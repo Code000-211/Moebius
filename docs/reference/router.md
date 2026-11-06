@@ -105,7 +105,7 @@ login runs on the server in the background:
   not given) has passed. `access_denied` or `expired_token` end it.
 - `code` listens on `127.0.0.1:<redirect_port>` (any free port when not set) and answers `authorize_url` with
   `response_type=code`, `client_id`, `redirect_uri` (`http://127.0.0.1:<port><redirect_path>`), `scope`, a `state`
-  of 32 random bytes (Anthropic's page refuses a shorter one) and an S256 `code_challenge`; the desktop app opens it in
+  of 32 random bytes (Anthropic's page refuses a shorter one) and an S256 `code_challenge`; the web app opens it in
   the browser. The first request to the redirect with
   that `state` ends the wait (others are ignored): its `code` is posted to `token_url` with
   `grant_type=authorization_code`, `redirect_uri`, `client_id` and the `code_verifier`; an `error` ends the login. The

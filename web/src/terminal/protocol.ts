@@ -3,7 +3,7 @@
  * messages carry bytes both ways, the keys to the shell and what the shell prints back, and a text message
  * `{"type":"resize","cols":N,"rows":M}` sets the size in cells (80 by 24 until then). The same for `/v1/chats/{id}/tui`,
  * `/v1/terminal` and `/v1/repositories/{id}/terminal`. These are the pure parts of that, written to match
- * `crates/moebius-desktop/src/client/terminal.rs`; `Terminal.tsx` draws them.
+ * `client/terminal.rs` of the former desktop app; `Terminal.tsx` draws them.
  */
 
 /** The most cells a side of the terminal has: the server takes `u16`. */

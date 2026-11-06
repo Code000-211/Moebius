@@ -1,6 +1,6 @@
 /**
  * What a `run_event` or `run_ended` does to the list of chats in the cache, so that a chat's status and unread marker
- * follow the stream at once, without reading the list again (the desktop app's `Chats::on_event`), and the one the
+ * follow the stream at once, without reading the list again (the former desktop app's `Chats::on_event`), and the one the
  * sidebar opens when there is no chat id in the address.
  */
 import type { Chat } from "../api/types/chat";

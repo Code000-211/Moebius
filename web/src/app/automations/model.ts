@@ -1,5 +1,5 @@
 /**
- * The logic of the Automations page, as `screens/automations/mod.rs` of the desktop app has it: the schedules the
+ * The logic of the Automations page, as `screens/automations/mod.rs` of the former desktop app has it: the schedules the
  * picker offers, how long until a firing, what a save sends and what is wrong with the fields, where a chat works,
  * and the line under the schedule that says when it fires next.
  */

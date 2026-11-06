@@ -1,5 +1,5 @@
 /**
- * Where the person is in the app, in a few lines for the Moebius agent (the desktop app's `page_context`): the page,
+ * Where the person is in the app, in a few lines for the Moebius agent (the former desktop app's `page_context`): the page,
  * the repository of a board, the chat that is open. The floating chat sends it with every message; the agent is told
  * it before the message, and the conversation does not show it.
  */

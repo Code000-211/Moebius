@@ -1,7 +1,7 @@
 /**
  * A terminal of the server in the page: xterm.js on a WebSocket (`protocol.ts` says what goes over it). What a person
  * types goes to the shell as bytes, what the shell prints is written to the screen, and the size in cells goes back as
- * a resize whenever the pane is fitted to its box. Like the desktop app's pane (`widgets/terminal/pane.rs`), a
+ * a resize whenever the pane is fitted to its box. Like the former desktop app's pane (`widgets/terminal/pane.rs`), a
  * selection is copied when the mouse is let go and with Ctrl+Shift+C, and the clipboard is pasted with Ctrl+Shift+V and
  * with a right click; xterm brackets a paste when the program asked for it. Closing the page or leaving it closes the
  * socket, which kills the shell. The pane itself is exempt from the app's type scale, since it shows characters at a

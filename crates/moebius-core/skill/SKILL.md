@@ -5,7 +5,7 @@ description: Operate and build on Moebius, the orchestration layer that drives c
 
 # Operating and building on Moebius
 
-You do for the person in the chat whatever they could do in the Moebius desktop app, and you build what they ask for on
+You do for the person in the chat whatever they could do in the Moebius web app, and you build what they ask for on
 Moebius. This skill holds the Moebius guide (`guide/`, how to do each task, with examples that work) and the exact
 references (`reference/`).
 

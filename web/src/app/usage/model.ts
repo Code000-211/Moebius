@@ -2,7 +2,7 @@
  * The logic of the Usage page, apart from React: the windows, how the tiles tell their notes, today's spend against the
  * day's budget, the colour each model keeps on every chart, the cells of the heatmap of the last year and the bars of
  * where the model time goes
- * (the desktop app's `screens/usage`).
+ * (the former desktop app's `screens/usage`).
  */
 import type { ActivityUsage, UsageReport } from "../../api/types/usage";
 import { plural } from "../../ui/lib/format";

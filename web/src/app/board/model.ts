@@ -1,7 +1,7 @@
 /**
  * What the board page decides, as plain functions: which columns a board has, which cards each shows after the
  * filters, what state a card is in, what a drop of a card on a column means (and why it may be refused), and the
- * words and links of a card. `screens/board.rs` of the desktop app is the model: the columns, the order, the ten cards
+ * words and links of a card. `screens/board.rs` of the former desktop app is the model: the columns, the order, the ten cards
  * of Done and the card the dock shows without a choice are the same.
  */
 import type { Board, Card, Change, Held, InboxItem, Repository } from "../../api/types/board";

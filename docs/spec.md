@@ -1,7 +1,7 @@
 # Moebius — specification of the first version
 
 This is what the first version of Moebius does and how it is built. The words are the ones in [`GLOSSARY.md`](../GLOSSARY.md);
-the decisions behind the shape are in [`docs/adr/`](adr/); the look of the desktop app is in [`docs/design.md`](design.md).
+the decisions behind the shape are in [`docs/adr/`](adr/); the look of the web app is in [`docs/design-web.md`](design-web.md).
 Where this document and an ADR disagree, the ADR wins and this document is wrong.
 
 ## 1. What the first version does
@@ -13,9 +13,9 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 
 ### In the first version
 
-- One server process, `moebius`, headless, on a machine in a private network; one desktop app talking to it.
+- One server process, `moebius`, headless, on a machine in a private network; one web app talking to it.
 - **Platforms**: the server is documented and tested on Linux and WSL 2; it builds and starts on Windows, where the
-  parts that need a Unix shell say they need Linux or WSL. The desktop app and the `moebius` commands that operate a
+  parts that need a Unix shell say they need Linux or WSL. The web app and the `moebius` commands that operate a
   server run on Linux and Windows. Releases are built for Linux x86_64 and Windows x86_64.
 - Repositories with the **GitHub forge**, with the **GitLab forge** (gitlab.com or self-hosted, with an access token),
   with the **Forgejo forge** (Codeberg, or a Forgejo or Gitea of one's own, with an access token), and repositories
@@ -33,7 +33,7 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
   requests the router translates from chat completions to the Codex Responses protocol of the ChatGPT backend and back (text, tool calls, finish reasons and usage, streamed or not), so that the tool-call check and the budgets apply as for any upstream. "Log in
   to a provider" on the Models page adds the upstream and logs in; a code login can be finished by pasting the code or
   the address the browser ended on.
-- The **MCP gateway**, skills and agents managed in the desktop app and kept in the harness configuration repository.
+- The **MCP gateway**, skills and agents managed in the web app and kept in the harness configuration repository.
 - The **default workflow** (section 6), with Luau scripts behind the columns and project overrides in the settings of the harness configuration repository (`repos/<repository name>/`).
 - **Rules** checked on every tool call: fixed patterns and the teacher model; nothing waits for a person.
 - **Judgements** recorded at every decision point, in full, with export of a training set.
@@ -46,8 +46,8 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
   points, judged with their outcomes and open to shadowing and takeover; the time of each check is a run event that Usage
   adds up. No language server is started; an on-demand language server tool is not part of it.
 - **Self-improvement** as a bundled plugin: the Retro, proposals, trials, autoresearch and shadowing.
-- **Where Moebius runs.** The server finds its program, files, addresses and host at start and the desktop app reports
-  its own when it connects (`PUT /v1/client`); the Moebius agent is told both at the start of each run, and that
+- **Where Moebius runs.** The server finds its program, files, addresses and host at start and a client app may report
+  its own (`PUT /v1/client`; the web app does not); the Moebius agent is told both at the start of each run, and that
   Moebius's official repository is https://github.com/Code000-211/Moebius, where it offers (after a yes) a pull request
   for a fix or an issue for a problem (the `moebius-report` skill).
 - **Chat** with any agent, and the **Moebius agent**, which knows Moebius from the guide (`docs/guide/`) and builds
@@ -64,7 +64,7 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
   Claude Code), chosen by an agent's `runner` or by a column script. The run's branch is pushed to a clone kept on the
   machine, the harness reaches the router, the check and the MCP gateway through an SSH reverse tunnel, and its commits
   are fetched back when it ends; each runner has a limit of runs at once. Machines of other kinds come as runner plugins.
-- The desktop app's seven screens: board, live view, inbox, chat, fleet, agents, usage.
+- The web app's seven screens: board, live view, inbox, chat, fleet, agents, usage.
 - **Plugins in their own process** besides the compiled-in ones: a program named under `[[plugins]]` in `moebius.toml`
   that speaks JSON Lines on stdin and stdout, called with the same time limit, failing closed, and started again with a
   growing pause when it stops (see `docs/reference/plugin-api.md`).
@@ -74,11 +74,12 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
   poll of that repository run at once. The poll stays the source of truth and goes on at its pace (ADR 0012, amending
   ADR 0003).
 
-- **Connecting over SSH**, as an editor's remote mode does: the desktop app picks a host of `~/.ssh/config` (or adds
-  one), finds or installs `moebius` there, runs `moebius init` and `moebius serve` (a systemd user service, else
-  detached), reads the token over SSH and talks to the server through `ssh -L`, which it keeps alive and makes again with
-  a backoff. The server listens on `127.0.0.1` only. Several servers are remembered and switched from the sidebar's
-  header; `moebius connect <host>` and `--ssh <host>` do the same for the command line.
+- **Connecting over SSH**, as an editor's remote mode does: `moebius connect <host>` logs in with the system's `ssh`
+  (keys, the agent, `~/.ssh/config`), and when no server answers there it sets one up after a yes (`--yes` for
+  scripts): it finds or installs `moebius` (the release of its own version), runs `moebius init` and `moebius serve` (a
+  systemd user service, else detached) and reads the token. It then forwards a port of this machine with `ssh -L` and
+  opens the web app in a window on it; the other commands use the tunnel while it stays open (`--ssh <host>` opens one
+  for a single command). The server listens on `127.0.0.1` only.
 
 ### Not in the first version
 
@@ -90,7 +91,7 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 ## 2. Processes and how they talk
 
 ```
-desktop app ──(private network, token, WebSocket + HTTP)──▶ moebius (server)
+web app ──(private network, token, WebSocket + HTTP)──▶ moebius (server)
                                                               │
                          ┌────────────────────────────────────┼─────────────────────────┐
                          ▼                                    ▼                         ▼
@@ -99,7 +100,7 @@ desktop app ──(private network, token, WebSocket + HTTP)──▶ moebius (s
                                                    bridge loaded in
 ```
 
-- **`moebius`** is one binary. It holds the core and the bundled plugins (section 4), the store, the API for the desktop app,
+- **`moebius`** is one binary. It holds the core and the bundled plugins (section 4), the store, the API for the web app,
   the router's HTTP endpoints and the MCP gateway's endpoint.
 - **A run** is a `pi-bolt` process started by the Pi-Bolt plugin in the run's worktree, controlled over Pi's RPC protocol
   (JSON Lines on stdin and stdout, records split on LF only). The bridge inside it talks back to `moebius` over HTTP on
@@ -107,7 +108,7 @@ desktop app ──(private network, token, WebSocket + HTTP)──▶ moebius (s
   question the harness asks.
 - **The router** listens on localhost; each run gets the router as its only provider and a per-run token, so that every model
   request is attributed to a run, a card and an agent.
-- **The desktop app** connects over the private network, or through an SSH tunnel to a server that listens only on
+- **The web app** connects over the private network, or through an SSH tunnel to a server that listens only on
   `127.0.0.1`, and authenticates with a token issued by the server.
 
 ## 3. The core
@@ -143,7 +144,7 @@ decide(kind, context, options) -> { choice, reason, decider }
 ```
 
 The core records a judgement for every call: kind, context blobs, options, choice, reason, decider (pattern, script, teacher
-model, decision model, person), and later the outcome. A person's decisions in the desktop app (merge, reject, approve,
+model, decision model, person), and later the outcome. A person's decisions in the web app (merge, reject, approve,
 steer, stop) go through the same record.
 
 ## 4. Bundled plugins in the first version
@@ -153,7 +154,7 @@ steer, stop) go through the same record.
 | GitHub forge | Acts as its own GitHub App with webhooks off; polls issues, pull requests, checks and reviews about every 30 seconds with conditional requests; opens and updates changes; maps trusted authors and "blocked by"; reads and writes an issue's sub-issues, dependencies, labels and comments (see the issue tracker in `docs/reference/desktop-api.md`). |
 | GitLab forge | Reaches gitlab.com or a self-hosted GitLab with a personal, project or group access token from a file or the secrets; polls issues (conditional on the ETag where GitLab gives one), merge requests, their pipelines and approvals; opens, updates and merges changes as merge requests; maps trusted authors and "blocked by" as the GitHub forge does; reads and writes labels, comments, closing, blockers (links, on GitLab Premium and above) and a parent as a "Part of #n" line. |
 | Forgejo forge | Reaches Codeberg, or any Forgejo or Gitea, with an access token from a file or the secrets; polls issues (conditional on the ETag where the forge gives one), pull requests, the commit statuses of their head and their reviews; opens, updates and merges changes as pull requests; maps trusted authors and "blocked by" as the GitHub forge does; reads and writes labels, comments, closing, dependencies and a parent as a "Part of #n" line. |
-| Git forge (none) | For a repository without a forge: issues and changes live in Moebius; merging happens in the desktop app. |
+| Git forge (none) | For a repository without a forge: issues and changes live in Moebius; merging happens in the web app. |
 | Pi-Bolt harness | Starts `pi-bolt --mode rpc` per run with the agent's model, thinking level, instructions (`--append-system-prompt`), skills (`--skill`) and extensions; maps Pi's events to run events. |
 | Claude Code harness | Starts `claude -p --input-format stream-json --output-format stream-json --verbose` per run with the router as `ANTHROPIC_BASE_URL`, the run's token as its key, the agent's model, instructions, skills and MCP servers; maps its records to the same run events. |
 | Bridge (Pi-Bolt) | A Pi extension (`crates/moebius-core/bridge/moebius-bridge.ts`) that Moebius loads into every run with `--extension`: on `tool_call` asks the core and blocks with the rule on refusal; on `tool_result` reports the result, which the server cleans of secrets and keeps small where it is made (compressed by command, cut to the agent's `tool_output` budget, the whole saved in the `out` folder of the run's own directory, outside its worktree); on `context` hides the outputs of tool calls older than the agent's window from the model's request; answers extension UI questions through `decide`. The lens (`moebius-lens.ts`) is loaded just before it. |
@@ -168,7 +169,7 @@ steer, stop) go through the same record.
 
 - The **harness configuration** is a git repository the server clones. It holds `agents/<name>.toml` (harness, model, thinking
   level, token budget, skills, MCP servers, extensions), `agents/<name>.md` (instructions), `skills/`, `rules.md` and
-  `mcp.toml`. Changes made in the desktop app are commits to it; proposals are branches on it.
+  `mcp.toml`. Changes made in the web app are commits to it; proposals are branches on it.
 - A project (a repository the server works on) has settings in the harness configuration repository, `repos/<repository
   name>/`: it can add rules in `rules.md` and override columns with `<column>.luau`, and it has `review.md`, `lint.toml`,
   `checks`, `test-first` and `localize`. A repository no longer keeps a `.moebius/` folder on its default branch: nothing
@@ -256,9 +257,9 @@ failure anywhere starts the run without a hint (Agentless, AutoCodeRover).
 - **Shadowing**: a trained decision model (outside the first version) decides alongside the teacher model; a kind of decision
   is taken over only through a proposal a person merges.
 
-## 8. The desktop app
+## 8. The web app
 
-Native, GPU-rendered, written in Rust with iced (ADR 0003, ADR 0011), built to [`docs/design.md`](design.md). Screens:
+A React app (`web/`) served by the server and built to [`docs/design-web.md`](design-web.md) (ADR 0013, ADR 0017; the iced desktop app of the first versions is gone). Pages:
 
 - **Board** per repository: columns with their scripts, cards with round, tokens and state; red for blocked and broken rules.
   The project's page works in tabs beside the board: an editor per file (a click on a file of the Files sidebar on the
@@ -268,8 +269,8 @@ Native, GPU-rendered, written in Rust with iced (ADR 0003, ADR 0011), built to [
   the worktree, steering and stopping.
 - **Terminal** (Setup): a shell on the server, in the directory of `moebius.toml`.
 - **Ports** (Setup): the ports that runs, chats and terminals on the server listen on (read from `/proc`, Linux only,
-  announced as `port_opened` and `port_closed`), forwarded to `127.0.0.1` here through `GET /v1/ports/{port}/tunnel`, with
-  an offer to open one in the browser, forwards by hand, and the forwards remembered per server in `desktop.toml`.
+  announced as `port_opened` and `port_closed`), with the `ssh -L` command that forwards one to this machine; a client
+  that carries connections itself uses `GET /v1/ports/{port}/tunnel`.
 - **Inbox**: everything that needs the person, one column, filterable.
 - **Chat**: a conversation with an agent, the Moebius agent by default, with code highlighted, tool calls with their
   checks, and the changes the agent offers.
@@ -302,7 +303,7 @@ Native, GPU-rendered, written in Rust with iced (ADR 0003, ADR 0011), built to [
 | M3 Rules | Bridge in Pi-Bolt, tool-call check, patterns, teacher model, judgements | A call that breaks a rule is refused with the rule and the run goes on; every decision has a judgement. |
 | M4 The loop | Review, CI, conflicts, round limit, token budgets, inbox | Cards go back and forth between coding and review on their own and stop at their limits. |
 | M5 Chat and the Moebius agent | Chats, the Moebius guide, the Moebius agent | A person asks the Moebius agent for a column script in a chat and gets it as a change. |
-| M6 Desktop app | Board, live view, inbox, chat | A person can follow and steer a run, chat, and merge from the app. |
+| M6 Web app | Board, live view, inbox, chat | A person can follow and steer a run, chat, and merge from the app. |
 | M7 Agents and usage | Harness configuration repository, agents, skills, MCP gateway, usage page | Agents are edited in the app and the usage page shows real numbers. |
 | M8 Self-improvement | Retro, proposals, trials, replays, autoresearch, grilling | A proposal tried overnight is waiting in the inbox in the morning. |
 | M9 Decision model | Training-set export, shadowing, takeover proposals | A trained model can shadow the teacher model and be proposed to take over. |

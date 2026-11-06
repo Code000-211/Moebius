@@ -1,6 +1,6 @@
 /**
  * The keys of `moebius.toml` the Settings page edits, by box, and one key as an input: what it holds, what it held when
- * read, the value a save sends, and which keys a save sets and which it removes (the desktop app's
+ * read, the value a save sends, and which keys a save sets and which it removes (the former desktop app's
  * `screens/setup/fields.rs` and `forms.rs`). The Models page edits the other keys.
  */
 import type { ServerSettings } from "../../api/types/settings";

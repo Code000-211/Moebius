@@ -1,7 +1,7 @@
 /** What the Ports page says about a port: who it belongs to, and where that is. */
 import type { Port } from "../../api/types/runs";
 
-/** What a port belongs to, in a few words (the desktop app's `owner`). */
+/** What a port belongs to, in a few words (the former desktop app's `owner`). */
 export function owner(port: Port): string {
   switch (port.kind) {
     case "run":

@@ -28,19 +28,12 @@ jobs:
             | PIBOLT_YES=1 PIBOLT_EXTENSIONS=no sh
           echo "MOEBIUS_PI_BOLT=$HOME/.local/bin/pi-bolt" >> "$GITHUB_ENV"
       - run: cargo test --workspace
-      # A render test that fails keeps what it drew; keep it with the run.
-      - if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: snapshot-diffs
-          path: target/snapshot-diffs
-          if-no-files-found: ignore
       - run: cargo run -p moebius-plugin-api --example allow_reads
       - run: cargo run -p moebius-plugin-api --example allow_reads_process
       - run: cargo run -p moebius-plugin-api --example wrap_launcher
       - run: cargo run -p moebius-plugin-api --example wrap_launcher_process
 
-  # The desktop app, the command line and the plugin API build and pass their tests on Windows, and so do the server's
+  # The command line and the plugin API build and pass their tests on Windows, and so do the server's
   # tests that need no Unix program (the others are `#[cfg(unix)]`, each saying why). The server is documented and
   # tested on Linux and WSL 2; on Windows it builds and starts.
   windows:
@@ -55,13 +48,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace
-      - run: cargo test -p moebius-desktop -p moebius -p moebius-plugin-api
-      - if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: snapshot-diffs-windows
-          path: target/snapshot-diffs
-          if-no-files-found: ignore
+      - run: cargo test -p moebius -p moebius-plugin-api
       - run: cargo test -p moebius-core --no-fail-fast
 
   # The code builds with the Rust version that `rust-version` in Cargo.toml names, and that is the version the README
@@ -93,7 +80,7 @@ jobs:
       run:
         working-directory: web
     steps:
-      # The tests read theme.rs and the formatter checks line ends: LF, as committed.
+      # The formatter checks line ends: LF, as committed.
       # Before the checkout web/ does not exist yet, so this step runs in the workspace.
       - run: git config --global core.autocrlf false
         working-directory: .

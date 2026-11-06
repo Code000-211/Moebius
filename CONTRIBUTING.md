@@ -14,7 +14,7 @@ You need Linux (or WSL 2), Rust 1.90 or newer, and git. The end-to-end tests als
 [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt) installed as `pi-bolt`, named by `MOEBIUS_PI_BOLT`. Without it they
 are skipped.
 
-The desktop app, the command line and the plugin API also build and pass their tests on Windows, and CI checks that (the
+The web app, the command line and the plugin API also build and pass their tests on Windows, and CI checks that (the
 `windows` job), with the server's tests that need no Unix program. To check your change for Windows from Linux, add the
 target and a MinGW C compiler (`gcc-mingw-w64-x86-64` and `g++-mingw-w64-x86-64` on Debian and Ubuntu); nothing needs
 to run:
@@ -30,30 +30,27 @@ started by its `#!` line) is `#[cfg(unix)]`, with a comment that says why.
 
 ## Where the code goes
 
-The workspace has four crates, and the web app lives next to them in `web/`:
+The workspace has three crates, and the web app lives next to them in `web/`:
 
 | Crate | What it is |
 |---|---|
 | [`crates/moebius-core`](crates/moebius-core/README.md) | The server: everything Moebius does. |
-| [`crates/moebius-desktop`](crates/moebius-desktop/README.md) | The desktop app. It talks to the server only through the desktop API. |
 | [`crates/moebius`](crates/moebius/README.md) | The `moebius` binary and its command line. |
 | [`crates/moebius-plugin-api`](crates/moebius-plugin-api/README.md) | The plugin trait and its host. |
 
 The web app, [`web/`](web/README.md), is not a crate: a Vite + React + TypeScript project built with pnpm into `web/dist`,
-which the server serves at `/`. It talks to the server only through the desktop API, as the desktop app does. Its API client
+which the server serves at `/`. It talks to the server only through the desktop API. Its API client
 is in `src/api/` (one module per part of the API), the shell and the pages in `src/app/`, the components copied from Vibe
 Kanban in `src/ui/` (each file says where from and what changed), and the tokens of its own design standard in
-`src/styles/`. The web app follows [`docs/design-web.md`](docs/design-web.md); `docs/design.md` and `theme.rs` are the
-desktop app's look and are not kept in step with it.
+`src/styles/`. The web app follows [`docs/design-web.md`](docs/design-web.md).
 
 Inside a crate's `src/`, the modules that tie it together are at the top, and the rest is grouped by part, one folder
-each. In the server those folders are `server/`, `repos/`, `board/`, `decide/`, `harness/` and `improve/`. In the app
-they are `screens/` and `widgets/`. The module map in [`docs/architecture.md`](docs/architecture.md#modules) lists
+each. In the server those folders are `server/`, `repos/`, `board/`, `decide/`, `harness/` and `improve/`. The module map in [`docs/architecture.md`](docs/architecture.md#modules) lists
 every module.
 
-- **New code goes into the folder of its part.** A new screen goes into `screens/`. A piece that two screens share goes
-  into `widgets/`. A new kind of record goes into a module of `store/`. A new route goes into the module of `server/api/`
-  for its part of the API, and its client call into `client/calls/` of the app.
+- **New code goes into the folder of its part.** A new page of the web app goes into `web/src/app/`. A piece that two pages share goes
+  into `web/src/ui/`. A new kind of record goes into a module of `store/`. A new route goes into the module of `server/api/`
+  for its part of the API, and its client call into `src/api/calls/` of the web app.
 - **A module that grows past about 600 lines, or that mixes concerns, becomes a folder.** Its `mod.rs` holds what the
   parts share and re-exports their public items, so that callers do not change. Tests stay next to the code they test.
 - **Every module starts with a `//!` doc comment.** It says in plain sentences what the module is for and how it fits
@@ -76,8 +73,6 @@ every module.
 - Tests must not be flaky: no tight time limits, no fixed ports (bind to port 0), and no sleeps where a condition can
   be awaited.
 - Talk to outside services through a fake: an axum server on port 0, or a local bare git repository.
-- The desktop app's render tests compare against the pictures in `crates/moebius-desktop/tests/snapshots/`. Delete a
-  picture to store a new one, and look at it before you commit it.
 
 ## Documentation
 

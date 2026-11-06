@@ -15,7 +15,7 @@
 //! (`calls`).
 //!
 //! The router can also ask its upstreams which models they serve ([`Router::available_models`]), for the pickers of the
-//! desktop app.
+//! web app.
 //!
 //! The server serves these routes together with the tool-call check (`check`) and the MCP gateway (`gateway`) on one
 //! listener. A run's token also names the MCP servers the gateway gives the run.

@@ -1,5 +1,5 @@
 /**
- * The floating chat (the desktop app's `float_chat`): a round button at the bottom right of every page that opens a
+ * The floating chat (the former desktop app's `float_chat`): a round button at the bottom right of every page that opens a
  * sheet with the Moebius agent over the page. The sheet is a borderless card down the right that leaves the page
  * recognisable behind it; Escape, or the control that minimises it, closes it and the focus goes back to the button
  * that opened it. Minimising turns it back into the button and the chat stays across pages. Every message carries

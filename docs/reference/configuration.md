@@ -55,10 +55,10 @@ An absolute path is used as it is.
 |---|---|---|---|
 | `data_dir` | path | `.moebius` | Where Moebius keeps its files: `moebius.sqlite` (the store), `blobs/`, `repos/<name>` (the clones), `harness/` (the clone of the harness configuration repository), `worktrees/<name>/run-<id>` (`chat-<id>` for a chat), `chats/<id>` (the empty directory of a chat without a repository), `runs/<id>/` (a run's agent directory, bridge, sessions and `stderr.log`), `skills/<name>/` (the built-in skills, `moebius` and the task skills of the Moebius agent, written again at every start) and by default `token`. Created if missing. |
 | `listen` | string | `127.0.0.1:7171` | The address of the desktop API, as `ip:port` (a host name is not accepted). Keep it on a private network. |
-| `token_file` | path | `token` | The file with the token the desktop app sends. Created with a random token (64 hex digits, readable by the owner only) when missing or empty. |
+| `token_file` | path | `token` | The file with the token the web app sends. Created with a random token (64 hex digits, readable by the owner only) when missing or empty. |
 | `run_limit` | integer | `3` | How many runs may go at once across all boards. At least 1, else the file is refused. Scripts read it as `moebius.run_limit`. |
 | `retro_at` | string | `23:30` | When the daily Retro runs, as `HH:MM` with two digits each (hour 00 to 23, minute 00 to 59) in the server's local time. The Retro of a day starts when this time has passed and the day has none (the server looks once a minute, also when it starts), so a day whose time passed while the server was off is not caught up. See [harness configuration](harness-configuration.md#the-retro). |
-| `rules_file` | path | `"rules.md"` | The server's rules, see [rules](rules.md), which the desktop app edits. A missing file means no server rules: only the built-in rules and the repositories' rules apply. An error together with `[harness]`: the repository's `rules.md` is the server's rules then. |
+| `rules_file` | path | `"rules.md"` | The server's rules, see [rules](rules.md), which the web app edits. A missing file means no server rules: only the built-in rules and the repositories' rules apply. An error together with `[harness]`: the repository's `rules.md` is the server's rules then. |
 
 ## `[harness]`
 
@@ -73,7 +73,7 @@ Without it, agents and rules are configured here, and skills and MCP servers can
 ### Setting it up from the app
 
 A server without `[harness]` can make one: `POST /v1/harness/setup` (see the [desktop API](desktop-api.md)), the "Set
-up" of the desktop app's Get started, Skills, MCP servers and Agents pages, which only a person can ask for. It makes
+up" of the web app's Get started, Skills, MCP servers and Agents pages, which only a person can ask for. It makes
 `harness/` next to `moebius.toml` a new repository, as `moebius init` does, with every `[agents.<name>]` as
 `agents/<name>.toml` and `agents/<name>.md` and the file of `rules_file` (by default `rules.md` next to this file) as
 `rules.md`. A skill an agent names by path is copied to `skills/<directory name>/`, and an extension to
@@ -180,14 +180,14 @@ without a match the router answers 502. Without any upstream, every model reques
 | `router.upstreams.protocol` | string | required | `openai` or `anthropic`. |
 | `router.upstreams.base_url` | string | required | The URL the endpoint's path is appended to, such as `http://127.0.0.1:8080` or `https://api.anthropic.com`. A trailing slash is ignored. |
 | `router.upstreams.api_key_env` | string | none | The name of the environment variable that holds the provider's key. The key is never in the file. If the variable is not set when the server starts, the server does not start. Without this key and without `api_key_secret`, no key is sent (a local server). The key is sent as `Authorization: Bearer` (`openai`) or `x-api-key` (`anthropic`). |
-| `router.upstreams.api_key_secret` | string | none | The name of a stored key (see [Secrets](#secrets)) that holds the provider's key, for a key typed into the desktop app. A name is made of letters, digits, `-` and `_`. If no key is stored under it when the server starts, the server does not start. Setting it together with `api_key_env` refuses the file. The key is sent as for `api_key_env`. |
+| `router.upstreams.api_key_secret` | string | none | The name of a stored key (see [Secrets](#secrets)) that holds the provider's key, for a key typed into the web app. A name is made of letters, digits, `-` and `_`. If no key is stored under it when the server starts, the server does not start. Setting it together with `api_key_env` refuses the file. The key is sent as for `api_key_env`. |
 
 #### `[router.upstreams.oauth]`
 
 An upstream that logs in with OAuth 2.0 instead of a key, such as a provider's subscription. `preset` names a provider
 that is built in and fills in every key that is not written; for any other provider the client id and the URLs are
 written here. Setting `oauth` together with `api_key_env` or
-`api_key_secret` refuses the file. The login is started from the Models page of the desktop app (or
+`api_key_secret` refuses the file. The login is started from the Models page of the web app (or
 `POST /v1/models/upstreams/{place}/login`, see the [desktop API](desktop-api.md)) after the person confirms that using a
 subscription through a third-party tool may break the provider's terms; `moebius doctor` repeats the warning. A server
 whose upstream is not logged in starts, and the router answers its requests with `502` (see [router](router.md#oauth-logins)).
@@ -229,7 +229,7 @@ A model class is a name, such as `fast`, `strong` or `local`, for an ordered lis
 teacher's `model` and a chat's model may name a class instead of a model; the router serves the class as a model name
 (see [router](router.md#model-classes)): a request for it goes to the first of its models that has tokens left today,
 and falls back to the next when an upstream fails before it answers. A class takes the place of a model of the same
-name. The desktop app's model pickers offer the classes before the models. The decision model is not asked through
+name. The web app's model pickers offer the classes before the models. The decision model is not asked through
 the router, so it cannot name a class.
 
 | Key | Type | Default | Meaning and validation |
@@ -499,7 +499,7 @@ has (see the [desktop API](desktop-api.md)). A chat on Claude Code has no termin
 waits, and ignores the reasoning level.
 ## Editing the file from the app
 
-The desktop app edits every key of this page through `PUT /v1/settings` (see the [desktop API](desktop-api.md)). The
+The web app edits every key of this page through `PUT /v1/settings` (see the [desktop API](desktop-api.md)). The
 server changes the text of the file in place, so comments and the order of the keys stay, refuses a result that
 `moebius serve` would refuse (status 422, nothing written), writes the file in one step, and records the decision
 (kind `edit_settings`). A key is addressed by the name this page gives it, `board.round_limit`, and a table by its

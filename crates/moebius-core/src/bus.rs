@@ -1,4 +1,4 @@
-//! The event bus: what the core publishes for the desktop app's event stream.
+//! The event bus: what the core publishes for the web app's event stream.
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
@@ -6,7 +6,7 @@ use tokio::sync::broadcast;
 use crate::server::ports::Port;
 use crate::store::{Card, Change, Comment, Repository};
 
-/// One thing that happened, as the desktop app receives it. It is built from an [`Event`] and deserializes from the
+/// One thing that happened, as the web app receives it. It is built from an [`Event`] and deserializes from the
 /// `{kind, data}` a client is sent, so nothing outside [`Event`] can name a kind.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppEvent {

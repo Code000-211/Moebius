@@ -1,5 +1,5 @@
 /**
- * The OAuth login of an upstream on the Models page (the desktop app's `login`): the warning about the provider's terms,
+ * The OAuth login of an upstream on the Models page (the former desktop app's `login`): the warning about the provider's terms,
  * which the person confirms before a login starts (`POST /v1/models/upstreams/{place}/login`), then the code to enter
  * at the provider or the provider's page, opened in a new tab, then whether the login holds, read again every second
  * (`GET /v1/models/upstreams/{place}/login`) while it waits. A login by the provider's page also takes the code, or

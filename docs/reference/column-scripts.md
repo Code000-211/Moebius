@@ -51,10 +51,10 @@ end
 | `card.number` | number | The issue number: on GitHub the issue's number, otherwise a counter per repository starting at 1. |
 | `card.title` | string | The issue's title. |
 | `card.body` | string | The issue's body; an empty string when there is none. |
-| `card.author` | string | Who created the issue: `person` for an issue made in the desktop app, otherwise the GitHub login. |
+| `card.author` | string | Who created the issue: `person` for an issue made in the web app, otherwise the GitHub login. |
 | `card.column` | string | The column the card is in. |
 | `card.confirmed` | boolean | True for a card made from a grilling a person confirmed (see `desktop-api.md`, grillings); the person has decided on it, so it needs no approval. |
-| `card.trusted` | boolean | True when the issue may move on without approval: it was made by a person in the desktop app on a repository without a forge, or its author is one of the repository's trusted GitHub logins (compared without regard to case). |
+| `card.trusted` | boolean | True when the issue may move on without approval: it was made by a person in the web app on a repository without a forge, or its author is one of the repository's trusted GitHub logins (compared without regard to case). |
 | `card.test_first` | boolean | True when the card's repository works test first: its project has a `test-first` file in its settings. See Test first. |
 | `card.blocked_by` | table (array of numbers) | The issue numbers the card is blocked by that are not done yet. A number counts as not done when it has no card or its card is not in `Done`. Empty (never nil) when nothing blocks the card. The numbers come from "blocked by #12" lines in the issue's body on a forge, from the forge's own dependencies (GitHub's issue dependencies, GitLab's `is_blocked_by` links, Forgejo's dependencies) and from what was added through the API (see [the issue tracker](desktop-api.md#the-issue-tracker)). A closed issue is a card in `Done`, so its blocked issues stop waiting. |
 | `card.parent` | number or nil | The issue number of the card's parent issue, or nil. |
@@ -458,7 +458,7 @@ script does this with `moebius.start_runs`, `moebius.check_attempt` and `moebius
   `moebius/run-<id>` in the repository's clone until the card is done.
 
 The desktop API shows the latest group of a card as `attempts` in its board entry (`GET /v1/snapshot`) and as
-`attempt_judged` and `attempts_settled` entries in `GET /v1/cards/{id}/history`; the desktop app's live view and its
+`attempt_judged` and `attempts_settled` entries in `GET /v1/cards/{id}/history`; the web app's live view and its
 card page show which attempts passed, which was picked and why.
 
 ## Test first

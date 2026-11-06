@@ -1,4 +1,4 @@
-//! The ports of the server, for the Ports view of the desktop app (see [`crate::server::ports`]).
+//! The ports of the server, for the Ports view of the web app (see [`crate::server::ports`]).
 //!
 //! - `GET /v1/ports`: the ports that processes of runs, chats and terminals listen on.
 //! - `GET /v1/ports/{port}/tunnel`: a WebSocket that carries one TCP connection to `127.0.0.1:<port>` on the server (or

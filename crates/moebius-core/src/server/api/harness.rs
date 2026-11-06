@@ -439,7 +439,7 @@ mod tests {
         assert!(instructions.contains("http://127.0.0.1:4141"));
         assert!(instructions.contains("127.0.0.1:4242"));
         assert!(instructions.contains(&std::env::current_exe().unwrap().display().to_string()));
-        assert!(instructions.contains("has not reported where it runs yet"));
+        assert!(instructions.contains("No app has reported where it runs"));
         // The official repository and the offer, which needs a yes.
         assert!(instructions.contains("https://github.com/Code000-211/Moebius"));
         assert!(instructions.contains("send nothing without the person's yes"));
@@ -451,7 +451,7 @@ mod tests {
             .put(format!("http://{addr}/v1/client"))
             .bearer_auth(&*state.token)
             .json(&serde_json::json!({
-                "program": "/opt/app/moebius-desktop", "version": "9.9.9", "os": "macos", "arch": "aarch64",
+                "program": "/opt/app/moebius-client", "version": "9.9.9", "os": "macos", "arch": "aarch64",
                 "host": "leons-laptop", "server_address": "http://127.0.0.1:50000", "ssh_host": "build-box"
             }))
             .send()
@@ -465,7 +465,7 @@ mod tests {
             .find(|w| w[0] == "--append-system-prompt")
             .unwrap()[1];
         for word in [
-            "/opt/app/moebius-desktop",
+            "/opt/app/moebius-client",
             "9.9.9",
             "leons-laptop",
             "http://127.0.0.1:50000",

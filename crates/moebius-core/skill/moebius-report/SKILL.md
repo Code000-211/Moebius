@@ -11,7 +11,7 @@ yes. A fix goes as a pull request, a problem as an issue. A problem in the perso
 ## Is it Moebius?
 
 It is Moebius when the code, a built-in skill, a document or the behaviour that is wrong belongs to Moebius: the server
-(its files are in "Where Moebius runs" of your instructions), the desktop app, the `moebius` command or the documents of
+(its files are in "Where Moebius runs" of your instructions), the web app, the `moebius` command or the documents of
 `docs/`. It is not Moebius when it is in the person's repository, their column scripts, rules, agents or settings.
 
 ## Steps

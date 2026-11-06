@@ -1,6 +1,6 @@
 # Desktop API
 
-The desktop API is how the desktop app, or any client such as `curl`, reads the boards and acts on them. This page is for
+The desktop API is how the web app, or any client such as `curl`, reads the boards and acts on them. This page is for
 anyone who writes a client or a script against a running server. The code is in `crates/moebius-core/src/server/api/`,
 anyone who writes a client or a script against a running server. The code is in `crates/moebius-core/src/server/api/`,
 one module per part; the events are published from `app/`, `harness/pibolt/`, `decide/check/`, `repos/poll/`,
@@ -100,7 +100,7 @@ done) and `children` (its sub-issues, oldest first, each `{"id", "number", "titl
 the person's next message), `worktree`, `started_at`, `ended_at`, `summary`, `repository_id` (the repository a chat
 works in, or null) and `harness_repository` (true for a chat that works in the [harness configuration
 repository](harness-configuration.md#changing-it-in-a-chat); `harness` is the name of the harness that runs the agent)
-and `origin` (where a chat was started: `chat`, or `assistant` for the desktop app's floating window; `chat` for every
+and `origin` (where a chat was started: `chat`, or `assistant` for the web app's floating window; `chat` for every
 other run) and `runner` (the name of the [runner](configuration.md#runners) the run's harness goes on, or null for a run on the server) and
 `title` (the name a person gave this chat, or null while it is untitled and its `Chat` title comes from its first
 message; see `POST /v1/chats/{id}/title`. Only a chat is ever named, so it is null for every other run).
@@ -119,7 +119,7 @@ many files the chat's worktree changes against the default branch of its reposit
 included: what `POST /v1/chats/{id}/offer` would offer; 0 for an ended chat and one without a repository), `asks`
 (true while the chat waits and the agent's last answer ends in a question to the person, so it needs an answer) and
 `origin`
-(`chat`, `assistant` for a chat of the desktop app's floating window, see `POST /v1/chats`, or `automation` for a chat an
+(`chat`, `assistant` for a chat of the web app's floating window, see `POST /v1/chats`, or `automation` for a chat an
 automation started, see `POST /v1/automations`), `model` and `thinking`
 (the model and reasoning level the chat was given in place of its agent's, see `POST /v1/chats` and
 `POST /v1/chats/{id}/settings`; null while it uses its agent's). A chat is unread while `answered` is greater than `seen`.
@@ -215,7 +215,7 @@ a core that was not started as a server.
 
 ### `GET /v1/client`
 
-What the desktop app last reported about itself: the body of `PUT /v1/client` and `reported_at`, the time the server
+What a client app last reported about itself (the web app does not report): the body of `PUT /v1/client` and `reported_at`, the time the server
 heard it (Unix seconds). Errors: `404` no app has reported since the server started.
 
 ### `PUT /v1/client`
@@ -1090,7 +1090,7 @@ worktree. `process` is the program's name. It is read from `/proc` (Linux); on a
 
 Carries one TCP connection to `127.0.0.1:<port>` on the server (`[::1]` when only that answers). It upgrades to a
 WebSocket: every binary message the client sends is written to the connection and every byte the connection sends comes
-back as a binary message; either side closing ends both. The server listens on no new interface: the desktop app listens
+back as a binary message; either side closing ends both. The server listens on no new interface: a client that forwards the port listens
 on its own machine and opens one tunnel for each connection made to it, with the same address and token as for every
 other route, so it works over an SSH tunnel too. A person may open a tunnel to any port of the server's loopback address,
 detected or asked for by hand.
@@ -1363,7 +1363,7 @@ is merged, when the branch is merged, so a commit added to the branch in between
 
 ### `POST /v1/uploads`
 
-Stores a zip file on the server, for the Moebius agent to import skills or MCP servers from (the desktop app's Import
+Stores a zip file on the server, for the Moebius agent to import skills or MCP servers from (the web app's Import
 button). Request: the file itself as the body, with `Content-Type: application/zip`, at most 20 MiB (20,971,520
 bytes). The file is written to `<data_dir>/uploads/<id>.zip`, where `id` is 32 random hex digits, and kept until
 someone removes it. Response: `{"id": string, "path": string}`, `path` being where the file is on the server. Allowed to
@@ -1447,7 +1447,7 @@ app adds an upstream for a provider with `PUT /v1/settings` (`router.upstreams.<
 Where the OAuth login of the upstream at `place` stands, as a login (above). While a started login waits, or after it
 failed, that login is answered. Otherwise the server checks whether the stored login holds: `logged_out` when no refresh
 token is stored or the provider refuses it, `logged_in` when the upstream lists its models with the access token
-(`Logged in: the upstream lists 2 models.`), `failed` when it does not. The desktop app asks every second while a login
+(`Logged in: the upstream lists 2 models.`), `failed` when it does not. The web app asks every second while a login
 waits. Errors: `404` and `422` as above.
 
 ### `GET /v1/models/available`
@@ -1518,7 +1518,7 @@ same five, in the order a person takes them. Response:
   Models page.`; when every upstream fails, it names each one as `Could not ask <url>: <message>.`
 - `pi_bolt` is done when `pi_bolt.program` exists and `<program> --version` exits with status 0 within 10 seconds.
 - `harness` is done when the server runs with `[harness]` (see [harness configuration](harness-configuration.md)), and
-  the detail names its URL. Without it the detail says what `POST /v1/harness/setup` does, which the desktop app's
+  the detail names its URL. Without it the detail says what `POST /v1/harness/setup` does, which the web app's
   "Set up" button sends.
 - `coder` is done when the agent the default workflow starts in the code column, `Coder`, has a model.
 - `repository` is done when at least one repository is added.
@@ -1732,7 +1732,7 @@ url` set to the repository's absolute path and without `[agents.*]` and `rules_f
 and records the decision (kind `setup_harness`, decider `person`, the file, the repository, the agents and where each
 skill and extension was copied in its context). The file is saved as `PUT /v1/settings` saves a change, so the result
 must read as `moebius serve` reads it and the keys that are live take effect at once; the running server is not
-otherwise changed: it uses the repository once it restarts (`POST /v1/server/restart`, which the desktop app sends
+otherwise changed: it uses the repository once it restarts (`POST /v1/server/restart`, which the web app sends
 next).
 
 Response: `{"restart_needed": true, "restart_keys": ["harness.url"]}`, as `PUT /v1/settings` answers. Errors: `403` a
@@ -1779,8 +1779,8 @@ Request:
 | `repository` | number | The id of a repository to work in. |
 | `harness` | boolean | Work in the harness configuration repository instead (default false): in a worktree on the branch `moebius/chat-<run id>` of its default branch, so that the agents, skills, extensions, MCP servers and rules can be built as files and merged (see [changing it in a chat](harness-configuration.md#changing-it-in-a-chat)). The run has `harness_repository` true. Not together with `repository`. |
 | `continues` | number | The id of an ended chat this one goes on from. Its agent, place (repository or harness configuration repository), model and reasoning level are used unless `agent`, `repository`, `model` or `thinking` name others, and the agent is given what was said in it (the person's messages and the agent's answers, at most the last 20 000 characters) before `message`. The new chat's `said` event holds only `message`. |
-| `context` | string | Where the person is in the app (the page, the repository, the open card or chat, the text being edited), as the desktop app describes it. The agent is told it before `message`, under the line `[Where the person is in the Moebius app. Use it to understand what they mean; do not repeat it.]`, with secrets removed and cut to 4 000 characters; the `said` event holds only `message`. Optional; blank is the same as none. |
-| `origin` | string | Where the chat is started: `chat` (the default), on the Chat page or by any client, `automation`, as an automation's chats are (see `POST /v1/automations`), or `assistant`, a conversation in the desktop app's floating window, which the person reads there. `GET /v1/chats` leaves out the chats of origin `assistant` unless asked for them with `all=true`; what an app does with them is its own (the web app lists them on its Chat page with every other chat and counts them unread until they are read, the desktop app keeps them out of its Chat page). The run, its events and every other chat route work as for any chat. |
+| `context` | string | Where the person is in the app (the page, the repository, the open card or chat, the text being edited), as the web app describes it. The agent is told it before `message`, under the line `[Where the person is in the Moebius app. Use it to understand what they mean; do not repeat it.]`, with secrets removed and cut to 4 000 characters; the `said` event holds only `message`. Optional; blank is the same as none. |
+| `origin` | string | Where the chat is started: `chat` (the default), on the Chat page or by any client, `automation`, as an automation's chats are (see `POST /v1/automations`), or `assistant`, a conversation in the web app's floating window, which the person reads there. `GET /v1/chats` leaves out the chats of origin `assistant` unless asked for them with `all=true`; what an app does with them is its own (the web app lists them on its Chat page with every other chat and counts them unread until they are read, the web app keeps them out of its Chat page). The run, its events and every other chat route work as for any chat. |
 
 Response: the `Run` (`purpose` `chat`, `card_id` null). Errors: `404` no such repository or no run `continues`; `422`
 the message is blank or missing with `continues`, `model` is blank, `thinking` is not one of the levels, the agent does not exist, it is a built-in agent and neither its own `[agents.<name>]` nor
@@ -1790,9 +1790,9 @@ the message is blank or missing with `continues`, `model` is blank, `thinking` i
 
 ### `GET /v1/chats`
 
-The chats, newest first, without those of origin `assistant` (the desktop app's floating window). Query: `all=true`
-lists those too, each with its `origin`; the desktop app asks for them so that its Fleet page shows the agents they
-keep working and "Open in Chat" can show one, and the web app asks for them because its Chat page lists every chat. Response: an array of `Chat`. A chat's history is its run's events, read with
+The chats, newest first, without those of origin `assistant` (the web app's floating window). Query: `all=true`
+lists those too, each with its `origin`; the web app asks for them so that its Fleet page shows the agents they
+keep working and "Open in Chat" can show one. Response: an array of `Chat`. A chat's history is its run's events, read with
 `GET /v1/runs/{id}/events` and followed on `GET /v1/events`.
 
 ### `POST /v1/chats/{id}/messages`
@@ -1894,7 +1894,7 @@ nothing that was not offered in a change since merged or closed), or its harness
 ### `POST /v1/chats/{id}/seen`
 
 A person has read the chat up to the event `seq`: `{"seq": number}`. The chat's `seen` becomes that `seq`, unless it is
-already further, since reading never goes back. The desktop app sends it while the chat is open on its Chat page, and
+already further, since reading never goes back. The web app sends it while the chat is open on its Chat page, and
 counts on the sidebar's Chat entry the chats that are unread. Response: `{}`. Errors: `404` no such run; `422` the run
 is not a chat.
 
@@ -1934,7 +1934,7 @@ that is not a chat; `409` the chat is being started again, or does not end.
 
 ### `POST /v1/chats/{id}/end`
 
-The desktop app offers no way to end a chat (its work is offered with `POST /v1/chats/{id}/offer`, and a chat that waits
+The web app offers no way to end a chat (its work is offered with `POST /v1/chats/{id}/offer`, and a chat that waits
 long frees its Pi by itself); the command line and the Moebius agent end chats with this route, and a grilling ends with
 it. A person ends a chat that has not ended: Pi is asked to shut down (its standard input is closed; a Pi that has not exited
 after 10 seconds is killed). With a repository, what the agent left in the worktree is committed on the chat's branch

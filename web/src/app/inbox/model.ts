@@ -1,7 +1,7 @@
 /**
  * The logic of the Inbox page, apart from React: what an item is about (looked up in the snapshot), its kind as a tag
  * and a sentence, the facts of a change that waits, the filters and their counts, and the list of issues a grilling
- * proposes while a person edits it (the desktop app's `screens/inbox`).
+ * proposes while a person edits it (the former desktop app's `screens/inbox`).
  */
 import type { Board, Card, Change, InboxItem, Snapshot } from "../../api/types/board";
 import type { Proposal } from "../../api/types/improve";

@@ -1,5 +1,5 @@
 /**
- * The Get started page (the desktop app's `screens/start`): what a server still needs before the first card can run
+ * The Get started page (the former desktop app's `screens/start`): what a server still needs before the first card can run
  * (an upstream with models, Pi-Bolt, a harness configuration repository, the Coder's model, a repository), read from
  * `GET /v1/start`. The step to take next is the one the page is built around, with the page that fixes it beside it;
  * the steps already taken are named but quiet. Finishing a step moves it as soon as the page is read again: by its

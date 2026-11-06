@@ -1,6 +1,6 @@
 /**
  * The logic of the MCP servers page, free of React: the fields of the editor, what a save sends (or what is wrong with
- * the fields) and how a server of `mcp.toml` fills the editor (`crates/moebius-desktop/src/screens/mcp_servers.rs`).
+ * the fields) and how a server of `mcp.toml` fills the editor (`screens/mcp_servers.rs` of the former desktop app).
  */
 import type { McpDefinition } from "../../api/types/harness";
 

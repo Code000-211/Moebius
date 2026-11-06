@@ -29,7 +29,7 @@ Built and described here:
   plugin API.
 - The bridge and Pi extensions, and the lens that tells an agent about the lint and type problems its own edits made
   (`lint.toml` in a repository's settings, see the extensions page).
-- The desktop API (HTTP and one WebSocket), the desktop app built on it, and the [command line](command-line.md),
+- The desktop API (HTTP and one WebSocket), the web app built on it, and the [command line](command-line.md),
   which reaches every route of it.
 - Chats with any agent, in a repository, in the harness configuration repository or in an empty directory. The Moebius
   agent, the default agent of a chat, operates Moebius through the command line and builds scripts, rules, agents,

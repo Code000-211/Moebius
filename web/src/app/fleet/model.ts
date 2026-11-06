@@ -1,7 +1,7 @@
 /**
  * The logic of the Fleet page, apart from React: which runs are working (the cards whose latest run is starting,
  * running or waiting, and the chats that are), what a tile says of its run, and the last steps of a conversation
- * (the desktop app's `screens/fleet`).
+ * (the former desktop app's `screens/fleet`).
  */
 import type { Snapshot } from "../../api/types/board";
 import type { Chat } from "../../api/types/chat";

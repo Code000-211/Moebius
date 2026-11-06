@@ -1,5 +1,8 @@
 # The web app is the front end; the iced app stays until it has been used for a release
 
+Status: superseded by [0017](0017-the-desktop-app-is-removed.md), which removes the iced app as this record said a later
+issue would. The text below is kept as it was.
+
 Supersedes [0011](0011-iced-for-the-desktop-app.md) as the choice of front end. The server serves a web app (`web/`,
 React) on the address of its API, behind the same token (a browser signs in once with a code: `moebius web`). From now
 on the web app is the front end of Moebius: a new page is built there first, and the iced app gets nothing new unless a

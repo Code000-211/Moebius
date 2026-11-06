@@ -74,7 +74,7 @@ pub struct NewChat {
     /// Where the person is in the app, which the agent is told with the message and the chat does not show.
     #[serde(default)]
     pub context: Option<String>,
-    /// Where the chat is started: `chat` (the default) or `assistant`, the desktop app's floating window, whose chats
+    /// Where the chat is started: `chat` (the default) or `assistant`, the web app's floating window, whose chats
     /// `GET /v1/chats` leaves out unless asked.
     #[serde(default)]
     pub origin: Option<String>,
@@ -105,7 +105,7 @@ pub struct ChatMessage {
     pub context: Option<String>,
 }
 
-/// Which chats to list: with `all`, also those of the desktop app's floating window.
+/// Which chats to list: with `all`, also those of the web app's floating window.
 #[derive(Debug, Deserialize)]
 struct ChatsQuery {
     #[serde(default)]

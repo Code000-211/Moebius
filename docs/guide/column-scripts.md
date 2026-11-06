@@ -59,7 +59,7 @@ settings.
 
 ### From the board
 
-In the desktop app each column header has a pencil that opens the column's script in an editor. Save checks the script
+In the web app each column header has a pencil that opens the column's script in an editor. Save checks the script
 the way `moebius check-script` does and refuses it with the check's message when it fails; otherwise it commits
 `repos/<repository name>/<script>` to the harness configuration repository and pushes it (a refused push is shown and
 undone). "Use the built-in script" removes the file again. The speech bubble opens a chat with the Moebius agent about

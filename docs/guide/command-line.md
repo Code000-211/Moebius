@@ -2,7 +2,7 @@
 
 ## When you want this
 
-You want to do from a terminal or a script what the desktop app does: read a board, merge a change, add a repository,
+You want to do from a terminal or a script what the web app does: read a board, merge a change, add a repository,
 change an agent, a rule or a setting. Or you want to know what the Moebius agent does when it operates Moebius for you,
 since it uses the same commands. Every command is one request to the [desktop API](desktop-api.md); the exact list, with
 the route each one calls and what it writes, is in the [command line reference](../reference/cli.md).

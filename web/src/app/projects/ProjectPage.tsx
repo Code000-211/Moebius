@@ -1,5 +1,5 @@
 /**
- * The page of one repository (`/projects/:id`; the desktop app's `screens/project`): where it is and what it trusts,
+ * The page of one repository (`/projects/:id`; the former desktop app's `screens/project`): where it is and what it trusts,
  * with the logins of a repository on a forge to edit, the settings Moebius keeps for it, and its files on the default
  * branch, which can be read, edited and saved as a commit. The three parts are borderless cards grouped by space. The board of the repository is its own
  * page.

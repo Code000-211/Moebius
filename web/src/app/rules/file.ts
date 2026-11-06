@@ -1,6 +1,6 @@
 /**
  * A rules file as text: a rule's `## name` section put back where it was, appended or dropped, what a rule's name may
- * be, and the request to the Moebius agent. The logic of `screens/rules/file.rs` of the desktop app; a save sends the
+ * be, and the request to the Moebius agent. The logic of `screens/rules/file.rs` of the former desktop app; a save sends the
  * whole file, so the page works on its text and the server checks it.
  */
 

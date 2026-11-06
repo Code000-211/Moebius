@@ -83,7 +83,7 @@ pub fn runs_since_retry<'a>(runs: &'a [Run], card: &Card) -> impl Iterator<Item 
     runs.iter().filter(move |r| Some(r.id) > retried_after)
 }
 
-/// The author of issues a person created in the desktop app; their cards are trusted.
+/// The author of issues a person created in the web app; their cards are trusted.
 pub const PERSON: &str = "person";
 
 /// Why an operation failed.
@@ -177,7 +177,7 @@ pub struct App {
     forges: BTreeMap<&'static str, Box<dyn Forge>>,
     /// The harness configuration repository's clone, once the server has opened it.
     harness_repo: OnceLock<Arc<HarnessRepo>>,
-    /// Where the server and the desktop app run (see `whereabouts`).
+    /// Where the server and the web app run (see `whereabouts`).
     whereabouts: whereabouts::Whereabouts,
 }
 

@@ -1,5 +1,5 @@
 /**
- * "Log in to a provider" on the Models page (the desktop app's `provider`): the providers the server has built in
+ * "Log in to a provider" on the Models page (the former desktop app's `provider`): the providers the server has built in
  * (`GET /v1/models/providers`) and "Other" with the fields of an `oauth` table. Choosing one adds the upstream through
  * `PUT /v1/settings` (live, no restart); the row of the new upstream then asks for the confirmation of the warning and
  * logs in.

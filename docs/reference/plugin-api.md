@@ -49,7 +49,7 @@ Serialised in lower case with underscores, as in `"decider"`.
 | `runner` | Where harnesses run: local worktrees, later GPU machines. | No. |
 | `decider` | Answers decision points. | Yes: `guard` decides `tool_call`, and `lens` decides `lint_report` and `deep_check` (see [the lens decisions](decision-model.md#the-lens-decisions)). |
 | `router` | The model provider the harnesses use. | No. `router/` is part of the core. |
-| `view` | Describes a screen of the desktop app as data. | No. |
+| `view` | Describes a screen of the web app as data. | No. |
 | `launcher` | Wraps how a harness process is started, such as in a sandbox. | Yes: Pi-Bolt asks the configured launcher before it starts Pi (see [Launchers](#launchers)). |
 
 Only the `decider` and `launcher` kinds have methods defined today.

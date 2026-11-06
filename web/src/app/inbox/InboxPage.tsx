@@ -1,5 +1,5 @@
 /**
- * The Inbox (the desktop app's `screens/inbox`): everything that needs the person in one list, newest first, filtered
+ * The Inbox (the former desktop app's `screens/inbox`): everything that needs the person in one list, newest first, filtered
  * by kind and by repository, each item with the buttons that act on it. The list is the whole page, so the filters sit
  * above it under a word each and an empty list says what belongs here. It reads the snapshot, which the event stream
  * keeps current, so an item arrives and leaves on its own. The filters are in the address (`?kind=`, `?repository=`).

@@ -1,4 +1,4 @@
-/** The logic of the Get started page: the page that fixes each step, and what the page says under its title (the desktop app's `screens/start`). */
+/** The logic of the Get started page: the page that fixes each step, and what the page says under its title (the former desktop app's `screens/start`). */
 import type { Start } from "../../api/types/server";
 
 export interface Fix {

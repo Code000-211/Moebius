@@ -1,5 +1,5 @@
 /**
- * The bar on top of the chat column (the desktop app's CH3-D): the title of the chat, its actions on the right, and
+ * The bar on top of the chat column (the former desktop app's CH3-D): the title of the chat, its actions on the right, and
  * the way to a new one. The column of chats beside it is not a menu dropped from here, and while it is on the screen
  * its own heading says how many chats there are, so this bar only carries the switcher that brings the column back
  * once it has been hidden; the dot on it says that one of them waits on you, because that is a fact about the list

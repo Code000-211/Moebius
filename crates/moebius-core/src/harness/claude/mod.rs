@@ -4,7 +4,7 @@
 //! (`--append-system-prompt`), skills and MCP servers. Claude Code has no bridge, so the run's token is a checked one:
 //! the router checks every tool call in the answers to it and replaces a refused one by a text that names the rule (see
 //! `router`). Each message is a JSON line on its stdin; what it writes is mapped to the run events Pi-Bolt's runs have
-//! (see `reader`), so the board, the desktop app and the Retro read both alike.
+//! (see `reader`), so the board, the web app and the Retro read both alike.
 //!
 //! A run of a card, of the Retro analyst or of the Autoresearcher ends after its answer: stdin is closed at the first
 //! `result`, and the run ends when Claude Code exits; what the agent left is committed as for Pi-Bolt. A steer is

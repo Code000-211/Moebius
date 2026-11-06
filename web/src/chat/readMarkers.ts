@@ -1,7 +1,7 @@
 /**
  * Read markers: the server counts a chat unread while its `answered` is greater than its `seen`, and learns how far a
  * person has read from `POST /v1/chats/{id}/seen`. The page tells it once per answer, not at every streamed piece of
- * it (the desktop app's fix for one request per token): only when the chat has an answer the person has not marked
+ * it (the former desktop app's fix for one request per token): only when the chat has an answer the person has not marked
  * and the events held reach it.
  */
 import type { Chat } from "../api/types/chat";

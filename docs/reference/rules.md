@@ -51,7 +51,7 @@ The built-in rules below are not in any `rules.md`; they always apply.
 
 ### Changing the rules
 
-A person changes the server's rules in the desktop app's Rules page, which uses `GET` and `PUT /v1/rules` (see the
+A person changes the server's rules in the web app's Rules page, which uses `GET` and `PUT /v1/rules` (see the
 [desktop API](desktop-api.md)). With a harness configuration repository the edit is a commit `Update the rules` to its
 `rules.md`, pushed to `origin`; without one it replaces the `rules_file`. Either way the decision is recorded (kind
 `edit_rules`). A text is refused

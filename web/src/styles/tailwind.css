@@ -2,7 +2,7 @@
  * Tailwind 4 setup: the tokens of theme.css become Tailwind's colours, radii, sizes, spacing and shadows, so a
  * component asks for `bg-surface` or `rounded-card` and never for a value. Tailwind's own palette is cleared first, so
  * the only colours a page can name are the tokens; the components copied from Vibe Kanban were rebuilt on these names
- * rather than given aliases of the desktop app's.
+ * rather than given aliases of the former desktop app's.
  *
  * The type utilities are the scale of the standard, not Tailwind's defaults: `text-xs` is the 12 of a caption,
  * `text-sm` the 13 of metadata, `text-base` the 15 of body, `text-lg` the 17 of emphasis, `text-xl` the 22 of a

@@ -1,5 +1,5 @@
 /**
- * The words and numbers of the Decision model page, as `screens/decision_model.rs` of the desktop app has them: a share
+ * The words and numbers of the Decision model page, as `screens/decision_model.rs` of the former desktop app has them: a share
  * as a percentage, a time as a named day and a UTC clock, the route that downloads a kind's file, and how the shadowing of a kind is told.
  */
 import type { Export, KindCounts, ShadowedKind } from "../../api/types/improve";

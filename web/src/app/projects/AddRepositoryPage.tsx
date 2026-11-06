@@ -1,5 +1,5 @@
 /**
- * The "Add a repository" page (the desktop app's `screens/add_repository`): the name of a repository, where to clone it
+ * The "Add a repository" page (the former desktop app's `screens/add_repository`): the name of a repository, where to clone it
  * from, and — for one on a forge — the repository there and the authors whose issues need no approval. The server
  * clones it and opens its board, so the form is one card with one action. What the server answers when it refuses stays
  * beside the field it belongs to, in words a person can act on: the command a run printed is detail to open, not the

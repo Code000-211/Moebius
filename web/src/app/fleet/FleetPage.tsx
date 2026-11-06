@@ -1,5 +1,5 @@
 /**
- * The Fleet page (the desktop app's `screens/fleet`): which runners are up and what they are running. One row for each
+ * The Fleet page (the former desktop app's `screens/fleet`): which runners are up and what they are running. One row for each
  * card whose latest run is starting, running or waiting and for each chat that is, led by the status word and the hue
  * that goes with it, then who runs it, what for, how long it has run, and the last steps of the run. The rows read
  * their events when the page opens and follow the stream's `run_event`s while it is open; a row opens the card's board

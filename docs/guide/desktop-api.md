@@ -2,8 +2,8 @@
 
 ## When you want this
 
-You want to do from a shell script or another program what the desktop app does: add a repository, create issues,
-watch the board, follow a run, approve, reject, retry, merge, chat. The desktop app and the `moebius` command line
+You want to do from a shell script or another program what the web app does: add a repository, create issues,
+watch the board, follow a run, approve, reject, retry, merge, chat. The web app and the `moebius` command line
 use the same API, so whatever they do, a script can do too. Every route and every type is in
 [`docs/reference/desktop-api.md`](../reference/desktop-api.md). This page is a walk through the routes in the order you
 need them.
@@ -75,7 +75,7 @@ curl -s -X PUT -H "$AUTH" -H "$JSON" -d '{"parent": null}' $API/v1/cards/$TICKET
 `GET /v1/repositories/{id}/tree?path=<dir>` lists a directory of the default branch (directories first) and
 `GET /v1/repositories/{id}/files/<path>` reads a file: its `text`, or `binary` or `too_large` with its `size`.
 `PUT` on the same route writes the file as a commit on the default branch (pushed for a repository on GitHub), which is
-what an editor tab of a project's page in the desktop app does. A refused push is undone and answered with `409`.
+what an editor tab of a project's page in the web app does. A refused push is undone and answered with `409`.
 `GET /v1/repositories/{id}/files` lists every path (`?query=` narrows it) and `GET /v1/repositories/{id}/search?q=`
 finds lines with `git grep` (`regex=true`, `limit=`); the app's "Go to file" (Ctrl+P) and "Search in files"
 (Ctrl+Shift+F) use them.

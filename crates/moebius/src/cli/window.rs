@@ -84,7 +84,7 @@ pub fn app_args(url: &str, profile: &Path) -> Vec<String> {
     ]
 }
 
-/// The folder the window's browser keeps its profile (and so its cookie) in: next to the desktop app's settings.
+/// The folder the window's browser keeps its profile (and so its cookie) in: next to the command line's settings.
 pub fn profile_dir() -> Option<PathBuf> {
     dirs::config_dir().map(|dir| dir.join("moebius").join("window"))
 }

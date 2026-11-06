@@ -1,5 +1,5 @@
 /**
- * The words of the Retro page, as `screens/retro/` of the desktop app says them: the kinds of error of a report in the
+ * The words of the Retro page, as `screens/retro/` of the former desktop app says them: the kinds of error of a report in the
  * order the page lists them, the tags of a Retro, a proposal and a lesson, and the lines of a proposal and its trials.
  */
 

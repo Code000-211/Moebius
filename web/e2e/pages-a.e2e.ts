@@ -1,7 +1,7 @@
 /**
  * The Inbox, Projects, Fleet, Usage, Get started and Settings pages in a real browser: what each shows, and that each
  * action sends its request and shows the outcome, or the server's own sentence when it refuses. The tests follow the
- * tests of the desktop app's pages (`crates/moebius-desktop/tests/`). The fake server (`fake/pages-a.ts` next to the
+ * tests of the former desktop app's pages. The fake server (`fake/pages-a.ts` next to the
  * board's) has the data; every page also loads against a real server, and the tests that need the fake's data are
  * skipped there. Every wait is on something the page shows, never on time.
  */

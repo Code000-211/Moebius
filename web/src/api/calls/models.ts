@@ -1,6 +1,6 @@
 /**
  * The calls of the Models and Plugins pages: what the server uses, the models its upstreams serve, the OAuth logins,
- * the plugins, and the keys of `moebius.toml` (`crates/moebius-desktop/src/client/calls/server.rs`). An API key goes to
+ * the plugins, and the keys of `moebius.toml` (`client/calls/server.rs` of the former desktop app). An API key goes to
  * `storeSecret` once and is never read back.
  */
 import { del, get, post, put } from "../http";

@@ -1,6 +1,6 @@
 /**
  * The calls about the harness configuration: agents, skills, a skill's files, MCP servers, uploads and setting up the
- * repository (`crates/moebius-desktop/src/client/calls/harness.rs`). An edit is a commit on the server.
+ * repository (`client/calls/harness.rs` of the former desktop app). An edit is a commit on the server.
  */
 import { del, get, post, put, request } from "../http";
 import type {

@@ -21,7 +21,7 @@
 //! - `terminals`: shells and Pi's terminal interface over a WebSocket.
 //! - `packages`: the package manager: search, install, update and remove plugins, workflows, rules and skills.
 //! - `ports`: the ports that runs and terminals listen on, and a WebSocket that carries a connection to one.
-//! - `whereabouts`: where the server runs and what the desktop app reports about itself.
+//! - `whereabouts`: where the server runs and what the web app reports about itself.
 //! - `events`: the WebSocket on which every event of the core arrives.
 //! - `session`: signing in from a browser with a cookie, and the one-time codes that open the web app signed in.
 //! - `web`: the web app itself, served at `/` without a token.

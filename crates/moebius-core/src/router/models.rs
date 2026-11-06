@@ -1,4 +1,4 @@
-//! The models the upstreams serve, asked of all of them at once for the pickers of the desktop app and kept for a
+//! The models the upstreams serve, asked of all of them at once for the pickers of the web app and kept for a
 //! while, without a key or a password in the answer, the model classes the router serves besides them, and the
 //! reasoning level names of each model: the names its endpoint says it takes, or the ones `[router.model_thinking]`
 //! gives it when it does not say. A run's `models.json` is given the name to send for every level whose own name the

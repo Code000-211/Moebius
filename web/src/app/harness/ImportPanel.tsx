@@ -1,5 +1,5 @@
 /**
- * Importing skills or MCP servers (the desktop app's import panel): the person gives a zip file, which is sent to the
+ * Importing skills or MCP servers (the former desktop app's import panel): the person gives a zip file, which is sent to the
  * server with `POST /v1/uploads`, or a link to a repository or a page, and "Submit" starts a chat with the
  * Moebius agent that reads the source and writes what it finds with the same routes the pages use. The chat is the
  * Chat page's, which the panel links to once the agent has the request.

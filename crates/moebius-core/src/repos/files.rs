@@ -1,4 +1,4 @@
-//! A repository's files from the desktop app's project page: listing a directory and reading a file as they are on the
+//! A repository's files from the web app's project page: listing a directory and reading a file as they are on the
 //! default branch, and changing a file with a commit on the default
 //! branch of Moebius's clone, pushed to `origin` for a repository on a forge. A push that fails undoes the commit, so
 //! the clone never drifts from `origin`, and every change is recorded as a decision of the person or agent who made

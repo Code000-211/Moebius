@@ -1,4 +1,4 @@
-//! Editing the server's configuration while it runs: the desktop app changes `moebius.toml` through
+//! Editing the server's configuration while it runs: the web app changes `moebius.toml` through
 //! `PUT /v1/settings` and keeps API keys it is given in `<data_dir>/secrets.toml`.
 //!
 //! A change is applied to the text of the file with `toml_edit`, so comments and order stay; the result must pass the

@@ -1,6 +1,6 @@
 /**
  * How the Usage page tells its figures: numbers of tokens in three figures, counts with separators, shares and times,
- * and the dates of the heatmap as day numbers with their weekday and month (the desktop app's `usage/figures.rs`).
+ * and the dates of the heatmap as day numbers with their weekday and month (the former desktop app's `usage/figures.rs`).
  */
 
 export const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;

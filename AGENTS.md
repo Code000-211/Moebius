@@ -28,19 +28,13 @@ documentation; `CONTRIBUTING.md` says the same as this file for people.
   every page of `docs/guide/` and `docs/reference/` (add a new page to the list in `harness/skill.rs`; a test fails if
   you forget); the Moebius agent's task skills are `skill/moebius-<task>/SKILL.md`, and every `"$MOEBIUS"` command and
   route they name is checked by a test.
-- `crates/moebius-desktop`: the iced desktop app (built to `docs/design.md`). It talks to the server only through the
-  desktop API and does not depend on `moebius-core` (a dev-dependency starts a real server in its tests). At the top:
-  `app/` the state, messages and view, `client/` the API client and event stream, `ssh/` connecting over SSH (config,
-  askpass, remote setup, tunnel), `settings.rs` the saved address and token, `theme.rs` every colour and size, `sidebar.rs` and `search.rs`. `screens/` has one module per page,
-  `widgets/` the pieces screens share. `tests/snapshots/` holds the pictures its render tests compare against (delete
-  one to store a new picture).
 - `web/`: the web app, a Vite + React + TypeScript (strict) + Tailwind 4 app built with pnpm into `web/dist`, which the
-  server serves at `/`. Like the desktop app it talks to the server only through the desktop API: `src/api/` the client
+  server serves at `/`. It talks to the server only through the desktop API: `src/api/` the client
   (one module per part of the API) and the event stream, `src/live/` the events feeding the TanStack Query cache,
   `src/app/` the shell and the pages, `src/ui/` components copied from Vibe Kanban (Apache-2.0, each file says where from
   and what changed; `web/NOTICE`), `src/styles/` the tokens of the web app's own design standard (both themes, with a
   test on their values, radii and contrast, and a design audit in `e2e/design/`), `e2e/` the Playwright tests against a
-  fake server. See `web/README.md`. The web app follows that standard, not `docs/design.md`, which the desktop app keeps.
+  fake server. See `web/README.md`. The web app follows `docs/design-web.md`.
 - `docs/guide/`: how to build on Moebius, one how-to per page (column scripts, workflows, rules, agents, plugins,
   extensions, the desktop API). Every `luau` block in it is a complete column script that `tests/guide.rs` runs; read it
   before you build anything for a user, and keep it in step with the code.
@@ -54,9 +48,9 @@ documentation; `CONTRIBUTING.md` says the same as this file for people.
 ## Where new code goes
 
 - Into the folder of its part, never as a new module at the top of a crate's `src/` unless it ties the crate together.
-  A new route goes into the module of `server/api/` for its part of the API, its client call into `client/calls/` of
-  the app; a new kind of record into a module of `store/`; a new page into `screens/`; a piece two screens share into
-  `widgets/`.
+  A new route goes into the module of `server/api/` for its part of the API, its client call into `src/api/calls/` of
+  the web app; a new kind of record into a module of `store/`; a new page into `web/src/app/`; a piece two pages share
+  into `web/src/ui/`.
 - A module that grows past about 600 lines, or mixes concerns, becomes a folder: `git mv x.rs x/mod.rs`, then cut it
   by concern. `mod.rs` keeps what the parts share and re-exports their public items, so callers do not change; each
   part takes its tests with it.

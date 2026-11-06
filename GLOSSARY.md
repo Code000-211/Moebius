@@ -72,7 +72,7 @@ _Avoid_: proxy, gateway, LLM provider
 
 **MCP gateway**:
 The part of Moebius that every harness uses as its one MCP server and that bundles the MCP servers a person manages in the
-desktop app.
+web app.
 _Avoid_: MCP proxy, MCP hub
 
 **Rule**:
@@ -116,7 +116,7 @@ would have done.
 _Avoid_: counterfactual, sandbox run, re-run
 
 **Live view**:
-The view of a run as it happens, in the desktop app, in which a person can steer, stop or message it and open a shell in its
+The view of a run as it happens, in the web app, in which a person can steer, stop or message it and open a shell in its
 worktree.
 _Avoid_: terminal, console, log
 
@@ -228,8 +228,8 @@ A plugin that ships with every installation of Moebius and is on by default, suc
 but that can still be removed.
 _Avoid_: built-in, default plugin, core plugin
 
-**Desktop app**:
-The native, GPU-rendered client through which a person works with a Moebius that runs on a server.
+**Web app**:
+The React client that the server serves and through which a person works with a Moebius that runs on a server; `moebius open` shows it in a window of its own.
 _Avoid_: UI, frontend, dashboard
 
 ## Improvement

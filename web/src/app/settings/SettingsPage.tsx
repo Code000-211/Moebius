@@ -1,5 +1,5 @@
 /**
- * The Settings page (the desktop app's Settings in `screens/setup`): every key of `moebius.toml` as an input in a box,
+ * The Settings page (the former desktop app's Settings in `screens/setup`): every key of `moebius.toml` as an input in a box,
  * as `GET /v1/settings` tells them, whose Save sends only the keys that were changed through `PUT /v1/settings`. The
  * server checks the file as `moebius serve` would read it and answers 422 with the message when it does not hold
  * together; that message is shown as it came, and a key whose own input cannot be typed right says so under the input

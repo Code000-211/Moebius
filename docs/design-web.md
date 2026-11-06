@@ -1,7 +1,7 @@
 # Web app design standard
 
-The standard the web app (`web/`) is built to. It supersedes [`design.md`](design.md) here: that one is the brief the
-iced desktop app is built to, and the two themes are not kept in step ([ADR 0016](adr/0016-the-web-app-has-its-own-design-standard.md)). Every value below is a token in
+The standard the web app (`web/`) is built to. It replaced the brief of the former desktop app, which is removed
+([ADR 0016](adr/0016-the-web-app-has-its-own-design-standard.md), [ADR 0017](adr/0017-the-desktop-app-is-removed.md)). Every value below is a token in
 [`web/src/styles/theme.css`](../web/src/styles/theme.css), which holds the light and dark pair of every name;
 `web/src/styles/tokens.test.ts` holds the tokens to it, and `web/e2e/design/audit.test.ts` (`pnpm audit:design`)
 measures every page against it in both themes at both widths.

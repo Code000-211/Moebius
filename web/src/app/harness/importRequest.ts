@@ -1,6 +1,6 @@
 /**
  * What the Moebius agent is asked when a person imports skills or MCP servers (the text of
- * `crates/moebius-desktop/src/widgets/import.rs`, word for word): where the source is, how to fetch it, what to write
+ * `widgets/import.rs` of the former desktop app, word for word): where the source is, how to fetch it, what to write
  * and what to say at the end, with the person's note. The agent writes what it finds with the same routes the pages
  * use, so every edit is a commit.
  */

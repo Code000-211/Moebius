@@ -1,9 +1,9 @@
 // @vitest-environment node
 /**
  * Keeps the tokens of `theme.css` and `tailwind.css` inside the design standard,
- * [`docs/design-web.md`](../../../docs/design-web.md). The web app follows that standard rather than the desktop app's
+ * [`docs/design-web.md`](../../../docs/design-web.md). The web app follows that standard rather than the former desktop app's
  * Deep Velvet palette ([ADR 0016](../../../docs/adr/0016-the-web-app-has-its-own-design-standard.md)), so this test reads the standard's own numbers
- * rather than `theme.rs`: both themes define the same names, every radius and every step of the type and spacing scale
+ * rather than a theme of the former desktop app: both themes define the same names, every radius and every step of the type and spacing scale
  * is one the standard lists, text is readable on the surface it sits on in both themes, and no colour literal appears
  * anywhere else in the app. It also fails a name that no theme defines, because a declaration that names a token which
  * is not there is dropped in silence and the control simply loses its colour, its border or its focus ring.

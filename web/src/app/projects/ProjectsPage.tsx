@@ -1,5 +1,5 @@
 /**
- * The Projects page (the desktop app's `screens/repositories`): every repository Moebius has, with the board it opens,
+ * The Projects page (the former desktop app's `screens/repositories`): every repository Moebius has, with the board it opens,
  * its settings and files, and the way to remove it. Each repository is a card of its own and the cards are grouped by
  * space alone. Removing asks first, because it takes the repository's cards, changes and chats with it and deletes its
  * clone; the server refuses while one of its runs is still going, and its sentence is shown under the list.

@@ -8,7 +8,7 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
 ## Processes
 
 ```
-                  desktop app / curl
+                  web app / curl
                          │  HTTP + WebSocket, bearer token      (server/api/, listen = 127.0.0.1:7171)
                          ▼
  ┌──────────────────────────────────────────────── moebius serve ───────────────────────────────┐
@@ -30,15 +30,14 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
   server about every tool call.
 - The router is part of the server. Each Pi process has it as its only model provider and holds a per-run token. The
   router forwards requests to the upstreams in the configuration and counts the tokens.
-- The desktop app (`crates/moebius-desktop`) is an iced app that talks to the server only through the desktop API
-  (HTTP and the event WebSocket) and does not depend on `moebius-core`. Any HTTP client can stand in for it.
-- The web app (`web/`) is the same client in a browser; see [The web app](#the-web-app).
+- The web app (`web/`) is a client in a browser that talks to the server only through the desktop API (HTTP and the
+  event WebSocket). Any HTTP client can stand in for it; see [The web app](#the-web-app).
 
 ## The web app
 
 `web/` is a React app (Vite, TypeScript, Tailwind 4, TanStack Query, React Router) built with pnpm into `web/dist`. It is
 not a crate, so it has no rows in the module map below; `web/README.md` has its layout. It is a client of the desktop API
-like the iced app and does not know anything the API does not say.
+and does not know anything the API does not say.
 
 - **Sign-in.** The browser signs in with `POST /v1/session` (the server's token, or the one-time code of the
   `?login=<code>` link the server prints) and then carries an HttpOnly cookie. Every request is same origin and sends
@@ -51,8 +50,7 @@ like the iced app and does not know anything the API does not say.
 - **Serving.** The server embeds `web/dist` and serves it at `/`, with `index.html` for the paths of the pages. In
   development `pnpm dev` proxies `/v1` to a running server.
 - **Components.** `web/src/ui/` holds components copied from Vibe Kanban's `@vibe/ui` (Apache-2.0), rebuilt on the web
-  app's own tokens (`web/src/styles/theme.css`), which are its own: the desktop app keeps the Deep Velvet theme of
-  `theme.rs` and `docs/design.md`.
+  app's own tokens (`web/src/styles/theme.css`), which are its own: the web app is built to `docs/design-web.md`.
 
 ## The life of a card
 
@@ -387,7 +385,7 @@ The server runs on a multi-threaded tokio runtime.
   say that they need Linux or WSL when those are missing; a stopped program's processes are found by `taskkill /T`,
   which misses one whose parent has already ended; files with secrets keep the permissions of their directory instead
   of mode `0600`; skills are copied into a Claude Code run instead of linked; the terminal pages open PowerShell. The
-  desktop app and the `moebius` commands that operate a server have no such limits.
+  web app and the `moebius` commands that operate a server have no such limits.
 - Times in the store are whole seconds. A card's history keeps entries from the same second in the order of their kinds
   (moves, runs, decisions, inbox items), not necessarily the order they happened in.
 
@@ -465,7 +463,7 @@ At the top:
 | `app/localize.rs` | The hint of files a code run is given, whether a repository wants it, and the outcome recorded from the files the card's change touched at the end of a code run and on merge. |
 | `app/packages/mod.rs` | Pi packages as the API offers them: the catalog search, a package's info, the installed packages, and the branches that install, update and remove one offered as changes. |
 | `app/packages/updates.rs` | The nightly check of the installed packages for newer versions, and the `extension_update` inbox items. |
-| `app/whereabouts.rs` | Where Moebius runs: what the server found about itself at start, what the desktop app reported about itself, and the "Where Moebius runs" section of the Moebius agent's instructions built from both (with the official repository). In memory only. |
+| `app/whereabouts.rs` | Where Moebius runs: what the server found about itself at start, what the web app reported about itself, and the "Where Moebius runs" section of the Moebius agent's instructions built from both (with the official repository). In memory only. |
 | `app/reproduce.rs` | Test first: a repository's opt-in (the project's `test-first`), what a run names in the `REPRODUCE:` lines of its summary, and the runs of that reproduction test on the change and on the commit it starts from with the test's files added. |
 
 `config/`, `moebius.toml`:
@@ -492,7 +490,7 @@ At the top:
 | `router/grants.rs` | The runs' tokens and what each allows: the card's, the run's and the day's token budgets, the MCP servers the gateway gives the run, and which tokens' answers are checked. |
 | `router/calls/mod.rs` | The check of the tool calls in the answers to a harness without a bridge (Claude Code): each call through `decide("tool_call")`, a refused one replaced by a text naming the rule; whole answers, and the secrets of tool results in requests. |
 | `router/calls/stream.rs` | A streamed answer checked as it passes: a tool call's events held back until the call is complete and decided. |
-| `router/models.rs` | The models the upstreams serve and the model classes, for the pickers of the desktop app, and the reasoning level names of each model: what its endpoint lists, or what `[router.model_thinking]` gives it, which a run's `models.json` is given. |
+| `router/models.rs` | The models the upstreams serve and the model classes, for the pickers of the web app, and the reasoning level names of each model: what its endpoint lists, or what `[router.model_thinking]` gives it, which a run's `models.json` is given. |
 | `router/oauth/mod.rs` | The OAuth login of an upstream: its `oauth` table, the warning confirmed before a login, the access token refreshed before it expires and the refresh token kept in `secrets.toml`. |
 | `router/oauth/device.rs` | The device authorization grant: the code the person enters at the provider, and the token URL polled until it is confirmed. |
 | `router/oauth/code.rs` | An authorization code with PKCE, the browser sent back to a loopback listener. |
@@ -736,137 +734,3 @@ At the top:
 
 Outside `src/`: `workflow/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension
 loaded into every run and `bridge/moebius-lens.ts` the one before it that runs the linters and type checks, `skill/` the built-in skills.
-
-### `crates/moebius-desktop` (the app)
-
-At the top:
-
-| Module | What it is for |
-|---|---|
-| `main.rs` | The desktop app's start: fonts, theme, window. |
-| `lib.rs` | The crate's parts. |
-| `settings.rs` | The address and token, the servers connected to before and the SSH preferences, saved in the config directory with mode 0600; a server over SSH is remembered by its host, never its token. |
-| `theme.rs` | Every colour, size, radius and spacing of `docs/design.md`, and the bundled fonts (Manrope, JetBrains Mono). |
-| `sidebar.rs`, `search.rs` | The sidebar on every screen with the header that names the server and switches between the remembered ones, and its search field. |
-| `ssh/mod.rs` | Connecting to a server over SSH with the system's `ssh`: running a script on the host, quoting for its shell, and what the other modules of the folder share. |
-| `ssh/config.rs` | The hosts of an SSH configuration file (`Host`, `Include`, wildcards) and writing the entry of a new host from `user@host` or an `ssh` command. |
-| `ssh/askpass.rs` | The passwords and passphrases of `ssh` shown in the app: the app started again as `SSH_ASKPASS`, and the loopback listener it asks. |
-| `ssh/remote.rs` | The setup of the server on the host as a stream of progress: system, `moebius` found or installed (downloaded there or uploaded), `init`, `serve`, the token. |
-| `ssh/tunnel.rs` | The port forward `ssh -N -L` with keep-alives, as a stream that says up and down and starts `ssh` again with a backoff. |
-
-`app/`, the app's state and how it changes:
-
-| Module | What it is for |
-|---|---|
-| `app/mod.rs` | The state: the connection, the page chosen, what a click on a card opened, each screen's own state. |
-| `app/message.rs` | The pages the sidebar opens, and every `Message`. |
-| `app/report.rs` | The app's report of where it runs (program, version, system, computer, the address and SSH host it reaches the server by), sent when the connection is made and when the stream connects again. |
-| `app/connection.rs` | The app's side of SSH: the host list and setup on the connect screen, the tunnel held while connected, "Reconnecting…", and switching between remembered servers. |
-| `app/update.rs` | How a message changes the state: handed to its screen, a refused token back to the connect screen, connecting, reading the snapshot again, opening a card or a page. |
-| `app/stream.rs` | What the event stream changes: what to read again on an event, and a run's steps to the screens that show them. |
-| `app/navigation.rs` | Where the person is and the way back: "Back", Alt+Left, the mouse's back button, Escape in an editor. |
-| `app/context.rs` | What the floating chat tells the Moebius agent of the page. |
-| `app/view.rs` | How the window is drawn (sidebar, page, link back, floating chat, search list), and the subscriptions the page needs. |
-
-`client/`, the desktop API client:
-
-| Module | What it is for |
-|---|---|
-| `client/mod.rs` | `Client` and `ClientError`; every type is re-exported here. |
-| `client/board.rs`, `client/runs.rs`, `client/harness.rs`, `client/server.rs`, `client/improve.rs` | The answers by part of the API: boards, cards, the inbox and the snapshot; runs and chats; agents, rules, skills and MCP servers; models, plugins, the first start and the settings; the Improve pages. |
-| `client/calls/mod.rs` | The calls of the client, one module per part of the API, and the requests with the token they share. |
-| `client/calls/board.rs` | The calls about boards: the snapshot, repositories, cards and issues, the inbox's decisions, a repository's files and scripts. |
-| `client/automations.rs` | Automations and their firings, and what a save sends. |
-| `client/calls/automations.rs` | The calls about automations: list, save, delete, run now, firings. |
-| `client/calls/runs.rs` | The calls about runs and chats: a run's events and decisions, steering and stopping, every step of a chat. |
-| `client/calls/harness.rs` | The calls about the harness configuration: agents, rules, skills, MCP servers and uploads. |
-| `client/calls/server.rs` | The calls about what the server runs with: health, models, plugins, the first start, settings, secrets and the restart. |
-| `client/calls/improve.rs` | The calls of the Improve pages: usage, the Retro and its proposals, the decision model, exports and research. |
-| `client/events.rs` | The event stream as an iced subscription that reconnects with a backoff. |
-| `client/terminal.rs` | A shell's WebSocket: what it prints, and the keys and sizes sent to it. |
-
-`screens/`, one module per page (`screens/mod.rs` lists them):
-
-| Module | What it is for |
-|---|---|
-| `screens/mod.rs` | The pages of the app, one module each. |
-| `screens/connect.rs` | The connect screen, for when there are no settings yet or the connection fails. |
-| `screens/connect_ssh.rs` | The connect screen's way over SSH: the hosts, adding one, the steps with the log, the question of `ssh`, and the offer to install. |
-| `screens/start.rs` | The Get started page: the steps of `GET /v1/start` with a button to the page that fixes each. |
-| `screens/inbox/mod.rs`, `screens/inbox/view.rs` | The inbox: everything that needs the person, newest first, filtered by kind and repository, and its actions; and how it is drawn. |
-| `screens/inbox/item.rs` | What an inbox item says of itself: what it is about, its kind, why it is there, its facts. |
-| `screens/automations/mod.rs`, `screens/automations/view.rs` | The Automations page (the list and the editor of the one chosen, with its schedule, chat, "Run now" and firings), how a message changes it, and how it is drawn. |
-| `screens/chat/mod.rs`, `screens/chat/update.rs`, `screens/chat/view.rs` | The chat screen (the chats with agents and the one chosen), how a message changes it, and how it is drawn. |
-| `screens/chat/thread.rs` | A chat's conversation wherever it is shown, here and in the floating chat. |
-| `screens/chat/draft.rs` | A chat not yet started, and the pickers of agent, place, model and reasoning level under the field. |
-| `screens/fleet.rs` | Every working run at a glance, one tile per card. |
-| `screens/project/mod.rs`, `screens/project/update.rs` | A project: the page of one repository with the tab Board and the tabs the person opened (editors, terminals, agent chats), the Files sidebar on the right, and how a message changes the files. |
-| `screens/project/tabs.rs`, `screens/project/strip.rs` | How tabs are opened, shown and closed (kept per project while the app runs), and the strip with the `+` menu and the sidebar's fold button. |
-| `screens/project/view.rs`, `screens/project/editor.rs` | The page and the Files sidebar's tree, and an editor tab. |
-| `screens/project/shell.rs` | The terminal tabs: a shell in the repository's clone (`GET /v1/repositories/{id}/terminal`), their connections and keys. |
-| `screens/project/context.rs` | What the floating chat is told of a project's tab. |
-| `screens/project/find.rs`, `screens/project/fuzzy.rs` | "Go to file" (Ctrl+P) and "Search in files" (Ctrl+Shift+F) over a project's default branch, and the fuzzy ranking of paths. |
-| `screens/board.rs` | The board of a repository: its columns in order with their cards. |
-| `screens/add_repository.rs` | The "Add a repository" page the "+" of the sidebar opens. |
-| `screens/repositories.rs` | The Projects page the "Projects" heading of the sidebar opens: every repository, the board it opens, and its removal after asking. |
-| `screens/live/mod.rs`, `screens/live/update.rs` | The live view of a run: the run being watched, its loading and the shell's subscription, and how a message changes it. |
-| `screens/live/view.rs` | The header with status, shell and stop, the conversation and the steer field. |
-| `screens/live/panel.rs` | "This run": the card's rounds and tokens, the agent, the judgements and the branch. |
-| `screens/history.rs` | The page of a card that has no run to watch: its issue, runs and decisions. |
-| `screens/agents/mod.rs`, `screens/agents/update.rs`, `screens/agents/view.rs` | The Agents page (the agents and an editor for the one chosen; an edit is a commit), how a message changes it, and the list with the editor's head. |
-| `screens/agents/editor.rs` | The editor of one agent, what a save sends, and an agent of `moebius.toml`. |
-| `screens/agents/boxes.rs` | The boxes under the editor's head: model and settings, instructions, skills, MCP servers, extensions. |
-| `screens/skills/mod.rs`, `screens/mcp_servers.rs` | The Skills and MCP servers pages, each a list with an editor; an edit is a commit. |
-| `screens/skills/files.rs` | A skill's files on the Skills page: the list, `SKILL.md` first, and the editor of another file. |
-| `screens/rules/mod.rs`, `screens/rules/update.rs` | The Rules page (the built-in patterns and what each refused, and the rules in prose, edited in place): its state and the file a save sends, and how a message changes it. |
-| `screens/rules/file.rs` | A rules file as text: a rule's section put back, appended or dropped, and what a name may be. |
-| `screens/rules/view.rs`, `screens/rules/cards.rs` | The boxes of the page, and the rules in them as cards with the editor a card grows into. |
-| `screens/harness_setup.rs` | Setting up a harness configuration repository from the app. |
-| `screens/usage/mod.rs` | The Usage page's window, state and layout, and the tokens of today for the sidebar's meter. |
-| `screens/usage/figures.rs` | How the page tells its figures: tokens in three figures, counts, shares, times, and the dates of the heatmap. |
-| `screens/usage/heatmap.rs` | The heatmap of the last year, and the colour each model keeps on every chart. |
-| `screens/usage/boxes.rs` | The tiles of the totals and the boxes of tokens by model, model time, tool waits and agents. |
-| `screens/usage/table.rs` | The panel and the table the boxes are made of. |
-| `screens/retro/mod.rs` | The Retro page: the Retros of the days, their errors by kind, and their proposals. |
-| `screens/retro/lessons.rs` | The lessons box of the Retro page: each lesson with its kind and cards, edited in place and deleted after asking. |
-| `screens/experiments/mod.rs`, `screens/experiments/update.rs` | The Experiments page (autoresearch): its state and layout, and how a message changes it. |
-| `screens/experiments/brief.rs` | The form of a new brief and the editor of a draft's, with the inputs they share. |
-| `screens/experiments/research.rs` | A research's card, brief, baseline and experiments table, with its numbers and changes. |
-| `screens/decision_model.rs` | The Decision model page: what was recorded of each kind of decision, the exports, shadowing and takeovers. |
-| `screens/setup/mod.rs`, `screens/setup/update.rs`, `screens/setup/view.rs` | The Setup pages (Models, Plugins and Settings, which edit `moebius.toml` through the API), how a message changes them, and how they are drawn. |
-| `screens/setup/login.rs` | The OAuth login of an upstream on the Models page: the warning to confirm, the code or the browser, and whether the login holds. |
-| `screens/setup/provider.rs` | "Log in to a provider" on the Models page: the built-in providers and the form of an `oauth` table, adding the upstream through the settings API. |
-| `screens/setup/fields.rs`, `screens/setup/forms.rs`, `screens/setup/inputs.rs` | The keys of `moebius.toml` as inputs, the forms made of them with what a save sends, and how each input is drawn. |
-| `screens/ports/mod.rs` | The Ports page's state: detected ports, forwards (made at once for a port that opens, by hand, local port changed), the offers, what is remembered. |
-| `screens/ports/update.rs` | How a message changes the Ports page: forms, stopping, opening the browser, copying an address. |
-| `screens/ports/tests.rs` | For the tests only: the forwards a page makes of ports that open, close, are stopped, changed or restored. |
-| `screens/ports/view.rs` | The Ports page, the "Ports" button of other pages and the offer banner. |
-| `client/ports.rs` | The ports of the server and the forwarder: a local listener whose connections go over the tunnel WebSocket. |
-| `client/calls/ports.rs` | `Client::ports`. |
-| `app/ports.rs` | The app's part of ports: events, what is watched, forwards remembered in the settings file and restored. |
-| `widgets/dropdown.rs` | A button whose menu drops down over the page, closed by a click beside it. |
-| `widgets/browser.rs` | Opening an address in the person's browser. |
-| `screens/server_terminal.rs` | The Terminal page: a shell on the server (`GET /v1/terminal`). |
-
-`widgets/`, the pieces screens share:
-
-| Module | What it is for |
-|---|---|
-| `widgets/mod.rs` | The pieces that more than one screen uses or that stand above every screen. |
-| `widgets/page.rs`, `widgets/icons.rs` | The page header and box every page is made of, and the line icons. |
-| `widgets/attempts.rs` | The attempts of a card tried several times at once: which passed, which was picked and why. |
-| `widgets/form.rs` | The pieces of the editing pages' forms: labelled inputs, the line after a save, a box's heading, the code editor, the dropdowns' style. |
-| `widgets/list_editor.rs` | A list with an editor beside it: its layout, its cards, and the head with Save and Delete. |
-| `widgets/conversation.rs` | Folds a run's events into a conversation (text, tool calls with their checks, steers, errors); pure, takes events in any order and drops repeats. |
-| `widgets/transcript.rs`, `widgets/steps.rs` | How a conversation is drawn (Markdown, tool calls, highlighted code), and the steps between two answers. |
-| `widgets/terminal/mod.rs` | The shell pane: bytes from the server parsed by `alacritty_terminal` into a grid and drawn in JetBrains Mono, the pane's size in cells sent as a resize (`client::terminal`), pasted text sent as typed. |
-| `widgets/terminal/keys.rs` | The bytes a shell expects for each key pressed in the pane. |
-| `widgets/terminal/pane.rs` | The pane around the screen: its size and focus, and selecting with the mouse, copying (on release and with Ctrl+Shift+C) and pasting (Ctrl+Shift+V, a right click). |
-| `widgets/tabs.rs` | A tab with a label, a line under it when shown, an optional cross and a mark for unsaved changes. |
-| `widgets/chat_terminal.rs` | A chat's terminal: the same pane on `GET /v1/chats/{id}/tui`, opened by the chat's "Chat \| Terminal" switch. |
-| `widgets/float_chat.rs` | The floating chat with the Moebius agent on every screen, given the context of the page. |
-| `widgets/inline_edit.rs`, `widgets/edits.rs` | Editing in place: the pencil and its editor, and the editors that belong to no screen (a card's title and body). |
-| `widgets/script_editor.rs` | The editor of a column's script, opened by the pencil in a column's header. |
-| `widgets/new_issue.rs` | The new-issue form of a board: written by hand or by the Moebius agent. |
-| `widgets/import.rs` | Importing skills or MCP servers from a path, a URL or an uploaded zip. |
-| `widgets/model_picker.rs` | The model dropdown of the Models and Agents pages, with "Another model…". |

@@ -197,7 +197,7 @@ async fn the_apps_report_stays_with_a_person_and_the_agent_reads_it() {
     let f = Fixture::start().await;
     let (_, token) = f.run("Moebius");
     let report = json!({
-        "program": "/opt/moebius-desktop", "version": "1.2.3", "os": "linux", "arch": "x86_64",
+        "program": "/opt/moebius-client", "version": "1.2.3", "os": "linux", "arch": "x86_64",
         "host": "laptop", "server_address": "http://127.0.0.1:1"
     });
     assert_eq!(

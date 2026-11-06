@@ -17,7 +17,7 @@ listed exactly in [`docs/reference/configuration.md`](../reference/configuration
 
 ## The Moebius agent
 
-The Moebius agent is bundled and always there. It does for the person in a chat what they could do in the desktop app,
+The Moebius agent is bundled and always there. It does for the person in a chat what they could do in the web app,
 and builds what they ask for on Moebius. It knows Moebius from this guide and the references, which are its skill, and it
 learns the state of a server from the server itself:
 
@@ -30,7 +30,7 @@ learns the state of a server from the server itself:
   settings, `repos/<repository name>/` of the harness configuration repository; in a chat in the harness configuration
   repository (see [Build an extension or skill in a chat](#build-an-extension-or-skill-in-a-chat)), agents, skills,
   extensions, MCP servers and the server's rules. It tries a column script with `moebius check-script` and a plugin with
-  `cargo test`. The person offers the files as a change between its answers ("Offer changes" in the desktop app,
+  `cargo test`. The person offers the files as a change between its answers ("Offer changes" in the web app,
   `moebius chat offer <id>`), and they are offered when the chat ends; a person merges the change (see
   [Chat with an agent](#chat-with-an-agent)). It never commits, pushes or merges its own files.
 
@@ -52,10 +52,10 @@ try the result. Pi shows the agent each skill's description and the agent reads 
 At the start of every run the Moebius agent (and only it) is given a section "Where Moebius runs" at the end of its
 instructions. It says where the server is: its program and version, the `moebius.toml` it runs with, its data
 directory, the source checkout it was built from when it lies in one, the addresses of the desktop API and the router,
-and its computer and system. The server found these when it started. It also says where the desktop app is: its
+and its computer and system. The server found these when it started. It also says where a client app is, when one has reported: its
 program, version, computer and system, the address it reaches the server by and the SSH host if it connects over SSH.
-The app reports this to the server (`PUT /v1/client`) when it connects and again whenever the connection is made again,
-so a new address shows in the next run; before the app has reported, the section says so. No token or key is in it.
+A client app reports this to the server (`PUT /v1/client`) when it connects and again whenever the connection is made
+again, so a new address shows in the next run; the web app does not report, and before an app has, the section says so. No token or key is in it.
 `"$MOEBIUS" api GET /v1/server` and `"$MOEBIUS" api GET /v1/client` read the same facts while a chat goes on.
 
 The section also names https://github.com/Code000-211/Moebius as Moebius's own repository. When the person fixes
@@ -90,7 +90,7 @@ every start, so a change to the guide arrives with the server.
 
 ### Asking it from any page
 
-In the desktop app the round button at the bottom right of every page opens a chat with the Moebius agent over the
+In the web app the round button at the bottom right of every page opens a chat with the Moebius agent over the
 page. The agent is told where you are with each message (the page, the repository, the card or chat that is open, and
 the script, rules or agent being edited with its text), so "why does this column wait?" on a column's script means that
 script. A chat started on a board works in that repository; elsewhere it works in none. The chat stays while you move
@@ -265,8 +265,8 @@ curl -s -H "Authorization: Bearer $TOKEN" $API/v1/mcp-servers
 ```
 
 The answer of `PUT` carries `commit`, the short id of the commit. `GET /v1/skills` and `GET /v1/mcp-servers` list what an
-agent can name, for an editor (the desktop app's Agents screen uses them); they show no secret and are empty without
-`[harness]`. The desktop app edits agents this way.
+agent can name, for an editor (the web app's Agents screen uses them); they show no secret and are empty without
+`[harness]`. The web app edits agents this way.
 
 The agent is used from the next run on. The exact files, keys and errors are in the
 [reference](../reference/harness-configuration.md).
@@ -275,7 +275,7 @@ Without `[harness]` the three routes of an agent answer 422: the agents are in `
 
 ### Setting it up from the app
 
-On a server without `[harness]`, the Skills, MCP servers and Agents pages of the desktop app, and the step "Keep agents,
+On a server without `[harness]`, the Skills, MCP servers and Agents pages of the web app, and the step "Keep agents,
 skills and MCP servers in a repository" of Get started, have a "Set up" button. Only a person can press it (the
 Moebius agent is refused). It sends `POST /v1/harness/setup`, and the server:
 
@@ -321,7 +321,7 @@ token_budget = 500000
 ### An agent on a hosted model
 
 The key is read from an environment variable, never from the file. If the variable is not set when the server starts,
-the server does not start. A key typed into the desktop app is kept by name in `secrets.toml` of the data directory, and
+the server does not start. A key typed into the web app is kept by name in `secrets.toml` of the data directory, and
 the file names it with `api_key_secret = "<name>"` instead of `api_key_env`.
 
 ```toml
@@ -480,7 +480,7 @@ checks, staying in its worktree. The Coder does not push in a chat either, unles
 
 With `repository` the agent works in a new worktree on the branch `moebius/chat-<run id>`. The chats list says how many
 files the worktree changes (`changed_files`). To offer them, without ending the chat, use `POST /v1/chats/{id}/offer` (the
-desktop app's "Offer changes (n files)", or `moebius chat offer <id>`) once the agent has answered: what the agent left is
+web app's "Offer changes (n files)", or `moebius chat offer <id>`) once the agent has answered: what the agent left is
 committed there and, as the branch then has commits that the default branch does not, offered as a change without a
 card: an inbox item of kind `ready_to_merge`, the event `change_offered` and, on GitHub, a pull request titled as the
 chat is. The chat goes on in the same worktree; offer again after more work and the same change gets the newer commit. A
@@ -502,7 +502,7 @@ A chat can run on another model and reasoning level than its agent's: `model` an
 chat waits or after its agent went away (`409` while the agent works). Pi is started with them every time, so they last
 after the terminal or a long wait; a new reasoning level is sent to the waiting Pi with `set_thinking_level`, and a
 new model starts the chat's Pi again on the same session, as Pi knows only the model it was started with. Without
-`message` a chat starts and waits, so its terminal can be opened at once. In the desktop app these are the pickers under the field to write in, and the
+`message` a chat starts and waits, so its terminal can be opened at once. In the web app these are the pickers under the field to write in, and the
 "Terminal" button next to Send.
 
 ```sh
@@ -512,7 +512,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/
   -d '{"thinking": "low"}' $API/v1/chats/$CHAT/settings
 ```
 
-A chat is not ended in the desktop app: it waits for the next message as long as you like. One that has waited 30
+A chat is not ended in the web app: it waits for the next message as long as you like. One that has waited 30
 minutes, with no terminal open, has its Pi ended to free it, and stays `waiting`; the next message starts Pi again on the
 chat's own session, so the agent knows the whole conversation. The command line and the API still end a chat
 (`moebius chat end <id>`, `POST /v1/chats/{id}/end`), which offers its work a last time and removes its worktree, and
@@ -520,7 +520,7 @@ chat's own session, so the agent knows the whole conversation. The command line 
 
 ### A chat in Pi-Bolt's own terminal interface
 
-A person can also work with a waiting chat in Pi-Bolt's own terminal interface: in the desktop app, the "Terminal"
+A person can also work with a waiting chat in Pi-Bolt's own terminal interface: in the web app, the "Terminal"
 button beside "Send" (and "Chat" under the terminal to go back); over the API, the WebSocket `GET /v1/chats/{id}/tui`. It is Pi-Bolt's
 interactive mode in the chat's worktree with the chat's own model, provider, instructions, skills, MCP servers,
 extensions and bridge, so every tool call is still checked by the rules and recorded as a decision of the chat. It is
@@ -542,7 +542,7 @@ tokens. Every tool call in a chat is checked by the built-in rules and the serve
 ## Import skills and MCP servers
 
 Skills and MCP servers that someone else wrote can be imported instead of typed in. On the Skills page or the MCP
-servers page of the desktop app, press **Import**:
+servers page of the web app, press **Import**:
 
 1. Choose **From a zip** and pick the file (it is sent to the server with `POST /v1/uploads`, at most 20 MB), or **From
    a link** and paste a git repository or a page that leads to one.
@@ -576,7 +576,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/
 2. The agent works in a worktree of the clone, on the branch `moebius/chat-<run id>`. A skill is
    `skills/<name>/SKILL.md`; an extension is a TypeScript file, `extensions/<name>.ts`; an agent names them in
    `skills` and `extensions` of `agents/<name>.toml` (see [harness configuration](../reference/harness-configuration.md)).
-3. Offer the work (`POST /v1/chats/{id}/offer`, "Offer changes" in the desktop app), or end the chat
+3. Offer the work (`POST /v1/chats/{id}/offer`, "Offer changes" in the web app), or end the chat
    (`POST /v1/chats/{id}/end`). Moebius checks that the branch changes only configuration files and that
    every agent can still be read. If so, the work is offered as a change of the harness configuration repository, with a
    `ready_to_merge` item in the inbox. If not, the offer is refused with why (`422`), or, when the chat ends, the run gets

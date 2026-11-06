@@ -1,4 +1,4 @@
-//! The ports that the processes of runs, chats and terminals listen on, for the Ports view of the desktop app.
+//! The ports that the processes of runs, chats and terminals listen on, for the Ports view of the web app.
 //!
 //! [`detect`] finds the TCP ports something listens on that the server's loopback address reaches, and says whose they
 //! are: the process that holds the socket belongs to a terminal when it, or a process that started it, is the shell

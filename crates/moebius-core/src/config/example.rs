@@ -7,10 +7,10 @@ pub const EXAMPLE: &str = r#"# Moebius server configuration. Every key is option
 # Where Moebius keeps its store, blobs, clones and worktrees.
 data_dir = ".moebius"
 
-# The address the desktop app connects to. Keep it on a private network (ADR 0003).
+# The address the web app connects to. Keep it on a private network (ADR 0003).
 listen = "127.0.0.1:7171"
 
-# The file holding the token the desktop app authenticates with; relative paths are inside data_dir.
+# The file holding the token the web app authenticates with; relative paths are inside data_dir.
 token_file = "token"
 
 # How many runs may work at the same time, across all boards.
@@ -20,7 +20,7 @@ run_limit = 3
 retro_at = "23:30"
 
 # Rules every run must follow, as Markdown with one section per rule (a heading `## name` and its text); relative paths
-# are inside this file's directory, and the desktop app edits the file. A project adds its own in repos/<repository name>/rules.md of
+# are inside this file's directory, and the web app edits the file. A project adds its own in repos/<repository name>/rules.md of
 # the harness configuration repository but cannot replace these. While the file does not exist, only the built-in rules apply. Not allowed together with
 # [harness], whose repository holds rules.md.
 # rules_file = "rules.md"
@@ -73,7 +73,7 @@ listen = "127.0.0.1:7172"
 
 # Where the router sends requests, one upstream per protocol (openai or anthropic). A key is never in this file: it is
 # read from the environment variable named by api_key_env, or from the secret named by api_key_secret (a key typed in
-# the desktop app is stored under a name in <data_dir>/secrets.toml). Set one of them, or neither for a local server.
+# the web app is stored under a name in <data_dir>/secrets.toml). Set one of them, or neither for a local server.
 # [[router.upstreams]]
 # protocol = "openai"
 # base_url = "http://127.0.0.1:8080"      # a local server such as Radiance
@@ -82,7 +82,7 @@ listen = "127.0.0.1:7172"
 # base_url = "https://api.anthropic.com"
 # api_key_env = "ANTHROPIC_API_KEY"       # or: api_key_secret = "anthropic"
 
-# An upstream may log in with OAuth instead of a key, from the Models page of the desktop app. The flow is "device" (a
+# An upstream may log in with OAuth instead of a key, from the Models page of the web app. The flow is "device" (a
 # code to enter at the provider) or "code" (the provider's page in the browser, sent back to 127.0.0.1). The client id
 # and URLs are the provider's; the refresh token is kept in secrets.toml under the name `secret`. Using a subscription
 # through a third-party tool may break the provider's terms: the app asks you to confirm that before a login starts.

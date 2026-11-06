@@ -1,5 +1,5 @@
 /**
- * The editor of one agent (the desktop app's A1 Bento workbench): the head with Save and Delete, the settings row, the
+ * The editor of one agent (the former desktop app's A1 Bento workbench): the head with Save and Delete, the settings row, the
  * instructions (written, or asked of the Moebius agent), what a built-in agent brings itself, and the skills, MCP
  * servers and extensions the agent is given (Browse Pi packages opens the package sheet on the pi.dev catalog, for this
  * agent). A save is `PUT /v1/agents/{name}`, a commit in the harness configuration

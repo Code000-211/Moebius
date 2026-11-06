@@ -1,6 +1,6 @@
 /**
- * The pages of the app: the entries of the sidebar, in its groups, as the desktop app lists them
- * (`crates/moebius-desktop/src/sidebar.rs` and `Page::title` in `app/message.rs`). Pages that are not built in the web
+ * The pages of the app: the entries of the sidebar, in its groups, as the former desktop app listed them
+ * (the sidebar of the former desktop app). Pages that are not built in the web
  * app yet show a placeholder; a page that is built replaces its entry's element in `routes.tsx`.
  */
 import {

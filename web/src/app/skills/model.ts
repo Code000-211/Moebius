@@ -1,6 +1,6 @@
 /**
  * The logic of the Skills page, free of React: what a save of a skill and of one of its files sends, or what is wrong
- * with the fields (`crates/moebius-desktop/src/screens/skills/`), and how a size reads.
+ * with the fields (`screens/skills/` of the former desktop app), and how a size reads.
  */
 
 const NAME = /^[A-Za-z0-9_-]+$/;

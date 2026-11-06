@@ -1,5 +1,5 @@
 /**
- * The entries of a conversation grouped for the page (the desktop app's CH3-D layout): each message of the person
+ * The entries of a conversation grouped for the page (the former desktop app's CH3-D layout): each message of the person
  * heads a turn, and what the agent did and answered until the next one is its body. The agent's texts, errors and
  * unreachable MCP servers stand on their own; the thinking and tool calls that follow one another are one block of
  * steps, in which consecutive reads are aggregated into one line.

@@ -128,7 +128,7 @@ Localizing before repairing is a strong, cheap step. Before each `code` run Moeb
 which files the card's change is likely to touch, and the run is given the answer under "Files that are likely relevant
 (a hint, not a limit)", told to verify it. A repository settles this for its own workflow in the file `localize` of its settings,
 over the `[localize]` table of the server: `off` gives its runs no hint, and `files 5` names at
-most five. When the card's change is known, each hint is judged by the files the change touched; the desktop app shows
+most five. When the card's change is known, each hint is judged by the files the change touched; the web app shows
 how many of the hinted files they were. The rules are in the [decision model reference](../reference/decision-model.md#localize).
 
 ### Test first

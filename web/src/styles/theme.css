@@ -11,9 +11,9 @@
  * `tailwind.css`, and `tokens.test.ts` fails when a token of one theme is missing from the other, when a radius, a
  * size or a step of the scale leaves the standard, or when a pair of tokens is unreadable in either theme.
  *
- * Nothing here is shared with the desktop app, whose palette stays in `crates/moebius-desktop/src/theme.rs`: the web
- * app is the front end now (ADR 0013) and follows this standard instead of Deep Velvet, so the components copied from
- * Vibe Kanban were rebuilt on these names rather than given aliases of the desktop's.
+ * Nothing here is shared with the former desktop app, whose Deep Velvet palette is gone with it: the web app is the front
+ * end (ADR 0013, ADR 0017) and follows this standard, so the components copied from Vibe Kanban were rebuilt on these
+ * names rather than given aliases of the desktop's.
  */
 
 /* Dark, the default. */

@@ -131,7 +131,7 @@ fn check_settings(model: Option<&str>, thinking: Option<&str>) -> Result<()> {
 /// The origin of a chat started on the Chat page or by a client.
 pub const CHAT_ORIGIN: &str = "chat";
 
-/// The origin of a chat started in the desktop app's floating window, which the list of chats leaves out.
+/// The origin of a chat started in the web app's floating window, which the list of chats leaves out.
 pub const ASSISTANT_ORIGIN: &str = "assistant";
 
 fn chat_origin() -> String {
@@ -577,7 +577,7 @@ impl App {
         Ok(run)
     }
 
-    /// The chats, newest first; those of the desktop app's floating window only when `all` is set.
+    /// The chats, newest first; those of the web app's floating window only when `all` is set.
     pub fn chats(&self, all: bool) -> Result<Vec<Chat>> {
         self.store
             .chats()?

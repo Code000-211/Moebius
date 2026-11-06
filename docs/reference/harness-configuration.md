@@ -33,7 +33,7 @@ mcp_env = ["DOCS_TOKEN"]
 
 ## A repository on the server
 
-`moebius init` and the desktop app's "Set up" (`POST /v1/harness/setup`, see the [desktop API](desktop-api.md) and
+`moebius init` and the web app's "Set up" (`POST /v1/harness/setup`, see the [desktop API](desktop-api.md) and
 [configuration](configuration.md#setting-it-up-from-the-app)) make the repository `harness/` next to `moebius.toml` and
 set `[harness] url` to its absolute path. It is a git repository on `main` with one commit, "Set up the harness
 configuration repository", holding:

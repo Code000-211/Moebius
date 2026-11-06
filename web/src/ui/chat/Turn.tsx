@@ -1,5 +1,5 @@
 /**
- * One turn of a conversation (the desktop app's CH3-D): the person's message as its head and what the agent did and
+ * One turn of a conversation (the former desktop app's CH3-D): the person's message as its head and what the agent did and
  * answered as its body. Presentational: the turn comes in as data (see `chat/turns.ts`), and so do the folded state
  * and the clicks. A later page that shows a run's conversation draws it with this.
  *

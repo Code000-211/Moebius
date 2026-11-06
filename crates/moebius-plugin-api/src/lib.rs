@@ -38,7 +38,7 @@ pub enum Kind {
     Decider,
     /// The model provider the harnesses talk to.
     Router,
-    /// Describes a screen of the desktop app as data.
+    /// Describes a screen of the web app as data.
     View,
     /// Wraps how a harness process is started, such as inside a sandbox (see the `launcher` module).
     Launcher,

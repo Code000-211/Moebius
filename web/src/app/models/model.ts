@@ -2,7 +2,7 @@
  * The logic of the Models page, free of React: the forms made from `GET /v1/settings` (the upstreams with their API
  * keys, the model classes, the teacher and the decision model, either of which may be left out) and what a save sends:
  * the keys to store by name, then the dotted keys to set and to remove in `moebius.toml`. It follows
- * `crates/moebius-desktop/src/screens/setup/{fields,forms,provider}.rs`.
+ * `screens/setup/{fields,forms,provider}.rs` of the former desktop app.
  */
 import type { ServerSettings } from "../../api/types/models";
 

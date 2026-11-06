@@ -108,7 +108,7 @@ since the default branch) and when the change is merged, each hint of the card g
 `{"touched": [...], "hinted": n, "recall": r, "precision": p}`: the files the change touched, how many files were
 hinted, the recall at ten (the share of the touched files among the first ten hinted; null when none were touched) and
 the precision (the share of the hinted files that were touched; null when none were hinted). When the change cannot be
-read the outcome is `{"unknown": true}`, which a known one replaces later. The desktop app shows how many of the hinted
+read the outcome is `{"unknown": true}`, which a known one replaces later. The web app shows how many of the hinted
 files were touched.
 
 **The decision model.** `localize` is shadowed like the other kinds (held-out judgements only), with the issue and the

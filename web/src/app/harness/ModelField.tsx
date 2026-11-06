@@ -1,5 +1,5 @@
 /**
- * The Model field of the Agents and Models pages (the desktop app's `model_picker`): a list of the router's model
+ * The Model field of the Agents and Models pages (the former desktop app's `model_picker`): a list of the router's model
  * classes and the models the upstreams serve, whose last entry, "Another model", turns the field into an input, so
  * that a model no upstream lists can be entered. Without a list the field is an input. `ModelNote` says which upstream
  * could not be asked, what to do about it, and offers to ask them again; `Answered` marks that the last ask came back

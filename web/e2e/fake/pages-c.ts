@@ -1,7 +1,7 @@
 /**
  * The part of the fake server for the pages of Rules, Automations, Retro, Experiments and Decision model, and for the
  * script editor of the board: the data and the routes of `docs/reference/desktop-api.md`, with the JSON the real server
- * sends (the types of `crates/moebius-desktop/src/client/`). The state changes the way the real one does: saving a
+ * sends (the types of `client/` of the former desktop app). The state changes the way the real one does: saving a
  * rules file or a script checks it first and answers 422 with a sentence, saving an automation checks its schedule,
  * "Run now" adds a firing and sends `automation_fired`, a research moves from draft to confirmed to running to
  * stopped, an export is added, a takeover released. A test can make the next request to a route fail (`refuseNext`)

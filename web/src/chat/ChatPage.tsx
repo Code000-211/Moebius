@@ -1,5 +1,5 @@
 /**
- * The Chat page (the desktop app's CH3-D): the column of chats beside one column a page title wide on the open canvas,
+ * The Chat page (the former desktop app's CH3-D): the column of chats beside one column a page title wide on the open canvas,
  * with the top bar that shows and hides that column and starts a new chat, and under it the form of a new chat
  * (`/chat`) or the chat chosen (`/chat/:id`). Whether the list is shown or hidden is remembered per browser; with
  * nothing remembered it is shown from a wide screen (`lg`) and hidden below it, where it would lie over the chat, and

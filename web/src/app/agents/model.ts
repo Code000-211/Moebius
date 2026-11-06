@@ -1,7 +1,7 @@
 /**
  * The logic of the Agents page, free of React: the fields of the editor, what a save sends (or what is wrong with the
  * fields), how an agent of `moebius.toml` is read from the server's settings and written back as a table, and the
- * choices of the Model field. It follows `crates/moebius-desktop/src/screens/agents/editor.rs`.
+ * choices of the Model field. It follows `screens/agents/editor.rs` of the former desktop app.
  */
 import type { Agent, AvailableClass, AvailableModel, AvailableModels } from "../../api/types/chat";
 import {

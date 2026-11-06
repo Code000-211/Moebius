@@ -109,18 +109,19 @@ web app (browser) ──(private network, sign-in)──▶ moebius server ─�
 ```
 
 One headless server holds the boards, runs the column scripts, starts the agents and keeps everything in SQLite. The
-web app it serves (React, in any browser; `moebius open` shows it in a window of its own, `moebius connect <host>` over SSH) talks to it over a documented API, and so does the `moebius` command line. The desktop app (Rust, [iced](https://iced.rs)) still works and gets no new features; it stays until the web app has been used for a release ([ADR 0013](docs/adr/0013-the-web-app-is-the-front-end.md)).
+web app it serves (React, in any browser; `moebius open` shows it in a window of its own, `moebius connect <host>` over SSH) talks to it over a documented API, and so does the `moebius` command line.
+The web app is the only front end ([ADR 0017](docs/adr/0017-the-desktop-app-is-removed.md)).
 [`docs/architecture.md`](docs/architecture.md) follows a card through the system.
 
 ## Quick start
 
 You need Linux (on Windows, WSL 2 for the server), git, [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt) installed as
 `pi-bolt`, and a model: a local OpenAI-compatible server (such as one on `http://127.0.0.1:8080`) or a provider API key.
-The `moebius` commands also run on Windows itself, and so does the legacy desktop app; the
+The `moebius` commands also run on Windows itself; the
 [Windows section of Running Moebius](docs/guide/running-moebius.md#on-windows) shows how.
 
 **1. Install.** From a [release](https://github.com/Code000-211/Moebius/releases) (Linux x86_64, and
-`moebius-windows-x86_64.zip` with the commands and the desktop app for Windows; the page
+`moebius-windows-x86_64.zip` with the commands for Windows; the page
 [Running Moebius](docs/guide/running-moebius.md) shows how to check the download), or from source with Rust 1.90 or
 newer:
 
@@ -158,10 +159,8 @@ moebius serve     # creates .moebius/ next to the file, with the API token in .m
 
 **4. Open the web app.** `moebius open` shows it in a window of its own (a Chromium-based browser in app mode, signed
 in once with a code; the default browser if there is none). For a server on another machine, `moebius connect <host>`
-forwards its port over SSH and opens the window on it. Or open the server's address, `http://127.0.0.1:7171`, in any
-browser and sign in with the content of `.moebius/token`. The **Get started** page lists what is still missing. (The
-legacy desktop app takes the same address and token: a release for Linux or Windows, or
-`cargo run -p moebius-desktop`.)
+sets one up there if none runs (after asking), forwards its port over SSH and opens the window on it. Or open the server's address, `http://127.0.0.1:7171`, in any
+browser and sign in with the content of `.moebius/token`. The **Get started** page lists what is still missing.
 
 **5. Try it.** Give the Coder agent a model (on the Agents page, or below), add a project (a path that does not
 exist yet becomes a new, empty repository) and create an issue:
@@ -204,7 +203,7 @@ Or just ask the Moebius agent: it knows the guide and the reference, and builds 
 | [`docs/architecture.md`](docs/architecture.md) | How a card moves and which module does what. |
 | [`docs/reference/`](docs/reference/) | [Column scripts](docs/reference/column-scripts.md), [rules](docs/reference/rules.md), [configuration](docs/reference/configuration.md), [command line](docs/reference/cli.md), [desktop API](docs/reference/desktop-api.md), [router](docs/reference/router.md), [plugin API](docs/reference/plugin-api.md), [bridge protocol](docs/reference/bridge-protocol.md), [harness configuration](docs/reference/harness-configuration.md), [training export](docs/reference/training-export.md), [decision model](docs/reference/decision-model.md). |
 | [`docs/guide/`](docs/guide/README.md) | How to build on Moebius, one task per page. |
-| [`docs/design-web.md`](docs/design-web.md), [`docs/design.md`](docs/design.md) | The standard the web app is built to, and the look of the desktop app. |
+| [`docs/design-web.md`](docs/design-web.md) | The standard the web app is built to. |
 | [`examples/`](examples/README.md) | Examples that run in CI. |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to work on Moebius: where new code goes, the checks, the commits. |
 
@@ -214,13 +213,12 @@ Or just ask the Moebius agent: it knows the guide and the reference, and builds 
 crates/
   moebius-core/        the server: app, config, store, router at the top;
                        server/ repos/ board/ decide/ harness/ improve/
-  moebius-desktop/     the legacy desktop app: app/ client/ at the top; screens/ widgets/
   moebius/             the moebius binary and its command line (cli/)
   moebius-plugin-api/  the plugin trait and its host
 web/                   the web app: React, TypeScript, Tailwind (src/, e2e/)
 docs/                  guide, reference, architecture, spec, decisions, plan
 examples/              examples that run in CI
-dist/                  the release packaging (systemd unit, desktop entry)
+dist/                  the release packaging (the systemd unit and the packaging script)
 ```
 
 Each crate's `README.md` gives its layout, and the [module map](docs/architecture.md#modules) gives every module.
@@ -236,8 +234,7 @@ cargo run -p moebius-plugin-api --example wrap_launcher
 cargo run -p moebius-plugin-api --example wrap_launcher_process
 ```
 
-The end-to-end tests run only when `MOEBIUS_PI_BOLT` names a `pi-bolt` executable. The desktop app's render tests
-compare against the pictures in `crates/moebius-desktop/tests/snapshots/`.
+The end-to-end tests run only when `MOEBIUS_PI_BOLT` names a `pi-bolt` executable.
 
 When you change `web/`, run its checks too, from `web/` (after `pnpm install`):
 

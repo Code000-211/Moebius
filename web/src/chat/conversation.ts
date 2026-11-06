@@ -1,7 +1,7 @@
 /**
  * A chat's run events folded into what the chat shows: the agent's text and thinking, its tool calls with the check's
- * decision, the person's messages and the errors, in order. It is the logic of the desktop app's `Conversation`
- * (`crates/moebius-desktop/src/widgets/conversation.rs`), with the errors of the model added: a provider that refuses
+ * decision, the person's messages and the errors, in order. It is the logic of the former desktop app's `Conversation`
+ * (`widgets/conversation.rs` of the former desktop app), with the errors of the model added: a provider that refuses
  * the key, runs out of quota or answers an HTTP error ends Pi's assistant message with `stopReason: "error"`, which the
  * server passes on as a `message_end` event (a Claude Code run ends with an `agent_end` that has `is_error`).
  *

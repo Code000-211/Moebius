@@ -1,5 +1,5 @@
 /**
- * The Usage page (the desktop app's `screens/usage`): what the model calls used, from `GET /v1/usage`. The page leads
+ * The Usage page (the former desktop app's `screens/usage`): what the model calls used, from `GET /v1/usage`. The page leads
  * with what today cost against the day's budget, because that is the question the page is opened to answer. A window
  * (today, 7 or 30 days) sets the figures under it, the models, what the model did with its time, the agents and the
  * tool waits; the heatmap always shows the last year. The tokens used today also feed the meter at the foot of the

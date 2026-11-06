@@ -1,6 +1,6 @@
-//! Where Moebius runs: the server's program, files and addresses, found once at start, and the desktop app's, which it
-//! reports when it connects. The Moebius agent is told both when its run starts (see [`App::where_moebius_runs`]), so
-//! that it finds the server's files and the app when it is asked to fix something. Kept in memory only, and never a token
+//! Where Moebius runs: the server's program, files and addresses, found once at start, and a client app's, which it
+//! reports when it connects (the web app does not; a client that calls `PUT /v1/client` does). The Moebius agent is told
+//! both when its run starts (see [`App::where_moebius_runs`]), so that it finds the server's files and the app when it is asked to fix something. Kept in memory only, and never a token
 //! or a key.
 
 use std::path::{Path, PathBuf};
@@ -70,7 +70,7 @@ fn source_checkout(program: &Path) -> Option<PathBuf> {
         .map(Path::to_path_buf)
 }
 
-/// What the desktop app tells about itself: `PUT /v1/client`.
+/// What a client app tells about itself: `PUT /v1/client`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClientInfo {
     /// The app's program.
@@ -203,7 +203,7 @@ impl App {
         match self.client_info() {
             Some(c) => {
                 text.push_str(&format!(
-                    "The desktop app the person uses is version {} on {} ({} {}); its program is {}. It reaches the \
+                    "The app the person uses is version {} on {} ({} {}); its program is {}. It reaches the \
                      server at {}",
                     c.version, c.host, c.os, c.arch, c.program, c.server_address
                 ));
@@ -217,7 +217,8 @@ impl App {
                 );
             }
             None => text.push_str(
-                "The desktop app has not reported where it runs yet (it does so when it connects).\n",
+                "No app has reported where it runs (a client says so with `PUT /v1/client` when it connects; the web \
+                 app does not), so the person's computer is not known.\n",
             ),
         }
         text.push_str(&format!(

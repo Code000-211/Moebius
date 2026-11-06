@@ -1,7 +1,7 @@
 //! Where Moebius runs, for the Moebius agent to find its way (see `app::whereabouts`):
 //!
 //! - `GET /v1/server`: the server's program, version, files, addresses, host and system.
-//! - `GET /v1/client`: what the desktop app last reported about itself; 404 until it has.
+//! - `GET /v1/client`: what the web app last reported about itself; 404 until it has.
 //! - `PUT /v1/client`: the app reports itself when it connects and when that changes. A person's token only.
 
 use axum::Router;
@@ -29,12 +29,11 @@ async fn server(State(state): State<ApiState>) -> Result<axum::Json<ServerInfo>,
 }
 
 async fn client(State(state): State<ApiState>) -> Result<axum::Json<ClientInfo>, ApiError> {
-    state.app.client_info().map(axum::Json).ok_or_else(|| {
-        ApiError(
-            StatusCode::NOT_FOUND,
-            "no desktop app has reported yet".into(),
-        )
-    })
+    state
+        .app
+        .client_info()
+        .map(axum::Json)
+        .ok_or_else(|| ApiError(StatusCode::NOT_FOUND, "no web app has reported yet".into()))
 }
 
 async fn report(
@@ -53,7 +52,7 @@ mod tests {
 
     fn info(address: &str) -> ClientInfo {
         ClientInfo {
-            program: "/opt/moebius-desktop".into(),
+            program: "/opt/moebius-client".into(),
             version: "9.9.9".into(),
             os: "linux".into(),
             arch: "x86_64".into(),

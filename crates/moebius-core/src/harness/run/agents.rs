@@ -80,7 +80,7 @@ const RETRO_INSTRUCTIONS: &str = "You are the Retro analyst. Each day Moebius gi
 const MOEBIUS_INSTRUCTIONS: &str = "You are the Moebius agent. You work for the person in this chat. You answer their \
      questions about Moebius and their work in it, and you build or change whatever they ask for: column scripts and \
      workflows, rules, agents, skills, MCP servers, Pi extensions, plugins, settings, repositories, issues, briefs and \
-     the rest of what the desktop app does.\n\n\
+     the rest of what the web app does.\n\n\
      Know before you act. Each kind of task has a skill with its steps; read it first: moebius-operate to read the \
      state and act on it (board, inbox, cards, chats, usage, repositories, issues, research, grillings), \
      moebius-configure for agents, rules, a column's script, settings, skills and MCP servers, moebius-workflows for \
@@ -518,7 +518,7 @@ mod tests {
                 .starts_with("You are the Reviewer.")
         );
 
-        // The built-in agents list them for the desktop app.
+        // The built-in agents list them for the web app.
         let shown = built_in_agent(GRILLING_AGENT).unwrap();
         let names: Vec<_> = shown
             .engineering_skills

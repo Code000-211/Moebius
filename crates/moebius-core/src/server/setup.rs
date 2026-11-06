@@ -1,4 +1,4 @@
-//! What the Models and Plugins pages of the desktop app show: how the server is set up, read from its configuration and
+//! What the Models and Plugins pages of the web app show: how the server is set up, read from its configuration and
 //! its plugin host, with the state of each plugin in its own process. Nothing here is a secret: a key is told as set or not, and a URL has no credentials in it. The
 //! Settings page reads and writes the configuration itself (see `settings`).
 

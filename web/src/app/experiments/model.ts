@@ -1,5 +1,5 @@
 /**
- * The logic of the Experiments page, as `screens/experiments/` of the desktop app has it: the word for a research's
+ * The logic of the Experiments page, as `screens/experiments/` of the former desktop app has it: the word for a research's
  * status, the numbers and changes of the table, the brief being written (what makes it ready to store) and what a
  * research's status allows a person to do.
  */

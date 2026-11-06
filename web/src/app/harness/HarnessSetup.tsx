@@ -1,5 +1,5 @@
 /**
- * Setting up a harness configuration repository from the app (the desktop app's `harness_setup`). A server without one
+ * Setting up a harness configuration repository from the app (the former desktop app's `harness_setup`). A server without one
  * keeps its agents and rules in `moebius.toml` and has no skills or MCP servers; the Agents, Skills and MCP servers
  * pages then show this box with "Set up". Pressed, it sends `POST /v1/harness/setup` and asks the server to restart;
  * the event stream reconnects by itself and every page reads again, so once the server is back the box is gone.

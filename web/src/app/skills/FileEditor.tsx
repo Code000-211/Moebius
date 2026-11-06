@@ -1,5 +1,5 @@
 /**
- * The editor of one of a skill's other files (the desktop app's `skills/files`): reading is
+ * The editor of one of a skill's other files (the former desktop app's `skills/files`): reading is
  * `GET /v1/skills/{name}/files/{path}`; saving and deleting are `PUT` and `DELETE` of the same route, each a commit in
  * the harness configuration repository. A built-in skill's files are read only, and a file that is not text is listed
  * with its size and can only be deleted. Save says what it knows — that a change is waiting, or why there is nothing

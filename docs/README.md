@@ -34,9 +34,7 @@ reads them too: they are its `moebius` skill.
 - [`architecture.md`](architecture.md): how a card moves through the code, the store, the threads, and the map of
   every module. A test checks that the map lists every module.
 - The README of each crate: [`moebius-core`](../crates/moebius-core/README.md) (the server),
-  [`moebius-desktop`](../crates/moebius-desktop/README.md) (the app), [`moebius`](../crates/moebius/README.md) (the
-  binary and command line) and [`moebius-plugin-api`](../crates/moebius-plugin-api/README.md).
-- [`design.md`](design.md) and the mockups in [`design/`](design/): what the desktop app looks like.
+  [`moebius`](../crates/moebius/README.md) (the binary and command line) and [`moebius-plugin-api`](../crates/moebius-plugin-api/README.md).
 - [`design-web.md`](design-web.md): the standard the web app is built to — voice, type, colour, components, interaction.
 - [`web/README.md`](../web/README.md): the web app, its layout, scripts and licenses.
 
@@ -44,7 +42,7 @@ reads them too: they are its `moebius` skill.
 
 - [`spec.md`](spec.md): what the first version does and how it is built.
 - [`adr/`](adr/): the decisions behind its shape, one record each. Where the spec and a record disagree, the record
-  wins. [0013](adr/0013-the-web-app-is-the-front-end.md) says which front end is the one to build on, and [0014](adr/0014-a-launcher-plugin-wraps-how-a-harness-starts.md) why a sandbox is a plugin of the launcher kind, [0015](adr/0015-packages-come-from-registries.md) why plugins and other packages come from registries, and [0016](adr/0016-the-web-app-has-its-own-design-standard.md) why the web app has a design standard of its own.
+  wins. [0013](adr/0013-the-web-app-is-the-front-end.md) says which front end is the one to build on and [0017](adr/0017-the-desktop-app-is-removed.md) that the desktop app is gone, and [0014](adr/0014-a-launcher-plugin-wraps-how-a-harness-starts.md) why a sandbox is a plugin of the launcher kind, [0015](adr/0015-packages-come-from-registries.md) why plugins and other packages come from registries, and [0016](adr/0016-the-web-app-has-its-own-design-standard.md) why the web app has a design standard of its own.
 - [`plan/`](plan/): the issues the first version was built from, milestone by milestone
   ([M0 and M1](plan/issues-m0-m1.md), [M2 to M9](plan/issues-m2-m9.md)). Later work is in the repository's GitHub
   issues.
