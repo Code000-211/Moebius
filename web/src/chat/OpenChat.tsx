@@ -446,6 +446,9 @@ export function OpenChat({
             olderLoading={thread.olderLoading}
             olderError={thread.olderError}
             loadOlder={thread.loadOlder}
+            // An answer to the agent's question is the person's next message.
+            onAnswer={writesHere ? (answer) => void send(answer) : undefined}
+            sending={sending}
             // The banner that says what went wrong is where the person is already looking, so it is where going
             // through the same message again is offered — the agent is made again in this chat, told what was said.
             retryAction={

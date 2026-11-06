@@ -50,6 +50,8 @@ impl PiBolt {
         // A chat from before the server was started again may lack the lens.
         std::fs::write(run_dir.join("moebius-lens.ts"), super::LENS)
             .map_err(|e| format!("cannot write the lens extension: {e}"))?;
+        std::fs::write(run_dir.join("moebius-ask.ts"), super::ASK)
+            .map_err(|e| format!("cannot write the question tool: {e}"))?;
         match live {
             Some(live) if !self.end_waiting_pi(&live) => return Err(ended()),
             Some(_) => {}
@@ -65,6 +67,7 @@ impl PiBolt {
             sessions: &sessions,
             continues: true,
             lens: &run_dir.join("moebius-lens.ts"),
+            ask: &run_dir.join("moebius-ask.ts"),
             bridge: &run_dir.join("moebius-bridge.ts"),
             token: &run.token,
             operates: operates(&stored.agent),

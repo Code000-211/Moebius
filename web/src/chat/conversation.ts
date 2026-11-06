@@ -20,7 +20,26 @@ export type ToolInput =
   | { type: "write"; path: string; content: string }
   | { type: "command"; command: string }
   | { type: "todos"; todos: Array<{ content: string; status: string }> }
+  | { type: "questions"; questions: AskedQuestion[] }
   | { type: "other"; json: string };
+
+/** One question the agent put to the person with the question tool: a few options to choose from, and always "Other". */
+export interface AskedQuestion {
+  /** A word or two that names the question; empty when the agent gave none. */
+  header: string;
+  question: string;
+  /** Whether more than one option may be chosen. */
+  multiple: boolean;
+  options: AskedOption[];
+}
+
+/** One option of a question. The agent marks the one it recommends by ending its label in "(Recommended)". */
+export interface AskedOption {
+  /** The label without the mark. */
+  label: string;
+  description: string;
+  recommended: boolean;
+}
 
 /** The answer of the tool-call check (or of the MCP gateway). */
 export interface Check {
@@ -73,10 +92,57 @@ const object = (value: unknown): Json =>
   typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Json) : {};
 const string = (value: unknown): string => (typeof value === "string" ? value : "");
 
+const RECOMMENDED = /\s*\(recommended\)\s*$/i;
+
+/**
+ * The questions of a call to the question tool (Claude Code's `AskUserQuestion`, Pi's `ask_user_question`), or null when
+ * the arguments hold none. Both take `questions`, each with a `question`, a `header`, `options` of a `label` and a
+ * `description` (a bare string is a label) and `multiSelect`.
+ */
+function askedQuestions(a: Json): AskedQuestion[] | null {
+  const list = Array.isArray(a.questions) ? a.questions : typeof a.question === "string" ? [a] : [];
+  const questions = list.flatMap((each): AskedQuestion[] => {
+    const q = object(each);
+    const question = string(q.question);
+    if (question === "") return [];
+    const options = (Array.isArray(q.options) ? q.options : []).flatMap((option) => {
+      const written = typeof option === "string" ? option : string(object(option).label);
+      const label = written.replace(RECOMMENDED, "").trim();
+      return label === ""
+        ? []
+        : [
+            {
+              label,
+              description: string(object(option).description),
+              recommended: label !== written.trim(),
+            },
+          ];
+    });
+    return [
+      {
+        header: string(q.header),
+        question,
+        multiple: q.multiSelect === true || q.multiple === true,
+        options,
+      },
+    ];
+  });
+  return questions.length > 0 ? questions : null;
+}
+
+/** Whether `tool` is the question tool, in either harness's spelling. */
+export function asksQuestions(tool: string): boolean {
+  return tool.toLowerCase().replace(/[_-]/g, "") === "askuserquestion";
+}
+
 /** The input of a tool call from its arguments; Pi's tool names are lower case, Claude Code's are capitalised. */
 export function toolInput(tool: string, args: unknown): ToolInput {
   const a = object(args);
   const path = string(a.path) || string(a.file_path);
+  if (asksQuestions(tool)) {
+    const questions = askedQuestions(a);
+    if (questions) return { type: "questions", questions };
+  }
   switch (tool.toLowerCase()) {
     case "read":
       return { type: "read", path };
@@ -131,6 +197,8 @@ export function inputSummary(input: ToolInput): string {
       return input.command.split("\n")[0] ?? "";
     case "todos":
       return `${input.todos.length} items`;
+    case "questions":
+      return input.questions[0]?.question ?? "";
     case "other":
       return input.json;
   }

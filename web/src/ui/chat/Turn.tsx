@@ -25,6 +25,7 @@ import { ChatAssistantMessage } from "./ChatAssistantMessage";
 import { ChatCollapsedThinking } from "./ChatCollapsedThinking";
 import { ChatErrorMessage } from "./ChatErrorMessage";
 import { ChatFileEntry } from "./ChatFileEntry";
+import { ChatQuestion } from "./ChatQuestion";
 import { ChatTodoList } from "./ChatTodoList";
 import { ChatToolSummary } from "./ChatToolSummary";
 import { ChatUserMessage } from "./ChatUserMessage";
@@ -260,12 +261,17 @@ function BlockView({
   isOpen,
   onToggle,
   retry,
+  onAnswer,
+  sending,
 }: {
   block: Block;
   isOpen: (key: string) => boolean;
   onToggle: (key: string) => void;
   /** What to press to have the failed turn answered again; only the last error of the turn has one. */
   retry?: ReactNode;
+  /** Sends the answer to the question this block asks, when it is the one the chat waits on. */
+  onAnswer?: (message: string) => void;
+  sending?: boolean;
 }) {
   switch (block.kind) {
     case "text":
@@ -308,6 +314,15 @@ function BlockView({
           actions={<CopyButton text={block.message} label="Copy error" />}
         />
       );
+    case "question":
+      return (
+        <ChatQuestion
+          questions={block.questions}
+          answer={block.answer}
+          onAnswer={onAnswer}
+          sending={sending}
+        />
+      );
     case "steps":
       return <StepsGroup block={block} isOpen={isOpen} onToggle={onToggle} />;
   }
@@ -322,9 +337,24 @@ interface TurnProps {
   compact?: boolean;
   /** Offered on the last block of the turn that went wrong: what to press to have it answered again. */
   retry?: ReactNode;
+  /**
+   * Sends the person's answer to the agent's question. Given to the last turn only, and taken by the last question of
+   * it: the agent often writes a line after its question ("waiting on your answers"), which does not answer it.
+   */
+  onAnswer?: (message: string) => void;
+  /** Whether a message is on its way, so an answer is not sent twice. */
+  sending?: boolean;
 }
 
-export function Turn({ turn, unfolded, onToggle, compact = false, retry }: TurnProps) {
+export function Turn({
+  turn,
+  unfolded,
+  onToggle,
+  compact = false,
+  retry,
+  onAnswer,
+  sending,
+}: TurnProps) {
   const isOpen = (key: string) => unfolded.has(key);
   const head = turn.head;
   // A turn is written on the canvas rather than stacked in boxes: the person's message is a band of the sunken
@@ -332,6 +362,7 @@ export function Turn({ turn, unfolded, onToggle, compact = false, retry }: TurnP
   // card of its own would put a second shadow inside the chat, which is itself a card on the page or a sheet over it.
   // Going again answers the whole turn once, so only its last error offers it.
   const lastError = turn.blocks.findLast((block) => block.kind === "error")?.key;
+  const lastQuestion = turn.blocks.findLast((block) => block.kind === "question")?.key;
   const view = (block: Block) => (
     <BlockView
       key={block.key}
@@ -339,6 +370,8 @@ export function Turn({ turn, unfolded, onToggle, compact = false, retry }: TurnP
       isOpen={isOpen}
       onToggle={onToggle}
       retry={block.key === lastError ? retry : undefined}
+      onAnswer={block.key === lastQuestion ? onAnswer : undefined}
+      sending={sending}
     />
   );
   return (
