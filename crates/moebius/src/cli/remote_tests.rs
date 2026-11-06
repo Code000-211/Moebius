@@ -411,8 +411,10 @@ fn a_server_that_writes_no_token_is_reported_with_its_log() {
         &host.home().join(".moebius/bin/moebius"),
         "#!/bin/sh\ncase \"$1\" in\ninit) touch moebius.toml ;;\nserve) echo 'address in use' >&2 ;;\nesac\n",
     );
+    // The server starts in the background, so its line may reach the log a moment after the first look for the token:
+    // a few looks leave it the time to.
     let options = Options {
-        token_tries: 1,
+        token_tries: 3,
         ..host.options(true, false)
     };
     let (result, _) = go(&host, &options, true);
