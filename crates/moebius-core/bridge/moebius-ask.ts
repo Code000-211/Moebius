@@ -53,7 +53,7 @@ export default function (pi: ExtensionAPI) {
 			"The questions appear in the chat; their answer arrives as their next message.",
 		promptSnippet: "ask_user_question: put questions with options to the person",
 		promptGuidelines: [
-			"Use ask_user_question for a decision that is the person's, in place of a question written in your answer. Put your recommended option first, end its label with "(Recommended)" and say why in its description.",
+			"Use ask_user_question for a decision that is the person's, in place of a question written in your answer. Put your recommended option first, end its label with \"(Recommended)\" and say why in its description.",
 			"After calling ask_user_question, write nothing more and end your turn: the person's answer is their next message.",
 		],
 		parameters: parameters as never,
