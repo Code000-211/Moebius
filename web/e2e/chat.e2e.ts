@@ -327,8 +327,13 @@ describe("an answer that streams in", () => {
     expect(await thread().evaluate((element) => element.scrollTop)).toBe(0);
 
     // Reaching the end follows again: the person scrolls down to it, and only then does more come.
-    await page.mouse.wheel(0, 100_000);
-    await expect.poll(() => distanceFromEnd(thread())).toBeLessThan(40);
+    // The list measures the turns it draws as it goes, so one wheel can stop short of the end: scroll until it is reached.
+    await expect
+      .poll(async () => {
+        await page.mouse.wheel(0, 100_000);
+        return distanceFromEnd(thread());
+      })
+      .toBeLessThan(40);
     fake().delta(run, paragraph(61));
     await page.getByText("Paragraph 61:").waitFor();
     await expect.poll(() => distanceFromEnd(thread())).toBeLessThan(40);
