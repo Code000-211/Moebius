@@ -77,3 +77,45 @@ describe("a turn that ended in a failure", () => {
     expect(screen.queryAllByRole("button", { name: "Retry" })).toHaveLength(0);
   });
 });
+
+describe("what the agent did", () => {
+  const worked: Entry[] = [
+    { at: 1, seq: 1, kind: "person", said: "said", message: "Do it" },
+    { at: 2, seq: 2, kind: "thinking", text: "Let me look." },
+    {
+      at: 4,
+      seq: 3,
+      kind: "tool",
+      call: {
+        id: "t1",
+        tool: "bash",
+        input: { type: "command", command: "ls" },
+        output: "",
+        check: null,
+        mcp: null,
+        execution: { state: "finished", failed: false },
+      },
+    },
+  ];
+
+  it("is one folded row that counts the steps, and shows none of them", () => {
+    render(<Turn turn={turnOf(worked)} {...folding} />);
+    const row = screen.getByRole("button", { name: "Worked · 2 steps" });
+    expect(row.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByTestId("steps")).toBeNull();
+  });
+
+  it("holds the steps once it is unfolded", () => {
+    const turn = turnOf(worked);
+    const key = turn.blocks[0]?.key as string;
+    render(<Turn turn={turn} unfolded={new Set([key])} onToggle={() => {}} />);
+    expect(screen.getByTestId("steps").textContent).toContain("Thought");
+  });
+
+  it("says Working while the agent is at it", () => {
+    const turn = groupTurns(worked, true)[0];
+    if (!turn) throw new Error("one turn");
+    render(<Turn turn={turn} {...folding} />);
+    expect(screen.getByTestId("working").textContent).toBe("Working");
+  });
+});
