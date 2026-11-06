@@ -22,11 +22,9 @@ export const COLUMNS = [
 /** How many cards Done lists, the highest numbers first, because it keeps growing. */
 export const DONE_SHOWN = 10;
 
-/** The names of the columns a board shows: Backlog only while it holds a card, and any other column a card is in, last. */
+/** The names of the columns a board shows: the default workflow's, Backlog always so that issues have a place to wait, and any other column a card is in, last. */
 export function boardColumns(board: Board): string[] {
-  const columns: string[] = COLUMNS.filter(
-    (name) => name !== "Backlog" || board.cards.some((card) => card.column === "Backlog"),
-  );
+  const columns: string[] = [...COLUMNS];
   for (const card of board.cards) {
     if (!columns.includes(card.column)) columns.push(card.column);
   }
