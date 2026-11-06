@@ -402,6 +402,28 @@ mod tests {
     }
 
     #[test]
+    fn a_comment_the_poll_stored_first_is_still_moebiuss_when_it_is_written_through_moebius() {
+        let (_dir, app, card) = setup("github");
+        // The poll read the comment from the forge (as the forge's login) before the store step of `comment_issue`.
+        from_forge(&app, &card, "moebius[bot]", "Decided on the old API.", 7);
+        let before = prompt_for(&app, &card, "code", None);
+        assert!(!before.contains("Decided on the old API."), "{before}");
+        let added = app
+            .store
+            .add_local_comment(card.id, "agent:Moebius", "Decided on the old API.", Some(7))
+            .unwrap();
+        assert!(added.is_none());
+        let comments = app.store.comments(card.id).unwrap();
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].author, "agent:Moebius");
+        let prompt = prompt_for(&app, &card, "code", None);
+        assert!(
+            prompt.contains("[Moebius] wrote:\n> Decided on the old API."),
+            "{prompt}"
+        );
+    }
+
+    #[test]
     fn a_forge_login_cannot_pass_for_a_person_or_for_moebius_and_an_outsider_is_left_out() {
         let (_dir, app, card) = setup("github");
         app.store

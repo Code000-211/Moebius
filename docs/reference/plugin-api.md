@@ -154,7 +154,10 @@ export default function mount(element, host) {
   `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`.
 - The web app is served with a content security policy (`web/csp.json`): scripts, styles, fonts and images from its own
   address only (inline styles allowed, inline scripts and `eval` not), connections to its own address only, frames of
-  its own address only, and no embedding of the app in another site. The frame gets the stricter policy of its own.
+  its own address only, and no embedding of the app in another site. The frame gets the stricter policy of its own. The app's `connect-src` also names `ws://` and `wss://` of the address the
+  page was asked at (its `Host`, written only when it is a plain hostname and port), since older browsers do not match
+  those schemes with `'self'`. The frame can navigate itself, and so could send the values it was given elsewhere; they
+  are the plugin's own settings, which the plugin already has on the server.
 - Values are stored as plain text (a repository's in the git history of the harness configuration repository, the
   server's in its database), are shown to anyone who can open the page and are handed to the launcher as written. A
   setting is not a place for a key or a token: the page says so beside the fields, and the decision that records a

@@ -1742,7 +1742,7 @@ mod tests {
             .app
             .comment_issue(&Actor::Person, a.id, "Decided.")
             .unwrap();
-        assert_eq!(comment.author, "moebius[bot]");
+        assert_eq!(comment.author, "person");
         assert!(s.kinds().is_empty());
         assert_eq!(s.app.comments(a.id).unwrap().len(), 1);
 

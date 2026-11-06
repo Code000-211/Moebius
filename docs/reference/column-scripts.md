@@ -166,7 +166,8 @@ users and not instructions. Only comments of the issue's author, of the logins t
 says how many others are left out. Each comment is headed by a label that Moebius sets and no author can: `[forge user:
 <login>]`, `[the person using Moebius]` or `[Moebius]` (`[Moebius agent: <name>]` for another agent). A comment from the
 forge is a forge user's even when its login is `person` or `agent:Moebius`; only what was written through Moebius is the
-person's or Moebius's. The text of each comment is quoted line by line with `> `, with secrets redacted, and the newest
+person's or Moebius's (a comment that the poll stored from the forge before Moebius stored its own copy is made the
+local one then; rows stored before that stay a forge user's). The text of each comment is quoted line by line with `> `, with secrets redacted, and the newest
 comments are kept when they come to more than 8,000 characters.
 
 `moebius.has_agent(name)` returns a boolean.

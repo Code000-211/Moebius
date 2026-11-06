@@ -240,7 +240,9 @@ impl Store {
     }
 
     /// Adds a comment written through Moebius by `author` (`person` or `agent:<name>`), which is also on the forge as
-    /// `forge_id` when the repository has one. Says whether it was added.
+    /// `forge_id` when the repository has one. Says whether it was added. When the poll stored the comment from the
+    /// forge first, that row is made the local one (its author is `author` and it counts as written through Moebius),
+    /// and nothing is added.
     pub fn add_local_comment(
         &self,
         card_id: i64,
@@ -248,7 +250,14 @@ impl Store {
         body: &str,
         forge_id: Option<i64>,
     ) -> Result<Option<Comment>> {
-        self.insert_comment(card_id, (author, true), body, None, forge_id)
+        let added = self.insert_comment(card_id, (author, true), body, None, forge_id)?;
+        if let (None, Some(forge_id)) = (&added, forge_id) {
+            self.conn().execute(
+                "UPDATE card_comments SET local = 1, author = ?1 WHERE card_id = ?2 AND forge_id = ?3",
+                params![author, card_id, forge_id],
+            )?;
+        }
+        Ok(added)
     }
 
     fn insert_comment(
