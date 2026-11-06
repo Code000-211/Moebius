@@ -165,7 +165,7 @@ The harness starts every Pi-Bolt run (and every Claude Code run) with a cleared 
 
 For each run the server writes the bridge to `<data_dir>/runs/<id>/moebius-bridge.ts` and the lens (below) to
 `<data_dir>/runs/<id>/moebius-lens.ts`, and starts Pi-Bolt with `--extension <lens>` and then `--extension <bridge>`
-after the agent's own `extensions`, so that the bridge is the last extension to run, and with `--no-extensions`
+after the agent's own `extensions` (and, for the Moebius agent and the Grilling partner, after `<data_dir>/runs/<id>/moebius-ask.ts`, the question tool: `ask_user_question` takes `questions` with `question`, `header`, `options` of `label` and `description`, and `multiSelect` (a label ending in "(Recommended)" is shown with a Recommended tag), and returns at once, telling the model to end its turn; the web app shows the call as a card and the answer is the person's next message), so that the bridge is the last extension to run, and with `--no-extensions`
 and `--no-skills`, so that Pi loads no extension or skill it finds on its own, only those the agent is configured with and
 the bridge. The token is revoked when the run ends.
 

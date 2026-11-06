@@ -153,6 +153,13 @@ interface ThreadViewProps {
    * chat has one end, and an older failure was answered past.
    */
   retryAction?: ReactNode;
+  /**
+   * Sends the person's answer to a question the agent asked. Only the last turn gets it, and only while the agent is
+   * not working: a question the chat went past is a record, and one asked mid-answer is not yet waiting.
+   */
+  onAnswer?: (message: string) => void;
+  /** Whether a message is on its way. */
+  sending?: boolean;
 }
 
 export function ThreadView({
@@ -170,6 +177,8 @@ export function ThreadView({
   olderError = null,
   loadOlder,
   retryAction,
+  onAnswer,
+  sending,
 }: ThreadViewProps) {
   // An answer arrives piece by piece, and the person may be typing while it does: the words shown trail the events by
   // a render rather than cutting the keystroke off, and a long conversation groups once per batch instead of per piece.
@@ -329,6 +338,8 @@ export function ThreadView({
             onToggle={toggle}
             compact={compact}
             retry={turn.key === lastKey ? retryAction : undefined}
+            onAnswer={turn.key === lastKey && !working ? onAnswer : undefined}
+            sending={sending}
           />
         </div>
       )}

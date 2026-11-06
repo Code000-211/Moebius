@@ -12,7 +12,7 @@ use std::time::Instant;
 use serde_json::{Value, json};
 
 use super::reader::Reader;
-use super::{BRIDGE, LENS, Live, PiBolt, kill_process, lock, run_dir, send};
+use super::{ASK, BRIDGE, LENS, Live, PiBolt, kill_process, lock, run_dir, send};
 use crate::app::App;
 use crate::bus::Event;
 use crate::config::AgentConfig;
@@ -34,6 +34,8 @@ pub(super) struct Place<'a> {
     pub(super) sessions: &'a Path,
     pub(super) continues: bool,
     pub(super) lens: &'a Path,
+    /// The question tool, loaded when `operates`.
+    pub(super) ask: &'a Path,
     pub(super) bridge: &'a Path,
     pub(super) token: &'a str,
     pub(super) operates: bool,
@@ -135,6 +137,10 @@ impl PiBolt {
         }
         for extension in &agent.extensions {
             command.arg("--extension").arg(extension);
+        }
+        // The agent that operates Moebius works with a person in a chat, and asks with options, not in prose.
+        if place.operates {
+            command.arg("--extension").arg(place.ask);
         }
         // The lens adds its findings to the results of edits; the bridge is last, so that it checks the input and
         // redacts the content the other extensions left, the lens's findings included.
@@ -241,6 +247,8 @@ impl PiBolt {
             .map_err(|e| format!("cannot write the bridge extension: {e}"))?;
         let lens = run_dir.join("moebius-lens.ts");
         std::fs::write(&lens, LENS).map_err(|e| format!("cannot write the lens extension: {e}"))?;
+        let ask = run_dir.join("moebius-ask.ts");
+        std::fs::write(&ask, ASK).map_err(|e| format!("cannot write the question tool: {e}"))?;
         let log = run_dir.join("stderr.log");
         let stderr = std::fs::OpenOptions::new()
             .create(true)
@@ -258,6 +266,7 @@ impl PiBolt {
             sessions: &sessions,
             continues: prompt.is_none(),
             lens: &lens,
+            ask: &ask,
             bridge: &bridge,
             token: &run.token,
             operates,
@@ -361,7 +370,11 @@ impl PiBolt {
             return Err(crate::harness::launch::no_launcher(spot.stored));
         };
         let remote = run.remote.as_ref().map(|remote| remote.runner());
-        let mut read_only = vec![place.lens.to_path_buf(), place.bridge.to_path_buf()];
+        let mut read_only = vec![
+            place.lens.to_path_buf(),
+            place.ask.to_path_buf(),
+            place.bridge.to_path_buf(),
+        ];
         read_only.extend(spot.agent.extensions.iter().cloned());
         read_only.extend(spot.agent.skills.iter().cloned());
         // Pi keeps its credential store in its agent directory, where it writes `auth.json` and a lock beside it, so
@@ -607,6 +620,7 @@ mod tests {
                 sessions: Path::new("/sessions"),
                 continues: false,
                 lens: Path::new("/lens.ts"),
+                ask: Path::new("/ask.ts"),
                 bridge: Path::new("/bridge.ts"),
                 token: "run-token",
                 operates: crate::harness::run::operates(name),
@@ -645,6 +659,46 @@ mod tests {
                     && !given.contains_key("MOEBIUS_RUN")
             );
         }
+    }
+
+    #[test]
+    fn only_the_agents_that_operate_moebius_get_the_question_tool() {
+        let (_dir, _app, pi, _repo) = setup();
+        let agent = pi.agent_set().agents["Coder"].clone();
+        let loaded = |name: &str| {
+            let place = Place {
+                worktree: Path::new("/work"),
+                agent_dir: Path::new("/agent"),
+                sessions: Path::new("/sessions"),
+                continues: false,
+                lens: Path::new("/lens.ts"),
+                ask: Path::new("/ask.ts"),
+                bridge: Path::new("/bridge.ts"),
+                token: "run-token",
+                operates: crate::harness::run::operates(name),
+                run: 12,
+                repository: None,
+                lint: None,
+            };
+            let args: Vec<_> = pi
+                .command(&agent, &place, false)
+                .get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect();
+            args.windows(2)
+                .filter(|w| w[0] == "--extension")
+                .map(|w| w[1].clone())
+                .collect::<Vec<_>>()
+        };
+        // After the agent's own extensions and before the lens and the bridge, which stay the last two.
+        assert_eq!(
+            loaded("Moebius"),
+            ["/agent/own.ts", "/ask.ts", "/lens.ts", "/bridge.ts"].map(String::from)
+        );
+        assert_eq!(
+            loaded("Coder"),
+            ["/agent/own.ts", "/lens.ts", "/bridge.ts"].map(String::from)
+        );
     }
 
     #[test]

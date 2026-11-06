@@ -114,6 +114,8 @@ and does not know anything the API does not say.
    to them at the run's first request, lists their tools as `<server>__<tool>`, checks every call with
    `check::decide_call` before the server sees it, cleans the result of secrets and records an `mcp_call` run event;
    it stops the servers when the run ends (`Gateway::stop_ended_runs`).
+   The question tool (`bridge/moebius-ask.ts`), loaded for the agents that operate Moebius, registers `ask_user_question`, which
+   answers at once; the web app draws its arguments as a card and the person's choices come back as their next message.
    The lens extension (`bridge/moebius-lens.ts`) loaded before the bridge runs the repository's fast linter on a file after each
    edit (the plan comes from `lens::Plan`, in `MOEBIUS_LENS`) and appends the problems that are new, as
    `lens::report` decides through `decide("lint_report")`; before the run settles it asks `decide("deep_check")` and
@@ -735,4 +737,4 @@ At the top:
 | `improve/export.rs` | The training-set export: judgements with their contexts and outcomes as JSON Lines per kind, the held-out tenth, the exports a person started in the app. |
 
 Outside `src/`: `workflow/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension
-loaded into every run and `bridge/moebius-lens.ts` the one before it that runs the linters and type checks, `skill/` the built-in skills.
+loaded into every run and `bridge/moebius-lens.ts` the one before it that runs the linters and type checks, `bridge/moebius-ask.ts` the question tool of the agents that operate Moebius, `skill/` the built-in skills.

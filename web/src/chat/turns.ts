@@ -2,9 +2,10 @@
  * The entries of a conversation grouped for the page (the former desktop app's CH3-D layout): each message of the person
  * heads a turn, and what the agent did and answered until the next one is its body. The agent's texts, errors and
  * unreachable MCP servers stand on their own; the thinking and tool calls that follow one another are one block of
- * steps, in which consecutive reads are aggregated into one line.
+ * steps, in which consecutive reads are aggregated into one line. The agent's questions (its question tool) are not a
+ * step: each stands on its own, as the answer the turn waits for.
  */
-import type { Entry, ErrorSource, ToolCall } from "./conversation";
+import type { AskedQuestion, Entry, ErrorSource, ToolCall } from "./conversation";
 import { refused } from "./conversation";
 
 export type PersonEntry = Extract<Entry, { kind: "person" }>;
@@ -26,6 +27,13 @@ export type Block =
   | { kind: "text"; key: string; text: string }
   | { kind: "error"; key: string; source: ErrorSource; message: string }
   | { kind: "mcpError"; key: string; server: string; message: string }
+  | {
+      kind: "question";
+      key: string;
+      questions: AskedQuestion[];
+      /** The message of the person that answered it, when the conversation went on with one; else null. */
+      answer: string | null;
+    }
   | { kind: "steps"; key: string; steps: StepView[]; working: boolean };
 
 export interface Turn {
@@ -39,6 +47,12 @@ export interface Turn {
   head: PersonEntry | null;
   blocks: Block[];
 }
+
+/** The questions a call puts to the person, unless the check refused it: a refused question was never asked. */
+const questionsOf = (entry: Entry): AskedQuestion[] | null =>
+  entry.kind === "tool" && entry.call.input.type === "questions" && !refused(entry.call)
+    ? entry.call.input.questions
+    : null;
 
 const isRead = (call: ToolCall) => call.input.type === "read" && !refused(call);
 
@@ -108,6 +122,17 @@ export function groupTurns(entries: Entry[], working: boolean): Turn[] {
   let index = 0;
   while (index < entries.length) {
     const entry = entries[index] as Entry;
+    const asked = questionsOf(entry);
+    if (asked) {
+      turn(entry.seq).blocks.push({
+        kind: "question",
+        key: `question-${entry.seq}`,
+        questions: asked,
+        answer: null,
+      });
+      index += 1;
+      continue;
+    }
     switch (entry.kind) {
       case "person":
         current = { key: `turn-${entry.seq}`, from: entry.seq, head: entry, blocks: [] };
@@ -137,7 +162,7 @@ export function groupTurns(entries: Entry[], working: boolean): Turn[] {
         const run: Array<{ index: number; entry: Entry }> = [];
         while (index < entries.length) {
           const next = entries[index] as Entry;
-          if (next.kind !== "thinking" && next.kind !== "tool") break;
+          if ((next.kind !== "thinking" && next.kind !== "tool") || questionsOf(next)) break;
           run.push({ index, entry: next });
           index += 1;
         }
@@ -156,6 +181,12 @@ export function groupTurns(entries: Entry[], working: boolean): Turn[] {
     }
     index += 1;
   }
+  // The person's next message answers the last question of a turn; it is what a closed card shows as chosen.
+  turns.forEach((each, place) => {
+    const next = turns[place + 1]?.head;
+    const asked = each.blocks.findLast((block) => block.kind === "question");
+    if (next && asked?.kind === "question") asked.answer = next.message;
+  });
   // A failure the conversation has gone past is not shown again: what came after it — the retry's answer — answered
   // it, and that is where the person is looking. Only real answer content counts as going past: text and steps. An
   // unreachable MCP server, or a message of the person's that nothing has answered yet, does not, so the failure
@@ -168,7 +199,7 @@ export function groupTurns(entries: Entry[], working: boolean): Turn[] {
     const kept: Block[] = [];
     for (const block of [...turn.blocks].reverse()) {
       if (block.kind === "error" && past) continue;
-      if (block.kind === "text" || block.kind === "steps") past = true;
+      if (block.kind === "text" || block.kind === "steps" || block.kind === "question") past = true;
       kept.push(block);
     }
     turn.blocks = kept.reverse();
