@@ -160,7 +160,7 @@ describe("the board page", () => {
     async () => {
       await fresh();
       await openBoard();
-      // Columns: Backlog is there because a card is in it; the counts follow the cards.
+      // Columns: Backlog is always there; the counts follow the cards.
       await column("Backlog").waitFor();
       expect(
         await column("Not started")

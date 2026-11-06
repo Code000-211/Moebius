@@ -193,8 +193,9 @@ describe("stacks of sub-issues", () => {
 });
 
 describe("boardColumns", () => {
-  it("lists the default workflow, with Backlog only while it holds a card", () => {
+  it("lists the default workflow, with Backlog even while it holds no card", () => {
     expect(boardColumns(board([card(1)]))).toEqual([
+      "Backlog",
       "Not started",
       "In progress",
       "In review",
