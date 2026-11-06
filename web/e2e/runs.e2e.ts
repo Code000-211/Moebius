@@ -101,6 +101,8 @@ describe("the run view", () => {
       toolName: "bash",
       args: { command: "make test" },
     });
+    // What the run did is folded under one row until it is opened.
+    await page.getByRole("button", { name: /^(Working|Worked · \d+ steps?)$/ }).click();
     await page.getByText("make test").first().waitFor();
 
     await card.click();

@@ -7,7 +7,7 @@
  * reads, a changed file, a todo list — each a control 40px tall that says its state in a word, opens to the text it
  * worked with, and keeps that text on the colour of code rather than in a box of its own colours.
  */
-import { CircleNotchIcon } from "@phosphor-icons/react";
+import { CaretRightIcon, CircleNotchIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 import {
   inputPath,
@@ -193,6 +193,68 @@ function StepLine({
   );
 }
 
+/**
+ * What the agent did between two texts, folded into one row: "Working" while it still goes on, "Worked · 5 steps" once
+ * it has stopped. Opened, the row holds the thinking and tool rows as they were. A row of the log is 32px rather than
+ * the 40px of a thing you aim at, and the rows sit 4px apart, so a log of what the agent did reads as one block of
+ * small marks rather than a list to choose from. The marker is what tells `e2e/design/audit.test.ts` these rows are a
+ * log at 32px rather than controls at 40px.
+ */
+function StepsGroup({
+  block,
+  isOpen,
+  onToggle,
+}: {
+  block: Extract<Block, { kind: "steps" }>;
+  isOpen: (key: string) => boolean;
+  onToggle: (key: string) => void;
+}) {
+  const expanded = isOpen(block.key);
+  return (
+    <div className="flex min-w-0 flex-col">
+      <button
+        type="button"
+        className={cn(
+          "flex min-h-8 cursor-pointer items-center gap-2 self-start rounded-control px-3 text-left text-sm transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text",
+          block.working ? "font-semibold text-progress-text" : "text-secondary",
+        )}
+        onClick={() => onToggle(block.key)}
+        aria-expanded={expanded}
+        data-testid={block.working ? "working" : undefined}
+      >
+        <CaretRightIcon
+          aria-hidden="true"
+          className={cn(
+            "size-4 shrink-0 transition-transform duration-(--motion-routine) ease-out",
+            expanded && "rotate-90",
+          )}
+        />
+        {block.working && (
+          <CircleNotchIcon aria-hidden="true" className="size-4 shrink-0 animate-spin" />
+        )}
+        {block.working ? (
+          <span className="animate-working-shimmer bg-[linear-gradient(90deg,var(--progress-text)_35%,var(--text)_50%,var(--progress-text)_65%)] bg-[length:200%_100%] bg-clip-text text-transparent">
+            Working
+          </span>
+        ) : (
+          `Worked · ${plural(block.steps.length, "step", "steps")}`
+        )}
+      </button>
+      {expanded && (
+        <div
+          className="ml-4 flex flex-col gap-1 border-l-2 border-hairline py-1 pl-3"
+          data-testid="steps"
+          data-audit="log"
+        >
+          {block.steps.map((step) => (
+            <StepLine key={step.key} step={step} isOpen={isOpen} onToggle={onToggle} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BlockView({
   block,
   isOpen,
@@ -247,26 +309,7 @@ function BlockView({
         />
       );
     case "steps":
-      // A row of the log is 32px rather than the 40px of a thing you aim at, and the rows sit 4px apart, so a log of
-      // what the agent did reads as one block of small marks rather than a list to choose from. It is the same rhythm
-      // in the page and in the dock. The marker is what tells `e2e/design/audit.test.ts` these rows are a log at 32px
-      // rather than controls at 40px.
-      return (
-        <div className="flex flex-col gap-1" data-testid="steps" data-audit="log">
-          {block.steps.map((step) => (
-            <StepLine key={step.key} step={step} isOpen={isOpen} onToggle={onToggle} />
-          ))}
-          {block.working && (
-            <p
-              className="flex items-center gap-3 px-3 text-sm font-semibold text-progress-text"
-              data-testid="working"
-            >
-              <CircleNotchIcon aria-hidden="true" className="size-4 animate-spin" />
-              Working
-            </p>
-          )}
-        </div>
-      );
+      return <StepsGroup block={block} isOpen={isOpen} onToggle={onToggle} />;
   }
 }
 

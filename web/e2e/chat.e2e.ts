@@ -425,6 +425,8 @@ describe("what the agent does", () => {
         output: "edited",
       });
 
+      // What the agent did is folded under one row until it is opened.
+      await page.getByRole("button", { name: /^(Working|Worked · \d+ steps?)$/ }).click();
       const steps = page.getByTestId("steps");
       await steps.getByRole("button", { name: /Read · 2 files/ }).waitFor();
       await steps.getByText("bash", { exact: true }).waitFor();
