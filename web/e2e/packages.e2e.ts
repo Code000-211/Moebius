@@ -203,11 +203,23 @@ describe.skipIf(usesRealServer)("the Plugins page and the Moebius registries", (
       .waitFor();
   });
 
-  const contentRight = () =>
+  const measure = () =>
     page.locator("main").evaluate((main) => {
       const rect = main.getBoundingClientRect();
       return rect.right - Number.parseFloat(getComputedStyle(main).paddingRight);
     });
+  // Right after the page opens its padding may not be computed yet, which reads as NaN: the edge is taken once it is a
+  // number.
+  const contentRight = async () => {
+    let right = Number.NaN;
+    await expect
+      .poll(async () => {
+        right = await measure();
+        return Number.isFinite(right);
+      })
+      .toBe(true);
+    return right;
+  };
 
   it("lies over the page on a window under 1536px, which keeps its width, and minimises to a button", async () => {
     await open("/plugins", 1280);
