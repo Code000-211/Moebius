@@ -132,6 +132,17 @@
     }
   }
 
+  /* The word of a block of steps that is still going on: a light that passes over it (StepsGroup). */
+  --animate-working-shimmer: working-shimmer 2s linear infinite;
+  @keyframes working-shimmer {
+    from {
+      background-position: 100% 0;
+    }
+    to {
+      background-position: 0 0;
+    }
+  }
+
   /* Type: the scale, with a line height that fits it. */
   --text-xs: 12px;
   --text-xs--line-height: 1.5;
