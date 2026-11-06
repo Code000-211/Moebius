@@ -4,6 +4,11 @@
 //! `/v1/`): the file of that name, or `index.html` for any other path, since the app routes in the browser. Without a
 //! build of the web app the binary embeds nothing, and every such path answers a short page that says how to build it.
 //! [`serve`] takes the files as a function, so the tests give it their own.
+//!
+//! Every file is answered with a content security policy (`web/csp.json`, which the end-to-end tests' fake server reads
+//! too): the app may load scripts, styles, fonts and images from its own address only, talk to its own address, and
+//! frame only its own address, and the frame a plugin's page runs in (`plugin-frame.html`, sandboxed by the app) gets a
+//! policy of its own that forbids it every network request. The fonts are readable from that frame, which has no origin.
 
 use std::borrow::Cow;
 
@@ -26,6 +31,28 @@ pub(super) struct Asset {
 /// The embedded file at `path`, relative to `web/dist`.
 fn embedded(path: &str) -> Option<Asset> {
     Dist::get(path).map(|file| Asset { bytes: file.data })
+}
+
+/// The two policies, `app` and `frame`, as `web/csp.json` says them.
+fn policies() -> &'static serde_json::Value {
+    static POLICIES: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
+    POLICIES.get_or_init(|| {
+        serde_json::from_str(include_str!("../../../../../web/csp.json"))
+            .expect("web/csp.json is JSON")
+    })
+}
+
+/// The content security policy for the file called `name`.
+fn policy(name: &str) -> String {
+    let which = if name == "plugin-frame.html" {
+        "frame"
+    } else {
+        "app"
+    };
+    policies()[which]
+        .as_str()
+        .unwrap_or("default-src 'none'")
+        .to_string()
 }
 
 const NOT_BUILT: &str = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
@@ -64,14 +91,27 @@ pub(super) fn serve(files: &dyn Fn(&str) -> Option<Asset>, path: &str) -> Respon
     } else {
         "no-cache"
     };
-    (
+    let mut response = (
         [
             (header::CONTENT_TYPE, content_type(name)),
             (header::CACHE_CONTROL, cache),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
         ],
         asset.bytes.into_owned(),
     )
-        .into_response()
+        .into_response();
+    let headers = response.headers_mut();
+    if let Ok(value) = policy(name).parse() {
+        headers.insert(header::CONTENT_SECURITY_POLICY, value);
+    }
+    // The frame of a plugin's page has no origin, and a font is only read across origins when the server allows it.
+    if name.starts_with("fonts/") {
+        headers.insert(
+            header::ACCESS_CONTROL_ALLOW_ORIGIN,
+            header::HeaderValue::from_static("*"),
+        );
+    }
+    response
 }
 
 /// The media type of the file called `name`, from its extension.
@@ -123,6 +163,59 @@ mod tests {
         Some(Asset {
             bytes: Cow::Borrowed(content),
         })
+    }
+
+    fn built_with_frame(name: &str) -> Option<Asset> {
+        let content: &'static [u8] = match name {
+            "plugin-frame.html" => b"<html>frame</html>",
+            "fonts/inter/Inter.woff2" => b"font",
+            _ => return built(name),
+        };
+        Some(Asset {
+            bytes: Cow::Borrowed(content),
+        })
+    }
+
+    #[tokio::test]
+    async fn every_file_has_the_policy_of_the_app_and_the_frame_of_a_plugin_its_own() {
+        for path in ["/", "/assets/app-1a2b.js", "/cards/3", "/favicon.svg"] {
+            let response = serve(&built_with_frame, path);
+            let policy = header_of(&response, header::CONTENT_SECURITY_POLICY);
+            assert!(policy.contains("script-src 'self';"), "{path}: {policy}");
+            assert!(!policy.contains("unsafe-eval"), "{path}: {policy}");
+            assert!(
+                !policy.contains("script-src 'self' 'unsafe-inline'"),
+                "{path}: {policy}"
+            );
+            assert!(
+                policy.contains("frame-src 'self'") && policy.contains("frame-ancestors 'none'")
+            );
+            assert_eq!(
+                header_of(&response, header::X_CONTENT_TYPE_OPTIONS),
+                "nosniff"
+            );
+        }
+        let frame = serve(&built_with_frame, "/plugin-frame.html");
+        let policy = header_of(&frame, header::CONTENT_SECURITY_POLICY);
+        assert!(policy.contains("default-src 'none'") && policy.contains("connect-src 'none'"));
+        assert!(
+            policy.contains("script-src 'self' blob:") && policy.contains("frame-ancestors 'self'")
+        );
+        // The frame has no origin, so only the fonts are opened to it.
+        let font = serve(&built_with_frame, "/fonts/inter/Inter.woff2");
+        assert_eq!(header_of(&font, header::ACCESS_CONTROL_ALLOW_ORIGIN), "*");
+        assert!(
+            frame
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .is_none()
+        );
+        assert!(
+            serve(&built_with_frame, "/")
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .is_none()
+        );
     }
 
     #[tokio::test]

@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { extname, join, normalize, resolve } from "node:path";
+import { extname, join, normalize, resolve, sep } from "node:path";
 import { type WebSocket, WebSocketServer } from "ws";
 import { type BoardFake, createBoardFake } from "./fake/board";
 import { createFakeChat, type FakeChat } from "./fake/chat";
@@ -23,6 +23,10 @@ export const AGENT_TOKEN = "fake-run-token";
 export const LOGIN_CODE = "fake-login-code";
 
 const DIST = resolve(import.meta.dirname, "../dist");
+const POLICIES = JSON.parse(readFileSync(resolve(import.meta.dirname, "../csp.json"), "utf8")) as {
+  app: string;
+  frame: string;
+};
 const TYPES: Record<string, string> = {
   ".html": "text/html",
   ".js": "text/javascript",
@@ -166,7 +170,14 @@ export async function startFakeServer(): Promise<FakeServer> {
     if (!file.startsWith(DIST) || !existsSync(file) || !statSync(file).isFile()) {
       file = join(DIST, "index.html");
     }
-    response.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
+    // The policies of the real server (`web/csp.json`, read by `server/api/web.rs`), so the tests run under them.
+    const headers: Record<string, string> = {
+      "content-type": TYPES[extname(file)] ?? "application/octet-stream",
+      "content-security-policy": file.endsWith("plugin-frame.html") ? POLICIES.frame : POLICIES.app,
+      "x-content-type-options": "nosniff",
+    };
+    if (file.includes(`${sep}fonts${sep}`)) headers["access-control-allow-origin"] = "*";
+    response.writeHead(200, headers);
     response.end(readFileSync(file));
   }
 

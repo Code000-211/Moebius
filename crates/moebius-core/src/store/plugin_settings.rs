@@ -1,25 +1,13 @@
 //! The settings of plugins for the whole server: the values a person gave the `app_settings` a plugin's manifest
 //! declares (see `app::plugin_settings`), kept by plugin name, so they stay while the plugin is not running and come
 //! back with it; a value left empty is not stored. A repository's values are not here but files of its project settings
-//! (`harness::repo`); the `project_settings` table is what an earlier version kept them in, no longer read.
+//! (`harness::repo`).
 
 use std::collections::BTreeMap;
 
 use rusqlite::params;
 
 use super::{Result, Store, now};
-
-/// Kept so the migrations stay in order, and for the values an earlier version stored here, which nothing reads.
-pub(super) const PROJECT_SCHEMA: &str = r#"
-CREATE TABLE project_settings (
-    repository_id INTEGER NOT NULL REFERENCES repositories(id),
-    plugin TEXT NOT NULL,
-    key TEXT NOT NULL,
-    value TEXT NOT NULL,
-    at INTEGER NOT NULL,
-    PRIMARY KEY (repository_id, plugin, key)
-);
-"#;
 
 pub(super) const APP_SCHEMA: &str = r#"
 CREATE TABLE app_settings (

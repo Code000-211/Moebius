@@ -44,6 +44,12 @@ CREATE TABLE forge_seen (
 );
 "#;
 
+/// Tells the comments written through Moebius from the ones read from the forge, whose author may be a login that
+/// looks like what Moebius writes (`person`). Older rows count as read from the forge.
+pub(super) const COMMENT_ORIGIN: &str = r#"
+ALTER TABLE card_comments ADD COLUMN local INTEGER NOT NULL DEFAULT 0;
+"#;
+
 /// A comment on an issue: written in Moebius or read from the forge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Comment {
@@ -220,8 +226,8 @@ impl Store {
         )
     }
 
-    /// Adds a comment. A comment of the forge is stored once however often it is read: `forge_id` is its id there.
-    /// Says whether it was added.
+    /// Adds a comment read from the forge. A comment of the forge is stored once however often it is read: `forge_id`
+    /// is its id there. Says whether it was added.
     pub fn add_comment(
         &self,
         card_id: i64,
@@ -230,11 +236,34 @@ impl Store {
         at: Option<i64>,
         forge_id: Option<i64>,
     ) -> Result<Option<Comment>> {
+        self.insert_comment(card_id, (author, false), body, at, forge_id)
+    }
+
+    /// Adds a comment written through Moebius by `author` (`person` or `agent:<name>`), which is also on the forge as
+    /// `forge_id` when the repository has one. Says whether it was added.
+    pub fn add_local_comment(
+        &self,
+        card_id: i64,
+        author: &str,
+        body: &str,
+        forge_id: Option<i64>,
+    ) -> Result<Option<Comment>> {
+        self.insert_comment(card_id, (author, true), body, None, forge_id)
+    }
+
+    fn insert_comment(
+        &self,
+        card_id: i64,
+        (author, local): (&str, bool),
+        body: &str,
+        at: Option<i64>,
+        forge_id: Option<i64>,
+    ) -> Result<Option<Comment>> {
         let conn = self.conn();
         let at = at.unwrap_or_else(now);
         let added = conn.execute(
-            "INSERT OR IGNORE INTO card_comments (card_id, author, body, at, forge_id) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![card_id, author, body, at, forge_id],
+            "INSERT OR IGNORE INTO card_comments (card_id, author, body, at, forge_id, local) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![card_id, author, body, at, forge_id, local],
         )?;
         Ok((added > 0).then(|| Comment {
             id: conn.last_insert_rowid(),
@@ -279,6 +308,18 @@ impl Store {
                 })
             },
         )
+    }
+
+    /// The ids of the card's comments that were written through Moebius, not read from the forge.
+    pub fn local_comment_ids(&self, card_id: i64) -> Result<std::collections::HashSet<i64>> {
+        Ok(self
+            .rows(
+                "SELECT id FROM card_comments WHERE card_id = ?1 AND local = 1",
+                [card_id],
+                |r| r.get(0),
+            )?
+            .into_iter()
+            .collect())
     }
 
     /// How many of the card's comments came from, or were written to, the forge.

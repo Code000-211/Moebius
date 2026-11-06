@@ -219,9 +219,7 @@ mod tests {
                 name: self.0.into(),
                 version: "0".into(),
                 kinds: vec![Kind::Launcher],
-                project_settings: Vec::new(),
-                app_settings: Vec::new(),
-                settings_ui: None,
+                ..Default::default()
             }
         }
 

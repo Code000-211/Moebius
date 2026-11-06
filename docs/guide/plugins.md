@@ -37,9 +37,7 @@ impl Plugin for AllowReads {
             name: "allow-reads".into(),
             version: "0.1.0".into(),
             kinds: vec![Kind::Decider],
-            project_settings: Vec::new(),
-            app_settings: Vec::new(),
-            settings_ui: None,
+            ..Default::default()
         }
     }
 ```
@@ -95,9 +93,7 @@ impl Plugin for StartGate {
             name: "start-gate".into(),
             version: "0.1.0".into(),
             kinds: vec![Kind::Decider],
-            project_settings: Vec::new(),
-            app_settings: Vec::new(),
-            settings_ui: None,
+            ..Default::default()
         }
     }
 
@@ -234,12 +230,13 @@ second to a minute. What it writes to standard error is in `<data_dir>/plugins/<
 ## Ask a person for settings
 
 A plugin that needs something per repository, such as the Dockerfile of a sandbox's image, lists it in its manifest's
-`project_settings` instead of `Vec::new()`; one that needs something once for the whole server lists it in
-`app_settings`. The web app then shows a box for the plugin on each repository's page or on the Settings page, a
+`project_settings` (the manifests above leave it to `..Default::default()`); one that needs something once for the whole server lists it in
+`app_settings`. The web app then shows a box for the plugin on each repository's page or on the Plugin settings page, a
 person fills it in, and a launcher finds the values in every launch request's `project_settings` (those of the run's
 repository) and `app_settings`, by key. The fields, the inputs and the rules are in
 [the plugin API](../reference/plugin-api.md#plugin-settings). To draw the box yourself, with presets or controls of
-your own, give the manifest's `settings_ui` the source of a JavaScript module, usually with `include_str!`; see
+your own, give the manifest's `settings_ui` the source of a JavaScript module (at most 256 KiB), usually with
+`include_str!`; it runs in a sandboxed frame that can draw and report values and reach nothing else, see
 [A page of its own](../reference/plugin-api.md#a-page-of-its-own).
 
 ## What the host guarantees

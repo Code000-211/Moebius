@@ -48,7 +48,7 @@ A plugin may ask a person for settings in two scopes, each declared in its manif
 | Scope | Manifest field | Where the web app shows it | Kept by | Routes | A launcher gets it as |
 |---|---|---|---|---|---|
 | Each repository, such as the Dockerfile a sandbox builds its runs' image from | `project_settings` | The repository's page (`/projects/<id>`), under the plugin's name | the repository's [project settings](harness-configuration.md#project-settings), a file `plugins/<plugin>/<key>` each (a server without `[harness]` has none) | [`GET` and `PUT /v1/repositories/{id}/plugin-settings`](desktop-api.md#get-v1repositoriesidplugin-settings) | `project_settings` of the run's repository |
-| The whole server, such as a registry every image comes from | `app_settings` | The Settings page (`/settings`), under the plugin's name | plugin name and key | [`GET /v1/plugins/settings` and `PUT /v1/plugins/{plugin}/settings`](desktop-api.md#get-v1pluginssettings) | `app_settings` |
+| The whole server, such as a registry every image comes from | `app_settings` | The Plugin settings page (`/plugin-settings`), under the plugin's name | plugin name and key | [`GET /v1/plugins/settings` and `PUT /v1/plugins/{plugin}/settings`](desktop-api.md#get-v1pluginssettings) | `app_settings` |
 
 A launcher gets both in every [`LaunchRequest`](#the-method-launch); no other kind is handed them yet. Both scopes
 declare their settings the same way, each a `PluginSetting`:
@@ -72,14 +72,24 @@ run may do. They are stored and handed over as written, not redacted, so a setti
 ### A page of its own
 
 A plugin may draw its settings itself, with presets, a preview or controls of its own, by giving the source of an ES
-module in `settings_ui`. The web app loads it from
+module in `settings_ui`, at most 256 KiB (a process plugin whose manifest has more is not started, with that reason in
+its status). The web app reads it from
 [`GET /v1/plugins/{plugin}/settings-ui`](desktop-api.md#get-v1pluginspluginsettings-ui) and draws it in the plugin's box
-in both scopes, in place of the fields; the desktop app draws the fields. The settings the manifest declares are still
-what is kept: the page only edits their values. The box keeps its Save and Revert buttons, and the core checks and
-records a save as for any plugin, so a key the plugin does not declare is refused.
+in both scopes, in place of the fields. The settings the manifest declares are still what is kept: the page only edits
+their values. The box keeps its Save and Revert buttons and the note that values are stored as plain text, and the core
+checks and records a save as for any plugin, so a key the plugin does not declare is refused.
 
-The module's default export is called once with an element to draw in and a host, and may return a function that takes
-the page down. It is drawn again from the saved values after a save or a revert.
+**The module does not run in the web app.** It runs in a frame, `<iframe sandbox="allow-scripts">` over
+`/plugin-frame.html`, drawn inline: no border, no scrollbar of its own, as tall as its content. The frame has no
+`allow-same-origin`, so its origin is opaque: it has no cookies, no local storage, no access to the app's page or to the
+session, and a call to the server's API from it carries no login. The server also answers the frame with a content
+security policy that forbids it every network request (`connect-src 'none'`), every image but `data:` and every
+form. The module can therefore draw and compute, and report values; it cannot read anything of the app or the server
+beyond what it is handed, or send anything out. Everything it says is untrusted: the app believes only the messages
+below, from the frame's own window (`event.source`), and takes nothing from a message beyond the declared values.
+
+The module's default export (a function, or an `async` one) is called once in the frame with an element to draw in and a
+host. It is drawn again from the saved values after a save or a revert.
 
 | Host field | Type | Meaning |
 |---|---|---|
@@ -89,13 +99,28 @@ the page down. It is drawn again from the saved values after a save or a revert.
 | `settings` | array | The settings the plugin declares in this scope, each with its `value`, as [`GET /v1/repositories/{id}/plugin-settings`](desktop-api.md#get-v1repositoriesidplugin-settings) lists them. |
 | `values` | object | The saved values to start from, by key. |
 | `change(values)` | function | Reports every value of the scope by key; a key left out is emptied by a save. |
-| `codeEditor(element, {label, language, value, onChange})` | function | Draws the web app's code editor in `element`; returns a function that takes it down. |
+| `codeEditor(element, {label, language, value, onChange})` | function | Draws an editor for a file of code in `element` (a plain text area in a monospaced font, `Tab` indents by two spaces, `language` is kept as `data-language` and not highlighted: the app's own editor cannot run in a frame without an origin); returns a function that takes it down. |
 
-The page is drawn in the web app's document, so it can use the app's CSS variables (`--text`, `--text-secondary`,
-`--surface-sunken`, `--hairline`, `--radius-control`, `--font-sans`, `--font-mono`, `--size-body` and the others of
-`web/src/styles/theme.css`) and follows the light and dark themes through them. It runs with the person's session and
-can do whatever the person can, so a plugin with a page is trusted as much as the person who installed it. A module that
-cannot be loaded, or throws while it draws, is reported in the box, which draws the fields instead.
+**The messages** between the app and the frame, by `postMessage`, are what a plugin's page may rely on only through the
+host above, but a client that wants to host a page needs them. The app sends `{type: "init", css, theme, source, host}`
+once the frame says `ready` (`css` is the app's stylesheets as text, `theme` is `"light"` or `"dark"`, `source` the
+module, `host` the fields above but `change`/`codeEditor`) and `{type: "theme", theme}` whenever the app's theme changes.
+The frame sends:
+
+| Message | Meaning | What the app accepts |
+|---|---|---|
+| `{type: "ready"}` | The frame is loaded and waits for `init`. | Always. |
+| `{type: "mounted"}` | The module's default export returned. | Always. |
+| `{type: "failed", message}` | The module could not be loaded or threw while it drew. | The message cut to 500 characters. The box then draws the fields and says why. |
+| `{type: "height", height}` | The height of the page's content in pixels, which sizes the frame. | A finite number of at least 0, at most 20,000. |
+| `{type: "change", values}` | Reports the values, as `change(values)` does. | Only an object whose keys are all declared in this scope and whose values are all text of at most 256 KiB, with no line break in a `line` setting; any other message is dropped whole, as is one from a window that is not the frame's. |
+
+A frame that has not said `mounted` or `failed` within 10 seconds, a module that cannot be read, and a page that fails
+are all reported in the box, which draws the fields instead. The values are saved by the app, never by the page.
+
+The page looks like the app: the app's stylesheets are in the frame, so its CSS variables (`--text`,
+`--text-secondary`, `--field`, `--hairline`, `--font-sans`, `--font-mono` and the others of `web/src/styles/theme.css`)
+and the classes the app uses are there, in the theme the app has now.
 
 ```js
 export default function mount(element, host) {
@@ -122,6 +147,19 @@ export default function mount(element, host) {
   return () => takeDown();
 }
 ```
+
+#### Security model of the settings
+
+- A plugin's page is untrusted code from the plugin's author, run in the frame above. The route that serves it sends
+  `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`.
+- The web app is served with a content security policy (`web/csp.json`): scripts, styles, fonts and images from its own
+  address only (inline styles allowed, inline scripts and `eval` not), connections to its own address only, frames of
+  its own address only, and no embedding of the app in another site. The frame gets the stricter policy of its own.
+- Values are stored as plain text (a repository's in the git history of the harness configuration repository, the
+  server's in its database), are shown to anyone who can open the page and are handed to the launcher as written. A
+  setting is not a place for a key or a token: the page says so beside the fields, and the decision that records a
+  save names the keys, never the values.
+- Only a person saves settings; an agent token may read them (the Moebius agent) and is refused a save.
 
 ### `Kind`
 
@@ -285,7 +323,7 @@ whose text best matches the issue, one path per line). The `choice` is a JSON li
 ## Launchers
 
 A launcher is a plugin of the kind `launcher` that may wrap how a harness process is started, such as inside a sandbox.
-Several plugins may be launchers: the `[[plugins]]` entries with [`launches = true`](configuration.md#plugins), each for the agents of its `launch_agents` (every agent, if it names none). A run goes to the first entry in the file that takes its agent, and is started unwrapped when none does, so one launcher can sandbox the Moebius agent while another takes the rest. A launcher
+Several plugins may be launchers: the `[[plugins]]` entries with [`launches = true`](configuration.md#plugins), each for the agents of its `launch_agents` (every agent, if it names none). A run goes to the first entry in the file that takes its agent. The last launcher must take every agent (no `launch_agents`), so that no run is started unwrapped while a launcher is configured; a file whose last launcher names agents is refused. One launcher can thus sandbox the Moebius agent while another takes the rest. A launcher
 is a `Plugin` like any other (the example `wrap_launcher.rs` is one compiled into a host); the server wires one only from
 `[[plugins]]`. **Without a launcher the
 harness starts exactly as before; the launcher code is not entered.** The reasons and the first launcher, a sandbox, are

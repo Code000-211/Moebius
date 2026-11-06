@@ -45,6 +45,9 @@ use crate::harness::pibolt::PiBolt;
 use crate::harness::pick::Harnesses;
 use crate::harness::remote::Runners;
 use crate::harness::repo::HarnessRepo;
+use crate::harness::run::{
+    AUTORESEARCHER_AGENT, CODER_AGENT, GRILLING_AGENT, MOEBIUS_AGENT, RETRO_AGENT, REVIEWER_AGENT,
+};
 use crate::harness::skill;
 use crate::improve::lessons;
 use crate::repos::forge::{ForgejoForge, GitHubForge, GitLabForge};
@@ -279,6 +282,7 @@ impl Server {
         if let Some(harness_repo) = &harness_repo {
             app.set_harness_repo(harness_repo.clone());
         }
+        warn_about_launch_agents(&config, &harness);
         let engine = Arc::new(Engine::new(
             app.clone(),
             harness.clone(),
@@ -373,6 +377,36 @@ impl Server {
             () = schedule::run(self.clone()) => Ok(()),
             () = self.live.restart_asked() => Ok(()),
         }
+    }
+}
+
+/// Says at the start which `launch_agents` of the launchers are no agent that exists: such a name takes no run, so the
+/// agent it was meant for is wrapped by the last launcher instead of the one that names it.
+fn warn_about_launch_agents(config: &Config, harness: &Harnesses) {
+    let mut known: std::collections::BTreeSet<String> = [
+        MOEBIUS_AGENT,
+        GRILLING_AGENT,
+        CODER_AGENT,
+        REVIEWER_AGENT,
+        RETRO_AGENT,
+        AUTORESEARCHER_AGENT,
+    ]
+    .map(String::from)
+    .into();
+    known.extend(config.agents.keys().cloned());
+    known.extend(
+        harness
+            .agents
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .agents
+            .keys()
+            .cloned(),
+    );
+    for each in plugins::unknown_launch_agents(&config.plugins, &known) {
+        eprintln!(
+            "moebius: plugins.launch_agents ({each}) is the name of no agent, so it takes no run"
+        );
     }
 }
 

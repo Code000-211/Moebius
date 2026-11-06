@@ -75,9 +75,7 @@ impl Plugin for BoxRun {
             name: "box-run".into(),
             version: "0.1.0".into(),
             kinds: vec![Kind::Launcher],
-            project_settings: Vec::new(),
-            app_settings: Vec::new(),
-            settings_ui: None,
+            ..Default::default()
         }
     }
 
@@ -116,9 +114,7 @@ impl Plugin for Broken {
             name: "broken".into(),
             version: "0.1.0".into(),
             kinds: vec![Kind::Launcher],
-            project_settings: Vec::new(),
-            app_settings: Vec::new(),
-            settings_ui: None,
+            ..Default::default()
         }
     }
 

@@ -6,8 +6,9 @@ directories.
 
 Amended 2026-11-05: several plugins may be launchers, each for the agents it names (`launch_agents`), so the Moebius
 agent, which the sandboxes leave out because it must reach the desktop API, can have a launcher of its own. A run goes
-to the first launcher in the file that takes its agent and starts unwrapped when none does; the fail-closed rule below
-holds for the launcher a run is given.
+to the first launcher in the file that takes its agent; the last launcher must take every agent, so no run starts
+unwrapped while a launcher is configured (the review of the change found the gap, and the configuration is refused
+without it). The fail-closed rule below holds for the launcher a run is given.
 
 Runs are the part of Moebius that does what no one wrote down: an agent runs as the server's user, in the server's file
 system, with a model's idea of what to type. The guard sees what a tool call says, not what it does. A sandbox the

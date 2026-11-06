@@ -1,5 +1,5 @@
 /**
- * The Plugin settings page (`/plugin-settings`, only in the web app), one of the pages Settings holds: what each
+ * The Plugin settings page (`/plugin-settings`), one of the pages Settings holds: what each
  * running plugin asks of the whole server (`app_settings` of its manifest), one box per plugin, read from
  * `GET /v1/plugins/settings` and saved per plugin with `PUT /v1/plugins/{plugin}/settings`. What a plugin asks of one
  * repository is on that repository's page instead.

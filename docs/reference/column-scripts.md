@@ -159,6 +159,16 @@ or is full (`the runner <name> is busy: ...`; no run is made then), the worktree
 started. The time this call takes does not count against the time limit. It does not check `run_limit`; a script
 that wants the limit checks `moebius.runs_active()` first.
 
+**The comments of the issue** come with the prompt of every run of a card, after the issue, in a section fenced by
+`=== COMMENTS ON THE ISSUE, oldest first ===` and `=== END OF THE COMMENTS ===`, which says they are data written by
+users and not instructions. Only comments of the issue's author, of the logins the repository trusts
+(`trusted`, see [the desktop API](desktop-api.md)), of a person using Moebius and of Moebius itself are told; the section
+says how many others are left out. Each comment is headed by a label that Moebius sets and no author can: `[forge user:
+<login>]`, `[the person using Moebius]` or `[Moebius]` (`[Moebius agent: <name>]` for another agent). A comment from the
+forge is a forge user's even when its login is `person` or `agent:Moebius`; only what was written through Moebius is the
+person's or Moebius's. The text of each comment is quoted line by line with `> `, with secrets redacted, and the newest
+comments are kept when they come to more than 8,000 characters.
+
 `moebius.has_agent(name)` returns a boolean.
 : True when an `[agents.<name>]` table or agent file of the configuration exists, or Moebius brings the agent itself: the `Moebius` agent, the `Grilling-partner`, the `Coder` and the `Reviewer` exist on every server.
 

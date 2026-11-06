@@ -472,6 +472,30 @@ mod tests {
         assert_eq!(fx.install(json!({"name": "nope"})).await.0, 404);
     }
 
+    #[tokio::test]
+    async fn a_launcher_package_is_refused_beside_a_launcher_for_every_agent_and_nothing_is_written()
+     {
+        let fx =
+            Fx::with_extra("[[plugins]]\nname = \"box\"\npath = \"box\"\nlaunches = true\n").await;
+        let entry = fx
+            .gate("1.0.0", ">=0.1")
+            .replace("kind = \"decider\"", "kind = \"launcher\"")
+            .replace("decides = [\"start_card\"]\n", "");
+        fx.publish(&[entry]);
+        let before = fx.config_text();
+
+        let (status, refused) = fx.install(json!({"name": "gate"})).await;
+        assert_ne!(status, 200, "{refused}");
+        let message = refused.to_string();
+        assert!(
+            message.contains("box already is one") && message.contains("launch_agents"),
+            "{message}"
+        );
+        assert_eq!(fx.config_text(), before);
+        assert!(!fx.data_dir().join("packages/gate").exists());
+        assert_eq!(fx.lock(), "");
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn a_plugin_is_installed_with_its_entry_written_and_started() {

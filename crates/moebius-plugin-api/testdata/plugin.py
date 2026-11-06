@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # A plugin process in tests. It behaves as its first argument says, and its second argument, if given, is the name its
 # manifest gives (the rest it writes to standard error after "started"): answers (the first option), errors, crashes (exits when called), garbage (writes a line that is not a
-# reply), stalls (reads nothing, writes a line that is not a reply after a second and stays), hangs (never answers), silent (sends no manifest) or exits (exits at once).
+# reply), settings (answers, with settings and a settings page in its manifest), bigui (a settings page over the limit), stalls (reads nothing, writes a line that is not a reply after a second and stays), hangs (never answers), silent (sends no manifest) or exits (exits at once).
 import json
 import sys
 
@@ -20,7 +20,14 @@ if mode == "exits":
 if mode == "silent":
     sys.stdin.read()
     sys.exit(0)
-send({"type": "manifest", "manifest": {"name": name, "version": "1.2.3", "kinds": ["decider"]}})
+manifest = {"name": name, "version": "1.2.3", "kinds": ["decider"]}
+if mode == "settings":
+    manifest["project_settings"] = [{"key": "image", "label": "Image", "input": "code", "language": "dockerfile"}]
+    manifest["app_settings"] = [{"key": "registry", "label": "Registry"}]
+    manifest["settings_ui"] = "export default function () {}"
+if mode == "bigui":
+    manifest["settings_ui"] = "x" * (256 * 1024 + 1)
+send({"type": "manifest", "manifest": manifest})
 print("started", *sys.argv[3:], file=sys.stderr, flush=True)
 if mode == "stalls":
     import time

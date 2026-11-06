@@ -20,6 +20,18 @@ let context: BrowserContext;
 let page: Page;
 const directories: string[] = [];
 
+/** Waits until the code editor in the frame of a plugin's page holds `text`. */
+async function editorHolds(frame: ReturnType<Page["locator"]>, text: string) {
+  const inside = await (await frame.elementHandle())?.contentFrame();
+  if (!inside) throw new Error("the plugin's page has no frame");
+  await inside.waitForFunction(
+    (wanted) =>
+      (document.querySelector("[data-testid=code-editor]") as HTMLTextAreaElement | null)?.value ===
+      wanted,
+    text,
+  );
+}
+
 /**
  * The chips that pick a repository. Both filter rows have a chip called All, so the test asks the
  * fieldset the legend names, and wants the chip whose name is nothing but the word.
@@ -1081,19 +1093,32 @@ describe("settings", () => {
     const box = page
       .getByTestId("plugin-settings")
       .filter({ has: page.getByRole("heading", { name: "drawn-sandbox" }) });
-    await box.getByText("app page of drawn-sandbox").waitFor();
-    await box.getByTestId("code-editor").waitFor();
-    await box.getByRole("button", { name: "Start from Debian" }).click();
+    // The page runs in a sandboxed frame, drawn inline: it is told the values and the theme, and reaches nothing else.
+    const sandbox = box.getByTestId("plugin-page");
+    expect(await sandbox.getAttribute("sandbox")).toBe("allow-scripts");
+    const inside = box.frameLocator("iframe[data-testid=plugin-page]");
+    await inside.getByText("app page of drawn-sandbox").waitFor();
+    await inside.getByText("api blocked, storage blocked, app blocked").waitFor();
+    await inside.getByTestId("code-editor").waitFor();
+    // The frame is as tall as its page, and looks like the app: its text is set in the app's font.
+    expect((await sandbox.boundingBox())?.height ?? 0).toBeGreaterThan(100);
+    const font = await inside
+      .locator("p")
+      .first()
+      .evaluate((p) => getComputedStyle(p).fontFamily);
+    expect(font).toContain("Inter");
+    await inside.getByRole("button", { name: "Start from Debian" }).click();
     // The editor drawn again with the preset stays.
-    await box.getByText("FROM debian:stable-slim").waitFor();
-    expect(await box.getByTestId("code-editor").count()).toBe(1);
+    await editorHolds(sandbox, "FROM debian:stable-slim\n");
+    expect(await inside.getByTestId("code-editor").count()).toBe(1);
     await box.getByRole("button", { name: "Save settings" }).click();
     await box.getByText("Saved. The plugin uses it from the next run.").waitFor();
     expect(lastBody(fake().requests, "PUT", "/v1/plugins/drawn-sandbox/settings")).toEqual({
       values: { base: "FROM debian:stable-slim\n" },
     });
+    // What was saved is what the page shows when it is opened again.
     await open("/plugin-settings");
-    await box.getByText("FROM debian:stable-slim").waitFor();
+    await editorHolds(box.getByTestId("plugin-page"), "FROM debian:stable-slim\n");
   });
 
   it("loads for a real server and for the fake", async () => {

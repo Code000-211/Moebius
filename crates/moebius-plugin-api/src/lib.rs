@@ -44,8 +44,9 @@ pub enum Kind {
     Launcher,
 }
 
-/// Who a plugin is and what it can do.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Who a plugin is and what it can do. Build one with `..Default::default()` after the fields you set, so that a field
+/// added later does not break the plugin.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Manifest {
     pub name: String,
     pub version: String,
@@ -55,17 +56,22 @@ pub struct Manifest {
     /// leave it out.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub project_settings: Vec<PluginSetting>,
-    /// What a person sets once for this plugin on the whole server, on the Settings page of the web app. The core
+    /// What a person sets once for this plugin on the whole server, on the Plugin settings page of the web app. The core
     /// keeps the values and hands a launcher them in every [`LaunchRequest`]. Older plugins leave it out.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub app_settings: Vec<PluginSetting>,
     /// The plugin's own page for its settings in the web app: the source of a JavaScript module whose default export
     /// draws it, in place of the fields the web app would draw from `project_settings` and `app_settings`, in both
-    /// scopes. The core still keeps, checks and records the values; the page only edits them. It runs in the web app
-    /// with the person's session, so it is as trusted as the plugin. Older plugins leave it out, and get the fields.
+    /// scopes. The web app runs it in a sandboxed frame without access to the app or the server: it gets the values
+    /// and the theme, and may send back values for the declared keys, which the app checks and saves as for the
+    /// fields. At most [`MAX_SETTINGS_UI`] bytes; a process plugin whose manifest has more is not started. Older
+    /// plugins leave it out, and get the fields. Shared, so that listing the manifests does not copy it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub settings_ui: Option<String>,
+    pub settings_ui: Option<Arc<str>>,
 }
+
+/// The most bytes of a manifest's `settings_ui`.
+pub const MAX_SETTINGS_UI: usize = 256 * 1024;
 
 /// One setting a plugin asks of a person, for each repository (a sandbox's Dockerfile) or for the whole server.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -194,6 +200,14 @@ enum Entry {
 }
 
 impl Entry {
+    /// Whether the plugin is of `kind`, without copying its manifest.
+    fn takes(&self, kind: &Kind) -> bool {
+        match self {
+            Entry::Compiled(plugin) => plugin.manifest().kinds.contains(kind),
+            Entry::Process(process) => process.takes(kind),
+        }
+    }
+
     fn manifest(&self) -> Manifest {
         match self {
             Entry::Compiled(plugin) => plugin.manifest(),
@@ -308,7 +322,7 @@ impl Host {
         {
             return Err(refusal);
         }
-        if !target.manifest().kinds.contains(&call.kind) {
+        if !target.takes(&call.kind) {
             return Err(Refusal::WrongKind {
                 plugin: plugin.to_string(),
                 kind: call.kind,
@@ -387,9 +401,7 @@ mod tests {
                 name: self.0.to_string(),
                 version: "0".into(),
                 kinds: vec![Kind::Decider],
-                project_settings: Vec::new(),
-                app_settings: Vec::new(),
-                settings_ui: None,
+                ..Default::default()
             }
         }
 

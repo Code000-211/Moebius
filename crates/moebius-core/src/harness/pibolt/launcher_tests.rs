@@ -55,9 +55,7 @@ impl Plugin for Fake {
             name: "box".into(),
             version: "0".into(),
             kinds: vec![Kind::Launcher],
-            project_settings: Vec::new(),
-            app_settings: Vec::new(),
-            settings_ui: None,
+            ..Default::default()
         }
     }
 
@@ -490,6 +488,51 @@ fn a_launcher_that_fails_hangs_or_garbles_fails_the_run_and_pi_never_starts() {
         }
         assert!(started.is_err() || !runs.is_empty());
         assert!(marker(dir.path()).is_empty());
+    }
+}
+
+#[test]
+fn a_run_of_an_agent_that_no_launcher_takes_fails_and_pi_never_starts() {
+    let (dir, app, mut pi, repo) = setup();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut host = Host::new(Duration::from_secs(30));
+    host.add(Fake {
+        mode: Mode::Wrap,
+        dir: dir.path().to_path_buf(),
+        seen: seen.clone(),
+    });
+    // A launcher for the Moebius agent only, which the configuration would refuse as the last: the Coder is taken by none.
+    pi.launcher = Some(Arc::new(Launcher::scoped(
+        Arc::new(host),
+        [("box".to_string(), vec!["Moebius".to_string()])],
+    )));
+    let card = app
+        .create_issue(repo, "Write done.txt", "", "person")
+        .unwrap();
+    let started = pi.start(&app, &card, "Coder", ("code", None), Variant::default());
+    // The launcher was never asked, nothing runs, and Pi did not start bare.
+    assert!(lock(&seen).is_empty());
+    assert!(lock(&pi.live).is_empty());
+    let runs = app.store.runs_for_card(card.id).unwrap();
+    assert!(
+        started.is_err() || runs.iter().all(|r| r.status == "failed"),
+        "{started:?} {runs:?}"
+    );
+    for run in &runs {
+        let run = wait_until_ended(&app, run.id);
+        assert_eq!(run.status, "failed");
+        assert!(
+            !run_dir(&app, run.id).join("agent/argv.json").exists(),
+            "Pi started without a launcher"
+        );
+    }
+    assert!(started.is_err() || !runs.is_empty());
+    if let Err(why) = &started {
+        assert!(
+            why.to_string()
+                .contains("no launcher takes the agent Coder"),
+            "{why}"
+        );
     }
 }
 

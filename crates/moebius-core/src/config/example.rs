@@ -161,7 +161,7 @@ program = "claude"
 # decides = ["start_card"]
 # A plugin may instead (or also) be a launcher: with `launches = true` it is asked before a harness process starts and
 # may wrap it, such as in a sandbox. A launcher that fails or is too slow fails the run. Several plugins may launch,
-# each for the agents of `launch_agents` (a run goes to the first that takes its agent; one for every agent comes last).
+# each for the agents of `launch_agents` (a run goes to the first that takes its agent; the last one must take every agent).
 # launches = true
 # launch_agents = ["Moebius"]
 

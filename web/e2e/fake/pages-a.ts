@@ -238,7 +238,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
     ],
     ui: true,
   });
-  /** Its page: a preset button over the web app's code editor. */
+  /** Its page: a preset button over the frame's code editor, and a probe of what the frame lets a page reach. */
   const drawnPage = `export default function mount(element, host) {
   const said = document.createElement("p");
   said.textContent = host.scope + " page of " + host.plugin;
@@ -246,7 +246,16 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
   preset.type = "button";
   preset.textContent = "Start from Debian";
   const editor = document.createElement("div");
-  element.append(said, preset, editor);
+  // What the frame the page runs in lets it reach: nothing of the app or the server.
+  const probe = document.createElement("p");
+  fetch("/v1/plugins/settings").then(() => "reached", () => "blocked").then((api) => {
+    let storage = "open";
+    try { localStorage.length; } catch { storage = "blocked"; }
+    let app = "open";
+    try { window.parent.document.title; } catch { app = "blocked"; }
+    probe.textContent = "api " + api + ", storage " + storage + ", app " + app;
+  });
+  element.append(said, preset, editor, probe);
   let takeDown = () => {};
   const draw = (value) => {
     takeDown();

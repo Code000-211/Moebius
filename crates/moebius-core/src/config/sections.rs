@@ -268,7 +268,8 @@ pub struct PluginConfig {
     /// Several plugins may be, each for its own agents (`launch_agents`); a run goes to the first that takes it.
     #[serde(default)]
     pub launches: bool,
-    /// The agents whose runs a launcher is asked about. Empty, every agent that no earlier launcher takes.
+    /// The agents whose runs a launcher is asked about. Empty, every agent that no earlier launcher takes; the last
+    /// launcher must be empty, so that every run has one.
     #[serde(default)]
     pub launch_agents: Vec<String>,
 }
@@ -650,6 +651,14 @@ pub(super) fn plugins(
         return Err(ConfigError::LauncherNeverAsked {
             name: after.name.clone(),
             before: launchers[index].name.clone(),
+        });
+    }
+    // A run no launcher takes would start without one, so the last launcher takes every agent.
+    if let Some(last) = launchers.last()
+        && !last.launch_agents.is_empty()
+    {
+        return Err(ConfigError::LauncherLeavesAgents {
+            name: last.name.clone(),
         });
     }
     Ok(plugins)

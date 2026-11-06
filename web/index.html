@@ -9,19 +9,7 @@
   </head>
   <body>
     <div id="root"></div>
-    <script>
-      // The colour theme before the first picture, so a light-system person never sees a dark flash.
-      // `src/theme.ts` owns the same key and keeps the theme in step with the system from here on.
-      try {
-        const saved = localStorage.getItem("moebius.theme");
-        const light =
-          saved === "light" ||
-          (saved !== "dark" && matchMedia("(prefers-color-scheme: light)").matches);
-        document.documentElement.dataset.theme = light ? "light" : "dark";
-      } catch {
-        document.documentElement.dataset.theme = "dark";
-      }
-    </script>
+    <script src="/theme-init.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -224,7 +224,8 @@ async fn put_plugin_settings(
     .await
 }
 
-/// The module as JavaScript, never cached, so that a new version of the plugin is drawn on the next visit.
+/// The module as JavaScript, never cached, so that a new version of the plugin is drawn on the next visit, and never
+/// sniffed into anything else.
 async fn plugin_settings_ui(
     State(state): State<ApiState>,
     UrlPath(plugin): UrlPath<String>,
@@ -234,8 +235,9 @@ async fn plugin_settings_ui(
         [
             (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
             (header::CACHE_CONTROL, "no-store"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
         ],
-        source,
+        source.to_string(),
     ))
 }
 

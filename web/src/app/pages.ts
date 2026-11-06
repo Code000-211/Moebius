@@ -1,7 +1,6 @@
 /**
- * The pages of the app: the entries of the sidebar, in its groups, as the former desktop app listed them
- * (the sidebar of the former desktop app). Pages that are not built in the web
- * app yet show a placeholder; a page that is built replaces its entry's element in `routes.tsx`.
+ * The pages of the app: the entries of the sidebar, in its groups. Pages that are not built yet
+ * show a placeholder; a page that is built replaces its entry's element in `routes.tsx`.
  */
 import {
   ArrowsClockwiseIcon,
@@ -54,7 +53,7 @@ export const PAGES: readonly PageDef[] = [
   { path: "start", title: "Get started", group: "Setup", icon: RocketLaunchIcon },
   { path: "models", title: "Models", group: "Setup", icon: CpuIcon },
   { path: "plugins", title: "Plugins", group: "Setup", icon: PlugIcon },
-  // Only in the web app: the desktop app has no page for the plugins' settings.
+  // The settings plugins ask of the server; those they ask of a repository are on the repository's page.
   { path: "plugin-settings", title: "Plugin settings", group: "Setup", icon: FadersHorizontalIcon },
   { path: "terminal", title: "Terminal", group: "Setup", icon: TerminalWindowIcon },
   { path: "ports", title: "Ports", group: "Setup", icon: PlugsConnectedIcon },

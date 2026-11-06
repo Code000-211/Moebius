@@ -958,3 +958,49 @@ async fn the_grilling_partner_creates_and_changes_wayfinder_cards_only() {
         200
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_grilling_partner_has_no_plugin_settings_but_the_moebius_agent_reads_them() {
+    let s = Scoped::start().await;
+    let (own, elsewhere) = (s.repository, s.elsewhere);
+    // The settings plugins ask are no part of the issue tracker, so the Grilling partner's token reaches none of the
+    // routes, whichever repository they name; the server's settings and a plugin's page are refused too.
+    for path in [
+        format!("/v1/repositories/{own}/plugin-settings"),
+        format!("/v1/repositories/{elsewhere}/plugin-settings"),
+        "/v1/plugins/settings".to_string(),
+        "/v1/plugins/box/settings-ui".to_string(),
+    ] {
+        assert_eq!(s.call(Method::GET, path.clone(), None).await, 401, "{path}");
+    }
+    for path in [
+        format!("/v1/repositories/{own}/plugin-settings/box"),
+        "/v1/plugins/box/settings".to_string(),
+    ] {
+        let body = Some(json!({ "values": {} }));
+        assert_eq!(s.call(Method::PUT, path.clone(), body).await, 401, "{path}");
+    }
+    // The Moebius agent may read them, and a person alone changes them.
+    let (_, moebius) = s.f.run("Moebius");
+    for path in [
+        format!("/v1/repositories/{own}/plugin-settings"),
+        "/v1/plugins/settings".to_string(),
+    ] {
+        assert_eq!(
+            s.f.send(Method::GET, &path, &moebius, None).await,
+            200,
+            "{path}"
+        );
+    }
+    for path in [
+        format!("/v1/repositories/{own}/plugin-settings/box"),
+        "/v1/plugins/box/settings".to_string(),
+    ] {
+        let body = Some(json!({ "values": {} }));
+        assert_eq!(
+            s.f.send(Method::PUT, &path, &moebius, body).await,
+            403,
+            "{path}"
+        );
+    }
+}

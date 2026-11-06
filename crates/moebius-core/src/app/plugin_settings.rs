@@ -186,7 +186,7 @@ impl App {
     }
 
     /// The source of the JavaScript module of the plugin's own page for its settings, for the web app to load.
-    pub fn settings_ui(&self, plugin: &str) -> Result<String> {
+    pub fn settings_ui(&self, plugin: &str) -> Result<std::sync::Arc<str>> {
         self.decisions
             .host()
             .manifests()
@@ -277,7 +277,7 @@ mod tests {
                     input: SettingInput::Line,
                     language: None,
                 }],
-                settings_ui: None,
+                ..Default::default()
             }
         }
 
@@ -505,7 +505,7 @@ mod tests {
             .map(|plugin| (plugin.plugin.as_str(), plugin.ui))
             .collect();
         assert_eq!(ui, [("box", false), ("drawn", true)]);
-        assert_eq!(app.settings_ui("drawn").unwrap(), PAGE);
+        assert_eq!(&*app.settings_ui("drawn").unwrap(), PAGE);
         assert!(matches!(app.settings_ui("box"), Err(AppError::NotFound(_))));
         assert!(matches!(
             app.settings_ui("nobody"),

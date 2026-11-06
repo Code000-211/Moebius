@@ -2,8 +2,10 @@
 //! as inside a sandbox (see `docs/reference/plugin-api.md`). A harness describes the process it would start as an
 //! [`Ask`] and its `Command`; [`Launcher::start`] returns the command to start instead and a [`Launched`], the handle
 //! that stops the wrapped process tree and cleans up after it. A launcher that does not answer, fails or answers
-//! something the core cannot use is an error, so the run fails: a configured launcher is never skipped. Without a
-//! launcher the harnesses do not come here at all.
+//! something the core cannot use is an error, so the run fails: a configured launcher is never skipped, and neither is
+//! a run: the configuration makes the last launcher take every agent, and a run that no launcher takes (a
+//! [`Launcher`] made by hand without one) fails instead of starting bare. Without a launcher the harnesses do not
+//! come here at all.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -21,7 +23,8 @@ use crate::blobs::redact;
 const COMMAND_LIMIT: Duration = Duration::from_secs(30);
 
 /// The launcher plugins of the plugin host, in the order of the configuration: a run goes to the first whose agents
-/// include the run's agent (or that names none), and to none, so it starts unwrapped, when no launcher takes it.
+/// include the run's agent (or that names none). The configuration makes the last one take every agent, so every run
+/// has a launcher; a run that none takes fails, it never starts unwrapped.
 pub struct Launcher {
     host: Arc<Host>,
     plugins: Vec<Scoped>,
@@ -69,6 +72,11 @@ pub(crate) struct Launched {
     cleanup: Mutex<Option<(Option<CommandLine>, Vec<String>)>>,
 }
 
+/// Why a run of `agent` fails when no launcher takes it: it is never started without the launcher.
+pub(crate) fn no_launcher(agent: &str) -> String {
+    format!("no launcher takes the agent {agent}, so its run does not start unwrapped")
+}
+
 impl Launcher {
     /// A launcher that is asked about every run.
     pub fn new(host: Arc<Host>, plugin: impl Into<String>) -> Self {
@@ -89,7 +97,8 @@ impl Launcher {
         }
     }
 
-    /// The launcher that wraps the runs of `agent`, which its settings are kept under; none when no launcher takes them.
+    /// The launcher that wraps the runs of `agent`, which its settings are kept under. None only for a launcher list
+    /// that the configuration would have refused (its last one names agents); the caller fails the run then.
     pub(crate) fn plugin_for(&self, agent: &str) -> Option<&str> {
         self.plugins
             .iter()
@@ -106,7 +115,7 @@ impl Launcher {
         command: &Command,
     ) -> Result<(Option<String>, Option<Wrapping>), String> {
         let Some(plugin) = self.plugin_for(&ask.run.agent) else {
-            return Ok((None, None));
+            return Err(no_launcher(&ask.run.agent));
         };
         let log = ask.log.to_path_buf();
         let request = request(ask, command);
@@ -363,9 +372,7 @@ mod tests {
                 name: "box".into(),
                 version: "0".into(),
                 kinds: vec![Kind::Launcher],
-                project_settings: Vec::new(),
-                app_settings: Vec::new(),
-                settings_ui: None,
+                ..Default::default()
             }
         }
 
@@ -451,7 +458,7 @@ mod tests {
     }
 
     #[test]
-    fn a_run_goes_to_the_first_launcher_that_takes_its_agent_and_to_none_otherwise() {
+    fn a_run_goes_to_the_first_launcher_that_takes_its_agent_and_a_run_no_launcher_takes_fails() {
         let host = Arc::new(Host::new(Duration::from_secs(30)));
         let named = |names: &[&str]| {
             names
@@ -472,13 +479,17 @@ mod tests {
         assert_eq!(only.plugin_for("Retro"), Some("nono"));
         assert_eq!(only.plugin_for("Coder"), None);
 
-        // A run no launcher takes starts as it is, and the launcher is not asked.
+        // A run no launcher takes fails, and the launcher is not asked: it never starts bare.
         let dir = tempfile::tempdir().unwrap();
         let log = dir.path().join("log");
-        let (note, wrapping) = only
+        let error = only
             .start(ask(dir.path(), None, &log), &Command::new("pi"))
-            .unwrap();
-        assert!(note.is_none() && wrapping.is_none());
+            .err()
+            .expect("the run fails");
+        assert!(
+            error.contains("no launcher takes the agent Coder"),
+            "{error}"
+        );
         only.clean_leftovers(&[]).unwrap_err();
     }
 

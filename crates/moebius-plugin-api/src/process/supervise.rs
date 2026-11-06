@@ -106,6 +106,19 @@ fn run(shared: &Shared) -> (String, Refusal) {
     }
     let manifest = match lines.recv_timeout(shared.limit) {
         Ok(line) => match serde_json::from_str::<Envelope>(&line) {
+            Ok(Envelope::Manifest { manifest })
+                if manifest.name == spec.name
+                    && manifest
+                        .settings_ui
+                        .as_ref()
+                        .is_some_and(|ui| ui.len() > crate::MAX_SETTINGS_UI) =>
+            {
+                let why = format!(
+                    "its manifest's settings_ui is over {} KiB",
+                    crate::MAX_SETTINGS_UI / 1024
+                );
+                return (why.clone(), shared.not_running(why));
+            }
             Ok(Envelope::Manifest { manifest }) if manifest.name == spec.name => manifest,
             Ok(Envelope::Manifest { manifest }) => {
                 let why = format!(

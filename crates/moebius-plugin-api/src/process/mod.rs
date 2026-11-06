@@ -182,6 +182,15 @@ impl Process {
         self.shared.inner().status.clone()
     }
 
+    /// Whether the manifest the process sent lists `kind`.
+    pub(crate) fn takes(&self, kind: &crate::Kind) -> bool {
+        self.shared
+            .inner()
+            .manifest
+            .as_ref()
+            .is_some_and(|manifest| manifest.kinds.contains(kind))
+    }
+
     /// The manifest the process sent, or its name with no kinds before it sent one.
     pub(crate) fn manifest(&self) -> Manifest {
         self.shared
@@ -190,11 +199,7 @@ impl Process {
             .clone()
             .unwrap_or_else(|| Manifest {
                 name: self.shared.spec.name.clone(),
-                version: String::new(),
-                kinds: Vec::new(),
-                project_settings: Vec::new(),
-                app_settings: Vec::new(),
-                settings_ui: None,
+                ..Manifest::default()
             })
     }
 
@@ -380,6 +385,54 @@ mod tests {
     }
 
     #[test]
+    fn the_settings_of_a_manifest_arrive_and_a_manifest_without_them_still_parses() {
+        // A plugin from before the settings sends none of the new fields and gets none.
+        let (old, _) = host("answers", LIMIT);
+        let old = &old.manifests()[0];
+        assert!(old.project_settings.is_empty() && old.app_settings.is_empty());
+        assert_eq!(old.settings_ui, None);
+
+        let (host, _) = host("settings", LIMIT);
+        let manifest = &host.manifests()[0];
+        assert_eq!(manifest.project_settings[0].key, "image");
+        assert_eq!(
+            manifest.project_settings[0].input,
+            crate::SettingInput::Code
+        );
+        assert_eq!(
+            manifest.project_settings[0].language.as_deref(),
+            Some("dockerfile")
+        );
+        assert_eq!(manifest.app_settings[0].input, crate::SettingInput::Line);
+        assert_eq!(
+            manifest.settings_ui.as_deref(),
+            Some("export default function () {}")
+        );
+        // A call still goes through, and listing the manifests again shares the module, not a copy.
+        assert_eq!(host.decide("test", &request()).unwrap().choice, "allow");
+        let (first, second) = (host.manifests(), host.manifests());
+        assert!(Arc::ptr_eq(
+            first[0].settings_ui.as_ref().unwrap(),
+            second[0].settings_ui.as_ref().unwrap()
+        ));
+    }
+
+    #[test]
+    fn a_settings_page_over_the_limit_keeps_the_plugin_from_starting() {
+        let process = Process::start(spec("bigui", &[]), LIMIT, |_| {});
+        let status = process.status();
+        assert_eq!(status.state, State::Restarting);
+        assert!(
+            status
+                .error
+                .as_deref()
+                .unwrap()
+                .contains("settings_ui is over 256 KiB"),
+            "{status:?}"
+        );
+    }
+
+    #[test]
     fn a_plugin_is_added_replaced_and_removed_while_the_host_is_in_use() {
         let host = Host::new(LIMIT);
         assert!(host.manifests().is_empty());
@@ -527,9 +580,7 @@ mod tests {
                 name: "first".into(),
                 version: "0".into(),
                 kinds: vec![Kind::Decider],
-                project_settings: Vec::new(),
-                app_settings: Vec::new(),
-                settings_ui: None,
+                ..Default::default()
             }
         }
 

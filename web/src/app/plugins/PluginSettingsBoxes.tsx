@@ -1,6 +1,6 @@
 /**
  * The settings plugins ask of a person, one box per plugin that declares some in its manifest: those of a repository
- * on its page (`project_settings`) and those of the whole server on the Settings page (`app_settings`). The boxes know
+ * on its page (`project_settings`) and those of the whole server on the Plugin settings page (`app_settings`). The boxes know
  * nothing of any plugin: each setting is drawn from what the plugin declares, a field of one line or a code editor
  * (loaded when a plugin asks for one) in the language it names. A plugin that brings its own page for its settings is
  * drawn by that page instead (`PluginPage`), and by the fields when the page cannot be drawn. Save replaces all of one
@@ -177,6 +177,12 @@ function PluginForm({
           ))}
         </>
       )}
+      <p className="m-0 max-w-prose text-sm text-secondary">
+        {scope.kind === "project"
+          ? "Saved as plain text in a file of the harness configuration repository, and so in its git history."
+          : "Saved as plain text in the server's database."}{" "}
+        Do not put a key, a token or a password here.
+      </p>
       {notice && (
         <Notice tone={notice.tone}>
           {notice.tone === "error" && (

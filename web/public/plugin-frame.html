@@ -1,0 +1,62 @@
+<!doctype html>
+<!--
+  The frame a plugin's own page for its settings runs in (see src/app/plugins/PluginPage.tsx). The web app embeds it as
+  <iframe sandbox="allow-scripts" src="/plugin-frame.html">: without allow-same-origin the frame has an opaque origin,
+  so the plugin's module cannot read the app's cookies or storage, call the server's API as the person, or reach into
+  the app's page. The server answers this file with a policy of its own that also forbids every network request from it.
+  The page's script, plugin-frame.js, is the only code here; the plugin's module arrives by message.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Plugin settings</title>
+    <style id="frame-base">
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: transparent;
+      }
+    </style>
+    <style id="app-css"></style>
+    <style id="frame-after">
+      /* After the app's own rules, which size the page to the window: here the page is as tall as its content. */
+      html,
+      body {
+        height: auto !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        background: transparent !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      #plugin-root {
+        display: flow-root;
+        min-width: 0;
+      }
+      .plugin-code-editor {
+        box-sizing: border-box;
+        display: block;
+        width: 100%;
+        min-height: 12rem;
+        resize: vertical;
+        padding: 12px;
+        border: 1px solid var(--hairline-strong);
+        border-radius: 12px;
+        background: var(--field);
+        color: var(--text);
+        font-family: var(--font-mono, ui-monospace, monospace);
+        font-size: 13px;
+        line-height: 1.5;
+        tab-size: 2;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="plugin-root"></div>
+    <script src="/plugin-frame.js"></script>
+  </body>
+</html>

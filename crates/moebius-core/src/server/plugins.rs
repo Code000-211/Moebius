@@ -45,3 +45,48 @@ pub fn start(config: &Config, plugin: &PluginConfig, limit: Duration) -> Result<
         let _ = writeln!(file, "{stamp} {}", redact(line));
     }))
 }
+
+/// The `launch_agents` of the launchers that name no agent in `known`, each as "plugin: agent", for a warning at the
+/// server's start: the match is by exact name, so a misspelt agent is wrapped by no launcher but the last.
+pub fn unknown_launch_agents(
+    plugins: &[PluginConfig],
+    known: &std::collections::BTreeSet<String>,
+) -> Vec<String> {
+    plugins
+        .iter()
+        .flat_map(|plugin| {
+            plugin
+                .launch_agents
+                .iter()
+                .filter(|agent| !known.contains(*agent))
+                .map(|agent| format!("{}: {agent}", plugin.name))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn launcher(name: &str, agents: &[&str]) -> PluginConfig {
+        PluginConfig {
+            name: name.into(),
+            path: "p".into(),
+            args: vec![],
+            decides: vec![],
+            launches: true,
+            launch_agents: agents.iter().map(|agent| agent.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn a_launch_agent_that_is_no_agent_is_named_exactly_as_it_is_written() {
+        let known = ["Moebius", "Coder"].map(String::from).into();
+        let plugins = [
+            launcher("nono", &["Moebius", "moebius"]),
+            launcher("podman", &[]),
+        ];
+        assert_eq!(unknown_launch_agents(&plugins, &known), ["nono: moebius"]);
+        assert!(unknown_launch_agents(&plugins[1..], &known).is_empty());
+    }
+}

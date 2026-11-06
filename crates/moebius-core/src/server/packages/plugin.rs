@@ -42,6 +42,29 @@ impl Packages<'_> {
         })
     }
 
+    /// The launcher of the file that takes every agent (`launches` without `launch_agents`), if there is one: a launcher
+    /// added after it would never be asked, and the file with both is refused.
+    fn launcher_for_every_agent(&self) -> Result<Option<String>> {
+        let (_, raw) = read_raw(&self.live.get().file)?;
+        let plugins = raw.get("plugins").and_then(|plugins| plugins.as_array());
+        Ok(plugins.into_iter().flatten().find_map(|plugin| {
+            let launches = plugin
+                .get("launches")
+                .and_then(|launches| launches.as_bool());
+            let agents = plugin
+                .get("launch_agents")
+                .and_then(|agents| agents.as_array());
+            (launches == Some(true) && agents.is_none_or(|agents| agents.is_empty()))
+                .then(|| {
+                    plugin
+                        .get("name")
+                        .and_then(|name| name.as_str())
+                        .map(str::to_string)
+                })
+                .flatten()
+        }))
+    }
+
     /// Where `name` is among the `[[plugins]]` of the file, if it is there, and how many entries there are.
     fn entry(&self, name: &str) -> Result<(Option<Entry>, usize)> {
         let (_, raw) = read_raw(&self.live.get().file)?;
@@ -161,8 +184,15 @@ impl Packages<'_> {
                 "{name} is the name of a plugin that is part of Moebius; a package cannot take its place"
             )));
         }
-        let (program, url, sha256) = self.download_program(chosen, spec)?;
         let launches = spec.launches || spec.kind == "launcher";
+        // A package is added last, as a launcher for every agent; after another such launcher it would never be asked.
+        if launches && let Some(other) = self.launcher_for_every_agent()? {
+            return Err(PackageError::Refused(format!(
+                "{name} is a launcher for every agent, but {other} already is one, and the second would never be asked; \
+                 give {other} launch_agents in moebius.toml (or remove it) first"
+            )));
+        }
+        let (program, url, sha256) = self.download_program(chosen, spec)?;
         let (_, count) = self.entry(name)?;
         let mut entry = json!({ "name": name, "path": program.display().to_string(), "args": [] });
         if !spec.decides.is_empty() {

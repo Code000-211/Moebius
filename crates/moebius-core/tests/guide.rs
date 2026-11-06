@@ -446,9 +446,7 @@ impl Plugin for StartGate {
             name: "start-gate".into(),
             version: "0.1.0".into(),
             kinds: vec![Kind::Decider],
-            project_settings: Vec::new(),
-            app_settings: Vec::new(),
-            settings_ui: None,
+            ..Default::default()
         }
     }
 

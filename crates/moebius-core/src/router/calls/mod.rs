@@ -203,9 +203,7 @@ pub(super) mod tests {
                 name: "no-bash".into(),
                 version: "0".into(),
                 kinds: vec![Kind::Decider],
-                project_settings: Vec::new(),
-                app_settings: Vec::new(),
-                settings_ui: None,
+                ..Default::default()
             }
         }
         fn call(&self, call: PluginCall) -> Result<Value, PluginError> {

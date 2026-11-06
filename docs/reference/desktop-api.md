@@ -174,7 +174,12 @@ The server serves the web app, built from `web/` into `web/dist` and embedded in
 the address of this API. Every `GET` of a path outside `/v1/` that is no file of the app answers `index.html`, since the
 app routes in the browser; the files get their media type, `index.html` has `Cache-Control: no-cache` and the files
 under `assets/` are cached for a year. A binary built without `web/dist` answers a short page that says to run `pnpm -C
-web build` and build the server again. Nothing under `/v1/` is a file: an unknown `/v1/` path is answered `401` without
+web build` and build the server again. Every file is answered with `X-Content-Type-Options: nosniff` and a
+`Content-Security-Policy` (the file `web/csp.json`): scripts, styles, fonts, images and connections from the server's own
+address only, inline styles but no inline script or `eval`, frames of its own address only, and the app is not to be
+framed by another site. `plugin-frame.html`, the frame a plugin's page for its settings runs in sandboxed (see [a page of
+its own](plugin-api.md#a-page-of-its-own)), has a stricter policy that forbids it every connection; the files under
+`fonts/` carry `Access-Control-Allow-Origin: *`, since that frame has no origin. Nothing under `/v1/` is a file: an unknown `/v1/` path is answered `401` without
 a valid token and `404` with one.
 
 At start, `moebius serve` prints the line `Open the web app: http://<listen address>/?login=<code>` on standard output
@@ -1528,7 +1533,7 @@ the Models screen's decision model. Response:
 
 The app settings of the server: what each plugin asks of the whole server in its manifest
 ([`app_settings`](plugin-api.md#plugin-settings)), with the value the server has. Only plugins added to the server that
-declare some are listed, by name; the web app shows them on the Settings page. Response: `{"plugins": [...]}`, each
+declare some are listed, by name; the web app shows them on the Plugin settings page (`/plugin-settings`). Response: `{"plugins": [...]}`, each
 entry as in [`GET /v1/repositories/{id}/plugin-settings`](#get-v1repositoriesidplugin-settings). A plugin that is not running is left
 out, but its values are kept and come back with it.
 
@@ -1543,8 +1548,9 @@ Response: the plugin's entry as `GET` answers it.
 ### `GET /v1/plugins/{plugin}/settings-ui`
 
 The JavaScript module of a plugin's own page for its settings ([`settings_ui`](plugin-api.md#a-page-of-its-own) of its
-manifest), as the plugin gave it, for the web app to draw in place of the fields. The answer is `text/javascript` with
-`Cache-Control: no-store`, so a new version of the plugin is drawn on the next visit. The same page serves both scopes.
+manifest), as the plugin gave it, for the web app to hand to the sandboxed frame it draws the page in (see [a page of its
+own](plugin-api.md#a-page-of-its-own)), in place of the fields. The answer is `text/javascript` with
+`Cache-Control: no-store`, so a new version of the plugin is drawn on the next visit, and `X-Content-Type-Options: nosniff`. The same page serves both scopes.
 Errors: `404` no plugin of that name with a page is running.
 
 ### `GET /v1/start`

@@ -115,9 +115,7 @@ impl Plugin for Fixed {
             name: "fixed".into(),
             version: "0".into(),
             kinds: vec![Kind::Decider],
-            project_settings: Vec::new(),
-            app_settings: Vec::new(),
-            settings_ui: None,
+            ..Default::default()
         }
     }
 
@@ -533,9 +531,7 @@ impl Plugin for Baseline {
             name: "baseline".into(),
             version: "0".into(),
             kinds: vec![Kind::Decider],
-            project_settings: Vec::new(),
-            app_settings: Vec::new(),
-            settings_ui: None,
+            ..Default::default()
         }
     }
 

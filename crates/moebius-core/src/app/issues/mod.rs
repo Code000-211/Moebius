@@ -436,7 +436,7 @@ impl App {
         };
         match self
             .store
-            .add_comment(card_id, &by.decider(), &body, None, forge_id)?
+            .add_local_comment(card_id, &by.decider(), &body, forge_id)?
         {
             Some(comment) => {
                 self.bus.publish(Event::CardCommented {

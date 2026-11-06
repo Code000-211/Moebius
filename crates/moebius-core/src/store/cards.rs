@@ -244,7 +244,7 @@ impl Store {
     }
 
     /// Removes a repository and everything stored for it: its cards with their changes, runs, decisions, inbox,
-    /// moves and dependencies; the open inbox items of its card-less changes, grillings and proposals; its chats and grillings; its lessons, research, automations, localize index and project settings. The
+    /// moves and dependencies; the open inbox items of its card-less changes, grillings and proposals; its chats and grillings; its lessons, research, automations and localize index. The
     /// clone and worktrees on disk belong to the caller. Says whether such a repository was stored.
     ///
     /// The foreign keys decide the order: whatever points at a card, a run, a change or a judgement goes first.
@@ -287,7 +287,6 @@ impl Store {
             format!("DELETE FROM grillings WHERE repository_id = ?1 OR run_id IN ({runs})"),
             "DELETE FROM automations WHERE repository_id = ?1".to_string(),
             "DELETE FROM localize_indexed WHERE repository_id = ?1".to_string(),
-            "DELETE FROM project_settings WHERE repository_id = ?1".to_string(),
             "DELETE FROM lessons WHERE repository_id = ?1".to_string(),
             "DELETE FROM deleted_cards WHERE repository_id = ?1".to_string(),
             "DELETE FROM forge_seen WHERE repository_id = ?1".to_string(),

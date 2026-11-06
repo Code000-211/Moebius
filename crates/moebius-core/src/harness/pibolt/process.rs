@@ -356,9 +356,9 @@ impl PiBolt {
         spot: Spot,
         command: &mut Command,
     ) -> Result<Option<(UrlsInside, Arc<Launched>)>, String> {
-        // A run that no launcher is configured for starts as it is.
+        // The last launcher takes every agent; a run that none takes fails and never starts bare.
         let Some(plugin) = launcher.plugin_for(spot.stored) else {
-            return Ok(None);
+            return Err(crate::harness::launch::no_launcher(spot.stored));
         };
         let remote = run.remote.as_ref().map(|remote| remote.runner());
         let mut read_only = vec![place.lens.to_path_buf(), place.bridge.to_path_buf()];

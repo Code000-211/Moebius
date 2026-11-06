@@ -125,6 +125,10 @@ pub enum ConfigError {
     #[error("plugins.launch_agents: {name:?} names agents but is not a launcher (launches = true)")]
     LaunchAgentsWithoutLaunches { name: String },
     #[error(
+        "plugins.launch_agents: the last launcher {name:?} names agents, so a run of any other agent would start without a launcher; the last launcher must take every agent (no launch_agents), after the ones for single agents"
+    )]
+    LauncherLeavesAgents { name: String },
+    #[error(
         "plugins.launches: {name:?} is never asked: {before:?} before it is a launcher for every agent; give {before:?} launch_agents or move it last"
     )]
     LauncherNeverAsked { name: String, before: String },
@@ -1049,6 +1053,10 @@ mod tests {
                 plugin("a", "") + "launch_agents = [\"Moebius\"]\n",
                 "not a launcher",
             ),
+            (
+                plugin("a", "") + "launches = true\nlaunch_agents = [\"Moebius\"]\n",
+                "must take every agent",
+            ),
         ] {
             let error = parse(&text).unwrap_err().to_string();
             assert!(error.contains(wanted), "{error}");
@@ -1056,20 +1064,30 @@ mod tests {
     }
 
     #[test]
-    fn launchers_for_some_agents_come_before_one_for_the_rest() {
+    fn launchers_for_some_agents_come_before_one_for_the_rest_which_comes_last() {
         let launcher = |name: &str, agents: &str| {
             format!("[[plugins]]\nname = \"{name}\"\npath = \"p\"\nlaunches = true\n{agents}")
         };
-        let text = launcher("nono", "launch_agents = [\"Moebius\"]\n") + &launcher("podman", "");
+        let moebius = "launch_agents = [\"Moebius\"]\n";
+        let text = launcher("nono", moebius) + &launcher("podman", "");
         let c = parse(&text).unwrap();
         assert_eq!(c.plugins[0].launch_agents, ["Moebius"]);
         assert!(c.plugins[1].launch_agents.is_empty());
-        // Scoped launchers need no launcher for the rest, and the one for the rest must be last.
-        assert!(parse(&launcher("nono", "launch_agents = [\"Moebius\"]\n")).is_ok());
-        assert!(
-            parse(&(launcher("podman", "") + &launcher("nono", "launch_agents = [\"Moebius\"]\n")))
-                .is_err()
-        );
+        // A single launcher for every agent is the configuration that was always valid.
+        assert!(parse(&launcher("podman", "")).is_ok());
+        // The one for the rest must be last, else the launchers after it could never be asked.
+        let error = parse(&(launcher("podman", "") + &launcher("nono", moebius)))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("never asked"), "{error}");
+        // Launchers that all name agents would let a run of any other agent start bare: refused.
+        let error = parse(&launcher("nono", moebius)).unwrap_err().to_string();
+        assert!(error.contains("must take every agent"), "{error}");
+        let error =
+            parse(&(launcher("nono", moebius) + &launcher("box", "launch_agents = [\"Coder\"]\n")))
+                .unwrap_err()
+                .to_string();
+        assert!(error.contains("\"box\""), "{error}");
     }
 
     #[test]
