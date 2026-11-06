@@ -1,9 +1,11 @@
 //! A server reached over SSH from the command line: one `ssh` that forwards a port of this machine to the server's
-//! `127.0.0.1:7171` and, on the same login, reads the token the app's setup left (`~/.moebius/server/.moebius/token`).
+//! `127.0.0.1:7171` and, on the same login, reads the token the setup left (`~/.moebius/server/.moebius/token`, else the
+//! one of a server installed by hand, `~/.config/moebius/.moebius/token`).
 //! `--ssh <host>` holds the tunnel for one command; `moebius connect <host>` holds it and writes where it is to
-//! `connected.toml` next to the desktop app's settings, which the commands that follow read. [`wait_until_healthy`]
-//! waits until the forwarded port answers `GET /v1/health`, so that a window is never opened on a tunnel that is not
-//! there yet.
+//! `connected.toml` next to the command line's settings, which the commands that follow read. `connect` also sets the
+//! server up on the host when none answers there ([`open_or_set_up`], with `remote` doing the setup).
+//! [`wait_until_healthy`] waits until the forwarded port answers `GET /v1/health`, so that a window is never opened
+//! on a tunnel that is not there yet.
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
@@ -19,17 +21,20 @@ use super::client::Connection;
 pub const REMOTE_PORT: u16 = 7171;
 /// How long the login and the tunnel may take.
 const OPEN_LIMIT: Duration = Duration::from_secs(120);
-/// What `ssh` is asked to run: write the token, then keep the login open until `ssh` is closed on this side.
-const REMOTE_COMMAND: &str =
-    "sh -c 'cat \"$HOME/.moebius/server/.moebius/token\" && echo && exec cat'";
+/// What `ssh` is asked to run: write the token in a line `MOEBIUS-TOKEN <token>` (so that a banner before it is
+/// skipped), then keep the login open until `ssh` is closed on this side. It ends with 1 when there is no token file.
+const REMOTE_COMMAND: &str = "sh -c 'for f in \"$HOME/.moebius/server/.moebius/token\" \
+    \"$HOME/.config/moebius/.moebius/token\"; do if [ -s \"$f\" ]; then echo \"MOEBIUS-TOKEN $(cat \"$f\")\"; exec cat; fi; done; exit 1'";
+/// How many lines of what the host prints are read for the token before the login is given up.
+const TOKEN_LINES: usize = 200;
 
-/// The `ssh` client: the program the desktop app's settings name (`ssh_program`), else `ssh`.
-pub fn program(desktop: Option<&Path>) -> String {
+/// The `ssh` client: the program the command line's settings name (`ssh_program`), else `ssh`.
+pub fn program(settings: Option<&Path>) -> String {
     #[derive(Deserialize, Default)]
     struct Settings {
         ssh_program: Option<String>,
     }
-    desktop
+    settings
         .and_then(|path| std::fs::read_to_string(path).ok())
         .and_then(|text| toml::from_str::<Settings>(&text).ok())
         .and_then(|settings| settings.ssh_program)
@@ -37,8 +42,9 @@ pub fn program(desktop: Option<&Path>) -> String {
 }
 
 /// The arguments of the `ssh` that forwards `127.0.0.1:<local>` to `127.0.0.1:<remote>` of `host` and prints the token.
-fn tunnel_args(local: u16, remote: u16, host: &str) -> Vec<String> {
-    [
+/// With `batch`, `ssh` never asks a question: there is no terminal to ask on.
+fn tunnel_args(local: u16, remote: u16, host: &str, batch: bool) -> Vec<String> {
+    let mut args: Vec<String> = [
         "-T",
         "-L",
         &format!("127.0.0.1:{local}:127.0.0.1:{remote}"),
@@ -48,13 +54,15 @@ fn tunnel_args(local: u16, remote: u16, host: &str) -> Vec<String> {
         "ServerAliveCountMax=3",
         "-o",
         "ExitOnForwardFailure=yes",
-        // A host is never read as an option, whatever its name.
-        "--",
-        host,
-        REMOTE_COMMAND,
     ]
     .map(String::from)
-    .into()
+    .into();
+    if batch {
+        args.extend(["-o".to_string(), "BatchMode=yes".to_string()]);
+    }
+    // A host is never read as an option, whatever its name.
+    args.extend(["--", host, REMOTE_COMMAND].map(String::from));
+    args
 }
 
 /// Waits until the server at `url` (a forwarded port, say) answers `GET /v1/health`: any answer but a server error
@@ -78,6 +86,29 @@ pub fn wait_until_healthy(url: &str, limit: Duration) -> Result<(), String> {
     }
 }
 
+/// Why a tunnel did not open.
+#[derive(Debug)]
+pub enum OpenError {
+    /// The login worked but there is no token to read: no server was set up there.
+    NoToken(String),
+    /// The login or the tunnel failed.
+    Failed(String),
+}
+
+impl std::fmt::Display for OpenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OpenError::NoToken(message) | OpenError::Failed(message) => f.write_str(message),
+        }
+    }
+}
+
+impl From<OpenError> for String {
+    fn from(error: OpenError) -> String {
+        error.to_string()
+    }
+}
+
 /// An open tunnel to the server of a host; `ssh` ends with it.
 pub struct Tunnel {
     child: Child,
@@ -94,44 +125,66 @@ impl Drop for Tunnel {
 
 impl Tunnel {
     /// Logs in to `host` (`ssh` asks for a password on this terminal if it needs one), forwards a free local port and
-    /// reads the token.
-    pub fn open(program: &str, host: &str, remote_port: u16) -> Result<Tunnel, String> {
+    /// reads the token. With `batch`, `ssh` fails instead of asking a question (there is no terminal).
+    pub fn open(
+        program: &str,
+        host: &str,
+        remote_port: u16,
+        batch: bool,
+    ) -> Result<Tunnel, OpenError> {
         let port = std::net::TcpListener::bind("127.0.0.1:0")
             .and_then(|listener| listener.local_addr())
-            .map_err(|e| format!("cannot find a free port: {e}"))?
+            .map_err(|e| OpenError::Failed(format!("cannot find a free port: {e}")))?
             .port();
         let mut child = Command::new(program)
-            .args(tunnel_args(port, remote_port, host))
+            .args(tunnel_args(port, remote_port, host, batch))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
-            .map_err(|e| format!("cannot start {program}: {e}"))?;
+            .map_err(|e| OpenError::Failed(format!("cannot start {program}: {e}")))?;
         let stdout = child.stdout.take().expect("piped");
-        let mut token = String::new();
-        let read = BufReader::new(stdout).read_line(&mut token);
         let tunnel_host = host.to_string();
-        match read {
-            Ok(n) if n > 0 && !token.trim().is_empty() => {}
-            _ => {
+        // The token is in the line `MOEBIUS-TOKEN <token>`; lines before it are the host's own chatter.
+        let token = BufReader::new(stdout)
+            .lines()
+            .take(TOKEN_LINES)
+            .map_while(Result::ok)
+            .find_map(|line| {
+                line.strip_prefix("MOEBIUS-TOKEN ")
+                    .map(|token| token.trim().to_string())
+                    .filter(|token| !token.is_empty())
+            });
+        let token = match token {
+            Some(token) => token,
+            None => {
                 let _ = child.kill();
-                let _ = child.wait();
-                return Err(format!(
-                    "cannot read the token on {tunnel_host}: has the desktop app set the server up there?"
-                ));
+                let status = child.wait();
+                // `ssh` ends with 255 when it could not log in; any other end is the remote command's: no token.
+                return Err(match status {
+                    Ok(status) if status.code() != Some(255) => OpenError::NoToken(format!(
+                        "cannot read the token on {tunnel_host}: run `moebius connect {tunnel_host}` to set the \
+                         server up there"
+                    )),
+                    _ => {
+                        OpenError::Failed(format!("cannot log in to {tunnel_host} with {program}"))
+                    }
+                });
             }
-        }
+        };
         let tunnel = Tunnel {
             child,
             host: tunnel_host,
             connection: Connection {
                 url: format!("http://127.0.0.1:{port}"),
-                token: token.trim().to_string(),
+                token,
             },
         };
         let started = Instant::now();
         while TcpStream::connect(("127.0.0.1", port)).is_err() {
             if started.elapsed() > OPEN_LIMIT {
-                return Err(format!("the tunnel to {host} did not open"));
+                return Err(OpenError::Failed(format!(
+                    "the tunnel to {host} did not open"
+                )));
             }
             std::thread::sleep(Duration::from_millis(100));
         }
@@ -153,6 +206,37 @@ impl Tunnel {
             .map(|_| ())
             .map_err(|e| format!("cannot wait for ssh: {e}"))
     }
+}
+
+/// How long a server behind a new tunnel has to answer before `connect` takes it for one that does not run.
+const ANSWER_LIMIT: Duration = Duration::from_secs(10);
+
+/// A tunnel to the server of `host`; when no server answers there and the server is on its usual port, sets one up
+/// first (see `remote`) and opens the tunnel again. A host that cannot be logged in to is an error either way.
+pub fn open_or_set_up(
+    program: &str,
+    host: &str,
+    port: u16,
+    options: &super::remote::Options,
+    ask: &mut dyn FnMut(&str) -> Result<bool, String>,
+) -> Result<Tunnel, String> {
+    let missing = match Tunnel::open(program, host, port, !options.interactive) {
+        Ok(tunnel) => match wait_until_healthy(&tunnel.connection.url, ANSWER_LIMIT) {
+            Ok(()) => return Ok(tunnel),
+            Err(e) if port != REMOTE_PORT => return Err(e),
+            Err(_) => {
+                drop(tunnel);
+                format!("no server answers on {host}")
+            }
+        },
+        Err(OpenError::NoToken(message)) if port == REMOTE_PORT => message,
+        Err(e) => return Err(e.into()),
+    };
+    eprintln!("{missing}");
+    super::remote::set_up(program, host, options, ask)?;
+    let tunnel = Tunnel::open(program, host, port, !options.interactive)?;
+    wait_until_healthy(&tunnel.connection.url, Duration::from_secs(60))?;
+    Ok(tunnel)
 }
 
 /// Removes the file `connect` wrote when it is dropped, so that an early error or a return leaves no token behind.
@@ -209,9 +293,9 @@ pub fn interrupted() -> bool {
     INTERRUPTED.load(std::sync::atomic::Ordering::SeqCst)
 }
 
-/// Where `connect` leaves the tunnel for the commands that follow: next to the desktop app's settings.
-pub fn connected_path(desktop: Option<&Path>) -> Option<PathBuf> {
-    desktop.map(|path| path.with_file_name("connected.toml"))
+/// Where `connect` leaves the tunnel for the commands that follow: next to the command line's settings.
+pub fn connected_path(settings: Option<&Path>) -> Option<PathBuf> {
+    settings.map(|path| path.with_file_name("connected.toml"))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -260,13 +344,22 @@ mod tests {
 
     #[test]
     fn the_tunnel_forwards_a_local_port_to_the_remote_one_and_the_host_is_never_an_option() {
-        let args = tunnel_args(4000, 9000, "-oProxyCommand=x");
+        let args = tunnel_args(4000, 9000, "-oProxyCommand=x", false);
         let at = |flag: &str| args.iter().position(|a| a == flag).unwrap();
         assert_eq!(args[at("-L") + 1], "127.0.0.1:4000:127.0.0.1:9000");
         assert!(args.contains(&"ExitOnForwardFailure=yes".to_string()));
         let end = args.iter().position(|a| a == "--").unwrap();
         assert_eq!(args[end + 1], "-oProxyCommand=x");
         assert_eq!(args[end + 2], REMOTE_COMMAND);
+        assert!(!args.contains(&"BatchMode=yes".to_string()));
+    }
+
+    #[test]
+    fn without_a_terminal_ssh_is_never_allowed_to_ask() {
+        let args = tunnel_args(4000, 9000, "build", true);
+        assert!(args.contains(&"BatchMode=yes".to_string()));
+        let end = args.iter().position(|a| a == "--").unwrap();
+        assert!(args.iter().position(|a| a == "BatchMode=yes").unwrap() < end);
     }
 
     #[test]
@@ -309,9 +402,9 @@ mod tests {
     }
 
     #[test]
-    fn the_program_comes_from_the_desktop_settings_else_is_ssh() {
+    fn the_program_comes_from_the_settings_else_is_ssh() {
         let dir = tempfile::tempdir().unwrap();
-        let settings = dir.path().join("desktop.toml");
+        let settings = dir.path().join("cli.toml");
         assert_eq!(program(Some(&settings)), "ssh");
         std::fs::write(&settings, "ssh_program = \"/opt/ssh\"\naddress = \"x\"\n").unwrap();
         assert_eq!(program(Some(&settings)), "/opt/ssh");
@@ -321,8 +414,8 @@ mod tests {
     #[test]
     fn a_connection_whose_port_answers_is_used_and_a_stale_one_is_removed() {
         let dir = tempfile::tempdir().unwrap();
-        let desktop = dir.path().join("desktop.toml");
-        let path = connected_path(Some(&desktop)).unwrap();
+        let settings = dir.path().join("cli.toml");
+        let path = connected_path(Some(&settings)).unwrap();
         assert_eq!(path.file_name().unwrap(), "connected.toml");
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();

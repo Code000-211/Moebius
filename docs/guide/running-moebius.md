@@ -3,36 +3,40 @@
 ## When you want this
 
 You want a Moebius server that stays up: installed from a release instead of built from source, started once, kept
-running by the operating system, reachable from the desktop app on your own machine or on another one, and upgraded and
-backed up without losing a card. Releases are built for Linux x86_64, the server (`moebius`) and the desktop app
-(`moebius-desktop`) in an archive each, and for Windows x86_64, both in `moebius-windows-x86_64.zip`; on another
-system, build from source. The server is documented and tested on Linux and on WSL 2; on Windows, run the app there and
-the server in WSL (see [On Windows](#on-windows)). Every key named here is in the
+running by the operating system, reachable from the web app on your own machine or on another one, and upgraded and
+backed up without losing a card. Releases are built for Linux x86_64 (`moebius`, as an archive and as a program alone)
+and for Windows x86_64 (`moebius.exe` in `moebius-windows-x86_64.zip`); on another system, build from source. The
+server is documented and tested on Linux and on WSL 2; on Windows, use the `moebius` commands there and run the server
+in WSL (see [On Windows](#on-windows)). Every key named here is in the
 [configuration reference](../reference/configuration.md).
 
 ## The steps
 
-0a. **Forward ports.** When an agent or a terminal on the server starts a dev server, the Ports page (Setup, and the
-   "Ports" button of the live view, the chat and the Terminal page) lists it and forwards it to the same port number on
-   `127.0.0.1` here, or to a free one; "Open in browser" opens it, and a banner offers that when the port opens in the run,
-   chat or terminal you are looking at. "Forward a port…" forwards one by hand, "Change local port" and "Stop forwarding"
-   do what they say. It works the same with an address and over SSH, since each connection is carried over the API
-   (`GET /v1/ports/{port}/tunnel`) and the server listens on nothing new. The forwarded ports are remembered for each
-   server in `desktop.toml` and forwarded again when the app connects (turn this off on the Ports page, or with
-   `restore_forwards = false`). Detection needs Linux on the server.
-0. **Connect over SSH** (the way that needs nothing but a login). In the desktop app's connect screen, press "Connect
-   over SSH" and pick a host of your `~/.ssh/config`, or "Add new SSH host" and type `user@host` or a whole `ssh …`
-   command, which is written to the config as a `Host` entry. The app uses the system's `ssh`, so keys, `ssh-agent`,
-   `ProxyJump` and known hosts work as in a terminal; use key-based login. A password or passphrase that `ssh` asks for is
-   shown in the app and never saved. The app then finds `moebius` on the host's `PATH` or in `~/.moebius/bin` (and offers
-   to install the release, downloaded there or, when the host has no internet, downloaded here and uploaded), runs
-   `moebius init` in `~/.moebius/server` if there is no configuration, starts `moebius serve` (a systemd user service
-   where there is one, else detached), reads the token and opens `ssh -N -L` to the server. The steps and the log are on
-   the screen. The server listens on `127.0.0.1` only and nothing else on the host needs to be reachable; if the tunnel
-   drops, the sidebar says "Reconnecting…" and it is made again. Hosts connected to before are in the sidebar header's
-   menu. On the command line, `moebius connect <host>` or `--ssh <host>` does the same tunnel and `connect` also opens
-   the web app in a window (see [the command line](../reference/cli.md#connect-host---port-n---no-window---browser-path)). The rest of the steps below are for installing by hand and for a
-   server that listens on a private network.
+0. **Connect over SSH** (the way that needs nothing but a login). Run `moebius connect <host>` where `<host>` is a host
+   of your `~/.ssh/config` or `user@host`. It uses the system's `ssh`, so keys, `ssh-agent`, `ProxyJump` and known hosts
+   work as in a terminal; use key-based login (a password or passphrase that `ssh` asks for is asked on your terminal and
+   never saved; for the steps of a setup the one connection is kept, so it is asked once). When no server answers on the
+   host, `connect` sets one up after asking `[y/N]` in the terminal (`--yes` answers for a script; without a terminal and
+   without `--yes` it refuses and changes nothing). The question says what will change: it finds `moebius` on the host's
+   `PATH` or in `~/.moebius/bin`, or installs the release of its own version there (also when the one found is older;
+   downloaded by the host or, with `--upload`, downloaded here and sent, and checked against the `SHA256SUMS` of the
+   release, which guards against a damaged download or a bad mirror, not against a compromised release), runs `moebius
+   init` in `~/.moebius/server` if there is no configuration, starts `moebius serve` and waits for its token. Where the
+   host has systemd, the server is a systemd user service named `moebius-connect.service` that `connect` installs and
+   enables (and `loginctl enable-linger` is tried so that it keeps running after you log out), never the
+   `moebius.service` of the manual install below; else it is started detached. If a server already runs on the host (it answers on
+   its port, or `moebius.service` or `moebius-connect.service` is active), `connect` sets nothing up and says where it
+   runs and how to connect: it reads the token of a server installed by hand from `~/.config/moebius/.moebius/token`, and
+   for another data directory you forward the port with `ssh -L` and give `--server` and `--token`. It then
+   forwards a port of this machine to the server, which listens on `127.0.0.1` only, so nothing else on the host needs
+   to be reachable, and opens the web app in a window of its own. The tunnel stays open until Ctrl+C, and the other
+   `moebius` commands use it meanwhile; `--ssh <host>` opens one for a single command (see [the command
+   line](../reference/cli.md#connect-host---port-n---no-window---browser-path---yes---upload)). The rest of the steps
+   below are for installing by hand and for a server that listens on a private network.
+
+   A dev server that an agent or a terminal on the server starts is listed on the Ports page of the web app. To reach it
+   from this machine, forward its port by hand (`ssh -L 3000:127.0.0.1:3000 <host>`); the page's "tunnel" is a WebSocket
+   of the API (`GET /v1/ports/{port}/tunnel`) for a client that carries connections itself.
 
 1. Install from a release. Download the archive for your machine and `SHA256SUMS` from the
    [releases page](https://github.com/Code000-211/Moebius/releases), check the archive against the list, and unpack it.
@@ -49,8 +53,8 @@ the server in WSL (see [On Windows](#on-windows)). Every key named here is in th
    moebius --version
    ```
 
-   The check must print `OK`. Put `~/.local/bin` on your `PATH` if `moebius --version` is not found. The desktop archive
-   holds the program, `moebius-desktop.png` and `moebius-desktop.desktop`. The server needs git and
+   The check must print `OK`. Put `~/.local/bin` on your `PATH` if `moebius --version` is not found. The release also has the program alone
+   (`moebius-$TARGET`), which `moebius connect` installs on a host over SSH. The server needs git and
    [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt) installed as `pi-bolt`.
 
 2. First start. `moebius init` writes a commented `moebius.toml` with every default; add an upstream, the Pi-Bolt
@@ -69,9 +73,10 @@ the server in WSL (see [On Windows](#on-windows)). Every key named here is in th
    prints a new address (or sign in with the token of `.moebius/token` on the page). The browser keeps a session
    until you sign out or the server restarts.
 
-   Or open the desktop app and give it the address (`http://127.0.0.1:7171`) and the content of `.moebius/token`. On the
-   machine that runs the server the `moebius` commands find both by themselves when you run them in the directory of
-   `moebius.toml`, or with `--config`.
+   `moebius open` opens the web app in a window of its own, signed in. On the machine that runs the server the
+   `moebius` commands find the address and the token by themselves when you run them in the directory of
+   `moebius.toml`, or with `--config`; from another machine, give `--server` and `--token`, or save `address` and `token`
+   in `cli.toml` of the config directory.
 
    An upstream can log in to a provider with OAuth instead of a key: write its client id and URLs in a
    `[router.upstreams.oauth]` table (see [configuration](../reference/configuration.md#routerupstreamsoauth)), then press
@@ -111,12 +116,12 @@ the server in WSL (see [On Windows](#on-windows)). Every key named here is in th
    shell profile: name the `pi-bolt` program in `pi_bolt.program`, or keep it in a directory on the `PATH` the unit sets.
 
 4. Reach it from another machine. The server listens on `127.0.0.1:7171`, where only the machine itself can reach it.
-   To use the desktop app from another machine of a private network, set `listen` to an address of this machine on that
+   To use the web app from another machine of a private network, set `listen` to an address of this machine on that
    network, such as `192.168.1.20:7171` (an `ip:port`, not a host name), and restart the server. The address is plain
    HTTP and anyone who has the token has full control, so use a private network, a VPN or an SSH tunnel
    (`ssh -L 7171:127.0.0.1:7171 server`), and never expose the port to the internet. The model router
-   (`router.listen`) must stay on a loopback address, and the app does not need it. In the app, enter the address of the
-   server and the token, which you copy from `.moebius/token` on the server.
+   (`router.listen`) must stay on a loopback address, and the web app does not need it. Open the address in a browser and
+   sign in with the token, which you copy from `.moebius/token` on the server.
 
 5. Upgrade. Install the new release over the old one and restart the service. The store migrates itself when the server
    starts and the change cannot be undone, so make the backup of the next step first if you may want to go back to the old
@@ -227,21 +232,26 @@ the server in WSL (see [On Windows](#on-windows)). Every key named here is in th
 
 ## On Windows
 
-The desktop app and the `moebius` commands that operate a server run on Windows. Download
+The `moebius` commands that operate a server (`open`, `connect`, `board`, `api` and the others) run on Windows;
+`moebius connect <host>` sets a server up on a Linux x86_64 host over SSH with the `ssh.exe` of Windows 10 and later.
+If `ssh` is missing, enable the OpenSSH Client optional feature (Settings, Apps, Optional features, or `Add-WindowsCapability
+-Online -Name OpenSSH.Client~~~~0.0.1.0` in an administrator PowerShell). The `ssh.exe` of Windows cannot share a
+connection between the steps of a setup, so it asks for a password for each; use a key or `ssh-agent` there. Download
 `moebius-windows-x86_64.zip` and `SHA256SUMS`, check the archive and unpack it, in PowerShell:
 
 ```powershell
 (Get-FileHash moebius-windows-x86_64.zip -Algorithm SHA256).Hash.ToLower()
 Select-String moebius-windows-x86_64.zip SHA256SUMS
 Expand-Archive moebius-windows-x86_64.zip -DestinationPath $env:LOCALAPPDATA\Programs
-& "$env:LOCALAPPDATA\Programs\moebius-windows-x86_64\moebius-desktop.exe"
+& "$env:LOCALAPPDATA\Programs\moebius-windows-x86_64\moebius.exe" connect build-box
 ```
 
-The two hashes must be the same. The app keeps its address and token in `%APPDATA%\moebius\desktop.toml`, where the
-`moebius` commands find them too.
+The two hashes must be the same. The command line keeps an address and token you save for it in
+`%APPDATA%\moebius\cli.toml`, and `connect` leaves the tunnel it holds in `%APPDATA%\moebius\connected.toml` while it
+runs.
 
 Run the server on Linux or in WSL 2, as the steps above show: install a Linux distribution with `wsl --install`, and in
-it install git, Pi-Bolt and the Linux release. WSL forwards `127.0.0.1:7171` to Windows, so the app reaches a server
+it install git, Pi-Bolt and the Linux release. WSL forwards `127.0.0.1:7171` to Windows, so the web app and the `moebius` commands reach a server
 started in WSL at `http://127.0.0.1:7171` with the token from `.moebius/token` (`wsl cat ~/.config/moebius/.moebius/token`
 prints it). To keep it running, enable systemd in WSL (`[boot] systemd=true` in `/etc/wsl.conf`) and use the unit of
 step 3.
@@ -293,12 +303,9 @@ run the `sha256sum` line of step 1 on it: it must print `FAILED`.
   `working_dir` the user cannot create, and an `sshd` that forbids remote forwarding (`AllowTcpForwarding no`).
 - A run on a runner fails with `command not found`: the harness is not on the `PATH` of a non-interactive login. Set
   `bin_dir` to its directory.
-- The app cannot connect from another machine: the server still listens on `127.0.0.1`, or a firewall blocks the port.
+- The web app cannot be reached from another machine: the server still listens on `127.0.0.1`, or a firewall blocks the port.
   `listen` takes an address of the machine, and a change of it needs a restart.
-- In a Wayland session on Linux the desktop app opens its window through XWayland, because through Wayland itself it
-  cannot reach the clipboard. Without XWayland (no `DISPLAY`) it opens on Wayland, and nothing can be copied or pasted
-  in it.
-- The app says the token is wrong after a restore or a move: the token is the content of `.moebius/token` of the server
+- The web app or a command says the token is wrong after a restore or a move: the token is the content of `.moebius/token` of the server
   it talks to; copy it again.
 - On Windows, a change's checks say `` `sh` was not found: this needs Linux or WSL ``: the server runs on Windows itself.
   Run it in WSL, as [On Windows](#on-windows) shows.

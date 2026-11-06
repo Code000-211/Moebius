@@ -2,6 +2,7 @@
 
 mod cli;
 
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -22,15 +23,15 @@ struct Cli {
     /// The configuration file.
     #[arg(long, global = true, default_value = "moebius.toml")]
     config: PathBuf,
-    /// The server the commands that operate it talk to. Without it: the desktop app's saved address, else the `listen`
-    /// of the configuration file.
+    /// The server the commands that operate it talk to. Without it: the saved address of `cli.toml` in the config
+    /// directory, else the `listen` of the configuration file.
     #[arg(long, global = true, env = "MOEBIUS_URL")]
     server: Option<String>,
-    /// The token for `--server`. Without it: the desktop app's, else the configuration's token file.
+    /// The token for `--server`. Without it: the saved one, else the configuration's token file.
     #[arg(long, global = true, env = "MOEBIUS_TOKEN", hide_env_values = true)]
     token: Option<String>,
-    /// Reach the server of this SSH host through a tunnel opened for the command (the app's setup must have been done
-    /// there once). `moebius connect <host>` keeps a tunnel open for several commands instead.
+    /// Reach the server of this SSH host through a tunnel opened for the command (`moebius connect <host>` must have set
+    /// the server up there once). `moebius connect <host>` keeps a tunnel open for several commands instead.
     #[arg(long, global = true, conflicts_with = "server")]
     ssh: Option<String>,
     /// Print the API's JSON as it came instead of plain text.
@@ -70,8 +71,10 @@ enum Command {
         author: String,
     },
     /// Open an SSH tunnel to the server of a host and keep it open, for the commands that follow in other terminals,
-    /// and the web app in a window. Stops with Ctrl+C.
-    /// With the web app in a window of its own, unless `--no-window`.
+    /// and the web app in a window of its own, unless `--no-window`. Stops with Ctrl+C. When no server runs on the
+    /// host it is set up there first: `moebius` is installed from the release of this version (checked against its
+    /// SHA256SUMS) if it is missing or older, a configuration is made in `~/.moebius/server` and the server is started,
+    /// as a systemd user service where there is systemd, after asking (or with `--yes`).
     Connect {
         /// A host of `~/.ssh/config`, or `user@host`.
         host: String,
@@ -84,6 +87,13 @@ enum Command {
         /// The Chromium-based browser that shows the window.
         #[arg(long, env = "MOEBIUS_BROWSER")]
         browser: Option<PathBuf>,
+        /// Set the server up on the host without asking when none runs there (for scripts and for a terminal that
+        /// is not a person's).
+        #[arg(long, short = 'y')]
+        yes: bool,
+        /// Download the program here and send it, for a host that cannot download it itself.
+        #[arg(long)]
+        upload: bool,
     },
     /// Open the web app of the server in a window of its own, signed in with a one-time code.
     Open {
@@ -194,11 +204,23 @@ fn run(cli: Cli) -> Result<(), String> {
             port,
             no_window,
             browser,
+            yes,
+            upload,
         }) => {
-            let desktop = cli::desktop_settings_path();
-            let mut tunnel =
-                cli::ssh::Tunnel::open(&cli::ssh::program(desktop.as_deref()), &host, port)?;
-            let file = cli::ssh::connected_path(desktop.as_deref())
+            let settings = cli::settings_path();
+            let options = cli::remote::Options::new(
+                yes,
+                std::io::stdin().is_terminal() && std::io::stderr().is_terminal(),
+                upload,
+            );
+            let mut tunnel = cli::ssh::open_or_set_up(
+                &cli::ssh::program(settings.as_deref()),
+                &host,
+                port,
+                &options,
+                &mut cli::remote::ask_on_terminal,
+            )?;
+            let file = cli::ssh::connected_path(settings.as_deref())
                 .ok_or("there is no config directory to write the connection to")?;
             let _remove = cli::ssh::ConnectedFile(file.clone());
             cli::ssh::remove_on_interrupt(file.clone(), tunnel.pid());
@@ -228,16 +250,16 @@ fn run(cli: Cli) -> Result<(), String> {
             ended
         }
         Some(Command::Open { browser }) => {
-            let desktop = cli::desktop_settings_path();
-            let (connection, _tunnel) = connection(&where_to, desktop.as_deref())?;
+            let settings = cli::settings_path();
+            let (connection, _tunnel) = connection(&where_to, settings.as_deref())?;
             let client = cli::Client::new(connection)?;
             let opened = cli::window::open(&cli::window::login_url(&client)?, browser.as_deref())?;
             println!("{}", cli::window::describe(&opened));
             Ok(())
         }
         Some(Command::Operate(command)) => {
-            let desktop = cli::desktop_settings_path();
-            let (connection, _tunnel) = connection(&where_to, desktop.as_deref())?;
+            let settings = cli::settings_path();
+            let (connection, _tunnel) = connection(&where_to, settings.as_deref())?;
             let client = cli::Client::new(connection)?;
             let (text, ready) = cli::operate(&client, &command, cli.json)?;
             println!("{text}");
@@ -300,22 +322,26 @@ struct Where {
 /// is dropped, so the caller keeps it until the command is done.
 fn connection(
     cli: &Where,
-    desktop: Option<&std::path::Path>,
+    settings: Option<&std::path::Path>,
 ) -> Result<(cli::Connection, Option<cli::ssh::Tunnel>), String> {
     if let Some(host) = &cli.ssh {
-        let tunnel =
-            cli::ssh::Tunnel::open(&cli::ssh::program(desktop), host, cli::ssh::REMOTE_PORT)?;
+        let tunnel = cli::ssh::Tunnel::open(
+            &cli::ssh::program(settings),
+            host,
+            cli::ssh::REMOTE_PORT,
+            false,
+        )?;
         return Ok((tunnel.connection.clone(), Some(tunnel)));
     }
     if cli.server.is_none()
-        && let Some(open) = cli::ssh::connected(cli::ssh::connected_path(desktop).as_deref())
+        && let Some(open) = cli::ssh::connected(cli::ssh::connected_path(settings).as_deref())
     {
         return Ok((open, None));
     }
     let connection = cli::connect(
         cli.server.as_deref(),
         cli.token.as_deref(),
-        desktop,
+        settings,
         &cli.config,
     )?;
     Ok((connection, None))

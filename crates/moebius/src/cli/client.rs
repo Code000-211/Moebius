@@ -1,4 +1,4 @@
-//! The connection to a running server: where it is (the flags, the desktop app's saved settings or `moebius.toml`),
+//! The connection to a running server: where it is (the flags, the saved settings of the command line or `moebius.toml`),
 //! the one [`Request`] a command makes, and the [`Client`] that sends it over HTTP with the token.
 
 use std::net::SocketAddr;
@@ -16,20 +16,33 @@ pub struct Connection {
     pub token: String,
 }
 
-/// What the desktop app saved: `<config dir>/moebius/desktop.toml`.
+/// What the person saved for the command line: `<config dir>/moebius/cli.toml` with an `address` and a `token`, and
+/// the `ssh_program` that [`super::ssh::program`] reads.
 #[derive(Debug, Deserialize)]
 struct Saved {
     address: Option<String>,
     token: Option<String>,
 }
 
-/// The desktop app's settings file of this person, if the platform has a config directory.
-pub fn desktop_settings_path() -> Option<PathBuf> {
-    dirs::config_dir().map(|dir| dir.join("moebius").join("desktop.toml"))
+/// The settings file of this person, if the platform has a config directory: `cli.toml` there, or, when it is missing
+/// and the desktop app (which Moebius no longer has) left a `desktop.toml` with the same keys, that.
+pub fn settings_path() -> Option<PathBuf> {
+    Some(settings_in(&dirs::config_dir()?.join("moebius")))
 }
 
-/// The address and token the desktop app saved; none when it saved nothing.
-fn desktop_settings(path: Option<&Path>) -> Result<Option<Connection>, String> {
+/// The settings file in `dir`: see [`settings_path`].
+fn settings_in(dir: &Path) -> PathBuf {
+    let legacy = dir.join("desktop.toml");
+    let path = dir.join("cli.toml");
+    if !path.exists() && legacy.exists() {
+        legacy
+    } else {
+        path
+    }
+}
+
+/// The address and token that were saved; none when nothing was saved.
+fn saved_settings(path: Option<&Path>) -> Result<Option<Connection>, String> {
     let Some(path) = path else {
         return Ok(None);
     };
@@ -89,12 +102,12 @@ fn listen_url(listen: SocketAddr) -> String {
 }
 
 /// Where the server is, from the first source that says: `--server` and `--token` (or `MOEBIUS_URL` and
-/// `MOEBIUS_TOKEN`), which must come together; the desktop app's saved settings; the `moebius.toml` that exists. A
+/// `MOEBIUS_TOKEN`), which must come together; the saved settings; the `moebius.toml` that exists. A
 /// `--token` alone replaces the token of the settings or the file.
 pub fn connect(
     server: Option<&str>,
     token: Option<&str>,
-    desktop: Option<&Path>,
+    settings: Option<&Path>,
     config: &Path,
 ) -> Result<Connection, String> {
     if let Some(server) = server {
@@ -104,12 +117,12 @@ pub fn connect(
             token: token.trim().to_string(),
         });
     }
-    let found = match desktop_settings(desktop)? {
+    let found = match saved_settings(settings)? {
         Some(found) => found,
         None => config_settings(config)?.ok_or_else(|| {
             format!(
                 "no server to connect to: give --server and --token, set MOEBIUS_URL and MOEBIUS_TOKEN, \
-                 save the address in the desktop app, or run it where {} is",
+                 save an address and a token in cli.toml of your config directory, or run it where {} is",
                 config.display()
             )
         })?,
@@ -225,13 +238,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_server_comes_from_the_flags_then_the_desktop_app_then_the_configuration() {
+    fn the_server_comes_from_the_flags_then_the_saved_settings_then_the_configuration() {
         let dir = tempfile::tempdir().unwrap();
-        let desktop = dir.path().join("desktop.toml");
+        let saved = dir.path().join("cli.toml");
         let config = dir.path().join("moebius.toml");
         let nothing = dir.path().join("none.toml");
-        let go = |server, token, desktop: &Path, config: &Path| {
-            connect(server, token, Some(desktop), config)
+        let go = |server, token, saved: &Path, config: &Path| {
+            connect(server, token, Some(saved), config)
         };
 
         // Nothing at all.
@@ -250,47 +263,51 @@ mod tests {
             ("http://127.0.0.1:9001", "from-file")
         );
 
-        // The desktop app's settings come before the file; an address without a scheme gets one.
+        // The saved settings come before the file; an address without a scheme gets one.
         std::fs::write(
-            &desktop,
-            "address = \"10.0.0.2:7171/\"\ntoken = \"from-app\"\n",
+            &saved,
+            "address = \"10.0.0.2:7171/\"\ntoken = \"from-settings\"\n",
         )
         .unwrap();
-        let found = go(None, None, &desktop, &config).unwrap();
+        let found = go(None, None, &saved, &config).unwrap();
         assert_eq!(
             (found.url.as_str(), found.token.as_str()),
-            ("http://10.0.0.2:7171", "from-app")
+            ("http://10.0.0.2:7171", "from-settings")
         );
 
         // A token alone replaces the token only.
-        let found = go(None, Some("mine"), &desktop, &config).unwrap();
+        let found = go(None, Some("mine"), &saved, &config).unwrap();
         assert_eq!(
             (found.url.as_str(), found.token.as_str()),
             ("http://10.0.0.2:7171", "mine")
         );
 
         // A server given must come with its token, so that one server's token is never sent to another.
-        let found = go(
-            Some("https://moebius.example/"),
-            Some("t"),
-            &desktop,
-            &config,
-        )
-        .unwrap();
+        let found = go(Some("https://moebius.example/"), Some("t"), &saved, &config).unwrap();
         assert_eq!(
             (found.url.as_str(), found.token.as_str()),
             ("https://moebius.example", "t")
         );
-        let error = go(Some("http://x:1"), None, &desktop, &config).unwrap_err();
+        let error = go(Some("http://x:1"), None, &saved, &config).unwrap_err();
         assert!(error.contains("--server needs --token"), "{error}");
 
         // Settings that are not valid are an error, not skipped.
-        std::fs::write(&desktop, "address = 1\n").unwrap();
+        std::fs::write(&saved, "address = 1\n").unwrap();
         assert!(
-            go(None, None, &desktop, &config)
+            go(None, None, &saved, &config)
                 .unwrap_err()
                 .contains("not valid")
         );
+    }
+
+    #[test]
+    fn the_settings_file_is_cli_toml_and_an_old_desktop_toml_is_read_when_it_is_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(settings_in(dir.path()), dir.path().join("cli.toml"));
+        std::fs::write(dir.path().join("desktop.toml"), "").unwrap();
+        assert_eq!(settings_in(dir.path()), dir.path().join("desktop.toml"));
+        std::fs::write(dir.path().join("cli.toml"), "").unwrap();
+        assert_eq!(settings_in(dir.path()), dir.path().join("cli.toml"));
     }
 
     #[test]

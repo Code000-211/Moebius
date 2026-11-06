@@ -252,14 +252,14 @@ async fn without_flags_the_configuration_in_the_directory_names_the_server() {
     let output = in_dir(other.path(), &home, &["api", "GET", "/v1/health"]).await;
     assert!(out(&output).contains("version"));
 
-    // The desktop app's saved settings come first. (Unix only: on Windows their place, the person's application
+    // The saved settings of the command line come first. (Unix only: on Windows their place, the person's application
     // data, is not taken from the environment, so the test cannot move it.)
     #[cfg(unix)]
     {
         let saved = home.join("moebius");
         std::fs::create_dir_all(&saved).unwrap();
         std::fs::write(
-            saved.join("desktop.toml"),
+            saved.join("cli.toml"),
             "address = \"http://127.0.0.1:1\"\ntoken = \"x\"\n",
         )
         .unwrap();
@@ -568,18 +568,27 @@ fn fake_remote(s: &Running) -> std::path::PathBuf {
     let fake = Path::new(env!("CARGO_MANIFEST_DIR")).join("../moebius-core/testdata/fake-ssh");
     let wrapper = s.dir.path().join("ssh");
     let pid_file = s.dir.path().join("ssh.pid");
+    // Programs of the remote's `PATH`: no systemd, so that a server set up there starts detached.
+    let remote_bin = s.dir.path().join("remote-bin");
+    std::fs::create_dir_all(&remote_bin).unwrap();
+    std::fs::write(remote_bin.join("systemctl"), "#!/bin/sh\nexit 1\n").unwrap();
+    std::fs::set_permissions(
+        remote_bin.join("systemctl"),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
     std::fs::write(
         &wrapper,
         format!(
             "#!/usr/bin/env python3\nimport os, sys\nargs = [a.replace(':7171', ':{port}') for a in sys.argv[1:]]\n\
-             os.environ['HOME'] = {remote_home:?}\nopen({pid_file:?}, 'w').write(str(os.getpid()))\nos.execv({fake:?}, [{fake:?}] + args)\n"
+             os.environ['HOME'] = {remote_home:?}\nos.environ['PATH'] = {remote_bin:?} + ':' + os.environ['PATH']\nopen({pid_file:?}, 'w').write(str(os.getpid()))\nos.execv({fake:?}, [{fake:?}] + args)\n"
         ),
     )
     .unwrap();
     std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).unwrap();
     std::fs::create_dir_all(config.join("moebius")).unwrap();
     std::fs::write(
-        config.join("moebius/desktop.toml"),
+        config.join("moebius/cli.toml"),
         format!("ssh_program = {:?}\n", wrapper.to_str().unwrap()),
     )
     .unwrap();
@@ -643,6 +652,81 @@ async fn connect_holds_a_tunnel_that_the_following_commands_use() {
     let health = out(&output);
     assert!(health.contains("version"), "{health}");
 
+    let _ = connect.kill();
+    let _ = connect.wait();
+}
+
+/// A remote with `moebius` installed but no server set up: `init` makes the configuration and `serve` writes the token of
+/// the server of the test.
+#[cfg(unix)] // The fake program is a shell script started by its `#!` line.
+fn fake_remote_without_server(s: &Running) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let config = fake_remote(s);
+    let home = s.dir.path().join("remote-home");
+    std::fs::remove_dir_all(home.join(".moebius/server")).unwrap();
+    std::fs::create_dir_all(home.join(".moebius/bin")).unwrap();
+    let program = home.join(".moebius/bin/moebius");
+    std::fs::write(
+        &program,
+        format!(
+            "#!/bin/sh\ncase \"$1\" in\ninit) touch moebius.toml ;;\nserve) mkdir -p .moebius; printf %s '{}' > .moebius/token ;;\nesac\n",
+            s.token
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+    config
+}
+
+#[cfg(unix)] // Uses the fake ssh, a Python script.
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_without_a_server_on_the_host_refuses_to_set_one_up_unasked() {
+    let s = start().await;
+    let config = fake_remote_without_server(&s);
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_moebius"))
+        .args(["connect", "fakehost", "--no-window"])
+        .env_remove("MOEBIUS_URL")
+        .env_remove("MOEBIUS_TOKEN")
+        .env("XDG_CONFIG_HOME", &config)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        error.contains("not a terminal") && error.contains("moebius connect fakehost --yes"),
+        "{error}"
+    );
+    assert!(!s.dir.path().join("remote-home/.moebius/server").exists());
+}
+
+#[cfg(unix)] // Uses the fake ssh, a Python script.
+#[tokio::test(flavor = "multi_thread")]
+async fn connect_with_yes_sets_the_server_up_and_then_holds_the_tunnel() {
+    use std::io::BufRead;
+    let s = start().await;
+    let config = fake_remote_without_server(&s);
+    let mut connect = std::process::Command::new(env!("CARGO_BIN_EXE_moebius"))
+        .args(["connect", "fakehost", "--no-window", "--yes"])
+        .env_remove("MOEBIUS_URL")
+        .env_remove("MOEBIUS_TOKEN")
+        .env("XDG_CONFIG_HOME", &config)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut line = String::new();
+    std::io::BufReader::new(connect.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    assert!(line.starts_with("Connected to fakehost"), "{line}");
+    let server = s.dir.path().join("remote-home/.moebius/server");
+    assert!(server.join("moebius.toml").is_file());
+    assert!(server.join(".moebius/token").is_file());
+
+    let output = in_dir(s.dir.path(), &config, &["api", "GET", "/v1/health"]).await;
+    assert!(out(&output).contains("version"), "{}", out(&output));
     let _ = connect.kill();
     let _ = connect.wait();
 }

@@ -21,14 +21,19 @@ The commands `init`, `serve`, `export` and `check-script` work on files and do n
 The server is the first of these that exists:
 
 0. `--ssh <host>`: one `ssh -L` to the host forwards a free port of this machine to `127.0.0.1:7171` there and, on the
-   same login, reads the token from `~/.moebius/server/.moebius/token`, where the desktop app's setup left it. The tunnel
-   closes when the command ends. `ssh` asks for a password on the terminal if it needs one; keys are recommended. The
-   program is `ssh`, or `ssh_program` of `desktop.toml`.
+   same login, reads the token from `~/.moebius/server/.moebius/token`, where `moebius connect` left it when it set the
+   server up, else from `~/.config/moebius/.moebius/token`, where a server installed by hand as in [running
+   Moebius](../guide/running-moebius.md) keeps it (a server with another data directory needs `--server` and `--token`
+   through an `ssh -L` of your own). The tunnel closes when the command ends. `ssh` asks for a password on the terminal if it needs one; keys
+   are recommended. The program is `ssh`, or `ssh_program` of the settings file (see 2.). This option never sets
+   anything up on the host; `connect` does.
 1. `--server` (or `MOEBIUS_URL`). It must come with `--token` (or `MOEBIUS_TOKEN`), so that a token is never sent to a
    server it does not belong to.
    Before this, a tunnel that `moebius connect` holds open is used, if there is one (see below).
-2. The address and token the desktop app saved, `<config dir>/moebius/desktop.toml` (`address` and `token`; on Linux
-   `~/.config/moebius/desktop.toml`, on Windows `%APPDATA%\moebius\desktop.toml`). A `--token` alone replaces the saved token.
+2. The address and token saved in the settings file of the command line, `<config dir>/moebius/cli.toml` (keys
+   `address`, `token` and `ssh_program`; on Linux `~/.config/moebius/cli.toml`, on Windows
+   `%APPDATA%\moebius\cli.toml`). If `cli.toml` does not exist but a `desktop.toml` does, which the desktop app of
+   earlier releases kept there with the same keys, that is read instead. A `--token` alone replaces the saved token.
 3. The `moebius.toml` of the current directory (or `--config`): its `listen` address (`0.0.0.0` is reached as
    `127.0.0.1`) and the content of its token file. The file must exist; the server must have started once so that the
    token exists. A `--token` alone replaces the file's token.
@@ -39,13 +44,12 @@ only, which is how it keeps a wayfinder map) (see [the bridge
 protocol](bridge-protocol.md#the-environment-of-the-harness)); what it does is recorded as the agent's (see
 [the desktop API](desktop-api.md#authentication)).
 
-### `connect <host> [--port <n>] [--no-window] [--browser <path>]`
+### `connect <host> [--port <n>] [--no-window] [--browser <path>] [--yes] [--upload]`
 
 Opens the same tunnel as `--ssh` and keeps it open until Ctrl+C. It writes the tunnel's address and token to
-`connected.toml` next to `desktop.toml` (mode 0600) and prints `Connected to <host>: http://127.0.0.1:<port>.` The
+`connected.toml` next to `cli.toml` (mode 0600) and prints `Connected to <host>: http://127.0.0.1:<port>.` The
 `moebius` commands run meanwhile, without `--server`, use it; a file whose port no longer answers is removed and
-ignored. The server must have been set up on the host once, by the desktop app. `desktop.toml` may name another client
-with `ssh_program`.
+ignored. `ssh_program` of `cli.toml` may name another client.
 
 `--port` is the port the server listens on at the host (default 7171). Once `GET /v1/health` answers through the
 forwarded port, `connect` asks the server for a one-time login code through the tunnel and opens the web app in a
@@ -53,6 +57,49 @@ window, as `open` does, on the local address of the tunnel (`http://127.0.0.1:<l
 is made here with the token read over the same login, so nothing has to run on the host but the server. `--no-window`
 holds the tunnel only; `--browser` (or `MOEBIUS_BROWSER`) names the browser, as for `open`. Neither the token nor the
 code is printed.
+
+**Setting the server up.** When the login works but no server answers on the host (the token file is missing, or the
+server behind the tunnel does not answer within ten seconds) and `--port` is 7171, `connect` sets one up there. Each
+step is one `ssh` call that runs a POSIX shell script on the host; the progress goes to standard error. The steps share
+one connection (`ControlMaster=auto`, a socket in a private temporary directory that is removed at the end, kept for at
+most a minute), so that a password or a passphrase is asked once for the whole setup; on Windows, whose `ssh` cannot
+share a connection, each step is a login of its own, so use a key or the agent there. The tunnel that follows is a login
+of its own. Without a terminal `ssh` runs with `BatchMode=yes` and fails instead of asking. The scripts print what they
+report in lines that start with `MOEBIUS-<NAME> `, and only those lines are read, so that a banner or a chatty shell
+profile on the host changes nothing.
+
+1. Look at the host: the system (`uname -sm`), `moebius` (on the host's `PATH`, else `~/.moebius/bin/moebius`) and its
+   version, whether something answers `GET /v1/health` on `127.0.0.1` there (the port is the `listen` of
+   `~/.moebius/server/moebius.toml` if there is one, else 7171), whether a systemd user unit `moebius.service` (the one
+   of the guide) or `moebius-connect.service` (the one `connect` installs) is active, and which token files exist. If a
+   server answers or a unit is active, `connect` sets nothing up: it says where the server runs, where its token is, and
+   how to connect with the token yourself.
+2. Install `moebius` when it is not there, or when it is older than this program (a newer one is never replaced): the
+   release of the same version as this program, from
+   `https://github.com/Code000-211/Moebius/releases/download/v<version>/moebius-x86_64-unknown-linux-gnu` into
+   `~/.moebius/bin/moebius`. Releases are built for Linux on x86_64 only; on another system `connect` says so and
+   changes nothing, and you install `moebius` there yourself (on the `PATH` or in `~/.moebius/bin`). The host downloads
+   it with `curl` (`--proto '=https' --tlsv1.2`) or `wget` (`--https-only`) together with the `SHA256SUMS` of the release
+   and checks it with `sha256sum -c` (or `shasum -a 256 -c`) before putting it in place; with `--upload` this machine
+   downloads both with `curl`, checks the hash, sends the program, and the host checks the same hash again, for a host
+   without internet. The setup fails, and removes the download, if neither tool for the hash exists or the hash differs.
+   This guards against a damaged download or a bad mirror; it does not protect against a compromised release, since the
+   list comes from the same place as the program.
+3. `moebius init` in `~/.moebius/server`, unless `moebius.toml` is there. Everything is made with `umask 077`, and the
+   directory is mode 0700, because `serve.log` holds a login link.
+4. Start `moebius serve` there, nothing if it runs already: as a systemd user service named `moebius-connect.service`
+   (written to `~/.config/systemd/user/`, enabled and started, and `loginctl enable-linger` is tried so that the server
+   keeps running after you log out) where the host has systemd and the program's path has only characters a unit can
+   take, else detached with `nohup` (its pid in `serve.pid`, its output in `serve.log`). Either way `~/.local/bin` is the
+   first directory of the server's `PATH`. `moebius.service`, the unit of the guide, is never written.
+5. Wait for `~/.moebius/server/.moebius/token` (up to 20 seconds, in one `ssh` call); then the tunnel is opened again as
+   above.
+
+Nothing on the host is changed before a yes. In a terminal `connect` asks once, saying what it will do (install or
+replace the release, and set the server up, with the systemd user service that is installed and enabled and the linger
+when the host has systemd) and answering `[y/N]`; only `y` or `yes` is a yes. `--yes` (`-y`) answers yes without asking. Without `--yes` and without a terminal (standard input
+and standard error must both be one), `connect` stops with an error that names `moebius connect <host> --yes` and
+changes nothing. A host that cannot be logged in to is an error that no setup follows.
 
 ### `open [--browser <path>]`
 

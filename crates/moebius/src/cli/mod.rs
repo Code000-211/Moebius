@@ -22,6 +22,9 @@ mod client;
 mod ext;
 mod improve;
 mod packages;
+pub mod remote;
+#[cfg(test)]
+mod remote_tests;
 mod repos;
 mod rules;
 mod setup;
@@ -38,7 +41,7 @@ use automations::AutomationCommand;
 use board::{InboxCommand, IssueCommand};
 use chats::{ChatCommand, GrillingCommand};
 use client::Request;
-pub use client::{Client, Connection, connect, desktop_settings_path};
+pub use client::{Client, Connection, connect, settings_path};
 use ext::ExtCommand;
 use improve::{ProposalCommand, ResearchCommand, RetroCommand, TakeoverCommand};
 use packages::PkgCommand;

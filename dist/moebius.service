@@ -7,7 +7,8 @@
 #
 # It expects `moebius` in ~/.local/bin and the configuration in ~/.config/moebius/moebius.toml. The data directory is
 # `.moebius` next to that file unless `data_dir` says otherwise. To keep the server running when you are logged out, run
-# `loginctl enable-linger "$USER"` once.
+# `loginctl enable-linger "$USER"` once. `moebius connect <host>` installs a unit of its own, `moebius-connect.service`, so that
+# it never overwrites this one, and does not set a server up while `moebius.service` runs.
 [Unit]
 Description=Moebius server
 After=network-online.target
