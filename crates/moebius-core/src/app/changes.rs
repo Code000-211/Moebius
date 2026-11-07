@@ -61,8 +61,9 @@ impl App {
     }
 
     /// Publishes the work of the card's latest successful `code` run on the branch of its change, `moebius/card-<number>`,
-    /// through the repository's forge: the first time that creates the change, later it updates it. Each round's branch
-    /// descends from the last, so the branch only ever moves forward. Does nothing when this work is published.
+    /// through the repository's forge: the first time that creates the change, later it updates it. The branch belongs
+    /// to Moebius, so a round that rewrote its commit (an amended message, say) replaces what was published; the push
+    /// is refused if the forge's branch has moved on since. Does nothing when this work is published.
     pub fn publish_change(&self, card_id: i64) -> Result<Change> {
         let card = self.card(card_id)?;
         let repository = self.repository(card.repository_id)?;

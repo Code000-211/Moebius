@@ -312,7 +312,7 @@ pub(crate) fn commit(
     *own.borrow_mut() = git(clone, &["rev-parse", "HEAD"]).ok();
     if on_forge {
         app.repos
-            .push(clone, &repository.default_branch, header.as_deref())
+            .push(clone, &repository.default_branch, header.as_deref(), false)
             .map_err(|e| undo(refused(e)))?;
     }
     let mut context = change.context.clone();
