@@ -538,7 +538,7 @@ so the redaction cannot recognise one in text: keep the token in its file or sec
 
 ## `[agents.<name>]`
 
-One table per agent; an error with `[harness]`, whose repository holds the agents (see [harness configuration](harness-configuration.md)). The default workflow starts an agent named `Coder`, which Moebius brings itself with its instructions (see [The Coder and the Reviewer](harness-configuration.md#the-coder-and-the-reviewer)); a server that runs it needs a model for it, so `[agents.Coder]` with a `model`, else a card fails with `the Coder agent needs a model`. It also starts the agent `Reviewer`, which Moebius brings itself too, for both review axes unless agents named `Standards` and `Spec` exist, so every change is reviewed out of the box (a person who wants none changes the workflow script). A `Reviewer` without a `model` of its own takes the Coder's.
+One table per agent; an error with `[harness]`, whose repository holds the agents (see [harness configuration](harness-configuration.md)). The default Kanban starts an agent named `Coder`, which Moebius brings itself with its instructions (see [The Coder and the Reviewer](harness-configuration.md#the-coder-and-the-reviewer)); a server that runs it needs a model for it, so `[agents.Coder]` with a `model`, else a card fails with `the Coder agent needs a model`. It also starts the agent `Reviewer`, which Moebius brings itself too, for both review axes unless agents named `Standards` and `Spec` exist, so every change is reviewed out of the box (a person who wants none changes the Kanban script). A `Reviewer` without a `model` of its own takes the Coder's.
 A name is made of letters, digits, `-` and `_` and must not be empty, else the file is refused.
 
 | Key | Type | Default | Meaning and validation |
@@ -690,7 +690,7 @@ names none; a delivery that is not verified is answered with `401` and changes n
 
 ## A minimal file
 
-A local OpenAI-compatible server upstream, the default workflow's Coder, and nothing else:
+A local OpenAI-compatible server upstream, the default Kanban's Coder, and nothing else:
 
 ```toml
 [[router.upstreams]]

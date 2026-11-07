@@ -2,7 +2,7 @@
 
 A column script is the behaviour behind one column of a board, written in Luau. This page is for anyone who writes or
 changes a script: a person, or an agent such as the Moebius agent. It lists everything a script can read and do. The
-code is in `crates/moebius-core/src/board/` (`api.rs` for the `moebius` table, `card.rs` for the `card` table); the default scripts are in `crates/moebius-core/workflow/`.
+code is in `crates/moebius-core/src/board/` (`api.rs` for the `moebius` table, `card.rs` for the `card` table); the default scripts are in `crates/moebius-core/kanban/`.
 
 ## How a column maps to a script
 
@@ -143,7 +143,7 @@ with `Evidence:`. Judgement calls never send the card back; `card.review.judgeme
 : Starts a run of the agent named `agent` (an `[agents.<name>]` table of the configuration) for this card in a new
 worktree on a new branch `moebius/run-<id>`. The branch starts at the branch of the card's latest successful `code`
 run, so the run sees the work so far, or at the repository's default branch when the card has none. `purpose` is any
-string; the default workflow uses `code`, `review-standards` and `review-spec`, and attempts (see Attempts) use `attempt` and `review-select`. Only `code` runs count as `card.rounds`, and only
+string; the default Kanban uses `code`, `review-standards` and `review-spec`, and attempts (see Attempts) use `attempt` and `review-select`. Only `code` runs count as `card.rounds`, and only
 `review` and `review-standards` runs as `card.reviews`. A `code` run gets the prompt for making the change and commits what the agent leaves; it fails when
 the agent changed nothing. A `review` run gets the prompt for reviewing the change on its branch and ending with
 the verdict line; a `review-standards` run the prompt for the standards axis (the repository's `CONTRIBUTING.md`,
@@ -151,7 +151,7 @@ the verdict line; a `review-standards` run the prompt for the standards axis (th
 calls) and a `review-spec` run the prompt for the spec axis (what the issue asked that is missing, not asked for or
 looks wrong), both asking for findings with evidence; nothing it changes is kept, and changing nothing is no failure. Any other purpose is prompted like
 `code`. `note` is optional text (a string or nil) added to the end of the prompt under the heading `Notes from the
-last round:`; the default workflow passes `card.note`. The call returns once the run is started, not when it ends. `runner` is optional (a string or nil): the name of a `[[runners]]` entry (see
+last round:`; the default Kanban passes `card.note`. The call returns once the run is started, not when it ends. `runner` is optional (a string or nil): the name of a `[[runners]]` entry (see
 [configuration](configuration.md#runners)) that the run goes to over SSH in place of the agent's own `runner`; without
 it the agent's runner is used, and without that the run is on the server. Raises an error
 when the agent does not exist (`no agent named <agent>`), the runner does not exist (`there is no runner named <name>`)
@@ -447,7 +447,7 @@ A card that is hard to get right can be tried several times at once, and the bes
 times solves far more tasks than one attempt does; the gain is only as large as the choice among the samples is good,
 and a choice by execution (tests and checks) together with a choice by a model is better than either alone. A column
 script does this with `moebius.start_runs`, `moebius.check_attempt` and `moebius.settle_attempts`; the
-[workflows guide](../guide/workflows.md#a-hard-card-several-attempts) shows a complete `code.luau`. The default
+[Kanban guide](../guide/kanban.md#a-hard-card-several-attempts) shows a complete `code.luau`. The default
 `code.luau` does not use attempts: a repository opts in with its own.
 
 - An **attempt** is a run with the purpose `attempt`. It is prompted, committed and judged as a failed run as a `code`
@@ -497,7 +497,7 @@ Until both have ended the card waits with `running the reproduction test`. When 
 which did not hold, with the output. A change that says it is untestable goes on to the review, whose run is given the
 reason to judge. All of this comes after the checks and conflicts and before the review.
 
-## The default workflow
+## The default Kanban
 
 | Script | What it does |
 |---|---|
@@ -508,7 +508,7 @@ reason to judge. All of this comes after the checks and conflicts and before the
 | `merge.luau` | Waits for a person to merge the change. The merge happens through the desktop API or, on GitHub, on the pull request. When the change no longer merges cleanly (the default branch moved), sends the card back to `In progress` with the conflict as the note; that resolves the change's inbox item. |
 | `done.luau` | Calls `moebius.record_outcome("merged")` when `card.merged` (a change of the card was merged) and `moebius.record_outcome("closed")` otherwise, so every judgement made for the card learns how it ended. |
 
-The default workflow needs an `[agents.Coder]` table in the configuration, because `code.luau` starts the agent
+The default Kanban needs an `[agents.Coder]` table in the configuration, because `code.luau` starts the agent
 `Coder`. An `[agents.Reviewer]` table is optional: with it every change is reviewed along two axes before it is offered, without
 it changes are offered unreviewed. `[agents.Standards]` and `[agents.Spec]` tables are optional too: they give an axis
 its own agent (another model, or a model class), where the Reviewer would otherwise review it.

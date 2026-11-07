@@ -40,7 +40,7 @@ mod tests {
     use super::*;
     use crate::app::{App, PERSON};
     use crate::board::testing::{FakeHarness, column, engine_with, setup, setup_with_harness};
-    use crate::board::{Engine, Workflow};
+    use crate::board::{Engine, Kanban};
     use crate::store::{Card, Run};
 
     /// Records `tokens` used by a run of the card.
@@ -136,7 +136,7 @@ mod tests {
         let engine = Engine::new(
             app.clone(),
             harness,
-            Workflow::default(),
+            Kanban::default(),
             Limits {
                 agent_budgets: BTreeMap::from([("Reviewer".to_string(), 100)]),
                 ..Limits::default()

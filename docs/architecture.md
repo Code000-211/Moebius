@@ -71,7 +71,7 @@ and does not know anything the API does not say.
 2. **The board ticks.** The loop in `Server::serve` calls `Server::tick` on a blocking thread every `board.tick_ms`.
    For each card it calls `Engine::settle`, which calls `Engine::tick` until a script stops moving the card.
    `Engine::tick` finds the script for the card's column: the project's `<script>` file, read by
-   `App::project_file` from `repos/<repository name>/` of the harness configuration repository's clone, else the built-in one from `workflow/` (`Engine::script`). `Engine::run_script`
+   `App::project_file` from `repos/<repository name>/` of the harness configuration repository's clone, else the built-in one from `kanban/` (`Engine::script`). `Engine::run_script`
    runs it in a fresh sandboxed Luau state with `card_table` and the `moebius` table, and applies the effects.
 3. **Backlog to Not started.** `backlog.luau` moves a trusted card on (`App::is_trusted`), and one made from a confirmed grilling (`card.confirmed`). Others get an `approve_issue` inbox
    item (`moebius.ask`) until a person calls `POST /v1/cards/{id}/approve` (`App::approve_issue`), which records a
@@ -154,7 +154,7 @@ and does not know anything the API does not say.
     findings without evidence and reads the two into `card.review`, whose `findings` are the blocking ones and
     `judgements` the rest. Blocking findings send the card back as the note; `offer_change` stores the judgements in
     the inbox item.
-11a. **A hard card is tried several times.** A repository's own `code.luau` (the workflows guide has one) may call
+11a. **A hard card is tried several times.** A repository's own `code.luau` (the Kanban guide has one) may call
     `moebius.start_runs`, which starts n runs with purpose `attempt` through `CardRuns::start` (each in a worktree and
     on a branch of its own, from the same commit, with a model or class from a list in turn) and stores them with
     `Store::add_attempt`. Each succeeded attempt is judged by `moebius.check_attempt` (`App::check_attempt`: the
@@ -547,7 +547,7 @@ At the top:
 | `server/packages/lock.rs` | `<data_dir>/packages.lock`, what is installed. |
 | `server/packages/download.rs` | Downloading what a package installs and checking its sha256 before anything is written. |
 | `server/packages/plugin.rs` | Installing, updating and removing a plugin: its program, its `[[plugins]]` entry through the live settings, and starting it in the plugin host. |
-| `server/packages/propose.rs` | Workflow, rules and skills packages: their files proposed as a change to a repository or to the harness configuration repository. |
+| `server/packages/propose.rs` | Kanban (`workflow`), rules and skills packages: their files proposed as a change to a repository or to the harness configuration repository. |
 | `server/packages/check.rs` | The nightly look for newer versions of the installed packages, and the inbox items it adds. |
 | `server/schedule.rs` | Once a minute: the Retro, trials, research, replays and automations when they are due, and the pause of chats that wait idle. |
 | `server/fake_github.rs` | For the tests only: a fake GitHub with one repository, and a server that polls it. |
@@ -605,7 +605,7 @@ At the top:
 | `repos/files.rs` | A repository's files on its default branch, read and committed (the Files sidebar and editor tabs of a project). |
 | `repos/search.rs` | A repository's default branch searched for the project page: the list of its paths for "Go to file", and a full-text search with `git grep`. |
 
-`board/`, the workflow:
+`board/`, the Kanban:
 
 | Module | What it is for |
 |---|---|
@@ -617,7 +617,7 @@ At the top:
 | `board/card.rs` | The `card` table a script reads, with the card's change and the verdict of its review. |
 | `board/sandbox.rs` | The Luau sandbox every script runs in, with its memory and time limits. |
 | `board/limits.rs` | The run, round and token limits scripts see, and a script call's memory and time. |
-| `board/workflow.rs` | The columns, the default workflow's scripts built into the server, and a repository's overrides. |
+| `board/kanban.rs` | The columns, the default Kanban's scripts built into the server, and a repository's overrides. |
 | `board/runs.rs` | What the engine needs of a harness (`Runs`), and the agents it lists. |
 | `board/testing.rs` | For the tests only: a fake harness and a store with a repository and a card. |
 | `board/dry_run.rs` | `check_script`: a script run once against a made-up card, for `moebius check-script`. |
@@ -735,5 +735,5 @@ At the top:
 | `improve/research/rounds.rs` | The thread that drives a research: its baseline, the Autoresearcher's rounds, each new lever measured and kept or offered, and the schedule's start of the oldest confirmed research. |
 | `improve/export.rs` | The training-set export: judgements with their contexts and outcomes as JSON Lines per kind, the held-out tenth, the exports a person started in the app. |
 
-Outside `src/`: `workflow/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension
+Outside `src/`: `kanban/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension
 loaded into every run, `bridge/moebius-ask.ts` the question tool of the agents that operate Moebius, `skill/` the built-in skills.

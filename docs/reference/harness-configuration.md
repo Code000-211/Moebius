@@ -76,7 +76,7 @@ Reviewer](#the-coder-and-the-reviewer)).
 
 ### The Coder and the Reviewer
 
-The agents the default workflow starts exist without any file: Moebius brings the `Coder` and the `Reviewer` with their
+The agents the default Kanban starts exist without any file: Moebius brings the `Coder` and the `Reviewer` with their
 instructions and their [engineering skills](#engineering-skills), and `agents/Coder.toml`, `agents/Coder.md` (or
 `[agents.Coder]`) and the same for the Reviewer add what a person sets on top, as for the Moebius agent: the built-in
 instructions come first and the agent's own after them, the built-in skills are the engineering skills alone (no
@@ -90,10 +90,10 @@ empty model, the Agents page says it needs one, and a card that starts it fails 
 `the Coder agent needs a model`; a chat with it runs on the model the chat is given. Nothing is guessed from the models
 the router can serve.
 
-The `Reviewer` is the review agent of the default workflow: it exists always, like the Coder (`moebius.has_agent("Reviewer")`
+The `Reviewer` is the review agent of the default Kanban: it exists always, like the Coder (`moebius.has_agent("Reviewer")`
 is true on every server), so a card goes to review out of the box, on the Coder's model unless the Reviewer has its own.
 A person who wants no review changes the column's script (`review.luau` of the project's settings, see the
-[workflows guide](../guide/workflows.md)), for example to `moebius.offer_change()` at once.
+[Kanban guide](../guide/kanban.md)), for example to `moebius.offer_change()` at once.
 The instructions complement what each run's prompt says (the issue, the checks, the `FINDING` format) and do not repeat
 it. The parts that fit only a card (the issue as the spec, the summary, the `FINDING` format) start with "When you work
 on a card", so in a chat with either agent they do not hold it to a card's rules; it follows what the person asks, with

@@ -186,7 +186,7 @@ takes a repository's name.
 | `secrets set <name>` | `PUT /v1/secrets/{name}` | `stored the key <name>`. The key is read from standard input, one trailing new line removed; it is never an argument. |
 | `pkg search [<text>]` | `GET /v1/packages/search?q=<text>` | Table `name kind version registry installed description`, then `problem  <registry>: <message>` for each registry that could not be read. |
 | `pkg info <name>` | `GET /v1/packages/{name}` | The name, registry and installed version, the description, and a table `version compatible moebius kind`. |
-| `pkg install <name>[@<version>] [--repository <name>] [--registry <name>]` | `POST /v1/packages` | `installed <name> <version>`, then `change <id> waits in the inbox to be merged` for a workflow, rules or skills package, the plugin's error if it does not run, and `restart the server for it to take effect` for a launcher. A plugin is for a person only. |
+| `pkg install <name>[@<version>] [--repository <name>] [--registry <name>]` | `POST /v1/packages` | `installed <name> <version>`, then `change <id> waits in the inbox to be merged` for a Kanban (`workflow`), rules or skills package, the plugin's error if it does not run, and `restart the server for it to take effect` for a launcher. A plugin is for a person only. |
 | `pkg update [<name>]` | `POST /v1/packages/{name}/update` | `updated <name> <version>` as above, or `unchanged`. Without a name, the one package the nightly check found an update for (`GET /v1/packages` first); with none, `no package has an update waiting`, with several, an error naming them. |
 | `pkg remove <name>` | `DELETE /v1/packages/{name}` | `removed <name> <version>` as above. |
 | `pkg list` | `GET /v1/packages` | Table `name version kind registry update_available`. |

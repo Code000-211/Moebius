@@ -1,13 +1,13 @@
 //! The engine: runs the script of a card's column once (`tick`, which skips a held card) or until the card stays where
 //! it is (`settle`), and applies what the script did: the column it moves the card to, with the note it gives, and why
-//! the card waits. The script of a column is the repository's override, or the built-in one (see `workflow`).
+//! the card waits. The script of a column is the repository's override, or the built-in one (see `kanban`).
 
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 
 use super::sandbox::run_sandboxed;
-use super::{CardRuns, Column, Limits, Workflow, built_in_script, repository_script};
+use super::{CardRuns, Column, Kanban, Limits, built_in_script, repository_script};
 use crate::app::{App, AppError, columns};
 use crate::store::Card;
 
@@ -25,17 +25,17 @@ pub struct Step {
 pub enum BoardError {
     #[error(transparent)]
     App(#[from] AppError),
-    #[error("no column {0:?} in the workflow")]
+    #[error("no column {0:?} in the Kanban")]
     NoColumn(String),
     #[error("{script}: {message}")]
     Script { script: String, message: String },
 }
 
-/// Runs the scripts of the workflow's columns, with the harness they start runs on and the limits they see.
+/// Runs the scripts of the Kanban's columns, with the harness they start runs on and the limits they see.
 pub struct Engine {
     pub(super) app: Arc<App>,
     pub(super) runs: Arc<dyn CardRuns>,
-    pub(super) workflow: Workflow,
+    pub(super) kanban: Kanban,
     /// Replaced when the limits are edited while the server runs (see `set_limits`).
     limits: RwLock<Limits>,
 }
@@ -53,11 +53,11 @@ pub(super) struct Effects {
 }
 
 impl Engine {
-    pub fn new(app: Arc<App>, runs: Arc<dyn CardRuns>, workflow: Workflow, limits: Limits) -> Self {
+    pub fn new(app: Arc<App>, runs: Arc<dyn CardRuns>, kanban: Kanban, limits: Limits) -> Self {
         Self {
             app,
             runs,
-            workflow,
+            kanban,
             limits: RwLock::new(limits),
         }
     }
@@ -106,7 +106,7 @@ impl Engine {
             return Ok(Step::default());
         }
         let column = self
-            .workflow
+            .kanban
             .columns
             .iter()
             .find(|c| c.name == card.column)
@@ -180,7 +180,7 @@ impl Engine {
     /// Ticks the card until its script leaves it where it is; returns the last step.
     pub fn settle(&self, card_id: i64) -> Result<Step, BoardError> {
         let mut step = self.tick(card_id)?;
-        for _ in 0..self.workflow.columns.len() * 2 {
+        for _ in 0..self.kanban.columns.len() * 2 {
             if step.moved.is_none() {
                 break;
             }
@@ -214,7 +214,7 @@ mod tests {
     use crate::board::testing::setup;
 
     #[test]
-    fn the_default_workflow_moves_a_card_from_backlog_to_done() {
+    fn the_default_kanban_moves_a_card_from_backlog_to_done() {
         let (_dir, app, engine, repo) = setup();
         let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
 
@@ -520,7 +520,7 @@ mod tests {
     }
 
     #[test]
-    fn the_default_workflow_starts_no_work_on_a_parent_and_closes_it_with_its_last_sub_issue() {
+    fn the_default_kanban_starts_no_work_on_a_parent_and_closes_it_with_its_last_sub_issue() {
         let (_dir, app, engine, repo) = setup();
         let map = app.create_issue(repo, "Map", "", PERSON).unwrap();
         let (a, b) = (
@@ -597,7 +597,7 @@ mod tests {
     }
 
     #[test]
-    fn a_wayfinder_map_and_its_tickets_are_questions_that_the_default_workflow_never_starts() {
+    fn a_wayfinder_map_and_its_tickets_are_questions_that_the_default_kanban_never_starts() {
         let (_dir, app, engine, repo) = setup();
         let map = app.create_issue(repo, "Map", "", PERSON).unwrap();
         let ticket = app.create_issue(repo, "Ticket", "", PERSON).unwrap();

@@ -21,7 +21,7 @@ Every `luau` example in the guide is a complete column script, and a test runs i
 
 Built and described here:
 
-- Column scripts, the default workflow, and a repository's overrides in its settings in the harness configuration repository (`repos/<repository name>/`).
+- Column scripts, the default Kanban, and a repository's overrides in its settings in the harness configuration repository (`repos/<repository name>/`).
 - Rules: the built-in rules, rules in prose in a server file and in a repository's settings, and the teacher model.
 - Agents, skills and MCP servers, set up in `moebius.toml` or in a harness configuration repository. In the repository,
   every edit through the API is a commit, and it holds the server's `rules.md` too.
@@ -42,7 +42,7 @@ Built and described here:
 |---|---|
 | Install a release, run the server as a service, reach it from another machine, upgrade and back up | [Running Moebius](running-moebius.md) |
 | Change what a column does for one repository, and try the change | [Column scripts](column-scripts.md) |
-| Know how a card moves from Backlog to Done and what a person can do on the way | [Workflows](workflows.md) |
+| Know how a card moves from Backlog to Done and what a person can do on the way | [Kanban](kanban.md) |
 | Forbid something to every run, or to the runs of one repository, and see a refusal | [Rules](rules.md) |
 | Set up the Coder, the Reviewer or another agent, chat with one, or have the Moebius agent build something | [Agents](agents.md) |
 | Have an agent look for ways to improve a number you can measure, and keep what helps | [Autoresearch](autoresearch.md) |
@@ -55,6 +55,6 @@ Built and described here:
 
 ## Where to start
 
-1. Run a server and a card through the default workflow: the quick start in [`README.md`](../../README.md).
-2. Read [Workflows](workflows.md) to see what happened and where you can step in.
+1. Run a server and a card through the default Kanban: the quick start in [`README.md`](../../README.md).
+2. Read [Kanban](kanban.md) to see what happened and where you can step in.
 3. Change one thing with a [column script](column-scripts.md) or a [rule](rules.md).

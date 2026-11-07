@@ -139,7 +139,7 @@ call check (see [Rules](rules.md)).
 
 ## Act on a card
 
-Each action below is recorded as a decision by `person`. [Workflows](workflows.md) says when each is possible.
+Each action below is recorded as a decision by `person`. [Kanban](kanban.md) says when each is possible.
 
 ```sh
 # Approve an issue that waits in the backlog (a card with an approve_issue item).

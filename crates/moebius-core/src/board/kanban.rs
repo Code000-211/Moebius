@@ -1,4 +1,4 @@
-//! The columns of a board and the default workflow (spec 6): its scripts, built into the server from `workflow/`, and
+//! The columns of a board and the default Kanban (spec 6): its scripts, built into the server from `kanban/`, and
 //! the scripts a project has in its settings (`repos/<repository name>/` of the harness configuration repository) in
 //! their place.
 
@@ -14,18 +14,18 @@ pub struct Column {
 
 /// The columns of a board, left to right.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Workflow {
+pub struct Kanban {
     pub columns: Vec<Column>,
 }
 
-/// The default workflow's scripts (spec 6), built into the server.
+/// The default Kanban's scripts (spec 6), built into the server.
 pub(super) const DEFAULT_SCRIPTS: &[(&str, &str)] = &[
-    ("backlog.luau", include_str!("../../workflow/backlog.luau")),
-    ("ready.luau", include_str!("../../workflow/ready.luau")),
-    ("code.luau", include_str!("../../workflow/code.luau")),
-    ("review.luau", include_str!("../../workflow/review.luau")),
-    ("merge.luau", include_str!("../../workflow/merge.luau")),
-    ("done.luau", include_str!("../../workflow/done.luau")),
+    ("backlog.luau", include_str!("../../kanban/backlog.luau")),
+    ("ready.luau", include_str!("../../kanban/ready.luau")),
+    ("code.luau", include_str!("../../kanban/code.luau")),
+    ("review.luau", include_str!("../../kanban/review.luau")),
+    ("merge.luau", include_str!("../../kanban/merge.luau")),
+    ("done.luau", include_str!("../../kanban/done.luau")),
 ];
 
 /// The name of the column `name` stands for: "Ready", the name the column "Not started" had, is its alias, so scripts
@@ -38,10 +38,10 @@ pub fn resolve_column(name: &str) -> &str {
     }
 }
 
-/// The column of the default workflow called `name` (or its alias, see [`resolve_column`]), in any case.
+/// The column of the default Kanban called `name` (or its alias, see [`resolve_column`]), in any case.
 pub fn column_named(name: &str) -> Option<Column> {
     let name = resolve_column(name);
-    Workflow::default()
+    Kanban::default()
         .columns
         .into_iter()
         .find(|column| column.name.eq_ignore_ascii_case(name))
@@ -60,7 +60,7 @@ pub fn repository_script(app: &App, repository: &Repository, file: &str) -> Opti
     app.project_file(repository, file)
 }
 
-impl Default for Workflow {
+impl Default for Kanban {
     fn default() -> Self {
         // The script file of a column keeps the name it was first given, so a project that wrote
         // `ready.luau` still overrides the column now called "Not started".

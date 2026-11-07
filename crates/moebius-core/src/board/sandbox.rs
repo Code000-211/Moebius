@@ -73,7 +73,7 @@ mod tests {
     use crate::app::{App, PERSON};
     use crate::board::engine::Effects;
     use crate::board::testing::{FakeHarness, engine_with, setup, setup_with_harness};
-    use crate::board::{CardRuns, Engine, Limits, StartError, Step, Variant, Workflow};
+    use crate::board::{CardRuns, Engine, Kanban, Limits, StartError, Step, Variant};
     use crate::store::{Card, Run};
 
     /// A harness that takes longer to start a run than a script may run.
@@ -123,7 +123,7 @@ mod tests {
         let engine = Engine::new(
             app.clone(),
             Arc::new(SlowHarness),
-            Workflow::default(),
+            Kanban::default(),
             Limits {
                 script_time: Duration::from_millis(300),
                 ..Limits::default()

@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use moebius_plugin_api::Host;
 
-use super::{AgentInfo, CardRuns, Engine, Limits, StartError, Variant, Workflow};
+use super::{AgentInfo, CardRuns, Engine, Kanban, Limits, StartError, Variant};
 use crate::app::App;
 use crate::harness::remote::RunnerInfo;
 use crate::repos::git;
@@ -17,7 +17,7 @@ use crate::store::{Card, Run, Store};
 /// a `review` run changes nothing and ends with the next of `answers`, or an approval when there are none left.
 #[derive(Default)]
 pub(super) struct FakeHarness {
-    /// Whether the Reviewer is missing, so that the default workflow offers a change at once. The real Reviewer is built
+    /// Whether the Reviewer is missing, so that the default kanban offers a change at once. The real Reviewer is built
     /// in; this is for the tests that are not about review.
     pub(super) unreviewed: bool,
     pub(super) answers: Mutex<VecDeque<String>>,
@@ -171,7 +171,7 @@ pub(super) fn setup_with_harness(
         .unwrap();
     // The real limits: a short time limit would make tests fail on a busy machine. Only the tests of the limit
     // itself shorten it.
-    let engine = Engine::new(app.clone(), harness, Workflow::default(), Limits::default());
+    let engine = Engine::new(app.clone(), harness, Kanban::default(), Limits::default());
     (dir, app, engine, repo.id)
 }
 
@@ -184,7 +184,7 @@ pub(super) fn engine_with(app: &Arc<App>, limits: Limits) -> Engine {
     Engine::new(
         app.clone(),
         Arc::new(FakeHarness::default()),
-        Workflow::default(),
+        Kanban::default(),
         limits,
     )
 }
