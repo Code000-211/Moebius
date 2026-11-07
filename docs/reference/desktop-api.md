@@ -604,7 +604,7 @@ Where each thing lives depends on the forge; what a forge cannot express, Moebiu
 - **Claims are Moebius's own and advisory.** A run is not a forge user, so a claim is not an assignee: nothing is written
   to the forge and the assignees the forge has are not read. A claim names a person (`person`), the Moebius agent
   (`agent:<name>`) or a name a session gave itself, which is free text: the claim keeps honest sessions from taking the
-  same issue, it does not keep anyone out, and the default workflow does not look at it.
+  same issue, it does not keep anyone out, and the default Kanban does not look at it.
 - **Comments** read from the forge are stored once each, by the id they have there, and are read again when the forge's
   count of an issue's comments differs from what Moebius has (and from what the forge said when they were last read, so
   that a comment deleted on the forge is read once and not at every poll). A comment that is edited or deleted on the
@@ -677,7 +677,7 @@ such card; `409` a run of the card is going (block the card to stop it first); `
 
 ### `POST /v1/cards/{id}/reopen`
 
-Reopens a closed issue, on the forge too: its card moves from `Done` back to `Backlog`, where the workflow takes it up as
+Reopens a closed issue, on the forge too: its card moves from `Done` back to `Backlog`, where the Kanban takes it up as
 it does a new issue. Request: `{"reason": string}` (optional). The decision is recorded (kind `reopen_issue`) and the event
 `card_reopened` is sent. Response: the `Card`. Errors: `404` no such card; `409` the issue is open; `500` the forge refused.
 
@@ -1576,7 +1576,7 @@ same five, in the order a person takes them. Response:
 - `harness` is done when the server runs with `[harness]` (see [harness configuration](harness-configuration.md)), and
   the detail names its URL. Without it the detail says what `POST /v1/harness/setup` does, which the web app's
   "Set up" button sends.
-- `coder` is done when the agent the default workflow starts in the code column, `Coder`, has a model.
+- `coder` is done when the agent the default Kanban starts in the code column, `Coder`, has a model.
 - `repository` is done when at least one repository is added.
 - `detail` is a sentence in plain words. It holds no key and no URL credentials.
 - `warnings` are sentences the person should read even when every step is done: one for each upstream that logs in with
@@ -1649,7 +1649,7 @@ on and refused, as at the server's start.
 
 ### Packages
 
-The package manager (see [packages](packages.md)). A package is a `plugin`, `workflow`, `rules` or `skills` package.
+The package manager (see [packages](packages.md)). A package is a `plugin`, `workflow` (a Kanban), `rules` or `skills` package.
 
 #### `GET /v1/packages/search`
 
@@ -1689,9 +1689,9 @@ and none has it.
 
 Installs a package (see [installing](packages.md#installing)). Request: `{"name", "version"?, "registry"?, "repository"?}`;
 `version` is exact, without it the newest that works with this Moebius; `repository` is a repository's name, for a
-workflow or rules package. Response, here and for the two routes below, an `Outcome`: `name`, `version`, `kind`,
+Kanban (`workflow`) or rules package. Response, here and for the two routes below, an `Outcome`: `name`, `version`, `kind`,
 `action` (`installed`, `updated`, `removed` or `unchanged`), `restart_needed` (a launcher is read when the server
-starts), `change` (the change that proposes the files of a workflow, rules or skills package; absent for a plugin) and
+starts), `change` (the change that proposes the files of a Kanban (`workflow`), rules or skills package; absent for a plugin) and
 `plugin` (a plugin's `program`, `state`, `restarts` and `error`, as `GET /v1/plugins` has them; absent for the others) and `leftover` (after removing a plugin, the folder of its
 files when it could not be deleted; the removal is done all the same; absent otherwise).
 Errors: `403` a run token asks for a plugin (the Moebius agent may propose the other kinds); `404` no registry has the

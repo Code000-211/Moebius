@@ -25,7 +25,7 @@ use serde_json::{Value, json};
 
 use super::retro::Report;
 use crate::app::{App, Result};
-use crate::board::Workflow;
+use crate::board::Kanban;
 use crate::server::settings::Live;
 
 pub use apply::{dismiss, merge};
@@ -55,7 +55,7 @@ pub const KEYS: &[&str] = &[
 /// The files of a project's settings the Retro may propose to change: its rules and its column scripts.
 pub fn files() -> Vec<String> {
     let mut files = vec!["rules.md".to_string()];
-    files.extend(Workflow::default().columns.into_iter().map(|c| c.script));
+    files.extend(Kanban::default().columns.into_iter().map(|c| c.script));
     files
 }
 

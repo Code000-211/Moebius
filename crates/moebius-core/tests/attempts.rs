@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use moebius_core::app::{App, PERSON};
-use moebius_core::board::{Engine, Limits, Workflow};
+use moebius_core::board::{Engine, Kanban, Limits};
 use moebius_core::config::AgentConfig;
 use moebius_core::harness::pibolt::PiBolt;
 use moebius_core::repos::git;
@@ -24,7 +24,7 @@ use moebius_plugin_api::Host;
 /// The `code.luau` of the workflows guide that tries a hard card several times.
 fn guide_script(models: &str) -> String {
     let page = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/guide/workflows.md"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/guide/kanban.md"),
     )
     .unwrap();
     let (_, after) = page
@@ -96,7 +96,7 @@ fn setup(models: &str) -> Setup {
     let engine = Engine::new(
         app.clone(),
         Arc::new(pi),
-        Workflow::default(),
+        Kanban::default(),
         Limits::default(),
     );
     let card = app

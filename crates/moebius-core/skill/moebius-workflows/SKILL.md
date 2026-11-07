@@ -1,14 +1,14 @@
 ---
 name: moebius-workflows
-description: Write or change Moebius column scripts (Luau) and whole workflows in a repository's settings (repos/<repository name>/ of the harness configuration repository). Use it when the person wants cards of a repository treated differently - held back, approved first, started with another agent, given up sooner, checked or reviewed another way - or asks for a column script, a workflow, the checks or the rules of a repository.
+description: Write or change Moebius column scripts (Luau) and the Kanban in a repository's settings (repos/<repository name>/ of the harness configuration repository). Use it when the person wants cards of a repository treated differently - held back, approved first, started with another agent, given up sooner, checked or reviewed another way - or asks for a column script, a Kanban, the checks or the rules of a repository.
 ---
 
-# Column scripts and workflows
+# Column scripts and the Kanban
 
-Goal: a repository's cards do what the person wants, with the smallest change to the default workflow, checked before
+Goal: a repository's cards do what the person wants, with the smallest change to the default Kanban, checked before
 it is offered.
 
-## What a workflow is
+## What the Kanban is
 
 Every board has six columns, each run by one Luau script; a repository replaces a column's script with a file of its
 settings, `repos/<repository name>/` of the harness configuration repository (never a `.moebius/` folder in the
@@ -23,7 +23,7 @@ repository: Moebius reads none):
 | `Ready to merge` | `merge.luau` |
 | `Done` | `done.luau` |
 
-A whole workflow is a set of these files, plus `checks` (the command that checks a change, without a forge) and
+The whole Kanban is a set of these files, plus `checks` (the command that checks a change, without a forge) and
 `rules.md` (rules for this repository's runs). Moebius reads them from the default branch of the harness configuration
 repository, and your saves through the API are commits there, so they work at once.
 
@@ -100,4 +100,4 @@ Try both paths: `"$MOEBIUS" check-script ready.luau --column "Not started"` and
 ## Details
 
 In the `moebius` skill: `guide/column-scripts.md` (more examples, how to test a script), `reference/column-scripts.md`
-(every field and function, the limits), `guide/workflows.md` (what each default script does) and `guide/rules.md`.
+(every field and function, the limits), `guide/kanban.md` (what each default script does) and `guide/rules.md`.

@@ -95,7 +95,7 @@ to `to-tickets`, or a decision to lock before anything is planned.
    cut it into issues.
 
 An issue with a `wayfinder:` label is a question, not a task: the default `ready.luau` never starts the Coder on it, and
-leaves it in `Not started` until a wayfinder session closes it (see [Workflows](workflows.md)). The map and its tickets are
+leaves it in `Not started` until a wayfinder session closes it (see [Kanban](kanban.md)). The map and its tickets are
 written by the agent through `"$MOEBIUS" issue`, which is why the agent's run token is accepted for the issue routes of
 the desktop API, and for nothing else. Moebius holds the token to the map: it reaches the issues of the repository of
 its chat only (another repository answers `404`, as if it were not there), it creates only issues with a `wayfinder:`

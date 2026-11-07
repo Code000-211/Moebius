@@ -27,7 +27,7 @@ against your rules, and learns from what went wrong.
 
 ## What it does
 
-You put issues on a board. Moebius picks them up and runs the workflow on its own:
+You put issues on a board. Moebius picks them up and runs the Kanban on its own:
 
 1. **Code.** An agent works on the card in its own git worktree, through [Pi-Bolt](https://github.com/opensec-git/Pi-Bolt)
    or Claude Code, on the server or on another machine over SSH. A repository can ask for a failing reproduction test
@@ -187,7 +187,7 @@ Moebius is made to be extended by people and agents who have not read its code. 
 in [`docs/reference/`](docs/reference/), and the [guide](docs/guide/README.md) shows each task step by step, with
 examples that the tests run.
 
-- **[Column scripts](docs/guide/column-scripts.md)** and **[workflows](docs/guide/workflows.md)**: change how cards move, in Luau, per repository.
+- **[Column scripts](docs/guide/column-scripts.md)** and **[Kanban](docs/guide/kanban.md)**: change how cards move, in Luau, per repository.
 - **[Rules](docs/guide/rules.md)**: what agents must never do, in prose.
 - **[Agents](docs/guide/agents.md)**: models, instructions, skills, MCP servers and extensions.
 - **[Pi extensions](docs/guide/extensions.md)**: TypeScript inside the agent's process.

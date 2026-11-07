@@ -15,7 +15,7 @@ links to the other.
 These pages are for people and agents who change how Moebius behaves without changing its code. The Moebius agent
 reads them too: they are its `moebius` skill.
 
-- [The guide](guide/README.md): one task per page, such as column scripts, workflows, rules, agents, extensions,
+- [The guide](guide/README.md): one task per page, such as column scripts, the Kanban, rules, agents, extensions,
   plugins, the command line and the desktop API. Every example in it is run by a test.
 - [The reference](reference/): the exact contracts, one page each:
   [column scripts](reference/column-scripts.md), [rules](reference/rules.md),

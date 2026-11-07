@@ -1,9 +1,9 @@
-# The default workflow, and where a person steps in
+# The default Kanban, and where a person steps in
 
 ## When you want this
 
 You want to know what Moebius does with an issue by itself, why a card is where it is, what a person can do to it and
-which setting changes which behaviour. The scripts behind the columns are in `crates/moebius-core/workflow/`; this
+which setting changes which behaviour. The scripts behind the columns are in `crates/moebius-core/kanban/`; this
 page describes what they do. The exact functions they call are in the
 [column script reference](../reference/column-scripts.md), and the routes a person uses are in the
 [desktop API reference](../reference/desktop-api.md).
@@ -126,7 +126,7 @@ branch.
 
 Localizing before repairing is a strong, cheap step. Before each `code` run Moebius asks the decision point `localize`
 which files the card's change is likely to touch, and the run is given the answer under "Files that are likely relevant
-(a hint, not a limit)", told to verify it. A repository settles this for its own workflow in the file `localize` of its settings,
+(a hint, not a limit)", told to verify it. A repository settles this for its own Kanban in the file `localize` of its settings,
 over the `[localize]` table of the server: `off` gives its runs no hint, and `files 5` names at
 most five. When the card's change is known, each hint is judged by the files the change touched; the web app shows
 how many of the hinted files they were. The rules are in the [decision model reference](../reference/decision-model.md#localize).

@@ -32,7 +32,7 @@ Outside `src/`:
 
 | Path | What it holds |
 |---|---|
-| `workflow/` | The built-in column scripts. |
+| `kanban/` | The built-in column scripts. |
 | `bridge/` | The Pi extensions: the bridge, loaded into every run, and the question tool of the agents that operate Moebius. |
 | `skill/` | The built-in skills, and in `vendor/` the engineering skills copied from Matt Pocock's skills with their license. |
 | `testdata/` | The fake Pi, the fake `claude`, the fake `ssh`, an MCP server that echoes, a GitHub App key and the manifest of a package (`packages/`). |

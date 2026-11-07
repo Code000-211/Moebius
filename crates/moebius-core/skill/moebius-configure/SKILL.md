@@ -27,7 +27,7 @@ Code, which needs `--protocol anthropic` and no extensions. These commands need 
 repository; without one the agents are the `agents` tables of `moebius.toml` (see Settings below). The built-in agents
 (`Moebius`, `Grilling-partner`, `Coder`, `Reviewer`) keep their built-in instructions and skills; what you save is added after
 them. The Coder and the Reviewer exist without a file, with good instructions of their own (they work test first and
-review read only), so to set up the agents of the default workflow give each a model and leave `--instructions` out, unless
+review read only), so to set up the agents of the default Kanban give each a model and leave `--instructions` out, unless
 the person wants their own words added: `"$MOEBIUS" agent save Coder --model qwen-coder`. The Coder needs a model (a card
 fails without one); the Reviewer without a model takes the Coder's, and reviews begin once it is saved.
 

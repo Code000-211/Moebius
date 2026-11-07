@@ -99,8 +99,7 @@ fn every_script_function_constant_and_card_field_is_in_the_reference() {
 #[test]
 fn every_default_script_is_in_the_reference() {
     let mut scripts = Vec::new();
-    for entry in std::fs::read_dir(repository_root().join("crates/moebius-core/workflow")).unwrap()
-    {
+    for entry in std::fs::read_dir(repository_root().join("crates/moebius-core/kanban")).unwrap() {
         scripts.push(entry.unwrap().file_name().to_string_lossy().into_owned());
     }
     assert_eq!(scripts.len(), 6);

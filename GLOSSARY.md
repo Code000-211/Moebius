@@ -125,7 +125,7 @@ _Avoid_: task, ticket, item
 
 **Run**:
 One use of a harness, as one agent, for one purpose, such as working on one card in its own worktree; a card has as many
-runs as its workflow needs.
+runs as its Kanban needs.
 _Avoid_: job, session, execution
 
 **Column**:
@@ -137,10 +137,10 @@ _Avoid_: status, lane, state
 A piece of behaviour behind a column, written in the script language built into Moebius.
 _Avoid_: hook, plugin, automation
 
-**Workflow**:
+**Kanban**:
 The columns a card goes through on its own and the behaviour behind them, by default coding and then testing and review, and
 back to coding while anything is still wrong, until its change is ready to merge; a person steps in only before the merge.
-_Avoid_: pipeline, process, flow
+_Avoid_: workflow, pipeline, process, flow
 
 **Attempt**:
 One of several runs a hard card gets in one go, each in a worktree and on a branch of its own and perhaps with another
@@ -195,7 +195,7 @@ until it is understood; it ends in a set of issues the person confirms before Mo
 _Avoid_: shaping, session, interview
 
 **Trusted author**:
-A person whose issues start the workflow without anyone's approval; issues from anyone else wait until a person approves
+A person whose issues start the Kanban without anyone's approval; issues from anyone else wait until a person approves
 them.
 _Avoid_: collaborator, maintainer, allowlisted user
 

@@ -18,7 +18,7 @@ back here for the exact page it names:
 |---|---|
 | What is going on, and acting on it: board, cards, inbox, chats, usage, repositories, issues, research, grillings | `moebius-operate` |
 | Agents, rules, a column's script through the API, settings, skills, MCP servers | `moebius-configure` |
-| Column scripts and whole workflows in a repository's settings | `moebius-workflows` |
+| Column scripts and the Kanban in a repository's settings | `moebius-workflows` |
 | Pi extensions | `moebius-extensions` |
 | Decider plugins in Rust | `moebius-plugins` |
 | A fix or a problem in Moebius itself, sent to its official repository (only when the person says yes) | `moebius-report` |
@@ -39,14 +39,14 @@ back here for the exact page it names:
 |---|---|---|---|
 | To know what is going on, what is stuck, what is missing, what it costs | `reference/cli.md`, `reference/desktop-api.md` | Nothing: you answer | Read it from the server, and say where each figure comes from |
 | A column to behave differently in one repository | `guide/column-scripts.md`, `reference/column-scripts.md` | `"$MOEBIUS" api PUT /v1/repositories/<id>/scripts/<Column>` (the repository's settings) | `"$MOEBIUS" check-script <column>.luau --column <Column>` on a scratch file first |
-| A workflow of their own | `guide/workflows.md` | The repository's settings, one `PUT` for each script | `check-script` for every script |
+| A Kanban of their own | `guide/kanban.md` | The repository's settings, one `PUT` for each script | `check-script` for every script |
 | Something forbidden to every run, or to one repository's runs | `guide/rules.md`, `reference/rules.md` | The server's rules: `"$MOEBIUS" rules save <file>`, or `rules.md` in a harness chat. One repository's: `"$MOEBIUS" api PUT /v1/repositories/<id>/settings/rules.md` | Read them back with `"$MOEBIUS" rules`; the rules parser's refusal names what is wrong |
 | An agent set up or changed | `guide/agents.md`, `reference/harness-configuration.md` | `"$MOEBIUS" agent save <name> ...`, or `agents/<name>.toml` and `.md` in a harness chat | `"$MOEBIUS" agent show <name>` |
 | A skill or an MCP server | `reference/harness-configuration.md` | `"$MOEBIUS" api PUT /v1/skills/<name>` or `/v1/mcp-servers/<name>`, or the files in a harness chat | Read it back with `api GET`; an agent that names it gets it in its next run |
 | A Pi extension | `guide/extensions.md`, `reference/bridge-protocol.md` | A file in a harness chat, named in the agent's `extensions` | The guide's way to load it; the bridge stays last |
 | A plugin (a decider in Rust) | `guide/plugins.md`, `reference/plugin-api.md` | A Rust crate in the chat's repository | `cargo test`, and `cargo run` of its example |
 | A setting, a model, an upstream | `reference/configuration.md` | `"$MOEBIUS" settings set <key>=<value>` | `"$MOEBIUS" settings`; it says when a restart is needed |
-| A repository, an issue, a card moved on | `guide/workflows.md`, `reference/desktop-api.md` | `"$MOEBIUS" repo add`, `issue create`, `inbox act` | `"$MOEBIUS" board` |
+| A repository, an issue, a card moved on | `guide/kanban.md`, `reference/desktop-api.md` | `"$MOEBIUS" repo add`, `issue create`, `inbox act` | `"$MOEBIUS" board` |
 | A number improved, or an idea turned into issues | `guide/autoresearch.md`, `guide/grilling.md` | `"$MOEBIUS" research new ...`, or a grilling chat | `"$MOEBIUS" research <id>` |
 | Something only the desktop API can do | `guide/desktop-api.md`, `reference/desktop-api.md` | `"$MOEBIUS" api <METHOD> <route> --body <json>` | The answer, and reading the state again |
 

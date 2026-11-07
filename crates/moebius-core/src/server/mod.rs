@@ -32,7 +32,7 @@ use moebius_plugin_api::Host;
 use tokio::net::TcpListener;
 
 use crate::app::App;
-use crate::board::{Engine, Limits, Workflow};
+use crate::board::{Engine, Kanban, Limits};
 use crate::config::{Config, GitHubAuth, TokenSource};
 use crate::decide::check;
 use crate::decide::guard::{Guard, Teacher};
@@ -336,7 +336,7 @@ impl Server {
         let engine = Arc::new(Engine::new(
             app.clone(),
             harness.clone(),
-            Workflow::default(),
+            Kanban::default(),
             Limits {
                 run_limit: config.run_limit,
                 round_limit: config.round_limit,

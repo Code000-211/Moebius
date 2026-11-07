@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use super::{KEYS, REPOSITORY, SETTINGS, files, unified};
 use crate::app::{App, PERSON, Result};
-use crate::board::{Workflow, check_script};
+use crate::board::{Kanban, check_script};
 use crate::bus::Event;
 use crate::harness::repo::OwnBranch;
 use crate::server::settings::{Changes, Live};
@@ -172,7 +172,7 @@ fn check(file: &str, text: &str) -> std::result::Result<(), String> {
     if file == "rules.md" {
         return crate::decide::rules::check(text);
     }
-    let column = Workflow::default()
+    let column = Kanban::default()
         .columns
         .into_iter()
         .find(|c| c.script == file)
