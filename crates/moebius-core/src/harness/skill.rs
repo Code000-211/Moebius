@@ -451,6 +451,10 @@ const FILES: &[(&str, &str)] = &[
         "reference/training-export.md",
         include_str!("../../../../docs/reference/training-export.md"),
     ),
+    (
+        "reference/workflows.md",
+        include_str!("../../../../docs/reference/workflows.md"),
+    ),
 ];
 
 /// Where the built-in skill `name` is kept under the data directory.

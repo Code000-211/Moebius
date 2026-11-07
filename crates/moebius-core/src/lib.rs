@@ -19,6 +19,7 @@ pub mod repos;
 pub mod router;
 pub mod server;
 pub mod store;
+pub mod workflows;
 
 /// The version of this build of Moebius.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

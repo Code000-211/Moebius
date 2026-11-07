@@ -492,7 +492,11 @@ mod tests {
         let docs = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs");
         for directory in ["guide", "reference"] {
             for page in std::fs::read_dir(docs.join(directory)).unwrap() {
-                let name = page.unwrap().file_name();
+                let page = page.unwrap();
+                if !page.file_type().unwrap().is_file() {
+                    continue;
+                }
+                let name = page.file_name();
                 let written = std::fs::read(skill.join(directory).join(&name)).unwrap();
                 assert_eq!(
                     written,

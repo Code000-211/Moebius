@@ -142,6 +142,21 @@ The columns a card goes through on its own and the behaviour behind them, by def
 back to coding while anything is still wrong, until its change is ready to merge; a person steps in only before the merge.
 _Avoid_: workflow, pipeline, process, flow
 
+**Workflow**:
+A graph kept as a file in the harness configuration repository: one trigger, the nodes that do the work, and the edges a
+value follows between their ports.
+_Avoid_: Kanban, board, pipeline
+
+**Node**:
+One piece of work in a workflow, of a kind the registry builds from the file's parameters, with named input and output
+ports.
+_Avoid_: step, task, block
+
+**Workflow run**:
+One execution of a workflow from its trigger to its last node, keeping the values that passed between nodes; it is not a
+run of a harness.
+_Avoid_: run, job, execution
+
 **Attempt**:
 One of several runs a hard card gets in one go, each in a worktree and on a branch of its own and perhaps with another
 model; each is judged by the repository's checks and the reproduction test, and one that passed is picked, by a selection
