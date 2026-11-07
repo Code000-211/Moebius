@@ -85,4 +85,9 @@ export const keys = {
   shadowing: ["decision-model", "shadowing"] as const,
   kinds: ["decision-model", "kinds"] as const,
   exports: ["decision-model", "exports"] as const,
+  /** The Workflows pages: the list, one definition, and a run with its nodes. */
+  workflows: ["workflows"] as const,
+  workflowDefinitions: ["workflow"] as const,
+  workflow: (name: string) => ["workflow", name] as const,
+  workflowRun: (id: number) => ["workflow-run", id] as const,
 };

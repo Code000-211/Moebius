@@ -145,6 +145,25 @@ describe("invalidates", () => {
   it("makes everything stale when events were lost", () => {
     expect(invalidates({ kind: "lagged", data: { missed: 3 } })).toEqual([[]]);
   });
+
+  it("reads the workflows, their definitions and the run again when a run or node moves", () => {
+    const queryClient = client();
+    queryClient.setQueryData(keys.workflows, []);
+    queryClient.setQueryData(keys.workflow("release"), {});
+    queryClient.setQueryData(keys.workflowRun(7), {});
+    applyEvent(queryClient, {
+      kind: "workflow_node_ended",
+      data: { run: 7, node: "test", attempt: 1, status: "done", error: null },
+    });
+    expect(stale(queryClient, keys.workflows)).toBe(true);
+    expect(stale(queryClient, keys.workflow("release"))).toBe(true);
+    expect(stale(queryClient, keys.workflowRun(7))).toBe(true);
+    expect(stale(queryClient, keys.health)).toBe(false);
+    expect(invalidates({ kind: "workflow_run_queued", data: {} })).toEqual([
+      keys.workflows,
+      keys.workflowDefinitions,
+    ]);
+  });
 });
 
 describe("applyEvent", () => {

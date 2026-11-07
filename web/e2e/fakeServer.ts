@@ -17,6 +17,7 @@ import { createPagesAFake, type PagesAFake } from "./fake/pages-a";
 import { createPagesBFake, type PagesBFake } from "./fake/pages-b";
 import { createPagesCFake, type PagesCFake } from "./fake/pages-c";
 import { createFakeRuns, type FakeRuns } from "./fake/runs";
+import { createWorkflowsFake, type WorkflowsFake } from "./fake/workflows";
 
 export const TOKEN = "fake-server-token";
 export const AGENT_TOKEN = "fake-run-token";
@@ -64,6 +65,8 @@ export interface FakeServer {
   pagesC: PagesCFake;
   /** The package managers: the Moebius registries and the pi.dev catalog (e2e/fake/packages.ts). */
   packages: PackagesFake;
+  /** The workflows and their runs (e2e/fake/workflows.ts). */
+  workflows: WorkflowsFake;
 }
 
 function cookieOf(request: IncomingMessage): string | undefined {
@@ -105,6 +108,7 @@ export async function startFakeServer(): Promise<FakeServer> {
   const pagesA = createPagesAFake(broadcast, board);
   const pagesB = createPagesBFake();
   const pagesC = createPagesCFake(broadcast);
+  const workflows = createWorkflowsFake();
   const packages = createPackagesFake(broadcast, pagesA);
   let port = 0;
 
@@ -148,6 +152,8 @@ export async function startFakeServer(): Promise<FakeServer> {
     // Rules, automations, Retro, research, the decision model and the column scripts: one rules file is a file of a repository, which pages A would answer.
     if (await pagesC.handle(request, response, path)) return;
     if (await pagesA.handle(request, response, path)) return;
+    // The workflows' own routes read their path before the board does; none of them changes anything.
+    if (await workflows.handle(request, response, path)) return;
     if (path === "/v1/health") return json(response, { version: "0.0.0-fake" });
     if (path === "/v1/snapshot") return json(response, board.snapshot());
     if (path === "/v1/start") return json(response, { done: true, steps: [], warnings: [] });
@@ -225,6 +231,7 @@ export async function startFakeServer(): Promise<FakeServer> {
     pagesB,
     pagesC,
     packages,
+    workflows,
     broadcast,
     async stop() {
       for (const ws of sockets) ws.terminate();
