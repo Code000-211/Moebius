@@ -7,7 +7,8 @@
 //! `shadows` (the decision model's shadows and takeovers), `usage`, `found` (what the Retro collects), `retros`
 //! (Retros, proposals and trials), `lessons` (what the Retro learned from earlier cards), `attempts` (the runs a hard
 //! card gets in one go and which was picked), `research` (research, its runs and experiments), `automations`
-//! (automations, their firings and the local clock) and `plugin_settings` (what plugins keep for the server).
+//! (automations, their firings and the local clock), `workflows` (workflow runs and what each node did) and
+//! `plugin_settings` (what plugins keep for the server).
 //! Every public type is re-exported here, as `store::Card` and the like.
 
 mod attempts;
@@ -31,6 +32,7 @@ mod retros;
 mod runs;
 mod shadows;
 mod usage;
+mod workflows;
 
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
@@ -62,6 +64,7 @@ pub use usage::{
     ANSWERING, ActivityUsage, AgentUsage, ClassUsage, ModelUsage, NO_RUN, ToolOutputSaving,
     ToolWait, UNKNOWN, Usage, UsageTotals,
 };
+pub use workflows::{WorkflowNodeRun, WorkflowRun};
 
 /// Why the store failed.
 #[derive(Debug, thiserror::Error)]
@@ -425,6 +428,7 @@ ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
     issues::SCHEMA,
     plugin_settings::APP_SCHEMA,
     issues::COMMENT_ORIGIN,
+    workflows::SCHEMA,
 ];
 
 pub fn now() -> i64 {
