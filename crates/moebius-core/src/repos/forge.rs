@@ -376,7 +376,7 @@ impl Forge for GitHubForge {
         let name = Self::github_name(repository)?;
         let clone = Path::new(&repository.path);
         let header = self.origin_auth(clone, name)?;
-        self.repos.push(clone, branch, header.as_deref())?;
+        self.repos.push(clone, branch, header.as_deref(), true)?;
         if pull_request.is_some() {
             return Ok(pull_request);
         }
@@ -575,7 +575,7 @@ impl Forge for GitLabForge {
         let project = Self::project(repository)?;
         let clone = Path::new(&repository.path);
         let header = self.origin_auth(clone)?;
-        self.repos.push(clone, branch, header.as_deref())?;
+        self.repos.push(clone, branch, header.as_deref(), true)?;
         if merge_request.is_some() {
             return Ok(merge_request);
         }
@@ -757,7 +757,7 @@ impl Forge for ForgejoForge {
         let repo = Self::repo(repository)?;
         let clone = Path::new(&repository.path);
         let header = self.origin_auth(clone)?;
-        self.repos.push(clone, branch, header.as_deref())?;
+        self.repos.push(clone, branch, header.as_deref(), true)?;
         if pull_request.is_some() {
             return Ok(pull_request);
         }

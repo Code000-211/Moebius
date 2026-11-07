@@ -514,6 +514,62 @@ impl Store {
         column: &str,
         blocked_by: &BTreeSet<i64>,
     ) -> Result<Card> {
+        self.add_card_awaiting(
+            repository_id,
+            number,
+            title,
+            body,
+            author,
+            column,
+            true,
+            blocked_by,
+            None,
+        )
+    }
+
+    /// Adds a card that the board leaves alone until [`Store::release_card`]: one whose parent, labels and blockers
+    /// are still being set, so that no script starts it without them. `confirmed` says whether it needs no approval;
+    /// `by` is who holds it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_held_card(
+        &self,
+        repository_id: i64,
+        number: Option<i64>,
+        title: &str,
+        body: &str,
+        author: &str,
+        column: &str,
+        confirmed: bool,
+        by: &str,
+    ) -> Result<Card> {
+        self.add_card_awaiting(
+            repository_id,
+            number,
+            title,
+            body,
+            author,
+            column,
+            confirmed,
+            &BTreeSet::new(),
+            Some(by),
+        )
+    }
+
+    /// Stores a card, its blockers, whether it needs approval, and its hold, in one step, so that the board never sees
+    /// it without any of them.
+    #[allow(clippy::too_many_arguments)]
+    fn add_card_awaiting(
+        &self,
+        repository_id: i64,
+        number: Option<i64>,
+        title: &str,
+        body: &str,
+        author: &str,
+        column: &str,
+        confirmed: bool,
+        blocked_by: &BTreeSet<i64>,
+        held_by: Option<&str>,
+    ) -> Result<Card> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
         let number = match number {
@@ -535,7 +591,20 @@ impl Store {
             Some(id) => id,
             None => Self::insert_card(&tx, repository_id, number, title, body, author, column)?.id,
         };
-        tx.execute("UPDATE cards SET confirmed = 1 WHERE id = ?1", [id])?;
+        if confirmed {
+            tx.execute("UPDATE cards SET confirmed = 1 WHERE id = ?1", [id])?;
+        }
+        if let Some(by) = held_by {
+            tx.execute(
+                "UPDATE cards SET held_by = ?1, held_reason = ?2, held_at = ?3 WHERE id = ?4",
+                params![
+                    by,
+                    "its parent, labels and blockers are still being set",
+                    now(),
+                    id
+                ],
+            )?;
+        }
         tx.execute("DELETE FROM dependencies WHERE card_id = ?1", [id])?;
         for blocker in blocked_by {
             tx.execute(

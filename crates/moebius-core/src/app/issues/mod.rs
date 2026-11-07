@@ -237,7 +237,7 @@ impl App {
                 )));
             }
         }
-        let card = self.create_issue(repository.id, title, body, super::PERSON)?;
+        let card = self.create_held_issue(&repository, title, body, true)?;
         let mut warnings = Vec::new();
         let mut note = |what: String, result: Result<()>| {
             if let Err(e) = result {
@@ -262,7 +262,11 @@ impl App {
                 self.add_blocker(card.id, *blocker).map(|_| ()),
             );
         }
-        Ok((self.card(card.id)?, warnings))
+        // Released only now: a script that saw the card before its blockers were stored could start it unblocked.
+        self.store.release_card(card.id)?;
+        let card = self.card(card.id)?;
+        self.bus.publish(Event::CardAdded(card.clone()));
+        Ok((card, warnings))
     }
 
     /// Replaces the labels of the card's issue (blank ones and repeats are dropped), on the forge too. Announces
@@ -623,7 +627,13 @@ mod tests {
         body: Arc<Mutex<Option<String>>>,
         /// Whether it refuses labels.
         labels_refused: Arc<Mutex<bool>>,
+        /// Called when the forge is asked to set a blocker, so that a test can look at the store while a new issue
+        /// is still being set up.
+        on_blocker: BlockerHook,
     }
+
+    /// What a test does when the forge is asked to set a blocker.
+    type BlockerHook = Arc<Mutex<Option<Arc<dyn Fn(i64) + Send + Sync>>>>;
 
     impl Recording {
         fn note(&self, call: String) -> std::result::Result<(), ForgeError> {
@@ -726,6 +736,9 @@ mod tests {
             blocker: i64,
             blocks: bool,
         ) -> std::result::Result<bool, ForgeError> {
+            if let Some(hook) = self.on_blocker.lock().unwrap().clone() {
+                hook(number);
+            }
             self.note(format!("#{number} blocker #{blocker} {blocks}"))?;
             Ok(*self.blocking.lock().unwrap())
         }
@@ -747,6 +760,7 @@ mod tests {
         blocking: Arc<Mutex<bool>>,
         body: Arc<Mutex<Option<String>>>,
         labels_refused: Arc<Mutex<bool>>,
+        on_blocker: BlockerHook,
         events: Receiver<AppEvent>,
     }
 
@@ -765,6 +779,7 @@ mod tests {
             let blocking = Arc::new(Mutex::new(true));
             let body = Arc::new(Mutex::new(None));
             let labels_refused = Arc::new(Mutex::new(false));
+            let on_blocker: BlockerHook = Arc::new(Mutex::new(None));
             let repository = match forge {
                 None => app.store.add_repository("w", "/w", "none", "main").unwrap(),
                 Some(sub_issues) => {
@@ -775,6 +790,7 @@ mod tests {
                         blocking: blocking.clone(),
                         body: body.clone(),
                         labels_refused: labels_refused.clone(),
+                        on_blocker: on_blocker.clone(),
                     }));
                     app.store
                         .add_github_repository("w", "/w", "main", "acme/w", &["person".into()])
@@ -791,6 +807,7 @@ mod tests {
                 blocking,
                 body,
                 labels_refused,
+                on_blocker,
                 events,
             }
         }
@@ -1726,6 +1743,38 @@ mod tests {
             warnings[0].starts_with("could not set its labels"),
             "{warnings:?}"
         );
+    }
+
+    #[test]
+    fn a_tracked_issue_is_held_until_its_blockers_are_stored_so_no_script_starts_it_unblocked() {
+        let s = Setup::new(Some(true));
+        let (parent, blocker) = (s.card("Parent"), s.card("Blocker"));
+        let store = s.app.store.clone();
+        *s.on_blocker.lock().unwrap() = Some(Arc::new(move |number: i64| {
+            let card = store
+                .card_by_number(1, number)
+                .unwrap()
+                .expect("the card exists while its blockers are set");
+            assert!(
+                card.held.is_some(),
+                "#{} could be started before its blocker was stored",
+                card.number
+            );
+        }));
+        let (card, warnings) = s
+            .app
+            .create_tracked_issue(
+                s.repository.id,
+                "New",
+                "",
+                Some(parent.number),
+                &[],
+                &[blocker.number],
+            )
+            .unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert!(card.held.is_none());
+        assert_eq!(s.app.issue(card.id).unwrap().blocked_by, [blocker.number]);
     }
 
     #[test]

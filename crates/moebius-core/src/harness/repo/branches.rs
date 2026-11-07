@@ -176,7 +176,7 @@ impl HarnessRepo {
         agents.dedup();
         let header = app.git_auth(&self.url).map_err(|e| e.to_string())?;
         self.repos
-            .push(&self.path, branch, header.as_deref())
+            .push(&self.path, branch, header.as_deref(), false)
             .map_err(|e| format!("it cannot be pushed: {e}"))?;
         Ok(Proposed {
             branch: branch.into(),
@@ -257,9 +257,11 @@ impl HarnessRepo {
             return Err(AppError::Forbidden(PERSON_ONLY.into()));
         }
         self.repos.merge(&self.path, &tip, message)?;
-        let pushed = app
-            .git_auth(&self.url)
-            .and_then(|header| Ok(self.repos.push(&self.path, &default, header.as_deref())?));
+        let pushed = app.git_auth(&self.url).and_then(|header| {
+            Ok(self
+                .repos
+                .push(&self.path, &default, header.as_deref(), false)?)
+        });
         if let Err(e) = pushed {
             let _ = git(&self.path, &["reset", "--hard", "--quiet", &before]);
             return Err(e);

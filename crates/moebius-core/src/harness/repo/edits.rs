@@ -161,7 +161,7 @@ impl HarnessRepo {
         git(&self.path, &["commit", "--quiet", "-m", message]).map_err(|e| undo(e.into()))?;
         let header = app.git_auth(&self.url).map_err(undo)?;
         self.repos
-            .push(&self.path, &branch, header.as_deref())
+            .push(&self.path, &branch, header.as_deref(), false)
             .map_err(|e| undo(redacted(e)))?;
         let head = git(&self.path, &["rev-parse", "HEAD"])?;
         let short = git(&self.path, &["rev-parse", "--short", "HEAD"])?;

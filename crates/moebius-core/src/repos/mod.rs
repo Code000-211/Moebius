@@ -272,9 +272,21 @@ impl Repos {
         git(clone, &["remote", "get-url", "origin"])
     }
 
-    /// Pushes `branch` to `origin`, with `auth` as an extra HTTP header if the remote needs one.
-    pub fn push(&self, clone: &Path, branch: &str, auth: Option<&str>) -> Result<()> {
-        let args = ["push", "--quiet", "origin", branch];
+    /// Pushes `branch` to `origin`, with `auth` as an extra HTTP header if the remote needs one. With
+    /// `force_with_lease`, a rewritten branch replaces what Moebius itself published, and is refused if the forge's
+    /// branch has moved on since; it is for the branches Moebius owns, and never for a default branch.
+    pub fn push(
+        &self,
+        clone: &Path,
+        branch: &str,
+        auth: Option<&str>,
+        force_with_lease: bool,
+    ) -> Result<()> {
+        let mut args = vec!["push", "--quiet"];
+        if force_with_lease {
+            args.push("--force-with-lease");
+        }
+        args.extend(["origin", branch]);
         git_with_config(clone, &args, &auth_config(auth)).map(drop)
     }
 
@@ -634,11 +646,35 @@ mod tests {
         commit(&wt.path, "feature.txt", "new\n");
         repos.remove_worktree(&clone, &wt.path).unwrap();
 
-        repos.push(&clone, &wt.branch, None).unwrap();
+        repos.push(&clone, &wt.branch, None, true).unwrap();
         assert!(git(&bare, &["rev-parse", "--verify", "moebius/run-3"]).is_ok());
+        // A round that rewrote its commit replaces what Moebius published, and is refused without the lease.
+        let head = git(&clone, &["rev-parse", "moebius/run-3"]).unwrap();
+        let tree = git(&clone, &["rev-parse", "moebius/run-3^{tree}"]).unwrap();
+        let parent = git(&clone, &["rev-parse", "moebius/run-3^"]).unwrap();
+        let amended = git(
+            &clone,
+            &[
+                "commit-tree",
+                tree.trim(),
+                "-p",
+                parent.trim(),
+                "-m",
+                "amended",
+            ],
+        )
+        .unwrap();
+        git(&clone, &["branch", "-f", "moebius/run-3", amended.trim()]).unwrap();
+        assert_ne!(head, amended);
+        assert!(repos.push(&clone, &wt.branch, None, false).is_err());
+        repos.push(&clone, &wt.branch, None, true).unwrap();
+        assert_eq!(
+            git(&bare, &["rev-parse", "moebius/run-3"]).unwrap(),
+            amended
+        );
         // A header given to a push is not kept.
         repos
-            .push(&clone, &wt.branch, Some("Authorization: secret"))
+            .push(&clone, &wt.branch, Some("Authorization: secret"), true)
             .unwrap();
         let config = std::fs::read_to_string(clone.join(".git/config")).unwrap();
         assert!(!config.contains("secret"));
