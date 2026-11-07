@@ -3,9 +3,9 @@
  * The block that says what went wrong holds the way back, when the page has one to offer: the chat whose agent went
  * away is answered again from the words it was answering, and the failure is where the person is already looking.
  */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { Entry } from "../../chat/conversation";
+import type { Entry, ToolCall } from "../../chat/conversation";
 import { groupTurns } from "../../chat/turns";
 import { Turn } from "./Turn";
 
@@ -117,5 +117,59 @@ describe("what the agent did", () => {
     if (!turn) throw new Error("one turn");
     render(<Turn turn={turn} {...folding} />);
     expect(screen.getByTestId("working").textContent).toBe("Working");
+  });
+
+  describe("when a step went wrong", () => {
+    const call = (id: string, overrides: Partial<ToolCall>): Entry => ({
+      at: 3,
+      seq: Number(id.slice(1)) + 10,
+      kind: "tool",
+      call: {
+        id,
+        tool: "bash",
+        input: { type: "command", command: "ls" },
+        output: "",
+        check: null,
+        mcp: null,
+        execution: { state: "finished", failed: false },
+        ...overrides,
+      },
+    });
+    const blocked = { allowed: false, reason: "no pushing" };
+    const trouble: Entry[] = [
+      { at: 1, seq: 1, kind: "person", said: "said", message: "Do it" },
+      call("t1", {}),
+      call("t2", { check: blocked, execution: null }),
+      call("t3", { execution: { state: "finished", failed: true } }),
+      call("t4", { execution: { state: "finished", failed: true } }),
+    ];
+
+    it("says on the closed row how many were refused and how many failed", () => {
+      render(<Turn turn={turnOf(trouble)} unfolded={new Set()} onToggle={() => {}} />);
+      const row = screen.getByRole("button", { name: /^Worked/ });
+      expect(row.textContent).toBe("Worked · 4 steps · 1 refused · 2 failed");
+      expect(screen.getByTestId("steps-trouble").className).toContain("text-error-text");
+    });
+
+    it("says nothing of trouble when every step went well", () => {
+      render(<Turn turn={turnOf(worked)} {...folding} />);
+      expect(screen.queryByTestId("steps-trouble")).toBeNull();
+    });
+
+    it("opens by itself, and the person can close it", () => {
+      const turn = turnOf(trouble);
+      const key = turn.blocks[0]?.key as string;
+      const toggled: string[] = [];
+      const { rerender } = render(
+        <Turn turn={turn} unfolded={new Set()} onToggle={(each) => toggled.push(each)} />,
+      );
+      const row = screen.getByRole("button", { name: /^Worked/ });
+      expect(row.getAttribute("aria-expanded")).toBe("true");
+      expect(row.getAttribute("aria-controls")).toBe(screen.getByTestId("steps").id);
+      fireEvent.click(row);
+      expect(toggled).toEqual([`${key}:closed`]);
+      rerender(<Turn turn={turn} unfolded={new Set(toggled)} onToggle={() => {}} />);
+      expect(screen.queryByTestId("steps")).toBeNull();
+    });
   });
 });

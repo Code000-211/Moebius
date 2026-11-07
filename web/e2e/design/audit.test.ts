@@ -35,7 +35,16 @@ interface Route {
   path: string;
   name: string;
   /** Something to open before measuring, so a sheet is on the screen when it is the thing being judged. */
-  open?: "search" | "chat" | "new issue" | "menu" | "terminal" | "chats" | "diff" | "changes";
+  open?:
+    | "search"
+    | "chat"
+    | "new issue"
+    | "menu"
+    | "terminal"
+    | "chats"
+    | "diff"
+    | "changes"
+    | "steps";
 }
 
 /** One page as the browser measured it. Every list holds findings as plain sentences. */
@@ -131,6 +140,9 @@ const routes: Route[] = [
   { path: "/runs/1000", name: "run-changes", open: "changes" },
   { path: "/chat", name: "chat-menu", open: "menu" },
   { path: "/chat", name: "chat-chats", open: "chats" },
+  // A conversation with a block of steps, folded and opened, which is the one place the log's 32px row is measured.
+  { path: "/chat", name: "chat-steps", open: "steps" },
+  { path: "/chat", name: "chat-steps-trouble", open: "steps" },
 ];
 
 let browser: Browser;
@@ -177,7 +189,8 @@ async function openPage(width: { width: number; height: number }, theme: string)
 /** Opens one page, waits for it to settle, and measures it. */
 async function audit(page: Page, route: Route, theme: string): Promise<PageAudit> {
   chatsForSwitcher(route.open === "chats");
-  const answer = await page.goto(`${base}${route.path}`);
+  const path = route.open === "steps" ? stepsChat(route.name === "chat-steps-trouble") : route.path;
+  const answer = await page.goto(`${base}${path}`);
   await page.waitForLoadState("networkidle").catch(() => {});
   await page.waitForTimeout(500);
   if (route.open) {
@@ -185,8 +198,41 @@ async function audit(page: Page, route: Route, theme: string): Promise<PageAudit
     // An overlay animates in; measuring it mid-flight measures an opacity and a scale rather than a layout.
     await page.waitForTimeout(400);
   }
-  const found = await page.evaluate(measure, { path: route.path, theme });
+  const found = await page.evaluate(measure, { path, theme });
   return { ...found, name: route.name, path: route.path, status: answer?.status() ?? 0 };
+}
+
+/**
+ * The path of a chat whose agent worked: it thought, read two files and ran a command, and with `trouble` the command
+ * failed, which opens the block of steps by itself. Without a fake server there is no such chat, so the page that is
+ * measured is the empty one. The chat is made again for each page, because the switcher's list is emptied before each.
+ */
+function stepsChat(trouble: boolean): string {
+  if (!fake) return "/chat";
+  const id = fake.chat.seed({ title: trouble ? "A run with a failure" : "A run that went well" });
+  fake.chat.emit(id, "said", { message: "Fix it" });
+  fake.chat.agentStart(id);
+  fake.chat.thinking(id, "I should read first.");
+  for (const [name, call] of [
+    ["a", "r1"],
+    ["b", "r2"],
+  ] as const) {
+    fake.chat.toolCall(id, {
+      id: call,
+      tool: "read",
+      args: { path: `src/${name}.rs` },
+      output: `fn ${name}() {}`,
+    });
+  }
+  fake.chat.toolCall(id, {
+    id: "b1",
+    tool: "bash",
+    args: { command: "cargo test --quiet" },
+    output: trouble ? "error: test failed" : "test result: ok. 3 passed",
+    isError: trouble,
+  });
+  fake.chat.settle(id, "Done.");
+  return `/chat/${id}`;
 }
 
 /**
@@ -227,6 +273,13 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
     // The column of chats is on the screen with the page and scrolls on its own, so nothing is opened to measure it:
     // a row of a list that caps its own height is shorter than its own words, and only the scrollable list shows it.
     await page.getByTestId("chat-list-rows").waitFor({ timeout: 5_000 });
+    return;
+  }
+  if (what === "steps") {
+    // A block of steps that went well is folded; the one with a failure is open already, and is left as it is.
+    const folded = page.getByRole("button", { name: /^Worked · \d+ steps?$/ });
+    if ((await folded.count()) > 0) await folded.click();
+    await page.getByTestId("steps").waitFor({ timeout: 5_000 });
     return;
   }
   if (what === "terminal") {

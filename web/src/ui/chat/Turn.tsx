@@ -194,12 +194,35 @@ function StepLine({
   );
 }
 
+/** The tool calls of a block of steps, with the runs of reads taken apart again. */
+function callsOf(steps: StepView[]): ToolCall[] {
+  return steps.flatMap((step) =>
+    step.kind === "tool" ? [step.call] : step.kind === "reads" ? step.calls : [],
+  );
+}
+
+/** How many calls of a block of steps the check refused, and how many ran and failed. */
+function troubleOf(steps: StepView[]): { refused: number; failed: number } {
+  let refusedCount = 0;
+  let failedCount = 0;
+  for (const call of callsOf(steps)) {
+    const { status } = toolStatus(call);
+    if (status === "denied") refusedCount += 1;
+    else if (status === "failed") failedCount += 1;
+  }
+  return { refused: refusedCount, failed: failedCount };
+}
+
 /**
  * What the agent did between two texts, folded into one row: "Working" while it still goes on, "Worked · 5 steps" once
- * it has stopped. Opened, the row holds the thinking and tool rows as they were. A row of the log is 32px rather than
- * the 40px of a thing you aim at, and the rows sit 4px apart, so a log of what the agent did reads as one block of
- * small marks rather than a list to choose from. The marker is what tells `e2e/design/audit.test.ts` these rows are a
- * log at 32px rather than controls at 40px.
+ * it has stopped. Opened, the row holds the thinking and tool rows as they were. A step that was refused or failed is
+ * said on the row itself, in the colour of an error, and the row opens by itself then: what went wrong is not
+ * something to fold away. The person can still close it, which is kept under the key of the block with `:closed`
+ * after it, so a group that opens itself and one the person opened do not read the same set the same way. A row of the
+ * log is 32px rather than the 40px of a thing you aim at, and the rows sit 4px apart, so a log of what the agent did
+ * reads as one block of small marks rather than a list to choose from. The whole block, the row that folds it
+ * included, is the log, and the marker is what tells `e2e/design/audit.test.ts` these rows are a log at 32px rather
+ * than controls at 40px.
  */
 function StepsGroup({
   block,
@@ -210,17 +233,26 @@ function StepsGroup({
   isOpen: (key: string) => boolean;
   onToggle: (key: string) => void;
 }) {
-  const expanded = isOpen(block.key);
+  const trouble = troubleOf(block.steps);
+  const troubled = trouble.refused + trouble.failed > 0;
+  const closedKey = `${block.key}:closed`;
+  const expanded = troubled ? !isOpen(closedKey) : isOpen(block.key);
+  const bodyId = `${block.key}-steps`;
+  const said = [
+    trouble.refused > 0 ? `${trouble.refused} refused` : null,
+    trouble.failed > 0 ? `${trouble.failed} failed` : null,
+  ].filter((part) => part !== null);
   return (
-    <div className="flex min-w-0 flex-col">
+    <div className="flex min-w-0 flex-col" data-audit="log">
       <button
         type="button"
         className={cn(
           "flex min-h-8 cursor-pointer items-center gap-2 self-start rounded-control px-3 text-left text-sm transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text",
           block.working ? "font-semibold text-progress-text" : "text-secondary",
         )}
-        onClick={() => onToggle(block.key)}
+        onClick={() => onToggle(troubled ? closedKey : block.key)}
         aria-expanded={expanded}
+        aria-controls={expanded ? bodyId : undefined}
         data-testid={block.working ? "working" : undefined}
       >
         <CaretRightIcon
@@ -234,18 +266,25 @@ function StepsGroup({
           <CircleNotchIcon aria-hidden="true" className="size-4 shrink-0 animate-spin" />
         )}
         {block.working ? (
-          <span className="animate-working-shimmer bg-[linear-gradient(90deg,var(--progress-text)_35%,var(--text)_50%,var(--progress-text)_65%)] bg-[length:200%_100%] bg-clip-text text-transparent">
+          // The word keeps its own colour, which is what is measured and what is read; the light that passes over it
+          // is drawn over it by the style `working-shimmer` from the word itself.
+          <span className="working-shimmer" data-text="Working">
             Working
           </span>
         ) : (
           `Worked · ${plural(block.steps.length, "step", "steps")}`
         )}
+        {said.length > 0 && (
+          <span className="font-semibold text-error-text" data-testid="steps-trouble">
+            {` · ${said.join(" · ")}`}
+          </span>
+        )}
       </button>
       {expanded && (
         <div
+          id={bodyId}
           className="ml-4 flex flex-col gap-1 border-l-2 border-hairline py-1 pl-3"
           data-testid="steps"
-          data-audit="log"
         >
           {block.steps.map((step) => (
             <StepLine key={step.key} step={step} isOpen={isOpen} onToggle={onToggle} />

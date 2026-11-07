@@ -172,6 +172,32 @@
   box-shadow: inset 0 0 0 1px var(--hairline);
 }
 
+/*
+ * The word of a block of steps that is still going on (StepsGroup): it keeps its own colour, which is what is read and
+ * what the contrast is measured on, and a light passes over it, drawn by the pseudo-element from the same word.
+ */
+@utility working-shimmer {
+  position: relative;
+  color: var(--progress-text);
+  &::after {
+    content: attr(data-text) / "";
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(
+      90deg,
+      var(--progress-text) 35%,
+      var(--text) 50%,
+      var(--progress-text) 65%
+    );
+    background-size: 200% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    @apply animate-working-shimmer;
+    pointer-events: none;
+  }
+}
+
 @utility z-scrim {
   z-index: var(--z-scrim);
 }
