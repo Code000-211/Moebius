@@ -25,9 +25,20 @@ struct Host {
     dir: tempfile::TempDir,
 }
 
+/// Writes the program `path`. It is written by `cp`, not by this process: a test on another thread that forks while this
+/// process holds the file open for writing would keep it open in its child until that child execs, and starting the
+/// program then fails with "Text file busy".
 fn script(path: &Path, text: &str) {
-    std::fs::write(path, text).unwrap();
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let draft = path.with_extension("draft");
+    std::fs::write(&draft, text).unwrap();
+    std::fs::set_permissions(&draft, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let copied = std::process::Command::new("cp")
+        .arg(&draft)
+        .arg(path)
+        .status()
+        .unwrap();
+    assert!(copied.success(), "cp {} failed", path.display());
+    std::fs::remove_file(&draft).unwrap();
 }
 
 impl Host {
