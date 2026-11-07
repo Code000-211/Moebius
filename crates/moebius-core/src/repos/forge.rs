@@ -328,7 +328,7 @@ impl Forge for NoForge {
     }
 }
 
-/// The forge for repositories on GitHub: a change is a branch pushed with the installation's token and a pull request,
+/// The forge for repositories on GitHub: a change is a branch pushed with the installation's token (or the access token) and a pull request,
 /// which later pushes update.
 /// The GitHub client is asynchronous, so the methods wait for it on `runtime`; they must be called from a thread that
 /// may block, never from an async task.
@@ -508,7 +508,7 @@ impl Forge for GitHubForge {
         Ok(self.repos.fetch(clone, header.as_deref())?)
     }
 
-    /// The installation's token as a basic-auth header, for addresses on this GitHub's web host only: the token goes
+    /// The installation's token, or the access token, as a basic-auth header, for addresses on this GitHub's web host only: the token goes
     /// to no other host, and a local directory needs none.
     fn auth(&self, url: &str, name: &str) -> Result<Option<String>, ForgeError> {
         if !self.github.is_web_url(url) {
@@ -519,7 +519,7 @@ impl Forge for GitHubForge {
             .ok_or_else(|| ForgeError::Invalid(format!("{name:?} is not owner/repo")))?;
         let token = self
             .runtime
-            .block_on(self.github.installation_token(owner, repo))?;
+            .block_on(self.github.access_token(owner, repo))?;
         Ok(Some(basic_auth("x-access-token", &token)))
     }
 }

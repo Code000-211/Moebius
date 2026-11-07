@@ -310,7 +310,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/
   -d '{"name": "demo", "url": "/srv/git/demo"}' http://127.0.0.1:7171/v1/repositories
 ```
 
-For GitHub, with the App set up, the clone authenticates as the App's installation, so a private repository works:
+For GitHub, with the App or an access token set up, the clone authenticates as the App's installation or as the token's user, so a private repository works:
 
 ```json
 {"name": "widgets", "url": "https://github.com/acme/widgets.git", "forge": "github", "github": "acme/widgets", "trusted": ["leon"]}
@@ -525,7 +525,7 @@ A person, or the Moebius agent, writes the file, creating it and its directories
 string, "message": string, "reason": string}`; `message` is the commit's message, `Update <path>` when it is left out or
 blank, and `reason`, optional, is kept with the decision. The file is committed on the default branch of Moebius's
 clone, the same way `PUT /v1/repositories/{id}/scripts/{column}` commits a script: for a repository on GitHub the clone
-is first brought up to date with `origin` and the branch is pushed with the installation's token. The decision is
+is first brought up to date with `origin` and the branch is pushed with the installation's token (or the access token). The decision is
 recorded (kind `edit_file`, decider `person` or `agent:Moebius`; its context has `repository`, `path` and `change`, the
 commit's message) and the event `file_changed` is sent. Text that changes nothing makes no commit and no decision.
 Response: the file as `GET` answers it. Errors: `404` no such repository; `409` as for a script: the clone cannot be
@@ -538,7 +538,7 @@ clone.
 A person, or the Moebius agent, changes a card's title and body, in any column. Request: `{"title": string, "body":
 string, "reason": string}`; `body` and `reason` are optional (`body` left out is empty), and `reason` is kept with the
 decision. The title is trimmed and must not be blank. On a repository with a forge the issue is changed there first
-(for GitHub, `PATCH /repos/{owner}/{repo}/issues/{number}` with the installation's token; for GitLab,
+(for GitHub, `PATCH /repos/{owner}/{repo}/issues/{number}` with the installation's token or the access token; for GitLab,
 `PUT /projects/{path}/issues/{number}` with the access token; for Forgejo, `PATCH /repos/{owner}/{repo}/issues/{number}`
 with the access token), and "blocked by #n" and "Part of #n" in the
 new body become the card's blockers and parent, as the poll reads them (what the old body said no longer counts, and the
@@ -607,7 +607,7 @@ Where each thing lives depends on the forge; what a forge cannot express, Moebiu
   count of an issue's comments differs from what Moebius has (and from what the forge said when they were last read, so
   that a comment deleted on the forge is read once and not at every poll). A comment that is edited or deleted on the
   forge is not changed or removed on the card. A comment written through the API is written to the forge as the forge's
-  own identity (the GitHub App, the access token) and kept with the author who wrote it here; if the poll read it from
+  own identity (the GitHub App, the access token and the user it belongs to) and kept with the author who wrote it here; if the poll read it from
   the forge first, the stored one is the answer.
 - **Closing** an issue closes it on the forge and moves its card to `Done`, so that issues it blocks are not blocked any
   more; a closed issue is its card in `Done`. A forge that reports an issue closed does the same, and one that reports a
@@ -1725,7 +1725,7 @@ A person changes `moebius.toml`. Request: `{"set": {...}, "remove": [...]}`, bot
 
 The change is made to the text of the file, so its comments and the order of its keys stay. The result is read as
 `moebius serve` would read it; if that fails (an unknown key, a value of the wrong type or out of range, an environment
-variable of an upstream that is not set, a secret that is not stored, a GitHub App key file, a GitLab or Forgejo
+variable of an upstream that is not set, a secret that is not stored, a GitHub App key file, a GitHub, GitLab or Forgejo
 token file that cannot be read, a token secret that is not stored or a token that is empty, `[agents.*]` together with
 `[harness]`) the
 answer is `422` with the message of the parse and nothing is written. Otherwise the file is written in one step (a

@@ -150,7 +150,39 @@ in WSL (see [On Windows](#on-windows)). Every key named here is in the
 
    To restore, stop the server, unpack the archive into the empty directory and start it again.
 
-7. Work on GitLab. For repositories on gitlab.com, or on a GitLab you host, create an access token with the `api` scope
+7. Work on GitHub. Moebius reaches GitHub with a personal access token, or as a GitHub App of your own. The token is the
+   simple way: Moebius then acts as the token's user, so its pull requests and comments carry that user's name (a
+   GitHub account made for Moebius keeps them apart from yours, and GitHub does not let a user approve their own pull
+   request). Create a fine-grained token (GitHub, Settings, Developer settings, Personal access tokens) whose resource
+   owner is the account or organization of the repositories, with access to the repositories Moebius works on and these
+   repository permissions: Metadata read, Contents read and write, Issues read and write, Pull requests read and write,
+   Checks read (and Workflows read and write to push changes under `.github/workflows`). A classic token with the scope
+   `repo` works too. Give it to the server in a file only you can read, or as a secret (`moebius secrets set github`
+   reads it from standard input; then write `token_secret = "github"` instead of `token_file`), so that it is never in
+   `moebius.toml`:
+
+   ```sh
+   printf '%s' "$GITHUB_TOKEN" > ~/.config/moebius/github-token
+   chmod 600 ~/.config/moebius/github-token
+   cat >> ~/.config/moebius/moebius.toml <<'TOML'
+   [github]
+   token_file = "github-token"
+   TOML
+   systemctl --user restart moebius
+   moebius repo add widgets https://github.com/acme/widgets.git --github acme/widgets --trusted leon
+   ```
+
+   The server asks GitHub who the token belongs to when it starts, and does not start, saying why, when GitHub refuses
+   the token or a classic token lacks `repo`. In the app, the "+" of the sidebar does the same with the forge GitHub.
+   The server polls the repository's issues every `github.poll_seconds`: open issues become cards, issues by the
+   trusted logins move on without your approval, and "blocked by #n" in an issue, sub-issues and issue dependencies
+   become dependencies. Changes are pushed with the token and opened as pull requests; the check runs of a pull
+   request's head commit are its checks, its latest review is its review, and a merge on GitHub, or in the app,
+   finishes its card. As the other way, create a GitHub App with the same permissions, install it on the repositories,
+   and write `app_id` and `private_key_file` (the App's PEM key) in `[github]` instead of the token: Moebius then acts
+   as the App. Exactly one of the two is set. See [configuration](../reference/configuration.md#github).
+
+8. Work on GitLab. For repositories on gitlab.com, or on a GitLab you host, create an access token with the `api` scope
    (a personal one, or a project or group access token for one project or group). Give it to the server in a file only
    you can read, or as a secret (`moebius secrets set gitlab` reads it from standard input; then write
    `token_secret = "gitlab"` instead of `token_file`), so that it is never in `moebius.toml`:
@@ -173,7 +205,7 @@ in WSL (see [On Windows](#on-windows)). Every key named here is in the
    latest pipeline of a merge request's head commit is its checks, an approval is its review, and a merge on GitLab, or
    in the app, finishes its card. See [configuration](../reference/configuration.md#gitlab).
 
-8. Work on Codeberg, or another Forgejo or Gitea. In the forge's settings (Settings, Applications), generate an access
+9. Work on Codeberg, or another Forgejo or Gitea. In the forge's settings (Settings, Applications), generate an access
    token with the scopes `write:issue` and `write:repository`. Give it to the server in a file only you can read, or as
    a secret (`moebius secrets set codeberg`, then `token_secret = "codeberg"`). Without `url`, the server reaches
    Codeberg; for a Forgejo or Gitea of your own, set `url` to its web address:
@@ -197,7 +229,7 @@ in WSL (see [On Windows](#on-windows)). Every key named here is in the
    its latest review is its review, and a merge on the forge, or in the app, finishes its card. One server reaches one
    Forgejo. See [configuration](../reference/configuration.md#forgejo).
 
-9. Run harnesses on another machine. A GPU box, a bigger build machine or a machine with tools the server lacks can run
+10. Run harnesses on another machine. A GPU box, a bigger build machine or a machine with tools the server lacks can run
    the harness of an agent's runs over SSH, while the server keeps the board, the router, the checks and the store. On
    that machine install `git`, `sshd` and the harness (`pi-bolt`, and `claude` for agents on Claude Code), and let the
    server's user log in with a key and no passphrase; log in once by hand so that the host key is in the server's
@@ -291,6 +323,10 @@ run the `sha256sum` line of step 1 on it: it must print `FAILED`.
   configuration error is printed there, with the key at fault. The unit starts the server with `--config`, so a
   `moebius.toml` in another place is not read, and a missing file is not an error: the server then runs with the
   defaults, which have no upstream and no agent.
+- GitHub repositories report `forge_error` with `401`: the token expired or was revoked. With `403` (`Resource not
+  accessible by personal access token`), a fine-grained token lacks one of the permissions of step 7. With `404`, the
+  repository is not `owner/repo` as GitHub shows it, or the token was not given access to it (private repositories
+  answer `404` to a token that cannot see them).
 - GitLab repositories report `forge_error` with `401` or `403`: the token expired, lacks the `api` scope, or (a project
   or group token) does not reach the project. With `404`, the project's path is not the one GitLab shows under the
   project's name, groups first.

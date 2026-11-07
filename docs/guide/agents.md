@@ -154,7 +154,7 @@ The exact rules are in [harness configuration](../reference/harness-configuratio
 | `extensions` | Paths, each given to Pi-Bolt as `--extension` before the bridge. See [Extensions](extensions.md). |
 | `token_budget` | The most tokens (input plus output) the card's runs may use, the teacher's included. Over it the router answers HTTP 429 and the default scripts mark the card stuck. |
 | `harness` | `pi-bolt` (the default) or `claude-code`: which harness runs the agent. See below. |
-| `runner` | The name of a `[[runners]]` machine the agent's runs go to over SSH; without it they run on the server. See [Running on another machine](running-moebius.md#the-steps) (step 9). |
+| `runner` | The name of a `[[runners]]` machine the agent's runs go to over SSH; without it they run on the server. See [Running on another machine](running-moebius.md#the-steps) (step 10). |
 
 A relative path in `skills` or `extensions` is relative to the directory that holds `moebius.toml`. Moebius does not
 check that the paths exist.
@@ -189,7 +189,7 @@ history, and the desktop API can change them: every edit is a commit. With `[har
 in `moebius.toml` are errors, so the repository is the only source.
 
 1. Make a git repository with the layout below and push it somewhere the server can reach. A GitHub repository needs the
-   GitHub App to have write access to it, if edits through the API are wanted.
+   GitHub App or access token to have write access to it, if edits through the API are wanted.
 2. Name it in `moebius.toml`, as shown below.
 3. Start the server. It clones the repository to `<data_dir>/harness` and reads the agents from its default branch. Every
    30 seconds it fetches and reads them again when something changed, so a commit pushed by hand arrives without a

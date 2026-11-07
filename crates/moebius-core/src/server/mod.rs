@@ -33,7 +33,7 @@ use tokio::net::TcpListener;
 
 use crate::app::App;
 use crate::board::{Engine, Limits, Workflow};
-use crate::config::{Config, TokenSource};
+use crate::config::{Config, GitHubAuth, TokenSource};
 use crate::decide::check;
 use crate::decide::guard::{self, Guard, Teacher};
 use crate::decide::localize::{self, Localizer};
@@ -52,7 +52,7 @@ use crate::harness::skill;
 use crate::improve::lessons;
 use crate::repos::forge::{ForgejoForge, GitHubForge, GitLabForge};
 use crate::repos::forgejo::Forgejo;
-use crate::repos::github::GitHub;
+use crate::repos::github::{GitHub, GitHubError};
 use crate::repos::gitlab::GitLab;
 use crate::router::Router;
 use crate::server::api::ApiState;
@@ -85,7 +85,7 @@ pub struct Server {
     pub live: Arc<Live>,
     /// The harness configuration repository, if one is configured.
     pub harness_repo: Option<Arc<HarnessRepo>>,
-    /// The client for the GitHub App, if one is configured.
+    /// The client for GitHub, if one is configured.
     pub github: Option<Arc<GitHub>>,
     /// The client for the GitLab, if one is configured.
     pub gitlab: Option<Arc<GitLab>>,
@@ -109,19 +109,74 @@ fn read_token(token: &TokenSource, secrets: &Secrets, forge: &str) -> Result<Str
     Ok(token)
 }
 
-/// The client for the GitHub App of `g`: its key file must be readable and hold an RSA key in PEM form.
-fn github_client(g: &crate::config::GitHubConfig) -> Result<GitHub, String> {
-    let key = std::fs::read(&g.private_key_file)
-        .map_err(|e| format!("cannot read {}: {e}", g.private_key_file.display()))?;
-    GitHub::new(&g.api_url, g.app_id, &key).map_err(|e| e.to_string())
+/// The client for the GitHub of `g`: with an App, its key file must be readable and hold an RSA key in PEM form; with
+/// an access token, the token must be readable and not empty. Nothing is asked of GitHub here (see [`check_github`]).
+fn github_client(g: &crate::config::GitHubConfig, secrets: &Secrets) -> Result<GitHub, String> {
+    match &g.auth {
+        GitHubAuth::App {
+            app_id,
+            private_key_file,
+        } => {
+            let key = std::fs::read(private_key_file)
+                .map_err(|e| format!("cannot read {}: {e}", private_key_file.display()))?;
+            GitHub::new(&g.api_url, *app_id, &key).map_err(|e| e.to_string())
+        }
+        GitHubAuth::Token(source) => {
+            let token = read_token(source, secrets, "GitHub")?;
+            Ok(GitHub::with_token(&g.api_url, &token))
+        }
+    }
+}
+
+/// Asks GitHub who an access token belongs to, so that a token it refuses, or a classic one without the scope `repo`,
+/// stops the server from starting with a sentence that says so. An App has nothing to check. GitHub being out of reach
+/// is not a reason to refuse: the token is tried again with every call. Runs on a thread of its own, since the server
+/// starts inside a runtime.
+fn check_github(github: &GitHub) -> Result<(), String> {
+    if !github.is_token() {
+        return Ok(());
+    }
+    let answer = std::thread::scope(|scope| {
+        scope
+            .spawn(|| -> Result<_, String> {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|e| format!("cannot check the GitHub access token: {e}"))?;
+                Ok(runtime.block_on(github.check_token()))
+            })
+            .join()
+            .unwrap_or_else(|_| Err("the check of the GitHub access token panicked".into()))
+    })?;
+    match answer {
+        Ok(owner) => {
+            if let Some(owner) = owner {
+                eprintln!("Moebius acts on GitHub as {}.", owner.login);
+            }
+            Ok(())
+        }
+        Err(GitHubError::Http(e)) => {
+            eprintln!(
+                "Could not reach GitHub to check the access token ({e}); it is tried again with every call."
+            );
+            Ok(())
+        }
+        Err(e @ GitHubError::RateLimited { .. }) => {
+            eprintln!(
+                "Could not check the GitHub access token now: {e}; it is tried again with every call."
+            );
+            Ok(())
+        }
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /// The checks of `Server::new` on the forges of `config` that depend on files and secrets: the key of the GitHub App
-/// must be a readable RSA key and the access tokens of GitLab and Forgejo must be readable. `Server::new` and the
+/// must be a readable RSA key and the access tokens of GitHub, GitLab and Forgejo must be readable. `Server::new` and the
 /// editing of the settings both run them, so a file that `moebius serve` would refuse is not written.
 pub(crate) fn check_forges(config: &Config, secrets: &Secrets) -> Result<(), String> {
     if let Some(g) = &config.github {
-        github_client(g)?;
+        github_client(g, secrets)?;
     }
     if let Some(g) = &config.gitlab {
         read_token(&g.token, secrets, "GitLab")?;
@@ -205,7 +260,9 @@ impl Server {
             (!launchers.is_empty()).then(|| Arc::new(Launcher::scoped(host.clone(), launchers)));
         let github = match &config.github {
             Some(g) => {
-                let github = Arc::new(github_client(g)?);
+                let github = github_client(g, &secrets)?;
+                check_github(&github)?;
+                let github = Arc::new(github);
                 app.add_forge(Box::new(GitHubForge::new(
                     github.clone(),
                     app.repos.clone(),

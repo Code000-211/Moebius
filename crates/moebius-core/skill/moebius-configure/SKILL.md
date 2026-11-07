@@ -109,6 +109,15 @@ when the person agrees (`"$MOEBIUS" server restart`). The last line changes an a
 without a harness configuration repository. Never put an API key in a setting: name the variable (`api_key_env`) or
 the stored key (`api_key_secret`) and leave storing it to the person.
 
+GitHub is reached with a personal access token or with a GitHub App, never both: `github.token_file` or
+`github.token_secret` (the name of a stored secret) for the token, `github.app_id` with `github.private_key_file` for
+the App. The token is the simple way; with it Moebius acts as the token's user, so its pull requests and comments carry
+that user's name, and GitHub does not let that user approve their own pull request. Never ask for the token's value or
+write it into a setting: the person stores it (`moebius secrets set github`) or puts it in a file, and you set only the
+name or the path. A fine-grained token needs the repository permissions Metadata read, Contents, Issues and Pull
+requests read and write, and Checks read; a classic one the scope `repo`. The server does not start when GitHub refuses
+the token (`docs/reference/configuration.md`, `[github]`).
+
 ## Skills and MCP servers
 
 Both live in the harness configuration repository and are named in an agent's `skills` and `mcp`. A server without

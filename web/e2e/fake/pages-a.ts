@@ -91,6 +91,8 @@ function initialSettings(): Record<string, Setting> {
     "harness.mcp_env": set([], true),
     rules_file: set(null, true),
     "pi_bolt.program": set("pi-bolt", true),
+    "github.token_file": set(null, true),
+    "github.token_secret": set(null, true),
     "github.app_id": set(null, true),
     "github.private_key_file": set(null, true),
     "github.api_url": set(null, true),
@@ -111,6 +113,8 @@ const DEFAULTS: Record<string, unknown> = {
   "board.round_limit": 5,
   "budgets.day_tokens": null,
   retro_at: "03:00",
+  "github.token_file": null,
+  "github.token_secret": null,
   "github.app_id": null,
   "github.private_key_file": null,
 };

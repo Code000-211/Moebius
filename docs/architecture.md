@@ -475,7 +475,7 @@ At the top:
 | `config/example.rs` | The commented example `moebius init` writes, every key at its default. |
 | `config/raw.rs` | The file as it is written: every key optional, unknown keys refused. |
 | `config/registries.rs` | The package registries from `[[registries]]`, with the default one first. |
-| `config/sections.rs` | The types of the sections (the router's upstreams, the GitHub App, the teacher, the decision model, the agents) and their checks. |
+| `config/sections.rs` | The types of the sections (the router's upstreams, the GitHub App or access token, the teacher, the decision model, the agents) and their checks. |
 
 `router/`, the model provider:
 

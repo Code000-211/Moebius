@@ -111,8 +111,10 @@ pub(super) struct RawForgejo {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawGitHub {
-    pub(super) app_id: u64,
-    pub(super) private_key_file: PathBuf,
+    pub(super) app_id: Option<u64>,
+    pub(super) private_key_file: Option<PathBuf>,
+    pub(super) token_file: Option<PathBuf>,
+    pub(super) token_secret: Option<String>,
     pub(super) api_url: Option<String>,
     pub(super) poll_seconds: Option<u64>,
 }

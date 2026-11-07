@@ -48,7 +48,7 @@ describe("a repository the server refused", () => {
     const first = alert.querySelector("p");
     expect(first?.textContent).toBe("The server cannot sign in to GitHub.");
     expect(alert.textContent).toContain(
-      "Set up the GitHub App under Settings and restart the server",
+      "Set the GitHub token under Settings and restart the server",
     );
 
     // The command the run printed is detail to open, not the sentence a person reads first.

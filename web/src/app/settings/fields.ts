@@ -65,8 +65,15 @@ export const GROUPS: ReadonlyArray<readonly [title: string, specs: readonly Spec
   [
     "GitHub",
     [
-      ["github.app_id", "App id", "whole", "Set both, or neither"],
-      ["github.private_key_file", "Private key file", "code", "Set both, or neither"],
+      ["github.token_file", "Token file", "code", "This one, the secret or an App"],
+      ["github.token_secret", "Token secret", "code", "This one, the file or an App"],
+      ["github.app_id", "App id", "whole", "Instead of a token, with the key file"],
+      [
+        "github.private_key_file",
+        "App private key file",
+        "code",
+        "Instead of a token, with the id",
+      ],
       ["github.api_url", "API URL", "code"],
       ["github.poll_seconds", "Poll every (s)", "whole"],
     ],
@@ -93,7 +100,17 @@ export const GROUPS: ReadonlyArray<readonly [title: string, specs: readonly Spec
 
 /** The tables of the file that are there or not: when every key of one is blank the table is removed. */
 const TABLES: ReadonlyArray<readonly [table: string, keys: readonly string[]]> = [
-  ["github", ["github.app_id", "github.private_key_file", "github.api_url", "github.poll_seconds"]],
+  [
+    "github",
+    [
+      "github.token_file",
+      "github.token_secret",
+      "github.app_id",
+      "github.private_key_file",
+      "github.api_url",
+      "github.poll_seconds",
+    ],
+  ],
   ["gitlab", ["gitlab.url", "gitlab.token_file", "gitlab.token_secret", "gitlab.poll_seconds"]],
   [
     "forgejo",

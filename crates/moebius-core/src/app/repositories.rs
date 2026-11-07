@@ -45,8 +45,8 @@ impl App {
     }
 
     /// Clones `url` and adds it as a repository whose issues are polled from GitHub as `github` (`owner/repo`).
-    /// Issues by the logins in `trusted` need no approval. With the GitHub App set up, the clone authenticates as
-    /// its installation, so private repositories work too.
+    /// Issues by the logins in `trusted` need no approval. With the GitHub App or an access token set up, the clone
+    /// authenticates as its installation or as the token's user, so private repositories work too.
     pub fn add_github_repository(
         &self,
         name: &str,

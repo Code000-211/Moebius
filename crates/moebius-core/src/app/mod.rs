@@ -253,7 +253,7 @@ impl App {
     }
 
     /// The HTTP header git needs to reach `url` when it is a repository on the GitHub web host (github.com or the
-    /// Enterprise host) and the GitHub App is set up, or one on the GitLab or the Forgejo that is set up; none otherwise, so a token never goes to another host.
+    /// Enterprise host) and the GitHub App or an access token is set up, or one on the GitLab or the Forgejo that is set up; none otherwise, so a token never goes to another host.
     pub fn git_auth(&self, url: &str) -> Result<Option<String>> {
         for name in ["gitlab", "forgejo"] {
             if let Some(forge) = self.forges.get(name)

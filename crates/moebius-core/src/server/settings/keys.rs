@@ -72,6 +72,8 @@ const KEYS: &[Key] = &[
     key("registries", "[]", false),
     key("github.app_id", "", false),
     key("github.private_key_file", "", false),
+    key("github.token_file", "", false),
+    key("github.token_secret", "", false),
     key("github.api_url", "\"https://api.github.com\"", false),
     key("github.poll_seconds", "30", false),
     key("gitlab.url", "\"https://gitlab.com\"", false),

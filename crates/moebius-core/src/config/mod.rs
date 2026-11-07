@@ -16,7 +16,8 @@ use std::time::Duration;
 
 use raw::{Raw, RawWindow};
 use sections::{
-    check_key, check_model_thinking, decision_model, forgejo, gitlab, plugins, runners, teacher,
+    check_key, check_model_thinking, decision_model, forgejo, github_auth, gitlab, plugins,
+    runners, teacher,
 };
 
 use crate::harness::mcp::valid_variable;
@@ -26,10 +27,10 @@ pub use example::EXAMPLE;
 pub use registries::{DEFAULT_REGISTRY, DEFAULT_REGISTRY_URL, RegistryConfig};
 pub(crate) use sections::default_protocol;
 pub use sections::{
-    AgentConfig, AgentSet, DecisionModelConfig, EngineeringSkills, ForgejoConfig, GitHubConfig,
-    GitLabConfig, HarnessKind, LocalizeConfig, MAX_LOCALIZE_FILES, PLUGIN_TIME_LIMIT_SECONDS,
-    PackagesConfig, PluginConfig, RunnerConfig, THINKING_LEVELS, TeacherConfig, TimeOfDay,
-    TokenSource, ToolOutput, UpstreamConfig, valid_agent_name,
+    AgentConfig, AgentSet, DecisionModelConfig, EngineeringSkills, ForgejoConfig, GitHubAuth,
+    GitHubConfig, GitLabConfig, HarnessKind, LocalizeConfig, MAX_LOCALIZE_FILES,
+    PLUGIN_TIME_LIMIT_SECONDS, PackagesConfig, PluginConfig, RunnerConfig, THINKING_LEVELS,
+    TeacherConfig, TimeOfDay, TokenSource, ToolOutput, UpstreamConfig, valid_agent_name,
 };
 
 /// Why a configuration could not be read.
@@ -93,6 +94,16 @@ pub enum ConfigError {
     McpEnv { name: String },
     #[error("harness.url must not be empty")]
     HarnessUrl,
+    #[error(
+        "[github] needs either an access token (token_file or token_secret) or an App (app_id with private_key_file), not both and not neither"
+    )]
+    GitHubAuth,
+    #[error("[github] needs exactly one of token_file and token_secret")]
+    GitHubToken,
+    #[error("github.token_secret: {name:?} is not a name (letters, digits, - and _)")]
+    GitHubSecret { name: String },
+    #[error("[github] needs app_id and private_key_file together")]
+    GitHubApp,
     #[error("[gitlab] needs exactly one of token_file and token_secret")]
     GitLabToken,
     #[error("gitlab.token_secret: {name:?} is not a name (letters, digits, - and _)")]
@@ -334,6 +345,16 @@ impl Config {
             .program
             .unwrap_or_else(|| PathBuf::from("claude"));
         let teacher = raw.teacher.map(teacher).transpose()?;
+        let github = match raw.github {
+            Some(mut g) => Some(GitHubConfig {
+                auth: github_auth(&mut g, base)?,
+                api_url: g
+                    .api_url
+                    .unwrap_or_else(|| "https://api.github.com".to_string()),
+                poll: Duration::from_secs(g.poll_seconds.unwrap_or(30).max(1)),
+            }),
+            None => None,
+        };
         let gitlab = raw.gitlab.map(|g| gitlab(g, base)).transpose()?;
         let forgejo = raw.forgejo.map(|f| forgejo(f, base)).transpose()?;
         let decision_model = raw.decision_model.map(decision_model).transpose()?;
@@ -413,14 +434,7 @@ impl Config {
                 .harness
                 .map(|harness| harness.mcp_env)
                 .unwrap_or_default(),
-            github: raw.github.map(|g| GitHubConfig {
-                app_id: g.app_id,
-                private_key_file: base.join(g.private_key_file),
-                api_url: g
-                    .api_url
-                    .unwrap_or_else(|| "https://api.github.com".to_string()),
-                poll: Duration::from_secs(g.poll_seconds.unwrap_or(30).max(1)),
-            }),
+            github,
             gitlab,
             forgejo,
             teacher,
@@ -831,8 +845,13 @@ mod tests {
         assert_eq!(parse("").unwrap().github, None);
         let c = parse("[github]\napp_id = 42\nprivate_key_file = \"app.pem\"\n").unwrap();
         let github = c.github.unwrap();
-        assert_eq!(github.app_id, 42);
-        assert_eq!(github.private_key_file, PathBuf::from("/srv/app.pem"));
+        assert_eq!(
+            github.auth,
+            GitHubAuth::App {
+                app_id: 42,
+                private_key_file: PathBuf::from("/srv/app.pem")
+            }
+        );
         assert_eq!(github.api_url, "https://api.github.com");
         assert_eq!(github.poll, Duration::from_secs(30));
         let c = parse(
@@ -840,12 +859,73 @@ mod tests {
         )
         .unwrap();
         let github = c.github.unwrap();
-        assert_eq!(github.private_key_file, PathBuf::from("/k.pem"));
+        assert_eq!(
+            github.auth,
+            GitHubAuth::App {
+                app_id: 1,
+                private_key_file: PathBuf::from("/k.pem")
+            }
+        );
         assert_eq!(github.api_url, "http://127.0.0.1:1");
         assert_eq!(github.poll, Duration::from_secs(5));
+        for half in ["app_id = 1", "private_key_file = \"k.pem\""] {
+            assert!(matches!(
+                parse(&format!("[github]\n{half}\n")),
+                Err(ConfigError::GitHubApp)
+            ));
+        }
+    }
+
+    #[test]
+    fn the_github_is_read_with_its_token_from_a_file_or_a_secret() {
+        let github = parse("[github]\ntoken_file = \"github-token\"\n")
+            .unwrap()
+            .github
+            .unwrap();
+        assert_eq!(
+            github.auth,
+            GitHubAuth::Token(TokenSource::File(PathBuf::from("/srv/github-token")))
+        );
+        assert_eq!(github.api_url, "https://api.github.com");
+        let github = parse("[github]\ntoken_secret = \"github\"\npoll_seconds = 0\n")
+            .unwrap()
+            .github
+            .unwrap();
+        assert_eq!(
+            github.auth,
+            GitHubAuth::Token(TokenSource::Secret("github".into()))
+        );
+        assert_eq!(github.poll, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn the_github_needs_exactly_one_way_in() {
+        // Neither a token nor an App.
+        for text in ["[github]\n", "[github]\npoll_seconds = 5\n"] {
+            assert!(
+                matches!(parse(text), Err(ConfigError::GitHubAuth)),
+                "{text}"
+            );
+        }
+        // A token and an App.
+        for text in [
+            "[github]\ntoken_file = \"t\"\napp_id = 1\nprivate_key_file = \"k.pem\"\n",
+            "[github]\ntoken_secret = \"t\"\napp_id = 1\n",
+        ] {
+            assert!(
+                matches!(parse(text), Err(ConfigError::GitHubAuth)),
+                "{text}"
+            );
+        }
+        // Both ways to keep the token.
         assert!(matches!(
-            parse("[github]\napp_id = 1"),
-            Err(ConfigError::Parse { .. })
+            parse("[github]\ntoken_file = \"t\"\ntoken_secret = \"t\"\n"),
+            Err(ConfigError::GitHubToken)
+        ));
+        // A secret must be a name.
+        assert!(matches!(
+            parse("[github]\ntoken_secret = \"not a name\"\n"),
+            Err(ConfigError::GitHubSecret { .. })
         ));
     }
 

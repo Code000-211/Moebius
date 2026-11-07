@@ -56,7 +56,8 @@ describe("reading the settings", () => {
     expect(field(forms, "budgets.day_tokens")?.whenEmpty).toBe("No limit");
     expect(field(forms, "gitlab.token_file")?.whenEmpty).toBe("This one or the secret");
     expect(field(forms, "gitlab.token_secret")?.whenEmpty).toBe("This one or the file");
-    expect(field(forms, "github.app_id")?.whenEmpty).toBe("Set both, or neither");
+    expect(field(forms, "github.token_secret")?.whenEmpty).toBe("This one, the file or an App");
+    expect(field(forms, "github.app_id")?.whenEmpty).toBe("Instead of a token, with the key file");
     // A key with a default has the default to say instead, so it needs no words of its own.
     expect(field(forms, "run_limit")?.whenEmpty).toBeNull();
     expect(field(forms, "run_limit")?.default).toBe("3");
@@ -128,6 +129,13 @@ describe("what a save sends", () => {
     expect(changes(edit(configured(), "github.app_id", ""))).toEqual({
       set: {},
       remove: ["github.app_id"],
+    });
+  });
+
+  it("saves the name of the secret that holds the GitHub token, and not the token", () => {
+    expect(changes(edit(readForms(answer({})), "github.token_secret", "github"))).toEqual({
+      set: { "github.token_secret": "github" },
+      remove: [],
     });
   });
 

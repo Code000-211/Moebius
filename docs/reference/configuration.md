@@ -372,16 +372,66 @@ key must be in the server user's `known_hosts`.
 
 ## `[github]`
 
-Moebius acts as its own GitHub App, with the App's own webhooks off; it polls, and a webhook set up on the repository only
-wakes the poll (see [Webhooks](#webhooks)). The table is optional. Without it, repositories on
-GitHub cannot be polled or merged.
+Repositories on GitHub are reached in one of two ways, and exactly one is configured, else the file is refused:
+
+- **A personal access token** (`token_file` or `token_secret`), the simple way. Moebius acts as the token's user.
+- **Its own GitHub App** (`app_id` with `private_key_file`), with the App's own webhooks off. Moebius acts as the App.
+
+The server polls; a webhook set up on the repository only wakes the poll (see [Webhooks](#webhooks)). The table is
+optional. Without it, repositories on GitHub cannot be polled or merged.
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
-| `github.app_id` | integer | required | The App's id. |
-| `github.private_key_file` | path | required | The App's private key (PEM). Read when the server starts; the server does not start if it cannot be read or used. |
+| `github.token_file` | path | none | The file holding the personal access token, relative to this file's directory. Read when the server starts; the server does not start if it cannot be read or is empty. |
+| `github.token_secret` | string | none | The name of the secret holding the access token (see [Secrets](#secrets)), instead of `token_file`. A name is made of letters, digits, `-` and `_`. Exactly one of the two is set, else the file is refused; a secret that is not stored stops the server from starting. |
+| `github.app_id` | integer | none | The App's id. Set together with `private_key_file`, and not together with a token. |
+| `github.private_key_file` | path | none | The App's private key (PEM). Read when the server starts; the server does not start if it cannot be read or used. |
 | `github.api_url` | string | `https://api.github.com` | The API's base URL, for GitHub Enterprise or a test double. |
 | `github.poll_seconds` | integer | `30` | Seconds between two polls of the repositories on GitHub. A value below 1 is raised to 1. |
+
+A table with a token and an App, with neither, with both `token_file` and `token_secret`, or with only one of `app_id` and
+`private_key_file` is refused.
+
+### The access token
+
+A fine-grained token (resource owner: the user or organization that owns the repositories; repository access: the ones
+Moebius works on) needs these repository permissions; a classic token needs the scope `repo` (and `workflow` to push
+changes to files under `.github/workflows`):
+
+| Permission | Access | What Moebius does with it |
+|---|---|---|
+| Metadata | read | Always granted; finds the repositories. |
+| Contents | read and write | Clones and fetches the repository, pushes the branch of a change over HTTPS, and merges a pull request. |
+| Issues | read and write | Lists the issues and their comments (`GET /repos/{owner}/{repo}/issues`, `.../issues/{n}/comments`); opens, edits, closes and reopens issues; sets labels; writes comments; reads and changes sub-issues (`.../issues/{n}/sub_issues`) and issue dependencies (`.../issues/{n}/dependencies/blocked_by`). |
+| Pull requests | read and write | Opens, reads and merges pull requests, and reads their reviews (`/pulls`, `/pulls/{n}`, `/pulls/{n}/reviews`, `/pulls/{n}/merge`). |
+| Checks | read | Reads the check runs of a pull request's head commit (`/commits/{sha}/check-runs`). |
+| Workflows | read and write | Only to push changes to files under `.github/workflows`. |
+
+At start the server asks `GET /user` with the token and refuses to start when GitHub answers 401 or 403 (the token is
+wrong, expired or revoked), saying so; for a classic token it also refuses one whose scopes (the `x-oauth-scopes` header)
+do not include `repo`. A fine-grained token sends no scopes, so what it lacks shows when a call needs it: a repository
+then reports a `forge_error` with GitHub's explanation (`403 Resource not accessible by personal access token`, or `404`
+for a repository the token does not reach). When GitHub cannot be reached at start, does not answer within 15 seconds, or limits the
+token's calls for now (429, or 403 with `x-ratelimit-remaining: 0`), the server starts and tries the token again with
+every call. The login that `GET /user` answers is read once and kept.
+
+The token is sent to the API as a bearer token, and to git (as the basic-auth password of the user `x-access-token`, in an
+`http.extraheader` that is passed in git's environment (`GIT_CONFIG_*`), never on its command line, and never stored in a URL, a configuration file or a log) only for remotes on
+the GitHub web host: `github.com` for the public API, the Enterprise host otherwise. It is redacted wherever Moebius
+writes text, whatever its shape.
+
+### What differs from the App
+
+- **Identity.** With a token, Moebius acts as the token's user: the pull requests, comments and issues it opens, the merges it makes and the pushes of its branches are
+  the user's, not `<app>[bot]`'s (the commits keep the author `Moebius <moebius@localhost>`). Use a machine
+  user (a GitHub account of its own) when that is not wanted.
+- **Reviews.** GitHub does not let a user approve their own pull request. A pull request opened with a token cannot be
+  approved by that user; another person, or a second account, approves it, or the repository does not require approval.
+- **Own comments.** Moebius knows which comments it wrote from what it stored (the id GitHub gave each), not from the
+  author's login, so a comment written with the token is Moebius's own while one the same user writes in GitHub's page is
+  an ordinary comment of a forge user, trusted only when that login is among the repository's `trusted` logins or wrote
+  the issue. Add the token's user to `trusted` if issues it opens by hand should move on without approval.
+- **Limits.** A token's requests count against the user's rate limit, not the App installation's.
 
 ## `[gitlab]`
 

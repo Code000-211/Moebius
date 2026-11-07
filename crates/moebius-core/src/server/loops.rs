@@ -880,7 +880,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn git_reaches_a_web_address_with_the_installation_token_and_a_local_one_without() {
+    async fn git_reaches_a_web_address_with_the_access_token_and_a_local_one_without() {
         let f = Fixture::new().await;
         let (repos, github) = (f.server.app.repos.clone(), f.server.github.clone().unwrap());
         let host = f.api.trim_start_matches("http://").to_string();

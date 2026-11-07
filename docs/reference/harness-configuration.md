@@ -16,8 +16,8 @@ mcp_env = ["DOCS_TOKEN"]
 ```
 
 - `url` is anything `git clone` takes. With `[github]` set, an `https://github.com/...` URL is cloned, fetched and pushed
-  with the GitHub App's installation token, like the repositories Moebius works on; the App needs write access to the
-  repository for edits. Any other URL, such as a local path, uses plain git.
+  with the GitHub App's installation token or the access token, like the repositories Moebius works on; the App or the
+  token needs write access to the repository for edits. Any other URL, such as a local path, uses plain git.
 - `mcp_env` (array of names, default none) lists the environment variables of the server that `mcp.toml` may take values
   from (see [`mcp.toml`](#mcptoml)). Each is a name of letters, digits and `_` that does not start with a digit, else
   the file is refused. Every value taken through `${NAME}` is treated as a secret: of 12 characters or more, it is

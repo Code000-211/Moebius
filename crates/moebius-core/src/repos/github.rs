@@ -1,5 +1,6 @@
-//! The GitHub App Moebius acts as: it signs a JWT with the app's private key and exchanges it for an installation
-//! token per repository owner, which it keeps until shortly before it expires. It also lists a repository's issues,
+//! The GitHub client. Moebius reaches GitHub in one of two ways ([`Auth`]): as its own GitHub App, which signs a JWT
+//! with the app's private key and exchanges it for an installation token per repository owner, kept until shortly
+//! before it expires; or as a person, with a personal access token that is sent as it is. It also lists a repository's issues,
 //! asking GitHub only for what changed since the last time, opens and edits issues, and opens, reads and merges pull
 //! requests.
 
@@ -17,6 +18,8 @@ use tokio::sync::Mutex;
 
 /// How long before its expiry a token is renewed.
 const RENEW_BEFORE: Duration = Duration::from_secs(5 * 60);
+/// How long the check of an access token at the start may take before the server starts without it.
+const CHECK_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Why talking to GitHub failed.
 #[derive(Debug, thiserror::Error)]
@@ -37,6 +40,22 @@ pub enum GitHubError {
     ExpiresAt(String),
     #[error("{0:?} is not a GitHub repository as owner/repo")]
     Repository(String),
+    #[error(
+        "GitHub refused the access token ({status}): {message}. Check that it is the right one and has not expired or been revoked"
+    )]
+    TokenRefused {
+        status: reqwest::StatusCode,
+        message: String,
+    },
+    #[error("GitHub limits the calls of this access token for now ({status}): {message}")]
+    RateLimited {
+        status: reqwest::StatusCode,
+        message: String,
+    },
+    #[error(
+        "the classic access token has the scopes {scopes}, which do not include `repo`; give it `repo` (or use a fine-grained token with the permissions in the configuration reference)"
+    )]
+    TokenScope { scopes: String },
 }
 
 /// An issue as GitHub lists it.
@@ -174,13 +193,31 @@ struct CachedToken {
     renew_at: SystemTime,
 }
 
-/// A client for the GitHub API that authenticates as the app and as its installations.
+/// How the client proves who it is: as a GitHub App, which trades its key for a token per installation, or as a person
+/// whose personal access token (fine-grained, or classic with the scope `repo`) is used as it is.
+enum Auth {
+    App {
+        app_id: u64,
+        key: EncodingKey,
+        tokens: Mutex<HashMap<String, CachedToken>>,
+    },
+    Token(String),
+}
+
+/// What GitHub says about the user a personal access token belongs to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TokenOwner {
+    /// The user's login, which the comments, pull requests and commits made with the token carry.
+    pub login: String,
+}
+
+/// A client for the GitHub API that authenticates as the app and as its installations, or with an access token.
 pub struct GitHub {
     http: reqwest::Client,
     api_url: String,
-    app_id: u64,
-    key: EncodingKey,
-    tokens: Mutex<HashMap<String, CachedToken>>,
+    auth: Auth,
+    /// The login of the token's user, once [`GitHub::check_token`] has read it.
+    login: std::sync::OnceLock<String>,
     /// The ETag of the last full answer to the issues list, per repository.
     etags: StdMutex<HashMap<String, String>>,
     /// The `updated_at` of the newest issue in the last full answer, per repository: the next poll stops paging once it
@@ -193,16 +230,101 @@ pub struct GitHub {
 impl GitHub {
     /// A client for the API at `api_url`, for the app `app_id` whose private key is `private_key_pem`.
     pub fn new(api_url: &str, app_id: u64, private_key_pem: &[u8]) -> Result<Self, GitHubError> {
-        Ok(Self {
+        let key = EncodingKey::from_rsa_pem(private_key_pem).map_err(GitHubError::Key)?;
+        Ok(Self::with(
+            api_url,
+            Auth::App {
+                app_id,
+                key,
+                tokens: Mutex::new(HashMap::new()),
+            },
+        ))
+    }
+
+    /// A client for the API at `api_url` that acts as the user `token` belongs to. The token is redacted wherever it
+    /// would be written, whatever its shape.
+    pub fn with_token(api_url: &str, token: &str) -> Self {
+        let token = token.trim().to_string();
+        crate::blobs::remember_secret(&token);
+        Self::with(api_url, Auth::Token(token))
+    }
+
+    fn with(api_url: &str, auth: Auth) -> Self {
+        Self {
             http: reqwest::Client::new(),
             api_url: api_url.trim_end_matches('/').to_string(),
-            app_id,
-            key: EncodingKey::from_rsa_pem(private_key_pem).map_err(GitHubError::Key)?,
-            tokens: Mutex::new(HashMap::new()),
+            auth,
+            login: std::sync::OnceLock::new(),
             etags: StdMutex::new(HashMap::new()),
             newest: StdMutex::new(HashMap::new()),
             blockers: Default::default(),
-        })
+        }
+    }
+
+    /// Whether the client acts as a person with an access token, not as a GitHub App.
+    pub fn is_token(&self) -> bool {
+        matches!(self.auth, Auth::Token(_))
+    }
+
+    /// The login of the user the access token belongs to, once [`GitHub::check_token`] has read it; none for an App.
+    pub fn login(&self) -> Option<&str> {
+        self.login.get().map(String::as_str)
+    }
+
+    /// Asks GitHub who the access token belongs to (`GET /user`) and remembers the login. A token GitHub refuses is an
+    /// error that says so; so is a classic token whose scopes (sent in `x-oauth-scopes`) lack `repo`. A fine-grained
+    /// token sends no scopes: what it lacks shows when a call needs it. For an App there is nothing to check.
+    /// This uses a client of its own, so it may run on any runtime.
+    pub async fn check_token(&self) -> Result<Option<TokenOwner>, GitHubError> {
+        let Auth::Token(token) = &self.auth else {
+            return Ok(None);
+        };
+        // A GitHub that takes the connection and never answers must not hold the server's start.
+        let client = reqwest::Client::builder().timeout(CHECK_TIMEOUT).build()?;
+        let request = Self::authorize(client.get(format!("{}/user", self.api_url)), token);
+        let response = request.send().await?;
+        let status = response.status();
+        let limited = status == reqwest::StatusCode::TOO_MANY_REQUESTS
+            || (status == reqwest::StatusCode::FORBIDDEN
+                && response
+                    .headers()
+                    .get("x-ratelimit-remaining")
+                    .and_then(|v| v.to_str().ok())
+                    == Some("0"));
+        if limited
+            || status == reqwest::StatusCode::UNAUTHORIZED
+            || status == reqwest::StatusCode::FORBIDDEN
+        {
+            let body = response.text().await.unwrap_or_default();
+            let message = serde_json::from_str::<serde_json::Value>(&body)
+                .ok()
+                .and_then(|v| v["message"].as_str().map(str::to_string))
+                .unwrap_or_else(|| "no explanation".into());
+            return Err(if limited {
+                GitHubError::RateLimited { status, message }
+            } else {
+                GitHubError::TokenRefused { status, message }
+            });
+        }
+        let scopes = response
+            .headers()
+            .get("x-oauth-scopes")
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        let user: User = Self::succeeded(response).await?.json().await?;
+        if let Some(scopes) = scopes
+            && !scopes.split(',').any(|scope| scope.trim() == "repo")
+        {
+            return Err(GitHubError::TokenScope {
+                scopes: if scopes.trim().is_empty() {
+                    "none".into()
+                } else {
+                    scopes
+                },
+            });
+        }
+        let _ = self.login.set(user.login.clone());
+        Ok(Some(TokenOwner { login: user.login }))
     }
 
     /// Whether `url` is an https address on this GitHub's web host: `github.com` for the public API, the Enterprise
@@ -225,16 +347,24 @@ impl GitHub {
             && authority(url).is_some_and(|host| host == web)
     }
 
-    /// A token for the app's installation on `owner`, found through `repo`. Tokens are reused until five minutes
-    /// before they expire.
-    pub async fn installation_token(&self, owner: &str, repo: &str) -> Result<String, GitHubError> {
-        let mut tokens = self.tokens.lock().await;
+    /// The credential for calls on `owner`'s repositories, found through `repo`: the access token itself, or for an
+    /// App a token for its installation on `owner`, which is reused until five minutes before it expires.
+    pub async fn access_token(&self, owner: &str, repo: &str) -> Result<String, GitHubError> {
+        let (app_id, key, tokens) = match &self.auth {
+            Auth::Token(token) => return Ok(token.clone()),
+            Auth::App {
+                app_id,
+                key,
+                tokens,
+            } => (*app_id, key, tokens),
+        };
+        let mut tokens = tokens.lock().await;
         if let Some(cached) = tokens.get(owner)
             && SystemTime::now() < cached.renew_at
         {
             return Ok(cached.token.clone());
         }
-        let jwt = self.app_jwt()?;
+        let jwt = Self::app_jwt(app_id, key)?;
         let installation: Installation = self
             .send(
                 self.http.get(format!(
@@ -266,16 +396,16 @@ impl GitHub {
     }
 
     /// The JWT the app authenticates with: issued a minute ago to allow for clock drift, valid for ten minutes in all.
-    fn app_jwt(&self) -> Result<String, GitHubError> {
+    fn app_jwt(app_id: u64, key: &EncodingKey) -> Result<String, GitHubError> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
         let claims = Claims {
             iat: now - 60,
             exp: now + 9 * 60,
-            iss: self.app_id.to_string(),
+            iss: app_id.to_string(),
         };
-        jsonwebtoken::encode(&Header::new(Algorithm::RS256), &claims, &self.key)
+        jsonwebtoken::encode(&Header::new(Algorithm::RS256), &claims, key)
             .map_err(GitHubError::Sign)
     }
 
@@ -287,7 +417,7 @@ impl GitHub {
         let (owner, repo) = github
             .split_once('/')
             .ok_or_else(|| GitHubError::Repository(github.to_string()))?;
-        let token = self.installation_token(owner, repo).await?;
+        let token = self.access_token(owner, repo).await?;
         let known = self.etags().get(github).cloned();
         let known_newest = self.newest().get(github).cloned();
         let mut url = format!(
@@ -461,7 +591,7 @@ impl GitHub {
         let (owner, repo) = github
             .split_once('/')
             .ok_or_else(|| GitHubError::Repository(github.to_string()))?;
-        let token = self.installation_token(owner, repo).await?;
+        let token = self.access_token(owner, repo).await?;
         let mut url = format!(
             "{}/repos/{github}/issues/{number}/comments?per_page=100",
             self.api_url
@@ -560,7 +690,7 @@ impl GitHub {
         let (owner, repo) = github
             .split_once('/')
             .ok_or_else(|| GitHubError::Repository(github.to_string()))?;
-        let token = self.installation_token(owner, repo).await?;
+        let token = self.access_token(owner, repo).await?;
         let mut url = format!(
             "{}/repos/{github}/issues/{number}/dependencies/blocked_by?per_page=100",
             self.api_url
@@ -642,7 +772,7 @@ impl GitHub {
         let (owner, repo) = github
             .split_once('/')
             .ok_or_else(|| GitHubError::Repository(github.to_string()))?;
-        let token = self.installation_token(owner, repo).await?;
+        let token = self.access_token(owner, repo).await?;
         let mut request = self
             .http
             .request(method, format!("{}/repos/{github}{path}", self.api_url));
@@ -663,7 +793,7 @@ impl GitHub {
         let (owner, repo) = github
             .split_once('/')
             .ok_or_else(|| GitHubError::Repository(github.to_string()))?;
-        let token = self.installation_token(owner, repo).await?;
+        let token = self.access_token(owner, repo).await?;
         let mut request = self
             .http
             .request(method, format!("{}/repos/{github}{path}", self.api_url));
@@ -956,11 +1086,11 @@ mod tests {
         let (url, fake) = serve(Duration::from_secs(3600)).await;
         let github = client(&url);
         assert_eq!(
-            github.installation_token("acme", "widgets").await.unwrap(),
+            github.access_token("acme", "widgets").await.unwrap(),
             "ghs_token1"
         );
         assert_eq!(
-            github.installation_token("acme", "gadgets").await.unwrap(),
+            github.access_token("acme", "gadgets").await.unwrap(),
             "ghs_token1",
             "the token is cached per owner"
         );
@@ -972,11 +1102,11 @@ mod tests {
         let (url, fake) = serve(Duration::from_secs(60)).await;
         let github = client(&url);
         assert_eq!(
-            github.installation_token("acme", "widgets").await.unwrap(),
+            github.access_token("acme", "widgets").await.unwrap(),
             "ghs_token1"
         );
         assert_eq!(
-            github.installation_token("acme", "widgets").await.unwrap(),
+            github.access_token("acme", "widgets").await.unwrap(),
             "ghs_token2"
         );
         assert_eq!(fake.exchanges.load(Ordering::SeqCst), 2);
@@ -986,16 +1116,11 @@ mod tests {
     async fn failures_are_reported() {
         let (url, _) = serve(Duration::from_secs(3600)).await;
         assert!(matches!(
-            client(&url).installation_token("acme", "missing").await,
+            client(&url).access_token("acme", "missing").await,
             Err(GitHubError::Status { status, .. }) if status == reqwest::StatusCode::NOT_FOUND
         ));
         let wrong_app = GitHub::new(&url, APP_ID + 1, PRIVATE_KEY).unwrap();
-        assert!(
-            wrong_app
-                .installation_token("acme", "widgets")
-                .await
-                .is_err()
-        );
+        assert!(wrong_app.access_token("acme", "widgets").await.is_err());
         assert!(matches!(
             GitHub::new(&url, APP_ID, b"not a key"),
             Err(GitHubError::Key(_))

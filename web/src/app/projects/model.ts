@@ -96,7 +96,7 @@ const UNREACHABLE = [
  * read when the server starts, so the way to take one says that the server has to restart.
  */
 function credentialPlace(name: string): string {
-  if (name === "GitHub") return "Set up the GitHub App under Settings";
+  if (name === "GitHub") return "Set the GitHub token under Settings";
   return `Set the ${name} token under Settings`;
 }
 

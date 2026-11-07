@@ -106,7 +106,7 @@ describe("what the server says about a repository it refused", () => {
     const failure = addFailure(message);
     expect(failure.headline).toBe("The server cannot sign in to GitHub.");
     expect(failure.next).toBe(
-      "Set up the GitHub App under Settings and restart the server, then try again.",
+      "Set the GitHub token under Settings and restart the server, then try again.",
     );
     expect(failure.field).toBe("url");
     // The command line is there to open, and is not what the person reads first.

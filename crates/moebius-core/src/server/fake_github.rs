@@ -27,7 +27,18 @@ pub(super) struct FakeGitHub {
     pub(super) comments: Mutex<Option<Vec<Value>>>,
     /// How many times the comments of an issue were asked for.
     pub(super) comment_reads: std::sync::atomic::AtomicUsize,
+    /// The `Authorization` of every request for something of a repository.
+    pub(super) credentials: Mutex<Vec<String>>,
+    /// The `x-oauth-scopes` that `GET /user` answers with; none sends no such header, as for a fine-grained token.
+    pub(super) scopes: Mutex<Option<String>>,
+    /// Whether `GET /user` answers that the token's calls are limited for now (403 with no calls remaining).
+    pub(super) limited: std::sync::atomic::AtomicBool,
 }
+
+/// The access token the fake accepts at `GET /user`.
+pub(super) const TOKEN: &str = "ghp_0123456789abcdefghijklmnopqrstuvwxyz";
+/// The login the fake says that token belongs to.
+pub(super) const TOKEN_LOGIN: &str = "octo-user";
 
 /// The pull requests of the fake: what it was asked to open and merge, and what it answers about pull request 7.
 pub(super) struct Pulls {
@@ -78,6 +89,9 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         asked: Mutex::new(Vec::new()),
         comments: Mutex::new(Some(Vec::new())),
         comment_reads: Default::default(),
+        credentials: Mutex::new(Vec::new()),
+        scopes: Mutex::new(None),
+        limited: std::sync::atomic::AtomicBool::new(false),
         pulls: Mutex::new(Pulls {
             opened: Vec::new(),
             merged: Vec::new(),
@@ -87,6 +101,42 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         }),
     });
     let app = axum::Router::new()
+        .route(
+            "/user",
+            get(
+                |State(fake): State<Arc<FakeGitHub>>, headers: HeaderMap| async move {
+                    if fake.limited.load(std::sync::atomic::Ordering::SeqCst) {
+                        let mut response = (
+                            StatusCode::FORBIDDEN,
+                            axum::Json(json!({ "message": "API rate limit exceeded" })),
+                        )
+                            .into_response();
+                        response
+                            .headers_mut()
+                            .insert("x-ratelimit-remaining", "0".parse().unwrap());
+                        return response;
+                    }
+                    let accepted = headers
+                        .get("authorization")
+                        .is_some_and(|v| v.to_str().unwrap() == format!("Bearer {TOKEN}"));
+                    if !accepted {
+                        return (
+                            StatusCode::UNAUTHORIZED,
+                            axum::Json(json!({ "message": "Bad credentials" })),
+                        )
+                            .into_response();
+                    }
+                    let mut response =
+                        axum::Json(json!({ "login": TOKEN_LOGIN })).into_response();
+                    if let Some(scopes) = fake.scopes.lock().unwrap().clone() {
+                        response
+                            .headers_mut()
+                            .insert("x-oauth-scopes", scopes.parse().unwrap());
+                    }
+                    response
+                },
+            ),
+        )
         .route(
             "/repos/acme/widgets/installation",
             get(|| async { axum::Json(json!({ "id": 77 })) }),
@@ -132,7 +182,8 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                     Some(comments) => axum::Json(comments).into_response(),
                     None => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
                 }
-            }),
+            })
+            .post(|| async { (StatusCode::CREATED, axum::Json(json!({ "id": 501 }))) }),
         )
         .route(
             "/repos/acme/widgets/pulls",
@@ -185,6 +236,23 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                 },
             ),
         )
+        .layer(axum::middleware::from_fn_with_state(
+            fake.clone(),
+            |State(fake): State<Arc<FakeGitHub>>,
+             request: axum::extract::Request,
+             next: axum::middleware::Next| async move {
+                if request.uri().path().starts_with("/repos/acme/widgets/") {
+                    let credentials = request
+                        .headers()
+                        .get("authorization")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or_default()
+                        .to_string();
+                    fake.credentials.lock().unwrap().push(credentials);
+                }
+                next.run(request).await
+            },
+        ))
         .with_state(fake.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
@@ -249,15 +317,33 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) async fn new() -> Self {
+        Self::start(false).await
+    }
+
+    /// The same, with Moebius acting as the user of an access token instead of as the App.
+    pub(super) async fn with_token() -> Self {
+        Self::start(true).await
+    }
+
+    async fn start(token: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let (url, fake) = fake_github().await;
         let key = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/github-app-test-key.pem");
-        let text = format!(
-            "[github]\napp_id = 4242\nprivate_key_file = {:?}\napi_url = {url:?}\n",
-            key.display().to_string()
-        );
+        let text = if token {
+            std::fs::write(dir.path().join("github-token"), format!("{TOKEN}\n")).unwrap();
+            format!("[github]\ntoken_file = \"github-token\"\napi_url = {url:?}\n")
+        } else {
+            format!(
+                "[github]\napp_id = 4242\nprivate_key_file = {:?}\napi_url = {url:?}\n",
+                key.display().to_string()
+            )
+        };
         let config = Config::parse(&text, dir.path(), &dir.path().join("moebius.toml")).unwrap();
-        let server = Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
+        let server = tokio::task::spawn_blocking(move || {
+            Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap()
+        })
+        .await
+        .unwrap();
         let origin = dir.path().join("origin");
         std::fs::create_dir_all(&origin).unwrap();
         git(&origin, &["init", "--quiet", "-b", "main"]).unwrap();
@@ -371,5 +457,216 @@ impl Fixture {
             .store
             .card_by_number(self.repository.id, number)
             .unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::decide::Actor;
+    use crate::repos::forge::{Forge, GitHubForge};
+
+    fn credentials(f: &Fixture) -> Vec<String> {
+        f.fake.credentials.lock().unwrap().clone()
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn with_a_token_issues_are_polled_and_changes_are_opened_and_merged_as_its_user() {
+        let f = Fixture::with_token().await;
+        let github = f.server.github.clone().unwrap();
+        assert!(github.is_token());
+        assert_eq!(
+            github.login(),
+            Some(TOKEN_LOGIN),
+            "read from GET /user at start"
+        );
+
+        // Polling, pushing the branch, opening the pull request and reading its checks.
+        let change = f.offered_change().await;
+        assert_eq!(f.fake.pulls.lock().unwrap().opened.len(), 1);
+        f.fake.pulls.lock().unwrap().check_runs = vec![check("build", "completed", "success")];
+        f.server.poll_github().await;
+
+        // Merging it.
+        let app = f.server.app.clone();
+        let id = change.id;
+        let commit =
+            tokio::task::spawn_blocking(move || app.merge_change(&Actor::Person, id, "looks good"))
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(commit, "c0ffee");
+        assert_eq!(f.fake.pulls.lock().unwrap().merged.len(), 1);
+
+        // Every call for a repository carried the token, and none asked for an installation.
+        let carried = credentials(&f);
+        assert!(carried.len() >= 4, "{carried:?}");
+        assert!(
+            carried.iter().all(|c| *c == format!("Bearer {TOKEN}")),
+            "{carried:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn git_gets_the_token_for_the_web_host_only() {
+        let f = Fixture::with_token().await;
+        let (repos, github) = (f.server.app.repos.clone(), f.server.github.clone().unwrap());
+        let host = f.api.trim_start_matches("http://").to_string();
+        let (web, elsewhere, local) = tokio::task::spawn_blocking(move || {
+            let forge = GitHubForge::new(github, repos, tokio::runtime::Handle::current());
+            (
+                forge.auth(&format!("https://{host}/acme/widgets.git"), "acme/widgets"),
+                forge.auth("https://attacker.example/x.git", "acme/widgets"),
+                forge.auth("/srv/widgets.git", "acme/widgets"),
+            )
+        })
+        .await
+        .unwrap();
+        use base64::Engine;
+        let expected =
+            base64::engine::general_purpose::STANDARD.encode(format!("x-access-token:{TOKEN}"));
+        assert_eq!(
+            web.unwrap().as_deref(),
+            Some(format!("Authorization: Basic {expected}").as_str())
+        );
+        assert_eq!(elsewhere.unwrap(), None);
+        assert_eq!(local.unwrap(), None);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_comment_written_with_a_token_is_not_stored_twice_when_the_poll_reads_it_back_as_the_user()
+     {
+        let f = Fixture::with_token().await;
+        f.fake
+            .set_issues("\"v1\"", vec![issue(1, "open", "leon", "Do it.")]);
+        f.server.poll_github().await;
+        let card = f.card(1).unwrap();
+        let app = f.server.app.clone();
+        let id = card.id;
+        let written =
+            tokio::task::spawn_blocking(move || app.comment_issue(&Actor::Person, id, "Hello."))
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(written.author, "person");
+        assert_eq!(credentials(&f).last().unwrap(), &format!("Bearer {TOKEN}"));
+
+        // The forge lists it under the token's user.
+        let mut changed = issue(1, "open", "leon", "Do it.");
+        changed["comments"] = json!(1);
+        *f.fake.comments.lock().unwrap() = Some(vec![json!({
+            "id": 501, "user": { "login": TOKEN_LOGIN }, "body": "Hello.",
+            "created_at": "2026-03-04T05:06:07Z",
+        })]);
+        f.fake.set_issues("\"v2\"", vec![changed]);
+        f.server.poll_github().await;
+        let comments = f.server.app.comments(card.id).unwrap();
+        assert_eq!(comments.len(), 1, "{comments:?}");
+        assert_eq!(
+            comments[0].author, "person",
+            "known as Moebius's own by the store, not by the login"
+        );
+    }
+
+    fn start(text: &str, dir: &std::path::Path) -> Result<Server, String> {
+        let config = Config::parse(text, dir, &dir.join("moebius.toml")).unwrap();
+        Server::new(config, "127.0.0.1:1".parse().unwrap())
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_server_does_not_start_with_a_token_github_refuses_or_one_that_cannot_be_read() {
+        let (url, fake) = fake_github().await;
+        let dir = tempfile::tempdir().unwrap();
+        let text = format!("[github]\ntoken_file = \"token\"\napi_url = {url:?}\n");
+        let try_start = |text: String, path: std::path::PathBuf| {
+            tokio::task::spawn_blocking(move || start(&text, &path).map(|_| ()))
+        };
+
+        let error = try_start(text.clone(), dir.path().to_path_buf())
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert!(
+            error.contains("cannot read") && error.contains("token"),
+            "{error}"
+        );
+
+        std::fs::write(dir.path().join("token"), "  \n").unwrap();
+        let error = try_start(text.clone(), dir.path().to_path_buf())
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(error, "the GitHub access token is empty");
+
+        let wrong = "ghp_wrongwrongwrongwrongwrongwrongwrong";
+        std::fs::write(dir.path().join("token"), wrong).unwrap();
+        let error = try_start(text.clone(), dir.path().to_path_buf())
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert!(
+            error.contains("GitHub refused the access token (401 Unauthorized): Bad credentials"),
+            "{error}"
+        );
+        assert!(!error.contains(wrong), "the token is not told: {error}");
+
+        // A classic token without the scope repo.
+        std::fs::write(dir.path().join("token"), TOKEN).unwrap();
+        *fake.scopes.lock().unwrap() = Some("read:org, gist".into());
+        let error = try_start(text.clone(), dir.path().to_path_buf())
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert!(
+            error.contains("read:org, gist") && error.contains("`repo`"),
+            "{error}"
+        );
+        assert!(!error.contains(TOKEN), "{error}");
+
+        // With the scope, and with a secret instead of a file.
+        *fake.scopes.lock().unwrap() = Some("gist, repo".into());
+        try_start(text, dir.path().to_path_buf())
+            .await
+            .unwrap()
+            .unwrap();
+        crate::server::settings::Secrets::new(&dir.path().join(".moebius"))
+            .set("github", TOKEN)
+            .unwrap();
+        let text = format!("[github]\ntoken_secret = \"github\"\napi_url = {url:?}\n");
+        try_start(text, dir.path().to_path_buf())
+            .await
+            .unwrap()
+            .unwrap();
+        let text = format!("[github]\ntoken_secret = \"nobody\"\napi_url = {url:?}\n");
+        let error = try_start(text, dir.path().to_path_buf())
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert!(error.contains("the secret nobody is not stored"), "{error}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_server_starts_when_github_limits_the_token_for_now() {
+        let (url, fake) = fake_github().await;
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("token"), TOKEN).unwrap();
+        fake.limited
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let text = format!("[github]\ntoken_file = \"token\"\napi_url = {url:?}\n");
+        let path = dir.path().to_path_buf();
+        tokio::task::spawn_blocking(move || start(&text, &path).map(|_| ()))
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[test]
+    fn the_token_is_redacted_wherever_it_would_be_written() {
+        let token = "ghe-token-of-no-known-shape-1234567890";
+        let _ = crate::repos::github::GitHub::with_token("http://127.0.0.1:1", token);
+        assert!(!crate::blobs::redact(&format!("push failed for {token}")).contains(token));
+        assert!(!crate::blobs::redact(&format!("Bearer {TOKEN}")).contains(TOKEN));
     }
 }

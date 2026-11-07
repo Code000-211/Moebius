@@ -403,6 +403,8 @@ mod tests {
                 ("github.app_id", json!(1)),
                 ("github.private_key_file", json!("missing.pem")),
             ],
+            vec![("github.token_file", json!("missing-token"))],
+            vec![("github.token_secret", json!("github"))],
             vec![("gitlab.token_file", json!("missing-token"))],
             vec![("gitlab.token_secret", json!("gitlab"))],
             vec![("forgejo.token_file", json!("missing-token"))],
@@ -413,6 +415,8 @@ mod tests {
             assert!(matches!(error, Err(AppError::Invalid(_))), "{sets:?}");
             assert_eq!(std::fs::read_to_string(&file).unwrap(), original);
         }
+        std::fs::write(dir.path().join("github-token"), "ghp_token\n").unwrap();
+        attempt(&[("github.token_file", json!("github-token"))]).unwrap();
         std::fs::write(dir.path().join("gitlab-token"), "glpat\n").unwrap();
         attempt(&[("gitlab.token_file", json!("gitlab-token"))]).unwrap();
     }

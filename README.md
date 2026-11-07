@@ -151,6 +151,10 @@ base_url = "http://127.0.0.1:8080"
 program = "/usr/local/bin/pi-bolt"
 ```
 
+For repositories on GitHub, add a personal access token (`[github] token_file`, or `token_secret` for a stored secret);
+[Running Moebius](docs/guide/running-moebius.md) lists the permissions it needs, and GitLab and Forgejo take a token the
+same way.
+
 **3. Run.**
 
 ```sh

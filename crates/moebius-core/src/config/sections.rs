@@ -1,4 +1,4 @@
-//! The types of the configuration's sections as the server uses them: the router's upstreams, the GitHub App, the
+//! The types of the configuration's sections as the server uses them: the router's upstreams, the GitHub App or access token, the
 //! teacher, the decision model, the plugins in their own process and the agents, with times of day and the checks of names, keys and timeouts.
 
 use std::collections::BTreeMap;
@@ -8,7 +8,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use super::ConfigError;
-use super::raw::{RawDecisionModel, RawForgejo, RawGitLab, RawTeacher};
+use super::raw::{RawDecisionModel, RawForgejo, RawGitHub, RawGitLab, RawTeacher};
 use crate::harness::mcp::{McpServer, valid_variable};
 use crate::router::{ModelThinking, OAuthConfig, Protocol};
 
@@ -102,11 +102,22 @@ pub(super) fn check_model_thinking(maps: &ModelThinking) -> Result<(), String> {
     Ok(())
 }
 
-/// The GitHub App Moebius acts as.
+/// How Moebius reaches GitHub: as a person with a personal access token, or as its own GitHub App.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitHubAuth {
+    /// A fine-grained token, or a classic one with the scope `repo`: Moebius acts as the token's user.
+    Token(TokenSource),
+    /// The App's id and its private key (PEM), made absolute against the configuration's directory.
+    App {
+        app_id: u64,
+        private_key_file: PathBuf,
+    },
+}
+
+/// The GitHub Moebius reaches with an access token or as a GitHub App.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitHubConfig {
-    pub app_id: u64,
-    pub private_key_file: PathBuf,
+    pub auth: GitHubAuth,
     pub api_url: String,
     /// How often the issues of each GitHub repository are polled.
     pub poll: Duration,
@@ -128,6 +139,34 @@ pub struct GitLabConfig {
 pub enum TokenSource {
     File(PathBuf),
     Secret(String),
+}
+
+/// How `[github]` reaches GitHub: exactly one of a token (`token_file` or `token_secret`) and an App (`app_id` with
+/// `private_key_file`).
+pub(super) fn github_auth(
+    raw: &mut RawGitHub,
+    base: &std::path::Path,
+) -> Result<GitHubAuth, ConfigError> {
+    let token = raw.token_file.is_some() || raw.token_secret.is_some();
+    let app = raw.app_id.is_some() || raw.private_key_file.is_some();
+    match (token, app) {
+        (true, true) | (false, false) => Err(ConfigError::GitHubAuth),
+        (true, false) => match (raw.token_file.take(), raw.token_secret.take()) {
+            (Some(file), None) => Ok(GitHubAuth::Token(TokenSource::File(base.join(file)))),
+            (None, Some(name)) if valid_agent_name(&name) => {
+                Ok(GitHubAuth::Token(TokenSource::Secret(name)))
+            }
+            (None, Some(name)) => Err(ConfigError::GitHubSecret { name }),
+            _ => Err(ConfigError::GitHubToken),
+        },
+        (false, true) => match (raw.app_id, raw.private_key_file.take()) {
+            (Some(app_id), Some(file)) => Ok(GitHubAuth::App {
+                app_id,
+                private_key_file: base.join(file),
+            }),
+            _ => Err(ConfigError::GitHubApp),
+        },
+    }
 }
 
 /// The GitLab of `[gitlab]`, with its defaults: exactly one of `token_file` and `token_secret`.

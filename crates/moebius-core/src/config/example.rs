@@ -186,12 +186,17 @@ program = "claude"
 # name = "acme"
 # url = "https://git.example.com/acme/moebius-packages"
 
-# Moebius acts as its own GitHub App. The key file is read at start; relative paths are inside this file's directory.
+# Repositories on GitHub, reached with a personal access token (a fine-grained one with the permissions of
+# docs/reference/configuration.md, or a classic one with the scope repo): Moebius then acts as the token's user. The token
+# is read at start from token_file, or from the secret named by token_secret, never from this file. Relative paths are
+# inside this file's directory.
 # [github]
-# app_id = 123456
-# private_key_file = "github-app.pem"
+# token_file = "github-token"
 # api_url = "https://api.github.com"
 # poll_seconds = 30                       # how often each GitHub repository's issues are polled
+# Or as a GitHub App of your own, in place of token_file or token_secret (exactly one of the two ways):
+# app_id = 123456
+# private_key_file = "github-app.pem"
 
 # Repositories on GitLab, gitlab.com or one hosted elsewhere, with a personal, project or group access token (scope
 # api). The token is read at start from token_file, or from the secret named by token_secret, never from this file.

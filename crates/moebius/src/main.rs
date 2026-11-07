@@ -550,6 +550,14 @@ mod tests {
             std::fs::read_to_string(&path).unwrap(),
             super::example(on_path.as_deref(), &harness)
         );
+        // GitHub is offered with the token first and the App as the other way; both are commented out.
+        let written = std::fs::read_to_string(&path).unwrap();
+        let github = written.split_once("# [github]\n").unwrap().1;
+        assert!(
+            github.starts_with("# token_file = \"github-token\"\n"),
+            "{github}"
+        );
+        assert!(github.contains("# app_id = 123456\n# private_key_file = \"github-app.pem\""));
         assert!(run(cli(Command::Init)).is_err());
         // The repository has its files, committed on main, and no agents yet.
         let git = |args: &[&str]| moebius_core::repos::git(&harness, args).unwrap();
