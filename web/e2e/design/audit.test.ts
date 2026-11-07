@@ -281,6 +281,10 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
     return;
   }
   if (what === "steps") {
+    // The column of chats is kept open per browser, so on a narrow window the "chats" route before this one leaves it
+    // lying over the chat; it is hidden again here, as a person would to read the chat.
+    const hide = page.getByRole("button", { name: "Hide the list of chats" });
+    if (await hide.isVisible()) await hide.click();
     // A block of steps that went well is folded; the one with a failure is open already, and is left as it is.
     const folded = page.getByRole("button", { name: /^Worked · \d+ steps?$/ });
     if ((await folded.count()) > 0) await folded.click();
