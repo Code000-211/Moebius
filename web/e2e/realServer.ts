@@ -38,7 +38,22 @@ export type RunningServer = Pick<FakeServer, "url" | "loginUrl" | "token"> & {
   packages?: undefined;
 };
 
+/**
+ * Starts the server, again with other ports when one it was given was taken in the meantime: a free port is found by
+ * binding port 0 and letting it go, and another process may take it before the server binds it.
+ */
 export async function startRealServer(binary: string): Promise<RunningServer> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await startOnce(binary);
+    } catch (error) {
+      const taken = error instanceof Error && error.message.includes("Address already in use");
+      if (!taken || attempt >= 5) throw error;
+    }
+  }
+}
+
+async function startOnce(binary: string): Promise<RunningServer> {
   const directory = mkdtempSync(join(tmpdir(), "moebius-e2e-"));
   const port = await freePort();
   const routerPort = await freePort();
@@ -88,6 +103,7 @@ export async function startRealServer(binary: string): Promise<RunningServer> {
     child.stderr?.on("data", read);
     child.on("exit", (code) => {
       clearTimeout(timer);
+      rmSync(directory, { recursive: true, force: true });
       fail(new Error(`moebius serve ended with ${code}:\n${output}`));
     });
   });
