@@ -272,7 +272,12 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
   if (what === "chats") {
     // The column of chats is on the screen with the page and scrolls on its own, so nothing is opened to measure it:
     // a row of a list that caps its own height is shorter than its own words, and only the scrollable list shows it.
-    await page.getByTestId("chat-list-rows").waitFor({ timeout: 5_000 });
+    // On a narrow window the column starts hidden, and the switcher above the chat brings it back.
+    const rows = page.getByTestId("chat-list-rows");
+    if (!(await rows.isVisible())) {
+      await page.getByRole("button", { name: /^Chats \(/ }).click();
+    }
+    await rows.waitFor({ timeout: 5_000 });
     return;
   }
   if (what === "steps") {
