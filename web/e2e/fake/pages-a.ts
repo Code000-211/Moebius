@@ -194,10 +194,6 @@ function usageReport(days: number) {
     tool_waits: [{ tool: "bash", calls: 31, seconds: 2460 }],
     classes: [],
     tool_output: { results: 96, bytes_before: 3_400_000, bytes_after: 920_000 },
-    lens: [
-      { phase: "deep", tool: "cargo", runs: 31, skipped: 2, ms: 412_000, shown: 9 },
-      { phase: "lint", tool: "ruff", runs: 140, skipped: 0, ms: 5200, shown: 17 },
-    ],
   };
 }
 
@@ -606,7 +602,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
   const projectFiles = new Map<number, Map<string, string>>([
     [1, new Map([["review.md", "Prefer small functions.\n"]])],
   ]);
-  const SETTING_NAMES = ["rules.md", "review.md", "lint.toml", "checks", "test-first", "localize"];
+  const SETTING_NAMES = ["rules.md", "review.md", "checks", "test-first", "localize"];
   const projectFilesOf = (id: number) => {
     const found = projectFiles.get(id) ?? new Map<string, string>();
     projectFiles.set(id, found);
@@ -899,8 +895,8 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
           }
           if (method === "PUT") {
             const text = String(body.text ?? "");
-            if (name === "lint.toml" && /^\s*unknown\s*=/m.test(text)) {
-              return fail(response, 422, "lint.toml: unknown field `unknown`");
+            if (name === "localize" && /^\s*unknown\b/m.test(text)) {
+              return fail(response, 422, "localize: unknown line `unknown`");
             }
             mine.set(name, text);
             send({ kind: "project_settings_changed", data: { repository: id, file: name } });

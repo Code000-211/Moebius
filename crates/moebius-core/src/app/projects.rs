@@ -25,7 +25,7 @@ impl App {
         })
     }
 
-    /// The text of `file` in the project `repository`'s settings (`rules.md`, `review.md`, `lint.toml`, `checks`,
+    /// The text of `file` in the project `repository`'s settings (`rules.md`, `review.md`, `checks`,
     /// `test-first`, `localize` or a column's script such as `ready.luau`); none when the project has no such file or
     /// the server has no harness configuration repository.
     pub fn project_file(&self, repository: &Repository, file: &str) -> Option<String> {
@@ -177,13 +177,7 @@ mod tests {
             (".moebius/test-first", ""),
             (".moebius/ready.luau", "error('read')"),
         ]);
-        for file in [
-            "rules.md",
-            "checks",
-            "test-first",
-            "ready.luau",
-            "lint.toml",
-        ] {
+        for file in ["rules.md", "checks", "test-first", "ready.luau"] {
             assert_eq!(app.project_file(&repository, file), None, "{file}");
         }
         assert!(!app.test_first(&repository));

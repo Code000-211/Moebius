@@ -19,7 +19,7 @@ import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { Reading, SkeletonCard } from "../../ui/page/Skeleton";
 import { Status } from "../../ui/page/Status";
-import { AgentsBox, LensBox, ModelsBox, TimeBox, WaitsBox } from "./Boxes";
+import { AgentsBox, ModelsBox, TimeBox, WaitsBox } from "./Boxes";
 import { short } from "./figures";
 import { Heatmap } from "./Heatmap";
 import { type MeterTone, span, tiles, tokenFigure, WINDOWS } from "./model";
@@ -142,7 +142,6 @@ export function UsagePage() {
             <TimeBox report={data} span={span(data.days_in_window)} />
             <WaitsBox report={data} />
           </div>
-          <LensBox report={data} />
           <AgentsBox report={data} />
         </div>
       )}

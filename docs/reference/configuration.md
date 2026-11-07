@@ -11,6 +11,8 @@ every key with its type, default, meaning and validation. The code is in `crates
   `init` makes next to the file (see below).
 - A file that does not exist means every default. An empty file is valid.
 - Every key is optional unless it says required. Unknown keys and unknown tables are errors, so a typo is found at start.
+  The one exception is a `[lens]` table, which a file written for version 0.9 may have: the lens was removed, the table
+  is accepted and ignored, and the server logs a warning at start that it is no longer used.
 - In TOML, keys outside any table must come before the first `[table]` header. `rules_file` is such a key.
 - A bad file stops the server with a message that names the key.
 
@@ -134,15 +136,6 @@ The guard is the built-in decider of `tool_call`: it refuses a call that breaks 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
 | `guard.enabled` | boolean | `true` | Whether the guard checks tool calls. With `false` **no tool call is checked, neither by the built-in patterns nor by the rules**: every call is allowed unless a plugin that decides `tool_call` ([`[[plugins]]`](#plugins)) refuses it, and the judgement of each call says that the guard is off. Live: a change takes effect at once, and turning the guard off needs a confirmation (see [turning a plugin off and on](#turning-a-plugin-off-and-on)). |
-
-## `[lens]`
-
-The lens is the built-in decider of `lint_report` and `deep_check`: the lint and type feedback an agent gets after its
-edits (see [harness configuration](harness-configuration.md)). The table is optional.
-
-| Key | Type | Default | Meaning and validation |
-|---|---|---|---|
-| `lens.enabled` | boolean | `true` | Whether runs get the lens's feedback. With `false` an agent is shown no finding of a linter, parser or type checker and the slow check at the end of its turn does not run; the run goes on as usual and no judgement of `lint_report` or `deep_check` is recorded. Live. |
 
 ## `[packages]`
 
@@ -349,8 +342,8 @@ A plugin is turned off and on again with `plugins.enabled`, at once and without 
 `PUT /v1/plugins/{plugin}/enabled`, `moebius plugin enable|disable <name>` and the switch on the Plugins page set
 `plugins.enabled` (a person only; `enabled = false` is written, and turning the plugin on removes the key), record the
 decision (kind `enable_plugin` or `disable_plugin`) and publish `plugin_enabled_changed`. The built-in deciders have the
-same switch under their names, `guard`, `lens` and `localize`, and the key `enabled` of their table
-([`[guard]`](#guard), [`[lens]`](#lens), [`[localize]`](#localize)); everything below holds for them as well, except
+same switch under their names, `guard` and `localize`, and the key `enabled` of their table
+([`[guard]`](#guard), [`[localize]`](#localize)); everything below holds for them as well, except
 where it speaks of processes and launchers. The same key edited through
 `PUT /v1/settings` takes effect at once as well, by a person only. What happens:
 
@@ -362,8 +355,7 @@ where it speaks of processes and launchers. The same key edited through
   keeps deciding it whether the guard is on or off; the guard answers the kind again only when no plugin that is on
   decides it.
 - A built-in decider that is off decides nothing, and the switch turns its feature off, so a plugin that decides the same
-  kind is not asked either (the guard is the exception, above): `localize` gives a run no hint and records no judgement; `lens` shows an
-  agent no finding and does not run the slow check, without failing the run, and records nothing.
+  kind is not asked either (the guard is the exception, above): `localize` gives a run no hint and records no judgement.
 - The guard off fails open, so turning it off is refused (`409`) unless the person confirms with `allow_unchecked` (the
   route, `--allow-unchecked` of the command, the field of `PUT /v1/settings`; the Plugins page asks first). The server
   logs a warning. Then, if no plugin that is on decides `tool_call`, every tool call is **allowed**, and its judgement is
@@ -398,8 +390,8 @@ where it speaks of processes and launchers. The same key edited through
   in a `PUT /v1/settings`; turning the plugin on through the same route puts the file back in step with what runs.
   The same holds for a hand edit that turns the guard off while the server runs: it is not applied (the guard stays on,
   the server logs why and publishes `plugin_enable_refused`) until a person confirms with `allow_unchecked`. A file that
-  says `[guard] enabled = false` when the server starts is honoured, with a warning in the log. `[lens]` and
-  `[localize]` need no confirmation.
+  says `[guard] enabled = false` when the server starts is honoured, with a warning in the log. `[localize]`
+  needs no confirmation.
 
 
 ## `[[registries]]`

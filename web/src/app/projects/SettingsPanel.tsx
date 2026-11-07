@@ -1,7 +1,6 @@
 /**
  * The settings Moebius keeps for one repository, the files of `repos/<name>/` in the harness configuration
- * repository: the notes for its reviews, the lint plan of the lens, the checks of a repository without a forge, the
- * hint of likely files, and the switch of test first. Each is saved as a commit there, which the server checks first.
+ * repository: the notes for its reviews, the checks of a repository without a forge, the hint of likely files, and the switch of test first. Each is saved as a commit there, which the server checks first.
  * Its rules are edited on the Rules page and its column scripts on the board; this panel says which scripts it has. A
  * `.moebius/` folder that the repository still has is said to be no longer read.
  */

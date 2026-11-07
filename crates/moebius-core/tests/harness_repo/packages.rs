@@ -762,7 +762,7 @@ async fn a_package_that_is_not_in_the_lock_is_an_error_of_the_agent() {
 // Unix only: the run is on the fake Pi (testdata/fake-pi), a Python script started by its `#!` line.
 #[cfg(unix)]
 #[tokio::test]
-async fn a_run_gets_the_extensions_and_skills_of_a_package_before_the_lens_and_the_bridge() {
+async fn a_run_gets_the_extensions_and_skills_of_a_package_before_the_bridge() {
     let env = env().await;
     publish_tools(&env.registry, "1.0.0", LOG_1_0);
     env.install("npm:pi-tools", Some("Coder")).await;
@@ -789,10 +789,6 @@ async fn a_run_gets_the_extensions_and_skills_of_a_package_before_the_lens_and_t
         env.clone.join("extensions/log.ts").display().to_string()
     );
     assert_eq!(extensions[1], main);
-    assert!(
-        extensions[extensions.len() - 2].ends_with("moebius-lens.ts"),
-        "{extensions:?}"
-    );
     assert!(
         extensions[extensions.len() - 1].ends_with("moebius-bridge.ts"),
         "{extensions:?}"

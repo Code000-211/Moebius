@@ -45,7 +45,7 @@ and settings they draw on, and the settings of each project), kept in a git repo
 _Avoid_: harness config, setup, profile
 
 **Project settings**:
-What Moebius keeps for one repository: its rules, review notes, lint plan, checks, test-first switch, hint settings and
+What Moebius keeps for one repository: its rules, review notes, checks, test-first switch, hint settings and
 column scripts, the files of `repos/<repository name>/` in the harness configuration. The repository itself holds none of
 it: there is no `.moebius/` folder in a repository.
 _Avoid_: repository config, `.moebius`
@@ -60,11 +60,6 @@ _Avoid_: plugin (that is a decider of Moebius), add-on
 The part of Moebius that lives inside a harness, as an extension of that harness, and through which Moebius checks every tool
 call before it runs.
 _Avoid_: Moebius extension, hook, plugin, adapter
-
-**Lens**:
-The extension loaded next to the bridge that shows an agent the lint, syntax and type problems its own edits made, at once
-after an edit and once more when it is done.
-_Avoid_: linter, LSP, diagnostics
 
 **Router**:
 The part of Moebius that every harness uses as its model provider and that passes each request on to a real provider.

@@ -1,6 +1,6 @@
 /**
  * The boxes under the focal figure of the Usage page: tokens by model, where the model time goes, the longest tool
- * waits, the lens's checks and the usage by agent. Figures are body or metadata text with `tabular-nums` so they line
+ * waits and the usage by agent. Figures are body or metadata text with `tabular-nums` so they line
  * up as they change; every chart is a category colour, so none of them borrows a status hue.
  */
 import type { ReactNode } from "react";
@@ -9,8 +9,8 @@ import { cn } from "../../ui/lib/cn";
 import { noun, plural } from "../../ui/lib/format";
 import { Box } from "../../ui/page/Box";
 import { CELL, Table } from "../../ui/page/List";
-import { bytes, duration, grouped, milliseconds, share, short } from "./figures";
-import { doings, lensWhen, modelColours } from "./model";
+import { bytes, duration, grouped, share, short } from "./figures";
+import { doings, modelColours } from "./model";
 
 /**
  * What a box says when the window has nothing to show. The first box says once what fills the page; the boxes under it
@@ -151,31 +151,6 @@ export function WaitsBox({ report }: { report: UsageReport }) {
           ))}
         </Table>
       )}
-    </Box>
-  );
-}
-
-/** Where the time of the lint and type checks after the agents' edits went, by phase and tool; nothing when there was none. */
-export function LensBox({ report }: { report: UsageReport }) {
-  const lens = report.lens ?? [];
-  if (lens.length === 0) return null;
-  return (
-    <Box
-      title="Lint and type checks"
-      aside={milliseconds(lens.reduce((sum, check) => sum + check.ms, 0))}
-    >
-      <Table head={["Check", "When", "Runs", "Skipped", "Time", "Told to the agent"]}>
-        {lens.map((check) => (
-          <tr key={`${check.tool} ${check.phase}`}>
-            {word(code(check.tool))}
-            {word(lensWhen(check.phase))}
-            {figure(grouped(check.runs))}
-            {figure(grouped(check.skipped))}
-            {figure(milliseconds(check.ms))}
-            {figure(grouped(check.shown))}
-          </tr>
-        ))}
-      </Table>
     </Box>
   );
 }

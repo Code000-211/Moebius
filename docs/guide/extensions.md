@@ -28,7 +28,7 @@ dependencies, an entry in `packages.lock` (source, version, download, integrity)
 `skills`, if the package has any) with `pkg:pi-web-access` added. The change waits in the inbox with the source and the
 files; read them, since an extension is code that runs in every Pi process of the agents that name it, and merge it.
 The Moebius agent can propose a package and cannot merge one. From the merge on, the Coder's runs load the package's
-extensions in the order the package lists them, before the lens and the bridge.
+extensions in the order the package lists them, before the bridge.
 
 Name a package yourself in `agents/<name>.toml` as `pkg:<package>` for all its extensions (or skills) or
 `pkg:<package>/<path>` for one, such as `extensions = ["pkg:pi-web-access/extensions/search.ts"]`. A package that is not
@@ -49,14 +49,6 @@ Pi-Bolt with `--extension` for each path in the agent's `extensions`, in the ord
 `--extension` for the bridge. It also passes `--no-extensions` and `--no-skills`, so Pi loads no extension or skill it
 finds on its own: only the ones in the agent's configuration, the bridge and, for skills, Moebius's own. The [bridge protocol](../reference/bridge-protocol.md) describes what the bridge does and the rules for
 a bridge of any harness.
-
-Before the bridge, Moebius loads a second extension of its own, the lens (`crates/moebius-core/bridge/moebius-lens.ts`).
-After the agent edits a file it appends to the tool's result the lint and syntax problems that edit made new, and
-before the run settles it runs the slow type check once. You do not write or load it; you tell it what to run for your
-repository in the project's `lint.toml` of the harness configuration repository (see [harness configuration](../reference/harness-configuration.md#linttoml)),
-or leave that out and it detects ruff, rustfmt and cargo, gofmt and go vet, biome, oxlint, tsc, pyright and
-shellcheck. Your own extensions run before it, so it sees the file as your handlers left it. The
-[bridge protocol](../reference/bridge-protocol.md#the-lens) says what it does and which decisions are Moebius's.
 
 What this guarantees, and what it asks of yours:
 

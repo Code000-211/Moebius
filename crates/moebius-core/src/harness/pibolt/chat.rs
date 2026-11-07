@@ -242,12 +242,11 @@ mod tests {
         wait_for_run(&app, run.id, "the agent answers", |run| {
             run.status == "waiting"
         });
-        // The lens cannot be written: a directory is where the file goes. (The live Pi's own directory stays intact.)
-        let lens = app
-            .data_dir
-            .join(format!("runs/{}/moebius-lens.ts", run.id));
-        let _ = std::fs::remove_file(&lens);
-        std::fs::create_dir(&lens).unwrap();
+        // The question tool cannot be written: a directory is where the file goes. (The live Pi's own directory stays
+        // intact.)
+        let ask = app.data_dir.join(format!("runs/{}/moebius-ask.ts", run.id));
+        let _ = std::fs::remove_file(&ask);
+        std::fs::create_dir(&ask).unwrap();
         assert!(pi.tui(&app, run.id).is_err());
         // The chat still has its Pi, and is neither ended nor stuck without one.
         assert!(pi.live_chat(run.id).is_some());

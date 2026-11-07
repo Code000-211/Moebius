@@ -552,11 +552,11 @@ describe("projects", () => {
       });
 
       // A refusal says that nothing was committed, and the text stays to be corrected.
-      await page.getByRole("button", { name: "Edit lint plan" }).click();
-      await page.getByLabel("Lint plan").fill("unknown = 1\n");
+      await page.getByRole("button", { name: "Edit files hint" }).click();
+      await page.getByLabel("Files hint").fill("unknown 1\n");
       await page.getByRole("button", { name: "Save", exact: true }).click();
-      await alert("Nothing was committed. lint.toml: unknown field `unknown`").waitFor();
-      expect(await page.getByLabel("Lint plan").inputValue()).toBe("unknown = 1\n");
+      await alert("Nothing was committed. localize: unknown line `unknown`").waitFor();
+      expect(await page.getByLabel("Files hint").inputValue()).toBe("unknown 1\n");
       await page.getByRole("button", { name: "Cancel" }).click();
 
       await page.getByTestId("test-first").getByText("Does not work test first").waitFor();
@@ -967,8 +967,6 @@ describe("usage", () => {
       await page.getByText("Answering · 40 calls").waitFor();
       await page.getByText("Longest tool waits").waitFor();
       await page.getByText("Outputs cut from 3.4 MB to 920 KB").waitFor();
-      await page.getByRole("heading", { name: "Lint and type checks" }).waitFor();
-      await page.getByText("Before the run ends").waitFor();
       await page.getByRole("cell", { name: "Coder" }).waitFor();
     },
   );

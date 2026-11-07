@@ -27,8 +27,7 @@ Built and described here:
   every edit through the API is a commit, and it holds the server's `rules.md` too.
 - Plugins compiled into the `moebius` binary or running as their own process (`[[plugins]]` in `moebius.toml`), and the
   plugin API.
-- The bridge and Pi extensions, and the lens that tells an agent about the lint and type problems its own edits made
-  (`lint.toml` in a repository's settings, see the extensions page).
+- The bridge and Pi extensions.
 - The desktop API (HTTP and one WebSocket), the web app built on it, and the [command line](command-line.md),
   which reaches every route of it.
 - Chats with any agent, in a repository, in the harness configuration repository or in an empty directory. The Moebius

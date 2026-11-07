@@ -160,12 +160,10 @@ The harness starts every Pi-Bolt run (and every Claude Code run) with a cleared 
 | `MOEBIUS_RUN` | Only for a run of the Moebius agent or the Grilling partner: the run's id, which the agent names its claims by (`"$MOEBIUS" issue claim <id> --as "wayfinder-$MOEBIUS_RUN"`). |
 | `MOEBIUS_URL` | Only for a run of the Moebius agent or the Grilling partner: the desktop API's base URL, such as `http://127.0.0.1:7171` (a server that listens on all interfaces is given as `127.0.0.1`). The `moebius` binary the agent runs as `$MOEBIUS` connects there (see [the command line](cli.md)). |
 | `MOEBIUS_TOKEN` | Only for a run of the Moebius agent or the Grilling partner (the desktop API accepts the latter's for the issue tracker only): the run's own token, the same as `MOEBIUS_RUN_TOKEN`, which the desktop API accepts while the run lasts (see [the desktop API](desktop-api.md#authentication)). |
-| `MOEBIUS_LENS` | The lens's plan as JSON (see [the lens](#the-lens)). Only for Pi-Bolt; absent or `enabled: false` makes the lens do nothing. |
 | `PI_CODING_AGENT_DIR` | The run's own agent directory, `<data_dir>/runs/<id>/agent`, which holds `models.json` that makes the router the `moebius` provider. |
 
-For each run the server writes the bridge to `<data_dir>/runs/<id>/moebius-bridge.ts` and the lens (below) to
-`<data_dir>/runs/<id>/moebius-lens.ts`, and starts Pi-Bolt with `--extension <lens>` and then `--extension <bridge>`
-after the agent's own `extensions` (and, for the Moebius agent and the Grilling partner, after `<data_dir>/runs/<id>/moebius-ask.ts`, the question tool, [below](#the-question-tool)), so that the bridge is the last extension to run, and with `--no-extensions`
+For each run the server writes the bridge to `<data_dir>/runs/<id>/moebius-bridge.ts` and starts Pi-Bolt with
+`--extension <bridge>` after the agent's own `extensions` (and, for the Moebius agent and the Grilling partner, after `<data_dir>/runs/<id>/moebius-ask.ts`, the question tool, [below](#the-question-tool)), so that the bridge is the last extension to run, and with `--no-extensions`
 and `--no-skills`, so that Pi loads no extension or skill it finds on its own, only those the agent is configured with and
 the bridge. The token is revoked when the run ends.
 
@@ -225,86 +223,6 @@ with options to choose from, instead of asking in prose.
   of the question at that place, so "Yes" does not mark "Yes, but later"; two questions with one header are told apart by
   their place; words that hold a label are the person's own words. A message of any other shape marks nothing. An agent
   reads the message as it is, and answers a person who wrote theirs by hand just as well.
-
-## The lens
-
-The lens gives an agent fast feedback on its own edits: the Pi extension `crates/moebius-core/bridge/moebius-lens.ts`,
-loaded just before the bridge. The checks run in the extension, in the run's worktree; the server decides what the agent
-is told (through `decide`) and stores the time each check took. The server side is `crates/moebius-core/src/harness/lens/`.
-
-### What the extension does
-
-- **After an edit** (the `edit` and `write` tools, when the call did not fail): within the budget (`budget_ms`, default
-  1500, for all the checks of the one edit together, run in parallel), a syntax check of the file and the repository's
-  fast linter on that file alone. The built-in syntax checks are a JSON parser for `.json`, `python3` for `.py` and
-  `bash -n` for `.sh` and `.bash`; `syntax = false` in the project's `lint.toml` turns them off. A command that is not
-  finished by the end of the budget is killed and skipped, and the result says so once per tool and run. A program that is
-  not installed is skipped for the rest of the run, silently apart from the `lens_check` event.
-- **Only new problems.** Before the first edit of a file in the run, the extension runs the same checks on the file as it
-  is, the baseline; later edits take the previous edit's diagnostics as theirs. A problem is *new* when the file now has
-  more problems with the same tool, rule and message than the baseline had (the line does not count, since an edit moves
-  lines; of equal problems the ones off the touched lines are the old ones). A problem is on a *touched line* when its
-  line is between the first and the last line of the file that the edit changed. Without a baseline (the tool timed out
-  then, or the file is new) only the problems on touched lines are new.
-- **Appended to the result.** What the server lets through is added to the tool's result as one more text block,
-  `Moebius lens: <n> new problems after this edit of <file>:` and a line `<file>:<line>:<column> <severity> <rule>
-  <message> (<tool>)` for each, at most `max_lines` (default 10), errors first. The bridge, which comes next, redacts and
-  shrinks it like the rest of the result.
-- **Before the run settles** (Pi's `agent_before_settle`): the files the run changed (the edit tools' and whatever
-  `git diff --name-only HEAD` and untracked files add, so the shell's changes count) are put to the server, and if it
-  says to run, the `deep` command of each check whose glob matches a changed file runs once with a timeout of
-  `deep_timeout_seconds` (default 120) each: `tsc --noEmit` incrementally, `pyright` on the files, `cargo check` once
-  for each package a changed file belongs to (`--manifest-path {manifest}`, so a workspace is not checked whole for a
-  change in one of its parts, and its `target` stays warm through the run), `go vet` for the packages. The findings that
-  are in a changed file and were not told before come as one follow-up message, `Moebius lens: the type check found <n>
-  new problems in files you changed:`, and the agent goes on. It asks at most three times per run, so a check that
-  cannot be satisfied does not loop.
-- It never starts a language server.
-- It never stops a call or the run: when anything in the lens fails, the result is left as it is. When the server cannot
-  be asked, it takes the safe side: it shows every new finding and runs the end-of-turn check.
-
-### The plan
-
-The plan in `MOEBIUS_LENS` is read by the server when it starts Pi, from the project's `lint.toml` (in the harness configuration repository) or, without
-`[[check]]` entries in it, detected from the repository's files (see [harness configuration](harness-configuration.md#linttoml)).
-It is JSON: `{"enabled", "budget_ms", "max_lines", "deep_timeout_ms", "syntax", "checks": [{"name", "files", "edit",
-"deep", "syntax", "format", "pattern", "severity"}], "error"}`, where `files` is a regular expression over the path
-from the worktree, and `error` says why `lint.toml` could not be read (the lens then does nothing but report
-it as a `lens_check` event).
-
-### Endpoints
-
-All three are on the router's listener, authenticated like the check endpoints (the run's token; `401` without one, and
-the token is checked before the body: `400` for a body that is not JSON, `422` for the wrong shape). They answer `500`
-when the server cannot decide; the extension then takes the safe side.
-
-#### `POST /moebius/lens/report`
-
-After an edit. Request: `file` (from the worktree), `edit` (`{"tool", "first_line", "last_line", "excerpt"}`: the lines
-the edit changed and their new text), `max_lines`, `findings` (the new findings, each `{"tool", "severity": "error" |
-"warning", "line", "column"?, "rule"?, "message", "touched", "key"}`), `present` (the `key` of every finding the file has
-now, new or old) and `checks` (`[{"phase": "syntax" | "lint" | "deep", "tool", "ms", "skipped"?, "findings"}]`), and
-optionally `tool_call_id`.
-
-Each finding is put to the decision point `lint_report` (see [the decision model](decision-model.md#the-lens-decisions)),
-errors first and then by line, at most 40 of them; the answer is `{"shown": [positions in findings], "hidden": n}`. A
-finding that was judged before in this run and that `present` no longer holds gets the outcome `fixed`. Each entry of
-`checks` is stored as a `lens_check` run event, `{"file", "tool_call_id", "phase", "tool", "ms", "skipped", "findings",
-"shown"}`.
-
-#### `POST /moebius/lens/deep`
-
-Before the run settles. Request: `files` (`[{"path", "comment_only"}]`: the files the run changed, and whether every
-edit to the file only changed comments), `round` (from 1) and `tools` (the names of the commands that would run). The
-question is `deep_check`; the answer is `{"run": boolean, "judgement_id": number or null}`. A failure to decide answers
-`run: true`.
-
-#### `POST /moebius/lens/deep-result`
-
-After the end-of-turn check ran. Request: `judgement_id` (from the answer above), `new_findings` (how many findings
-the agent was told about), `checks` (as above, with `shown`). Stores a `lens_check` event for each check, and the
-outcome of the judgement: `found something new`, `nothing new`, or `not run` when every check was skipped. The
-judgement must be one of this run's `deep_check` judgements. Answer: `{}`.
 
 ## The MCP gateway
 

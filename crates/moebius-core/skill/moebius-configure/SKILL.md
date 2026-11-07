@@ -54,8 +54,8 @@ wrong line):
 "$MOEBIUS" api PUT /v1/repositories/1/settings/rules.md --body '{"text": "## small-diffs\nKeep changes small.\n", "reason": "..."}'
 ```
 
-The other files of the settings are saved the same way: `review.md` (notes for the Standards review), `lint.toml`
-(what the lens checks), `checks` (the checks of a repository without a forge), `test-first` (an empty text turns test
+The other files of the settings are saved the same way: `review.md` (notes for the Standards review),
+`checks` (the checks of a repository without a forge), `test-first` (an empty text turns test
 first on, `DELETE` turns it off) and `localize`. A repository's own `.moebius/` folder is not read; if `settings` lists
 `leftover` files, offer to move them to the settings.
 
@@ -73,7 +73,7 @@ checks the script again and refuses it with the check's message. How to write th
 
 ## A file of a repository
 
-A project's own settings (`rules.md`, `review.md`, `lint.toml`, `checks`, `test-first`, `localize` and the column
+A project's own settings (`rules.md`, `review.md`, `checks`, `test-first`, `localize` and the column
 scripts) are not files of the repository: change them with the settings and scripts routes above, never with
 `/files/`, and never in a `.moebius/` folder, which is not read.
 
@@ -85,7 +85,7 @@ in. Never put such a value in a file of the repository.
 Turning a plugin off or on (`enabled` of its `[[plugins]]` entry) is a person's too, and takes effect at once, without a
 restart: you are refused with `403`, so tell the person to use the switch on the Plugins page or `"$MOEBIUS" plugin
 disable <name>` (`enable` to turn it on; `--unwrap-runs` to confirm turning off the last launcher, after which runs start
-unwrapped; `--allow-unchecked` to confirm turning off `guard`, after which tool calls are no longer checked). The built-in deciders `guard`, `lens` and `localize` can be turned off and on the same way. A plugin that is off keeps its entry and its settings and is not started or asked.
+unwrapped; `--allow-unchecked` to confirm turning off `guard`, after which tool calls are no longer checked). The built-in deciders `guard` and `localize` can be turned off and on the same way. A plugin that is off keeps its entry and its settings and is not started or asked.
 
 When the person asks you to change a file of a repository right on its default branch (often the file open in the
 Editor of the project page, which your context names with the cursor's line), read and write it through the server:

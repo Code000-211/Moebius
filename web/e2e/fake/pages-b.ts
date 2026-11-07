@@ -174,7 +174,6 @@ export function createPagesBFake(): PagesBFake {
     "allow-reads": true,
     "box-run": true,
     guard: true,
-    lens: true,
     localize: true,
   };
   const logins = new Map<
@@ -909,14 +908,6 @@ export function createPagesBFake(): PagesBFake {
             decides: pluginsOn.guard ? ["tool_call"] : [],
             process: null,
             enabled: pluginsOn.guard,
-          },
-          {
-            name: "lens",
-            version: "0.1.0",
-            kinds: ["decider"],
-            decides: pluginsOn.lens ? ["lint_report", "deep_check"] : [],
-            process: null,
-            enabled: pluginsOn.lens,
           },
           {
             name: "localize",

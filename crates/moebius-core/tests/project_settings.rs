@@ -173,14 +173,7 @@ async fn the_files_of_a_project_are_listed_saved_as_commits_and_removed() {
         .collect();
     assert_eq!(
         names,
-        [
-            "rules.md",
-            "review.md",
-            "lint.toml",
-            "checks",
-            "test-first",
-            "localize"
-        ]
+        ["rules.md", "review.md", "checks", "test-first", "localize"]
     );
     assert!(
         view["files"]
@@ -247,7 +240,7 @@ async fn the_files_of_a_project_are_listed_saved_as_commits_and_removed() {
 }
 
 #[tokio::test]
-async fn a_rules_file_or_a_lint_plan_that_fails_its_check_is_refused_and_nothing_is_committed() {
+async fn a_rules_file_that_fails_its_check_is_refused_and_nothing_is_committed() {
     let dir = tempfile::tempdir().unwrap();
     let setup = Setup::start(dir.path(), true).await;
     let repo = setup
@@ -266,11 +259,9 @@ async fn a_rules_file_or_a_lint_plan_that_fails_its_check_is_refused_and_nothing
         why.as_str().unwrap().starts_with("rules.md: line 3"),
         "{why}"
     );
-    let (status, why) = setup.put(repo.id, "lint.toml", "unknown = 1\n").await;
-    assert_eq!(status, 422, "{why}");
-    assert!(why.as_str().unwrap().starts_with("lint.toml: "), "{why}");
-    // A column's script has its own route, and no other file is a file of the settings.
-    for file in ["ready.luau", "notes.md", "agents"] {
+    // A column's script has its own route, and no other file is a file of the settings, the lint plan of the removed
+    // lens included.
+    for file in ["ready.luau", "notes.md", "agents", "lint.toml"] {
         let (status, why) = setup.put(repo.id, file, "x").await;
         assert_eq!(status, 422, "{file}: {why}");
     }
@@ -401,4 +392,27 @@ async fn a_push_the_origin_refuses_is_a_conflict_and_leaves_the_project_as_it_wa
     assert!(why.as_str().unwrap().contains("closed for edits"), "{why}");
     assert_eq!(git(&clone, &["rev-parse", "HEAD"]).unwrap(), before);
     assert!(!clone.join("repos/demo/checks").exists());
+}
+
+#[tokio::test]
+async fn a_lint_plan_left_in_the_harness_configuration_repository_by_the_removed_lens_is_ignored() {
+    let dir = tempfile::tempdir().unwrap();
+    let setup = Setup::start(dir.path(), true).await;
+    let repo = setup
+        .server
+        .app
+        .add_repository("demo", source(dir.path(), &[]).to_str().unwrap())
+        .unwrap();
+    let folder = setup.clone_path().join("repos/demo");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("lint.toml"), "[[tool]]\nname = \"x\"\n").unwrap();
+    let view = setup.get(repo.id).await;
+    let names: Vec<&str> = view["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["file"].as_str().unwrap())
+        .collect();
+    assert!(!names.contains(&"lint.toml"), "{names:?}");
+    assert_eq!(view["leftover"], json!([]));
 }

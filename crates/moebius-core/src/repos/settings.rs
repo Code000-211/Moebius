@@ -1,6 +1,6 @@
 //! A project's settings for the desktop API: the files of `repos/<repository name>/` in the harness configuration
 //! repository other than the column scripts (those are [`crate::board::scripts`]): `rules.md`, `review.md`,
-//! `lint.toml`, `checks`, `test-first` and `localize`. Reading lists them with the text each has; writing or removing
+//! `checks`, `test-first` and `localize`. Reading lists them with the text each has; writing or removing
 //! one is a commit there, as an edit of an agent is, and is refused when the text is not fit to be saved. Every
 //! change is recorded as a decision of the person or agent who made it.
 
@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use crate::app::{App, AppError, Result};
 use crate::bus::Event;
 use crate::decide::Actor;
-use crate::harness::lens;
 use crate::harness::repo::PROJECT_FILES;
 use crate::store::Repository;
 
@@ -105,14 +104,13 @@ fn known(file: &str) -> Result<&'static str> {
 fn check(file: &str, text: &str) -> Result<()> {
     let checked = match file {
         "rules.md" => crate::decide::rules::check(text),
-        "lint.toml" => lens::check_lint(text),
         _ => Ok(()),
     };
     checked.map_err(|why| AppError::Invalid(format!("{file}: {why}")))
 }
 
 /// Replaces the project's `file` of repository `id` with `new.text`, committed in the harness configuration
-/// repository: refused with `Invalid` when the text is not fit (rules, the lint plan) or the server has no such
+/// repository: refused with `Invalid` when the text is not fit (rules) or the server has no such
 /// repository. Text that changes nothing makes no commit.
 pub fn save(app: &App, by: &Actor, id: i64, file: &str, new: &NewSetting) -> Result<SettingFile> {
     let repository = app.repository(id)?;

@@ -232,11 +232,6 @@ export const SETTING_FILES: { file: string; label: string; hint: string }[] = [
     hint: "What the Standards review should also check, in Markdown.",
   },
   {
-    file: "lint.toml",
-    label: "Lint plan",
-    hint: "What the lens checks after an agent's edits (TOML); without it the common tools are detected.",
-  },
-  {
     file: "checks",
     label: "Checks",
     hint: "The command that checks a change of a repository without a forge, run with sh.",

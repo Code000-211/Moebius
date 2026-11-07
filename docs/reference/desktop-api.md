@@ -427,17 +427,17 @@ repository other than the column scripts (see [harness configuration](harness-co
 Response: `{"path": string, "editable": bool, "files": [{"file": string, "exists": bool, "text": string}], "scripts":
 [string], "leftover": [string]}`. `path` is where they are (`repos/demo`). `editable` is false when the server has no
 `[harness]`, where nothing can be saved and no project has any file. `files` has an entry for each of `rules.md`,
-`review.md`, `lint.toml`, `checks`, `test-first` and `localize`, in that order, with the file's text (empty when it does
+`review.md`, `checks`, `test-first` and `localize`, in that order, with the file's text (empty when it does
 not exist; a `test-first` that exists is empty and turns test first on). `scripts` lists the column scripts the project
 has, such as `ready.luau`. `leftover` lists the files of a `.moebius/` folder that the repository's default branch still
 has, which are not read: move them to the settings. Errors: `404` no such repository.
 
 ### `PUT /v1/repositories/{id}/settings/{file}`
 
-A person, or the Moebius agent, writes one of the files `rules.md`, `review.md`, `lint.toml`, `checks`, `test-first`
+A person, or the Moebius agent, writes one of the files `rules.md`, `review.md`, `checks`, `test-first`
 and `localize` of the project. Request: `{"text": string, "reason": string}`; `reason` is optional and is kept with the
 decision. A final new line is added to a text without one. `rules.md` is checked as `PUT /v1/rules` checks the server's
-(a `## ` line needs a name and no name may be given twice) and `lint.toml` must be a lint file the lens can use; text that
+(a `## ` line needs a name and no name may be given twice); text that
 fails is refused with `422` and a message that starts with the file's name, and nothing is committed. Otherwise the file
 is committed (`Update <file> of <repository>`) on the default branch of the harness configuration repository's clone and
 pushed to its `origin`. The decision is recorded (kind `edit_repository_rules` for `rules.md`, else `edit_project_file`,
@@ -951,9 +951,7 @@ Response:
   "activities": [{"activity": "bash", "model_ms": 2140000, "calls": 214, "output_tokens": 61000}],
   "tool_waits": [{"tool": "bash", "calls": 31, "seconds": 2460}],
   "classes": [{"class": "strong", "model": "claude-sonnet-5-5", "tokens": 420000, "calls": 300}],
-  "tool_output": {"results": 96, "bytes_before": 3400000, "bytes_after": 920000},
-  "lens": [{"phase": "deep", "tool": "cargo", "runs": 31, "skipped": 2, "ms": 412000, "shown": 9},
-           {"phase": "lint", "tool": "ruff", "runs": 140, "skipped": 0, "ms": 5200, "shown": 17}]
+  "tool_output": {"results": 96, "bytes_before": 3400000, "bytes_after": 920000}
 }
 ```
 
@@ -984,10 +982,6 @@ Response:
 - `tool_output` is what keeping tool outputs small saved in the window: how many results were made smaller (their
   `tool_output` run events) and their bytes before and after, summed. See `agents.<name>.tool_output` in
   [configuration](configuration.md).
-- `lens` is where the time of the lens's checks goes (see [the lens](bridge-protocol.md#the-lens)): for each phase
-  (`syntax`, `lint` after an edit, `deep` before the run settles) and tool in the window, the checks that `runs` and the
-  ones `skipped`, the `ms` they took in all and how many problems they told the agent about (`shown`); the one that took
-  most time first. It is the sum of the `lens_check` run events.
 
 Errors: `422` `days` is not from 1 to 365.
 
@@ -1620,15 +1614,15 @@ how many times it was started again (`restarts`); why it stopped the last time (
 `null`); and the file its standard error goes to (`log`). Until such a plugin has sent its manifest, its `version` is
 empty and its `kinds` are empty.
 
-`enabled` is false for a plugin that is turned off (`plugins.enabled`, or `enabled` in the table `[guard]`, `[lens]` or `[localize]` for those built-in deciders, see [the configuration](configuration.md#turning-a-plugin-off-and-on)):
+`enabled` is false for a plugin that is turned off (`plugins.enabled`, or `enabled` in the table `[guard]` or `[localize]` for those built-in deciders, see [the configuration](configuration.md#turning-a-plugin-off-and-on)):
 it is listed from the manifest it last sent, its `process` is `null`, and it decides nothing.
 
 ### `PUT /v1/plugins/{plugin}/enabled`
 
-A person turns the plugin `plugin`, one that `[[plugins]]` names or one of the built-in deciders `guard`, `lens` and
+A person turns the plugin `plugin`, one that `[[plugins]]` names or one of the built-in deciders `guard` and
 `localize`, off or on, at once and without a restart. Request:
 `{"enabled": boolean, "unwrap_runs": boolean (optional, default false), "allow_unchecked": boolean (optional, default false)}`.
-For a built-in decider `enabled` false writes `enabled = false` to its table (`[guard]`, `[lens]`, `[localize]`) and
+For a built-in decider `enabled` false writes `enabled = false` to its table (`[guard]`, `[localize]`) and
 `true` removes the key. `allow_unchecked` confirms turning off the guard, after which tool calls are not checked. `enabled` false writes `enabled = false` to the
 plugin's entry, `true` removes that key; the entry and its other keys stay, and so do its settings. The server stops or
 starts the plugin, gives its kinds back to or takes them from the deciders, and builds the launchers again from the
@@ -1777,7 +1771,7 @@ change), and the keys that are live take effect at once. Response: `{"restart_ne
 [string]}`, as in `GET /v1/settings`: true with the keys that the running server uses only after it restarts. A
 `plugins.<n>.enabled` set or removed takes effect at once, by a person only (`403` for a run token). A change that turns
 off the last launcher that is on is refused with `409` unless `unwrap_runs` is true, and one that sets `guard.enabled`
-to false likewise unless `allow_unchecked` is true (`guard.enabled`, `lens.enabled` and `localize.enabled` take effect
+to false likewise unless `allow_unchecked` is true (`guard.enabled` and `localize.enabled` take effect
 at once); a file that a hand edit left in
 that state does not refuse other changes: the launcher or the guard stays on until the edit is confirmed (see
 [turning a plugin off](configuration.md#turning-a-plugin-off-and-on)) and the event `plugin_enable_refused` is published.
@@ -2549,10 +2543,6 @@ A `run_event`'s source is told by its inner `kind`:
   the [MCP gateway](bridge-protocol.md#the-mcp-gateway).
 - `tool_output`: a tool's result made smaller before the model read it, `{"tool", "tool_call_id", "steps", "bytes_before",
   "bytes_after", "lines_before", "lines_after", "saved"}`. See the [bridge protocol](bridge-protocol.md#post-moebiusresult).
-- `lens_check`: one check of the lens after an edit or before the run settled, `{"file", "tool_call_id", "phase": "syntax" |
-  "lint" | "deep", "tool", "ms", "skipped", "findings", "shown"}`: how long the check took, why it did not run when it
-  did not (`over budget`, `not installed`, or why `lint.toml` cannot be read), how many problems it found and how
-  many the agent was told about; `file` and `tool_call_id` are null for `deep`. See [the lens](bridge-protocol.md#the-lens).
 - `mcp_error`: an MCP server of the run's agent could not be started or reached, `{"server", "message"}`; its tools are
   left out.
 - `launcher_note`: what the launcher plugin said about starting the run's process, `{"note"}` (see

@@ -166,8 +166,8 @@ export function PluginsPage() {
                 state={runsLabel(plugin.process, plugin.enabled)}
                 off={!plugin.enabled}
                 control={
-                  // A plugin named under [[plugins]] has a process or is off; of the ones built in, the guard, the
-                  // lens and the localizer have a switch.
+                  // A plugin named under [[plugins]] has a process or is off; of the ones built in, the guard and
+                  // the localizer have a switch.
                   plugin.process !== null ||
                   !plugin.enabled ||
                   SWITCHED_BUILT_INS.has(plugin.name) ? (

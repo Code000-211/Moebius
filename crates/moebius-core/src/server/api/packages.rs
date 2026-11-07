@@ -857,20 +857,22 @@ mod tests {
     #[tokio::test]
     async fn a_package_cannot_take_the_name_of_a_plugin_that_is_part_of_moebius() {
         let fx = Fx::new().await;
-        let lens = fx
+        let localize = fx
             .gate("1.0.0", ">=0.1")
-            .replace("name = \"gate\"", "name = \"lens\"")
-            .replace("decides = [\"start_card\"]", "decides = [\"lint_report\"]");
-        fx.publish(&[lens]);
-        // The server holds the Lens in its host, as it does when it runs.
+            .replace("name = \"gate\"", "name = \"localize\"")
+            .replace("decides = [\"start_card\"]", "decides = [\"localize\"]");
+        fx.publish(&[localize]);
+        // The server holds the Localizer in its host, as it does when it runs.
         fx.state
             .app
             .decisions
             .host()
             .clone()
-            .add(crate::harness::lens::Lens);
+            .add(crate::decide::localize::Localizer::new(
+                fx.state.app.store.clone(),
+            ));
         let before = fx.state.app.decisions.host().manifests().len();
-        let (status, refused) = fx.install(json!({"name": "lens"})).await;
+        let (status, refused) = fx.install(json!({"name": "localize"})).await;
         assert_eq!(status, 422, "{refused}");
         assert!(
             refused.as_str().unwrap().contains("part of Moebius"),
@@ -878,10 +880,10 @@ mod tests {
         );
         let host = fx.state.app.decisions.host();
         assert_eq!(host.manifests().len(), before);
-        assert!(host.manifests().iter().any(|m| m.name == "lens"));
+        assert!(host.manifests().iter().any(|m| m.name == "localize"));
         assert!(
-            host.status("lens").is_none(),
-            "the compiled Lens is still there"
+            host.status("localize").is_none(),
+            "the compiled Localizer is still there"
         );
         assert!(!fx.data_dir().join("packages").exists());
         assert!(!fx.config_text().contains("[[plugins]]"));

@@ -47,9 +47,7 @@ impl PiBolt {
         };
         // Written before the Pi is ended, so that a failure leaves the chat as it was.
         let agent_dir = self.write_agent_dir(run_dir.join("agent"), &config, &run.token)?;
-        // A chat from before the server was started again may lack the lens.
-        std::fs::write(run_dir.join("moebius-lens.ts"), super::LENS)
-            .map_err(|e| format!("cannot write the lens extension: {e}"))?;
+        // A chat from before the server was started again may lack the question tool.
         std::fs::write(run_dir.join("moebius-ask.ts"), super::ASK)
             .map_err(|e| format!("cannot write the question tool: {e}"))?;
         match live {
@@ -60,20 +58,17 @@ impl PiBolt {
             }
         }
         let sessions = run_dir.join("sessions");
-        let lint = app.run_project_file(run_id, "lint.toml");
         let place = Place {
             worktree: &run.worktree,
             agent_dir: &agent_dir,
             sessions: &sessions,
             continues: true,
-            lens: &run_dir.join("moebius-lens.ts"),
             ask: &run_dir.join("moebius-ask.ts"),
             bridge: &run_dir.join("moebius-bridge.ts"),
             token: &run.token,
             operates: operates(&stored.agent),
             run: run_id,
             repository: stored.repository_id,
-            lint: lint.as_deref(),
         };
         let command = self.command(&config, &place, true);
         let follower = Follower::start(app.clone(), run_id, sessions);

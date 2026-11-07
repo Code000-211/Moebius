@@ -288,12 +288,3 @@ export function doings(activities: readonly ActivityUsage[]): Doing[] {
     },
   ];
 }
-
-/** What a lens check's phase is called. */
-export function lensWhen(phase: string): string {
-  return phase === "deep"
-    ? "Before the run ends"
-    : phase === "syntax"
-      ? "Syntax, after an edit"
-      : "After an edit";
-}

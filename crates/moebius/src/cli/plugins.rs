@@ -96,10 +96,6 @@ mod tests {
             route(&["plugin", "disable", "guard", "--allow-unchecked"]).2,
             Some(json!({"enabled": false, "allow_unchecked": true}))
         );
-        assert_eq!(
-            route(&["plugin", "disable", "lens"]).1,
-            "/v1/plugins/lens/enabled"
-        );
         // Enabling confirms nothing: it takes no such option.
         assert!(super::super::tests::plan(&["plugin", "enable", "box", "--unwrap-runs"]).is_err());
         assert!(

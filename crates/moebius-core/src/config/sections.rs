@@ -658,7 +658,6 @@ pub(super) fn plugins(
     let built_in = [
         crate::decide::guard::NAME,
         crate::decide::model::NAME,
-        crate::harness::lens::NAME,
         crate::decide::localize::KIND,
     ];
     let mut names = std::collections::BTreeSet::new();

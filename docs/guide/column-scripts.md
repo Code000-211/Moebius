@@ -47,7 +47,7 @@ reported as a `harness_error` event.
 
 **Moving from `.moebius/`.** Earlier versions read these files from the repository's own `.moebius/` folder. Move them:
 the files of `.moebius/` become the files of `repos/<repository name>/` in the harness configuration repository, with the
-same names (`rules.md`, `review.md`, `lint.toml`, `checks`, `test-first`, `localize` and the `.luau` scripts), and
+same names (`rules.md`, `review.md`, `checks`, `test-first`, `localize` and the `.luau` scripts), and
 `.moebius/reproduce` goes away (the Coder names the test in its summary now). Nothing is imported. A repository whose
 default branch still has a `.moebius/` folder is told so once in the log and with the event `settings_moved`, and
 `GET /v1/repositories/{id}/settings` lists its files as `leftover`, and the board and the project page of the

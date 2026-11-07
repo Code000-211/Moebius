@@ -24,7 +24,7 @@ import { Notice } from "../../ui/page/Notice";
 import { Switch } from "../../ui/page/Switch";
 
 /** The built-in deciders that have a switch. */
-export const SWITCHED_BUILT_INS = new Set(["guard", "lens", "localize"]);
+export const SWITCHED_BUILT_INS = new Set(["guard", "localize"]);
 
 export function PluginSwitch({ name, enabled }: { name: string; enabled: boolean }) {
   const queryClient = useQueryClient();

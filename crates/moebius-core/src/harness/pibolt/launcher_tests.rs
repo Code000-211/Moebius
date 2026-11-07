@@ -225,7 +225,7 @@ fn an_unchanged_answer_starts_pi_as_without_a_launcher() {
     assert_eq!(request.repository.as_deref(), Some("demo"));
     assert_eq!(request.project_settings, settings);
     assert_eq!(request.app_settings, server);
-    // The worktree and the agent directory are read and written (Pi writes its credential store there); the lens, the
+    // The worktree and the agent directory are read and written (Pi writes its credential store there); the
     // bridge and the agent's extensions only read.
     assert!(request.read_write.contains(&request.dir));
     // The directories of the run it is told to write are named, and the fake launcher failed the run, so it would not
@@ -242,13 +242,14 @@ fn an_unchanged_answer_starts_pi_as_without_a_launcher() {
             .iter()
             .any(|p| p.ends_with("moebius-bridge.ts"))
     );
-    // The question tool and the lens are read only whether or not the agent loads them.
-    for name in ["moebius-ask.ts", "moebius-lens.ts"] {
-        assert!(
-            request.read_only.iter().any(|p| p.ends_with(name)),
-            "{name} is not read only"
-        );
-    }
+    // The question tool is read only whether or not the agent loads it.
+    assert!(
+        request
+            .read_only
+            .iter()
+            .any(|p| p.ends_with("moebius-ask.ts")),
+        "moebius-ask.ts is not read only"
+    );
     assert!(request.read_only.iter().any(|p| p == "/agent/own.ts"));
     // The whole outputs of tools are saved by the server in the run's folder `out`, outside the worktree, which the
     // agent only reads. It is made for the launcher, which grants what it is told, and goes with the run: the fake

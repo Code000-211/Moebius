@@ -222,8 +222,8 @@ pub struct Config {
     pub localize: LocalizeConfig,
     /// Whether the guard checks tool calls (`[guard] enabled`). Off, calls are allowed unchecked.
     pub guard_enabled: bool,
-    /// Whether the lens gives runs lint and type feedback (`[lens] enabled`).
-    pub lens_enabled: bool,
+    /// Whether the file still has a `[lens]` table, which an earlier version read and this one ignores.
+    pub has_lens_table: bool,
     /// Where Pi packages are found and fetched from.
     pub packages: PackagesConfig,
     /// The plugins in their own process, with their paths made absolute.
@@ -445,7 +445,7 @@ impl Config {
             decision_model,
             localize,
             guard_enabled: raw.guard.enabled.unwrap_or(true),
-            lens_enabled: raw.lens.enabled.unwrap_or(true),
+            has_lens_table: raw.lens.is_some(),
             packages,
             plugins,
             runners,
@@ -510,6 +510,15 @@ mod tests {
 
     fn parse(text: &str) -> Result<Config, ConfigError> {
         Config::parse(text, Path::new("/srv"), Path::new("/srv/moebius.toml"))
+    }
+
+    #[test]
+    fn the_table_of_the_removed_lens_is_accepted_and_ignored() {
+        assert!(!parse("").unwrap().has_lens_table);
+        assert!(parse("[lens]\nenabled = false\n").unwrap().has_lens_table);
+        assert!(parse("[lens]\n").unwrap().has_lens_table);
+        // Other unknown tables are still refused.
+        assert!(parse("[lenz]\nenabled = false\n").is_err());
     }
 
     #[test]

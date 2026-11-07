@@ -380,7 +380,7 @@ mod tests {
         for file in ["rules.md", "ready.luau", "code.luau"] {
             assert!(is_configuration(&format!("repos/app/{file}")), "{file}");
         }
-        for file in ["checks", "test-first", "lint.toml", "review.md", "localize"] {
+        for file in ["checks", "test-first", "review.md", "localize"] {
             assert!(!is_configuration(&format!("repos/app/{file}")), "{file}");
         }
         assert!(!is_configuration("repos//rules.md"));

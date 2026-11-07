@@ -144,7 +144,7 @@ The Reviewer's:
 | `thinking` | string | none | Given to Pi-Bolt as `--thinking`. Pi-Bolt checks the value. |
 | `token_budget` | integer | none | The most tokens a card may use with this agent, as `agents.<name>.token_budget` in [configuration](configuration.md). At least 1. |
 | `skills` | array of strings | `[]` | Names of directories under `skills/` that hold a `SKILL.md`, or `pkg:<package>[/<path>]` for the skills of a vendored package (see [Packages](#packages)). Each is given to Pi-Bolt as `--skill`. A name that is not there is an error. |
-| `extensions` | array of strings | `[]` | Paths of files in the repository, relative to its root and without `..`, or `pkg:<package>[/<path>]` for the extensions of a vendored package (see [Packages](#packages)). Each is given to Pi-Bolt as `--extension`, before the lens and the bridge. A path that is not a file, and a `pkg:` name that does not resolve, is an error. |
+| `extensions` | array of strings | `[]` | Paths of files in the repository, relative to its root and without `..`, or `pkg:<package>[/<path>]` for the extensions of a vendored package (see [Packages](#packages)). Each is given to Pi-Bolt as `--extension`, before the bridge. A path that is not a file, and a `pkg:` name that does not resolve, is an error. |
 | `tool_output` | table | the defaults | `hide_after_turns`, `max_lines`, `max_bytes` and `compress`, as `agents.<name>.tool_output` in [configuration](configuration.md); a key left out has its default. Pi-Bolt runs only. |
 | `engineering_skills` | boolean or array of strings | `true` | The engineering skills the agent is given (see [Engineering skills](#engineering-skills)): `true` the defaults of its name (the `Coder`'s, the `Reviewer`'s and the `Grilling-partner`'s, none for another name), `false` none, a list of names exactly those. Only the names of the engineering skills and `moebius-autonomous` are accepted (`tdd`, `diagnosing-bugs`, `code-review`, `grilling`, `to-tickets`, `wayfinder`, `domain-modeling`, `research`, `prototype`, `moebius-autonomous`); any other name, or any other value, is an error of the agent. Written only when it is not `true`. |
 | `mcp` | array of strings | `[]` | Names of servers in `mcp.toml`. A run of the agent is given exactly these servers. A name that is not there, a server that cannot be used (see [`mcp.toml`](#mcptoml)), or any name while `mcp.toml` cannot be read, is an error. |
@@ -275,7 +275,7 @@ apply to RPC runs: they are listed and not loaded.
 package lists them, and `pkg:<name>/<path>` one of them (the path as the package lists it, such as
 `pkg:pi-web-access/extensions/search.ts`); in `skills` the names are the same for the skills, `<path>` being the skill's
 folder. They are resolved from `packages.lock` to the files in `packages/` and given to Pi-Bolt as `--extension` and
-`--skill` where the agent's other extensions and skills are, so before the lens and the bridge. A name whose package is
+`--skill` where the agent's other extensions and skills are, so before the bridge. A name whose package is
 not in `packages.lock`, a package without a directory, a path the package does not list, and a whole-package name for a
 package that has none of that kind, are errors of the agent, like a missing file.
 
@@ -377,7 +377,6 @@ that name cannot be made there, so saving a file is refused with `422` on every 
 |---|---|
 | `rules.md` | The project's own rules, in the format of [rules](rules.md). They are added after the server's rules, which a project cannot weaken. |
 | `review.md` | Notes for the reviews of the project's changes, given to the Standards review run in its prompt (the files the repository itself keeps, such as `CONTRIBUTING.md`, are read by the reviewer from the worktree). |
-| `lint.toml` | What the lens checks after an agent's edits (below). |
 | `checks` | The command that checks a change of a repository without a forge (see [column scripts](column-scripts.md#checks-and-conflicts)). |
 | `test-first` | Its presence turns test first on (content ignored; see [column scripts](column-scripts.md#test-first)). |
 | `localize` | Turns the hint of likely files for code runs on or off for the project, and says how many files (see [configuration](configuration.md#localize)). |
@@ -387,53 +386,6 @@ that name cannot be made there, so saving a file is refused with `422` on every 
 A change to these files that a package or the Retro proposes is a branch of this repository like any other, merged by a
 person (see [Packages](#packages) and [Proposals for Moebius itself](#proposals-for-moebius-itself)). The Retro's proposals
 may change only `rules.md` and the column scripts of a project, never `checks`, which the server runs as a command.
-
-### `lint.toml`
-
-The file that tells the [lens](bridge-protocol.md#the-lens) what to run after the agent's edits in the run's
-worktree. Without the file, or with no `[[check]]` in it, the lens detects the common tools from the repository's files.
-
-```toml
-budget_ms = 1500            # all per-edit checks of one edit together; a check over it is skipped and said
-max_lines = 10              # the most findings an edit's result or the end-of-turn message carries
-deep_timeout_seconds = 120  # each end-of-turn command
-syntax = true               # the built-in syntax checks (JSON, Python, shell); false turns them off
-enabled = true              # false turns the lens off for this project
-
-[[check]]
-glob = "**/*.py"                                  # or globs = ["*.py", "*.pyi"]
-edit = "ruff check --output-format concise {file}"   # after each edit, on the one file
-deep = "pyright {files}"                           # once, when the agent is done, on the changed files
-format = "lines"                                   # how the output is read
-pattern = "^(?<file>.+?):(?<line>\\d+):(?<column>\\d+): (?<message>.*)$"   # optional, for any other output
-severity = "warning"                               # for a finding that does not say
-```
-
-`syntax` (not in the example) is a command like `edit` that runs as the syntax check of the files of the glob, instead of
-the built-in one. The keys are all optional except that a `[[check]]` needs a `glob` or `globs` and at least one of `edit`, `deep` and
-`syntax`. An unknown key, an empty command or a `pattern` that is not a regular expression makes the whole file unusable:
-the lens then does nothing in that run except to store a `lens_check` event that says why.
-
-- **Globs** are matched against the path from the worktree: `*` is any characters but `/`, `**` any characters, `**/` any
-  folders, `?` one character, `{a,b}` either. A glob without a `/` names files at any depth, so `*.py` is every Python file.
-- **Commands** are split into words as a shell would (`'single'` and `"double"` quotes), and run without a shell, in the
-  worktree, so there is no `|`, `&&` or `$VAR`; a program that is in `node_modules/.bin` is found there. In a command,
-  `{file}` is the edited file; for `deep`, an argument that is exactly `{files}` becomes the changed files that match the
-  glob, `{dirs}` their folders (`./pkg`), and `{manifest}` the `Cargo.toml` of the package a changed file belongs to
-  (`./crates/x/Cargo.toml`), each with its own run. The program's exit status is not read, only its output.
-- **Output** is read by `format`: `lines` (the default) finds `<file>:<line>[:<column>]: <message>`, one finding per line,
-  and ignores other lines; `files` takes each line that is only a file name as "not formatted" (`gofmt -l`) and also reads
-  `lines`; `diff-in` reads `Diff in <file>:<line>:` (`rustfmt --check`); `github` reads `::error file=..,line=..,col=..,
-  title=..::message` (`biome --reporter=github`). A `pattern` replaces the line format of `lines` and `files`: a regular
-  expression with the named groups `file`, `line`, `column`, `message` and `severity`. Only findings in the file that was
-  edited count after an edit. A finding is an error when its text says error, a warning when it says warning, and has the
-  check's `severity` (default `warning`) otherwise. Two commands that print differently need two `[[check]]` entries.
-- **Without `[[check]]`** the lens uses what the files suggest: `ruff check` for Python when the repository has a
-  `pyproject.toml`, `setup.py`, `requirements.txt` or `ruff.toml`, and `pyright` at the end when it is configured;
-  `rustfmt --check` and `cargo check --message-format short --manifest-path {manifest}` with a `Cargo.toml` (the edition
-  from it), so only the packages that changed are checked; `gofmt -l` and `go vet` with a `go.mod`; `biome lint` with a
-  `biome.json`, or `oxlint` with an `.oxlintrc.json`; `tsc --noEmit --incremental` with a `tsconfig.json`; `shellcheck`
-  for shell scripts. A tool that is not installed is skipped.
 
 ## A broken agent
 

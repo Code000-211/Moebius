@@ -98,8 +98,8 @@ describe("the switch of a plugin", () => {
 });
 
 describe("the switch of a built-in decider", () => {
-  it("turns the lens and the localizer off and on without asking", async () => {
-    for (const name of ["lens", "localize"]) {
+  it("turns the localizer off and on without asking", async () => {
+    for (const name of ["localize"]) {
       const puts = shown(true, (body) => done(body.enabled === true, name), name);
       fireEvent.click(screen.getByRole("switch", { name: `Plugin ${name}` }));
       await waitFor(() => expect(puts).toHaveLength(1));

@@ -5,7 +5,6 @@ import {
   dayMeter,
   doings,
   heat,
-  lensWhen,
   modelColours,
   span,
   tiles,
@@ -219,11 +218,5 @@ describe("where the model time goes", () => {
     expect(list).toHaveLength(9);
     expect(list[7]?.name).toBe("tool7");
     expect(list[8]).toEqual({ name: "Other", tool: false, calls: 3, modelMs: 92 + 91 + 90 });
-  });
-
-  it("names the phases of the lens", () => {
-    expect(lensWhen("deep")).toBe("Before the run ends");
-    expect(lensWhen("syntax")).toBe("Syntax, after an edit");
-    expect(lensWhen("lint")).toBe("After an edit");
   });
 });

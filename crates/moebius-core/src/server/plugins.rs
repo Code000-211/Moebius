@@ -20,7 +20,6 @@ use crate::blobs::redact;
 use crate::config::{Config, PluginConfig};
 use crate::decide::{Decisions, guard, localize};
 use crate::harness::launch::{Launcher, LauncherSlot};
-use crate::harness::lens;
 
 /// The log of the plugin `name`.
 pub fn log_path(data_dir: &Path, name: &str) -> PathBuf {
@@ -116,16 +115,15 @@ pub fn built_in_decider(kind: &str) -> Option<&'static str> {
     match kind {
         "tool_call" => Some(guard::NAME),
         localize::KIND => Some(localize::KIND),
-        "lint_report" | "deep_check" => Some(lens::NAME),
         _ => None,
     }
 }
 
 /// The kinds a built-in decider decides, which a switch of it gives to a plugin or takes away.
-const BUILT_IN_KINDS: [&str; 4] = ["tool_call", localize::KIND, "lint_report", "deep_check"];
+const BUILT_IN_KINDS: [&str; 2] = ["tool_call", localize::KIND];
 
-/// The built-in deciders that can be switched, by name: the guard, the lens and the localizer.
-pub const BUILT_INS: [&str; 3] = [guard::NAME, lens::NAME, localize::KIND];
+/// The built-in deciders that can be switched, by name: the guard and the localizer.
+pub const BUILT_INS: [&str; 2] = [guard::NAME, localize::KIND];
 
 /// Whether `name` is the name of a built-in decider that a person can turn off and on.
 pub fn is_built_in(name: &str) -> bool {
@@ -136,7 +134,6 @@ pub fn is_built_in(name: &str) -> bool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Switches {
     pub guard: bool,
-    pub lens: bool,
     pub localize: bool,
 }
 
@@ -144,7 +141,6 @@ impl Default for Switches {
     fn default() -> Self {
         Self {
             guard: true,
-            lens: true,
             localize: true,
         }
     }
@@ -155,7 +151,6 @@ impl Switches {
     pub fn of(config: &Config) -> Self {
         Self {
             guard: config.guard_enabled,
-            lens: config.lens_enabled,
             localize: config.localize.enabled,
         }
     }
@@ -164,13 +159,12 @@ impl Switches {
     pub fn get(&self, name: &str) -> Option<bool> {
         match name {
             guard::NAME => Some(self.guard),
-            lens::NAME => Some(self.lens),
             localize::KIND => Some(self.localize),
             _ => None,
         }
     }
 
-    /// Whether `kind` belongs to a feature that is switched off, such as the lens's feedback: nothing decides it then,
+    /// Whether `kind` belongs to a feature that is switched off, such as the localizer's: nothing decides it then,
     /// not even a plugin. The guard's `tool_call` is not such a kind: it is always decided (see [`route_kind`]).
     pub fn kind_off(&self, kind: &str) -> bool {
         kind != "tool_call"
@@ -181,7 +175,6 @@ impl Switches {
     pub fn set(&mut self, name: &str, on: bool) {
         match name {
             guard::NAME => self.guard = on,
-            lens::NAME => self.lens = on,
             localize::KIND => self.localize = on,
             _ => {}
         }
@@ -193,8 +186,8 @@ const UNCHECKED: &str = "the guard is off: this tool call was not checked, neith
 
 /// Gives `kind` to the plugin that is on and decides it, else to the built-in decider of the kind if that is on. A
 /// `tool_call` that nothing decides is allowed with a note that says so, never left without a decider, which would
-/// refuse every call. The kinds of the lens and the localizer are decided by nobody while their switch is off, a plugin
-/// that decides them included: the switch turns the feature off.
+/// refuse every call. The kind of the localizer is decided by nobody while its switch is off, a plugin that decides it
+/// included: the switch turns the feature off.
 fn route_kind(decisions: &Decisions, kind: &str, plugins: &[PluginConfig], switches: &Switches) {
     decisions.unroute_kind(kind);
     if switches.kind_off(kind) {

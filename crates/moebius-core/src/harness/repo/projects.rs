@@ -1,5 +1,5 @@
 //! A project's settings in the clone: the files of `repos/<repository name>/` that say how Moebius works on one
-//! repository (its rules, review notes, lint plan, checks, test-first switch and column scripts, and the settings
+//! repository (its rules, review notes, checks, test-first switch and column scripts, and the settings
 //! plugins ask for in `plugins/<plugin>/<key>`). They are read from
 //! the clone's default branch, which is checked out, and a person's or an agent's edit is a commit on that branch
 //! pushed to `origin`, like the other edits of the harness configuration repository (see `edits`).
@@ -21,16 +21,9 @@ pub const DIR: &str = "repos";
 /// of its settings.
 pub const PLUGINS_DIR: &str = "plugins";
 
-/// The files of a project that are not column scripts: the repository's rules, notes for the reviewer, the lens's lint
-/// plan, the checks of a repository without a forge, the test-first switch and the hint of files for code runs.
-pub const FILES: &[&str] = &[
-    "rules.md",
-    "review.md",
-    "lint.toml",
-    "checks",
-    "test-first",
-    "localize",
-];
+/// The files of a project that are not column scripts: the repository's rules, notes for the reviewer, the checks of a
+/// repository without a forge, the test-first switch and the hint of files for code runs.
+pub const FILES: &[&str] = &["rules.md", "review.md", "checks", "test-first", "localize"];
 
 /// Whether `file` is one of a project's files: one of [`FILES`] or the script of a column of the default workflow.
 pub fn is_project_file(file: &str) -> bool {

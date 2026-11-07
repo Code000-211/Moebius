@@ -89,9 +89,6 @@ const BRIDGE: &str = include_str!("../../../bridge/moebius-bridge.ts");
 /// The question tool, written into the run directory of a chat whose agent operates Moebius, next to the bridge.
 const ASK: &str = include_str!("../../../bridge/moebius-ask.ts");
 
-/// The lens extension, written into each run's directory next to the bridge.
-use crate::harness::lens::EXTENSION as LENS;
-
 /// Starts and stops Pi-Bolt runs.
 pub struct PiBolt {
     /// The `pi-bolt` executable.

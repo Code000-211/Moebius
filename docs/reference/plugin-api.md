@@ -173,7 +173,7 @@ Serialised in lower case with underscores, as in `"decider"`.
 | `forge` | Issues and changes: GitHub, GitLab, Forgejo (Codeberg, Gitea), plain git. | No. The forges are a Rust trait in `forge.rs`. |
 | `harness` | Drives a coding-agent harness such as Pi-Bolt. | No. `harness/pibolt/` is called directly. |
 | `runner` | Where harnesses run: local worktrees, later GPU machines. | No. |
-| `decider` | Answers decision points. | Yes: `guard` decides `tool_call`, and `lens` decides `lint_report` and `deep_check` (see [the lens decisions](decision-model.md#the-lens-decisions)). |
+| `decider` | Answers decision points. | Yes: `guard` decides `tool_call`. |
 | `router` | The model provider the harnesses use. | No. `router/` is part of the core. |
 | `view` | Describes a screen of the web app as data. | No. |
 | `launcher` | Wraps how a harness process is started, such as in a sandbox. | Yes: Pi-Bolt asks the configured launcher before it starts Pi (see [Launchers](#launchers)). |
@@ -352,7 +352,7 @@ a chat's Pi is started again). The parameters are a `LaunchRequest`:
 | `args` | array of strings | Its arguments. |
 | `env` | map of string to string | Its complete environment, the run token (`MOEBIUS_RUN_TOKEN`) included: not the server's, but the few variables every program needs and those Moebius sets. With a launcher, `TMPDIR`, `TEMP` and `TMP` name a directory of the run (`<data_dir>/runs/<id>/tmp`) instead of the shared one. |
 | `dir` | string | The working directory: the run's worktree, or an empty directory for a chat without a repository. |
-| `read_only` | array of strings | Paths the process needs to read: the lens and bridge extensions, the agent's own extensions and skills, and the run's output folder (`<data_dir>/runs/<id>/out`), where the server saves the whole outputs of tools that were cut short and the agent reads them. They may be files or directories. |
+| `read_only` | array of strings | Paths the process needs to read: the bridge extension, the agent's own extensions and skills, and the run's output folder (`<data_dir>/runs/<id>/out`), where the server saves the whole outputs of tools that were cut short and the agent reads them. They may be files or directories. |
 | `read_write` | array of strings | Paths it needs to read and write: the worktree, its agent directory (which holds the credential store of its harness), its sessions directory, and the run's temporary directory. |
 | `urls` | object | `router`, `gateway` and `check`: the addresses the process must reach as the server reaches them, such as `http://127.0.0.1:7172`, `http://127.0.0.1:7172/mcp` and `http://127.0.0.1:7172` (the tool-call check the bridge asks, `MOEBIUS_CHECK_URL`). |
 | `clone` | string or `null` | The clone of the repository the worktree belongs to, whose git directory the worktree's git uses; `null` without a repository. |

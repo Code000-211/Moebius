@@ -44,7 +44,7 @@ pub(super) struct RawLocalize {
     pub(super) files: Option<u32>,
 }
 
-/// The table of a built-in decider that can be turned off: `[guard]` and `[lens]`.
+/// The table of a built-in decider that can be turned off: `[guard]`.
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawBuiltIn {
@@ -165,8 +165,9 @@ pub(super) struct Raw {
     pub(super) localize: RawLocalize,
     #[serde(default)]
     pub(super) guard: RawBuiltIn,
+    /// The table of the removed lens, accepted so that a file written for an earlier version still loads.
     #[serde(default)]
-    pub(super) lens: RawBuiltIn,
+    pub(super) lens: Option<toml::Table>,
     #[serde(default)]
     pub(super) packages: RawPackages,
     #[serde(default)]

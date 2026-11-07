@@ -810,14 +810,11 @@ async fn listed(f: &Fixture, name: &str) -> (bool, Vec<String>) {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn the_lens_and_the_localizer_are_turned_off_and_on_at_once_and_the_file_says_so() {
+async fn the_localizer_is_turned_off_and_on_at_once_and_the_file_says_so() {
     let f = Fixture::start("").await;
     let person = f.server.token.to_string();
     let mut events = f.server.app.bus.subscribe();
-    for (name, kinds) in [
-        ("lens", vec!["deep_check", "lint_report"]),
-        ("localize", vec!["localize"]),
-    ] {
+    for (name, kinds) in [("localize", vec!["localize"])] {
         assert_eq!(
             listed(&f, name).await,
             (true, kinds.iter().map(|k| k.to_string()).collect())
@@ -876,8 +873,6 @@ async fn the_lens_and_the_localizer_are_turned_off_and_on_at_once_and_the_file_s
     assert_eq!(
         seen,
         [
-            json!({"name": "lens", "enabled": false}),
-            json!({"name": "lens", "enabled": true}),
             json!({"name": "localize", "enabled": false}),
             json!({"name": "localize", "enabled": true}),
         ]
@@ -892,7 +887,7 @@ async fn the_lens_and_the_localizer_are_turned_off_and_on_at_once_and_the_file_s
         .iter()
         .map(|j| j.decider.clone())
         .collect();
-    assert_eq!(kinds, ["person", "person"]);
+    assert_eq!(kinds, ["person"]);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1024,35 +1019,31 @@ async fn the_settings_route_turns_the_guard_off_only_with_allow_unchecked() {
             &agent,
             Method::PUT,
             "/v1/settings",
-            Some(json!({"set": {"lens.enabled": false}})),
+            Some(json!({"set": {"localize.enabled": false}})),
         )
         .await;
     assert_eq!(status, 403);
-    // The lens and the localizer need no confirmation through the settings route.
+    // The localizer needs no confirmation through the settings route.
     let (status, body) = f
         .call(
             &person,
             Method::PUT,
             "/v1/settings",
-            Some(json!({"set": {"lens.enabled": false, "localize.enabled": false}})),
+            Some(json!({"set": {"localize.enabled": false}})),
         )
         .await;
     assert_eq!(status, 200, "{body}");
-    assert!(
-        !f.server.app.decisions.decides("deep_check")
-            && !f.server.app.decisions.decides("localize")
-    );
+    assert!(!f.server.app.decisions.decides("localize"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_hand_edit_that_turns_the_guard_off_is_honoured_at_the_start_but_refused_while_it_runs() {
-    // At the start the file is honoured.
+    // At the start the file is honoured. (Its `[lens]` table is one of the removed lens, which is ignored.)
     let f = Fixture::start("[guard]\nenabled = false\n[lens]\nenabled = false\n").await;
+    assert!(f.server.config.has_lens_table);
     assert!(!f.server.live.get().guard_enabled);
     assert_eq!(decision_of(&f, "tool_call").decider, "none");
-    assert!(!f.server.app.decisions.decides("lint_report"));
     assert_eq!(listed(&f, "guard").await, (false, vec![]));
-    assert!(!listed(&f, "lens").await.0);
     // Turned on, the key goes and the guard decides.
     f.set("guard", true, false).unwrap();
     assert!(decision_of(&f, "tool_call").decider.starts_with("guard"));
@@ -1118,28 +1109,86 @@ async fn a_hand_edit_that_turns_the_guard_off_is_honoured_at_the_start_but_refus
 async fn a_switch_that_is_off_turns_the_feature_off_for_a_plugin_that_decides_its_kind_too() {
     let f = Fixture::start(
         "[[plugins]]\nname = \"gate\"\npath = \"{script}\"\nargs = [\"{dir}\", \"gate\"]\n\
-         decides = [\"lint_report\", \"localize\"]\n",
+         decides = [\"start_card\", \"localize\"]\n",
     )
     .await;
-    assert!(f.server.app.decisions.decides("lint_report"));
-    assert_eq!(decision_of(&f, "lint_report").decider, "gate");
-    f.set("lens", false, false).unwrap();
-    assert!(!f.server.app.decisions.decides("lint_report"));
-    // The plugin is still on and keeps its other kind.
     assert!(f.server.app.decisions.decides("localize"));
-    assert_eq!(
-        listed(&f, "gate").await,
-        (true, vec!["localize".to_string()])
-    );
+    assert_eq!(decision_of(&f, "localize").decider, "gate");
     f.set("localize", false, false).unwrap();
     assert!(!f.server.app.decisions.decides("localize"));
-    // Turning the plugin off and on meanwhile does not bring the kinds back.
+    // The plugin is still on and keeps its other kind.
+    assert!(f.server.app.decisions.decides("start_card"));
+    assert_eq!(
+        listed(&f, "gate").await,
+        (true, vec!["start_card".to_string()])
+    );
+    // Turning the plugin off and on meanwhile does not bring the kind back.
     f.set("gate", false, false).unwrap();
     f.set("gate", true, false).unwrap();
-    assert!(!f.server.app.decisions.decides("lint_report"));
     assert!(!f.server.app.decisions.decides("localize"));
-    f.set("lens", true, false).unwrap();
     f.set("localize", true, false).unwrap();
-    assert_eq!(decision_of(&f, "lint_report").decider, "gate");
-    assert!(f.server.app.decisions.decides("localize"));
+    assert_eq!(decision_of(&f, "localize").decider, "gate");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_with_the_table_of_the_removed_lens_still_runs_and_its_old_judgements_stay_readable()
+{
+    let f = Fixture::start("[lens]\nenabled = false\n").await;
+    let person = f.server.token.to_string();
+    // Edits through the app do not trip over the table.
+    let (status, saved) = f
+        .call(
+            &person,
+            Method::PUT,
+            "/v1/settings",
+            Some(json!({"set": {"run_limit": 7}})),
+        )
+        .await;
+    assert_eq!(status, 200, "{saved}");
+    assert_eq!(f.server.live.get().run_limit, 7);
+    // The lens is no plugin and no setting any more.
+    let (status, _) = f
+        .call(
+            &person,
+            Method::PUT,
+            "/v1/plugins/lens/enabled",
+            Some(json!({"enabled": false})),
+        )
+        .await;
+    assert_eq!(status, 404);
+    let (status, settings) = f.call(&person, Method::GET, "/v1/settings", None).await;
+    assert_eq!(status, 200, "{settings}");
+    assert!(!settings.to_string().contains("lens"), "{settings}");
+    // A judgement of a kind the lens decided, recorded by an earlier version, is shown like any other.
+    for kind in ["lint_report", "deep_check"] {
+        f.server
+            .app
+            .store
+            .add_judgement(&moebius_core::store::NewJudgement {
+                kind: kind.into(),
+                options: vec!["show".into(), "hide".into()],
+                choice: "show".into(),
+                decider: "lens".into(),
+                ..Default::default()
+            })
+            .unwrap();
+    }
+    for kind in ["lint_report", "deep_check"] {
+        let (status, shown) = f
+            .call(
+                &person,
+                Method::GET,
+                &format!("/v1/judgements?kind={kind}"),
+                None,
+            )
+            .await;
+        assert_eq!(status, 200, "{shown}");
+        assert_eq!(shown.as_array().unwrap().len(), 1, "{shown}");
+    }
+    let (status, kinds) = f
+        .call(&person, Method::GET, "/v1/judgements/kinds", None)
+        .await;
+    assert_eq!(status, 200, "{kinds}");
+    let (status, usage) = f.call(&person, Method::GET, "/v1/usage", None).await;
+    assert_eq!(status, 200, "{usage}");
 }

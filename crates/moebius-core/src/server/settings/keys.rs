@@ -40,7 +40,6 @@ const KEYS: &[Key] = &[
     key("regression.size", "5", true),
     key("regression.gate", "true", true),
     key("guard.enabled", "true", true),
-    key("lens.enabled", "true", true),
     key("localize.enabled", "true", true),
     key("localize.files", "10", false),
     key(

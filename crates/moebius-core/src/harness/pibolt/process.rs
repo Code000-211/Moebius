@@ -12,7 +12,7 @@ use std::time::Instant;
 use serde_json::{Value, json};
 
 use super::reader::Reader;
-use super::{ASK, BRIDGE, LENS, Live, PiBolt, kill_process, lock, run_dir, send};
+use super::{ASK, BRIDGE, Live, PiBolt, kill_process, lock, run_dir, send};
 use crate::app::App;
 use crate::bus::Event;
 use crate::config::AgentConfig;
@@ -26,14 +26,13 @@ use crate::store::Card;
 use moebius_plugin_api::{LaunchRun, Urls, UrlsInside};
 
 /// Where a Pi starts and what it is given: the worktree it works in, its agent directory and sessions, whether it
-/// continues the latest session there, the lens and bridge extensions, the token of the router and whether it operates Moebius
+/// continues the latest session there, the bridge extension, the token of the router and whether it operates Moebius
 /// with the desktop API.
 pub(super) struct Place<'a> {
     pub(super) worktree: &'a Path,
     pub(super) agent_dir: &'a Path,
     pub(super) sessions: &'a Path,
     pub(super) continues: bool,
-    pub(super) lens: &'a Path,
     /// The question tool, loaded when `operates`.
     pub(super) ask: &'a Path,
     pub(super) bridge: &'a Path,
@@ -43,8 +42,6 @@ pub(super) struct Place<'a> {
     pub(super) run: i64,
     /// The repository the run works in, which `$MOEBIUS_REPOSITORY` names for an agent that operates Moebius.
     pub(super) repository: Option<i64>,
-    /// The text of the project's `lint.toml`, if it has one.
-    pub(super) lint: Option<&'a str>,
 }
 
 /// Where a run's Pi is started from, for the launcher: the agent's name, its card, its definition, the run's directory
@@ -92,12 +89,7 @@ impl PiBolt {
             .env("MOEBIUS_CHECK_URL", &self.router_url)
             .env("MOEBIUS_RUN_TOKEN", place.token)
             // How the bridge keeps the outputs of tools small (see `harness::output`).
-            .env("MOEBIUS_TOOL_OUTPUT", json!(agent.tool_output).to_string())
-            // What the lens checks after the agent's edits (see `harness::lens`).
-            .env(
-                "MOEBIUS_LENS",
-                crate::harness::lens::plan_json(place.worktree, place.lint),
-            );
+            .env("MOEBIUS_TOOL_OUTPUT", json!(agent.tool_output).to_string());
         if let (true, Some(url)) = (place.operates, self.api_url.get()) {
             // The Moebius agent and the Grilling partner operate Moebius with `$MOEBIUS`, as the run itself: its token
             // is accepted by the desktop API.
@@ -142,9 +134,7 @@ impl PiBolt {
         if place.operates {
             command.arg("--extension").arg(place.ask);
         }
-        // The lens adds its findings to the results of edits; the bridge is last, so that it checks the input and
-        // redacts the content the other extensions left, the lens's findings included.
-        command.arg("--extension").arg(place.lens);
+        // The bridge is last, so that it checks the input and redacts the content the other extensions left.
         command.arg("--extension").arg(place.bridge);
         command
     }
@@ -245,8 +235,6 @@ impl PiBolt {
         let bridge = run_dir.join("moebius-bridge.ts");
         std::fs::write(&bridge, BRIDGE)
             .map_err(|e| format!("cannot write the bridge extension: {e}"))?;
-        let lens = run_dir.join("moebius-lens.ts");
-        std::fs::write(&lens, LENS).map_err(|e| format!("cannot write the lens extension: {e}"))?;
         let ask = run_dir.join("moebius-ask.ts");
         std::fs::write(&ask, ASK).map_err(|e| format!("cannot write the question tool: {e}"))?;
         let log = run_dir.join("stderr.log");
@@ -259,20 +247,17 @@ impl PiBolt {
         let operates = stored.as_ref().is_some_and(|s| operates(&s.agent));
         let repository = stored.as_ref().and_then(|s| s.repository_id);
         let sessions = run_dir.join("sessions");
-        let lint = app.run_project_file(run.id, "lint.toml");
         let place = Place {
             worktree: &run.worktree,
             agent_dir: &agent_dir,
             sessions: &sessions,
             continues: prompt.is_none(),
-            lens: &lens,
             ask: &ask,
             bridge: &bridge,
             token: &run.token,
             operates,
             run: run.id,
             repository,
-            lint: lint.as_deref(),
         };
         let mut command = self.command(agent, &place, false);
         let mut launched = None;
@@ -370,11 +355,7 @@ impl PiBolt {
             return Err(crate::harness::launch::no_launcher(spot.stored));
         };
         let remote = run.remote.as_ref().map(|remote| remote.runner());
-        let mut read_only = vec![
-            place.lens.to_path_buf(),
-            place.ask.to_path_buf(),
-            place.bridge.to_path_buf(),
-        ];
+        let mut read_only = vec![place.ask.to_path_buf(), place.bridge.to_path_buf()];
         read_only.extend(spot.agent.extensions.iter().cloned());
         read_only.extend(spot.agent.skills.iter().cloned());
         // Pi keeps its credential store in its agent directory, where it writes `auth.json` and a lock beside it, so
@@ -619,14 +600,12 @@ mod tests {
                 agent_dir: Path::new("/agent"),
                 sessions: Path::new("/sessions"),
                 continues: false,
-                lens: Path::new("/lens.ts"),
                 ask: Path::new("/ask.ts"),
                 bridge: Path::new("/bridge.ts"),
                 token: "run-token",
                 operates: crate::harness::run::operates(name),
                 run: 12,
                 repository,
-                lint: None,
             };
             let command = pi.command(&agent, &place, false);
             command
@@ -671,14 +650,12 @@ mod tests {
                 agent_dir: Path::new("/agent"),
                 sessions: Path::new("/sessions"),
                 continues: false,
-                lens: Path::new("/lens.ts"),
                 ask: Path::new("/ask.ts"),
                 bridge: Path::new("/bridge.ts"),
                 token: "run-token",
                 operates: crate::harness::run::operates(name),
                 run: 12,
                 repository: None,
-                lint: None,
             };
             let args: Vec<_> = pi
                 .command(&agent, &place, false)
@@ -690,14 +667,14 @@ mod tests {
                 .map(|w| w[1].clone())
                 .collect::<Vec<_>>()
         };
-        // After the agent's own extensions and before the lens and the bridge, which stay the last two.
+        // After the agent's own extensions and before the bridge, which stays the last.
         assert_eq!(
             loaded("Moebius"),
-            ["/agent/own.ts", "/ask.ts", "/lens.ts", "/bridge.ts"].map(String::from)
+            ["/agent/own.ts", "/ask.ts", "/bridge.ts"].map(String::from)
         );
         assert_eq!(
             loaded("Coder"),
-            ["/agent/own.ts", "/lens.ts", "/bridge.ts"].map(String::from)
+            ["/agent/own.ts", "/bridge.ts"].map(String::from)
         );
     }
 
@@ -807,10 +784,6 @@ mod tests {
         assert_eq!(extensions[0][1], "/agent/own.ts");
         assert_eq!(extensions.last().unwrap()[1], bridge.to_str().unwrap());
         assert_eq!(std::fs::read_to_string(&bridge).unwrap(), BRIDGE);
-        // The lens comes just before the bridge, and is told what to check.
-        let lens = run_dir.join("moebius-lens.ts");
-        assert_eq!(extensions[extensions.len() - 2][1], lens.to_str().unwrap());
-        assert_eq!(std::fs::read_to_string(&lens).unwrap(), LENS);
         // The question tool is written for every run, whether or not its agent loads it.
         assert_eq!(
             std::fs::read_to_string(run_dir.join("moebius-ask.ts")).unwrap(),
@@ -824,9 +797,6 @@ mod tests {
         assert!(env["CARGO_MANIFEST_DIR"].is_null(), "{env}");
         assert!(env["PATH"].is_string());
         assert_eq!(env["MOEBIUS_CHECK_URL"], "http://127.0.0.1:9");
-        let plan: Value = serde_json::from_str(env["MOEBIUS_LENS"].as_str().unwrap()).unwrap();
-        assert_eq!(plan["enabled"], true);
-        assert_eq!(plan["budget_ms"], 1500);
         let tool_output: Value =
             serde_json::from_str(env["MOEBIUS_TOOL_OUTPUT"].as_str().unwrap()).unwrap();
         assert_eq!(
@@ -963,10 +933,10 @@ mod tests {
         let (argv, mcp_json) = run_agent("C");
         assert_eq!(values(&argv, "--skill"), ["/skills/c"]);
         assert!(!mcp_json.exists());
-        // Only the lens and the bridge.
+        // Only the bridge.
         let extensions = values(&argv, "--extension");
-        assert_eq!(extensions.len(), 2);
-        assert!(extensions[0].ends_with("moebius-lens.ts"));
+        assert_eq!(extensions.len(), 1);
+        assert!(extensions[0].ends_with("moebius-bridge.ts"));
     }
 
     #[test]

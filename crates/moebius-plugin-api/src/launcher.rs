@@ -59,7 +59,7 @@ pub struct LaunchRequest {
     pub env: BTreeMap<String, String>,
     /// The working directory: the run's worktree.
     pub dir: String,
-    /// Paths the process needs to read: the lens and the bridge, and the agent's own extensions and skills.
+    /// Paths the process needs to read: the bridge, and the agent's own extensions and skills.
     pub read_only: Vec<String>,
     /// Paths the process needs to read and write: the worktree, its agent directory, its sessions directory and the
     /// run's temporary directory.

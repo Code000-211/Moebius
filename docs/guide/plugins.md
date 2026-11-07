@@ -130,7 +130,6 @@ The server builds the host, adds the guard and, in `plugins::route_deciders`, ro
 <!-- excerpt: crates/moebius-core/src/server/mod.rs -->
 ```rust
 host.add(guard);
-host.add(lens::Lens);
 let host = Arc::new(host);
 let mut app = App::new(store.clone(), host.clone(), &config.data_dir);
 app.decisions.share_routed(routed);
@@ -243,9 +242,9 @@ write `enabled = false` to its entry. It takes effect at once, without a restart
   launcher takes every agent, so turning one off is refused when the launchers left would wrap some agents and not others.
   Turning off the last launcher means runs start unwrapped, so it needs `--unwrap-runs` (`"unwrap_runs": true`).
 
-The built-in deciders have the same switch, under the names `guard`, `lens` and `localize` (`moebius plugin disable lens`,
-`enabled = false` in `[lens]`; see [the configuration](../reference/configuration.md#guard)). The lens off gives runs no lint
-and type feedback, the localizer off gives them no hint of files. The guard off fails open: nothing checks tool calls any
+The built-in deciders have the same switch, under the names `guard` and `localize` (`moebius plugin disable localize`,
+`enabled = false` in `[localize]`; see [the configuration](../reference/configuration.md#guard)). The localizer off gives
+runs no hint of files. The guard off fails open: nothing checks tool calls any
 more, neither the built-in safety patterns nor the rules, unless a plugin of yours decides `tool_call`; so it needs
 `--allow-unchecked` (`"allow_unchecked": true`), and the Plugins page asks first.
 

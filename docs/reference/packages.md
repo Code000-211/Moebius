@@ -154,7 +154,7 @@ and the result must pass the rules check. Every kind needs a harness configurati
 
 The Moebius agent may propose a workflow, rules or skills package. Installing a plugin is for a person only.
 
-A plugin package whose name is the name of a plugin that is part of Moebius (such as `lens`) is refused, so that a
+A plugin package whose name is the name of a plugin that is part of Moebius (such as `guard`) is refused, so that a
 registry cannot take a built-in decider out of service. Install, update and remove, the nightly check and the reading of
 a registry's clone each run one at a time; a second request waits for the first.
 

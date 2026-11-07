@@ -57,15 +57,6 @@ export interface ToolOutputSaving {
   bytes_after: number;
 }
 
-export interface LensUsage {
-  phase: string;
-  tool: string;
-  runs: number;
-  skipped: number;
-  ms: number;
-  shown: number;
-}
-
 export interface UsageReport {
   today: string;
   days_in_window: number;
@@ -77,5 +68,4 @@ export interface UsageReport {
   tool_waits: ToolWait[];
   classes?: ClassUsage[];
   tool_output?: ToolOutputSaving;
-  lens?: LensUsage[];
 }

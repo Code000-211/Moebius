@@ -307,7 +307,6 @@ impl Live {
         }
         running.plugins = turned.plugins;
         running.guard_enabled = turned.switches.guard;
-        running.lens_enabled = turned.switches.lens;
         running.localize.enabled = turned.switches.localize;
         if let Some(targets) = &self.targets {
             targets
@@ -518,7 +517,7 @@ impl Live {
     /// stay), and the running server stops or starts it at once, takes its kinds and builds the launchers again. A
     /// run that started keeps the launcher it started with. Refused when the launchers left would wrap some agents
     /// and not others (naming them), and, without `unwrap_runs`, when no launcher would be left, so that runs would
-    /// start unwrapped. The built-in deciders (`guard`, `lens` and `localize`) are turned the same way, by their
+    /// start unwrapped. The built-in deciders (`guard` and `localize`) are turned the same way, by their
     /// `enabled` in the table of their name; turning the guard off is refused without `allow_unchecked`.
     pub fn set_plugin_enabled(
         &self,
@@ -885,7 +884,6 @@ mod tests {
                 )
             }),
             "guard.enabled" => (json!(false), field!(guard_enabled)),
-            "lens.enabled" => (json!(false), field!(lens_enabled)),
             "localize.enabled" => (json!(false), field!(localize.enabled)),
             "agents" => (json!({"Coder": {"model": "live-model"}}), |s| {
                 format!("{:?}", s.harness.agents.read().unwrap().agents)

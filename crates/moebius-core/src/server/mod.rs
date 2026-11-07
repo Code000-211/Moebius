@@ -39,7 +39,6 @@ use crate::decide::guard::{Guard, Teacher};
 use crate::decide::localize::Localizer;
 use crate::decide::model::{self, DecisionModel, Routed};
 use crate::harness::gateway::Gateway;
-use crate::harness::lens;
 use crate::harness::pibolt::PiBolt;
 use crate::harness::pick::Harnesses;
 use crate::harness::remote::Runners;
@@ -232,7 +231,6 @@ impl Server {
         }
         host.add(Localizer::new(store.clone()));
         host.add(guard);
-        host.add(lens::Lens);
         let host = Arc::new(host);
         let mut app = App::new(store.clone(), host.clone(), &config.data_dir);
         app.decisions.share_routed(routed);
@@ -245,6 +243,11 @@ impl Server {
         if !config.guard_enabled {
             eprintln!(
                 "moebius: the guard is off ([guard] enabled = false): tool calls are not checked, neither by the built-in safety patterns nor by the rules"
+            );
+        }
+        if config.has_lens_table {
+            eprintln!(
+                "moebius: the [lens] table is no longer used (the lens was removed) and is ignored; you can delete it"
             );
         }
         let launcher = plugins::launchers_of(&host, &config.plugins);
@@ -409,7 +412,6 @@ impl Server {
                 self.router.clone(),
                 self.config.rules_path(),
             ))
-            .merge(lens::routes(self.app.clone(), self.router.clone()))
             .merge(lessons::tool::routes(self.app.clone(), self.router.clone()))
             .merge(gateway.clone().routes());
         tokio::select! {
