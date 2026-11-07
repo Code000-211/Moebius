@@ -64,6 +64,8 @@ pub struct Decisions {
     store: Arc<Store>,
     host: Arc<Host>,
     by_kind: Mutex<BTreeMap<String, String>>,
+    /// The kinds that are answered, when no decider answers them, with a fixed choice and reason (see [`Self::leave_open`]).
+    left_open: Mutex<BTreeMap<String, (String, String)>>,
     /// The kinds the decision model has taken over (see `decision_model`).
     routed: Arc<Routed>,
     /// Set once, when a decision model is configured.
@@ -76,6 +78,7 @@ impl Decisions {
             store,
             host,
             by_kind: Mutex::default(),
+            left_open: Mutex::default(),
             routed: Arc::default(),
             shadowing: OnceLock::new(),
         }
@@ -96,6 +99,35 @@ impl Decisions {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .retain(|_, decider| decider != plugin);
+        self
+    }
+
+    /// Stops every plugin from answering decisions of `kind`.
+    pub fn unroute_kind(&self, kind: &str) -> &Self {
+        self.by_kind
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(kind);
+        self
+    }
+
+    /// Lets decisions of `kind` that no decider answers take `choice` with `reason` and not the fail-closed option, for
+    /// a kind whose decider a person turned off knowingly (the guard for `tool_call`). The judgement says `reason` and
+    /// is decided by `none`. Not for any other kind: a decision with no decider fails closed.
+    pub fn leave_open(&self, kind: &str, choice: &str, reason: &str) -> &Self {
+        self.left_open
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(kind.to_string(), (choice.to_string(), reason.to_string()));
+        self
+    }
+
+    /// Makes decisions of `kind` that no decider answers fail closed again.
+    pub fn close(&self, kind: &str) -> &Self {
+        self.left_open
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(kind);
         self
     }
 
@@ -169,6 +201,19 @@ impl Decisions {
     pub fn decide(&self, question: &Question) -> Result<Decision> {
         let context = self.keep_context(question)?;
         let decider = self.decider_for(&question.kind);
+        let open = match decider {
+            None => self
+                .left_open
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .get(&question.kind)
+                .filter(|(choice, _)| question.options.contains(choice))
+                .cloned(),
+            Some(_) => None,
+        };
+        if let Some((choice, reason)) = open {
+            return self.record(question, context, choice, reason, "none".into(), false);
+        }
         let answer = match &decider {
             None => Err(format!("no decider answers {:?}", question.kind)),
             Some(plugin) => self

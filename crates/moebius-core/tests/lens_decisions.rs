@@ -313,3 +313,71 @@ async fn the_endpoints_want_the_runs_token_and_a_judgement_of_the_run() {
     assert_eq!(events[0].data["phase"], "deep");
     assert_eq!(events[0].data["shown"], 1);
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_lens_that_is_off_shows_nothing_runs_no_deep_check_and_fails_no_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("moebius.toml");
+    std::fs::write(&file, "[lens]\nenabled = false\n").unwrap();
+    let server = Arc::new(
+        Server::new(Config::load(&file).unwrap(), "127.0.0.1:1".parse().unwrap()).unwrap(),
+    );
+    let app = server.app.clone();
+    let run = app.store.add_run(None, "Coder", "pi-bolt", "code").unwrap();
+    let token = server.router.issue_token(Grant {
+        run_id: run.id,
+        card_id: None,
+        budget: None,
+    });
+    let url = serve(lens::routes(app.clone(), server.router.clone())).await;
+    let client = reqwest::Client::new();
+    let post = |path: &str, body: Value| {
+        client
+            .post(format!("{url}/moebius/lens/{path}"))
+            .bearer_auth(&token)
+            .json(&body)
+            .send()
+    };
+    // The agent is shown none of the findings, the slow check does not run, and nothing is recorded or failed.
+    let reply = post("report", report(1)).await.unwrap();
+    assert_eq!(reply.status(), 200);
+    let reply: Value = reply.json().await.unwrap();
+    assert_eq!((&reply["shown"], &reply["hidden"]), (&json!([]), &json!(1)));
+    let body = json!({ "files": [{ "path": "src/a.rs" }], "round": 1, "tools": ["cargo"] });
+    let reply = post("deep", body.clone()).await.unwrap();
+    assert_eq!(reply.status(), 200);
+    let reply: Value = reply.json().await.unwrap();
+    assert_eq!(
+        (&reply["run"], &reply["judgement_id"]),
+        (&json!(false), &Value::Null)
+    );
+    assert!(app.store.judgements("lint_report").unwrap().is_empty());
+    assert!(app.store.judgements("deep_check").unwrap().is_empty());
+    assert!(app.store.events(run.id).unwrap().is_empty());
+    let end = post("deep-result", json!({ "new_findings": 0, "checks": [] }))
+        .await
+        .unwrap();
+    assert_eq!(end.status(), 200);
+
+    // Turned on, the same run is judged again.
+    server
+        .live
+        .set_plugin_enabled(
+            &app,
+            &moebius_core::decide::Actor::Person,
+            "lens",
+            true,
+            false,
+            false,
+        )
+        .unwrap();
+    let reply: Value = post("report", report(2))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(reply["shown"], json!([0]));
+    let reply: Value = post("deep", body).await.unwrap().json().await.unwrap();
+    assert_eq!(reply["run"], true);
+}

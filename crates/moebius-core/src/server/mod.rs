@@ -18,7 +18,7 @@ mod fake_gitlab;
 mod leftovers;
 mod loops;
 pub mod packages;
-mod plugins;
+pub mod plugins;
 pub mod ports;
 mod schedule;
 pub mod settings;
@@ -239,7 +239,14 @@ impl Server {
         app.checks_timeout = config.checks_timeout;
         app.localize = config.localize;
         app.packages = config.packages.clone();
-        plugins::route_deciders(&app.decisions, &config.plugins);
+        plugins::route_deciders(&app.decisions, &config);
+        // Whether the hint is asked for at all is the routing of `localize`, which can change while the server runs.
+        app.localize.enabled = true;
+        if !config.guard_enabled {
+            eprintln!(
+                "moebius: the guard is off ([guard] enabled = false): tool calls are not checked, neither by the built-in safety patterns nor by the rules"
+            );
+        }
         let launcher = plugins::launchers_of(&host, &config.plugins);
         let github = match &config.github {
             Some(g) => {

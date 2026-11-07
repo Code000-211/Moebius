@@ -168,7 +168,8 @@ impl Packages<'_> {
         let decisions = &self.app.decisions;
         decisions.host().set_process(process);
         decisions.unroute(name);
-        for kind in decides {
+        let switches = crate::server::plugins::Switches::of(&self.live.get());
+        for kind in decides.iter().filter(|kind| !switches.kind_off(kind)) {
             decisions.route(kind, name);
         }
     }
@@ -377,6 +378,12 @@ impl Packages<'_> {
             self.live.save(self.app, by, &changes)?;
         }
         self.app.decisions.unroute(name);
+        let config = self.live.get();
+        crate::server::plugins::route_built_ins(
+            &self.app.decisions,
+            &config.plugins,
+            &crate::server::plugins::Switches::of(&config),
+        );
         self.app.decisions.host().remove(name);
         let mut lock = self.read_lock()?;
         lock.remove(name);

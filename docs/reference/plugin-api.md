@@ -310,6 +310,10 @@ fail-closed option `refuse`. All context values are strings:
 | `builtin_refusal` | when the call breaks a built-in rule | The rule's name and what it says, tested on the call before the context was redacted and with Claude Code's tool names and keys (`Bash`, `Write`, `Edit`, `file_path`) read as `bash`, `write`, `edit` and `path`. The guard refuses with it. |
 | `rules_error` | when the server's rules file exists but cannot be read | Why it cannot (a message). The guard refuses every call then. |
 
+A plugin that decides `tool_call` replaces the guard for as long as it is on. With the guard turned off
+([`[guard] enabled`](configuration.md#guard)) and no such plugin, every call is allowed: the judgement's decider is `none` and
+its reason says the guard is off.
+
 A decider for `tool_call` that refuses should say which rule it applied at the start of `reason`, followed by a colon,
 as the guard does (`no-force-push: ...`).
 
@@ -317,7 +321,8 @@ as the guard does (`no-force-push: ...`).
 
 The kind `localize` is asked once at the start of every `code` run of a card, with no options and the fail-closed answer
 `[]`, which gives the run no hint. A plugin of a repository's own that decides it (`decides = ["localize"]` in
-`[[plugins]]`) replaces the built-in decider. All context values are strings: `title` and `body` (the card's issue),
+`[[plugins]]`) replaces the built-in decider, unless the localizer is turned off ([`localize.enabled`](configuration.md#localize)),
+which turns the hint off for everyone. All context values are strings: `title` and `body` (the card's issue),
 `repository` (its name), `card` (its id), `files` (how many files to name at most, 1 to 10) and `candidates` (the files
 whose text best matches the issue, one path per line). The `choice` is a JSON list of at most `files` objects
 `{"path": string, "reason": string}`, best first, each path of a file of the repository once; see

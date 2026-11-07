@@ -16,18 +16,28 @@ pub enum PluginCommand {
         /// Confirm turning off the last launcher, after which runs start unwrapped.
         #[arg(long)]
         unwrap_runs: bool,
+        /// Confirm turning off the guard, after which tool calls are allowed unchecked.
+        #[arg(long)]
+        allow_unchecked: bool,
     },
 }
 
 /// `plugin ...`.
 pub fn plugin(command: &PluginCommand) -> Plan {
-    let (name, enabled, unwrap_runs) = match command {
-        PluginCommand::Enable { name } => (name, true, false),
-        PluginCommand::Disable { name, unwrap_runs } => (name, false, *unwrap_runs),
+    let (name, enabled, unwrap_runs, allow_unchecked) = match command {
+        PluginCommand::Enable { name } => (name, true, false, false),
+        PluginCommand::Disable {
+            name,
+            unwrap_runs,
+            allow_unchecked,
+        } => (name, false, *unwrap_runs, *allow_unchecked),
     };
     let mut body = json!({ "enabled": enabled });
     if unwrap_runs {
         body["unwrap_runs"] = true.into();
+    }
+    if allow_unchecked {
+        body["allow_unchecked"] = true.into();
     }
     Ok((
         Request::put(format!("/v1/plugins/{name}/enabled"), body),
@@ -35,7 +45,7 @@ pub fn plugin(command: &PluginCommand) -> Plan {
     ))
 }
 
-/// The answer of the route as a sentence, with the note when runs now start unwrapped.
+/// The answer of the route as a sentence, with the note when runs now start unwrapped or tool calls are no longer checked.
 pub fn show_plugin(value: &Value) -> String {
     let name = value["name"].as_str().unwrap_or("the plugin");
     let state = if value["enabled"] == true {
@@ -82,8 +92,19 @@ mod tests {
             route(&["plugin", "disable", "box", "--unwrap-runs"]).2,
             Some(json!({"enabled": false, "unwrap_runs": true}))
         );
+        assert_eq!(
+            route(&["plugin", "disable", "guard", "--allow-unchecked"]).2,
+            Some(json!({"enabled": false, "allow_unchecked": true}))
+        );
+        assert_eq!(
+            route(&["plugin", "disable", "lens"]).1,
+            "/v1/plugins/lens/enabled"
+        );
         // Enabling confirms nothing: it takes no such option.
         assert!(super::super::tests::plan(&["plugin", "enable", "box", "--unwrap-runs"]).is_err());
+        assert!(
+            super::super::tests::plan(&["plugin", "enable", "guard", "--allow-unchecked"]).is_err()
+        );
     }
 
     #[test]

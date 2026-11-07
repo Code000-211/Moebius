@@ -925,19 +925,21 @@ describe("the Plugins page", () => {
     "lists what the host loaded and the plugins in their own process",
     async () => {
       await open("/plugins");
-      await page.getByText("4 plugins loaded; a call into one is refused after 30 s.").waitFor();
+      await page.getByText("6 plugins loaded; a call into one is refused after 30 s.").waitFor();
       const rows = page.getByTestId("plugin-row");
-      await rows.nth(5).waitFor();
+      await rows.nth(7).waitFor();
       const guard = await rows.nth(0).textContent();
       expect(guard).toContain("guard");
       expect(guard).toContain("Built in");
       expect(guard).toContain("tool_call");
-      const process = await rows.nth(1).textContent();
+      expect(await rows.nth(1).textContent()).toContain("lint_report");
+      expect(await rows.nth(2).textContent()).toContain("localize");
+      const process = await rows.nth(3).textContent();
       expect(process).toContain("Running");
       expect(process).toContain("start_card");
-      expect(await rows.nth(2).textContent()).toContain("No kind of decision");
+      expect(await rows.nth(4).textContent()).toContain("No kind of decision");
       await page.getByRole("heading", { name: "Plugins in their own process" }).waitFor();
-      const own = await rows.nth(4).textContent();
+      const own = await rows.nth(6).textContent();
       expect(own).toContain("/srv/plugins/allow-reads");
       expect(own).toContain("2 times");
       expect(own).toContain("exited with status 1");
@@ -961,8 +963,11 @@ describe("the switch of a plugin", () => {
     const allow = toggle("allow-reads");
     await allow.waitFor();
     expect(await allow.getAttribute("aria-checked")).toBe("true");
-    // The built-in plugins have no switch.
-    expect(await row("guard").first().getByRole("switch").count()).toBe(0);
+    // The decision model is built in and has no switch; the guard, the lens and the localizer have one.
+    expect(await row("idle").first().getByRole("switch").count()).toBe(0);
+    for (const name of ["guard", "lens", "localize"]) {
+      expect(await toggle(name).getAttribute("aria-checked")).toBe("true");
+    }
     await allow.click();
     await page.waitForFunction(
       () => document.querySelector('[data-testid="plugin-row"][data-off]') !== null,
@@ -972,7 +977,7 @@ describe("the switch of a plugin", () => {
     expect(await off.textContent()).toContain("No kind of decision");
     expect(await allow.getAttribute("aria-checked")).toBe("false");
     // Off, it is not in the list of plugins in their own process.
-    expect(await page.getByTestId("plugin-row").count()).toBe(5);
+    expect(await page.getByTestId("plugin-row").count()).toBe(7);
     await allow.click();
     await page.waitForFunction(
       () => document.querySelector('[data-testid="plugin-row"][data-off]') === null,
@@ -980,6 +985,55 @@ describe("the switch of a plugin", () => {
     expect(await allow.getAttribute("aria-checked")).toBe("true");
     expect(enabled("allow-reads")).toEqual([{ enabled: false }, { enabled: true }]);
   });
+
+  it.skipIf(usesRealServer)("turns the lens off and on and greys it while it is off", async () => {
+    await open("/plugins");
+    const lens = toggle("lens");
+    await lens.waitFor();
+    await lens.click();
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="plugin-row"][data-off]') !== null,
+    );
+    expect(await row("lens").first().textContent()).toContain("Off");
+    expect(await lens.getAttribute("aria-checked")).toBe("false");
+    await lens.click();
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="plugin-row"][data-off]') === null,
+    );
+    expect(enabled("lens")).toEqual([{ enabled: false }, { enabled: true }]);
+  });
+
+  it.skipIf(usesRealServer)(
+    "asks before turning off the guard, and sends nothing until it is confirmed",
+    async () => {
+      await open("/plugins");
+      const guard = toggle("guard");
+      await guard.waitFor();
+      await guard.click();
+      const dialog = page.getByRole("dialog", { name: "Turn off the guard?" });
+      await dialog.waitFor();
+      expect(await dialog.textContent()).toContain("tool calls are no longer checked");
+      await dialog.getByRole("button", { name: "Keep it on" }).click();
+      await dialog.waitFor({ state: "detached" });
+      expect(await guard.getAttribute("aria-checked")).toBe("true");
+      expect(enabled("guard")).toEqual([]);
+      await guard.click();
+      await dialog.waitFor();
+      await dialog.getByRole("button", { name: "Turn off, check nothing" }).click();
+      await dialog.waitFor({ state: "detached" });
+      await page.waitForFunction(
+        () => document.querySelector('[data-testid="plugin-row"][data-off]') !== null,
+      );
+      expect(await row("guard").first().textContent()).toContain("Off");
+      expect(enabled("guard")).toEqual([{ enabled: false, allow_unchecked: true }]);
+      // Turning it on again asks nothing.
+      await guard.click();
+      await page.waitForFunction(
+        () => document.querySelector('[data-testid="plugin-row"][data-off]') === null,
+      );
+      expect(enabled("guard").at(-1)).toEqual({ enabled: true });
+    },
+  );
 
   it.skipIf(usesRealServer)("asks before turning off the last launcher", async () => {
     await open("/plugins");

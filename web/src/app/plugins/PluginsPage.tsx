@@ -22,7 +22,7 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import { Status, type Tone } from "../../ui/page/Status";
 import { InstalledPackages } from "./InstalledPackages";
-import { PluginSwitch } from "./PluginSwitch";
+import { PluginSwitch, SWITCHED_BUILT_INS } from "./PluginSwitch";
 
 /**
  * How a plugin runs: built into the server, or as its own process in a state, coloured by whether it takes calls.
@@ -166,8 +166,11 @@ export function PluginsPage() {
                 state={runsLabel(plugin.process, plugin.enabled)}
                 off={!plugin.enabled}
                 control={
-                  // A plugin named under [[plugins]] has a process or is off; the ones built in are always on.
-                  plugin.process !== null || !plugin.enabled ? (
+                  // A plugin named under [[plugins]] has a process or is off; of the ones built in, the guard, the
+                  // lens and the localizer have a switch.
+                  plugin.process !== null ||
+                  !plugin.enabled ||
+                  SWITCHED_BUILT_INS.has(plugin.name) ? (
                     <PluginSwitch name={plugin.name} enabled={plugin.enabled} />
                   ) : undefined
                 }

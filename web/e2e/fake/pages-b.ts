@@ -170,7 +170,13 @@ export function createPagesBFake(): PagesBFake {
   const uploads: PagesBFake["uploads"] = [];
   const secrets: Record<string, string> = {};
   /** Which of the plugins named in the file are on. */
-  const pluginsOn: Record<string, boolean> = { "allow-reads": true, "box-run": true };
+  const pluginsOn: Record<string, boolean> = {
+    "allow-reads": true,
+    "box-run": true,
+    guard: true,
+    lens: true,
+    localize: true,
+  };
   const logins = new Map<
     number,
     { state: string; message: string; code: boolean; loggedIn: boolean }
@@ -900,9 +906,25 @@ export function createPagesBFake(): PagesBFake {
             name: "guard",
             version: "0.1.0",
             kinds: ["decider"],
-            decides: ["tool_call"],
+            decides: pluginsOn.guard ? ["tool_call"] : [],
             process: null,
-            enabled: true,
+            enabled: pluginsOn.guard,
+          },
+          {
+            name: "lens",
+            version: "0.1.0",
+            kinds: ["decider"],
+            decides: pluginsOn.lens ? ["lint_report", "deep_check"] : [],
+            process: null,
+            enabled: pluginsOn.lens,
+          },
+          {
+            name: "localize",
+            version: "0.1.0",
+            kinds: ["decider"],
+            decides: pluginsOn.localize ? ["localize"] : [],
+            process: null,
+            enabled: pluginsOn.localize,
           },
           {
             name: "allow-reads",
@@ -927,7 +949,7 @@ export function createPagesBFake(): PagesBFake {
     const toggled = /^\/v1\/plugins\/([^/]+)\/enabled$/.exec(path);
     if (toggled && method === "PUT") {
       const name = decodeURIComponent(toggled[1] ?? "");
-      const asked = input as { enabled: boolean; unwrap_runs?: boolean };
+      const asked = input as { enabled: boolean; unwrap_runs?: boolean; allow_unchecked?: boolean };
       if (!(name in pluginsOn)) return send(response, 404, `a plugin ${name} not found`);
       // box-run is the only launcher: turning it off unwraps every run, which needs a confirmation.
       if (name === "box-run" && !asked.enabled && !asked.unwrap_runs) {
@@ -937,14 +959,24 @@ export function createPagesBFake(): PagesBFake {
           "this change leaves no launcher on, so runs would start unwrapped; confirm that with unwrap_runs",
         );
       }
+      // The guard off lets tool calls through unchecked, which needs a confirmation.
+      if (name === "guard" && !asked.enabled && !asked.allow_unchecked) {
+        return send(
+          response,
+          409,
+          "this change turns the guard off, so tool calls would no longer be checked; confirm that with allow_unchecked",
+        );
+      }
       const changed = pluginsOn[name] !== asked.enabled;
       pluginsOn[name] = asked.enabled;
       const unwrapped = name === "box-run" && !asked.enabled && changed;
+      const unchecked = name === "guard" && !asked.enabled;
       return send(response, 200, {
         name,
         enabled: asked.enabled,
         changed,
         unwrapped_runs: unwrapped,
+        unchecked_calls: unchecked,
         note: unwrapped
           ? `runs now start unwrapped: no launcher is on after ${name} was turned off`
           : null,

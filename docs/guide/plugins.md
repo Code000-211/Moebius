@@ -137,7 +137,7 @@ app.decisions.share_routed(routed);
 app.checks_timeout = config.checks_timeout;
 app.localize = config.localize;
 app.packages = config.packages.clone();
-plugins::route_deciders(&app.decisions, &config.plugins);
+plugins::route_deciders(&app.decisions, &config);
 ```
 
 Add your plugin to the host next to the guard, and route your kind after `App::new`.
@@ -242,6 +242,12 @@ write `enabled = false` to its entry. It takes effect at once, without a restart
 - a launcher is no longer asked about runs that start from then on, and counts as absent for the rule that the last
   launcher takes every agent, so turning one off is refused when the launchers left would wrap some agents and not others.
   Turning off the last launcher means runs start unwrapped, so it needs `--unwrap-runs` (`"unwrap_runs": true`).
+
+The built-in deciders have the same switch, under the names `guard`, `lens` and `localize` (`moebius plugin disable lens`,
+`enabled = false` in `[lens]`; see [the configuration](../reference/configuration.md#guard)). The lens off gives runs no lint
+and type feedback, the localizer off gives them no hint of files. The guard off fails open: nothing checks tool calls any
+more, neither the built-in safety patterns nor the rules, unless a plugin of yours decides `tool_call`; so it needs
+`--allow-unchecked` (`"allow_unchecked": true`), and the Plugins page asks first.
 
 `moebius plugin enable start-gate` turns it on again: it is started and answers its kinds again. The same key can be set
 by hand in `moebius.toml`; the server applies it at once as well when it changes the file through `PUT /v1/settings`,

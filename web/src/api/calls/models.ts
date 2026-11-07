@@ -49,15 +49,20 @@ export function plugins(): Promise<Plugins> {
   return get<Plugins>("/v1/plugins");
 }
 
-/** Turns a plugin off or on at once; `unwrapRuns` confirms turning off the last launcher, after which runs start unwrapped. */
+/**
+ * Turns a plugin off or on at once; `unwrapRuns` confirms turning off the last launcher, after which runs start
+ * unwrapped, and `allowUnchecked` confirms turning off the guard, after which tool calls are not checked.
+ */
 export function setPluginEnabled(
   plugin: string,
   enabled: boolean,
   unwrapRuns = false,
+  allowUnchecked = false,
 ): Promise<PluginEnabled> {
   return put<PluginEnabled>(`/v1/plugins/${encodeURIComponent(plugin)}/enabled`, {
     enabled,
     ...(unwrapRuns ? { unwrap_runs: true } : {}),
+    ...(allowUnchecked ? { allow_unchecked: true } : {}),
   });
 }
 

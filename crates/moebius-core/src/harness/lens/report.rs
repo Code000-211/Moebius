@@ -131,9 +131,17 @@ fn cannot(why: &str) -> Response {
         .into_response()
 }
 
-/// Puts each new finding to `decide("lint_report")` and stores the checks' times. Findings that were shown or hidden
+/// Puts each new finding to `decide("lint_report")` and stores the checks' times. With no decider for the kind (the lens
+/// is off) the findings are all hidden and nothing is stored. Findings that were shown or hidden
 /// before and are gone now are fixed; that is their outcome.
 fn judge_report(app: &App, grant: &Grant, report: &Report) -> ReportReply {
+    // The lens is off, or nothing else decides this: the agent is shown nothing, and nothing is recorded.
+    if !app.decisions.decides("lint_report") {
+        return ReportReply {
+            shown: Vec::new(),
+            hidden: report.findings.len(),
+        };
+    }
     close_fixed(app, grant.run_id, &report.file, &report.present);
     let mut order: Vec<usize> = (0..report.findings.len()).collect();
     // Errors first, then by line, so that the limit cuts the least important.
@@ -286,8 +294,16 @@ async fn deep(State(state): State<Served>, headers: HeaderMap, body: Bytes) -> R
     }
 }
 
-/// Puts the end-of-turn check to `decide("deep_check")`. Anything that fails answers `run`.
+/// Puts the end-of-turn check to `decide("deep_check")`. Anything that fails answers `run`; with no decider for the kind
+/// (the lens is off) the check does not run.
 fn judge_deep(app: &App, grant: &Grant, request: &Deep) -> DeepReply {
+    // The lens is off, or nothing else decides this: the slow check does not run, and nothing is recorded.
+    if !app.decisions.decides("deep_check") {
+        return DeepReply {
+            run: false,
+            judgement_id: None,
+        };
+    }
     let mut code = Vec::new();
     let mut comments = Vec::new();
     let mut docs = Vec::new();

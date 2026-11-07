@@ -9,8 +9,9 @@
 //!   confirmed the warning about the provider's terms; `GET` on the same route tells how it stands.
 //! - `POST /v1/models/upstreams/{place}/login/code` `{pasted}`: a person finishes a waiting `code` login with the code,
 //!   or the address the browser ended on, when the browser could not reach the server.
-//! - `PUT /v1/plugins/{plugin}/enabled` `{enabled, unwrap_runs?}`: a person turns a plugin off or on, at once and without
-//!   a restart; `unwrap_runs` confirms turning off the last launcher, after which runs start unwrapped.
+//! - `PUT /v1/plugins/{plugin}/enabled` `{enabled, unwrap_runs?, allow_unchecked?}`: a person turns a plugin off or on, at once and without
+//!   a restart; `unwrap_runs` confirms turning off the last launcher, after which runs start unwrapped; `allow_unchecked` confirms
+//!   turning off the guard, after which tool calls are allowed unchecked.
 //! - `GET /v1/plugins/settings` and `PUT /v1/plugins/{plugin}/settings` `{values, reason}`: the settings plugins ask of
 //!   the whole server and the values it has, changed by a person (see [`crate::app::plugin_settings`]).
 //!   `GET /v1/plugins/{plugin}/settings-ui`: the JavaScript module of a plugin's own page for its settings.
@@ -34,6 +35,7 @@ use crate::app::AppError;
 use crate::app::plugin_settings::{AppSettings, PluginSettings, Scope};
 use crate::decide::Actor;
 use crate::router::{Login, LoginError, TERMS_WARNING};
+use crate::server::plugins::Switches;
 use crate::server::settings::{Changes, PluginEnabled, Saved, SettingsView};
 use crate::server::setup;
 
@@ -206,7 +208,11 @@ async fn start_steps(State(state): State<ApiState>) -> Result<axum::Json<setup::
 }
 
 async fn plugins(State(state): State<ApiState>) -> axum::Json<setup::Plugins> {
-    axum::Json(setup::plugins(&state.app.decisions, &state.app.data_dir))
+    axum::Json(setup::plugins(
+        &state.app.decisions,
+        &state.app.data_dir,
+        &Switches::of(&state.config.get()),
+    ))
 }
 
 /// What `PUT /v1/plugins/{plugin}/enabled` takes.
@@ -217,6 +223,9 @@ struct NewEnabled {
     /// Confirms that turning the plugin off leaves runs without a launcher.
     #[serde(default)]
     unwrap_runs: bool,
+    /// Confirms that turning the guard off lets tool calls through unchecked.
+    #[serde(default)]
+    allow_unchecked: bool,
 }
 
 async fn put_plugin_enabled(
@@ -228,7 +237,14 @@ async fn put_plugin_enabled(
     person_only(&by)?;
     let live = state.config.clone();
     blocking(&state.app, move |app| {
-        live.set_plugin_enabled(app, &by, &plugin, new.enabled, new.unwrap_runs)
+        live.set_plugin_enabled(
+            app,
+            &by,
+            &plugin,
+            new.enabled,
+            new.unwrap_runs,
+            new.allow_unchecked,
+        )
     })
     .await
 }

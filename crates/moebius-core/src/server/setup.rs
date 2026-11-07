@@ -147,7 +147,11 @@ pub struct Plugins {
     pub plugins: Vec<PluginView>,
 }
 
-pub fn plugins(decisions: &Decisions, data_dir: &Path) -> Plugins {
+pub fn plugins(
+    decisions: &Decisions,
+    data_dir: &Path,
+    switches: &super::plugins::Switches,
+) -> Plugins {
     let routes = decisions.routes();
     Plugins {
         time_limit_seconds: decisions.host().limit().as_secs(),
@@ -173,7 +177,9 @@ pub fn plugins(decisions: &Decisions, data_dir: &Path) -> Plugins {
                     .filter(|(_, plugin)| **plugin == manifest.name)
                     .map(|(kind, _)| kind.clone())
                     .collect(),
-                enabled: !decisions.host().is_off(&manifest.name),
+                enabled: switches
+                    .get(&manifest.name)
+                    .unwrap_or_else(|| !decisions.host().is_off(&manifest.name)),
                 name: manifest.name,
                 version: manifest.version,
                 kinds: manifest.kinds,

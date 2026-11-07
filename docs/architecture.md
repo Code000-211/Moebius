@@ -414,7 +414,7 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `cli/agents.rs` | `agents` and `agent` (show, save, delete). |
 | `cli/rules.rs` | `rules` and `rules save`. |
 | `cli/packages.rs` | `pkg search`, `info`, `install`, `update`, `remove` and `list`, and how their answers are written. |
-| `cli/plugins.rs` | `plugin enable` and `plugin disable [--unwrap-runs]`: turning a plugin off or on, and how the answer is written. |
+| `cli/plugins.rs` | `plugin enable` and `plugin disable [--unwrap-runs] [--allow-unchecked]`: turning a plugin off or on, and how the answer is written. |
 | `cli/ext.rs` | `ext search`, `info`, `add`, `update`, `remove` and `list`: Pi packages, and how a proposed change is written. |
 | `cli/repos.rs` | `repos` and `repo add`. |
 | `cli/setup.rs` | `doctor`, `settings`, `secrets set`, `usage` and `server restart`. |

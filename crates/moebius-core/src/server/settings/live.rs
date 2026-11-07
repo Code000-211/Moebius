@@ -22,10 +22,23 @@ use crate::decide::Actor;
 use crate::harness::launch::LauncherSlot;
 use crate::harness::repo;
 use crate::router::{Router, Upstream};
+use crate::server::plugins::{BUILT_INS, Switches, is_built_in, route_built_ins};
 use crate::server::webhooks::Webhooks;
 
 /// Why a change that leaves no launcher on is refused unless a person confirms it.
 const UNWRAP_NEEDS_CONFIRMING: &str = "this change leaves no launcher on, so runs would start unwrapped; confirm that with unwrap_runs";
+
+/// Why a change that turns the guard off is refused unless a person confirms it.
+const UNCHECKED_NEEDS_CONFIRMING: &str = "this change turns the guard off, so tool calls would no longer be checked, neither by the built-in safety patterns nor by the rules; confirm that with allow_unchecked";
+
+/// What a person confirmed for a change that has consequences the server does not allow unasked.
+#[derive(Debug, Clone, Copy, Default)]
+pub(super) struct Confirm {
+    /// That runs may start unwrapped when no launcher is on.
+    pub unwrap_runs: bool,
+    /// That tool calls may go unchecked when the guard is off.
+    pub allow_unchecked: bool,
+}
 
 /// The parts of the running server that take live keys.
 struct Targets {
@@ -138,16 +151,22 @@ impl Live {
     /// is recorded and the live keys are applied.
     pub fn save(&self, app: &App, by: &Actor, changes: &Changes) -> Result<Saved> {
         let _writing = self.writing.lock().unwrap_or_else(|e| e.into_inner());
-        self.write_changes(app, by, changes, ("edit_settings", false), || {
-            Ok(BTreeMap::from([
-                (
-                    "set".to_string(),
-                    without_passwords(&serde_json::to_value(&changes.set).unwrap_or_default())
-                        .to_string(),
-                ),
-                ("remove".to_string(), changes.remove.join(", ")),
-            ]))
-        })
+        self.write_changes(
+            app,
+            by,
+            changes,
+            ("edit_settings", Confirm::default()),
+            || {
+                Ok(BTreeMap::from([
+                    (
+                        "set".to_string(),
+                        without_passwords(&serde_json::to_value(&changes.set).unwrap_or_default())
+                            .to_string(),
+                    ),
+                    ("remove".to_string(), changes.remove.join(", ")),
+                ]))
+            },
+        )
     }
 
     /// The one path every edit of the file takes, with `writing` held: `changes` are applied to the text and the
@@ -159,7 +178,7 @@ impl Live {
         app: &App,
         by: &Actor,
         changes: &Changes,
-        (action, unwrap_runs): (&str, bool),
+        (action, confirm): (&str, Confirm),
         prepare: impl FnOnce() -> Result<BTreeMap<String, String>>,
     ) -> Result<Saved> {
         let (text, _) = read_raw(&self.started.file)?;
@@ -167,7 +186,10 @@ impl Live {
         let base = self.started.file.parent().unwrap_or(Path::new("."));
         let config = Config::parse(&edited, base, &self.started.file)
             .map_err(|e| invalid(redact(&e.to_string())))?;
-        let unwrap_runs = unwrap_runs || changes.unwrap_runs;
+        let confirm = Confirm {
+            unwrap_runs: confirm.unwrap_runs || changes.unwrap_runs,
+            allow_unchecked: confirm.allow_unchecked || changes.allow_unchecked,
+        };
         let upstreams = self.secrets.upstreams(&config).map_err(invalid)?;
         if let Some(model) = &config.decision_model {
             self.secrets
@@ -178,7 +200,9 @@ impl Live {
                 .map_err(invalid)?;
         }
         crate::server::check_forges(&config, &self.secrets).map_err(invalid)?;
-        if !matches!(by, Actor::Person) && !turned(&self.get().plugins, &config.plugins).is_empty()
+        if !matches!(by, Actor::Person)
+            && (!turned(&self.get().plugins, &config.plugins).is_empty()
+                || Switches::of(&self.get()) != Switches::of(&config))
         {
             return Err(AppError::Forbidden(
                 "only a person turns a plugin off or on".into(),
@@ -186,12 +210,16 @@ impl Live {
         }
         // A file that a hand edit left with no launcher on does not refuse every later change: the change is saved and
         // the launcher stays on until a person confirms (see `turn_plugins`).
-        if !unwrap_runs && self.unwraps(&config) && !self.file_unwraps(&text, base) {
+        if !confirm.unwrap_runs && self.unwraps(&config) && !self.file_unwraps(&text, base) {
             return Err(AppError::Conflict(UNWRAP_NEEDS_CONFIRMING.into()));
+        }
+        // The same for the guard.
+        if !confirm.allow_unchecked && self.unchecks(&config) && !self.file_unchecks(&text, base) {
+            return Err(AppError::Conflict(UNCHECKED_NEEDS_CONFIRMING.into()));
         }
         let mut context = prepare()?;
         write_atomically(&self.started.file, edited.as_bytes(), false)?;
-        let turned = match self.turn_plugins(app, &config, unwrap_runs) {
+        let turned = match self.turn_plugins(app, &config, confirm) {
             Ok(turned) => turned,
             Err(e) => {
                 // A plugin that cannot be turned on leaves the file as it was.
@@ -235,21 +263,27 @@ impl Live {
             remove: vec!["agents".into(), "rules_file".into()],
             ..Changes::default()
         };
-        self.write_changes(app, by, &changes, ("setup_harness", false), || {
-            let moved = repo::create(&dir, &config.agents, config.rules_file.as_deref())?;
-            let moved = moved
-                .iter()
-                .map(|(from, to)| format!("{} -> {to}", from.display()))
-                .collect::<Vec<_>>();
-            Ok(BTreeMap::from([
-                ("repository".to_string(), url.clone()),
-                (
-                    "agents".to_string(),
-                    config.agents.keys().cloned().collect::<Vec<_>>().join(", "),
-                ),
-                ("copied".to_string(), moved.join("\n")),
-            ]))
-        })
+        self.write_changes(
+            app,
+            by,
+            &changes,
+            ("setup_harness", Confirm::default()),
+            || {
+                let moved = repo::create(&dir, &config.agents, config.rules_file.as_deref())?;
+                let moved = moved
+                    .iter()
+                    .map(|(from, to)| format!("{} -> {to}", from.display()))
+                    .collect::<Vec<_>>();
+                Ok(BTreeMap::from([
+                    ("repository".to_string(), url.clone()),
+                    (
+                        "agents".to_string(),
+                        config.agents.keys().cloned().collect::<Vec<_>>().join(", "),
+                    ),
+                    ("copied".to_string(), moved.join("\n")),
+                ]))
+            },
+        )
     }
 
     /// Takes the live keys of `new` into the running configuration and gives them to the parts that use them.
@@ -272,6 +306,9 @@ impl Live {
             running.agents = new.agents.clone();
         }
         running.plugins = turned.plugins;
+        running.guard_enabled = turned.switches.guard;
+        running.lens_enabled = turned.switches.lens;
+        running.localize.enabled = turned.switches.localize;
         if let Some(targets) = &self.targets {
             targets
                 .engine
@@ -301,17 +338,36 @@ impl Live {
     /// `new` that run or that the plugin host holds (those a package installed since the start), as `new` has them,
     /// except that a plugin whose change was not applied has the state it runs in.
     ///
-    /// Not applied is a change that turns off the launchers that are on, when `confirmed` is false: a hand edit of the
-    /// file that nobody confirmed. The launchers stay on, the server logs why and the event `plugin_enable_refused`
-    /// says so; a person confirms it with `unwrap_runs`. `Err` with why when a plugin cannot be turned on; the ones
+    /// The built-in deciders are turned the same way, with the plugins that decide their kinds taking the kinds first.
+    ///
+    /// Not applied is a change that turns off the launchers that are on, when `confirm.unwrap_runs` is false, or the
+    /// guard, when `confirm.allow_unchecked` is false: a hand edit of the file that nobody confirmed. The launchers or
+    /// the guard stay on, the server logs why and the event `plugin_enable_refused` says so; a person confirms it with
+    /// `unwrap_runs` or `allow_unchecked`. `Err` with why when a plugin cannot be turned on; the ones
     /// turned before it are put back then, and nothing is published.
     fn turn_plugins(
         &self,
         app: &App,
         new: &Config,
-        confirmed: bool,
+        confirm: Confirm,
     ) -> std::result::Result<Turned, String> {
+        let confirmed = confirm.unwrap_runs;
         let running = self.get();
+        let before_switches = Switches::of(&running);
+        let mut switches = Switches::of(new);
+        let mut refused_events = Vec::new();
+        if before_switches.guard && !switches.guard && !confirm.allow_unchecked {
+            switches.guard = true;
+            let message = "guard stays on: moebius.toml turns it off, so tool calls would no longer be checked, neither by the \
+                           built-in safety patterns nor by the rules; confirm that with allow_unchecked (PUT /v1/plugins/guard/enabled)"
+                .to_string();
+            eprintln!("moebius: {message}");
+            refused_events.push(Event::PluginEnableRefused {
+                name: "guard".into(),
+                enabled: false,
+                message,
+            });
+        }
         let before = known_plugins(app, &running.plugins, &new.plugins);
         let mut wanted = turned(&before, &new.plugins);
         // The plugins as they run now; each takes its new state as it is turned.
@@ -324,7 +380,7 @@ impl Live {
                 };
             }
         }
-        let mut events = Vec::new();
+        let mut events = refused_events;
         let on = |plugins: &[PluginConfig]| plugins.iter().any(|p| p.launches && p.enabled);
         let mut after = before.clone();
         for (name, enabled) in &wanted {
@@ -362,6 +418,7 @@ impl Live {
                 &plugins,
                 &name,
                 &self.launchers,
+                &switches,
             ) {
                 Ok(()) => {
                     events.push(Event::PluginEnabledChanged {
@@ -384,14 +441,39 @@ impl Live {
                             &plugins,
                             &back,
                             &self.launchers,
+                            &before_switches,
                         );
                     }
+                    route_built_ins(&app.decisions, &plugins, &before_switches);
                     let verb = if enabled { "on" } else { "off" };
                     return Err(format!("cannot turn {name} {verb}: {e}"));
                 }
             }
         }
-        Ok(Turned { plugins, events })
+        if switches != before_switches {
+            route_built_ins(&app.decisions, &plugins, &switches);
+            for name in BUILT_INS {
+                let now = switches.get(name);
+                if now != before_switches.get(name)
+                    && let Some(enabled) = now
+                {
+                    if name == crate::decide::guard::NAME && !enabled {
+                        eprintln!(
+                            "moebius: the guard is off: tool calls are no longer checked, neither by the built-in safety patterns nor by the rules"
+                        );
+                    }
+                    events.push(Event::PluginEnabledChanged {
+                        name: name.to_string(),
+                        enabled,
+                    });
+                }
+            }
+        }
+        Ok(Turned {
+            plugins,
+            switches,
+            events,
+        })
     }
 
     /// The plugins as they run, with the states `new` gives those that run; a plugin that `new` adds is not among them
@@ -417,6 +499,16 @@ impl Live {
         on(&self.get().plugins) && !on(&self.plugins_after(new))
     }
 
+    /// Whether `new` turns the guard off where it is on: tool calls would go unchecked.
+    fn unchecks(&self, new: &Config) -> bool {
+        self.get().guard_enabled && !new.guard_enabled
+    }
+
+    /// Whether the file as it is, the text `text`, turns the guard off where it is on: a hand edit did that.
+    fn file_unchecks(&self, text: &str, base: &Path) -> bool {
+        Config::parse(text, base, &self.started.file).is_ok_and(|config| self.unchecks(&config))
+    }
+
     /// Whether the file as it is, the text `text`, leaves no launcher on where one is: a hand edit did that.
     fn file_unwraps(&self, text: &str, base: &Path) -> bool {
         Config::parse(text, base, &self.started.file).is_ok_and(|config| self.unwraps(&config))
@@ -426,7 +518,8 @@ impl Live {
     /// stay), and the running server stops or starts it at once, takes its kinds and builds the launchers again. A
     /// run that started keeps the launcher it started with. Refused when the launchers left would wrap some agents
     /// and not others (naming them), and, without `unwrap_runs`, when no launcher would be left, so that runs would
-    /// start unwrapped.
+    /// start unwrapped. The built-in deciders (`guard`, `lens` and `localize`) are turned the same way, by their
+    /// `enabled` in the table of their name; turning the guard off is refused without `allow_unchecked`.
     pub fn set_plugin_enabled(
         &self,
         app: &App,
@@ -434,11 +527,15 @@ impl Live {
         plugin: &str,
         enabled: bool,
         unwrap_runs: bool,
+        allow_unchecked: bool,
     ) -> Result<PluginEnabled> {
         if !matches!(by, Actor::Person) {
             return Err(AppError::Forbidden(
                 "only a person turns a plugin off or on".into(),
             ));
+        }
+        if is_built_in(plugin) {
+            return self.set_built_in_enabled(app, by, plugin, enabled, allow_unchecked);
         }
         let _writing = self.writing.lock().unwrap_or_else(|e| e.into_inner());
         let file = &self.started.file;
@@ -465,6 +562,7 @@ impl Live {
             enabled,
             changed,
             unwrapped_runs,
+            unchecked_calls: false,
             note: unwrapped_runs.then(|| {
                 format!("runs now start unwrapped: no launcher is on after {plugin} was turned off")
             }),
@@ -514,7 +612,10 @@ impl Live {
                 } else {
                     "disable_plugin"
                 },
-                unwrap_runs,
+                Confirm {
+                    unwrap_runs,
+                    allow_unchecked: false,
+                },
             ),
             || {
                 Ok(BTreeMap::from([
@@ -527,6 +628,82 @@ impl Live {
             eprintln!("moebius: {}", answer(true, true).note.unwrap_or_default());
         }
         Ok(answer(true, unwrapped))
+    }
+
+    /// A person turns the built-in decider `name` off or on: `enabled` in its table is saved (`false` is written, and
+    /// turning it on removes the key), and the running server gives its kinds away or takes them back at once. Turning
+    /// the guard off lets tool calls through unchecked, so it is refused without `allow_unchecked`.
+    fn set_built_in_enabled(
+        &self,
+        app: &App,
+        by: &Actor,
+        name: &str,
+        enabled: bool,
+        allow_unchecked: bool,
+    ) -> Result<PluginEnabled> {
+        let _writing = self.writing.lock().unwrap_or_else(|e| e.into_inner());
+        let (_, raw) = read_raw(&self.started.file)?;
+        let in_file = raw
+            .get(name)
+            .and_then(|table| table.get("enabled"))
+            .and_then(|enabled| enabled.as_bool())
+            .unwrap_or(true);
+        let was = Switches::of(&self.get()).get(name).unwrap_or(true);
+        let unchecked = name == crate::decide::guard::NAME && !enabled && was;
+        let answer = |changed| {
+            PluginEnabled {
+            name: name.to_string(),
+            enabled,
+            changed,
+            unwrapped_runs: false,
+            unchecked_calls: name == crate::decide::guard::NAME && !enabled,
+            note: (changed && unchecked).then(|| {
+                "tool calls are no longer checked, neither by the built-in safety patterns nor by the rules"
+                    .to_string()
+            }),
+        }
+        };
+        if was == enabled && in_file == enabled {
+            return Ok(answer(false));
+        }
+        if unchecked && !allow_unchecked {
+            return Err(AppError::Conflict(UNCHECKED_NEEDS_CONFIRMING.into()));
+        }
+        let key = format!("{name}.enabled");
+        let changes = if enabled {
+            Changes {
+                remove: vec![key],
+                ..Changes::default()
+            }
+        } else {
+            Changes {
+                set: BTreeMap::from([(key, Value::Bool(false))]),
+                ..Changes::default()
+            }
+        };
+        self.write_changes(
+            app,
+            by,
+            &changes,
+            (
+                if enabled {
+                    "enable_plugin"
+                } else {
+                    "disable_plugin"
+                },
+                Confirm {
+                    unwrap_runs: false,
+                    allow_unchecked,
+                },
+            ),
+            || {
+                Ok(BTreeMap::from([
+                    ("plugin".to_string(), name.to_string()),
+                    ("unchecked_calls".to_string(), unchecked.to_string()),
+                ]))
+            },
+        )?;
+        Ok(answer(true))
     }
 
     /// Why turning `plugin` off or on leaves the launchers wrapping some agents and not others, naming them; `edited`
@@ -626,6 +803,8 @@ fn turned(running: &[PluginConfig], new: &[PluginConfig]) -> Vec<(String, bool)>
 /// What turning the plugins that a change turned off or on left: the plugins as they run, and the events to publish.
 struct Turned {
     plugins: Vec<PluginConfig>,
+    /// Which built-in deciders are on.
+    switches: Switches,
     events: Vec<Event>,
 }
 
@@ -639,7 +818,9 @@ pub struct PluginEnabled {
     pub changed: bool,
     /// Whether runs start unwrapped from now on: the plugin was the last launcher that was on.
     pub unwrapped_runs: bool,
-    /// Says so in words when `unwrapped_runs`.
+    /// Whether tool calls are allowed unchecked from now on: the guard is off.
+    pub unchecked_calls: bool,
+    /// Says so in words when `unwrapped_runs`, or when the guard was just turned off.
     pub note: Option<String>,
 }
 
@@ -703,6 +884,9 @@ mod tests {
                     s.router.thinking_map("qwen-local")
                 )
             }),
+            "guard.enabled" => (json!(false), field!(guard_enabled)),
+            "lens.enabled" => (json!(false), field!(lens_enabled)),
+            "localize.enabled" => (json!(false), field!(localize.enabled)),
             "agents" => (json!({"Coder": {"model": "live-model"}}), |s| {
                 format!("{:?}", s.harness.agents.read().unwrap().agents)
             }),
@@ -726,6 +910,7 @@ mod tests {
             let before = seen(&server);
             let changes = Changes {
                 set: BTreeMap::from([(name.to_string(), value)]),
+                allow_unchecked: name == "guard.enabled",
                 ..Changes::default()
             };
             let saved = server.live.save(&server.app, &actor(), &changes).unwrap();

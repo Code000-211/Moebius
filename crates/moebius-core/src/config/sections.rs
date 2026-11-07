@@ -655,7 +655,12 @@ pub(super) fn plugins(
     mut plugins: Vec<PluginConfig>,
     base: &Path,
 ) -> Result<Vec<PluginConfig>, ConfigError> {
-    let built_in = [crate::decide::guard::NAME, crate::decide::model::NAME];
+    let built_in = [
+        crate::decide::guard::NAME,
+        crate::decide::model::NAME,
+        crate::harness::lens::NAME,
+        crate::decide::localize::KIND,
+    ];
     let mut names = std::collections::BTreeSet::new();
     let mut kinds = std::collections::BTreeSet::new();
     for plugin in &mut plugins {

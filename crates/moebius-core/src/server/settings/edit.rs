@@ -181,7 +181,14 @@ fn remove_in(table: &mut Table, key: &str, path: &[&str]) -> Result<()> {
         return Ok(());
     }
     match table.get_mut(first) {
-        Some(Item::Table(child)) => remove_in(child, key, rest),
+        Some(Item::Table(child)) => {
+            remove_in(child, key, rest)?;
+            // A table the removal emptied is no use left in the file as a header with nothing under it.
+            if child.is_empty() {
+                table.remove(first);
+            }
+            Ok(())
+        }
         Some(Item::ArrayOfTables(list)) => {
             let at = index(key, rest[0])?;
             if at >= list.len() {

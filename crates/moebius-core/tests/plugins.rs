@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use moebius_core::config::Config;
 use moebius_core::decide::Question;
 use moebius_core::server::Server;
+use moebius_core::server::plugins::Switches;
 use moebius_core::server::setup;
 
 /// The first block of `language` in the guide's plugins page after `after`.
@@ -101,7 +102,7 @@ fn a_plugin_in_its_own_process_decides_and_one_that_crashes_fails_closed() {
             .status("crashes")
             .is_some_and(|status| status.error.is_some())
     });
-    let plugins = setup::plugins(decisions, data_dir);
+    let plugins = setup::plugins(decisions, data_dir, &Switches::default());
     let plugin = |name: &str| {
         plugins
             .plugins

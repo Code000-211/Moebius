@@ -490,6 +490,28 @@ fn a_repository_can_turn_the_hint_off_for_its_own_workflow() {
 }
 
 #[test]
+fn the_localizer_turned_off_gives_runs_no_hint_and_no_judgement_and_on_again_gives_it_back() {
+    use crate::decide::localize::KIND;
+    let setup = setup_localizing();
+    let card = setup
+        .app
+        .create_issue(setup.repo, "Change README.md", "", "person")
+        .unwrap();
+    assert!(run_prompt(&setup.app, &card, "code", None).contains("- README.md"));
+    let asked = || setup.app.store.judgements("localize").unwrap().len();
+    assert_eq!(asked(), 1);
+    // Off, as `localize.enabled = false` is: the run starts without a hint and nothing is judged. A project that
+    // says `on` does not bring it back.
+    setup.app.decisions.unroute_kind(KIND);
+    crate::harness::repo::testing::put(&setup.app, "demo", "localize", "on\n");
+    assert!(!run_prompt(&setup.app, &card, "code", None).contains("likely relevant"));
+    assert_eq!(asked(), 1);
+    setup.app.decisions.route(KIND, KIND);
+    assert!(run_prompt(&setup.app, &card, "code", None).contains("- README.md"));
+    assert_eq!(asked(), 2);
+}
+
+#[test]
 fn a_decider_that_fails_leaves_the_run_without_a_hint() {
     let setup = setup();
     setup

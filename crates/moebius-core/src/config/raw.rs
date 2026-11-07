@@ -44,6 +44,13 @@ pub(super) struct RawLocalize {
     pub(super) files: Option<u32>,
 }
 
+/// The table of a built-in decider that can be turned off: `[guard]` and `[lens]`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct RawBuiltIn {
+    pub(super) enabled: Option<bool>,
+}
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawPackages {
@@ -156,6 +163,10 @@ pub(super) struct Raw {
     pub(super) board: RawBoard,
     #[serde(default)]
     pub(super) localize: RawLocalize,
+    #[serde(default)]
+    pub(super) guard: RawBuiltIn,
+    #[serde(default)]
+    pub(super) lens: RawBuiltIn,
     #[serde(default)]
     pub(super) packages: RawPackages,
     #[serde(default)]

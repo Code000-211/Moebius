@@ -14,6 +14,7 @@ use moebius_core::decide::{Actor, Question};
 use moebius_core::router::Grant;
 use moebius_core::server::Server;
 use moebius_core::server::api::{self, ApiState};
+use moebius_core::server::plugins::Switches;
 use reqwest::Method;
 use serde_json::{Value, json};
 
@@ -134,6 +135,7 @@ impl Fixture {
             plugin,
             enabled,
             unwrap_runs,
+            false,
         )
     }
 
@@ -247,8 +249,11 @@ async fn a_decider_is_turned_off_and_on_at_once_with_its_process_entry_and_setti
     assert!(file.contains("enabled = false") && file.contains("decides = [\"tool_call\"]"));
     assert!(f.server.live.view().unwrap().restart_keys.is_empty());
     // It is still listed, as off, with its settings box and its value.
-    let plugins =
-        moebius_core::server::setup::plugins(&f.server.app.decisions, &f.server.config.data_dir);
+    let plugins = moebius_core::server::setup::plugins(
+        &f.server.app.decisions,
+        &f.server.config.data_dir,
+        &Switches::of(&f.server.live.get()),
+    );
     let gate = plugins.plugins.iter().find(|p| p.name == "gate").unwrap();
     assert!(!gate.enabled && gate.process.is_none());
     let settings = f.server.app.app_settings().unwrap();
@@ -276,8 +281,11 @@ async fn a_decider_is_turned_off_and_on_at_once_with_its_process_entry_and_setti
     assert!(alive(&f.pid("gate")));
     assert_eq!(f.decider_of("tool_call"), "gate");
     assert!(!f.file().contains("enabled"));
-    let plugins =
-        moebius_core::server::setup::plugins(&f.server.app.decisions, &f.server.config.data_dir);
+    let plugins = moebius_core::server::setup::plugins(
+        &f.server.app.decisions,
+        &f.server.config.data_dir,
+        &Switches::of(&f.server.live.get()),
+    );
     assert!(
         plugins
             .plugins
@@ -415,7 +423,7 @@ async fn only_a_person_turns_a_plugin_off_and_the_route_and_the_settings_say_so(
     assert_eq!(status, 200, "{body}");
     assert_eq!(
         body,
-        json!({"name": "gate", "enabled": false, "changed": true, "unwrapped_runs": false, "note": null})
+        json!({"name": "gate", "enabled": false, "changed": true, "unwrapped_runs": false, "unchecked_calls": false, "note": null})
     );
     let (_, plugins) = f.call(&person, Method::GET, "/v1/plugins", None).await;
     let gate = plugins["plugins"]
@@ -764,4 +772,374 @@ async fn a_launcher_turned_off_while_a_run_goes_is_not_called_again_by_it() {
     // still stopped and cleaned up; `harness::launch` tests that.)
     let error = held.clean_leftovers(&[]).unwrap_err();
     assert!(error.contains("turned off"), "{error}");
+}
+
+/// What a decision of `kind` is, with the options a tool call has.
+fn decision_of(f: &Fixture, kind: &str) -> moebius_core::decide::Decision {
+    f.server
+        .app
+        .decisions
+        .decide(&Question {
+            kind: kind.into(),
+            options: vec!["allow".into(), "refuse".into()],
+            fail_closed: "refuse".into(),
+            ..Question::default()
+        })
+        .unwrap()
+}
+
+/// What `GET /v1/plugins` says of the plugin `name`: whether it is on, and the kinds it answers.
+async fn listed(f: &Fixture, name: &str) -> (bool, Vec<String>) {
+    let token = f.server.token.to_string();
+    let (_, plugins) = f.call(&token, Method::GET, "/v1/plugins", None).await;
+    let plugin = plugins["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["name"] == name)
+        .unwrap_or_else(|| panic!("{name} is not listed: {plugins}"));
+    (
+        plugin["enabled"].as_bool().unwrap(),
+        plugin["decides"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|kind| kind.as_str().unwrap().to_string())
+            .collect(),
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_lens_and_the_localizer_are_turned_off_and_on_at_once_and_the_file_says_so() {
+    let f = Fixture::start("").await;
+    let person = f.server.token.to_string();
+    let mut events = f.server.app.bus.subscribe();
+    for (name, kinds) in [
+        ("lens", vec!["deep_check", "lint_report"]),
+        ("localize", vec!["localize"]),
+    ] {
+        assert_eq!(
+            listed(&f, name).await,
+            (true, kinds.iter().map(|k| k.to_string()).collect())
+        );
+        for kind in &kinds {
+            assert!(f.server.app.decisions.decides(kind));
+        }
+        let (status, body) = f
+            .call(
+                &person,
+                Method::PUT,
+                &format!("/v1/plugins/{name}/enabled"),
+                Some(json!({"enabled": false})),
+            )
+            .await;
+        assert_eq!(status, 200, "{body}");
+        assert_eq!(
+            body,
+            json!({"name": name, "enabled": false, "changed": true, "unwrapped_runs": false, "unchecked_calls": false, "note": null})
+        );
+        // At once: nothing decides the kinds any more, the page says so, the file has the key, no restart is needed.
+        for kind in &kinds {
+            assert!(!f.server.app.decisions.decides(kind));
+        }
+        assert_eq!(listed(&f, name).await, (false, vec![]));
+        assert!(
+            f.file().contains(&format!("[{name}]\nenabled = false")),
+            "{}",
+            f.file()
+        );
+        assert!(f.server.live.view().unwrap().restart_keys.is_empty());
+        assert!(f.server.live.view().unwrap().values[&format!("{name}.enabled")]["value"] == false);
+        // The same again changes nothing.
+        assert!(!f.set(name, false, false).unwrap().changed);
+        // On again: the key is removed and the kinds are decided again.
+        let (status, body) = f
+            .call(
+                &person,
+                Method::PUT,
+                &format!("/v1/plugins/{name}/enabled"),
+                Some(json!({"enabled": true})),
+            )
+            .await;
+        assert_eq!(status, 200, "{body}");
+        assert!(!f.file().contains("enabled"), "{}", f.file());
+        for kind in &kinds {
+            assert!(f.server.app.decisions.decides(kind));
+        }
+        assert!(listed(&f, name).await.0);
+    }
+    let seen: Vec<Value> = std::iter::from_fn(|| events.try_recv().ok())
+        .map(|e| serde_json::to_value(&e).unwrap())
+        .filter(|e| e["kind"] == "plugin_enabled_changed")
+        .map(|e| e["data"].clone())
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            json!({"name": "lens", "enabled": false}),
+            json!({"name": "lens", "enabled": true}),
+            json!({"name": "localize", "enabled": false}),
+            json!({"name": "localize", "enabled": true}),
+        ]
+    );
+    // The decision is recorded like any other plugin's.
+    let kinds: Vec<String> = f
+        .server
+        .app
+        .store
+        .judgements("disable_plugin")
+        .unwrap()
+        .iter()
+        .map(|j| j.decider.clone())
+        .collect();
+    assert_eq!(kinds, ["person", "person"]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_guard_is_turned_off_only_with_allow_unchecked_and_then_tool_calls_are_allowed_and_say_so()
+ {
+    let f = Fixture::start("").await;
+    let person = f.server.token.to_string();
+    let path = "/v1/plugins/guard/enabled";
+    assert_eq!(
+        listed(&f, "guard").await,
+        (true, vec!["tool_call".to_string()])
+    );
+    // Refused without the confirmation, in words, and nothing changes.
+    let (status, body) = f
+        .call(&person, Method::PUT, path, Some(json!({"enabled": false})))
+        .await;
+    assert_eq!(status, 409, "{body}");
+    assert!(body.to_string().contains("allow_unchecked"), "{body}");
+    assert!(f.server.live.get().guard_enabled && !f.file().contains("guard"));
+    assert!(decision_of(&f, "tool_call").decider.starts_with("guard"));
+
+    // Only a person confirms it.
+    let agent = f.agent_token();
+    let (status, _) = f
+        .call(
+            &agent,
+            Method::PUT,
+            path,
+            Some(json!({"enabled": false, "allow_unchecked": true})),
+        )
+        .await;
+    assert_eq!(status, 403);
+
+    let (status, body) = f
+        .call(
+            &person,
+            Method::PUT,
+            path,
+            Some(json!({"enabled": false, "allow_unchecked": true})),
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        (
+            &body["changed"],
+            &body["unchecked_calls"],
+            &body["unwrapped_runs"]
+        ),
+        (&json!(true), &json!(true), &json!(false))
+    );
+    assert!(body["note"].as_str().unwrap().contains("no longer checked"));
+    assert!(
+        f.file().contains("[guard]\nenabled = false"),
+        "{}",
+        f.file()
+    );
+    assert!(!f.server.live.get().guard_enabled);
+    assert_eq!(listed(&f, "guard").await, (false, vec![]));
+
+    // A call that the guard would refuse is allowed, and the judgement says that the guard is off.
+    let call = decision_of(&f, "tool_call");
+    assert!(!call.refused && call.choice == "allow" && call.decider == "none");
+    assert!(call.reason.contains("the guard is off"), "{}", call.reason);
+    let judged = f.server.app.store.judgements("tool_call").unwrap();
+    assert!(judged.last().unwrap().reason.contains("the guard is off"));
+    // Other kinds still fail closed with no decider.
+    assert!(decision_of(&f, "nobody_decides").refused);
+
+    // On again: no confirmation, the key is gone, the guard decides.
+    let (status, body) = f
+        .call(&person, Method::PUT, path, Some(json!({"enabled": true})))
+        .await;
+    assert_eq!(status, 200, "{body}");
+    assert!(!f.file().contains("guard") && f.server.live.get().guard_enabled);
+    assert!(decision_of(&f, "tool_call").decider.starts_with("guard"));
+    assert!(listed(&f, "guard").await.0);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_plugin_that_decides_tool_call_keeps_it_and_gives_it_back_to_what_is_on() {
+    let f = Fixture::start(GATE).await;
+    f.set("guard", false, false).unwrap_err();
+    f.server
+        .live
+        .set_plugin_enabled(&f.server.app, &Actor::Person, "guard", false, false, true)
+        .unwrap();
+    // The plugin decides it; the guard being off changes nothing for the calls it checks.
+    assert_eq!(decision_of(&f, "tool_call").decider, "gate");
+    // The plugin off with the guard off: calls are allowed with the note, never left without a decider.
+    f.set("gate", false, false).unwrap();
+    let open = decision_of(&f, "tool_call");
+    assert!(!open.refused && open.choice == "allow" && open.decider == "none");
+    assert!(open.reason.contains("the guard is off"));
+    // The plugin on again takes the kind back from the note.
+    f.set("gate", true, false).unwrap();
+    assert_eq!(decision_of(&f, "tool_call").decider, "gate");
+    // The guard on, then the plugin off: the kind goes to the guard.
+    f.set("guard", true, false).unwrap();
+    assert_eq!(decision_of(&f, "tool_call").decider, "gate");
+    f.set("gate", false, false).unwrap();
+    assert!(decision_of(&f, "tool_call").decider.starts_with("guard"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn the_settings_route_turns_the_guard_off_only_with_allow_unchecked() {
+    let f = Fixture::start("").await;
+    let person = f.server.token.to_string();
+    let off = json!({"set": {"guard.enabled": false}});
+    let (status, body) = f
+        .call(&person, Method::PUT, "/v1/settings", Some(off))
+        .await;
+    assert_eq!(status, 409, "{body}");
+    assert!(body.to_string().contains("allow_unchecked"), "{body}");
+    assert!(!f.file().contains("guard") && f.server.live.get().guard_enabled);
+    let confirmed = json!({"set": {"guard.enabled": false}, "allow_unchecked": true});
+    let (status, body) = f
+        .call(&person, Method::PUT, "/v1/settings", Some(confirmed))
+        .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["restart_needed"], false);
+    assert!(f.file().contains("enabled = false") && !f.file().contains("allow_unchecked"));
+    assert!(!f.server.live.get().guard_enabled);
+    assert_eq!(decision_of(&f, "tool_call").decider, "none");
+    // An agent cannot do it through the settings either.
+    let agent = f.agent_token();
+    f.set("guard", true, false).unwrap();
+    let (status, _) = f
+        .call(
+            &agent,
+            Method::PUT,
+            "/v1/settings",
+            Some(json!({"set": {"lens.enabled": false}})),
+        )
+        .await;
+    assert_eq!(status, 403);
+    // The lens and the localizer need no confirmation through the settings route.
+    let (status, body) = f
+        .call(
+            &person,
+            Method::PUT,
+            "/v1/settings",
+            Some(json!({"set": {"lens.enabled": false, "localize.enabled": false}})),
+        )
+        .await;
+    assert_eq!(status, 200, "{body}");
+    assert!(
+        !f.server.app.decisions.decides("deep_check")
+            && !f.server.app.decisions.decides("localize")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_hand_edit_that_turns_the_guard_off_is_honoured_at_the_start_but_refused_while_it_runs() {
+    // At the start the file is honoured.
+    let f = Fixture::start("[guard]\nenabled = false\n[lens]\nenabled = false\n").await;
+    assert!(!f.server.live.get().guard_enabled);
+    assert_eq!(decision_of(&f, "tool_call").decider, "none");
+    assert!(!f.server.app.decisions.decides("lint_report"));
+    assert_eq!(listed(&f, "guard").await, (false, vec![]));
+    assert!(!listed(&f, "lens").await.0);
+    // Turned on, the key goes and the guard decides.
+    f.set("guard", true, false).unwrap();
+    assert!(decision_of(&f, "tool_call").decider.starts_with("guard"));
+
+    // While it runs, a hand edit is not applied by the next save: nobody confirmed it.
+    let g = Fixture::start("").await;
+    let person = g.server.token.to_string();
+    let mut events = g.server.app.bus.subscribe();
+    let hand = format!("{}\n[guard]\nenabled = false\n", g.file());
+    std::fs::write(g.dir.path().join("moebius.toml"), &hand).unwrap();
+    let (status, saved) = g
+        .call(
+            &person,
+            Method::PUT,
+            "/v1/settings",
+            Some(json!({"set": {"run_limit": 7}})),
+        )
+        .await;
+    assert_eq!(status, 200, "{saved}");
+    assert_eq!(g.server.live.get().run_limit, 7);
+    assert!(g.server.live.get().guard_enabled);
+    assert!(decision_of(&g, "tool_call").decider.starts_with("guard"));
+    assert!(g.file().contains("enabled = false"));
+    let seen: Vec<Value> = std::iter::from_fn(|| events.try_recv().ok())
+        .map(|e| serde_json::to_value(&e).unwrap())
+        .collect();
+    let refused = seen
+        .iter()
+        .find(|e| e["kind"] == "plugin_enable_refused")
+        .unwrap();
+    assert_eq!(refused["data"]["name"], "guard");
+    assert!(
+        refused["data"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("allow_unchecked")
+    );
+    assert!(seen.iter().all(|e| e["kind"] != "plugin_enabled_changed"));
+    // A person confirms it with the route.
+    let (status, _) = g
+        .call(
+            &person,
+            Method::PUT,
+            "/v1/plugins/guard/enabled",
+            Some(json!({"enabled": false})),
+        )
+        .await;
+    assert_eq!(status, 409);
+    let (status, done) = g
+        .call(
+            &person,
+            Method::PUT,
+            "/v1/plugins/guard/enabled",
+            Some(json!({"enabled": false, "allow_unchecked": true})),
+        )
+        .await;
+    assert_eq!(status, 200, "{done}");
+    assert!(!g.server.live.get().guard_enabled);
+    assert_eq!(decision_of(&g, "tool_call").decider, "none");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_switch_that_is_off_turns_the_feature_off_for_a_plugin_that_decides_its_kind_too() {
+    let f = Fixture::start(
+        "[[plugins]]\nname = \"gate\"\npath = \"{script}\"\nargs = [\"{dir}\", \"gate\"]\n\
+         decides = [\"lint_report\", \"localize\"]\n",
+    )
+    .await;
+    assert!(f.server.app.decisions.decides("lint_report"));
+    assert_eq!(decision_of(&f, "lint_report").decider, "gate");
+    f.set("lens", false, false).unwrap();
+    assert!(!f.server.app.decisions.decides("lint_report"));
+    // The plugin is still on and keeps its other kind.
+    assert!(f.server.app.decisions.decides("localize"));
+    assert_eq!(
+        listed(&f, "gate").await,
+        (true, vec!["localize".to_string()])
+    );
+    f.set("localize", false, false).unwrap();
+    assert!(!f.server.app.decisions.decides("localize"));
+    // Turning the plugin off and on meanwhile does not bring the kinds back.
+    f.set("gate", false, false).unwrap();
+    f.set("gate", true, false).unwrap();
+    assert!(!f.server.app.decisions.decides("lint_report"));
+    assert!(!f.server.app.decisions.decides("localize"));
+    f.set("lens", true, false).unwrap();
+    f.set("localize", true, false).unwrap();
+    assert_eq!(decision_of(&f, "lint_report").decider, "gate");
+    assert!(f.server.app.decisions.decides("localize"));
 }

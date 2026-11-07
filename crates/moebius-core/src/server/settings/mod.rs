@@ -47,6 +47,11 @@ pub struct Changes {
     /// file turned off stays on until it is confirmed.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub unwrap_runs: bool,
+    /// Confirms that the change may turn the guard off, so that tool calls go unchecked (see
+    /// `PUT /v1/plugins/{plugin}/enabled`). Without it such a change is refused, and a guard that a hand edit of the
+    /// file turned off stays on until it is confirmed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allow_unchecked: bool,
 }
 
 /// What a saved change tells the caller.

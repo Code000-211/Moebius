@@ -85,7 +85,7 @@ in. Never put such a value in a file of the repository.
 Turning a plugin off or on (`enabled` of its `[[plugins]]` entry) is a person's too, and takes effect at once, without a
 restart: you are refused with `403`, so tell the person to use the switch on the Plugins page or `"$MOEBIUS" plugin
 disable <name>` (`enable` to turn it on; `--unwrap-runs` to confirm turning off the last launcher, after which runs start
-unwrapped). A plugin that is off keeps its entry and its settings and is not started or asked.
+unwrapped; `--allow-unchecked` to confirm turning off `guard`, after which tool calls are no longer checked). The built-in deciders `guard`, `lens` and `localize` can be turned off and on the same way. A plugin that is off keeps its entry and its settings and is not started or asked.
 
 When the person asks you to change a file of a repository right on its default branch (often the file open in the
 Editor of the project page, which your context names with the cursor's line), read and write it through the server:

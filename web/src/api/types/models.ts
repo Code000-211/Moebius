@@ -89,6 +89,8 @@ export interface PluginEnabled {
   changed: boolean;
   /** True when runs start unwrapped from now on: it was the last launcher that was on. */
   unwrapped_runs: boolean;
+  /** True when tool calls are allowed unchecked from now on: the guard is off. */
+  unchecked_calls: boolean;
   note: string | null;
 }
 

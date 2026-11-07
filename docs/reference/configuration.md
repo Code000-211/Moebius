@@ -113,17 +113,36 @@ cards; one proposal is tried at a time, and only when the board has a run to spa
 ## `[localize]`
 
 The hint a `code` run is given: the files of the repository that its issue is likely to touch, ranked by the decision point
-`localize` (see [the decision model](decision-model.md#localize)). The table is optional; a change needs a restart.
+`localize` (see [the decision model](decision-model.md#localize)). The table is optional. `localize.enabled` takes effect at once
+(see [turning a plugin off and on](#turning-a-plugin-off-and-on)); `localize.files` needs a restart.
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
-| `localize.enabled` | boolean | `true` | Whether a run is given the hint. With `false` it starts without, and no judgement of `localize` is recorded. |
+| `localize.enabled` | boolean | `true` | Whether a run is given the hint. With `false` it starts without, in every repository whatever its `localize` file says, and no judgement of `localize` is recorded. Live: the Plugins page, `moebius plugin disable localize` and `PUT /v1/plugins/localize/enabled` set it, and turning it on removes the key. |
 | `localize.files` | integer | `10` | How many files the hint names at most, from 1 to 10. |
 
 A project decides for itself in the file `localize` of its settings (as `test-first` there turns test first on; see
 [harness configuration](harness-configuration.md#project-settings)), over these keys: lines that are empty or start with `#` are skipped, `on` and `off` turn the hint on and off,
 and `files <n>` (1 to 10) says how many files it names. A line that says anything else is ignored. A project that wants no hint for its
 coding writes `off` there.
+
+## `[guard]`
+
+The guard is the built-in decider of `tool_call`: it refuses a call that breaks a built-in safety pattern or a rule (see
+[the plugin API](plugin-api.md#the-tool_call-context)). The table is optional.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `guard.enabled` | boolean | `true` | Whether the guard checks tool calls. With `false` **no tool call is checked, neither by the built-in patterns nor by the rules**: every call is allowed unless a plugin that decides `tool_call` ([`[[plugins]]`](#plugins)) refuses it, and the judgement of each call says that the guard is off. Live: a change takes effect at once, and turning the guard off needs a confirmation (see [turning a plugin off and on](#turning-a-plugin-off-and-on)). |
+
+## `[lens]`
+
+The lens is the built-in decider of `lint_report` and `deep_check`: the lint and type feedback an agent gets after its
+edits (see [harness configuration](harness-configuration.md)). The table is optional.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `lens.enabled` | boolean | `true` | Whether runs get the lens's feedback. With `false` an agent is shown no finding of a linter, parser or type checker and the slow check at the end of its turn does not run; the run goes on as usual and no judgement of `lint_report` or `deep_check` is recorded. Live. |
 
 ## `[packages]`
 
@@ -329,14 +348,27 @@ A plugin is turned off and on again with `plugins.enabled`, at once and without 
 
 `PUT /v1/plugins/{plugin}/enabled`, `moebius plugin enable|disable <name>` and the switch on the Plugins page set
 `plugins.enabled` (a person only; `enabled = false` is written, and turning the plugin on removes the key), record the
-decision (kind `enable_plugin` or `disable_plugin`) and publish `plugin_enabled_changed`. The same key edited through
+decision (kind `enable_plugin` or `disable_plugin`) and publish `plugin_enabled_changed`. The built-in deciders have the
+same switch under their names, `guard`, `lens` and `localize`, and the key `enabled` of their table
+([`[guard]`](#guard), [`[lens]`](#lens), [`[localize]`](#localize)); everything below holds for them as well, except
+where it speaks of processes and launchers. The same key edited through
 `PUT /v1/settings` takes effect at once as well, by a person only. What happens:
 
 - A plugin in its own process that is turned off has its process stopped and is not started again; it is listed as off
   with the manifest it last sent, so that its settings stay on the pages. A server that starts with a plugin off does
   not start it. Turned on, it is started and answers again.
-- A decider that is off gives its kinds back to what decides them without it: the guard for `tool_call`, Moebius's own
-  decision for the others, as if the plugin were not configured.
+- A decider that is off gives its kinds back to what decides them without it: the guard for `tool_call` if the guard is
+  on, Moebius's own decision for the others, as if the plugin were not configured. A plugin that decides `tool_call`
+  keeps deciding it whether the guard is on or off; the guard answers the kind again only when no plugin that is on
+  decides it.
+- A built-in decider that is off decides nothing, and the switch turns its feature off, so a plugin that decides the same
+  kind is not asked either (the guard is the exception, above): `localize` gives a run no hint and records no judgement; `lens` shows an
+  agent no finding and does not run the slow check, without failing the run, and records nothing.
+- The guard off fails open, so turning it off is refused (`409`) unless the person confirms with `allow_unchecked` (the
+  route, `--allow-unchecked` of the command, the field of `PUT /v1/settings`; the Plugins page asks first). The server
+  logs a warning. Then, if no plugin that is on decides `tool_call`, every tool call is **allowed**, and its judgement is
+  decided by `none` with the reason that the guard is off; the kind is never left with no decider, since that would
+  refuse every call. Turning the guard on again checks the calls that come after.
 - Launchers are built again from the launchers that are on, in file order, and the runs that start from then on use
   them. A run that started keeps the launcher it started with, and is stopped and cleaned up by it.
 - Turning a launcher off is refused when the launchers left would wrap some agents and not others (the last launcher
@@ -364,6 +396,10 @@ decision (kind `enable_plugin` or `disable_plugin`) and publish `plugin_enabled_
   runs start unwrapped: the launcher stays on, the server logs why and publishes `plugin_enable_refused`, and every other
   change goes through. A person confirms with `PUT /v1/plugins/{plugin}/enabled` and `unwrap_runs`, or with `unwrap_runs`
   in a `PUT /v1/settings`; turning the plugin on through the same route puts the file back in step with what runs.
+  The same holds for a hand edit that turns the guard off while the server runs: it is not applied (the guard stays on,
+  the server logs why and publishes `plugin_enable_refused`) until a person confirms with `allow_unchecked`. A file that
+  says `[guard] enabled = false` when the server starts is honoured, with a warning in the log. `[lens]` and
+  `[localize]` need no confirmation.
 
 
 ## `[[registries]]`

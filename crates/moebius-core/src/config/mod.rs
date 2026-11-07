@@ -220,6 +220,10 @@ pub struct Config {
     pub decision_model: Option<DecisionModelConfig>,
     /// Whether code runs are told which files are likely relevant, and how many.
     pub localize: LocalizeConfig,
+    /// Whether the guard checks tool calls (`[guard] enabled`). Off, calls are allowed unchecked.
+    pub guard_enabled: bool,
+    /// Whether the lens gives runs lint and type feedback (`[lens] enabled`).
+    pub lens_enabled: bool,
     /// Where Pi packages are found and fetched from.
     pub packages: PackagesConfig,
     /// The plugins in their own process, with their paths made absolute.
@@ -440,6 +444,8 @@ impl Config {
             teacher,
             decision_model,
             localize,
+            guard_enabled: raw.guard.enabled.unwrap_or(true),
+            lens_enabled: raw.lens.enabled.unwrap_or(true),
             packages,
             plugins,
             runners,
