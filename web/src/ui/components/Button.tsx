@@ -1,6 +1,6 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/Button.tsx (Apache-2.0), changed to this app's design standard:
 // the variants are primary, secondary, ghost, danger and attention; the primary fills with the ink colour and labels it
-// with the canvas colour; the attention one also wears a ring in the warning's border colour, because its fill is close
+// with the canvas colour; the attention one also wears an outline (not a ring, which is a shadow) in the warning's border colour, because its fill is close
 // to the canvas of a warning banner; nothing else carries a border, a size under 40px, or a colour of its own; the focus ring comes from the
 // global `:focus-visible` rule in `styles/tailwind.css`; a button that cannot be pressed and has a reason stays
 // focusable (`aria-disabled`), shows the reason in the app's own tooltip on hover and on focus, and keeps it for a
@@ -34,7 +34,7 @@ const buttonVariants = cva(
         ghost: "bg-transparent text-secondary hover:bg-hover hover:text-text",
         danger: "bg-error-fill text-error-text hover:bg-error-hover",
         attention:
-          "bg-attention-fill text-attention-text ring-1 ring-attention-border ring-inset hover:bg-attention-hover",
+          "bg-attention-fill text-attention-text outline outline-1 -outline-offset-1 outline-attention-border hover:bg-attention-hover",
         icon: "bg-transparent text-secondary hover:bg-hover hover:text-text",
       },
       size: {

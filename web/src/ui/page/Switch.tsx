@@ -46,7 +46,7 @@ export function Switch({
         <span
           aria-hidden="true"
           className={cn(
-            "size-6 shrink-0 rounded-full bg-surface ring-1 ring-hairline-strong transition-transform duration-(--motion-routine) ease-out",
+            "size-6 shrink-0 rounded-full bg-surface outline outline-1 -outline-offset-1 outline-hairline-strong transition-transform duration-(--motion-routine) ease-out",
             checked ? "translate-x-6" : "translate-x-0",
           )}
         />
