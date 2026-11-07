@@ -245,10 +245,14 @@ mod tests {
             }
         };
         assert_eq!(fired.data["run"], chat);
-        until("the agent has answered", || status(app, chat) == "waiting").await;
+        // The chat's status may say it waits a moment before its last event is stored: both are waited for.
+        until("the agent has answered", || {
+            status(app, chat) == "waiting"
+                && kinds(app, chat).contains(&"agent_settled".to_string())
+        })
+        .await;
         let said = app.store.events(chat).unwrap();
         assert_eq!(said[0].data["message"], "Triage the new issues.");
-        assert!(kinds(app, chat).contains(&"agent_settled".to_string()));
         // It is listed with the chats.
         assert!(
             app.chats(false)
