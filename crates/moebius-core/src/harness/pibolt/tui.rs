@@ -24,7 +24,7 @@ impl PiBolt {
     pub(super) fn hand_to_tui(&self, app: &Arc<App>, run_id: i64) -> Result<Command, String> {
         // The terminal interface is a Pi the person's terminal owns, which the launcher could neither stop nor clean up
         // after; with a launcher configured it is not offered rather than started outside it.
-        if self.launcher.is_some() {
+        if self.launcher.is_set() {
             return Err(
                 "the terminal interface is not available while a launcher wraps the runs".into(),
             );

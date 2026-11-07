@@ -38,7 +38,7 @@ impl Harnesses {
             agents.clone(),
         );
         claude.runners = pi_bolt.runners.clone();
-        claude.launcher_configured = pi_bolt.launcher.is_some();
+        claude.launcher = pi_bolt.launcher.clone();
         Self {
             pi_bolt: Arc::new(pi_bolt),
             claude_code: Arc::new(claude),

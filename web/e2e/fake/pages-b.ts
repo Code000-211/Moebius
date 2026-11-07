@@ -1,7 +1,7 @@
 /**
  * The routes of the Agents, Skills, MCP servers, Models and Plugins pages in the fake server, with the JSON the real
  * server sends (docs/reference/desktop-api.md: `GET /v1/agents`, the harness configuration routes, `GET /v1/models`
- * and the routes next to it, `GET /v1/plugins`, `GET` and `PUT /v1/settings`, `PUT /v1/secrets/{name}`). The state is
+ * and the routes next to it, `GET /v1/plugins`, `PUT /v1/plugins/{plugin}/enabled`, `GET` and `PUT /v1/settings`, `PUT /v1/secrets/{name}`). The state is
  * kept per server and changes the way the real one does: an edit of the harness configuration repository is a commit
  * with a short id, an invalid edit is refused with a sentence, a key typed on the Models page is stored under a name
  * and only the name is ever answered, and an OAuth login waits until the test finishes it.
@@ -169,6 +169,8 @@ export function createPagesBFake(): PagesBFake {
   const refusals = new Map<string, { status: number; message: string }>();
   const uploads: PagesBFake["uploads"] = [];
   const secrets: Record<string, string> = {};
+  /** Which of the plugins named in the file are on. */
+  const pluginsOn: Record<string, boolean> = { "allow-reads": true, "box-run": true };
   const logins = new Map<
     number,
     { state: string; message: string; code: boolean; loggedIn: boolean }
@@ -287,7 +289,7 @@ export function createPagesBFake(): PagesBFake {
       const url = new URL(request.url ?? "/", "http://x");
       // `/v1/plugins` alone: the plugins' settings are the Settings page's, in pages-a.
       const mine =
-        /^\/v1\/(runners|agents|skills|mcp-servers|uploads|models|plugins(?!\/)|settings|secrets|harness|server\/restart)/.test(
+        /^\/v1\/(runners|agents|skills|mcp-servers|uploads|models|plugins(?!\/)|plugins\/[^/]+\/enabled|settings|secrets|harness|server\/restart)/.test(
           path,
         ) && !(path === "/v1/server");
       if (!mine) return false;
@@ -881,6 +883,16 @@ export function createPagesBFake(): PagesBFake {
 
     // --- plugins ---
     if (path === "/v1/plugins" && method === "GET") {
+      const process = (name: string, program: string, restarts: number, error: string | null) =>
+        pluginsOn[name]
+          ? {
+              program,
+              state: "running",
+              restarts,
+              error,
+              log: `/srv/.moebius/plugins/${name}.log`,
+            }
+          : null;
       return send(response, 200, {
         time_limit_seconds: 30,
         plugins: [
@@ -890,22 +902,52 @@ export function createPagesBFake(): PagesBFake {
             kinds: ["decider"],
             decides: ["tool_call"],
             process: null,
+            enabled: true,
           },
           {
             name: "allow-reads",
             version: "0.1.0",
             kinds: ["decider"],
-            decides: ["start_card"],
-            process: {
-              program: "/srv/plugins/allow-reads",
-              state: "running",
-              restarts: 2,
-              error: "exited with status 1",
-              log: "/srv/.moebius/plugins/allow-reads.log",
-            },
+            decides: pluginsOn["allow-reads"] ? ["start_card"] : [],
+            process: process("allow-reads", "/srv/plugins/allow-reads", 2, "exited with status 1"),
+            enabled: pluginsOn["allow-reads"],
           },
-          { name: "idle", version: "", kinds: [], decides: [], process: null },
+          { name: "idle", version: "", kinds: [], decides: [], process: null, enabled: true },
+          {
+            name: "box-run",
+            version: "0.1.0",
+            kinds: ["launcher"],
+            decides: [],
+            process: process("box-run", "/srv/plugins/box-run", 0, null),
+            enabled: pluginsOn["box-run"],
+          },
         ],
+      });
+    }
+    const toggled = /^\/v1\/plugins\/([^/]+)\/enabled$/.exec(path);
+    if (toggled && method === "PUT") {
+      const name = decodeURIComponent(toggled[1] ?? "");
+      const asked = input as { enabled: boolean; unwrap_runs?: boolean };
+      if (!(name in pluginsOn)) return send(response, 404, `a plugin ${name} not found`);
+      // box-run is the only launcher: turning it off unwraps every run, which needs a confirmation.
+      if (name === "box-run" && !asked.enabled && !asked.unwrap_runs) {
+        return send(
+          response,
+          409,
+          "this change leaves no launcher on, so runs would start unwrapped; confirm that with unwrap_runs",
+        );
+      }
+      const changed = pluginsOn[name] !== asked.enabled;
+      pluginsOn[name] = asked.enabled;
+      const unwrapped = name === "box-run" && !asked.enabled && changed;
+      return send(response, 200, {
+        name,
+        enabled: asked.enabled,
+        changed,
+        unwrapped_runs: unwrapped,
+        note: unwrapped
+          ? `runs now start unwrapped: no launcher is on after ${name} was turned off`
+          : null,
       });
     }
 

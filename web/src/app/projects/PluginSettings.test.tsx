@@ -36,6 +36,7 @@ const SANDBOX: PluginProjectSettings = {
         },
         { key: "network", label: "Network", description: "", input: "line", value: "" },
       ],
+      enabled: true,
       ui: false,
     },
   ],
@@ -126,6 +127,16 @@ describe("the plugin settings of a repository", () => {
     expect(
       (screen.getByRole("button", { name: "Save settings" }) as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+
+  it("shows a plugin that is turned off as off and keeps its settings box", async () => {
+    shown(
+      { ...SANDBOX, plugins: SANDBOX.plugins.map((plugin) => ({ ...plugin, enabled: false })) },
+      () => new Response(null, { status: 500 }),
+    );
+    await screen.findByRole("heading", { name: "podman-sandbox" });
+    expect(screen.getByText("Plugin settings · 0.2.0 · Off")).toBeTruthy();
+    expect((screen.getByLabelText("Network") as HTMLInputElement).disabled).toBe(false);
   });
 
   it("says why the server refused and keeps what was typed", async () => {

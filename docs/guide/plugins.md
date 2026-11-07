@@ -125,7 +125,7 @@ you cannot answer; both are refusals to the core.
 
 ### 2. Registering and routing it
 
-The server builds the host, adds the guard and routes `tool_call` to it in `Server::new`:
+The server builds the host, adds the guard and, in `plugins::route_deciders`, routes `tool_call` to it in `Server::new`:
 
 <!-- excerpt: crates/moebius-core/src/server/mod.rs -->
 ```rust
@@ -135,7 +135,9 @@ let host = Arc::new(host);
 let mut app = App::new(store.clone(), host.clone(), &config.data_dir);
 app.decisions.share_routed(routed);
 app.checks_timeout = config.checks_timeout;
-app.decisions.route("tool_call", guard::NAME);
+app.localize = config.localize;
+app.packages = config.packages.clone();
+plugins::route_deciders(&app.decisions, &config.plugins);
 ```
 
 Add your plugin to the host next to the guard, and route your kind after `App::new`.
@@ -226,6 +228,26 @@ The server starts the program when it starts and waits for its manifest. The Plu
 state: `running`, or `restarting` with why it stopped. A plugin that crashes, hangs, or writes a line that is not a
 reply is refused like a compiled-in one, and a stopped process is started again after a pause that doubles from 1
 second to a minute. What it writes to standard error is in `<data_dir>/plugins/<name>.log`.
+
+## Turn a plugin off and on again
+
+A plugin that is named under `[[plugins]]` can be switched off without losing its entry or its settings: a person uses the
+switch beside it on the Plugins page, `moebius plugin disable start-gate` or `PUT /v1/plugins/start-gate/enabled`, which
+write `enabled = false` to its entry. It takes effect at once, without a restart:
+
+- the process is stopped and not started again, and nothing is asked of it; the Plugins page shows it as off, with its
+  settings box;
+- the kinds in its `decides` go back to what decides them without it, the guard for `tool_call` and Moebius's own
+  decision for the others, as if it were not configured;
+- a launcher is no longer asked about runs that start from then on, and counts as absent for the rule that the last
+  launcher takes every agent, so turning one off is refused when the launchers left would wrap some agents and not others.
+  Turning off the last launcher means runs start unwrapped, so it needs `--unwrap-runs` (`"unwrap_runs": true`).
+
+`moebius plugin enable start-gate` turns it on again: it is started and answers its kinds again. The same key can be set
+by hand in `moebius.toml`; the server applies it at once as well when it changes the file through `PUT /v1/settings`,
+and reads it at its start otherwise. A hand edit that turns off the last launcher is not applied until a person confirms it
+(`unwrap_runs`); the launcher stays on and other changes are saved meanwhile. Installing a package leaves its plugin on. See
+[the configuration](../reference/configuration.md#turning-a-plugin-off-and-on).
 
 ## Ask a person for settings
 

@@ -128,7 +128,7 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     use crate::config::{AgentSet, Config};
-    use crate::decide::Question;
+    use crate::decide::{Actor, Question};
     use crate::harness::repo::HarnessRepo;
     use crate::repos::git;
     use crate::server::api::testing::{origin, start};
@@ -498,6 +498,26 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
+    async fn a_launcher_that_is_off_does_not_stop_a_launcher_package_from_being_installed() {
+        use crate::decide::Actor;
+        let fx =
+            Fx::with_extra("[[plugins]]\nname = \"box\"\npath = \"box\"\nlaunches = true\n").await;
+        let entry = fx
+            .gate("1.0.0", ">=0.1")
+            .replace("kind = \"decider\"", "kind = \"launcher\"")
+            .replace("decides = [\"start_card\"]\n", "");
+        fx.publish(&[entry]);
+        assert_ne!(fx.install(json!({"name": "gate"})).await.0, 200);
+        fx.state
+            .config
+            .set_plugin_enabled(&fx.state.app, &Actor::Person, "box", false, true)
+            .unwrap();
+        let (status, done) = fx.install(json!({"name": "gate"})).await;
+        assert_eq!(status, 200, "{done}");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
     async fn a_plugin_is_installed_with_its_entry_written_and_started() {
         let fx = Fx::new().await;
         fx.publish(&[fx.gate("1.0.0", ">=0.1")]);
@@ -699,6 +719,63 @@ mod tests {
                 .0,
             404
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_plugin_that_is_off_is_listed_as_off_and_an_update_leaves_it_off() {
+        let fx = Fx::new().await;
+        fx.publish(&[fx.gate("1.0.0", ">=0.1")]);
+        assert_eq!(fx.install(json!({"name": "gate"})).await.0, 200);
+        // Installing leaves the plugin on.
+        let (_, installed) = fx.get("/v1/packages").await;
+        assert_eq!(installed[0]["enabled"], true);
+        assert!(!fx.config_text().contains("enabled"));
+
+        let saved = fx
+            .state
+            .config
+            .set_plugin_enabled(&fx.state.app, &Actor::Person, "gate", false, false)
+            .unwrap();
+        assert!(saved.changed && !saved.enabled);
+        assert!(fx.state.app.decisions.host().is_off("gate"));
+        assert!(!fx.state.app.decisions.decides("start_card"));
+        let (_, installed) = fx.get("/v1/packages").await;
+        assert_eq!(installed[0]["enabled"], false);
+        // A package installed in this session and then turned off keeps the manifest it sent for a restart.
+        let kept = fx.data_dir().join("plugins/gate.manifest.json");
+        assert!(std::fs::read_to_string(&kept).unwrap().contains("\"gate\""));
+
+        // An update puts the new version in the file and the folder, but does not start it.
+        fx.publish(&[fx.gate("1.0.0", ">=0.1"), fx.gate("1.1.0", ">=0.1")]);
+        let (status, updated) = fx
+            .send(reqwest::Method::POST, "/v1/packages/gate/update", None)
+            .await;
+        assert_eq!(status, 200, "{updated}");
+        assert_eq!(updated["version"], "1.1.0");
+        assert_eq!(updated.get("plugin"), None);
+        let text = fx.config_text();
+        assert!(
+            text.contains("enabled = false") && text.contains("gate/1.1.0/gate"),
+            "{text}"
+        );
+        assert!(fx.state.app.decisions.host().is_off("gate"));
+        assert!(!fx.state.app.decisions.decides("start_card"));
+        // The manifest kept of the old version does not stand for the new one.
+        assert!(!kept.exists());
+        let listed = fx.state.app.decisions.host().manifests();
+        assert_eq!(
+            listed.iter().find(|m| m.name == "gate").unwrap().version,
+            "1.1.0"
+        );
+
+        // Turned on, the new version runs and decides again.
+        fx.state
+            .config
+            .set_plugin_enabled(&fx.state.app, &Actor::Person, "gate", true, false)
+            .unwrap();
+        assert_eq!(fx.gate_says().1, "gate 1.1.0");
+        assert!(fx.state.app.decisions.decides("start_card"));
     }
 
     #[cfg(unix)]

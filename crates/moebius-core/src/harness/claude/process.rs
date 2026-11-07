@@ -149,7 +149,7 @@ impl ClaudeCode {
         (session, resumes): (&str, bool),
         prompt: Option<&str>,
     ) -> Result<(), String> {
-        if self.launcher_configured {
+        if self.launcher.is_set() {
             return Err(
                 "Claude Code is not started through the launcher yet, so it does not start while one is configured"
                     .into(),

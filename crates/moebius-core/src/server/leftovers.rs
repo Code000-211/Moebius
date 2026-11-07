@@ -295,7 +295,7 @@ mod launcher_tests {
         let config = config(dir.path(), launcher.to_str().unwrap(), &args);
         let server = Server::new(config, "127.0.0.1:1".parse().unwrap()).unwrap();
         assert!(!dir.path().join("leftover.txt").exists());
-        assert!(server.harness.pi_bolt.launcher.is_some());
+        assert!(server.harness.pi_bolt.launcher.is_set());
         let requests = std::fs::read_to_string(dir.path().join("requests.jsonl")).unwrap();
         assert!(requests.contains(r#""method": "leftovers""#), "{requests}");
     }

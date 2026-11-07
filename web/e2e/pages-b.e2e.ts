@@ -925,9 +925,9 @@ describe("the Plugins page", () => {
     "lists what the host loaded and the plugins in their own process",
     async () => {
       await open("/plugins");
-      await page.getByText("3 plugins loaded; a call into one is refused after 30 s.").waitFor();
+      await page.getByText("4 plugins loaded; a call into one is refused after 30 s.").waitFor();
       const rows = page.getByTestId("plugin-row");
-      await rows.nth(3).waitFor();
+      await rows.nth(5).waitFor();
       const guard = await rows.nth(0).textContent();
       expect(guard).toContain("guard");
       expect(guard).toContain("Built in");
@@ -937,13 +937,82 @@ describe("the Plugins page", () => {
       expect(process).toContain("start_card");
       expect(await rows.nth(2).textContent()).toContain("No kind of decision");
       await page.getByRole("heading", { name: "Plugins in their own process" }).waitFor();
-      const own = await rows.nth(3).textContent();
+      const own = await rows.nth(4).textContent();
       expect(own).toContain("/srv/plugins/allow-reads");
       expect(own).toContain("2 times");
       expect(own).toContain("exited with status 1");
       expect(own).toContain("/srv/.moebius/plugins/allow-reads.log");
     },
   );
+});
+
+describe("the switch of a plugin", () => {
+  const row = (name: string) =>
+    page.getByTestId("plugin-row").filter({ has: page.getByRole("heading", { name }) });
+  const toggle = (name: string) =>
+    row(name)
+      .first()
+      .getByRole("switch", { name: `Plugin ${name}` });
+  const enabled = (name: string) =>
+    requests("PUT", `/v1/plugins/${name}/enabled`).map((call) => call.body);
+
+  it.skipIf(usesRealServer)("turns a plugin off and on again at once", async () => {
+    await open("/plugins");
+    const allow = toggle("allow-reads");
+    await allow.waitFor();
+    expect(await allow.getAttribute("aria-checked")).toBe("true");
+    // The built-in plugins have no switch.
+    expect(await row("guard").first().getByRole("switch").count()).toBe(0);
+    await allow.click();
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="plugin-row"][data-off]') !== null,
+    );
+    const off = row("allow-reads").first();
+    expect(await off.textContent()).toContain("Off");
+    expect(await off.textContent()).toContain("No kind of decision");
+    expect(await allow.getAttribute("aria-checked")).toBe("false");
+    // Off, it is not in the list of plugins in their own process.
+    expect(await page.getByTestId("plugin-row").count()).toBe(5);
+    await allow.click();
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="plugin-row"][data-off]') === null,
+    );
+    expect(await allow.getAttribute("aria-checked")).toBe("true");
+    expect(enabled("allow-reads")).toEqual([{ enabled: false }, { enabled: true }]);
+  });
+
+  it.skipIf(usesRealServer)("asks before turning off the last launcher", async () => {
+    await open("/plugins");
+    const box = toggle("box-run");
+    await box.waitFor();
+    await box.click();
+    const dialog = page.getByRole("dialog", { name: "Turn off the last launcher?" });
+    await dialog.waitFor();
+    expect(await dialog.textContent()).toContain("runs start unwrapped");
+    // Keeping it on turns nothing off.
+    await dialog.getByRole("button", { name: "Keep it on" }).click();
+    await dialog.waitFor({ state: "detached" });
+    expect(await box.getAttribute("aria-checked")).toBe("true");
+    expect(enabled("box-run")).toEqual([{ enabled: false }]);
+    await box.click();
+    await dialog.waitFor();
+    await dialog.getByRole("button", { name: "Turn off, run unwrapped" }).click();
+    await dialog.waitFor({ state: "detached" });
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="plugin-row"][data-off]') !== null,
+    );
+    expect(enabled("box-run")).toEqual([
+      { enabled: false },
+      { enabled: false },
+      { enabled: false, unwrap_runs: true },
+    ]);
+    // Turning it on again asks nothing.
+    await box.click();
+    await page.waitForFunction(
+      () => document.querySelector('[data-testid="plugin-row"][data-off]') === null,
+    );
+    expect(enabled("box-run").at(-1)).toEqual({ enabled: true });
+  });
 });
 
 describe("the pages that put a list beside a detail", () => {

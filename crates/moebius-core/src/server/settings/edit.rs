@@ -256,6 +256,7 @@ mod tests {
         Changes {
             set: serde_json::from_value(set).unwrap(),
             remove: remove.iter().map(|key| key.to_string()).collect(),
+            ..Changes::default()
         }
     }
 

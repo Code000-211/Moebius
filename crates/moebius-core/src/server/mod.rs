@@ -35,11 +35,10 @@ use crate::app::App;
 use crate::board::{Engine, Limits, Workflow};
 use crate::config::{Config, GitHubAuth, TokenSource};
 use crate::decide::check;
-use crate::decide::guard::{self, Guard, Teacher};
-use crate::decide::localize::{self, Localizer};
+use crate::decide::guard::{Guard, Teacher};
+use crate::decide::localize::Localizer;
 use crate::decide::model::{self, DecisionModel, Routed};
 use crate::harness::gateway::Gateway;
-use crate::harness::launch::Launcher;
 use crate::harness::lens;
 use crate::harness::pibolt::PiBolt;
 use crate::harness::pick::Harnesses;
@@ -225,7 +224,7 @@ impl Server {
         let mut guard = Guard::new(teacher);
         let mut host = Host::new(PLUGIN_TIME_LIMIT);
         for plugin in &config.plugins {
-            host.add_process(plugins::start(&config, plugin, PLUGIN_TIME_LIMIT)?);
+            plugins::put_in_host(&host, &config, plugin)?;
         }
         if let Some(model) = &model {
             guard = guard.with_decision_model(model.clone(), routed.clone());
@@ -238,26 +237,10 @@ impl Server {
         let mut app = App::new(store.clone(), host.clone(), &config.data_dir);
         app.decisions.share_routed(routed);
         app.checks_timeout = config.checks_timeout;
-        app.decisions.route("tool_call", guard::NAME);
-        app.decisions.route(localize::KIND, localize::KIND);
         app.localize = config.localize;
         app.packages = config.packages.clone();
-        for kind in ["lint_report", "deep_check"] {
-            app.decisions.route(kind, lens::NAME);
-        }
-        for plugin in &config.plugins {
-            for kind in &plugin.decides {
-                app.decisions.route(kind, &plugin.name);
-            }
-        }
-        let launchers: Vec<(String, Vec<String>)> = config
-            .plugins
-            .iter()
-            .filter(|plugin| plugin.launches)
-            .map(|plugin| (plugin.name.clone(), plugin.launch_agents.clone()))
-            .collect();
-        let launcher =
-            (!launchers.is_empty()).then(|| Arc::new(Launcher::scoped(host.clone(), launchers)));
+        plugins::route_deciders(&app.decisions, &config.plugins);
+        let launcher = plugins::launchers_of(&host, &config.plugins);
         let github = match &config.github {
             Some(g) => {
                 let github = github_client(g, &secrets)?;
@@ -324,7 +307,7 @@ impl Server {
             config.agents.clone(),
         );
         pi_bolt.runners = runners;
-        pi_bolt.launcher = launcher;
+        pi_bolt.launcher.set(launcher);
         let harness = Arc::new(Harnesses::new(pi_bolt, &config.claude_code));
         let harness_repo = match &config.harness_url {
             Some(url) => Some(Arc::new(HarnessRepo::open(
@@ -351,11 +334,11 @@ impl Server {
                 ..Limits::default()
             },
         ));
-        let live = Arc::new(Live::new(config.clone()).with_targets(
-            engine.clone(),
-            router.clone(),
-            harness.agents.clone(),
-        ));
+        let live = Arc::new(
+            Live::new(config.clone())
+                .with_targets(engine.clone(), router.clone(), harness.agents.clone())
+                .with_launchers(harness.pi_bolt.launcher.clone()),
+        );
         Ok(Self {
             config,
             app,

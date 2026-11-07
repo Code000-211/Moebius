@@ -223,6 +223,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         value: appValues.registry ?? "",
       },
     ],
+    enabled: true,
     ui: false,
   });
   /** A plugin that draws its own page for its one setting of the server, a base Dockerfile with a preset. */
@@ -240,6 +241,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         value: drawnValues.base ?? "",
       },
     ],
+    enabled: true,
     ui: true,
   });
   /** Its page: a preset button over the frame's code editor, and a probe of what the frame lets a page reach. */
@@ -302,6 +304,8 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
           value: values.network ?? "",
         },
       ],
+      enabled: true,
+      ui: false,
     };
   };
   let nextRepository = 2;

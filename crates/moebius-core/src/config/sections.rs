@@ -311,6 +311,14 @@ pub struct PluginConfig {
     /// launcher must be empty, so that every run has one.
     #[serde(default)]
     pub launch_agents: Vec<String>,
+    /// Whether the plugin is on. A plugin that is off keeps its entry and its settings but is not started, not asked and
+    /// not called; a launcher that is off counts as absent for the rule that the last launcher takes every agent.
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+fn default_enabled() -> bool {
+    true
 }
 
 /// A machine that runs harnesses over SSH, from `[[runners]]`.
@@ -672,7 +680,11 @@ pub(super) fn plugins(
             plugin.path = base.join(&plugin.path);
         }
     }
-    let launchers: Vec<&PluginConfig> = plugins.iter().filter(|plugin| plugin.launches).collect();
+    // A launcher that is off is absent: the rules are for the launchers that wrap runs.
+    let launchers: Vec<&PluginConfig> = plugins
+        .iter()
+        .filter(|plugin| plugin.launches && plugin.enabled)
+        .collect();
     if let Some(plugin) = plugins
         .iter()
         .find(|plugin| !plugin.launches && !plugin.launch_agents.is_empty())

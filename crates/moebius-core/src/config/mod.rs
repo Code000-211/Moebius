@@ -1171,6 +1171,56 @@ mod tests {
     }
 
     #[test]
+    fn a_plugin_is_on_unless_the_file_says_otherwise_and_one_that_is_off_keeps_everything_else() {
+        let text = "[[plugins]]\nname = \"a\"\npath = \"p\"\n\
+                    [[plugins]]\nname = \"b\"\npath = \"p\"\nargs = [\"x\"]\ndecides = [\"k\"]\nenabled = false\n";
+        let c = parse(text).unwrap();
+        assert!(c.plugins[0].enabled && !c.plugins[1].enabled);
+        assert_eq!(c.plugins[1].args, ["x"]);
+        assert_eq!(c.plugins[1].decides, ["k"]);
+        // Two plugins may not decide the same kind, on or off: turning one on later must never be refused for it.
+        let error = parse(&format!(
+            "{text}[[plugins]]\nname = \"c\"\npath = \"p\"\ndecides = [\"k\"]\n"
+        ))
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("decided by two plugins"), "{error}");
+        let error = parse("[[plugins]]\nname = \"a\"\npath = \"p\"\nenabled = \"no\"\n")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("enabled"), "{error}");
+    }
+
+    #[test]
+    fn launchers_that_are_off_are_absent_for_the_rules_of_the_launchers() {
+        let launcher = |name: &str, agents: &str, enabled: bool| {
+            format!(
+                "[[plugins]]\nname = \"{name}\"\npath = \"p\"\nlaunches = true\n{agents}enabled = {enabled}\n"
+            )
+        };
+        let moebius = "launch_agents = [\"Moebius\"]\n";
+        // The last launcher that is on must take every agent, whatever launchers are off before or after it.
+        let text = launcher("nono", moebius, true) + &launcher("podman", "", false);
+        let error = parse(&text).unwrap_err().to_string();
+        assert!(error.contains("must take every agent"), "{error}");
+        assert!(parse(&(launcher("nono", moebius, false) + &launcher("podman", "", true))).is_ok());
+        // Off launchers need no launcher at all, and a launcher for every agent that is off lets one after it be asked.
+        assert!(
+            parse(&(launcher("nono", moebius, false) + &launcher("podman", "", false))).is_ok()
+        );
+        let text = launcher("podman", "", false) + &launcher("nono", moebius, true);
+        let error = parse(&text).unwrap_err().to_string();
+        assert!(error.contains("must take every agent"), "{error}");
+        let text = launcher("podman", "", false) + &launcher("box", "", true);
+        assert!(parse(&text).is_ok());
+        // Turned on, the same two are the old mistake.
+        let error = parse(&(launcher("podman", "", true) + &launcher("box", "", true)))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("never asked"), "{error}");
+    }
+
+    #[test]
     fn a_relative_config_path_gives_absolute_paths() {
         let c = Config::load(Path::new("moebius-does-not-exist.toml")).unwrap();
         assert!(c.data_dir.is_absolute(), "{}", c.data_dir.display());

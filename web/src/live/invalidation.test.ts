@@ -223,6 +223,16 @@ describe("the package events", () => {
     },
   );
 
+  it("reads the plugins, the packages and the plugins' settings again when a plugin is turned off or on", () => {
+    const stale = invalidates({
+      kind: "plugin_enabled_changed",
+      data: { name: "box", enabled: false },
+    });
+    expect(stale).toContainEqual(keys.plugins);
+    expect(stale).toContainEqual(keys.packages);
+    expect(stale).toContainEqual(["plugin-project-settings"]);
+  });
+
   it("does not react to the history entries of a card that are named like inbox items", () => {
     expect(
       invalidates({ kind: "inbox_added", data: { kind: "extension_update" } }),

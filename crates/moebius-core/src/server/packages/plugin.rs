@@ -33,6 +33,8 @@ struct Entry {
     index: usize,
     args: Vec<String>,
     launches: bool,
+    /// Whether the plugin is on; one that is off is updated but not started.
+    enabled: bool,
 }
 
 impl Packages<'_> {
@@ -42,8 +44,9 @@ impl Packages<'_> {
         })
     }
 
-    /// The launcher of the file that takes every agent (`launches` without `launch_agents`), if there is one: a launcher
-    /// added after it would never be asked, and the file with both is refused.
+    /// The launcher of the file that takes every agent (`launches` without `launch_agents`) and is on, if there is one:
+    /// a launcher added after it would never be asked, and the file with both is refused. One that is off counts as
+    /// absent, as for the rules of the configuration.
     fn launcher_for_every_agent(&self) -> Result<Option<String>> {
         let (_, raw) = read_raw(&self.live.get().file)?;
         let plugins = raw.get("plugins").and_then(|plugins| plugins.as_array());
@@ -54,7 +57,8 @@ impl Packages<'_> {
             let agents = plugin
                 .get("launch_agents")
                 .and_then(|agents| agents.as_array());
-            (launches == Some(true) && agents.is_none_or(|agents| agents.is_empty()))
+            let on = plugin.get("enabled").and_then(|on| on.as_bool()) != Some(false);
+            (on && launches == Some(true) && agents.is_none_or(|agents| agents.is_empty()))
                 .then(|| {
                     plugin
                         .get("name")
@@ -89,6 +93,10 @@ impl Packages<'_> {
                     .get("launches")
                     .and_then(|launches| launches.as_bool())
                     .unwrap_or(false),
+                enabled: plugins[index]
+                    .get("enabled")
+                    .and_then(|enabled| enabled.as_bool())
+                    .unwrap_or(true),
             });
         Ok((found, plugins.len()))
     }
@@ -136,7 +144,14 @@ impl Packages<'_> {
         spec: &PluginSpec,
         args: Vec<String>,
     ) -> Result<Process> {
-        let plugin = PluginConfig {
+        let plugin = Self::config_of(name, program, spec, args);
+        plugins::start(&self.live.get(), &plugin, self.app.decisions.host().limit())
+            .map_err(PackageError::Refused)
+    }
+
+    /// The entry of `moebius.toml` that runs `program` as the plugin `name` of the package `spec`.
+    fn config_of(name: &str, program: &Path, spec: &PluginSpec, args: Vec<String>) -> PluginConfig {
+        PluginConfig {
             name: name.to_string(),
             path: program.to_path_buf(),
             args,
@@ -144,9 +159,8 @@ impl Packages<'_> {
             launches: spec.launches || spec.kind == "launcher",
             // Which agents it is asked about is the launcher's, not the host's, to decide.
             launch_agents: Vec::new(),
-        };
-        plugins::start(&self.live.get(), &plugin, self.app.decisions.host().limit())
-            .map_err(PackageError::Refused)
+            enabled: true,
+        }
     }
 
     /// Makes the host answer for `name` with `process`, and the deciders it names decide their kinds.
@@ -203,7 +217,7 @@ impl Packages<'_> {
         }
         let changes = Changes {
             set: [(format!("plugins.{count}"), entry)].into(),
-            remove: vec![],
+            ..Changes::default()
         };
         if let Err(e) = self.live.save(self.app, by, &changes) {
             let _ = std::fs::remove_dir_all(packages_dir(&self.data_dir()).join(name));
@@ -277,14 +291,20 @@ impl Packages<'_> {
         };
         let (entry, count) = self.entry(name).map_err(discard)?;
         let args = entry.as_ref().map(|e| e.args.clone()).unwrap_or_default();
-        // The new version must run before it replaces the one that does.
-        let process = self.start(name, &program, spec, args).map_err(discard)?;
-        if let Some(status) = process
-            .status()
-            .error
-            .filter(|_| process.status().state != moebius_plugin_api::State::Running)
+        let entry_config = Self::config_of(name, &program, spec, args.clone());
+        // The new version must run before it replaces the one that does; a plugin that is off is not started.
+        let on = entry.as_ref().is_none_or(|entry| entry.enabled);
+        let process = if on {
+            Some(self.start(name, &program, spec, args).map_err(discard)?)
+        } else {
+            None
+        };
+        if let Some(process) = &process
+            && let Some(status) = process
+                .status()
+                .error
+                .filter(|_| process.status().state != moebius_plugin_api::State::Running)
         {
-            drop(process);
             return Err(discard(PackageError::Refused(format!(
                 "{name} {} does not start, so {} stays: {status}",
                 package.version, old.version
@@ -296,7 +316,7 @@ impl Packages<'_> {
                 let at = |key: &str| format!("plugins.{}.{key}", entry.index);
                 let mut changes = Changes {
                     set: [(at("path"), Value::String(program.display().to_string()))].into(),
-                    remove: vec![],
+                    ..Changes::default()
                 };
                 // The new version decides the kinds and launches as it says, so a restart routes the same.
                 if spec.decides.is_empty() {
@@ -318,13 +338,22 @@ impl Packages<'_> {
                             "decides": spec.decides, "launches": launches }),
                 )]
                 .into(),
-                remove: vec![],
+                ..Changes::default()
             },
         };
         self.live
             .save(self.app, by, &changes)
             .map_err(|e| discard(e.into()))?;
-        self.put_in_service(name, process, &spec.decides);
+        match process {
+            Some(process) => self.put_in_service(name, process, &spec.decides),
+            None => {
+                // The manifest kept of the old version must not stand for the new one: until the plugin is turned on
+                // and sends its own, the host lists what the package says of it.
+                plugins::forget_manifest(&self.data_dir(), name);
+                let manifest = plugins::manifest_of_entry(&entry_config, &package.version);
+                self.app.decisions.host().add_off(manifest);
+            }
+        }
         let _ =
             std::fs::remove_dir_all(packages_dir(&self.data_dir()).join(name).join(&old.version));
         let mut locked = old.clone();
@@ -342,8 +371,8 @@ impl Packages<'_> {
         let launches = entry.as_ref().is_some_and(|entry| entry.launches);
         if let Some(entry) = entry {
             let changes = Changes {
-                set: Default::default(),
                 remove: vec![format!("plugins.{}", entry.index)],
+                ..Changes::default()
             };
             self.live.save(self.app, by, &changes)?;
         }

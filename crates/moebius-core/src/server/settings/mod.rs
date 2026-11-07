@@ -4,7 +4,9 @@
 //! A change is applied to the text of the file with `toml_edit`, so comments and order stay; the result must pass the
 //! same `Config::parse` the server uses at start, else nothing is written. [`Live`] is the configuration the running
 //! server reads: the keys marked live in `keys::KEYS` take effect at once (the board engine, the router, the schedule
-//! and the agents read them from it), every other key is written and used after a restart, which the answer says.
+//! and the agents read them from it), and so does `enabled` of a `[[plugins]]` entry, which stops or starts the plugin
+//! and builds the launchers again (`Live::set_plugin_enabled`); every other key is written and used after a restart,
+//! which the answer says.
 //! `POST /v1/harness/setup` edits the file the same way when it moves the agents and rules into a new harness
 //! configuration repository.
 //!
@@ -27,7 +29,7 @@ use crate::blobs::redact;
 
 pub use edit::edit;
 pub use keys::values;
-pub use live::{Live, SettingsView};
+pub use live::{Live, PluginEnabled, SettingsView};
 pub use secrets::Secrets;
 
 /// What `PUT /v1/settings` takes: values to set and keys or tables to remove, by their dotted names.
@@ -40,6 +42,11 @@ pub struct Changes {
     /// Dotted keys or tables to remove; one that is not in the file is ignored.
     #[serde(default)]
     pub remove: Vec<String>,
+    /// Confirms that the change may leave no launcher on, so that runs start unwrapped (see
+    /// `PUT /v1/plugins/{plugin}/enabled`). Without it such a change is refused, and a launcher that a hand edit of the
+    /// file turned off stays on until it is confirmed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unwrap_runs: bool,
 }
 
 /// What a saved change tells the caller.

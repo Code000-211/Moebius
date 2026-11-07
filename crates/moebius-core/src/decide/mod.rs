@@ -123,6 +123,11 @@ impl Decisions {
             .collect()
     }
 
+    /// The plugin host, shared, for what holds it beyond a call (the launchers).
+    pub fn host_arc(&self) -> Arc<Host> {
+        self.host.clone()
+    }
+
     /// The plugins the decisions go through, and how long a call into one may take.
     pub fn host(&self) -> &Host {
         &self.host

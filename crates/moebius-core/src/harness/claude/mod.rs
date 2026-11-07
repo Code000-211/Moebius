@@ -35,6 +35,7 @@ use serde_json::{Value, json};
 use crate::app::{App, ChatSettings};
 use crate::board::{AgentInfo, CardRuns, ChatRuns, ImproveRuns, StartError, Variant};
 use crate::config::{AgentConfig, AgentSet, HarnessKind};
+use crate::harness::launch::LauncherSlot;
 use crate::harness::remote::Runners;
 use crate::harness::run::{
     AUTORESEARCHER_AGENT, Launching, RETRO_AGENT, RunningRun, agent_list, chat_run, finish,
@@ -60,9 +61,9 @@ pub struct ClaudeCode {
     pub agents: Arc<RwLock<AgentSet>>,
     /// The machines an agent's `runner` can name, shared with Pi-Bolt.
     pub runners: Arc<Runners>,
-    /// Whether a launcher is configured. Claude Code does not ask it yet, so with one no Claude Code run starts rather
-    /// than one outside the launcher.
-    pub launcher_configured: bool,
+    /// The launchers, shared with Pi-Bolt. Claude Code does not ask them yet, so while one wraps the runs no Claude
+    /// Code run starts rather than one outside the launcher.
+    pub launcher: LauncherSlot,
     live: Arc<Mutex<HashMap<i64, Live>>>,
 }
 
@@ -109,7 +110,7 @@ impl ClaudeCode {
             router,
             agents,
             runners: Arc::new(Runners::default()),
-            launcher_configured: false,
+            launcher: LauncherSlot::default(),
             live: Arc::new(Mutex::new(HashMap::new())),
         }
     }

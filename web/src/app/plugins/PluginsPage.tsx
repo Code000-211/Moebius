@@ -1,9 +1,11 @@
 /**
- * The Plugins page: what the plugin host loaded (`GET /v1/plugins`), which answer the decisions. It only shows: each
+ * The Plugins page: what the plugin host loaded (`GET /v1/plugins`), which answer the decisions: each
  * plugin's version, kinds, whether it runs in the server or as its own process and in what state, and the kinds of
  * decision it answers; and for plugins in their own process the program, how often it was started again, why it last
- * stopped and where its log is. The plugins are named in moebius.toml, or installed from the registries: the page lists
- * the installed packages and opens the package sheet on them ("Browse packages").
+ * stopped and where its log is. Each plugin named in moebius.toml has a switch that turns it off and on at once; one
+ * that is off shows as "Off", greyed, and can be turned on again. The plugins are named in moebius.toml, or installed
+ * from the registries: the page lists the installed packages and opens the package sheet on them ("Browse
+ * packages").
  */
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -20,13 +22,18 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import { Status, type Tone } from "../../ui/page/Status";
 import { InstalledPackages } from "./InstalledPackages";
+import { PluginSwitch } from "./PluginSwitch";
 
 /**
  * How a plugin runs: built into the server, or as its own process in a state, coloured by whether it takes calls.
- * "Built in" is the words the app already uses for what Moebius brings (an agent, a skill, a script), so a person who
+ * A plugin that is turned off says "Off", whatever it was. "Built in" is the words the app already uses for what Moebius brings (an agent, a skill, a script), so a person who
  * has read it once reads it the same way here.
  */
-export function runsLabel(process: PluginProcess | null): { label: string; tone: Tone } {
+export function runsLabel(
+  process: PluginProcess | null,
+  enabled = true,
+): { label: string; tone: Tone } {
+  if (!enabled) return { label: "Off", tone: "neutral" };
   if (process === null) return { label: "Built in", tone: "neutral" };
   switch (process.state) {
     case "running":
@@ -64,18 +71,31 @@ function PluginRow({
   name,
   state,
   facts,
+  off = false,
+  control,
 }: {
   name: string;
   state: { label: string; tone: Tone };
   facts: ReactNode;
+  /** Whether the plugin is turned off: its name and facts are greyed, the switch is not. */
+  off?: boolean;
+  /** The switch that turns the plugin off or on. */
+  control?: ReactNode;
 }) {
   return (
-    <div data-testid="plugin-row" className="flex flex-col gap-4">
+    <div data-testid="plugin-row" data-off={off || undefined} className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <h3 className="m-0 min-w-0 break-all font-mono text-sm font-semibold text-text">{name}</h3>
-        <Status tone={state.tone}>{state.label}</Status>
+        <h3
+          className={`m-0 min-w-0 break-all font-mono text-sm font-semibold ${off ? "text-secondary" : "text-text"}`}
+        >
+          {name}
+        </h3>
+        <div className="flex flex-wrap items-center gap-4">
+          <Status tone={state.tone}>{state.label}</Status>
+          {control}
+        </div>
       </div>
-      <div className="grid gap-4 sm:grid-cols-3">{facts}</div>
+      <div className={`grid gap-4 sm:grid-cols-3 ${off ? "opacity-60" : ""}`}>{facts}</div>
     </div>
   );
 }
@@ -143,7 +163,14 @@ export function PluginsPage() {
               <PluginRow
                 key={plugin.name}
                 name={plugin.name}
-                state={runsLabel(plugin.process)}
+                state={runsLabel(plugin.process, plugin.enabled)}
+                off={!plugin.enabled}
+                control={
+                  // A plugin named under [[plugins]] has a process or is off; the ones built in are always on.
+                  plugin.process !== null || !plugin.enabled ? (
+                    <PluginSwitch name={plugin.name} enabled={plugin.enabled} />
+                  ) : undefined
+                }
                 facts={
                   <>
                     <Fact label="Version" value={plugin.version || "Not given"} />

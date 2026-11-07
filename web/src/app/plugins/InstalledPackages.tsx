@@ -64,6 +64,7 @@ export function InstalledPackages({ onBrowse }: { onBrowse: () => void }) {
                     {each.name}
                   </h3>
                   <Tag>{kindLabel(each.kind)}</Tag>
+                  {each.enabled === false && <Tag>Off</Tag>}
                   {state.map((each) => (
                     <Tag
                       key={each.label}

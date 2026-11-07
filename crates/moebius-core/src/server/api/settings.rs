@@ -9,6 +9,8 @@
 //!   confirmed the warning about the provider's terms; `GET` on the same route tells how it stands.
 //! - `POST /v1/models/upstreams/{place}/login/code` `{pasted}`: a person finishes a waiting `code` login with the code,
 //!   or the address the browser ended on, when the browser could not reach the server.
+//! - `PUT /v1/plugins/{plugin}/enabled` `{enabled, unwrap_runs?}`: a person turns a plugin off or on, at once and without
+//!   a restart; `unwrap_runs` confirms turning off the last launcher, after which runs start unwrapped.
 //! - `GET /v1/plugins/settings` and `PUT /v1/plugins/{plugin}/settings` `{values, reason}`: the settings plugins ask of
 //!   the whole server and the values it has, changed by a person (see [`crate::app::plugin_settings`]).
 //!   `GET /v1/plugins/{plugin}/settings-ui`: the JavaScript module of a plugin's own page for its settings.
@@ -32,7 +34,7 @@ use crate::app::AppError;
 use crate::app::plugin_settings::{AppSettings, PluginSettings, Scope};
 use crate::decide::Actor;
 use crate::router::{Login, LoginError, TERMS_WARNING};
-use crate::server::settings::{Changes, Saved, SettingsView};
+use crate::server::settings::{Changes, PluginEnabled, Saved, SettingsView};
 use crate::server::setup;
 
 /// The routes of the setup and the settings.
@@ -49,6 +51,7 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/start", get(start_steps))
         .route("/v1/plugins", get(plugins))
         .route("/v1/plugins/settings", get(plugin_settings))
+        .route("/v1/plugins/{plugin}/enabled", put(put_plugin_enabled))
         .route("/v1/plugins/{plugin}/settings", put(put_plugin_settings))
         .route("/v1/plugins/{plugin}/settings-ui", get(plugin_settings_ui))
         .route("/v1/settings", get(settings).put(put_settings))
@@ -204,6 +207,30 @@ async fn start_steps(State(state): State<ApiState>) -> Result<axum::Json<setup::
 
 async fn plugins(State(state): State<ApiState>) -> axum::Json<setup::Plugins> {
     axum::Json(setup::plugins(&state.app.decisions, &state.app.data_dir))
+}
+
+/// What `PUT /v1/plugins/{plugin}/enabled` takes.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NewEnabled {
+    enabled: bool,
+    /// Confirms that turning the plugin off leaves runs without a launcher.
+    #[serde(default)]
+    unwrap_runs: bool,
+}
+
+async fn put_plugin_enabled(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(plugin): UrlPath<String>,
+    axum::Json(new): axum::Json<NewEnabled>,
+) -> Result<axum::Json<PluginEnabled>, ApiError> {
+    person_only(&by)?;
+    let live = state.config.clone();
+    blocking(&state.app, move |app| {
+        live.set_plugin_enabled(app, &by, &plugin, new.enabled, new.unwrap_runs)
+    })
+    .await
 }
 
 async fn plugin_settings(

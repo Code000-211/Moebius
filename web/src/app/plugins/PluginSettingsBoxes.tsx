@@ -79,7 +79,7 @@ function PluginBox({ scope, plugin }: { scope: SettingsScope; plugin: Plugin }) 
   return (
     <Box
       title={plugin.plugin}
-      aside={`Plugin settings · ${plugin.version}`}
+      aside={`Plugin settings · ${plugin.version}${plugin.enabled ? "" : " · Off"}`}
       testId="plugin-settings"
     >
       <PluginForm

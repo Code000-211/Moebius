@@ -9,6 +9,7 @@ import type { AvailableModels } from "../types/chat";
 import type {
   Login,
   Models,
+  PluginEnabled,
   Plugins,
   Provider,
   SavedSettings,
@@ -46,6 +47,18 @@ export function pasteLogin(place: number, pasted: string): Promise<Login> {
 
 export function plugins(): Promise<Plugins> {
   return get<Plugins>("/v1/plugins");
+}
+
+/** Turns a plugin off or on at once; `unwrapRuns` confirms turning off the last launcher, after which runs start unwrapped. */
+export function setPluginEnabled(
+  plugin: string,
+  enabled: boolean,
+  unwrapRuns = false,
+): Promise<PluginEnabled> {
+  return put<PluginEnabled>(`/v1/plugins/${encodeURIComponent(plugin)}/enabled`, {
+    enabled,
+    ...(unwrapRuns ? { unwrap_runs: true } : {}),
+  });
 }
 
 /** What each running plugin asks of the whole server, with the values it has. */

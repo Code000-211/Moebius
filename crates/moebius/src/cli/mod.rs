@@ -9,7 +9,7 @@
 //! This module holds the commands as clap sees them, the dispatch to the command groups and the helpers they share
 //! for reading input and writing answers. `client` finds the server and sends the requests; each other module is one
 //! group of commands, with its requests and how its answers are written: `api` (any route), `board` (the board,
-//! cards, the inbox and issues), `chats` (chats and grillings), `automations`, `agents`, `rules`, `packages`, `ext` (Pi packages), `repos`
+//! cards, the inbox and issues), `chats` (chats and grillings), `automations`, `agents`, `rules`, `packages`, `plugins` (turning a plugin off or on), `ext` (Pi packages), `repos`
 //! (repositories), `ssh` (a server reached through an SSH tunnel), `window` (the web app as a window of its own), `setup` (`doctor`, settings, API keys, usage and the server itself) and `improve` (Retros,
 //! proposals, research, the decision model and its takeovers).
 
@@ -22,6 +22,7 @@ mod client;
 mod ext;
 mod improve;
 mod packages;
+mod plugins;
 pub mod remote;
 #[cfg(test)]
 mod remote_tests;
@@ -45,6 +46,7 @@ pub use client::{Client, Connection, connect, settings_path};
 use ext::ExtCommand;
 use improve::{ProposalCommand, ResearchCommand, RetroCommand, TakeoverCommand};
 use packages::PkgCommand;
+use plugins::PluginCommand;
 use repos::RepoCommand;
 use rules::RulesCommand;
 use setup::{SecretsCommand, ServerCommand, SettingsCommand};
@@ -122,6 +124,11 @@ pub enum Operate {
     Pkg {
         #[command(subcommand)]
         command: PkgCommand,
+    },
+    /// Turn a plugin off or on at once, keeping its entry and settings.
+    Plugin {
+        #[command(subcommand)]
+        command: PluginCommand,
     },
     /// The repositories.
     Repos,
@@ -224,6 +231,7 @@ impl Operate {
             Agent { command } => agents::agent(command, get),
             Rules { command } => rules::rules(command.as_ref()),
             Pkg { command } => packages::pkg(command, get),
+            Plugin { command } => plugins::plugin(command),
             Ext { command } => ext::ext(command),
             Repos => repos::repos(),
             Repo { command } => repos::repo(command),
@@ -263,6 +271,8 @@ pub enum Show {
     Rules,
     /// An answer of the package routes.
     Packages,
+    /// The answer of turning a plugin off or on.
+    Plugin,
     /// A change offered for a Pi package, or the changes of an update.
     Offered,
     Settings,
@@ -318,6 +328,7 @@ pub fn render(show: &Show, text: &str) -> Result<String, String> {
         Show::Object => object(&value),
         Show::Rules => rules::show_rules(&value),
         Show::Packages => packages::show_packages(&value),
+        Show::Plugin => plugins::show_plugin(&value),
         Show::Offered => ext::show_offered(&value),
         Show::Settings => setup::show_settings(&value),
         Show::Retro => improve::show_retro(&value),

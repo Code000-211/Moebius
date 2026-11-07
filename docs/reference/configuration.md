@@ -312,6 +312,9 @@ minute; meanwhile every call into it is refused, so what it decides takes the fa
 and a line each time it stops, go to `<data_dir>/plugins/<name>.log` with secrets redacted. The Plugins page of the app
 and `GET /v1/plugins` show its state. There are none by default.
 
+A plugin is turned off and on again with `plugins.enabled`, at once and without a restart (see
+[turning a plugin off](#turning-a-plugin-off-and-on)).
+
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
 | `plugins.name` | string | required | The plugin's name: letters, digits, `-` and `_`, not `guard` or `decision-model`, and not the name of another entry, else the file is refused. The manifest the program sends must give the same name, else it counts as not started. |
@@ -319,7 +322,49 @@ and `GET /v1/plugins` show its state. There are none by default.
 | `plugins.args` | array of strings | `[]` | The program's arguments. |
 | `plugins.decides` | array of strings | `[]` | The kinds of decision the plugin answers, such as `start_card`. A kind named by two entries refuses the file. A kind has one decider, so naming `tool_call` replaces the guard, with the built-in rules and the teacher. |
 | `plugins.launches` | boolean | `false` | Whether the plugin is a launcher: it is asked before a Pi-Bolt process starts and may wrap it, such as in a sandbox (see [launchers](plugin-api.md#launchers)). Its manifest must list the kind `launcher`. A launcher that fails or is too slow fails the run, and while one is configured Pi-Bolt's terminal interface and Claude Code runs are not available. Several plugins may have it, each for its own agents (`launch_agents`); a run goes to the first, in file order, that takes its agent. |
-| `plugins.launch_agents` | array of strings | `[]` | The agents whose runs a launcher is asked about, such as `["Moebius"]`. Empty, it takes every agent that no launcher before it takes. The last launcher must be one that takes every agent, so that no run starts unwrapped while a launcher is configured; a launcher that takes every agent must also come last, else the launchers after it could never be asked. The file is refused otherwise, and for `launch_agents` on a plugin without `launches = true`. A name that is no agent's is warned about at the start, since it takes no run. Installing a launcher package is refused while a launcher for every agent exists. A launcher added to `moebius.toml` takes effect after a restart of the server; runs until then are wrapped by the launchers the server started with. |
+| `plugins.launch_agents` | array of strings | `[]` | The agents whose runs a launcher is asked about, such as `["Moebius"]`. Empty, it takes every agent that no launcher before it takes. The last launcher must be one that takes every agent, so that no run starts unwrapped while a launcher is configured; a launcher that takes every agent must also come last, else the launchers after it could never be asked. The file is refused otherwise, and for `launch_agents` on a plugin without `launches = true`. A name that is no agent's is warned about at the start, since it takes no run. Installing a launcher package is refused while a launcher for every agent exists. A launcher added to `moebius.toml` takes effect after a restart of the server; runs until then are wrapped by the launchers the server started with. A launcher that is off (`enabled = false`) counts as absent for these rules. |
+| `plugins.enabled` | boolean | `true` | Whether the plugin is on. A plugin that is off keeps its entry, every key of it and its settings (a repository's in the harness configuration repository, the server's in the store), but is not started, not asked and not called, and a launcher that is off counts as absent for the rules of `launch_agents`. Turning it off or on takes effect at once; see below. |
+
+### Turning a plugin off and on
+
+`PUT /v1/plugins/{plugin}/enabled`, `moebius plugin enable|disable <name>` and the switch on the Plugins page set
+`plugins.enabled` (a person only; `enabled = false` is written, and turning the plugin on removes the key), record the
+decision (kind `enable_plugin` or `disable_plugin`) and publish `plugin_enabled_changed`. The same key edited through
+`PUT /v1/settings` takes effect at once as well, by a person only. What happens:
+
+- A plugin in its own process that is turned off has its process stopped and is not started again; it is listed as off
+  with the manifest it last sent, so that its settings stay on the pages. A server that starts with a plugin off does
+  not start it. Turned on, it is started and answers again.
+- A decider that is off gives its kinds back to what decides them without it: the guard for `tool_call`, Moebius's own
+  decision for the others, as if the plugin were not configured.
+- Launchers are built again from the launchers that are on, in file order, and the runs that start from then on use
+  them. A run that started keeps the launcher it started with, and is stopped and cleaned up by it.
+- Turning a launcher off is refused when the launchers left would wrap some agents and not others (the last launcher
+  that is on must take every agent), with a message naming the agents whose runs would start unwrapped.
+- Turning off the last launcher that is on is allowed, but runs would then start unwrapped, so it is refused unless the
+  person confirms it (`unwrap_runs`); the answer then says `unwrapped_runs` and a note, and the server logs the same.
+- A launcher that is turned on is asked what it left (the method `leftovers`, with the ids of the runs that exist, whose
+  sandboxes it keeps), as at the server's start, before the runs that start next are given to it; if it cannot name its
+  leftovers, or cannot be started at all, it stays off, the file is left as it was and the answer is an error. A launcher
+  that is off when the server starts is not asked until a person turns it on.
+- A run that is going when its launcher is turned off keeps the launch it has: its stop and cleanup commands are run by
+  the server without a call into the launcher, so it is stopped and cleaned up as usual. A later launch through the
+  launchers it was started with (a chat's next message starts Pi again) is a call into the launcher that is off, which is
+  refused, so that launch fails and never starts unwrapped.
+- The decider of a kind that no built-in decider takes (such as `start_card`) that is turned off leaves the kind with
+  no decider: a decision of it takes its fail-closed option and says so.
+- The manifest a plugin sent is kept in `<data_dir>/plugins/<name>.manifest.json`, readable by the owner only, when the
+  server starts it and when it is turned off, so that its settings stay on the pages while it is off and after a restart.
+  It is read back only when it names the plugin, lists a kind and its `settings_ui` is within the limit of a manifest a
+  process sends; else the plugin is listed from its entry. Updating a package whose plugin is off drops the kept
+  manifest: the plugin is listed from the package until it is turned on and sends its own.
+- Installing a package leaves its plugin on; updating one that is off writes the new version and does not start it.
+- A change of the file by hand is applied by the next change that the server saves, as the whole file is read then. If
+  the hand edit turned off the last launcher that is on, the server does not apply that part, since nobody confirmed that
+  runs start unwrapped: the launcher stays on, the server logs why and publishes `plugin_enable_refused`, and every other
+  change goes through. A person confirms with `PUT /v1/plugins/{plugin}/enabled` and `unwrap_runs`, or with `unwrap_runs`
+  in a `PUT /v1/settings`; turning the plugin on through the same route puts the file back in step with what runs.
+
 
 ## `[[registries]]`
 
@@ -568,7 +613,7 @@ A change applies to the running server at once for these keys:
 
 Every other key is written to the file and used after the server restarts: `data_dir`, `listen`, `token_file`,
 `rules_file`, `checks.timeout_seconds`, `router.listen`, `pi_bolt.program`, `harness.*`, `github.*`, `gitlab.*`,
-`forgejo.*`, `teacher.*`, `decision_model.*` and `plugins` (an entry is addressed by its position, `plugins.0`). The answer of `PUT /v1/settings` and `GET /v1/settings` lists the ones that differ from what the
+`forgejo.*`, `teacher.*`, `decision_model.*` and `plugins` (an entry is addressed by its position, `plugins.0`; only its `enabled` applies at once, as the previous section says). The answer of `PUT /v1/settings` and `GET /v1/settings` lists the ones that differ from what the
 running server started with, and `POST /v1/server/restart` restarts it.
 
 ### Secrets

@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use moebius_plugin_api::{
@@ -28,6 +28,29 @@ const COMMAND_LIMIT: Duration = Duration::from_secs(30);
 pub struct Launcher {
     host: Arc<Host>,
     plugins: Vec<Scoped>,
+}
+
+/// The launchers the harnesses start runs through, which can change while the server runs: a person turns a launcher
+/// plugin off or on. A run reads the launchers once, as it starts, and keeps them to its end; the slot is shared by
+/// the harnesses.
+#[derive(Clone, Default)]
+pub struct LauncherSlot(Arc<RwLock<Option<Arc<Launcher>>>>);
+
+impl LauncherSlot {
+    /// The launchers now; none when runs start without one.
+    pub fn get(&self) -> Option<Arc<Launcher>> {
+        self.0.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Whether a launcher wraps the runs that start now.
+    pub fn is_set(&self) -> bool {
+        self.get().is_some()
+    }
+
+    /// Makes `launcher` take the runs that start from now on.
+    pub fn set(&self, launcher: Option<Arc<Launcher>>) {
+        *self.0.write().unwrap_or_else(|e| e.into_inner()) = launcher;
+    }
 }
 
 /// One launcher plugin and the agents it is asked about; empty, every agent.
@@ -99,7 +122,7 @@ impl Launcher {
 
     /// The launcher that wraps the runs of `agent`, which its settings are kept under. None only for a launcher list
     /// that the configuration would have refused (its last one names agents); the caller fails the run then.
-    pub(crate) fn plugin_for(&self, agent: &str) -> Option<&str> {
+    pub fn plugin_for(&self, agent: &str) -> Option<&str> {
         self.plugins
             .iter()
             .find(|each| each.agents.is_empty() || each.agents.iter().any(|name| name == agent))
@@ -491,6 +514,49 @@ mod tests {
             "{error}"
         );
         only.clean_leftovers(&[]).unwrap_err();
+    }
+
+    #[test]
+    fn a_launcher_turned_off_is_not_asked_again_by_a_launcher_that_holds_it_but_a_run_that_goes_is_cleaned_up()
+     {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("log");
+        let mut host = Host::new(Duration::from_secs(30));
+        host.add(Wraps {
+            marker: dir.path().join("marker"),
+            broken: false,
+            program: "wrap".into(),
+        });
+        let host = Arc::new(host);
+        let held = Launcher::new(host.clone(), "box");
+        std::fs::write(dir.path().join("marker.made"), "").unwrap();
+        let Wrapping { launched, .. } = held
+            .start(ask(dir.path(), None, &log), &Command::new("pi"))
+            .unwrap()
+            .1
+            .expect("the launch is wrapped");
+        // The launcher is turned off while the run goes.
+        host.add_off(Manifest {
+            name: "box".into(),
+            kinds: vec![Kind::Launcher],
+            ..Default::default()
+        });
+        // A launch through the launchers the run holds fails closed, and so do its leftovers.
+        let error = held
+            .start(ask(dir.path(), None, &log), &Command::new("pi"))
+            .err()
+            .expect("the launch fails");
+        assert!(error.contains("turned off"), "{error}");
+        assert!(
+            held.clean_leftovers(&[1])
+                .unwrap_err()
+                .contains("turned off")
+        );
+        // The run that goes is cleaned up by the commands the launcher gave it: they need no call into the launcher.
+        launched.finish();
+        let marker = std::fs::read_to_string(dir.path().join("marker")).unwrap();
+        assert_eq!(marker, "cleaned\n");
+        assert!(!dir.path().join("marker.made").exists());
     }
 
     #[test]

@@ -192,7 +192,7 @@ impl Process {
     }
 
     /// The manifest the process sent, or its name with no kinds before it sent one.
-    pub(crate) fn manifest(&self) -> Manifest {
+    pub fn manifest(&self) -> Manifest {
         self.shared
             .inner()
             .manifest
@@ -337,6 +337,38 @@ mod tests {
         let mut host = Host::new(limit);
         host.add_process(process);
         (host, logged)
+    }
+
+    #[test]
+    fn turning_a_process_off_stops_it_keeps_its_manifest_and_it_is_not_started_again() {
+        let (host, logged) = host("settings", LIMIT);
+        assert_eq!(host.decide("test", &request()).unwrap().choice, "allow");
+        let sent = host.manifests().remove(0);
+        assert!(!sent.app_settings.is_empty());
+        assert!(host.turn_off("test", Manifest::default()));
+        assert!(host.is_off("test"));
+        assert_eq!(host.status("test"), None);
+        // The manifest the process sent is what the host lists, not the one given.
+        assert_eq!(host.manifests(), vec![sent]);
+        assert!(matches!(
+            host.decide("test", &request()),
+            Err(Refusal::NotRunning { .. })
+        ));
+        // A process that was stopped is not started again by its supervisor.
+        std::thread::sleep(Duration::from_millis(1500));
+        assert_eq!(
+            logged
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|line| line.starts_with("started"))
+                .count(),
+            1
+        );
+        // Turned on: a new process replaces the entry that was off.
+        host.set_process(Process::start(spec("settings", &[]), LIMIT, |_| {}));
+        assert!(!host.is_off("test"));
+        assert_eq!(host.decide("test", &request()).unwrap().choice, "allow");
     }
 
     fn request() -> DecideRequest {

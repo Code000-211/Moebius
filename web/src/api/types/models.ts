@@ -77,6 +77,19 @@ export interface Plugin {
   kinds: string[];
   decides: string[];
   process: PluginProcess | null;
+  /** False for a plugin that is turned off: listed from the manifest it last sent, decides nothing. */
+  enabled: boolean;
+}
+
+/** What `PUT /v1/plugins/{plugin}/enabled` answers. */
+export interface PluginEnabled {
+  name: string;
+  enabled: boolean;
+  /** False when the plugin was in that state already. */
+  changed: boolean;
+  /** True when runs start unwrapped from now on: it was the last launcher that was on. */
+  unwrapped_runs: boolean;
+  note: string | null;
 }
 
 export interface Plugins {

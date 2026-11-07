@@ -404,8 +404,15 @@ fn a_launch_that_fails_after_claude_code_started_kills_it() {
 #[cfg(unix)]
 #[test]
 fn claude_code_does_not_start_while_a_launcher_is_configured() {
-    let mut s = setup();
-    s.claude.launcher_configured = true;
+    let s = setup();
+    s.claude.launcher.set(Some(std::sync::Arc::new(
+        crate::harness::launch::Launcher::new(
+            std::sync::Arc::new(moebius_plugin_api::Host::new(
+                std::time::Duration::from_secs(1),
+            )),
+            "box",
+        ),
+    )));
     let started = crate::board::ChatRuns::start_chat(
         &s.claude,
         &s.app,

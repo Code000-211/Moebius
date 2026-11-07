@@ -131,10 +131,24 @@ pub(super) fn live_keys() -> Vec<&'static str> {
         .collect()
 }
 
+/// The value of `key` as a restart cares about it: a plugin is turned off and on while the server runs, so `enabled`
+/// of the `plugins` is left out.
+fn restart_relevant(raw: &toml::Table, key: &Key) -> Value {
+    let mut value = effective(raw, key);
+    if key.name == "plugins"
+        && let Some(plugins) = value.as_array_mut()
+    {
+        for plugin in plugins.iter_mut().filter_map(Value::as_object_mut) {
+            plugin.remove("enabled");
+        }
+    }
+    value
+}
+
 /// The keys the running server uses only after a restart whose value in `raw` is not the one it started with.
 pub(super) fn restart_keys(started: &toml::Table, raw: &toml::Table) -> Vec<String> {
     KEYS.iter()
-        .filter(|key| !key.live && effective(started, key) != effective(raw, key))
+        .filter(|key| !key.live && restart_relevant(started, key) != restart_relevant(raw, key))
         .map(|key| key.name.to_string())
         .collect()
 }

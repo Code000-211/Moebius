@@ -150,7 +150,11 @@ export function Installed({
                 <Row
                   key={each.name}
                   name={each.name}
-                  tags={[{ label: kindLabel(each.kind), tone: "plain" }, ...standingTags(state)]}
+                  tags={[
+                    { label: kindLabel(each.kind), tone: "plain" },
+                    ...(each.enabled === false ? [{ label: "Off", tone: "plain" as const }] : []),
+                    ...standingTags(state),
+                  ]}
                   line={`From ${each.registry}${each.repository ? `, proposed to ${each.repository}` : ""}`}
                   onOpen={() => onOpen(each.name)}
                   buttons={

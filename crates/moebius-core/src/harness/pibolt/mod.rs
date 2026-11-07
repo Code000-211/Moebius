@@ -55,7 +55,7 @@ use serde_json::{Value, json};
 use crate::app::{App, ChatSettings};
 use crate::board::{AgentInfo, CardRuns, ChatRuns, ImproveRuns, StartError, Variant};
 use crate::config::{AgentConfig, AgentSet};
-use crate::harness::launch::{Launched, Launcher};
+use crate::harness::launch::{Launched, LauncherSlot};
 use crate::harness::remote::Runners;
 use crate::router::Router;
 use crate::store::{Card, Repository, Run};
@@ -107,7 +107,7 @@ pub struct PiBolt {
     pub runners: Arc<Runners>,
     /// The launcher plugin that may wrap how Pi starts, such as in a sandbox; none unless `[[plugins]]` names one.
     /// With one, no Pi starts without asking it, and one that cannot be asked does not start.
-    pub launcher: Option<Arc<Launcher>>,
+    pub launcher: LauncherSlot,
     live: Arc<Mutex<HashMap<i64, Live>>>,
     /// The chats whose terminal interface is open, or that waited [`IDLE`], which have no Pi of their own meanwhile.
     /// Taken before `live` by whoever takes both, and held while a chat moves between the two.
@@ -176,7 +176,7 @@ impl PiBolt {
                 skill_overrides: BTreeMap::new(),
             })),
             runners: Arc::new(Runners::default()),
-            launcher: None,
+            launcher: LauncherSlot::default(),
             live: Arc::new(Mutex::new(HashMap::new())),
             paused: Arc::new(Mutex::new(HashMap::new())),
         }

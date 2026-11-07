@@ -167,6 +167,9 @@ pub struct Installed {
     #[serde(flatten)]
     pub locked: Locked,
     pub update_available: Option<String>,
+    /// For a plugin: whether it is on. A plugin that was turned off is not started or asked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
 }
 
 /// What an install, update or removal did.
@@ -382,6 +385,8 @@ impl Packages<'_> {
                     .max_by_key(|v| Version::parse(v))
                     .map(str::to_string);
                 Installed {
+                    enabled: (locked.kind == "plugin")
+                        .then(|| !self.app.decisions.host().is_off(&locked.name)),
                     locked,
                     update_available,
                 }

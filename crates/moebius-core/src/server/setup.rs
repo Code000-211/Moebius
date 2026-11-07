@@ -120,8 +120,10 @@ pub struct PluginView {
     pub kinds: Vec<moebius_plugin_api::Kind>,
     /// The kinds of decision it answers, those the decision model took over included.
     pub decides: Vec<String>,
-    /// How it runs when it is a plugin in its own process; none for one compiled in.
+    /// How it runs when it is a plugin in its own process; none for one compiled in or one that is off.
     pub process: Option<ProcessView>,
+    /// Whether the plugin is on. One that is off is not started, asked or called.
+    pub enabled: bool,
 }
 
 /// A plugin in its own process, as the Plugins page shows it.
@@ -171,6 +173,7 @@ pub fn plugins(decisions: &Decisions, data_dir: &Path) -> Plugins {
                     .filter(|(_, plugin)| **plugin == manifest.name)
                     .map(|(kind, _)| kind.clone())
                     .collect(),
+                enabled: !decisions.host().is_off(&manifest.name),
                 name: manifest.name,
                 version: manifest.version,
                 kinds: manifest.kinds,

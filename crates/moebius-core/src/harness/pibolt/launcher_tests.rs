@@ -137,7 +137,8 @@ fn with_launcher(pi: &mut PiBolt, dir: &Path, mode: Mode) -> Arc<Mutex<Vec<Launc
         dir: dir.to_path_buf(),
         seen: seen.clone(),
     });
-    pi.launcher = Some(Arc::new(Launcher::new(Arc::new(host), "box")));
+    pi.launcher
+        .set(Some(Arc::new(Launcher::new(Arc::new(host), "box"))));
     seen
 }
 
@@ -329,6 +330,45 @@ fn a_run_that_is_stopped_uses_the_stop_command_and_is_cleaned_up_once() {
 }
 
 #[test]
+fn a_run_that_started_keeps_its_launcher_when_the_launchers_are_turned_off_meanwhile() {
+    let (dir, app, mut pi, repo) = setup();
+    with_launcher(&mut pi, dir.path(), Mode::Wrap);
+    let card = app
+        .create_issue(repo, "Please [deaf]", "", "person")
+        .unwrap();
+    let run = pi
+        .start(&app, &card, "Coder", ("code", None), Variant::default())
+        .unwrap();
+    wait_for("Pi runs inside the wrapper", || {
+        marker(dir.path()) == ["wrapped"]
+    });
+    // No launcher is on from now on: the run that goes is still stopped and cleaned up by its own.
+    pi.launcher.set(None);
+    assert!(pi.stop(run.id));
+    let run = wait_until_ended(&app, run.id);
+    assert_eq!(run.status, "stopped", "{run:?}");
+    wait_for("the cleanup command ran", || {
+        marker(dir.path()).last().is_some_and(|l| l == "cleaned")
+    });
+    assert!(marker(dir.path()).contains(&"stopped".to_string()));
+    // A run that starts now is not wrapped.
+    let card = app
+        .create_issue(repo, "Write done.txt", "", "person")
+        .unwrap();
+    let next = pi
+        .start(&app, &card, "Coder", ("code", None), Variant::default())
+        .unwrap();
+    wait_until_ended(&app, next.id);
+    assert_eq!(
+        marker(dir.path())
+            .iter()
+            .filter(|l| *l == "wrapped")
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn a_server_restart_stops_a_wrapped_pi_with_the_stop_command_and_cleans_up() {
     let (dir, app, mut pi, repo) = setup();
     with_launcher(&mut pi, dir.path(), Mode::Wrap);
@@ -493,7 +533,7 @@ fn a_launcher_that_fails_hangs_or_garbles_fails_the_run_and_pi_never_starts() {
 
 #[test]
 fn a_run_of_an_agent_that_no_launcher_takes_fails_and_pi_never_starts() {
-    let (dir, app, mut pi, repo) = setup();
+    let (dir, app, pi, repo) = setup();
     let seen = Arc::new(Mutex::new(Vec::new()));
     let mut host = Host::new(Duration::from_secs(30));
     host.add(Fake {
@@ -502,10 +542,10 @@ fn a_run_of_an_agent_that_no_launcher_takes_fails_and_pi_never_starts() {
         seen: seen.clone(),
     });
     // A launcher for the Moebius agent only, which the configuration would refuse as the last: the Coder is taken by none.
-    pi.launcher = Some(Arc::new(Launcher::scoped(
+    pi.launcher.set(Some(Arc::new(Launcher::scoped(
         Arc::new(host),
         [("box".to_string(), vec!["Moebius".to_string()])],
-    )));
+    ))));
     let card = app
         .create_issue(repo, "Write done.txt", "", "person")
         .unwrap();
@@ -582,14 +622,14 @@ fn process_launcher(dir: &Path) -> Arc<Launcher> {
 
 #[test]
 fn a_launcher_in_its_own_process_wraps_a_run_and_names_its_leftovers() {
-    let (dir, app, mut pi, repo) = setup();
+    let (dir, app, pi, repo) = setup();
     let launcher = process_launcher(dir.path());
     // What an earlier run left is removed when the server starts.
     std::fs::write(dir.path().join("leftover.txt"), "old profile").unwrap();
     launcher.clean_leftovers(&[]).unwrap();
     assert!(!dir.path().join("leftover.txt").exists());
 
-    pi.launcher = Some(launcher);
+    pi.launcher.set(Some(launcher));
     let card = app
         .create_issue(repo, "Write done.txt", "", "person")
         .unwrap();
@@ -618,7 +658,7 @@ fn a_launcher_in_its_own_process_wraps_a_run_and_names_its_leftovers() {
 
 #[test]
 fn a_launcher_process_that_is_gone_fails_the_run_instead_of_starting_it_bare() {
-    let (dir, app, mut pi, repo) = setup();
+    let (dir, app, pi, repo) = setup();
     // A program that is no launcher: it exits at once.
     let spec = ProcessSpec {
         name: "box".into(),
@@ -628,7 +668,8 @@ fn a_launcher_process_that_is_gone_fails_the_run_instead_of_starting_it_bare() {
     };
     let mut host = Host::new(Duration::from_secs(1));
     host.add_process(Process::start(spec, Duration::from_secs(5), |_| {}));
-    pi.launcher = Some(Arc::new(Launcher::new(Arc::new(host), "box")));
+    pi.launcher
+        .set(Some(Arc::new(Launcher::new(Arc::new(host), "box"))));
     let card = app
         .create_issue(repo, "Write done.txt", "", "person")
         .unwrap();

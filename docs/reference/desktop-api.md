@@ -459,14 +459,14 @@ The project settings of the repository: what each plugin asks of every repositor
 ([`project_settings`](plugin-api.md#plugin-settings)), with the value this repository has. Only plugins added to the
 server that declare some are listed, by name; the web app shows them on the repository's page. Response:
 `{"repository": number, "plugins": [{"plugin": string, "version": string, "settings": [{"key": string, "label": string,
-"description": string, "input": "line" or "code", "language": string or missing, "value": string}], "ui": boolean}]}`,
-`value` empty when the repository has none, and `ui` true when the plugin brings its own page for its settings
+"description": string, "input": "line" or "code", "language": string or missing, "value": string}], "enabled": boolean, "ui": boolean}]}`,
+`value` empty when the repository has none, `enabled` false for a plugin that is [turned off](configuration.md#turning-a-plugin-off-and-on) (its settings are kept and can be changed), and `ui` true when the plugin brings its own page for its settings
 ([`GET /v1/plugins/{plugin}/settings-ui`](#get-v1pluginspluginsettings-ui)). A plugin that is not running is left out, but its values are kept and come back with it. A server without `[harness]`
 has no values.
 Errors: `404` no such repository.
 
 ```json
-{"repository": 1, "plugins": [{"plugin": "podman-sandbox", "version": "0.2.0", "settings": [{"key": "dockerfile", "label": "Dockerfile", "description": "The image of the runs of this repository.", "input": "code", "language": "dockerfile", "value": "FROM docker.io/library/node:24-bookworm\n"}], "ui": false}]}
+{"repository": 1, "plugins": [{"plugin": "podman-sandbox", "version": "0.2.0", "settings": [{"key": "dockerfile", "label": "Dockerfile", "description": "The image of the runs of this repository.", "input": "code", "language": "dockerfile", "value": "FROM docker.io/library/node:24-bookworm\n"}], "enabled": true, "ui": false}]}
 ```
 
 ### `PUT /v1/repositories/{id}/plugin-settings/{plugin}`
@@ -1595,10 +1595,13 @@ The plugins the plugin host has loaded, which answer the decisions (see [the plu
 {
   "time_limit_seconds": 30,
   "plugins": [
-    {"name": "guard", "version": "0.1.0", "kinds": ["decider"], "decides": ["tool_call"], "process": null},
+    {"name": "guard", "version": "0.1.0", "kinds": ["decider"], "decides": ["tool_call"], "process": null,
+     "enabled": true},
     {"name": "allow-reads", "version": "0.1.0", "kinds": ["decider"], "decides": ["start_card"],
      "process": {"program": "/srv/plugins/allow-reads", "state": "running", "restarts": 0, "error": null,
-                 "log": "/srv/.moebius/plugins/allow-reads.log"}}
+                 "log": "/srv/.moebius/plugins/allow-reads.log"},
+     "enabled": true},
+    {"name": "box", "version": "0.2.0", "kinds": ["launcher"], "decides": [], "process": null, "enabled": false}
   ]
 }
 ```
@@ -1614,6 +1617,35 @@ with a merged takeover.
 how many times it was started again (`restarts`); why it stopped the last time (`error`, with secrets redacted, or
 `null`); and the file its standard error goes to (`log`). Until such a plugin has sent its manifest, its `version` is
 empty and its `kinds` are empty.
+
+`enabled` is false for a plugin that is turned off (`plugins.enabled`, see [the configuration](configuration.md#turning-a-plugin-off-and-on)):
+it is listed from the manifest it last sent, its `process` is `null`, and it decides nothing.
+
+### `PUT /v1/plugins/{plugin}/enabled`
+
+A person turns the plugin `plugin`, one that `[[plugins]]` names, off or on, at once and without a restart. Request:
+`{"enabled": boolean, "unwrap_runs": boolean (optional, default false)}`. `enabled` false writes `enabled = false` to the
+plugin's entry, `true` removes that key; the entry and its other keys stay, and so do its settings. The server stops or
+starts the plugin, gives its kinds back to or takes them from the deciders, and builds the launchers again from the
+launchers that are on (see [turning a plugin off](configuration.md#turning-a-plugin-off-and-on)); a run that started keeps
+the launcher it started with. The decision has the kind `enable_plugin` or `disable_plugin`, and its context has `plugin`
+and `unwrapped_runs`. The event `plugin_enabled_changed` is published. Response:
+
+```json
+{"name": "box", "enabled": false, "changed": true, "unwrapped_runs": true,
+ "note": "runs now start unwrapped: no launcher is on after box was turned off"}
+```
+
+`changed` is false, and nothing is written, when the plugin runs in that state and the file says so too. It is true
+when either changes: a hand edit that the server has not applied (it did not leave no launcher on without a
+confirmation) is applied, or the file is put in step with what runs. `unwrapped_runs` is true, with a `note`, when the
+plugin was the last launcher that was on, so that runs start unwrapped from now on. Errors: `403` a run token
+(a person only); `404` no `[[plugins]]` entry of that name; `409` no launcher would be on and `unwrap_runs` is not
+true; `422` an unknown field, or turning it off or on would leave the launchers wrapping some agents and not others (the
+message names the agents whose runs would start unwrapped), or the file would not be valid, or the plugin cannot be
+turned on (it cannot be started at all, or a launcher cannot name its leftovers; the message gives the reason, and the
+file, the plugin and the launchers stay as they were, and nothing is published). A plugin that starts and then fails is
+on and refused, as at the server's start.
 
 ### Packages
 
@@ -1642,7 +1674,8 @@ whose index is not valid is in `problems` (secrets redacted), and the others are
 
 What is installed: an array of the lock's entries (`name`, `version`, `kind`, `registry`, `url`, `sha256`, and
 `program`, `repository`, `change`, `files`, `rules` where they apply; see [the lock](packages.md#the-lock-data_dirpackageslock))
-with `update_available`: the newest version the nightly check found, or null. Nothing is fetched.
+with `update_available`: the newest version the nightly check found, or null, and for a plugin `enabled`, false when it
+is turned off. Nothing is fetched.
 
 #### `GET /v1/packages/{name}`
 
@@ -1713,7 +1746,8 @@ Models pages to build their forms from. The file is read afresh, so a change mad
 
 ### `PUT /v1/settings`
 
-A person changes `moebius.toml`. Request: `{"set": {...}, "remove": [...]}`, both optional.
+A person changes `moebius.toml`. Request: `{"set": {...}, "remove": [...], "unwrap_runs": boolean}`, all optional.
+`unwrap_runs` (default false) confirms a change that leaves no launcher on, so that runs start unwrapped (see below).
 
 - `set` maps a dotted key to its new value: a JSON string, number, boolean or array of them for a key, an object for a
   table (`"teacher": {"model": "m"}` replaces the table, `"agents.Coder": {...}` replaces that agent), an array of
@@ -1732,8 +1766,14 @@ answer is `422` with the message of the parse and nothing is written. Otherwise 
 temporary file in its directory that replaces it), the decision is recorded (kind `edit_settings`, decider `person`,
 the `set` and `remove` in its context; a URL has no user name and password there, and a key is never part of a
 change), and the keys that are live take effect at once. Response: `{"restart_needed": boolean, "restart_keys":
-[string]}`, as in `GET /v1/settings`: true with the keys that the running server uses only after it restarts. Errors:
-`422` as above or a key that is not a key of the configuration; `500` the file cannot be read or written.
+[string]}`, as in `GET /v1/settings`: true with the keys that the running server uses only after it restarts. A
+`plugins.<n>.enabled` set or removed takes effect at once, by a person only (`403` for a run token). A change that turns
+off the last launcher that is on is refused with `409` unless `unwrap_runs` is true; a file that a hand edit left in
+that state does not refuse other changes: the launcher stays on until the edit is confirmed (see
+[turning a plugin off](configuration.md#turning-a-plugin-off-and-on)) and the event `plugin_enable_refused` is published.
+A plugin that cannot be turned on makes the whole change a `422` with the reason, and the file is left as it was.
+Errors: `403` as above; `409` as above; `422` as above, a key that is not a key of the configuration, or a plugin that
+cannot be turned on; `500` the file cannot be read or written.
 
 ### `PUT /v1/secrets/{name}`
 
@@ -2466,6 +2506,8 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `harness_error` | An agent's files in the harness configuration repository are broken (it is left out), or refreshing the repository failed (every 30 seconds). | `{"agent": name (left out when the refresh failed), "message": string}` |
 | `package_installed` | A package was installed or updated (a plugin is in place and started; the files of the others are proposed). | `{"name": string, "version": string, "kind": "plugin" \| "workflow" \| "rules" \| "skills"}` |
 | `package_removed` | A package was removed. | `{"name": string, "kind": string}` |
+| `plugin_enabled_changed` | A plugin was turned off or on (`PUT /v1/plugins/{plugin}/enabled`, or `enabled` set through `PUT /v1/settings`). | `{"name": string, "enabled": boolean}` |
+| `plugin_enable_refused` | A change of `moebius.toml` that turns off the last launcher that is on was not applied, as nobody confirmed that runs would start unwrapped (a hand edit picked up by a later save); the plugin stays on. | `{"name": string, "enabled": false, "message": string}` |
 | `package_update_available` | The nightly check found a newer version that works with this Moebius; it is in the inbox. | `{"name": string, "version": string}` |
 | `extension_update_available` | The nightly check found a newer version of an installed Pi package; it is in the inbox as an `extension_update` item (once for each version). | `{"name": string, "version": string}` |
 | `package_check_error` | The nightly check could not read a registry, or failed. | `{"registry": string (empty when the check itself failed), "message": string}` |

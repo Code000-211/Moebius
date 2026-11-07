@@ -171,6 +171,17 @@ async fn keys_shells_and_the_harness_setup_stay_with_a_person() {
             .await,
         200
     );
+    // So is turning a plugin off or on, whatever the plugin.
+    assert_eq!(
+        f.send(
+            Method::PUT,
+            "/v1/plugins/box/enabled",
+            &token,
+            Some(json!({ "enabled": false }))
+        )
+        .await,
+        403
+    );
     // Moving the agents into a harness configuration repository is the person's choice.
     assert_eq!(
         f.send(Method::POST, "/v1/harness/setup", &token, None)

@@ -267,7 +267,7 @@ impl PiBolt {
         };
         let mut command = self.command(agent, &place, false);
         let mut launched = None;
-        if let Some(launcher) = &self.launcher {
+        if let Some(launcher) = self.launcher.get() {
             let stored = stored.as_ref().ok_or("the run is gone")?;
             let spot = Spot {
                 stored: &stored.agent,
@@ -276,7 +276,7 @@ impl PiBolt {
                 run_dir: &run_dir,
                 log: &log,
             };
-            launched = self.through_launcher(app, launcher, &run, &place, spot, &mut command)?;
+            launched = self.through_launcher(app, &launcher, &run, &place, spot, &mut command)?;
             if let Some((urls, _)) = &launched {
                 if urls.router.is_some() || urls.gateway.is_some() {
                     let inside_router = urls.router.as_deref().unwrap_or(router_url);

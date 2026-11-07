@@ -409,8 +409,9 @@ delays the other chats' messages meanwhile; when the server restarts the stop an
 
 ### The method `leftovers`
 
-The core calls it when the server starts, after it has failed the runs the last server left going, and removes what the
-launcher names, so that a profile or a container of a run that died with the server does not stay. The parameters are a
+The core calls it when the server starts, after it has failed the runs the last server left going, and when a person
+turns the launcher on while the server runs (then with the ids of the runs that exist; a launcher that is off at the
+start is not called until then), and removes what the launcher names, so that a profile or a container of a run that died with the server does not stay. The parameters are a
 `LeftoversRequest`: `running`, the ids of the runs that exist (empty at the server's start). The result is `Leftovers`:
 
 | Field | Type | Meaning |
@@ -430,6 +431,8 @@ A launcher is asked for every launch, and what it cannot do is never a reason to
 | It returns an error, panics, is not running, is not a launcher (`WrongKind`), is unknown, or its reply is not a `LaunchAnswer` (`BadReply`), or a wrapped one without a `program` | Fails the run before the harness starts, with `the launcher <name> did not start the run: <why>` (secrets, run tokens included, redacted). |
 | It wraps a run whose `runner` is set | Fails the run: a launcher on the server cannot wrap a harness on another machine. It answers `unchanged` for those, with a `note` saying so. In both cases a `cleanup` and `remove` it gave are run. |
 | It cannot name its leftovers at the server's start | The server does not start. |
+| It cannot name its leftovers when it is turned on | It stays off, and the turning on is refused with the reason. |
+| It is turned off while a run it wrapped goes | The run keeps its wrap and is stopped and cleaned up by the commands the launcher gave it, which the core runs without a call. A later launch through the launchers the run holds (a chat's next message) is refused as `NotRunning` (`it is turned off`), so it fails and never starts unwrapped. |
 
 For a run on a card, a failed start is a failed run like a harness that cannot be started, so the board's usual handling
 applies. The one process outside this: Pi-Bolt's terminal interface for a chat (`GET /v1/chats/{id}/tui`) is a process
@@ -469,6 +472,18 @@ decides = ["start_card"]
 The server starts it with `args`, in the directory of `moebius.toml`, with the server's environment, when it starts.
 It is added to the host under `name` and the kinds in `decides` are routed to it. In Rust, `Process::start(spec, limit,
 log)` does the same, and `host.add_process(process)` adds it.
+
+### Turning a plugin off
+
+An entry with `enabled = false` ([`plugins.enabled`](configuration.md#turning-a-plugin-off-and-on)) is not started at the
+server's start; a plugin that runs is stopped when a person turns it off, and started again when they turn it on, both
+without a restart. The host keeps a plugin that is off, with the manifest it last sent (the server keeps a copy in
+`<data_dir>/plugins/<name>.manifest.json`), so that it is listed as off and its settings stay on the pages; nothing is
+routed to it, it is no launcher, and a call into it is refused as `NotRunning` (`it is turned off`) like any call that
+cannot be answered. In Rust, `host.turn_off(name, manifest)` stops a process plugin and keeps it as off (false for one
+compiled in, which is never turned off), `host.add_off(manifest)` adds one that is off, `host.is_off(name)` asks, and
+`host.set_process(process)` turns it on by replacing it. The server builds its launchers again when a launcher is turned
+off or on; a run that started keeps the launchers it started with.
 
 ### The wire format
 

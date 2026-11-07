@@ -209,6 +209,7 @@ mod tests {
         let changes = Changes {
             set: [("run_limit".to_string(), serde_json::json!(4))].into(),
             remove: vec![],
+            ..Changes::default()
         };
         let edits = settings(&live, &serde_json::to_string(&changes).unwrap()).unwrap();
         assert!(edits.diff.contains("+run_limit = 4"), "{}", edits.diff);

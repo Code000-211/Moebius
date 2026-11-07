@@ -412,6 +412,7 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `cli/agents.rs` | `agents` and `agent` (show, save, delete). |
 | `cli/rules.rs` | `rules` and `rules save`. |
 | `cli/packages.rs` | `pkg search`, `info`, `install`, `update`, `remove` and `list`, and how their answers are written. |
+| `cli/plugins.rs` | `plugin enable` and `plugin disable [--unwrap-runs]`: turning a plugin off or on, and how the answer is written. |
 | `cli/ext.rs` | `ext search`, `info`, `add`, `update`, `remove` and `list`: Pi packages, and how a proposed change is written. |
 | `cli/repos.rs` | `repos` and `repo add`. |
 | `cli/setup.rs` | `doctor`, `settings`, `secrets set`, `usage` and `server restart`. |
@@ -534,7 +535,7 @@ At the top:
 | `server/mod.rs` | Wires everything from the configuration and serves the desktop API, the router and the loops. |
 | `server/leftovers.rs` | What a server that stopped left going, ended at the next start: its runs failed and their worktrees removed, its Retros, research and trials set back. |
 | `server/loops.rs` | The board's tick, the polls of GitHub, GitLab and Forgejo (also at once when a webhook wakes one), the refresh of the clones every 30 seconds, and the hour's ask of the upstreams for the reasoning level names their models take. |
-| `server/plugins.rs` | Starting the plugins in their own process that `[[plugins]]` names, with their standard error in `<data_dir>/plugins/<name>.log`, redacted. |
+| `server/plugins.rs` | Starting the plugins in their own process that `[[plugins]]` names, with their standard error in `<data_dir>/plugins/<name>.log`, redacted; holding one that is off with the manifest it last sent (`<data_dir>/plugins/<name>.manifest.json`); routing the deciders and building the launchers from the plugins that are on; and turning a plugin off or on while the server runs (`set_enabled`). |
 | `server/packages/mod.rs` | The package manager: the errors, the registries' catalog, the choice of a version, and search, info, list, install, update and remove (see `docs/reference/packages.md`). |
 | `server/packages/version.rs` | Versions and the ranges of Moebius versions a package works with. |
 | `server/packages/manifest.rs` | A package as `moebius-package.toml` and an entry of `index.toml` say it, and the checks of an entry. |
@@ -669,7 +670,7 @@ At the top:
 | `harness/claude/tests.rs` | For the tests only: Claude Code runs and chats against the fake `claude`, and the router's check of its calls. |
 | `harness/pibolt/launcher_tests.rs` | For the tests only: Pi through a fake launcher, compiled in and in its own process (`testdata/fake-launcher`). |
 | `harness/pibolt/remote_tests.rs` | For the tests only: runs on a runner over the fake `ssh` of `testdata/`. |
-| `harness/launch.rs` | The launcher of harness processes (`Launcher`, from the `[[plugins]]` entry with `launches = true`): asks it how to start a process, builds the wrapped command, runs its stop and cleanup commands, and removes what earlier runs left; any failure is an error that fails the run. |
+| `harness/launch.rs` | The launcher of harness processes (`Launcher`, from the `[[plugins]]` entry with `launches = true`): asks it how to start a process, builds the wrapped command, runs its stop and cleanup commands, and removes what earlier runs left; any failure is an error that fails the run. `LauncherSlot` holds the launchers the harnesses share, built again when a launcher plugin is turned off or on; a run reads them once, as it starts. |
 | `harness/remote/mod.rs` | The runners (`[[runners]]`): which machines there are and how many runs go on each (`Runners`, a `Slot` per run, the list `GET /v1/runners` answers). |
 | `harness/remote/session.rs` | One run on a runner over SSH (`RemoteRun`): the reverse tunnel to the router, the run's branch pushed to the machine's clone and checked out, the harness's command line turned into an `ssh` command with the files it names copied over, and the commits fetched back. |
 | `harness/pick.rs` | `Harnesses`, the server's `Runs`: Pi-Bolt and Claude Code side by side, a lookup from an agent to the harness it runs on. |

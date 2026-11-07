@@ -197,6 +197,9 @@ pub enum Refusal {
 enum Entry {
     Compiled(Arc<dyn Plugin>),
     Process(Arc<Process>),
+    /// Turned off: no process runs and no call is made, but the manifest it last had is kept, so that its settings can
+    /// still be shown and edited.
+    Off(Manifest),
 }
 
 impl Entry {
@@ -205,6 +208,7 @@ impl Entry {
         match self {
             Entry::Compiled(plugin) => plugin.manifest().kinds.contains(kind),
             Entry::Process(process) => process.takes(kind),
+            Entry::Off(_) => false,
         }
     }
 
@@ -212,6 +216,7 @@ impl Entry {
         match self {
             Entry::Compiled(plugin) => plugin.manifest(),
             Entry::Process(process) => process.manifest(),
+            Entry::Off(manifest) => manifest.clone(),
         }
     }
 }
@@ -263,9 +268,51 @@ impl Host {
                 old.stop();
                 true
             }
-            Some(Entry::Compiled(_)) => true,
+            Some(Entry::Compiled(_) | Entry::Off(_)) => true,
             None => false,
         }
+    }
+
+    /// Adds a plugin that is off under the name of its manifest, replacing one with the same name: nothing runs, and
+    /// the host lists `manifest` for it.
+    pub fn add_off(&self, manifest: Manifest) {
+        let replaced = self
+            .write()
+            .insert(manifest.name.clone(), Entry::Off(manifest));
+        if let Some(Entry::Process(old)) = replaced {
+            old.stop();
+        }
+    }
+
+    /// Whether the host holds a plugin named `plugin`, running or turned off.
+    pub fn holds(&self, plugin: &str) -> bool {
+        self.read().contains_key(plugin)
+    }
+
+    /// Turns the plugin `plugin`, one that runs in its own process, off: its process is stopped and no call is made
+    /// into it. The host lists the manifest the process sent, else `manifest`. Calls that are going on keep the plugin
+    /// they started with. False, and nothing changes, when the host holds no process plugin of that name and none that
+    /// is off already (a plugin compiled in is never turned off).
+    pub fn turn_off(&self, plugin: &str, manifest: Manifest) -> bool {
+        let mut plugins = self.write();
+        let kept = match plugins.get(plugin) {
+            Some(Entry::Process(process)) => {
+                Some(Some(process.manifest()).filter(|sent| !sent.kinds.is_empty()))
+            }
+            Some(Entry::Off(_)) => return true,
+            _ => None,
+        };
+        let Some(kept) = kept else { return false };
+        let kept = kept.unwrap_or(manifest);
+        if let Some(Entry::Process(old)) = plugins.insert(plugin.to_string(), Entry::Off(kept)) {
+            old.stop();
+        }
+        true
+    }
+
+    /// Whether the plugin `plugin` is turned off.
+    pub fn is_off(&self, plugin: &str) -> bool {
+        matches!(self.read().get(plugin), Some(Entry::Off(_)))
     }
 
     fn read(&self) -> RwLockReadGuard<'_, BTreeMap<String, Entry>> {
@@ -284,7 +331,7 @@ impl Host {
     pub fn status(&self, plugin: &str) -> Option<ProcessStatus> {
         match self.read().get(plugin)? {
             Entry::Process(process) => Some(process.status()),
-            Entry::Compiled(_) => None,
+            Entry::Compiled(_) | Entry::Off(_) => None,
         }
     }
 
@@ -317,6 +364,12 @@ impl Host {
             .get(plugin)
             .ok_or_else(|| Refusal::UnknownPlugin(plugin.to_string()))?
             .clone();
+        if matches!(target, Entry::Off(_)) {
+            return Err(Refusal::NotRunning {
+                plugin: plugin.to_string(),
+                message: "it is turned off".into(),
+            });
+        }
         if let Entry::Process(process) = &target
             && let Some(refusal) = process.unavailable()
         {
@@ -342,6 +395,7 @@ impl Host {
                             })
                         }),
                     Entry::Process(process) => Ok(process.request(call)),
+                    Entry::Off(_) => unreachable!("a plugin that is off is refused before"),
                 };
                 let _ = tx.send(result);
             })
@@ -487,6 +541,34 @@ mod tests {
             host.call("answers", Call::new(Kind::Forge, "issues", ())),
             Err(Refusal::WrongKind { .. })
         ));
+    }
+
+    #[test]
+    fn a_plugin_that_is_off_is_listed_and_never_called_and_is_on_again_when_a_process_replaces_it()
+    {
+        let host = host();
+        // A plugin compiled in is never turned off.
+        assert!(!host.turn_off("answers", Manifest::default()));
+        assert!(!host.is_off("answers"));
+        let manifest = Manifest {
+            name: "gate".into(),
+            version: "2".into(),
+            kinds: vec![Kind::Decider],
+            ..Default::default()
+        };
+        host.add_off(manifest.clone());
+        assert!(host.is_off("gate") && host.holds("gate"));
+        assert!(host.manifests().contains(&manifest));
+        assert_eq!(host.status("gate"), None);
+        assert!(matches!(
+            host.decide("gate", &request()),
+            Err(Refusal::NotRunning { ref message, .. }) if message == "it is turned off"
+        ));
+        // Turning off what is off stays off, and what the host holds is not removed by it.
+        assert!(host.turn_off("gate", Manifest::default()));
+        assert!(host.manifests().contains(&manifest));
+        assert!(host.remove("gate"));
+        assert!(!host.holds("gate"));
     }
 
     #[test]

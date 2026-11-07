@@ -239,6 +239,18 @@ pub enum Event {
         name: String,
         version: String,
     },
+    /// A person turned a plugin off or on.
+    PluginEnabledChanged {
+        name: String,
+        enabled: bool,
+    },
+    /// A change to `moebius.toml` that turns off the last launcher that is on was not applied, since nobody confirmed that
+    /// runs would start unwrapped: the plugin stays on.
+    PluginEnableRefused {
+        name: String,
+        enabled: bool,
+        message: String,
+    },
     /// The nightly check found a newer version of an installed Pi package; it is in the inbox as `extension_update`.
     ExtensionUpdateAvailable {
         name: String,
@@ -697,6 +709,21 @@ mod tests {
                     kind: "plugin".into(),
                 },
                 json!({"kind": "package_removed", "data": {"name": "gate", "kind": "plugin"}}),
+            ),
+            (
+                Event::PluginEnabledChanged {
+                    name: "gate".into(),
+                    enabled: false,
+                },
+                json!({"kind": "plugin_enabled_changed", "data": {"name": "gate", "enabled": false}}),
+            ),
+            (
+                Event::PluginEnableRefused {
+                    name: "box".into(),
+                    enabled: false,
+                    message: "box stays on".into(),
+                },
+                json!({"kind": "plugin_enable_refused", "data": {"name": "box", "enabled": false, "message": "box stays on"}}),
             ),
             (
                 Event::PackageUpdateAvailable {

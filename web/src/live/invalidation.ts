@@ -117,7 +117,7 @@ function improvePages(event: ServerEvent): QueryKey[] {
 
 /**
  * What the package sheet and the Plugins page read, by the events that change it: a package installed, updated or
- * removed, an update the nightly check found (for a Pi package it is an inbox item, which the snapshot holds and
+ * removed or turned off or on, an update the nightly check found (for a Pi package it is an inbox item, which the snapshot holds and
  * the sheet reads to mark the package), and a registry it could not read.
  */
 function packagePages(event: ServerEvent): QueryKey[] {
@@ -129,6 +129,9 @@ function packagePages(event: ServerEvent): QueryKey[] {
     case "package_update_available":
     case "extension_update_available":
       return [keys.packages, keys.plugins, keys.snapshot];
+    // A plugin turned off or on changes its row, its settings boxes (here and on the projects' pages) and its tag in the sheet.
+    case "plugin_enabled_changed":
+      return [keys.plugins, keys.packages, ["plugin-project-settings"]];
     default:
       return [];
   }

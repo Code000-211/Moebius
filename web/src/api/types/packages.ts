@@ -65,6 +65,8 @@ export interface LockedPackage {
 /** An installed package with the newest version the nightly check found, if it is newer. */
 export interface InstalledPackage extends LockedPackage {
   update_available: string | null;
+  /** For a plugin: false when it is turned off. */
+  enabled?: boolean;
 }
 
 export interface PackageInfo {

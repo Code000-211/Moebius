@@ -60,6 +60,8 @@ pub struct PluginSettings {
     pub plugin: String,
     pub version: String,
     pub settings: Vec<SettingView>,
+    /// Whether the plugin is on. The settings of one that is off are kept and can be changed.
+    pub enabled: bool,
     /// Whether the plugin brings its own page for its settings, served by [`App::settings_ui`].
     pub ui: bool,
 }
@@ -228,6 +230,7 @@ impl App {
                 })
                 .collect(),
             ui: manifest.settings_ui.is_some(),
+            enabled: !self.decisions.host().is_off(&manifest.name),
             plugin: manifest.name,
             version: manifest.version,
         })
