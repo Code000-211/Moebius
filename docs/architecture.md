@@ -346,6 +346,8 @@ start; its version is `PRAGMA user_version`.
 | `changes` | A card's or chat's branch `moebius/card-<number>`: repository (none, with `harness_repository` set, for the harness configuration repository), card, state (`open`, `merged`, `closed`), pull request number, the published commit and time, checks with the commit they are for, failing checks, output of the repository's own checks, review. |
 | `runs` | One per harness run: card (none for a chat), agent, harness, purpose, status, worktree, repository (a chat's) or whether it works in the harness configuration repository, start and end, summary (the agent's final answer). |
 | `events` | Everything a run emitted, numbered per run, as JSON. |
+| `workflow_runs` | One per run of a workflow: workflow name, repository, trigger kind, status (`queued`, `running`, `waiting`, `succeeded`, `failed` or `cancelled`), the run's value as JSON text, when it was stored, started and finished, and its error. |
+| `workflow_node_runs` | One per attempt of a node in a workflow run: run, node id, attempt, status, input and output as JSON text, when it started and finished, and its error. |
 | `judgements` | One per decision: kind, context (blob ids), options, choice, reason, decider, run, card, outcome. |
 | `shadows` | One per judgement the decision model was asked about: judgement, kind, the model's choice (null when it failed), reason, failed. |
 | `takeovers` | A proposal that the decision model take a kind over: kind, agreement, the number of shadows, status (`open`, `merged`, `dismissed`, `released`). |
@@ -509,6 +511,7 @@ At the top:
 | `store/changes.rs` | Changes: a branch offered for merging, with its pull request, checks and review. |
 | `store/attempts.rs` | Attempts: the runs a card was tried with at once, how each fared, which was picked and why, and the rounds of which none passed. |
 | `store/runs.rs` | Runs: an agent's work in a harness, from its start to its end. |
+| `store/workflows.rs` | Workflow runs and the runs of each node of them, with their value, input and output redacted before they are stored. |
 | `store/events.rs` | A run's events, in order, redacted before they are stored. |
 | `store/automations.rs` | Automations, their firings with the status of each chat, and the server's local minute. |
 | `store/chats.rs` | Chats: where they were started, what they work in and how far a person has read them. |

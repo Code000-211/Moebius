@@ -182,6 +182,47 @@ pub enum Event {
         value: Option<f64>,
         kept: bool,
     },
+    /// A workflow run was stored, queued for its first node.
+    WorkflowRunQueued {
+        run: i64,
+        workflow: String,
+        repository: i64,
+    },
+    WorkflowRunStarted {
+        run: i64,
+    },
+    WorkflowRunWaiting {
+        run: i64,
+    },
+    WorkflowRunEnded {
+        run: i64,
+        status: String,
+        error: Option<String>,
+    },
+    /// A workflow run changed status; sent for every transition.
+    WorkflowRunStatus {
+        run: i64,
+        status: String,
+    },
+    WorkflowNodeStarted {
+        run: i64,
+        node: String,
+        attempt: i64,
+    },
+    WorkflowNodeEnded {
+        run: i64,
+        node: String,
+        attempt: i64,
+        status: String,
+        error: Option<String>,
+    },
+    /// A node run changed status; sent for every transition.
+    WorkflowNodeStatus {
+        run: i64,
+        node: String,
+        attempt: i64,
+        status: String,
+    },
     RetroDone {
         date: String,
         status: String,
@@ -636,6 +677,64 @@ mod tests {
                     kept: true,
                 },
                 json!({"kind": "experiment_done", "data": {"research": 6, "lever": "moebius/lever/a", "value": 1.5, "kept": true}}),
+            ),
+            (
+                Event::WorkflowRunQueued {
+                    run: 7,
+                    workflow: "release".into(),
+                    repository: 2,
+                },
+                json!({"kind": "workflow_run_queued", "data": {"run": 7, "workflow": "release", "repository": 2}}),
+            ),
+            (
+                Event::WorkflowRunStarted { run: 7 },
+                json!({"kind": "workflow_run_started", "data": {"run": 7}}),
+            ),
+            (
+                Event::WorkflowRunWaiting { run: 7 },
+                json!({"kind": "workflow_run_waiting", "data": {"run": 7}}),
+            ),
+            (
+                Event::WorkflowRunEnded {
+                    run: 7,
+                    status: "succeeded".into(),
+                    error: None,
+                },
+                json!({"kind": "workflow_run_ended", "data": {"run": 7, "status": "succeeded", "error": null}}),
+            ),
+            (
+                Event::WorkflowRunStatus {
+                    run: 7,
+                    status: "running".into(),
+                },
+                json!({"kind": "workflow_run_status", "data": {"run": 7, "status": "running"}}),
+            ),
+            (
+                Event::WorkflowNodeStarted {
+                    run: 7,
+                    node: "build".into(),
+                    attempt: 1,
+                },
+                json!({"kind": "workflow_node_started", "data": {"run": 7, "node": "build", "attempt": 1}}),
+            ),
+            (
+                Event::WorkflowNodeEnded {
+                    run: 7,
+                    node: "build".into(),
+                    attempt: 1,
+                    status: "succeeded".into(),
+                    error: None,
+                },
+                json!({"kind": "workflow_node_ended", "data": {"run": 7, "node": "build", "attempt": 1, "status": "succeeded", "error": null}}),
+            ),
+            (
+                Event::WorkflowNodeStatus {
+                    run: 7,
+                    node: "build".into(),
+                    attempt: 1,
+                    status: "running".into(),
+                },
+                json!({"kind": "workflow_node_status", "data": {"run": 7, "node": "build", "attempt": 1, "status": "running"}}),
             ),
             (
                 Event::RetroDone {

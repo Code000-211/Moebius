@@ -2505,6 +2505,14 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `run_started` | A harness process for a run started. | `{"run": id, "card": id or null}` (null for a chat) |
 | `run_event` | Something happened in a run. | `{"run": id, "seq": number, "kind": string, "data": object}` (below) |
 | `run_ended` | A run ended. | `{"run": id, "status": "succeeded" \| "failed" \| "stopped"}` |
+| `workflow_run_queued` | A workflow run was stored, queued for its first node. | `{"run": id, "workflow": string, "repository": id}` |
+| `workflow_run_started` | A workflow run began running. | `{"run": id}` |
+| `workflow_run_waiting` | A workflow run waits for a person or another run. | `{"run": id}` |
+| `workflow_run_ended` | A workflow run ended. | `{"run": id, "status": "succeeded" \| "failed" \| "cancelled", "error": string or null}` |
+| `workflow_run_status` | A workflow run changed status. | `{"run": id, "status": "queued" \| "running" \| "waiting" \| "succeeded" \| "failed" \| "cancelled"}` |
+| `workflow_node_started` | A node of a workflow run began an attempt. | `{"run": id, "node": string, "attempt": number}` |
+| `workflow_node_ended` | A node of a workflow run ended an attempt. | `{"run": id, "node": string, "attempt": number, "status": string, "error": string or null}` |
+| `workflow_node_status` | A node of a workflow run changed status. | `{"run": id, "node": string, "attempt": number, "status": string}` |
 | `board_error` | A column script failed; the card stays where it is. | `{"card": id, "message": string}` |
 | `forge_error` | Polling a repository on GitHub, GitLab or Forgejo, or refreshing the clone of a repository without a forge, failed; it is tried again at the next poll or refresh (every 30 seconds without a forge). | `{"repository": "owner/repo" (GitHub, Forgejo), the project's path (GitLab) or the repository's name, "message": string}` |
 | `harness_error` | An agent's files in the harness configuration repository are broken (it is left out), or refreshing the repository failed (every 30 seconds). | `{"agent": name (left out when the refresh failed), "message": string}` |
