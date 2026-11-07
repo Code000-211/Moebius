@@ -461,6 +461,58 @@ describe("what the agent does", () => {
   );
 
   it.skipIf(usesRealServer)(
+    "draws the agent's question as a card, says the chat asks, and marks the chosen option once answered",
+    async () => {
+      await open("/chat");
+      fake().autoAnswer = false;
+      await say("Plan the work");
+      await page.waitForURL(/\/chat\/\d+$/);
+      const run = fake().chats[0]?.id as number;
+      fake().agentStart(run);
+      fake().toolCall(run, {
+        id: "q1",
+        tool: "ask_user_question",
+        args: {
+          questions: [
+            {
+              header: "Go",
+              question: "Shall I go on?",
+              options: [
+                { label: "Yes, but later", description: "Wait" },
+                { label: "Yes", description: "Now" },
+              ],
+            },
+          ],
+        },
+        output: "The questions are shown to the person.",
+      });
+      fake().settle(run);
+
+      // The card is the question, and the list says the chat asks before the person has answered.
+      const card = page.getByTestId("question");
+      await card.getByText("Shall I go on?").waitFor();
+      await page.getByTestId("chat-list-rows").getByText("Asks you").waitFor();
+
+      // The person chooses the shorter label, which must not mark the longer one that holds it.
+      await card.getByRole("radio", { name: "Yes Now" }).check();
+      await card.getByRole("button", { name: "Send answer" }).click();
+      await page.getByTestId("person-message").filter({ hasText: "My answers:" }).waitFor();
+      expect(fake().said.at(-1)?.body.message).toBe('My answers:\n1. Go: "Yes"');
+
+      // The card closes into a record with the chosen option marked, and the list stops saying the chat asks.
+      fake().agentStart(run);
+      fake().delta(run, "Going on.");
+      fake().settle(run, "Going on.");
+      const closed = page.getByTestId("question-asked");
+      await closed.waitFor();
+      await closed.getByText("Yes (chosen)", { exact: true }).waitFor();
+      expect(await closed.getByText("Yes, but later (chosen)").count()).toBe(0);
+      expect(await page.getByTestId("question").count()).toBe(0);
+      expect(await page.getByTestId("chat-list-rows").getByText("Asks you").count()).toBe(0);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
     "shows an answer as Markdown with a highlighted code block",
     async () => {
       await open("/chat");

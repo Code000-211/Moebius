@@ -117,7 +117,9 @@ chat started without a message has none), `answered` (the `seq` of the chat's la
 event, 0 without one), `seen` (how far a person has read it, see `POST /v1/chats/{id}/seen`) and `changed_files` (how
 many files the chat's worktree changes against the default branch of its repository, committed or not, new files
 included: what `POST /v1/chats/{id}/offer` would offer; 0 for an ended chat and one without a repository), `asks`
-(true while the chat waits and the agent's last answer ends in a question to the person, so it needs an answer) and
+(true while the chat waits and either the agent's last answer ends in a question to the person, or the last thing it did
+was call its question tool, `ask_user_question` or Claude Code's `AskUserQuestion`, with no message of the person after
+it, so it needs an answer) and
 `origin`
 (`chat`, `assistant` for a chat of the web app's floating window, see `POST /v1/chats`, or `automation` for a chat an
 automation started, see `POST /v1/automations`), `model` and `thinking`

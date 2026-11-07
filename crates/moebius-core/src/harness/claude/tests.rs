@@ -179,6 +179,7 @@ fn a_code_run_on_claude_code_is_given_the_agent_and_the_router_and_commits_its_w
         ["--output-format", "stream-json"],
         ["--model", "claude-test"],
         ["--permission-mode", "bypassPermissions"],
+        ["--disallowedTools", "AskUserQuestion"],
     ] {
         assert!(argv.windows(2).any(|w| w == pair), "{pair:?} in {argv:?}");
     }

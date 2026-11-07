@@ -165,7 +165,7 @@ The harness starts every Pi-Bolt run (and every Claude Code run) with a cleared 
 
 For each run the server writes the bridge to `<data_dir>/runs/<id>/moebius-bridge.ts` and the lens (below) to
 `<data_dir>/runs/<id>/moebius-lens.ts`, and starts Pi-Bolt with `--extension <lens>` and then `--extension <bridge>`
-after the agent's own `extensions` (and, for the Moebius agent and the Grilling partner, after `<data_dir>/runs/<id>/moebius-ask.ts`, the question tool: `ask_user_question` takes `questions` with `question`, `header`, `options` of `label` and `description`, and `multiSelect` (a label ending in "(Recommended)" is shown with a Recommended tag), and returns at once, telling the model to end its turn; the web app shows the call as a card and the answer is the person's next message), so that the bridge is the last extension to run, and with `--no-extensions`
+after the agent's own `extensions` (and, for the Moebius agent and the Grilling partner, after `<data_dir>/runs/<id>/moebius-ask.ts`, the question tool, [below](#the-question-tool)), so that the bridge is the last extension to run, and with `--no-extensions`
 and `--no-skills`, so that Pi loads no extension or skill it finds on its own, only those the agent is configured with and
 the bridge. The token is revoked when the run ends.
 
@@ -192,6 +192,39 @@ and three handlers with `pi.on`:
 
 A bridge for another harness does the same with that harness's hooks. See
 [`examples/pi-extension/log-tool-calls.ts`](../../examples/pi-extension/log-tool-calls.ts) for the smallest extension.
+
+## The question tool
+
+`crates/moebius-core/bridge/moebius-ask.ts` registers `ask_user_question` for the chats of the Moebius agent and the
+Grilling partner (the agents that operate Moebius); no other agent has it, and Claude Code's own `AskUserQuestion` is
+switched off (`--disallowedTools`), because it is a picker for a terminal. The model puts a few questions to the person
+with options to choose from, instead of asking in prose.
+
+- Arguments: `questions`, one to four, each with `question` (the whole question), `header` (a word or two, at most 16
+  characters), `options` (two to four, each with a `label` of at most 60 characters, which ends in "(Recommended)" for the
+  one the agent recommends, and a `description`) and `multiSelect` (false by default). The person can always write their
+  own answer, so the agent adds no "Other". The web app cuts a header or label past its limit and keeps the whole in a
+  tooltip.
+- Returns at once with a text that tells the model to end its turn without answering for the person. The call waits for
+  nobody, so a run never holds a tool open for a person and a chat that was paused meanwhile loses nothing. The
+  `tool_execution_start` event of the call is the question: a chat that waits and whose last call is this tool, with no
+  message of the person after it, has `asks` set in the list of chats.
+- The answer is the person's next message (`POST /v1/chats/{id}/messages`, no route of its own). The web app writes it in
+  one fixed shape, which is also the only shape it reads back to mark the chosen options of a question that was
+  answered:
+
+  ```
+  My answers:
+  1. Database: "SQLite"
+  2. Extras: "Metrics", "Tracing", Other: "my own words"
+  ```
+
+  The first line is `My answers:`; then one line for each question, in the order asked: its place, a full stop, its
+  header (its question when it has none, on one line), a colon, and a comma-separated list of JSON strings: the `label`
+  of each chosen option, whole, and after `Other:` the person's own words. A label is matched whole against the options
+  of the question at that place, so "Yes" does not mark "Yes, but later"; two questions with one header are told apart by
+  their place; words that hold a label are the person's own words. A message of any other shape marks nothing. An agent
+  reads the message as it is, and answers a person who wrote theirs by hand just as well.
 
 ## The lens
 

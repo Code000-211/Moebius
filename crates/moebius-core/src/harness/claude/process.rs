@@ -88,6 +88,9 @@ impl ClaudeCode {
             .args(["--output-format", "stream-json", "--verbose"])
             .args(["--model", &agent.model])
             .args(["--permission-mode", "bypassPermissions"])
+            // Its question tool is a picker for a terminal; headless it has nobody to answer it, so it is switched
+            // off and the agent asks in words, as the person answers in a message either way.
+            .args(["--disallowedTools", "AskUserQuestion"])
             .args(["--setting-sources", "user", "--strict-mcp-config"])
             .arg(if place.resumes {
                 "--resume"

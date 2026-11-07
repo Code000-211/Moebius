@@ -42,7 +42,8 @@ pub struct Chat {
     /// `POST /v1/chats/{id}/offer` would offer. 0 for an ended chat or one without a repository.
     #[serde(default)]
     pub changed_files: usize,
-    /// Whether the chat waits for an answer to a question: it waits, and the agent's last answer ends in one.
+    /// Whether the chat waits for an answer to a question: it waits, and either the agent's last answer ends in one
+    /// or its last tool call is its question tool with no message of the person after it.
     #[serde(default)]
     pub asks: bool,
     /// Where the chat was started: `chat`, `assistant` or `automation` (see `Run::origin`).
@@ -55,6 +56,9 @@ pub struct Chat {
     #[serde(default)]
     pub thinking: Option<String>,
 }
+
+/// How many of the latest events of a chat are looked through for a call of the question tool.
+const QUESTION_LOOKBACK: i64 = 200;
 
 /// Whether an answer ends in a question to the person: its last line, without the marks of emphasis or a closing
 /// bracket or quote, ends in `?`.
@@ -602,11 +606,37 @@ impl App {
             answered: self.store.answered_seq(run.id)?,
             seen: self.store.seen_seq(run.id)?,
             changed_files: self.changed_files(run),
-            asks: run.status == "waiting" && asks(run.summary.as_deref().unwrap_or_default()),
+            asks: run.status == "waiting"
+                && (asks(run.summary.as_deref().unwrap_or_default())
+                    || self.waits_on_question_tool(run.id)),
             origin: run.origin.clone(),
             model: settings.model,
             thinking: settings.thinking,
         })
+    }
+
+    /// Whether the last thing in the chat is a call of the question tool (`ask_user_question` of Pi-Bolt, or Claude
+    /// Code's `AskUserQuestion`) that no message of the person has followed: the call is the question, and the agent's
+    /// last text, when it wrote any, does not end in one.
+    fn waits_on_question_tool(&self, run_id: i64) -> bool {
+        let Ok(tail) = self.store.events_tail(run_id, QUESTION_LOOKBACK) else {
+            return false;
+        };
+        tail.iter()
+            .rev()
+            .find(|event| {
+                matches!(
+                    event.kind.as_str(),
+                    "said" | "steered" | "tool_execution_start"
+                )
+            })
+            .is_some_and(|event| {
+                event.kind == "tool_execution_start"
+                    && matches!(
+                        event.data["toolName"].as_str(),
+                        Some("ask_user_question" | "AskUserQuestion")
+                    )
+            })
     }
 
     /// Names the chat `run_id` `title`, in place of the title taken from its first message, and returns it as the list
@@ -1000,5 +1030,49 @@ mod tests {
         ));
         assert!(!asks("The tests pass."));
         assert!(!asks(""));
+    }
+
+    #[test]
+    fn a_chat_waiting_on_the_question_tool_asks_until_the_person_speaks() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let host = Arc::new(Host::new(Duration::from_secs(1)));
+        let app = App::new(store, host, &dir.path().join("data"));
+        let run = app.store.add_run(None, "Moebius", "fake", "chat").unwrap();
+        let record = |kind: &str, data: serde_json::Value| {
+            app.record_run_event(run.id, kind, &data).unwrap();
+        };
+        let call = |tool: &str| {
+            record(
+                "tool_execution_start",
+                serde_json::json!({ "toolCallId": "t", "toolName": tool, "args": {} }),
+            );
+        };
+        let asks_now = || {
+            app.store.set_run_status(run.id, "waiting").unwrap();
+            app.chat_view(&app.run(run.id).unwrap()).unwrap().asks
+        };
+
+        record("said", serde_json::json!({ "message": "Plan it" }));
+        call("read");
+        assert!(!asks_now(), "an ordinary tool call asks nothing");
+        call("ask_user_question");
+        assert!(
+            asks_now(),
+            "the question tool is the question, with no text"
+        );
+        call("AskUserQuestion");
+        assert!(asks_now(), "Claude Code's question tool is one too");
+        record("said", serde_json::json!({ "message": "The first" }));
+        assert!(!asks_now(), "the person's answer closes the question");
+        call("ask_user_question");
+        call("bash");
+        assert!(!asks_now(), "a later call means the agent went on");
+        call("ask_user_question");
+        app.store.set_run_status(run.id, "running").unwrap();
+        assert!(
+            !app.chat_view(&app.run(run.id).unwrap()).unwrap().asks,
+            "a running chat waits for nobody"
+        );
     }
 }

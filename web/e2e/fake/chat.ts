@@ -212,6 +212,9 @@ export function createFakeChat(
     },
 
     toolCall(id, call) {
+      // The server says a waiting chat asks when its last call is the question tool and the person has not spoken since.
+      const chat = find(id);
+      if (chat) chat.asks = call.tool === "ask_user_question" || call.tool === "AskUserQuestion";
       fake.emit(id, "tool_check", {
         tool: call.tool,
         tool_call_id: call.id,
@@ -380,6 +383,7 @@ export function createFakeChat(
               return reply(response, 422, "the chat has ended");
             }
             chat.status = "running";
+            chat.asks = false;
             // Nothing new was asked, so nothing new is stored: the agent answers what the chat already holds.
             if (message.trim() !== "") fake.emit(id, "said", { message });
             answer(id, message);

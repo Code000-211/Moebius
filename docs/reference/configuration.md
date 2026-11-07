@@ -580,8 +580,8 @@ An agent whose `harness` is `claude-code` runs as `claude -p --input-format stre
 --verbose` in the run's worktree, with:
 
 - `--model` the agent's model, `--append-system-prompt` its instructions, `--session-id` a new session (`--resume` it
-  for a chat given another model), `--permission-mode bypassPermissions`, `--setting-sources user` and
-  `--strict-mcp-config`, and `--mcp-config <data_dir>/runs/<id>/mcp.json` when the agent has MCP servers (written as for
+  for a chat given another model), `--permission-mode bypassPermissions`, `--disallowedTools AskUserQuestion` (a picker for a terminal, which has nobody to
+  answer it here), `--setting-sources user` and `--strict-mcp-config`, and `--mcp-config <data_dir>/runs/<id>/mcp.json` when the agent has MCP servers (written as for
   Pi-Bolt, readable by the server's user only);
 - `ANTHROPIC_BASE_URL` the router and `ANTHROPIC_API_KEY` the run's token (`ANTHROPIC_AUTH_TOKEN`,
   `CLAUDE_CODE_USE_BEDROCK` and `CLAUDE_CODE_USE_VERTEX` removed), `CLAUDE_CONFIG_DIR` the run's own

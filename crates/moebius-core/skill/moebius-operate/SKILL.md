@@ -8,6 +8,11 @@ description: Read the state of a Moebius server and act on it with the moebius c
 Goal: answer from the server, never from memory, and do to it exactly what the person asked for. Every command is one
 request to the server's desktop API as the Moebius agent; what it decides is recorded as `agent:Moebius` with this chat.
 
+When a choice is the person's (which repository, which of two ways, whether to go on), call the tool `ask_user_question`
+instead of asking in prose: one to four questions, two to four options each, the one you recommend first with
+"(Recommended)" at the end of its label. Then end your turn; their answer is their next message, a list of the labels
+they chose.
+
 ## Read the state
 
 ```sh

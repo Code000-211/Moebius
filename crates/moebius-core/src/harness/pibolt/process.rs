@@ -702,6 +702,53 @@ mod tests {
     }
 
     #[test]
+    fn the_question_tool_registers_the_name_the_web_app_draws_and_is_well_formed() {
+        assert!(ASK.contains("export default function (pi: ExtensionAPI)"));
+        assert!(
+            ASK.contains("name: \"ask_user_question\""),
+            "the tool's name changed"
+        );
+        // A quote left open in a guideline breaks the whole extension, which Pi reports only when a chat starts. Every
+        // string of the file is on one line, so a line has an even number of quotes that are not escaped.
+        for line in ASK
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+        {
+            let mut open = false;
+            let mut escaped = false;
+            for c in line.chars() {
+                match (escaped, c) {
+                    (true, _) => escaped = false,
+                    (false, '\\') => escaped = true,
+                    (false, '"') => open = !open,
+                    _ => {}
+                }
+            }
+            assert!(!open, "a string is left open in: {line}");
+        }
+        // Where Node can read TypeScript, it reads the extension too. Without Node, or with one too old to strip
+        // types, only the checks above run.
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("moebius-ask.ts");
+        std::fs::write(&file, ASK).unwrap();
+        let Ok(output) = Command::new("node")
+            .args(["--experimental-strip-types", "--check"])
+            .arg(&file)
+            .output()
+        else {
+            return;
+        };
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("bad option") {
+            return;
+        }
+        assert!(
+            output.status.success(),
+            "node cannot read the extension: {stderr}"
+        );
+    }
+
+    #[test]
     fn a_run_is_stored_event_by_event_and_its_work_committed() {
         let (_dir, app, pi, repo) = setup();
         let card = app
@@ -764,6 +811,11 @@ mod tests {
         let lens = run_dir.join("moebius-lens.ts");
         assert_eq!(extensions[extensions.len() - 2][1], lens.to_str().unwrap());
         assert_eq!(std::fs::read_to_string(&lens).unwrap(), LENS);
+        // The question tool is written for every run, whether or not its agent loads it.
+        assert_eq!(
+            std::fs::read_to_string(run_dir.join("moebius-ask.ts")).unwrap(),
+            ASK
+        );
         let env: Value =
             serde_json::from_slice(&std::fs::read(run_dir.join("agent/env.json")).unwrap())
                 .unwrap();
