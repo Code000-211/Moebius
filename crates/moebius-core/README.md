@@ -27,6 +27,7 @@ The other parts have one folder each:
 | `decide/` | Decision points, the tool-call check, the guard, the rules, the files a code run is hinted, the decision model. |
 | `harness/` | One run lifecycle shared by every harness (`harness/run/`), Pi-Bolt and Claude Code runs and chats (`harness/pibolt/`, `harness/claude/`) with the harness picked per agent (`harness/pick.rs`), terminals, the harness configuration repository, MCP servers and the MCP gateway, skills, the Pi packages vendored into the harness configuration repository (`harness/packages/`), grilling, tool outputs kept small, runners (machines that run a harness over SSH). |
 | `improve/` | The Retro, trials, the Retro's proposals to Moebius's own configuration, replays, autoresearch, the training-set export. |
+| `workflows/` | The workflow files in the harness configuration repository, their graph validation, and the registry of node kinds. |
 
 Outside `src/`:
 

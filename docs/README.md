@@ -22,7 +22,8 @@ reads them too: they are its `moebius` skill.
   [configuration](reference/configuration.md), [command line](reference/cli.md),
   [desktop API](reference/desktop-api.md), [router](reference/router.md), [plugin API](reference/plugin-api.md),
   [bridge protocol](reference/bridge-protocol.md), [harness configuration](reference/harness-configuration.md),
-  [training export](reference/training-export.md), [decision model](reference/decision-model.md) and [packages](reference/packages.md). Tests check that
+  [training export](reference/training-export.md), [decision model](reference/decision-model.md),
+  [workflows](reference/workflows.md) and [packages](reference/packages.md). Tests check that
   every route, script function, `card` field, configuration key and event kind is on its page.
 - [`examples/`](../examples/README.md): small examples to copy, run in CI.
 
