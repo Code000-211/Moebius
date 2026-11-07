@@ -55,13 +55,16 @@ and does not know anything the API does not say.
 ## The life of a card
 
 1. **An issue arrives.** Without a forge: `POST /v1/repositories/{id}/issues` (`api::create_issue`) calls
-   `App::create_issue`, which stores a card in `Backlog` (`Store::add_card`) and publishes `card_added`. On GitHub: the
+   `App::create_tracked_issue`, which opens the issue (on a forge) and stores its card held in `Backlog`
+   (`Store::add_held_card`): the board runs no script for it until its parent, labels and blockers are set, and only
+   then is it released and `card_added` published, so no script ever sees it unblocked. A plain
+   `App::create_issue` stores a card in `Backlog` (`Store::add_card`) and publishes `card_added`. On GitHub: the
    loop in `Server::serve` calls `poll::poll` with the GitHub client every `github.poll_seconds`, on GitLab with the
    GitLab client every `gitlab.poll_seconds`, and on Forgejo with the Forgejo client every `forgejo.poll_seconds`. That
    fetches the clone (`App::refresh`), lists issues with `GitHub::issues`, `GitLab::issues` or `Forgejo::issues`
    (conditional on the ETag where the forge gives one), turns them into the forge-neutral `forge::Issue` (the client's
    `poll::Polled`), and `App::sync_issues` adds or updates the cards and their "blocked by #n" dependencies
-   (`Store::set_dependencies`). A repository without a forge has no
+   (`Store::set_dependencies`): a card it adds is held until those dependencies are read, then released and announced. A repository without a forge has no
    poll; the loop in `Server::serve` calls `Server::refresh_plain_repositories` every 30 seconds, which refreshes it
    (`NoForge::refresh` fetches `origin` and fast-forwards the default branch when it can) and publishes a failure as
    `forge_error`.

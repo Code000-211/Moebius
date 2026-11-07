@@ -78,6 +78,7 @@ impl App {
             if self.stale_snapshot(repository.id, issue.number, read_at)? {
                 continue;
             }
+            let mut added = false;
             let card = match self.store.card_by_number(repository.id, issue.number)? {
                 Some(card) => {
                     if card.title != issue.title || card.body != body {
@@ -87,15 +88,19 @@ impl App {
                     card
                 }
                 None if issue.open => {
-                    let card = self.store.add_numbered_card(
+                    // Held until the poll has read its parent, labels and blockers: a script that ran before that
+                    // would see the card unblocked and start it.
+                    let card = self.store.add_held_card(
                         repository.id,
-                        issue.number,
+                        Some(issue.number),
                         &issue.title,
                         body,
                         &issue.author,
                         columns::BACKLOG,
+                        false,
+                        "moebius",
                     )?;
-                    self.bus.publish(Event::CardAdded(card.clone()));
+                    added = true;
                     card
                 }
                 None => {
@@ -105,7 +110,12 @@ impl App {
                 }
             };
             let card = self.card(card.id)?;
-            self.sync_issue_details(&card, issue)?;
+            let synced = self.sync_issue_details(&card, issue);
+            if added {
+                self.store.release_card(card.id)?;
+                self.bus.publish(Event::CardAdded(self.card(card.id)?));
+            }
+            synced?;
         }
         Ok(())
     }
@@ -177,6 +187,48 @@ impl App {
             )?
         };
         self.bus.publish(Event::CardAdded(card.clone()));
+        Ok(card)
+    }
+
+    /// Opens a tracker's issue on the forge, if the repository has one, and stores its card held: the board runs no
+    /// script for it until its parent, labels and blockers are set and it is released. `confirmed` says whether it
+    /// needs no approval, which it does when the person made it and not when the poll only found it.
+    pub(super) fn create_held_issue(
+        &self,
+        repository: &Repository,
+        title: &str,
+        body: &str,
+        confirmed: bool,
+    ) -> Result<Card> {
+        if title.trim().is_empty() {
+            return Err(AppError::Invalid("an issue needs a title".into()));
+        }
+        let card = if repository.forge == "none" {
+            self.store.add_held_card(
+                repository.id,
+                None,
+                title,
+                body,
+                PERSON,
+                columns::BACKLOG,
+                confirmed,
+                PERSON,
+            )?
+        } else {
+            let number = self
+                .forge(repository)?
+                .create_issue(repository, title, body)?;
+            self.store.add_held_card(
+                repository.id,
+                Some(number),
+                title,
+                body,
+                PERSON,
+                columns::BACKLOG,
+                confirmed,
+                PERSON,
+            )?
+        };
         Ok(card)
     }
 
