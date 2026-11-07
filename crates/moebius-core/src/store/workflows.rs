@@ -108,34 +108,6 @@ impl Store {
             .optional()?)
     }
 
-    /// Every run, newest first.
-    pub fn workflow_runs(&self) -> Result<Vec<WorkflowRun>> {
-        self.workflow_runs_where("", [])
-    }
-
-    /// The runs of one repository, newest first.
-    pub fn workflow_runs_of_repository(&self, repository_id: i64) -> Result<Vec<WorkflowRun>> {
-        self.workflow_runs_where("WHERE repository_id = ?1", [repository_id])
-    }
-
-    /// The runs of one workflow name, newest first.
-    pub fn workflow_runs_of_workflow(&self, workflow: &str) -> Result<Vec<WorkflowRun>> {
-        self.workflow_runs_where("WHERE workflow = ?1", [workflow])
-    }
-
-    fn workflow_runs_where<P: rusqlite::Params>(
-        &self,
-        clause: &str,
-        params: P,
-    ) -> Result<Vec<WorkflowRun>> {
-        let conn = self.conn();
-        let mut statement = conn.prepare(&format!(
-            "SELECT * FROM workflow_runs {clause} ORDER BY created_at DESC, id DESC"
-        ))?;
-        let rows = statement.query_map(params, run_from_row)?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
-    }
-
     /// Moves a run to `status`. Its start is set the first time it runs, its finish the first time it ends.
     pub fn set_workflow_run_status(&self, id: i64, status: &str) -> Result<()> {
         let at = now();
@@ -240,22 +212,6 @@ impl Store {
             params![status, at, output, error.map(crate::blobs::redact), id],
         )?;
         Ok(())
-    }
-
-    /// The same as [`Store::set_workflow_node_run_status`], under the shorter name.
-    pub fn set_workflow_node_status(&self, id: i64, status: &str) -> Result<()> {
-        self.set_workflow_node_run_status(id, status)
-    }
-
-    /// The same as [`Store::finish_workflow_node_run`], under the shorter name.
-    pub fn finish_workflow_node(
-        &self,
-        id: i64,
-        status: &str,
-        output: Option<&Value>,
-        error: Option<&str>,
-    ) -> Result<()> {
-        self.finish_workflow_node_run(id, status, output, error)
     }
 }
 
