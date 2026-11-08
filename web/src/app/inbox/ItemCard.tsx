@@ -8,7 +8,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { proposals } from "../../api/calls/improve";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
@@ -107,6 +107,7 @@ export function ItemCard({
   });
   const proposed = record.data?.find((each) => each.id === proposal) ?? null;
   const sentence = why(item, about, proposed?.kind);
+  const href = linkOf(item, about.board?.repository.id ?? null, proposed);
   const reasonReady = rejecting !== null && rejecting.trim() !== "";
 
   const footer = () => {
@@ -221,7 +222,16 @@ export function ItemCard({
 
       <div className="flex flex-col gap-2">
         <h2 className="m-0 break-words text-lg font-semibold tracking-tight text-text">
-          {item.title}
+          {href ? (
+            <Link
+              to={href}
+              className="text-inherit no-underline transition-colors duration-(--motion-routine) ease-out hover:underline"
+            >
+              {item.title}
+            </Link>
+          ) : (
+            item.title
+          )}
         </h2>
         {sentence && (
           <p className="m-0 max-w-prose text-base text-secondary [overflow-wrap:anywhere]">
@@ -282,6 +292,19 @@ function FactList({ facts }: { facts: Fact[] }) {
       ))}
     </dl>
   );
+}
+
+/**
+ * Where the item itself is opened, so its title is a link: the card on its board, the chat a change came from, the
+ * Retro's day for a proposal, the board of a grilling's repository. A takeover has no page of its own.
+ */
+function linkOf(item: InboxItem, board: number | null, proposed: Proposal | null): string | null {
+  if (item.card_id !== null && board !== null) return `/board/${board}?card=${item.card_id}`;
+  const chat = chatOf(item);
+  if (chat !== null) return `/chat/${chat}`;
+  if (proposed) return retroLink(proposed);
+  if (grillingOf(item) !== null && board !== null) return `/board/${board}`;
+  return null;
 }
 
 /** Where a proposal is read in full: the day of the Retro that made it, opened on the proposal itself. */
