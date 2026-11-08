@@ -1,4 +1,6 @@
 # Workflow node kinds
 
 One page per node kind, linked from the [workflow reference](../workflows.md). A node-kind card adds its page here and
-does not edit another kind's page. No node kind is registered yet.
+does not edit another kind's page.
+
+- [`condition`](condition.md): sends the value down the first port whose expression is true, or a fallback port.
