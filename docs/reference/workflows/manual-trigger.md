@@ -68,7 +68,7 @@ from them; see the [desktop API](../desktop-api.md#get-v1workflowsnamerun-inputs
 
 `POST /v1/workflows/{name}/runs` takes the inputs by their names and the repository the run belongs to, and answers the
 run as it was recorded. `moebius workflow run <name>` is the same door: `--input name=value` for each input, the text
-taken as the type the trigger declares, or `--inputs <file|->` for a JSON object of them all. See the
+taken as the type the trigger declares, or `--inputs <json|file|->` for a JSON object of them all. See the
 [command line](../cli.md) and the [desktop API](../desktop-api.md#post-v1workflowsnameruns).
 
 ## Validation

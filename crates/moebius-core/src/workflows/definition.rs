@@ -53,7 +53,7 @@ pub struct WorkflowDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Trigger {
-    /// The trigger kind, resolved through the same registry as a node's kind.
+    /// The trigger kind: `manual`, or a kind resolved through the same registry as a node's kind.
     pub kind: String,
     /// The trigger kind's own settings.
     #[serde(default = "empty_params", skip_serializing_if = "is_empty_params")]
@@ -133,8 +133,8 @@ impl WorkflowDefinition {
     /// Refuse a definition whose graph cannot be run whole.
     ///
     /// The checks run from the file's shape to its graph: exactly one trigger, unique node ids, edges that name nodes
-    /// that exist, kinds the registry knows, ports those kinds have, an edge leaving by every port of a node that
-    /// chooses its output port, no cycle, and every node reachable from the trigger.
+    /// that exist, kinds the registry knows (with `manual` read directly), ports those kinds have, an edge leaving by
+    /// every port of a node that chooses its output port, no cycle, and every node reachable from the trigger.
     pub fn validate(&self, file: &str) -> Result<(), Error> {
         self.check_triggers(file)?;
         self.check_ids(file)?;
