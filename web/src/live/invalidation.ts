@@ -3,7 +3,7 @@
  * event, so an event that changes what the snapshot shows invalidates it; `card_waiting` is also patched in place,
  * which shows the reason at once. What is read about one card (history, runs) goes stale with the snapshot, and the
  * column scripts with `script_changed`, and a project's settings with `project_settings_changed`. A new page that reads something the events change adds its key to `keys.ts` and a
- * line to `invalidates` below (the package sheet is in `packagePages`; the pages of Rules, Automations, Retro, Experiments and Decision model are in `improvePages`). Events are not replayed, so when the socket connects all that is shown is read again.
+ * line to `invalidates` below (the package sheet is in `packagePages`; the pages of Rules, Automations, Retro, Experiments and Decision model are in `improvePages`). A workflow run's events make the workflow list, the definition it belongs to and its own run stale (`workflowPages`). Events are not replayed, so when the socket connects all that is shown is read again.
  */
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { keys } from "../api/keys";
@@ -84,6 +84,16 @@ export function invalidates(event: ServerEvent): QueryKey[] {
   if (listChanged(event)) stale.push(keys.chats);
   stale.push(...improvePages(event));
   stale.push(...packagePages(event));
+  stale.push(...workflowPages(event));
+  return stale;
+}
+
+/** What the Workflows list, a definition and a run read, by the run and node events that change it. */
+function workflowPages(event: ServerEvent): QueryKey[] {
+  if (!event.kind.startsWith("workflow_")) return [];
+  const run = event.data.run;
+  const stale: QueryKey[] = [keys.workflows, keys.workflowDefinitions];
+  if (typeof run === "number") stale.push(keys.workflowRun(run));
   return stale;
 }
 

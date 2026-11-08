@@ -111,6 +111,11 @@ const routes: Route[] = [
   { path: "/projects/new", name: "projects-new" },
   { path: "/projects/1", name: "project" },
   { path: "/automations", name: "automations" },
+  { path: "/workflows", name: "workflows" },
+  { path: "/workflows/release", name: "workflow" },
+  { path: "/workflow-runs/41", name: "workflow-run" },
+  // A run that stopped at a node and asks what to do next.
+  { path: "/workflow-runs/42", name: "workflow-run-waiting" },
   { path: "/rules", name: "rules" },
   { path: "/retro", name: "retro" },
   // A day whose analysis failed, whose banner offers making it again.

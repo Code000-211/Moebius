@@ -68,6 +68,15 @@ const TerminalPage = lazy(() =>
 const UsagePage = lazy(() =>
   import("./usage/UsagePage").then((all) => ({ default: all.UsagePage })),
 );
+const WorkflowsPage = lazy(() =>
+  import("./workflows/WorkflowsPage").then((all) => ({ default: all.WorkflowsPage })),
+);
+const WorkflowPage = lazy(() =>
+  import("./workflows/WorkflowPage").then((all) => ({ default: all.WorkflowPage })),
+);
+const WorkflowRunPage = lazy(() =>
+  import("./workflows/WorkflowRunPage").then((all) => ({ default: all.WorkflowRunPage })),
+);
 const ChatPage = lazy(() => import("../chat/ChatPage").then((all) => ({ default: all.ChatPage })));
 
 /** The pages that have their own route below; the others show a placeholder. */
@@ -92,6 +101,7 @@ const PAGES_BUILT = new Set([
   "retro",
   "experiments",
   "decision-model",
+  "workflows",
 ]);
 
 export const routes = [
@@ -122,6 +132,9 @@ export const routes = [
       { path: "retro", element: <RetroPage /> },
       { path: "experiments", element: <ExperimentsPage /> },
       { path: "decision-model", element: <DecisionModelPage /> },
+      { path: "workflows", element: <WorkflowsPage /> },
+      { path: "workflows/:name", element: <WorkflowPage /> },
+      { path: "workflow-runs/:id", element: <WorkflowRunPage /> },
       { path: "chat/:id", element: <ChatPage /> },
       { path: "board/:id", element: <BoardPage /> },
       { path: "board/:id/scripts/:column", element: <ScriptPage /> },

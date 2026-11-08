@@ -270,6 +270,11 @@ A React app (`web/`) served by the server and built to [`docs/design-web.md`](de
 - **Fleet**: every card run and chat that is working, one tile each with its last steps; a click opens the live view or the chat.
 - **Automations**: the automations and an editor of each (name, schedule with a picker of common ones and its next
   firing, agent, place, prompt, on or off, "Run now"), with its past firings, each of which opens its chat.
+- **Workflows**: the list (name, description, trigger kind, node count and last run), a definition (the saved graph
+  read-only at the positions it saved, each node's kind and parameters, and the raw file for copying) and a run
+  (status, trigger, and a panel per node with its input, output, log and error). Values are JSON, a redacted value keeps
+  its mark, a large one is cut until it is asked for whole, and a waiting run says where it stopped and what it asks.
+  The pages read the workflow API; until it lands they run against the end-to-end fake server.
 - **Agents**: the agent list and editor (model, thinking, token budget, instructions, skills, MCP servers, extensions), and
   open proposals for the agent.
 - **Skills**: each skill of `skills/` as a list of its files, `SKILL.md` and the others, each edited as a commit; skills

@@ -22,6 +22,7 @@ import {
   SparkleIcon,
   TerminalWindowIcon,
   TrayIcon,
+  TreeStructureIcon,
   UsersThreeIcon,
 } from "@phosphor-icons/react";
 
@@ -46,6 +47,7 @@ export const PAGES: readonly PageDef[] = [
   { path: "skills", title: "Skills", group: "Build", icon: SparkleIcon },
   { path: "mcp-servers", title: "MCP servers", group: "Build", icon: PlugsConnectedIcon },
   { path: "rules", title: "Rules", group: "Build", icon: ScalesIcon },
+  { path: "workflows", title: "Workflows", group: "Build", icon: TreeStructureIcon },
   { path: "retro", title: "Retro", group: "Improve", icon: ArrowsClockwiseIcon },
   { path: "experiments", title: "Experiments", group: "Improve", icon: FlaskIcon },
   { path: "decision-model", title: "Decisions", group: "Improve", icon: GraphIcon },
