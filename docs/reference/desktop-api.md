@@ -950,8 +950,7 @@ Response:
   "agents": [{"agent": "Coder", "calls": 702, "tokens": 1120000, "input_tokens": 1000000, "cached_tokens": 610000, "model_ms": 7080000}],
   "activities": [{"activity": "bash", "model_ms": 2140000, "calls": 214, "output_tokens": 61000}],
   "tool_waits": [{"tool": "bash", "calls": 31, "seconds": 2460}],
-  "classes": [{"class": "strong", "model": "claude-sonnet-5-5", "tokens": 420000, "calls": 300}],
-  "tool_output": {"results": 96, "bytes_before": 3400000, "bytes_after": 920000}
+  "classes": [{"class": "strong", "model": "claude-sonnet-5-5", "tokens": 420000, "calls": 300}]
 }
 ```
 
@@ -979,9 +978,6 @@ Response:
 - `classes` holds the calls of the window whose request named a model class (see [the router](router.md#model-classes)):
   for each class and the model of it that answered, the tokens and the calls, by class name and then the model with
   the most tokens first. The same calls are counted under their model in `models` too.
-- `tool_output` is what keeping tool outputs small saved in the window: how many results were made smaller (their
-  `tool_output` run events) and their bytes before and after, summed. See `agents.<name>.tool_output` in
-  [configuration](configuration.md).
 
 Errors: `422` `days` is not from 1 to 365.
 
@@ -1154,8 +1150,8 @@ included.
 ### `GET /v1/agents/{name}`
 
 An agent of the harness configuration repository, as its files say: `{"name": string, "settings": {"model", "protocol",
-"thinking", "token_budget", "harness", "runner", "skills", "extensions", "mcp", "tool_output", "engineering_skills"}, "instructions": string}` (`thinking`,
-`token_budget`, `harness` and `runner` are left out when not set; no `harness` is `pi-bolt`, no `runner` is the server itself; `tool_output` is left out when it is the defaults; `engineering_skills` is left out when it is `true` (the engineering skills of the agent's name, if it has any), is `false` for none, and is a list of names (`tdd`, `diagnosing-bugs`, `code-review`, `grilling`, `to-tickets`, `wayfinder`, `domain-modeling`, `research`, `prototype`, `moebius-autonomous`) for exactly those: see [engineering skills](harness-configuration.md#engineering-skills). A `PUT` with any other name is refused with `422`, and so is a file with one). The files hold no secrets and are returned in full. Errors: `404` no such agent; `422` its files
+"thinking", "token_budget", "harness", "runner", "skills", "extensions", "mcp", "engineering_skills"}, "instructions": string}` (`thinking`,
+`token_budget`, `harness` and `runner` are left out when not set; no `harness` is `pi-bolt`, no `runner` is the server itself; `engineering_skills` is left out when it is `true` (the engineering skills of the agent's name, if it has any), is `false` for none, and is a list of names (`tdd`, `diagnosing-bugs`, `code-review`, `grilling`, `to-tickets`, `wayfinder`, `domain-modeling`, `research`, `prototype`, `moebius-autonomous`) for exactly those: see [engineering skills](harness-configuration.md#engineering-skills). A `PUT` with any other name is refused with `422`, and so is a file with one). The files hold no secrets and are returned in full. Errors: `404` no such agent; `422` its files
 are broken (the message says how), or the server has no `[harness]` and its agents are in `moebius.toml`.
 
 A built-in agent (`Moebius`, `Grilling-partner`, `Coder`, `Reviewer`, `Retro-analyst`, `Autoresearcher`) also has `"built_in":
@@ -2583,8 +2579,6 @@ A `run_event`'s source is told by its inner `kind`:
 - `mcp_call`: a call of a tool of an MCP server through the MCP gateway, `{"server", "tool", "tool_call_id", "input",
   "decision", "reason", "result"}`, where `result` is what the harness was given (the refusal for a refused call). See
   the [MCP gateway](bridge-protocol.md#the-mcp-gateway).
-- `tool_output`: a tool's result made smaller before the model read it, `{"tool", "tool_call_id", "steps", "bytes_before",
-  "bytes_after", "lines_before", "lines_after", "saved"}`. See the [bridge protocol](bridge-protocol.md#post-moebiusresult).
 - `mcp_error`: an MCP server of the run's agent could not be started or reached, `{"server", "message"}`; its tools are
   left out.
 - `launcher_note`: what the launcher plugin said about starting the run's process, `{"note"}` (see

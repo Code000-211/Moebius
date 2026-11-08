@@ -36,7 +36,6 @@ describe("what a save sends", () => {
       thinking: "high",
       budget: " 2000000 ",
       runner: "box",
-      maxLines: "400",
       engineeringSkills: [] as string[],
     };
     const request = agentRequest(form);
@@ -47,7 +46,6 @@ describe("what a save sends", () => {
         token_budget: 2000000,
         runner: "box",
         engineering_skills: false,
-        tool_output: { max_lines: 400, max_bytes: 16384, compress: true },
       },
     });
   });
@@ -58,7 +56,6 @@ describe("what a save sends", () => {
     [{ model: "  " }, "Enter the model."],
     [{ budget: "0" }, "The token budget is a whole number of at least 1."],
     [{ budget: "1.5" }, "The token budget is a whole number of at least 1."],
-    [{ maxLines: "many" }, "The tool output fields are whole numbers; 0 turns one off."],
   ])("says what is wrong with %j", (change, problem) => {
     expect(agentRequest({ ...filled(), ...change })).toBe(problem);
   });
@@ -78,7 +75,6 @@ describe("opening an agent", () => {
         mcp: ["docs"],
         extensions: ["extensions/log.ts"],
         engineering_skills: false,
-        tool_output: { max_lines: 2, max_bytes: 3, compress: false },
       },
     });
     expect(form).toMatchObject({
@@ -87,7 +83,6 @@ describe("opening an agent", () => {
       protocol: "anthropic",
       thinking: "low",
       budget: "5",
-      compress: false,
       engineeringSkills: [],
       mcp: ["docs"],
     });
@@ -133,7 +128,6 @@ describe("an agent of moebius.toml", () => {
           instructions: "Hi.",
           skills: ["skills/a"],
           token_budget: 7,
-          tool_output: { max_lines: 5 },
         },
       }),
     );
@@ -143,7 +137,6 @@ describe("an agent of moebius.toml", () => {
       thinking: "low",
       token_budget: 7,
       skills: ["skills/a"],
-      tool_output: { max_lines: 5, max_bytes: 16384, compress: true },
     });
     expect(fileTable(detail?.settings as never, "Hi.")).toEqual({
       model: "m",
@@ -151,7 +144,6 @@ describe("an agent of moebius.toml", () => {
       thinking: "low",
       instructions: "Hi.",
       token_budget: 7,
-      tool_output: { max_lines: 5, max_bytes: 16384, compress: true },
       skills: ["skills/a"],
     });
   });
@@ -220,7 +212,6 @@ describe("starting from an existing agent", () => {
           extensions: ["extensions/x.ts"],
           mcp: ["docs"],
           engineering_skills: false,
-          tool_output: { max_lines: 1, max_bytes: 2, compress: false },
         },
         instructions: "Be brief.",
       },
@@ -241,7 +232,6 @@ describe("starting from an existing agent", () => {
       extensions: ["extensions/x.ts"],
       mcp: ["docs"],
       engineeringSkills: [],
-      compress: false,
       instructions: "Be brief.",
     });
   });

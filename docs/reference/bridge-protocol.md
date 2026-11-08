@@ -1,9 +1,9 @@
 # Bridge protocol
 
 The bridge is the part of Moebius that lives inside a harness. The Pi-Bolt bridge does not change the agent's process:
-it blocks no tool call, changes no result and hides nothing; it only offers the tool `lessons`. The check and the result
-endpoints below stay for a bridge that wants them, but no bridge of Moebius calls them now. This page is for anyone who writes a bridge for another harness or tests the endpoints: it describes the HTTP
-endpoints the server offers (the check, the result and the lessons), their JSON, the rules a client must follow so that it fails closed, and how the harness is
+it blocks no tool call, changes no result and hides nothing; it only offers the tool `lessons`. The check endpoint
+below stays for a bridge that wants it, but no bridge of Moebius calls it now. This page is for anyone who writes a bridge for another harness or tests the endpoints: it describes the HTTP
+endpoints the server offers (the check and the lessons), their JSON, the rules a client must follow so that it fails closed, and how the harness is
 told where the server is. It also describes the [MCP gateway](#the-mcp-gateway), the one MCP server every harness is
 given, which checks the calls of MCP tools on the server's side. The server side is `crates/moebius-core/src/decide/check/`; the reference client is the Pi
 extension `crates/moebius-core/bridge/moebius-bridge.ts`.
@@ -65,59 +65,6 @@ Status codes:
 | `400`, `422` | With a valid token: the body is not JSON (`400`), or lacks a field or has the wrong type (`422`). The token is checked first, so without one the answer is always `401`. |
 | `500` | `{"error": "cannot decide"}`: the server could not even record the decision. The client must treat it as a refusal. |
 
-### `POST /moebius/result`
-
-Reports a tool's result before the model sees it, so that secrets can be removed. Send it for every tool result.
-
-Request:
-
-| Field | Type | Meaning |
-|---|---|---|
-| `content` | array of JSON objects | The result's content blocks, as the harness has them (for Pi: `{"type": "text", "text": "..."}` and other block types). Required. |
-
-| `tool_call_id` | string | The harness's id for the call. Optional; named in the `tool_output` event. |
-| `tool` | string | The tool's name. Optional; with `bash`, the command's output can be compressed by what the command is. |
-| `input` | any JSON | The call's arguments. Optional; for `bash`, `input.command` is the command line. |
-| `is_error` | boolean | Whether the call failed. Optional; not read. |
-| `tool_output` | object | The agent's budget: `{"max_lines", "max_bytes", "compress"}`, as `agents.<name>.tool_output` in [configuration](configuration.md) (a key left out has its default; an unknown key is `422`). Optional; without it the result is only cleaned of secrets. |
-
-Response, status `200`: `{"content": [...]}` with the same blocks. In every block of `"type": "text"` each secret is
-replaced by `[redacted:<kind>]`; other blocks are unchanged. The kinds are `private-key`, `anthropic-key`, `openai-key`,
-`github-token`, `gitlab-token` and `aws-access-key`. The patterns are the ones listed under `no-secrets-in-commands` in [rules](rules.md). With `tool_output`, each text is then made smaller where it is
-made (the server side is `crates/moebius-core/src/harness/output/`):
-
-1. With `compress`: terminal escape codes go, a line keeps what follows its last carriage return, and a line that is only
-   a progress bar goes. For a `bash` command line that runs `cargo test`, `pytest`, `go test`, `jest` or `vitest` (also
-   as `npm test`, `pnpm test` and the like) or a cargo build (`build`, `check`, `clippy`, `doc`, `run`, `install`), the
-   lines known to be noise go: passing tests, test binaries in which every test passed, build progress, and a cargo
-   diagnostic that repeats is kept once with `(×<n>)`. A line that is not known is kept, so error messages and failing
-   tests' output stay. A note at the end says how many lines were left out and what they were. Last, each run of the
-   same line becomes one line followed by `(×<n>)`.
-2. Above `max_lines` or `max_bytes`, the head and the tail are kept, half the budget each, around
-   `[1,840 lines left out; the full output is in /srv/.moebius/runs/7/out/3.txt]`.
-3. When lines were left out by 1 or 2, the whole text (without secrets) is written to the next free `<n>.txt` in the
-   `out` folder of the run's own directory (`<data_dir>/runs/<run id>/out/`), outside the worktree, so it is never
-   committed. The server writes it and the agent reads it in ranges, by the full path the text names: the check of a
-   tool call refuses only writes outside the worktree, so a read of that folder is allowed, and a launcher is asked to
-   grant it for reading (see the [plugin API](plugin-api.md#launchers)). The folder is removed when the run ends (and
-   when the server finds the run unended at its next start). A run on a runner cannot read the server's files, so
-   nothing is saved for it: its text says how many lines were left out and names no path, and `saved` is `null`.
-4. Each text made smaller is stored as a `tool_output` run event: `{"tool", "tool_call_id", "steps", "bytes_before",
-   "bytes_after", "lines_before", "lines_after", "saved"}`, where `steps` lists what was done (`clean`, the compressor's
-   name such as `cargo-test`, `fold`, `budget`) and `saved` is the path of step 3 or `null`. `GET /v1/usage` adds them
-   up.
-
-```json
-{"content": [{"type": "text", "text": "token ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}]}
-```
-
-```json
-{"content": [{"type": "text", "text": "token [redacted:github-token]"}]}
-```
-
-Status codes: `200`, `401` and the `400` and `422` of the check endpoint. Nothing but the `tool_output` events is
-recorded.
-
 ### `POST /moebius/lessons`
 
 Looks up the lessons the Retro learned from earlier cards (see [the Retro](harness-configuration.md#the-retro)). The Pi
@@ -133,20 +80,16 @@ reports to the agent as text.
 
 ## Rules for a client
 
-A client must fail closed. Do this:
+A client that checks tool calls must fail closed. Do this:
 
 1. Before a tool call, `POST /moebius/check`. Run the call only if the answer is status `200` with `decision` equal to
    `allow`. Block it for a `refuse`, for any other status, for a `decision` that is neither value, for an unreachable
    server, for an unparsable body and when the two environment variables below are not set.
 2. Give the model the refusal's `reason` as the tool's result, so that it can find another way. A refusal is an answer:
    do not stop the run and never wait for a person.
-3. Before the model sees a tool result, `POST /moebius/result` and use the `content` of the answer. If that fails for any
-   reason, withhold the result: replace its text blocks with a message saying that the result could not be checked for
-   secrets. Also drop fields that may carry the same text again, such as `structuredContent` in Pi.
 
 The reference client does exactly this: a blocked call carries `Moebius refused this call: <reason>`, or `Moebius refused
-this call: the check could not be reached (<error>)`; a withheld result says `Moebius withheld this result because it could
-not be checked for secrets.`
+this call: the check could not be reached (<error>)`.
 
 ## The environment of the harness
 
@@ -154,7 +97,7 @@ The harness starts every Pi-Bolt run (and every Claude Code run) with a cleared 
 
 | Variable | Value |
 |---|---|
-| `MOEBIUS_CHECK_URL` | The router's base URL, such as `http://127.0.0.1:7172`, without a trailing slash. The client appends `/moebius/check` and `/moebius/result`. |
+| `MOEBIUS_CHECK_URL` | The router's base URL, such as `http://127.0.0.1:7172`, without a trailing slash. The client appends `/moebius/check`. |
 | `MOEBIUS_RUN_TOKEN` | The run's token, of the form `moebius-run-<48 hex digits>`. |
 | `MOEBIUS_REPOSITORY` | Only for a run of the Moebius agent or the Grilling partner in a repository: its id, which `"$MOEBIUS" issue create` and `issue list` take. |
 | `MOEBIUS_RUN` | Only for a run of the Moebius agent or the Grilling partner: the run's id, which the agent names its claims by (`"$MOEBIUS" issue claim <id> --as "wayfinder-$MOEBIUS_RUN"`). |
@@ -253,8 +196,7 @@ Every `tools/call` is a tool call like any other: it goes through `decide("tool_
 judgement (see [above](#post-moebiuscheck)). A refused call never reaches the server; its result is
 `{"content": [{"type": "text", "text": "Moebius refused this call: <reason>"}], "isError": true}`, and the reason names
 the rule. Anything that fails while deciding refuses the call. An allowed call goes to the server, which may take ten
-minutes; what it answers comes back with every secret in its strings replaced by `[redacted:<kind>]`, as from
-`/moebius/result`, and a server that fails gives `isError: true` with why. Every call is stored and published as an
+minutes; what it answers comes back with every secret in its strings replaced by `[redacted:<kind>]`,, and a server that fails gives `isError: true` with why. Every call is stored and published as an
 `mcp_call` run event, `{"server", "tool", "tool_call_id", "input", "decision", "reason", "result"}`, with secrets
 removed.
 

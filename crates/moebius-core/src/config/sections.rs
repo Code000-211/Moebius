@@ -421,9 +421,9 @@ pub struct AgentConfig {
     /// The harness the agent runs on.
     #[serde(default)]
     pub harness: HarnessKind,
-    /// How the outputs of the agent's tools are kept small (`[agents.<name>.tool_output]`).
-    #[serde(default)]
-    pub tool_output: ToolOutput,
+    /// The removed setting `[agents.<name>.tool_output]`: read and ignored.
+    #[serde(default, skip_serializing)]
+    pub tool_output: RemovedTable,
     /// The runner (`[[runners]]`) the agent's runs go to; without one they run on the server.
     #[serde(default)]
     pub runner: Option<String>,
@@ -498,44 +498,14 @@ impl Serialize for EngineeringSkills {
     }
 }
 
-/// How the outputs of an agent's tools are kept small before the model reads them: each one compressed and cut to a
-/// budget where it is made (by `harness::output`). The bridge is given it as the JSON of `MOEBIUS_TOOL_OUTPUT` and
-/// hands the budget back with each result. Older outputs are not hidden: that would change the start of the
-/// conversation and so spoil the model's prompt cache; Pi-Bolt keeps the context small itself.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct ToolOutput {
-    /// Read and ignored: the key of the setting that hid older outputs, which files written before it was removed
-    /// still carry. Never written.
-    #[serde(skip_serializing)]
-    pub hide_after_turns: Option<u32>,
-    /// The most lines of one result; above it, its head and tail are kept. 0 is no limit.
-    pub max_lines: u32,
-    /// The most bytes of one result; above it, its head and tail are kept. 0 is no limit.
-    pub max_bytes: u32,
-    /// Whether the outputs of well-known commands (test runners, cargo's build logs) are compressed, and escape
-    /// codes, progress bars and repeated lines removed.
-    pub compress: bool,
-}
+/// The table `[agents.<name>.tool_output]`, which files written before the setting was removed still carry. It is
+/// read and ignored, and never written.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RemovedTable;
 
-impl Default for ToolOutput {
-    fn default() -> Self {
-        Self {
-            hide_after_turns: None,
-            max_lines: 200,
-            max_bytes: 16 * 1024,
-            compress: true,
-        }
-    }
-}
-
-impl ToolOutput {
-    /// Whether these are the defaults, which an agent's file need not say.
-    pub fn is_default(&self) -> bool {
-        Self {
-            hide_after_turns: None,
-            ..*self
-        } == Self::default()
+impl<'de> Deserialize<'de> for RemovedTable {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        serde::de::IgnoredAny::deserialize(deserializer).map(|_| Self)
     }
 }
 

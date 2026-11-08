@@ -51,12 +51,6 @@ export interface ClassUsage {
   calls: number;
 }
 
-export interface ToolOutputSaving {
-  results: number;
-  bytes_before: number;
-  bytes_after: number;
-}
-
 export interface UsageReport {
   today: string;
   days_in_window: number;
@@ -67,5 +61,4 @@ export interface UsageReport {
   activities: ActivityUsage[];
   tool_waits: ToolWait[];
   classes?: ClassUsage[];
-  tool_output?: ToolOutputSaving;
 }

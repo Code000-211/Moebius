@@ -1,5 +1,5 @@
-//! The tool-call check (spec 3.2, ADR 0007): the endpoints the harness's bridge calls on the router's listener. Every
-//! tool call of a run is asked before it runs, and every tool result is reported before the model sees it. The run's
+//! The tool-call check (spec 3.2, ADR 0007): the endpoint on the router's listener that asks whether a
+//! tool call of a run may run (the Pi-Bolt bridge does not call it now). The run's
 //! token (`Authorization: Bearer <token>`, the one the harness uses for the model) authenticates the bridge; an
 //! unknown or missing token gets 401.
 //!
@@ -10,18 +10,11 @@
 //!
 //!   A harness without a bridge (Claude Code) has its calls asked the same way by the router, which finds them in the
 //!   model's answers ([`Checker`], see `router`).
-//! - `POST /moebius/result` takes `{ "content": [ { "type": "text", "text" }, .. ] }` (Pi's tool result blocks; the
-//!   bridge may add `tool_call_id`, `tool`, `input` and `is_error`) and answers `{ "content": [..] }` with the secrets
-//!   removed from every text block and other blocks unchanged. With `tool_output` (the agent's budget, see
-//!   `config::ToolOutput`) each text block is also made smaller by `harness::output`, and what that saved is stored
-//!   as a `tool_output` run event.
 //!
 //! The MCP gateway (`harness::gateway`) decides each call of an MCP tool with the same question (`decide_call`).
 //! The decision itself, and the order of the deciders behind it, is `call`; this module is the HTTP adapter.
-//! `result` is the second endpoint.
 
 mod call;
-mod result;
 
 use call::ask;
 pub(crate) use call::{CheckRequest, decide_call};
@@ -54,7 +47,6 @@ struct Check {
 pub fn routes(app: Arc<App>, router: Arc<Router>, rules_file: Option<PathBuf>) -> Routes {
     Routes::new()
         .route("/moebius/check", post(check))
-        .route("/moebius/result", post(result::result))
         .with_state(Check {
             app,
             router,
@@ -352,13 +344,10 @@ pub(super) mod tests {
     async fn an_unknown_or_missing_token_is_refused() {
         let s = setup(true).await;
         let client = reqwest::Client::new();
-        let bodies = [
-            (
-                "check",
-                json!({"tool": "bash", "input": {}, "tool_call_id": "c"}),
-            ),
-            ("result", json!({"content": []})),
-        ];
+        let bodies = [(
+            "check",
+            json!({"tool": "bash", "input": {}, "tool_call_id": "c"}),
+        )];
         for (endpoint, body) in bodies {
             let url = format!("{}/moebius/{endpoint}", s.url);
             let unknown = client
@@ -377,7 +366,7 @@ pub(super) mod tests {
     async fn the_token_is_checked_before_the_body() {
         let s = setup(true).await;
         let client = reqwest::Client::new();
-        for endpoint in ["check", "result"] {
+        for endpoint in ["check"] {
             let url = format!("{}/moebius/{endpoint}", s.url);
             let bad_bodies = [
                 client.post(&url).body("not json"),

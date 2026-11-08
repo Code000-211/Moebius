@@ -103,12 +103,11 @@ async fn a_tool_of_the_agents_mcp_server_is_called_through_the_gateway_by_a_real
     );
 
     let events = started.server.app.store.events(run.id).unwrap();
-    let checked: Vec<_> = events
-        .iter()
-        .filter(|event| event.kind == "tool_check" && event.data["tool"] == TOOL)
-        .collect();
-    assert_eq!(checked.len(), 1, "{events:#?}");
-    assert_eq!(checked[0].data["decision"], "allow");
+    // The bridge asks for no check of a tool call; the gateway's check is the `mcp_call` below.
+    assert!(
+        events.iter().all(|event| event.kind != "tool_check"),
+        "{events:#?}"
+    );
 
     // The gateway checked the call under the server's name, and recorded it with the server's answer.
     let calls: Vec<_> = events
