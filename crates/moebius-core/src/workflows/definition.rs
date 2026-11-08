@@ -139,6 +139,7 @@ impl WorkflowDefinition {
         self.check_ids(file)?;
         self.check_edge_nodes(file)?;
         self.check_kinds_and_ports(file)?;
+        super::nodes::for_each::check(self).map_err(|message| Error::new(file, message))?;
         self.check_no_cycle(file)?;
         self.check_reachable(file)
     }

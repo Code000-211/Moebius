@@ -116,7 +116,7 @@ fn configuration_keys() -> Vec<String> {
         if let Some(header) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
             table = header.trim_matches(['[', ']']).to_string();
             if let Some(agent) = table.strip_prefix("agents.") {
-                // A table of an agent, such as `agents.Coder.tool_output`, is written with the name left out.
+                // A table of an agent, such as `agents.Coder.foo`, is written with the name left out.
                 let rest = agent.split_once('.').map_or("", |(_, rest)| rest);
                 table = ["agents.<name>", rest]
                     .into_iter()
@@ -151,7 +151,7 @@ fn every_configuration_key_is_in_the_reference() {
         "teacher.timeout_seconds",
         "github.poll_seconds",
         "agents.<name>.token_budget",
-        "agents.<name>.tool_output.max_lines",
+        "agents.<name>.token_budget",
     ] {
         assert!(
             keys.iter().any(|key| key == expected),

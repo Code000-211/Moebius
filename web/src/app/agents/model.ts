@@ -4,13 +4,7 @@
  * choices of the Model field. It follows `screens/agents/editor.rs` of the former desktop app.
  */
 import type { Agent, AvailableClass, AvailableModel, AvailableModels } from "../../api/types/chat";
-import {
-  type AgentDetail,
-  type AgentSettings,
-  type BuiltInAgent,
-  DEFAULT_TOOL_OUTPUT,
-  type ToolOutput,
-} from "../../api/types/harness";
+import type { AgentDetail, AgentSettings, BuiltInAgent } from "../../api/types/harness";
 import type { ServerSettings } from "../../api/types/models";
 
 export const PROTOCOLS = ["openai", "anthropic"] as const;
@@ -76,10 +70,6 @@ export interface AgentForm {
   runner: string | null;
   thinking: string | null;
   budget: string;
-  hideAfter: string;
-  maxLines: string;
-  maxBytes: string;
-  compress: boolean;
   /** The engineering skills it is given, exactly; null leaves them at the defaults of its name. */
   engineeringSkills: string[] | null;
   instructions: string;
@@ -88,15 +78,6 @@ export interface AgentForm {
   extensions: string[];
   /** What a built-in agent brings itself, shown read only. */
   builtIn: BuiltInAgent | null;
-}
-
-function toolOutputFields(output: ToolOutput) {
-  return {
-    hideAfter: String(output.hide_after_turns),
-    maxLines: String(output.max_lines),
-    maxBytes: String(output.max_bytes),
-    compress: output.compress,
-  };
 }
 
 export function blankForm(name: string, naming = false): AgentForm {
@@ -110,7 +91,6 @@ export function blankForm(name: string, naming = false): AgentForm {
     runner: null,
     thinking: null,
     budget: "",
-    ...toolOutputFields(DEFAULT_TOOL_OUTPUT),
     engineeringSkills: null,
     instructions: "",
     skills: [],
@@ -135,7 +115,6 @@ export function formOf(detail: AgentDetail): AgentForm {
     runner: settings.runner ?? null,
     thinking: settings.thinking ?? null,
     budget: settings.token_budget === undefined ? "" : String(settings.token_budget),
-    ...toolOutputFields(settings.tool_output ?? DEFAULT_TOOL_OUTPUT),
     engineeringSkills: Array.isArray(settings.engineering_skills)
       ? settings.engineering_skills
       : settings.engineering_skills === false
@@ -209,17 +188,6 @@ export function agentRequest(form: AgentForm): AgentRequest | string {
     tokenBudget = WHOLE.test(budget) ? Number(budget) : Number.NaN;
     if (!(tokenBudget >= 1)) return "The token budget is a whole number of at least 1.";
   }
-  const numbers = [form.hideAfter, form.maxLines, form.maxBytes].map((field) => field.trim());
-  if (!numbers.every((field) => WHOLE.test(field) && Number(field) <= 4294967295)) {
-    return "The tool output fields are whole numbers; 0 turns one off.";
-  }
-  const [hide, lines, bytes] = numbers.map(Number) as [number, number, number];
-  const toolOutput: ToolOutput = {
-    hide_after_turns: hide,
-    max_lines: lines,
-    max_bytes: bytes,
-    compress: form.compress,
-  };
   const settings: AgentSettings = {
     model,
     protocol: form.protocol,
@@ -231,7 +199,6 @@ export function agentRequest(form: AgentForm): AgentRequest | string {
   if (tokenBudget !== undefined) settings.token_budget = tokenBudget;
   if (form.harness !== HARNESSES[0]) settings.harness = form.harness;
   if (form.runner !== null) settings.runner = form.runner;
-  if (!sameToolOutput(toolOutput, DEFAULT_TOOL_OUTPUT)) settings.tool_output = toolOutput;
   if (form.engineeringSkills !== null) {
     settings.engineering_skills =
       form.engineeringSkills.length === 0 ? false : form.engineeringSkills;
@@ -241,15 +208,6 @@ export function agentRequest(form: AgentForm): AgentRequest | string {
     ? form.instructions.slice(0, -1)
     : form.instructions;
   return { name, settings, instructions };
-}
-
-function sameToolOutput(a: ToolOutput, b: ToolOutput): boolean {
-  return (
-    a.hide_after_turns === b.hide_after_turns &&
-    a.max_lines === b.max_lines &&
-    a.max_bytes === b.max_bytes &&
-    a.compress === b.compress
-  );
 }
 
 /** `name` taken out of `chosen` when it is there, put in when it is not. */
@@ -280,7 +238,6 @@ export function fromFile(name: string, server: ServerSettings): AgentDetail | nu
     typeof table[key] === "string" ? (table[key] as string) : undefined;
   const paths = (key: string) =>
     Array.isArray(table[key]) ? (table[key] as unknown[]).filter((v) => typeof v === "string") : [];
-  const output = table.tool_output;
   const settings: AgentSettings = {
     model: text("model") ?? "",
     protocol: text("protocol") ?? PROTOCOLS[0],
@@ -295,9 +252,6 @@ export function fromFile(name: string, server: ServerSettings): AgentDetail | nu
   if (harness !== undefined) settings.harness = harness;
   const runner = text("runner");
   if (runner !== undefined) settings.runner = runner;
-  if (output !== null && typeof output === "object") {
-    settings.tool_output = { ...DEFAULT_TOOL_OUTPUT, ...(output as Partial<ToolOutput>) };
-  }
   if (table.engineering_skills === false) settings.engineering_skills = false;
   if (Array.isArray(table.engineering_skills)) {
     settings.engineering_skills = table.engineering_skills.filter((v) => typeof v === "string");
@@ -313,7 +267,6 @@ export function fileTable(settings: AgentSettings, instructions: string): Record
   if (settings.runner !== undefined) table.runner = settings.runner;
   if (instructions.trim() !== "") table.instructions = instructions;
   if (settings.token_budget !== undefined) table.token_budget = settings.token_budget;
-  if (settings.tool_output) table.tool_output = settings.tool_output;
   if (settings.engineering_skills !== undefined && settings.engineering_skills !== true) {
     table.engineering_skills = settings.engineering_skills;
   }

@@ -171,6 +171,7 @@ Only the kinds listed under [Node kinds](#node-kinds) are registered; a file nam
 Each node kind has one section here and one page in [`workflows/`](workflows/README.md).
 
 - [`condition`](workflows/condition.md): sends the value down the first port whose expression is true.
+- [`for_each`](workflows/for-each.md): runs a sub-path once per element of a list and gathers the outputs.
 
 ## Extending this page
 

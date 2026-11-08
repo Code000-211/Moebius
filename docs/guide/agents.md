@@ -525,7 +525,7 @@ chat's own session, so the agent knows the whole conversation. The command line 
 A person can also work with a waiting chat in Pi-Bolt's own terminal interface: in the web app, the "Terminal"
 button beside "Send" (and "Chat" under the terminal to go back); over the API, the WebSocket `GET /v1/chats/{id}/tui`. It is Pi-Bolt's
 interactive mode in the chat's worktree with the chat's own model, provider, instructions, skills, MCP servers,
-extensions and bridge, so every tool call is still checked by the rules and recorded as a decision of the chat. It is
+extensions and bridge. It is
 the same conversation as the chat: the terminal continues the chat's Pi session, so the agent there knows what was said
 in the chat; what is said in the terminal is recorded as the chat's events as it happens (the person's messages as
 `said`, the agent's text, thinking and tool calls as Pi records them), so the chat view, the Fleet and the event stream
@@ -586,43 +586,15 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/
 4. Merge it with `POST /v1/changes/{id}/merge`. The merge is pushed to `origin`, the agents are read again, and the next
    run of the Coder has the skill. Try it by starting a chat with that agent.
 
-## Keep tool outputs small
+## Tool outputs
 
-What tools print is most of what a run sends the model, and most of it is read once. Every agent on Pi-Bolt has a table
-`tool_output` that keeps it small, with defaults that need no configuration (Pi-Bolt's bridge does it; an agent on
-Claude Code has no bridge, and the table has no effect there):
-
-- The output of a tool call older than the last `hide_after_turns` turns (default 10) is replaced, in the requests to the
-  model, by `[bash {"command":"cargo test"}: output hidden: 312 lines]`. Errors are kept. The run's events and Pi's
-  session keep every output.
-- One result is at most `max_lines` lines (200) and `max_bytes` bytes (16384). Above that the model reads its head and
-  tail around `[1,840 lines left out; the full output is in /srv/.moebius/runs/7/out/3.txt]`; the agent can read that file
-  in ranges. It is in the run's own directory, outside its worktree, so it is never committed.
-- With `compress` (on), escape codes, progress bars and repeated lines go, and the output of `cargo test`, `pytest`,
-  `go test`, `jest` and `vitest` is cut to the failing tests and the summary, a cargo build's to its errors and warnings.
-  Nothing that is not known to be noise is removed.
-
-```toml
-[agents.Coder]
-model = "my-local-model"
-
-[agents.Coder.tool_output]
-hide_after_turns = 20     # 0 keeps every output
-max_lines = 400           # 0 is no limit
-max_bytes = 32768
-compress = true
-```
-
-In a harness configuration repository the same table goes in `agents/<name>.toml`, and the agent editor of the desktop
-app has a field for each (shown for an agent on Pi-Bolt). Each result made smaller is a `tool_output` run event with its bytes before and after; the
-Usage page shows what they saved beside the longest tool waits. A built-in rule, `no-dumping-large-files`, refuses `cat`
-of a file over 64 KB and tells the agent to read a range or grep instead (see [Rules](rules.md)). The exact behaviour is
-in the [configuration reference](../reference/configuration.md) and the [bridge protocol](../reference/bridge-protocol.md).
+Moebius does not change what tools print: the model reads the output as the tool made it, and older outputs are never
+hidden, so the model's prompt cache holds from one request to the next.
 
 ## How to try an agent
 
 Start a chat with it and read its events. A first message that makes it call a tool shows the whole path: model request
-through the router, tool call through the bridge (a `tool_check` event), tool result. The agent's answer is in the data of the event
+through the router, tool call, tool result. The agent's answer is in the data of the event
 of kind `agent_end`, which is Pi's own record.
 
 ## What can go wrong and how you see it
@@ -635,6 +607,5 @@ of kind `agent_end`, which is Pi's own record.
 | Model requests fail. | The router answers 502 when it has no upstream for the agent's `protocol`, or cannot reach it. See the [router reference](../reference/router.md). |
 | Model requests are refused with 429. | The card's `token_budget` or the day's budget is spent. The message says which. |
 | A run fails at once. | The run is `failed` and its events hold a `moebius_error` with the reason, for example that Pi-Bolt could not be started (`pi_bolt.program`). A run's standard error is in `<data_dir>/runs/<id>/stderr.log`. |
-| The model says it cannot see an earlier output. | It was hidden after `tool_output.hide_after_turns` turns; the agent can run the command again, or you raise or turn off the window (`0`). |
 | A skill or extension does not load. | Moebius only passes the path. Look in `<data_dir>/runs/<id>/stderr.log` and in Pi-Bolt's documentation. |
 | The Reviewer never approves. | Its final answer has text after the verdict line, or no verdict line. Read the run's `summary` (`GET /v1/runs/{id}`). |

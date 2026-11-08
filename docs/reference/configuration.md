@@ -553,28 +553,8 @@ A name is made of letters, digits, `-` and `_` and must not be empty, else the f
 | `agents.<name>.extensions` | array of paths | `[]` | Each given to Pi-Bolt as `--extension`, before the bridge, which is always loaded last. Pi loads no extension or skill it discovers on its own. |
 | `agents.<name>.token_budget` | integer | none | The most tokens (input plus output, summed over all runs of the card, teacher included) a card may use. A model request over it is answered with HTTP 429 `budget_exceeded`, and the default scripts mark a card that reached it stuck instead of starting a run. Tokens used before the card's latest retry do not count. Without it there is no limit. A chat has no card, so its budget is the tokens of the chat's own run. Scripts read it as `moebius.agent_budget(name)`. |
 | `agents.<name>.engineering_skills` | boolean or array of strings | `true` | The engineering skills the agent is given, before its own `skills`. `true`: those of its name, with the skill `moebius-autonomous` that says how to use them without a person to ask: for the `Coder` `tdd` and `diagnosing-bugs`, for the `Reviewer` `code-review`, for the `Grilling-partner` `grilling`, `to-tickets`, `wayfinder`, `domain-modeling`, `research` and `prototype`, none for another name. `false`: none. A list of names (`tdd`, `diagnosing-bugs`, `code-review`, `grilling`, `to-tickets`, `wayfinder`, `domain-modeling`, `research`, `prototype`, `moebius-autonomous`): exactly those, under any name; another name is an error. See [Engineering skills](harness-configuration.md#engineering-skills). |
-| `agents.<name>.tool_output.hide_after_turns` | integer | `10` | The output of a tool call older than this many turns (model responses) is replaced, in the requests to the model, by a placeholder: `[<tool> <input>: output hidden: <n> lines]`. Errors are never hidden, and the session and the run's events keep every output. `0` keeps every output. The bridge does it, through Pi's `context` hook. |
-| `agents.<name>.tool_output.max_lines` | integer | `200` | The most lines of one tool result the model reads. Above it (or above `max_bytes`), the result's head and tail are kept, half the budget each, around `[<n> lines left out; the full output is in <data_dir>/runs/<id>/out/<k>.txt]`. `0` is no limit. |
-| `agents.<name>.tool_output.max_bytes` | integer | `16384` | The most bytes of one tool result, as `max_lines`. A result whose lines are each too long keeps its first and last bytes and says how many bytes were left out. `0` is no limit. |
-| `agents.<name>.tool_output.compress` | boolean | `true` | Whether escape codes and progress bars are removed from every result, runs of the same line folded into one with `(×<n>)`, and the output of well-known commands compressed: `cargo test`, `pytest`, `go test`, `jest` and `vitest` (also as `npm test`) to their failures and summary, cargo's builds to their errors and warnings with repeats folded. A compressor only removes lines it knows to be noise, so no error message and no failing test's output is lost. |
 
-The `tool_output` table keeps what the model reads of tools small (Pi-Bolt already shows at most 2000 lines or 50 KB of
-a `bash` or `read` result; these budgets are tighter). It applies to Pi-Bolt runs only: the bridge does it, and an agent
-with `harness = "claude-code"` has no bridge, so its table is accepted and has no effect. When lines are left out, the whole output, without secrets, is in
-`<k>.txt` in the `out` folder of the run's own directory (`<data_dir>/runs/<run id>/out/`), outside its worktree, which
-the agent can read in ranges (the text names the full path); it is never part of the change, and it is removed when the run ends. A run on a runner (`runner`) has nothing saved
-and the text names no path. Each result made smaller is a `tool_output` run event
-(see the [bridge protocol](bridge-protocol.md)), and `GET /v1/usage` adds up what they saved.
-
-```toml
-[agents.Coder]
-model = "my-local-model"
-
-[agents.Coder.tool_output]
-hide_after_turns = 0      # keep every output in the context
-max_lines = 400
-compress = false
-```
+The table `[agents.<name>.tool_output]` of older files (`max_lines`, `max_bytes`, `compress`) is still accepted, ignored and never written: Moebius does not shorten, compress or hide what tools print.
 
 ### `[agents.Moebius]`
 

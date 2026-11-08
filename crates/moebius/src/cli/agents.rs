@@ -47,18 +47,6 @@ pub struct SaveAgent {
     /// A server of mcp.toml; give it again for more.
     #[arg(long = "mcp")]
     mcp: Vec<String>,
-    /// Hide the outputs of tool calls older than this many turns; 0 keeps them all (default 10).
-    #[arg(long)]
-    hide_outputs_after: Option<u32>,
-    /// The most lines of one tool result; 0 is no limit (default 200).
-    #[arg(long)]
-    output_lines: Option<u32>,
-    /// The most bytes of one tool result; 0 is no limit (default 16384).
-    #[arg(long)]
-    output_bytes: Option<u32>,
-    /// Give tool outputs as they are: no compression of test runs and build logs.
-    #[arg(long)]
-    no_compress: bool,
     /// Do not give the agent the engineering skills Moebius brings for it (only the Coder, the Reviewer and the
     /// Grilling partner have any).
     #[arg(long)]
@@ -108,10 +96,6 @@ pub fn agent(command: &AgentCommand, get: &mut dyn FnMut(&str) -> Result<Value, 
                 skills,
                 extensions,
                 mcp,
-                hide_outputs_after,
-                output_lines,
-                output_bytes,
-                no_compress,
                 no_engineering_skills,
                 engineering_skills,
                 instructions,
@@ -149,29 +133,6 @@ pub fn agent(command: &AgentCommand, get: &mut dyn FnMut(&str) -> Result<Value, 
                 settings["engineering_skills"] = json!(false);
             } else if !engineering_skills.is_empty() {
                 settings["engineering_skills"] = json!(engineering_skills);
-            }
-            // What is not given of the tool outputs keeps its default.
-            let mut tool_output = serde_json::Map::new();
-            for (key, value) in [
-                ("hide_after_turns", hide_outputs_after),
-                ("max_lines", output_lines),
-                ("max_bytes", output_bytes),
-            ] {
-                if let Some(value) = value {
-                    tool_output.insert(key.into(), json!(value));
-                }
-            }
-            if *no_compress {
-                tool_output.insert("compress".into(), json!(false));
-            }
-            if !tool_output.is_empty() {
-                // A copy keeps what the flags do not say.
-                let mut merged = settings["tool_output"]
-                    .as_object()
-                    .cloned()
-                    .unwrap_or_default();
-                merged.extend(tool_output);
-                settings["tool_output"] = merged.into();
             }
             let instructions = match instructions {
                 Some(source) => read_input(source)?,
@@ -313,7 +274,7 @@ mod tests {
             "/v1/agents/Fast" => json!({
                 "name": "Fast",
                 "settings": {"model": "small", "protocol": "anthropic", "skills": ["a"], "extensions": [], "mcp": [],
-                             "engineering_skills": false, "tool_output": {"max_lines": 50}},
+                             "engineering_skills": false},
                 "instructions": "Be brief.\n",
             }),
             "/v1/agents/Coder" => {
@@ -337,22 +298,13 @@ mod tests {
 
     #[test]
     fn an_agent_is_saved_as_a_copy_of_an_existing_one() {
-        let saved = copy(&[
-            "Faster",
-            "--template",
-            "Fast",
-            "--thinking",
-            "low",
-            "--no-compress",
-        ])
-        .unwrap();
+        let saved = copy(&["Faster", "--template", "Fast", "--thinking", "low"]).unwrap();
         assert_eq!(saved["path"], "/v1/agents/Faster");
         assert_eq!(
             saved["body"],
             json!({
                 "settings": {"model": "small", "protocol": "anthropic", "skills": ["a"], "extensions": [], "mcp": [],
-                             "engineering_skills": false, "thinking": "low",
-                             "tool_output": {"max_lines": 50, "compress": false}},
+                             "engineering_skills": false, "thinking": "low"},
                 "instructions": "Be brief.\n",
             })
         );
@@ -421,25 +373,6 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(request.body.unwrap()["settings"]["runner"], "gpu-box");
-    }
-
-    #[test]
-    fn an_agents_tool_output_is_given_only_as_far_as_flags_say() {
-        let (request, _) = plan(&[
-            "agent",
-            "save",
-            "Fast",
-            "--model",
-            "m",
-            "--hide-outputs-after",
-            "0",
-            "--no-compress",
-        ])
-        .unwrap();
-        assert_eq!(
-            request.body.unwrap()["settings"]["tool_output"],
-            json!({"hide_after_turns": 0, "compress": false})
-        );
     }
 
     #[test]

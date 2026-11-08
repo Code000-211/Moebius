@@ -3,6 +3,7 @@
 //! node kind is added: one arm of [`node`], next to the others.
 
 pub mod condition;
+pub mod for_each;
 
 use serde_json::Value;
 use thiserror::Error;
@@ -100,6 +101,7 @@ pub fn node(kind: &str, params: &Value) -> Result<Box<dyn Node>, NodeError> {
         TEST_KIND => Ok(Box::new(TestNode {
             params: params.clone(),
         })),
+        for_each::KIND => Ok(Box::new(for_each::ForEach::from_params(params)?)),
         other => Err(NodeError::UnknownKind(other.to_string())),
     }
 }

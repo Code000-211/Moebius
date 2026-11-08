@@ -4,6 +4,7 @@
 -- An issue with sub-issues is a parent: it starts no work of its own while one is open, and closes with the last one.
 -- A parent that has work of its own already (a run, or a change) goes on as any other card does.
 function on_card(card)
+  moebius.set_label("in-progress", false)
   for _, label in ipairs(card.labels) do
     if string.sub(string.lower(label), 1, 10) == "wayfinder:" then
       moebius.wait("a wayfinder question, not a task: it stays until the wayfinder session closes it")

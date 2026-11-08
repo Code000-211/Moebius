@@ -29,8 +29,8 @@ pub(crate) use sections::default_protocol;
 pub use sections::{
     AgentConfig, AgentSet, DecisionModelConfig, EngineeringSkills, ForgejoConfig, GitHubAuth,
     GitHubConfig, GitLabConfig, HarnessKind, LocalizeConfig, MAX_LOCALIZE_FILES,
-    PLUGIN_TIME_LIMIT_SECONDS, PackagesConfig, PluginConfig, RunnerConfig, THINKING_LEVELS,
-    TeacherConfig, TimeOfDay, TokenSource, ToolOutput, UpstreamConfig, valid_agent_name,
+    PLUGIN_TIME_LIMIT_SECONDS, PackagesConfig, PluginConfig, RemovedTable, RunnerConfig,
+    THINKING_LEVELS, TeacherConfig, TimeOfDay, TokenSource, UpstreamConfig, valid_agent_name,
 };
 
 /// Why a configuration could not be read.
@@ -704,22 +704,13 @@ mod tests {
     }
 
     #[test]
-    fn an_agents_tool_output_has_defaults_and_can_be_turned_off() {
-        let c = parse("[agents.Coder]\nmodel = \"m\"\n").unwrap();
-        assert_eq!(c.agents["Coder"].tool_output, ToolOutput::default());
-        assert_eq!(c.agents["Coder"].tool_output.hide_after_turns, 10);
+    fn an_agents_tool_output_table_of_older_files_is_read_and_ignored() {
         let c = parse(
-            "[agents.Coder]\nmodel = \"m\"\n[agents.Coder.tool_output]\nhide_after_turns = 0\n\
+            "[agents.Coder]\nmodel = \"m\"\n[agents.Coder.tool_output]\n\
              max_lines = 50\ncompress = false\n",
         )
         .unwrap();
-        let output = c.agents["Coder"].tool_output;
-        assert_eq!((output.hide_after_turns, output.max_lines), (0, 50));
-        assert_eq!((output.max_bytes, output.compress), (16 * 1024, false));
-        assert!(
-            parse("[agents.Coder]\nmodel = \"m\"\n[agents.Coder.tool_output]\nlines = 5\n")
-                .is_err()
-        );
+        assert_eq!(c.agents["Coder"].model, "m");
     }
 
     #[test]
