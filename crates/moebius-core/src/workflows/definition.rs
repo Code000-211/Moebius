@@ -10,6 +10,7 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 
 use super::nodes::{Node, node};
+use super::trigger::manual;
 
 /// The id an edge uses to start at the workflow's trigger.
 pub const TRIGGER_ID: &str = "trigger";
@@ -207,8 +208,17 @@ impl WorkflowDefinition {
 
     fn check_kinds_and_ports(&self, file: &str) -> Result<(), Error> {
         let trigger = &self.trigger[0];
-        let trigger_node = node(&trigger.kind, &trigger.params)
-            .map_err(|error| Error::new(file, format!("trigger: {error}")))?;
+        // The manual trigger is not a node: its parameters are the inputs it names, checked against them, and a value
+        // leaves it by its `out`.
+        let trigger_ports = if trigger.kind == manual::KIND {
+            manual::ManualTrigger::parse(&trigger.params)
+                .map_err(|message| Error::new(file, format!("trigger: {message}")))?
+                .ports()
+        } else {
+            node(&trigger.kind, &trigger.params)
+                .map_err(|error| Error::new(file, format!("trigger: {error}")))?
+                .ports()
+        };
 
         let mut nodes: HashMap<&str, Box<dyn Node>> = HashMap::new();
         for definition in &self.nodes {
@@ -218,16 +228,17 @@ impl WorkflowDefinition {
         }
 
         for edge in &self.edges {
-            let source = if edge.from == TRIGGER_ID {
-                trigger_node.as_ref()
+            let leaves = if edge.from == TRIGGER_ID {
+                trigger_ports.outputs.iter().any(|port| port == &edge.port)
             } else {
-                nodes
+                let node = nodes
                     .get(edge.from.as_str())
                     .map(Box::as_ref)
-                    .expect("edge sources were checked")
+                    .expect("edge sources were checked");
+                let ports = node.ports();
+                ports.outputs.iter().any(|port| port == &edge.port)
             };
-            let ports = source.ports();
-            if !ports.outputs.iter().any(|port| port == &edge.port) {
+            if !leaves {
                 return Err(Error::new(
                     file,
                     format!(
@@ -660,6 +671,86 @@ kind = "missing"
         assert!(message.contains(FILE), "{message}");
         assert!(
             message.contains("trigger: unknown node kind \"missing\""),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn a_manual_trigger_is_accepted_with_its_inputs() {
+        let definition = parse(
+            r#"
+name = "release"
+description = "Started by a person."
+[[trigger]]
+kind = "manual"
+params = { inputs = [
+    { name = "version", type = "text", required = true },
+    { name = "count", type = "number", default = 3 },
+] }
+[[nodes]]
+id = "build"
+kind = "test"
+"#,
+        );
+        definition.validate(FILE).expect("the inputs are checked and are right");
+    }
+
+    #[test]
+    fn a_manual_trigger_input_that_is_not_one_is_refused_naming_the_input_and_the_file() {
+        let message = refusal(
+            r#"
+name = "release"
+description = "Started by a person."
+[[trigger]]
+kind = "manual"
+params = { inputs = [{ name = "count", type = "number", default = "3" }] }
+[[nodes]]
+id = "build"
+kind = "test"
+"#,
+        );
+        assert!(message.contains(FILE), "{message}");
+        assert!(message.contains("\"count\""), "{message}");
+        assert!(message.contains("default"), "{message}");
+    }
+
+    #[test]
+    fn the_manual_trigger_leaves_its_edges_by_out_like_the_other_triggers() {
+        let definition = parse(
+            r#"
+name = "release"
+description = "Started by a person."
+[[trigger]]
+kind = "manual"
+params = { inputs = [{ name = "version", type = "text" }] }
+[[nodes]]
+id = "build"
+kind = "test"
+[[edges]]
+from = "trigger"
+to = "build"
+port = "out"
+"#,
+        );
+        definition.validate(FILE).expect("an edge leaves the trigger by out");
+    }
+
+    #[test]
+    fn a_node_that_takes_the_manual_kind_is_refused() {
+        let message = refusal(
+            r#"
+name = "release"
+description = "Nothing to do yet."
+[[trigger]]
+kind = "test"
+[[nodes]]
+id = "manual"
+kind = "manual"
+"#,
+        );
+        assert!(message.contains(FILE), "{message}");
+        assert!(
+            message.contains("node \"manual\": unknown node kind \"manual\""),
             "{message}"
         );
     }
