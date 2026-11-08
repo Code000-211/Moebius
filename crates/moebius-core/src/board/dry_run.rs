@@ -263,6 +263,22 @@ fn recording_api(
 
     let log = record.clone();
     m.set(
+        "set_label",
+        lua.create_function(move |_, (label, present): (String, bool)| {
+            if label.trim().is_empty() {
+                return Err(mlua::Error::runtime("a label needs a name"));
+            }
+            log(if present {
+                format!("gave the issue the label {label:?}")
+            } else {
+                format!("took the label {label:?} from the issue")
+            });
+            Ok(())
+        })?,
+    )?;
+
+    let log = record.clone();
+    m.set(
         "close_issue",
         lua.create_function(move |_, reason: Option<String>| {
             log(format!(
@@ -379,20 +395,28 @@ mod tests {
         };
         assert_eq!(
             dry(script("backlog.luau"), "Backlog", PERSON).unwrap(),
-            ["moved the card to Not started"]
+            [
+                "took the label \"in-progress\" from the issue",
+                "moved the card to Not started"
+            ]
         );
         assert_eq!(
             dry(script("backlog.luau"), "Backlog", "mallory").unwrap(),
             [
+                "took the label \"in-progress\" from the issue",
                 "asked a person (approve_issue) and waited: waiting for a person to approve the issue"
             ]
         );
         assert_eq!(
             dry(script("ready.luau"), "Not started", PERSON).unwrap(),
-            ["moved the card to In progress"]
+            [
+                "took the label \"in-progress\" from the issue",
+                "moved the card to In progress"
+            ]
         );
         let coding = dry(script("code.luau"), "In progress", PERSON).unwrap();
-        assert_eq!(coding[0], "started a run of Coder for code");
+        assert_eq!(coding[0], "gave the issue the label \"in-progress\"");
+        assert_eq!(coding[1], "started a run of Coder for code");
     }
 
     #[test]

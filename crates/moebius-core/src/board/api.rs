@@ -10,6 +10,8 @@
 //! - `moebius.wait(reason)`: leaves the card where it is.
 //! - `moebius.close_issue(reason)`: closes the card's issue (on its forge too) and moves the card to Done when the script
 //!   returns.
+//! - `moebius.set_label(label, present)`: gives the card's issue the label (`present` true) or takes it away (false)
+//!   when the script returns, on its forge too.
 //! - `moebius.publish_change() -> change`: publishes the card's latest successful `code` run on the branch of its
 //!   change (once per commit) and returns the change, as `card.change` is.
 //! - `moebius.run_checks() -> change`: starts the repository's own checks on the change, if it has any.
@@ -265,6 +267,18 @@ impl Engine {
             "close_issue",
             lua.create_function(move |_, _reason: Option<String>| {
                 fx.borrow_mut().close = true;
+                Ok(())
+            })?,
+        )?;
+
+        let fx = effects.clone();
+        m.set(
+            "set_label",
+            lua.create_function(move |_, (label, present): (String, bool)| {
+                if label.trim().is_empty() {
+                    return Err(mlua::Error::runtime("a label needs a name"));
+                }
+                fx.borrow_mut().labels.push((label, present));
                 Ok(())
             })?,
         )?;

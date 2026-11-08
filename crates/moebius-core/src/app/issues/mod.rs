@@ -512,6 +512,65 @@ impl App {
         self.card(card_id)
     }
 
+    /// Gives the card's issue the labels a column script asked for (`moebius.set_label`) and takes away those it asked
+    /// to remove, on the forge too; the others stay as they are. Does nothing when the issue is as asked. A forge that
+    /// refuses is told once as a forge error and not asked again for a while, and the card goes on: a label is a mark,
+    /// not a step of the work.
+    pub(crate) fn set_labels_for_script(
+        &self,
+        card_id: i64,
+        changes: &[(String, bool)],
+    ) -> Result<()> {
+        let mut labels: BTreeSet<String> = self.card(card_id)?.labels.into_iter().collect();
+        let before = labels.clone();
+        for (label, present) in changes {
+            if *present {
+                labels.insert(label.clone());
+            } else {
+                labels.retain(|l| !l.eq_ignore_ascii_case(label));
+            }
+        }
+        if labels == before {
+            return Ok(());
+        }
+        let retry = self.close_retry;
+        if self
+            .label_refused
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(&card_id)
+            .is_some_and(|at| at.elapsed() < retry)
+        {
+            return Ok(());
+        }
+        match self.set_labels(card_id, &labels.into_iter().collect::<Vec<_>>()) {
+            Ok(_) => {
+                self.label_refused
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .remove(&card_id);
+                Ok(())
+            }
+            Err(AppError::Forge(e)) => {
+                let card = self.card(card_id)?;
+                let first = self
+                    .label_refused
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(card_id, std::time::Instant::now())
+                    .is_none();
+                if first {
+                    self.bus.publish(Event::ForgeError {
+                        repository: self.repository(card.repository_id)?.name,
+                        message: format!("the forge would not label #{}: {e}", card.number),
+                    });
+                }
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     /// Closes the card's issue because its column script said so (a parent whose sub-issues are all done). A parent a
     /// person reopened is not closed again for the sub-issues that were done already: it stays open, and waits, until
     /// one of its sub-issues closes after that. A forge that refuses is not asked again for a while, so that the board
@@ -1601,6 +1660,40 @@ mod tests {
                 .is_none()
         );
         assert_eq!(s.app.issue(b.id).unwrap().blocked_by, [8]);
+    }
+
+    #[test]
+    fn a_script_gives_and_takes_a_label_keeping_the_others_and_asks_the_forge_only_for_a_change() {
+        let s = Setup::new(Some(true));
+        let a = s.card("A");
+        s.app.set_labels(a.id, &["bug".to_string()]).unwrap();
+        s.calls.lock().unwrap().clear();
+        let give = [("in-progress".to_string(), true)];
+        s.app.set_labels_for_script(a.id, &give).unwrap();
+        assert_eq!(s.calls(), ["#1 labels=bug,in-progress"]);
+        assert_eq!(s.app.card(a.id).unwrap().labels, ["bug", "in-progress"]);
+
+        // As asked already: nothing is sent.
+        s.app.set_labels_for_script(a.id, &give).unwrap();
+        assert!(s.calls().is_empty());
+
+        // Taking it away matches the name in any case and leaves the other label.
+        let take = [("In-Progress".to_string(), false)];
+        s.app.set_labels_for_script(a.id, &take).unwrap();
+        assert_eq!(s.app.card(a.id).unwrap().labels, ["bug"]);
+    }
+
+    #[test]
+    fn a_forge_that_refuses_a_label_for_a_script_is_told_once_and_does_not_stop_the_card() {
+        let mut s = Setup::new(Some(true));
+        let a = s.card("A");
+        s.kinds();
+        *s.labels_refused.lock().unwrap() = true;
+        let give = [("in-progress".to_string(), true)];
+        s.app.set_labels_for_script(a.id, &give).unwrap();
+        s.app.set_labels_for_script(a.id, &give).unwrap();
+        assert_eq!(s.kinds(), ["forge_error"]);
+        assert!(s.app.card(a.id).unwrap().labels.is_empty());
     }
 
     #[test]
