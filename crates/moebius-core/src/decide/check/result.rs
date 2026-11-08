@@ -162,7 +162,7 @@ mod tests {
         let reply = post(json!({
             "tool_call_id": "call-1", "tool": "bash", "input": {"command": "seq 500"}, "is_error": false,
             "content": content,
-            "tool_output": {"hide_after_turns": 10, "max_lines": 200, "max_bytes": 16384, "compress": true},
+            "tool_output": {"max_lines": 200, "max_bytes": 16384, "compress": true},
         }))
         .await;
         let shown = reply["content"][0]["text"].as_str().unwrap();
@@ -210,7 +210,7 @@ mod tests {
             .json(&json!({
                 "tool_call_id": "call-1", "tool": "bash", "input": {"command": "seq 500"}, "is_error": false,
                 "content": [{"type": "text", "text": text}],
-                "tool_output": {"hide_after_turns": 10, "max_lines": 200, "max_bytes": 16384, "compress": true},
+                "tool_output": {"max_lines": 200, "max_bytes": 16384, "compress": true},
             }))
             .send()
             .await

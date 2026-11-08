@@ -801,7 +801,7 @@ mod tests {
             serde_json::from_str(env["MOEBIUS_TOOL_OUTPUT"].as_str().unwrap()).unwrap();
         assert_eq!(
             tool_output,
-            json!({"hide_after_turns": 10, "max_lines": 200, "max_bytes": 16384, "compress": true})
+            json!({"max_lines": 200, "max_bytes": 16384, "compress": true})
         );
         assert!(
             env["MOEBIUS_RUN_TOKEN"]

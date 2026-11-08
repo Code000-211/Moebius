@@ -498,14 +498,17 @@ impl Serialize for EngineeringSkills {
     }
 }
 
-/// How the outputs of an agent's tools are kept small before the model reads them: older ones hidden (by the bridge),
-/// and each one compressed and cut to a budget where it is made (by `harness::output`). The bridge is given it as
-/// the JSON of `MOEBIUS_TOOL_OUTPUT` and hands the budget back with each result.
+/// How the outputs of an agent's tools are kept small before the model reads them: each one compressed and cut to a
+/// budget where it is made (by `harness::output`). The bridge is given it as the JSON of `MOEBIUS_TOOL_OUTPUT` and
+/// hands the budget back with each result. Older outputs are not hidden: that would change the start of the
+/// conversation and so spoil the model's prompt cache; Pi-Bolt keeps the context small itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct ToolOutput {
-    /// The output of a tool call older than this many turns is hidden behind a placeholder; 0 keeps every output.
-    pub hide_after_turns: u32,
+    /// Read and ignored: the key of the setting that hid older outputs, which files written before it was removed
+    /// still carry. Never written.
+    #[serde(skip_serializing)]
+    pub hide_after_turns: Option<u32>,
     /// The most lines of one result; above it, its head and tail are kept. 0 is no limit.
     pub max_lines: u32,
     /// The most bytes of one result; above it, its head and tail are kept. 0 is no limit.
@@ -518,7 +521,7 @@ pub struct ToolOutput {
 impl Default for ToolOutput {
     fn default() -> Self {
         Self {
-            hide_after_turns: 10,
+            hide_after_turns: None,
             max_lines: 200,
             max_bytes: 16 * 1024,
             compress: true,
@@ -529,7 +532,10 @@ impl Default for ToolOutput {
 impl ToolOutput {
     /// Whether these are the defaults, which an agent's file need not say.
     pub fn is_default(&self) -> bool {
-        *self == Self::default()
+        Self {
+            hide_after_turns: None,
+            ..*self
+        } == Self::default()
     }
 }
 

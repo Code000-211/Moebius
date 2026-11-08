@@ -47,9 +47,6 @@ pub struct SaveAgent {
     /// A server of mcp.toml; give it again for more.
     #[arg(long = "mcp")]
     mcp: Vec<String>,
-    /// Hide the outputs of tool calls older than this many turns; 0 keeps them all (default 10).
-    #[arg(long)]
-    hide_outputs_after: Option<u32>,
     /// The most lines of one tool result; 0 is no limit (default 200).
     #[arg(long)]
     output_lines: Option<u32>,
@@ -108,7 +105,6 @@ pub fn agent(command: &AgentCommand, get: &mut dyn FnMut(&str) -> Result<Value, 
                 skills,
                 extensions,
                 mcp,
-                hide_outputs_after,
                 output_lines,
                 output_bytes,
                 no_compress,
@@ -152,11 +148,7 @@ pub fn agent(command: &AgentCommand, get: &mut dyn FnMut(&str) -> Result<Value, 
             }
             // What is not given of the tool outputs keeps its default.
             let mut tool_output = serde_json::Map::new();
-            for (key, value) in [
-                ("hide_after_turns", hide_outputs_after),
-                ("max_lines", output_lines),
-                ("max_bytes", output_bytes),
-            ] {
+            for (key, value) in [("max_lines", output_lines), ("max_bytes", output_bytes)] {
                 if let Some(value) = value {
                     tool_output.insert(key.into(), json!(value));
                 }
@@ -431,14 +423,14 @@ mod tests {
             "Fast",
             "--model",
             "m",
-            "--hide-outputs-after",
-            "0",
+            "--output-lines",
+            "50",
             "--no-compress",
         ])
         .unwrap();
         assert_eq!(
             request.body.unwrap()["settings"]["tool_output"],
-            json!({"hide_after_turns": 0, "compress": false})
+            json!({"max_lines": 50, "compress": false})
         );
     }
 

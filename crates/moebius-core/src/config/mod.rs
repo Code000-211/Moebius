@@ -707,14 +707,13 @@ mod tests {
     fn an_agents_tool_output_has_defaults_and_can_be_turned_off() {
         let c = parse("[agents.Coder]\nmodel = \"m\"\n").unwrap();
         assert_eq!(c.agents["Coder"].tool_output, ToolOutput::default());
-        assert_eq!(c.agents["Coder"].tool_output.hide_after_turns, 10);
         let c = parse(
-            "[agents.Coder]\nmodel = \"m\"\n[agents.Coder.tool_output]\nhide_after_turns = 0\n\
+            "[agents.Coder]\nmodel = \"m\"\n[agents.Coder.tool_output]\n\
              max_lines = 50\ncompress = false\n",
         )
         .unwrap();
         let output = c.agents["Coder"].tool_output;
-        assert_eq!((output.hide_after_turns, output.max_lines), (0, 50));
+        assert_eq!(output.max_lines, 50);
         assert_eq!((output.max_bytes, output.compress), (16 * 1024, false));
         assert!(
             parse("[agents.Coder]\nmodel = \"m\"\n[agents.Coder.tool_output]\nlines = 5\n")

@@ -6,14 +6,12 @@
 
 /** How Pi-Bolt's bridge keeps tool outputs small; the values here are what an agent without the table has. */
 export interface ToolOutput {
-  hide_after_turns: number;
   max_lines: number;
   max_bytes: number;
   compress: boolean;
 }
 
 export const DEFAULT_TOOL_OUTPUT: ToolOutput = {
-  hide_after_turns: 10,
   max_lines: 200,
   max_bytes: 16384,
   compress: true,

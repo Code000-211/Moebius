@@ -376,17 +376,6 @@ export function AgentEditor(props: EditorProps) {
             </Field>
             {form.harness === HARNESSES[0] && (
               <>
-                <Field label="Hide tool outputs after turns">
-                  {(id) => (
-                    <Input
-                      id={id}
-                      value={form.hideAfter}
-                      placeholder="0 keeps them"
-                      className="tabular-nums"
-                      onChange={(event) => change({ hideAfter: event.target.value })}
-                    />
-                  )}
-                </Field>
                 <Field label="Lines per tool result">
                   {(id) => (
                     <Input
