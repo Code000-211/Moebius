@@ -9,8 +9,8 @@ node with an expression: see [Expressions](workflows/expressions.md).
 The file lives at `workflows/<name>.toml` under the harness configuration repository's root, beside `agents/`, `skills/`
 and `mcp.toml`. The `<name>` is the file's stem and may contain only letters, digits, `-` and `_`.
 
-The example below shows the file's shape. Its kind names are placeholders: no node kind is registered yet, so a file
-naming any kind is refused.
+The example below shows the file's shape. Its kind names are placeholders: a file naming a kind the registry does not
+know is refused.
 
 ## The file
 
@@ -153,12 +153,14 @@ Every `Node` reports three things:
 - `ports()` returns its named `inputs` and `outputs`, whose output names an edge's `port` uses;
 - `metadata()` returns its `kind`, a `title` and a one-sentence `description` for people.
 
-No node kind is registered yet. Until a kind's card lands, a file naming it is refused.
+A file naming a kind the registry does not know is refused; the kinds that exist are listed under
+[Node kinds](#node-kinds).
 
 ## Node kinds
 
-Each node kind has one section here and one page in [`workflows/`](workflows/README.md). This section is empty until the
-first node kind lands.
+Each node kind has one section here and one page in [`workflows/`](workflows/README.md).
+
+- [`for_each`](workflows/for-each.md): runs a sub-path once per element of a list and gathers the outputs.
 
 ## Extending this page
 

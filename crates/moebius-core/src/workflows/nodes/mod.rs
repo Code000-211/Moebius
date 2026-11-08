@@ -5,6 +5,8 @@
 use serde_json::Value;
 use thiserror::Error;
 
+pub mod for_each;
+
 /// The named ways a value enters and leaves a node.
 ///
 /// An edge's `port` names one of the source node's outputs, so an executor can follow the edge that the value it made
@@ -72,6 +74,7 @@ pub fn node(kind: &str, _params: &Value) -> Result<Box<dyn Node>, NodeError> {
         TEST_KIND => Ok(Box::new(TestNode {
             params: _params.clone(),
         })),
+        for_each::KIND => Ok(Box::new(for_each::ForEach::from_params(_params)?)),
         other => Err(NodeError::UnknownKind(other.to_string())),
     }
 }
