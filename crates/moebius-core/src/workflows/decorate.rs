@@ -20,7 +20,7 @@ const INSTRUCTIONS: u64 = 100_000;
 
 /// What an expression may read: the trigger's value, the value that reached the node, and the values of earlier
 /// nodes by their id.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Scope {
     /// The value the workflow's trigger produced.
     pub trigger: Json,
@@ -28,23 +28,6 @@ pub struct Scope {
     pub input: Json,
     /// The values earlier nodes produced, by node id.
     pub nodes: BTreeMap<String, Json>,
-}
-
-impl Scope {
-    /// A scope with `trigger` and `input`, and no earlier nodes yet.
-    pub fn new(trigger: Json, input: Json) -> Self {
-        Self {
-            trigger,
-            input,
-            nodes: BTreeMap::new(),
-        }
-    }
-
-    /// Adds the value an earlier node produced.
-    pub fn with_node(mut self, id: impl Into<String>, value: Json) -> Self {
-        self.nodes.insert(id.into(), value);
-        self
-    }
 }
 
 /// An expression that could not be evaluated. It names the node and parameter it was in, and fails closed: the
