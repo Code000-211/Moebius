@@ -14,9 +14,6 @@ use thiserror::Error;
 use super::definition::{NodeDefinition, TRIGGER_ID, WorkflowDefinition};
 use super::nodes::NodeError;
 
-/// The number of nodes a run may execute when its definition does not set a ceiling.
-pub use super::definition::DEFAULT_MAX_NODES;
-
 /// Why a run ended `failed`, or could not start.
 #[derive(Debug, Clone, PartialEq, Error)]
 pub enum Error {
@@ -78,7 +75,7 @@ impl Default for Limits {
     fn default() -> Self {
         Self {
             node_timeout: Duration::from_secs(super::definition::DEFAULT_NODE_TIMEOUT_SECONDS),
-            max_nodes: DEFAULT_MAX_NODES,
+            max_nodes: super::definition::DEFAULT_MAX_NODES,
         }
     }
 }
@@ -198,7 +195,6 @@ fn run_one(
 #[cfg(test)]
 mod tests {
     use std::sync::Mutex;
-    use std::thread;
     use std::time::Duration;
 
     use serde_json::{Value, json};
@@ -348,10 +344,12 @@ kind = "test"
     #[test]
     fn a_node_that_runs_past_its_timeout_fails_the_run() {
         let definition = chain();
-        let runner: Arc<dyn Runner> = Arc::new(|node: &NodeDefinition, input: &Value| {
-            if node.id == "two" {
-                thread::sleep(Duration::from_millis(200));
-            }
+        // The first node waits until the test lets it go, so it cannot finish inside its timeout
+        // however fast the machine is.
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        let released = std::sync::Mutex::new(released);
+        let runner: Arc<dyn Runner> = Arc::new(move |_node: &NodeDefinition, input: &Value| {
+            let _ = released.lock().unwrap().recv();
             Ok(input.clone())
         });
         let limits = Limits {
@@ -360,8 +358,9 @@ kind = "test"
         };
 
         let error = execute(&definition, json!(1), limits, &runner, &mut ()).unwrap_err();
+        drop(release);
 
-        assert!(matches!(error, Error::TimedOut { ref node, .. } if node == "two"));
+        assert!(matches!(error, Error::TimedOut { ref node, .. } if node == "one"));
     }
 
     #[test]

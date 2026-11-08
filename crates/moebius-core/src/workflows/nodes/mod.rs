@@ -122,15 +122,7 @@ impl Node for TestNode {
         if let Some(message) = self.params.get("fail").and_then(Value::as_str) {
             return Err(NodeError::Failed(message.to_string()));
         }
-        if self.params.get("fail").and_then(Value::as_bool) == Some(true) {
-            return Err(NodeError::Failed("the test node failed".into()));
-        }
-        if let Some(millis) = self
-            .params
-            .get("delay_ms")
-            .or_else(|| self.params.get("sleep_ms"))
-            .and_then(Value::as_u64)
-        {
+        if let Some(millis) = self.params.get("delay_ms").and_then(Value::as_u64) {
             std::thread::sleep(std::time::Duration::from_millis(millis));
         }
         if let Some(name) = self.params.get("wait_for_gate").and_then(Value::as_str) {
