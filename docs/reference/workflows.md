@@ -137,7 +137,8 @@ with an error that says which limit was reached.
 
 `workflows::run::execute` is the same executor without the store: it takes the definition, the starting value, the
 `Limits`, a `Runner` and an `Observer`. It reports each node to the observer before and after it runs, so the caller
-can record the step. The `Runner` trait runs one node; the server's runner goes through the node registry.
+can record the step. The `Runner` trait runs one node; the server's runner goes through the node registry. A run that cannot go on ends with a `workflows::run::Error` (a node's `NodeError`, a timeout, the ceiling, an edge to
+unknown node, or a step the observer could not record); its text is the run's `error`.
 
 ## The node registry
 

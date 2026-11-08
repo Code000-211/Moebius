@@ -11,7 +11,8 @@ use crate::app::{App, AppError, Result};
 use crate::bus::Event;
 use crate::store::WorkflowRun;
 use crate::workflows::definition::{self, NodeDefinition, WorkflowDefinition};
-use crate::workflows::run::{Limits, Observer, Runner, StepResult, execute};
+use crate::workflows::nodes::NodeError;
+use crate::workflows::run::{Error as RunError, Limits, Observer, Runner, StepResult, execute};
 
 /// A definition a trigger asks a run for: either the definition itself or the name of its file in the harness
 /// configuration repository.
@@ -121,6 +122,7 @@ impl App {
                 });
             }
             Err(error) => {
+                let error = error.to_string();
                 self.store
                     .finish_workflow_run(run_id, "failed", Some(&error))?;
                 self.bus.publish(Event::WorkflowRunEnded {
@@ -143,11 +145,8 @@ impl App {
 struct NodeRunner;
 
 impl Runner for NodeRunner {
-    fn run(&self, node: &NodeDefinition, input: &Value) -> std::result::Result<Value, String> {
-        let node: Box<dyn crate::workflows::nodes::Node> =
-            crate::workflows::nodes::node(&node.kind, &node.params)
-                .map_err(|error| error.to_string())?;
-        node.run(input.clone()).map_err(|error| error.to_string())
+    fn run(&self, node: &NodeDefinition, input: &Value) -> std::result::Result<Value, NodeError> {
+        crate::workflows::nodes::node(&node.kind, &node.params)?.run(input.clone())
     }
 }
 
@@ -159,12 +158,16 @@ struct StoreObserver<'a> {
 }
 
 impl Observer for StoreObserver<'_> {
-    fn started(&mut self, node: &NodeDefinition, input: &Value) -> std::result::Result<(), String> {
+    fn started(
+        &mut self,
+        node: &NodeDefinition,
+        input: &Value,
+    ) -> std::result::Result<(), RunError> {
         let recorded = self
             .app
             .store
             .add_workflow_node_run(self.run, &node.id, 1, input)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| record_error(node, &error))?;
         self.current = Some(recorded.id);
         self.app.bus.publish(Event::WorkflowNodeStarted {
             run: self.run,
@@ -184,22 +187,22 @@ impl Observer for StoreObserver<'_> {
         &mut self,
         node: &NodeDefinition,
         result: &StepResult,
-    ) -> std::result::Result<(), String> {
-        let id = self
-            .current
-            .take()
-            .ok_or_else(|| format!("node \"{}\" was not recorded as started", node.id))?;
+    ) -> std::result::Result<(), RunError> {
+        let id = self.current.take().ok_or_else(|| RunError::Record {
+            node: node.id.clone(),
+            reason: "it was not recorded as started".into(),
+        })?;
         match result {
             StepResult::Succeeded(output) => self
                 .app
                 .store
                 .finish_workflow_node_run(id, "succeeded", Some(output), None)
-                .map_err(|error| error.to_string())?,
+                .map_err(|error| record_error(node, &error))?,
             StepResult::Failed(error) => self
                 .app
                 .store
-                .finish_workflow_node_run(id, "failed", None, Some(error))
-                .map_err(|error| error.to_string())?,
+                .finish_workflow_node_run(id, "failed", None, Some(&error.to_string()))
+                .map_err(|error| record_error(node, &error))?,
         }
         let status = match result {
             StepResult::Succeeded(_) => "succeeded",
@@ -207,7 +210,7 @@ impl Observer for StoreObserver<'_> {
         };
         let error = match result {
             StepResult::Succeeded(_) => None,
-            StepResult::Failed(error) => Some(error.clone()),
+            StepResult::Failed(error) => Some(error.to_string()),
         };
         self.app.bus.publish(Event::WorkflowNodeEnded {
             run: self.run,
@@ -226,10 +229,18 @@ impl Observer for StoreObserver<'_> {
     }
 }
 
+/// A store error met while recording `node`.
+fn record_error(node: &NodeDefinition, error: &impl std::fmt::Display) -> RunError {
+    RunError::Record {
+        node: node.id.clone(),
+        reason: error.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     use moebius_plugin_api::Host;
     use serde_json::json;
@@ -268,15 +279,20 @@ mod tests {
         std::fs::write(folder.join(format!("{name}.toml")), text).unwrap();
     }
 
-    fn wait_for_end(app: &App, id: i64) -> crate::store::WorkflowRun {
-        let deadline = Instant::now() + Duration::from_secs(5);
+    /// Waits for the bus to say that run `id` ended, then returns it as stored.
+    fn wait_for_end(
+        app: &App,
+        events: &mut tokio::sync::broadcast::Receiver<crate::bus::AppEvent>,
+        id: i64,
+    ) -> crate::store::WorkflowRun {
         loop {
-            let run = app.store.workflow_run(id).unwrap().unwrap();
-            if run.status == "succeeded" || run.status == "failed" {
-                return run;
+            match events.blocking_recv() {
+                Ok(event) if event.kind == "workflow_run_ended" && event.data["run"] == id => {
+                    return app.store.workflow_run(id).unwrap().unwrap();
+                }
+                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                Err(error) => panic!("the bus closed before the run ended: {error}"),
             }
-            assert!(Instant::now() < deadline, "the run did not end: {run:?}");
-            std::thread::sleep(Duration::from_millis(10));
         }
     }
 
@@ -319,6 +335,7 @@ to = "two"
     fn a_started_run_is_stored_before_it_finishes_and_records_its_nodes_in_order() {
         let (_dir, app, repository) = setup();
 
+        let mut events = app.bus.subscribe();
         let run = app
             .start_workflow_run(chain(), repository.id, json!({"seed": 1}))
             .unwrap();
@@ -330,7 +347,7 @@ to = "two"
         );
 
         crate::workflows::nodes::test_gate::release("recorded-run");
-        let ended = wait_for_end(&app, run.id);
+        let ended = wait_for_end(&app, &mut events, run.id);
         assert_eq!(ended.status, "succeeded");
         assert_eq!(ended.error, None);
 
@@ -383,10 +400,11 @@ to = "two"
 "#,
         );
 
+        let mut events = app.bus.subscribe();
         let run = app
             .start_workflow_run("broken", repository.id, json!(1))
             .unwrap();
-        let ended = wait_for_end(&app, run.id);
+        let ended = wait_for_end(&app, &mut events, run.id);
 
         assert_eq!(ended.status, "failed");
         assert_eq!(ended.error.as_deref(), Some("one is broken"));
@@ -423,10 +441,11 @@ to = "one"
 "#,
         );
 
+        let mut events = app.bus.subscribe();
         let run = app
             .start_workflow_run("slow", repository.id, json!(1))
             .unwrap();
-        let ended = wait_for_end(&app, run.id);
+        let ended = wait_for_end(&app, &mut events, run.id);
 
         assert_eq!(ended.status, "failed");
         assert!(ended.error.unwrap().contains("timed out"));
@@ -493,10 +512,11 @@ to = "one"
 "#,
         );
 
+        let mut events = app.bus.subscribe();
         let run = app
             .start_workflow_run("stored", repository.id, json!({"a": true}))
             .unwrap();
-        let ended = wait_for_end(&app, run.id);
+        let ended = wait_for_end(&app, &mut events, run.id);
 
         assert_eq!(ended.status, "succeeded");
         assert_eq!(ended.workflow, "stored");

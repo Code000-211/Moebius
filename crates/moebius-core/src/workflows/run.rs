@@ -9,11 +9,42 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::Value;
+use thiserror::Error;
 
 use super::definition::{NodeDefinition, TRIGGER_ID, WorkflowDefinition};
+use super::nodes::NodeError;
 
 /// The number of nodes a run may execute when its definition does not set a ceiling.
 pub use super::definition::DEFAULT_MAX_NODES;
+
+/// Why a run ended `failed`, or could not start.
+#[derive(Debug, Clone, PartialEq, Error)]
+pub enum Error {
+    /// The definition cannot be followed; no node ran.
+    #[error("{0}")]
+    Definition(String),
+    /// An edge leads to a node the definition does not have.
+    #[error("the edge from \"{from}\" names unknown node \"{to}\"")]
+    UnknownNode { from: String, to: String },
+    /// The run was about to execute more nodes than its ceiling allows.
+    #[error("the run reached its ceiling of {0} nodes")]
+    Ceiling(u64),
+    /// A node ran longer than its timeout.
+    #[error("node \"{node}\" timed out after {seconds} seconds")]
+    TimedOut { node: String, seconds: f64 },
+    /// A node's thread ended without handing back a value.
+    #[error("node \"{0}\" ended without a value")]
+    NoValue(String),
+    /// The thread for a node could not be started.
+    #[error("cannot start node \"{node}\": {reason}")]
+    Spawn { node: String, reason: String },
+    /// The node itself failed.
+    #[error("{0}")]
+    Node(#[from] NodeError),
+    /// An observer could not record a step of the run.
+    #[error("cannot record node \"{node}\": {reason}")]
+    Record { node: String, reason: String },
+}
 
 /// What one node did with the value it was given.
 #[derive(Debug, Clone, PartialEq)]
@@ -21,7 +52,7 @@ pub enum StepResult {
     /// The node returned this value for the next edge to carry.
     Succeeded(Value),
     /// The node failed with this error, which ends the run.
-    Failed(String),
+    Failed(Error),
 }
 
 /// The limits one run obeys, taken from its definition.
@@ -54,14 +85,14 @@ impl Default for Limits {
 
 /// Runs one node, given the node as its file wrote it and the value its predecessor left.
 pub trait Runner: Send + Sync {
-    fn run(&self, node: &NodeDefinition, input: &Value) -> Result<Value, String>;
+    fn run(&self, node: &NodeDefinition, input: &Value) -> Result<Value, NodeError>;
 }
 
 impl<F> Runner for F
 where
-    F: Fn(&NodeDefinition, &Value) -> Result<Value, String> + Send + Sync,
+    F: Fn(&NodeDefinition, &Value) -> Result<Value, NodeError> + Send + Sync,
 {
-    fn run(&self, node: &NodeDefinition, input: &Value) -> Result<Value, String> {
+    fn run(&self, node: &NodeDefinition, input: &Value) -> Result<Value, NodeError> {
         self(node, input)
     }
 }
@@ -69,17 +100,17 @@ where
 /// Watches a run as it happens, so its nodes are recorded before the next one starts.
 pub trait Observer {
     /// A node is about to run with `input`.
-    fn started(&mut self, node: &NodeDefinition, input: &Value) -> Result<(), String>;
+    fn started(&mut self, node: &NodeDefinition, input: &Value) -> Result<(), Error>;
     /// A node has finished with `result`, which the run records before it goes on or ends.
-    fn finished(&mut self, node: &NodeDefinition, result: &StepResult) -> Result<(), String>;
+    fn finished(&mut self, node: &NodeDefinition, result: &StepResult) -> Result<(), Error>;
 }
 
 impl Observer for () {
-    fn started(&mut self, _node: &NodeDefinition, _input: &Value) -> Result<(), String> {
+    fn started(&mut self, _node: &NodeDefinition, _input: &Value) -> Result<(), Error> {
         Ok(())
     }
 
-    fn finished(&mut self, _node: &NodeDefinition, _result: &StepResult) -> Result<(), String> {
+    fn finished(&mut self, _node: &NodeDefinition, _result: &StepResult) -> Result<(), Error> {
         Ok(())
     }
 }
@@ -92,10 +123,10 @@ pub fn execute(
     limits: Limits,
     runner: &Arc<dyn Runner>,
     observer: &mut dyn Observer,
-) -> Result<Value, String> {
+) -> Result<Value, Error> {
     definition
         .validate(&format!("workflows/{}.toml", definition.name))
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| Error::Definition(error.to_string()))?;
 
     let mut from = TRIGGER_ID.to_string();
     let mut value = start;
@@ -106,26 +137,19 @@ pub fn execute(
             return Ok(value);
         };
         let Some(node) = definition.nodes.iter().find(|node| node.id == edge.to) else {
-            return Err(format!(
-                "the edge from \"{from}\" names unknown node \"{}\"",
-                edge.to
-            ));
+            return Err(Error::UnknownNode {
+                from,
+                to: edge.to.clone(),
+            });
         };
         if ran >= limits.max_nodes {
-            return Err(format!(
-                "the run reached its ceiling of {} nodes",
-                limits.max_nodes
-            ));
+            return Err(Error::Ceiling(limits.max_nodes));
         }
         ran += 1;
 
-        observer
-            .started(node, &value)
-            .map_err(|error| format!("cannot record node \"{}\" as started: {error}", node.id))?;
+        observer.started(node, &value)?;
         let result = run_one(runner, node, &value, limits.node_timeout);
-        observer
-            .finished(node, &result)
-            .map_err(|error| format!("cannot record node \"{}\" as finished: {error}", node.id))?;
+        observer.finished(node, &result)?;
 
         match result {
             StepResult::Succeeded(output) => {
@@ -154,20 +178,20 @@ fn run_one(
             let _ = sender.send(runner.run(&running, &given));
         });
     if let Err(error) = spawned {
-        return StepResult::Failed(format!("cannot start node \"{}\": {error}", node.id));
+        return StepResult::Failed(Error::Spawn {
+            node: node.id.clone(),
+            reason: error.to_string(),
+        });
     }
 
     match receiver.recv_timeout(timeout) {
         Ok(Ok(output)) => StepResult::Succeeded(output),
-        Ok(Err(error)) => StepResult::Failed(error),
-        Err(RecvTimeoutError::Timeout) => StepResult::Failed(format!(
-            "node \"{}\" timed out after {} seconds",
-            node.id,
-            timeout.as_secs_f64()
-        )),
-        Err(RecvTimeoutError::Disconnected) => {
-            StepResult::Failed(format!("node \"{}\" ended without a value", node.id))
-        }
+        Ok(Err(error)) => StepResult::Failed(Error::Node(error)),
+        Err(RecvTimeoutError::Timeout) => StepResult::Failed(Error::TimedOut {
+            node: node.id.clone(),
+            seconds: timeout.as_secs_f64(),
+        }),
+        Err(RecvTimeoutError::Disconnected) => StepResult::Failed(Error::NoValue(node.id.clone())),
     }
 }
 
@@ -231,12 +255,12 @@ to = "three"
     }
 
     impl Observer for Seen {
-        fn started(&mut self, node: &NodeDefinition, _input: &Value) -> Result<(), String> {
+        fn started(&mut self, node: &NodeDefinition, _input: &Value) -> Result<(), Error> {
             self.started.lock().unwrap().push(node.id.clone());
             Ok(())
         }
 
-        fn finished(&mut self, node: &NodeDefinition, result: &StepResult) -> Result<(), String> {
+        fn finished(&mut self, node: &NodeDefinition, result: &StepResult) -> Result<(), Error> {
             self.finished
                 .lock()
                 .unwrap()
@@ -304,7 +328,7 @@ kind = "test"
         let definition = chain();
         let runner: Arc<dyn Runner> = Arc::new(|node: &NodeDefinition, input: &Value| {
             if node.id == "two" {
-                Err("two is broken".into())
+                Err(NodeError::Failed("two is broken".into()))
             } else {
                 Ok(input.clone())
             }
@@ -314,7 +338,10 @@ kind = "test"
         let error =
             execute(&definition, json!(1), Limits::default(), &runner, &mut seen).unwrap_err();
 
-        assert_eq!(error, "two is broken");
+        assert_eq!(
+            error,
+            Error::Node(NodeError::Failed("two is broken".into()))
+        );
         assert_eq!(*seen.started.lock().unwrap(), vec!["one", "two"]);
     }
 
@@ -334,7 +361,7 @@ kind = "test"
 
         let error = execute(&definition, json!(1), limits, &runner, &mut ()).unwrap_err();
 
-        assert!(error.contains("timed out"), "{error}");
+        assert!(matches!(error, Error::TimedOut { ref node, .. } if node == "two"));
     }
 
     #[test]
@@ -349,7 +376,7 @@ kind = "test"
 
         let error = execute(&definition, json!(1), limits, &runner, &mut ()).unwrap_err();
 
-        assert!(error.contains("ceiling"), "{error}");
+        assert_eq!(error, Error::Ceiling(2));
     }
 
     #[test]
@@ -383,6 +410,6 @@ to = "missing"
         let error =
             execute(&definition, json!(1), Limits::default(), &runner, &mut ()).unwrap_err();
 
-        assert!(error.contains("missing"), "{error}");
+        assert!(error.to_string().contains("missing"), "{error}");
     }
 }
