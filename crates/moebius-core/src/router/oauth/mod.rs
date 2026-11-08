@@ -16,6 +16,7 @@
 //!
 //! This module holds the configuration, the tokens and the state of a login; `device` and `code` are the two flows.
 
+pub(in crate::router) mod anthropic;
 mod code;
 mod config;
 mod device;
@@ -142,6 +143,8 @@ pub(super) struct Logins {
     /// The task of each login that waits, so that a newer login of the same secret can stop it.
     tasks: std::sync::Mutex<HashMap<String, tokio::task::JoinHandle<()>>>,
     next: std::sync::atomic::AtomicU64,
+    /// The highest Claude Code version floor seen or asked for by an Anthropic subscription upstream.
+    claude_code_version: std::sync::Mutex<Option<String>>,
 }
 
 impl Logins {

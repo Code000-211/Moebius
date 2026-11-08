@@ -503,6 +503,7 @@ At the top:
 | `router/oauth/code.rs` | An authorization code with PKCE, the browser sent back to a loopback listener. |
 | `router/oauth/config.rs` | The `oauth` table as configured, filled in from its `preset`, and the warning confirmed before a login. |
 | `router/oauth/preset.rs` | The built-in providers (Anthropic, OpenAI): client ids, URLs, and what their requests need (headers, system prefix, or the Codex Responses protocol). |
+| `router/oauth/anthropic.rs` | What an Anthropic subscription token needs on `POST /v1/messages`: the `x-anthropic-billing-header` block, section-aware sanitization of Pi and Pi-Bolt system prompts, and raising the Claude Code version floor on `claude_code_version_too_old`. |
 | `router/oauth/flows.rs` | Tests of the presets against a fake provider. |
 | `router/oauth/testing.rs` | The fake OAuth provider and upstream the tests of the logins share. |
 
@@ -742,6 +743,7 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `workflows/mod.rs` | What the workflows folder holds, and what the rest of the crate uses from it. |
+| `workflows/decorate.rs` | The expressions in a node's parameters: evaluating `{{ ... }}` in the sandbox column scripts use, with the trigger, the node's input and earlier nodes in scope. |
 | `workflows/definition.rs` | The workflow file (`workflows/<name>.toml`): its trigger, nodes and edges, parsing it whole, validating its graph, and reading it from the harness configuration repository. |
 | `workflows/nodes/mod.rs` | The node kinds: the `Node` trait, the ports and metadata a kind reports, and the registry that maps a kind name and its parameters to a node. |
 | `workflows/run.rs` | The executor: following the edges from the trigger with one value, running each node under its timeout, failing the run on a node's error or its node ceiling, and reporting each step to an observer. |

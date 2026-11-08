@@ -13,11 +13,8 @@ use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::Flow;
+use super::anthropic::{self, CLAUDE_CODE_PREFIX, DEFAULT_CLAUDE_CODE_VERSION};
 use crate::router::Protocol;
-
-/// What the system prompt of a request with an Anthropic subscription token must start with: the subscription is
-/// granted to Claude Code, and the API refuses its token for a request that does not say so.
-const CLAUDE_CODE_PREFIX: &str = "You are Claude Code, Anthropic's official CLI for Claude.";
 
 /// One provider.
 pub(in crate::router) struct Preset {
@@ -168,8 +165,23 @@ pub(super) fn names() -> String {
 }
 
 impl Preset {
-    /// Puts the preset's text at the start of the system prompt of `request`, unless it is already there.
+    pub(in crate::router) fn is_anthropic(&self) -> bool {
+        self.name == "anthropic"
+    }
+
+    /// Puts the preset's text at the start of the system prompt of `request` (and for `anthropic`, its billing header
+    /// and system prompt sanitization), unless it is already there.
+    #[cfg(test)]
     pub(in crate::router) fn shape(&self, request: &mut Value) {
+        self.shape_with_version(request, DEFAULT_CLAUDE_CODE_VERSION);
+    }
+
+    /// Shapes `request` using `version` for the Anthropic billing header.
+    pub(in crate::router) fn shape_with_version(&self, request: &mut Value, version: &str) {
+        if self.is_anthropic() {
+            anthropic::shape_request(request, version);
+            return;
+        }
         let Some(prefix) = self.system_prefix else {
             return;
         };
@@ -191,11 +203,26 @@ impl Preset {
     /// (`harness_beta`, the header it sent), without repeating one.
     pub(in crate::router) fn dress(
         &self,
-        mut request: RequestBuilder,
+        request: RequestBuilder,
         harness_beta: Option<&str>,
     ) -> RequestBuilder {
+        self.dress_with_version(request, harness_beta, DEFAULT_CLAUDE_CODE_VERSION)
+    }
+
+    /// Puts the preset's headers on `request`, setting `user-agent` to `claude-cli/<version>` for the `anthropic`
+    /// preset.
+    pub(in crate::router) fn dress_with_version(
+        &self,
+        mut request: RequestBuilder,
+        harness_beta: Option<&str>,
+        version: &str,
+    ) -> RequestBuilder {
         for (name, value) in self.headers {
-            request = request.header(*name, *value);
+            if self.is_anthropic() && *name == "user-agent" {
+                request = request.header(*name, format!("claude-cli/{version}"));
+            } else {
+                request = request.header(*name, *value);
+            }
         }
         if !self.beta.is_empty() {
             let mut features: Vec<&str> = harness_beta

@@ -3,7 +3,8 @@
 A workflow is a graph kept as a file in the harness configuration repository: one trigger starts it, nodes do the work,
 and edges carry a value from one node's output port to another node. This page specifies that file exactly. Each node
 kind has a section here and a page of its own in [`workflows/`](workflows/README.md); the registry in
-`crates/moebius-core/src/workflows/nodes/mod.rs` has one match arm per kind.
+`crates/moebius-core/src/workflows/nodes/mod.rs` has one match arm per kind. A parameter may be filled from an earlier
+node with an expression: see [Expressions](workflows/expressions.md).
 
 The file lives at `workflows/<name>.toml` under the harness configuration repository's root, beside `agents/`, `skills/`
 and `mcp.toml`. The `<name>` is the file's stem and may contain only letters, digits, `-` and `_`.
