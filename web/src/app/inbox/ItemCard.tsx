@@ -17,12 +17,14 @@ import type { Proposal } from "../../api/types/improve";
 import { CodeBlock } from "../../ui/chat/CodeBlock";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
+import { PrBadge } from "../../ui/components/PrBadge";
 import { cn } from "../../ui/lib/cn";
 import { ago } from "../../ui/lib/format";
 import { FadedClamp } from "../../ui/page/FadedClamp";
 import { Field, TextArea } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { Status } from "../../ui/page/Status";
+import { pullRequestOf } from "../board/model";
 import { type Action, perform, working } from "./actions";
 import { DeleteGrilling } from "./DeleteGrilling";
 import {
@@ -33,6 +35,7 @@ import {
   confirmable,
   type Draft,
   draftsOf,
+  type Fact,
   facts,
   found,
   GRILLING_ISSUES,
@@ -243,9 +246,27 @@ export function ItemCard({
 }
 
 function Facts({ item, snapshot }: { item: InboxItem; snapshot: Snapshot }) {
+  const about = found(snapshot, item);
+  const pullRequest = about.board ? pullRequestOf(about.board.repository, about.change) : null;
+  return (
+    <>
+      {pullRequest && (
+        <PrBadge
+          number={pullRequest.number}
+          url={pullRequest.url}
+          status={pullRequest.status}
+          className="w-fit"
+        />
+      )}
+      <FactList facts={facts(item, about)} />
+    </>
+  );
+}
+
+function FactList({ facts }: { facts: Fact[] }) {
   return (
     <dl className="m-0 flex flex-wrap gap-2">
-      {facts(item, found(snapshot, item)).map((fact) => (
+      {facts.map((fact) => (
         <div key={fact.label} className="min-w-40 flex-1 rounded-control bg-sunken p-3">
           <dt className="text-sm font-semibold text-secondary">{fact.label}</dt>
           <dd

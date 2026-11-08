@@ -19,6 +19,7 @@ import { Markdown } from "../../ui/chat/Markdown";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { KanbanIssuePanel, KanbanIssueSection } from "../../ui/components/KanbanIssuePanel";
+import { PrBadge } from "../../ui/components/PrBadge";
 import { RunningDots } from "../../ui/components/RunningDots";
 import { ago } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
@@ -32,11 +33,13 @@ import { CommentsSection, EditIssueDialog, TrackerSection } from "./IssueSection
 import {
   type CardStatus,
   cardStatus,
+  changeOf,
   changeWorktree,
   describeHistory,
   heldLine,
   issueUrl,
   parentOf,
+  pullRequestOf,
   STATUS_LABELS,
   tokens,
   waitingLine,
@@ -233,6 +236,7 @@ export function Dock({
   const parent = parentOf(board, card);
   // The worktree of the run that made the change, from the runs read for the list below anyway.
   const worktree = changeWorktree(card, runs.data ?? []);
+  const pullRequest = pullRequestOf(repository, changeOf(board, card));
 
   return (
     <KanbanIssuePanel
@@ -282,6 +286,14 @@ export function Dock({
           waiting behind the runs that made it. */}
       {card.change && (
         <KanbanIssueSection title="Changes">
+          {pullRequest && (
+            <PrBadge
+              number={pullRequest.number}
+              url={pullRequest.url}
+              status={pullRequest.status}
+              className="mb-3"
+            />
+          )}
           <ChangesCard of={{ change: card.change.id }} worktree={worktree} />
         </KanbanIssueSection>
       )}

@@ -281,6 +281,14 @@ describe("live data", () => {
     await dock().getByText("demo · In review · by person").waitFor();
   });
 
+  it.skipIf(usesRealServer)("links the pull request of a card from the dock", async () => {
+    await fresh();
+    await openBoard();
+    await card(5).click();
+    const pull = dock().getByRole("link", { name: "Pull request #11, open" });
+    expect(await pull.getAttribute("href")).toBe("https://github.com/acme/demo/pull/11");
+  });
+
   it.skipIf(usesRealServer)("names the dock's two waiting rows by what each one is", async () => {
     await fresh();
     await openBoard();
