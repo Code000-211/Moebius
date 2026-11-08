@@ -76,7 +76,6 @@ an invalid definition is refused with the message and the file stays as it was. 
 workflow is queued or running. The `moebius` skill has `reference/workflows.md`.
 
 ## A column's script in one repository
-## A column's script in one repository
 
 ```sh
 "$MOEBIUS" api GET /v1/repositories/1/scripts/Not%20started               # the script that runs now, built in or its own
