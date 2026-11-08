@@ -919,3 +919,112 @@ async fn a_person_deletes_a_chat_a_research_and_a_grilling() {
     assert!(!again.status.success());
     assert!(String::from_utf8_lossy(&again.stderr).contains("not found"));
 }
+
+/// A workflow whose runs a person starts by hand, with the inputs its `manual` trigger names.
+const MANUAL_WORKFLOW: &str = r#"
+name = "release"
+description = "Started by a person."
+
+[[trigger]]
+kind = "manual"
+params = { inputs = [
+    { name = "version", type = "text", required = true },
+    { name = "count", type = "number", default = 3 },
+    { name = "dry_run", type = "boolean" },
+] }
+"#;
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_workflow_run_starts_by_hand_with_the_inputs_it_is_given() {
+    let dir = tempfile::tempdir().unwrap();
+    let harness = dir.path().join("harness");
+    moebius_core::harness::repo::create(&harness, &Default::default(), None).unwrap();
+    let text = format!(
+        "[board]\ntick_ms = 100\n[router]\nlisten = \"127.0.0.1:0\"\n[harness]\nurl = {:?}\n",
+        harness.display().to_string()
+    );
+    let s = start_in(dir, &text).await;
+    let origin = common::origin(s.dir.path());
+    out(&s
+        .run(&["repo", "add", "radiance", origin.to_str().unwrap()])
+        .await);
+    out(&s
+        .run_with(&["workflow", "save", "release", "-"], MANUAL_WORKFLOW)
+        .await);
+
+    // The inputs as flags: the text of each becomes the type the trigger declares it, and a default stands in for
+    // the input that was not given.
+    let started = json_out(
+        &s.run(&[
+            "--json",
+            "workflow",
+            "run",
+            "release",
+            "--repository",
+            "radiance",
+            "--input",
+            "version=1.2.3",
+            "--input",
+            "count=12",
+        ])
+        .await,
+    );
+    assert_eq!(started["workflow"], "release");
+    assert_eq!(started["repository"], "radiance");
+    assert_eq!(
+        started["trigger"], "manual",
+        "the run records the trigger that started it"
+    );
+    assert_eq!(started["value"], json!({"version": "1.2.3", "count": 12}));
+
+    // The same inputs as a JSON object on standard input.
+    let started = json_out(
+        &s.run_with(
+            &[
+                "--json",
+                "workflow",
+                "run",
+                "release",
+                "--repository",
+                "radiance",
+                "--inputs",
+                "-",
+            ],
+            r#"{"version": "2.0.0", "dry_run": true}"#,
+        )
+        .await,
+    );
+    assert_eq!(
+        started["value"],
+        json!({"version": "2.0.0", "count": 3, "dry_run": true})
+    );
+
+    // A value that is not the type its input names is refused, and the refusal names the input.
+    let failed = s
+        .run(&[
+            "workflow",
+            "run",
+            "release",
+            "--repository",
+            "radiance",
+            "--input",
+            "version=1.2.3",
+            "--input",
+            "count=many",
+        ])
+        .await;
+    assert!(!failed.status.success());
+    let error = String::from_utf8_lossy(&failed.stderr);
+    assert!(error.contains("count"), "{error}");
+
+    // A required input nobody gave is refused, naming it.
+    let failed = s
+        .run(&["workflow", "run", "release", "--repository", "radiance"])
+        .await;
+    assert!(!failed.status.success());
+    let error = String::from_utf8_lossy(&failed.stderr);
+    assert!(
+        error.contains("version") && error.contains("required"),
+        "{error}"
+    );
+}

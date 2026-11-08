@@ -690,9 +690,15 @@ params = { inputs = [
 [[nodes]]
 id = "build"
 kind = "test"
+[[edges]]
+from = "trigger"
+to = "build"
+port = "out"
 "#,
         );
-        definition.validate(FILE).expect("the inputs are checked and are right");
+        definition
+            .validate(FILE)
+            .expect("the inputs are checked and are right");
     }
 
     #[test]
@@ -732,7 +738,9 @@ to = "build"
 port = "out"
 "#,
         );
-        definition.validate(FILE).expect("an edge leaves the trigger by out");
+        definition
+            .validate(FILE)
+            .expect("an edge leaves the trigger by out");
     }
 
     #[test]

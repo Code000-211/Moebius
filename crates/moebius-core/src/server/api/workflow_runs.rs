@@ -65,7 +65,7 @@ struct Started {
 /// The inputs a person gave, checked against the trigger of the workflow, the repository the run belongs to, and the
 /// run as it was recorded.
 fn start_manual(
-    app: &crate::app::App,
+    app: &std::sync::Arc<crate::app::App>,
     repo: &crate::harness::repo::HarnessRepo,
     name: &str,
     request: &StartRequest,
@@ -84,7 +84,7 @@ fn start_manual(
     }
     let manual = manual::ManualTrigger::parse(&trigger.params)
         .map_err(|message| AppError::Invalid(format!("trigger: {message}")))?;
-    let value = manual.resolve(&request.inputs)?;
+    let value = manual.resolve(&request.inputs).map_err(AppError::Invalid)?;
 
     // The run belongs to the repository the person named, or to the one the trigger's `repository` input named.
     let (repository_name, via_input) = match manual
@@ -150,11 +150,10 @@ async fn run_inputs(
     let repo = harness(&state)?;
     blocking(&state.app, move |_| {
         let definition = repo.workflow(&name)?;
-        let trigger = definition
-            .trigger
-            .first()
-            .cloned()
-            .ok_or_else(|| AppError::Conflict(format!("the workflow {name:?} has no trigger")))?;
+        let trigger =
+            definition.trigger.first().cloned().ok_or_else(|| {
+                AppError::Conflict(format!("the workflow {name:?} has no trigger"))
+            })?;
         if trigger.kind != manual::KIND {
             return Err(AppError::Conflict(format!(
                 "the workflow's trigger is {:?}, not manual",
@@ -177,12 +176,13 @@ async fn start(
     axum::Json(request): axum::Json<StartRequest>,
 ) -> Result<axum::Json<Started>, ApiError> {
     let repo = harness(&state)?;
-    blocking(&state.app, move |app| start_manual(app, &repo, &name, &request)).await
+    blocking(&state.app, move |app| {
+        start_manual(app, &repo, &name, &request)
+    })
+    .await
 }
 
-fn harness(
-    state: &ApiState,
-) -> Result<Arc<crate::harness::repo::HarnessRepo>, ApiError> {
+fn harness(state: &ApiState) -> Result<Arc<crate::harness::repo::HarnessRepo>, ApiError> {
     if let Some(repo) = state.harness_repo.clone() {
         return Ok(repo);
     }
@@ -274,11 +274,7 @@ port = "out"
         assert_eq!(response.status(), 200, "{}", response.text().await.unwrap());
     }
 
-    async fn start_run(
-        state: &ApiState,
-        addr: &str,
-        body: Value,
-    ) -> (reqwest::StatusCode, String) {
+    async fn start_run(state: &ApiState, addr: &str, body: Value) -> (reqwest::StatusCode, String) {
         let response = reqwest::Client::new()
             .post(format!("http://{addr}/v1/workflows/release/runs"))
             .bearer_auth(&*state.token)
@@ -340,7 +336,12 @@ port = "out"
             "the default stands in for the input not given"
         );
 
-        let stored = state.app.store.workflow_run(started["id"].as_i64().unwrap()).unwrap().unwrap();
+        let stored = state
+            .app
+            .store
+            .workflow_run(started["id"].as_i64().unwrap())
+            .unwrap()
+            .unwrap();
         assert_eq!(stored.workflow, "release");
         assert_eq!(stored.trigger, "manual");
         assert_eq!(
@@ -371,7 +372,10 @@ port = "out"
             )
             .await;
             assert_eq!(status, 422, "{input}: {body}");
-            assert!(body.contains(input), "the refusal names the input it refused: {body}");
+            assert!(
+                body.contains(input),
+                "the refusal names the input it refused: {body}"
+            );
         }
     }
 
@@ -423,12 +427,8 @@ port = "out"
         save(&state, &addr, WORKFLOW).await;
 
         // Without a repository, when the trigger has no input of its kind.
-        let (status, body) = start_run(
-            &state,
-            &addr,
-            json!({ "inputs": { "version": "1.2.3" } }),
-        )
-        .await;
+        let (status, body) =
+            start_run(&state, &addr, json!({ "inputs": { "version": "1.2.3" } })).await;
         assert_eq!(status, 422, "{body}");
         assert!(body.contains("repository"), "{body}");
 

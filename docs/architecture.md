@@ -566,6 +566,7 @@ At the top:
 | `server/api/harness.rs` | The agents, skills and MCP servers of the harness configuration repository, and `POST /v1/harness/setup`. |
 | `server/api/rules.rs` | The rules page and the rules in prose. |
 | `server/api/workflows.rs` | The workflows of the harness configuration repository: list, read, save and delete, saving and deleting as commits. |
+| `server/api/workflow_runs.rs` | `GET /v1/workflows/{name}/run-inputs` and `POST /v1/workflows/{name}/runs`: the inputs a manual trigger names, and starting a run by hand with them. |
 | `server/api/settings.rs` | `moebius.toml`, the API keys and the restart, and what the Models, Plugins and Get started pages show. |
 | `server/api/lessons.rs` | The lessons: list, read, edit and delete. |
 | `server/api/extensions.rs` | `/v1/extensions/...`: search, info, the installed packages, and proposals to install, update and remove; and the refusal of an agent's merge of a change that touches a package. |
@@ -743,6 +744,8 @@ At the top:
 | `workflows/mod.rs` | What the workflows folder holds, and what the rest of the crate uses from it. |
 | `workflows/decorate.rs` | The expressions in a node's parameters: evaluating `{{ ... }}` in the sandbox column scripts use, with the trigger, the node's input and earlier nodes in scope. |
 | `workflows/definition.rs` | The workflow file (`workflows/<name>.toml`): its trigger, nodes and edges, parsing it whole, validating its graph, and reading and listing it from the harness configuration repository; saving and deleting it are commits in `harness/repo/edits.rs`. |
+| `workflows/trigger/mod.rs` | The triggers of a workflow: what starts its runs, and the manual trigger among them. |
+| `workflows/trigger/manual.rs` | The `manual` trigger: the inputs it names with their types, requiredness, defaults and choices, checked when the file is read, and the value a started run begins with. |
 | `workflows/nodes/mod.rs` | The node kinds: the `Node` trait, the ports and metadata a kind reports, and the registry that maps a kind name and its parameters to a node. |
 | `workflows/nodes/for_each.rs` | The `for_each` node: fans a list out over a sub-path once per element, gathers the outputs in order, and checks that the sub-path rejoins where the definition says. |
 | `workflows/run.rs` | The executor: following the edges from the trigger with one value, running each node under its timeout, failing the run on a node's error or its node ceiling, and reporting each step to an observer. |

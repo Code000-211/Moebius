@@ -14,6 +14,7 @@
 //! - `extensions`: searching the catalog of Pi packages, and proposing to install, update and remove them.
 //! - `rules`: the rules page and the rules in prose.
 //! - `workflows`: the workflows of the harness configuration repository: listing, reading, saving and deleting.
+//! - `workflow_runs`: starting a run of a workflow by hand with the inputs its `manual` trigger names.
 //! - `settings`: `moebius.toml`, the API keys, the restart, and what the Models, Plugins and Get started pages show.
 //! - `improve`: usage, judgements and replays, the Retro and its proposals, the decision model, research and
 //!   exports.
@@ -57,6 +58,7 @@ mod uploads;
 mod web;
 mod webhooks;
 mod whereabouts;
+mod workflow_runs;
 mod workflows;
 
 #[cfg(test)]
@@ -208,6 +210,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(extensions::routes())
         .merge(rules::routes())
         .merge(workflows::routes())
+        .merge(workflow_runs::routes())
         .merge(settings::routes())
         .merge(improve::routes())
         .merge(lessons::routes())

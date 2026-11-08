@@ -61,11 +61,15 @@ written `[[trigger]]` and has:
 
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `kind` | string | The kind name; the same registry resolves it as a node's `kind`. |
-| `params` | table | The kind's settings, read by that kind. Optional; defaults to an empty table. |
+| `kind` | string | The trigger's kind. `manual` is the trigger a person starts by hand and is read by itself, from [its page](workflows/manual-trigger.md); every other kind is resolved by the same registry that resolves a node's `kind`. |
+| `params` | table | The kind's settings, read by that kind. Optional; defaults to an empty table. For `manual` these are the inputs a person gives the run. |
 
 An edge starts at the trigger with `from = "trigger"`; `trigger` is reserved and cannot be a node's id or an edge's
-target.
+target. A value leaves a trigger by its `out` port, which is what the edges leaving the trigger name.
+
+The triggers that exist:
+
+- [`manual`](workflows/manual-trigger.md): a person starts each of its runs, with the inputs the trigger names.
 
 ### `nodes`
 
@@ -98,7 +102,10 @@ refusal names the file and the node or edge it is about:
 - two nodes have the same id: `node "<id>": duplicate id`;
 - a node uses the reserved id `trigger`: `node "trigger": the id is reserved for the workflow's trigger`;
 - an edge names a source or target node that does not exist: `edge "<from>" -> "<to>": no node "<id>"`;
-- a node or trigger names a kind the registry does not know: `node "<id>": unknown node kind "<kind>"`;
+- a node names a kind the registry does not know, or a trigger names a kind that is neither `manual` nor one the
+  registry knows: `node "<id>": unknown node kind "<kind>"`;
+- a `manual` trigger's parameters are not its inputs: a message that names the input that is not one, as its
+  [page](workflows/manual-trigger.md) spells them out;
 - an edge leaves by a port the source node does not have: `node "<id>": edge to "<to>" leaves by port "<port>"`;
 - the nodes form a cycle: `node "<id>": is part of a cycle ...`;
 - a node cannot be reached from the trigger: `node "<id>": is unreachable from the trigger`.

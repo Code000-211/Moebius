@@ -56,7 +56,7 @@ pub struct ManualTrigger {
 impl ManualTrigger {
     /// The ports a value leaves the trigger by: the edges of a workflow name its `out`.
     pub fn ports(&self) -> Ports {
-        Ports::new([], ["out"])
+        Ports::new(Vec::<String>::new(), ["out"])
     }
 
     /// The trigger the parameters of a `manual` trigger in a workflow's file name, refused with a message that names
@@ -95,11 +95,20 @@ impl ManualTrigger {
 
     /// The value a run starts with, from the inputs a person gave: the value of an input is checked against its type,
     /// a default stands in for an input that was not given, an input that was not given and has no default is left
-    /// out of the value, and a name the trigger does not give is refused. Every refusal names the input.
+    /// out of the value, and a name the trigger does not give is refused. Every refusal names the input, and a value
+    /// that is not of its type is refused before an input that is missing, so a person who gave a wrong value hears
+    /// about the input they gave.
     pub fn resolve(&self, given: &Map<String, Value>) -> Result<Value, String> {
         for name in given.keys() {
             if !self.inputs.iter().any(|input| input.name == *name) {
-                return Err(format!("input \"{name}\": the trigger has no input named \"{name}\""));
+                return Err(format!(
+                    "input \"{name}\": the trigger has no input named \"{name}\""
+                ));
+            }
+        }
+        for input in &self.inputs {
+            if let Some(value) = given.get(&input.name) {
+                check_value(&label(&input.name), input.ty, value, &input.choices)?;
             }
         }
         let mut value = Map::new();
@@ -116,7 +125,6 @@ impl ManualTrigger {
                     }
                 },
             };
-            check_value(&label(&input.name), input.ty, &input_value, &input.choices)?;
             value.insert(input.name.clone(), input_value);
         }
         Ok(Value::Object(value))
@@ -141,7 +149,7 @@ fn input(index: usize, item: &Value) -> Result<Input, String> {
         .to_string();
     let label = label(&name);
     for key in table.keys() {
-        if !["name", "type", "required", "default", "choices"].contains(key.as_str()) {
+        if !["name", "type", "required", "default", "choices"].contains(&key.as_str()) {
             return Err(format!("{label}: unknown key \"{key}\""));
         }
     }
@@ -151,7 +159,11 @@ fn input(index: usize, item: &Value) -> Result<Input, String> {
     };
     let required = table
         .get("required")
-        .map(|value| value.as_bool().ok_or_else(|| format!("{label}: \"required\" is true or false")))
+        .map(|value| {
+            value
+                .as_bool()
+                .ok_or_else(|| format!("{label}: \"required\" is true or false"))
+        })
         .transpose()?
         .unwrap_or(false);
     let mut choices = Vec::new();
@@ -160,7 +172,9 @@ fn input(index: usize, item: &Value) -> Result<Input, String> {
     }
     if ty == InputType::Choice {
         if choices.is_empty() {
-            return Err(format!("{label}: \"choices\" is a non-empty list of strings"));
+            return Err(format!(
+                "{label}: \"choices\" is a non-empty list of strings"
+            ));
         }
     } else if !choices.is_empty() {
         return Err(format!("{label}: \"choices\" is only for a choice input"));
@@ -187,7 +201,9 @@ fn input_type(input: &str, value: &Value) -> Result<InputType, String> {
         Some("boolean") => Ok(InputType::Boolean),
         Some("choice") => Ok(InputType::Choice),
         Some("repository") => Ok(InputType::Repository),
-        _ => Err(format!("{input}: \"type\" is one of \"text\", \"number\", \"boolean\", \"choice\", \"repository\"")),
+        _ => Err(format!(
+            "{input}: \"type\" is one of \"text\", \"number\", \"boolean\", \"choice\", \"repository\""
+        )),
     }
 }
 
@@ -217,7 +233,9 @@ fn check_value(what: &str, ty: InputType, value: &Value, choices: &[String]) -> 
         InputType::Text => value.is_string(),
         InputType::Number => value.is_number(),
         InputType::Boolean => value.is_boolean(),
-        InputType::Choice => value.as_str().is_some_and(|choice| choices.contains(choice)),
+        InputType::Choice => value
+            .as_str()
+            .is_some_and(|choice| choices.iter().any(|known| known == choice)),
         InputType::Repository => value.as_str().is_some_and(|name| !name.is_empty()),
     };
     if takes {
@@ -249,7 +267,10 @@ mod tests {
     fn a_trigger_with_no_inputs_is_a_trigger() {
         let manual = parse(json!({}));
         assert!(manual.inputs.is_empty());
-        assert_eq!(manual.resolve(&Map::new()).expect("no inputs to check"), json!({}));
+        assert_eq!(
+            manual.resolve(&Map::new()).expect("no inputs to check"),
+            json!({})
+        );
     }
 
     #[test]
@@ -303,13 +324,22 @@ mod tests {
         let cases = [
             (json!({ "name": "text", "type": "text" }), json!(3)),
             (json!({ "name": "number", "type": "number" }), json!("3")),
-            (json!({ "name": "boolean", "type": "boolean" }), json!("true")),
+            (
+                json!({ "name": "boolean", "type": "boolean" }),
+                json!("true"),
+            ),
             (
                 json!({ "name": "choice", "type": "choice", "choices": ["main"] }),
                 json!("staging"),
             ),
-            (json!({ "name": "repository", "type": "repository" }), json!(3)),
-            (json!({ "name": "repository", "type": "repository" }), json!("")),
+            (
+                json!({ "name": "repository", "type": "repository" }),
+                json!(3),
+            ),
+            (
+                json!({ "name": "repository", "type": "repository" }),
+                json!(""),
+            ),
         ];
         for (input, value) in cases {
             let manual = parse(json!({ "inputs": [input] }));
@@ -338,9 +368,18 @@ mod tests {
 
     #[test]
     fn choices_that_are_not_a_list_of_strings_are_refused_and_the_input_is_named() {
-        for choices in [json!("main"), json!(["main", 3]), json!(["main", "main"]), json!([])].into_iter() {
-            let error = trigger(json!({ "inputs": [{ "name": "env", "type": "choice", "choices": choices }] }))
-                .expect_err("refused");
+        for choices in [
+            json!("main"),
+            json!(["main", 3]),
+            json!(["main", "main"]),
+            json!([]),
+        ]
+        .into_iter()
+        {
+            let error = trigger(
+                json!({ "inputs": [{ "name": "env", "type": "choice", "choices": choices }] }),
+            )
+            .expect_err("refused");
             assert!(error.contains("\"env\""), "{error}");
         }
     }
@@ -356,8 +395,9 @@ mod tests {
 
     #[test]
     fn a_key_that_is_not_one_of_the_inputs_fields_is_refused_and_the_input_is_named() {
-        let error = trigger(json!({ "inputs": [{ "name": "count", "type": "number", "bogus": 1 }] }))
-            .expect_err("refused");
+        let error =
+            trigger(json!({ "inputs": [{ "name": "count", "type": "number", "bogus": 1 }] }))
+                .expect_err("refused");
         assert!(error.contains("\"count\""), "{error}");
         assert!(error.contains("bogus"), "{error}");
     }
@@ -370,8 +410,9 @@ mod tests {
 
     #[test]
     fn a_default_that_is_not_the_type_of_its_input_is_refused_and_the_input_is_named() {
-        let error = trigger(json!({ "inputs": [{ "name": "count", "type": "number", "default": "3" }] }))
-            .expect_err("refused");
+        let error =
+            trigger(json!({ "inputs": [{ "name": "count", "type": "number", "default": "3" }] }))
+                .expect_err("refused");
         assert!(error.contains("\"count\""), "{error}");
         assert!(error.contains("default"), "{error}");
     }
@@ -410,7 +451,8 @@ mod tests {
 
     #[test]
     fn a_missing_required_input_is_refused_and_named() {
-        let manual = parse(json!({ "inputs": [{ "name": "version", "type": "text", "required": true }] }));
+        let manual =
+            parse(json!({ "inputs": [{ "name": "version", "type": "text", "required": true }] }));
         let error = manual.resolve(&Map::new()).expect_err("refused");
         assert!(error.contains("\"version\""), "{error}");
         assert!(error.contains("required"), "{error}");
@@ -432,13 +474,19 @@ mod tests {
 
     #[test]
     fn a_required_input_with_a_default_needs_no_value() {
-        let manual = parse(json!({ "inputs": [{ "name": "count", "type": "number", "required": true, "default": 3 }] }));
-        assert_eq!(manual.resolve(&Map::new()).expect("the default stands in"), json!({ "count": 3 }));
+        let manual = parse(
+            json!({ "inputs": [{ "name": "count", "type": "number", "required": true, "default": 3 }] }),
+        );
+        assert_eq!(
+            manual.resolve(&Map::new()).expect("the default stands in"),
+            json!({ "count": 3 })
+        );
     }
 
     #[test]
     fn a_given_value_wins_over_a_default() {
-        let manual = parse(json!({ "inputs": [{ "name": "count", "type": "number", "default": 3 }] }));
+        let manual =
+            parse(json!({ "inputs": [{ "name": "count", "type": "number", "default": 3 }] }));
         let value = manual
             .resolve(&Map::from_iter([("count".to_string(), json!(7))]))
             .expect("a value of its type");
@@ -448,7 +496,10 @@ mod tests {
     #[test]
     fn an_input_that_was_not_given_and_has_no_default_is_left_out() {
         let manual = parse(json!({ "inputs": [{ "name": "note", "type": "text" }] }));
-        assert_eq!(manual.resolve(&Map::new()).expect("no value for it"), json!({}));
+        assert_eq!(
+            manual.resolve(&Map::new()).expect("no value for it"),
+            json!({})
+        );
     }
 
     #[test]
@@ -462,7 +513,7 @@ mod tests {
     #[test]
     fn a_trigger_leaves_its_value_by_out() {
         let manual = parse(json!({}));
-        assert_eq!(manual.ports().output, &["out"]);
+        assert_eq!(manual.ports().outputs, ["out"]);
     }
 
     #[test]
@@ -480,7 +531,7 @@ mod tests {
             .collect::<Result<Vec<_>, _>>()
             .expect("plain values");
         assert_eq!(
-            inputs.expect("plain values"),
+            inputs,
             vec![
                 json!({ "name": "version", "type": "text", "required": true }),
                 json!({ "name": "env", "type": "choice", "required": false, "choices": ["main", "staging"] })
