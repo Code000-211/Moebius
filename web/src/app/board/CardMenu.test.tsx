@@ -43,6 +43,7 @@ function shown(of: Card) {
   const actions = {
     onBlock: vi.fn(),
     onUnblock: vi.fn(),
+    onStop: vi.fn(),
     onDelete: vi.fn(),
     onAddSubIssue: vi.fn(),
     onMoveParent: vi.fn(),
@@ -105,6 +106,20 @@ describe("the menu of a card", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Unblock" }));
     expect(actions.onUnblock).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
     expect(actions.onBlock).not.toHaveBeenCalled();
+  });
+
+  it("offers Stop run only while a run is live, and asks to stop it", () => {
+    const idle = shown(card());
+    open(idle.trigger);
+    expect(screen.queryByRole("menuitem", { name: "Stop run" })).toBeNull();
+    cleanup();
+    const live = shown(
+      card({ run: { id: 3, agent: "coder", purpose: "code", status: "running" } as Card["run"] }),
+    );
+    open(live.trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Stop run" }));
+    expect(live.actions.onStop).toHaveBeenCalledWith(expect.objectContaining({ id: 7 }));
+    expect(live.actions.onBlock).not.toHaveBeenCalled();
   });
 
   it("keeps the pointer, clicks and keys of its button to itself", () => {

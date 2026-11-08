@@ -212,6 +212,7 @@ export function Dock({
   menu: {
     onBlock: (card: Card) => void;
     onUnblock: (card: Card) => void;
+    onStop: (card: Card) => void;
     onDelete: (card: Card) => void;
     onAddSubIssue: (card: Card) => void;
     onMoveParent: (card: Card) => void;
@@ -338,9 +339,22 @@ export function Dock({
           {card.note && <Row label="Note">{card.note}</Row>}
         </dl>
         {card.run && (
-          <Button asChild variant="secondary" size="sm" className="mt-4 w-fit">
-            <Link to={`/runs/${card.run.id}`}>Open live view</Link>
-          </Button>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button asChild variant="secondary" size="sm" className="w-fit">
+              <Link to={`/runs/${card.run.id}`}>Open live view</Link>
+            </Button>
+            {status === "live" && (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="w-fit"
+                disabled={busy}
+                onClick={() => menu.onStop(card)}
+              >
+                Stop run
+              </Button>
+            )}
+          </div>
         )}
       </KanbanIssueSection>
 
