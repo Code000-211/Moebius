@@ -31,7 +31,7 @@ const METHODS: [&str; 6] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"];
 
 /// What the server configuration says about the node: the hosts it may call and where the named secrets are kept.
 #[derive(Debug, Clone)]
-pub struct Settings {
+struct Settings {
     hosts: Vec<String>,
     secrets: Secrets,
 }
