@@ -26,9 +26,8 @@ const DEFAULT_TIMEOUT_SECONDS: f64 = 30.0;
 const MAX_TIMEOUT_SECONDS: f64 = 300.0;
 /// The most bytes of a response body that are read; a longer one fails the node.
 const MAX_BODY_BYTES: u64 = 10 * 1024 * 1024;
-/// The header a secret goes in, and what is written before its value, when the node does not say.
-const DEFAULT_SECRET_HEADER: &str = "Authorization";
-const DEFAULT_SECRET_PREFIX: &str = "Bearer ";
+/// The text written before a named secret's value, in the `Authorization` header.
+const SECRET_PREFIX: &str = "Bearer ";
 const METHODS: [&str; 6] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"];
 
 /// What the server configuration says about the node: the hosts it may call and where the named secrets are kept.
@@ -76,16 +75,8 @@ struct Request {
     headers: Vec<(String, String)>,
     body: Option<Json>,
     timeout: Duration,
-    secret: Option<SecretHeader>,
+    secret: Option<String>,
     settings: Option<Arc<Settings>>,
-}
-
-/// A secret to send, by name: the header it goes in and the text before its value.
-#[derive(Debug, Clone)]
-struct SecretHeader {
-    name: String,
-    header: String,
-    prefix: String,
 }
 
 impl HttpNode {
@@ -123,15 +114,13 @@ impl Request {
         let Some(map) = params.as_object() else {
             return Err(invalid("the parameters must be a table".to_string()));
         };
-        const KNOWN: [&str; 8] = [
+        const KNOWN: [&str; 6] = [
             "method",
             "url",
             "headers",
             "body",
             "timeout_seconds",
             "secret",
-            "secret_header",
-            "secret_prefix",
         ];
         if let Some(unknown) = map.keys().find(|key| !KNOWN.contains(&key.as_str())) {
             return Err(invalid(format!("unknown parameter \"{unknown}\"")));
@@ -188,19 +177,7 @@ impl Request {
                 }
             },
         };
-        let secret = match text("secret")? {
-            Some(name) => Some(SecretHeader {
-                name,
-                header: text("secret_header")?.unwrap_or_else(|| DEFAULT_SECRET_HEADER.into()),
-                prefix: text("secret_prefix")?.unwrap_or_else(|| DEFAULT_SECRET_PREFIX.into()),
-            }),
-            None if map.contains_key("secret_header") || map.contains_key("secret_prefix") => {
-                return Err(invalid(
-                    "\"secret_header\" and \"secret_prefix\" need a \"secret\"".to_string(),
-                ));
-            }
-            None => None,
-        };
+        let secret = text("secret")?;
         Ok(Self {
             method,
             url,
@@ -263,21 +240,18 @@ impl Request {
                 .ok_or_else(|| failed("no secrets are configured".to_string()))?;
             let value = settings
                 .secrets
-                .get(&secret.name)
+                .get(secret)
                 .map_err(|_| failed("the secrets file cannot be read".to_string()))?
-                .ok_or_else(|| failed(format!("no secret is named \"{}\"", secret.name)))?;
+                .ok_or_else(|| failed(format!("no secret is named \"{secret}\"")))?;
             remember_secret(&value);
-            let header = HeaderName::from_bytes(secret.header.as_bytes())
-                .map_err(|_| failed(format!("\"{}\" is not a header name", secret.header)))?;
-            let mut value = HeaderValue::from_str(&format!("{}{}", secret.prefix, value.trim()))
+            let mut value = HeaderValue::from_str(&format!("{SECRET_PREFIX}{}", value.trim()))
                 .map_err(|_| {
                     failed(format!(
-                        "the secret \"{}\" is not a valid header value",
-                        secret.name
+                        "the secret \"{secret}\" is not a valid header value"
                     ))
                 })?;
             value.set_sensitive(true);
-            map.insert(header, value);
+            map.insert(HeaderName::from_static("authorization"), value);
         }
         Ok(map)
     }
@@ -835,9 +809,6 @@ mod tests {
         );
         assert!(bad(json!({"url": "https://a", "timeout_seconds": 0})).contains("timeout_seconds"));
         assert!(bad(json!({"url": "https://a", "headers": {"a": 1}})).contains("header \"a\""));
-        assert!(
-            bad(json!({"url": "https://a", "secret_header": "X"})).contains("need a \"secret\"")
-        );
         // A value the run will fill is not a value to refuse while the file is read.
         HttpNode::with_settings(
             &json!({"url": "{{ trigger.url }}", "timeout_seconds": "{{ trigger.seconds }}"}),

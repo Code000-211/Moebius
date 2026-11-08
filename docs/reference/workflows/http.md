@@ -19,9 +19,7 @@ params = { method = "GET", url = "https://api.example.com/items/{{ input.id }}",
 | `headers` | table of strings | Headers to send. Their values are stored with the workflow, so they are not for credentials: use `secret`. |
 | `body` | string or any JSON | A string is sent as it is. Any other value is sent as JSON, with `Content-Type: application/json` unless `headers` sets one. |
 | `timeout_seconds` | number | Above 0 and at most 300. Default 30. |
-| `secret` | string | The name of a secret kept in `<data_dir>/secrets.toml` (the Models page, or `"$MOEBIUS"`). |
-| `secret_header` | string | The header the secret is sent in. Default `Authorization`. Needs `secret`. |
-| `secret_prefix` | string | Written before the secret's value. Default `Bearer ` (with the space). Needs `secret`. |
+| `secret` | string | The name of a secret kept in `<data_dir>/secrets.toml` (the Models page, or `"$MOEBIUS"`), sent as `Authorization: Bearer <value>`. |
 
 Any other key is refused, and so is a `secret` that names nothing in the file (the node fails when it runs).
 
@@ -44,11 +42,11 @@ value is known: a method that is not one of the six, or a `timeout_seconds` that
 
 ## Secrets
 
-A credential is given only by name. The node reads the value from `secrets.toml` when it runs, sends it, and passes it
-to the redaction that every store write, log line and web page goes through (`remember_secret`), so the value is
-replaced by `[redacted:secret]` wherever it would be written, including in a response that echoes it. A node never
-holds the value in its parameters. A secret shorter than the redaction's minimum length is sent but not redacted, so
-use real keys.
+A credential is given only by name. The node reads the value from `secrets.toml` when it runs and sends it in the
+`Authorization` header as `Bearer <value>`. It passes the value to the redaction that every store write, log line and
+web page goes through (`remember_secret`), so the value is replaced by `[redacted:secret]` wherever it would be
+written, including in a response that echoes it. A node never holds the value in its parameters. A secret shorter than
+the redaction's minimum length is sent but not redacted, so use real keys.
 
 ## URL policy
 
