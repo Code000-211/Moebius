@@ -183,6 +183,7 @@ Each node kind has one section here and one page in [`workflows/`](workflows/REA
 
 - [`condition`](workflows/condition.md): sends the value down the first port whose expression is true.
 - [`for_each`](workflows/for-each.md): runs a sub-path once per element of a list and gathers the outputs.
+- [`merge`](workflows/merge.md): joins two branches and emits what arrived by each side.
 
 ## Extending this page
 
