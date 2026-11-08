@@ -36,31 +36,13 @@ neither given nor defaulted is left out of the value the run starts with, unless
 ```toml
 [[trigger]]
 kind = "manual"
-
-[[trigger.inputs]]
-name = "version"
-type = "text"
-required = true
-
-[[trigger.inputs]]
-name = "count"
-type = "number"
-default = 3
-
-[[trigger.inputs]]
-name = "dry_run"
-type = "boolean"
-default = true
-
-[[trigger.inputs]]
-name = "environment"
-type = "choice"
-choices = ["staging", "prod"]
-default = "prod"
-
-[[trigger.inputs]]
-name = "checkout"
-type = "repository"
+params = { inputs = [
+    { name = "version", type = "text", required = true },
+    { name = "count", type = "number", default = 3 },
+    { name = "dry_run", type = "boolean", default = true },
+    { name = "environment", type = "choice", choices = ["staging", "prod"], default = "prod" },
+    { name = "checkout", type = "repository" },
+] }
 ```
 
 ## Ports
