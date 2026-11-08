@@ -108,6 +108,16 @@ impl Store {
             .optional()?)
     }
 
+    /// How many runs of `workflow` are queued or running, that is, not yet finished.
+    pub fn active_workflow_runs(&self, workflow: &str) -> Result<i64> {
+        Ok(self.conn().query_row(
+            "SELECT COUNT(*) FROM workflow_runs
+             WHERE workflow = ?1 AND status NOT IN ('succeeded', 'failed', 'cancelled')",
+            [workflow],
+            |row| row.get(0),
+        )?)
+    }
+
     /// Moves a run to `status`. Its start is set the first time it runs, its finish the first time it ends.
     pub fn set_workflow_run_status(&self, id: i64, status: &str) -> Result<()> {
         let at = now();

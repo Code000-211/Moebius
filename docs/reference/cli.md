@@ -181,6 +181,10 @@ takes a repository's name.
 | `agent delete <name>` | `DELETE /v1/agents/{name}` | `deleted the agent <name>`. |
 | `rules` | `GET /v1/rules` | The built-in rules, the rules in prose, those of each repository and the refusals of the week. |
 | `rules save <file\|->` | `PUT /v1/rules` | The rules page after the change, with `committed <id>`. |
+| `workflow list` | `GET /v1/workflows` | Table `name description trigger_kind node_count`. |
+| `workflow show <name>` | `GET /v1/workflows/{name}` | The workflow's file and its parsed form, as JSON. |
+| `workflow save <name> <file\|->` | `PUT /v1/workflows/{name}` | The saved workflow, with `commit`. The file is checked as the route checks it, so an invalid definition is refused and nothing is written; `-` reads standard input. |
+| `workflow delete <name>` | `DELETE /v1/workflows/{name}` | `name` and `commit`; `409` while a run of the workflow is queued or running. |
 | `settings` | `GET /v1/settings` | `file:`, then `<key> = <value>` for every key, `(default)` after a default, the stored key names and the keys that need a restart. |
 | `settings set <KEY=VALUE>... [--remove <key>]...` | `PUT /v1/settings` | `restart_needed` and `restart_keys`. |
 | `secrets set <name>` | `PUT /v1/secrets/{name}` | `stored the key <name>`. The key is read from standard input, one trailing new line removed; it is never an argument. |

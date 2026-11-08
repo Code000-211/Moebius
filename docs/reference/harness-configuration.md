@@ -435,6 +435,10 @@ as they are.
 - A skill or an MCP server that an agent names is not deleted (`409`, naming the agents).
 - `PUT /v1/rules` takes `{"text": "..."}`, writes it to `rules.md` and commits and pushes it the same way, with the
   message `Update the rules` and the decision kind `edit_rules`.
+- `PUT /v1/workflows/{name}` takes a workflow as the whole TOML file or as its parsed definition, checks it as reading
+  checks it, and writes it to `workflows/<name>.toml`; the message is `Add the workflow <name>` or `Update the workflow
+  <name>`, the decision kind `edit_workflow`. `DELETE` removes the file (`Delete the workflow <name>`), and is refused
+  while a run of the workflow is queued or running.
 
 If anything fails after the commit was made, including the push, the commit is undone (`git reset --hard` to the head
 before it), so the clone never drifts from `origin`, and no decision is recorded. The request then fails with the
