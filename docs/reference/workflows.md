@@ -132,6 +132,8 @@ No node kind is registered yet. Until a kind's card lands, a file naming it is r
 Each node kind has one section here and one page in [`workflows/`](workflows/README.md). This section is empty until the
 first node kind lands.
 
+- [`http`](workflows/http.md): calls a URL on an allowed host, with secrets by name, and outputs the status, headers and body.
+
 ## Extending this page
 
 A node-kind card adds its section under [Node kinds](#node-kinds), a page `workflows/<kind>.md`, its entry in the

@@ -199,6 +199,7 @@ impl Server {
         let token = api::load_or_create_token(&config.token_file)
             .map_err(|e| format!("cannot read {}: {e}", config.token_file.display()))?;
         let secrets = Secrets::new(&config.data_dir);
+        crate::workflows::nodes::http::configure(&config);
         let upstreams = secrets.upstreams(&config)?;
         let router = Arc::new(
             Router::new(store.clone(), upstreams)
