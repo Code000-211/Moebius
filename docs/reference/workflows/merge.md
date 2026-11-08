@@ -35,7 +35,8 @@ the other side, and a `both` that is not a boolean, are refused when the file is
 ## Ports
 
 - Inputs `a` and `b`: the two branches. An edge names the port its _source_ leaves by, so it is the definition's `a`
-  and `b` that say which side a node's value arrives by; the two input ports are where the canvas draws the edges in.
+  and `b` that say which side a node's value arrives by; the canvas draws each edge from its source node to the node
+  its target names.
 - Output `out`: what arrived.
 
 ## Which side arrived
