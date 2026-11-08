@@ -55,7 +55,7 @@ import {
   issueUrl,
   labelsOf,
   nextCard,
-  pullUrl,
+  pullRequestOf,
   rootOf,
   type Stack,
   stackWords,
@@ -598,15 +598,7 @@ function CardContent({
         ) : undefined
       }
       badges={cardBadges(card, status, next === card.id)}
-      pullRequest={
-        change?.pull_request != null
-          ? {
-              number: change.pull_request,
-              url: pullUrl(board.repository, change.pull_request),
-              status: change.state,
-            }
-          : null
-      }
+      pullRequest={pullRequestOf(board.repository, change)}
       rounds={coding ? { done: card.rounds, limit: board.round_limit } : null}
       isLoading={status === "live"}
       muted={card.column === "Done" || card.closed}
