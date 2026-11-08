@@ -4,19 +4,6 @@
  * agents and skills (`Agent`, `Skill`) are in `chat.ts`, where the chat page first needed them.
  */
 
-/** How Pi-Bolt's bridge keeps tool outputs small; the values here are what an agent without the table has. */
-export interface ToolOutput {
-  max_lines: number;
-  max_bytes: number;
-  compress: boolean;
-}
-
-export const DEFAULT_TOOL_OUTPUT: ToolOutput = {
-  max_lines: 200,
-  max_bytes: 16384,
-  compress: true,
-};
-
 /** The settings of an agent as `PUT /v1/agents/{name}` takes them. */
 export interface AgentSettings {
   model: string;
@@ -29,7 +16,6 @@ export interface AgentSettings {
   /** Left out for `pi-bolt`. */
   harness?: string;
   /** Left out when it is the defaults. */
-  tool_output?: ToolOutput;
   runner?: string;
   /** Left out when true (the defaults of the agent's name); false is none; a list is exactly those skills. */
   engineering_skills?: boolean | string[];

@@ -9,7 +9,7 @@ import { cn } from "../../ui/lib/cn";
 import { noun, plural } from "../../ui/lib/format";
 import { Box } from "../../ui/page/Box";
 import { CELL, Table } from "../../ui/page/List";
-import { bytes, duration, grouped, share, short } from "./figures";
+import { duration, grouped, share, short } from "./figures";
 import { doings, modelColours } from "./model";
 
 /**
@@ -124,18 +124,10 @@ export function TimeBox({ report, span }: { report: UsageReport; span: string })
   );
 }
 
-/** The tools whose calls made runs wait longest, and what making the tools' outputs smaller saved. */
+/** The tools whose calls made runs wait longest. */
 export function WaitsBox({ report }: { report: UsageReport }) {
-  const saving = report.tool_output;
   return (
-    <Box
-      title="Longest tool waits"
-      aside={
-        saving && saving.results > 0
-          ? `Outputs cut from ${bytes(saving.bytes_before)} to ${bytes(saving.bytes_after)}`
-          : undefined
-      }
-    >
+    <Box title="Longest tool waits">
       {report.tool_waits.length === 0 ? (
         <p className="m-0 text-base text-secondary">
           No tool call waited long enough to be worth naming.

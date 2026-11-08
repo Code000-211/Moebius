@@ -966,7 +966,6 @@ describe("usage", () => {
       await page.getByText("Where the model time goes").waitFor();
       await page.getByText("Answering · 40 calls").waitFor();
       await page.getByText("Longest tool waits").waitFor();
-      await page.getByText("Outputs cut from 3.4 MB to 920 KB").waitFor();
       await page.getByRole("cell", { name: "Coder" }).waitFor();
     },
   );

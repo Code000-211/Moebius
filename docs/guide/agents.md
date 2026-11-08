@@ -589,8 +589,7 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/
 ## Tool outputs
 
 Moebius does not change what tools print: the model reads the output as the tool made it, and older outputs are never
-hidden, so the model's prompt cache holds from one request to the next. The `tool_output` table of an agent is still
-accepted but has no effect.
+hidden, so the model's prompt cache holds from one request to the next.
 
 ## How to try an agent
 

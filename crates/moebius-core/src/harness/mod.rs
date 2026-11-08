@@ -9,7 +9,6 @@ pub mod gateway;
 pub mod grilling;
 pub mod launch;
 pub mod mcp;
-pub mod output;
 pub mod packages;
 pub mod pibolt;
 pub mod pick;

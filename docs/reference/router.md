@@ -220,8 +220,7 @@ bridge, so the token of a run on Claude Code is a checked one, and the router ch
   `[DONE]`), then each allowed call in one chunk (renumbered from 0) and each refused one as a `content` delta. A call
   the stream did not finish is never passed on. Tokens are counted from the stream as it came.
 - The tool results in such a run's requests (OpenAI messages with the role `tool`, Anthropic `tool_result` blocks, as
-  text or text blocks) have their secrets removed before the request goes upstream, as `/moebius/result` removes them
-  for the bridge.
+  text or text blocks) have their secrets removed before the request goes upstream.
 
 ## Errors
 

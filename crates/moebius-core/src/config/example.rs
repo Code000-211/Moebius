@@ -232,11 +232,6 @@ program = "claude"
 # instructions = "Keep changes small and run the tests."
 # token_budget = 2000000
 # engineering_skills = true               # false: none; or a list, ["tdd", "moebius-autonomous"]: exactly those (default: those of the name Coder, Reviewer, Grilling-partner)
-# How the outputs of its tools are kept small before the model reads them:
-# [agents.Coder.tool_output]
-# max_lines = 200                         # one result's budget: above it, its head and tail; 0 is no limit
-# max_bytes = 16384
-# compress = true                         # compress test runs and build logs, strip escape codes and progress bars
 "#;
 
 #[cfg(test)]
