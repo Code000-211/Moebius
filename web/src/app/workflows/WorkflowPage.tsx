@@ -19,7 +19,7 @@ import { useNow } from "../../ui/lib/useNow";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
-import { triggerName } from "./model";
+import { lastRunLine, triggerName } from "./model";
 import { WorkflowGraph } from "./WorkflowGraph";
 
 export function WorkflowPage() {
@@ -94,7 +94,7 @@ export function WorkflowPage() {
             </div>
             <p className="m-0 text-sm text-secondary">
               {last
-                ? `Last run ${ago(now, last.started_at ?? now)}: ${last.status}.`
+                ? `${lastRunLine(last)}${last.started_at === null ? "" : ` · ${ago(now, last.started_at)}`}.`
                 : "This workflow has not run."}
             </p>
           </section>

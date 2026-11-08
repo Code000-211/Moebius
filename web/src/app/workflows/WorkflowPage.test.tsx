@@ -77,9 +77,14 @@ describe("a workflow's definition", () => {
   it("says what starts it and how the last run went", async () => {
     show(DEFINITION);
     expect(await screen.findByText("Schedule · 0 6 * * 1")).toBeTruthy();
-    expect(screen.getByText(/Last run .*: failed\./)).toBeTruthy();
+    expect(screen.getByText(/Last run: failed/)).toBeTruthy();
     expect(screen.getByRole("link", { name: /Open last run/ }).getAttribute("href")).toBe(
       "/workflow-runs/41",
     );
+  });
+
+  it("names a successful last run as done, as the list does", async () => {
+    show({ ...DEFINITION, last_run: { ...DEFINITION.last_run, status: "succeeded" } });
+    expect(await screen.findByText(/Last run: done/)).toBeTruthy();
   });
 });
