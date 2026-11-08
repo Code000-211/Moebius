@@ -80,6 +80,7 @@ const COLUMN_EMPTY: Record<string, string> = {
 type CardMenuActions = {
   onBlock: (card: Card) => void;
   onUnblock: (card: Card) => void;
+  onStop: (card: Card) => void;
   onDelete: (card: Card) => void;
   onAddSubIssue: (card: Card) => void;
   onMoveParent: (card: Card) => void;
@@ -203,6 +204,9 @@ export function BoardPage() {
   const menu = {
     onBlock: setBlocking,
     onUnblock: (card: Card) => decide({ kind: "unblock", card: card.id, number: card.number }),
+    onStop: (card: Card) => {
+      if (card.run) decide({ kind: "stop", run: card.run.id, number: card.number });
+    },
     onDelete: setDeleting,
     onAddSubIssue: (card: Card) => setCreating({ parent: card.number }),
     onMoveParent: setMoving,

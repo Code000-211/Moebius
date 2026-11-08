@@ -3,7 +3,7 @@
  * real server sends (docs/reference/desktop-api.md: the snapshot, `Card`, `Change`, `Run`, the history, the script of a
  * column, and the decisions). The state is kept per server and changes the way the real one does: approving, merging,
  * sending back, retrying and creating an issue move cards, resolve inbox items and send the events the real server
- * sends; blocking stops the card's run and holds the card, unblocking releases it, and deleting takes the card, its
+ * sends; stopping a run ends it as stopped, blocking stops the card's run and holds the card, unblocking releases it, and deleting takes the card, its
  * changes and its inbox items and sends `card_deleted`. The issue tracker works the way the server's does: a parent (cycles
  * refused), blockers (cycles refused, resolved when the blocker is closed), labels, a claim (a second claimant is refused),
  * comments, and closing and reopening, each with the event of its own. A test can also move a card as the board engine would (`moveCard`) and make the next request to a route fail
@@ -485,6 +485,17 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       send({ kind: "card_updated", data: view(target) });
       return ok(view(target));
     }
+    const stop = /^\/v1\/runs\/(\d+)\/stop$/.exec(path);
+    if (stop) {
+      const target = cards.find((c) => c.run?.id === Number(stop[1]));
+      const live = target?.run?.status === "running" || target?.run?.status === "starting";
+      if (!target?.run || !live) return fail(422, `run ${stop[1]} is not running`);
+      const stopped = target.run;
+      target.run = { ...stopped, status: "stopped" };
+      send({ kind: "run_ended", data: { run: stopped.id, status: "stopped" } });
+      send({ kind: "card_updated", data: view(target) });
+      return ok(stopped);
+    }
     if (unblock) {
       const target = find(Number(unblock[1]));
       if (!target) return fail(404, `card ${unblock[1]} not found`);
@@ -584,6 +595,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
         path === "/v1/repositories/1/issues" ||
         /^\/v1\/(cards|changes)\/\d+\//.test(path) ||
         /^\/v1\/cards\/\d+$/.test(path) ||
+        /^\/v1\/runs\/\d+\/stop$/.test(path) ||
         /^\/v1\/repositories\/1\/scripts\//.test(path);
       if (!known) return undefined;
       if (method !== "GET") requests.push({ method, path, body });
