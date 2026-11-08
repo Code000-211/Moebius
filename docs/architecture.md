@@ -741,6 +741,7 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `workflows/mod.rs` | What the workflows folder holds, and what the rest of the crate uses from it. |
+| `workflows/decorate.rs` | The expressions in a node's parameters: evaluating `{{ ... }}` in the sandbox column scripts use, with the trigger, the node's input and earlier nodes in scope. |
 | `workflows/definition.rs` | The workflow file (`workflows/<name>.toml`): its trigger, nodes and edges, parsing it whole, validating its graph, and reading it from the harness configuration repository. |
 | `workflows/nodes/mod.rs` | The node kinds: the `Node` trait, the ports and metadata a kind reports, and the registry that maps a kind name and its parameters to a node. |
 
