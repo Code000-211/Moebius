@@ -41,8 +41,6 @@ import {
   withChosen,
 } from "./model";
 
-const COMPRESS = ["Compressed", "As they are"];
-
 /** What the page says of the last save: the commit it made (none when nothing changed), or that moebius.toml was written. */
 export type Saved = { name: string; commit: string | null } | { name: string; written: true };
 
@@ -374,52 +372,6 @@ export function AgentEditor(props: EditorProps) {
                 />
               )}
             </Field>
-            {form.harness === HARNESSES[0] && (
-              <>
-                <Field label="Hide tool outputs after turns">
-                  {(id) => (
-                    <Input
-                      id={id}
-                      value={form.hideAfter}
-                      placeholder="0 keeps them"
-                      className="tabular-nums"
-                      onChange={(event) => change({ hideAfter: event.target.value })}
-                    />
-                  )}
-                </Field>
-                <Field label="Lines per tool result">
-                  {(id) => (
-                    <Input
-                      id={id}
-                      value={form.maxLines}
-                      placeholder="0 is no limit"
-                      className="tabular-nums"
-                      onChange={(event) => change({ maxLines: event.target.value })}
-                    />
-                  )}
-                </Field>
-                <Field label="Bytes per tool result">
-                  {(id) => (
-                    <Input
-                      id={id}
-                      value={form.maxBytes}
-                      placeholder="0 is no limit"
-                      onChange={(event) => change({ maxBytes: event.target.value })}
-                    />
-                  )}
-                </Field>
-                <Field label="Tool outputs">
-                  {(id) => (
-                    <Select
-                      id={id}
-                      options={COMPRESS}
-                      value={COMPRESS[form.compress ? 0 : 1] as string}
-                      onChange={(choice) => change({ compress: choice === COMPRESS[0] })}
-                    />
-                  )}
-                </Field>
-              </>
-            )}
           </div>
           <ModelNote
             available={available}

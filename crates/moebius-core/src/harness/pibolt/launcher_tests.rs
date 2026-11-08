@@ -251,14 +251,6 @@ fn an_unchanged_answer_starts_pi_as_without_a_launcher() {
         "moebius-ask.ts is not read only"
     );
     assert!(request.read_only.iter().any(|p| p == "/agent/own.ts"));
-    // The whole outputs of tools are saved by the server in the run's folder `out`, outside the worktree, which the
-    // agent only reads. It is made for the launcher, which grants what it is told, and goes with the run: the fake
-    // launcher failed this one, so its folder is removed.
-    let out = run_dir(&app, run.id).join("out");
-    assert!(request.read_only.iter().any(|p| Path::new(p) == out));
-    assert!(!out.exists());
-    assert!(!request.read_write.iter().any(|p| Path::new(p) == out));
-    assert!(!out.starts_with(&request.dir));
     assert!(request.env["TMPDIR"].ends_with("tmp"));
 }
 

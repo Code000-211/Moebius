@@ -10,7 +10,7 @@ use super::HarnessRepo;
 use crate::app::{App, AppError, Result};
 use crate::bus::Event;
 use crate::config::{
-    AgentConfig, AgentSet, EngineeringSkills, HarnessKind, ToolOutput, default_protocol,
+    AgentConfig, AgentSet, EngineeringSkills, HarnessKind, RemovedTable, default_protocol,
     valid_agent_name,
 };
 use crate::harness::mcp::{McpServer, parse_file};
@@ -41,9 +41,9 @@ pub struct AgentSettings {
     /// The harness the agent runs on, `pi-bolt` unless it says.
     #[serde(default, skip_serializing_if = "HarnessKind::is_default")]
     pub harness: HarnessKind,
-    /// How the outputs of its tools are kept small (the table `[tool_output]`); left out when it is the default.
-    #[serde(default, skip_serializing_if = "ToolOutput::is_default")]
-    pub tool_output: ToolOutput,
+    /// The removed table `[tool_output]` of older files: read and ignored, never written.
+    #[serde(default, skip_serializing)]
+    pub tool_output: RemovedTable,
     /// The runner (`[[runners]]` of `moebius.toml`) the agent's runs go to; left out for the server itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runner: Option<String>,

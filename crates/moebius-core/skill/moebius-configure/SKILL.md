@@ -21,8 +21,7 @@ and are recorded as yours.
 
 Write the instructions to a file first (`coder.md`, outside the worktree's tracked files or delete it after) and pass
 it with `--instructions`; `-` reads standard input. Keep `--thinking`, `--token-budget`, `--harness`, every `--skill`, `--mcp` and
-`--extension` the agent had, and its `tool_output` (`--hide-outputs-after`, `--output-lines`, `--output-bytes`,
-`--no-compress`; left out, each is its default) and `--no-engineering-skills` if it had `engineering_skills = false` (or one `--engineering-skill <name>` for each name of its `engineering_skills` list), unless the person asked to change them. `--harness claude-code` runs the agent on Claude
+`--extension` the agent had, and `--no-engineering-skills` if it had `engineering_skills = false` (or one `--engineering-skill <name>` for each name of its `engineering_skills` list), unless the person asked to change them. `--harness claude-code` runs the agent on Claude
 Code, which needs `--protocol anthropic` and no extensions. These commands need a harness configuration
 repository; without one the agents are the `agents` tables of `moebius.toml` (see Settings below). The built-in agents
 (`Moebius`, `Grilling-partner`, `Coder`, `Reviewer`) keep their built-in instructions and skills; what you save is added after
@@ -58,6 +57,22 @@ The other files of the settings are saved the same way: `review.md` (notes for t
 `checks` (the checks of a repository without a forge), `test-first` (an empty text turns test
 first on, `DELETE` turns it off) and `localize`. A repository's own `.moebius/` folder is not read; if `settings` lists
 `leftover` files, offer to move them to the settings.
+
+## Workflows
+
+A workflow is a file `workflows/<name>.toml` of the harness configuration repository: a trigger, nodes with a
+`position` and the edges between them. List what exists, read one, save one from a file, and delete one:
+
+```sh
+"$MOEBIUS" workflow list
+"$MOEBIUS" workflow show release
+"$MOEBIUS" workflow save release release.toml
+"$MOEBIUS" workflow delete release
+```
+
+`save` replaces the whole file and commits it, so read it first (`workflow show`) and keep every node's `position`;
+an invalid definition is refused with the message and the file stays as it was. `delete` is refused while a run of the
+workflow is queued or running. The `moebius` skill has `reference/workflows.md`.
 
 ## A column's script in one repository
 

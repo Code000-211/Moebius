@@ -25,6 +25,18 @@ pub struct WorkflowDefinition {
     pub name: String,
     /// One sentence on what the workflow does.
     pub description: String,
+    /// How long one node may take, in seconds, before the run fails closed.
+    #[serde(
+        default = "default_node_timeout_seconds",
+        skip_serializing_if = "is_default_node_timeout_seconds"
+    )]
+    pub node_timeout_seconds: u64,
+    /// How many nodes one run may execute before it fails closed.
+    #[serde(
+        default = "default_max_nodes",
+        skip_serializing_if = "is_default_max_nodes"
+    )]
+    pub max_nodes: u64,
     /// Exactly one trigger, written as `[[trigger]]`.
     #[serde(default)]
     pub trigger: Vec<Trigger>,
@@ -127,6 +139,7 @@ impl WorkflowDefinition {
         self.check_ids(file)?;
         self.check_edge_nodes(file)?;
         self.check_kinds_and_ports(file)?;
+        super::nodes::for_each::check(self).map_err(|message| Error::new(file, message))?;
         self.check_no_cycle(file)?;
         self.check_reachable(file)
     }
@@ -337,11 +350,11 @@ fn visit<'a>(
     None
 }
 
-/// Read one workflow from the harness configuration repository, whose files are `workflows/<name>.toml` under `root`.
+/// The file a workflow named `name` is kept in, refused when the name cannot be one file's name.
 ///
 /// A name that cannot be a file name is refused before the path is built, so a workflow name never reaches outside
 /// its folder.
-pub fn read(root: &Path, name: &str) -> Result<WorkflowDefinition, Error> {
+pub(crate) fn file_for(name: &str) -> Result<String, Error> {
     let file = format!("{DIRECTORY}/{name}.toml");
     if name.is_empty()
         || !name
@@ -353,13 +366,63 @@ pub fn read(root: &Path, name: &str) -> Result<WorkflowDefinition, Error> {
             "workflow names may contain only letters, digits, '-' and '_'",
         ));
     }
+    Ok(file)
+}
 
-    let path = root.join(DIRECTORY).join(format!("{name}.toml"));
-    let text = std::fs::read_to_string(&path)
-        .map_err(|error| Error::new(&file, format!("cannot be read: {error}")))?;
-    let definition = WorkflowDefinition::parse(&text, &file)?;
+/// The text of one workflow's file in the harness configuration repository under `root`.
+pub fn read_text(root: &Path, name: &str) -> Result<String, Error> {
+    let file = file_for(name)?;
+    std::fs::read_to_string(root.join(&file))
+        .map_err(|error| Error::new(&file, format!("cannot be read: {error}")))
+}
+
+/// Read one workflow from the harness configuration repository, whose files are `workflows/<name>.toml` under `root`.
+pub fn read(root: &Path, name: &str) -> Result<WorkflowDefinition, Error> {
+    parse(name, &read_text(root, name)?)
+}
+
+/// Parse and validate the definition of the workflow `name` from `text`.
+pub fn parse(name: &str, text: &str) -> Result<WorkflowDefinition, Error> {
+    let file = file_for(name)?;
+    let definition = WorkflowDefinition::parse(text, &file)?;
     definition.validate(&file)?;
     Ok(definition)
+}
+
+/// Every workflow in the harness configuration repository under `root`, by file name, in name order.
+pub fn list(root: &Path) -> Result<Vec<(String, WorkflowDefinition)>, Error> {
+    let dir = root.join(DIRECTORY);
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => {
+            return Err(Error::new(DIRECTORY, format!("cannot be read: {error}")));
+        }
+    };
+    let mut names = Vec::new();
+    for entry in entries {
+        let entry =
+            entry.map_err(|error| Error::new(DIRECTORY, format!("cannot be read: {error}")))?;
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "toml")
+            && let Some(name) = path.file_stem().and_then(|name| name.to_str())
+        {
+            names.push(name.to_string());
+        }
+    }
+    names.sort();
+    names
+        .into_iter()
+        .map(|name| read(root, &name).map(|definition| (name, definition)))
+        .collect()
+}
+
+/// The text of a workflow's file: the definition validated and written as TOML.
+pub(crate) fn render(name: &str, definition: &WorkflowDefinition) -> Result<String, Error> {
+    let file = file_for(name)?;
+    definition.validate(&file)?;
+    toml::to_string(definition)
+        .map_err(|error| Error::new(&file, format!("cannot be written: {error}")))
 }
 
 impl crate::harness::repo::HarnessRepo {
@@ -367,10 +430,37 @@ impl crate::harness::repo::HarnessRepo {
     pub fn workflow(&self, name: &str) -> crate::app::Result<WorkflowDefinition> {
         read(self.path(), name).map_err(|error| crate::app::AppError::Invalid(error.to_string()))
     }
+
+    /// Every workflow in this harness configuration repository, by name.
+    pub fn workflows(&self) -> crate::app::Result<Vec<(String, WorkflowDefinition)>> {
+        list(self.path()).map_err(|error| crate::app::AppError::Invalid(error.to_string()))
+    }
 }
 
 fn empty_params() -> Value {
     Value::Object(Map::new())
+}
+
+/// The per-node timeout a workflow gets when its file does not set one: five minutes.
+pub const DEFAULT_NODE_TIMEOUT_SECONDS: u64 = 300;
+
+/// The number of nodes a run may execute when its file does not set a ceiling.
+pub const DEFAULT_MAX_NODES: u64 = 100;
+
+fn default_node_timeout_seconds() -> u64 {
+    DEFAULT_NODE_TIMEOUT_SECONDS
+}
+
+fn is_default_node_timeout_seconds(value: &u64) -> bool {
+    *value == DEFAULT_NODE_TIMEOUT_SECONDS
+}
+
+fn default_max_nodes() -> u64 {
+    DEFAULT_MAX_NODES
+}
+
+fn is_default_max_nodes(value: &u64) -> bool {
+    *value == DEFAULT_MAX_NODES
 }
 
 fn is_empty_params(params: &Value) -> bool {

@@ -87,9 +87,7 @@ impl PiBolt {
             .env("PI_CODING_AGENT_DIR", place.agent_dir)
             .env("MOEBIUS", &self.moebius)
             .env("MOEBIUS_CHECK_URL", &self.router_url)
-            .env("MOEBIUS_RUN_TOKEN", place.token)
-            // How the bridge keeps the outputs of tools small (see `harness::output`).
-            .env("MOEBIUS_TOOL_OUTPUT", json!(agent.tool_output).to_string());
+            .env("MOEBIUS_RUN_TOKEN", place.token);
         if let (true, Some(url)) = (place.operates, self.api_url.get()) {
             // The Moebius agent and the Grilling partner operate Moebius with `$MOEBIUS`, as the run itself: its token
             // is accepted by the desktop API.
@@ -378,12 +376,6 @@ impl PiBolt {
                 command.env(name, &tmp);
             }
             read_write.push(tmp);
-            // The server writes the whole outputs of tools here (see `harness::output`) and the agent reads them, so
-            // it is granted to read only; it has to exist for a launcher to grant it.
-            let out = spot.run_dir.join(crate::harness::output::OUT_DIR);
-            std::fs::create_dir_all(&out)
-                .map_err(|e| format!("cannot make the output directory of the run: {e}"))?;
-            read_only.push(out);
         }
         let ask = Ask {
             run: LaunchRun {
@@ -797,12 +789,7 @@ mod tests {
         assert!(env["CARGO_MANIFEST_DIR"].is_null(), "{env}");
         assert!(env["PATH"].is_string());
         assert_eq!(env["MOEBIUS_CHECK_URL"], "http://127.0.0.1:9");
-        let tool_output: Value =
-            serde_json::from_str(env["MOEBIUS_TOOL_OUTPUT"].as_str().unwrap()).unwrap();
-        assert_eq!(
-            tool_output,
-            json!({"hide_after_turns": 10, "max_lines": 200, "max_bytes": 16384, "compress": true})
-        );
+        assert!(env["MOEBIUS_TOOL_OUTPUT"].is_null(), "{env}");
         assert!(
             env["MOEBIUS_RUN_TOKEN"]
                 .as_str()

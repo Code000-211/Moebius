@@ -193,7 +193,6 @@ function usageReport(days: number) {
     ],
     tool_waits: [{ tool: "bash", calls: 31, seconds: 2460 }],
     classes: [],
-    tool_output: { results: 96, bytes_before: 3_400_000, bytes_after: 920_000 },
   };
 }
 

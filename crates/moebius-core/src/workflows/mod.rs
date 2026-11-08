@@ -5,6 +5,7 @@
 pub mod decorate;
 pub mod definition;
 pub mod nodes;
+pub mod run;
 
 pub use definition::{Edge, NodeDefinition, Position, Trigger, WorkflowDefinition};
 pub use nodes::{Metadata, Node, NodeError, Ports, node};

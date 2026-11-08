@@ -2,8 +2,7 @@
 //! an answer to a checked token goes through `decide("tool_call")` (see `check`) before the answer reaches the harness,
 //! and a refused call is replaced by a text that names the rule, so the harness never sees it. Answers are read as
 //! OpenAI chat completions (`tool_calls` of a message) or Anthropic messages (`tool_use` blocks), whole or streamed.
-//! The tool results in such a run's requests lose their secrets before they go upstream, as the bridge's
-//! `/moebius/result` removes them for Pi.
+//! The tool results in such a run's requests lose their secrets before they go upstream.
 //!
 //! This module reads and rewrites whole answers and requests; `stream` rewrites a streamed answer as it passes.
 

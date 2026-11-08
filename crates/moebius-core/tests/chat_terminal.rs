@@ -159,17 +159,8 @@ async fn what_is_said_in_a_chats_terminal_is_the_chats_conversation_through_a_re
         }
     }
     let events = app.store.events(id).unwrap();
-    // The bridge still checks the terminal's tool calls. Its check is recorded as Pi asks for it, so it can come
-    // before the session's lines are read: it is left out of the order.
-    let check = events[seen..]
-        .iter()
-        .find(|e| e.kind == "tool_check")
-        .expect("the terminal's tool call is checked");
-    assert_eq!(check.data["tool"], "write");
-    assert_eq!(check.data["decision"], "allow");
     let added: Vec<(&str, &Value)> = events[seen..]
         .iter()
-        .filter(|e| e.kind != "tool_check")
         .map(|e| (e.kind.as_str(), &e.data))
         .collect();
     let kinds: Vec<&str> = added.iter().map(|(kind, _)| *kind).collect();

@@ -195,6 +195,14 @@ for ten minutes (nor at every tick), unless a person closes the issue or the pol
 was reopened (by a person, or on the forge) is not closed again by this call for the sub-issues that were done already:
 it stays where it is, waiting, until one of its sub-issues closes after the reopening.
 
+`moebius.set_label(label, present)`
+: Gives the card's issue the label (`present` true) or takes it away (`present` false) when the script returns, on its forge
+too; the issue's other labels stay. Taking away matches the name in any case. Nothing is sent when the issue is as asked,
+so a script may call it at every tick. A label the forge does not know is made by it (GitHub does). If the forge refuses,
+the card goes on, because a label is a mark and not a step: the forge is told once as a `forge_error` and is not asked
+again for ten minutes. The default `code.luau` and `review.luau` give the label `in-progress` and the other default
+scripts take it away, so an issue carries it exactly while its card is in `In progress` or `In review` and not stuck.
+
 `moebius.publish_change()` returns the card's change as a table like `card.change`.
 : Publishes the work of the card's latest successful `code` run on the change's branch, `moebius/card-<number>`: the
 branch is pointed at that run's last commit and the forge is told. The first time this creates the change (on GitHub:
@@ -381,6 +389,7 @@ The output is one line for each call that does something, in the order of the ca
 | `moved the card to <column>`, with ` (note: <note>)` when there is one | `moebius.move` |
 | `waited: <reason>` | `moebius.wait` |
 | `closed the issue and moved the card to Done`, then `: <reason>` when there is one | `moebius.close_issue` |
+| `gave the issue the label "<label>"` or `took the label "<label>" from the issue` | `moebius.set_label` |
 | `started a run of <agent> for <purpose>`, then ` on <runner>` when a runner is given, with the note as above | `moebius.start_run` |
 | `started <n> attempts of <agent>`, with the note as above | `moebius.start_runs` |
 | `started judging attempt <run>` | `moebius.check_attempt` |

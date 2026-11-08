@@ -50,6 +50,8 @@ pub(super) struct Effects {
     pub(super) started_run: Option<i64>,
     /// Whether the script closed the card's issue.
     pub(super) close: bool,
+    /// The labels the script asked to give (`true`) or take away (`false`), in order.
+    pub(super) labels: Vec<(String, bool)>,
 }
 
 impl Engine {
@@ -124,6 +126,9 @@ impl Engine {
     /// Applies what a script did to `card`, which is the card as the script saw it.
     fn apply(&self, card: &Card, mut effects: Effects) -> Result<Step, BoardError> {
         let card_id = card.id;
+        if !effects.labels.is_empty() {
+            self.app.set_labels_for_script(card_id, &effects.labels)?;
+        }
         if effects.close {
             // Closed on the forge first; the card then goes to Done, whatever else the script asked for. A forge that
             // refuses leaves the card where it is, waiting with the reason, and is not asked at every tick.

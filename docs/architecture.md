@@ -110,8 +110,7 @@ and does not know anything the API does not say.
    `rules::applicable`, or the `rules_error` when the server's rules file cannot be read), and `Decisions::decide` asks the `guard` plugin through the `Host` on a thread of its own with
    a time limit. `Guard::call` tests the built-in patterns, then the prose rules with the teacher model (`Teacher::judge`,
    which calls the router with a token for this run; once a takeover of `tool_call` is merged, `DecisionModel::ask` answers the prose rules instead). The answer is stored as one judgement, as a `tool_check` run
-   event, and returned. A refusal goes back to the model as the tool's result and the run goes on. The result of each
-   tool is cleaned of secrets through `/moebius/result` (`check::result`). A run whose agent has MCP servers reaches
+   event, and returned. A refusal goes back to the model as the tool's result and the run goes on. A run whose agent has MCP servers reaches
    them only through the MCP gateway (`POST /mcp`, `harness/gateway/`): its `mcp.json` names the gateway with the run's
    token, which `PiBolt::write_agent_dir` gave the agent's servers (`Router::allow_mcp`). The gateway starts or connects
    to them at the run's first request, lists their tools as `<server>__<tool>`, checks every call with
@@ -414,6 +413,7 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `cli/automations.rs` | `automation` (list, save, run, delete). |
 | `cli/agents.rs` | `agents` and `agent` (show, save, delete). |
 | `cli/rules.rs` | `rules` and `rules save`. |
+| `cli/workflow.rs` | `workflow list`, `show`, `save` and `delete`. |
 | `cli/packages.rs` | `pkg search`, `info`, `install`, `update`, `remove` and `list`, and how their answers are written. |
 | `cli/plugins.rs` | `plugin enable` and `plugin disable [--unwrap-runs] [--allow-unchecked]`: turning a plugin off or on, and how the answer is written. |
 | `cli/ext.rs` | `ext search`, `info`, `add`, `update`, `remove` and `list`: Pi packages, and how a proposed change is written. |
@@ -470,6 +470,8 @@ At the top:
 | `app/packages/updates.rs` | The nightly check of the installed packages for newer versions, and the `extension_update` inbox items. |
 | `app/whereabouts.rs` | Where Moebius runs: what the server found about itself at start, what the web app reported about itself, and the "Where Moebius runs" section of the Moebius agent's instructions built from both (with the official repository). In memory only. |
 | `app/reproduce.rs` | Test first: a repository's opt-in (the project's `test-first`), what a run names in the `REPRODUCE:` lines of its summary, and the runs of that reproduction test on the change and on the commit it starts from with the test's files added. |
+| `app/workflows/mod.rs` | The wiring that turns a stored workflow into a run, recording the run and its nodes in the store and on the bus. |
+| `app/workflows/run.rs` | Starting a workflow run from its definition or its name, driving it off the request path, and recording and publishing each node and the run's end as they happen. |
 
 `config/`, `moebius.toml`:
 
@@ -563,6 +565,7 @@ At the top:
 | `server/api/chats.rs` | Chats with an agent (start, write, offer, end, seen, settings) and what grilling chats ended in. |
 | `server/api/harness.rs` | The agents, skills and MCP servers of the harness configuration repository, and `POST /v1/harness/setup`. |
 | `server/api/rules.rs` | The rules page and the rules in prose. |
+| `server/api/workflows.rs` | The workflows of the harness configuration repository: list, read, save and delete, saving and deleting as commits. |
 | `server/api/settings.rs` | `moebius.toml`, the API keys and the restart, and what the Models, Plugins and Get started pages show. |
 | `server/api/lessons.rs` | The lessons: list, read, edit and delete. |
 | `server/api/extensions.rs` | `/v1/extensions/...`: search, info, the installed packages, and proposals to install, update and remove; and the refusal of an agent's merge of a change that touches a package. |
@@ -629,9 +632,8 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `decide/mod.rs` | Decision points: routing a question to a decider, failing closed, recording the judgement. |
-| `decide/check/mod.rs` | The tool-call check's endpoints `/moebius/check` and `/moebius/result` the bridge calls on the router's listener: the token, the parse, every result reported; the MCP gateway decides its calls with the same question. |
+| `decide/check/mod.rs` | The tool-call check's endpoint `/moebius/check` on the router's listener: the token, the parse; the MCP gateway decides its calls with the same question. |
 | `decide/check/call.rs` | The one entry that decides a tool call (`decide_call`): the `tool_call` question with the applicable rules, `Decisions::decide` for the order (fixed rules, guard, decision model, shadowing and takeover), the recorded decider, and the `tool_check` run event. |
-| `decide/check/result.rs` | `/moebius/result`: each text of a tool's result cleaned of secrets and, with the agent's `tool_output`, made smaller by `harness/output/`, recorded as a `tool_output` run event. |
 | `decide/guard/mod.rs` | The `guard` decider: built-in rules first, then the rules in prose for the teacher or the decision model. |
 | `decide/guard/shell.rs` | How the guard reads a tool call: simple commands, redirects, nested shells, `cd`, and paths. |
 | `decide/guard/patterns.rs` | The built-in rules, fixed patterns over a tool call. |
@@ -697,8 +699,6 @@ At the top:
 | `harness/packages/resolve.rs` | The `pkg:` names of an agent's `extensions` and `skills`, resolved from `packages.lock` to files. |
 | `harness/repo/branches.rs` | Its branches: the Retro's proposals and chats' branches checked, pushed, merged or dismissed, the Retro's branches for Moebius's own configuration read and deleted, and a trial's worktree of a branch. |
 | `harness/repo/create.rs` | `create`: a new repository from the agents and rules of `moebius.toml` (`POST /v1/harness/setup`, `moebius init`). |
-| `harness/output/mod.rs` | Keeping a tool's output small where it is made: compressed, cut to the agent's budget (head and tail), and the whole saved to `<n>.txt` in the `out` folder of the run's directory, outside the worktree. |
-| `harness/output/compress.rs` | The compressors: escape codes, progress bars and repeated lines, and the noise of `cargo test`, `pytest`, `go test`, `jest`/`vitest` and cargo builds; only known noise is removed. |
 | `harness/mcp.rs` | The MCP servers of `mcp.toml`, checked when read, their `${NAME}` values filled in, and the `mcp.json` that names the MCP gateway for a run of an agent that names them. |
 | `harness/gateway/mod.rs` | The MCP gateway, `POST /mcp` on the router's listener: a run's servers bundled as one MCP server, every tool call checked, its result cleaned of secrets and recorded as an `mcp_call` run event. |
 | `harness/gateway/upstream.rs` | One server of a run as the gateway reaches it: a stdio child process or a remote server over streamable HTTP, initialized and its tools listed. |
@@ -742,9 +742,11 @@ At the top:
 |---|---|
 | `workflows/mod.rs` | What the workflows folder holds, and what the rest of the crate uses from it. |
 | `workflows/decorate.rs` | The expressions in a node's parameters: evaluating `{{ ... }}` in the sandbox column scripts use, with the trigger, the node's input and earlier nodes in scope. |
-| `workflows/definition.rs` | The workflow file (`workflows/<name>.toml`): its trigger, nodes and edges, parsing it whole, validating its graph, and reading it from the harness configuration repository. |
+| `workflows/definition.rs` | The workflow file (`workflows/<name>.toml`): its trigger, nodes and edges, parsing it whole, validating its graph, and reading and listing it from the harness configuration repository; saving and deleting it are commits in `harness/repo/edits.rs`. |
 | `workflows/nodes/mod.rs` | The node kinds: the `Node` trait, the ports and metadata a kind reports, and the registry that maps a kind name and its parameters to a node. |
+| `workflows/nodes/for_each.rs` | The `for_each` node: fans a list out over a sub-path once per element, gathers the outputs in order, and checks that the sub-path rejoins where the definition says. |
 | `workflows/nodes/http.rs` | The `http` node: one HTTP request made by the server under a URL policy (hosts from `workflows.http_hosts`), with credentials only by the name of a secret. |
+| `workflows/run.rs` | The executor: following the edges from the trigger with one value, running each node under its timeout, failing the run on a node's error or its node ceiling, and reporting each step to an observer. |
 
 Outside `src/`: `kanban/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension
 loaded into every run, `bridge/moebius-ask.ts` the question tool of the agents that operate Moebius, `skill/` the built-in skills.

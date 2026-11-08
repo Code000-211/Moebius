@@ -9,7 +9,8 @@ node with an expression: see [Expressions](workflows/expressions.md).
 The file lives at `workflows/<name>.toml` under the harness configuration repository's root, beside `agents/`, `skills/`
 and `mcp.toml`. The `<name>` is the file's stem and may contain only letters, digits, `-` and `_`.
 
-The example below shows the file's shape. Its kind names are placeholders, so the file as written is refused.
+The example below shows the file's shape. Its kind names are placeholders: a file naming a kind the registry does not
+know is refused.
 
 ## The file
 
@@ -112,6 +113,34 @@ harness configuration repository validates both: `HarnessRepo::workflow(name)` r
 a `WorkflowDefinition`, or an error that names that file. `workflows::definition::read(root, name)` is the same read for
 a repository root already at hand.
 
+## Executing a run
+
+`App::start_workflow_run` is the one door a trigger has into a run. It takes a `WorkflowSource` (a
+`WorkflowDefinition`, or the name of one in the harness configuration repository), the repository the run belongs to,
+and the value the trigger starts it with. The definition is validated before anything is stored, so a graph with an
+unresolved edge, a cycle, an unreachable node or a kind nobody registered cannot start.
+
+The run is stored before the call returns, with status `queued`, and `start_workflow_run` returns that row. The nodes
+then run on a thread of their own, under these limits, which a workflow sets at the top of its file and which have
+defaults when it does not:
+
+| Key | Default | What it limits |
+|---|---|---|
+| `node_timeout_seconds` | `300` | How long one node may run. A node still running after this fails the run. |
+| `max_nodes` | `100` | How many nodes one run may execute. Asking for one more fails the run. |
+
+A run moves from `queued` to `running` and ends `succeeded` or `failed`. Each node is one `workflow_node_runs` row,
+stored with its input before the node starts and its output (or error) after it finishes, so a run's nodes are readable
+while it is still going. A node gets exactly one JSON value, the value its predecessor returned, and returns one value
+for the edge that leaves it. When no edge leaves the node that just ran, the run is `succeeded`. A node's error ends
+the run `failed` with that error, and no later node runs. A timeout or a reached node ceiling also ends it `failed`,
+with an error that says which limit was reached.
+
+`workflows::run::execute` is the same executor without the store: it takes the definition, the starting value, the
+`Limits`, a `Runner` and an `Observer`. It reports each node to the observer before and after it runs, so the caller
+can record the step. The `Runner` trait runs one node; the server's runner goes through the node registry. A run that cannot go on ends with a `workflows::run::Error` (a node's `NodeError`, a timeout, the ceiling, an edge to
+unknown node, or a step the observer could not record); its text is the run's `error`.
+
 ## The node registry
 
 `workflows::nodes::node(kind, params)` is the extension point: it maps a kind name and its parameters to a `Node`, or
@@ -124,12 +153,14 @@ Every `Node` reports three things:
 - `ports()` returns its named `inputs` and `outputs`, whose output names an edge's `port` uses;
 - `metadata()` returns its `kind`, a `title` and a one-sentence `description` for people.
 
-Until a kind's card lands, a file naming it is refused.
+A file naming a kind the registry does not know is refused; the kinds that exist are listed under
+[Node kinds](#node-kinds).
 
 ## Node kinds
 
 Each node kind has one section here and one page in [`workflows/`](workflows/README.md).
 
+- [`for_each`](workflows/for-each.md): runs a sub-path once per element of a list and gathers the outputs.
 - [`http`](workflows/http.md): calls a URL on an allowed host, with secrets by name, and outputs the status, headers and body.
 
 ## Extending this page

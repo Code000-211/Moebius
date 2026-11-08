@@ -181,7 +181,6 @@ impl RunningRun {
     /// outputs of its tools that were saved and what the run left on its runner.
     pub(in crate::harness) fn remove_worktree(&self, app: &App) {
         app.terminals.close(self.id);
-        crate::harness::output::remove_saved(&app.data_dir, self.id);
         if let Some(remote) = &self.remote {
             remote.cleanup();
         }
