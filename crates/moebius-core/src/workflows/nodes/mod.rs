@@ -69,7 +69,9 @@ pub trait Node: Send + Sync {
 pub fn node(kind: &str, _params: &Value) -> Result<Box<dyn Node>, NodeError> {
     match kind {
         #[cfg(test)]
-        TEST_KIND => Ok(Box::new(TestNode)),
+        TEST_KIND => Ok(Box::new(TestNode {
+            params: _params.clone(),
+        })),
         other => Err(NodeError::UnknownKind(other.to_string())),
     }
 }
@@ -79,11 +81,58 @@ pub fn node(kind: &str, _params: &Value) -> Result<Box<dyn Node>, NodeError> {
 pub(crate) const TEST_KIND: &str = "test";
 
 #[cfg(test)]
-struct TestNode;
+pub(crate) mod test_gate {
+    use std::collections::HashMap;
+    use std::sync::{Arc, Condvar, Mutex, OnceLock};
+
+    type Gate = Arc<(Mutex<bool>, Condvar)>;
+
+    fn gates() -> &'static Mutex<HashMap<String, Gate>> {
+        static GATES: OnceLock<Mutex<HashMap<String, Gate>>> = OnceLock::new();
+        GATES.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    /// The gate called `name`, which a test node waits on until it is released.
+    pub(crate) fn gate(name: &str) -> Gate {
+        gates()
+            .lock()
+            .unwrap()
+            .entry(name.to_string())
+            .or_default()
+            .clone()
+    }
+
+    /// Opens the gate called `name`, letting a node waiting on it go on.
+    pub(crate) fn release(name: &str) {
+        let gate = gate(name);
+        let (open, wake) = &*gate;
+        *open.lock().unwrap() = true;
+        wake.notify_all();
+    }
+}
+
+#[cfg(test)]
+struct TestNode {
+    params: Value,
+}
 
 #[cfg(test)]
 impl Node for TestNode {
     fn run(&self, input: Value) -> Result<Value, NodeError> {
+        if let Some(message) = self.params.get("fail").and_then(Value::as_str) {
+            return Err(NodeError::Failed(message.to_string()));
+        }
+        if let Some(millis) = self.params.get("delay_ms").and_then(Value::as_u64) {
+            std::thread::sleep(std::time::Duration::from_millis(millis));
+        }
+        if let Some(name) = self.params.get("wait_for_gate").and_then(Value::as_str) {
+            let gate = test_gate::gate(name);
+            let (open, wake) = &*gate;
+            let mut open = open.lock().unwrap();
+            while !*open {
+                open = wake.wait(open).unwrap();
+            }
+        }
         Ok(input)
     }
 

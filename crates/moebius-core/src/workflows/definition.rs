@@ -25,6 +25,18 @@ pub struct WorkflowDefinition {
     pub name: String,
     /// One sentence on what the workflow does.
     pub description: String,
+    /// How long one node may take, in seconds, before the run fails closed.
+    #[serde(
+        default = "default_node_timeout_seconds",
+        skip_serializing_if = "is_default_node_timeout_seconds"
+    )]
+    pub node_timeout_seconds: u64,
+    /// How many nodes one run may execute before it fails closed.
+    #[serde(
+        default = "default_max_nodes",
+        skip_serializing_if = "is_default_max_nodes"
+    )]
+    pub max_nodes: u64,
     /// Exactly one trigger, written as `[[trigger]]`.
     #[serde(default)]
     pub trigger: Vec<Trigger>,
@@ -371,6 +383,28 @@ impl crate::harness::repo::HarnessRepo {
 
 fn empty_params() -> Value {
     Value::Object(Map::new())
+}
+
+/// The per-node timeout a workflow gets when its file does not set one: five minutes.
+pub const DEFAULT_NODE_TIMEOUT_SECONDS: u64 = 300;
+
+/// The number of nodes a run may execute when its file does not set a ceiling.
+pub const DEFAULT_MAX_NODES: u64 = 100;
+
+fn default_node_timeout_seconds() -> u64 {
+    DEFAULT_NODE_TIMEOUT_SECONDS
+}
+
+fn is_default_node_timeout_seconds(value: &u64) -> bool {
+    *value == DEFAULT_NODE_TIMEOUT_SECONDS
+}
+
+fn default_max_nodes() -> u64 {
+    DEFAULT_MAX_NODES
+}
+
+fn is_default_max_nodes(value: &u64) -> bool {
+    *value == DEFAULT_MAX_NODES
 }
 
 fn is_empty_params(params: &Value) -> bool {

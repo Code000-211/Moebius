@@ -32,6 +32,7 @@ mod reproduce;
 mod runs;
 mod stopping;
 mod whereabouts;
+pub mod workflows;
 
 pub use packages::{
     Available, Offered, PackageInfo, PackageView, UPDATE_ITEM, UpdateFailure, Updates,
