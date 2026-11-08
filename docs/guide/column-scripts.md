@@ -12,8 +12,8 @@ The exact contract is in [`docs/reference/column-scripts.md`](../reference/colum
 ## The steps
 
 1. Pick the column. The scripts are `backlog.luau`, `ready.luau`, `code.luau` (the column `In progress`),
-   `review.luau`, `merge.luau` and `done.luau`. [Workflows](workflows.md) says what each does.
-2. Start from the default script, which is in `crates/moebius-core/workflow/<script>`. An override replaces the whole
+   `review.luau`, `merge.luau` and `done.luau`. [Kanban](kanban.md) says what each does.
+2. Start from the default script, which is in `crates/moebius-core/kanban/<script>`. An override replaces the whole
    script and cannot call the built-in one, so what you do not copy is gone: a Not started override that forgets the
    blockers starts blocked cards. Every example below is a copy of the default with a change.
 3. Write the file and keep the function `on_card(card)`. A script reads the `card` and acts through the `moebius`
@@ -227,7 +227,7 @@ Try it on GitHub: open an issue whose body says `blocked by #12` while #12 is op
 An issue can have sub-issues (`card.children`, each with its `state`), labels (`card.labels`) and a claim
 (`card.claimed_by`), set with `moebius issue` or the API. The default `ready.luau` already treats a card with sub-issues as
 a plan (one that has no run or change of its own): it starts no work of its own while one is open, and closes the issue
-with the last. A claim is advisory, and the default workflow does not look at it. This version leaves a
+with the last. A claim is advisory, and the default Kanban does not look at it. This version leaves a
 claimed card alone, and lets a card labelled `plan` close itself without work once its sub-issues are done.
 
 <!-- script: ready.luau -->
@@ -292,7 +292,7 @@ pattern, which needs no model and no Pi-Bolt:
    `HarnessRepo::project_dir(<repository name>)`.
 2. Make a `Store::in_memory`, a `Host` and an `App`, and add the repository with `App::add_repository`.
 3. Make an `Engine` with a harness of your own that implements `Runs` (it can start runs that never end and record what
-   it was asked to start), `Workflow::default()` and `Limits`.
+   it was asked to start), `Kanban::default()` and `Limits`.
 4. Create a card with `App::create_issue`, put it in the script's column with `App::move_card`, call
    `Engine::tick(card.id)` and read the `Step`: `moved`, `waiting` and `started_run`. The store tells the rest: the
    inbox, the runs, the judgements.

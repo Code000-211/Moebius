@@ -7,7 +7,7 @@ Where this document and an ADR disagree, the ADR wins and this document is wrong
 ## 1. What the first version does
 
 A person connects a repository, puts issues on its board, and comes back to changes that are ready to merge. In between,
-Moebius runs the workflow on its own: a harness codes in a worktree, the change is tested and reviewed, it goes back to
+Moebius runs the Kanban on its own: a harness codes in a worktree, the change is tested and reviewed, it goes back to
 coding while anything is wrong, and every tool call is checked against the rules on the way. Every night the Retro looks at
 what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 
@@ -34,7 +34,7 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
   to a provider" on the Models page adds the upstream and logs in; a code login can be finished by pasting the code or
   the address the browser ended on.
 - The **MCP gateway**, skills and agents managed in the web app and kept in the harness configuration repository.
-- The **default workflow** (section 6), with Luau scripts behind the columns and project overrides in the settings of the harness configuration repository (`repos/<repository name>/`).
+- The **default Kanban** (section 6), with Luau scripts behind the columns and project overrides in the settings of the harness configuration repository (`repos/<repository name>/`).
 - **Rules** checked on every tool call: fixed patterns and the teacher model; nothing waits for a person.
 - **Judgements** recorded at every decision point, in full, with export of a training set.
 - **Localizing** the files of a card before its code run, as a decision point the decision model can learn (section 6).
@@ -171,7 +171,7 @@ steer, stop) go through the same record.
 - A **chat** is an interactive run without a card: the person writes, the agent answers, and the chat can be continued,
   steered and stopped. The Moebius agent is a new chat's default; what it builds is offered as a change to merge.
 
-## 6. The default workflow
+## 6. The default Kanban
 
 | Column | Script | Behaviour |
 |---|---|---|
@@ -200,7 +200,7 @@ the change, both run like the repository's checks; a change that cannot be teste
 judges the reason. Tests generated from the issue and used as a gate raise the precision of offered changes the most of
 any review step (Otter, arXiv 2502.05368).
 
-A hard card can be tried several times at once (a repository's own `code.luau`; the workflows guide has one that does it
+A hard card can be tried several times at once (a repository's own `code.luau`; the Kanban guide has one that does it
 for a card titled `[hard]` or reviewed twice already). `moebius.start_runs` starts n code runs, each in its own worktree
 and on its own branch and with a model or model class from a list in turn, so that the attempts differ. Every attempt is
 judged by execution, the repository's checks and the reproduction test of test first; if exactly one passes it is kept,
@@ -296,7 +296,7 @@ A React app (`web/`) served by the server and built to [`docs/design-web.md`](de
 | Milestone | Delivers | Done when |
 |---|---|---|
 | M0 Skeleton | `moebius` binary, store, plugin API, config, desktop API stub | The server starts, opens its store, and answers the app's health and snapshot calls. |
-| M1 One card, end to end | Git forge (none), local runner, Pi-Bolt harness, router pass-through, default workflow without review | An issue in a plain git repository becomes a merged change through one Coder run, with its events stored. |
+| M1 One card, end to end | Git forge (none), local runner, Pi-Bolt harness, router pass-through, default Kanban without review | An issue in a plain git repository becomes a merged change through one Coder run, with its events stored. |
 | M2 GitHub | GitHub forge with polling, changes as pull requests, trusted authors, dependencies | The same flow works on a GitHub repository, from issue to pull request. |
 | M3 Rules | Bridge in Pi-Bolt, tool-call check, patterns, teacher model, judgements | A call that breaks a rule is refused with the rule and the run goes on; every decision has a judgement. |
 | M4 The loop | Review, CI, conflicts, round limit, token budgets, inbox | Cards go back and forth between coding and review on their own and stop at their limits. |

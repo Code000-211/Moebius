@@ -2,7 +2,7 @@
 
 ## When you want this
 
-You want the default workflow to have a Coder, and perhaps a Reviewer, or you want another agent for a purpose of your
+You want the default Kanban to have a Coder, and perhaps a Reviewer, or you want another agent for a purpose of your
 own: a stronger model for hard cards, a reviewer that is stricter than the coder, an agent to chat with. An agent is a
 named setup that a run uses: the model, how it thinks, its instructions, its skills and extensions, and a token budget.
 
@@ -42,7 +42,7 @@ try the result. Pi shows the agent each skill's description and the agent reads 
 | `moebius` | The guide and the references: every command, route, `card` field, script function and configuration key. |
 | `moebius-operate` | Reading the state and acting on it: board, cards, inbox, chats, usage, repositories, issues, research, grillings. |
 | `moebius-configure` | Agents, rules, a column's script through the API, settings, skills and MCP servers. |
-| `moebius-workflows` | Column scripts and whole workflows in a repository's settings. |
+| `moebius-workflows` | Column scripts and the Kanban in a repository's settings. |
 | `moebius-extensions` | Pi extensions. |
 | `moebius-plugins` | Decider plugins in Rust. |
 | `moebius-report` | Sending a fix or a problem in Moebius itself to its official repository, after the person says yes. |
@@ -141,7 +141,7 @@ The exact rules are in [harness configuration](../reference/harness-configuratio
    model name is sent to that upstream as it is written.
 3. Restart the server. The file is read once, at start; a change to it does nothing until then. A mistake (an unknown
    key, a bad name) stops the server with a message that names the key.
-4. Use the agent: the default workflow starts `Coder` and, when it exists, `Reviewer`; a script can start any agent
+4. Use the agent: the default Kanban starts `Coder` and, when it exists, `Reviewer`; a script can start any agent
    with `moebius.start_run`; a chat can start with any agent.
 
 | Key | What it does |
@@ -392,7 +392,7 @@ end
 Save it as the repository's `code.luau` (see [Column scripts](column-scripts.md)). A card is stuck when its tokens reach the
 budget of the agent chosen at that moment.
 
-## What the default workflow expects of the agents
+## What the default Kanban expects of the agents
 
 ### The Coder
 
@@ -418,7 +418,7 @@ evidence, no invented findings) and the engineering skills `code-review` and `mo
 agent of the board, so reviews need no setup: every change is reviewed before it is offered, along two axes that are two
 runs of a round, on the Coder's model unless the Reviewer has a `model` of its own (`moebius agent save Reviewer --model
 <m>`, the Agents page, or an `[agents.Reviewer]` table). A person who wants changes offered unreviewed changes the
-workflow script instead (see the [workflows guide](workflows.md)). The **Standards** run checks the change against the
+Kanban script instead (see the [Kanban guide](kanban.md)). The **Standards** run checks the change against the
 repository's own rules (`CONTRIBUTING.md`, `CLAUDE.md`, `AGENTS.md` and the optional rubric `review.md` of the repository's settings) and a
 fixed baseline of code smells, which are always judgement calls ("Possible Feature Envy"). The **Spec** run checks it
 against the issue. Both are told to read the change on its branch and not to edit files, to report each finding as

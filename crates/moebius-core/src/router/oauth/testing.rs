@@ -38,6 +38,8 @@ struct Provider {
     exchanged_state: Option<String>,
     /// The headers (lower case names) and body of each request to `/v1/messages`.
     messages: Vec<(HashMap<String, String>, serde_json::Value)>,
+    /// Minimum Claude Code version `/v1/messages` demands, if set.
+    required_claude_version: Option<String>,
 }
 
 pub(crate) struct FakeProvider {
@@ -175,11 +177,28 @@ async fn message(
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> Response {
     let mut provider = state.lock().unwrap();
-    let headers = headers
+    let headers: HashMap<String, String> = headers
         .iter()
         .map(|(name, value)| (name.to_string(), value.to_str().unwrap().to_string()))
         .collect();
+    let ua = headers.get("user-agent").cloned().unwrap_or_default();
     provider.messages.push((headers, body));
+    if let Some(required) = &provider.required_claude_version
+        && ua != format!("claude-cli/{required}")
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            axum::Json(json!({
+                "type": "error",
+                "error": {
+                    "type": "invalid_request_error",
+                    "message": format!("This version of Claude Code is no longer supported. Version {required} or newer is required."),
+                    "details": {"error_code": "claude_code_version_too_old"}
+                }
+            })),
+        )
+            .into_response();
+    }
     axum::Json(json!({
         "type": "message", "model": "subscribed-a", "role": "assistant",
         "content": [{"type": "text", "text": "Hi"}],
@@ -228,6 +247,10 @@ impl FakeProvider {
 
     pub(crate) fn set_lifetime(&self, seconds: u64) {
         self.with(|p| p.lifetime = seconds);
+    }
+
+    pub(crate) fn require_claude_version(&self, version: &str) {
+        self.with(|p| p.required_claude_version = Some(version.to_string()));
     }
 
     pub(crate) fn pending_polls(&self, polls: u32) {

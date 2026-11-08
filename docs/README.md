@@ -15,14 +15,15 @@ links to the other.
 These pages are for people and agents who change how Moebius behaves without changing its code. The Moebius agent
 reads them too: they are its `moebius` skill.
 
-- [The guide](guide/README.md): one task per page, such as column scripts, workflows, rules, agents, extensions,
+- [The guide](guide/README.md): one task per page, such as column scripts, the Kanban, rules, agents, extensions,
   plugins, the command line and the desktop API. Every example in it is run by a test.
 - [The reference](reference/): the exact contracts, one page each:
   [column scripts](reference/column-scripts.md), [rules](reference/rules.md),
   [configuration](reference/configuration.md), [command line](reference/cli.md),
   [desktop API](reference/desktop-api.md), [router](reference/router.md), [plugin API](reference/plugin-api.md),
   [bridge protocol](reference/bridge-protocol.md), [harness configuration](reference/harness-configuration.md),
-  [training export](reference/training-export.md), [decision model](reference/decision-model.md) and [packages](reference/packages.md). Tests check that
+  [training export](reference/training-export.md), [decision model](reference/decision-model.md),
+  [workflows](reference/workflows.md) and [packages](reference/packages.md). Tests check that
   every route, script function, `card` field, configuration key and event kind is on its page.
 - [`examples/`](../examples/README.md): small examples to copy, run in CI.
 

@@ -67,7 +67,7 @@ fn view(app: &App, repository: &Repository, file: &str) -> SettingFile {
 /// The settings of repository `id`'s project.
 pub fn settings(app: &App, id: i64) -> Result<Settings> {
     let repository = app.repository(id)?;
-    let scripts = crate::board::Workflow::default()
+    let scripts = crate::board::Kanban::default()
         .columns
         .into_iter()
         .map(|column| column.script)

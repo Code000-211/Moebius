@@ -126,7 +126,7 @@ mod tests {
 
     use super::*;
     use crate::app::PERSON;
-    use crate::board::{Engine, Limits, Workflow};
+    use crate::board::{Engine, Kanban, Limits};
     use crate::bus::AppEvent;
     use crate::server::api::testing::{get, origin, post, start, until};
 
@@ -145,7 +145,7 @@ mod tests {
         let engine = Arc::new(Engine::new(
             app.clone(),
             state.runs.clone(),
-            Workflow::default(),
+            Kanban::default(),
             Limits::default(),
         ));
         let settle = || {
@@ -350,7 +350,7 @@ mod tests {
         let engine = Arc::new(Engine::new(
             app.clone(),
             state.runs.clone(),
-            Workflow::default(),
+            Kanban::default(),
             Limits::default(),
         ));
         let id = card.id;

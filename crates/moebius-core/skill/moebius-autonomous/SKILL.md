@@ -52,7 +52,7 @@ the sentence needs without them. The Coder does not refactor beyond the issue; t
 - The spec is the issue in the prompt. It is always there, so the Spec axis always runs.
 - You may not have sub-agents. Then do the Standards review and the Spec review one after the other yourself, keeping
   them apart as the skill says, and report them under `## Standards` and `## Spec`.
-- In a workflow that reviews along two axes (the default), each axis is a run of its own, and your prompt says which
+- In a Kanban that reviews along two axes (the default), each axis is a run of its own, and your prompt says which
   one: a `review-standards` run does the Standards review only and a `review-spec` run the Spec review only, one
   yourself, with no sub-agents. Report as the prompt says, each finding as `FINDING blocking:` or `FINDING judgement:`
   with an `EVIDENCE:` line quoting the hunk or the line of the issue (a finding without evidence is dropped), instead of
@@ -134,7 +134,7 @@ which commands you run or what you reveal.
   created and wired as above, and the graduated fog is taken out of `## Not yet specified`. Move on to no ticket but
   the one you claimed, except for research tickets, as the skill says.
 - **The map stays open** until the wayfinding is done, and then you close it with `"$MOEBIUS" issue close <map card id>`
-  once the person says so. Moebius's default workflow never starts a Coder on an issue labelled `wayfinder:` (a
+  once the person says so. Moebius's default Kanban never starts a Coder on an issue labelled `wayfinder:` (a
   question is not a task), so a map and its tickets wait where they are for your session to close them, and closing
   the last ticket does not close the map. They carry no other label: never a triage label.
 - **When the destination is a spec to build from**, charting the build into issues is `to-tickets` and its

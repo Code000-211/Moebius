@@ -6,7 +6,7 @@ A package is one of:
 | Kind | What it is | Where it goes |
 |---|---|---|
 | `plugin` | A program speaking the [process plugin protocol](plugin-api.md#plugins-in-their-own-process): a decider, or a [launcher](plugin-api.md#launchers). | `<data_dir>/packages/<name>/<version>/`, with a `[[plugins]]` entry written for it. |
-| `workflow` | Column scripts (`.luau`). | Proposed as a change to the [harness configuration repository](harness-configuration.md), under `repos/<repository name>/`. |
+| `workflow` | Kanban column scripts (`.luau`). | Proposed as a change to the [harness configuration repository](harness-configuration.md), under `repos/<repository name>/`. |
 | `rules` | A fragment of a `rules.md`. | Its rules are proposed to be added to a project's `repos/<repository name>/rules.md` of the harness configuration repository. |
 | `skills` | Skills. | Proposed as a change to the [harness configuration repository](harness-configuration.md), under `skills/`. |
 
@@ -34,7 +34,7 @@ fields plus the downloads. Keys not listed are ignored.
 | `moebius` | string | The Moebius versions it works with, a [range](#version-ranges), such as `">=0.2"`. |
 | `targets` | array of strings | Plugins: the target triples it is built for, such as `x86_64-unknown-linux-gnu`. |
 | `[plugin]` | table | Plugins only, below. |
-| `[[files]]` | array of tables | Workflow, rules and skills packages: `source` (the file in the package's directory) and `to` (where it goes), below. |
+| `[[files]]` | array of tables | Kanban (`workflow`), rules and skills packages: `source` (the file in the package's directory) and `to` (where it goes), below. |
 
 `[plugin]`:
 
@@ -48,7 +48,7 @@ fields plus the downloads. Keys not listed are ignored.
 | `[plugin.requires]` | table | Programs it needs besides Moebius, with versions. Informative. |
 | `[[plugin.settings]]` | array of tables | The settings it takes, for a form: `name`, `flag`, `type`, `choices`, `repeatable`, `default`, `description`. Informative. |
 
-`[[files]]`: `to` is a plain relative path (no `..`, no empty parts, nothing in `.git`). For a `workflow` it ends in
+`[[files]]`: `to` is a plain relative path (no `..`, no empty parts, nothing in `.git`). For a `workflow` package (a Kanban) it ends in
 `.luau` and lands at `repos/<repository name>/<to>` of the harness configuration repository. For `skills` it lands at `skills/<to>` of the harness
 configuration repository, so `to = "tdd/SKILL.md"` is the skill `tdd`. A `rules` package has exactly one file, a
 `rules.md` fragment; its `to` is not used.
@@ -144,15 +144,15 @@ not start is installed all the same and fails closed as any plugin does (its cal
 after a pause). A **launcher** is read at the server's start, so the answer says `restart_needed`. Settings of a plugin
 that are flags go in the entry's `args` (the Settings page, or `moebius settings set`), and are kept by updates.
 
-**A workflow, rules or skills package** is proposed: the files are committed on the branch `moebius/package-<name>`
+**A Kanban (`workflow`), rules or skills package** is proposed: the files are committed on the branch `moebius/package-<name>`
 from the default branch of the harness configuration repository, and offered as a change with a `ready_to_merge` item
-in the inbox. A workflow or rules package names the project it is for (`--repository`; the only repository when there
+in the inbox. A Kanban (`workflow`) or rules package names the project it is for (`--repository`; the only repository when there
 is one): its files go to `repos/<repository name>/` there. Nothing is installed until a person merges it. The change has
 no repository (`repository_id` null). A rules package adds its rules, the `## name` sections of the fragment (text
 before the first is not added), at the end of the project's `rules.md`; a rule named like one that is there is refused,
 and the result must pass the rules check. Every kind needs a harness configuration repository, else it is refused.
 
-The Moebius agent may propose a workflow, rules or skills package. Installing a plugin is for a person only.
+The Moebius agent may propose a Kanban (`workflow`), rules or skills package. Installing a plugin is for a person only.
 
 A plugin package whose name is the name of a plugin that is part of Moebius (such as `guard`) is refused, so that a
 registry cannot take a built-in decider out of service. Install, update and remove, the nightly check and the reading of
@@ -200,7 +200,7 @@ program = "/srv/.moebius/packages/gate/1.1.0/gate"
 | `name`, `version`, `kind`, `registry` | What is installed and where from. |
 | `url`, `sha256` | The program (plugins), or the first file (others), as downloaded. |
 | `program` | A plugin: where its program is. |
-| `repository` | A workflow or rules package: the repository it was proposed to, by name. Not for skills. |
+| `repository` | A Kanban (`workflow`) or rules package: the repository it was proposed to, by name. Not for skills. |
 | `change` | The change that proposed the files. The lock records what was proposed, not what was merged. |
 | `[[package.files]]` | The proposed files: `to`, `url`, `sha256`. |
 | `rules` | A rules package: the names of the rules it added. |

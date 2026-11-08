@@ -19,7 +19,7 @@ documentation; `CONTRIBUTING.md` says the same as this file for people.
   (`pibolt`, `claude` for Claude Code, `pick` choosing per agent, `terminal`, `repo` for the harness configuration
   repository, `mcp`, `gateway` for the MCP gateway, `remote` for runners over SSH, `skill`, `grilling`) and `improve/` (`retro`, `trial`, `own` for the
   Retro's proposals to Moebius's own configuration, `replay`, `research`, `export`, `lessons` for what the Retro learns from earlier cards). `docs/architecture.md` lists every
-  module. Column scripts are in `workflow/*.luau`.
+  module. Column scripts are in `kanban/*.luau`.
 - `crates/moebius-plugin-api`: the plugin trait and the host that calls plugins with a time limit, failing closed.
 - `crates/moebius`: the `moebius` binary (`init`, `serve`, `check-script`, `export`, and in `cli/` the commands that
   operate a running server through the desktop API: `api` for any route, a command for what is done often; the Moebius

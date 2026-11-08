@@ -370,7 +370,7 @@ impl Fixture {
         let engine = Arc::new(Engine::new(
             server.app.clone(),
             Arc::new(IdleRuns),
-            crate::board::Workflow::default(),
+            crate::board::Kanban::default(),
             crate::board::Limits::default(),
         ));
         Self {

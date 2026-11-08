@@ -9,7 +9,7 @@ use std::rc::Rc;
 use mlua::{Lua, Table};
 
 use super::sandbox::run_sandboxed;
-use super::{Limits, Workflow, resolve_column};
+use super::{Kanban, Limits, resolve_column};
 use crate::app::PERSON;
 
 /// Runs the column script `source`, called `name`, once in the same sandbox as the engine, on a made-up card in
@@ -25,7 +25,7 @@ pub fn check_script(
     author: &str,
 ) -> Result<Vec<String>, String> {
     let limits = Limits::default();
-    let columns: Vec<String> = Workflow::default()
+    let columns: Vec<String> = Kanban::default()
         .columns
         .into_iter()
         .map(|c| c.name)
@@ -319,8 +319,8 @@ mod tests {
 
     use super::*;
     use crate::board::engine::Effects;
+    use crate::board::kanban::DEFAULT_SCRIPTS;
     use crate::board::testing::setup;
-    use crate::board::workflow::DEFAULT_SCRIPTS;
 
     fn dry(source: &str, column: &str, author: &str) -> Result<Vec<String>, String> {
         check_script("test.luau", source, column, "Fix the parser", author)
@@ -369,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn the_default_scripts_do_what_the_workflow_says_on_the_made_up_card() {
+    fn the_default_scripts_do_what_the_kanban_says_on_the_made_up_card() {
         let script = |name: &str| {
             DEFAULT_SCRIPTS
                 .iter()
@@ -442,7 +442,7 @@ mod tests {
         let deadline = Rc::new(Cell::new(Instant::now()));
         let real = engine.api(&lua, &card, effects, deadline).unwrap();
         let columns: Vec<String> = engine
-            .workflow
+            .kanban
             .columns
             .iter()
             .map(|c| c.name.clone())

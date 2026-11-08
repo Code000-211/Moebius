@@ -1142,7 +1142,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn blocking_a_card_stops_its_run_and_deleting_one_waits_for_its_run_to_end() {
-        use crate::board::{Engine, Limits, Workflow};
+        use crate::board::{Engine, Kanban, Limits};
         use std::sync::Arc;
 
         let (dir, state, addr) = start().await;
@@ -1153,7 +1153,7 @@ mod tests {
         let engine = Arc::new(Engine::new(
             app.clone(),
             state.runs.clone(),
-            Workflow::default(),
+            Kanban::default(),
             Limits::default(),
         ));
         let settle = |id: i64| {

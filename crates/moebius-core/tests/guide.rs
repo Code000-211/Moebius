@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use moebius_core::app::{App, PERSON};
-use moebius_core::board::{CardRuns, Engine, Limits, StartError, Step, Variant, Workflow};
+use moebius_core::board::{CardRuns, Engine, Kanban, Limits, StartError, Step, Variant};
 use moebius_core::config::Config;
 use moebius_core::decide::rules;
 use moebius_core::harness::repo::AgentSettings;
@@ -118,7 +118,7 @@ fn all_blocks(language: &str) -> Vec<Block> {
 const PAGES: [&str; 12] = [
     "README.md",
     "column-scripts.md",
-    "workflows.md",
+    "kanban.md",
     "rules.md",
     "agents.md",
     "plugins.md",
@@ -510,7 +510,7 @@ impl Fixture {
             run_limit: 3,
             ..Limits::default()
         };
-        let engine = Engine::new(app.clone(), harness.clone(), Workflow::default(), limits);
+        let engine = Engine::new(app.clone(), harness.clone(), Kanban::default(), limits);
         Self {
             _dir: dir,
             app,

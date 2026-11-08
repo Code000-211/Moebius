@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moebius_core::app::{App, PERSON};
-use moebius_core::board::{CardRuns, Engine, Limits, StartError, Variant, Workflow};
+use moebius_core::board::{CardRuns, Engine, Kanban, Limits, StartError, Variant};
 use moebius_core::decide::rules;
 use moebius_core::repos::git;
 use moebius_core::store::{Card, Run, Store};
@@ -83,7 +83,7 @@ fn engine_with_ready_script(script: &str) -> (tempfile::TempDir, Arc<App>, Engin
         run_limit: 3,
         ..Limits::default()
     };
-    let engine = Engine::new(app.clone(), Arc::new(IdleRuns), Workflow::default(), limits);
+    let engine = Engine::new(app.clone(), Arc::new(IdleRuns), Kanban::default(), limits);
     (dir, app, engine, repository.id)
 }
 

@@ -8,7 +8,7 @@
 //! - `review`: the review along two axes, Standards and Spec, read from the summaries of its runs.
 //! - `sandbox`: the Luau sandbox every script runs in, with its memory and time limits.
 //! - `limits`: the run, round and token limits scripts see.
-//! - `workflow`: the columns and the default workflow's scripts built into the server, and a repository's overrides.
+//! - `kanban`: the columns and the default Kanban's scripts built into the server, and a repository's overrides.
 //! - `runs`: what the engine needs of a harness to start runs and chats (`Runs`), which `pibolt` implements.
 //! - `dry_run`: `check_script`, which runs a script once against a made-up card, for `moebius check-script`.
 //! - `scripts`: editing a column's script, saved as a commit in the repository.
@@ -18,6 +18,7 @@ mod attempts;
 mod card;
 mod dry_run;
 mod engine;
+mod kanban;
 mod limits;
 mod review;
 mod runs;
@@ -25,15 +26,14 @@ mod sandbox;
 pub mod scripts;
 #[cfg(test)]
 mod testing;
-mod workflow;
 
 pub use card::{Review, latest_review};
 pub use dry_run::check_script;
 pub use engine::{BoardError, Engine, Step};
+pub use kanban::{
+    Column, Kanban, built_in_script, column_named, repository_script, resolve_column,
+};
 pub use limits::Limits;
 pub use runs::{
     AgentInfo, CardRuns, ChatRuns, ImproveRuns, Runs, StartError, Tui, Variant, may_start,
-};
-pub use workflow::{
-    Column, Workflow, built_in_script, column_named, repository_script, resolve_column,
 };

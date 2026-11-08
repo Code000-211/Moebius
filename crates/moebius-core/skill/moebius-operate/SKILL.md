@@ -100,5 +100,5 @@ figure, say which command it came from.
 ## Details
 
 The `moebius` skill holds the exact pages: `reference/cli.md` (every command and the route it calls),
-`reference/desktop-api.md` (every route and body), `guide/workflows.md` (what each column does and what a person can
+`reference/desktop-api.md` (every route and body), `guide/kanban.md` (what each column does and what a person can
 do), `guide/autoresearch.md`, `guide/grilling.md` and `guide/automations.md`.

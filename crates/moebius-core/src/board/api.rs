@@ -132,7 +132,7 @@ impl Engine {
 
         let (fx, names) = (
             effects.clone(),
-            self.workflow
+            self.kanban
                 .columns
                 .iter()
                 .map(|c| c.name.clone())

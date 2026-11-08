@@ -32,7 +32,7 @@ use moebius_plugin_api::Host;
 use tokio::net::TcpListener;
 
 use crate::app::App;
-use crate::board::{Engine, Limits, Workflow};
+use crate::board::{Engine, Kanban, Limits};
 use crate::config::{Config, GitHubAuth, TokenSource};
 use crate::decide::check;
 use crate::decide::guard::{Guard, Teacher};
@@ -336,7 +336,7 @@ impl Server {
         let engine = Arc::new(Engine::new(
             app.clone(),
             harness.clone(),
-            Workflow::default(),
+            Kanban::default(),
             Limits {
                 run_limit: config.run_limit,
                 round_limit: config.round_limit,
@@ -492,7 +492,11 @@ mod tests {
         let docs = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs");
         for directory in ["guide", "reference"] {
             for page in std::fs::read_dir(docs.join(directory)).unwrap() {
-                let name = page.unwrap().file_name();
+                let page = page.unwrap();
+                if !page.file_type().unwrap().is_file() {
+                    continue;
+                }
+                let name = page.file_name();
                 let written = std::fs::read(skill.join(directory).join(&name)).unwrap();
                 assert_eq!(
                     written,
