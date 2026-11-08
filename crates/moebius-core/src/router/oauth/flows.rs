@@ -222,3 +222,231 @@ async fn a_table_names_its_preset_and_what_it_writes_wins() {
     assert!(unknown.contains("anthropic, openai"), "{unknown}");
     assert!(table("preset = \"openai\"\nnot_a_key = 1").is_err());
 }
+
+#[tokio::test]
+async fn the_anthropic_preset_adds_the_billing_header_sanitizes_pi_prompts_and_recovers_from_an_old_version()
+ {
+    let provider = FakeProvider::start(3600).await;
+    provider.require_claude_version("2.1.295");
+    let (router, dir) = router_with_preset(&provider, "anthropic", Protocol::Anthropic);
+    Secrets::new(dir.path())
+        .set("oauth-anthropic", "refresh-token-0")
+        .unwrap();
+
+    let pi_bolt_prompt = "You are an expert coding assistant operating inside Pi-Bolt, a build of pi (a coding agent harness) compiled ahead of time. You help users by reading files, executing commands, editing code, and writing new files.\n\n\
+        <tools>\n- read: Read file contents\n\nIn addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>\n\n\
+        <docs>\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main documentation: /opt/pi/README.md\n</docs>\n\n\
+        <cwd>\n/work\n</cwd>";
+    let answered = send(
+        &router,
+        json!({
+            "model": "claude-sonnet-fake",
+            "system": pi_bolt_prompt,
+            "messages": [{"role": "user", "content": "Write a poem"}],
+            "max_tokens": 5
+        }),
+        &[],
+    )
+    .await;
+    assert!(answered.response.status().is_success());
+
+    let seen = provider.messages();
+    assert_eq!(seen.len(), 2);
+    // First attempt used the default 2.1.280 floor; the retry used the learned 2.1.295 floor.
+    assert_eq!(seen[0].0["user-agent"], "claude-cli/2.1.280");
+    assert_eq!(seen[1].0["user-agent"], "claude-cli/2.1.295");
+    assert_eq!(seen[1].0["anthropic-version"], "2023-06-01");
+    let system = seen[1].1["system"].as_array().unwrap();
+    assert_eq!(system.len(), 3);
+    let billing = system[0]["text"].as_str().unwrap();
+    assert!(
+        billing.starts_with("x-anthropic-billing-header: cc_version=2.1.295.")
+            && billing.ends_with("; cc_entrypoint=sdk-cli; cch=2d0d5;"),
+        "{billing}"
+    );
+    assert_eq!(
+        system[1]["text"],
+        "You are Claude Code, Anthropic's official CLI for Claude."
+    );
+    let sanitized = system[2]["text"].as_str().unwrap();
+    assert!(sanitized.starts_with("You are an expert coding assistant.\nBe concise and helpful."));
+    assert!(!sanitized.contains("Pi documentation"));
+    assert!(!sanitized.contains("In addition to the tools above"));
+    assert!(sanitized.contains("<cwd>\n/work\n</cwd>"));
+
+    // The next request starts at 2.1.295 without another 400 retry.
+    let answered = send(
+        &router,
+        json!({
+            "model": "claude-sonnet-fake",
+            "messages": [{"role": "user", "content": "Write a poem"}],
+            "max_tokens": 5
+        }),
+        &[],
+    )
+    .await;
+    assert!(answered.response.status().is_success());
+    assert_eq!(provider.messages().len(), 3);
+}
+
+#[test]
+fn billing_header_matches_reference_hashes_and_utf16_sampling() {
+    use super::anthropic::billing_header;
+    assert_eq!(
+        billing_header("Write a poem", "2.1.280"),
+        "x-anthropic-billing-header: cc_version=2.1.280.31b; cc_entrypoint=sdk-cli; cch=2d0d5;"
+    );
+    let short = billing_header("Hi", "2.1.280");
+    assert!(
+        short.starts_with("x-anthropic-billing-header: cc_version=2.1.280."),
+        "{short}"
+    );
+    assert!(
+        short.ends_with("; cc_entrypoint=sdk-cli; cch=3639e;"),
+        "{short}"
+    );
+}
+
+#[test]
+fn sanitizes_pi_and_pi_bolt_system_prompts_preserving_context_and_skills() {
+    use super::anthropic::{MINIMAL_ANTHROPIC_OAUTH_PROMPT, sanitize_system_prompt};
+    for identity in [
+        "pi, a coding agent harness",
+        "Pi-Bolt, a build of pi (a coding agent harness) compiled ahead of time",
+    ] {
+        let prompt = format!(
+            "You are an expert coding assistant operating inside {identity}. \
+             You help users by reading files, executing commands, editing code, and writing new files.\n\n\
+             <tools>\n\
+             - read: Read file contents\n\
+             - bash: Execute a bash command\n\n\
+             In addition to the tools above, you may have access to other custom tools depending on the project.\n\
+             </tools>\n\n\
+             <rules>\n\
+             - Here is some useful information about the environment you are running in:\n\
+             - Be concise in your responses\n\
+             </rules>\n\n\
+             <docs>\n\
+             Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n\
+             - Main documentation: /opt/pi/README.md\n\
+             </docs>\n\n\
+             <addendum>\n\
+             Keep answers factual.\n\
+             </addendum>\n\n\
+             <project_context>\n\
+             Project-specific instructions and guidelines:\n\n\
+             <project_instructions path=\"/repo/AGENTS.md\">\n\
+             Run tests before finishing.\n\
+             </project_instructions>\n\
+             </project_context>\n\n\
+             <skills>\n\
+             <available_skills>\n\
+             <skill><name>moebius</name></skill>\n\
+             </available_skills>\n\
+             </skills>\n\n\
+             <cwd>\n\
+             /repo\n\
+             </cwd>"
+        );
+        let sanitized = sanitize_system_prompt(&prompt);
+        assert!(sanitized.starts_with(MINIMAL_ANTHROPIC_OAUTH_PROMPT));
+        assert!(!sanitized.contains("operating inside"));
+        assert!(!sanitized.contains("In addition to the tools above"));
+        assert!(!sanitized.contains("<docs>"));
+        assert!(!sanitized.contains("Pi documentation"));
+        assert!(sanitized.contains("- Environment context you are running in:"));
+        assert!(sanitized.contains("<addendum>\nKeep answers factual.\n</addendum>"));
+        assert!(sanitized.contains("<project_instructions path=\"/repo/AGENTS.md\">"));
+        assert!(sanitized.contains("<skill><name>moebius</name></skill>"));
+        assert!(sanitized.contains("<cwd>\n/repo\n</cwd>"));
+    }
+
+    let custom = "You are a specialized code reviewer.\n\n<docs>\nPi documentation (read only when the user asks about pi itself): keep\n</docs>";
+    assert_eq!(sanitize_system_prompt(custom), custom);
+}
+
+#[test]
+fn shapes_system_blocks_and_mid_conversation_section_updates() {
+    use super::anthropic::{
+        CLAUDE_CODE_PREFIX, MINIMAL_ANTHROPIC_OAUTH_PROMPT, required_version_from_error,
+        shape_request,
+    };
+    let mut request = json!({
+        "model": "m",
+        "system": [
+            {
+                "type": "text",
+                "text": "You are an expert coding assistant operating inside Pi-Bolt, a build of pi (a coding agent harness) compiled ahead of time.\n\n<tools>\n- read: Read\n\nIn addition to the tools above, custom tools.\n</tools>\n\n<docs>\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n- Main: /readme\n</docs>",
+                "cache_control": {"type": "ephemeral"}
+            }
+        ],
+        "messages": [
+            {"role": "user", "content": "Write a poem"},
+            {
+                "role": "system",
+                "content": [
+                    {"type": "text", "text": "Updated system prompt section \"docs\":\n\n<docs>\nPi documentation (read only when the user asks about pi itself): /readme\n</docs>"}
+                ]
+            },
+            {
+                "role": "system",
+                "content": [
+                    {"type": "text", "text": "Removed system prompt section \"docs\"."}
+                ],
+                "output_config": {"effort": "high"}
+            },
+            {
+                "role": "system",
+                "content": [
+                    {"type": "text", "text": "Updated system prompt section \"tools\":\n\n<tools>\n- bash: Run\n\nIn addition to the tools above, more.\n</tools>"}
+                ]
+            }
+        ]
+    });
+
+    shape_request(&mut request, "2.1.280");
+    let system = request["system"].as_array().unwrap();
+    assert_eq!(system.len(), 3);
+    assert_eq!(
+        system[0],
+        json!({
+            "type": "text",
+            "text": "x-anthropic-billing-header: cc_version=2.1.280.31b; cc_entrypoint=sdk-cli; cch=2d0d5;"
+        })
+    );
+    assert!(system[0].get("cache_control").is_none());
+    assert_eq!(
+        system[1],
+        json!({"type": "text", "text": CLAUDE_CODE_PREFIX})
+    );
+    assert_eq!(system[2]["cache_control"]["type"], "ephemeral");
+    let body_text = system[2]["text"].as_str().unwrap();
+    assert!(body_text.starts_with(MINIMAL_ANTHROPIC_OAUTH_PROMPT));
+    assert!(!body_text.contains("<docs>"));
+    assert!(!body_text.contains("In addition to the tools above"));
+
+    let messages = request["messages"].as_array().unwrap();
+    assert_eq!(messages.len(), 3);
+    assert_eq!(messages[1]["content"], json!([]));
+    assert_eq!(messages[1]["output_config"]["effort"], "high");
+    assert_eq!(
+        messages[2]["content"][0]["text"],
+        "Updated system prompt section \"tools\":\n\n<tools>\n- bash: Run\n</tools>"
+    );
+
+    let err = json!({
+        "type": "error",
+        "error": {
+            "type": "invalid_request_error",
+            "message": "This version of Claude Code is no longer supported. Version 2.1.295 or newer is required.",
+            "details": {"error_code": "claude_code_version_too_old"}
+        }
+    });
+    let bytes = serde_json::to_vec(&err).unwrap();
+    assert_eq!(
+        required_version_from_error(&bytes, "2.1.280").as_deref(),
+        Some("2.1.295")
+    );
+    assert_eq!(required_version_from_error(&bytes, "2.1.295"), None);
+    assert_eq!(required_version_from_error(&bytes, "2.2.0"), None);
+}

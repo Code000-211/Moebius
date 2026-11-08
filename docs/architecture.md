@@ -501,6 +501,7 @@ At the top:
 | `router/oauth/code.rs` | An authorization code with PKCE, the browser sent back to a loopback listener. |
 | `router/oauth/config.rs` | The `oauth` table as configured, filled in from its `preset`, and the warning confirmed before a login. |
 | `router/oauth/preset.rs` | The built-in providers (Anthropic, OpenAI): client ids, URLs, and what their requests need (headers, system prefix, or the Codex Responses protocol). |
+| `router/oauth/anthropic.rs` | What an Anthropic subscription token needs on `POST /v1/messages`: the `x-anthropic-billing-header` block, section-aware sanitization of Pi and Pi-Bolt system prompts, and raising the Claude Code version floor on `claude_code_version_too_old`. |
 | `router/oauth/flows.rs` | Tests of the presets against a fake provider. |
 | `router/oauth/testing.rs` | The fake OAuth provider and upstream the tests of the logins share. |
 
