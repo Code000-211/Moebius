@@ -10,8 +10,9 @@ use serde_json::Value;
 use crate::app::{App, AppError, Result};
 use crate::bus::Event;
 use crate::store::WorkflowRun;
+use crate::workflows::decorate::Scope;
 use crate::workflows::definition::{self, NodeDefinition, WorkflowDefinition};
-use crate::workflows::nodes::NodeError;
+use crate::workflows::nodes::{NodeError, Routed};
 use crate::workflows::run::{Error as RunError, Limits, Observer, Runner, StepResult, execute};
 
 /// A definition a trigger asks a run for: either the definition itself or the name of its file in the harness
@@ -147,6 +148,14 @@ struct NodeRunner;
 impl Runner for NodeRunner {
     fn run(&self, node: &NodeDefinition, input: &Value) -> std::result::Result<Value, NodeError> {
         crate::workflows::nodes::node(&node.kind, &node.params)?.run(input.clone())
+    }
+
+    fn run_routed(
+        &self,
+        node: &NodeDefinition,
+        scope: &Scope,
+    ) -> std::result::Result<Routed, NodeError> {
+        crate::workflows::nodes::node(&node.kind, &node.params)?.run_routed(scope)
     }
 }
 

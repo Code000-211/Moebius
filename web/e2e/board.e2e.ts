@@ -281,6 +281,14 @@ describe("live data", () => {
     await dock().getByText("demo · In review · by person").waitFor();
   });
 
+  it.skipIf(usesRealServer)("links the pull request of a card from the dock", async () => {
+    await fresh();
+    await openBoard();
+    await card(5).click();
+    const pull = dock().getByRole("link", { name: "Pull request #11, open" });
+    expect(await pull.getAttribute("href")).toBe("https://github.com/acme/demo/pull/11");
+  });
+
   it.skipIf(usesRealServer)("names the dock's two waiting rows by what each one is", async () => {
     await fresh();
     await openBoard();
@@ -424,6 +432,30 @@ describe("blocking, unblocking and deleting a card", () => {
     // The run was stopped, so the card is no longer live.
     await card(1).getByText("Live", { exact: true }).waitFor({ state: "detached" });
     expect(fake().requests.at(-1)).toMatchObject({ body: { reason: "" } });
+  });
+
+  it.skipIf(usesRealServer)("stops the run of a card from its menu and from the dock", async () => {
+    await fresh();
+    await openBoard();
+    await card(1).getByText("Live", { exact: true }).waitFor();
+    await menuOf(card(1), 1).click();
+    await item("Stop run").click();
+    await status("Stopping #1.").waitFor();
+    expect(fake().requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/runs/1/stop" });
+    // The card is no longer live and is not blocked, and the menu offers no second stop.
+    await card(1).getByText("Live", { exact: true }).waitFor({ state: "detached" });
+    expect(await card(1).getByText("Blocked", { exact: true }).count()).toBe(0);
+    await menuOf(card(1), 1).click();
+    expect(await item("Stop run").count()).toBe(0);
+    await page.keyboard.press("Escape");
+
+    // A card with a live run has the button in its dock too: retrying the stuck card 6 starts one.
+    await card(6).click();
+    await dock().getByRole("button", { name: "Retry" }).click();
+    await card(6).getByText("Live", { exact: true }).waitFor();
+    await dock().getByRole("button", { name: "Stop run" }).click();
+    await status("Stopping #6.").waitFor();
+    await dock().getByRole("button", { name: "Stop run" }).waitFor({ state: "detached" });
   });
 
   it.skipIf(usesRealServer)("blocks from the menu of the dock and shows why there", async () => {

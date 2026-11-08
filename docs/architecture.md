@@ -746,9 +746,10 @@ At the top:
 | `workflows/definition.rs` | The workflow file (`workflows/<name>.toml`): its trigger, nodes and edges, parsing it whole, validating its graph, and reading and listing it from the harness configuration repository; saving and deleting it are commits in `harness/repo/edits.rs`. |
 | `workflows/trigger/mod.rs` | The triggers of a workflow: what starts its runs, and the manual trigger among them. |
 | `workflows/trigger/manual.rs` | The `manual` trigger: the inputs it names with their types, requiredness, defaults and choices, checked when the file is read, and the value a started run begins with. |
-| `workflows/nodes/mod.rs` | The node kinds: the `Node` trait, the ports and metadata a kind reports, and the registry that maps a kind name and its parameters to a node. |
+| `workflows/nodes/mod.rs` | The node kinds: the `Node` trait, the ports and metadata a kind reports, the value and port a node returns, and the registry that maps a kind name and its parameters to a node. |
+| `workflows/nodes/condition.rs` | The `condition` node: one Luau expression per named output port, tried in order, the first true one taken, else the fallback port or a failure. |
 | `workflows/nodes/for_each.rs` | The `for_each` node: fans a list out over a sub-path once per element, gathers the outputs in order, and checks that the sub-path rejoins where the definition says. |
-| `workflows/run.rs` | The executor: following the edges from the trigger with one value, running each node under its timeout, failing the run on a node's error or its node ceiling, and reporting each step to an observer. |
+| `workflows/run.rs` | The executor: following the edges from the trigger with one value, giving each node the trigger's value and the values of the nodes that ran before, taking the edge that leaves by the port a node names, running each node under its timeout, failing the run on a node's error or its node ceiling, and reporting each step to an observer. |
 
 Outside `src/`: `kanban/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension
 loaded into every run, `bridge/moebius-ask.ts` the question tool of the agents that operate Moebius, `skill/` the built-in skills.
