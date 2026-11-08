@@ -76,7 +76,6 @@ export interface AgentForm {
   runner: string | null;
   thinking: string | null;
   budget: string;
-  hideAfter: string;
   maxLines: string;
   maxBytes: string;
   compress: boolean;
@@ -92,7 +91,6 @@ export interface AgentForm {
 
 function toolOutputFields(output: ToolOutput) {
   return {
-    hideAfter: String(output.hide_after_turns),
     maxLines: String(output.max_lines),
     maxBytes: String(output.max_bytes),
     compress: output.compress,
@@ -209,13 +207,12 @@ export function agentRequest(form: AgentForm): AgentRequest | string {
     tokenBudget = WHOLE.test(budget) ? Number(budget) : Number.NaN;
     if (!(tokenBudget >= 1)) return "The token budget is a whole number of at least 1.";
   }
-  const numbers = [form.hideAfter, form.maxLines, form.maxBytes].map((field) => field.trim());
+  const numbers = [form.maxLines, form.maxBytes].map((field) => field.trim());
   if (!numbers.every((field) => WHOLE.test(field) && Number(field) <= 4294967295)) {
     return "The tool output fields are whole numbers; 0 turns one off.";
   }
-  const [hide, lines, bytes] = numbers.map(Number) as [number, number, number];
+  const [lines, bytes] = numbers.map(Number) as [number, number];
   const toolOutput: ToolOutput = {
-    hide_after_turns: hide,
     max_lines: lines,
     max_bytes: bytes,
     compress: form.compress,
@@ -244,12 +241,7 @@ export function agentRequest(form: AgentForm): AgentRequest | string {
 }
 
 function sameToolOutput(a: ToolOutput, b: ToolOutput): boolean {
-  return (
-    a.hide_after_turns === b.hide_after_turns &&
-    a.max_lines === b.max_lines &&
-    a.max_bytes === b.max_bytes &&
-    a.compress === b.compress
-  );
+  return a.max_lines === b.max_lines && a.max_bytes === b.max_bytes && a.compress === b.compress;
 }
 
 /** `name` taken out of `chosen` when it is there, put in when it is not. */

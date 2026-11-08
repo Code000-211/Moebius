@@ -43,21 +43,12 @@ You still write an extension yourself when nothing in the catalog does what you 
 ## The bridge comes last
 
 Moebius loads one extension into every run after all of yours, the bridge
-(`crates/moebius-core/bridge/moebius-bridge.ts`). It asks the server about every tool call and every tool result. It is
-what makes the rules work. For each run the server writes it to `<data_dir>/runs/<id>/moebius-bridge.ts` and starts
+(`crates/moebius-core/bridge/moebius-bridge.ts`). It only offers the tool `lessons`; it checks no tool call, changes no
+result and hides nothing, so the rules do not act on a Pi-Bolt run through it. For each run the server writes it to `<data_dir>/runs/<id>/moebius-bridge.ts` and starts
 Pi-Bolt with `--extension` for each path in the agent's `extensions`, in the order you list them, and then with
 `--extension` for the bridge. It also passes `--no-extensions` and `--no-skills`, so Pi loads no extension or skill it
-finds on its own: only the ones in the agent's configuration, the bridge and, for skills, Moebius's own. The [bridge protocol](../reference/bridge-protocol.md) describes what the bridge does and the rules for
-a bridge of any harness.
+finds on its own: only the ones in the agent's configuration, the bridge and, for skills, Moebius's own. The [bridge protocol](../reference/bridge-protocol.md) describes the endpoints.
 
-What this guarantees, and what it asks of yours:
-
-- Pi runs the handlers of one event in load order (Pi-Bolt's documentation). Your `tool_call` handlers run first, so
-  the bridge checks the input the call will run with, even if your handler changed it, and a tool your extension adds
-  goes through the same hook.
-- Your `tool_result` handlers run first too, so the bridge removes the secrets from the content the result will
-  carry, even those your handler added.
-- A call or a result that the bridge refuses or withholds stays so; no extension of the agent has a say after it.
 - An extension runs inside the Pi process with the same permissions, and sees prompts, tool calls, files and
   credentials. Load only extensions you trust.
 
@@ -110,15 +101,7 @@ export default function (pi: ExtensionAPI) {
 ```
 
 To stop a call, a `tool_call` handler returns an object with `block: true` and a `reason`, which the model sees as the
-tool's result. This is how the bridge does it:
-
-<!-- excerpt: crates/moebius-core/bridge/moebius-bridge.ts -->
-```ts
-if (answer.decision === "allow") return undefined;
-if (answer.decision === "refuse") {
-	return { block: true, reason: `Moebius refused this call: ${answer.reason}` };
-}
-```
+tool's result. The bridge does not do this: it blocks no call.
 
 A rule is the better tool for forbidding a call (see [Rules](rules.md)), because it is recorded as a judgement and
 applies to every harness. Pi has many more events (input, the agent's start and end, the model request, sessions) and
@@ -145,7 +128,7 @@ result, such as `tool_call ls <id> {}`.
 | Nothing is logged. | The change in `moebius.toml` has not been loaded: restart the server. Or the run is of another agent. |
 | Run events of kind `unparsed` appear. | An extension wrote to standard output, which Moebius reads as JSON lines. Use `console.error`. |
 | Every tool call is slow. | A handler awaits something slow, and the call waits for it. |
-| A call is refused, and you do not know by whom. | The reason starts `Moebius refused this call:` when the bridge blocked it, with the rule's name. A call blocked by your own handler carries your reason. The rule refusals are `tool_check` events of the run. |
+| A call is refused, and you do not know by whom. | The bridge blocks no call. A call blocked by your own handler carries your reason. |
 
 The example is not run in CI, which has no TypeScript toolchain. The guide's test checks only that the code above is a
 copy of the file.

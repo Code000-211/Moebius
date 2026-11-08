@@ -239,7 +239,7 @@ mod tests {
 
     fn limits(max_lines: u32, max_bytes: u32, compress: bool) -> ToolOutput {
         ToolOutput {
-            hide_after_turns: 10,
+            hide_after_turns: None,
             max_lines,
             max_bytes,
             compress,

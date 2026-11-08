@@ -1,7 +1,8 @@
 # Bridge protocol
 
-The bridge is the part of Moebius that lives inside a harness and through which every tool call is checked before it
-runs. This page is for anyone who writes a bridge for another harness or tests the endpoints: it describes the HTTP
+The bridge is the part of Moebius that lives inside a harness. The Pi-Bolt bridge does not change the agent's process:
+it blocks no tool call, changes no result and hides nothing; it only offers the tool `lessons`. The check and the result
+endpoints below stay for a bridge that wants them, but no bridge of Moebius calls them now. This page is for anyone who writes a bridge for another harness or tests the endpoints: it describes the HTTP
 endpoints the server offers (the check, the result and the lessons), their JSON, the rules a client must follow so that it fails closed, and how the harness is
 told where the server is. It also describes the [MCP gateway](#the-mcp-gateway), the one MCP server every harness is
 given, which checks the calls of MCP tools on the server's side. The server side is `crates/moebius-core/src/decide/check/`; the reference client is the Pi
@@ -78,7 +79,7 @@ Request:
 | `tool` | string | The tool's name. Optional; with `bash`, the command's output can be compressed by what the command is. |
 | `input` | any JSON | The call's arguments. Optional; for `bash`, `input.command` is the command line. |
 | `is_error` | boolean | Whether the call failed. Optional; not read. |
-| `tool_output` | object | The agent's budget: `{"hide_after_turns", "max_lines", "max_bytes", "compress"}`, as `agents.<name>.tool_output` in [configuration](configuration.md) (a key left out has its default; an unknown key is `422`). Optional; without it the result is only cleaned of secrets. |
+| `tool_output` | object | The agent's budget: `{"max_lines", "max_bytes", "compress"}`, as `agents.<name>.tool_output` in [configuration](configuration.md) (a key left out has its default; an unknown key is `422`). Optional; without it the result is only cleaned of secrets. |
 
 Response, status `200`: `{"content": [...]}` with the same blocks. In every block of `"type": "text"` each secret is
 replaced by `[redacted:<kind>]`; other blocks are unchanged. The kinds are `private-key`, `anthropic-key`, `openai-key`,
@@ -155,7 +156,6 @@ The harness starts every Pi-Bolt run (and every Claude Code run) with a cleared 
 |---|---|
 | `MOEBIUS_CHECK_URL` | The router's base URL, such as `http://127.0.0.1:7172`, without a trailing slash. The client appends `/moebius/check` and `/moebius/result`. |
 | `MOEBIUS_RUN_TOKEN` | The run's token, of the form `moebius-run-<48 hex digits>`. |
-| `MOEBIUS_TOOL_OUTPUT` | The agent's `tool_output` as JSON, such as `{"hide_after_turns":10,"max_lines":200,"max_bytes":16384,"compress":true}`. The bridge hides older outputs by it and sends it with each result. |
 | `MOEBIUS_REPOSITORY` | Only for a run of the Moebius agent or the Grilling partner in a repository: its id, which `"$MOEBIUS" issue create` and `issue list` take. |
 | `MOEBIUS_RUN` | Only for a run of the Moebius agent or the Grilling partner: the run's id, which the agent names its claims by (`"$MOEBIUS" issue claim <id> --as "wayfinder-$MOEBIUS_RUN"`). |
 | `MOEBIUS_URL` | Only for a run of the Moebius agent or the Grilling partner: the desktop API's base URL, such as `http://127.0.0.1:7171` (a server that listens on all interfaces is given as `127.0.0.1`). The `moebius` binary the agent runs as `$MOEBIUS` connects there (see [the command line](cli.md)). |
@@ -167,28 +167,16 @@ For each run the server writes the bridge to `<data_dir>/runs/<id>/moebius-bridg
 and `--no-skills`, so that Pi loads no extension or skill it finds on its own, only those the agent is configured with and
 the bridge. The token is revoked when the run ends.
 
-The bridge being last is what lets it have the last word. Pi runs the handlers of an event in load order, a later
-`tool_call` handler sees and may change the `input` an earlier one left, and `tool_result` handlers chain. Last, the bridge
-checks the input the call will run with and redacts the content the result will carry. A harness that cannot guarantee
-this order must not be used.
+A bridge that checks calls must be last: Pi runs the handlers of an event in load order, a later `tool_call` handler sees
+and may change the `input` an earlier one left, and `tool_result` handlers chain. The Pi-Bolt bridge is last, but checks nothing.
 
 ## The bridge as the reference client
 
-`crates/moebius-core/bridge/moebius-bridge.ts` is a Pi extension of about a hundred and fifty lines. It registers the tool `lessons` with `pi.registerTool` (its
-only parameter is `query`; it asks `/moebius/lessons` and shows `text`, or says that the lessons could not be looked up)
-and three handlers with `pi.on`:
+`crates/moebius-core/bridge/moebius-bridge.ts` is a Pi extension of about fifty lines. It registers the tool `lessons` with `pi.registerTool` (its
+only parameter is `query`; it asks `/moebius/lessons` and shows `text`, or says that the lessons could not be looked up). It has no
+handler with `pi.on`: it never changes what the model reads, so the model's prompt cache stays valid.
 
-- `tool_call` (event fields `toolName`, `input`, `toolCallId`): asks `/moebius/check` and returns `undefined` to let the
-  call run or `{ block: true, reason }` to block it.
-- `tool_result` (event fields `toolCallId`, `toolName`, `input`, `content`, `isError`): asks `/moebius/result` with the
-  agent's `tool_output` and returns `{ content }` with the cleaned blocks.
-- `context` (event field `messages`, the conversation of one model request): with `hide_after_turns` above 0, replaces
-  the content of each `toolResult` message whose call is older than the last `hide_after_turns` assistant messages by
-  one text block, `[<tool> <input as JSON, cut at 200 characters>: output hidden: <n> lines]`. A result with `isError`
-  is kept, and so is one shorter than its placeholder. Only the request changes: Pi's session, and the
-  `tool_execution_end` run events, keep every output. When anything fails here, the messages are left as they are.
-
-A bridge for another harness does the same with that harness's hooks. See
+A bridge for another harness offers the same tool. See
 [`examples/pi-extension/log-tool-calls.ts`](../../examples/pi-extension/log-tool-calls.ts) for the smallest extension.
 
 ## The question tool

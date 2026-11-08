@@ -120,5 +120,9 @@ async fn a_tool_of_the_agents_mcp_server_is_called_through_the_gateway_by_a_real
     assert_eq!(calls[0].data["decision"], "allow");
     assert_eq!(calls[0].data["result"]["content"][0]["text"], "echo: hello");
     let judged = started.server.app.store.judgements("tool_call").unwrap();
-    assert_eq!(judged.len(), 2, "the bridge's check and the gateway's");
+    assert_eq!(
+        judged.len(),
+        1,
+        "the gateway's check; the bridge asks for none"
+    );
 }
