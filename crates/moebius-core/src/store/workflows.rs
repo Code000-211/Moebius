@@ -2,6 +2,8 @@
 //! it was started with and moves through its statuses; each node of the run is a row of its own, with the attempt, the
 //! input it was given and the output it produced. The JSON values are stored as text, redacted first.
 
+use std::path::Path;
+
 use rusqlite::{OptionalExtension, Row, params};
 use serde_json::Value;
 
@@ -26,6 +28,8 @@ pub struct WorkflowRun {
     pub started_at: Option<i64>,
     pub finished_at: Option<i64>,
     pub error: Option<String>,
+    /// The worktree in which the run's agents work on the branch named for the run; none before its first agent node.
+    pub worktree: Option<String>,
 }
 
 /// One node of a workflow run at one attempt: the input it was given and the output it left.
@@ -94,6 +98,16 @@ impl Store {
             conn.last_insert_rowid()
         };
         Ok(self.workflow_run(id)?.expect("the run was just stored"))
+    }
+
+    /// Records the worktree of the run `id`, in which the run's agents work on the branch named for the run, so its
+    /// later agents reuse it.
+    pub fn set_workflow_run_worktree(&self, id: i64, worktree: &Path) -> Result<()> {
+        self.conn().execute(
+            "UPDATE workflow_runs SET worktree = ?1 WHERE id = ?2",
+            params![worktree.to_string_lossy().to_string(), id],
+        )?;
+        Ok(())
     }
 
     /// The run with `id`, if it exists.
@@ -253,6 +267,7 @@ fn run_from_row(row: &Row<'_>) -> rusqlite::Result<WorkflowRun> {
         started_at: row.get(7)?,
         finished_at: row.get(8)?,
         error: row.get(9)?,
+        worktree: row.get(10)?,
     })
 }
 

@@ -82,6 +82,45 @@ pub(in crate::harness) fn detached_run(
     })
 }
 
+/// Records a run of `agent` (on the harness `config` names) for the workflow run `workflow_run`, in the worktree
+/// `worktree`, which the first agent node of that run checked out on the branch named for the run (see
+/// `repos::add_workflow_worktree`), and its later agents reuse, and its token. The run keeps the worktree when it
+/// ends, on the run's branch (see `end`), where it commits what the agent left. The run fails when the worktree has
+/// no head.
+pub(in crate::harness) fn in_worktree_run(
+    app: &App,
+    router: &Router,
+    agent: &str,
+    config: &AgentConfig,
+    (clone, repository): (&Path, i64),
+    worktree: &Path,
+    workflow_run: i64,
+) -> Result<RunningRun, StartError> {
+    let run = app
+        .store
+        .add_run(None, agent, config.harness.name(), "workflow")
+        .map_err(|e| StartError::Store(e.to_string()))?;
+    app.store
+        .set_run_repository(run.id, repository)
+        .map_err(|e| StartError::Store(e.to_string()))?;
+    let start = head(app, run.id, worktree)?;
+    let grant = Grant {
+        run_id: run.id,
+        card_id: None,
+        budget: config.token_budget,
+    };
+    Ok(RunningRun {
+        id: run.id,
+        clone: Some(clone.to_path_buf()),
+        start,
+        worktree: worktree.to_path_buf(),
+        token: issue_token(router, config, grant),
+        purpose: "workflow".into(),
+        commit_message: format!("Workflow run {workflow_run}\n\nCommitted by Moebius for its run."),
+        remote: None,
+    })
+}
+
 /// Records a run of `card` by `agent`, as `config` has it (on the harness it names), for `purpose`, with the worktree
 /// `worktree` makes for the run and its token. The agent leaves its work in the worktree, which is committed when the
 /// run ends. The commit the worktree starts at is recorded with the run (`Store::set_run_base`), which the trials of the
@@ -419,6 +458,24 @@ pub(in crate::harness) fn launch_or_undo(
         // Nothing reads this run: undo what was set up for it.
         router.revoke_token(&running.token);
         running.remove_worktree(app);
+        return Err(StartError::LaunchFailed(fail(app, running.id, e)));
+    }
+    app.store
+        .run(running.id)
+        .map_err(|e| StartError::Store(e.to_string()))
+        .map(|run| run.expect("the run exists"))
+}
+
+/// Starts the process of the run `running` with `launch` and returns the run; when the process cannot be started, the
+/// run has failed, and its worktree is kept, on the branch it is named for: the run's later agents work on it still.
+pub(in crate::harness) fn launch_or_keep(
+    app: &App,
+    router: &Router,
+    running: RunningRun,
+    launch: impl FnOnce(RunningRun) -> Result<(), String>,
+) -> Result<Run, StartError> {
+    if let Err(e) = launch(running.clone()) {
+        router.revoke_token(&running.token);
         return Err(StartError::LaunchFailed(fail(app, running.id, e)));
     }
     app.store

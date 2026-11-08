@@ -1,0 +1,543 @@
+//! The agent node: the node kind that runs an agent of the harness configuration. The first agent node of a workflow
+//! run checks the run's repository out into a worktree on a branch named for the run, and the run keeps the worktree
+//! path with itself, so the run's later agent nodes reuse the worktree and the branch; each agent is started through
+//! the harness picker, failing closed, and its transcript is kept in its run's log. The node's value is the
+//! declared `output`, the fenced JSON block the prompt asks the agent to end with: it is parsed, and a missing or
+//! malformed block fails the node closed.
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use serde_json::{Value, json};
+
+use super::{Metadata, Node, NodeError, Ports};
+use crate::app::App;
+use crate::harness::pick::Harnesses;
+use crate::improve::retro::wait_for_end;
+use crate::workflows::decorate::{Scope, fill};
+
+/// The kind of the node.
+pub const KIND: &str = "agent";
+
+/// What the node adds to its prompt: the value of the node is the fenced JSON block the agent ends with.
+const OUTPUT_REQUEST: &str = "End your final message with a fenced JSON block containing the value of the \
+node's declared output; it is the value the node takes from you.";
+
+/// The agent node: `agent` names an agent of the harness configuration, `prompt` is built from parameters and
+/// expressions, and the node's value is the declared `output`, the fenced JSON block the agent ends with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Agent {
+    agent: String,
+    prompt: String,
+    output: String,
+}
+
+impl Agent {
+    /// The node from its parameters: `agent`, `prompt` and the declared `output`, each a text of its own.
+    pub fn from_params(params: &Value) -> Result<Self, NodeError> {
+        let invalid = |message: &str| NodeError::Parameters {
+            kind: KIND.to_string(),
+            message: message.to_string(),
+        };
+        let parameter = |name: &str| {
+            params
+                .get(name)
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .map(|value| value.to_string())
+                .ok_or_else(|| invalid(&format!("`{name}` must be a non-empty string")))
+        };
+        Ok(Self {
+            agent: parameter("agent")?,
+            prompt: parameter("prompt")?,
+            output: parameter("output")?,
+        })
+    }
+
+    /// Runs the agent of the node for the workflow run `run_id`, with `input` reaching the node, and returns the
+    /// value of the node's declared output. The first agent node of a run checks the run's repository out into a
+    /// worktree on a branch named for the run and records the worktree with the run; the later nodes reuse it. The
+    /// agent is started through the picker `runs`, failing closed; `node_id` names the node in the errors of its
+    /// expressions.
+    pub fn run_node(
+        &self,
+        app: &Arc<App>,
+        runs: &Harnesses,
+        node_id: &str,
+        run_id: i64,
+        input: &Value,
+    ) -> Result<Value, NodeError> {
+        let failed = |why: String| NodeError::Failed(format!("node {node_id}: {why}"));
+        let run = app
+            .store
+            .workflow_run(run_id)
+            .map_err(|e| failed(e.to_string()))?
+            .ok_or_else(|| failed(format!("the workflow run {run_id} is gone")))?;
+        let repository = app
+            .store
+            .repository(run.repository_id)
+            .map_err(|e| failed(e.to_string()))?
+            .ok_or_else(|| {
+                failed(format!(
+                    "the run's repository {} is gone",
+                    run.repository_id
+                ))
+            })?;
+        // The worktree of the run, on the branch named for it: what its first agent node made, recorded with it.
+        let worktree = match &run.worktree {
+            Some(path) if Path::new(path).exists() => PathBuf::from(path),
+            Some(path) => return Err(failed(format!("the run's worktree {path} is gone"))),
+            None => {
+                let worktree = app
+                    .repos
+                    .add_workflow_worktree(
+                        &repository.name,
+                        Path::new(&repository.path),
+                        run.id,
+                        &repository.base_ref(),
+                    )
+                    .map_err(|e| {
+                        failed(format!("cannot check the run out into its worktree: {e}"))
+                    })?;
+                app.store
+                    .set_workflow_run_worktree(run.id, &worktree.path)
+                    .map_err(|e| failed(e.to_string()))?;
+                worktree.path
+            }
+        };
+        // The prompt, from the parameters and the expressions of the run.
+        let scope = Scope {
+            trigger: run.value.clone(),
+            input: input.clone(),
+            nodes: BTreeMap::new(),
+        };
+        let filled = fill(node_id, &json!({ "prompt": self.prompt.clone() }), &scope)
+            .map_err(|e| failed(e.to_string()))?;
+        let prompt = match filled.get("prompt") {
+            Some(Value::String(text)) => format!("{text}\n\n{OUTPUT_REQUEST}"),
+            _ => return Err(failed("the filled prompt is not text".to_string())),
+        };
+        // The agent's run, through the picker: failing closed, its transcript in the run's log.
+        let mut ended = app.bus.subscribe();
+        let started = runs
+            .start_workflow_run(app, &self.agent, &repository, &worktree, (run.id, &prompt))
+            .map_err(|e| failed(format!("cannot start the agent: {e}")))?;
+        wait_for_end(app, &mut ended, started.id);
+        let done = app
+            .store
+            .run(started.id)
+            .map_err(|e| failed(e.to_string()))?
+            .ok_or_else(|| failed("the agent's run is gone".to_string()))?;
+        if done.status != "succeeded" {
+            return Err(failed(format!("the agent's run ended {}", done.status)));
+        }
+        let answer = done
+            .summary
+            .ok_or_else(|| failed("the agent ended without a final answer".to_string()))?;
+        value_of(&answer)
+    }
+}
+
+/// The value the node takes from the final answer `answer`: the last fenced block of it, parsed as JSON. A missing
+/// block, or one that is not JSON, fails the node closed.
+fn value_of(answer: &str) -> Result<Value, NodeError> {
+    let mut blocks: Vec<String> = Vec::new();
+    let mut current: Option<Vec<String>> = None;
+    for line in answer.lines() {
+        if line.trim_start().starts_with("```") {
+            if let Some(lines) = current.take() {
+                blocks.push(lines.join("\n"));
+            } else {
+                current = Some(Vec::new());
+            }
+        } else if let Some(lines) = &mut current {
+            lines.push(line.to_string());
+        }
+    }
+    let failed = |why: String| NodeError::Failed(format!("node {KIND}: {why}"));
+    match blocks.last() {
+        Some(block) => serde_json::from_str(block)
+            .map_err(|e| failed(format!("the agent's fenced block is not JSON: {e}"))),
+        None => Err(failed(
+            "the agent ended without a fenced JSON block: the node's declared output is missing"
+                .to_string(),
+        )),
+    }
+}
+
+impl Node for Agent {
+    /// The node is run for a workflow run, which the plain executor does not give it; see [`Agent::run_node`].
+    fn run(&self, _input: Value) -> Result<Value, NodeError> {
+        Err(NodeError::Failed(
+            "an agent node is run by the executor, which gives it the workflow run and its worktree".to_string(),
+        ))
+    }
+
+    fn ports(&self) -> Ports {
+        Ports::new(["in"], [self.output.clone()])
+    }
+
+    fn metadata(&self) -> Metadata {
+        Metadata {
+            kind: KIND,
+            title: "Agent",
+            description: "Runs an agent of the harness configuration in a worktree the run owns, and takes its \
+                declared output from the fenced JSON block it ends with.",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::workflows::nodes::node;
+
+    fn params() -> Value {
+        json!({
+            "agent": "Coder",
+            "prompt": "Read the issue {{ trigger.issue }} and answer.",
+            "output": "summary",
+        })
+    }
+
+    #[test]
+    fn the_parameters_name_the_agent_the_prompt_and_the_output() {
+        let agent = Agent::from_params(&params()).unwrap();
+        assert_eq!(agent.agent, "Coder");
+        assert_eq!(
+            agent.prompt,
+            "Read the issue {{ trigger.issue }} and answer."
+        );
+        assert_eq!(agent.output, "summary");
+    }
+
+    #[test]
+    fn a_parameter_that_is_not_a_non_empty_string_is_refused() {
+        for missing in ["agent", "prompt", "output"] {
+            let mut params = params();
+            params.as_object_mut().unwrap().remove(missing);
+            let error = Agent::from_params(&params).unwrap_err();
+            assert!(
+                matches!(&error, NodeError::Parameters { kind, message }
+                    if kind == KIND && message.contains(missing)),
+                "{error}"
+            );
+            let mut empty = params.clone();
+            empty[missing] = json!("");
+            assert!(
+                Agent::from_params(&empty).is_err(),
+                "{missing} taken while empty"
+            );
+        }
+    }
+
+    #[test]
+    fn the_registry_builds_the_agent_node_and_keeps_its_declared_output() {
+        let built = node(KIND, &params());
+        assert!(built.is_ok());
+        let ports = built.unwrap().ports();
+        assert_eq!(ports.inputs, ["in"]);
+        assert_eq!(ports.outputs, ["summary"]);
+        assert!(
+            matches!(node(KIND, &json!({})), Err(NodeError::Parameters { .. })),
+            "the registry takes an agent node without its parameters"
+        );
+    }
+
+    #[test]
+    fn the_node_is_run_for_a_workflow_run_only() {
+        let agent = Agent::from_params(&params()).unwrap();
+        // The plain executor has no workflow run to give the node, so the node fails closed rather than run blind.
+        let error = agent.run(json!(null)).unwrap_err();
+        assert!(matches!(error, NodeError::Failed(_)), "{error}");
+    }
+
+    #[test]
+    fn the_last_fenced_block_of_the_answer_is_the_output() {
+        let answer = "A draft first:\n```json\n{\"draft\": 1}\n```\nthen the answer:\n```json\n{\"done\": true}\n```";
+        assert_eq!(value_of(answer).unwrap(), json!({"done": true}));
+    }
+
+    #[test]
+    fn a_block_the_agent_never_closed_is_no_block() {
+        let error = value_of("```json\n{\"done\": true}").unwrap_err();
+        assert!(
+            matches!(&error, NodeError::Failed(why) if why.contains("without a fenced JSON block")),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_block_that_is_not_json_fails_the_node_closed() {
+        let error = value_of("```json\n{\"done\": tru}\n```").unwrap_err();
+        assert!(
+            matches!(&error, NodeError::Failed(why) if why.contains("not JSON")),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn an_answer_without_a_block_fails_the_node_closed() {
+        let error = value_of("I read the issue and answered in prose.").unwrap_err();
+        assert!(
+            matches!(&error, NodeError::Failed(why) if why.contains("without a fenced JSON block")),
+            "{error}"
+        );
+    }
+}
+
+/// The node against a real launcher and a `pi-bolt` that is a script. The fake is a Python script started by its
+/// `#!` line, so these run on Unix only.
+#[cfg(all(test, unix))]
+mod a_run {
+    use std::collections::BTreeMap;
+    use std::time::Duration;
+
+    use moebius_plugin_api::Host;
+    use serde_json::json;
+
+    use super::*;
+    use crate::config::{AgentConfig, HarnessKind};
+    use crate::harness::pibolt::PiBolt;
+    use crate::repos::git;
+    use crate::router::{Protocol, Router};
+    use crate::store::{Repository, Run, Store};
+
+    /// A world for the node: a repository its runs belong to, and a `Coder` the fake `pi-bolt` answers for.
+    struct World {
+        _dir: tempfile::TempDir,
+        app: Arc<App>,
+        runs: Harnesses,
+        repository: Repository,
+    }
+
+    impl World {
+        fn new() -> World {
+            let dir = tempfile::tempdir().unwrap();
+            let origin = dir.path().join("origin");
+            std::fs::create_dir_all(&origin).unwrap();
+            git(&origin, &["init", "--quiet", "-b", "main"]).unwrap();
+            std::fs::write(origin.join("README.md"), "hello\n").unwrap();
+            git(&origin, &["add", "."]).unwrap();
+            git(&origin, &["commit", "--quiet", "-m", "first"]).unwrap();
+            let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+            let app = Arc::new(App::new(
+                store.clone(),
+                Arc::new(Host::new(Duration::from_secs(1))),
+                &dir.path().join("data"),
+            ));
+            let repository = app
+                .add_repository("demo", origin.to_str().unwrap())
+                .unwrap();
+            let coder = AgentConfig {
+                model: "m".into(),
+                protocol: Protocol::OpenAi,
+                thinking: None,
+                instructions: None,
+                skills: vec![],
+                extensions: vec![],
+                mcp: BTreeMap::new(),
+                token_budget: None,
+                harness: HarnessKind::PiBolt,
+                tool_output: Default::default(),
+                engineering_skills: Default::default(),
+                runner: None,
+            };
+            let testdata = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata");
+            let pi = PiBolt::new(
+                testdata.join("fake-pi"),
+                "/usr/local/bin/moebius".into(),
+                "http://127.0.0.1:9".into(),
+                Arc::new(Router::new(store, vec![])),
+                BTreeMap::from([("Coder".to_string(), coder)]),
+            );
+            let runs = Harnesses::new(pi, &testdata.join("fake-claude"));
+            World {
+                _dir: dir,
+                app,
+                runs,
+                repository,
+            }
+        }
+
+        /// A workflow run of the world's repository, started by a trigger that produced `value`.
+        fn workflow_run(&self, value: Value) -> i64 {
+            self.app
+                .store
+                .add_workflow_run("release", self.repository.id, "manual", &value)
+                .unwrap()
+                .id
+        }
+
+        /// The node that runs the world's `Coder` on `prompt` and calls its value `output`.
+        fn agent_node(&self, prompt: &str, output: &str) -> Agent {
+            Agent::from_params(&json!({
+                "agent": "Coder",
+                "prompt": prompt,
+                "output": output,
+            }))
+            .unwrap()
+        }
+
+        /// The run's worktree the store keeps, which its first agent node made.
+        fn worktree(&self, run_id: i64) -> PathBuf {
+            let worktree = self
+                .app
+                .store
+                .workflow_run(run_id)
+                .unwrap()
+                .expect("the run is stored")
+                .worktree
+                .expect("the run keeps its worktree");
+            PathBuf::from(worktree)
+        }
+
+        /// The branch the run owns, named for the run.
+        fn branch(run_id: i64) -> String {
+            format!("moebius/workflow-run-{run_id}")
+        }
+
+        /// The file `name` as the run's branch holds it.
+        fn on_branch(&self, run_id: i64, name: &str) -> String {
+            let branch = Self::branch(run_id);
+            git(
+                Path::new(&self.repository.path),
+                &["show", &format!("{branch}:{name}")],
+            )
+            .unwrap_or_else(|e| panic!("{name} is not on {branch}: {e}"))
+        }
+
+        /// The clone the run's branch lives in, beside the worktree the run owns.
+        fn clone(&self) -> &Path {
+            Path::new(&self.repository.path)
+        }
+    }
+
+    /// The runs the store holds, oldest first: a world starts no run but its agents', and a fresh store numbers
+    /// them from one.
+    fn agent_runs(app: &App) -> Vec<Run> {
+        (1..10)
+            .filter_map(|id| app.store.run(id).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn the_first_agent_node_checks_the_run_out_and_yields_its_block() {
+        let world = World::new();
+        let run_id = world.workflow_run(json!({"release": "1.0"}));
+        // The fake answers a prompt that is not a card by saying it back, so the block the prompt asks for comes
+        // back in the answer; `[write note.txt]` leaves a file where the agent works.
+        let node = world.agent_node(
+            "Write the note. [write note.txt]\nAnswer with:\n```json\n{\"release\": \"{{ trigger.release }}\"}\n```",
+            "note",
+        );
+        let value = node
+            .run_node(&world.app, &world.runs, "draft", run_id, &json!(null))
+            .unwrap_or_else(|e| panic!("{e}"));
+        // The value is the block, with the run's expressions filled into the prompt the agent answers.
+        assert_eq!(value, json!({"release": "1.0"}));
+        // The work the agent left is on the branch the run owns.
+        assert_eq!(world.on_branch(run_id, "note.txt"), "written");
+        // The run keeps its worktree, where the agent worked.
+        let worktree = world.worktree(run_id);
+        assert!(
+            worktree.join("note.txt").is_file(),
+            "the worktree {worktree:?} was kept with the work in it"
+        );
+        // The agent ran once, as a run of the workflow whose transcript is kept in its log.
+        let agents = agent_runs(&world.app);
+        assert_eq!(agents.len(), 1, "one agent node, one run");
+        assert_eq!(agents[0].purpose, "workflow");
+        assert_eq!(agents[0].status, "succeeded");
+        assert!(
+            !world.app.store.events(agents[0].id).unwrap().is_empty(),
+            "the agent's transcript is in its run's log"
+        );
+    }
+
+    #[test]
+    fn the_agent_nodes_of_a_run_share_its_worktree_and_branch() {
+        let world = World::new();
+        let run_id = world.workflow_run(json!({}));
+        let first = world.agent_node("First. [write one.txt]\n```json\n{\"step\": 1}\n```", "one");
+        let second = world.agent_node("Then. [write two.txt]\n```json\n{\"step\": 2}\n```", "two");
+        assert_eq!(
+            first
+                .run_node(&world.app, &world.runs, "one", run_id, &json!(null))
+                .unwrap_or_else(|e| panic!("{e}")),
+            json!({"step": 1})
+        );
+        let worktree = world.worktree(run_id);
+        assert_eq!(
+            second
+                .run_node(&world.app, &world.runs, "two", run_id, &json!(null))
+                .unwrap_or_else(|e| panic!("{e}")),
+            json!({"step": 2})
+        );
+        // The second node worked where the first one did, and left its work on the same branch.
+        assert_eq!(world.worktree(run_id), worktree);
+        assert_eq!(world.on_branch(run_id, "one.txt"), "written");
+        assert_eq!(world.on_branch(run_id, "two.txt"), "written");
+        // One branch for the run, and one worktree of the repository.
+        let branches = git(world.clone(), &["branch", "--list", "moebius/*"]).unwrap();
+        assert_eq!(branches.trim().lines().count(), 1, "{branches}");
+        let worktrees = std::fs::read_dir(world.app.data_dir.join("worktrees").join("demo"))
+            .unwrap()
+            .collect::<Vec<_>>();
+        assert_eq!(worktrees.len(), 1, "one worktree for the run");
+        assert_eq!(worktrees[0].as_ref().unwrap().path(), worktree);
+    }
+
+    #[test]
+    fn an_agent_that_is_not_configured_starts_nothing() {
+        let world = World::new();
+        let run_id = world.workflow_run(json!({}));
+        let node = Agent::from_params(&json!({
+            "agent": "Nobody",
+            "prompt": "```json\n{}\n```",
+            "output": "note",
+        }))
+        .unwrap();
+        let error = node
+            .run_node(&world.app, &world.runs, "draft", run_id, &json!(null))
+            .unwrap_err();
+        assert!(matches!(error, NodeError::Failed(_)), "{error}");
+        assert!(
+            agent_runs(&world.app).is_empty(),
+            "an agent that is not there"
+        );
+    }
+
+    #[test]
+    fn a_malformed_block_fails_the_node_after_the_agent_ended() {
+        let world = World::new();
+        let run_id = world.workflow_run(json!({}));
+        let node = world.agent_node("Answer with:\n```json\n{\"release\": oops}\n```", "note");
+        let error = node
+            .run_node(&world.app, &world.runs, "draft", run_id, &json!(null))
+            .unwrap_err();
+        assert!(
+            matches!(&error, NodeError::Failed(why) if why.contains("not JSON")),
+            "{error}"
+        );
+        // The run ends as it is: the node has no value, and nothing else was changed.
+        assert_eq!(agent_runs(&world.app)[0].status, "succeeded");
+    }
+
+    #[test]
+    fn an_answer_without_a_block_fails_the_node_after_the_agent_ended() {
+        let world = World::new();
+        let run_id = world.workflow_run(json!({}));
+        let node = world.agent_node("Say hello and nothing else.", "note");
+        let error = node
+            .run_node(&world.app, &world.runs, "draft", run_id, &json!(null))
+            .unwrap_err();
+        assert!(
+            matches!(&error, NodeError::Failed(why) if why.contains("without a fenced JSON block")),
+            "{error}"
+        );
+    }
+}

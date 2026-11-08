@@ -160,6 +160,8 @@ A file naming a kind the registry does not know is refused; the kinds that exist
 
 Each node kind has one section here and one page in [`workflows/`](workflows/README.md).
 
+- [`agent`](workflows/agent.md): runs an agent of the harness configuration in a worktree the run owns, on a
+  branch named for the run.
 - [`for_each`](workflows/for-each.md): runs a sub-path once per element of a list and gathers the outputs.
 
 ## Extending this page

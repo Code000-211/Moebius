@@ -5,6 +5,7 @@
 use serde_json::Value;
 use thiserror::Error;
 
+pub mod agent;
 pub mod for_each;
 
 /// The named ways a value enters and leaves a node.
@@ -74,6 +75,7 @@ pub fn node(kind: &str, _params: &Value) -> Result<Box<dyn Node>, NodeError> {
         TEST_KIND => Ok(Box::new(TestNode {
             params: _params.clone(),
         })),
+        agent::KIND => Ok(Box::new(agent::Agent::from_params(_params)?)),
         for_each::KIND => Ok(Box::new(for_each::ForEach::from_params(_params)?)),
         other => Err(NodeError::UnknownKind(other.to_string())),
     }
