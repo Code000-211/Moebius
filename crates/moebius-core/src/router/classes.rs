@@ -204,11 +204,19 @@ impl Router {
                 continue;
             }
             let codex = upstream.oauth.as_ref().filter(|oauth| oauth.codex());
+            let version = self.oauth.claude_code_version(headers);
             let prepared = match codex {
                 Some(oauth) => self.codex_request(upstream, oauth, request, headers).await,
                 None => {
-                    let outgoing =
-                        plain_request(&self.client, upstream, preset, request, headers, path);
+                    let outgoing = plain_request(
+                        &self.client,
+                        upstream,
+                        preset,
+                        request,
+                        headers,
+                        path,
+                        &version,
+                    );
                     self.authenticate(upstream, outgoing).await
                 }
             };
@@ -226,16 +234,25 @@ impl Router {
             };
             let started = Instant::now();
             match outgoing.send().await {
-                Ok(response) if last || !falls_back(response.status()) => {
-                    return Ok(Answered {
-                        response,
-                        model: (*model).clone(),
-                        started,
-                        codex: codex.is_some(),
-                    });
+                Ok(mut response) => {
+                    if preset.is_some_and(Preset::is_anthropic)
+                        && response.status() == StatusCode::BAD_REQUEST
+                    {
+                        response = self
+                            .retry_if_claude_version_too_old(
+                                response, upstream, request, headers, path, &version,
+                            )
+                            .await;
+                    }
+                    if last || !falls_back(response.status()) {
+                        return Ok(Answered {
+                            response,
+                            model: (*model).clone(),
+                            started,
+                            codex: codex.is_some(),
+                        });
+                    }
                 }
-                // The failed answer is dropped unread; nothing of it reached the harness.
-                Ok(_) => {}
                 Err(e) => {
                     failure = error(
                         protocol,
@@ -248,6 +265,45 @@ impl Router {
         }
         Err(Box::new(failure))
     }
+
+    /// When an Anthropic subscription upstream answers with 400 `claude_code_version_too_old`, remembers the required
+    /// version floor and resends the request once with that version.
+    async fn retry_if_claude_version_too_old(
+        &self,
+        response: reqwest::Response,
+        upstream: &Upstream,
+        request: &Value,
+        headers: &HeaderMap,
+        path: &str,
+        sent_version: &str,
+    ) -> reqwest::Response {
+        use super::oauth::anthropic::{rebuild_response, required_version_from_error};
+        let status = response.status();
+        let resp_headers = response.headers().clone();
+        let Ok(bytes) = response.bytes().await else {
+            return rebuild_response(status, resp_headers, axum::body::Bytes::new());
+        };
+        let Some(required) = required_version_from_error(&bytes, sent_version) else {
+            return rebuild_response(status, resp_headers, bytes);
+        };
+        self.oauth.note_claude_code_version(&required);
+        let preset = upstream.oauth.as_ref().and_then(|oauth| oauth.preset());
+        let outgoing = plain_request(
+            &self.client,
+            upstream,
+            preset,
+            request,
+            headers,
+            path,
+            &required,
+        );
+        if let Ok(authed) = self.authenticate(upstream, outgoing).await
+            && let Ok(retried) = authed.send().await
+        {
+            return retried;
+        }
+        rebuild_response(status, resp_headers, bytes)
+    }
 }
 
 /// The request to `upstream` for `request` of a harness, with the preset's changes and headers, but not yet its
@@ -259,11 +315,12 @@ fn plain_request(
     request: &Value,
     headers: &HeaderMap,
     path: &str,
+    version: &str,
 ) -> reqwest::RequestBuilder {
     let body = match preset {
         Some(preset) => {
             let mut shaped = request.clone();
-            preset.shape(&mut shaped);
+            preset.shape_with_version(&mut shaped, version);
             shaped.to_string()
         }
         None => request.to_string(),
@@ -283,13 +340,15 @@ fn plain_request(
         }
         if let Some(value) = headers.get(name) {
             outgoing = outgoing.header(name, value);
+        } else if name == "anthropic-version" && preset.is_some_and(Preset::is_anthropic) {
+            outgoing = outgoing.header(name, "2023-06-01");
         }
     }
     if let Some(preset) = preset {
         let beta = headers
             .get("anthropic-beta")
             .and_then(|value| value.to_str().ok());
-        outgoing = preset.dress(outgoing, beta);
+        outgoing = preset.dress_with_version(outgoing, beta, version);
     }
     outgoing
 }

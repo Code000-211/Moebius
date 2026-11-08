@@ -138,12 +138,22 @@ Codes and refresh tokens are posted as a form, except for the `anthropic` preset
 with the code), as Pi does.
 
 - `anthropic`: every request with the token (and the model list) is sent with `Authorization: Bearer`, no `x-api-key`,
-  and the headers `user-agent: claude-cli/2.1.280`, `x-app: cli`, `anthropic-dangerous-direct-browser-access: true` and
-  `accept: application/json`. The `anthropic-beta` header is the harness's features followed by `claude-code-20250219`
-  and `oauth-2025-04-20`, none twice. The system prompt of the request starts with the block `You are Claude Code,
-  Anthropic's official CLI for Claude.` (a string or blocks already there follow it). Why: the subscription is granted
-  to Claude Code, and the API refuses its token for a request that does not identify itself as Claude Code; Pi does the
-  same. Pi also writes the names of the tools in Claude Code's casing; the router does not.
+  `anthropic-version: 2023-06-01` when the client sent none, and the headers `user-agent: claude-cli/<version>`
+  (floor `2.1.280`), `x-app: cli`, `anthropic-dangerous-direct-browser-access: true` and `accept: application/json`. The
+  `anthropic-beta` header is the harness's features followed by `claude-code-20250219` and `oauth-2025-04-20`, none
+  twice. When `messages` has a non-empty user text, the system prompt starts with an uncached text block
+  `x-anthropic-billing-header: cc_version=<version>.<suffix>; cc_entrypoint=sdk-cli; cch=<cch>;` (`cch` the first five
+  hex digits of the SHA-256 of the first user text, `<suffix>` the first three hex digits of the SHA-256 of the salt,
+  the UTF-16 characters at positions `4`, `7` and `20` of that text or `0`, and `<version>`), followed by the block
+  `You are Claude Code, Anthropic's official CLI for Claude.` and the caller's system prompt blocks. Pi and Pi-Bolt
+  system prompts (and mid-conversation `role: "system"` section updates) have their harness preamble replaced by a
+  neutral coding-assistant preamble, their Pi `<docs>` section and `<tools>` custom-tool filler paragraph removed, and
+  `<addendum>`, `<project_context>`, `<skills>`, `<cwd>` and custom prompts kept intact. When the client sends a newer
+  `claude-cli/<version>` in `user-agent`, or when the upstream refuses with `400` and `claude_code_version_too_old`
+  naming a newer required version, the router raises its version floor in memory and, on `claude_code_version_too_old`,
+  retries the request once with the required version. Why: the subscription is granted to Claude Code, and the API
+  refuses its token or bills extra usage for a request that does not carry the billing header, identify itself as a
+  supported Claude Code version, or remove Pi's harness fingerprint (`@gotgenes/pi-anthropic-auth`).
 - `openai`: a ChatGPT Plus/Pro subscription, whose backend takes requests only in its own Codex Responses protocol. The
   router translates, following the `openai-codex` provider of Pi (commit `f09d01b85e0384647fcab6779d35ab9dabe04be3` of
   `badlogic/pi-mono`, `packages/ai/src/api/openai-codex-responses.ts`). The request to `POST /v1/chat/completions` is
