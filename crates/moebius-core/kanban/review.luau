@@ -11,11 +11,17 @@ local function conflict_note(change)
     .. change.conflict .. "\nMerge " .. change.base .. " into your branch and resolve the conflicts."
 end
 
+-- A card that is stuck loses the label `in-progress` that marks the cards being worked on.
+local function stuck(reason)
+  moebius.set_label("in-progress", false)
+  moebius.stuck(reason)
+end
+
 -- Whether a limit keeps the agent from starting now; the card is then stuck or waiting.
 local function limited(card, agent)
   local budget = moebius.agent_budget(agent)
   if budget ~= nil and card.tokens >= budget then
-    moebius.stuck("the token budget of " .. budget .. " is spent")
+    stuck("the token budget of " .. budget .. " is spent")
   elseif moebius.day_budget ~= nil and moebius.tokens_today() >= moebius.day_budget then
     moebius.wait("the daily token budget is spent")
   else
@@ -99,7 +105,7 @@ local function review(card, run)
       moebius.wait("reviewing the spec")
     end
   elseif run.purpose ~= "code" and card.reviews >= moebius.round_limit then
-    moebius.stuck("the round limit is reached")
+    stuck("the round limit is reached")
   else
     local agent = axis_agent("Standards")
     if not limited(card, agent) then
@@ -114,13 +120,14 @@ local function review(card, run)
 end
 
 function on_card(card)
+  moebius.set_label("in-progress", true)
   local run = card.run
   if run ~= nil and (run.status == "starting" or run.status == "running") then
     moebius.wait("reviewing")
     return
   end
   if card.stopped then
-    moebius.stuck("stopped by a person")
+    stuck("stopped by a person")
     return
   end
   local reviewing = run ~= nil and string.sub(run.purpose, 1, 6) == "review"

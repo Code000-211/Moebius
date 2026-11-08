@@ -175,7 +175,9 @@ pub struct App {
     /// The cards whose forge refused to close their issue for a script, with when and what it said: not asked again for
     /// a while (see `issues`). Not stored.
     close_refused: Mutex<HashMap<i64, (std::time::Instant, String)>>,
-    /// How long a forge that refused to close an issue is left alone.
+    /// The cards whose forge refused a label for a script, with when: not asked again for `close_retry`. Not stored.
+    label_refused: Mutex<HashMap<i64, std::time::Instant>>,
+    /// How long a forge that refused to close an issue, or a label, is left alone.
     close_retry: Duration,
     forges: BTreeMap<&'static str, Box<dyn Forge>>,
     /// The harness configuration repository's clone, once the server has opened it.
@@ -213,6 +215,7 @@ impl App {
             terminals: Arc::default(),
             waiting: Mutex::default(),
             close_refused: Mutex::default(),
+            label_refused: Mutex::default(),
             close_retry: Duration::from_secs(600),
             forges,
             harness_repo: OnceLock::new(),

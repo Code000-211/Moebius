@@ -294,8 +294,8 @@ mod tests {
             ),
             ("Issue 1", "Do it.", "leon")
         );
-        f.engine.settle(trusted.id).unwrap();
-        f.engine.settle(outside.id).unwrap();
+        f.settle(&trusted).await;
+        f.settle(&outside).await;
         let app = &f.server.app;
         assert_eq!(app.card(trusted.id).unwrap().column, "In progress");
         assert_eq!(app.card(outside.id).unwrap().column, "Backlog");
@@ -324,8 +324,8 @@ mod tests {
             ],
         );
         f.server.poll_github().await;
-        let id = f.card(1).unwrap().id;
-        f.engine.settle(id).unwrap();
+        let card = f.card(1).unwrap();
+        f.settle(&card).await;
 
         let mut retitled = issue(2, "open", "mallory", "");
         retitled["title"] = json!("Better title");
