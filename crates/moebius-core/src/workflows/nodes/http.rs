@@ -648,6 +648,59 @@ mod tests {
     }
 
     #[test]
+    fn the_server_configuration_reaches_the_node_through_the_registry() {
+        let secret = "registry-http-secret-5c2e9b8d71f4a6";
+        let fake = serve(Router::new().route(
+            "/echo",
+            get(|headers: AxumHeaders| async move {
+                let sent = headers["authorization"].to_str().unwrap().to_string();
+                (
+                    [("content-type", "application/json")],
+                    json!({"sent": sent}).to_string(),
+                )
+            }),
+        ));
+        let dir = tempfile::tempdir().unwrap();
+        let config = crate::config::Config::parse(
+            "[workflows]\nhttp_hosts = [\"127.0.0.1\"]\n",
+            dir.path(),
+            std::path::Path::new("moebius.toml"),
+        )
+        .unwrap();
+        Secrets::new(&config.data_dir)
+            .set("service", secret)
+            .unwrap();
+        configure(&config);
+
+        // Built the way the run builds it, the node has the hosts and the secrets file the server configured.
+        let http = crate::workflows::nodes::node(
+            KIND,
+            &json!({"url": format!("http://{}/echo", fake.addr), "secret": "service"}),
+        )
+        .unwrap();
+        let output = http.run(json!(null)).unwrap();
+        assert_eq!(output["status"], 200);
+        assert_eq!(output["body"]["sent"], format!("Bearer {secret}"));
+        assert!(!redact(&output.to_string()).contains(secret));
+
+        // And a host the configuration does not name is refused before any request is made.
+        let refused = crate::workflows::nodes::node(
+            KIND,
+            &json!({"url": "https://not-configured.example.com/"}),
+        )
+        .unwrap();
+        match refused.run(json!(null)) {
+            Err(NodeError::Failed(message)) => assert!(
+                message.contains(
+                    "the host \"not-configured.example.com\" is not in workflows.http_hosts"
+                ),
+                "{message}"
+            ),
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn a_secret_that_is_not_there_fails_the_node() {
         let dir = tempfile::tempdir().unwrap();
         let http = node(
