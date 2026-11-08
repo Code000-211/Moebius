@@ -31,7 +31,8 @@ port is refused when the file is read: `invalid parameters for node kind "condit
 
 An edge whose `port` is not one of these is refused by validation, like any edge by a port its source does not have. A
 port with no edge leaving by it is refused too, `fallback` included: `node "<id>": port "<port>" has no edge leaving by
-it`.
+it`. The node asks for that check by overriding `Node::routes` to `true`, since its value always leaves by one of the
+ports it names.
 
 ## Expressions
 

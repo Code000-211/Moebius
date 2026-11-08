@@ -100,8 +100,9 @@ refusal names the file and the node or edge it is about:
 - an edge names a source or target node that does not exist: `edge "<from>" -> "<to>": no node "<id>"`;
 - a node or trigger names a kind the registry does not know: `node "<id>": unknown node kind "<kind>"`;
 - an edge leaves by a port the source node does not have: `node "<id>": edge to "<to>" leaves by port "<port>"`;
-- a node that chooses its output port reports a port with no edge leaving by it, `fallback` included: `node "<id>":
-  port "<port>" has no edge leaving by it`;
+- a node that routes, so chooses its output port (see `routes()` under [the node registry](#the-node-registry)),
+  reports a port with no edge leaving by it, `fallback` included: `node "<id>": port "<port>" has no edge leaving by
+  it`;
 - the nodes form a cycle: `node "<id>": is part of a cycle ...`;
 - a node cannot be reached from the trigger: `node "<id>": is unreachable from the trigger`.
 
@@ -153,7 +154,7 @@ unknown node, or a step the observer could not record); its text is the run's `e
 `workflows::nodes::node(kind, params)` is the extension point: it maps a kind name and its parameters to a `Node`, or
 returns `NodeError::UnknownKind` for a kind no card has added yet. A node-kind card adds one arm to its match.
 
-Every `Node` reports four things:
+Every `Node` reports five things:
 
 - `run(input)` does the node's work on the value that reached it and returns the value that leaves by one of its output
   ports;
@@ -162,6 +163,9 @@ Every `Node` reports four things:
   when the node chooses which output port it leaves by, the name of that port, so the executor follows the edge that
   leaves by it. A node that chooses no port needs only `run`;
 - `ports()` returns its named `inputs` and `outputs`, whose output names an edge's `port` uses;
+- `routes()` says whether the node names the port its value leaves by, in the `port` of the `Routed` above. A node that
+  names one returns `true`, and validation then refuses it for a port with no edge leaving by it; a node whose value
+  leaves by its first edge whatever it returns keeps the default, `false`;
 - `metadata()` returns its `kind`, a `title` and a one-sentence `description` for people.
 
 Only the kinds listed under [Node kinds](#node-kinds) are registered; a file naming any other kind is refused.
