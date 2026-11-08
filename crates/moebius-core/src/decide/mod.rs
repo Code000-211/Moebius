@@ -34,15 +34,23 @@ pub struct Question {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Actor {
     Person,
-    Agent { name: String, run: i64 },
+    Agent {
+        name: String,
+        run: i64,
+    },
+    /// The script of a column, as the policy a repository's settings hold: it decided for every card of the column.
+    Script {
+        column: String,
+    },
 }
 
 impl Actor {
-    /// The decider a judgement records for this actor: `person`, or `agent:<name>`.
+    /// The decider a judgement records for this actor: `person`, `agent:<name>` or `script:<column>`.
     pub fn decider(&self) -> String {
         match self {
             Actor::Person => crate::app::PERSON.to_string(),
             Actor::Agent { name, .. } => format!("agent:{name}"),
+            Actor::Script { column } => format!("script:{column}"),
         }
     }
 }
