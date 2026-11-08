@@ -171,6 +171,11 @@ pub trait Forge: Send + Sync {
         branch: &str,
         pull_request: Option<i64>,
     ) -> Result<Option<i64>, ForgeError>;
+    /// Pushes `branch` to the forge without offering it as a change: no pull request is opened. A forge without
+    /// pull requests has nothing to push to.
+    fn push(&self, _repository: &Repository, _branch: &str) -> Result<(), ForgeError> {
+        Ok(())
+    }
     /// Merges `change` into the repository's default branch and returns the merge commit.
     fn merge(
         &self,
@@ -363,6 +368,13 @@ impl GitHubForge {
 impl Forge for GitHubForge {
     fn name(&self) -> &'static str {
         "github"
+    }
+
+    fn push(&self, repository: &Repository, branch: &str) -> Result<(), ForgeError> {
+        let name = Self::github_name(repository)?;
+        let clone = Path::new(&repository.path);
+        let header = self.origin_auth(clone, name)?;
+        Ok(self.repos.push(clone, branch, header.as_deref(), true)?)
     }
 
     fn publish(
@@ -564,6 +576,13 @@ impl Forge for GitLabForge {
         "gitlab"
     }
 
+    fn push(&self, repository: &Repository, branch: &str) -> Result<(), ForgeError> {
+        Self::project(repository)?;
+        let clone = Path::new(&repository.path);
+        let header = self.origin_auth(clone)?;
+        Ok(self.repos.push(clone, branch, header.as_deref(), true)?)
+    }
+
     fn publish(
         &self,
         repository: &Repository,
@@ -744,6 +763,13 @@ impl ForgejoForge {
 impl Forge for ForgejoForge {
     fn name(&self) -> &'static str {
         "forgejo"
+    }
+
+    fn push(&self, repository: &Repository, branch: &str) -> Result<(), ForgeError> {
+        Self::repo(repository)?;
+        let clone = Path::new(&repository.path);
+        let header = self.origin_auth(clone)?;
+        Ok(self.repos.push(clone, branch, header.as_deref(), true)?)
     }
 
     fn publish(

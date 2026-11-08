@@ -781,6 +781,32 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn the_pull_request_opens_when_the_change_is_offered_not_when_it_is_published() {
+        let f = Fixture::new().await;
+        let card = f.card_in_review().await;
+        let app = f.server.app.clone();
+        let published = tokio::task::spawn_blocking(move || app.publish_change(card.id).unwrap())
+            .await
+            .unwrap();
+        // The branch is on the forge, but no pull request was opened for it.
+        assert_eq!(published.pull_request, None);
+        assert!(f.fake.pulls.lock().unwrap().opened.is_empty());
+        assert_eq!(
+            git(&f.remote, &["rev-parse", "moebius/card-1"]).unwrap(),
+            published.head.clone().unwrap()
+        );
+
+        let app = f.server.app.clone();
+        let offered = tokio::task::spawn_blocking(move || app.offer_change(card.id).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(offered.id, published.id);
+        assert_eq!(offered.pull_request, Some(7));
+        assert_eq!(f.fake.pulls.lock().unwrap().opened.len(), 1);
+        assert_eq!(f.card(1).unwrap().column, "Ready to merge");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn a_retry_after_a_closed_pull_request_opens_a_new_one() {
         let f = Fixture::new().await;
         let closed = f.offered_change().await;
@@ -804,9 +830,10 @@ mod tests {
 
         f.code(&card, "second.txt").await;
         let app = f.server.app.clone();
-        let change = tokio::task::spawn_blocking(move || app.publish_change(card.id).unwrap())
-            .await
-            .unwrap();
+        let change =
+            tokio::task::spawn_blocking(move || app.publish_card_change(card.id, true).unwrap())
+                .await
+                .unwrap();
         assert_ne!(change.id, closed.id);
         assert_eq!(change.state, "open");
         assert_eq!(f.change(closed.id).state, "closed");
@@ -923,8 +950,9 @@ mod tests {
     async fn a_change_waits_for_the_checks_of_its_head_and_goes_back_when_they_fail() {
         let f = Fixture::new().await;
         let card = f.card_in_review().await;
+        f.opened_pull_request(&card).await;
 
-        // The change is published and, with no checks recorded for it yet, waits for them.
+        // The change has its pull request and, with no checks recorded for it yet, waits for them.
         let step = f.settle(&card).await;
         assert_eq!(step.waiting.as_deref(), Some("waiting for the checks"));
         let change = f.server.app.store.open_change(card.id).unwrap().unwrap();
@@ -960,6 +988,7 @@ mod tests {
     async fn a_change_without_checks_goes_on_once_the_grace_period_is_over() {
         let f = Fixture::new().await;
         let card = f.card_in_review().await;
+        f.opened_pull_request(&card).await;
         f.settle(&card).await;
         assert_eq!(f.card(1).unwrap().column, "In review");
 
@@ -981,7 +1010,7 @@ mod tests {
         let publish = || {
             let app = app.clone();
             async move {
-                tokio::task::spawn_blocking(move || app.publish_change(card.id).unwrap())
+                tokio::task::spawn_blocking(move || app.publish_card_change(card.id, true).unwrap())
                     .await
                     .unwrap()
             }

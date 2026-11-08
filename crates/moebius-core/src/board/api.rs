@@ -13,7 +13,7 @@
 //! - `moebius.set_label(label, present)`: gives the card's issue the label (`present` true) or takes it away (false)
 //!   when the script returns, on its forge too.
 //! - `moebius.publish_change() -> change`: publishes the card's latest successful `code` run on the branch of its
-//!   change (once per commit) and returns the change, as `card.change` is.
+//!   change (once per commit), without a pull request, which `moebius.offer_change` opens, and returns the change, as `card.change` is.
 //! - `moebius.run_checks() -> change`: starts the repository's own checks on the change, if it has any.
 //! - `moebius.reproduction() -> table`: what the card's runs name in their summaries as the reproduction test, for test first.
 //! - `moebius.run_test(command) -> test`, `moebius.run_test_at_base(command, files) -> test`: run the change's
