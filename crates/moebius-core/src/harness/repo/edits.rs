@@ -16,6 +16,7 @@ use crate::decide::rules;
 use crate::harness::mcp::{self, McpServer};
 use crate::harness::skill;
 use crate::repos::{GitError, git};
+use crate::workflows::definition::{self, WorkflowDefinition};
 
 impl HarnessRepo {
     /// A person adds or changes the agent `name`: the definition is validated as a file read is, committed on the
@@ -120,6 +121,64 @@ impl HarnessRepo {
         };
         let context = BTreeMap::from([("text".to_string(), text.clone())]);
         let write = || Ok(std::fs::write(self.path.join("rules.md"), &text)?);
+        self.commit(app, by, &mut read_at, &edit, context, write)
+    }
+
+    /// A person adds or changes the workflow `name`: the definition is validated as a file read is, committed on the
+    /// default branch and pushed to `origin`. An edit that changes nothing commits nothing.
+    pub fn save_workflow(
+        &self,
+        app: &App,
+        by: &Actor,
+        name: &str,
+        definition: &WorkflowDefinition,
+    ) -> Result<Option<String>> {
+        let mut read_at = self.lock();
+        let file =
+            definition::file_for(name).map_err(|error| AppError::Invalid(error.to_string()))?;
+        let text = definition::render(name, definition)
+            .map_err(|error| AppError::Invalid(error.to_string()))?;
+        let path = self.path.join(&file);
+        let verb = if path.exists() { "Update" } else { "Add" };
+        let message = format!("{verb} the workflow {name}");
+        let context = BTreeMap::from([("workflow".to_string(), name.to_string())]);
+        let write = || {
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            Ok(std::fs::write(&path, &text)?)
+        };
+        let edit = Edit {
+            kind: "edit_workflow",
+            files: &file,
+            message: &message,
+        };
+        self.commit(app, by, &mut read_at, &edit, context, write)
+    }
+
+    /// A person deletes the workflow `name`, the same way. A workflow with a run queued or running is refused, since
+    /// the run would have no definition left to finish with.
+    pub fn delete_workflow(&self, app: &App, by: &Actor, name: &str) -> Result<Option<String>> {
+        let mut read_at = self.lock();
+        let file =
+            definition::file_for(name).map_err(|error| AppError::Invalid(error.to_string()))?;
+        let path = self.path.join(&file);
+        if !path.is_file() {
+            return Err(AppError::NotFound(format!("workflow {name}")));
+        }
+        if app.store.active_workflow_runs(name)? > 0 {
+            return Err(AppError::Conflict(format!(
+                "workflow {name} has a run queued or running"
+            )));
+        }
+        let message = format!("Delete the workflow {name}");
+        let context = BTreeMap::from([("workflow".to_string(), name.to_string())]);
+        let write = || Ok(std::fs::remove_file(&path)?);
+        let edit = Edit {
+            kind: "edit_workflow",
+            files: &file,
+            message: &message,
+        };
         self.commit(app, by, &mut read_at, &edit, context, write)
     }
 

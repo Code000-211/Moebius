@@ -59,6 +59,23 @@ The other files of the settings are saved the same way: `review.md` (notes for t
 first on, `DELETE` turns it off) and `localize`. A repository's own `.moebius/` folder is not read; if `settings` lists
 `leftover` files, offer to move them to the settings.
 
+## Workflows
+
+A workflow is a file `workflows/<name>.toml` of the harness configuration repository: a trigger, nodes with a
+`position` and the edges between them. List what exists, read one, save one from a file, and delete one:
+
+```sh
+"$MOEBIUS" workflow list
+"$MOEBIUS" workflow show release
+"$MOEBIUS" workflow save release release.toml
+"$MOEBIUS" workflow delete release
+```
+
+`save` replaces the whole file and commits it, so read it first (`workflow show`) and keep every node's `position`;
+an invalid definition is refused with the message and the file stays as it was. `delete` is refused while a run of the
+workflow is queued or running. The `moebius` skill has `reference/workflows.md`.
+
+## A column's script in one repository
 ## A column's script in one repository
 
 ```sh

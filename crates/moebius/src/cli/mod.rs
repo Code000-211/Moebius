@@ -9,7 +9,7 @@
 //! This module holds the commands as clap sees them, the dispatch to the command groups and the helpers they share
 //! for reading input and writing answers. `client` finds the server and sends the requests; each other module is one
 //! group of commands, with its requests and how its answers are written: `api` (any route), `board` (the board,
-//! cards, the inbox and issues), `chats` (chats and grillings), `automations`, `agents`, `rules`, `packages`, `plugins` (turning a plugin off or on), `ext` (Pi packages), `repos`
+//! cards, the inbox and issues), `chats` (chats and grillings), `automations`, `agents`, `rules`, `workflow`, `packages`, `plugins` (turning a plugin off or on), `ext` (Pi packages), `repos`
 //! (repositories), `ssh` (a server reached through an SSH tunnel), `window` (the web app as a window of its own), `setup` (`doctor`, settings, API keys, usage and the server itself) and `improve` (Retros,
 //! proposals, research, the decision model and its takeovers).
 
@@ -31,6 +31,7 @@ mod rules;
 mod setup;
 pub mod ssh;
 pub mod window;
+mod workflow;
 
 use std::io::Read;
 
@@ -50,6 +51,7 @@ use plugins::PluginCommand;
 use repos::RepoCommand;
 use rules::RulesCommand;
 use setup::{SecretsCommand, ServerCommand, SettingsCommand};
+use workflow::WorkflowCommand;
 
 /// The commands that operate a running server.
 #[derive(Debug, Subcommand)]
@@ -108,6 +110,11 @@ pub enum Operate {
     Rules {
         #[command(subcommand)]
         command: Option<RulesCommand>,
+    },
+    /// The workflows of the harness configuration repository.
+    Workflow {
+        #[command(subcommand)]
+        command: WorkflowCommand,
     },
     /// Every key of moebius.toml with its value; `settings set` changes the file.
     #[command(args_conflicts_with_subcommands = true)]
@@ -230,6 +237,7 @@ impl Operate {
             Agents => agents::agents(),
             Agent { command } => agents::agent(command, get),
             Rules { command } => rules::rules(command.as_ref()),
+            Workflow { command } => workflow::workflow(command),
             Pkg { command } => packages::pkg(command, get),
             Plugin { command } => plugins::plugin(command),
             Ext { command } => ext::ext(command),

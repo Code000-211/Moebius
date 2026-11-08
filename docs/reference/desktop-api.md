@@ -1230,6 +1230,40 @@ commit (left out when the text changed nothing, and always for a `rules_file`). 
 `409` a push that `origin` refused, and then nothing changed and no decision was recorded; `500` any other failure of git (see
 [harness configuration](harness-configuration.md)).
 
+### `GET /v1/workflows`
+
+The workflows of the harness configuration repository, in name order. A workflow is a file `workflows/<name>.toml` in
+that repository (see [workflows](workflows.md)). Response: an array of
+`{"name": string, "description": string, "trigger_kind": string, "node_count": number}`; `trigger_kind` is the `kind` of
+the first trigger, empty for a workflow with none. Errors: `409` the server has no `[harness]`; `422` a workflow file
+that cannot be used (the message names its file).
+
+### `GET /v1/workflows/{name}`
+
+One workflow. Response: `{"name": string, "file": string, "definition": object}`, the text of the file exactly as it is
+saved and the definition parsed from it. Errors: `422` the name or the file cannot be used (there is no such workflow, or
+it is not valid); `409` the server has no `[harness]`.
+
+### `PUT /v1/workflows/{name}`
+
+A person adds or changes a workflow. Request: exactly one of `{"file": string}`, the whole TOML file, or
+`{"definition": object}`, the parsed form `GET /v1/workflows/{name}` answers; unknown keys are refused. The definition is
+parsed and validated before anything is written, so every node keeps its `position` and a canvas round-trips; an invalid
+definition is refused with the validation message and the file is untouched. A valid one is written as TOML to
+`workflows/<name>.toml`, committed on the default branch with the message `Add the workflow <name>` or
+`Update the workflow <name>` and pushed to `origin`; the decision is recorded (kind `edit_workflow`, decider `person`).
+Response: the workflow as `GET /v1/workflows/{name}` answers it, with `commit`, the short id of the commit (left out when
+the definition changed nothing). Errors: `422` an invalid name or definition (the message says why); `409` the server has
+no `[harness]`; `409` and `500` as for `PUT /v1/agents/{name}`.
+
+### `DELETE /v1/workflows/{name}`
+
+A person deletes a workflow: the file is removed, committed on the default branch with the message
+`Delete the workflow <name>` and pushed to `origin`, and the decision is recorded (kind `edit_workflow`, decider
+`person`). Response: `{"name": string, "commit": string}` (`commit` is left out when there was nothing to commit). Errors:
+`404` no such workflow; `409` a run of the workflow is queued or running, or the server has no `[harness]`; `422` an
+invalid name; `409` and `500` as for `PUT /v1/agents/{name}`.
+
 ### `GET /v1/skills`
 
 The skills an agent's `skills` can name, for an editor to offer: an array of `{"name": string, "description": string,

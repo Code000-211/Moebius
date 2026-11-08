@@ -414,6 +414,7 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `cli/automations.rs` | `automation` (list, save, run, delete). |
 | `cli/agents.rs` | `agents` and `agent` (show, save, delete). |
 | `cli/rules.rs` | `rules` and `rules save`. |
+| `cli/workflow.rs` | `workflow list`, `show`, `save` and `delete`. |
 | `cli/packages.rs` | `pkg search`, `info`, `install`, `update`, `remove` and `list`, and how their answers are written. |
 | `cli/plugins.rs` | `plugin enable` and `plugin disable [--unwrap-runs] [--allow-unchecked]`: turning a plugin off or on, and how the answer is written. |
 | `cli/ext.rs` | `ext search`, `info`, `add`, `update`, `remove` and `list`: Pi packages, and how a proposed change is written. |
@@ -562,6 +563,7 @@ At the top:
 | `server/api/chats.rs` | Chats with an agent (start, write, offer, end, seen, settings) and what grilling chats ended in. |
 | `server/api/harness.rs` | The agents, skills and MCP servers of the harness configuration repository, and `POST /v1/harness/setup`. |
 | `server/api/rules.rs` | The rules page and the rules in prose. |
+| `server/api/workflows.rs` | The workflows of the harness configuration repository: list, read, save and delete, saving and deleting as commits. |
 | `server/api/settings.rs` | `moebius.toml`, the API keys and the restart, and what the Models, Plugins and Get started pages show. |
 | `server/api/lessons.rs` | The lessons: list, read, edit and delete. |
 | `server/api/extensions.rs` | `/v1/extensions/...`: search, info, the installed packages, and proposals to install, update and remove; and the refusal of an agent's merge of a change that touches a package. |
@@ -740,7 +742,7 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `workflows/mod.rs` | What the workflows folder holds, and what the rest of the crate uses from it. |
-| `workflows/definition.rs` | The workflow file (`workflows/<name>.toml`): its trigger, nodes and edges, parsing it whole, validating its graph, and reading it from the harness configuration repository. |
+| `workflows/definition.rs` | The workflow file (`workflows/<name>.toml`): its trigger, nodes and edges, parsing it whole, validating its graph, and reading and listing it from the harness configuration repository; saving and deleting it are commits in `harness/repo/edits.rs`. |
 | `workflows/nodes/mod.rs` | The node kinds: the `Node` trait, the ports and metadata a kind reports, and the registry that maps a kind name and its parameters to a node. |
 
 Outside `src/`: `kanban/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension
