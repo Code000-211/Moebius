@@ -439,6 +439,19 @@ export function pullUrl(repository: Repository, pullRequest: number): string | n
   return null;
 }
 
+/** The pull request a change was published as, with the address to open it at; none before it is published. */
+export function pullRequestOf(
+  repository: Repository,
+  change: Change | undefined,
+): { number: number; url: string | null; status: Change["state"] } | null {
+  if (change?.pull_request == null) return null;
+  return {
+    number: change.pull_request,
+    url: pullUrl(repository, change.pull_request),
+    status: change.state,
+  };
+}
+
 /** The change of a card: its open one, else the latest it ever had. */
 export function changeOf(board: Board, card: Card): Change | undefined {
   if (card.change) {

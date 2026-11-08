@@ -101,6 +101,9 @@ pub(in crate::harness) fn in_worktree_run(
         .add_run(None, agent, config.harness.name(), "workflow")
         .map_err(|e| StartError::Store(e.to_string()))?;
     app.store
+        .set_run_workflow_run(run.id, workflow_run)
+        .map_err(|e| StartError::Store(e.to_string()))?;
+    app.store
         .set_run_repository(run.id, repository)
         .map_err(|e| StartError::Store(e.to_string()))?;
     let start = head(app, run.id, worktree)?;

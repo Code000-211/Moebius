@@ -1,6 +1,6 @@
 /**
- * The ⋯ menu of a card, on the board and in the dock: Add a sub-issue…, Move to another parent…, Block… or Unblock, and
- * Delete…. The menu only says what was
+ * The ⋯ menu of a card, on the board and in the dock: Add a sub-issue…, Move to another parent…, Stop run (while a run is live), Block… or
+ * Unblock, and Delete…. The menu only says what was
  * chosen; the page owns the questions that follow (`CardDialogs.tsx`) and the requests. It is a real menu — the
  * trigger is a button with a name, Enter and the arrow keys work, Escape closes it and returns to the button — and it
  * keeps every key and click that happens in it to itself, because the card it sits in opens on Enter, is picked up for
@@ -16,6 +16,7 @@ import {
   PlayIcon,
   PlusIcon,
   ProhibitIcon,
+  StopIcon,
   TrashIcon,
   TreeStructureIcon,
 } from "@phosphor-icons/react";
@@ -28,7 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "../../ui/components/DropdownMenu";
 import { cn } from "../../ui/lib/cn";
-import { isHeld } from "./model";
+import { isHeld, isLive } from "./model";
 
 /** Keeps an event from reaching the card or the dock that the menu sits in. */
 const keep = (event: SyntheticEvent) => event.stopPropagation();
@@ -37,6 +38,7 @@ export function CardMenu({
   card,
   onBlock,
   onUnblock,
+  onStop,
   onDelete,
   onAddSubIssue,
   onMoveParent,
@@ -50,6 +52,8 @@ export function CardMenu({
   /** Asks for the reason to block with; the page opens its dialog. */
   onBlock: (card: Card) => void;
   onUnblock: (card: Card) => void;
+  /** Stops the live run of the card; offered only while there is one. */
+  onStop: (card: Card) => void;
   /** Asks before deleting; the page opens its dialog. */
   onDelete: (card: Card) => void;
   className?: string;
@@ -98,6 +102,12 @@ export function CardMenu({
           <TreeStructureIcon aria-hidden="true" />
           Move to another parent…
         </DropdownMenuItem>
+        {isLive(card) && (
+          <DropdownMenuItem onSelect={() => onStop(card)}>
+            <StopIcon aria-hidden="true" />
+            Stop run
+          </DropdownMenuItem>
+        )}
         {isHeld(card) ? (
           <DropdownMenuItem onSelect={() => onUnblock(card)}>
             <PlayIcon aria-hidden="true" />

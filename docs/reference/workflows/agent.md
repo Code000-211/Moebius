@@ -41,9 +41,9 @@ port = "summary"
 ## Behaviour
 
 - The first agent node of a run checks the run's repository out into a worktree of its own, on the branch
-  `moebius/workflow-run-<run id>` of the repository's clone, and the run keeps that worktree's path with itself. The
-  later agent nodes of the same run work in that worktree and on that branch, so what one agent left is there for the
-  next; one work of a run ends as one branch.
+  `moebius/workflow-run-<workflow run id>` of the repository's clone, and the run keeps that worktree's path with
+  itself. The later agent nodes of the same run work in that worktree and on that branch, so what one agent left is
+  there for the next; one work of a run ends as one branch.
 - The node asks the agent to end its final message with a fenced JSON block; the node's value is that block, the last
   one of the answer, parsed as JSON. The `output` parameter names the port the value leaves by, and is not a key
   inside the value: the block holds the value whole.

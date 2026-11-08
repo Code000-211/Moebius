@@ -55,7 +55,7 @@ import {
   issueUrl,
   labelsOf,
   nextCard,
-  pullUrl,
+  pullRequestOf,
   rootOf,
   type Stack,
   stackWords,
@@ -80,6 +80,7 @@ const COLUMN_EMPTY: Record<string, string> = {
 type CardMenuActions = {
   onBlock: (card: Card) => void;
   onUnblock: (card: Card) => void;
+  onStop: (card: Card) => void;
   onDelete: (card: Card) => void;
   onAddSubIssue: (card: Card) => void;
   onMoveParent: (card: Card) => void;
@@ -203,6 +204,9 @@ export function BoardPage() {
   const menu = {
     onBlock: setBlocking,
     onUnblock: (card: Card) => decide({ kind: "unblock", card: card.id, number: card.number }),
+    onStop: (card: Card) => {
+      if (card.run) decide({ kind: "stop", run: card.run.id, number: card.number });
+    },
     onDelete: setDeleting,
     onAddSubIssue: (card: Card) => setCreating({ parent: card.number }),
     onMoveParent: setMoving,
@@ -598,15 +602,7 @@ function CardContent({
         ) : undefined
       }
       badges={cardBadges(card, status, next === card.id)}
-      pullRequest={
-        change?.pull_request != null
-          ? {
-              number: change.pull_request,
-              url: pullUrl(board.repository, change.pull_request),
-              status: change.state,
-            }
-          : null
-      }
+      pullRequest={pullRequestOf(board.repository, change)}
       rounds={coding ? { done: card.rounds, limit: board.round_limit } : null}
       isLoading={status === "live"}
       muted={card.column === "Done" || card.closed}

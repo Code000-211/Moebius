@@ -452,6 +452,8 @@ mod a_run {
         assert_eq!(agents.len(), 1, "one agent node, one run");
         assert_eq!(agents[0].purpose, "workflow");
         assert_eq!(agents[0].status, "succeeded");
+        // The run names the branch its work is committed on, so a diff of it finds that work.
+        assert_eq!(agents[0].branch(), World::branch(run_id));
         assert!(
             !world.app.store.events(agents[0].id).unwrap().is_empty(),
             "the agent's transcript is in its run's log"
