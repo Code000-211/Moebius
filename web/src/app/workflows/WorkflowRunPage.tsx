@@ -159,7 +159,7 @@ function NodePanel({ node, waiting }: { node: WorkflowNodeRun; waiting: boolean 
       aria-current={waiting ? "step" : undefined}
       className={
         waiting
-          ? "flex flex-col gap-4 rounded-card border border-attention-text bg-surface p-4 shadow-card"
+          ? "flex flex-col gap-4 rounded-card bg-surface p-4 shadow-card"
           : "flex flex-col gap-4 rounded-card bg-surface p-4 shadow-card"
       }
     >

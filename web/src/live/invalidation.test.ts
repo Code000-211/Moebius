@@ -153,7 +153,7 @@ describe("invalidates", () => {
     queryClient.setQueryData(keys.workflowRun(7), {});
     applyEvent(queryClient, {
       kind: "workflow_node_ended",
-      data: { run: 7, node: "test", attempt: 1, status: "done", error: null },
+      data: { run: 7, node: "test", attempt: 1, status: "succeeded", error: null },
     });
     expect(stale(queryClient, keys.workflows)).toBe(true);
     expect(stale(queryClient, keys.workflow("release"))).toBe(true);

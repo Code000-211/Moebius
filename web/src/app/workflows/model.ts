@@ -32,7 +32,7 @@ export function runStatus(status: string): { label: string; tone: TagTone } {
       return { label: "Running", tone: "progress" };
     case "waiting":
       return { label: "Waiting", tone: "attention" };
-    case "done":
+    case "succeeded":
       return { label: "Done", tone: "complete" };
     case "failed":
       return { label: "Failed", tone: "error" };

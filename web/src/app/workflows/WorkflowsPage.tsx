@@ -12,7 +12,7 @@ import { Link } from "react-router";
 import { keys } from "../../api/keys";
 import { workflows } from "../../api/workflows";
 import { Tag } from "../../ui/chat/Tag";
-import { ago } from "../../ui/lib/format";
+import { ago, plural } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import { Empty } from "../../ui/page/Empty";
 import { PageHeader } from "../../ui/page/PageHeader";
@@ -82,9 +82,7 @@ export function WorkflowsPage() {
                       {each.description}
                     </p>
                     <div className="mt-auto flex flex-wrap items-center justify-between gap-3 text-sm text-secondary">
-                      <span>
-                        {each.node_count} {each.node_count === 1 ? "node" : "nodes"}
-                      </span>
+                      <span>{plural(each.node_count, "node", "nodes")}</span>
                       {last && status ? (
                         <Link
                           className="flex min-w-0 items-center gap-2 rounded-round underline-offset-4 hover:underline"

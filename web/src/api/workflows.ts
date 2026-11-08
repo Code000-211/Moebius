@@ -65,7 +65,7 @@ export interface WorkflowNodeRun {
   node: string;
   kind: string;
   attempt: number;
-  /** `queued`, `running`, `waiting`, `done`, `failed` or `skipped`. */
+  /** `queued`, `running`, `waiting`, `succeeded`, `failed` or `skipped`. */
   status: string;
   input: unknown;
   output: unknown;
@@ -89,7 +89,7 @@ export interface WorkflowRun {
   workflow: string;
   repository_id: number;
   trigger: WorkflowTrigger;
-  /** `queued`, `running`, `waiting`, `done`, `failed` or `cancelled`. */
+  /** `queued`, `running`, `waiting`, `succeeded`, `failed` or `cancelled`. */
   status: string;
   /** The value the run was started with. */
   value: unknown;

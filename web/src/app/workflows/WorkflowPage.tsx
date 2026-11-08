@@ -14,7 +14,7 @@ import { workflow } from "../../api/workflows";
 import { CodeBlock } from "../../ui/chat/CodeBlock";
 import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
-import { ago } from "../../ui/lib/format";
+import { ago, plural } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
@@ -89,7 +89,7 @@ export function WorkflowPage() {
             <div className="flex flex-wrap items-center gap-2">
               <Tag tone="plain">{triggerName(saved.trigger)}</Tag>
               <span className="text-sm text-secondary">
-                {saved.node_count} {saved.node_count === 1 ? "node" : "nodes"}
+                {plural(saved.node_count, "node", "nodes")}
               </span>
             </div>
             <p className="m-0 text-sm text-secondary">

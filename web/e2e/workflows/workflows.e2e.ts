@@ -116,22 +116,22 @@ describe.skipIf(usesRealServer)("a run that failed at a node", () => {
     const test = run?.nodes.find((node) => node.node === "test");
     if (!run || !test) throw new Error("the fake failed run is not what the test expects");
 
-    test.status = "done";
+    test.status = "succeeded";
     test.error = null;
     test.output = { passed: 62, failed: 0 };
     server.broadcast?.({
       kind: "workflow_node_ended",
-      data: { run: 41, node: "test", attempt: 1, status: "done", error: null },
+      data: { run: 41, node: "test", attempt: 1, status: "succeeded", error: null },
     });
     const panel = page.getByRole("region", { name: "Node test" });
     await panel.getByText('"passed": 62').waitFor();
     await panel.getByText("Done", { exact: true }).waitFor();
 
-    run.status = "done";
+    run.status = "succeeded";
     run.error = null;
     server.broadcast?.({
       kind: "workflow_run_ended",
-      data: { run: 41, status: "done", error: null },
+      data: { run: 41, status: "succeeded", error: null },
     });
     await page.getByRole("region", { name: "Run" }).getByText("Done", { exact: true }).waitFor();
     await page.getByText("The test node failed.").waitFor({ state: "detached" });

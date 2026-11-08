@@ -28,7 +28,7 @@ const FAILED: WorkflowRun = {
       node: "build",
       kind: "agent",
       attempt: 1,
-      status: "done",
+      status: "succeeded",
       input: { prompt: "Build the release" },
       output: { stdout: LONG },
       log: "built the workspace in 41s",
