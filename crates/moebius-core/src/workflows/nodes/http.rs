@@ -1,6 +1,7 @@
 //! The `http` node: one HTTP request, made by the server, because the sandbox has no network. The URL must pass the
 //! URL policy (only hosts named in the server configuration), a credential is named and never written in the
-//! workflow, and a refusal or a failure fails the node closed.
+//! workflow, and a refusal or a failure fails the node closed. The parameters are read when the node runs, so the
+//! URL, a header value and the body may hold expressions the run fills.
 
 use std::io::Read;
 use std::sync::{Arc, RwLock};
@@ -10,10 +11,11 @@ use reqwest::Url;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use serde_json::{Map, Value as Json};
 
-use super::{Metadata, Node, NodeError, Ports};
+use super::{Metadata, Node, NodeError, Ports, Routed};
 use crate::blobs::{redact, remember_secret};
 use crate::config::Config;
 use crate::server::settings::Secrets;
+use crate::workflows::decorate::{self, Scope};
 
 /// The kind name a workflow file writes.
 pub const KIND: &str = "http";
@@ -58,10 +60,18 @@ fn configured() -> Option<Arc<Settings>> {
     SETTINGS.read().unwrap_or_else(|p| p.into_inner()).clone()
 }
 
-/// A node that makes one HTTP request and outputs `{status, headers, body}`.
+/// A node that makes one HTTP request and outputs `{status, headers, body}`. Its parameters are kept as the workflow
+/// wrote them, so the expressions they carry are filled from the run when the node runs.
 #[derive(Debug, Clone)]
 pub struct HttpNode {
-    method: reqwest::Method,
+    params: Json,
+    settings: Option<Arc<Settings>>,
+}
+
+/// The request the node makes: its parameters read after the run filled their expressions.
+#[derive(Debug, Clone)]
+struct Request {
+    method: String,
     url: String,
     headers: Vec<(String, String)>,
     body: Option<Json>,
@@ -79,12 +89,33 @@ struct SecretHeader {
 }
 
 impl HttpNode {
-    /// Builds the node from its parameters, already filled from their expressions, with the server's settings.
+    /// Builds the node from the parameters as the workflow wrote them, with the server's settings.
     pub fn from_params(params: &Json) -> Result<Self, NodeError> {
         Self::with_settings(params, configured())
     }
 
     fn with_settings(params: &Json, settings: Option<Arc<Settings>>) -> Result<Self, NodeError> {
+        // Read once here with the expressions left standing, so a file naming an unknown parameter, a header that is
+        // not a string or a method the node does not have is refused when it is read. The node reads its parameters
+        // again once the run has filled them, and refuses what only an expression could produce then.
+        Request::parse(params, None, true)?;
+        Ok(Self {
+            params: params.clone(),
+            settings,
+        })
+    }
+}
+
+impl Request {
+    /// Reads parameters into a request. `allow_expressions` leaves a value that still holds an expression unchecked,
+    /// since its value is only known when the node runs; the node reads the filled parameters with it off.
+    fn parse(
+        params: &Json,
+        settings: Option<Arc<Settings>>,
+        allow_expressions: bool,
+    ) -> Result<Self, NodeError> {
+        // A string that still holds `{{` is a value the run has yet to fill.
+        let pending = |text: &str| allow_expressions && text.contains("{{");
         let invalid = |message: String| NodeError::Parameters {
             kind: KIND.to_string(),
             message,
@@ -113,8 +144,13 @@ impl HttpNode {
             }
         };
         let method = text("method")?.unwrap_or_else(|| "GET".to_string());
-        let method = method.to_ascii_uppercase();
-        if !METHODS.contains(&method.as_str()) {
+        // A method the run will fill is left as written: its text is an expression, not a name yet.
+        let method = if pending(&method) {
+            method
+        } else {
+            method.to_ascii_uppercase()
+        };
+        if !METHODS.contains(&method.as_str()) && !pending(&method) {
             return Err(invalid(format!(
                 "\"method\" must be one of {}",
                 METHODS.join(", ")
@@ -140,6 +176,9 @@ impl HttpNode {
         }
         let timeout = match map.get("timeout_seconds") {
             None => DEFAULT_TIMEOUT_SECONDS,
+            // Seconds the run has yet to fill stand in as the default while the file is read; the node reads the
+            // filled value and checks it for real.
+            Some(value) if pending(value.as_str().unwrap_or_default()) => DEFAULT_TIMEOUT_SECONDS,
             Some(value) => match value.as_f64() {
                 Some(seconds) if seconds > 0.0 && seconds <= MAX_TIMEOUT_SECONDS => seconds,
                 _ => {
@@ -163,7 +202,7 @@ impl HttpNode {
             None => None,
         };
         Ok(Self {
-            method: method.parse().map_err(|_| invalid("bad method".into()))?,
+            method,
             url,
             headers,
             body: map.get("body").filter(|body| !body.is_null()).cloned(),
@@ -252,7 +291,14 @@ impl HttpNode {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| NodeError::Failed(describe(&e)))?;
-        let mut request = client.request(self.method.clone(), url).headers(headers);
+        let method = reqwest::Method::from_bytes(self.method.as_bytes()).map_err(|_| {
+            NodeError::Failed(format!(
+                "\"{}\" is not one of {}",
+                self.method,
+                METHODS.join(", ")
+            ))
+        })?;
+        let mut request = client.request(method, url).headers(headers);
         match &self.body {
             None => {}
             Some(Json::String(text)) => request = request.body(text.clone()),
@@ -331,14 +377,34 @@ fn without_url(error: &reqwest::Error) -> String {
 }
 
 impl Node for HttpNode {
-    fn run(&self, _input: Json) -> Result<Json, NodeError> {
+    /// Makes the request with only the value that reached the node to fill its expressions; the executor runs the
+    /// node through [`Node::run_routed`], which also has the trigger and the earlier nodes.
+    fn run(&self, input: Json) -> Result<Json, NodeError> {
+        let scope = Scope {
+            trigger: Json::Null,
+            input,
+            nodes: Default::default(),
+        };
+        Ok(self.run_routed(&scope)?.value)
+    }
+
+    /// Fills the expressions the parameters hold from the run, reads them, and makes the request.
+    fn run_routed(&self, scope: &Scope) -> Result<Routed, NodeError> {
+        let filled = decorate::fill(KIND, &self.params, scope).map_err(|error| {
+            NodeError::Failed(format!(
+                "parameter {:?}: {}",
+                error.parameter, error.message
+            ))
+        })?;
+        let request = Request::parse(&filled, self.settings.clone(), false)?;
         // The request runs on a thread of its own, since the blocking client must not start inside a runtime.
-        std::thread::scope(|scope| {
-            scope
-                .spawn(|| self.call())
+        let value = std::thread::scope(|thread| {
+            thread
+                .spawn(|| request.call())
                 .join()
                 .unwrap_or_else(|_| Err(NodeError::Failed("the request panicked".to_string())))
-        })
+        })?;
+        Ok(Routed { value, port: None })
     }
 
     fn ports(&self) -> Ports {
@@ -425,18 +491,79 @@ mod tests {
         assert_eq!(output["headers"]["x-total"], "2");
 
         // The next node reads it through an expression, as any node's output.
-        let scope = crate::workflows::decorate::Scope {
+        let scope = Scope {
             trigger: json!(null),
             input: output,
             nodes: Default::default(),
         };
-        let filled = crate::workflows::decorate::fill(
+        let filled = decorate::fill(
             "next",
             &json!({"second": "{{ input.body.items[2] }}", "status": "{{ input.status }}"}),
             &scope,
         )
         .unwrap();
         assert_eq!(filled, json!({"second": 2, "status": 200}));
+    }
+
+    /// The node fills the expressions its own parameters hold from the run: the trigger, the value that reached it,
+    /// and the values of the nodes before it.
+    #[test]
+    fn the_expressions_in_the_parameters_are_filled_before_the_call() {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let record = seen.clone();
+        let fake = serve(Router::new().fallback(get(
+            |uri: axum::extract::OriginalUri, headers: AxumHeaders| async move {
+                let branch = headers["x-branch"].to_str().unwrap_or_default().to_string();
+                record
+                    .lock()
+                    .unwrap()
+                    .push((uri.0.path().to_string(), branch));
+                StatusCode::OK
+            },
+        )));
+        let dir = tempfile::tempdir().unwrap();
+        let mut earlier = std::collections::BTreeMap::new();
+        earlier.insert("build".to_string(), json!({"tag": "v2"}));
+        let http = node(
+            json!({
+                "url": format!("http://{}/runs/{{{{ trigger.number }}}}", fake.addr),
+                "headers": {"X-Branch": "{{ node(\"build\").tag }}"},
+            }),
+            settings(dir.path(), &["127.0.0.1"]),
+        );
+        let scope = Scope {
+            trigger: json!({"number": 7}),
+            input: json!(null),
+            nodes: earlier,
+        };
+        assert_eq!(http.run_routed(&scope).unwrap().value["status"], 200);
+        assert_eq!(
+            seen.lock().unwrap().as_slice(),
+            [("/runs/7".to_string(), "v2".to_string())]
+        );
+    }
+
+    /// An expression that does not evaluate fails the node closed, naming the parameter it was in, and no request is
+    /// made.
+    #[test]
+    fn an_expression_that_fails_fails_the_node_without_a_call() {
+        let seen = Arc::new(Mutex::new(0));
+        let record = seen.clone();
+        let fake = serve(Router::new().fallback(get(move || async move {
+            *record.lock().unwrap() += 1;
+            StatusCode::OK
+        })));
+        let dir = tempfile::tempdir().unwrap();
+        let http = node(
+            json!({"url": format!("http://{}/{{{{ nil + 1 }}}}", fake.addr)}),
+            settings(dir.path(), &["127.0.0.1"]),
+        );
+        let error = match http.run(json!(null)) {
+            Err(NodeError::Failed(message)) => message,
+            other => panic!("expected a failure, got {other:?}"),
+        };
+        assert!(error.contains("url"), "{error}");
+        assert_eq!(*seen.lock().unwrap(), 0);
     }
 
     #[test]
@@ -608,6 +735,36 @@ mod tests {
         assert_eq!(fails(&http), "the request timed out after 0.3 seconds");
     }
 
+    /// A method that only the run knows is checked when it runs, and a wrong one fails the node before any request.
+    #[test]
+    fn a_method_filled_from_the_run_is_checked_when_the_node_runs() {
+        let seen = Arc::new(Mutex::new(0));
+        let record = seen.clone();
+        let fake = serve(Router::new().fallback(get(move || async move {
+            *record.lock().unwrap() += 1;
+            StatusCode::OK
+        })));
+        let dir = tempfile::tempdir().unwrap();
+        let http = node(
+            json!({
+                "url": format!("http://{}/go", fake.addr),
+                "method": "{{ trigger.verb }}",
+            }),
+            settings(dir.path(), &["127.0.0.1"]),
+        );
+        let scope = Scope {
+            trigger: json!({"verb": "TRACE"}),
+            input: json!(null),
+            nodes: Default::default(),
+        };
+        let error = match http.run_routed(&scope) {
+            Err(NodeError::Parameters { message, .. }) => message,
+            other => panic!("expected a refusal, got {other:?}"),
+        };
+        assert!(error.contains("\"method\" must be one of"), "{error}");
+        assert_eq!(*seen.lock().unwrap(), 0);
+    }
+
     #[test]
     fn parameters_are_checked() {
         let bad = |params: Json| match HttpNode::with_settings(&params, None) {
@@ -628,5 +785,11 @@ mod tests {
         assert!(
             bad(json!({"url": "https://a", "secret_header": "X"})).contains("need a \"secret\"")
         );
+        // A value the run will fill is not a value to refuse while the file is read.
+        HttpNode::with_settings(
+            &json!({"url": "{{ trigger.url }}", "timeout_seconds": "{{ trigger.seconds }}"}),
+            None,
+        )
+        .unwrap();
     }
 }

@@ -25,6 +25,23 @@ params = { method = "GET", url = "https://api.example.com/items/{{ input.id }}",
 
 Any other key is refused, and so is a `secret` that names nothing in the file (the node fails when it runs).
 
+## Expressions
+
+A parameter string is filled before the request is made: the URL, a header value, the body, a method, a secret name. As
+everywhere in a workflow, an expression reads the trigger as `trigger`, the value that reached the node as `input`, and
+an earlier node's output as `node("<id>")` — see [Expressions](expressions.md).
+
+```toml
+[[nodes]]
+id = "fetch-tag"
+kind = "http"
+params = { url = "https://api.example.com/runs/{{ trigger.number }}", headers = { X-Run = "{{ node(\"build\").tag }}" } }
+```
+
+The parameter names and their shapes are checked when the workflow is read, so a misspelled key or a header that is not
+a string is refused then. A value that an expression will fill is checked when the node runs, since that is when its
+value is known: a method that is not one of the six, or a `timeout_seconds` that fills to a string, fails the node.
+
 ## Secrets
 
 A credential is given only by name. The node reads the value from `secrets.toml` when it runs, sends it, and passes it
@@ -62,9 +79,13 @@ One input, `in`, and one output, `out`.
 
 ## Failure
 
-The node fails, and no output is stored, when the URL policy refuses the call, the secret is not found or is not a
+The node fails, and no output is stored, when the URL policy refuses the call, an expression in a parameter does not
+evaluate or fills to a value the node cannot use, the secret is not found or is not a
 valid header value, a header is not valid, the connection fails, the request takes longer than `timeout_seconds`
 (`the request timed out after <n> seconds`), or the body is longer than 10 MiB. Messages never include the URL's query
-or a secret.
+or a secret. A failing expression names the parameter it was in (`parameter "url": ...`) and no request is made.
+
+The run's `node_timeout_seconds` bounds the node as a whole, so a request whose `timeout_seconds` is longer than that
+is ended by the run, not by the node.
 
 The module is `crates/moebius-core/src/workflows/nodes/http.rs`.
