@@ -358,3 +358,47 @@ fn every_path_the_documentation_names_in_the_crates_exists() {
     }
     assert!(missing.is_empty(), "paths that do not exist: {missing:#?}");
 }
+
+#[test]
+fn every_workflow_node_kind_has_a_reference_page() {
+    let registry = source("crates/moebius-core/src/workflows/nodes/mod.rs");
+    let index = read("docs/reference/workflows.md");
+    let mut pages = Vec::new();
+    for line in registry.lines() {
+        let Some((module, _)) = line.trim().split_once("::KIND =>") else {
+            continue;
+        };
+        let page = module.trim().replace('_', "-");
+        let path = format!("docs/reference/workflows/{page}.md");
+        assert!(
+            repository_root().join(&path).exists(),
+            "the {page} node has no reference page at {path}"
+        );
+        assert!(
+            index.contains(&format!("](workflows/{page}.md)")),
+            "docs/reference/workflows.md does not link to workflows/{page}.md"
+        );
+        pages.push(page);
+    }
+    assert!(pages.len() >= 7, "only {} node kinds found", pages.len());
+}
+
+#[test]
+fn the_workflow_guide_page_is_indexed_and_shows_the_example_in_full() {
+    let page = read("docs/guide/workflows.md");
+    assert!(
+        read("docs/guide/README.md").contains("](workflows.md)"),
+        "docs/guide/README.md does not link to the workflow guide"
+    );
+    let example = read("examples/workflows/release-preview.toml");
+    for line in example
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+    {
+        assert!(
+            page.contains(line),
+            "docs/guide/workflows.md does not show {line:?} of its example"
+        );
+    }
+}

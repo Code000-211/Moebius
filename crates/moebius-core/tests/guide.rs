@@ -5,6 +5,7 @@
 //!   runs it against a card in that script's column; it must not fail. A marker `<!-- script: ready.luau; test: key -->`
 //!   also runs the scenario `key` below, which checks what the script does.
 //! - ```` ```toml ```` blocks are `moebius.toml` snippets and must pass `Config::parse`, unless marked `<!-- skip -->`.
+//!   Blocks marked `<!-- workflow -->` are whole workflow files and must pass `WorkflowDefinition::validate`.
 //!   Blocks marked `<!-- agent-file -->` are `agents/<name>.toml` files of the harness configuration repository and must
 //!   parse as the settings of an agent.
 //! - ```` ```rules ```` blocks, and ```` ```markdown ```` blocks marked `<!-- rules -->`, are `rules.md` files and must
@@ -28,6 +29,7 @@ use moebius_core::decide::rules;
 use moebius_core::harness::repo::AgentSettings;
 use moebius_core::repos::git;
 use moebius_core::store::{Card, Run, Store};
+use moebius_core::workflows::definition::WorkflowDefinition;
 use moebius_plugin_api::{
     Call, DecideRequest, Decision, Host, Kind, Manifest, Plugin, PluginError,
 };
@@ -115,7 +117,7 @@ fn all_blocks(language: &str) -> Vec<Block> {
 
 // ---- The pages -----------------------------------------------------------------------------------------------
 
-const PAGES: [&str; 12] = [
+const PAGES: [&str; 13] = [
     "README.md",
     "column-scripts.md",
     "kanban.md",
@@ -128,6 +130,7 @@ const PAGES: [&str; 12] = [
     "autoresearch.md",
     "grilling.md",
     "running-moebius.md",
+    "workflows.md",
 ];
 
 #[test]
@@ -177,6 +180,7 @@ fn links_to_files_point_at_files_that_exist() {
 fn every_toml_block_is_a_configuration_unless_it_says_skip() {
     let mut parsed = 0;
     let mut agent_files = 0;
+    let mut workflows = 0;
     for block in all_blocks("toml") {
         match block.marker.as_deref() {
             Some("skip") => continue,
@@ -184,6 +188,15 @@ fn every_toml_block_is_a_configuration_unless_it_says_skip() {
                 toml::from_str::<AgentSettings>(&block.text)
                     .unwrap_or_else(|e| panic!("{}: {e}", block.name()));
                 agent_files += 1;
+                continue;
+            }
+            Some("workflow") => {
+                let definition = WorkflowDefinition::parse(&block.text, "workflows/guide.toml")
+                    .unwrap_or_else(|e| panic!("{}: {e}", block.name()));
+                definition
+                    .validate("workflows/guide.toml")
+                    .unwrap_or_else(|e| panic!("{}: {e}", block.name()));
+                workflows += 1;
                 continue;
             }
             None => {}
@@ -199,6 +212,7 @@ fn every_toml_block_is_a_configuration_unless_it_says_skip() {
     }
     assert!(parsed >= 4, "only {parsed} configurations found");
     assert!(agent_files >= 2, "only {agent_files} agent files found");
+    assert!(workflows >= 1, "only {workflows} workflow files found");
 }
 
 #[test]
