@@ -390,7 +390,7 @@ function ChatSection({
     <Section title="Chats" collapsed={false}>
       <li className="flex items-center gap-1">
         <Button asChild variant="secondary" size="sm" className="min-w-0 flex-1">
-          <Link to="/chat" aria-label="Start a new chat">
+          <Link to="/chat" aria-label="Start a chat in the sidebar">
             <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
             New chat
           </Link>

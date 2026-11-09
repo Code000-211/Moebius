@@ -297,7 +297,7 @@ describe("the list of chats", () => {
 
   it("sits a compact way to a new chat above the list", async () => {
     show({ at: "/chat" });
-    const fresh = await screen.findByRole("link", { name: "Start a new chat" });
+    const fresh = await screen.findByRole("link", { name: "Start a chat in the sidebar" });
     expect(fresh.getAttribute("href")).toBe("/chat");
   });
 
