@@ -101,10 +101,17 @@ impl Harnesses {
         worktree: &Path,
         (workflow_run, prompt): (i64, &str),
     ) -> Result<Run, StartError> {
+        // A run cancelled before its next node started must not start it, even when the node's thread had already
+        // got past the run's own check.
+        if app.workflow_run_has_stopped(workflow_run) {
+            return Err(StartError::LaunchFailed(
+                "the workflow run has stopped".into(),
+            ));
+        }
         // Pi-Bolt for an agent that does not exist, which refuses it, as with every other start.
         let harness = resolve_agent(&self.agent_set(), &app.data_dir, agent)
             .map_or(HarnessKind::PiBolt, |agent| agent.harness);
-        match harness {
+        let started = match harness {
             HarnessKind::PiBolt => self.pi_bolt.start_workflow_run(
                 app,
                 agent,
@@ -119,7 +126,13 @@ impl Harnesses {
                 worktree,
                 (workflow_run, prompt),
             ),
+        };
+        // A cancel that landed while the agent run was being recorded found no process to stop: the harness knew none
+        // yet. The run has stopped now, so stop the process before it does any work.
+        if let Ok(run) = &started {
+            app.stop_late_workflow_node_run(self, workflow_run, run.id);
         }
+        started
     }
 }
 

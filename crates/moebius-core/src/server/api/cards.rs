@@ -386,7 +386,7 @@ async fn reject_change(
     Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(rejection): axum::Json<Reason>,
-) -> Result<axum::Json<Card>, ApiError> {
+) -> Result<axum::Json<Option<Card>>, ApiError> {
     blocking(&state.app, move |app| {
         app.reject_change(&by, id, &rejection.reason)
     })

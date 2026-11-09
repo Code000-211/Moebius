@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{Result, Store, now};
 
-const CHANGE_COLUMNS: &str = "id, repository_id, card_id, branch, state, pull_request, checks, review, \
+const CHANGE_COLUMNS: &str = "id, repository_id, card_id, run_id, branch, state, pull_request, checks, review, \
      head, published_at, checks_head, failed_checks, check_output, harness_repository";
 
 fn change_from_row(r: &rusqlite::Row) -> rusqlite::Result<Change> {
@@ -13,17 +13,18 @@ fn change_from_row(r: &rusqlite::Row) -> rusqlite::Result<Change> {
         id: r.get(0)?,
         repository_id: r.get(1)?,
         card_id: r.get(2)?,
-        branch: r.get(3)?,
-        state: r.get(4)?,
-        pull_request: r.get(5)?,
-        checks: r.get(6)?,
-        review: r.get(7)?,
-        head: r.get(8)?,
-        published_at: r.get(9)?,
-        checks_head: r.get(10)?,
-        failed_checks: r.get(11)?,
-        check_output: r.get(12)?,
-        harness_repository: r.get(13)?,
+        run_id: r.get(3)?,
+        branch: r.get(4)?,
+        state: r.get(5)?,
+        pull_request: r.get(6)?,
+        checks: r.get(7)?,
+        review: r.get(8)?,
+        head: r.get(9)?,
+        published_at: r.get(10)?,
+        checks_head: r.get(11)?,
+        failed_checks: r.get(12)?,
+        check_output: r.get(13)?,
+        harness_repository: r.get(14)?,
     })
 }
 
@@ -33,6 +34,8 @@ pub struct Change {
     /// The repository the change belongs to; none for a change of the harness configuration repository.
     pub repository_id: Option<i64>,
     pub card_id: Option<i64>,
+    /// The workflow run whose work the change offers; none for a change of a card or a chat.
+    pub run_id: Option<i64>,
     pub branch: String,
     pub state: String,
     /// The number of the change's pull request on GitHub.
@@ -64,18 +67,45 @@ impl Store {
         pull_request: Option<i64>,
         head: &str,
     ) -> Result<Change> {
-        self.insert_change(Some(repository_id), card_id, branch, pull_request, head)
+        self.insert_change(
+            Some(repository_id),
+            card_id,
+            None,
+            branch,
+            pull_request,
+            head,
+        )
     }
 
     /// Adds a change of the harness configuration repository, which has no card and no pull request.
     pub fn add_harness_change(&self, branch: &str, head: &str) -> Result<Change> {
-        self.insert_change(None, None, branch, None, head)
+        self.insert_change(None, None, None, branch, None, head)
+    }
+
+    /// Adds the change of the workflow run `run_id`, which has no card: the branch is the run's.
+    pub fn add_run_change(
+        &self,
+        repository_id: i64,
+        run_id: i64,
+        branch: &str,
+        pull_request: Option<i64>,
+        head: &str,
+    ) -> Result<Change> {
+        self.insert_change(
+            Some(repository_id),
+            None,
+            Some(run_id),
+            branch,
+            pull_request,
+            head,
+        )
     }
 
     fn insert_change(
         &self,
         repository_id: Option<i64>,
         card_id: Option<i64>,
+        run_id: Option<i64>,
         branch: &str,
         pull_request: Option<i64>,
         head: &str,
@@ -84,14 +114,15 @@ impl Store {
         let at = now();
         let harness_repository = repository_id.is_none();
         conn.execute(
-            "INSERT INTO changes (repository_id, card_id, branch, state, pull_request, head, published_at, created_at, \
-             harness_repository) VALUES (?1, ?2, ?3, 'open', ?4, ?5, ?6, ?6, ?7)",
-            params![repository_id, card_id, branch, pull_request, head, at, harness_repository],
+            "INSERT INTO changes (repository_id, card_id, run_id, branch, state, pull_request, head, published_at, \
+             created_at, harness_repository) VALUES (?1, ?2, ?3, ?4, 'open', ?5, ?6, ?7, ?7, ?8)",
+            params![repository_id, card_id, run_id, branch, pull_request, head, at, harness_repository],
         )?;
         Ok(Change {
             id: conn.last_insert_rowid(),
             repository_id,
             card_id,
+            run_id,
             branch: branch.into(),
             state: "open".into(),
             pull_request,
@@ -166,6 +197,15 @@ impl Store {
         self.rows(
             &format!("SELECT {CHANGE_COLUMNS} FROM changes WHERE repository_id = ?1 ORDER BY id"),
             [repository_id],
+            change_from_row,
+        )
+    }
+
+    /// The changes a workflow run offered, oldest first.
+    pub fn changes_for_run(&self, run_id: i64) -> Result<Vec<Change>> {
+        self.rows(
+            &format!("SELECT {CHANGE_COLUMNS} FROM changes WHERE run_id = ?1 ORDER BY id"),
+            [run_id],
             change_from_row,
         )
     }

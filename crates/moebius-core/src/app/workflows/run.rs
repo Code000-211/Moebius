@@ -4,6 +4,7 @@
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::thread;
 
 use serde_json::Value;
@@ -89,7 +90,8 @@ impl App {
     /// Runs one stored run to its end, recording each node before it starts and after it finishes. A run a stopped
     /// server left at `resume` starts again at that node, with the value that reached it, while expressions still see
     /// the run's own trigger and the values the nodes before it left, so no node before it runs a second time; a
-    /// fresh run starts at the trigger with its own value. Only one thread drives a run at a time.
+    /// fresh run starts at the trigger with its own value. Only one thread drives a run at a time. A run cancelled
+    /// before it started never starts; a cancel while it goes stops it at its current node.
     pub(super) fn drive_workflow_run(
         self: &Arc<Self>,
         run_id: i64,
@@ -102,19 +104,49 @@ impl App {
         self.drive_claimed_workflow_run(run_id, definition, resume, driving)
     }
 
-    /// Runs a stored run whose driving this thread already claims; `driving` keeps the claim until the run ends.
+    /// Runs a stored run whose driving this thread already claims; `driving` keeps the claim until the run ends. The
+    /// run's cancellation flag is registered for the drive and left behind when the run has ended, since nobody looks
+    /// at it again.
     pub(super) fn drive_claimed_workflow_run(
         self: &Arc<Self>,
         run_id: i64,
         definition: WorkflowDefinition,
         resume: Option<Resume>,
+        driving: Driving,
+    ) -> Result<()> {
+        let cancellation = self.workflow_run_cancellation(run_id);
+        let result = self.drive_claimed_workflow_run_to_end(
+            run_id,
+            definition,
+            resume,
+            driving,
+            cancellation.clone(),
+        );
+        self.forget_workflow_run_cancellation(run_id);
+        result
+    }
+
+    /// Carries a claimed run from its start to its end, stopping where `cancellation` is set.
+    fn drive_claimed_workflow_run_to_end(
+        self: &Arc<Self>,
+        run_id: i64,
+        definition: WorkflowDefinition,
+        resume: Option<Resume>,
         _driving: Driving,
+        cancellation: Arc<std::sync::atomic::AtomicBool>,
     ) -> Result<()> {
         let run = self
             .store
             .workflow_run(run_id)?
             .ok_or_else(|| AppError::NotFound(format!("workflow run {run_id}")))?;
-        self.store.set_workflow_run_status(run_id, "running")?;
+        let started = match resume {
+            Some(_) => self.store.start_workflow_run_if_waiting(run_id)?,
+            None => self.store.start_workflow_run_if_queued(run_id)?,
+        };
+        if !started {
+            // The run has ended already — cancelled while it was queued or waiting; nothing starts for it.
+            return Ok(());
+        }
         self.bus.publish(Event::WorkflowRunStarted { run: run_id });
         self.bus.publish(Event::WorkflowRunStatus {
             run: run_id,
@@ -124,6 +156,7 @@ impl App {
         let runner: Arc<dyn Runner> = Arc::new(NodeRunner {
             app: Arc::clone(self),
             run: run_id,
+            cancellation: Arc::clone(&cancellation),
         });
         let mut observer = StoreObserver {
             app: self,
@@ -132,36 +165,61 @@ impl App {
         };
         let limits = Limits::from_definition(&definition);
         let result = match resume {
-            Some(resume) => execute_from_node(&definition, resume, limits, &runner, &mut observer),
-            None => execute(&definition, run.value, limits, &runner, &mut observer),
+            Some(resume) => execute_from_node(
+                &definition,
+                resume,
+                limits,
+                &runner,
+                &mut observer,
+                &cancellation,
+            ),
+            None => execute(
+                &definition,
+                run.value,
+                limits,
+                &runner,
+                &mut observer,
+                &cancellation,
+            ),
         };
 
+        if cancellation.load(Ordering::Relaxed) {
+            // A person cancelled the run; it ends cancelled. The cancel has ended it unless it is still going.
+            return self.end_workflow_run_as_cancelled(run_id);
+        }
         match result {
             Ok(_) => {
-                self.store.finish_workflow_run(run_id, "succeeded", None)?;
-                self.bus.publish(Event::WorkflowRunEnded {
-                    run: run_id,
-                    status: "succeeded".into(),
-                    error: None,
-                });
-                self.bus.publish(Event::WorkflowRunStatus {
-                    run: run_id,
-                    status: "succeeded".into(),
-                });
+                let ended = self
+                    .store
+                    .finish_workflow_run_if_active(run_id, "succeeded", None)?;
+                if ended {
+                    self.bus.publish(Event::WorkflowRunEnded {
+                        run: run_id,
+                        status: "succeeded".into(),
+                        error: None,
+                    });
+                    self.bus.publish(Event::WorkflowRunStatus {
+                        run: run_id,
+                        status: "succeeded".into(),
+                    });
+                }
             }
             Err(error) => {
                 let error = error.to_string();
-                self.store
-                    .finish_workflow_run(run_id, "failed", Some(&error))?;
-                self.bus.publish(Event::WorkflowRunEnded {
-                    run: run_id,
-                    status: "failed".into(),
-                    error: Some(error.clone()),
-                });
-                self.bus.publish(Event::WorkflowRunStatus {
-                    run: run_id,
-                    status: "failed".into(),
-                });
+                let ended =
+                    self.store
+                        .finish_workflow_run_if_active(run_id, "failed", Some(&error))?;
+                if ended {
+                    self.bus.publish(Event::WorkflowRunEnded {
+                        run: run_id,
+                        status: "failed".into(),
+                        error: Some(error.clone()),
+                    });
+                    self.bus.publish(Event::WorkflowRunStatus {
+                        run: run_id,
+                        status: "failed".into(),
+                    });
+                }
             }
         }
 
@@ -204,12 +262,13 @@ impl Drop for Driving {
 struct NodeRunner {
     app: Arc<App>,
     run: i64,
+    cancellation: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Runner for NodeRunner {
     fn run(&self, node: &NodeDefinition, input: &Value) -> std::result::Result<Value, NodeError> {
         if node.kind == crate::workflows::nodes::approval::KIND {
-            return super::approval::wait(&self.app, self.run, node, input);
+            return super::approval::wait(&self.app, self.run, node, input, &self.cancellation);
         }
         crate::workflows::nodes::node(&node.kind, &node.params)?.run(input.clone())
     }
@@ -227,7 +286,13 @@ impl Runner for NodeRunner {
                 ..node.clone()
             };
             return Ok(Routed {
-                value: super::approval::wait(&self.app, self.run, &asked, &scope.input)?,
+                value: super::approval::wait(
+                    &self.app,
+                    self.run,
+                    &asked,
+                    &scope.input,
+                    &self.cancellation,
+                )?,
                 port: None,
             });
         }
@@ -288,26 +353,18 @@ impl Observer for StoreObserver<'_> {
             node: node.id.clone(),
             reason: "it was not recorded as started".into(),
         })?;
-        match result {
-            StepResult::Succeeded(output) => self
-                .app
-                .store
-                .finish_workflow_node_run(id, "succeeded", Some(output), None)
-                .map_err(|error| record_error(node, &error))?,
-            StepResult::Failed(error) => self
-                .app
-                .store
-                .finish_workflow_node_run(id, "failed", None, Some(&error.to_string()))
-                .map_err(|error| record_error(node, &error))?,
-        }
-        let status = match result {
-            StepResult::Succeeded(_) => "succeeded",
-            StepResult::Failed(_) => "failed",
+        let (status, output, error) = match result {
+            StepResult::Succeeded(output) => ("succeeded", Some(output), None),
+            // A node given up when its run was cancelled is not a failure of the node.
+            StepResult::Failed(RunError::Cancelled) => {
+                ("cancelled", None, Some(RunError::Cancelled.to_string()))
+            }
+            StepResult::Failed(error) => ("failed", None, Some(error.to_string())),
         };
-        let error = match result {
-            StepResult::Succeeded(_) => None,
-            StepResult::Failed(error) => Some(error.to_string()),
-        };
+        self.app
+            .store
+            .finish_workflow_node_run(id, status, output, error.as_deref())
+            .map_err(|error| record_error(node, &error))?;
         self.app.bus.publish(Event::WorkflowNodeEnded {
             run: self.run,
             node: node.id.clone(),
@@ -342,9 +399,50 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::board::{AgentInfo, CardRuns, StartError, Variant};
     use crate::harness::repo::testing;
     use crate::repos::git;
-    use crate::store::{Repository, Store};
+    use crate::store::{Card, Repository, Run, Store};
+
+    /// A harness that a test which starts no run of its own never reaches.
+    struct NoRuns;
+
+    impl CardRuns for NoRuns {
+        fn start(
+            &self,
+            _: &Arc<App>,
+            _: &Card,
+            _: &str,
+            _: (&str, Option<&str>),
+            _: Variant,
+        ) -> std::result::Result<Run, StartError> {
+            unreachable!("this test starts no run")
+        }
+
+        fn has_agent(&self, _: &str) -> bool {
+            false
+        }
+
+        fn runners(&self) -> Vec<crate::harness::remote::RunnerInfo> {
+            Vec::new()
+        }
+
+        fn agents(&self) -> Vec<AgentInfo> {
+            Vec::new()
+        }
+
+        fn token_budget(&self, _: &str) -> Option<i64> {
+            None
+        }
+
+        fn steer(&self, _: i64, _: &str) -> bool {
+            false
+        }
+
+        fn stop(&self, _: i64) -> bool {
+            false
+        }
+    }
 
     /// A server with a harness configuration repository and one repository a workflow run can belong to.
     fn setup() -> (tempfile::TempDir, Arc<App>, Repository) {
@@ -481,6 +579,37 @@ to = "two"
         assert_eq!(nodes[0].output, Some(json!({"seed": 1})));
         assert_eq!(nodes[1].input, json!({"seed": 1}));
         assert_eq!(nodes[1].output, Some(json!({"seed": 1})));
+    }
+
+    /// A person can cancel a run in the moment between its thread taking it up and the store marking it running.
+    /// The store decides whether the run still starts, so the cancel wins: the run stays as it ended, no node is
+    /// recorded, and nothing is published about a run that never started.
+    #[test]
+    fn a_run_cancelled_while_it_is_queued_is_never_started() {
+        let (_dir, app, repository) = setup();
+        let run = app
+            .store
+            .add_workflow_run("recorded", repository.id, "test", &json!({}))
+            .unwrap();
+        let mut events = app.bus.subscribe();
+        app.cancel_workflow_run(&crate::decide::Actor::Person, &NoRuns, run.id)
+            .unwrap();
+
+        app.drive_workflow_run(run.id, chain(), None).unwrap();
+
+        let ended = app.store.workflow_run(run.id).unwrap().unwrap();
+        assert_eq!(ended.status, "cancelled");
+        assert!(ended.started_at.is_none(), "the run was marked as started");
+        assert!(
+            app.store.workflow_node_runs(run.id).unwrap().is_empty(),
+            "a node ran for a run cancelled while it was queued"
+        );
+        while let Ok(event) = events.try_recv() {
+            assert!(
+                !(event.kind == "workflow_run_started" && event.data["run"] == run.id),
+                "a run that never started said it started: {event:?}"
+            );
+        }
     }
 
     /// A code node runs against the run itself: what the trigger carried and what the node before it output are in

@@ -13,9 +13,14 @@ Node kinds:
 - [`approval`](approval.md): pauses the run for a person, who approves the value, replaces it, or rejects it.
 - [`http`](http.md): one HTTP request to an allowed host, with secrets by name.
 - [`merge`](merge.md): joins two branches and emits what arrived by each side.
+- [`publish`](publish.md): offers the run's branch as a change for review, checks and merge.
 
 The folder also holds the trigger kinds, which are not node kinds:
 
 - [`manual`](manual-trigger.md): the trigger a person starts by hand, with the typed inputs it names.
 - [`schedule`](schedule-trigger.md): starts a run when a cron comes due, in the server's local time.
 - [`webhook`](webhook-trigger.md): a path on the server whose deliveries start runs of the workflow.
+
+And the page for cancelling a run, which is not a node kind either:
+
+- [`cancel`](cancel.md): ends a run that has not ended, at each status it can be in, and leaves its worktree and branch as they are.
