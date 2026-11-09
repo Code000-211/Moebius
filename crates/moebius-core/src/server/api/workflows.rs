@@ -5,15 +5,19 @@
 //! - `GET /v1/workflows/{name}`: one workflow's file and its parsed form.
 //! - `PUT /v1/workflows/{name}` `{file}` or `{definition}`: validates and commits the workflow. An invalid definition
 //!   is refused with the validation message and the file is untouched.
-//! - `DELETE /v1/workflows/{name}`: commits the workflow's deletion, refused while a run of it is queued or running.
+//! - `DELETE /v1/workflows/{name}`: commits the workflow's deletion, refused while a run of it is queued, running or
+//!   waiting.
+//! - `POST /v1/workflows/runs/{run_id}/resume` `{decision, value?, reason?}`: records a person's decision on a run that
+//!   waits for one (`workflow_approval` in the inbox); a second decision on a finished wait is refused.
 
 use axum::Router;
 use axum::extract::{Path as UrlPath, State};
-use axum::routing::get;
+use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 
 use super::{ApiError, ApiState, blocking};
 use crate::app::AppError;
+use crate::app::workflows::DecisionRequest;
 use crate::workflows::definition::{self, WorkflowDefinition};
 
 /// The routes of workflows.
@@ -21,6 +25,7 @@ pub(super) fn routes() -> Router<ApiState> {
     Router::new()
         .route("/v1/workflows", get(list))
         .route("/v1/workflows/{name}", get(show).put(save).delete(delete))
+        .route("/v1/workflows/runs/{run_id}/resume", post(resume))
 }
 
 /// One workflow as the list names it.
@@ -137,6 +142,30 @@ async fn delete(
     .await
 }
 
+/// What resuming a run answers: the run the decision was recorded against, and the status it went to.
+#[derive(Debug, Serialize)]
+struct Resumed {
+    run: i64,
+    status: String,
+}
+
+/// Records a person's decision on a workflow run that waits for one (see `app::workflows::approval`): the run runs
+/// on with the value, the person's, or fails with the reason.
+async fn resume(
+    State(state): State<ApiState>,
+    UrlPath(run_id): UrlPath<i64>,
+    axum::Json(request): axum::Json<DecisionRequest>,
+) -> Result<axum::Json<Resumed>, ApiError> {
+    let run = blocking(&state.app, move |app| {
+        app.resume_workflow_run(run_id, &request)
+    })
+    .await?;
+    Ok(axum::Json(Resumed {
+        run: run.0.id,
+        status: run.0.status,
+    }))
+}
+
 /// The harness configuration repository, or the conflict that the server has none.
 fn harness(
     state: &ApiState,
@@ -172,6 +201,33 @@ mod tests {
     use crate::config::AgentSet;
     use crate::harness::repo::{self, HarnessRepo};
     use crate::server::api::testing;
+
+    const APPROVAL: &str = r#"
+name = "asking"
+description = "Ask a person before the change ships."
+
+[[trigger]]
+kind = "test"
+
+[[nodes]]
+id = "ask"
+kind = "approval"
+params = { prompt = "Ship the change?" }
+
+[[nodes]]
+id = "after"
+kind = "test"
+
+[[edges]]
+from = "trigger"
+port = "out"
+to = "ask"
+
+[[edges]]
+from = "ask"
+port = "out"
+to = "after"
+"#;
 
     const WORKFLOW: &str = r#"
 name = "release"
@@ -260,6 +316,87 @@ port = "out"
         String::from_utf8(output.stdout).unwrap()
     }
 
+    async fn resume(state: &ApiState, addr: &str, run: i64, body: Value) -> reqwest::Response {
+        testing::post(
+            state,
+            addr,
+            format!("/v1/workflows/runs/{run}/resume"),
+            body,
+        )
+        .await
+    }
+
+    /// Starts a workflow run that waits for a person, and returns its id once it does.
+    async fn waiting(state: &ApiState, harness: &HarnessRepo, value: Value) -> i64 {
+        let folder = harness.path().join("workflows");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("asking.toml"), APPROVAL).unwrap();
+        let repository = state.app.store.repositories().unwrap().first().unwrap().id;
+        let run = state
+            .app
+            .start_workflow_run("asking", repository, value)
+            .unwrap();
+        testing::until("the run waits for a decision", || {
+            state
+                .app
+                .store
+                .workflow_run(run.id)
+                .unwrap()
+                .unwrap()
+                .status
+                == "waiting"
+        })
+        .await;
+        run.id
+    }
+
+    /// Waits for the run to end, then returns it as stored.
+    async fn ended(state: &ApiState, run: i64) -> crate::store::WorkflowRun {
+        testing::until("the run ends", || {
+            matches!(
+                state
+                    .app
+                    .store
+                    .workflow_run(run)
+                    .unwrap()
+                    .unwrap()
+                    .status
+                    .as_str(),
+                "succeeded" | "failed"
+            )
+        })
+        .await;
+        state.app.store.workflow_run(run).unwrap().unwrap()
+    }
+
+    /// The value the node after the wait was given.
+    fn left_the_wait(state: &ApiState, run: i64) -> Value {
+        state
+            .app
+            .store
+            .workflow_node_runs(run)
+            .unwrap()
+            .into_iter()
+            .find(|row| row.node_id == "after")
+            .expect("the run ran on past the wait")
+            .input
+    }
+
+    /// The run and the status the resume route answered for it.
+    async fn answered(response: reqwest::Response, run: i64) -> Value {
+        assert_eq!(response.status(), 200);
+        let answered: Value = response.json().await.unwrap();
+        assert_eq!(answered["run"], json!(run));
+        assert!(
+            matches!(
+                answered["status"].as_str(),
+                Some("running" | "succeeded" | "failed")
+            ),
+            "{answered}"
+        );
+        answered
+    }
+
     #[tokio::test]
     async fn an_invalid_definition_is_refused_and_the_file_is_untouched() {
         let (_dir, state, addr, harness) = started().await;
@@ -343,6 +480,111 @@ port = "out"
         assert_eq!(response.status(), 200, "{}", response.text().await.unwrap());
         let shown: Value = testing::get(&state, &addr, "/v1/workflows/release").await;
         assert_eq!(shown["definition"]["nodes"][1]["position"]["y"], 4.5);
+    }
+
+    #[tokio::test]
+    async fn the_resume_route_continues_a_run_with_the_value_it_waited_on() {
+        let (_dir, state, addr, harness) = started().await;
+        let value = json!({"change": 7});
+        let run = waiting(&state, &harness, value.clone()).await;
+
+        let response = resume(&state, &addr, run, json!({ "decision": "approve" })).await;
+        answered(response, run).await;
+        let ended = ended(&state, run).await;
+
+        assert_eq!(ended.status, "succeeded");
+        assert_eq!(left_the_wait(&state, run), value);
+        assert_eq!(
+            state.app.store.inbox_for_workflow_run(run).unwrap(),
+            None,
+            "the decision resolves the inbox item"
+        );
+    }
+
+    #[tokio::test]
+    async fn the_resume_route_continues_with_the_persons_value_after_an_edit() {
+        let (_dir, state, addr, harness) = started().await;
+        let run = waiting(&state, &harness, json!({"change": 7})).await;
+        let shipped = json!({"change": 8});
+
+        let response = resume(
+            &state,
+            &addr,
+            run,
+            json!({ "decision": "edit", "value": shipped }),
+        )
+        .await;
+        answered(response, run).await;
+        let ended = ended(&state, run).await;
+
+        assert_eq!(ended.status, "succeeded");
+        assert_eq!(left_the_wait(&state, run), shipped);
+    }
+
+    #[tokio::test]
+    async fn the_resume_route_fails_the_run_with_the_reason_of_a_rejection() {
+        let (_dir, state, addr, harness) = started().await;
+        let run = waiting(&state, &harness, json!({"change": 7})).await;
+
+        let response = resume(
+            &state,
+            &addr,
+            run,
+            json!({ "decision": "reject", "reason": "not this week" }),
+        )
+        .await;
+        answered(response, run).await;
+        let ended = ended(&state, run).await;
+
+        assert_eq!(ended.status, "failed");
+        assert_eq!(ended.error.as_deref(), Some("not this week"));
+    }
+
+    #[tokio::test]
+    async fn the_resume_route_refuses_a_request_it_cannot_take_or_a_second_decision() {
+        let (_dir, state, addr, harness) = started().await;
+        let run = waiting(&state, &harness, json!({"change": 7})).await;
+
+        let refused = resume(
+            &state,
+            &addr,
+            run,
+            json!({ "decision": "approve", "unexpected": true }),
+        )
+        .await;
+        assert_eq!(refused.status(), 422, "unknown keys are refused");
+
+        let refused = resume(&state, &addr, run, json!({ "decision": "maybe" })).await;
+        assert_eq!(refused.status(), 422, "a decision is one of the three");
+
+        let refused = resume(&state, &addr, run, json!({ "decision": "edit" })).await;
+        assert_eq!(refused.status(), 422, "an edit needs a value");
+
+        let response = resume(&state, &addr, run, json!({ "decision": "approve" })).await;
+        answered(response, run).await;
+        assert_eq!(ended(&state, run).await.status, "succeeded");
+
+        let refused = resume(
+            &state,
+            &addr,
+            run,
+            json!({ "decision": "reject", "reason": "too late" }),
+        )
+        .await;
+        assert_eq!(
+            refused.status(),
+            409,
+            "a second decision on a finished wait is refused"
+        );
+
+        let refused = resume(
+            &state,
+            &addr,
+            run + 10_000,
+            json!({ "decision": "approve" }),
+        )
+        .await;
+        assert_eq!(refused.status(), 404, "no such run");
     }
 
     #[tokio::test]

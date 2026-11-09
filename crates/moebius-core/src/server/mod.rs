@@ -333,6 +333,11 @@ impl Server {
         if let Some(harness_repo) = &harness_repo {
             app.set_harness_repo(harness_repo.clone());
         }
+        // A run of a workflow that waits for a person waits on with this server: its node rows are replayed, so a
+        // decision made while no server ran is taken up and an open wait is waited for again.
+        if let Err(error) = app.resume_waiting_workflow_runs() {
+            eprintln!("Moebius cannot resume the workflow runs that wait: {error}");
+        }
         warn_about_launch_agents(&config, &harness);
         let engine = Arc::new(Engine::new(
             app.clone(),

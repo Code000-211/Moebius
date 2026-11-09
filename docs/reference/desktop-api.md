@@ -158,10 +158,12 @@ instead of `data.trials`), `grilling_issues` (`data.grilling`, `data.repository`
 "body", "blocked_by"}`; its `title` is "N issues from a grilling" and it has no card) and `grilling_report` (`data.grilling`,
 `data.repository`, `data.report`: the text; no card) and `takeover` (`data.takeover`, `data.kind`, `data.agreement`,
 `data.count`; its `title` is "The decision model can take over <kind>" and it has no card) and `extension_update`
-(`data.package`, `data.from`, `data.to`, `data.source`; its `title` is "<package> <from> -> <to>" and it has no card). The
-nightly schedule, from `retro_at` on, once a day, puts one `extension_update` item in the inbox for each installed package
-with a newer version, and no second one for a version it has told of; the item is resolved when the package is current or
-an update is proposed.
+(`data.package`, `data.from`, `data.to`, `data.source`; its `title` is "<package> <from> -> <to>" and it has no card) and
+`workflow_approval` (`data.run`, `data.node`, `data.prompt`, `data.value` and `data.deadline` in whole seconds since the
+epoch; its `title` is the prompt and it has no card; it carries the decision a workflow run waits for, see
+[the approval node](workflows/approval.md)). The nightly schedule, from `retro_at` on, once a day, puts one
+`extension_update` item in the inbox for each installed package with a newer version, and no second one for a version it
+has told of; the item is resolved when the package is current or an update is proposed.
 A column script can add other kinds with `moebius.ask`.
 
 ## Endpoints
@@ -1257,7 +1259,7 @@ no `[harness]`; `409` and `500` as for `PUT /v1/agents/{name}`.
 A person deletes a workflow: the file is removed, committed on the default branch with the message
 `Delete the workflow <name>` and pushed to `origin`, and the decision is recorded (kind `edit_workflow`, decider
 `person`). Response: `{"name": string, "commit": string}` (`commit` is left out when there was nothing to commit). Errors:
-`404` no such workflow; `409` a run of the workflow is queued or running, or the server has no `[harness]`; `422` an
+`404` no such workflow; `409` a run of the workflow is queued, running or waiting, or the server has no `[harness]`; `422` an
 invalid name; `409` and `500` as for `PUT /v1/agents/{name}`.
 
 ### `GET /v1/workflows/{name}/run-inputs`
@@ -1284,6 +1286,16 @@ name, a value that is not of the type its input names, a required input with nei
 repository that is not known, or a request giving `repository` when the trigger names an input of type `repository` —
 every message names the input or the repository it refused; `409` the workflow's trigger is not `manual`, or the server
 has no `[harness]`; `422` a workflow file that cannot be used, as for `GET /v1/workflows/{name}`.
+### `POST /v1/workflows/runs/{run_id}/resume`
+
+A person decides on a workflow run that waits for one, which is what the `approval` node leaves (see
+[the approval node](workflows/approval.md)). Request: `{"decision": "approve" | "edit" | "reject", "value": any, "reason":
+string}`, where `value` is what an `edit` replaces the run's value with and `reason` why a `reject` refuses it (`rejected`
+when left out); unknown keys are refused. The decision is recorded in the waiting node's row and the run's `workflow_approval`
+inbox item is resolved, and the run runs on: with the value it had for an `approve`, with the person's for an `edit`, or ended
+`failed` with the reason for a `reject`. Response: `{"run": id, "status": string}`, the run and the status it went to. Errors:
+`404` no such run; `409` the run does not wait, which is how a second decision on a finished wait is refused; `422` a
+`decision` that is none of the three, or an `edit` without a `value`.
 
 ### `GET /v1/skills`
 

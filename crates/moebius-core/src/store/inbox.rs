@@ -1,10 +1,14 @@
-//! The inbox: what waits for a person, about a card or about a change, grilling, proposal or takeover, until it is
-//! resolved.
+//! The inbox: what waits for a person, about a card or about a change, grilling, proposal, takeover or workflow
+//! approval, until it is resolved. Its title and data are redacted before they are stored.
 
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
 use super::{Result, Store, now};
+use crate::blobs::{redact, redact_json};
+
+/// The kind of an inbox item that carries the decision of a workflow run waiting for a person (see `workflows`).
+pub const WORKFLOW_APPROVAL: &str = "workflow_approval";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InboxItem {
@@ -27,16 +31,18 @@ impl Store {
     ) -> Result<InboxItem> {
         let conn = self.conn();
         let at = now();
+        let title = redact(title);
+        let data = redact_json(data);
         conn.execute(
             "INSERT INTO inbox_items (kind, card_id, title, data, at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![kind, card_id, title, serde_json::to_string(data)?, at],
+            params![kind, card_id, title, serde_json::to_string(&data)?, at],
         )?;
         Ok(InboxItem {
             id: conn.last_insert_rowid(),
             kind: kind.into(),
             card_id,
-            title: title.into(),
-            data: data.clone(),
+            title,
+            data,
             resolved_at: None,
             at,
         })
@@ -57,30 +63,27 @@ impl Store {
         let mut stmt = conn.prepare(&format!(
             "SELECT id, kind, card_id, title, data, resolved_at, at FROM inbox_items WHERE {clause} ORDER BY id"
         ))?;
-        let rows = stmt.query_map([param], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, Option<i64>>(2)?,
-                r.get::<_, String>(3)?,
-                r.get::<_, String>(4)?,
-                r.get::<_, Option<i64>>(5)?,
-                r.get::<_, i64>(6)?,
-            ))
-        })?;
-        rows.map(|row| {
-            let (id, kind, card_id, title, data, resolved_at, at) = row?;
-            Ok(InboxItem {
-                id,
-                kind,
-                card_id,
-                title,
-                data: serde_json::from_str(&data)?,
-                resolved_at,
-                at,
-            })
+        let rows = stmt.query_map([param], |r| self.inbox_row(r))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    fn inbox_row(&self, r: &rusqlite::Row<'_>) -> rusqlite::Result<InboxItem> {
+        let data: String = r.get(4)?;
+        Ok(InboxItem {
+            id: r.get(0)?,
+            kind: r.get(1)?,
+            card_id: r.get(2)?,
+            title: r.get(3)?,
+            data: serde_json::from_str(&data).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    4,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?,
+            resolved_at: r.get(5)?,
+            at: r.get(6)?,
         })
-        .collect()
     }
 
     pub fn resolve_inbox_item(&self, id: i64) -> Result<()> {
@@ -146,6 +149,31 @@ impl Store {
             "UPDATE inbox_items SET resolved_at = ?1 \
              WHERE kind = 'takeover' AND json_extract(data, '$.takeover') = ?2 AND resolved_at IS NULL",
             params![now(), takeover_id],
+        )?;
+        Ok(())
+    }
+
+    /// The open inbox item that carries the decision of workflow run `run_id`, if one is open.
+    pub fn inbox_for_workflow_run(&self, run_id: i64) -> Result<Option<InboxItem>> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT id, kind, card_id, title, data, resolved_at, at FROM inbox_items \
+                 WHERE card_id IS NULL AND kind = ?1 AND json_extract(data, '$.run') = ?2 \
+                 AND resolved_at IS NULL ORDER BY id DESC LIMIT 1",
+                params![WORKFLOW_APPROVAL, run_id],
+                |r| self.inbox_row(r),
+            )
+            .optional()?)
+    }
+
+    /// Resolves the open inbox item that carries the decision of workflow run `run_id`, which has no card to resolve
+    /// it through.
+    pub fn resolve_inbox_for_workflow_run(&self, run_id: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE inbox_items SET resolved_at = ?1 \
+             WHERE kind = ?2 AND json_extract(data, '$.run') = ?3 AND resolved_at IS NULL",
+            params![now(), WORKFLOW_APPROVAL, run_id],
         )?;
         Ok(())
     }

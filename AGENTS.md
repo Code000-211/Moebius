@@ -96,8 +96,8 @@ started by its `#!` line) is `#[cfg(unix)]`, with a comment that says why.
 - Every behaviour an issue asks for has a test; a bug fix has a test that fails without the fix. Tests must not be
   flaky: no tight time limits, no fixed ports (bind to port 0), no sleeps where a condition can be awaited.
 - Talk to outside services through a fake in tests (an axum server on port 0, a local bare git repository).
-- Errors: `thiserror` enums per module; a run never waits for a person; anything that fails while deciding fails
-  closed.
+- Errors: `thiserror` enums per module; a card run never waits for a person, and a workflow run waits only at an
+  `approval` node and only until its deadline; anything that fails while deciding fails closed.
 - Secrets never reach the store or a log unredacted (`blobs::redact`).
 
 ## Documentation
