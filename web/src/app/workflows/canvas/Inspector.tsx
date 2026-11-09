@@ -12,7 +12,7 @@ import { Button } from "../../../ui/components/Button";
 import { Input } from "../../../ui/components/Input";
 import { Field } from "../../../ui/page/Field";
 import { JsonValue } from "../../../ui/page/JsonValue";
-import { formFor, nodeKinds } from "../nodeKinds";
+import { formFor, nodeKinds, triggerFormFor } from "../nodeKinds";
 import { nodeOf, TRIGGER } from "./model";
 import { ParamForm } from "./ParamForm";
 
@@ -29,6 +29,7 @@ export function Inspector({
   run,
   onRename,
   onParams,
+  onTrigger,
   onDeleteNode,
   onDeleteEdge,
 }: {
@@ -38,6 +39,7 @@ export function Inspector({
   run?: WorkflowNodeRun | null;
   onRename: (from: string, to: string) => void;
   onParams: (id: string, params: Record<string, unknown>) => void;
+  onTrigger: (trigger: Trigger) => void;
   onDeleteNode: (id: string) => void;
   onDeleteEdge: (edge: WorkflowEdge) => void;
 }) {
@@ -52,6 +54,7 @@ export function Inspector({
         run={run ?? null}
         onRename={onRename}
         onParams={onParams}
+        onTrigger={onTrigger}
         onDeleteNode={onDeleteNode}
         onDeleteEdge={onDeleteEdge}
       />
@@ -65,6 +68,7 @@ function Body({
   run,
   onRename,
   onParams,
+  onTrigger,
   onDeleteNode,
   onDeleteEdge,
 }: Parameters<typeof Inspector>[0] & { run: WorkflowNodeRun | null }) {
@@ -76,7 +80,7 @@ function Body({
     );
   }
   if (selection.kind === "trigger") {
-    return <TriggerPanel trigger={graph.trigger[0]} />;
+    return <TriggerPanel trigger={graph.trigger[0]} onTrigger={onTrigger} />;
   }
   if (selection.kind === "edge") {
     return <EdgePanel edge={selection.edge} onDelete={() => onDeleteEdge(selection.edge)} />;
@@ -241,14 +245,24 @@ function EdgePanel({ edge, onDelete }: { edge: WorkflowEdge; onDelete: () => voi
   );
 }
 
-function TriggerPanel({ trigger }: { trigger: Trigger | undefined }) {
+function TriggerPanel({
+  trigger,
+  onTrigger,
+}: {
+  trigger: Trigger | undefined;
+  onTrigger: (trigger: Trigger) => void;
+}) {
+  const Custom = trigger ? triggerFormFor(trigger.kind) : undefined;
   return (
     <>
       <Head title="Trigger" subtitle={trigger ? trigger.kind : "This workflow has none"} />
       {trigger ? (
-        <Section title="What it is given">
-          <JsonValue value={trigger.params ?? {}} name="trigger" />
-        </Section>
+        <>
+          {Custom ? <Custom trigger={trigger} onTrigger={onTrigger} /> : null}
+          <Section title="What it is given">
+            <JsonValue value={trigger.params ?? {}} name="trigger" />
+          </Section>
+        </>
       ) : (
         <p className="m-0 text-sm text-secondary">
           A workflow needs exactly one trigger, and this file has none.

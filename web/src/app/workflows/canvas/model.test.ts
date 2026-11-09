@@ -15,6 +15,7 @@ import {
   removeNode,
   renameNode,
   setParams,
+  setTrigger,
   TRIGGER,
 } from "./model";
 
@@ -83,6 +84,12 @@ describe("moving and editing a node", () => {
     const edited = setParams(graph(), "test", { script: "pnpm test", timeout: 20 });
     expect(nodeOf(edited, "test")?.params).toEqual({ script: "pnpm test", timeout: 20 });
     expect(setParams(edited, "test", {}).nodes[1]?.params).toBeUndefined();
+  });
+
+  it("replaces the one trigger with the one the form shows", () => {
+    const edited = setTrigger(graph(), { kind: "schedule", params: { cron: "0 7 * * 1" } });
+    expect(edited.trigger).toEqual([{ kind: "schedule", params: { cron: "0 7 * * 1" } }]);
+    expect(edited.nodes).toEqual(graph().nodes);
   });
 
   it("renames a node and re-points the edges that named it", () => {

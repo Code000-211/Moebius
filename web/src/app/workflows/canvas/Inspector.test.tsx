@@ -26,6 +26,7 @@ function show() {
       selection={{ kind: "node", id: "test" }}
       onRename={onRename}
       onParams={vi.fn()}
+      onTrigger={vi.fn()}
       onDeleteNode={vi.fn()}
       onDeleteEdge={vi.fn()}
     />,

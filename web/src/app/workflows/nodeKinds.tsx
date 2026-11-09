@@ -12,11 +12,16 @@
  * trip through the editor.
  */
 import type { ComponentType } from "react";
-import type { WorkflowDefinition, WorkflowNode } from "../../api/types/workflows";
+import type { Trigger, WorkflowDefinition, WorkflowNode } from "../../api/types/workflows";
+import { AgentForm } from "./forms/agent";
+import { ApprovalForm } from "./forms/approval";
 import { CodeForm } from "./forms/code";
 import { ConditionForm } from "./forms/condition";
 import { ForEachForm } from "./forms/for_each";
+import { HttpForm } from "./forms/http";
 import { MergeForm } from "./forms/merge";
+import { PublishForm } from "./forms/publish";
+import { ManualTriggerForm, ScheduleTriggerForm, WebhookTriggerForm } from "./forms/trigger";
 
 /**
  * One parameter a kind asks for, and how to ask it. `node` is the id of another node of the graph; `list` is a list of
@@ -118,6 +123,118 @@ export const nodeKinds: NodeKind[] = [
     ],
   },
   {
+    kind: "http",
+    title: "HTTP",
+    description: "Calls a URL, with a named secret when it needs one, and outputs the reply.",
+    inputs: ["in"],
+    outputs: ["out"],
+    params: [
+      {
+        type: "text",
+        name: "url",
+        label: "URL",
+        help: "Where the node calls. Expressions such as {{ trigger.tag }} are filled before it runs.",
+        required: true,
+      },
+      {
+        type: "text",
+        name: "method",
+        label: "Method",
+        help: "The HTTP method the call uses; GET when it is left alone.",
+      },
+      {
+        type: "text",
+        name: "secret",
+        label: "Secret",
+        help: "The name of a secret the server holds, never its value.",
+      },
+      {
+        type: "number",
+        name: "timeout_seconds",
+        label: "Timeout",
+        help: "How long the call may take, in seconds.",
+        min: 1,
+      },
+    ],
+  },
+  {
+    kind: "agent",
+    title: "Agent",
+    description:
+      "Runs an agent of the harness configuration repository in a worktree the run owns.",
+    inputs: ["in"],
+    outputs: [],
+    params: [
+      {
+        type: "text",
+        name: "agent",
+        label: "Agent",
+        help: "The agent that runs.",
+        required: true,
+      },
+      {
+        type: "text",
+        name: "prompt",
+        label: "Prompt",
+        help: "What the agent reads. Expressions such as {{ trigger.tag }} are filled before it starts.",
+        required: true,
+      },
+      {
+        type: "text",
+        name: "output",
+        label: "Output",
+        help: "The name of the port the node's value leaves by.",
+        required: true,
+      },
+    ],
+  },
+  {
+    kind: "approval",
+    title: "Approval",
+    description: "Waits for a person to answer before the run goes on.",
+    inputs: ["in"],
+    outputs: ["out", "failed"],
+    params: [
+      {
+        type: "text",
+        name: "prompt",
+        label: "Prompt",
+        help: "What the person deciding reads.",
+        required: true,
+      },
+      {
+        type: "number",
+        name: "timeout_seconds",
+        label: "Deadline",
+        help: "How long the run waits for an answer, in seconds.",
+        min: 1,
+      },
+    ],
+  },
+  {
+    kind: "publish",
+    title: "Publish",
+    description: "Publishes a change with a title and a body.",
+    inputs: ["in"],
+    outputs: ["out"],
+    params: [
+      {
+        type: "text",
+        name: "title",
+        label: "Title",
+        help: "The title of what the node publishes.",
+        required: true,
+      },
+      {
+        type: "text",
+        name: "body",
+        label: "Body",
+        help: "The body that goes with it.",
+        required: true,
+      },
+    ],
+  },
+  {
     kind: "merge",
     title: "Merge",
     description: "Joins two branches and emits what arrived by each side.",
@@ -159,6 +276,9 @@ export function portsOf(kind: string, params?: unknown): { inputs: string[]; out
   }
   if (kind === "condition") {
     return { inputs: known.inputs, outputs: conditionPorts(params) };
+  }
+  if (kind === "agent") {
+    return { inputs: known.inputs, outputs: agentPorts(params) };
   }
   return { inputs: known.inputs, outputs: known.outputs };
 }
@@ -242,13 +362,42 @@ export interface NodeFormProps {
  * which is where a kind with nothing special about it stays.
  */
 export const nodeForms: Record<string, ComponentType<NodeFormProps>> = {
+  agent: AgentForm,
+  approval: ApprovalForm,
   code: CodeForm,
   condition: ConditionForm,
   for_each: ForEachForm,
+  http: HttpForm,
   merge: MergeForm,
+  publish: PublishForm,
 };
 
 /** The form a kind draws itself, when it has one. */
 export function formFor(kind: string): ComponentType<NodeFormProps> | undefined {
   return nodeForms[kind];
+}
+
+/** The names an agent node's parameters give its output port; the kind's own name when it declares none. */
+function agentPorts(params: unknown): string[] {
+  const given =
+    typeof params === "object" && params !== null ? (params as Record<string, unknown>) : {};
+  return typeof given.output === "string" && given.output !== "" ? [given.output] : ["out"];
+}
+
+/** What a trigger's own form is given: the trigger and the way to give its parameters back. */
+export interface TriggerFormProps {
+  trigger: Trigger;
+  onTrigger: (trigger: Trigger) => void;
+}
+
+/** The forms the triggers draw themselves. A trigger left out is drawn as its JSON, as before. */
+export const triggerForms: Record<string, ComponentType<TriggerFormProps>> = {
+  manual: ManualTriggerForm,
+  schedule: ScheduleTriggerForm,
+  webhook: WebhookTriggerForm,
+};
+
+/** The form a trigger draws itself, when it has one. */
+export function triggerFormFor(kind: string): ComponentType<TriggerFormProps> | undefined {
+  return triggerForms[kind];
 }

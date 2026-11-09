@@ -47,6 +47,7 @@ import { Notice } from "../../../ui/page/Notice";
 import { PageHeader } from "../../../ui/page/PageHeader";
 import { ReadFailed } from "../../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../../ui/page/Skeleton";
+import { triggerProblem } from "../forms/trigger";
 import { genericKind, type NodeKind, nodeKinds, startingParams } from "../nodeKinds";
 import { NodeCard, TriggerCard } from "./cards";
 import { type CardNode, flowEdges, flowNodes, type Marks, problemsOf } from "./flow";
@@ -64,6 +65,7 @@ import {
   removeNode,
   renameNode,
   setParams,
+  setTrigger,
   TRIGGER,
 } from "./model";
 import { droppedKind, Palette } from "./Palette";
@@ -130,6 +132,7 @@ function Canvas({ name, loaded }: { name: string; loaded: WorkflowDefinition }) 
   const [movedTrigger, setMovedTrigger] = useState<{ x: number; y: number } | null>(null);
 
   const dirty = isDirty(saved, draft);
+  const triggerIssue = triggerProblem(draft.trigger[0]);
   const runs = useQuery({ queryKey: keys.workflowRuns(name), queryFn: () => workflowRuns(name) });
   const run = useQuery({
     queryKey: keys.workflowRun(runId ?? 0),
@@ -282,7 +285,8 @@ function Canvas({ name, loaded }: { name: string; loaded: WorkflowDefinition }) 
             <Button
               variant="primary"
               size="sm"
-              disabled={!dirty || save.isPending}
+              disabled={!dirty || save.isPending || triggerIssue !== null}
+              title={triggerIssue ?? undefined}
               onClick={() => save.mutate()}
               data-testid="canvas-save"
             >
@@ -389,6 +393,7 @@ function Canvas({ name, loaded }: { name: string; loaded: WorkflowDefinition }) 
             setSelection({ kind: "node", id: to.trim() });
           }}
           onParams={(id, params) => setDraft((graph) => setParams(graph, id, params))}
+          onTrigger={(trigger) => setDraft((graph) => setTrigger(graph, trigger))}
           onDeleteNode={(id) => {
             setDraft((graph) => removeNode(graph, id));
             setSelection(null);
