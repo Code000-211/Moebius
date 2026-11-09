@@ -1,9 +1,7 @@
-//! The agent node: the node kind that runs an agent of the harness configuration. The first agent node of a workflow
-//! run checks the run's repository out into a worktree on a branch named for the run, and the run keeps the worktree
-//! path with itself, so the run's later agent nodes reuse the worktree and the branch; each agent is started through
-//! the harness picker, failing closed, and its transcript is kept in its run's log. The node's value is the
-//! declared `output`, the fenced JSON block the prompt asks the agent to end with: it is parsed, and a missing or
-//! malformed block fails the node closed.
+//! Running the agent of an agent node: the workflow run's repository checked out into the worktree the run owns,
+//! the prompt filled from the run and the agent started through the picker, failing closed, and its fenced block
+//! taken as the node's value (see `value`). The tests below run the node against a real launcher and a fake
+//! `pi-bolt`.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -11,50 +9,15 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 
-use super::{Metadata, Node, NodeError, Ports};
+use super::super::NodeError;
+use super::value::value_of;
+use super::{Agent, OUTPUT_REQUEST};
 use crate::app::App;
 use crate::harness::pick::Harnesses;
 use crate::improve::retro::wait_for_end;
 use crate::workflows::decorate::{Scope, fill};
 
-/// The kind of the node.
-pub const KIND: &str = "agent";
-
-/// What the node adds to its prompt: the value of the node is the fenced JSON block the agent ends with.
-const OUTPUT_REQUEST: &str = "End your final message with a fenced JSON block containing the value of the \
-node's declared output; it is the value the node takes from you.";
-
-/// The agent node: `agent` names an agent of the harness configuration, `prompt` is built from parameters and
-/// expressions, and the node's value is the declared `output`, the fenced JSON block the agent ends with.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Agent {
-    agent: String,
-    prompt: String,
-    output: String,
-}
-
 impl Agent {
-    /// The node from its parameters: `agent`, `prompt` and the declared `output`, each a text of its own.
-    pub fn from_params(params: &Value) -> Result<Self, NodeError> {
-        let invalid = |message: &str| NodeError::Parameters {
-            kind: KIND.to_string(),
-            message: message.to_string(),
-        };
-        let parameter = |name: &str| {
-            params
-                .get(name)
-                .and_then(Value::as_str)
-                .filter(|value| !value.is_empty())
-                .map(|value| value.to_string())
-                .ok_or_else(|| invalid(&format!("`{name}` must be a non-empty string")))
-        };
-        Ok(Self {
-            agent: parameter("agent")?,
-            prompt: parameter("prompt")?,
-            output: parameter("output")?,
-        })
-    }
-
     /// Runs the agent of the node for the workflow run `run_id`, with `input` reaching the node, and returns the
     /// value of the node's declared output. The first agent node of a run checks the run's repository out into a
     /// worktree on a branch named for the run and records the worktree with the run; the later nodes reuse it. The
@@ -139,161 +102,12 @@ impl Agent {
     }
 }
 
-/// The value the node takes from the final answer `answer`: the last fenced block of it, parsed as JSON. A missing
-/// block, or one that is not JSON, fails the node closed.
-fn value_of(answer: &str) -> Result<Value, NodeError> {
-    let mut blocks: Vec<String> = Vec::new();
-    let mut current: Option<Vec<String>> = None;
-    for line in answer.lines() {
-        if line.trim_start().starts_with("```") {
-            if let Some(lines) = current.take() {
-                blocks.push(lines.join("\n"));
-            } else {
-                current = Some(Vec::new());
-            }
-        } else if let Some(lines) = &mut current {
-            lines.push(line.to_string());
-        }
-    }
-    let failed = |why: String| NodeError::Failed(format!("node {KIND}: {why}"));
-    match blocks.last() {
-        Some(block) => serde_json::from_str(block)
-            .map_err(|e| failed(format!("the agent's fenced block is not JSON: {e}"))),
-        None => Err(failed(
-            "the agent ended without a fenced JSON block: the node's declared output is missing"
-                .to_string(),
-        )),
-    }
-}
-
-impl Node for Agent {
-    /// The node is run for a workflow run, which the plain executor does not give it; see [`Agent::run_node`].
-    fn run(&self, _input: Value) -> Result<Value, NodeError> {
-        Err(NodeError::Failed(
-            "an agent node is run by the executor, which gives it the workflow run and its worktree".to_string(),
-        ))
-    }
-
-    fn ports(&self) -> Ports {
-        Ports::new(["in"], [self.output.clone()])
-    }
-
-    fn metadata(&self) -> Metadata {
-        Metadata {
-            kind: KIND,
-            title: "Agent",
-            description: "Runs an agent of the harness configuration in a worktree the run owns, and takes its \
-                declared output from the fenced JSON block it ends with.",
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::*;
-    use crate::workflows::nodes::node;
-
-    fn params() -> Value {
-        json!({
-            "agent": "Coder",
-            "prompt": "Read the issue {{ trigger.issue }} and answer.",
-            "output": "summary",
-        })
-    }
-
-    #[test]
-    fn the_parameters_name_the_agent_the_prompt_and_the_output() {
-        let agent = Agent::from_params(&params()).unwrap();
-        assert_eq!(agent.agent, "Coder");
-        assert_eq!(
-            agent.prompt,
-            "Read the issue {{ trigger.issue }} and answer."
-        );
-        assert_eq!(agent.output, "summary");
-    }
-
-    #[test]
-    fn a_parameter_that_is_not_a_non_empty_string_is_refused() {
-        for missing in ["agent", "prompt", "output"] {
-            let mut params = params();
-            params.as_object_mut().unwrap().remove(missing);
-            let error = Agent::from_params(&params).unwrap_err();
-            assert!(
-                matches!(&error, NodeError::Parameters { kind, message }
-                    if kind == KIND && message.contains(missing)),
-                "{error}"
-            );
-            let mut empty = params.clone();
-            empty[missing] = json!("");
-            assert!(
-                Agent::from_params(&empty).is_err(),
-                "{missing} taken while empty"
-            );
-        }
-    }
-
-    #[test]
-    fn the_registry_builds_the_agent_node_and_keeps_its_declared_output() {
-        let built = node(KIND, &params());
-        assert!(built.is_ok());
-        let ports = built.unwrap().ports();
-        assert_eq!(ports.inputs, ["in"]);
-        assert_eq!(ports.outputs, ["summary"]);
-        assert!(
-            matches!(node(KIND, &json!({})), Err(NodeError::Parameters { .. })),
-            "the registry takes an agent node without its parameters"
-        );
-    }
-
-    #[test]
-    fn the_node_is_run_for_a_workflow_run_only() {
-        let agent = Agent::from_params(&params()).unwrap();
-        // The plain executor has no workflow run to give the node, so the node fails closed rather than run blind.
-        let error = agent.run(json!(null)).unwrap_err();
-        assert!(matches!(error, NodeError::Failed(_)), "{error}");
-    }
-
-    #[test]
-    fn the_last_fenced_block_of_the_answer_is_the_output() {
-        let answer = "A draft first:\n```json\n{\"draft\": 1}\n```\nthen the answer:\n```json\n{\"done\": true}\n```";
-        assert_eq!(value_of(answer).unwrap(), json!({"done": true}));
-    }
-
-    #[test]
-    fn a_block_the_agent_never_closed_is_no_block() {
-        let error = value_of("```json\n{\"done\": true}").unwrap_err();
-        assert!(
-            matches!(&error, NodeError::Failed(why) if why.contains("without a fenced JSON block")),
-            "{error}"
-        );
-    }
-
-    #[test]
-    fn a_block_that_is_not_json_fails_the_node_closed() {
-        let error = value_of("```json\n{\"done\": tru}\n```").unwrap_err();
-        assert!(
-            matches!(&error, NodeError::Failed(why) if why.contains("not JSON")),
-            "{error}"
-        );
-    }
-
-    #[test]
-    fn an_answer_without_a_block_fails_the_node_closed() {
-        let error = value_of("I read the issue and answered in prose.").unwrap_err();
-        assert!(
-            matches!(&error, NodeError::Failed(why) if why.contains("without a fenced JSON block")),
-            "{error}"
-        );
-    }
-}
-
 /// The node against a real launcher and a `pi-bolt` that is a script. The fake is a Python script started by its
 /// `#!` line, so these run on Unix only.
 #[cfg(all(test, unix))]
 mod a_run {
     use std::collections::BTreeMap;
+    use std::os::unix::fs::PermissionsExt;
     use std::time::Duration;
 
     use moebius_plugin_api::Host;
@@ -317,6 +131,20 @@ mod a_run {
     impl World {
         fn new() -> World {
             let dir = tempfile::tempdir().unwrap();
+            let testdata = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata");
+            World::with_pi(dir, testdata.join("fake-pi"))
+        }
+
+        /// A world whose harness is `script`, a fake `pi-bolt` the test writes itself.
+        fn with_script(script: &str) -> World {
+            let dir = tempfile::tempdir().unwrap();
+            let pi = dir.path().join("fake-pi");
+            std::fs::write(&pi, script).unwrap();
+            std::fs::set_permissions(&pi, std::fs::Permissions::from_mode(0o755)).unwrap();
+            World::with_pi(dir, pi)
+        }
+
+        fn with_pi(dir: tempfile::TempDir, pi: PathBuf) -> World {
             let origin = dir.path().join("origin");
             std::fs::create_dir_all(&origin).unwrap();
             git(&origin, &["init", "--quiet", "-b", "main"]).unwrap();
@@ -348,7 +176,7 @@ mod a_run {
             };
             let testdata = Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata");
             let pi = PiBolt::new(
-                testdata.join("fake-pi"),
+                pi,
                 "/usr/local/bin/moebius".into(),
                 "http://127.0.0.1:9".into(),
                 Arc::new(Router::new(store, vec![])),
@@ -458,6 +286,18 @@ mod a_run {
             !world.app.store.events(agents[0].id).unwrap().is_empty(),
             "the agent's transcript is in its run's log"
         );
+        // The prompt the agent got asks for the fenced JSON block the node parses.
+        let prompt = std::fs::read_to_string(
+            world
+                .app
+                .data_dir
+                .join(format!("runs/{}/agent/prompt.txt", agents[0].id)),
+        )
+        .unwrap();
+        assert!(
+            prompt.ends_with(OUTPUT_REQUEST),
+            "the prompt asks for the block: {prompt}"
+        );
     }
 
     #[test]
@@ -541,5 +381,52 @@ mod a_run {
             matches!(&error, NodeError::Failed(why) if why.contains("without a fenced JSON block")),
             "{error}"
         );
+    }
+
+    /// A fake `pi-bolt` that answers the prompt, then either leaves before the run settles or settles without an
+    /// assistant's answer: a workflow agent has nothing to take from either.
+    const FAILING_PI: &str = r#"#!/usr/bin/env python3
+import json, sys
+for line in sys.stdin.buffer:
+    command = json.loads(line.split(b"\n")[0])
+    if command.get("type") != "prompt":
+        continue
+    print(json.dumps({"id": command.get("id"), "type": "response", "command": "prompt", "success": True,
+                      "data": {"disposition": "started"}}), flush=True)
+    if "exit" in command.get("message", ""):
+        sys.exit(1)
+    print(json.dumps({"type": "agent_end", "messages": []}), flush=True)
+    print(json.dumps({"type": "agent_settled", "aborted": False}), flush=True)
+    sys.exit(0)
+"#;
+
+    #[test]
+    fn an_agent_run_that_failed_fails_the_node_closed() {
+        let world = World::with_script(FAILING_PI);
+        let run_id = world.workflow_run(json!({}));
+        let node = world.agent_node("Answer, then exit.", "note");
+        let error = node
+            .run_node(&world.app, &world.runs, "draft", run_id, &json!(null))
+            .unwrap_err();
+        assert!(
+            matches!(&error, NodeError::Failed(why) if why.contains("ended failed")),
+            "{error}"
+        );
+        assert_eq!(agent_runs(&world.app)[0].status, "failed");
+    }
+
+    #[test]
+    fn an_agent_run_without_a_final_answer_fails_the_node_closed() {
+        let world = World::with_script(FAILING_PI);
+        let run_id = world.workflow_run(json!({}));
+        let node = world.agent_node("Answer nothing.", "note");
+        let error = node
+            .run_node(&world.app, &world.runs, "draft", run_id, &json!(null))
+            .unwrap_err();
+        assert!(
+            matches!(&error, NodeError::Failed(why) if why.contains("without a final answer")),
+            "{error}"
+        );
+        assert_eq!(agent_runs(&world.app)[0].status, "succeeded");
     }
 }

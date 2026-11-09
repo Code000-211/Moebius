@@ -1,6 +1,7 @@
 //! Ending a run, whatever its harness: the run's summary and events are kept as its records arrive (`keep`), and when its
 //! process is gone `finish` commits what the agent left (a chat's work is offered as a change, a grilling's result
-//! read), removes the worktree, revokes the run's token and publishes the end.
+//! read), revokes the run's token and publishes the end. It removes the worktree, except for a workflow run, whose
+//! worktree and branch stay for the run's later agents.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

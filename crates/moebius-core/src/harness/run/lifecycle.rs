@@ -1,7 +1,8 @@
 //! What a run holds from its start to its end, the same for every harness: the run recorded, its worktree and its
 //! token (`card_run` for a card, `detached_run` for the Retro analyst and the Autoresearcher, `chat_run` for a chat,
-//! `woken_chat` for a chat taken up again after its agent went away), what is done to undo it when its process cannot
-//! be started (`launch_or_undo`), and `RunningRun`, which keeps it until the run ends (see `end`).
+//! `woken_chat` for a chat taken up again after its agent went away, `in_worktree_run` for an agent of a workflow
+//! run), what is done to undo it when its process cannot be started (`launch_or_undo`) or to keep its worktree when
+//! it can (`launch_or_keep`), and `RunningRun`, which keeps it until the run ends (see `end`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

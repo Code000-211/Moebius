@@ -9,7 +9,7 @@ run owns, on a branch named for the run, and takes the node's value from the fen
 | --- | --- | --- |
 | `agent` | string | Required. The name of an agent of the harness configuration, as `agents/<name>.toml` names it. |
 | `prompt` | string | Required. What the agent is told. It may hold [expressions](expressions.md), filled from the run's trigger value as `trigger` and from the value that reached the node as `input`, before the agent starts. |
-| `output` | string | Required. The name of the node's one output port, and the name of what the agent's block holds. |
+| `output` | string | Required. The name of the node's one output port. |
 
 ## Ports
 
