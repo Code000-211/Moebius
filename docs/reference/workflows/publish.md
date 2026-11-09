@@ -2,22 +2,19 @@
 
 Offers the workflow run's branch as a change: what an [`agent`](agent.md) node committed becomes a pull request on the
 repository's forge, or a branch waiting to be merged in the clone when the repository has no forge. The change goes
-through the same offer as a card's change (`App::offer_branch_change`), so its review, checks and merge work exactly
+through the same offer as a card's change (`App::offer_run_branch_change`), so its review, checks and merge work exactly
 as they do for a card's work; it has no card, and it belongs to the run and the repository.
 
 ```toml
 [[nodes]]
 id = "publish"
 kind = "publish"
-title = "Release {{ trigger.version }}"
-body = "Offered by workflow run {{ trigger.run }}."
+params = { title = "Release {{ trigger.version }}", body = "Offered by workflow run {{ trigger.run }}." }
 
 [[nodes]]
 id = "agent"
 kind = "agent"
-agent = "Coder"
-prompt = "Prepare release {{ trigger.version }}."
-output = "summary"
+params = { agent = "Coder", output = "summary", prompt = "Prepare release {{ trigger.version }}." }
 ```
 
 ## Parameters
