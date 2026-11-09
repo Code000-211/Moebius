@@ -109,6 +109,20 @@ export function refuse(graph: GraphDefinition): string | null {
       return `node ${quote(edge.from)}: edge to ${quote(edge.to)} leaves by port ${quote(edge.port)}, which is not one of its outputs`;
     }
   }
+  for (const node of graph.nodes) {
+    if (node.kind !== "condition") {
+      continue;
+    }
+    const known = nodes.get(node.id);
+    if (!known || !("outputs" in known)) {
+      continue;
+    }
+    for (const port of known.outputs) {
+      if (!graph.edges.some((edge) => edge.from === node.id && edge.port === port)) {
+        return `node ${quote(node.id)}: port ${quote(port)} has no edge leaving by it`;
+      }
+    }
+  }
 
   const adjacency = new Map<string, string[]>();
   for (const edge of graph.edges) {
@@ -216,6 +230,55 @@ type KnownNode = { outputs: string[] } | { error: string };
 
 /** The node a kind builds, or the parameter error the server gives for it. */
 function knownNode(kind: string, params: Record<string, unknown>): KnownNode | null {
+  if (kind === "code") {
+    if (typeof params.source !== "string") {
+      return {
+        error: 'invalid parameters for node kind "code": "source" is required',
+      };
+    }
+    return { outputs: ["out"] };
+  }
+  if (kind === "condition") {
+    if (!Array.isArray(params.ports) || params.ports.length === 0) {
+      return {
+        error: 'invalid parameters for node kind "condition": at least one port is required',
+      };
+    }
+    const outputs: string[] = [];
+    for (const entry of params.ports) {
+      const port = asRecord(entry);
+      if (typeof port.name !== "string" || port.name.trim() === "") {
+        return {
+          error: 'invalid parameters for node kind "condition": a port needs a name',
+        };
+      }
+      if (typeof port.when !== "string" || port.when.trim() === "") {
+        return {
+          error: `invalid parameters for node kind "condition": port ${quote(port.name)} needs an expression`,
+        };
+      }
+      outputs.push(port.name);
+    }
+    if (typeof params.fallback === "string" && params.fallback !== "") {
+      outputs.push(params.fallback);
+    }
+    return { outputs };
+  }
+  if (kind === "merge") {
+    for (const side of ["a", "b"]) {
+      if (typeof params[side] !== "string" || (params[side] as string).trim() === "") {
+        return {
+          error: `invalid parameters for node kind "merge": "${side}" must name the node whose value arrives by port "${side}"`,
+        };
+      }
+    }
+    if (params.a === params.b) {
+      return {
+        error: 'invalid parameters for node kind "merge": "a" and "b" must name different nodes',
+      };
+    }
+    return { outputs: ["out"] };
+  }
   if (kind !== "for_each") {
     return null;
   }

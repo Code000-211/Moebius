@@ -53,7 +53,7 @@ export function flowNodes(graph: WorkflowDefinition, marks: Marks = {}): CardNod
     },
   ];
   for (const node of graph.nodes) {
-    const ports = portsOf(node.kind);
+    const ports = portsOf(node.kind, node.params);
     const data: CardData = {
       id: node.id,
       kind: node.kind,
@@ -117,7 +117,7 @@ function targetPort(graph: WorkflowDefinition, edge: WorkflowEdge): string | nul
   if (!node) {
     return null;
   }
-  return portsOf(node.kind).inputs[0] ?? "in";
+  return portsOf(node.kind, node.params).inputs[0] ?? "in";
 }
 
 function problemForEdge(
