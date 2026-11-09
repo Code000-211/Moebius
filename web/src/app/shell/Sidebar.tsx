@@ -18,6 +18,7 @@ import {
   GearIcon,
   type Icon,
   MagnifyingGlassIcon,
+  PlusIcon,
   SidebarSimpleIcon,
   SignOutIcon,
   SquaresFourIcon,
@@ -30,9 +31,13 @@ import { chats as readChats } from "../../api/calls/chat";
 import { start } from "../../api/calls/server";
 import type { ConnectionState } from "../../api/events";
 import { keys } from "../../api/keys";
+import type { Snapshot } from "../../api/types/board";
 import { liveRuns } from "../../api/types/board";
-import { recentChat } from "../../chat/chatList";
+import type { Chat } from "../../api/types/chat";
+import { groupChats, recentChat } from "../../chat/chatList";
+import { placeName } from "../../chat/places";
 import { unreadCount } from "../../chat/readMarkers";
+import { Button } from "../../ui/components/Button";
 import { IconButton } from "../../ui/components/IconButton";
 import { Mark } from "../../ui/components/Mark";
 import { StatusDot } from "../../ui/components/StatusDot";
@@ -262,6 +267,9 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
           </Section>
         )}
         {!inSettings && groupSection("")}
+        {!inSettings && !collapsed && (
+          <ChatSection chats={chatList.data ?? []} snapshot={data.data} at={at} />
+        )}
         {!inSettings && (
           <Section title="Projects" collapsed={collapsed}>
             {/* The label above is not a way to get anywhere; the whole list of repositories is a row of its own, at
@@ -318,6 +326,97 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
         )}
       </ScrollFades>
     </nav>
+  );
+}
+
+/**
+ * The list of the conversations, above Projects, in the wide sidebar only: the rail has no room for a list of them,
+ * so it keeps its one Chat entry instead. The chats stand under the day each was started (`groupChats`), each row
+ * with its unread dot and the place it works in, and the one on screen marked by its own address the way a page is.
+ * The compact way to start a new one sits above the list, like the way ChatTopBar puts beside the canvas.
+ */
+function ChatSection({
+  chats,
+  snapshot,
+  at,
+}: {
+  chats: Chat[];
+  snapshot: Snapshot | undefined;
+  at: string;
+}) {
+  const groups = groupChats(chats, Math.floor(Date.now() / 1000));
+  return (
+    <Section title="Chats" collapsed={false}>
+      <li>
+        <Button asChild variant="secondary" size="sm" className="w-full">
+          <Link to="/chat" aria-label="Start a new chat">
+            <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
+            New chat
+          </Link>
+        </Button>
+      </li>
+      {groups.map((group) => (
+        <div key={group.label} className="mt-1 flex flex-col gap-1">
+          <div
+            className="px-2 text-xs font-semibold text-sidebar-group"
+            data-testid="chat-group-label"
+          >
+            {group.label}
+          </div>
+          {group.chats.map((chat) => (
+            <ChatEntry
+              key={chat.id}
+              chat={chat}
+              snapshot={snapshot}
+              current={at === `/chat/${chat.id}`}
+            />
+          ))}
+        </div>
+      ))}
+    </Section>
+  );
+}
+
+/** One conversation of the list: its name, the place it works in, and a dot while it has answers nobody read. */
+function ChatEntry({
+  chat,
+  snapshot,
+  current,
+}: {
+  chat: Chat;
+  snapshot: Snapshot | undefined;
+  current: boolean;
+}) {
+  const name = chat.title || "New chat";
+  const place = placeName(snapshot, chat);
+  const unread = chat.answered > chat.seen;
+  return (
+    <li>
+      <Link
+        to={`/chat/${chat.id}`}
+        aria-label={name}
+        aria-current={current ? "true" : undefined}
+        data-testid="chat-entry"
+        data-unread={unread ? "true" : undefined}
+        className={cn(
+          "flex min-h-10 items-center gap-2 rounded-control px-3 text-base",
+          current
+            ? "bg-selected font-semibold text-text"
+            : "text-sidebar-text hover:bg-hover hover:text-text",
+        )}
+      >
+        <span className="min-w-0 flex-1 truncate" title={name}>
+          {name}
+        </span>
+        {place && <span className="shrink-0 truncate text-xs text-secondary">{place}</span>}
+        {unread && (
+          <>
+            <StatusDot color="var(--attention)" />
+            <span className="sr-only">New answers</span>
+          </>
+        )}
+      </Link>
+    </li>
   );
 }
 

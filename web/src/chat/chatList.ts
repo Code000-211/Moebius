@@ -53,6 +53,36 @@ function replace(chats: Chat[], id: number, change: (chat: Chat) => Chat): Chat[
   return next;
 }
 
+/** A day in seconds, so the chats are grouped by whole days the way `ago` splits its words, not by clocks. */
+const DAY = 86_400;
+
+/** The chats of one day of the list, named as the sidebar says it. */
+export interface ChatGroup {
+  label: string;
+  chats: Chat[];
+}
+
+/**
+ * Every chat falls under one of three days, in a fixed order the cache's updates cannot shake: "Today", then
+ * "Yesterday", then "Older", each group's own chats newest first. The day a chat belongs to is the whole day of its
+ * `started_at` against `now` (both Unix seconds), so a chat begun at 23:59 stays of the day it was begun; a clock a
+ * little behind the server's still puts a chat of tomorrow under Today. A day with no chat is dropped.
+ */
+export function groupChats(chats: Chat[], now: number): ChatGroup[] {
+  const today = Math.floor(now / DAY);
+  const inGroup = (chat: Chat): number =>
+    Math.min(2, Math.max(0, today - Math.floor(chat.started_at / DAY)));
+  const buckets: [string, Chat[]][] = [
+    ["Today", []],
+    ["Yesterday", []],
+    ["Older", []],
+  ];
+  for (const chat of chats) buckets[inGroup(chat)]?.[1].push(chat);
+  return buckets
+    .map(([label, chats]) => ({ label, chats: chats.sort((a, b) => b.started_at - a.started_at) }))
+    .filter((group) => group.chats.length > 0);
+}
+
 /**
  * The chat to open when someone asks for Chat: the one started most recently, or null when there is none — wherever
  * it was started, since a conversation begun in the floating window is a chat of the Chat page like any other. The
