@@ -472,6 +472,7 @@ At the top:
 | `app/reproduce.rs` | Test first: a repository's opt-in (the project's `test-first`), what a run names in the `REPRODUCE:` lines of its summary, and the runs of that reproduction test on the change and on the commit it starts from with the test's files added. |
 | `app/workflows/mod.rs` | The wiring that turns a stored workflow into a run, recording the run and its nodes in the store and on the bus. |
 | `app/workflows/run.rs` | Starting a workflow run from its definition or its name, driving it off the request path, and recording and publishing each node and the run's end as they happen. |
+| `app/workflows/approval.rs` | The part of a run that waits for a person: the wait of the `approval` node, the decision coming back through the resume route, and driving again the runs a stopped server left waiting. |
 
 `config/`, `moebius.toml`:
 
@@ -748,6 +749,7 @@ At the top:
 | `workflows/nodes/code.rs` | The `code` node: Luau that reshapes the value in the expression sandbox, with the run's scope, and outputs what it returns. |
 | `workflows/nodes/condition.rs` | The `condition` node: one Luau expression per named output port, tried in order, the first true one taken, else the fallback port or a failure. |
 | `workflows/nodes/for_each.rs` | The `for_each` node: fans a list out over a sub-path once per element, gathers the outputs in order, and checks that the sub-path rejoins where the definition says. |
+| `workflows/nodes/approval.rs` | The `approval` node: the prompt, the deadline and what each of the three decisions leaves on the run; the waiting itself belongs to `app/workflows/approval.rs`. |
 | `workflows/nodes/http/mod.rs` | The `http` node: the node kind, its configuration from the server, and the run that fills its parameters and fails closed on a refused or failed call. |
 | `workflows/nodes/http/params.rs` | Reading the `http` node's parameters into a request, when the file is read and again when the run has filled its expressions. |
 | `workflows/nodes/http/policy.rs` | The `http` node's URL policy: `https` or `http`, no user name or password, and only a host the server configuration names. |

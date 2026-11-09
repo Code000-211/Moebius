@@ -63,8 +63,8 @@ every module.
 - Match the code around you. Doc comments say what a thing is for. Names read as words. Little else goes in comments.
 - Build only what is needed. No traits with one implementation unless a second is planned, no options nobody sets, and
   no public API nobody uses. Prefer a plain function to a new type.
-- Errors are a `thiserror` enum per module. A run never waits for a person. Anything that fails while deciding fails
-  closed.
+- Errors are a `thiserror` enum per module. A card run never waits for a person; a workflow run may wait at an
+  `approval` node, until its deadline. Anything that fails while deciding fails closed.
 - Secrets never reach the store or a log unredacted (`blobs::redact`).
 
 ## Tests

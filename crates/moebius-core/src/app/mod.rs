@@ -172,6 +172,13 @@ pub struct App {
     /// Why each waiting card waits, as its column script last said (`moebius.wait`, `ask`, `stuck`). Not stored: a
     /// reason is rebuilt by the next tick after a restart.
     waiting: Mutex<HashMap<i64, String>>,
+    /// The workflow runs waiting for a person's decision: the decision the resume route sends to the thread that waits
+    /// for it (see `workflows::approval`).
+    workflow_decisions:
+        Mutex<HashMap<i64, std::sync::mpsc::Sender<crate::workflows::nodes::approval::Decision>>>,
+    /// The workflow runs a thread drives now, so that a decision at the edge of a wait cannot start a second drive
+    /// of the same run (see `workflows::run`).
+    workflow_drives: Mutex<BTreeSet<i64>>,
     /// The cards whose forge refused to close their issue for a script, with when and what it said: not asked again for
     /// a while (see `issues`). Not stored.
     close_refused: Mutex<HashMap<i64, (std::time::Instant, String)>>,
@@ -214,6 +221,8 @@ impl App {
             researching: Mutex::default(),
             terminals: Arc::default(),
             waiting: Mutex::default(),
+            workflow_decisions: Mutex::default(),
+            workflow_drives: Mutex::default(),
             close_refused: Mutex::default(),
             label_refused: Mutex::default(),
             close_retry: Duration::from_secs(600),

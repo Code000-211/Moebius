@@ -136,10 +136,11 @@ defaults when it does not:
 
 | Key | Default | What it limits |
 |---|---|---|
-| `node_timeout_seconds` | `300` | How long one node may run. A node still running after this fails the run. |
+| `node_timeout_seconds` | `300` | How long one node may run. A node still running after this fails the run. A node kind may name its own timeout, which replaces this one for its nodes. |
 | `max_nodes` | `100` | How many nodes one run may execute. Asking for one more fails the run. |
 
-A run moves from `queued` to `running` and ends `succeeded` or `failed`. Each node is one `workflow_node_runs` row,
+A run moves from `queued` to `running`, may go `waiting` while an `approval` node waits for a person, and ends
+`succeeded` or `failed`. Each node is one `workflow_node_runs` row,
 stored with its input before the node starts and its output (or error) after it finishes, so a run's nodes are readable
 while it is still going. A node gets the trigger's value, the value its predecessor returned, and the values of the
 nodes that ran before it; it returns one value for the edge that leaves it and, when it chooses, the name of the output
@@ -149,10 +150,13 @@ ends the run `failed` with that error, and no later node runs. A timeout or a re
 `failed`, with an error that says which limit was reached.
 
 `workflows::run::execute` is the same executor without the store: it takes the definition, the starting value, the
-`Limits`, a `Runner` and an `Observer`. It reports each node to the observer before and after it runs, so the caller
-can record the step. The `Runner` trait runs one node: `run(node, input)` gives it the node and the value that reached
-it; `run_routed(node, scope)` gives it, in a `Scope`, the trigger's value, the input and the values of the nodes that
-ran before, and takes back a `Routed`, the value and the port the node named, if it named one. A run that cannot go on
+`Limits`, a `Runner` and an `Observer`. `workflows::run::execute_from_node` starts at a named node with the value that
+reached it, for a run a server restart left waiting, so no node before it runs again. Both report each node to the
+observer before and after it runs, so the caller can record the step. The `Runner` trait runs one node: `run(node,
+input)` gives it the node and the value that reached it; `run_routed(node, scope)` gives it, in a `Scope`, the trigger's
+value, the input and the values of the nodes that ran before, and takes back a `Routed`, the value and the port the node
+named, if it named one. A `Runner` may name a `timeout` for a node, which replaces the run's `node_timeout_seconds` for
+that node; the server does for an `approval` node, whose wait is bounded by its own deadline. A run that cannot go on
 ends with a `workflows::run::Error` (a node's `NodeError`, a timeout, the ceiling, a port with no edge, an edge to an
 unknown node, or a step the observer could not record); its text is the run's `error`.
 
@@ -184,6 +188,7 @@ Each node kind has one section here and one page in [`workflows/`](workflows/REA
 - [`code`](workflows/code.md): runs Luau that reshapes the value and outputs what it returns.
 - [`condition`](workflows/condition.md): sends the value down the first port whose expression is true.
 - [`for_each`](workflows/for-each.md): runs a sub-path once per element of a list and gathers the outputs.
+- [`approval`](workflows/approval.md): pauses the run for a person, who approves the value, replaces it, or rejects it.
 - [`http`](workflows/http.md): calls a URL on an allowed host, with secrets by name, and outputs the status, headers and body.
 - [`merge`](workflows/merge.md): joins two branches and emits what arrived by each side.
 
