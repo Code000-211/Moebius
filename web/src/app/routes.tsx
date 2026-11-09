@@ -74,6 +74,11 @@ const WorkflowsPage = lazy(() =>
 const WorkflowPage = lazy(() =>
   import("./workflows/WorkflowPage").then((all) => ({ default: all.WorkflowPage })),
 );
+const WorkflowCanvasPage = lazy(() =>
+  import("./workflows/canvas/WorkflowCanvasPage").then((all) => ({
+    default: all.WorkflowCanvasPage,
+  })),
+);
 const WorkflowRunPage = lazy(() =>
   import("./workflows/WorkflowRunPage").then((all) => ({ default: all.WorkflowRunPage })),
 );
@@ -134,6 +139,7 @@ export const routes = [
       { path: "decision-model", element: <DecisionModelPage /> },
       { path: "workflows", element: <WorkflowsPage /> },
       { path: "workflows/:name", element: <WorkflowPage /> },
+      { path: "workflows/:name/canvas", element: <WorkflowCanvasPage /> },
       { path: "workflow-runs/:id", element: <WorkflowRunPage /> },
       { path: "chat/:id", element: <ChatPage /> },
       { path: "board/:id", element: <BoardPage /> },

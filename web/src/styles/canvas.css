@@ -1,0 +1,140 @@
+/*
+ * The workflow canvas. React Flow draws the graph; this sheet dresses it in the app's own tokens, so the canvas sits
+ * inside the design standard of `docs/design-web.md` rather than beside it: the ground and the dots of the background,
+ * the wires and their labels, the ports a person drags from, the cards and their selected and refused states, and the
+ * controls in the corner. Every value is a token of `theme.css`; nothing here carries a colour, a radius or a shadow
+ * of its own.
+ *
+ * The names React Flow asks for are all set here, so a control of the library never falls back to the value it ships
+ * with. `tokens.test.ts` reads this file like any other, and the e2e design audit walks the canvas it is used on.
+ */
+
+.react-flow {
+  /* The ground, and the dots that show where it has been panned to. */
+  --xy-background-color-default: var(--background);
+  --xy-background-pattern-dots-color-default: var(--hairline);
+
+  /* The wires, the label of the port one leaves by, and the line being drawn. */
+  --xy-edge-stroke-default: var(--hairline-strong);
+  --xy-edge-stroke-width-default: 1.5;
+  --xy-edge-stroke-selected-default: var(--text-secondary);
+  --xy-edge-label-background-color-default: var(--background);
+  --xy-edge-label-color-default: var(--text-secondary);
+
+  /* The cards. A card paints its own surface, so the library's is left clear. */
+  --xy-node-background-color-default: transparent;
+  --xy-node-border-default: none;
+  --xy-node-border-radius-default: var(--radius-card);
+  --xy-node-color-default: var(--text);
+  --xy-node-boxshadow-selected-default: none;
+  --xy-node-boxshadow-hover-default: none;
+
+  /* The ports, and the rubber band of a connection being refused. */
+  --xy-handle-background-color-default: var(--surface-sunken);
+  --xy-handle-border-color-default: var(--hairline-strong);
+  --xy-connectionline-stroke-default: var(--focus);
+
+  /* The box a marquee selects within. */
+  --xy-selection-background-color-default: var(--selected);
+  --xy-selection-border-default: 1px dashed var(--hairline-strong);
+
+  /* The corner controls. */
+  --xy-controls-button-background-color-default: var(--surface);
+  --xy-controls-button-background-color-hover-default: var(--hover);
+  --xy-controls-button-color-default: var(--text-secondary);
+  --xy-controls-button-color-hover-default: var(--text);
+  --xy-controls-button-border-color-default: var(--hairline);
+  --xy-controls-box-shadow-default: var(--shadow-card);
+
+  /* The library's name is hidden outright (`proOptions.hideAttribution`); its licence and size are in `web/NOTICE`. */
+  --xy-attribution-background-color-default: transparent;
+}
+
+/* A port: a small square with the ground of the card behind it, big enough to catch a pointer. */
+.canvas-handle {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--surface);
+  border-radius: var(--radius-small);
+  background: var(--hairline-strong);
+}
+
+.canvas-handle:hover,
+.canvas-handle:focus-visible {
+  background: var(--focus);
+}
+
+.react-flow__handle.connectingto .canvas-handle,
+.react-flow__handle.connecting .canvas-handle {
+  background: var(--progress);
+}
+
+.react-flow__handle.invalid .canvas-handle,
+.react-flow__handle.connectingto.invalid .canvas-handle {
+  background: var(--error);
+}
+
+/* A chosen card, and a card a refused save named. */
+.canvas-node--selected {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.canvas-node--problem {
+  outline: 2px solid var(--error);
+  outline-offset: 2px;
+}
+
+/* The label of an edge names the port it leaves by, so it reads as text and not as a badge. */
+.react-flow__edge-text {
+  fill: var(--text-secondary);
+  font-size: var(--size-caption);
+}
+
+.react-flow__edge-textbg {
+  fill: var(--background);
+}
+
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:focus-visible .react-flow__edge-path {
+  stroke: var(--text-secondary);
+  outline: none;
+}
+
+.react-flow__edge.animated .react-flow__edge-path {
+  stroke: var(--progress);
+}
+
+.react-flow__node {
+  font-family: inherit;
+}
+
+.react-flow__controls {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+
+/* The panel of controls sits on the step of the spacing, and its buttons are big enough for a thumb. */
+.react-flow__panel {
+  margin: 16px;
+}
+
+.react-flow__controls-button {
+  width: 40px;
+  height: 40px;
+  padding: 8px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--surface);
+  color: var(--text-secondary);
+}
+
+.react-flow__controls-button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
