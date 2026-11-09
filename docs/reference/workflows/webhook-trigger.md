@@ -84,6 +84,6 @@ curl -X POST -H "Authorization: Bearer 7f7c…" \
 ## Where the code is
 
 `workflows/trigger/webhook.rs` reads the trigger and says which workflow a path leads to;
-`server/api/workflow_hooks.rs` is the route that answers. A trigger kind is resolved by the trigger module that owns
-it, and `webhook` is not a node kind: a workflow that names `webhook` as a node's `kind` is refused as an unknown node
-kind.
+`server/api/workflow_hooks.rs` is the route that answers. A `webhook` trigger is resolved by the trigger module that
+owns it, and `webhook` is not a node kind: a workflow that names `webhook` as a node's `kind` is refused as an unknown
+node kind.

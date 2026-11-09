@@ -749,7 +749,7 @@ At the top:
 | `workflows/nodes/for_each.rs` | The `for_each` node: fans a list out over a sub-path once per element, gathers the outputs in order, and checks that the sub-path rejoins where the definition says. |
 | `workflows/nodes/merge.rs` | The `merge` node: joins the two branches that reached it and emits what arrived by each side, one side's object or the list of the arrivals. |
 | `workflows/run.rs` | The executor: following the edges from the trigger with one value, giving each node the trigger's value and the values of the nodes that ran before, taking the edge that leaves by the port a node names, running each node under its timeout, failing the run on a node's error or its node ceiling, and reporting each step to an observer. |
-| `workflows/trigger/mod.rs` | The trigger kinds a workflow file may name, and why a trigger's `kind` is resolved here rather than as a node's. |
+| `workflows/trigger/mod.rs` | The trigger kinds a workflow file may name, the module that owns each, and how a trigger's `kind` is resolved by its module when one owns it and by the node registry otherwise. |
 | `workflows/trigger/webhook.rs` | The `webhook` trigger: the path its workflow answers on, the secret a delivery must carry and the repository its runs belong to, and which workflow a path leads to. |
 
 Outside `src/`: `kanban/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension

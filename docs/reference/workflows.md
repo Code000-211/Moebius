@@ -61,7 +61,7 @@ written `[[trigger]]` and has:
 
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `kind` | string | The kind name, which the trigger kind of [`workflows/trigger/`](#trigger-kinds) reads. A trigger kind is not a node kind. |
+| `kind` | string | The kind name. A kind with a module in [`workflows/trigger/`](#trigger-kinds) is read by that module and is not a node kind; any other kind is read by the node registry, like a node's kind. |
 | `params` | table | The kind's settings, read by that kind. Optional; defaults to an empty table. |
 
 An edge starts at the trigger with `from = "trigger"`; `trigger` is reserved and cannot be a node's id or an edge's
@@ -172,9 +172,10 @@ Only the kinds listed under [Node kinds](#node-kinds) are registered; a file nam
 
 ## Trigger kinds
 
-A trigger is not a piece of work inside a run, so its `kind` is not one of the [node registry](#the-node-registry):
-the module that owns the trigger kind in `workflows/trigger/` reads its `params` and says which ports it has. Each
-trigger kind has one page in [`workflows/`](workflows/README.md).
+A trigger is not a piece of work inside a run. When a module in `workflows/trigger/` owns the trigger's `kind`, that
+module reads its `params` and says which ports it has, and the kind is not one of the [node
+registry](#the-node-registry). A trigger kind with no module there is read by the node registry, like a node's kind.
+Each trigger kind has one page in [`workflows/`](workflows/README.md).
 
 - [`webhook`](workflows/webhook-trigger.md): a path on the server whose deliveries start runs of this workflow.
 
