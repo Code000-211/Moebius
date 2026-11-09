@@ -999,6 +999,24 @@ async fn a_workflow_run_starts_by_hand_with_the_inputs_it_is_given() {
         json!({"version": "2.0.0", "count": 3, "dry_run": true})
     );
 
+    // The same inputs from a JSON file.
+    let file = s.dir.path().join("inputs.json");
+    std::fs::write(&file, r#"{"version": "3.0.0", "count": 7}"#).unwrap();
+    let started = json_out(
+        &s.run(&[
+            "--json",
+            "workflow",
+            "run",
+            "release",
+            "--repository",
+            "radiance",
+            "--inputs",
+            file.to_str().unwrap(),
+        ])
+        .await,
+    );
+    assert_eq!(started["value"], json!({"version": "3.0.0", "count": 7}));
+
     // A value that is not the type its input names is refused, and the refusal names the input.
     let failed = s
         .run(&[
