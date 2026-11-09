@@ -588,6 +588,53 @@ async fn an_upgraded_automation_with_a_name_that_is_not_a_file_name_keeps_firing
 // Unix only: the fake Pi is a Python script started by its `#!` line.
 #[cfg(unix)]
 #[tokio::test]
+async fn an_automation_whose_workflow_file_is_deleted_stops_until_the_next_start() {
+    let (dir, state, addr) = start().await;
+    let app = &state.app;
+    let mut body = triage("Triage the new issues.");
+    body["schedule"] = json!("* * * * *");
+    let added: AutomationView = add(&state, &addr, body).await.json().await.unwrap();
+    let id = added.automation.id;
+    let harness = crate::harness::repo::testing::use_harness(app, dir.path());
+    app.migrate_automations().unwrap();
+
+    // A person deletes the workflow's file: the automation no longer fires, from its row or anywhere else.
+    std::fs::remove_file(harness.path().join("workflows/Triage.toml")).unwrap();
+    app.store
+        .set_automations_checked("2000-01-01 00:00")
+        .unwrap();
+    on_automation_schedule(app, &*state.runs).unwrap();
+    assert!(app.firings(id).unwrap().is_empty());
+
+    // The next start writes the file again, and the schedule fires the automation once, not once from the row too.
+    app.migrate_automations().unwrap();
+    assert!(
+        app.harness_repo()
+            .unwrap()
+            .path()
+            .join("workflows/Triage.toml")
+            .exists(),
+        "the file is written again"
+    );
+    let due = a_minute_from_now(app) + time::Duration::minutes(5);
+    crate::server::schedule::on_workflow_schedules(
+        app,
+        Some(harness.as_ref()),
+        Some(&*state.runs),
+        due,
+    )
+    .unwrap();
+    on_automation_schedule(app, &*state.runs).unwrap();
+    let firings = app.firings(id).unwrap();
+    assert_eq!(firings.len(), 1);
+    assert_eq!(firings[0].status, "started");
+    app.end_chat(&*state.runs, firings[0].run_id.unwrap())
+        .unwrap();
+}
+
+// Unix only: the fake Pi is a Python script started by its `#!` line.
+#[cfg(unix)]
+#[tokio::test]
 async fn an_automation_without_a_harness_fires_from_its_row() {
     let (_dir, state, addr) = start().await;
     let app = &state.app;
@@ -721,8 +768,13 @@ port = "out"
     on_automation_schedule(app, &*state.runs).unwrap();
     assert!(app.firings(row.id).unwrap().is_empty());
     let due = a_minute_from_now(app) + time::Duration::minutes(5);
-    crate::server::schedule::on_workflow_schedules(app, Some(&harness), Some(&*state.runs), due)
-        .unwrap();
+    crate::server::schedule::on_workflow_schedules(
+        app,
+        Some(harness.as_ref()),
+        Some(&*state.runs),
+        due,
+    )
+    .unwrap();
     let firings = app.firings(row.id).unwrap();
     assert_eq!(firings.len(), 1);
     assert_eq!(firings[0].status, "started");

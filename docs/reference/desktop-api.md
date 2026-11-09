@@ -2168,7 +2168,8 @@ The automations, by name: an array of `Automation`. An automation is a workflow 
 node (see [workflows](workflows.md#automations)); these routes and the commands keep their old names and arguments as a
 shortcut over it. The workflow file is the definition, and the automation's row keeps the id its firings use. A row
 whose file has been edited into an ordinary workflow is not listed: the workflow owns its schedule, and the row fires
-it no more.
+it no more. Deleting the workflow's file also stops the automation, until the next start of the server writes it
+again; then the schedule fires it as before.
 
 ### `POST /v1/automations`
 
@@ -2182,12 +2183,12 @@ within the last five minutes) fires once. It starts from the minute the automati
 upgrade or a save cannot fire the minute it happens in again. A repository automation starts a workflow run whose `chat`
 node starts a chat as `POST /v1/chats` would, with the automation's agent, place and `prompt` as the first message, and
 `origin` `automation`; an automation that works in the harness configuration repository starts that chat directly. A
-firing that came due while the server was not running is not made up. A run never waits for a person: once the chat's agent has answered and the chat
-waits for a message, the next check ends it as `POST /v1/chats/{id}/end` does, so what it changed is offered as a change
-and lands in the inbox. A firing due while the chat of the automation's last started firing has neither ended nor
-answered is skipped and recorded as `skipped`. A chat that cannot be started (its agent can no longer run, say) is
-recorded as `failed` with the reason. Each firing publishes `automation_fired`, whose `workflow` names the workflow behind
-it and whose `workflow_run` names the run that carries it.
+firing that came due while the server was not running is not made up. A run never waits for a person: once the chat's
+agent has answered and the chat waits for a message, the next check ends it as `POST /v1/chats/{id}/end` does, so what
+it changed is offered as a change and lands in the inbox. A firing due while the chat of the automation's last started
+firing has neither ended nor answered is skipped and recorded as `skipped`. A chat that cannot be started (its agent can
+no longer run, say) is recorded as `failed` with the reason. Each firing publishes `automation_fired`, whose `workflow`
+names the workflow behind it and whose `workflow_run` names the run that carries it.
 
 Request:
 

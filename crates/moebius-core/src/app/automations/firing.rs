@@ -177,9 +177,9 @@ fn fire(
 }
 
 /// The schedule's check, once a minute: ends the chats of automations that have answered, and fires an automation
-/// still held only by its row, which is one an upgrade has not written to a workflow yet, or any automation on a
-/// server with no harness configuration repository. An automation whose workflow file holds it fires from that file
-/// (see `server::schedule::on_workflow_schedules`), so one automation has one clock.
+/// that has nowhere its workflow file would be. Where a harness configuration repository is, the workflow file is
+/// what fires an automation (see `server::schedule::on_workflow_schedules`), so one automation has one clock there;
+/// deleting its file stops it until the next start writes it again.
 pub fn on_schedule(app: &Arc<App>, runs: &dyn Runs) -> Result<()> {
     for run_id in app.store.waiting_automation_chats()? {
         // A chat that ended meanwhile cannot be ended again; it is left as it is.
@@ -192,13 +192,13 @@ pub fn on_schedule(app: &Arc<App>, runs: &dyn Runs) -> Result<()> {
         return Ok(());
     };
     let earliest = now - LOOK_BACK;
+    let anywhere = app.harness_repo.get().is_some();
     for automation in app.store.automations()? {
-        // Any file at the row's key is what fires it, even one edited into an ordinary workflow: the row is then
-        // only its firings' history, and firing it from both clocks would fire the automation twice.
-        let has_workflow = app
-            .automation_workflow(automation.id, &automation.name)?
-            .is_some();
-        if has_workflow || !automation.enabled {
+        // Where the workflow file of an automation can be, that file is all that fires it, and the row is only its
+        // firings' history: firing it from both clocks would fire the automation twice, and a file a person deleted
+        // between starts stops the firing until the next start writes it again. Only a server with nowhere to
+        // write a file keeps firing its automations from their rows.
+        if anywhere || !automation.enabled {
             continue;
         }
         let Ok(schedule) = cron::parse(&automation.schedule) else {

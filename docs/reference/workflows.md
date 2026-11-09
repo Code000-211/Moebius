@@ -210,6 +210,7 @@ Each node kind has one section here and one page in [`workflows/`](workflows/REA
 - [`http`](workflows/http.md): calls a URL on an allowed host, with secrets by name, and outputs the status, headers and body.
 - [`merge`](workflows/merge.md): joins two branches and emits what arrived by each side.
 - [`chat`](workflows/chat.md): starts an agent chat; an automation is one `schedule` trigger and one `chat` node.
+- [`publish`](workflows/publish.md): offers the run's branch as a change for review, checks and merge.
 
 ## Automations
 
@@ -220,13 +221,16 @@ name. The Automations page and the `/v1/automations` routes and `automation` com
 shortcut, keeping the automation's id for its firings; an automation whose name is not a safe file name, or whose
 name is already an ordinary workflow's or another automation's, is kept in `automation-<id>.toml`, with the name still
 in the file, so that the workflow or automation of that name keeps its file and each automation keeps firing. Two
-automations may share a name and are still two workflows, each with its own file. A run of it is a workflow run, started by the same workflow
-schedule as any other and reaching its `chat` node, so it fires once; the firing names that run. A file edited into an
-ordinary workflow is that workflow: its own schedule starts it, and the Automations page leaves its old row out and no
-longer fires it. An automation that works in the harness configuration repository starts its chat directly, because a
-workflow run belongs to a repository.
-Until an upgrade has written an older automation to a file, or on a server with no `[harness]` where there is nowhere
-to write it, its row is what fires it, on the same minute and within the same five minutes. The workflow schedule starts
+automations may share a name and are still two workflows, each with its own file. A run of it is a workflow run, started
+by the same workflow schedule as any other and reaching its `chat` node, so it fires once; the firing names that run. A
+file edited into an ordinary workflow is that workflow: its own schedule starts it, and the Automations page leaves its
+old row out and no longer fires it. An automation that works in the harness configuration repository starts its chat
+directly, because a workflow run belongs to a repository.
+
+The file is all that fires the automation where the repository exists: deleting its file stops the automation until
+the next start writes it again, and then it fires as its schedule says. On a server with no `[harness]`, where there
+is nowhere to write a file, the automation's row is what fires it, on the same minute and within the same five
+minutes. The workflow schedule starts
 from the minute the automation was last checked or saved, so the minute of an upgrade or a save cannot fire again.
 
 ## Extending this page
