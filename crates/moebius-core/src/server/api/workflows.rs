@@ -7,6 +7,7 @@
 //!   is refused with the validation message and the file is untouched.
 //! - `DELETE /v1/workflows/{name}`: commits the workflow's deletion, refused while a run of it is queued, running or
 //!   waiting.
+//! - `POST /v1/workflows/runs/{id}/cancel`: cancels a run of a workflow and ends it `cancelled`.
 //! - `POST /v1/workflows/runs/{run_id}/resume` `{decision, value?, reason?}`: records a person's decision on a run that
 //!   waits for one (`workflow_approval` in the inbox); a second decision on a finished wait is refused.
 
@@ -18,6 +19,8 @@ use serde::{Deserialize, Serialize};
 use super::{ApiError, ApiState, blocking};
 use crate::app::AppError;
 use crate::app::workflows::DecisionRequest;
+use crate::app::workflows::stopping::CancelWorkflowRunError;
+use crate::store::WorkflowRun;
 use crate::workflows::definition::{self, WorkflowDefinition};
 
 /// The routes of workflows.
@@ -25,6 +28,7 @@ pub(super) fn routes() -> Router<ApiState> {
     Router::new()
         .route("/v1/workflows", get(list))
         .route("/v1/workflows/{name}", get(show).put(save).delete(delete))
+        .route("/v1/workflows/runs/{id}/cancel", post(cancel_run))
         .route("/v1/workflows/runs/{run_id}/resume", post(resume))
 }
 
@@ -125,6 +129,30 @@ async fn save(
             view: view(&repo, &name)?,
             commit,
         })
+    })
+    .await
+}
+
+/// Cancels a run of a workflow and ends it `cancelled`: a queued run never starts, a run going stops at its current
+/// node, and a run waiting on a person leaves its inbox item withdrawn. A run that has already ended answers 409.
+async fn cancel_run(
+    State(state): State<ApiState>,
+    axum::Extension(by): axum::Extension<crate::decide::Actor>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<WorkflowRun>, ApiError> {
+    let runs = state.runs.clone();
+    blocking(&state.app, move |app| {
+        app.cancel_workflow_run(&by, &*runs, id)
+            .map_err(|error| match error {
+                CancelWorkflowRunError::NotFound => {
+                    AppError::NotFound(format!("workflow run {id}"))
+                }
+                CancelWorkflowRunError::AlreadyFinished { status } => {
+                    AppError::Conflict(format!("workflow run {id} has already ended as {status}"))
+                }
+                CancelWorkflowRunError::Store(error) => AppError::Store(error),
+                CancelWorkflowRunError::App(error) => error,
+            })
     })
     .await
 }
@@ -300,6 +328,15 @@ port = "out"
     async fn get_response(state: &ApiState, addr: &str, path: &str) -> reqwest::Response {
         reqwest::Client::new()
             .get(format!("http://{addr}{path}"))
+            .bearer_auth(&*state.token)
+            .send()
+            .await
+            .unwrap()
+    }
+
+    async fn post(state: &ApiState, addr: &str, path: &str) -> reqwest::Response {
+        reqwest::Client::new()
+            .post(format!("http://{addr}{path}"))
             .bearer_auth(&*state.token)
             .send()
             .await
@@ -629,6 +666,132 @@ port = "out"
             log(&harness).contains("Delete the workflow release"),
             "{}",
             log(&harness)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_queued_run_is_cancelled_by_the_route_and_refuses_a_second_cancel() {
+        let (_dir, state, addr, _harness) = started().await;
+        let repository = state.app.store.repositories().unwrap().first().unwrap().id;
+        let run = state
+            .app
+            .store
+            .add_workflow_run("release", repository, "test", &json!({}))
+            .unwrap();
+
+        let response = post(
+            &state,
+            &addr,
+            &format!("/v1/workflows/runs/{}/cancel", run.id),
+        )
+        .await;
+        let status = response.status();
+        let body = response.text().await.unwrap();
+        assert_eq!(status, 200, "{body}");
+        let cancelled: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(cancelled["id"], run.id);
+        assert_eq!(cancelled["status"], "cancelled");
+        assert!(cancelled["started_at"].is_null(), "{body}");
+        assert_eq!(cancelled["error"], "cancelled by a person");
+        assert_eq!(
+            state
+                .app
+                .store
+                .workflow_run(run.id)
+                .unwrap()
+                .unwrap()
+                .status,
+            "cancelled"
+        );
+
+        let response = post(
+            &state,
+            &addr,
+            &format!("/v1/workflows/runs/{}/cancel", run.id),
+        )
+        .await;
+        let status = response.status();
+        let body = response.text().await.unwrap();
+        assert_eq!(status, 409, "{body}");
+        assert!(
+            body.contains("has already ended as cancelled"),
+            "the refusal says what ended: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_finished_run_and_an_unknown_one_answer_the_cancel_with_an_error() {
+        let (_dir, state, addr, _harness) = started().await;
+        let repository = state.app.store.repositories().unwrap().first().unwrap().id;
+        let run = state
+            .app
+            .store
+            .add_workflow_run("release", repository, "test", &json!({}))
+            .unwrap();
+        state
+            .app
+            .store
+            .finish_workflow_run(run.id, "succeeded", None)
+            .unwrap();
+
+        let response = post(
+            &state,
+            &addr,
+            &format!("/v1/workflows/runs/{}/cancel", run.id),
+        )
+        .await;
+        let status = response.status();
+        let body = response.text().await.unwrap();
+        assert_eq!(status, 409, "{body}");
+        assert!(
+            body.contains("has already ended as succeeded"),
+            "the refusal says what ended: {body}"
+        );
+
+        let response = post(&state, &addr, "/v1/workflows/runs/9999/cancel").await;
+        assert_eq!(response.status(), 404);
+    }
+
+    #[tokio::test]
+    async fn a_waiting_run_leaves_its_inbox_item_withdrawn_when_the_route_cancels_it() {
+        let (_dir, state, addr, _harness) = started().await;
+        let repository = state.app.store.repositories().unwrap().first().unwrap().id;
+        let run = state
+            .app
+            .store
+            .add_workflow_run("release", repository, "test", &json!({}))
+            .unwrap();
+        state
+            .app
+            .store
+            .set_workflow_run_status(run.id, "waiting")
+            .unwrap();
+        let item = state
+            .app
+            .store
+            .add_inbox_item(
+                "workflow_approval",
+                None,
+                "The run waits for a person",
+                &json!({ "run": run.id }),
+            )
+            .unwrap();
+
+        let response = post(
+            &state,
+            &addr,
+            &format!("/v1/workflows/runs/{}/cancel", run.id),
+        )
+        .await;
+        let status = response.status();
+        let body = response.text().await.unwrap();
+        assert_eq!(status, 200, "{body}");
+
+        let open = state.app.store.inbox().unwrap();
+        let open_ids = open.iter().map(|item| item.id).collect::<Vec<_>>();
+        assert!(
+            !open_ids.contains(&item.id),
+            "the run's inbox item is still open: {open_ids:?}"
         );
     }
 }

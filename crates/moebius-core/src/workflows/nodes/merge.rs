@@ -165,6 +165,7 @@ impl Node for Merge {
 mod tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
 
     use serde_json::json;
 
@@ -296,6 +297,7 @@ port = "out"
             run::Limits::from_definition(&definition),
             &runner,
             &mut steps,
+            &AtomicBool::new(false),
         );
         (result, steps)
     }

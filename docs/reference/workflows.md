@@ -147,25 +147,30 @@ defaults when it does not:
 | `max_nodes` | `100` | How many nodes one run may execute. Asking for one more fails the run. |
 
 A run moves from `queued` to `running`, may go `waiting` while an `approval` node waits for a person, and ends
-`succeeded` or `failed`. Each node is one `workflow_node_runs` row,
-stored with its input before the node starts and its output (or error) after it finishes, so a run's nodes are readable
-while it is still going. A node gets the trigger's value, the value its predecessor returned, and the values of the
-nodes that ran before it; it returns one value for the edge that leaves it and, when it chooses, the name of the output
-port that edge leaves by. When no edge leaves the node that just ran, the run is `succeeded`; when a node names a port
-with no edge, the run is `failed` with `node "<id>" named port "<port>", which has no edge leaving by it`. A node's error
-ends the run `failed` with that error, and no later node runs. A timeout or a reached node ceiling also ends it
-`failed`, with an error that says which limit was reached.
+`succeeded`, `failed` or `cancelled`. A person or the Moebius agent cancels a run that has not ended with
+`POST /v1/workflows/runs/4/cancel`, which is [cancelling a run](workflows/cancel.md) in full. Each node is one
+`workflow_node_runs` row, stored with its input before the node starts and its output (or error) after it finishes, so a
+run's nodes are readable while it is still going. A node gets the trigger's value, the value its predecessor returned,
+and the values of the nodes that ran before it; it returns one value for the edge that leaves it and, when it chooses,
+the name of the output port that edge leaves by. When no edge leaves the node that just ran, the run is `succeeded`;
+when a node names a port with no edge, the run is `failed` with `node "<id>" named port "<port>", which has no edge
+leaving by it`. A node's error ends the run `failed` with that error, and no later node runs. A timeout or a reached
+node ceiling also ends it `failed`, with an error that says which limit was reached.
 
 `workflows::run::execute` is the same executor without the store: it takes the definition, the starting value, the
-`Limits`, a `Runner` and an `Observer`. `workflows::run::execute_from_node` starts at a named node with the value that
-reached it, for a run a server restart left waiting, so no node before it runs again. Both report each node to the
-observer before and after it runs, so the caller can record the step. The `Runner` trait runs one node: `run(node,
-input)` gives it the node and the value that reached it; `run_routed(node, scope)` gives it, in a `Scope`, the trigger's
-value, the input and the values of the nodes that ran before, and takes back a `Routed`, the value and the port the node
-named, if it named one. A `Runner` may name a `timeout` for a node, which replaces the run's `node_timeout_seconds` for
-that node; the server does for an `approval` node, whose wait is bounded by its own deadline. A run that cannot go on
-ends with a `workflows::run::Error` (a node's `NodeError`, a timeout, the ceiling, a port with no edge, an edge to an
-unknown node, or a step the observer could not record); its text is the run's `error`.
+`Limits`, a `Runner`, an `Observer` and the run's cancellation flag. `workflows::run::execute_from_node` starts at a
+named node with the value that reached it, for a run a server restart left waiting, so no node before it runs again; it
+takes the same arguments. Both report each node to the observer before and after it runs, so the caller can record the
+step. The `Runner` trait runs one node: `run(node, input)` gives it the node and the value that reached it;
+`run_routed(node, scope)` gives it, in a `Scope`, the trigger's value, the input and the values of the nodes that ran
+before, and takes back a `Routed`, the value and the port the node named, if it named one. A `Runner` may name a
+`timeout` for a node, which replaces the run's `node_timeout_seconds` for that node; the server does for an `approval`
+node, whose wait is bounded by its own deadline. The cancellation flag is set by a cancel and looked at before each node
+and while one goes; seeing it, the executor gives up on the node and ends the run with `Error::Cancelled`. A run that
+cannot go on ends with a `workflows::run::Error` (a node's `NodeError`, a timeout, the ceiling, a port with no edge, an
+edge to an unknown node, or a step the observer could not record); its text is the run's `error`. A cancellation is the
+exception: the run ends `cancelled` with the error `cancelled by a person`, and the node it was going is recorded with
+the cancellation's text, `the run was cancelled`.
 
 ## The node registry
 

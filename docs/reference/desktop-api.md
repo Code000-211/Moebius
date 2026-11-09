@@ -1269,6 +1269,17 @@ A person deletes a workflow: the file is removed, committed on the default branc
 `404` no such workflow; `409` a run of the workflow is queued, running or waiting, or the server has no `[harness]`; `422` an
 invalid name; `409` and `500` as for `PUT /v1/agents/{name}`.
 
+### `POST /v1/workflows/runs/{id}/cancel`
+
+Cancels a run of a workflow and ends it `cancelled`: a queued run never starts, a run going stops at its current node,
+and a run waiting on a person leaves its inbox item withdrawn. The run's worktree and branch are left as they are (see
+[cancelling a run](workflows/cancel.md)). Request: no body. Response: the run as the server has it now,
+`{"id": number, "workflow": string, "repository_id": number, "trigger": string, "status": string, "value": any,
+"created_at": number, "started_at": number or null, "finished_at": number or null, "error": string or null,
+"worktree": string or null}`, its
+`status` `cancelled` and its `error` `cancelled by a person`. Errors: `404` no such run; `409` the run has ended
+already, and the message names the status it ended as.
+
 ### `POST /api/hooks/{path}`
 
 Starts a run of the workflow whose `webhook` trigger names this path, in the repository that trigger names. No token:

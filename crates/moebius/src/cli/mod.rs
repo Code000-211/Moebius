@@ -592,6 +592,15 @@ pub(crate) mod tests {
         );
         assert_eq!(route(&["server", "restart"]).1, "/v1/server/restart");
         assert_eq!(route(&["agent", "delete", "Old"]).0, "DELETE");
+        assert_eq!(route(&["workflow", "list"]).1, "/v1/workflows");
+        assert_eq!(
+            route(&["workflow", "cancel", "12"]),
+            (
+                "POST".into(),
+                "/v1/workflows/runs/12/cancel".into(),
+                Some(json!({}))
+            )
+        );
     }
 
     #[test]
