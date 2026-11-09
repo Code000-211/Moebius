@@ -9,11 +9,12 @@ the path and, when the trigger names a secret, the key that secret holds.
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `path` | string | Required. The one URL segment the hook answers on: letters, digits, `-` and `_`, at most 64 of them. |
-| `secret` | string | The name of a key in the server's secret store (`secrets.toml` of the data directory, which `PUT /v1/secrets/{name}` writes) whose value a delivery must carry. Optional; without it anyone who knows the path can start a run. |
+| `secret` | string | The name of a key in the server's secret store (`secrets.toml` of the data directory, which `PUT /v1/secrets/{name}` writes) whose value a delivery must carry. The name must itself be one URL segment: letters, digits, `-` and `_`, at most 64 of them. Optional; without it anyone who knows the path can start a run. |
 | `repository` | string | The name of the repository a run belongs to, for a delivery whose address names none. Optional. |
 
-Any other key is refused. A workflow file is validated when it is read, so a trigger with no `path`, a `path` that is
-not one safe segment, or a `secret` that is not a name is refused then, with the reason in the message.
+Any other key is refused. A workflow file is validated when it is read, so a trigger with no `path`, or a `path` or
+`secret` that is not one URL segment of letters, digits, `-` and `_`, at most 64 of them, is refused then, with the
+reason in the message.
 
 The key itself never goes in the workflow file: that file is committed to a git repository and pushed to a forge, and
 a secret committed there has left the server. The file only names where the key is kept.
