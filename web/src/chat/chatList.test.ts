@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Chat } from "../api/types/chat";
-import { applyChatEvent, listChanged, recentChat } from "./chatList";
+import { applyChatEvent, groupChats, listChanged, recentChat } from "./chatList";
 
 const chat = (over: Partial<Chat> = {}): Chat => ({
   id: 7,
@@ -134,5 +134,41 @@ describe("recentChat", () => {
   it("takes the first of two that started in the same second, the order the server sends them in", () => {
     const [earlier, later] = [chat({ id: 4, started_at: 500 }), chat({ id: 6, started_at: 500 })];
     expect(recentChat([earlier, later])).toBe(earlier);
+  });
+});
+
+describe("groupChats", () => {
+  // A day is 86,400 seconds; the days here are the last three the helper can name.
+  const now = 4 * 86_400 + 12_000;
+  it("puts each chat under its own day, in the fixed order Today, Yesterday, Older", () => {
+    const chats = [
+      chat({ id: 1, started_at: now - 60 }), // Today
+      chat({ id: 2, started_at: now - 86_400 }), // Yesterday
+      chat({ id: 3, started_at: now - 2 * 86_400 - 1 }), // Older
+    ];
+    expect(groupChats(chats, now)).toEqual([
+      { label: "Today", chats: [chats[0]] },
+      { label: "Yesterday", chats: [chats[1]] },
+      { label: "Older", chats: [chats[2]] },
+    ]);
+  });
+
+  it("drops a day with no chat", () => {
+    const chats = [chat({ id: 1, started_at: now - 60 }), chat({ id: 2, started_at: 100 })];
+    expect(groupChats(chats, now)).toEqual([
+      { label: "Today", chats: [chats[0]] },
+      { label: "Older", chats: [chats[1]] },
+    ]);
+  });
+
+  it("puts the newest of each group first, whatever order the list arrives in", () => {
+    const later = chat({ id: 5, started_at: now - 10 });
+    const earlier = chat({ id: 6, started_at: now - 300 });
+    expect(groupChats([earlier, later], now)[0]?.chats.map((c) => c.id)).toEqual([5, 6]);
+  });
+
+  it("keeps a chat of just before midnight of the day before yesterday in Older", () => {
+    const old = chat({ id: 7, started_at: 3 * 86_400 - 1 });
+    expect(groupChats([old], now)[0]?.label).toBe("Older");
   });
 });
