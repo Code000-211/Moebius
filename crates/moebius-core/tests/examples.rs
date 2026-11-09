@@ -1,4 +1,5 @@
-//! The examples in `examples/` work: the column script runs as a project's override and the rules parse.
+//! The examples in `examples/` work: the column script runs as a project's override, the rules parse, and the
+//! workflow examples validate and run against a fake harness and a fake HTTP server.
 
 mod common;
 

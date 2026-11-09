@@ -104,7 +104,8 @@ or pass an `api_base` whose host is already in the list.
 ## What each part reads
 
 The trigger's value is `trigger`. Every node after it also sees `input`, the value that reached it, and
-`node("<id>")`, the value an earlier node produced. A parameter is filled from those names by an expression in
+`node("<id>")`, the value an earlier node produced (an [agent node](../reference/workflows/agent.md) cannot name
+another node's value). A parameter is filled from those names by an expression in
 `{{ }}`: `{{ trigger.api_base }}` is the input the person gave, and a whole expression as the HTTP node's `body` is
 the object the code node returned. The [expressions page](../reference/workflows/expressions.md) has the grammar and
 the sandbox.
