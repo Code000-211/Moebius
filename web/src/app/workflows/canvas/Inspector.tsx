@@ -142,7 +142,7 @@ function NodePanel({
         <IdField node={node} graph={graph} onRename={onRename} />
       </Field>
       {Custom ? (
-        <Custom node={node} graph={graph} onParams={onParams} />
+        <Custom key={node.id} node={node} graph={graph} onParams={onParams} />
       ) : (
         <ParamForm
           key={node.id}

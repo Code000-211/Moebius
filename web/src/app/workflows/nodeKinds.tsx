@@ -13,6 +13,10 @@
  */
 import type { ComponentType } from "react";
 import type { WorkflowDefinition, WorkflowNode } from "../../api/types/workflows";
+import { CodeForm } from "./forms/code";
+import { ConditionForm } from "./forms/condition";
+import { ForEachForm } from "./forms/for_each";
+import { MergeForm } from "./forms/merge";
 
 /**
  * One parameter a kind asks for, and how to ask it. `node` is the id of another node of the graph; `list` is a list of
@@ -52,6 +56,45 @@ export interface NodeKind {
 /** Every kind the palette offers, in the order it offers them. */
 export const nodeKinds: NodeKind[] = [
   {
+    kind: "code",
+    title: "Code",
+    description: "Runs Luau that reshapes the value and outputs what it returns.",
+    inputs: ["in"],
+    outputs: ["out"],
+    params: [
+      {
+        type: "text",
+        name: "source",
+        label: "Source",
+        help: "Luau that gets the value as input and returns what the node gives back. Expressions such as {{ trigger.tag }} are filled before it runs.",
+        placeholder: "return input",
+        required: true,
+      },
+    ],
+  },
+  {
+    kind: "condition",
+    title: "Condition",
+    description:
+      "Sends the value down the first port whose expression is true, or the fallback port.",
+    inputs: ["in"],
+    outputs: [],
+    params: [
+      {
+        type: "json",
+        name: "ports",
+        label: "Ports",
+        help: "The ports and their expressions, tried in order.",
+      },
+      {
+        type: "text",
+        name: "fallback",
+        label: "Fallback",
+        help: "The port taken when no expression is true.",
+      },
+    ],
+  },
+  {
     kind: "for_each",
     title: "For each",
     description: "Runs a sub-path once for every element of a list.",
@@ -74,14 +117,73 @@ export const nodeKinds: NodeKind[] = [
       },
     ],
   },
+  {
+    kind: "merge",
+    title: "Merge",
+    description: "Joins two branches and emits what arrived by each side.",
+    inputs: ["a", "b"],
+    outputs: ["out"],
+    params: [
+      {
+        type: "node",
+        name: "a",
+        label: "Side A",
+        help: "The node whose value arrives by side a.",
+        required: true,
+      },
+      {
+        type: "node",
+        name: "b",
+        label: "Side B",
+        help: "The node whose value arrives by side b.",
+        required: true,
+      },
+      {
+        type: "boolean",
+        name: "both",
+        label: "Both sides",
+        help: "Emit every side that arrived, not only one.",
+      },
+    ],
+  },
 ];
 
-/** The ports a kind has; a kind this file does not know has one each way. */
-export function portsOf(kind: string): { inputs: string[]; outputs: string[] } {
+/**
+ * The ports a kind has; a kind this file does not know has one each way. A condition's ports are the ones its
+ * parameters declare, so its card follows the form beside it.
+ */
+export function portsOf(kind: string, params?: unknown): { inputs: string[]; outputs: string[] } {
   const known = nodeKinds.find((entry) => entry.kind === kind);
-  return known
-    ? { inputs: known.inputs, outputs: known.outputs }
-    : { inputs: ["in"], outputs: ["out"] };
+  if (!known) {
+    return { inputs: ["in"], outputs: ["out"] };
+  }
+  if (kind === "condition") {
+    return { inputs: known.inputs, outputs: conditionPorts(params) };
+  }
+  return { inputs: known.inputs, outputs: known.outputs };
+}
+
+/** The names a condition's parameters give its ports, in the order it tries them, with the fallback last. */
+function conditionPorts(params: unknown): string[] {
+  const given =
+    typeof params === "object" && params !== null ? (params as Record<string, unknown>) : {};
+  const outputs = Array.isArray(given.ports)
+    ? given.ports.flatMap((entry): string[] => {
+        if (typeof entry !== "object" || entry === null) {
+          return [];
+        }
+        const name = (entry as Record<string, unknown>).name;
+        return typeof name === "string" && name !== "" ? [name] : [];
+      })
+    : [];
+  if (
+    typeof given.fallback === "string" &&
+    given.fallback !== "" &&
+    !outputs.includes(given.fallback)
+  ) {
+    outputs.push(given.fallback);
+  }
+  return outputs;
 }
 
 /** A palette entry for a kind the registry does not describe, drawn with one port each way. */
@@ -139,7 +241,12 @@ export interface NodeFormProps {
  * The forms kinds draw themselves. A kind left out is drawn by the generic parameter form from the fields it reports,
  * which is where a kind with nothing special about it stays.
  */
-export const nodeForms: Record<string, ComponentType<NodeFormProps>> = {};
+export const nodeForms: Record<string, ComponentType<NodeFormProps>> = {
+  code: CodeForm,
+  condition: ConditionForm,
+  for_each: ForEachForm,
+  merge: MergeForm,
+};
 
 /** The form a kind draws itself, when it has one. */
 export function formFor(kind: string): ComponentType<NodeFormProps> | undefined {
