@@ -1,9 +1,7 @@
 /**
  * What the server's events do to the TanStack Query cache. The reference says the snapshot is read again on every
  * event, so an event that changes what the snapshot shows invalidates it; `card_waiting` is also patched in place,
- * which shows the reason at once. A chat's list follows the stream the same way, patched in place
- * (`patchChats`), and a chat's deletion is not read again for it: the patch is the whole of what the list needs, and
- * a read that left before the deletion and lands after it would put the deleted chat back with nothing to take it out. What is read about one card (history, runs) goes stale with the snapshot, and the
+ * which shows the reason at once. What is read about one card (history, runs) goes stale with the snapshot, and the
  * column scripts with `script_changed`, and a project's settings with `project_settings_changed`. A new page that reads something the events change adds its key to `keys.ts` and a
  * line to `invalidates` below (the package sheet is in `packagePages`; the pages of Rules, Automations, Retro, Experiments and Decision model are in `improvePages`). A workflow run's events make the workflow list, the definition it belongs to and its own run stale (`workflowPages`). Events are not replayed, so when the socket connects all that is shown is read again.
  */
@@ -83,12 +81,6 @@ export function invalidates(event: ServerEvent): QueryKey[] {
   if (event.kind === "run_ended") stale.push(keys.usage);
   if (event.kind === "file_changed" && typeof event.data.repository === "number") {
     stale.push(keys.files(event.data.repository));
-  }
-  // A chat's deletion is put into the list of chats in place (applyChatEvent), and no read is made again for it: a
-  // read that left before the deletion and lands after it would put the deleted chat back, and nothing would take
-  // it out again — no event follows it. The patch is the whole of what the list needs, so the list is left alone.
-  if (event.kind === "chat_deleted") {
-    return stale;
   }
   if (listChanged(event)) stale.push(keys.chats);
   stale.push(...improvePages(event));

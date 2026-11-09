@@ -51,6 +51,14 @@ function fake(): FakeChat {
 
 const field = () => page.getByRole("textbox", { name: "Message" });
 const thread = () => page.getByTestId("thread");
+const sheet = () => page.getByRole("dialog", { name: "Package sheet" });
+
+/** The right edge of the chat page's content, without the room it keeps for the package sheet. */
+const contentRight = () =>
+  page.getByTestId("chat-page").evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.right - Number.parseFloat(getComputedStyle(element).paddingRight);
+  });
 
 /** Writes `text` in the field and sends it with Enter. */
 async function say(text: string) {
@@ -1060,6 +1068,46 @@ async function openWith(
 }
 
 describe("the chat page on a phone", () => {
+  /**
+   * The shell holds room for the sheet only on the widest screens (2xl), so on any narrower one the chat page gives
+   * way of its own accord — the sheet must never lie over the conversation, whatever the window's size. The sheet is
+   * opened on the Plugins page (the chat page has no opener of its own, and the sheet stays shown across pages).
+   */
+  async function chatWithSheet(width: number) {
+    await openWith("/plugins", { viewport: { width, height: 900 } });
+    await page.getByRole("button", { name: "Browse packages" }).first().click();
+    await sheet().getByTestId("list-card").first().waitFor();
+    await page.getByRole("link", { name: /^Back( to the pages)?$/ }).click();
+    await page
+      .getByRole("navigation", { name: "Pages" })
+      .getByRole("link", { name: /^Chat( \d+)?$/ })
+      .click();
+    await field().waitFor();
+    await sheet().waitFor();
+  }
+
+  it("gives way to the package sheet on every screen size, so it never lies over the chat", async () => {
+    await chatWithSheet(1280);
+    const box = await sheet().boundingBox();
+    expect(await contentRight(), "the sheet does not lie over the chat").toBeLessThanOrEqual(
+      box?.x ?? 0,
+    );
+
+    // Minimised, the chat takes its width back; opened again from the sheet's own button, it gives way once more.
+    await page.keyboard.press("Escape");
+    await sheet().waitFor({ state: "hidden" });
+    const before = await contentRight();
+    await page.getByRole("button", { name: "Open the package sheet" }).click();
+    await sheet().waitFor();
+    await expect.poll(contentRight).toBeLessThan(before);
+  });
+
+  it("gives way to the package sheet above 2xl, on the room the shell reserves", async () => {
+    await chatWithSheet(1600);
+    const box = await sheet().boundingBox();
+    expect(await contentRight()).toBeLessThanOrEqual(box?.x ?? 0);
+  });
+
   it.skipIf(usesRealServer)(
     "fills the screen beside the sidebar and the composer stays usable",
     async () => {
