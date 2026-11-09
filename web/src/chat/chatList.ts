@@ -103,7 +103,6 @@ export function filterChats(
       (words === "" || (chat.title || "New chat").toLowerCase().includes(words)),
   );
 }
-
 /**
  * The chat to open when someone asks for Chat: the one started most recently, or null when there is none — wherever
  * it was started, since a conversation begun in the floating window is a chat of the Chat page like any other. The
