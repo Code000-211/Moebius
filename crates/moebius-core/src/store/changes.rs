@@ -141,6 +141,15 @@ impl Store {
         Ok(())
     }
 
+    /// Records the pull request opened for the change.
+    pub fn set_change_pull_request(&self, id: i64, pull_request: Option<i64>) -> Result<()> {
+        self.conn().execute(
+            "UPDATE changes SET pull_request = ?1 WHERE id = ?2",
+            params![pull_request, id],
+        )?;
+        Ok(())
+    }
+
     pub fn change(&self, id: i64) -> Result<Option<Change>> {
         Ok(self
             .conn()

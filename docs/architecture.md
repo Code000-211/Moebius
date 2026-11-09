@@ -126,11 +126,14 @@ and does not know anything the API does not say.
 9. **The change is published.** On a later tick `code.luau` sees the succeeded `code` run (and no `card.note`) and moves
    the card to `In review`. `review.luau` calls `moebius.publish_change`, which calls `App::publish_change`: the branch
    `moebius/card-<number>` is pointed at the latest successful `code` run's commit (`Repos::point_branch`; each round's
-   branch descends from the last, so the branch only moves forward) and the forge publishes it (`Forge::publish`:
-   `NoForge` does nothing; `GitHubForge` pushes and, the first time, opens the pull request; `GitLabForge` the same with a
-   merge request, `ForgejoForge` with a pull request on Forgejo). The change is stored
+   branch descends from the last, so the branch only moves forward) and the forge pushes it (`Forge::push`; `NoForge` does nothing). No pull request is opened yet: it opens when the
+   review approved the change and `moebius.offer_change` offers it (`Forge::publish`: `GitHubForge` pushes and, the first
+   time, opens the pull request; `GitLabForge` the same with a merge request, `ForgejoForge` with a pull request on
+   Forgejo). The change is stored
    (`Store::add_change`, later `Store::set_change_head`) with the published commit and time, and `change_updated` is
    published. A card has one change, one branch and one pull request for all its rounds.
+    The forge's own checks are read from the pull request, so a forge's checks come after the offer; `merge.luau` sends
+    the card back when they fail.
 10. **The change is checked.** On GitHub the poll records the check runs of the pull request's head commit, on GitLab
     the latest pipeline of the merge request's head commit and its failed jobs, on Forgejo the commit statuses of the
     pull request's head commit (`poll::poll_requests`, which reads them
@@ -140,7 +143,7 @@ and does not know anything the API does not say.
     runs it with `sh -c` in a throwaway worktree of the change's commit (`App::check_change`, `execute`) with the time
     limit `checks.timeout_seconds`, and records `success` or `failure` with the end of the output, redacted
     (`Store::set_local_checks`). `App::checks_of` gives scripts `card.change.checks`: checks for another commit than the
-    published one do not count, and on a forge the change is `pending` for a grace period after the publish and then
+    published one do not count, and on a forge the change is, once it has a pull request, `pending` for a grace period after the publish and then
     `none`. `App::conflict_of` asks `git merge-tree` whether the change still merges into the default branch
     (`Repos::conflicts`).
 11. **The change is sent back or reviewed.** `review.luau` waits while the checks are `pending`. Failing checks or a

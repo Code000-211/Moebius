@@ -60,11 +60,22 @@ impl App {
         self.move_card(card.id, columns::IN_PROGRESS)
     }
 
-    /// Publishes the work of the card's latest successful `code` run on the branch of its change, `moebius/card-<number>`,
-    /// through the repository's forge: the first time that creates the change, later it updates it. The branch belongs
-    /// to Moebius, so a round that rewrote its commit (an amended message, say) replaces what was published; the push
-    /// is refused if the forge's branch has moved on since. Does nothing when this work is published.
+    /// Publishes the work of the card's latest successful `code` run on the branch of its change, `moebius/card-<number>`:
+    /// the branch is pushed to the forge and the change is recorded, without a pull request. The pull request opens
+    /// only when the change is offered (see `offer_change`), once the review approved it. The branch belongs to
+    /// Moebius, so a round that rewrote its commit (an amended message, say) replaces what was published; the push is
+    /// refused if the forge's branch has moved on since. Does nothing when this work is published.
     pub fn publish_change(&self, card_id: i64) -> Result<Change> {
+        self.publish_card_change(card_id, false)
+    }
+
+    /// Publishes the card's work as `publish_change` does and, if the change has no pull request yet, opens one
+    /// through the repository's forge; a forge without them has none to open.
+    pub(crate) fn publish_card_change(
+        &self,
+        card_id: i64,
+        open_pull_request: bool,
+    ) -> Result<Change> {
         let card = self.card(card_id)?;
         let repository = self.repository(card.repository_id)?;
         let forge = self.forge(&repository)?;
@@ -75,17 +86,30 @@ impl App {
         let clone = Path::new(&repository.path);
         let head = git(clone, &["rev-parse", &code_branch])?;
         let existing = self.store.open_change(card_id)?;
-        if let Some(change) = existing.as_ref().filter(|c| c.head.as_ref() == Some(&head)) {
+        let opened = |c: &Change| c.pull_request.is_some() || !open_pull_request;
+        if let Some(change) = existing
+            .as_ref()
+            .filter(|c| c.head.as_ref() == Some(&head) && opened(c))
+        {
             return Ok(change.clone());
         }
         let branch = format!("moebius/card-{}", card.number);
         self.repos.point_branch(clone, &branch, &head)?;
         let pull_request = existing.as_ref().and_then(|c| c.pull_request);
-        let body = format!("Closes #{}\n\nMade by Moebius.", card.number);
-        let pull_request = forge.publish(&repository, &card.title, &body, &branch, pull_request)?;
+        let pull_request = if open_pull_request {
+            let body = format!("Closes #{}\n\nMade by Moebius.", card.number);
+            forge.publish(&repository, &card.title, &body, &branch, pull_request)?
+        } else {
+            forge.push(&repository, &branch)?;
+            pull_request
+        };
         let change = match existing {
             Some(change) => {
                 self.store.set_change_head(change.id, &head, now())?;
+                if pull_request != change.pull_request {
+                    self.store
+                        .set_change_pull_request(change.id, pull_request)?;
+                }
                 self.change(change.id)?
             }
             None => self.store.add_change(
@@ -100,7 +124,7 @@ impl App {
         Ok(change)
     }
 
-    /// Publishes the card's change and puts it in the inbox, ready to merge.
+    /// Publishes the card's change, opening its pull request, and puts it in the inbox, ready to merge.
     pub fn offer_change(&self, card_id: i64) -> Result<Change> {
         self.offer_change_noted(card_id, None)
             .map(|(change, _)| change)
@@ -115,7 +139,7 @@ impl App {
         judgements: Option<&str>,
     ) -> Result<(Change, bool)> {
         let seen = self.card(card_id)?.column;
-        let change = self.publish_change(card_id)?;
+        let change = self.publish_card_change(card_id, true)?;
         self.finish_offer(card_id, &seen, change, judgements)
     }
 

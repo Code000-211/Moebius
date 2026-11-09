@@ -298,6 +298,15 @@ impl Fixture {
             .unwrap()
     }
 
+    /// Has the pull request of the card's work opened while the card stays in review, as it is once a round of the
+    /// review was approved and before the card moves on.
+    pub(super) async fn opened_pull_request(&self, card: &Card) {
+        let (app, id) = (self.server.app.clone(), card.id);
+        tokio::task::spawn_blocking(move || app.publish_card_change(id, true).unwrap())
+            .await
+            .unwrap();
+    }
+
     /// Polls issue 1 into a card and has its work offered as a change.
     pub(super) async fn offered_change(&self) -> Change {
         let card = self.card_in_review().await;
@@ -463,6 +472,7 @@ mod tests {
      {
         let f = Fixture::new().await;
         let card = f.card_in_review().await;
+        f.opened_pull_request(&card).await;
         let step = f.settle(&card).await;
         assert_eq!(step.waiting.as_deref(), Some("waiting for the checks"));
         let change = f.server.app.store.open_change(card.id).unwrap().unwrap();
