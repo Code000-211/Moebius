@@ -223,9 +223,9 @@ describe("the pages and the settings", () => {
 });
 
 /**
- * Which entry says "you are here", and where Chat leads: a conversation has an address of its own, so the entry stands
- * on every one of them while leading to the newest of them — asking for Chat gives a conversation rather than an
- * empty field, even while a different one is open.
+ * Which entry says "you are here", and where Chat leads: since the chat list lives in the sidebar, the wide list leaves
+ * Chat to the rail, whose single icon still opens a conversation rather than an empty field — the newest of them, with
+ * the unread trail on its name.
  */
 /**
  * The two collapsible groups. Automation holds Automations and Workflows; Improve holds Retro, Experiments,
@@ -326,14 +326,48 @@ describe("where an entry leads", () => {
     expect(marked).toHaveLength(1);
   });
 
-  it("leads Chat to the newest conversation and stands while any other one is open", async () => {
+  it("leaves Chat off the wide list once the chat list is in the sidebar", async () => {
     show({ at: "/chat/9", chats: [chat(9, 400), chat(21, 900)] });
-    const entry = () => screen.getByRole("link", { name: /^Chat/ });
+    await screen.findByRole("link", { name: /^Inbox/ });
+    expect(screen.queryByRole("link", { name: /^Chat/ })).toBeNull();
+  });
+
+  it("marks no everyday page on a conversation, the wide list having no Chat row to stand in", async () => {
+    show({ at: "/chat/9" });
+    await screen.findByRole("link", { name: /^Inbox/ });
+    // Chat was the row that stood for a conversation; with it gone from the wide list, no everyday page matches the
+    // address, so none of them says "you are here" — the rail keeps the standing Chat icon.
+    const marked = screen
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("aria-current") !== null);
+    expect(marked).toHaveLength(0);
+  });
+
+  it("keeps the rail's Chat icon leading to the newest conversation, with the unread trail", async () => {
+    show({
+      at: "/inbox",
+      collapsed: true,
+      chats: [chat(9, 400), { ...chat(21, 900), answered: 2, seen: 1 }],
+    });
     // The entry is drawn while the list is still on its way, and moves to the newest conversation once it lands.
-    await waitFor(() => expect(entry().getAttribute("href")).toBe("/chat/21"));
-    expect(entry().getAttribute("aria-current")).toBe("page");
-    // The conversation on screen is not the one Chat leads to; every other entry stays an ordinary page.
-    expect(screen.getByRole("link", { name: /^Inbox/ }).getAttribute("aria-current")).toBeNull();
+    const entry = await waitFor(() => {
+      const link = screen.getByRole("link", { name: /^Chat/ });
+      expect(link.getAttribute("href")).toBe("/chat/21");
+      return link;
+    });
+    expect(entry.getAttribute("aria-current")).toBeNull();
+    // The unread trail stands alone by the icon: the conversation the server counts not-yet-read, on the row's name.
+    expect(entry.getAttribute("aria-label")).toBe("Chat. 1");
+  });
+
+  it("keeps Chat at the front of the rail while a conversation is open there", async () => {
+    show({ at: "/chat/9", collapsed: true, chats: [chat(9, 400), chat(21, 900)] });
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: /^Chat/ }).getAttribute("href")).toBe("/chat/21"),
+    );
+    // A chat has an address of its own, so the entry stays standing on every conversation rather than leading back to
+    // the newest while it is read on screen.
+    expect(screen.getByRole("link", { name: /^Chat/ }).getAttribute("aria-current")).toBe("page");
   });
 });
 
