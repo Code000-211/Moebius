@@ -6,7 +6,7 @@
  * It reads `GET /v1/workflows/{name}`. A definition that could not be read says so and offers to read it again; a
  * workflow that does not exist is said as a missing workflow rather than as an empty graph.
  */
-import { ArrowLeftIcon, PlayIcon } from "@phosphor-icons/react";
+import { ArrowLeftIcon, PencilSimpleIcon, PlayIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router";
 import { keys } from "../../api/keys";
@@ -69,14 +69,22 @@ export function WorkflowPage() {
         back={back}
         context={saved.description}
         actions={
-          last ? (
+          <div className="flex items-center gap-2">
             <Button asChild variant="secondary" size="sm">
-              <Link to={`/workflow-runs/${last.id}`}>
-                <PlayIcon className="size-4" aria-hidden="true" />
-                Open last run
+              <Link to={`/workflows/${encodeURIComponent(saved.name)}/canvas`}>
+                <PencilSimpleIcon className="size-4" aria-hidden="true" />
+                Edit on the canvas
               </Link>
             </Button>
-          ) : null
+            {last ? (
+              <Button asChild variant="secondary" size="sm">
+                <Link to={`/workflow-runs/${last.id}`}>
+                  <PlayIcon className="size-4" aria-hidden="true" />
+                  Open last run
+                </Link>
+              </Button>
+            ) : null}
+          </div>
         }
       />
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">

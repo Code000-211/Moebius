@@ -146,6 +146,33 @@ One implementation of each control, in one place: ``web/src/ui/``.
 - Interrupt only for failures, blockers, decisions, and meaningful completion. Say what happened, what the system did, and whether action is needed; open the relevant place when a notification is selected; never repeat what is already on screen.
 - Keyboard: visible focus, logical order, predictable shortcuts. Escape closes overlays. Background updates never move, remove, or replace what someone is using.
 
+## The canvas
+
+A workflow's graph is edited on a canvas of its own (`web/src/app/workflows/canvas/`), the one screen in the app that is
+a surface rather than a list of rows. What that asks for, once:
+
+- The graph is the page. It fills the window between the palette of kinds at its left and the panel of what is chosen at
+  its right, and nothing is laid over it: no box, no heading, no band of padding. Pan and zoom belong to the graph, so
+  the page itself never scrolls.
+- Where a node sits is what the file holds, and the file holds it because a person put it there. A node opens at the
+  place it was saved at, a node dragged is a change to the file like any other, and the read-only view of the same
+  workflow draws the same positions by hand (`WorkflowGraph.tsx`) so the two never disagree about where a node is.
+- The graph library brings its own look, and none of it reaches the screen: `src/styles/canvas.css` sets the library's
+  colour variables to the app's tokens, so the dots of the grid, the wires, a chosen node and its handles are the same
+  fills and hairlines as everywhere else, in both themes, and neither of the library's themes is loaded. Its own name in
+  the corner is switched off too, since the app says where it is; the license and size of the library are in `web/NOTICE`.
+- A node on the canvas is the card of the read-only view, with two things added: the ports it leaves and comes in by,
+  each named for the port it is, and what is wrong with it. A refusal is written on the node it names, in the error
+  colour, with the wire carrying it coloured the same way, and the same sentence once more above the graph — where a
+  person looks after pressing Save, which is where the state of the graph stands: "Saved", "Unsaved changes", "Saved as
+  1a3b3c0".
+- A run picked is drawn over the graph rather than beside it: the node's own status on its card, and what it was given
+  and gave back in the panel beside the node it happened to. Nothing opens, nothing navigates: the run is a way of
+  reading the same graph.
+- Nothing is asked twice, and the keyboard is the graph's own. Delete takes the chosen node or wire away, with the wires
+  that hung off it; the start of the graph cannot be taken away, since a workflow without it is not a workflow; and
+  leaving with changes that are not saved asks once, with a way to save on the way out.
+
 ## Motion and imagery
 - Update content in place. Never scroll someone away from what they are reading; follow newly arriving content only when they are already at the end. A step someone opens is read where it is: unfolding one lets go of the end, even when the list was sitting on it. Do not animate the same content twice.
 - About 180ms ease-out for routine transitions. Springs sparingly. One restrained moment at completion.

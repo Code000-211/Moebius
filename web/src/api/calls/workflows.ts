@@ -7,6 +7,7 @@ import type {
   WorkflowSummary,
   WorkflowView,
 } from "../types/workflows";
+import type { WorkflowRunSummary } from "../workflows";
 
 export function workflows(): Promise<WorkflowSummary[]> {
   return get<WorkflowSummary[]>("/v1/workflows");
@@ -29,4 +30,9 @@ export function saveWorkflowFile(name: string, file: string): Promise<SavedWorkf
 /** Deletes a workflow; a run of it queued or running refuses the deletion. */
 export function deleteWorkflow(name: string): Promise<DeletedWorkflow> {
   return del<DeletedWorkflow>(`/v1/workflows/${encodeURIComponent(name)}`);
+}
+
+/** The runs of one workflow, newest first. */
+export function workflowRuns(workflow: string): Promise<WorkflowRunSummary[]> {
+  return get<WorkflowRunSummary[]>(`/v1/workflow-runs?workflow=${encodeURIComponent(workflow)}`);
 }

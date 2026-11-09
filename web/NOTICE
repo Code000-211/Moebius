@@ -17,3 +17,11 @@ are borderless and carry a shadow instead, and they use React 19 and Tailwind 4.
 The fonts in public/fonts/ are Inter Variable and JetBrains Mono under the SIL Open Font License 1.1 (OFL.txt next to
 each). The Inter files are the latin and latin-ext subsets of the variable font, from the rsms/inter releases; JetBrains
 Mono is the copy that the former desktop app bundled.
+
+The canvas of a workflow (src/app/workflows/canvas/) draws its graph with React Flow, @xyflow/react 12.12.1 and the
+@xyflow/system 0.0.84 under it, by the xyflow contributors, https://github.com/xyflow/xyflow, under the MIT license.
+It is not copied: it is a dependency, 1.9 MB and 736 KB installed, and 211 kB (67 kB gzipped) of the built app, in its
+own chunk loaded when a canvas opens. It is chosen over drawing the graph by hand because the graph is edited rather
+than only looked at: the ports, the drag of a node, the pan, the zoom and the keyboard of a canvas are what the read-only
+view (src/app/workflows/WorkflowGraph.tsx, drawn by hand) does not need and the editor does. Its colours come from this
+app's tokens (src/styles/canvas.css) rather than from either of its own themes.

@@ -113,6 +113,8 @@ const routes: Route[] = [
   { path: "/automations", name: "automations" },
   { path: "/workflows", name: "workflows" },
   { path: "/workflows/release", name: "workflow" },
+  // The graph edited on a canvas of its own.
+  { path: "/workflows/release/canvas", name: "workflow-canvas" },
   { path: "/workflow-runs/41", name: "workflow-run" },
   // A run that stopped at a node and asks what to do next.
   { path: "/workflow-runs/42", name: "workflow-run-waiting" },
