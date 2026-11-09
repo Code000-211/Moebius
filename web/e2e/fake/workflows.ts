@@ -1,6 +1,8 @@
 /**
- * The workflows the Workflows pages read, and the runs they show: two workflows whose graphs are saved, one run that
- * failed on a node and one that waits for a person. The shapes are the types of `src/api/workflows.ts`; the real server
+ * The workflows the Workflows pages read, the runs they show and the delete route they ask: three workflows whose
+ * graphs are saved — one that failed on a node, one that waits for a person and one shaped like an automation (a
+ * schedule that starts one chat), so the detail page's warning can be read — and one run that failed. The shapes are the
+ * types of `src/api/workflows.ts`; the real server
  * answers the same routes once its workflow API lands. A test can change a run and broadcast the event the server would
  * send, which is how the live updates are tried, or empty the list.
  *
@@ -35,6 +37,10 @@ export interface WorkflowsFake {
   readonly graphs: Map<string, GraphDefinition>;
   /** Each run, by id. A test changes one to stand in for the engine moving it on. */
   readonly runs: Map<number, WorkflowRun>;
+  /** The requests of the workflows' routes, in order, so a test can read what a page sent. */
+  readonly calls: Array<{ method: string | undefined; path: string }>;
+  /** Makes the next `DELETE /v1/workflows/{name}` answer `status` with `message`, as the server refuses it. */
+  refuseNextDelete(status: number, message: string): void;
 }
 
 function reply(response: ServerResponse, status: number, body: unknown): true {
@@ -391,6 +397,18 @@ at = [320, 16]
 question = "Publish 1.4.0 to the registry?"
 `;
 
+const TIDY_FILE = `name = "tidy"
+description = "Tidy old branches, every weeknight"
+trigger = { kind = "schedule", detail = "0 23 * * 1-5" }
+
+[[nodes]]
+id = "chat"
+kind = "chat"
+at = [16, 16]
+[nodes.parameters]
+prompt = "Tidy the merged branches"
+`;
+
 const LONG_OUTPUT = `${"compiling the workspace and linking every test binary\n".repeat(24)}done`;
 
 function summaryOf(
@@ -474,9 +492,27 @@ export function createWorkflowsFake(): WorkflowsFake {
     edges: [{ from: "build", to: "approve" }],
     file: DEPLOY_FILE,
   };
+  const tidy: WorkflowDefinition = {
+    name: "tidy",
+    description: "Tidy old branches, every weeknight.",
+    trigger: { kind: "schedule", detail: "0 23 * * 1-5" },
+    node_count: 1,
+    last_run: null,
+    nodes: [
+      {
+        id: "chat",
+        kind: "chat",
+        parameters: { prompt: "Tidy the merged branches" },
+        position: { x: 16, y: 16 },
+      },
+    ],
+    edges: [],
+    file: TIDY_FILE,
+  };
   const definitions = new Map<string, WorkflowDefinition>([
     [release.name, release],
     [deploy.name, deploy],
+    [tidy.name, tidy],
   ]);
   const runs = new Map<number, WorkflowRun>([
     [
@@ -620,13 +656,31 @@ export function createWorkflowsFake(): WorkflowsFake {
         ],
       },
     ],
+    [
+      tidy.name,
+      {
+        name: tidy.name,
+        description: tidy.description,
+        trigger: [{ kind: "schedule", params: { cron: "0 23 * * 1-5" } }],
+        nodes: tidy.nodes.map((node) => ({
+          id: node.id,
+          kind: node.kind,
+          params: asRecord(node.parameters),
+          position: { ...node.position },
+        })),
+        edges: [{ from: "trigger", to: "chat", port: "out" }],
+      },
+    ],
   ]);
   const workflows: WorkflowSummary[] = [
     summaryOf(release, lastFailed),
     summaryOf(deploy, { id: 42, status: "waiting", started_at: NOW() - 300, finished_at: null }),
+    summaryOf(tidy, null),
   ];
   /** Each save, so a test can read what was written and the page can name the commit. */
   let saves = 0;
+  const calls: Array<{ method: string | undefined; path: string }> = [];
+  let nextDeleteRefusal: { status: number; message: string } | null = null;
 
   async function handle(
     request: IncomingMessage,
@@ -635,9 +689,25 @@ export function createWorkflowsFake(): WorkflowsFake {
   ): Promise<boolean> {
     const url = decoded(path);
     const named = /^\/v1\/workflows\/([^/]+)$/.exec(url);
+    calls.push({ method: request.method, path: url });
     if (named) {
       const name = named[1] ?? "";
       const found = definitions.get(name);
+      if (request.method === "DELETE") {
+        const refusal = nextDeleteRefusal;
+        nextDeleteRefusal = null;
+        if (refusal) return plain(response, refusal.status, refusal.message);
+        if (!found) return plain(response, 404, "No such workflow.");
+        definitions.delete(name);
+        graphs.delete(name);
+        const kept = workflows.filter((entry) => entry.name !== name);
+        workflows.length = 0;
+        for (const entry of kept) workflows.push(entry);
+        return reply(response, 200, {
+          name,
+          commit: `${(0x1a2b3c + saves).toString(16)}${"0".repeat(34)}${saves}`,
+        });
+      }
       if (!found) return plain(response, 404, "No such workflow.");
       if (request.method === "PUT") {
         return save(name, request, response);
@@ -709,7 +779,17 @@ export function createWorkflowsFake(): WorkflowsFake {
     });
   }
 
-  return { handle, workflows, definitions, graphs, runs };
+  return {
+    handle,
+    workflows,
+    definitions,
+    graphs,
+    runs,
+    calls,
+    refuseNextDelete(status: number, message: string) {
+      nextDeleteRefusal = { status, message };
+    },
+  };
 }
 
 async function readBody(request: IncomingMessage): Promise<string> {
