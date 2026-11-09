@@ -1253,7 +1253,11 @@ mod tests {
         );
         assert_eq!(
             git(&clone, &["log", "-1", "--format=%s", "main"]).unwrap(),
-            format!("Merge {}", run.branch())
+            // The merge is named after what it carries: the subject of the change's last commit.
+            format!(
+                "Merge {}: You said: Write a script [write scripts/ready.luau]",
+                run.branch()
+            )
         );
         assert!(app.store.inbox().unwrap().is_empty());
         assert_eq!(

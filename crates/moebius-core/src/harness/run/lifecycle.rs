@@ -200,12 +200,12 @@ pub(in crate::harness) struct RunningRun {
 impl RunningRun {
     /// Commits what the agent left in the worktree of a repository; false when it changed nothing, that is, left
     /// the worktree clean and made no commit of its own. A chat without a repository has nothing to commit.
-    pub(in crate::harness) fn commit(&self) -> crate::repos::Result<bool> {
+    pub(in crate::harness) fn commit(&self, message: &str) -> crate::repos::Result<bool> {
         if self.clone.is_none() {
             return Ok(false);
         }
         let worktree = &self.worktree;
-        if crate::repos::commit_all(worktree, &self.commit_message)? {
+        if crate::repos::commit_all(worktree, message)? {
             return Ok(true);
         }
         Ok(git(worktree, &["rev-parse", "HEAD"])? != self.start)
@@ -213,9 +213,9 @@ impl RunningRun {
 
     /// Brings what the agent did on the runner into the worktree: committed there, fetched, and the worktree set to
     /// it. A run on the server has nothing to bring.
-    pub(in crate::harness) fn bring_back(&self) -> Result<(), String> {
+    pub(in crate::harness) fn bring_back(&self, message: &str) -> Result<(), String> {
         match &self.remote {
-            Some(remote) => remote.bring_back(&self.worktree, &self.commit_message),
+            Some(remote) => remote.bring_back(&self.worktree, message),
             None => Ok(()),
         }
     }

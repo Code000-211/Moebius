@@ -697,6 +697,45 @@ impl App {
             .collect())
     }
 
+    /// The commit message of what a chat left behind: its subject is what the agent did (the first line of its last
+    /// answer), the body carries the rest of that answer, and the trailer says which chat it was and what it was
+    /// asked. Never just the first message of the chat, in the same shape as the commits of a card's runs.
+    pub fn chat_commit_message(&self, run: &Run, when: &str) -> String {
+        let answer = run.summary.as_deref().unwrap_or("").trim();
+        let full = self.chat_title(run).unwrap_or_default();
+        let asked = full.trim_end_matches('.').trim_end();
+        // The subject is what the agent said it did; when its last answer is empty, what the chat was asked.
+        let (subject, rest) = match answer.lines().next() {
+            Some(line) if !line.trim().is_empty() => (
+                line.trim().to_owned(),
+                answer
+                    .lines()
+                    .skip(1)
+                    .collect::<Vec<&str>>()
+                    .join("\n")
+                    .trim()
+                    .to_owned(),
+            ),
+            _ => (asked.to_owned(), answer.to_owned()),
+        };
+        let subject = if subject.is_empty() {
+            format!("Chat {}", run.id)
+        } else {
+            subject
+        };
+        let trailer = if asked.is_empty() {
+            format!("Chat {} (agent {}).", run.id, run.agent)
+        } else {
+            format!("Chat {}: {asked} (agent {}).", run.id, run.agent)
+        };
+        let body = if rest.is_empty() {
+            String::new()
+        } else {
+            format!("\n\n{rest}")
+        };
+        format!("{subject}{body}\n\n{trailer}\nMade by Moebius {when}.")
+    }
+
     /// How many files the worktree of the chat `run` changes against its default branch, committed or not; 0 for an
     /// ended chat, one without a repository, or when git cannot tell.
     fn changed_files(&self, run: &Run) -> usize {
