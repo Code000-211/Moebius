@@ -40,9 +40,11 @@ pub(super) const TOKEN: &str = "ghp_0123456789abcdefghijklmnopqrstuvwxyz";
 /// The login the fake says that token belongs to.
 pub(super) const TOKEN_LOGIN: &str = "octo-user";
 
-/// The pull requests of the fake: what it was asked to open and merge, and what it answers about pull request 7.
+/// The pull requests of the fake: what it was asked to open, update and merge, and what it answers about pull
+/// request 7.
 pub(super) struct Pulls {
     pub(super) opened: Vec<Value>,
+    pub(super) updated: Vec<Value>,
     pub(super) merged: Vec<Value>,
     pub(super) pull: Value,
     pub(super) check_runs: Vec<Value>,
@@ -94,6 +96,7 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         limited: std::sync::atomic::AtomicBool::new(false),
         pulls: Mutex::new(Pulls {
             opened: Vec::new(),
+            updated: Vec::new(),
             merged: Vec::new(),
             pull: pull("open", false),
             check_runs: Vec::new(),
@@ -204,6 +207,15 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                     }
                     assert_eq!(number, 7);
                     axum::Json(fake.pulls.lock().unwrap().pull.clone()).into_response()
+                },
+            )
+            .patch(
+                |State(fake): State<Arc<FakeGitHub>>,
+                 UrlPath(number): UrlPath<u64>,
+                 axum::Json(body): axum::Json<Value>| async move {
+                    assert_eq!(number, 7);
+                    fake.pulls.lock().unwrap().updated.push(body.clone());
+                    axum::Json(body)
                 },
             ),
         )
@@ -442,7 +454,7 @@ impl Fixture {
     /// review was approved and before the card moves on.
     pub(super) async fn opened_pull_request(&self, card: &Card) {
         let (app, id) = (self.server.app.clone(), card.id);
-        tokio::task::spawn_blocking(move || app.publish_card_change(id, true).unwrap())
+        tokio::task::spawn_blocking(move || app.publish_card_change(id, true, None).unwrap())
             .await
             .unwrap();
     }
@@ -515,6 +527,78 @@ mod tests {
         assert!(
             carried.iter().all(|c| *c == format!("Bearer {TOKEN}")),
             "{carried:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_pull_request_says_what_the_change_did_and_what_the_review_found() {
+        let f = Fixture::new().await;
+        let card = f.card_in_review().await;
+        let run = f
+            .server
+            .app
+            .store
+            .runs_for_card(card.id)
+            .unwrap()
+            .into_iter()
+            .find(|run| run.purpose == "code")
+            .unwrap();
+        f.server
+            .app
+            .store
+            .set_run_summary(
+                run.id,
+                "Added the feature.\n\nREPRODUCE: cargo test --test feature\nREPRODUCE-FILE: tests/feature.rs\n",
+            )
+            .unwrap();
+        let (app, id) = (f.server.app.clone(), card.id);
+        tokio::task::spawn_blocking(move || {
+            app.offer_change_noted(id, Some("Kept the API plain."))
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        let opened = f.fake.pulls.lock().unwrap().opened.clone();
+        assert_eq!(opened.len(), 1);
+        let body = opened[0]["body"].as_str().unwrap();
+        assert!(
+            body.starts_with("Closes #1\n"),
+            "the merge closes the issue: {body}"
+        );
+        assert!(
+            body.contains("## What changed\n\nAdded the feature."),
+            "{body}"
+        );
+        assert!(
+            !body.contains("REPRODUCE"),
+            "the reproduction test is the review's, not the pull request's: {body}"
+        );
+        assert!(
+            body.contains("## Files changed") && body.contains("feature.txt"),
+            "{body}"
+        );
+        assert!(body.contains("## Review\n\nKept the API plain."), "{body}");
+        assert!(body.trim_end().ends_with("Made by Moebius."), "{body}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_pull_request_is_updated_when_the_branch_moves_on() {
+        let f = Fixture::new().await;
+        let change = f.offered_change().await;
+        assert_eq!(change.pull_request, Some(7));
+
+        // The next round adds to the branch and the change is offered again: the pull request it opened is updated.
+        let card = f.card(1).unwrap();
+        f.code(&card, "more.txt").await;
+        f.opened_pull_request(&card).await;
+
+        let pulls = f.fake.pulls.lock().unwrap();
+        assert_eq!(pulls.opened.len(), 1, "no second pull request");
+        let updated = &pulls.updated[0]["body"];
+        assert!(
+            updated.as_str().unwrap().contains("more.txt"),
+            "the updated body says what the branch does now: {updated}"
         );
     }
 

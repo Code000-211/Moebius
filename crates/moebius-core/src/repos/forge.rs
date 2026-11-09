@@ -162,7 +162,8 @@ pub trait Forge: Send + Sync {
     fn name(&self) -> &'static str;
     /// Makes the work on `branch` known to the forge, as a change with `title` and `body`, and returns the number of
     /// the pull request for it if the forge has them. Called again when `branch` has moved on; `pull_request` is the
-    /// number returned before, so the forge updates the change it offered instead of offering another.
+    /// number returned before, so the forge updates the change it offered instead of offering another, its title and
+    /// body with it.
     fn publish(
         &self,
         repository: &Repository,
@@ -389,8 +390,10 @@ impl Forge for GitHubForge {
         let clone = Path::new(&repository.path);
         let header = self.origin_auth(clone, name)?;
         self.repos.push(clone, branch, header.as_deref(), true)?;
-        if pull_request.is_some() {
-            return Ok(pull_request);
+        if let Some(number) = pull_request {
+            self.runtime
+                .block_on(self.github.update_pull_request(name, number, title, body))?;
+            return Ok(Some(number));
         }
         let number = self.runtime.block_on(self.github.open_pull_request(
             name,
@@ -595,8 +598,12 @@ impl Forge for GitLabForge {
         let clone = Path::new(&repository.path);
         let header = self.origin_auth(clone)?;
         self.repos.push(clone, branch, header.as_deref(), true)?;
-        if merge_request.is_some() {
-            return Ok(merge_request);
+        if let Some(number) = merge_request {
+            self.runtime.block_on(
+                self.gitlab
+                    .update_merge_request(project, number, title, body),
+            )?;
+            return Ok(Some(number));
         }
         let number = self.runtime.block_on(self.gitlab.open_merge_request(
             project,
@@ -784,8 +791,10 @@ impl Forge for ForgejoForge {
         let clone = Path::new(&repository.path);
         let header = self.origin_auth(clone)?;
         self.repos.push(clone, branch, header.as_deref(), true)?;
-        if pull_request.is_some() {
-            return Ok(pull_request);
+        if let Some(number) = pull_request {
+            self.runtime
+                .block_on(self.forgejo.update_pull_request(repo, number, title, body))?;
+            return Ok(Some(number));
         }
         let number = self.runtime.block_on(self.forgejo.open_pull_request(
             repo,

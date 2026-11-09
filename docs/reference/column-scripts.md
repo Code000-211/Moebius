@@ -207,7 +207,8 @@ scripts take it away, so an issue carries it exactly while its card is in `In pr
 : Publishes the work of the card's latest successful `code` run on the change's branch, `moebius/card-<number>`: the
 branch is pointed at that run's last commit and pushed to the forge. The first time this creates the change, without
 a pull request: the pull request opens when the change is offered (`moebius.offer_change`), so not before the review
-approved it. Once the change has a pull request, publishing a later round updates it (on GitHub: a push).
+approved it. Once the change has a pull request, publishing a later round updates it: a push, and the title and body
+say what the branch does now.
 It does nothing when that commit is already published, so a script may call it on every tick. Publishing records the
 time, which starts the grace period of `card.change.checks`, and publishes `change_updated`. Raises an error `the card has no code
 run to publish` when the card has no successful `code` run, and an error with the forge's message when the push or
@@ -279,7 +280,8 @@ did not pass, so it cannot be picked` or `run <n> is not an open attempt of the 
 `moebius.offer_change(judgements)` returns the change's id (a number). `judgements` is optional text, which is stored in
 the inbox item as `data.judgements` for the person to read.
 : Publishes the change as `moebius.publish_change` does and opens its pull request if it has none (on GitHub, with a
-body that says `Closes #<number>`), then offers it to a person: it adds an item `ready_to_merge` to
+body that says `Closes #<number>`, what the code run said it did, the files it changed and, when `judgements` is given,
+what the review found), then offers it to a person: it adds an item `ready_to_merge` to
 the inbox with `{change, branch}` as its data, publishes `change_offered`, and moves the card to `Ready to merge` at
 once (not when the script returns). Raises the errors of `moebius.publish_change`. Call it last in a script. A person
 merges the branch `moebius/card-<number>`. The time this call takes does not count against the time limit.
