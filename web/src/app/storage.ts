@@ -7,6 +7,16 @@ export function readFlag(key: string): boolean {
   }
 }
 
+/** `readFlag` for a switch that is on until a browser turns it off: a key never written reads as `whenUnset`. */
+export function readFlagOr(key: string, whenUnset: boolean): boolean {
+  try {
+    const kept = window.localStorage.getItem(key);
+    return kept === null ? whenUnset : kept === "1";
+  } catch {
+    return whenUnset;
+  }
+}
+
 export function writeFlag(key: string, value: boolean): void {
   try {
     window.localStorage.setItem(key, value ? "1" : "0");

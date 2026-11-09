@@ -10,8 +10,19 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Chat } from "../../api/types/chat";
 import { SETTINGS_PAGES, settingsLabel } from "../pages";
 import { Sidebar } from "./Sidebar";
+
+/** The pages inside the two collapsible groups, in the order the sidebar lists them. */
+const AUTOMATION_PAGES: readonly string[] = ["Automations", "Workflows"];
+const IMPROVE_PAGES: readonly string[] = ["Retro", "Experiments", "Decisions", "Usage"];
+
+/** The keys the open/closed state of each group is kept under, like `moebius.sidebar.collapsed` is. */
+const GROUP_KEYS = {
+  Automation: "moebius.sidebar.group.automation",
+  Improve: "moebius.sidebar.group.improve",
+};
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -50,8 +61,8 @@ const ROUTES: Record<string, unknown> = {
   "/v1/start": { done: true, steps: [], warnings: [] },
 };
 
-/** A conversation started at `startedAt`, read to its last answer. */
-function chat(id: number, startedAt: number) {
+/** A conversation started at `startedAt`, read to its last answer, unless a field says otherwise. */
+function chat(id: number, startedAt: number, over: Partial<Chat> = {}) {
   return {
     id,
     agent: "Moebius",
@@ -68,6 +79,7 @@ function chat(id: number, startedAt: number) {
     origin: "chat",
     model: null,
     thinking: null,
+    ...over,
   };
 }
 
@@ -215,6 +227,83 @@ describe("the pages and the settings", () => {
  * on every one of them while leading to the newest of them — asking for Chat gives a conversation rather than an
  * empty field, even while a different one is open.
  */
+/**
+ * The two collapsible groups. Automation holds Automations and Workflows; Improve holds Retro, Experiments,
+ * Decisions and Usage. Both are open before anybody has chosen anything, the choice is kept per browser like the
+ * sidebar's own collapsed state is, and the rail — which has no room for a name on its group labels — never
+ * collapses them: there the groups behave as they always did, the label's room kept and every row under it.
+ * The group's name itself goes nowhere (`docs/design-web.md`); the caret beside it is the toggle.
+ */
+describe("the collapsible groups", () => {
+  it("holds its pages, and is open before anybody has chosen anything", async () => {
+    show();
+    const automation = screen.getByRole("button", { name: "Collapse Automation" });
+    expect(automation.getAttribute("aria-expanded")).toBe("true");
+    for (const page of AUTOMATION_PAGES) {
+      expect(await screen.findByRole("link", { name: new RegExp(`^${page}`) })).not.toBeNull();
+    }
+    const improve = screen.getByRole("button", { name: "Collapse Improve" });
+    expect(improve.getAttribute("aria-expanded")).toBe("true");
+    for (const page of IMPROVE_PAGES) {
+      expect(screen.getByRole("link", { name: new RegExp(`^${page}`) })).not.toBeNull();
+    }
+    // The groups that are not touched by this stay what they were.
+    expect(screen.getByRole("link", { name: /^Inbox/ })).not.toBeNull();
+    expect(screen.getByRole("link", { name: /^Fleet/ })).not.toBeNull();
+  });
+
+  it("closes on its own caret, and leaves the rows beside it standing", async () => {
+    show();
+    await screen.findByRole("link", { name: /^Automations/ });
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Automation" }));
+    expect(screen.queryByRole("link", { name: /^Automations/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^Workflows/ })).toBeNull();
+    // The rows of the other groups are not the closed group's to take down.
+    expect(screen.getByRole("link", { name: /^Inbox/ })).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Expand Automation" }).getAttribute("aria-expanded"),
+    ).toBe("false");
+    // The choice is kept in this browser the way the sidebar's shape is.
+    expect(localStorage.getItem(GROUP_KEYS.Automation)).toBe("0");
+  });
+
+  it("opens again on the same caret", async () => {
+    show();
+    await screen.findByRole("link", { name: /^Retro/ });
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Improve" }));
+    expect(screen.queryByRole("link", { name: /^Retro/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Expand Improve" }));
+    expect(screen.getByRole("link", { name: /^Retro/ })).not.toBeNull();
+    expect(localStorage.getItem(GROUP_KEYS.Improve)).toBe("1");
+  });
+
+  it("keeps a closed group closed the next time the sidebar is built", async () => {
+    show();
+    await screen.findByRole("link", { name: /^Retro/ });
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Improve" }));
+    cleanup();
+    show();
+    await screen.findByRole("link", { name: /^Inbox/ });
+    expect(screen.queryByRole("link", { name: /^Retro/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^Experiments/ })).toBeNull();
+    // A group left open is remembered open; nothing about the state of one group touches another.
+    expect(screen.getByRole("link", { name: /^Automations/ })).not.toBeNull();
+  });
+
+  it("keeps every row in the rail, whatever the groups were left as", async () => {
+    localStorage.setItem(GROUP_KEYS.Automation, "0");
+    localStorage.setItem(GROUP_KEYS.Improve, "0");
+    show({ collapsed: true });
+    // The rail's labels keep the room they always took, and carry no toggle there.
+    await screen.findByRole("link", { name: /^Inbox/ });
+    expect(screen.queryByRole("button", { name: "Collapse Automation" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Collapse Improve" })).toBeNull();
+    for (const page of [...AUTOMATION_PAGES, ...IMPROVE_PAGES]) {
+      expect(screen.getByRole("link", { name: new RegExp(`^${page}`) })).not.toBeNull();
+    }
+  });
+});
+
 describe("where an entry leads", () => {
   it("marks the one entry that leads to the page on screen", async () => {
     show({ at: "/inbox" });
@@ -245,6 +334,75 @@ describe("where an entry leads", () => {
     expect(entry().getAttribute("aria-current")).toBe("page");
     // The conversation on screen is not the one Chat leads to; every other entry stays an ordinary page.
     expect(screen.getByRole("link", { name: /^Inbox/ }).getAttribute("aria-current")).toBeNull();
+  });
+});
+
+describe("the list of chats", () => {
+  const now = Math.floor(Date.now() / 1000);
+  const DAY = 86_400;
+
+  it("groups the chats under their day, above Projects, in the wide sidebar only", async () => {
+    show({
+      at: "/inbox",
+      chats: [chat(9, now - 60), chat(4, now - DAY - 60), chat(2, now - 3 * DAY - 60)],
+    });
+    // The list stands above the Projects one, its groups in the fixed order of the days.
+    const labels = await screen.findAllByTestId("chat-group-label");
+    expect(labels.map((label) => label.textContent)).toEqual(["Today", "Yesterday", "Older"]);
+  });
+
+  it("orders the groups itself, the days fixed and the newest chat first within one", async () => {
+    const today = chat(5, now - 10);
+    const older = chat(6, now - 3 * DAY);
+    show({ at: "/inbox", chats: [older, today] });
+    const labels = await screen.findAllByTestId("chat-group-label");
+    expect(labels[0]?.textContent).toBe("Today");
+    expect(labels[1]?.textContent).toBe("Older");
+  });
+
+  it("opens a chat on its row, and marks the one on screen", async () => {
+    show({ at: "/chat/9", chats: [chat(9, now - 60), chat(4, now - DAY)] });
+    const rows = await screen.findAllByTestId("chat-entry");
+    const active = rows.find((row) => row.getAttribute("aria-current"));
+    expect(active?.getAttribute("href")).toBe("/chat/9");
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.getAttribute("href"))).toEqual(["/chat/9", "/chat/4"]);
+  });
+
+  it("carries an unread dot for a chat with an answer nobody has read", async () => {
+    show({
+      at: "/inbox",
+      chats: [chat(9, now - 60, { answered: 4, seen: 2 }), chat(4, now - DAY)],
+    });
+    const rows = await screen.findAllByTestId("chat-entry");
+    const unread = rows.find((row) => row.getAttribute("href") === "/chat/9");
+    expect(unread?.getAttribute("data-unread")).toBe("true");
+    expect(unread?.textContent).toContain("New answers");
+    const read = rows.find((row) => row.getAttribute("href") === "/chat/4");
+    expect(read?.getAttribute("data-unread")).toBeNull();
+  });
+
+  it("sits a compact way to a new chat above the list", async () => {
+    show({ at: "/chat" });
+    const fresh = await screen.findByRole("link", { name: "Start a new chat" });
+    expect(fresh.getAttribute("href")).toBe("/chat");
+  });
+
+  it("names the place a chat works in, and keeps the rail with its one Chat entry", async () => {
+    show({ collapsed: true, at: "/inbox", chats: [chat(9, now - 60)] });
+    await screen.findByRole("link", { name: /^Chat/ });
+    // The rail is a rail of pages: no list of conversations, no group of days.
+    expect(screen.queryByRole("link", { name: "Work", current: "true" })).toBeNull();
+    expect(screen.queryByTestId("chat-group-label")).toBeNull();
+  });
+
+  it("names the place a chat sits in", async () => {
+    show({
+      at: "/inbox",
+      chats: [chat(9, now - 60, { repository_id: 1 })],
+    });
+    const entry = await screen.findByTestId("chat-entry");
+    expect(entry.textContent).toContain("moebius-platform");
   });
 });
 
