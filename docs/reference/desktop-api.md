@@ -2100,6 +2100,20 @@ grilling, it works in no repository, it has nothing to offer (its branch changes
 nothing that was not offered in a change since merged or closed), or its harness configuration branch fails the check
 (the message says why).
 
+### `POST /v1/chats/{id}/publish`
+
+Stores what a grilling chat has left in its worktree the way its end would, without ending the chat and while the
+chat takes messages as before: the same grilling, its inbox item and `grilling_published` in place of
+`grilling_ended`. The first publish stores the grilling; a publish of the same chat that follows replaces what was
+stored — the grilling row and its open inbox item, kind included, since the chat may have gone from issues to a
+report or back — while what was published has not been confirmed or dismissed yet, so the grilling may go on after
+its person has the issues. Ending or stopping the chat after a publish publishes nothing more: what was published is
+the grilling of the run.
+
+Response: the `Grilling`. Errors: `404` no such run; `422` the run is not a chat, the chat has ended, it is not with
+the Grilling partner, what it left is `empty` (nothing usable in the worktree; the reason why comes with the error),
+or what was published was settled (`confirmed` or `dismissed`) already.
+
 ### `POST /v1/chats/{id}/seen`
 
 A person has read the chat up to the event `seq`: `{"seq": number}`. The chat's `seen` becomes that `seq`, unless it is
@@ -2143,9 +2157,9 @@ that is not a chat; `409` the chat is being started again, or does not end.
 
 ### `POST /v1/chats/{id}/end`
 
-The web app offers no way to end a chat (its work is offered with `POST /v1/chats/{id}/offer`, and a chat that waits
-long frees its Pi by itself); the command line and the Moebius agent end chats with this route, and a grilling ends with
-it. A person ends a chat that has not ended: Pi is asked to shut down (its standard input is closed; a Pi that has not exited
+The web app ends a grilling chat while it waits (its "End grilling" button); other open chats are stopped by a person
+while their agent works, and a chat that waits long frees its Pi by itself; the command line and the Moebius agent end
+chats with this route, and a grilling ends with it. A person ends a chat that has not ended: Pi is asked to shut down (its standard input is closed; a Pi that has not exited
 after 10 seconds is killed). With a repository, what the agent left in the worktree is committed on the chat's branch
 (a chat that changed nothing has still succeeded), and then the worktree, or the empty directory, is removed.
 
@@ -2656,6 +2670,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `experiment_done` | An experiment of a research ended and was stored. | `{"research": id, "lever": the lever's branch, "value": number or null, "kept": boolean}` |
 | `automation_fired` | An automation fired, by its schedule or `POST /v1/automations/{id}/run`, for the workflow behind it. | `{"automation": id, "firing": id, "workflow": string, "status": "started" \| "skipped" \| "failed", "run": the chat's id or null, "workflow_run": the workflow run's id or null}` |
 | `grilling_ended` | A grilling chat ended and its result was stored. | `{"grilling": id, "status": "proposed" \| "reported" \| "empty"}` |
+| `grilling_published` | A person had what an open grilling chat left stored while the chat goes on; a later publish replaced it. | `{"grilling": id, "status": "proposed" \| "reported"}` |
 | `grilling_deleted` | A grilling was deleted through the API, or its chat was. | `{"grilling": id}` |
 | `export_deleted` | A training-set export was deleted through the API. | `{"export": id}` |
 | `replay_deleted` | A replay was deleted through the API. | `{"replay": id}` |

@@ -12,10 +12,12 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   changeChatSettings,
   continueChat,
+  endChat,
   markSeen,
   mergeChange,
   nameChat,
   offerChat,
+  publishGrilling,
   chats as readChats,
   say,
   stopRun,
@@ -45,6 +47,9 @@ import { Starters } from "./Starters";
 import { ThreadView } from "./ThreadView";
 import { useChoices } from "./useChoices";
 import { useThread } from "./useThread";
+
+/** The agent grillings run with; such a chat has the Publish and End grilling buttons. */
+const GRILLING_AGENT = "Grilling-partner";
 
 /**
  * The title row of the top bar for a chat: its name, which the person may change, and where its status stands. Who
@@ -141,6 +146,7 @@ export function ChatActions({
 }) {
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
+  const [confirmingEnd, setConfirmingEnd] = useState(false);
   const [params, setParams] = useSearchParams();
   if (!isOpen(chat.status)) return null;
   const inTerminal = params.get("terminal") === "1";
@@ -176,6 +182,29 @@ export function ChatActions({
     }
   }
 
+  async function publish() {
+    try {
+      await publishGrilling(chat.id);
+      onNotice(
+        "Published: what the grilling partner left waits in the Inbox. The grilling goes on; publish again to replace what was published.",
+      );
+    } catch (e) {
+      onNotice(e instanceof Error ? e.message : "Couldn't publish the issues. Try again.");
+    }
+    await queryClient.invalidateQueries({ queryKey: keys.snapshot });
+  }
+
+  async function end() {
+    setConfirmingEnd(false);
+    try {
+      await endChat(chat.id);
+    } catch (e) {
+      onNotice(e instanceof Error ? e.message : "Couldn't end the grilling. Try again.");
+    }
+    await queryClient.invalidateQueries({ queryKey: keys.chats });
+    await queryClient.invalidateQueries({ queryKey: keys.snapshot });
+  }
+
   if (confirming) {
     return (
       <div className="flex flex-wrap items-center gap-2">
@@ -184,6 +213,17 @@ export function ChatActions({
           Keep going
         </Button>
         <Button onClick={() => void stop()}>Stop chat</Button>
+      </div>
+    );
+  }
+  if (confirmingEnd) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-base text-text">End this grilling?</span>
+        <Button variant="secondary" onClick={() => setConfirmingEnd(false)}>
+          Keep going
+        </Button>
+        <Button onClick={() => void end()}>End grilling</Button>
       </div>
     );
   }
@@ -221,6 +261,29 @@ export function ChatActions({
             {label}
           </Button>
         ))}
+      {chat.agent === GRILLING_AGENT &&
+        (working ? (
+          <Tooltip content="Publish once the grilling partner has answered">
+            <span>
+              <Button variant="secondary" disabled>
+                Publish issues
+              </Button>
+            </span>
+          </Tooltip>
+        ) : (
+          <Tooltip content="What it left waits in the Inbox; the grilling goes on">
+            <span>
+              <Button variant="secondary" onClick={() => void publish()}>
+                Publish issues
+              </Button>
+            </span>
+          </Tooltip>
+        ))}
+      {chat.agent === GRILLING_AGENT && !working && (
+        <Button variant="secondary" onClick={() => setConfirmingEnd(true)}>
+          End grilling
+        </Button>
+      )}
       {working && (
         <Button variant="secondary" onClick={() => setConfirming(true)}>
           Stop

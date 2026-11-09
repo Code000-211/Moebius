@@ -17,7 +17,7 @@ use crate::config::{AgentConfig, THINKING_LEVELS};
 use crate::harness::terminal::tui_key;
 use crate::repos::git;
 use crate::router::Protocol;
-use crate::store::Run;
+use crate::store::{Grilling, Run};
 
 /// How many characters of a chat's first message its title keeps.
 const TITLE_LENGTH: usize = 80;
@@ -546,6 +546,24 @@ impl App {
                 run.id
             ))
         }
+    }
+
+    /// What the Publish button of a grilling chat does: what the Grilling partner left in its worktree goes into the
+    /// inbox (see `crate::harness::grilling::publish`) while the chat goes on, instead of only when it ends (see
+    /// [`end_chat`]). Not for other chats.
+    pub fn publish_grilling(&self, run_id: i64) -> Result<Grilling> {
+        let run = self.running_chat(run_id)?;
+        if run.agent != crate::harness::pibolt::GRILLING_AGENT {
+            return Err(AppError::Invalid(format!(
+                "chat {run_id} is not a grilling: it runs with {}",
+                run.agent
+            )));
+        }
+        let worktree = run
+            .worktree
+            .as_deref()
+            .ok_or_else(|| AppError::Invalid(format!("chat {run_id} has no worktree")))?;
+        crate::harness::grilling::publish(self, run_id, Path::new(worktree))
     }
 
     /// A person ends a chat that has not ended. It ends as `succeeded` once its agent has shut down and its work is

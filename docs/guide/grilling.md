@@ -34,6 +34,11 @@ can be built, in a research report. The exact routes and fields are in
      event `grilling_ended` says which of the three it was.
 
    A grilling does not offer its worktree as a change, so there is no `ready_to_merge` item for a chat with this agent.
+
+   You may also take what there is while the chat stays open: `POST /v1/chats/{id}/publish` stores the same grilling
+   with its inbox item (event `grilling_published`) and the chat keeps taking messages. A later publish replaces what
+   was published, so you may first publish a report and later the issues it turned into, as long as neither has been
+   confirmed or dismissed; when the chat ends after a publish, ending stores nothing more.
 4. Read the proposal, `GET /v1/grillings/{id}`, and confirm it with the list as you want it. You may edit a title or a body,
    drop an issue or reorder them; `blocked_by` indexes the list you send:
 

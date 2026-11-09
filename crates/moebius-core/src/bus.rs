@@ -243,6 +243,11 @@ pub enum Event {
         grilling: i64,
         status: String,
     },
+    /// A person published what an open grilling chat left, while the chat goes on; a later publish replaced it.
+    GrillingPublished {
+        grilling: i64,
+        status: String,
+    },
     /// A person deleted a grilling, or the chat it came from.
     GrillingDeleted {
         grilling: i64,
@@ -770,6 +775,13 @@ mod tests {
                     status: "proposed".into(),
                 },
                 json!({"kind": "grilling_ended", "data": {"grilling": 1, "status": "proposed"}}),
+            ),
+            (
+                Event::GrillingPublished {
+                    grilling: 1,
+                    status: "reported".into(),
+                },
+                json!({"kind": "grilling_published", "data": {"grilling": 1, "status": "reported"}}),
             ),
             (
                 Event::ForgeError {

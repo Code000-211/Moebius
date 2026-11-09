@@ -30,6 +30,16 @@ export function stopRun(run: number): Promise<Run> {
   return post<Run>(`/v1/runs/${run}/stop`, {});
 }
 
+/** Publishes what a grilling chat has left in its worktree: its grilling waits in the Inbox while the chat goes on. */
+export function publishGrilling(chat: number): Promise<unknown> {
+  return post<unknown>(`/v1/chats/${chat}/publish`, {});
+}
+
+/** Ends a chat that has not ended, as if its agent had answered its last time; publish or end reads what it left. */
+export function endChat(chat: number): Promise<Run> {
+  return post<Run>(`/v1/chats/${chat}/end`, {});
+}
+
 export function offerChat(chat: number): Promise<Change> {
   return post<Change>(`/v1/chats/${chat}/offer`, {});
 }

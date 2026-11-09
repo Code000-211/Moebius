@@ -133,6 +133,39 @@ impl Store {
         Ok(())
     }
 
+    /// The open inbox item of a grilling, the one a later publish of what the chat left replaces.
+    pub fn inbox_for_grilling(&self, grilling_id: i64) -> Result<Option<InboxItem>> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT id, kind, card_id, title, data, resolved_at, at FROM inbox_items \
+                 WHERE kind IN ('grilling_issues', 'grilling_report') \
+                 AND json_extract(data, '$.grilling') = ?1 AND resolved_at IS NULL",
+                params![grilling_id],
+                |r| self.inbox_row(r),
+            )
+            .optional()?)
+    }
+
+    /// Replaces what a grilling's inbox item holds with what the chat left at a later publish, kind included, since
+    /// the grilling may have gone from issues to a report or back.
+    pub fn update_inbox_item(
+        &self,
+        id: i64,
+        kind: &str,
+        title: &str,
+        data: &serde_json::Value,
+    ) -> Result<()> {
+        let title = redact(title);
+        let data = redact_json(data);
+        self.conn().execute(
+            "UPDATE inbox_items SET kind = ?1, title = ?2, data = ?3, at = ?4 \
+             WHERE id = ?5 AND resolved_at IS NULL",
+            params![kind, title, serde_json::to_string(&data)?, now(), id],
+        )?;
+        Ok(())
+    }
+
     /// Resolves the open inbox item of a proposal, which has no card to resolve it through.
     pub fn resolve_inbox_for_proposal(&self, proposal_id: i64) -> Result<()> {
         self.conn().execute(
