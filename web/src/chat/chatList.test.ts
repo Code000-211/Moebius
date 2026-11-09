@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
+import type { Snapshot } from "../api/types/board";
 import type { Chat } from "../api/types/chat";
-import { applyChatEvent, groupChats, listChanged, recentChat } from "./chatList";
+import {
+  applyChatEvent,
+  filterChats,
+  groupChats,
+  listChanged,
+  parseChatFilter,
+  recentChat,
+} from "./chatList";
 
 const chat = (over: Partial<Chat> = {}): Chat => ({
   id: 7,
@@ -170,5 +178,53 @@ describe("groupChats", () => {
   it("keeps a chat of just before midnight of the day before yesterday in Older", () => {
     const old = chat({ id: 7, started_at: 3 * 86_400 - 1 });
     expect(groupChats([old], now)[0]?.label).toBe("Older");
+  });
+});
+
+/** A snapshot with one board per repository name and id, as the filter tests read it. */
+const snapshot = (repositories: { id: number; name: string }[]) =>
+  ({
+    boards: repositories.map((repository) => ({ repository })),
+  }) as Snapshot;
+
+/** How the list is narrowed by the project it is asked about (`ChatFilter`). */
+describe("filterChats", () => {
+  const chats = [
+    chat({ id: 1, repository_id: 1 }), // on the snapshot's board
+    chat({ id: 2, repository_id: 9 }), // a repository the snapshot does not know
+    chat({ id: 3, harness_repository: true }), // the harness configuration repository
+    chat({ id: 4 }), // no repository at all
+  ];
+  const boards = snapshot([{ id: 1, name: "moebius" }]);
+
+  it("keeps the whole list when every chat is asked for", () => {
+    expect(filterChats(chats, boards, "all")).toEqual(chats);
+  });
+
+  it("keeps a repository's own chats, and none of the others", () => {
+    expect(filterChats(chats, boards, 1).map((c) => c.id)).toEqual([1]);
+    // A repository the snapshot does not know still filters by its id, so the choice can survive a rename.
+    expect(filterChats(chats, boards, 9).map((c) => c.id)).toEqual([2]);
+  });
+
+  it("keeps the harness repository and the chats with no known place under Without project", () => {
+    expect(filterChats(chats, boards, "none").map((c) => c.id)).toEqual([2, 3, 4]);
+    // Without a snapshot nothing resolves, so every chat is without a project.
+    expect(filterChats(chats, undefined, "none")).toHaveLength(4);
+  });
+});
+
+/** The filter this browser remembers between visits, read back defensively. */
+describe("parseChatFilter", () => {
+  it("returns the filter the words name", () => {
+    expect(parseChatFilter("all")).toBe("all");
+    expect(parseChatFilter("none")).toBe("none");
+    expect(parseChatFilter("5")).toBe(5);
+  });
+
+  it("falls back to every chat for nothing stored, or anything that names no filter", () => {
+    expect(parseChatFilter(null)).toBe("all");
+    expect(parseChatFilter("")).toBe("all");
+    expect(parseChatFilter("yesterday")).toBe("all");
   });
 });

@@ -14,6 +14,7 @@
 
 import {
   ArrowLeftIcon,
+  CaretDownIcon,
   FolderIcon,
   GearIcon,
   type Icon,
@@ -24,7 +25,7 @@ import {
   SquaresFourIcon,
 } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { chats as readChats } from "../../api/calls/chat";
@@ -34,10 +35,24 @@ import { keys } from "../../api/keys";
 import type { Snapshot } from "../../api/types/board";
 import { liveRuns } from "../../api/types/board";
 import type { Chat } from "../../api/types/chat";
-import { groupChats, recentChat } from "../../chat/chatList";
+import {
+  type ChatFilter,
+  filterChats,
+  formatChatFilter,
+  groupChats,
+  parseChatFilter,
+  recentChat,
+} from "../../chat/chatList";
 import { placeName } from "../../chat/places";
 import { unreadCount } from "../../chat/readMarkers";
 import { Button } from "../../ui/components/Button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "../../ui/components/DropdownMenu";
 import { IconButton } from "../../ui/components/IconButton";
 import { Mark } from "../../ui/components/Mark";
 import { StatusDot } from "../../ui/components/StatusDot";
@@ -54,6 +69,7 @@ import {
   SETTINGS_PAGES,
   settingsLabel,
 } from "../pages";
+import { readText, writeText } from "../storage";
 import { leaveSession } from "./session";
 
 const STATE: Record<ConnectionState, { label: string; color: string }> = {
@@ -329,11 +345,16 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
   );
 }
 
+/** Where the chosen project of the list is kept for this browser (`moebius.sidebar.*`). */
+const CHAT_FILTER_KEY = "moebius.sidebar.chatsRepository";
+
 /**
  * The list of the conversations, above Projects, in the wide sidebar only: the rail has no room for a list of them,
  * so it keeps its one Chat entry instead. The chats stand under the day each was started (`groupChats`), each row
  * with its unread dot and the place it works in, and the one on screen marked by its own address the way a page is.
- * The compact way to start a new one sits above the list, like the way ChatTopBar puts beside the canvas.
+ * Above the list, the way to start a new one sits beside the compact dropdown that narrows the list by project: All
+ * projects, a repository of the snapshot, or Without project — kept in this browser so the next visit reads the same
+ * list. The filter narrows the `keys.chats` read on the client; the dropdown changes nothing on the server.
  */
 function ChatSection({
   chats,
@@ -344,16 +365,61 @@ function ChatSection({
   snapshot: Snapshot | undefined;
   at: string;
 }) {
-  const groups = groupChats(chats, Math.floor(Date.now() / 1000));
+  const [filter, setFilter] = useState<ChatFilter>(() =>
+    parseChatFilter(readText(CHAT_FILTER_KEY)),
+  );
+  const choose = (next: ChatFilter) => {
+    setFilter(next);
+    writeText(CHAT_FILTER_KEY, formatChatFilter(next));
+  };
+  const shown = useMemo(() => filterChats(chats, snapshot, filter), [chats, snapshot, filter]);
+  const groups = groupChats(shown, Math.floor(Date.now() / 1000));
+  const named =
+    filter === "all"
+      ? "All projects"
+      : filter === "none"
+        ? "Without project"
+        : (snapshot?.boards.find((board) => board.repository.id === filter)?.repository.name ??
+          "All projects");
   return (
     <Section title="Chats" collapsed={false}>
-      <li>
-        <Button asChild variant="secondary" size="sm" className="w-full">
+      <li className="flex items-center gap-2">
+        <Button asChild variant="secondary" size="sm" className="min-w-0 flex-1">
           <Link to="/chat" aria-label="Start a new chat">
             <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
             New chat
           </Link>
         </Button>
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="max-w-32"
+              aria-label="Filter chats by project"
+            >
+              <span className="min-w-0 truncate">{named}</span>
+              <CaretDownIcon className="size-4 shrink-0" weight="bold" aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuRadioGroup
+              value={formatChatFilter(filter)}
+              onValueChange={(next) => choose(parseChatFilter(next))}
+            >
+              <DropdownMenuRadioItem value="all">All projects</DropdownMenuRadioItem>
+              {snapshot?.boards.map((board) => (
+                <DropdownMenuRadioItem
+                  key={board.repository.id}
+                  value={String(board.repository.id)}
+                >
+                  {board.repository.name}
+                </DropdownMenuRadioItem>
+              ))}
+              <DropdownMenuRadioItem value="none">Without project</DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </li>
       {groups.map((group) => (
         <div key={group.label} className="mt-1 flex flex-col gap-1">
