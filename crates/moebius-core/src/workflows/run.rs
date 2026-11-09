@@ -102,6 +102,12 @@ pub trait Runner: Send + Sync {
             port: None,
         })
     }
+
+    /// How long this node may run before the run fails it: a node that waits for something the run itself arranges
+    /// says for how long it waits, and the rest get the run's own node timeout.
+    fn timeout(&self, _node: &NodeDefinition) -> Option<Duration> {
+        None
+    }
 }
 
 impl<F> Runner for F
@@ -143,13 +149,97 @@ pub fn execute(
     definition
         .validate(&format!("workflows/{}.toml", definition.name))
         .map_err(|error| Error::Definition(error.to_string()))?;
-
-    let mut from = TRIGGER_ID.to_string();
     let trigger = start.clone();
+    walk(
+        definition,
+        TRIGGER_ID.to_string(),
+        trigger,
+        start,
+        None,
+        BTreeMap::new(),
+        0,
+        limits,
+        runner,
+        observer,
+    )
+}
+
+/// Where a run a stopped server left waiting starts again: the node that waited, the run's trigger, the value that
+/// reached the node, and the values the nodes before it left.
+pub struct Resume {
+    pub node: String,
+    pub trigger: Value,
+    pub input: Value,
+    pub earlier: BTreeMap<String, Value>,
+}
+
+/// Runs `definition` again from `resume`'s node, where a server restart left a run waiting: the node runs again with
+/// the value that reached it, while expressions see the run's trigger and the values the nodes before it left, and
+/// the run follows from it, so no node before it runs a second time.
+/// An unreadable graph fails before any node runs.
+pub fn execute_from_node(
+    definition: &WorkflowDefinition,
+    resume: Resume,
+    limits: Limits,
+    runner: &Arc<dyn Runner>,
+    observer: &mut dyn Observer,
+) -> Result<Value, Error> {
+    let Resume {
+        node: node_id,
+        trigger,
+        input: start,
+        earlier,
+    } = resume;
+    definition
+        .validate(&format!("workflows/{}.toml", definition.name))
+        .map_err(|error| Error::Definition(error.to_string()))?;
+    let node = definition
+        .nodes
+        .iter()
+        .find(|node| node.id == node_id)
+        .ok_or_else(|| Error::UnknownNode {
+            from: TRIGGER_ID.to_string(),
+            to: node_id.to_string(),
+        })?;
+    if limits.max_nodes == 0 {
+        return Err(Error::Ceiling(limits.max_nodes));
+    }
+    let mut earlier = earlier;
+    let (value, port) = step(runner, node, &trigger, &start, &earlier, limits, observer)?;
+    earlier.insert(node.id.clone(), value.clone());
+    walk(
+        definition,
+        node.id.clone(),
+        trigger,
+        value,
+        port,
+        earlier,
+        1,
+        limits,
+        runner,
+        observer,
+    )
+}
+
+/// Follows the edges from `from`, running each node it reaches with the value the one before left.
+#[allow(clippy::too_many_arguments)]
+fn walk(
+    definition: &WorkflowDefinition,
+    from: String,
+    trigger: Value,
+    start: Value,
+    port: Option<String>,
+    earlier: BTreeMap<String, Value>,
+    ran: u64,
+    limits: Limits,
+    runner: &Arc<dyn Runner>,
+    observer: &mut dyn Observer,
+) -> Result<Value, Error> {
+    let mut from = from;
     let mut value = start;
-    let mut port: Option<String> = None;
-    let mut earlier: BTreeMap<String, Value> = BTreeMap::new();
-    let mut ran = 0_u64;
+    let mut port = port;
+    let mut earlier = earlier;
+    let mut ran = ran;
 
     loop {
         // The next node is the one the edge out of this one leads to; a routing node chooses which of its output
@@ -176,24 +266,39 @@ pub fn execute(
         }
         ran += 1;
 
-        observer.started(node, &value)?;
-        let scope = Scope {
-            trigger: trigger.clone(),
-            input: value.clone(),
-            nodes: earlier.clone(),
-        };
-        let (result, chosen) = run_one(runner, node, scope, limits.node_timeout);
-        observer.finished(node, &result)?;
+        let (output, chosen) = step(runner, node, &trigger, &value, &earlier, limits, observer)?;
+        earlier.insert(node.id.clone(), output.clone());
+        value = output;
+        port = chosen;
+        from = node.id.clone();
+    }
+}
 
-        match result {
-            StepResult::Succeeded(output) => {
-                earlier.insert(node.id.clone(), output.clone());
-                value = output;
-                port = chosen;
-                from = node.id.clone();
-            }
-            StepResult::Failed(error) => return Err(error),
-        }
+/// Runs one node, telling the observer before and after it, giving it its own timeout if it named one or the run's
+/// node timeout for the rest, and gives back the value it left and the port it chose, or the failure that ends the
+/// run.
+#[allow(clippy::too_many_arguments)]
+fn step(
+    runner: &Arc<dyn Runner>,
+    node: &NodeDefinition,
+    trigger: &Value,
+    input: &Value,
+    earlier: &BTreeMap<String, Value>,
+    limits: Limits,
+    observer: &mut dyn Observer,
+) -> Result<(Value, Option<String>), Error> {
+    observer.started(node, input)?;
+    let scope = Scope {
+        trigger: trigger.clone(),
+        input: input.clone(),
+        nodes: earlier.clone(),
+    };
+    let timeout = runner.timeout(node).unwrap_or(limits.node_timeout);
+    let (result, port) = run_one(runner, node, scope, timeout);
+    observer.finished(node, &result)?;
+    match result {
+        StepResult::Succeeded(output) => Ok((output, port)),
+        StepResult::Failed(error) => Err(error),
     }
 }
 
@@ -362,6 +467,37 @@ kind = "test"
             finished[0].1,
             StepResult::Succeeded(json!({"started": true, "one": true}))
         );
+    }
+
+    #[test]
+    fn a_run_driven_from_a_node_does_not_run_the_nodes_before_it() {
+        let definition = chain();
+        let runner: Arc<dyn Runner> = Arc::new(|node: &NodeDefinition, input: &Value| {
+            let mut output = input.clone();
+            output[&node.id] = json!(true);
+            Ok(output)
+        });
+        let mut seen = Seen::default();
+
+        let value = execute_from_node(
+            &definition,
+            Resume {
+                node: "two".into(),
+                trigger: json!({"trigger": true}),
+                input: json!({"waited": true}),
+                earlier: BTreeMap::new(),
+            },
+            Limits::default(),
+            &runner,
+            &mut seen,
+        )
+        .unwrap();
+
+        assert_eq!(*seen.started.lock().unwrap(), vec!["two", "three"]);
+        assert_eq!(value["waited"], json!(true));
+        assert_eq!(value["two"], json!(true));
+        assert_eq!(value["three"], json!(true));
+        assert!(value.get("one").is_none(), "no node before the wait ran");
     }
 
     #[test]

@@ -2,6 +2,7 @@
 //! the stored run at once; the executor follows the definition off the request path, and this module records every node
 //! and the run's own end in the store and on the bus.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::thread;
 
@@ -13,7 +14,10 @@ use crate::store::WorkflowRun;
 use crate::workflows::decorate::Scope;
 use crate::workflows::definition::{self, NodeDefinition, WorkflowDefinition};
 use crate::workflows::nodes::{NodeError, Routed};
-use crate::workflows::run::{Error as RunError, Limits, Observer, Runner, StepResult, execute};
+pub(super) use crate::workflows::run::Resume;
+use crate::workflows::run::{
+    Error as RunError, Limits, Observer, Runner, StepResult, execute, execute_from_node,
+};
 
 /// A definition a trigger asks a run for: either the definition itself or the name of its file in the harness
 /// configuration repository.
@@ -69,7 +73,7 @@ impl App {
         let spawned = thread::Builder::new()
             .name(format!("workflow run {stored}"))
             .spawn(move || {
-                let _ = app.drive_workflow_run(stored, definition);
+                let _ = app.drive_workflow_run(stored, definition, None);
             });
         if let Err(error) = spawned {
             self.store
@@ -82,8 +86,30 @@ impl App {
         Ok(run)
     }
 
-    /// Runs one stored run to its end, recording each node before it starts and after it finishes.
-    fn drive_workflow_run(&self, run_id: i64, definition: WorkflowDefinition) -> Result<()> {
+    /// Runs one stored run to its end, recording each node before it starts and after it finishes. A run a stopped
+    /// server left at `resume` starts again at that node, with the value that reached it, while expressions still see
+    /// the run's own trigger and the values the nodes before it left, so no node before it runs a second time; a
+    /// fresh run starts at the trigger with its own value. Only one thread drives a run at a time.
+    pub(super) fn drive_workflow_run(
+        self: &Arc<Self>,
+        run_id: i64,
+        definition: WorkflowDefinition,
+        resume: Option<Resume>,
+    ) -> Result<()> {
+        let Some(driving) = self.begin_driving(run_id) else {
+            return Ok(());
+        };
+        self.drive_claimed_workflow_run(run_id, definition, resume, driving)
+    }
+
+    /// Runs a stored run whose driving this thread already claims; `driving` keeps the claim until the run ends.
+    pub(super) fn drive_claimed_workflow_run(
+        self: &Arc<Self>,
+        run_id: i64,
+        definition: WorkflowDefinition,
+        resume: Option<Resume>,
+        _driving: Driving,
+    ) -> Result<()> {
         let run = self
             .store
             .workflow_run(run_id)?
@@ -95,19 +121,20 @@ impl App {
             status: "running".into(),
         });
 
-        let runner: Arc<dyn Runner> = Arc::new(NodeRunner);
+        let runner: Arc<dyn Runner> = Arc::new(NodeRunner {
+            app: Arc::clone(self),
+            run: run_id,
+        });
         let mut observer = StoreObserver {
             app: self,
             run: run_id,
             current: None,
         };
-        let result = execute(
-            &definition,
-            run.value,
-            Limits::from_definition(&definition),
-            &runner,
-            &mut observer,
-        );
+        let limits = Limits::from_definition(&definition);
+        let result = match resume {
+            Some(resume) => execute_from_node(&definition, resume, limits, &runner, &mut observer),
+            None => execute(&definition, run.value, limits, &runner, &mut observer),
+        };
 
         match result {
             Ok(_) => {
@@ -140,13 +167,50 @@ impl App {
 
         Ok(())
     }
+
+    /// Claims the driving of `run` for this thread, so that a decision at the edge of a wait cannot start a second
+    /// drive of the same run; `None` while another thread drives it.
+    pub(super) fn begin_driving(self: &Arc<Self>, run: i64) -> Option<Driving> {
+        if !self.workflow_drives().insert(run) {
+            return None;
+        }
+        Some(Driving {
+            app: Arc::clone(self),
+            run,
+        })
+    }
+
+    fn workflow_drives(&self) -> std::sync::MutexGuard<'_, BTreeSet<i64>> {
+        self.workflow_drives
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 }
 
-/// Runs a node through the same registry a definition is validated against.
-struct NodeRunner;
+/// One thread's claim on driving a run, released when the drive ends.
+pub(super) struct Driving {
+    app: Arc<App>,
+    run: i64,
+}
+
+impl Drop for Driving {
+    fn drop(&mut self) {
+        self.app.workflow_drives().remove(&self.run);
+    }
+}
+
+/// Runs a node through the same registry a definition is validated against, and waits for a person's decision
+/// where the node is an approval.
+struct NodeRunner {
+    app: Arc<App>,
+    run: i64,
+}
 
 impl Runner for NodeRunner {
     fn run(&self, node: &NodeDefinition, input: &Value) -> std::result::Result<Value, NodeError> {
+        if node.kind == crate::workflows::nodes::approval::KIND {
+            return super::approval::wait(&self.app, self.run, node, input);
+        }
         crate::workflows::nodes::node(&node.kind, &node.params)?.run(input.clone())
     }
 
@@ -155,7 +219,23 @@ impl Runner for NodeRunner {
         node: &NodeDefinition,
         scope: &Scope,
     ) -> std::result::Result<Routed, NodeError> {
+        if node.kind == crate::workflows::nodes::approval::KIND {
+            let params = crate::workflows::decorate::fill(&node.id, &node.params, scope)
+                .map_err(|error| NodeError::Failed(error.to_string()))?;
+            let asked = NodeDefinition {
+                params,
+                ..node.clone()
+            };
+            return Ok(Routed {
+                value: super::approval::wait(&self.app, self.run, &asked, &scope.input)?,
+                port: None,
+            });
+        }
         crate::workflows::nodes::node(&node.kind, &node.params)?.run_routed(scope)
+    }
+
+    fn timeout(&self, node: &NodeDefinition) -> Option<std::time::Duration> {
+        super::approval::wait_timeout(&self.app, self.run, node)
     }
 }
 
@@ -163,7 +243,7 @@ impl Runner for NodeRunner {
 struct StoreObserver<'a> {
     app: &'a App,
     run: i64,
-    current: Option<i64>,
+    current: Option<(i64, i64)>,
 }
 
 impl Observer for StoreObserver<'_> {
@@ -172,21 +252,28 @@ impl Observer for StoreObserver<'_> {
         node: &NodeDefinition,
         input: &Value,
     ) -> std::result::Result<(), RunError> {
+        // A node that is driven again after a restart gets its next attempt, not the first one all over.
+        let attempt = self
+            .app
+            .store
+            .workflow_node_runs(self.run)
+            .map(|rows| rows.iter().filter(|row| row.node_id == node.id).count() as i64 + 1)
+            .unwrap_or(1);
         let recorded = self
             .app
             .store
-            .add_workflow_node_run(self.run, &node.id, 1, input)
+            .add_workflow_node_run(self.run, &node.id, attempt, input)
             .map_err(|error| record_error(node, &error))?;
-        self.current = Some(recorded.id);
+        self.current = Some((recorded.id, attempt));
         self.app.bus.publish(Event::WorkflowNodeStarted {
             run: self.run,
             node: node.id.clone(),
-            attempt: 1,
+            attempt,
         });
         self.app.bus.publish(Event::WorkflowNodeStatus {
             run: self.run,
             node: node.id.clone(),
-            attempt: 1,
+            attempt,
             status: "running".into(),
         });
         Ok(())
@@ -197,7 +284,7 @@ impl Observer for StoreObserver<'_> {
         node: &NodeDefinition,
         result: &StepResult,
     ) -> std::result::Result<(), RunError> {
-        let id = self.current.take().ok_or_else(|| RunError::Record {
+        let (id, attempt) = self.current.take().ok_or_else(|| RunError::Record {
             node: node.id.clone(),
             reason: "it was not recorded as started".into(),
         })?;
@@ -224,14 +311,14 @@ impl Observer for StoreObserver<'_> {
         self.app.bus.publish(Event::WorkflowNodeEnded {
             run: self.run,
             node: node.id.clone(),
-            attempt: 1,
+            attempt,
             status: status.into(),
             error,
         });
         self.app.bus.publish(Event::WorkflowNodeStatus {
             run: self.run,
             node: node.id.clone(),
-            attempt: 1,
+            attempt,
             status: status.into(),
         });
         Ok(())
@@ -301,6 +388,27 @@ mod tests {
                 }
                 Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
                 Err(error) => panic!("the bus closed before the run ended: {error}"),
+            }
+        }
+    }
+
+    /// Waits for the bus to say that node `node` of run `id` started.
+    fn wait_for_node_started(
+        events: &mut tokio::sync::broadcast::Receiver<crate::bus::AppEvent>,
+        id: i64,
+        node: &str,
+    ) {
+        loop {
+            match events.blocking_recv() {
+                Ok(event)
+                    if event.kind == "workflow_node_started"
+                        && event.data["run"] == id
+                        && event.data["node"] == node =>
+                {
+                    return;
+                }
+                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                Err(error) => panic!("the bus closed before node {node} started: {error}"),
             }
         }
     }
@@ -438,6 +546,74 @@ port = "out"
         // What the run stores as the code node's output is the value the edge carried to the next node.
         assert_eq!(nodes[2].input, reshaped);
         assert_eq!(nodes[2].output, Some(json!({"seen": 2, "here": "moebius"})));
+    }
+
+    #[test]
+    fn a_run_is_driven_by_one_thread_at_a_time() {
+        let (_dir, app, repository) = setup();
+        let gated = definition(
+            r#"
+name = "driven"
+description = "Two nodes, the first held until the test lets it go."
+
+[[trigger]]
+kind = "test"
+
+[[nodes]]
+id = "one"
+kind = "test"
+params = { wait_for_gate = "driven-once" }
+
+[[nodes]]
+id = "two"
+kind = "test"
+
+[[edges]]
+from = "trigger"
+port = "out"
+to = "one"
+
+[[edges]]
+from = "one"
+port = "out"
+to = "two"
+"#,
+        );
+
+        let mut events = app.bus.subscribe();
+        let run = app
+            .start_workflow_run(gated.clone(), repository.id, json!({"seed": 1}))
+            .unwrap();
+        wait_for_node_started(&mut events, run.id, "one");
+
+        // A decision at the edge of a wait asks to replay a run another thread is still driving; the replay must
+        // not run its nodes a second time.
+        let (done, returned) = std::sync::mpsc::channel();
+        let replay = Arc::clone(&app);
+        let definition = gated.clone();
+        let second = std::thread::spawn(move || {
+            let result = replay.drive_workflow_run(run.id, definition, None);
+            let _ = done.send(result.is_ok());
+        });
+        let returned_in_time = returned.recv_timeout(Duration::from_secs(5));
+        crate::workflows::nodes::test_gate::release("driven-once");
+        let _ = second.join();
+        assert!(
+            returned_in_time.is_ok(),
+            "the second drive waited to run the run again"
+        );
+        assert!(returned_in_time.unwrap());
+
+        let ended = wait_for_end(&app, &mut events, run.id);
+        assert_eq!(ended.status, "succeeded");
+        let nodes = app.store.workflow_node_runs(run.id).unwrap();
+        assert_eq!(
+            nodes
+                .iter()
+                .map(|node| node.node_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["one", "two"]
+        );
     }
 
     #[test]
