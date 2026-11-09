@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Chat } from "../api/types/chat";
-import { applyChatEvent, groupChats, listChanged, recentChat } from "./chatList";
+import { applyChatEvent, filterChats, groupChats, listChanged, recentChat } from "./chatList";
 
 const chat = (over: Partial<Chat> = {}): Chat => ({
   id: 7,
@@ -134,6 +134,35 @@ describe("recentChat", () => {
   it("takes the first of two that started in the same second, the order the server sends them in", () => {
     const [earlier, later] = [chat({ id: 4, started_at: 500 }), chat({ id: 6, started_at: 500 })];
     expect(recentChat([earlier, later])).toBe(earlier);
+  });
+});
+
+describe("filterChats", () => {
+  it("keeps the chats whose title holds the words typed, whatever their case", () => {
+    const a = chat({ id: 1, title: "Fix the login flow" });
+    const b = chat({ id: 2, title: "Write the tests" });
+    expect(filterChats([a, b], "  LOGIN ")).toEqual([a]);
+  });
+
+  it("reads a chat without a title as the New chat its row names it", () => {
+    const untitled = chat({ id: 1, title: "" });
+    expect(filterChats([untitled], "new ch")).toEqual([untitled]);
+    expect(filterChats([untitled], "work")).toEqual([]);
+  });
+
+  it("keeps every chat while the field is empty", () => {
+    const chats = [chat({ id: 1 }), chat({ id: 2 })];
+    expect(filterChats(chats, "")).toBe(chats);
+  });
+
+  it("combines with the project filter: a chat passes only when both take it", () => {
+    const mine = chat({ id: 1, title: "Fix the login flow", repository_id: 1 });
+    const other = chat({ id: 2, title: "Fix the notes feed", repository_id: 2 });
+    const project = (c: Chat): boolean => c.repository_id === 1;
+    // The search never broadens the project filter, and the project filter never keeps a chat the search drops.
+    expect(filterChats([other], "fix the", project)).toEqual([]);
+    expect(filterChats([mine, other], "notes", project)).toEqual([]);
+    expect(filterChats([mine, other], "login", project)).toEqual([mine]);
   });
 });
 

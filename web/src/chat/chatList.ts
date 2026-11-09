@@ -84,6 +84,27 @@ export function groupChats(chats: Chat[], now: number): ChatGroup[] {
 }
 
 /**
+ * The chats the list shows: each one in turn past the filters, which take a chat away only when every one of them
+ * does. The project filter — the filter over which repository a chat works in, the one beside the New chat button the
+ * search joins — takes the chats that are not of its picking, and the search takes the rest whose title does not hold
+ * the words typed, folded to one case: a chat with no title of its own is read as the "New chat" its row names it, so
+ * the words typed match what is on the screen.
+ */
+export function filterChats(
+  chats: Chat[],
+  query: string,
+  project: ((chat: Chat) => boolean) | null = null,
+): Chat[] {
+  const words = query.trim().toLowerCase();
+  if (!project && words === "") return chats;
+  return chats.filter(
+    (chat) =>
+      (!project || project(chat)) &&
+      (words === "" || (chat.title || "New chat").toLowerCase().includes(words)),
+  );
+}
+
+/**
  * The chat to open when someone asks for Chat: the one started most recently, or null when there is none — wherever
  * it was started, since a conversation begun in the floating window is a chat of the Chat page like any other. The
  * list from the server is newest first, but the newest of an edited or partially updated cache is picked by its own

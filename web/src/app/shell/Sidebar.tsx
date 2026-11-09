@@ -34,7 +34,7 @@ import { keys } from "../../api/keys";
 import type { Snapshot } from "../../api/types/board";
 import { liveRuns } from "../../api/types/board";
 import type { Chat } from "../../api/types/chat";
-import { groupChats, recentChat } from "../../chat/chatList";
+import { filterChats, groupChats, recentChat } from "../../chat/chatList";
 import { placeName } from "../../chat/places";
 import { unreadCount } from "../../chat/readMarkers";
 import { Button } from "../../ui/components/Button";
@@ -333,7 +333,9 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
  * The list of the conversations, above Projects, in the wide sidebar only: the rail has no room for a list of them,
  * so it keeps its one Chat entry instead. The chats stand under the day each was started (`groupChats`), each row
  * with its unread dot and the place it works in, and the one on screen marked by its own address the way a page is.
- * The compact way to start a new one sits above the list, like the way ChatTopBar puts beside the canvas.
+ * The compact way to start a new one sits above the list with the field that narrows it, like the way ChatTopBar
+ * puts beside the canvas. The field filters the chats of this list by title only — the search of the command bar above
+ * stays the way to look everywhere else.
  */
 function ChatSection({
   chats,
@@ -344,17 +346,37 @@ function ChatSection({
   snapshot: Snapshot | undefined;
   at: string;
 }) {
-  const groups = groupChats(chats, Math.floor(Date.now() / 1000));
+  const [query, setQuery] = useState("");
+  // The filters of the row above the list take a chat away only when every one of them does: the search narrows the
+  // chats the rest of the row lets through. The list has no project filter of its own yet, so none is set here — the
+  // day one joins the row, it goes into `filterChats` and the search keeps its place beside it.
+  const shown = filterChats(chats, query);
+  const groups = groupChats(shown, Math.floor(Date.now() / 1000));
   return (
     <Section title="Chats" collapsed={false}>
       <li>
-        <Button asChild variant="secondary" size="sm" className="w-full">
-          <Link to="/chat" aria-label="Start a new chat">
-            <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
-            New chat
-          </Link>
-        </Button>
+        <div className="flex gap-1">
+          <Button asChild variant="secondary" size="sm" className="flex-1">
+            <Link to="/chat" aria-label="Start a new chat">
+              <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
+              New chat
+            </Link>
+          </Button>
+          <input
+            type="search"
+            aria-label="Filter the chats"
+            placeholder="Filter"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            className="w-0 min-w-0 flex-1 rounded-control bg-sunken px-2 text-sm text-text outline-none transition-colors duration-(--motion-routine) ease-out placeholder:text-secondary focus-visible:bg-background focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-hairline-strong"
+          />
+        </div>
       </li>
+      {shown.length === 0 && chats.length > 0 && (
+        <li>
+          <p className="px-3 py-2 text-sm text-secondary">No chats match</p>
+        </li>
+      )}
       {groups.map((group) => (
         <div key={group.label} className="mt-1 flex flex-col gap-1">
           <div

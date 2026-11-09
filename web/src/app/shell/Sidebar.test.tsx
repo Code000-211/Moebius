@@ -319,6 +319,71 @@ describe("the list of chats", () => {
   });
 });
 
+describe("the chat search", () => {
+  const now = Math.floor(Date.now() / 1000);
+  const DAY = 86_400;
+
+  it("narrows the list to the chats whose title holds the words typed, as they are typed", async () => {
+    show({
+      at: "/inbox",
+      chats: [
+        chat(9, now - 60, { title: "Fix the login flow" }),
+        chat(4, now - DAY - 60, { title: "Write the tests" }),
+      ],
+    });
+    await screen.findAllByTestId("chat-entry");
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter the chats" }), {
+      target: { value: "login" },
+    });
+    await waitFor(() => {
+      const rows = screen.getAllByTestId("chat-entry");
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.getAttribute("href")).toBe("/chat/9");
+    });
+  });
+
+  it("reads a chat without a title as the New chat it is named", async () => {
+    show({
+      at: "/inbox",
+      chats: [chat(9, now - 60, { title: "" }), chat(4, now - DAY)],
+    });
+    await screen.findAllByTestId("chat-entry");
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter the chats" }), {
+      target: { value: "new c" },
+    });
+    await waitFor(() => {
+      const rows = screen.getAllByTestId("chat-entry");
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.getAttribute("href")).toBe("/chat/9");
+    });
+  });
+
+  it("says No chats match when nothing the search is given fits, and gives the list back on a clear", async () => {
+    show({
+      at: "/inbox",
+      chats: [
+        chat(9, now - 60, { title: "Fix the login flow" }),
+        chat(4, now - DAY, { title: "Other" }),
+      ],
+    });
+    await screen.findAllByTestId("chat-entry");
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter the chats" }), {
+      target: { value: "zzz" },
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("chat-entry")).toBeNull();
+    });
+    expect(screen.getByText("No chats match", { selector: "p" })).toBeTruthy();
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter the chats" }), {
+      target: { value: "" },
+    });
+    await waitFor(() => {
+      expect(screen.getAllByTestId("chat-entry")).toHaveLength(2);
+    });
+    expect(screen.queryByText("No chats match")).toBeNull();
+  });
+});
+
 describe("the rail", () => {
   it("keeps a board's work in the name of its icon", async () => {
     show({ collapsed: true });
