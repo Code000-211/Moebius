@@ -1,9 +1,9 @@
 /**
- * The sidebar on every page: the app name with the connection, the search (the command bar), Inbox, Chat, Fleet,
- * Automations and Workflows, then Projects (one entry per board), Improve, and the one entry for Settings. It collapses to a rail
- * of icons, where the words the rail drops — the connection, a board's work — stay with the icon as text a person can
- * hear or open, at the same heights the wide sidebar uses so that the rail is the same list seen closer. The counts
- * come from the snapshot.
+ * The sidebar on every page: the app name with the connection, the search (the command bar), Inbox, Chat and Fleet,
+ * the folding groups Automation and Improve, then Projects (one entry per board), the pages that set the server up,
+ * and the one entry for Settings. It collapses to a rail of icons, where the words the rail drops — the connection,
+ * a board's work — stay with the icon as text a person can hear or open, at the same heights the wide sidebar uses so
+ * that the rail is the same list seen closer, and where nothing folds. The counts come from the snapshot.
  *
  * The pages that set the server up rather than run the work — General, Models, Plugins, Terminal, Ports, Usage, Rules,
  * Agents, Skills and MCP servers — are not listed beside the everyday pages. Choosing Settings swaps this list for
@@ -66,10 +66,12 @@ import {
   type Group,
   isSettingsPage,
   PAGES,
+  type PageDef,
+  pageByPath,
   SETTINGS_PAGES,
   settingsLabel,
 } from "../pages";
-import { readText, writeText } from "../storage";
+import { readFlagOr, readText, writeFlag, writeText } from "../storage";
 import { leaveSession } from "./session";
 
 const STATE: Record<ConnectionState, { label: string; color: string }> = {
@@ -83,6 +85,21 @@ const CHAT_FILTER_KEY = "moebius.sidebar.chatsRepository";
 
 /** How the words after an entry's name are coloured: a count that waits, work that is running, or the plain state. */
 type TrailingTone = "attention" | "progress" | "secondary";
+
+/**
+ * The groups that fold. Automation holds Automations and Workflows; Improve holds Retro, Experiments, Decisions and
+ * Usage. Whether each is open is kept per browser under its own key, like the sidebar's own shape is; a browser that
+ * has never chosen anything has every group open. In the rail the groups do not fold — there a label keeps the room
+ * it always took and every row under it stays where it was.
+ */
+const COLLAPSIBLE: readonly { key: string; title: string; paths: readonly string[] }[] = [
+  { key: "group.automation", title: "Automation", paths: ["automations", "workflows"] },
+  {
+    key: "group.improve",
+    title: "Improve",
+    paths: ["retro", "experiments", "decision-model", "usage"],
+  },
+];
 
 /** The words after an entry's name: the count or state of what it leads to. Colour supports them, never replaces them. */
 interface Trailing {
@@ -143,6 +160,16 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
   const working = boards.reduce((sum, board) => sum + liveRuns(board), 0);
   const state = STATE[connection];
   const modifier = getModifierKey();
+  // Whether a group that folds is open. A browser that has never chosen anything has every group open.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(
+      COLLAPSIBLE.map((group) => [group.key, readFlagOr(`moebius.sidebar.${group.key}`, true)]),
+    ),
+  );
+  const toggleGroup = (key: string, open: boolean) => {
+    setOpenGroups((openNow) => ({ ...openNow, [key]: open }));
+    writeFlag(`moebius.sidebar.${key}`, open);
+  };
 
   // "Get started" is listed only while the server says a step is missing.
   const pagesOf = (group: Group) =>
@@ -163,25 +190,49 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
     return undefined;
   };
 
-  /** One section of the everyday list; nothing when its group has no entry to show. */
+  /** One row of the everyday list, from the page it leads to. */
+  const entryOf = (page: PageDef) => (
+    <Entry
+      key={page.path}
+      to={page.path === "chat" && recent !== null ? `/chat/${recent.id}` : `/${page.path}`}
+      // A chat has an address of its own, so the entry stays standing on every conversation rather than only
+      // on the one it happens to lead to.
+      current={page.path === "chat" ? here === "chat" : here === page.path}
+      icon={page.icon}
+      label={page.title}
+      collapsed={collapsed}
+      trailing={trailingOf(page.path)}
+    />
+  );
+
+  /** One flat section of the everyday list; nothing when its group has no entry to show. */
   const groupSection = (group: Group, title?: string) => {
-    const pages = pagesOf(group);
+    // The pages a folding group holds are the folding group's to show, not the flat section's.
+    const folded = new Set(COLLAPSIBLE.flatMap((each) => each.paths));
+    const pages = pagesOf(group).filter((page) => !folded.has(page.path));
     if (pages.length === 0) return null;
     return (
       <Section title={title} collapsed={collapsed}>
-        {pages.map((page) => (
-          <Entry
-            key={page.path}
-            to={page.path === "chat" && recent !== null ? `/chat/${recent.id}` : `/${page.path}`}
-            // A chat has an address of its own, so the entry stays standing on every conversation rather than only
-            // on the one it happens to lead to.
-            current={page.path === "chat" ? here === "chat" : here === page.path}
-            icon={page.icon}
-            label={page.title}
-            collapsed={collapsed}
-            trailing={trailingOf(page.path)}
-          />
-        ))}
+        {pages.map(entryOf)}
+      </Section>
+    );
+  };
+
+  /** One folding group: the toggle is the caret beside its name, and its pages stand under it only while it is open. */
+  const collapsibleSection = (title: string) => {
+    const group = COLLAPSIBLE.find((each) => each.title === title);
+    if (!group) return null;
+    const open = openGroups[group.key] ?? true;
+    const pages = group.paths.map(pageByPath).filter((page): page is PageDef => page !== undefined);
+    return (
+      <Section
+        title={title}
+        collapsed={collapsed}
+        collapsible={{ open, onToggle: () => toggleGroup(group.key, !open) }}
+      >
+        {/* The name stays a label that goes nowhere; the caret beside it is the toggle (`docs/design-web.md`). */}
+        {/* In the rail a group never folds, so its rows show whatever the browser left it as. */}
+        {(open || collapsed) && pages.map((page) => entryOf(page))}
       </Section>
     );
   };
@@ -286,6 +337,7 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
           </Section>
         )}
         {!inSettings && groupSection("")}
+        {!inSettings && collapsibleSection("Automation")}
         {!inSettings && !collapsed && (
           <ChatSection chats={chatList.data ?? []} snapshot={data.data} at={at} />
         )}
@@ -325,7 +377,7 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
             })}
           </Section>
         )}
-        {!inSettings && groupSection("Improve", "Improve")}
+        {!inSettings && collapsibleSection("Improve")}
         {!inSettings && groupSection("Setup", "Setup")}
         {!inSettings && (
           <Section collapsed={collapsed}>
@@ -512,10 +564,13 @@ function ChatEntry({
 function Section({
   title,
   collapsed,
+  collapsible,
   children,
 }: {
   title?: string;
   collapsed: boolean;
+  /** Set when the group folds: the caret beside its name is the toggle, and the open state is the browser's. */
+  collapsible?: { open: boolean; onToggle: () => void };
   children: React.ReactNode;
 }) {
   return (
@@ -523,8 +578,28 @@ function Section({
       {title &&
         (collapsed ? (
           // The rail has no room for the group's name, but it keeps the room its line takes, so the rows under it do
-          // not climb when the sidebar narrows.
+          // not climb when the sidebar narrows. The rail never folds a group: every row stays where it always was.
           <div className="mb-2 h-4 px-2" aria-hidden="true" />
+        ) : collapsible ? (
+          <div className="mb-2 flex h-4 items-center gap-1 px-2 text-xs font-semibold text-sidebar-group">
+            {/* The label names the group and goes nowhere; the caret alone opens and closes it. */}
+            {title}
+            <button
+              type="button"
+              onClick={collapsible.onToggle}
+              aria-expanded={collapsible.open}
+              aria-label={`${collapsible.open ? "Collapse" : "Expand"} ${title}`}
+              className="cursor-pointer text-sidebar-group"
+            >
+              <CaretDownIcon
+                className={cn(
+                  "size-3 shrink-0 transition-transform duration-(--motion-routine)",
+                  !collapsible.open && "-rotate-90",
+                )}
+                weight="bold"
+              />
+            </button>
+          </div>
         ) : (
           <div className="mb-2 flex h-4 items-center px-2 text-xs font-semibold text-sidebar-group">
             {title}
