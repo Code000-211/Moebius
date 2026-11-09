@@ -589,7 +589,7 @@ export function createWorkflowsFake(): WorkflowsFake {
       {
         name: release.name,
         description: release.description,
-        trigger: [{ kind: "schedule", params: { detail: "0 6 * * 1" } }],
+        trigger: [{ kind: "schedule", params: { cron: "0 6 * * 1" } }],
         nodes: release.nodes.map((node) => ({
           id: node.id,
           kind: node.kind,

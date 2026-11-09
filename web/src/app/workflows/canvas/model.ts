@@ -66,6 +66,14 @@ export function moveNode(
   };
 }
 
+/** Replaces the workflow's one trigger with the one the form now shows. */
+export function setTrigger(
+  graph: WorkflowDefinition,
+  trigger: WorkflowDefinition["trigger"][number],
+): WorkflowDefinition {
+  return { ...graph, trigger: [trigger] };
+}
+
 /** Sets a node's parameters whole; a node that keeps none is written with none. */
 export function setParams(
   graph: WorkflowDefinition,
