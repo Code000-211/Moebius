@@ -215,6 +215,18 @@ run to publish` when the card has no successful `code` run, and an error with th
 pull request fails. Unlike `card.change`, which is a snapshot from before the script ran, the returned table is current.
 The time this call takes does not count against the time limit.
 
+`moebius.open_pull_request()` returns the card's change as a table like `card.change`.
+: Publishes the change as `moebius.publish_change` does and, if the change has no pull request yet, opens it at once
+(on GitHub, with a body that says `Closes #<number>` and what the change does, without the review's `judgements`,
+which only `moebius.offer_change` attaches). A review script that calls it
+when the latest `code` run ended lets the forge run its checks on the pull request while the review of the card still
+reads the change: the poll reads the checks of the pull request's head commit, and the grace period of
+`card.change.checks` applies, so the script can wait for them and offer the change only when they are green (see
+Checks and conflicts). On a forge without pull requests it does nothing beyond the publish,
+and it does nothing at all when the commit already has one, so a script may call it on every tick. Raises the errors
+of `moebius.publish_change`. The returned table is current. The time this call takes does not count against the time
+limit.
+
 `moebius.run_checks()` returns the card's change as a table like `card.change`.
 : Starts the repository's own checks (see Checks and conflicts) on the change's current commit, unless they already ran
 or are running for it. It returns at once; the returned `checks` is `pending` while they run. It does nothing, and
@@ -352,8 +364,9 @@ What is left is the base functions (`assert`, `error`, `pairs`, `ipairs`, `pcall
 ## Limits
 
 - Time: 2 seconds for one run of a script, loading included. Only the time a script itself spends counts. The time
-  spent inside `moebius.decide`, `moebius.start_run`, `moebius.publish_change`, `moebius.run_checks`,
-  `moebius.reproduction`, `moebius.run_test`, `moebius.run_test_at_base` and `moebius.offer_change` is added back to the deadline, so a slow decider, harness start or push does not fail a
+  spent inside `moebius.decide`, `moebius.start_run`, `moebius.publish_change`, `moebius.open_pull_request`,
+  `moebius.run_checks`, `moebius.reproduction`, `moebius.run_test`, `moebius.run_test_at_base` and
+  `moebius.offer_change` is added back to the deadline, so a slow decider, harness start or push does not fail a
   script, nor does the time Moebius takes to describe the card (`card.change` needs git).
 - Memory: 16 MiB for one run of a script.
 
