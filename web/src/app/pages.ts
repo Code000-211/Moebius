@@ -42,12 +42,14 @@ export const PAGES: readonly PageDef[] = [
   { path: "chat", title: "Chat", group: "", icon: ChatCircleIcon },
   { path: "fleet", title: "Fleet", group: "", icon: UsersThreeIcon },
   { path: "automations", title: "Automations", group: "", icon: ClockIcon },
+  { path: "workflows", title: "Workflows", group: "", icon: TreeStructureIcon },
   { path: "projects", title: "Projects", group: "Projects", icon: FolderIcon },
+  // Agents, Skills, MCP servers and Rules are held by Settings, so the everyday list does not name their group;
+  // the command bar still lists them under "Build".
   { path: "agents", title: "Agents", group: "Build", icon: RobotIcon },
   { path: "skills", title: "Skills", group: "Build", icon: SparkleIcon },
   { path: "mcp-servers", title: "MCP servers", group: "Build", icon: PlugsConnectedIcon },
   { path: "rules", title: "Rules", group: "Build", icon: ScalesIcon },
-  { path: "workflows", title: "Workflows", group: "Build", icon: TreeStructureIcon },
   { path: "retro", title: "Retro", group: "Improve", icon: ArrowsClockwiseIcon },
   { path: "experiments", title: "Experiments", group: "Improve", icon: FlaskIcon },
   { path: "decision-model", title: "Decisions", group: "Improve", icon: GraphIcon },
