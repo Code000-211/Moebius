@@ -319,9 +319,102 @@ describe("the list of chats", () => {
   });
 });
 
+/**
+ * The compact dropdown beside "New chat" narrows the list by project: All projects, one per repository of the
+ * snapshot, and Without project for the chats whose place is the harness configuration repository or nowhere the
+ * snapshot can name. The choice is kept in this browser, and it filters the list itself.
+ */
+describe("the filter of the list of chats", () => {
+  const now = Math.floor(Date.now() / 1000);
+
+  /** The dropdown of the list of chats, read by the accessible name of its trigger. */
+  const trigger = () => screen.getByRole("button", { name: "Filter chats by project" });
+  // Radix menus open on a pointer press and commit a choice on its release, not on a click.
+  const choose = async (name: string) => {
+    fireEvent.pointerDown(trigger());
+    const item = await screen.findByRole("menuitemradio", { name });
+    fireEvent.pointerUp(item);
+    // Committing a choice closes the menu.
+    expect(screen.queryByRole("menu", { hidden: false })).toBeNull();
+  };
+
+  it("offers All projects, the repositories of the snapshot, and Without project", async () => {
+    show({ at: "/inbox", chats: [chat(9, now - 60)] });
+    await screen.findAllByTestId("chat-entry");
+    fireEvent.pointerDown(trigger());
+    const choices = await screen.findAllByRole("menuitemradio");
+    expect(choices.map((choice) => choice.textContent)).toEqual([
+      "All projects",
+      "moebius-platform",
+      "notes",
+      "Without project",
+    ]);
+    // The choice stands on its item, and is named on the trigger.
+    expect(choices[0]?.getAttribute("data-state")).toBe("checked");
+    expect(trigger().textContent).toContain("All projects");
+  });
+
+  it("filters the list to the repository chosen", async () => {
+    show({
+      at: "/inbox",
+      chats: [chat(9, now - 60, { repository_id: 1 }), chat(4, now - 60, { repository_id: 2 })],
+    });
+    await screen.findAllByTestId("chat-entry");
+    await choose("notes");
+    const rows = screen.getAllByTestId("chat-entry");
+    expect(rows.map((row) => row.getAttribute("href"))).toEqual(["/chat/4"]);
+    expect(trigger().textContent).toContain("notes");
+  });
+
+  it("puts the harness repository and the chats with no place under Without project", async () => {
+    show({
+      at: "/inbox",
+      chats: [
+        chat(9, now - 60, { harness_repository: true }),
+        chat(4, now - 60),
+        chat(2, now - 60, { repository_id: 1 }),
+      ],
+    });
+    await screen.findAllByTestId("chat-entry");
+    await choose("Without project");
+    const rows = screen.getAllByTestId("chat-entry");
+    expect(rows.map((row) => row.getAttribute("href"))).toEqual(["/chat/9", "/chat/4"]);
+  });
+
+  it("keeps the chosen filter for the next visit of this browser", async () => {
+    show({ at: "/inbox", chats: [chat(9, now - 60, { repository_id: 1 })] });
+    await screen.findAllByTestId("chat-entry");
+    await choose("moebius-platform");
+    // The filter is remembered not as a repository name, but as its id: a renamed repository keeps working.
+    expect(localStorage.getItem("moebius.sidebar.chatsRepository")).toBe("1");
+    cleanup();
+    show({ at: "/inbox", chats: [chat(9, now - 60, { repository_id: 1 })] });
+    await screen.findAllByTestId("chat-entry");
+    expect(trigger().textContent).toContain("moebius-platform");
+  });
+
+  it("falls back to every chat when what is stored names no repository", async () => {
+    localStorage.setItem("moebius.sidebar.chatsRepository", "gone");
+    show({ at: "/inbox", chats: [chat(9, now - 60)] });
+    await screen.findAllByTestId("chat-entry");
+    expect(trigger().textContent).toContain("All projects");
+    expect(screen.getAllByTestId("chat-entry")).toHaveLength(1);
+  });
+});
+
+/**
+ * The field beside "New chat" and the project dropdown narrows the list by title while it is typed, on from what the
+ * dropdown takes away: a chat stays only when both take it. A chat without a title is read as the "New chat" its row
+ * names it, and an unmatched list says so quietly. It filters chats only — the search of the command bar is not
+ * duplicated.
+ */
 describe("the chat search", () => {
   const now = Math.floor(Date.now() / 1000);
   const DAY = 86_400;
+
+  /** The field of the list of chats, read by the accessible name it is given. */
+  const field = () => screen.getByRole("searchbox", { name: "Filter the chats" });
+  const type = (text: string) => fireEvent.change(field(), { target: { value: text } });
 
   it("narrows the list to the chats whose title holds the words typed, as they are typed", async () => {
     show({
@@ -332,25 +425,7 @@ describe("the chat search", () => {
       ],
     });
     await screen.findAllByTestId("chat-entry");
-    fireEvent.change(screen.getByRole("searchbox", { name: "Filter the chats" }), {
-      target: { value: "login" },
-    });
-    await waitFor(() => {
-      const rows = screen.getAllByTestId("chat-entry");
-      expect(rows).toHaveLength(1);
-      expect(rows[0]?.getAttribute("href")).toBe("/chat/9");
-    });
-  });
-
-  it("reads a chat without a title as the New chat it is named", async () => {
-    show({
-      at: "/inbox",
-      chats: [chat(9, now - 60, { title: "" }), chat(4, now - DAY)],
-    });
-    await screen.findAllByTestId("chat-entry");
-    fireEvent.change(screen.getByRole("searchbox", { name: "Filter the chats" }), {
-      target: { value: "new c" },
-    });
+    type("login");
     await waitFor(() => {
       const rows = screen.getAllByTestId("chat-entry");
       expect(rows).toHaveLength(1);
@@ -367,20 +442,39 @@ describe("the chat search", () => {
       ],
     });
     await screen.findAllByTestId("chat-entry");
-    fireEvent.change(screen.getByRole("searchbox", { name: "Filter the chats" }), {
-      target: { value: "zzz" },
-    });
+    type("zzz");
     await waitFor(() => {
       expect(screen.queryByTestId("chat-entry")).toBeNull();
     });
     expect(screen.getByText("No chats match", { selector: "p" })).toBeTruthy();
-    fireEvent.change(screen.getByRole("searchbox", { name: "Filter the chats" }), {
-      target: { value: "" },
-    });
+    type("");
     await waitFor(() => {
       expect(screen.getAllByTestId("chat-entry")).toHaveLength(2);
     });
     expect(screen.queryByText("No chats match")).toBeNull();
+  });
+
+  it("combines with the project dropdown: a chat passes only when both take it", async () => {
+    show({
+      at: "/inbox",
+      chats: [
+        chat(9, now - 60, { title: "Fix the login flow", repository_id: 1 }),
+        chat(4, now - DAY, { title: "Fix the login feed of notes", repository_id: 2 }),
+      ],
+    });
+    await screen.findAllByTestId("chat-entry");
+    // The project only takes the chats of moebius-platform; from those, the words only take the first one.
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Filter chats by project" }));
+    const item = await screen.findByRole("menuitemradio", { name: "moebius-platform" });
+    fireEvent.pointerUp(item);
+    type("login");
+    await waitFor(() => {
+      const rows = screen.getAllByTestId("chat-entry");
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.getAttribute("href")).toBe("/chat/9");
+    });
+    // The search never broadens the project filter: its other chat holds the words but not the project.
+    expect(screen.queryByTestId("chat-entry")?.getAttribute("href")).not.toBe("/chat/4");
   });
 });
 
