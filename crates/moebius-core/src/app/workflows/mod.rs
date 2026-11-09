@@ -5,6 +5,7 @@
 //! through the resume route, and a run a server stopped while it waited is driven again on the next server start.
 
 pub mod approval;
+pub mod chat;
 pub mod run;
 pub mod stopping;
 

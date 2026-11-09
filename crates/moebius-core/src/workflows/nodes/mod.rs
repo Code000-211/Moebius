@@ -4,6 +4,7 @@
 
 pub mod agent;
 pub mod approval;
+pub mod chat;
 pub mod code;
 pub mod condition;
 pub mod for_each;
@@ -105,6 +106,7 @@ pub trait Node: Send + Sync {
 /// lands, naming it is an [`NodeError::UnknownKind`].
 pub fn node(kind: &str, params: &Value) -> Result<Box<dyn Node>, NodeError> {
     match kind {
+        chat::KIND => Ok(Box::new(chat::Chat::from_params(params)?)),
         #[cfg(test)]
         TEST_KIND => Ok(Box::new(TestNode {
             params: params.clone(),

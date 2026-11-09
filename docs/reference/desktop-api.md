@@ -134,7 +134,8 @@ configuration repository), `enabled`, `created_at`, `next_firing` (when the sche
 null while it is off or when the schedule never comes due) and `last_firing` (its latest `Firing`, or null).
 
 `Firing`: `id`, `automation_id`, `status` (`started`, `skipped` or `failed`), `run_id` (the chat it started, or null),
-`chat_status` (that chat's status now, or null), `manual` (true when a person fired it with
+`workflow_run_id` (the workflow run that carries it, or null when it starts a chat directly, with no repository: in an
+empty directory or in the harness configuration repository), `chat_status` (that chat's status now, or null), `manual` (true when a person fired it with
 `POST /v1/automations/{id}/run`), `reason` (why it was skipped or failed; else empty) and `at`.
 
 `Change`: `id`, `repository_id` (null for a change of the harness configuration repository), `harness_repository` (true
@@ -2180,19 +2181,31 @@ ended; `409` the chat's agent is starting after a message woke it (try again in 
 
 ### `GET /v1/automations`
 
-The automations, by name: an array of `Automation`.
+The automations, by name: an array of `Automation`. An automation is a workflow with a `schedule` trigger and one `chat`
+node (see [workflows](workflows.md#automations)); these routes and the commands keep their old names and arguments as a
+shortcut over it. The workflow file is the definition, and the automation's row keeps the id its firings use. A row
+whose file has been edited into an ordinary workflow is not listed: the workflow owns its schedule, and the row fires
+it no more. Deleting the workflow's file also stops the automation, until the next start of the server writes it
+again; then the schedule fires it as before.
 
 ### `POST /v1/automations`
 
-Adds an automation: recurring work that runs on its own. Once a minute the server reads its local time; each automation
-that is on and whose schedule came due since the minute before (or, after a late check, within the last five minutes)
-fires: the server starts a chat as `POST /v1/chats` would, with the automation's agent, place and `prompt` as the first
-message, and `origin` `automation`. A firing that came due while the server was not running is not made up. A run never
-waits for a person: once the chat's agent has answered and the chat waits for a message, the next check ends it as
-`POST /v1/chats/{id}/end` does, so what it changed is offered as a change and lands in the inbox. A firing due while the
-chat of the automation's last started firing has neither ended nor answered is skipped and recorded as `skipped`. A chat
-that cannot be started (its agent can no longer run, say) is recorded as `failed` with the reason. Each firing publishes
-`automation_fired`.
+Adds an automation: recurring work that runs on its own. It writes the `schedule` workflow named after it, in the harness
+configuration repository, with one `chat` node; a name an ordinary workflow or another automation already holds gets
+`automation-<id>.toml` instead, so neither loses its file and two automations may share a name. Without a `[harness]`
+the automation keeps its row, is fired from it,
+and moves to a workflow when a harness configuration repository is configured. Once a minute the workflow schedule reads
+its local time; each automation that is on and whose schedule came due since the minute before (or, after a late check,
+within the last five minutes) fires once. It starts from the minute the automation was last checked or saved, so an
+upgrade or a save cannot fire the minute it happens in again. A repository automation starts a workflow run whose `chat`
+node starts a chat as `POST /v1/chats` would, with the automation's agent, place and `prompt` as the first message, and
+`origin` `automation`; an automation that works in the harness configuration repository starts that chat directly. A
+firing that came due while the server was not running is not made up. A run never waits for a person: once the chat's
+agent has answered and the chat waits for a message, the next check ends it as `POST /v1/chats/{id}/end` does, so what
+it changed is offered as a change and lands in the inbox. A firing due while the chat of the automation's last started
+firing has neither ended nor answered is skipped and recorded as `skipped`. A chat that cannot be started (its agent can
+no longer run, say) is recorded as `failed` with the reason. Each firing publishes `automation_fired`, whose `workflow`
+names the workflow behind it and whose `workflow_run` names the run that carries it.
 
 Request:
 
@@ -2216,22 +2229,26 @@ The `Automation`. Errors: `404` no such automation.
 
 ### `PUT /v1/automations/{id}`
 
-Replaces an automation: the same body and checks as `POST /v1/automations`. Its firings stay, and it fires next when
-its new schedule comes due. Response: the `Automation`. Errors: as `POST /v1/automations`, and `404` no such automation.
+Replaces an automation: the same body and checks as `POST /v1/automations`. Its firings stay, it fires next when its new
+schedule comes due, and the workflow file changes with it. Response: the `Automation`. Errors: as `POST
+/v1/automations`, and `404` no such automation.
 
 ### `DELETE /v1/automations/{id}`
 
-Deletes an automation and its firings; the chats it started stay. Response: `{}`. Errors: `404` no such automation.
+Deletes an automation, its workflow file and its firings; the chats it started stay. Response: `{}`. Errors: `404` no
+such automation.
 
 ### `POST /v1/automations/{id}/run`
 
 Fires an automation now ("Run now"), whether it is on or not, as its schedule would: it is skipped while the chat of its
-last started firing still runs. Request: `{}`. Response: the `Firing` (`manual` true). Errors: `404` no such automation.
+last started firing still runs, and a repository automation starts a workflow run like the schedule. Request: `{}`.
+Response: the `Firing` (`manual` true). Errors: `404` no such automation.
 
 ### `GET /v1/automations/{id}/firings`
 
-The automation's firings, newest first, at most 50: an array of `Firing`, each with its chat (`run_id`, whose events
-are `GET /v1/runs/{id}/events`) and that chat's status. Errors: `404` no such automation.
+The automation's firings, newest first, at most 50: an array of `Firing`, each with its workflow run
+(`workflow_run_id`), its chat (`run_id`, whose events are `GET /v1/runs/{id}/events`) and that chat's status. Errors:
+`404` no such automation.
 
 ### `POST /v1/retros`
 
@@ -2637,7 +2654,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `research_status` | A research was stored, its brief was edited, or it was confirmed, started, stopped or ended. | `{"research": id, "status": string}` (the statuses above) |
 | `research_deleted` | A research was deleted through the API, with its experiments and their changes. Read the snapshot again. | `{"research": id}` |
 | `experiment_done` | An experiment of a research ended and was stored. | `{"research": id, "lever": the lever's branch, "value": number or null, "kept": boolean}` |
-| `automation_fired` | An automation fired, by its schedule or `POST /v1/automations/{id}/run`. | `{"automation": id, "firing": id, "status": "started" \| "skipped" \| "failed", "run": id or null}` |
+| `automation_fired` | An automation fired, by its schedule or `POST /v1/automations/{id}/run`, for the workflow behind it. | `{"automation": id, "firing": id, "workflow": string, "status": "started" \| "skipped" \| "failed", "run": the chat's id or null, "workflow_run": the workflow run's id or null}` |
 | `grilling_ended` | A grilling chat ended and its result was stored. | `{"grilling": id, "status": "proposed" \| "reported" \| "empty"}` |
 | `grilling_deleted` | A grilling was deleted through the API, or its chat was. | `{"grilling": id}` |
 | `export_deleted` | A training-set export was deleted through the API. | `{"export": id}` |

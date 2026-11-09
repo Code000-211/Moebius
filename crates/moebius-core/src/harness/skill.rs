@@ -476,6 +476,10 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../../../../docs/reference/workflows/cancel.md"),
     ),
     (
+        "reference/workflows/chat.md",
+        include_str!("../../../../docs/reference/workflows/chat.md"),
+    ),
+    (
         "reference/workflows/code.md",
         include_str!("../../../../docs/reference/workflows/code.md"),
     ),

@@ -13,6 +13,7 @@ Node kinds:
 - [`approval`](approval.md): pauses the run for a person, who approves the value, replaces it, or rejects it.
 - [`http`](http.md): one HTTP request to an allowed host, with secrets by name.
 - [`merge`](merge.md): joins two branches and emits what arrived by each side.
+- [`chat`](chat.md): starts an agent chat; the node an automation is stored as.
 - [`publish`](publish.md): offers the run's branch as a change for review, checks and merge.
 
 The folder also holds the trigger kinds, which are not node kinds:

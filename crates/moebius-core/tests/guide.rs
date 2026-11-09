@@ -287,18 +287,29 @@ fn unmarked_rust_and_typescript_blocks_do_not_exist() {
 
 // ---- curl commands ---------------------------------------------------------------------------------------------
 
+/// The Rust sources of `dir`, as paths from the repository root, walking into the folders a module was cut into.
+fn collect_sources(dir: &Path, path: &str, files: &mut Vec<String>) {
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let file = entry.unwrap().path();
+        let file_path = format!("{path}/{}", file.file_name().unwrap().to_string_lossy());
+        if file.is_dir() {
+            collect_sources(&file, &file_path, files);
+        } else if file_path.ends_with(".rs") {
+            files.push(file_path);
+        }
+    }
+}
+
 /// The routes of the desktop API as written in the modules of `server/api/`: path and the methods it answers.
 fn routes() -> Vec<(String, BTreeSet<&'static str>)> {
     let dir = repository_root().join("crates/moebius-core/src/server/api");
-    let mut files: Vec<_> = std::fs::read_dir(&dir)
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
+    let mut files = Vec::new();
+    collect_sources(&dir, "crates/moebius-core/src/server/api", &mut files);
     files.sort();
     files
         .iter()
         .flat_map(|file| {
-            let source = read(&format!("crates/moebius-core/src/server/api/{file}"));
+            let source = read(file);
             let source = source
                 .split("#[cfg(test)]\nmod tests")
                 .next()

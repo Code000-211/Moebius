@@ -44,11 +44,14 @@ pub struct ScheduleTrigger {
     pub repository: Option<String>,
     /// What a run starts its inputs with, as an object of the input names and their defaults.
     inputs: Value,
+    /// Whether the schedule is on; a switched-off schedule never comes due.
+    enabled: bool,
 }
 
 impl ScheduleTrigger {
-    /// Reads the trigger's parameters: its `cron`, the `repository` its runs belong to and its `inputs` defaults. A
-    /// cron the clock cannot read is refused with what is wrong with it, naming which field it is in.
+    /// Reads the trigger's parameters: its `cron`, the `repository` its runs belong to, its `inputs` defaults and
+    /// whether it is `enabled`. A cron the clock cannot read is refused with what is wrong with it, naming which
+    /// field it is in.
     pub fn parse(params: &Value) -> Result<Self, String> {
         let invalid = |message: &str| format!("the {KIND} trigger {message}");
         let table = params
@@ -56,7 +59,7 @@ impl ScheduleTrigger {
             .ok_or_else(|| invalid("takes an object of parameters"))?;
         let unknown: Vec<&str> = table
             .keys()
-            .filter(|key| !["cron", "repository", "inputs"].contains(&key.as_str()))
+            .filter(|key| !["cron", "repository", "inputs", "enabled"].contains(&key.as_str()))
             .map(String::as_str)
             .collect();
         if !unknown.is_empty() {
@@ -87,10 +90,16 @@ impl ScheduleTrigger {
                 ));
             }
         };
+        let enabled = match table.get("enabled") {
+            None => true,
+            Some(Value::Bool(enabled)) => *enabled,
+            Some(_) => return Err(invalid("\"enabled\" must be true or false")),
+        };
         Ok(Self {
             cron,
             repository,
             inputs,
+            enabled,
         })
     }
 
@@ -115,6 +124,9 @@ impl ScheduleTrigger {
         fired_at: Option<PrimitiveDateTime>,
         now: PrimitiveDateTime,
     ) -> Option<PrimitiveDateTime> {
+        if !self.enabled {
+            return None;
+        }
         let schedule = cron::parse(&self.cron).ok()?;
         let earliest = now - LOOK_BACK;
         let since = fired_at.map_or(earliest, |fired| fired.max(earliest));
@@ -253,6 +265,18 @@ mod tests {
                 "inputs": { "goal": "Triage the new issues." },
             })
         );
+    }
+
+    #[test]
+    fn a_schedule_is_on_unless_it_says_it_is_off() {
+        assert!(trigger("* * * * *").enabled);
+        let off =
+            ScheduleTrigger::parse(&json!({ "cron": "* * * * *", "enabled": false })).unwrap();
+        assert!(!off.enabled);
+        assert_eq!(off.due(None, datetime!(2026-11-09 03:30:00)), None);
+        let error =
+            ScheduleTrigger::parse(&json!({ "cron": "* * * * *", "enabled": "no" })).unwrap_err();
+        assert!(error.contains("enabled"), "{error}");
     }
 
     #[test]

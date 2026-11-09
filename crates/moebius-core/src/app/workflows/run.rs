@@ -50,6 +50,28 @@ impl App {
         repository_id: i64,
         value: Value,
     ) -> Result<WorkflowRun> {
+        self.start_workflow_run_with(source, repository_id, value, None)
+    }
+
+    /// Starts a run for the firing `firing`, linked to it before the run's thread starts so that its first node
+    /// already finds the firing; a start with no firing is [`Self::start_workflow_run`].
+    pub fn start_workflow_run_for_firing<S: WorkflowSource>(
+        self: &Arc<Self>,
+        source: S,
+        repository_id: i64,
+        value: Value,
+        firing: i64,
+    ) -> Result<WorkflowRun> {
+        self.start_workflow_run_with(source, repository_id, value, Some(firing))
+    }
+
+    fn start_workflow_run_with<S: WorkflowSource>(
+        self: &Arc<Self>,
+        source: S,
+        repository_id: i64,
+        value: Value,
+        firing: Option<i64>,
+    ) -> Result<WorkflowRun> {
         let definition = source.definition(self)?;
         definition
             .validate(&format!("workflows/{}.toml", definition.name))
@@ -62,6 +84,9 @@ impl App {
         let run = self
             .store
             .add_workflow_run(&definition.name, repository_id, &trigger, &value)?;
+        if let Some(firing) = firing {
+            self.store.set_firing_workflow_run(firing, run.id)?;
+        }
 
         self.bus.publish(Event::WorkflowRunQueued {
             run: run.id,
@@ -209,6 +234,14 @@ impl App {
                 let ended =
                     self.store
                         .finish_workflow_run_if_active(run_id, "failed", Some(&error))?;
+                // A firing whose chat node could not start the chat names the run it came from but no chat; without
+                // this it would say `started` with no chat and no reason forever.
+                if let Some(firing) = self.store.firing_for_workflow_run(run_id)?
+                    && firing.run_id.is_none()
+                {
+                    self.store
+                        .fail_firing(firing.id, &crate::blobs::redact(&error))?;
+                }
                 if ended {
                     self.bus.publish(Event::WorkflowRunEnded {
                         run: run_id,
@@ -270,6 +303,9 @@ impl Runner for NodeRunner {
         if node.kind == crate::workflows::nodes::approval::KIND {
             return super::approval::wait(&self.app, self.run, node, input, &self.cancellation);
         }
+        if node.kind == crate::workflows::nodes::chat::KIND {
+            return super::chat::start(&self.app, self.run, node);
+        }
         crate::workflows::nodes::node(&node.kind, &node.params)?.run(input.clone())
     }
 
@@ -293,6 +329,18 @@ impl Runner for NodeRunner {
                     &scope.input,
                     &self.cancellation,
                 )?,
+                port: None,
+            });
+        }
+        if node.kind == crate::workflows::nodes::chat::KIND {
+            let params = crate::workflows::decorate::fill(&node.id, &node.params, scope)
+                .map_err(|error| NodeError::Failed(error.to_string()))?;
+            let asked = NodeDefinition {
+                params,
+                ..node.clone()
+            };
+            return Ok(Routed {
+                value: super::chat::start(&self.app, self.run, &asked)?,
                 port: None,
             });
         }
