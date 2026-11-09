@@ -94,9 +94,17 @@ pub(in crate::harness) fn finish<L>(
         Err(why) => failed(&why),
     };
     if grilling && status != "failed" {
-        // Before the worktree is removed, with the result in it.
-        if let Err(e) = crate::harness::grilling::conclude(app, run.id, &run.worktree) {
-            failed(&format!("cannot read the result of the grilling: {e}"));
+        // Before the worktree is removed, with the result in it. What the person published already is kept.
+        match app.store.grilling_for_run(run.id) {
+            Err(e) => {
+                failed(&e.to_string());
+            }
+            Ok(None) => {
+                if let Err(e) = crate::harness::grilling::conclude(app, run.id, &run.worktree) {
+                    failed(&format!("cannot read the result of the grilling: {e}"));
+                }
+            }
+            Ok(Some(_)) => {}
         }
     }
     if run.purpose == "code" && status == "succeeded" {

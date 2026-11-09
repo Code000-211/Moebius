@@ -10,7 +10,9 @@
 //! When the chat ends or is stopped, [`conclude`] reads the files before the worktree is removed and stores a
 //! `grilling`: `proposed` with an inbox item `grilling_issues` for issues, `reported` with an inbox item
 //! `grilling_report` for a report, or `empty`, with the reason and no inbox item, when there is no file, `issues.json`
-//! is broken or the issues do not hold together (a blank title, a `blocked_by` out of range or in a cycle).
+//! is broken or the issues do not hold together (a blank title, a `blocked_by` out of range or in a cycle). A person
+//! can also have [`publish`] read what the chat left while it is still open, on its say-so, and keep grilling; a
+//! later publish replaces what was stored, and [`conclude`] is then skipped at the end.
 //!
 //! The person reads the proposal, may edit, drop and reorder the issues, and [`confirm`]s the final list: one card per
 //! issue in the repository's Backlog (on GitHub, an issue is opened first), which needs no approval and moves on to
@@ -124,55 +126,154 @@ pub fn read_result(worktree: &Path) -> Outcome {
 }
 
 /// Stores what the ended grilling chat `run_id` left in `worktree`, puts it in the inbox when it holds issues or a
-/// report, and publishes `grilling_ended`.
+/// report, and publishes `grilling_ended`. Nothing happens when the person published what the chat left already
+/// (see [`publish`]); [`crate::harness::run::end`] keeps the published result then.
 pub fn conclude(app: &App, run_id: i64, worktree: &Path) -> Result<Grilling> {
     let run = app.run(run_id)?;
     let repository_id = run
         .repository_id
         .ok_or_else(|| AppError::Invalid(format!("grilling {run_id} has no repository")))?;
+    let grilling = store_result(app, run_id, repository_id, read_result(worktree), None)?;
+    publish_ended(app, &grilling);
+    Ok(grilling)
+}
+
+/// Reads what an open grilling chat left in `worktree` and stores it the way [`conclude`] would, while the chat goes
+/// on. A later publish replaces what was stored, until it is `confirmed` or `dismissed`. Refuses to publish when
+/// nothing usable is in the worktree yet (the reason why comes with the error), or to replace a grilling the person
+/// has settled. Publishes `grilling_published`.
+pub fn publish(app: &App, run_id: i64, worktree: &Path) -> Result<Grilling> {
+    let run = app.run(run_id)?;
+    let repository_id = run
+        .repository_id
+        .ok_or_else(|| AppError::Invalid(format!("grilling {run_id} has no repository")))?;
+    let previous = app.store.grilling_for_run(run_id)?;
+    if let Some(previous) = &previous
+        && previous.status != "proposed"
+        && previous.status != "reported"
+    {
+        return Err(AppError::Invalid(format!(
+            "what the grilling left was {} already: end the chat when you are done with it, or start a new grilling",
+            previous.status
+        )));
+    }
     let grilling = match read_result(worktree) {
+        Outcome::Empty(reason) => {
+            return Err(AppError::Invalid(format!("nothing to publish: {reason}")));
+        }
+        outcome => store_result(app, run_id, repository_id, outcome, previous.as_ref())?,
+    };
+    app.bus.publish(Event::GrillingPublished {
+        grilling: grilling.id,
+        status: grilling.status.clone(),
+    });
+    Ok(grilling)
+}
+
+/// Stores issues or a report as a grilling with its inbox item, in place of the one the open chat left when
+/// `replace` holds it. [`conclude`] stores what is not usable as an `empty` grilling; [`publish`] refuses it.
+fn store_result(
+    app: &App,
+    run_id: i64,
+    repository_id: i64,
+    outcome: Outcome,
+    replace: Option<&Grilling>,
+) -> Result<Grilling> {
+    let replace_id = replace.map(|grilling| grilling.id);
+    match outcome {
         Outcome::Issues(issues) => {
             let issues: Vec<GrillingIssue> = issues.into_iter().map(redacted).collect();
-            let grilling =
-                app.store
-                    .add_grilling(run_id, repository_id, &issues, None, "proposed", "")?;
+            let grilling = stored_grilling(
+                app,
+                run_id,
+                repository_id,
+                replace_id,
+                &issues,
+                None,
+                "proposed",
+            )?;
             let title = match issues.len() {
                 1 => "1 issue from a grilling".to_string(),
                 n => format!("{n} issues from a grilling"),
             };
             let data =
                 json!({ "grilling": grilling.id, "repository": repository_id, "issues": issues });
-            app.store
-                .add_inbox_item("grilling_issues", None, &title, &data)?;
-            grilling
+            put_into_inbox(app, grilling.id, "grilling_issues", &title, &data)?;
+            Ok(grilling)
         }
         Outcome::Report(report) => {
             let report = redact(&report);
-            let grilling = app.store.add_grilling(
+            let grilling = stored_grilling(
+                app,
                 run_id,
                 repository_id,
+                replace_id,
                 &[],
                 Some(&report),
                 "reported",
-                "",
             )?;
             let data =
                 json!({ "grilling": grilling.id, "repository": repository_id, "report": report });
-            app.store.add_inbox_item(
+            put_into_inbox(
+                app,
+                grilling.id,
                 "grilling_report",
-                None,
                 "A research report from a grilling",
                 &data,
             )?;
-            grilling
+            Ok(grilling)
         }
-        Outcome::Empty(reason) => {
+        Outcome::Empty(reason) => app
+            .store
+            .add_grilling(run_id, repository_id, &[], None, "empty", &reason)
+            .map_err(From::from),
+    }
+}
+
+/// What the grilling of a run is stored as: the grilling that was published before, replaced, or a fresh one.
+fn stored_grilling(
+    app: &App,
+    run_id: i64,
+    repository_id: i64,
+    replace_id: Option<i64>,
+    issues: &[GrillingIssue],
+    report: Option<&str>,
+    status: &str,
+) -> Result<Grilling> {
+    let id = match replace_id {
+        Some(id) => {
             app.store
-                .add_grilling(run_id, repository_id, &[], None, "empty", &reason)?
+                .update_grilling_result(id, issues, report, status)?;
+            id
+        }
+        None => {
+            app.store
+                .add_grilling(run_id, repository_id, issues, report, status, "")?
+                .id
         }
     };
-    publish_ended(app, &grilling);
-    Ok(grilling)
+    Ok(app
+        .store
+        .grilling(id)?
+        .expect("the grilling was just stored"))
+}
+
+/// Puts the grilling's `kind`, `title` and `data` into the inbox, over the item it had, else fresh: the first
+/// publish adds, a later publish replaces what the open chat published before.
+fn put_into_inbox(
+    app: &App,
+    grilling_id: i64,
+    kind: &str,
+    title: &str,
+    data: &serde_json::Value,
+) -> Result<()> {
+    match app.store.inbox_for_grilling(grilling_id)? {
+        Some(item) => Ok(app.store.update_inbox_item(item.id, kind, title, data)?),
+        None => {
+            app.store.add_inbox_item(kind, None, title, data)?;
+            Ok(())
+        }
+    }
 }
 
 fn redacted(issue: GrillingIssue) -> GrillingIssue {

@@ -6,7 +6,9 @@
 //!   the first. `GET /v1/chats`: the chats, newest first. `POST /v1/chats/{id}/settings` `{model?, thinking?}`:
 //!   changes the model or reasoning level of a waiting chat.
 //! - `POST /v1/chats/{id}/messages` `{message}`: writes to a chat. `POST /v1/chats/{id}/offer` `{reason?}`: offers
-//!   what a chat's worktree changes as a change without ending the chat. `POST /v1/chats/{id}/end`: ends a chat.
+//!   what a chat's worktree changes as a change without ending the chat. `POST /v1/chats/{id}/publish`: what a
+//!   grilling chat left, into the inbox without ending the chat; a later publish replaces it (see
+//!   [`crate::harness::grilling`]). `POST /v1/chats/{id}/end`: ends a chat.
 //!   `POST /v1/chats/{id}/seen` `{seq}`: a person has read a chat that far. `POST /v1/chats/{id}/title` `{title}`:
 //!   names a chat, in place of the title taken from its first message.
 //! - `DELETE /v1/chats/{id}`: a person deletes a chat (see [`crate::app::App::delete_chat`]); `DELETE
@@ -34,6 +36,7 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/chats/{id}", axum::routing::delete(delete_chat))
         .route("/v1/chats/{id}/messages", post(say_in_chat))
         .route("/v1/chats/{id}/offer", post(offer_chat_changes))
+        .route("/v1/chats/{id}/publish", post(publish_grilling))
         .route("/v1/chats/{id}/end", post(end_chat))
         .route("/v1/chats/{id}/seen", post(chat_seen))
         .route("/v1/chats/{id}/settings", post(change_chat_settings))
@@ -282,6 +285,15 @@ async fn end_chat(
 ) -> Result<axum::Json<Run>, ApiError> {
     let runs = state.runs.clone();
     blocking(&state.app, move |app| app.end_chat(&*runs, id)).await
+}
+
+/// What a grilling chat that waits has left goes into the inbox (see [`crate::app::App::publish_grilling`]); the chat
+/// keeps going.
+async fn publish_grilling(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<Grilling>, ApiError> {
+    blocking(&state.app, move |app| app.publish_grilling(id)).await
 }
 
 /// How far a person has read a chat.
