@@ -10,7 +10,7 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 
 use super::nodes::{Node, node};
-use super::trigger::webhook;
+use super::trigger::{manual, webhook};
 
 /// The id an edge uses to start at the workflow's trigger.
 pub const TRIGGER_ID: &str = "trigger";
@@ -53,7 +53,7 @@ pub struct WorkflowDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Trigger {
-    /// The trigger kind, which the module of `workflows/trigger/` that owns it reads.
+    /// The trigger kind: `manual`, `webhook`, or a kind resolved through the same registry as a node's kind.
     pub kind: String,
     /// The trigger kind's own settings.
     #[serde(default = "empty_params", skip_serializing_if = "is_empty_params")]
@@ -133,8 +133,8 @@ impl WorkflowDefinition {
     /// Refuse a definition whose graph cannot be run whole.
     ///
     /// The checks run from the file's shape to its graph: exactly one trigger, unique node ids, edges that name nodes
-    /// that exist, kinds the registry knows, ports those kinds have, an edge leaving by every port of a node that
-    /// chooses its output port, no cycle, and every node reachable from the trigger.
+    /// that exist, kinds the registry knows (with `manual` read directly), ports those kinds have, an edge leaving by
+    /// every port of a node that chooses its output port, no cycle, and every node reachable from the trigger.
     pub fn validate(&self, file: &str) -> Result<(), Error> {
         self.check_triggers(file)?;
         self.check_ids(file)?;
@@ -210,7 +210,11 @@ impl WorkflowDefinition {
         let trigger = &self.trigger[0];
         // A trigger's kind belongs to the trigger module that owns it; only a kind none of them claims is looked up
         // in the registry of node kinds, which is where a trigger kind is refused as a node's kind.
-        let trigger_ports = if trigger.kind == webhook::KIND {
+        let trigger_ports = if trigger.kind == manual::KIND {
+            manual::ManualTrigger::parse(&trigger.params)
+                .map_err(|message| Error::new(file, format!("trigger: {message}")))?
+                .ports()
+        } else if trigger.kind == webhook::KIND {
             webhook::WebhookTrigger::parse(&trigger.params)
                 .map_err(|message| Error::new(file, format!("trigger: {message}")))?
                 .ports()
@@ -228,16 +232,17 @@ impl WorkflowDefinition {
         }
 
         for edge in &self.edges {
-            let ports = if edge.from == TRIGGER_ID {
-                trigger_ports.clone()
+            let leaves = if edge.from == TRIGGER_ID {
+                trigger_ports.outputs.iter().any(|port| port == &edge.port)
             } else {
-                nodes
+                let node = nodes
                     .get(edge.from.as_str())
                     .map(Box::as_ref)
-                    .expect("edge sources were checked")
-                    .ports()
+                    .expect("edge sources were checked");
+                let ports = node.ports();
+                ports.outputs.iter().any(|port| port == &edge.port)
             };
-            if !ports.outputs.iter().any(|port| port == &edge.port) {
+            if !leaves {
                 return Err(Error::new(
                     file,
                     format!(
@@ -697,6 +702,94 @@ kind = "missing"
         assert!(message.contains(FILE), "{message}");
         assert!(
             message.contains("trigger: unknown node kind \"missing\""),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn a_manual_trigger_is_accepted_with_its_inputs() {
+        let definition = parse(
+            r#"
+name = "release"
+description = "Started by a person."
+[[trigger]]
+kind = "manual"
+params = { inputs = [
+    { name = "version", type = "text", required = true },
+    { name = "count", type = "number", default = 3 },
+] }
+[[nodes]]
+id = "build"
+kind = "test"
+[[edges]]
+from = "trigger"
+to = "build"
+port = "out"
+"#,
+        );
+        definition
+            .validate(FILE)
+            .expect("the inputs are checked and are right");
+    }
+
+    #[test]
+    fn a_manual_trigger_input_that_is_not_one_is_refused_naming_the_input_and_the_file() {
+        let message = refusal(
+            r#"
+name = "release"
+description = "Started by a person."
+[[trigger]]
+kind = "manual"
+params = { inputs = [{ name = "count", type = "number", default = "3" }] }
+[[nodes]]
+id = "build"
+kind = "test"
+"#,
+        );
+        assert!(message.contains(FILE), "{message}");
+        assert!(message.contains("\"count\""), "{message}");
+        assert!(message.contains("default"), "{message}");
+    }
+
+    #[test]
+    fn the_manual_trigger_leaves_its_edges_by_out_like_the_other_triggers() {
+        let definition = parse(
+            r#"
+name = "release"
+description = "Started by a person."
+[[trigger]]
+kind = "manual"
+params = { inputs = [{ name = "version", type = "text" }] }
+[[nodes]]
+id = "build"
+kind = "test"
+[[edges]]
+from = "trigger"
+to = "build"
+port = "out"
+"#,
+        );
+        definition
+            .validate(FILE)
+            .expect("an edge leaves the trigger by out");
+    }
+
+    #[test]
+    fn a_node_that_takes_the_manual_kind_is_refused() {
+        let message = refusal(
+            r#"
+name = "release"
+description = "Nothing to do yet."
+[[trigger]]
+kind = "test"
+[[nodes]]
+id = "manual"
+kind = "manual"
+"#,
+        );
+        assert!(message.contains(FILE), "{message}");
+        assert!(
+            message.contains("node \"manual\": unknown node kind \"manual\""),
             "{message}"
         );
     }

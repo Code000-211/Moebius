@@ -59,6 +59,13 @@ pub(super) struct RawPackages {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(super) struct RawWorkflows {
+    #[serde(default)]
+    pub(super) http_hosts: Vec<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct RawBoard {
     pub(super) tick_ms: Option<u64>,
     pub(super) round_limit: Option<u32>,
@@ -170,6 +177,8 @@ pub(super) struct Raw {
     pub(super) lens: Option<toml::Table>,
     #[serde(default)]
     pub(super) packages: RawPackages,
+    #[serde(default)]
+    pub(super) workflows: RawWorkflows,
     #[serde(default)]
     pub(super) budgets: RawBudgets,
     #[serde(default)]

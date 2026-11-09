@@ -62,6 +62,10 @@ pub enum ConfigError {
     DecisionModelMinJudgements,
     #[error("localize.files must be between 1 and {max}, not {value}")]
     LocalizeFiles { value: u32, max: usize },
+    #[error(
+        "workflows.http_hosts: {0:?} is not a host name (no scheme, path, port, user name or blanks)"
+    )]
+    WorkflowHost(String),
     #[error("packages.npm_registry must be an http:// or https:// URL, not {0:?}")]
     NpmRegistry(String),
     #[error("decision_model.url and decision_model.model must not be empty")]
@@ -226,6 +230,8 @@ pub struct Config {
     pub has_lens_table: bool,
     /// Where Pi packages are found and fetched from.
     pub packages: PackagesConfig,
+    /// The hosts the HTTP node of a workflow may call, lower case.
+    pub workflow_http_hosts: Vec<String>,
     /// The plugins in their own process, with their paths made absolute.
     pub plugins: Vec<PluginConfig>,
     /// The machines that run harnesses over SSH, with their key files made absolute.
@@ -391,6 +397,22 @@ impl Config {
                 }
             },
         };
+        let workflow_http_hosts = raw
+            .workflows
+            .http_hosts
+            .iter()
+            .map(|host| {
+                let lower = host.to_ascii_lowercase();
+                let valid = reqwest::Url::parse(&format!("http://{lower}/")).is_ok_and(|url| {
+                    url.host_str() == Some(lower.as_str()) && url.port().is_none()
+                });
+                if valid {
+                    Ok(lower)
+                } else {
+                    Err(ConfigError::WorkflowHost(host.clone()))
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let checks_timeout = raw.checks.timeout_seconds.unwrap_or(1800);
         if checks_timeout == 0 {
             return Err(ConfigError::ChecksTimeout);
@@ -447,6 +469,7 @@ impl Config {
             guard_enabled: raw.guard.enabled.unwrap_or(true),
             has_lens_table: raw.lens.is_some(),
             packages,
+            workflow_http_hosts,
             plugins,
             runners,
             registries,
@@ -1028,6 +1051,27 @@ mod tests {
         assert_eq!(parse("").unwrap().checks_timeout, Duration::from_secs(1800));
         let c = parse("[checks]\ntimeout_seconds = 5").unwrap();
         assert_eq!(c.checks_timeout, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn the_hosts_workflows_may_call_are_bare_names_in_lower_case() {
+        assert!(parse("").unwrap().workflow_http_hosts.is_empty());
+        let c = parse("[workflows]\nhttp_hosts = [\"API.Example.com\", \"127.0.0.1\"]\n").unwrap();
+        assert_eq!(c.workflow_http_hosts, ["api.example.com", "127.0.0.1"]);
+        for bad in [
+            "https://api.example.com",
+            "api.example.com:8080",
+            "api.example.com/path",
+            "user@api.example.com",
+            "api example.com",
+            "",
+        ] {
+            let err = parse(&format!("[workflows]\nhttp_hosts = [{bad:?}]\n")).unwrap_err();
+            assert!(
+                matches!(&err, ConfigError::WorkflowHost(h) if h == bad),
+                "{bad:?}: {err}"
+            );
+        }
     }
 
     #[test]

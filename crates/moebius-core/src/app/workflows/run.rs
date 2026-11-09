@@ -375,6 +375,71 @@ to = "two"
         assert_eq!(nodes[1].output, Some(json!({"seed": 1})));
     }
 
+    /// A code node runs against the run itself: what the trigger carried and what the node before it output are in
+    /// scope for its Luau, its source is filled from expressions like any parameter, and the output the run stores for
+    /// it is the value the next node was handed.
+    #[test]
+    fn a_code_node_reads_the_run_and_its_output_is_what_the_next_node_is_handed() {
+        let (_dir, app, repository) = setup();
+        let workflow = definition(
+            r#"
+name = "reshape"
+description = "Reshape the value in Luau."
+
+[[trigger]]
+kind = "test"
+
+[[nodes]]
+id = "first"
+kind = "test"
+
+[[nodes]]
+id = "shape"
+kind = "code"
+params = { source = "return { repository = '{{ trigger.repository }}', twice = {{ node('first').n * 2 }} }" }
+
+[[nodes]]
+id = "second"
+kind = "code"
+params = { source = "return { seen = input.twice, here = node('shape').repository }" }
+
+[[edges]]
+from = "trigger"
+to = "first"
+port = "out"
+
+[[edges]]
+from = "first"
+to = "shape"
+port = "out"
+
+[[edges]]
+from = "shape"
+to = "second"
+port = "out"
+"#,
+        );
+
+        let mut events = app.bus.subscribe();
+        let run = app
+            .start_workflow_run(
+                workflow,
+                repository.id,
+                json!({"repository": "moebius", "n": 1}),
+            )
+            .unwrap();
+        let ended = wait_for_end(&app, &mut events, run.id);
+        assert_eq!(ended.status, "succeeded", "{:?}", ended.error);
+
+        let nodes = app.store.workflow_node_runs(run.id).unwrap();
+        let reshaped = json!({"repository": "moebius", "twice": 2});
+        // The code read the trigger and the node before it.
+        assert_eq!(nodes[1].output, Some(reshaped.clone()));
+        // What the run stores as the code node's output is the value the edge carried to the next node.
+        assert_eq!(nodes[2].input, reshaped);
+        assert_eq!(nodes[2].output, Some(json!({"seen": 2, "here": "moebius"})));
+    }
+
     #[test]
     fn a_failing_node_ends_the_run_failed_and_records_its_error() {
         let (_dir, app, repository) = setup();

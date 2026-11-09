@@ -51,6 +51,10 @@ files = 10
 # [packages]
 # npm_registry = "https://registry.npmjs.org"
 
+# The `http` node of a workflow calls only the hosts named here (https, or plain http). With none, it calls nothing.
+# [workflows]
+# http_hosts = ["api.example.com"]
+
 # How often the board engine runs the column scripts, and how many coding rounds a card gets.
 [board]
 tick_ms = 2000

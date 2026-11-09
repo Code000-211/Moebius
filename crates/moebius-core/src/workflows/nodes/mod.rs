@@ -2,8 +2,10 @@
 //! may leave it by, and describes itself for the pages that list the kinds. The registry below is the one place a new
 //! node kind is added: one arm of [`node`], next to the others.
 
+pub mod code;
 pub mod condition;
 pub mod for_each;
+pub mod http;
 pub mod merge;
 
 use serde_json::Value;
@@ -97,12 +99,14 @@ pub trait Node: Send + Sync {
 /// lands, naming it is an [`NodeError::UnknownKind`].
 pub fn node(kind: &str, params: &Value) -> Result<Box<dyn Node>, NodeError> {
     match kind {
+        code::KIND => Ok(Box::new(code::CodeNode::from_params(params)?)),
         condition::KIND => Ok(Box::new(condition::Condition::new(params)?)),
         #[cfg(test)]
         TEST_KIND => Ok(Box::new(TestNode {
             params: params.clone(),
         })),
         for_each::KIND => Ok(Box::new(for_each::ForEach::from_params(params)?)),
+        http::KIND => Ok(Box::new(http::HttpNode::from_params(params)?)),
         merge::KIND => Ok(Box::new(merge::Merge::from_params(params)?)),
         other => Err(NodeError::UnknownKind(other.to_string())),
     }

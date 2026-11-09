@@ -1280,6 +1280,31 @@ repository, or two workflows claiming one path that the delivery opens; `429` pa
 The same door for a delivery that names which repository the run belongs to. The repository in the address wins over
 the one the trigger names; a repository the server does not have is refused `422`.
 
+### `GET /v1/workflows/{name}/run-inputs`
+
+The inputs the `manual` trigger of a workflow names, in the order its file names them, so a form builds itself from
+them; see the [manual trigger](workflows/manual-trigger.md).
+Response: `{"trigger_kind": "manual", "inputs": [{"name": string, "type": string, "required": boolean,
+"default": value, "choices": [string]}]}`, where `type` is `text`, `number`, `boolean`, `choice` or `repository`,
+`default` is left out when the input has none and `choices` when it is not a `choice`. Errors: `422` the workflow file
+cannot be used, as for `GET /v1/workflows/{name}`; `409` the workflow's trigger is not `manual`, or the server has no
+`[harness]`.
+
+### `POST /v1/workflows/{name}/runs`
+
+A person starts a run of the workflow by hand. Request: `{"repository": string, "inputs": object}`, both optional and
+any other key refused. `inputs` gives the trigger's inputs by the names it names them; a value is checked against the
+type its input names, a default stands in for an input that was not given, and an input that was given nothing and has
+no default is left out of the value the run starts with. The run belongs to the repository `repository` names, or, when
+the trigger names an input of type `repository`, to the repository that input names. A run started here is recorded with
+`manual` as the kind of the trigger that started it, and goes on off the request path as any other run does.
+Response: `{"id": number, "workflow": string, "repository": string, "trigger": "manual", "status": string,
+"value": object}`, the run as stored and the value its nodes start from. Errors: `422` an input the trigger does not
+name, a value that is not of the type its input names, a required input with neither a value nor a default, a
+repository that is not known, or a request giving `repository` when the trigger names an input of type `repository` —
+every message names the input or the repository it refused; `409` the workflow's trigger is not `manual`, or the server
+has no `[harness]`; `422` a workflow file that cannot be used, as for `GET /v1/workflows/{name}`.
+
 ### `GET /v1/skills`
 
 The skills an agent's `skills` can name, for an editor to offer: an array of `{"name": string, "description": string,

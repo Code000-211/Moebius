@@ -237,7 +237,7 @@ impl Operate {
             Agents => agents::agents(),
             Agent { command } => agents::agent(command, get),
             Rules { command } => rules::rules(command.as_ref()),
-            Workflow { command } => workflow::workflow(command),
+            Workflow { command } => workflow::workflow(command, get),
             Pkg { command } => packages::pkg(command, get),
             Plugin { command } => plugins::plugin(command),
             Ext { command } => ext::ext(command),
