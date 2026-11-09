@@ -4,6 +4,7 @@
 //! left waiting is driven again by `App::resume_waiting_workflow_runs`: a decision that was made is replayed from
 //! the node's row, and a wait that is still open is waited for again, to the deadline its inbox item fixed.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, MutexGuard};
 use std::thread;
@@ -22,6 +23,9 @@ use crate::workflows::nodes::approval::{self, Decision, KIND};
 
 /// The seconds a decision is waited for at a stretch, so the deadline is honoured to a few seconds.
 const WAIT_CHUNK: i64 = 5;
+/// How often a wait looks at the run's cancellation flag, so a cancel leaves its inbox item withdrawn and its node
+/// cancelled without waiting for the deadline.
+const CANCEL_POLL: Duration = Duration::from_millis(20);
 /// The seconds the run gives the node over its deadline, so the deadline is what names the run's failure, not the
 /// run's own node timeout.
 const WAIT_MARGIN: i64 = 2;
@@ -277,8 +281,12 @@ pub(super) fn wait(
     run: i64,
     node: &NodeDefinition,
     input: &Value,
+    cancellation: &AtomicBool,
 ) -> std::result::Result<Value, NodeError> {
     let store = &app.store;
+    if cancellation.load(Ordering::Relaxed) {
+        return Err(NodeError::Cancelled);
+    }
     let approval = approval::Approval::from_params(&node.params)?;
     let failed = |error: &crate::store::StoreError| NodeError::Failed(error.to_string());
 
@@ -309,6 +317,10 @@ pub(super) fn wait(
                 }),
             )
             .map_err(|error| failed(&error))?;
+        if cancellation.load(Ordering::Relaxed) {
+            let _ = store.resolve_inbox_for_workflow_run(run);
+            return Err(NodeError::Cancelled);
+        }
     }
 
     let rows = store
@@ -351,19 +363,37 @@ pub(super) fn wait(
         return continue_with(&decided);
     }
 
-    // The run and its node wait; nothing else of the run runs.
-    store
+    // The run and its node wait; nothing else of the run runs. A cancel that came in before this point leaves no
+    // waiting row or run behind, and a cancel after it is seen before the first stretch of waiting.
+    if cancellation.load(Ordering::Relaxed) {
+        app.decision_waiters().remove(&run);
+        let _ = store.resolve_inbox_for_workflow_run(run);
+        return Err(NodeError::Cancelled);
+    }
+    let node_waiting = store
         .set_workflow_node_run_status(row.id, "waiting")
         .map_err(|error| failed(&error))?;
+    let run_waiting = node_waiting
+        && store
+            .set_workflow_run_status(run, "waiting")
+            .map_err(|error| failed(&error))?;
+    if !run_waiting {
+        app.decision_waiters().remove(&run);
+        let _ = store.finish_waiting_workflow_node_run(
+            row.id,
+            "cancelled",
+            None,
+            Some("the workflow run was cancelled"),
+        );
+        let _ = store.resolve_inbox_for_workflow_run(run);
+        return Err(NodeError::Cancelled);
+    }
     app.bus.publish(Event::WorkflowNodeStatus {
         run,
         node: node.id.clone(),
         attempt: row.attempt,
         status: "waiting".into(),
     });
-    store
-        .set_workflow_run_status(run, "waiting")
-        .map_err(|error| failed(&error))?;
     app.bus.publish(Event::WorkflowRunWaiting { run });
     app.bus.publish(Event::WorkflowRunStatus {
         run,
@@ -371,11 +401,25 @@ pub(super) fn wait(
     });
 
     loop {
+        if cancellation.load(Ordering::Relaxed) {
+            app.decision_waiters().remove(&run);
+            let _ = store.finish_waiting_workflow_node_run(
+                row.id,
+                "cancelled",
+                None,
+                Some("the workflow run was cancelled"),
+            );
+            let _ = store.resolve_inbox_for_workflow_run(run);
+            return Err(NodeError::Cancelled);
+        }
         let remaining = deadline - crate::store::now();
         if remaining <= 0 {
             break;
         }
-        match receive.recv_timeout(Duration::from_secs(remaining.min(WAIT_CHUNK) as u64)) {
+        let look = Duration::from_millis(remaining as u64)
+            .min(Duration::from_secs(WAIT_CHUNK as u64))
+            .min(CANCEL_POLL);
+        match receive.recv_timeout(look) {
             Ok(decision) => {
                 app.decision_waiters().remove(&run);
                 return approval.continues_with(input, &decision);
@@ -774,6 +818,52 @@ to = "after"
             None,
             "the decision resolves the inbox item"
         );
+    }
+
+    #[test]
+    fn a_cancel_before_the_wait_starts_leaves_no_inbox_item_or_waiting_run() {
+        let (_dir, app, repository) = setup(&asking(None));
+        let definition = crate::workflows::definition::WorkflowDefinition::parse(
+            &asking(None),
+            "workflows/asking.toml",
+        )
+        .unwrap();
+        let node = definition
+            .nodes
+            .iter()
+            .find(|node| node.id == "ask")
+            .unwrap()
+            .clone();
+        let run = app
+            .store
+            .add_workflow_run("asking", repository.id, "test", &value())
+            .unwrap();
+        let row = app
+            .store
+            .add_workflow_node_run(run.id, "ask", 1, &value())
+            .unwrap();
+        let cancellation = app.workflow_run_cancellation(run.id);
+        cancellation.store(true, Ordering::Relaxed);
+
+        let error = wait(&app, run.id, &node, &value(), &cancellation).unwrap_err();
+
+        assert!(matches!(error, NodeError::Cancelled), "{error:?}");
+        assert_eq!(
+            app.store.inbox_for_workflow_run(run.id).unwrap(),
+            None,
+            "the cancelled run must not ask a person"
+        );
+        assert_eq!(
+            app.store.workflow_run(run.id).unwrap().unwrap().status,
+            "queued",
+            "a cancel that came before the wait must leave no waiting run behind"
+        );
+        assert_eq!(
+            app.store.workflow_node_runs(run.id).unwrap()[0].status,
+            "running",
+            "and no waiting node behind"
+        );
+        assert_eq!(row.node_id, "ask");
     }
 
     #[test]

@@ -178,3 +178,51 @@ impl Store {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::store::test_store;
+    use serde_json::json;
+
+    #[test]
+    fn the_inbox_item_of_a_workflow_run_is_resolved_for_the_run_and_only() {
+        let (_dir, store) = test_store();
+        let repository = store
+            .add_repository("cancel", "/tmp/cancel", "none", "main")
+            .unwrap();
+        let run = store
+            .add_workflow_run("release", repository.id, "manual", &json!({}))
+            .unwrap();
+        let other = store
+            .add_workflow_run("release", repository.id, "manual", &json!({}))
+            .unwrap();
+        let run_item = store
+            .add_inbox_item(
+                "workflow_approval",
+                None,
+                "The run waits",
+                &json!({ "run": run.id }),
+            )
+            .unwrap();
+        let other_item = store
+            .add_inbox_item(
+                "workflow_approval",
+                None,
+                "The other run waits",
+                &json!({ "run": other.id }),
+            )
+            .unwrap();
+        let not_a_workflow_item = store
+            .add_inbox_item("chat", None, "A chat run", &json!({ "run": run.id }))
+            .unwrap();
+
+        store.resolve_inbox_for_workflow_run(run.id).unwrap();
+
+        let open = store.inbox().unwrap();
+        let open_ids = open.iter().map(|item| item.id).collect::<Vec<_>>();
+        assert_eq!(open_ids.len(), 2);
+        assert!(!open_ids.contains(&run_item.id));
+        assert!(open_ids.contains(&other_item.id));
+        assert!(open_ids.contains(&not_a_workflow_item.id));
+    }
+}

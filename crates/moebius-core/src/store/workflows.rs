@@ -5,6 +5,7 @@
 use std::path::Path;
 
 use rusqlite::{OptionalExtension, Row, params};
+use serde::Serialize;
 use serde_json::Value;
 
 use super::{Result, Store, now};
@@ -16,7 +17,7 @@ fn is_finished(status: &str) -> bool {
 }
 
 /// One run of a workflow: what started it and what became of it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct WorkflowRun {
     pub id: i64,
     pub workflow: String,
@@ -141,17 +142,18 @@ impl Store {
         )?)
     }
 
-    /// Moves a run to `status`. Its start is set the first time it runs, its finish the first time it ends.
-    pub fn set_workflow_run_status(&self, id: i64, status: &str) -> Result<()> {
+    /// Moves a run to `status` while it has not ended. Its start is set the first time it runs, its finish the first
+    /// time it ends; a run that has already ended keeps its status, and `false` says nothing moved.
+    pub fn set_workflow_run_status(&self, id: i64, status: &str) -> Result<bool> {
         let at = now();
-        self.conn().execute(
+        let changed = self.conn().execute(
             "UPDATE workflow_runs SET status = ?1,
                  started_at = CASE WHEN ?2 = 'running' AND started_at IS NULL THEN ?3 ELSE started_at END,
                  finished_at = CASE WHEN ?4 AND finished_at IS NULL THEN ?3 ELSE finished_at END
-             WHERE id = ?5",
+             WHERE id = ?5 AND status NOT IN ('succeeded', 'failed', 'cancelled')",
             params![status, status, at, is_finished(status), id],
         )?;
-        Ok(())
+        Ok(changed > 0)
     }
 
     /// Ends a run with `status` and `error`, redacted before it is stored.
@@ -166,6 +168,47 @@ impl Store {
             params![status, at, error.map(crate::blobs::redact), id],
         )?;
         Ok(())
+    }
+
+    /// Ends a run with `status` and `error`, but only while it is still active; answers whether it ended it, so that
+    /// the one that did so publishes the run's events. A queued run keeps its `started_at` empty: it never ran.
+    pub fn finish_workflow_run_if_active(
+        &self,
+        id: i64,
+        status: &str,
+        error: Option<&str>,
+    ) -> Result<bool> {
+        let at = now();
+        let ended = self.conn().execute(
+            "UPDATE workflow_runs SET status = ?1,
+                 finished_at = COALESCE(finished_at, ?2),
+                 error = ?3
+             WHERE id = ?4 AND status IN ('queued', 'running', 'waiting')",
+            params![status, at, error.map(crate::blobs::redact), id],
+        )?;
+        Ok(ended == 1)
+    }
+
+    /// Moves a queued run to `running` and stamps its start, and answers whether it did: a run that has ended in the
+    /// meantime — one a person cancelled while it was queued — is left as it is, so that nothing starts for it.
+    pub fn start_workflow_run_if_queued(&self, id: i64) -> Result<bool> {
+        let started = self.conn().execute(
+            "UPDATE workflow_runs SET status = 'running', started_at = COALESCE(started_at, ?1)
+             WHERE id = ?2 AND status = 'queued'",
+            params![now(), id],
+        )?;
+        Ok(started == 1)
+    }
+
+    /// Moves a waiting run back to `running`, for a drive that takes up the wait again, and answers whether it did: a
+    /// run that ended in the meantime — one a person cancelled while it waited — is left as it is.
+    pub fn start_workflow_run_if_waiting(&self, id: i64) -> Result<bool> {
+        let started = self.conn().execute(
+            "UPDATE workflow_runs SET status = 'running'
+             WHERE id = ?1 AND status = 'waiting'",
+            [id],
+        )?;
+        Ok(started == 1)
     }
 
     /// Stores one attempt of a node of `run_id` as it starts, with its input.
@@ -212,17 +255,18 @@ impl Store {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
-    /// Moves a node run to `status`, setting its finish the first time it ends.
-    pub fn set_workflow_node_run_status(&self, id: i64, status: &str) -> Result<()> {
+    /// Moves a node run to `status` while it has not ended, setting its finish the first time it ends; a node run
+    /// that has already ended keeps its status, and `false` says nothing moved.
+    pub fn set_workflow_node_run_status(&self, id: i64, status: &str) -> Result<bool> {
         let at = now();
-        self.conn().execute(
+        let changed = self.conn().execute(
             "UPDATE workflow_node_runs SET status = ?1,
                  started_at = CASE WHEN ?2 = 'running' AND started_at IS NULL THEN ?3 ELSE started_at END,
                  finished_at = CASE WHEN ?4 AND finished_at IS NULL THEN ?3 ELSE finished_at END
-             WHERE id = ?5",
+             WHERE id = ?5 AND status NOT IN ('succeeded', 'failed', 'cancelled')",
             params![status, status, at, is_finished(status), id],
         )?;
-        Ok(())
+        Ok(changed > 0)
     }
 
     /// Ends a node run with `status`, its `output` and `error`; both are redacted before they are stored.
@@ -534,6 +578,115 @@ mod tests {
                 "workflow_node_ended",
                 "workflow_node_status",
             ]
+        );
+    }
+
+    #[test]
+    fn a_run_is_finished_only_while_it_is_still_active() {
+        let (_dir, store, repository) = store_with_repository();
+        let run = store
+            .add_workflow_run("release", repository, "manual", &json!({}))
+            .unwrap();
+
+        // A queued run that never ran keeps its started time empty, and a second finish is refused.
+        assert!(
+            store
+                .finish_workflow_run_if_active(run.id, "cancelled", Some("cancelled by a person"))
+                .unwrap()
+        );
+        let done = store.workflow_run(run.id).unwrap().unwrap();
+        assert_eq!(done.status, "cancelled");
+        assert_eq!(done.error.as_deref(), Some("cancelled by a person"));
+        assert!(done.started_at.is_none());
+        assert!(done.finished_at.is_some());
+        assert!(
+            !store
+                .finish_workflow_run_if_active(run.id, "succeeded", None)
+                .unwrap()
+        );
+
+        // A run that did run keeps its started time, and one that is already finished is left alone.
+        let other = store
+            .add_workflow_run("release", repository, "manual", &json!({}))
+            .unwrap();
+        store.set_workflow_run_status(other.id, "running").unwrap();
+        assert!(
+            store
+                .finish_workflow_run_if_active(other.id, "failed", Some("a node failed"))
+                .unwrap()
+        );
+        let failed = store.workflow_run(other.id).unwrap().unwrap();
+        assert_eq!(failed.status, "failed");
+        assert!(failed.started_at.is_some());
+        assert!(
+            !store
+                .finish_workflow_run_if_active(other.id, "cancelled", Some("late"))
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn a_cancelled_run_is_never_moved_to_running() {
+        let (_dir, store, repository) = store_with_repository();
+        let run = store
+            .add_workflow_run("release", repository, "manual", &json!({}))
+            .unwrap();
+
+        // The driver of a run starts it only while the store still has it queued.
+        assert!(store.start_workflow_run_if_queued(run.id).unwrap());
+        assert_eq!(
+            store.workflow_run(run.id).unwrap().unwrap().status,
+            "running"
+        );
+        assert!(
+            store
+                .workflow_run(run.id)
+                .unwrap()
+                .unwrap()
+                .started_at
+                .is_some()
+        );
+
+        // A run that has ended — one a person cancelled — is not started again, nor stamped as running.
+        let other = store
+            .add_workflow_run("release", repository, "manual", &json!({}))
+            .unwrap();
+        store
+            .finish_workflow_run_if_active(other.id, "cancelled", Some("cancelled by a person"))
+            .unwrap();
+        assert!(!store.start_workflow_run_if_queued(other.id).unwrap());
+        let done = store.workflow_run(other.id).unwrap().unwrap();
+        assert_eq!(done.status, "cancelled");
+        assert!(done.started_at.is_none());
+    }
+
+    #[test]
+    fn a_waiting_run_is_started_again_but_a_cancelled_one_is_not() {
+        let (_dir, store, repository) = store_with_repository();
+        let run = store
+            .add_workflow_run("release", repository, "manual", &json!({}))
+            .unwrap();
+        store.set_workflow_run_status(run.id, "waiting").unwrap();
+
+        assert!(store.start_workflow_run_if_waiting(run.id).unwrap());
+        assert_eq!(
+            store.workflow_run(run.id).unwrap().unwrap().status,
+            "running"
+        );
+
+        let cancelled = store
+            .add_workflow_run("release", repository, "manual", &json!({}))
+            .unwrap();
+        store
+            .set_workflow_run_status(cancelled.id, "waiting")
+            .unwrap();
+        store
+            .finish_workflow_run_if_active(cancelled.id, "cancelled", Some("cancelled by a person"))
+            .unwrap();
+        assert!(!store.start_workflow_run_if_waiting(cancelled.id).unwrap());
+        assert_eq!(
+            store.workflow_run(cancelled.id).unwrap().unwrap().status,
+            "cancelled"
         );
     }
 }

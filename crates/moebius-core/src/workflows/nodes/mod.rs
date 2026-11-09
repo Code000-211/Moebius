@@ -56,6 +56,9 @@ pub enum NodeError {
     UnknownKind(String),
     #[error("invalid parameters for node kind \"{kind}\": {message}")]
     Parameters { kind: String, message: String },
+    /// A person cancelled the run while the node waited; the node leaves what it was doing.
+    #[error("the run was cancelled")]
+    Cancelled,
     #[error("{0}")]
     Failed(String),
 }
