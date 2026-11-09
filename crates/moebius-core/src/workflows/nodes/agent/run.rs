@@ -301,6 +301,26 @@ mod a_run {
     }
 
     #[test]
+    fn the_prompt_is_filled_from_the_value_that_reached_the_node() {
+        let world = World::new();
+        let run_id = world.workflow_run(json!({}));
+        let node = world.agent_node(
+            "Answer with:\n```json\n{\"release\": \"{{ input.release }}\"}\n```",
+            "note",
+        );
+        let value = node
+            .run_node(
+                &world.app,
+                &world.runs,
+                "draft",
+                run_id,
+                &json!({"release": "2.0"}),
+            )
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(value, json!({"release": "2.0"}));
+    }
+
+    #[test]
     fn the_last_fenced_block_of_the_agents_answer_is_the_nodes_value() {
         let world = World::new();
         let run_id = world.workflow_run(json!({}));
