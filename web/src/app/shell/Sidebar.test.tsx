@@ -10,6 +10,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Chat } from "../../api/types/chat";
 import { SETTINGS_PAGES, settingsLabel } from "../pages";
 import { Sidebar } from "./Sidebar";
 
@@ -50,8 +51,8 @@ const ROUTES: Record<string, unknown> = {
   "/v1/start": { done: true, steps: [], warnings: [] },
 };
 
-/** A conversation started at `startedAt`, read to its last answer. */
-function chat(id: number, startedAt: number) {
+/** A conversation started at `startedAt`, read to its last answer, unless a field says otherwise. */
+function chat(id: number, startedAt: number, over: Partial<Chat> = {}) {
   return {
     id,
     agent: "Moebius",
@@ -68,6 +69,7 @@ function chat(id: number, startedAt: number) {
     origin: "chat",
     model: null,
     thinking: null,
+    ...over,
   };
 }
 
@@ -245,6 +247,75 @@ describe("where an entry leads", () => {
     expect(entry().getAttribute("aria-current")).toBe("page");
     // The conversation on screen is not the one Chat leads to; every other entry stays an ordinary page.
     expect(screen.getByRole("link", { name: /^Inbox/ }).getAttribute("aria-current")).toBeNull();
+  });
+});
+
+describe("the list of chats", () => {
+  const now = Math.floor(Date.now() / 1000);
+  const DAY = 86_400;
+
+  it("groups the chats under their day, above Projects, in the wide sidebar only", async () => {
+    show({
+      at: "/inbox",
+      chats: [chat(9, now - 60), chat(4, now - DAY - 60), chat(2, now - 3 * DAY - 60)],
+    });
+    // The list stands above the Projects one, its groups in the fixed order of the days.
+    const labels = await screen.findAllByTestId("chat-group-label");
+    expect(labels.map((label) => label.textContent)).toEqual(["Today", "Yesterday", "Older"]);
+  });
+
+  it("orders the groups itself, the days fixed and the newest chat first within one", async () => {
+    const today = chat(5, now - 10);
+    const older = chat(6, now - 3 * DAY);
+    show({ at: "/inbox", chats: [older, today] });
+    const labels = await screen.findAllByTestId("chat-group-label");
+    expect(labels[0]?.textContent).toBe("Today");
+    expect(labels[1]?.textContent).toBe("Older");
+  });
+
+  it("opens a chat on its row, and marks the one on screen", async () => {
+    show({ at: "/chat/9", chats: [chat(9, now - 60), chat(4, now - DAY)] });
+    const rows = await screen.findAllByTestId("chat-entry");
+    const active = rows.find((row) => row.getAttribute("aria-current"));
+    expect(active?.getAttribute("href")).toBe("/chat/9");
+    expect(rows).toHaveLength(2);
+    expect(rows.map((row) => row.getAttribute("href"))).toEqual(["/chat/9", "/chat/4"]);
+  });
+
+  it("carries an unread dot for a chat with an answer nobody has read", async () => {
+    show({
+      at: "/inbox",
+      chats: [chat(9, now - 60, { answered: 4, seen: 2 }), chat(4, now - DAY)],
+    });
+    const rows = await screen.findAllByTestId("chat-entry");
+    const unread = rows.find((row) => row.getAttribute("href") === "/chat/9");
+    expect(unread?.getAttribute("data-unread")).toBe("true");
+    expect(unread?.textContent).toContain("New answers");
+    const read = rows.find((row) => row.getAttribute("href") === "/chat/4");
+    expect(read?.getAttribute("data-unread")).toBeNull();
+  });
+
+  it("sits a compact way to a new chat above the list", async () => {
+    show({ at: "/chat" });
+    const fresh = await screen.findByRole("link", { name: "Start a new chat" });
+    expect(fresh.getAttribute("href")).toBe("/chat");
+  });
+
+  it("names the place a chat works in, and keeps the rail with its one Chat entry", async () => {
+    show({ collapsed: true, at: "/inbox", chats: [chat(9, now - 60)] });
+    await screen.findByRole("link", { name: /^Chat/ });
+    // The rail is a rail of pages: no list of conversations, no group of days.
+    expect(screen.queryByRole("link", { name: "Work", current: "true" })).toBeNull();
+    expect(screen.queryByTestId("chat-group-label")).toBeNull();
+  });
+
+  it("names the place a chat sits in", async () => {
+    show({
+      at: "/inbox",
+      chats: [chat(9, now - 60, { repository_id: 1 })],
+    });
+    const entry = await screen.findByTestId("chat-entry");
+    expect(entry.textContent).toContain("moebius-platform");
   });
 });
 
