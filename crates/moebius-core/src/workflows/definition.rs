@@ -10,6 +10,7 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 
 use super::nodes::{Node, node};
+use super::trigger::webhook;
 
 /// The id an edge uses to start at the workflow's trigger.
 pub const TRIGGER_ID: &str = "trigger";
@@ -52,7 +53,7 @@ pub struct WorkflowDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Trigger {
-    /// The trigger kind, resolved through the same registry as a node's kind.
+    /// The trigger kind, which the module of `workflows/trigger/` that owns it reads.
     pub kind: String,
     /// The trigger kind's own settings.
     #[serde(default = "empty_params", skip_serializing_if = "is_empty_params")]
@@ -207,8 +208,17 @@ impl WorkflowDefinition {
 
     fn check_kinds_and_ports(&self, file: &str) -> Result<(), Error> {
         let trigger = &self.trigger[0];
-        let trigger_node = node(&trigger.kind, &trigger.params)
-            .map_err(|error| Error::new(file, format!("trigger: {error}")))?;
+        // A trigger's kind belongs to the trigger module that owns it; only a kind none of them claims is looked up
+        // in the registry of node kinds, which is where a trigger kind is refused as a node's kind.
+        let trigger_ports = if trigger.kind == webhook::KIND {
+            webhook::WebhookTrigger::parse(&trigger.params)
+                .map_err(|message| Error::new(file, format!("trigger: {message}")))?
+                .ports()
+        } else {
+            node(&trigger.kind, &trigger.params)
+                .map_err(|error| Error::new(file, format!("trigger: {error}")))?
+                .ports()
+        };
 
         let mut nodes: HashMap<&str, Box<dyn Node>> = HashMap::new();
         for definition in &self.nodes {
@@ -218,15 +228,15 @@ impl WorkflowDefinition {
         }
 
         for edge in &self.edges {
-            let source = if edge.from == TRIGGER_ID {
-                trigger_node.as_ref()
+            let ports = if edge.from == TRIGGER_ID {
+                trigger_ports.clone()
             } else {
                 nodes
                     .get(edge.from.as_str())
                     .map(Box::as_ref)
                     .expect("edge sources were checked")
+                    .ports()
             };
-            let ports = source.ports();
             if !ports.outputs.iter().any(|port| port == &edge.port) {
                 return Err(Error::new(
                     file,

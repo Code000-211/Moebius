@@ -566,6 +566,7 @@ At the top:
 | `server/api/harness.rs` | The agents, skills and MCP servers of the harness configuration repository, and `POST /v1/harness/setup`. |
 | `server/api/rules.rs` | The rules page and the rules in prose. |
 | `server/api/workflows.rs` | The workflows of the harness configuration repository: list, read, save and delete, saving and deleting as commits. |
+| `server/api/workflow_hooks.rs` | `POST /api/hooks/{path}` and `POST /api/hooks/{repository}/{path}`, the door a workflow's `webhook` trigger answers on: the credential it asks for, the run its body starts, and its ceiling of runs going at once. |
 | `server/api/settings.rs` | `moebius.toml`, the API keys and the restart, and what the Models, Plugins and Get started pages show. |
 | `server/api/lessons.rs` | The lessons: list, read, edit and delete. |
 | `server/api/extensions.rs` | `/v1/extensions/...`: search, info, the installed packages, and proposals to install, update and remove; and the refusal of an agent's merge of a change that touches a package. |
@@ -746,6 +747,8 @@ At the top:
 | `workflows/nodes/mod.rs` | The node kinds: the `Node` trait, the ports and metadata a kind reports, and the registry that maps a kind name and its parameters to a node. |
 | `workflows/nodes/for_each.rs` | The `for_each` node: fans a list out over a sub-path once per element, gathers the outputs in order, and checks that the sub-path rejoins where the definition says. |
 | `workflows/run.rs` | The executor: following the edges from the trigger with one value, running each node under its timeout, failing the run on a node's error or its node ceiling, and reporting each step to an observer. |
+| `workflows/trigger/mod.rs` | The trigger kinds a workflow file may name, and why a trigger's `kind` is resolved here rather than as a node's. |
+| `workflows/trigger/webhook.rs` | The `webhook` trigger: the path its workflow answers on, the secret a delivery must carry and the repository its runs belong to, and which workflow a path leads to. |
 
 Outside `src/`: `kanban/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension
 loaded into every run, `bridge/moebius-ask.ts` the question tool of the agents that operate Moebius, `skill/` the built-in skills.

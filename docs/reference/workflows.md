@@ -61,7 +61,7 @@ written `[[trigger]]` and has:
 
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `kind` | string | The kind name; the same registry resolves it as a node's `kind`. |
+| `kind` | string | The kind name, which the trigger kind of [`workflows/trigger/`](#trigger-kinds) reads. A trigger kind is not a node kind. |
 | `params` | table | The kind's settings, read by that kind. Optional; defaults to an empty table. |
 
 An edge starts at the trigger with `from = "trigger"`; `trigger` is reserved and cannot be a node's id or an edge's
@@ -156,6 +156,14 @@ Every `Node` reports three things:
 A file naming a kind the registry does not know is refused; the kinds that exist are listed under
 [Node kinds](#node-kinds).
 
+## Trigger kinds
+
+A trigger is not a piece of work inside a run, so its `kind` is not one of the [node registry](#the-node-registry):
+the module that owns the trigger kind in `workflows/trigger/` reads its `params` and says which ports it has. Each
+trigger kind has one page in [`workflows/`](workflows/README.md).
+
+- [`webhook`](workflows/webhook-trigger.md): a path on the server whose deliveries start runs of this workflow.
+
 ## Node kinds
 
 Each node kind has one section here and one page in [`workflows/`](workflows/README.md).
@@ -165,4 +173,6 @@ Each node kind has one section here and one page in [`workflows/`](workflows/REA
 ## Extending this page
 
 A node-kind card adds its section under [Node kinds](#node-kinds), a page `workflows/<kind>.md`, its entry in the
-[node kind index](workflows/README.md), and its arm in the registry. It does not edit another kind's page.
+[node kind index](workflows/README.md), and its arm in the registry. It does not edit another kind's page. A
+trigger-kind card adds its section under [Trigger kinds](#trigger-kinds), a page `workflows/<kind>-trigger.md`, and a
+module of `workflows/trigger/` that reads its parameters, along with the door that starts runs of it.
