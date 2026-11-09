@@ -42,8 +42,7 @@ export function ChatTopBar({ chats, listOpen, onToggleList, title, actions }: Ch
       {listOpen ? null : (
         <Button variant="secondary" aria-label={said} onClick={onToggleList}>
           {asking > 0 && <StatusDot color="var(--attention)" />}
-          Chats
-          <span className="text-sm font-normal tabular-nums text-secondary">{chats.length}</span>
+          {said}
           <SidebarSimpleIcon aria-hidden="true" className="size-4" />
         </Button>
       )}

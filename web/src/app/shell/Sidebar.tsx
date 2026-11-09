@@ -80,6 +80,9 @@ const STATE: Record<ConnectionState, { label: string; color: string }> = {
   reconnecting: { label: "Reconnecting", color: "var(--attention)" },
 };
 
+/** Where the chosen project of the list is kept for this browser (`moebius.sidebar.*`). */
+const CHAT_FILTER_KEY = "moebius.sidebar.chatsRepository";
+
 /** How the words after an entry's name are coloured: a count that waits, work that is running, or the plain state. */
 type TrailingTone = "attention" | "progress" | "secondary";
 
@@ -397,16 +400,14 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
   );
 }
 
-/** Where the chosen project of the list is kept for this browser (`moebius.sidebar.*`). */
-const CHAT_FILTER_KEY = "moebius.sidebar.chatsRepository";
-
 /**
  * The list of the conversations, above Projects, in the wide sidebar only: the rail has no room for a list of them,
  * so it keeps its one Chat entry instead. The chats stand under the day each was started (`groupChats`), each row
  * with its unread dot and the place it works in, and the one on screen marked by its own address the way a page is.
- * Above the list, the way to start a new one sits beside the compact dropdown that narrows the list by project: All
+ * Above the list, the way to start a new one sits beside the compact dropdown and the field that narrow the list: All
  * projects, a repository of the snapshot, or Without project — kept in this browser so the next visit reads the same
- * list. The filter narrows the `keys.chats` read on the client; the dropdown changes nothing on the server.
+ * list; the field narrows what the dropdown leaves by title while it is typed. They change nothing on the server, and
+ * neither duplicates the search of the command bar above, which looks everywhere else.
  */
 function ChatSection({
   chats,
@@ -420,11 +421,15 @@ function ChatSection({
   const [filter, setFilter] = useState<ChatFilter>(() =>
     parseChatFilter(readText(CHAT_FILTER_KEY)),
   );
+  const [query, setQuery] = useState("");
   const choose = (next: ChatFilter) => {
     setFilter(next);
     writeText(CHAT_FILTER_KEY, formatChatFilter(next));
   };
-  const shown = useMemo(() => filterChats(chats, snapshot, filter), [chats, snapshot, filter]);
+  const shown = useMemo(
+    () => filterChats(chats, snapshot, filter, query),
+    [chats, snapshot, filter, query],
+  );
   const groups = groupChats(shown, Math.floor(Date.now() / 1000));
   const named =
     filter === "all"
@@ -435,13 +440,21 @@ function ChatSection({
           "All projects");
   return (
     <Section title="Chats" collapsed={false}>
-      <li className="flex items-center gap-2">
+      <li className="flex items-center gap-1">
         <Button asChild variant="secondary" size="sm" className="min-w-0 flex-1">
-          <Link to="/chat" aria-label="Start a new chat">
+          <Link to="/chat" aria-label="Start a chat in the sidebar">
             <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
             New chat
           </Link>
         </Button>
+        <input
+          type="search"
+          aria-label="Filter the chats"
+          placeholder="Filter"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          className="w-16 min-w-0 shrink-0 rounded-control bg-sunken px-2 py-1 text-sm text-text outline-none transition-colors duration-(--motion-routine) ease-out placeholder:text-secondary focus-visible:bg-background focus-visible:outline-1 focus-visible:-outline-offset-1 focus-visible:outline-hairline-strong"
+        />
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
@@ -473,6 +486,11 @@ function ChatSection({
           </DropdownMenuContent>
         </DropdownMenu>
       </li>
+      {shown.length === 0 && chats.length > 0 && (
+        <li>
+          <p className="px-3 py-2 text-sm text-secondary">No chats match</p>
+        </li>
+      )}
       {groups.map((group) => (
         <div key={group.label} className="mt-1 flex flex-col gap-1">
           <div

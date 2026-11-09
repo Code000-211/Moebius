@@ -64,17 +64,28 @@ export function parseChatFilter(stored: string | null): ChatFilter {
 /**
  * The list narrowed to the project chosen. A repository keeps only its own chats; "Without project" keeps the chats
  * of the harness configuration repository and of no known place — the ones `placeName` does not name after a board.
+ * A `query` typed into the search field narrows on from there: a chat stays only when both the project and the words
+ * take it, each read by what it says — the project by the repository a chat works in, the words by the title the row
+ * names, folded to one case, with a chat without a title read as the "New chat" its row names it.
  */
 export function filterChats(
   chats: Chat[],
   snapshot: Snapshot | undefined,
   filter: ChatFilter,
+  query = "",
 ): Chat[] {
-  if (filter === "all") return chats;
-  if (filter === "none") {
-    return chats.filter((chat) => chat.harness_repository || placeName(snapshot, chat) === null);
-  }
-  return chats.filter((chat) => chat.repository_id === filter);
+  const words = query.trim().toLowerCase();
+  const byProject = (chat: Chat): boolean => {
+    if (filter === "all") return true;
+    if (filter === "none") {
+      return chat.harness_repository || placeName(snapshot, chat) === null;
+    }
+    return chat.repository_id === filter;
+  };
+  return chats.filter(
+    (chat) =>
+      byProject(chat) && (words === "" || (chat.title || "New chat").toLowerCase().includes(words)),
+  );
 }
 
 function replace(chats: Chat[], id: number, change: (chat: Chat) => Chat): Chat[] {

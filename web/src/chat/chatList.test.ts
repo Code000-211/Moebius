@@ -212,6 +212,36 @@ describe("filterChats", () => {
     // Without a snapshot nothing resolves, so every chat is without a project.
     expect(filterChats(chats, undefined, "none")).toHaveLength(4);
   });
+
+  /** The same list titled as the sidebar's rows name it, plus one chat not yet titled. */
+  const titled = [
+    chat({ id: 1, repository_id: 1, title: "Fix the login flow" }),
+    chat({ id: 2, repository_id: 9, title: "Write the tests" }),
+    chat({ id: 3, repository_id: 1, title: "" }),
+  ];
+
+  it("keeps the chats whose title holds the words typed, whatever their case", () => {
+    expect(filterChats(titled, boards, "all", "  LOGIN ").map((c) => c.id)).toEqual([1]);
+  });
+
+  it("reads a chat without a title as the New chat its row names it", () => {
+    expect(filterChats(titled, boards, "all", "new ch").map((c) => c.id)).toEqual([3]);
+    expect(filterChats(titled, boards, "all", "work")).toEqual([]);
+  });
+
+  it("keeps every chat while the field is empty", () => {
+    expect(filterChats(titled, boards, "all")).toEqual(titled);
+  });
+
+  it("combines with the project filter: a chat passes only when both take it", () => {
+    // The search never broadens the project filter, and the project filter never keeps a chat the search drops.
+    expect(filterChats(titled, boards, 1, "tests")).toEqual([]);
+    expect(filterChats(titled, boards, 1, "write")).toEqual([]);
+    expect(filterChats(titled, boards, 1, "login").map((c) => c.id)).toEqual([1]);
+    // The only chat `Without project` takes is narrowed by the words it holds.
+    expect(filterChats(titled, boards, "none", "test").map((c) => c.id)).toEqual([2]);
+    expect(filterChats(titled, boards, "none", "login")).toEqual([]);
+  });
 });
 
 /** The filter this browser remembers between visits, read back defensively. */
