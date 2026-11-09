@@ -1,6 +1,6 @@
 /**
- * The sidebar on every page: the app name with the connection, the search (the command bar), Inbox, Chat, Fleet
- * and Automations, then Projects (one entry per board), Improve, and the one entry for Settings. It collapses to a rail
+ * The sidebar on every page: the app name with the connection, the search (the command bar), Inbox, Chat, Fleet,
+ * Automations and Workflows, then Projects (one entry per board), Improve, and the one entry for Settings. It collapses to a rail
  * of icons, where the words the rail drops — the connection, a board's work — stay with the icon as text a person can
  * hear or open, at the same heights the wide sidebar uses so that the rail is the same list seen closer. The counts
  * come from the snapshot.
