@@ -744,9 +744,11 @@ At the top:
 | `workflows/mod.rs` | What the workflows folder holds, and what the rest of the crate uses from it. |
 | `workflows/decorate.rs` | The expressions in a node's parameters: evaluating `{{ ... }}` in the sandbox column scripts use, with the trigger, the node's input and earlier nodes in scope. |
 | `workflows/definition.rs` | The workflow file (`workflows/<name>.toml`): its trigger, nodes and edges, parsing it whole, validating its graph, and reading and listing it from the harness configuration repository; saving and deleting it are commits in `harness/repo/edits.rs`. |
-| `workflows/nodes/mod.rs` | The node kinds: the `Node` trait, the ports and metadata a kind reports, and the registry that maps a kind name and its parameters to a node. |
+| `workflows/nodes/mod.rs` | The node kinds: the `Node` trait, the ports and metadata a kind reports, the value and port a node returns, and the registry that maps a kind name and its parameters to a node. |
+| `workflows/nodes/condition.rs` | The `condition` node: one Luau expression per named output port, tried in order, the first true one taken, else the fallback port or a failure. |
 | `workflows/nodes/for_each.rs` | The `for_each` node: fans a list out over a sub-path once per element, gathers the outputs in order, and checks that the sub-path rejoins where the definition says. |
-| `workflows/run.rs` | The executor: following the edges from the trigger with one value, running each node under its timeout, failing the run on a node's error or its node ceiling, and reporting each step to an observer. |
+| `workflows/nodes/merge.rs` | The `merge` node: joins the two branches that reached it and emits what arrived by each side, one side's object or the list of the arrivals. |
+| `workflows/run.rs` | The executor: following the edges from the trigger with one value, giving each node the trigger's value and the values of the nodes that ran before, taking the edge that leaves by the port a node names, running each node under its timeout, failing the run on a node's error or its node ceiling, and reporting each step to an observer. |
 | `workflows/trigger/mod.rs` | The trigger kinds a workflow file may name, and why a trigger's `kind` is resolved here rather than as a node's. |
 | `workflows/trigger/webhook.rs` | The `webhook` trigger: the path its workflow answers on, the secret a delivery must carry and the repository its runs belong to, and which workflow a path leads to. |
 

@@ -2,10 +2,14 @@
 //! may leave it by, and describes itself for the pages that list the kinds. The registry below is the one place a new
 //! node kind is added: one arm of [`node`], next to the others.
 
+pub mod condition;
+pub mod for_each;
+pub mod merge;
+
 use serde_json::Value;
 use thiserror::Error;
 
-pub mod for_each;
+use super::decorate::Scope;
 
 /// The named ways a value enters and leaves a node.
 ///
@@ -52,13 +56,36 @@ pub enum NodeError {
     Failed(String),
 }
 
+/// What a node made and, when it chooses, the output port the value leaves by.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Routed {
+    pub value: Value,
+    /// The output port to follow. `None` leaves the choice to the executor, which follows the first edge out of the node.
+    pub port: Option<String>,
+}
+
 /// One piece of work in a workflow.
 pub trait Node: Send + Sync {
     /// Do the node's work on the value that reached it and return the value that leaves by its output port.
     fn run(&self, input: Value) -> Result<Value, NodeError>;
 
+    /// Do the node's work as the executor asks it to: with the trigger's value and the earlier nodes' values in
+    /// `scope`, and with the choice of an output port. A node that does not choose a port needs only [`Node::run`].
+    fn run_routed(&self, scope: &Scope) -> Result<Routed, NodeError> {
+        Ok(Routed {
+            value: self.run(scope.input.clone())?,
+            port: None,
+        })
+    }
+
     /// The ports a value enters and leaves by, whose names the workflow's edges use.
     fn ports(&self) -> Ports;
+
+    /// `true` when the node chooses which output port the value leaves by; such a node needs an edge leaving by every
+    /// port it reports, which the workflow's validation refuses to let go missing.
+    fn routes(&self) -> bool {
+        false
+    }
 
     /// The kind name, title and description shown to people.
     fn metadata(&self) -> Metadata;
@@ -68,13 +95,15 @@ pub trait Node: Send + Sync {
 ///
 /// Each node-kind card adds one arm to the match below and constructs its own node from `params`. Until a kind's card
 /// lands, naming it is an [`NodeError::UnknownKind`].
-pub fn node(kind: &str, _params: &Value) -> Result<Box<dyn Node>, NodeError> {
+pub fn node(kind: &str, params: &Value) -> Result<Box<dyn Node>, NodeError> {
     match kind {
+        condition::KIND => Ok(Box::new(condition::Condition::new(params)?)),
         #[cfg(test)]
         TEST_KIND => Ok(Box::new(TestNode {
-            params: _params.clone(),
+            params: params.clone(),
         })),
-        for_each::KIND => Ok(Box::new(for_each::ForEach::from_params(_params)?)),
+        for_each::KIND => Ok(Box::new(for_each::ForEach::from_params(params)?)),
+        merge::KIND => Ok(Box::new(merge::Merge::from_params(params)?)),
         other => Err(NodeError::UnknownKind(other.to_string())),
     }
 }

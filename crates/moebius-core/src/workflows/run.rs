@@ -1,8 +1,9 @@
 //! The executor of a workflow run. It follows the edges from the trigger, giving each node the value its predecessor
-//! left and taking the one value the node returns. A node that fails, a node that takes longer than its timeout, or a
-//! run that reaches its node ceiling fails the whole run closed; the edge from the node that just ran decides whether
-//! there is more work or the run is done.
+//! left and taking the one value the node returns, and it follows the edge that leaves by the port the node names. A
+//! node that fails, a node that takes longer than its timeout, or a run that reaches its node ceiling fails the whole
+//! run closed; the edge from the node that just ran decides whether there is more work or the run is done.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::thread;
@@ -11,8 +12,9 @@ use std::time::Duration;
 use serde_json::Value;
 use thiserror::Error;
 
+use super::decorate::Scope;
 use super::definition::{NodeDefinition, TRIGGER_ID, WorkflowDefinition};
-use super::nodes::NodeError;
+use super::nodes::{NodeError, Routed};
 
 /// Why a run ended `failed`, or could not start.
 #[derive(Debug, Clone, PartialEq, Error)]
@@ -32,6 +34,14 @@ pub enum Error {
     /// A node's thread ended without handing back a value.
     #[error("node \"{0}\" ended without a value")]
     NoValue(String),
+    /// A node named an output port with no edge, so its value has nowhere to go.
+    #[error("node \"{node}\" named port \"{port}\", which has no edge leaving by it")]
+    NoEdge {
+        /// The node that named the port.
+        node: String,
+        /// The port it named.
+        port: String,
+    },
     /// The thread for a node could not be started.
     #[error("cannot start node \"{node}\": {reason}")]
     Spawn { node: String, reason: String },
@@ -83,6 +93,15 @@ impl Default for Limits {
 /// Runs one node, given the node as its file wrote it and the value its predecessor left.
 pub trait Runner: Send + Sync {
     fn run(&self, node: &NodeDefinition, input: &Value) -> Result<Value, NodeError>;
+
+    /// Runs one node with what an expression may read, and returns the port it chose, if it chose one. A runner whose
+    /// nodes never choose needs only [`Runner::run`].
+    fn run_routed(&self, node: &NodeDefinition, scope: &Scope) -> Result<Routed, NodeError> {
+        Ok(Routed {
+            value: self.run(node, &scope.input)?,
+            port: None,
+        })
+    }
 }
 
 impl<F> Runner for F
@@ -126,12 +145,25 @@ pub fn execute(
         .map_err(|error| Error::Definition(error.to_string()))?;
 
     let mut from = TRIGGER_ID.to_string();
+    let trigger = start.clone();
     let mut value = start;
+    let mut port: Option<String> = None;
+    let mut earlier: BTreeMap<String, Value> = BTreeMap::new();
     let mut ran = 0_u64;
 
     loop {
-        let Some(edge) = definition.edges.iter().find(|edge| edge.from == from) else {
-            return Ok(value);
+        // The next node is the one the edge out of this one leads to; a routing node chooses which of its output
+        // ports that edge leaves by. A named port with no edge is a choice that has nowhere to go, so the run fails
+        // closed rather than ending with it.
+        let Some(edge) = definition
+            .edges
+            .iter()
+            .find(|edge| edge.from == from && port.as_ref().is_none_or(|port| &edge.port == port))
+        else {
+            return match port {
+                None => Ok(value),
+                Some(port) => Err(Error::NoEdge { node: from, port }),
+            };
         };
         let Some(node) = definition.nodes.iter().find(|node| node.id == edge.to) else {
             return Err(Error::UnknownNode {
@@ -145,12 +177,19 @@ pub fn execute(
         ran += 1;
 
         observer.started(node, &value)?;
-        let result = run_one(runner, node, &value, limits.node_timeout);
+        let scope = Scope {
+            trigger: trigger.clone(),
+            input: value.clone(),
+            nodes: earlier.clone(),
+        };
+        let (result, chosen) = run_one(runner, node, scope, limits.node_timeout);
         observer.finished(node, &result)?;
 
         match result {
             StepResult::Succeeded(output) => {
+                earlier.insert(node.id.clone(), output.clone());
                 value = output;
+                port = chosen;
                 from = node.id.clone();
             }
             StepResult::Failed(error) => return Err(error),
@@ -158,37 +197,43 @@ pub fn execute(
     }
 }
 
-/// Runs one node on a thread of its own, and gives up on it after `timeout`.
+/// Runs one node on a thread of its own, and gives up on it after `timeout`. Along with the result it returns the
+/// output port the node chose, if it chose one.
 fn run_one(
     runner: &Arc<dyn Runner>,
     node: &NodeDefinition,
-    input: &Value,
+    scope: Scope,
     timeout: Duration,
-) -> StepResult {
+) -> (StepResult, Option<String>) {
     let (sender, receiver) = channel();
     let runner = Arc::clone(runner);
     let running = node.clone();
-    let given = input.clone();
     let spawned = thread::Builder::new()
         .name(format!("workflow node {}", node.id))
         .spawn(move || {
-            let _ = sender.send(runner.run(&running, &given));
+            let _ = sender.send(runner.run_routed(&running, &scope));
         });
     if let Err(error) = spawned {
-        return StepResult::Failed(Error::Spawn {
+        let failed = Error::Spawn {
             node: node.id.clone(),
             reason: error.to_string(),
-        });
+        };
+        return (StepResult::Failed(failed), None);
     }
 
     match receiver.recv_timeout(timeout) {
-        Ok(Ok(output)) => StepResult::Succeeded(output),
-        Ok(Err(error)) => StepResult::Failed(Error::Node(error)),
-        Err(RecvTimeoutError::Timeout) => StepResult::Failed(Error::TimedOut {
-            node: node.id.clone(),
-            seconds: timeout.as_secs_f64(),
-        }),
-        Err(RecvTimeoutError::Disconnected) => StepResult::Failed(Error::NoValue(node.id.clone())),
+        Ok(Ok(Routed { value, port })) => (StepResult::Succeeded(value), port),
+        Ok(Err(error)) => (StepResult::Failed(Error::Node(error)), None),
+        Err(RecvTimeoutError::Timeout) => {
+            let failed = Error::TimedOut {
+                node: node.id.clone(),
+                seconds: timeout.as_secs_f64(),
+            };
+            (StepResult::Failed(failed), None)
+        }
+        Err(RecvTimeoutError::Disconnected) => {
+            (StepResult::Failed(Error::NoValue(node.id.clone())), None)
+        }
     }
 }
 
@@ -361,6 +406,37 @@ kind = "test"
         drop(release);
 
         assert!(matches!(error, Error::TimedOut { ref node, .. } if node == "one"));
+    }
+
+    #[test]
+    fn a_node_that_names_a_port_with_no_edge_fails_the_run() {
+        struct NamingPort;
+        impl Runner for NamingPort {
+            fn run(&self, _node: &NodeDefinition, input: &Value) -> Result<Value, NodeError> {
+                Ok(input.clone())
+            }
+            fn run_routed(
+                &self,
+                node: &NodeDefinition,
+                scope: &Scope,
+            ) -> Result<Routed, NodeError> {
+                let port = (node.id == "one").then_some("nowhere".to_string());
+                Ok(Routed {
+                    value: scope.input.clone(),
+                    port,
+                })
+            }
+        }
+        let definition = chain();
+        let runner: Arc<dyn Runner> = Arc::new(NamingPort);
+
+        let error =
+            execute(&definition, json!(1), Limits::default(), &runner, &mut ()).unwrap_err();
+
+        assert!(
+            matches!(error, Error::NoEdge { ref node, ref port } if node == "one" && port == "nowhere"),
+            "got {error:?}"
+        );
     }
 
     #[test]

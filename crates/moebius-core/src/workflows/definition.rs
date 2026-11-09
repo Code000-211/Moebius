@@ -133,8 +133,8 @@ impl WorkflowDefinition {
     /// Refuse a definition whose graph cannot be run whole.
     ///
     /// The checks run from the file's shape to its graph: exactly one trigger, unique node ids, edges that name nodes
-    /// that exist, kinds the registry knows, ports those kinds have, no cycle, and every node reachable from the
-    /// trigger.
+    /// that exist, kinds the registry knows, ports those kinds have, an edge leaving by every port of a node that
+    /// chooses its output port, no cycle, and every node reachable from the trigger.
     pub fn validate(&self, file: &str) -> Result<(), Error> {
         self.check_triggers(file)?;
         self.check_ids(file)?;
@@ -245,6 +245,33 @@ impl WorkflowDefinition {
                         edge.from, edge.to, edge.port
                     ),
                 ));
+            }
+        }
+        // A node that chooses its output port needs an edge leaving by every port it reports: a run that names a port
+        // with no edge has nowhere to go, so the definition is refused.
+        for definition in &self.nodes {
+            let node = nodes
+                .get(definition.id.as_str())
+                .map(Box::as_ref)
+                .expect("every node was built");
+            if !node.routes() {
+                continue;
+            }
+            let ports = node.ports();
+            for port in ports.outputs {
+                if !self
+                    .edges
+                    .iter()
+                    .any(|edge| edge.from == definition.id && edge.port == port)
+                {
+                    return Err(Error::new(
+                        file,
+                        format!(
+                            "node {:?}: port {:?} has no edge leaving by it",
+                            definition.id, port
+                        ),
+                    ));
+                }
             }
         }
         Ok(())
