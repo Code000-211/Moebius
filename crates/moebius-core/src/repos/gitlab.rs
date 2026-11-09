@@ -470,6 +470,24 @@ impl GitLab {
         Ok(created.iid)
     }
 
+    /// Replaces the title and description of merge request `number` in `project`.
+    pub async fn update_merge_request(
+        &self,
+        project: &str,
+        number: i64,
+        title: &str,
+        body: &str,
+    ) -> Result<(), GitLabError> {
+        let request = json!({ "title": title, "description": body });
+        self.project_do(
+            project,
+            Method::PUT,
+            &format!("/merge_requests/{number}"),
+            Some(&request),
+        )
+        .await
+    }
+
     pub async fn merge_request(
         &self,
         project: &str,

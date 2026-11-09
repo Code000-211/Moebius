@@ -407,6 +407,24 @@ impl Forgejo {
         Ok(created.number)
     }
 
+    /// Replaces the title and body of pull request `number` in `repo`.
+    pub async fn update_pull_request(
+        &self,
+        repo: &str,
+        number: i64,
+        title: &str,
+        body: &str,
+    ) -> Result<(), ForgejoError> {
+        let request = json!({ "title": title, "body": body });
+        self.repo_do(
+            repo,
+            Method::PATCH,
+            &format!("/pulls/{number}"),
+            Some(&request),
+        )
+        .await
+    }
+
     pub async fn pull_request(&self, repo: &str, number: i64) -> Result<PullRequest, ForgejoError> {
         self.repo_call(repo, Method::GET, &format!("/pulls/{number}"), None)
             .await

@@ -88,8 +88,9 @@ progress too.
 ### In review: checks, conflicts and the review loop
 
 1. The change is published on a branch `moebius/card-<number>`, the same for all rounds of the card. On GitHub the first
-   publish also opens a pull request that says `Closes #<number>`, on GitLab a merge request, on Forgejo a pull request; later ones push
-   to it.
+   publish also opens a pull request that says `Closes #<number>`, what the code run said it did, the files it changed and
+   what the review found; on GitLab a merge request, on Forgejo a pull request. Later rounds push to it and replace what
+   it says.
 2. The checks run. On GitHub they are the check runs of the pull request, found by the poll, on GitLab the latest
    pipeline of the merge request's head commit, on Forgejo the commit statuses of the pull request's head commit (such
    as those Forgejo Actions reports); a repository with none

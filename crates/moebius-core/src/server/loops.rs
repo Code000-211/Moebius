@@ -830,10 +830,11 @@ mod tests {
 
         f.code(&card, "second.txt").await;
         let app = f.server.app.clone();
-        let change =
-            tokio::task::spawn_blocking(move || app.publish_card_change(card.id, true).unwrap())
-                .await
-                .unwrap();
+        let change = tokio::task::spawn_blocking(move || {
+            app.publish_card_change(card.id, true, None).unwrap()
+        })
+        .await
+        .unwrap();
         assert_ne!(change.id, closed.id);
         assert_eq!(change.state, "open");
         assert_eq!(f.change(closed.id).state, "closed");
@@ -1010,9 +1011,11 @@ mod tests {
         let publish = || {
             let app = app.clone();
             async move {
-                tokio::task::spawn_blocking(move || app.publish_card_change(card.id, true).unwrap())
-                    .await
-                    .unwrap()
+                tokio::task::spawn_blocking(move || {
+                    app.publish_card_change(card.id, true, None).unwrap()
+                })
+                .await
+                .unwrap()
             }
         };
         let first = publish().await;

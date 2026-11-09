@@ -484,7 +484,7 @@ changes to files under `.github/workflows`):
 | Metadata | read | Always granted; finds the repositories. |
 | Contents | read and write | Clones and fetches the repository, pushes the branch of a change over HTTPS, and merges a pull request. |
 | Issues | read and write | Lists the issues and their comments (`GET /repos/{owner}/{repo}/issues`, `.../issues/{n}/comments`); opens, edits, closes and reopens issues; sets labels; writes comments; reads and changes sub-issues (`.../issues/{n}/sub_issues`) and issue dependencies (`.../issues/{n}/dependencies/blocked_by`). |
-| Pull requests | read and write | Opens, reads and merges pull requests, and reads their reviews (`/pulls`, `/pulls/{n}`, `/pulls/{n}/reviews`, `/pulls/{n}/merge`). |
+| Pull requests | read and write | Opens, updates, reads and merges pull requests, and reads their reviews (`/pulls`, `/pulls/{n}`, `/pulls/{n}/reviews`, `/pulls/{n}/merge`; the one Moebius opened is updated with `PATCH /pulls/{n}`). |
 | Checks | read | Reads the check runs of a pull request's head commit (`/commits/{sha}/check-runs`). |
 | Workflows | read and write | Only to push changes to files under `.github/workflows`. |
 
