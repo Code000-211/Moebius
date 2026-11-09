@@ -47,6 +47,7 @@ const KEYS: &[Key] = &[
         "\"https://registry.npmjs.org\"",
         false,
     ),
+    key("workflows.http_hosts", "[]", false),
     key("board.tick_ms", "2000", true),
     key("board.round_limit", "5", true),
     key("budgets.day_tokens", "", true),

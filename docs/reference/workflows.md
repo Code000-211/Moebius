@@ -61,11 +61,15 @@ written `[[trigger]]` and has:
 
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `kind` | string | The kind name; the same registry resolves it as a node's `kind`. |
-| `params` | table | The kind's settings, read by that kind. Optional; defaults to an empty table. |
+| `kind` | string | The trigger's kind. `manual` is the trigger a person starts by hand and is read by itself, from [its page](workflows/manual-trigger.md); every other kind is resolved by the same registry that resolves a node's `kind`. |
+| `params` | table | The kind's settings, read by that kind. Optional; defaults to an empty table. For `manual` these are the inputs a person gives the run. |
 
 An edge starts at the trigger with `from = "trigger"`; `trigger` is reserved and cannot be a node's id or an edge's
-target.
+target. A value leaves a trigger by its `out` port, which is what the edges leaving the trigger name.
+
+The triggers that exist:
+
+- [`manual`](workflows/manual-trigger.md): a person starts each of its runs, with the inputs the trigger names.
 
 ### `nodes`
 
@@ -98,7 +102,10 @@ refusal names the file and the node or edge it is about:
 - two nodes have the same id: `node "<id>": duplicate id`;
 - a node uses the reserved id `trigger`: `node "trigger": the id is reserved for the workflow's trigger`;
 - an edge names a source or target node that does not exist: `edge "<from>" -> "<to>": no node "<id>"`;
-- a node or trigger names a kind the registry does not know: `node "<id>": unknown node kind "<kind>"`;
+- a node names a kind the registry does not know: `node "<id>": unknown node kind "<kind>"`; a trigger names a kind
+  that is neither `manual` nor one the registry knows: `trigger: unknown node kind "<kind>"`;
+- a `manual` trigger's parameters are not its inputs: a message that names the input that is not one, as its
+  [page](workflows/manual-trigger.md) spells them out;
 - an edge leaves by a port the source node does not have: `node "<id>": edge to "<to>" leaves by port "<port>"`;
 - a node that routes, so chooses its output port (see `routes()` under [the node registry](#the-node-registry)),
   reports a port with no edge leaving by it, `fallback` included: `node "<id>": port "<port>" has no edge leaving by
@@ -176,8 +183,10 @@ Each node kind has one section here and one page in [`workflows/`](workflows/REA
 
 - [`agent`](workflows/agent.md): runs an agent of the harness configuration in a worktree the run owns, on a
   branch named for the run.
+- [`code`](workflows/code.md): runs Luau that reshapes the value and outputs what it returns.
 - [`condition`](workflows/condition.md): sends the value down the first port whose expression is true.
 - [`for_each`](workflows/for-each.md): runs a sub-path once per element of a list and gathers the outputs.
+- [`http`](workflows/http.md): calls a URL on an allowed host, with secrets by name, and outputs the status, headers and body.
 - [`merge`](workflows/merge.md): joins two branches and emits what arrived by each side.
 
 ## Extending this page
