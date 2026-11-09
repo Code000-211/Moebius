@@ -39,8 +39,8 @@ use crate::harness::launch::LauncherSlot;
 use crate::harness::remote::Runners;
 use crate::harness::run::{
     AUTORESEARCHER_AGENT, Launching, RETRO_AGENT, RunningRun, agent_list, chat_run, finish,
-    has_agent, keep, launch_or_undo, resolve_agent, start_card, start_detached, start_trial,
-    tell_where_moebius_runs, woken_chat,
+    has_agent, keep, launch_or_undo, resolve_agent, start_card, start_detached, start_in_worktree,
+    start_trial, tell_where_moebius_runs, woken_chat,
 };
 use crate::router::Router;
 use crate::store::{Card, Repository, Run};
@@ -153,6 +153,29 @@ impl ClaudeCode {
             run,
             (&process::new_session(), false),
             prompt,
+        )
+    }
+
+    /// Starts the agent of a workflow run: see `harness::run::start_in_worktree`.
+    pub(in crate::harness) fn start_workflow_run(
+        &self,
+        app: &Arc<App>,
+        agent: &str,
+        repository: &Repository,
+        worktree: &Path,
+        (workflow_run, prompt): (i64, &str),
+    ) -> Result<Run, StartError> {
+        let config = self.agent(app, agent)?;
+        let launch = |launching: Launching| self.launch_for(app, launching);
+        let clone = PathBuf::from(&repository.path);
+        start_in_worktree(
+            app,
+            &self.router,
+            agent,
+            config,
+            (clone.as_path(), repository.id, worktree),
+            (workflow_run, prompt),
+            &launch,
         )
     }
 

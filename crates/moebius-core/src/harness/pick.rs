@@ -88,6 +88,39 @@ impl Harnesses {
             _ => self.pi_bolt.as_ref(),
         }
     }
+
+    /// Starts the agent of the workflow run `workflow_run`: `agent` on `prompt` in `worktree`, the worktree the first
+    /// agent node of the run checked out on the branch named for the run, which the later nodes reuse. The agent is
+    /// resolved through the harness configuration, failing closed; the run keeps its worktree when it ends, where it
+    /// commits what the agent left.
+    pub fn start_workflow_run(
+        &self,
+        app: &Arc<App>,
+        agent: &str,
+        repository: &Repository,
+        worktree: &Path,
+        (workflow_run, prompt): (i64, &str),
+    ) -> Result<Run, StartError> {
+        // Pi-Bolt for an agent that does not exist, which refuses it, as with every other start.
+        let harness = resolve_agent(&self.agent_set(), &app.data_dir, agent)
+            .map_or(HarnessKind::PiBolt, |agent| agent.harness);
+        match harness {
+            HarnessKind::PiBolt => self.pi_bolt.start_workflow_run(
+                app,
+                agent,
+                repository,
+                worktree,
+                (workflow_run, prompt),
+            ),
+            HarnessKind::ClaudeCode => self.claude_code.start_workflow_run(
+                app,
+                agent,
+                repository,
+                worktree,
+                (workflow_run, prompt),
+            ),
+        }
+    }
 }
 
 impl CardRuns for Harnesses {

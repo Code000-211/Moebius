@@ -1,6 +1,7 @@
 //! Ending a run, whatever its harness: the run's summary and events are kept as its records arrive (`keep`), and when its
 //! process is gone `finish` commits what the agent left (a chat's work is offered as a change, a grilling's result
-//! read), removes the worktree, revokes the run's token and publishes the end.
+//! read), revokes the run's token and publishes the end. It removes the worktree, except for a workflow run, whose
+//! worktree and branch stay for the run's later agents.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -79,6 +80,11 @@ pub(in crate::harness) fn finish<L>(
             Err(e) => failed(&e.to_string()),
         },
         Ok(true) => "stopped",
+        Ok(false) if run.purpose == "workflow" => match run.commit() {
+            // An agent of a workflow run may answer only, leaving the branch as it found it.
+            Ok(_) => "succeeded",
+            Err(e) => failed(&e.to_string()),
+        },
         Ok(false) if !matches!(run.purpose.as_str(), "code" | "trial" | "attempt") => "succeeded",
         Ok(false) => match run.commit() {
             Ok(true) => "succeeded",
@@ -97,7 +103,12 @@ pub(in crate::harness) fn finish<L>(
         // Before the worktree is removed, with the change in it.
         app.localize_run_ended(run.id, &run.worktree);
     }
-    run.remove_worktree(app);
+    if run.purpose == "workflow" {
+        // The workflow run keeps its worktree, on the branch its run is named for: the run's later agents reuse it.
+        app.terminals.close(run.id);
+    } else {
+        run.remove_worktree(app);
+    }
     if run.purpose == "chat" && !grilling && status != "failed" {
         // Before the status is set, so that an ended chat has offered what it made.
         if let Err(e) = app.offer_chat_change(run.id) {

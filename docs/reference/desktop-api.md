@@ -96,8 +96,9 @@ in `Done`), `labels` (array of text, in order) and `claimed_by` (who claimed it,
 
 `Issue`: a `Card` with `state` (`open` or `closed`), `blocked_by` (the numbers of the issues that block it and are not
 done) and `children` (its sub-issues, oldest first, each `{"id", "number", "title", "state", "column"}`).
-`Run`: `id`, `card_id` (null for a chat), `agent`, `harness`, `purpose` (`code`, `review`, other purposes of column scripts,
-`chat`, `retro`, the Retro analyst's run, `trial`, the trial of a proposal on a card, or `research`, a round of the Autoresearcher), `status` (`starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`; `waiting` is a chat waiting for
+`Run`: `id`, `card_id` (null for a chat or an agent of a workflow run), `agent`, `harness`, `purpose` (`code`, `review`, other purposes of column scripts,
+`chat`, `retro`, the Retro analyst's run, `trial`, the trial of a proposal on a card, `research`, a round of the Autoresearcher, or
+`workflow`, an agent of a workflow run), `status` (`starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`; `waiting` is a chat waiting for
 the person's next message), `worktree`, `started_at`, `ended_at`, `summary`, `repository_id` (the repository a chat
 works in, or null) and `harness_repository` (true for a chat that works in the [harness configuration
 repository](harness-configuration.md#changing-it-in-a-chat); `harness` is the name of the harness that runs the agent)
@@ -987,7 +988,8 @@ Errors: `422` `days` is not from 1 to 365.
 ### `GET /v1/runs/{id}/diff`
 
 What a run changed, as a unified diff: while the run has a worktree, everything in it since the run started, uncommitted
-work included; afterwards the run's branch (`moebius/run-<id>`, `moebius/chat-<id>` for a chat) against the commit the
+work included; afterwards the run's branch (`moebius/run-<id>`, `moebius/chat-<id>` for a chat, or
+`moebius/workflow-run-<workflow run id>` for an agent of a workflow) against the commit the
 run started from. Response: `{"diff": string, "truncated": boolean}`, as for [a change](#get-v1changesiddiff); the diff
 is empty for a chat that has no repository. Errors: `404` no such run.
 
@@ -2589,7 +2591,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `change_closed` | A change's pull or merge request was closed on its forge without a merge. | `{"change": id}` |
 | `attempt_judged` | An attempt of a card was judged by its tests and checks (`moebius.check_attempt`). | `{"card": id, "run": id, "result": "passed" \| "failed"}` |
 | `attempts_settled` | A card's open attempts were settled (`moebius.settle_attempts`): one picked, or none passed. | `{"card": id, "picked": id or null, "runs": [id]}` |
-| `run_started` | A harness process for a run started. | `{"run": id, "card": id or null}` (null for a chat) |
+| `run_started` | A harness process for a run started. | `{"run": id, "card": id or null}` (null for a chat or an agent of a workflow run) |
 | `run_event` | Something happened in a run. | `{"run": id, "seq": number, "kind": string, "data": object}` (below) |
 | `run_ended` | A run ended. | `{"run": id, "status": "succeeded" \| "failed" \| "stopped"}` |
 | `workflow_run_queued` | A workflow run was stored, queued for its first node. | `{"run": id, "workflow": string, "repository": id}` |

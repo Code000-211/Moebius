@@ -66,7 +66,8 @@ pub use crate::harness::run::{
     REVIEWER_AGENT, built_in_agent,
 };
 use crate::harness::run::{
-    Launching, RunningRun, launch_or_undo, start_card, start_detached, start_trial, woken_chat,
+    Launching, RunningRun, launch_or_undo, start_card, start_detached, start_in_worktree,
+    start_trial, woken_chat,
 };
 pub(crate) use crate::harness::run::{
     agent_list, chat_agent, final_answer, has_agent, resolve_agent, tell_where_moebius_runs,
@@ -239,6 +240,29 @@ impl PiBolt {
             prompt,
         } = launching;
         self.launch(app, card, config, run, prompt)
+    }
+
+    /// Starts the agent of a workflow run: see `harness::run::start_in_worktree`.
+    pub(in crate::harness) fn start_workflow_run(
+        &self,
+        app: &Arc<App>,
+        agent: &str,
+        repository: &Repository,
+        worktree: &Path,
+        (workflow_run, prompt): (i64, &str),
+    ) -> Result<Run, StartError> {
+        let config = self.agent(app, agent)?;
+        let launch = |launching: Launching| self.launch_for(app, launching);
+        let clone = PathBuf::from(&repository.path);
+        start_in_worktree(
+            app,
+            &self.router,
+            agent,
+            config,
+            (clone.as_path(), repository.id, worktree),
+            (workflow_run, prompt),
+            &launch,
+        )
     }
 }
 

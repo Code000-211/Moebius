@@ -151,6 +151,8 @@ The Reviewer's:
 The instructions are not a key: they are the text of `agents/<name>.md`, given to Pi-Bolt as `--append-system-prompt`.
 A file that is empty or only blank is no instructions.
 
+One of these agents is what a workflow's [`agent` node](workflows/agent.md) runs, beside the cards and chats it runs on.
+
 ```toml
 model = "my-local-model"
 protocol = "openai"

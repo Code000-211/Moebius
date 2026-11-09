@@ -203,6 +203,8 @@ Each trigger kind has one page in [`workflows/`](workflows/README.md).
 
 Each node kind has one section here and one page in [`workflows/`](workflows/README.md).
 
+- [`agent`](workflows/agent.md): runs an agent of the harness configuration in a worktree the run owns, on a
+  branch named for the run.
 - [`code`](workflows/code.md): runs Luau that reshapes the value and outputs what it returns.
 - [`condition`](workflows/condition.md): sends the value down the first port whose expression is true.
 - [`for_each`](workflows/for-each.md): runs a sub-path once per element of a list and gathers the outputs.

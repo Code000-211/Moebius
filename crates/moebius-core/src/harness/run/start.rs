@@ -5,7 +5,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use super::lifecycle::{RunningRun, card_run, detached_run, launch_or_undo, undo_unlaunched};
+use super::lifecycle::{
+    RunningRun, card_run, detached_run, in_worktree_run, launch_or_keep, launch_or_undo,
+    undo_unlaunched,
+};
 use super::prompts::{prompt_for, run_prompt};
 use crate::app::App;
 use crate::board::{StartError, Variant};
@@ -132,6 +135,39 @@ pub(in crate::harness) fn start_detached(
     launch_or_undo(app, router, running, |run| {
         launch(Launching {
             config,
+            run,
+            card: None,
+            prompt: Some(prompt),
+        })
+    })
+}
+
+/// Starts the agent of the workflow run `workflow_run`: the run of `agent` on `prompt` in the worktree `worktree`,
+/// which the first agent node of that run checked out on the branch named for the run (see [`in_worktree_run`]), and
+/// the later nodes reuse. The worktree is kept when the run ends, on the run's branch (see `end`), where the run
+/// commits what the agent left; when the process cannot be started, the run has failed and the worktree is kept.
+pub(in crate::harness) fn start_in_worktree(
+    app: &Arc<App>,
+    router: &Router,
+    agent: &str,
+    config: AgentConfig,
+    // The run's repository and the worktree the run owns.
+    (clone, repository, worktree): (&Path, i64, &Path),
+    (workflow_run, prompt): (i64, &str),
+    launch: Launch,
+) -> Result<Run, StartError> {
+    let running = in_worktree_run(
+        app,
+        router,
+        agent,
+        &config,
+        (clone, repository),
+        worktree,
+        workflow_run,
+    )?;
+    launch_or_keep(app, router, running, |run| {
+        launch(Launching {
+            config: &config,
             run,
             card: None,
             prompt: Some(prompt),

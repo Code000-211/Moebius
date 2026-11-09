@@ -430,6 +430,8 @@ ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
     plugin_settings::APP_SCHEMA,
     issues::COMMENT_ORIGIN,
     workflows::SCHEMA,
+    "ALTER TABLE workflow_runs ADD COLUMN worktree TEXT;",
+    "ALTER TABLE runs ADD COLUMN workflow_run_id INTEGER;",
     workflow_schedules::SCHEMA,
 ];
 
