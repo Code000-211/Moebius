@@ -138,7 +138,7 @@ null while it is off or when the schedule never comes due) and `last_firing` (it
 `POST /v1/automations/{id}/run`), `reason` (why it was skipped or failed; else empty) and `at`.
 
 `Change`: `id`, `repository_id` (null for a change of the harness configuration repository), `harness_repository` (true
-for such a change), `card_id` (or null), `branch`, `state` (`open`, `merged` or `closed`), `pull_request`
+for such a change), `card_id` (or null), `run_id` (the workflow run whose work it offers, or null), `branch`, `state` (`open`, `merged` or `closed`), `pull_request`
 (the number of the pull request on GitHub or Forgejo or of the merge request on GitLab, or null), `checks` (`pending`,
 `success`, `failure` or null; on GitLab the latest pipeline of the head commit: `failed` and `canceled` are `failure`,
 `success` and `skipped` are `success`, anything else is `pending`; on Forgejo the latest status of each context of the
@@ -147,11 +147,11 @@ latest review's state in lower case, such as `approved`; on GitLab `approved` on
 latest review given that was not dismissed, with `REQUEST_CHANGES` as `changes_requested`; or null), `head` (the published commit), `published_at`, `checks_head` (the commit
 `checks` are for), `failed_checks` (the failing checks of a pull request, the failed jobs of a pipeline, or the failed
 statuses of a commit, one per line, or null) and `check_output` (the
-end of the output of the repository's own checks, or null). A change's `branch` is `moebius/card-<number>`, `moebius/chat-<run id>` for the work of a chat, which has no card, or `research/<research id>-<name>` for a lever of a research, which has none either.
+end of the output of the repository's own checks, or null). A change's `branch` is `moebius/card-<number>`, `moebius/chat-<run id>` for the work of a chat, which has no card, `moebius/workflow-run-<run id>` for the work of a workflow run, which has none either and names the run in `run_id`, or `research/<research id>-<name>` for a lever of a research, which has none either.
 
 `InboxItem`: `id`, `kind`, `card_id` (or null), `title`, `data` (an object that depends on the kind), `resolved_at` (null
 in the snapshot, which holds only open items), `at`. Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
-(`data.reason`), `package_update` (`data.name`, `data.installed`, `data.version`; no card), `ready_to_merge` (`data.change`, `data.branch`, and `data.judgements`, the review's judgement calls, when it had any), `change_closed` (`data.change`, `data.pull_request`) and
+(`data.reason`), `package_update` (`data.name`, `data.installed`, `data.version`; no card), `ready_to_merge` (`data.change`, `data.branch`, `data.run` when the change is a workflow run's, and `data.judgements`, the review's judgement calls, when it had any), `change_closed` (`data.change`, `data.pull_request`) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
 addresses, and `data.regression`: the same for the cards of the regression set, empty when none was tried; its `title` is the
 proposal's and it has no card; a proposal for Moebius's own configuration has `data.kind` (`settings` or
@@ -769,7 +769,8 @@ A person merges an open change: the decision is recorded (kind `merge`, decider 
 no-fast-forward merge into the default branch of the clone for a repository without a forge; the GitHub API for a pull
 request; the GitLab API for a merge request, with the merge commit's message; the Forgejo API for a pull request, with a
 merge commit titled with the message), the change becomes `merged`, its inbox items are resolved and its card, if it has one, moves to `Done`. A
-change from a chat has no card: its `ready_to_merge` item is resolved and the commit message is `Merge <branch>`.
+change from a chat has no card: its `ready_to_merge` item is resolved and the commit message is `Merge <branch>`. A
+workflow run's change is merged the same way, and the change that belongs to the run becomes `merged`.
 
 A change of the harness configuration repository (`harness_repository` true) is merged into the default branch of its
 clone with a merge commit, which is pushed to `origin`; the agents are read again, so the next run uses what the change
@@ -786,11 +787,14 @@ branch does not merge cleanly; `500` the forge failed.
 A person rejects an open change whose card waits in `Ready to merge`: the decision is recorded (kind `reject`, decider
 `person`), the card's `ready_to_merge` inbox item is resolved, and the card moves back to `In progress` with the reason as
 its `note`, so that the next Coder round is told (without a reason the note says a person rejected the change). The change
-stays open: the next round updates it, and on GitHub its pull request stays.
+stays open: the next round updates it, and on GitHub its pull request stays. A workflow run's change has no card: rejecting
+it records the rejection and closes the change, so the run's change becomes `closed` and its `ready_to_merge` item is
+resolved.
 
 Request: `{"reason": "..."}`; `reason` is optional, but send `{}` without one.
 
-Response: the `Card`. Errors: `404` no such change; `422` the change is not `open` or its card is not in `Ready to merge`.
+Response: the `Card`, or `null` for a workflow run's change. Errors: `404` no such change; `422` the change is not `open`
+or its card is not in `Ready to merge`.
 
 ### `GET /v1/changes/{id}/diff`
 
@@ -2585,7 +2589,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `card_waiting` | The reason a card waits changed: set, replaced, or cleared because the card moved or its script did not wait. Not sent when it stays the same. | `{"card": id, "reason": string or null}` |
 | `chat_renamed` | A chat was given a name, or its name was cleared, through the API. | `{"run": id, "title": string}` (the title the list of chats shows now) |
 | `chat_deleted` | A chat was deleted through the API, with its changes and inbox items, or deleted with its grilling. Read the snapshot again. | `{"run": id}` |
-| `change_offered` | A card's change, the work of a chat or a kept lever of a research was offered to a person to merge. | The `Change` (`card_id` is null for a chat's or a lever's). |
+| `change_offered` | A card's change, the work of a chat, a kept lever of a research or a workflow run was offered to a person to merge. | The `Change` (`card_id` is null for a chat's, a lever's or a workflow run's; `run_id` is set for a workflow run's). |
 | `change_updated` | A change was published or published again, its checks started or ended, or the checks or review of its pull request changed. | The `Change`. |
 | `change_merged` | A change was merged, here or on its forge. | `{"change": id, "commit": sha or null}` |
 | `change_closed` | A change's pull or merge request was closed on its forge without a merge. | `{"change": id}` |
