@@ -12,6 +12,21 @@ import type { WorkflowDefinition, WorkflowEdge, WorkflowNode } from "../../../ap
 export const TRIGGER = "trigger";
 
 /**
+ * A workflow as it starts, before anything has been added to it: a manual trigger with no inputs, no nodes, no edges,
+ * and the sentence the person creating it gave. The dialog that opens the canvas with it is the Workflows page's
+ * `New workflow` dialog, which passes it as router state; see `WorkflowCanvasPage`.
+ */
+export function newWorkflowDraft(name: string, description: string): WorkflowDefinition {
+  return {
+    name,
+    description,
+    trigger: [{ kind: "manual", params: {} }],
+    nodes: [],
+    edges: [],
+  };
+}
+
+/**
  * A position for a node added with no place of its own: on a free row under everything on the graph, in line with the
  * leftmost node. Beside the last node would do for one node, but a second one added lands on the first, and a node
  * half over another cannot have its ports held down.
