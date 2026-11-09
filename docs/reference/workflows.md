@@ -102,8 +102,8 @@ refusal names the file and the node or edge it is about:
 - two nodes have the same id: `node "<id>": duplicate id`;
 - a node uses the reserved id `trigger`: `node "trigger": the id is reserved for the workflow's trigger`;
 - an edge names a source or target node that does not exist: `edge "<from>" -> "<to>": no node "<id>"`;
-- a node names a kind the registry does not know, or a trigger names a kind that is neither `manual` nor one the
-  registry knows: `node "<id>": unknown node kind "<kind>"`;
+- a node names a kind the registry does not know: `node "<id>": unknown node kind "<kind>"`; a trigger names a kind
+  that is neither `manual` nor one the registry knows: `trigger: unknown node kind "<kind>"`;
 - a `manual` trigger's parameters are not its inputs: a message that names the input that is not one, as its
   [page](workflows/manual-trigger.md) spells them out;
 - an edge leaves by a port the source node does not have: `node "<id>": edge to "<to>" leaves by port "<port>"`;
