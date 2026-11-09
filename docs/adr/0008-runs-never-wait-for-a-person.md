@@ -13,3 +13,6 @@ when it ends (the merge); everything between is the workflow's.
 - A rule has to say what is not allowed in a way the model can act on, because the model, not a person, has to find the way
   around it.
 - What was refused, and why, is evidence for the Retro.
+- A run of a workflow is not one of these runs: its `approval` node waits for a person on purpose, and only until its
+  deadline, which ends the run when nobody decides (see
+  [the approval node](../reference/workflows/approval.md)).

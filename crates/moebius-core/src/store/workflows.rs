@@ -122,6 +122,15 @@ impl Store {
             .optional()?)
     }
 
+    /// The runs that are still `waiting` (for a person's decision), in the order they were stored.
+    pub fn waiting_workflow_runs(&self) -> Result<Vec<WorkflowRun>> {
+        let conn = self.conn();
+        let mut statement =
+            conn.prepare("SELECT * FROM workflow_runs WHERE status = 'waiting' ORDER BY id")?;
+        let rows = statement.query_map([], run_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     /// How many runs of `workflow` are queued or running, that is, not yet finished.
     pub fn active_workflow_runs(&self, workflow: &str) -> Result<i64> {
         Ok(self.conn().query_row(
@@ -236,6 +245,29 @@ impl Store {
             params![status, at, output, error.map(crate::blobs::redact), id],
         )?;
         Ok(())
+    }
+
+    /// Ends a node run that is still `waiting` with `status`, its `output` and `error`; returns whether it did. A
+    /// decision and the wait's deadline race for this, and only the first to arrive ends the wait.
+    pub fn finish_waiting_workflow_node_run(
+        &self,
+        id: i64,
+        status: &str,
+        output: Option<&Value>,
+        error: Option<&str>,
+    ) -> Result<bool> {
+        let at = now();
+        let output = output.map(json_text);
+        let changed = self.conn().execute(
+            "UPDATE workflow_node_runs SET status = ?1,
+                 started_at = COALESCE(started_at, ?2),
+                 finished_at = COALESCE(finished_at, ?2),
+                 output = ?3,
+                 error = ?4
+             WHERE id = ?5 AND status = 'waiting'",
+            params![status, at, output, error.map(crate::blobs::redact), id],
+        )?;
+        Ok(changed > 0)
     }
 }
 

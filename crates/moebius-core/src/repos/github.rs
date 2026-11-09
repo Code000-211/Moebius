@@ -491,6 +491,24 @@ impl GitHub {
         Ok(created.number)
     }
 
+    /// Replaces the title and body of pull request `number` in `github`.
+    pub async fn update_pull_request(
+        &self,
+        github: &str,
+        number: i64,
+        title: &str,
+        body: &str,
+    ) -> Result<(), GitHubError> {
+        let request = json!({ "title": title, "body": body });
+        self.repository_do(
+            github,
+            Method::PATCH,
+            &format!("/pulls/{number}"),
+            Some(&request),
+        )
+        .await
+    }
+
     /// Opens an issue in `github` and returns its number.
     pub async fn create_issue(
         &self,

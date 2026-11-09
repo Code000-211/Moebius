@@ -301,6 +301,20 @@ mod a_run {
     }
 
     #[test]
+    fn the_last_fenced_block_of_the_agents_answer_is_the_nodes_value() {
+        let world = World::new();
+        let run_id = world.workflow_run(json!({}));
+        let node = world.agent_node(
+            "A draft first:\n```json\n{\"draft\": true}\n```\nThen the answer:\n```json\n{\"done\": true}\n```",
+            "note",
+        );
+        let value = node
+            .run_node(&world.app, &world.runs, "draft", run_id, &json!(null))
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(value, json!({"done": true}));
+    }
+
+    #[test]
     fn the_agent_nodes_of_a_run_share_its_worktree_and_branch() {
         let world = World::new();
         let run_id = world.workflow_run(json!({}));

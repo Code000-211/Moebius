@@ -3,6 +3,7 @@
 //! node kind is added: one arm of [`node`], next to the others.
 
 pub mod agent;
+pub mod approval;
 pub mod code;
 pub mod condition;
 pub mod for_each;
@@ -110,6 +111,7 @@ pub fn node(kind: &str, params: &Value) -> Result<Box<dyn Node>, NodeError> {
         for_each::KIND => Ok(Box::new(for_each::ForEach::from_params(params)?)),
         http::KIND => Ok(Box::new(http::HttpNode::from_params(params)?)),
         merge::KIND => Ok(Box::new(merge::Merge::from_params(params)?)),
+        approval::KIND => Ok(Box::new(approval::Approval::from_params(params)?)),
         other => Err(NodeError::UnknownKind(other.to_string())),
     }
 }

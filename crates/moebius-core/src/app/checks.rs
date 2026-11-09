@@ -23,7 +23,8 @@ const CHECK_OUTPUT: usize = 4096;
 impl App {
     /// How the checks of the change stand for its current commit: `pending`, `success`, `failure` or `none`. Checks
     /// recorded for an older commit do not count; on a forge the change then waits for its checks for a while after
-    /// it was published, so that a pushed commit is not taken for one without CI.
+    /// it was published, so that a pushed commit is not taken for one without CI. A change without a pull request, one
+    /// not offered yet, has no checks on the forge to wait for.
     pub fn checks_of(&self, change: &Change) -> Result<&'static str> {
         let recorded = change
             .checks
@@ -33,7 +34,7 @@ impl App {
             Some("success") => "success",
             Some("failure") => "failure",
             Some(_) => "pending",
-            None if change.repository_id.is_some()
+            None if change.pull_request.is_some()
                 && self.repository_of(change)?.forge != "none"
                 && now() - change.published_at.unwrap_or(0) < CHECKS_GRACE =>
             {

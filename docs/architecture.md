@@ -126,11 +126,14 @@ and does not know anything the API does not say.
 9. **The change is published.** On a later tick `code.luau` sees the succeeded `code` run (and no `card.note`) and moves
    the card to `In review`. `review.luau` calls `moebius.publish_change`, which calls `App::publish_change`: the branch
    `moebius/card-<number>` is pointed at the latest successful `code` run's commit (`Repos::point_branch`; each round's
-   branch descends from the last, so the branch only moves forward) and the forge publishes it (`Forge::publish`:
-   `NoForge` does nothing; `GitHubForge` pushes and, the first time, opens the pull request; `GitLabForge` the same with a
-   merge request, `ForgejoForge` with a pull request on Forgejo). The change is stored
+   branch descends from the last, so the branch only moves forward) and the forge pushes it (`Forge::push`; `NoForge` does nothing). No pull request is opened yet: it opens when the
+   review approved the change and `moebius.offer_change` offers it (`Forge::publish`: `GitHubForge` pushes and, the first
+   time, opens the pull request; `GitLabForge` the same with a merge request, `ForgejoForge` with a pull request on
+   Forgejo). The change is stored
    (`Store::add_change`, later `Store::set_change_head`) with the published commit and time, and `change_updated` is
    published. A card has one change, one branch and one pull request for all its rounds.
+    The forge's own checks are read from the pull request, so a forge's checks come after the offer; `merge.luau` sends
+    the card back when they fail.
 10. **The change is checked.** On GitHub the poll records the check runs of the pull request's head commit, on GitLab
     the latest pipeline of the merge request's head commit and its failed jobs, on Forgejo the commit statuses of the
     pull request's head commit (`poll::poll_requests`, which reads them
@@ -140,7 +143,7 @@ and does not know anything the API does not say.
     runs it with `sh -c` in a throwaway worktree of the change's commit (`App::check_change`, `execute`) with the time
     limit `checks.timeout_seconds`, and records `success` or `failure` with the end of the output, redacted
     (`Store::set_local_checks`). `App::checks_of` gives scripts `card.change.checks`: checks for another commit than the
-    published one do not count, and on a forge the change is `pending` for a grace period after the publish and then
+    published one do not count, and on a forge the change is, once it has a pull request, `pending` for a grace period after the publish and then
     `none`. `App::conflict_of` asks `git merge-tree` whether the change still merges into the default branch
     (`Repos::conflicts`).
 11. **The change is sent back or reviewed.** `review.luau` waits while the checks are `pending`. Failing checks or a
@@ -472,6 +475,7 @@ At the top:
 | `app/reproduce.rs` | Test first: a repository's opt-in (the project's `test-first`), what a run names in the `REPRODUCE:` lines of its summary, and the runs of that reproduction test on the change and on the commit it starts from with the test's files added. |
 | `app/workflows/mod.rs` | The wiring that turns a stored workflow into a run, recording the run and its nodes in the store and on the bus. |
 | `app/workflows/run.rs` | Starting a workflow run from its definition or its name, driving it off the request path, and recording and publishing each node and the run's end as they happen. |
+| `app/workflows/approval.rs` | The part of a run that waits for a person: the wait of the `approval` node, the decision coming back through the resume route, and driving again the runs a stopped server left waiting. |
 
 `config/`, `moebius.toml`:
 
@@ -566,6 +570,7 @@ At the top:
 | `server/api/harness.rs` | The agents, skills and MCP servers of the harness configuration repository, and `POST /v1/harness/setup`. |
 | `server/api/rules.rs` | The rules page and the rules in prose. |
 | `server/api/workflows.rs` | The workflows of the harness configuration repository: list, read, save and delete, saving and deleting as commits. |
+| `server/api/workflow_hooks.rs` | `POST /api/hooks/{path}` and `POST /api/hooks/{repository}/{path}`, the door a workflow's `webhook` trigger answers on: the credential it asks for, the run its body starts, and its ceiling of runs going at once. |
 | `server/api/workflow_runs.rs` | `GET /v1/workflows/{name}/run-inputs` and `POST /v1/workflows/{name}/runs`: the inputs a manual trigger names, and starting a run by hand with them. |
 | `server/api/settings.rs` | `moebius.toml`, the API keys and the restart, and what the Models, Plugins and Get started pages show. |
 | `server/api/lessons.rs` | The lessons: list, read, edit and delete. |
@@ -751,13 +756,15 @@ At the top:
 | `workflows/nodes/code.rs` | The `code` node: Luau that reshapes the value in the expression sandbox, with the run's scope, and outputs what it returns. |
 | `workflows/nodes/condition.rs` | The `condition` node: one Luau expression per named output port, tried in order, the first true one taken, else the fallback port or a failure. |
 | `workflows/nodes/for_each.rs` | The `for_each` node: fans a list out over a sub-path once per element, gathers the outputs in order, and checks that the sub-path rejoins where the definition says. |
+| `workflows/nodes/approval.rs` | The `approval` node: the prompt, the deadline and what each of the three decisions leaves on the run; the waiting itself belongs to `app/workflows/approval.rs`. |
 | `workflows/nodes/http/mod.rs` | The `http` node: the node kind, its configuration from the server, and the run that fills its parameters and fails closed on a refused or failed call. |
 | `workflows/nodes/http/params.rs` | Reading the `http` node's parameters into a request, when the file is read and again when the run has filled its expressions. |
 | `workflows/nodes/http/policy.rs` | The `http` node's URL policy: `https` or `http`, no user name or password, and only a host the server configuration names. |
 | `workflows/nodes/http/call.rs` | The `http` node's request: a named secret resolved and sent, no redirects, a time limit, the answer read as status, headers and body, and failures whose message carries no URL query or secret. |
 | `workflows/nodes/merge.rs` | The `merge` node: joins the two branches that reached it and emits what arrived by each side, one side's object or the list of the arrivals. |
-| `workflows/trigger/mod.rs` | The triggers of a workflow: what starts its runs, and the manual trigger among them. |
+| `workflows/trigger/mod.rs` | The trigger kinds a workflow file may name, the module that owns each, and how a trigger's `kind` is resolved by its module when one owns it and by the node registry otherwise. |
 | `workflows/trigger/manual.rs` | The `manual` trigger: the inputs it names with their types, requiredness, defaults and choices, checked when the file is read, and the value a started run begins with. |
+| `workflows/trigger/webhook.rs` | The `webhook` trigger: the path its workflow answers on, the secret a delivery must carry and the repository its runs belong to, and which workflow a path leads to. |
 | `workflows/run.rs` | The executor: following the edges from the trigger with one value, giving each node the trigger's value and the values of the nodes that ran before, taking the edge that leaves by the port a node names, running each node under its timeout, failing the run on a node's error or its node ceiling, and reporting each step to an observer. |
 
 Outside `src/`: `kanban/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension

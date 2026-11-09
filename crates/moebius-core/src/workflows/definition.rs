@@ -10,7 +10,7 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 
 use super::nodes::{Node, node};
-use super::trigger::manual;
+use super::trigger::{manual, webhook};
 
 /// The id an edge uses to start at the workflow's trigger.
 pub const TRIGGER_ID: &str = "trigger";
@@ -53,7 +53,7 @@ pub struct WorkflowDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Trigger {
-    /// The trigger kind: `manual`, or a kind resolved through the same registry as a node's kind.
+    /// The trigger kind: `manual`, `webhook`, or a kind resolved through the same registry as a node's kind.
     pub kind: String,
     /// The trigger kind's own settings.
     #[serde(default = "empty_params", skip_serializing_if = "is_empty_params")]
@@ -208,10 +208,14 @@ impl WorkflowDefinition {
 
     fn check_kinds_and_ports(&self, file: &str) -> Result<(), Error> {
         let trigger = &self.trigger[0];
-        // The manual trigger is not a node: its parameters are the inputs it names, checked against them, and a value
-        // leaves it by its `out`.
+        // A trigger's kind belongs to the trigger module that owns it; only a kind none of them claims is looked up
+        // in the registry of node kinds, which is where a trigger kind is refused as a node's kind.
         let trigger_ports = if trigger.kind == manual::KIND {
             manual::ManualTrigger::parse(&trigger.params)
+                .map_err(|message| Error::new(file, format!("trigger: {message}")))?
+                .ports()
+        } else if trigger.kind == webhook::KIND {
+            webhook::WebhookTrigger::parse(&trigger.params)
                 .map_err(|message| Error::new(file, format!("trigger: {message}")))?
                 .ports()
         } else {

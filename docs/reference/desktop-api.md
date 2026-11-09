@@ -16,7 +16,8 @@ cookie of a [session](#post-v1session)). The token is the content of
 `token_file` (by default `<data_dir>/token`, created when the server first starts). A missing or wrong token is answered
 with `401` and the plain text `a valid token is needed`. The exceptions are `POST /v1/webhooks/{forge}`, which a forge
 sends and which carries the forge's signature instead, and `/v1/session`, which signs a browser in. The paths outside
-`/v1/` need no token: they are the [web app](#the-web-app).
+`/v1/` need no token: they are the [web app](#the-web-app) and the [hooks a workflow's `webhook` trigger answers
+on](#post-apihookspath), which the secret that trigger names opens instead.
 
 The run token of a run of the Moebius agent (`MOEBIUS_TOKEN` in its environment, see the [bridge
 protocol](bridge-protocol.md#the-environment-of-the-harness)) is accepted as well, while the run lasts: it is how the
@@ -159,10 +160,12 @@ instead of `data.trials`), `grilling_issues` (`data.grilling`, `data.repository`
 "body", "blocked_by"}`; its `title` is "N issues from a grilling" and it has no card) and `grilling_report` (`data.grilling`,
 `data.repository`, `data.report`: the text; no card) and `takeover` (`data.takeover`, `data.kind`, `data.agreement`,
 `data.count`; its `title` is "The decision model can take over <kind>" and it has no card) and `extension_update`
-(`data.package`, `data.from`, `data.to`, `data.source`; its `title` is "<package> <from> -> <to>" and it has no card). The
-nightly schedule, from `retro_at` on, once a day, puts one `extension_update` item in the inbox for each installed package
-with a newer version, and no second one for a version it has told of; the item is resolved when the package is current or
-an update is proposed.
+(`data.package`, `data.from`, `data.to`, `data.source`; its `title` is "<package> <from> -> <to>" and it has no card) and
+`workflow_approval` (`data.run`, `data.node`, `data.prompt`, `data.value` and `data.deadline` in whole seconds since the
+epoch; its `title` is the prompt and it has no card; it carries the decision a workflow run waits for, see
+[the approval node](workflows/approval.md)). The nightly schedule, from `retro_at` on, once a day, puts one
+`extension_update` item in the inbox for each installed package with a newer version, and no second one for a version it
+has told of; the item is resolved when the package is current or an update is proposed.
 A column script can add other kinds with `moebius.ask`.
 
 ## Endpoints
@@ -1259,8 +1262,27 @@ no `[harness]`; `409` and `500` as for `PUT /v1/agents/{name}`.
 A person deletes a workflow: the file is removed, committed on the default branch with the message
 `Delete the workflow <name>` and pushed to `origin`, and the decision is recorded (kind `edit_workflow`, decider
 `person`). Response: `{"name": string, "commit": string}` (`commit` is left out when there was nothing to commit). Errors:
-`404` no such workflow; `409` a run of the workflow is queued or running, or the server has no `[harness]`; `422` an
+`404` no such workflow; `409` a run of the workflow is queued, running or waiting, or the server has no `[harness]`; `422` an
 invalid name; `409` and `500` as for `PUT /v1/agents/{name}`.
+
+### `POST /api/hooks/{path}`
+
+Starts a run of the workflow whose `webhook` trigger names this path, in the repository that trigger names. No token:
+what opens the door is the secret the trigger names, when it names one. The body is one JSON value and is the value the
+run starts with; a body that is not JSON is refused `400` saying so. The answer is `202` with
+`{"run": number, "workflow": string}` as soon as the run is stored, its nodes running on a thread of their own. A path
+with no hook on it, a credential that is missing or wrong, and a secret the trigger names that the server does not
+have are answered alike, with `404` and the plain text `no hook on this path`, so nothing here says which paths have
+hooks. At most eight runs of one workflow may be queued or running at once through its hook; past that the answer is
+`429` saying to try again later, never a dropped delivery. Errors: `400` a body that is not JSON; `404` no hook this
+delivery opens, including a path claimed by two workflows that the delivery cannot open; `422` a trigger that names no
+repository, or two workflows claiming one path that the delivery opens; `429` past the ceiling. See the
+[`webhook` trigger](workflows/webhook-trigger.md).
+
+### `POST /api/hooks/{repository}/{path}`
+
+The same door for a delivery that names which repository the run belongs to. The repository in the address wins over
+the one the trigger names; a repository the server does not have is refused `422`.
 
 ### `GET /v1/workflows/{name}/run-inputs`
 
@@ -1286,6 +1308,16 @@ name, a value that is not of the type its input names, a required input with nei
 repository that is not known, or a request giving `repository` when the trigger names an input of type `repository` —
 every message names the input or the repository it refused; `409` the workflow's trigger is not `manual`, or the server
 has no `[harness]`; `422` a workflow file that cannot be used, as for `GET /v1/workflows/{name}`.
+### `POST /v1/workflows/runs/{run_id}/resume`
+
+A person decides on a workflow run that waits for one, which is what the `approval` node leaves (see
+[the approval node](workflows/approval.md)). Request: `{"decision": "approve" | "edit" | "reject", "value": any, "reason":
+string}`, where `value` is what an `edit` replaces the run's value with and `reason` why a `reject` refuses it (`rejected`
+when left out); unknown keys are refused. The decision is recorded in the waiting node's row and the run's `workflow_approval`
+inbox item is resolved, and the run runs on: with the value it had for an `approve`, with the person's for an `edit`, or ended
+`failed` with the reason for a `reject`. Response: `{"run": id, "status": string}`, the run and the status it went to. Errors:
+`404` no such run; `409` the run does not wait, which is how a second decision on a finished wait is refused; `422` a
+`decision` that is none of the three, or an `edit` without a `value`.
 
 ### `GET /v1/skills`
 

@@ -14,6 +14,10 @@
 @import "./fonts.css";
 @import "./theme.css";
 @import "./highlight.css";
+/* The workflow canvas: React Flow's own sheet, then this app's tokens over it. The order is the one that matters —
+ * `canvas.css` sets the variables React Flow asks for, so it has to come after it. */
+@import "@xyflow/react/dist/style.css";
+@import "./canvas.css";
 
 @theme inline {
   --color-*: initial;

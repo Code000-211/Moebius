@@ -114,9 +114,9 @@ The core is everything that is not a plugin (ADR 0009). Its parts:
 | Plugin host | the plugin API, the compiled-in plugins and the plugins in their own process | Every call into a plugin has a time limit and fails closed; a plugin process is started again when it stops. |
 | Runs and scheduling | starting, stopping and limiting runs | Global and per-column limits; a card waits for the cards it depends on; token budgets per card and per day. |
 | Boards | columns, cards, transitions | Each column's behaviour is a Luau script; scripts decide through `moebius.decide`. |
-| Inbox | what needs a person | Ready to merge, stuck, proposals, outside issues awaiting approval, takeover proposals from shadowing. |
+| Inbox | what needs a person | Ready to merge, stuck, proposals, outside issues awaiting approval, takeover proposals from shadowing, workflow runs waiting at an `approval` node. |
 | Tool-call check | the one point every tool call passes | Asks the deciders (plugins), records the judgement, answers allow or refuse with the rule. |
-| Invariants | what no plugin may break | A run never waits for a person; a plugin call that times out or fails blocks; budgets are enforced from the router's usage. |
+| Invariants | what no plugin may break | A card run never waits for a person, and a workflow run waits only at an `approval` node and only until its deadline; a plugin call that times out or fails blocks; budgets are enforced from the router's usage. |
 | Desktop API | the app's view of everything | Snapshots plus an event stream; plugins describe their own views as data. |
 
 ### 3.1 The store
