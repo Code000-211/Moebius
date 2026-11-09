@@ -87,7 +87,7 @@ describe("the chat page", () => {
       .getByRole("navigation", { name: "Pages" })
       .getByText(/^Chats$/, { exact: true })
       .waitFor();
-    await page.getByRole("link", { name: "Start a new chat" }).waitFor();
+    await page.getByRole("link", { name: "Start a chat in the sidebar" }).waitFor();
     await page.getByRole("button", { name: /^Agent: / }).waitFor();
     await field().waitFor();
   });
@@ -174,6 +174,8 @@ describe("the chat page", () => {
       .getByRole("navigation", { name: "Pages" })
       .getByRole("link", { name: "Chat. 1" })
       .waitFor();
+    // The list comes back with the sidebar, and its row says the same per chat.
+    await page.getByRole("button", { name: "Expand the sidebar" }).click();
 
     // The entry says the same thing with a dot rather than a word, and keeps the word in the row's own name.
     const row = page.getByTestId("chat-entry").filter({ hasText: "Done" });
@@ -1080,11 +1082,10 @@ describe("the chat page on a phone", () => {
     await openWith("/plugins", { viewport: { width, height: 900 } });
     await page.getByRole("button", { name: "Browse packages" }).first().click();
     await sheet().getByTestId("list-card").first().waitFor();
+    // Back to the everyday pages: Plugins is one of Settings, whose sidebar holds no chat list, so "New chat" is
+    // reached from there once the everyday sidebar is back.
     await page.getByRole("link", { name: /^Back( to the pages)?$/ }).click();
-    await page
-      .getByRole("navigation", { name: "Pages" })
-      .getByRole("link", { name: /^Chat( \d+)?$/ })
-      .click();
+    await page.getByRole("link", { name: "Start a chat in the sidebar" }).click();
     await field().waitFor();
     await sheet().waitFor();
   }
