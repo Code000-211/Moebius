@@ -131,6 +131,14 @@ impl App {
     }
 
     /// Publishes the card's work as `publish_change` does and, if the change has no pull request yet, opens one
+    /// through the repository's forge; a forge without them has none to open. Without the review's `judgements`,
+    /// which only an offer has. A review script that calls this when the `code` run ended lets the forge run its
+    /// checks while the review of the card still reads the change.
+    pub fn open_pull_request(&self, card_id: i64) -> Result<Change> {
+        self.publish_card_change(card_id, true, None)
+    }
+
+    /// Publishes the card's work as `publish_change` does and, if the change has no pull request yet, opens one
     /// through the repository's forge; a forge without them has none to open. The pull request says what the change
     /// does (see `pull_request_body`), with the review's `judgements` in it when the offer has them.
     pub(crate) fn publish_card_change(

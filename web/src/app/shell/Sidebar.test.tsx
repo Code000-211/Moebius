@@ -14,6 +14,16 @@ import type { Chat } from "../../api/types/chat";
 import { SETTINGS_PAGES, settingsLabel } from "../pages";
 import { Sidebar } from "./Sidebar";
 
+/** The pages inside the two collapsible groups, in the order the sidebar lists them. */
+const AUTOMATION_PAGES: readonly string[] = ["Automations", "Workflows"];
+const IMPROVE_PAGES: readonly string[] = ["Retro", "Experiments", "Decisions", "Usage"];
+
+/** The keys the open/closed state of each group is kept under, like `moebius.sidebar.collapsed` is. */
+const GROUP_KEYS = {
+  Automation: "moebius.sidebar.group.automation",
+  Improve: "moebius.sidebar.group.improve",
+};
+
 afterEach(() => {
   vi.unstubAllGlobals();
   localStorage.clear();
@@ -217,6 +227,83 @@ describe("the pages and the settings", () => {
  * Chat to the rail, whose single icon still opens a conversation rather than an empty field — the newest of them, with
  * the unread trail on its name.
  */
+/**
+ * The two collapsible groups. Automation holds Automations and Workflows; Improve holds Retro, Experiments,
+ * Decisions and Usage. Both are open before anybody has chosen anything, the choice is kept per browser like the
+ * sidebar's own collapsed state is, and the rail — which has no room for a name on its group labels — never
+ * collapses them: there the groups behave as they always did, the label's room kept and every row under it.
+ * The group's name itself goes nowhere (`docs/design-web.md`); the caret beside it is the toggle.
+ */
+describe("the collapsible groups", () => {
+  it("holds its pages, and is open before anybody has chosen anything", async () => {
+    show();
+    const automation = screen.getByRole("button", { name: "Collapse Automation" });
+    expect(automation.getAttribute("aria-expanded")).toBe("true");
+    for (const page of AUTOMATION_PAGES) {
+      expect(await screen.findByRole("link", { name: new RegExp(`^${page}`) })).not.toBeNull();
+    }
+    const improve = screen.getByRole("button", { name: "Collapse Improve" });
+    expect(improve.getAttribute("aria-expanded")).toBe("true");
+    for (const page of IMPROVE_PAGES) {
+      expect(screen.getByRole("link", { name: new RegExp(`^${page}`) })).not.toBeNull();
+    }
+    // The groups that are not touched by this stay what they were.
+    expect(screen.getByRole("link", { name: /^Inbox/ })).not.toBeNull();
+    expect(screen.getByRole("link", { name: /^Fleet/ })).not.toBeNull();
+  });
+
+  it("closes on its own caret, and leaves the rows beside it standing", async () => {
+    show();
+    await screen.findByRole("link", { name: /^Automations/ });
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Automation" }));
+    expect(screen.queryByRole("link", { name: /^Automations/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^Workflows/ })).toBeNull();
+    // The rows of the other groups are not the closed group's to take down.
+    expect(screen.getByRole("link", { name: /^Inbox/ })).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Expand Automation" }).getAttribute("aria-expanded"),
+    ).toBe("false");
+    // The choice is kept in this browser the way the sidebar's shape is.
+    expect(localStorage.getItem(GROUP_KEYS.Automation)).toBe("0");
+  });
+
+  it("opens again on the same caret", async () => {
+    show();
+    await screen.findByRole("link", { name: /^Retro/ });
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Improve" }));
+    expect(screen.queryByRole("link", { name: /^Retro/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Expand Improve" }));
+    expect(screen.getByRole("link", { name: /^Retro/ })).not.toBeNull();
+    expect(localStorage.getItem(GROUP_KEYS.Improve)).toBe("1");
+  });
+
+  it("keeps a closed group closed the next time the sidebar is built", async () => {
+    show();
+    await screen.findByRole("link", { name: /^Retro/ });
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Improve" }));
+    cleanup();
+    show();
+    await screen.findByRole("link", { name: /^Inbox/ });
+    expect(screen.queryByRole("link", { name: /^Retro/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^Experiments/ })).toBeNull();
+    // A group left open is remembered open; nothing about the state of one group touches another.
+    expect(screen.getByRole("link", { name: /^Automations/ })).not.toBeNull();
+  });
+
+  it("keeps every row in the rail, whatever the groups were left as", async () => {
+    localStorage.setItem(GROUP_KEYS.Automation, "0");
+    localStorage.setItem(GROUP_KEYS.Improve, "0");
+    show({ collapsed: true });
+    // The rail's labels keep the room they always took, and carry no toggle there.
+    await screen.findByRole("link", { name: /^Inbox/ });
+    expect(screen.queryByRole("button", { name: "Collapse Automation" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Collapse Improve" })).toBeNull();
+    for (const page of [...AUTOMATION_PAGES, ...IMPROVE_PAGES]) {
+      expect(screen.getByRole("link", { name: new RegExp(`^${page}`) })).not.toBeNull();
+    }
+  });
+});
+
 describe("where an entry leads", () => {
   it("marks the one entry that leads to the page on screen", async () => {
     show({ at: "/inbox" });
