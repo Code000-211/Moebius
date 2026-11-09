@@ -49,8 +49,10 @@ pub enum Event {
     AutomationFired {
         automation: i64,
         firing: i64,
+        workflow: String,
         status: String,
         run: Option<i64>,
+        workflow_run: Option<i64>,
     },
     CardAdded(Card),
     CardUpdated(Card),
@@ -433,10 +435,12 @@ mod tests {
                 Event::AutomationFired {
                     automation: 2,
                     firing: 5,
+                    workflow: "nightly".into(),
                     status: "started".into(),
                     run: Some(9),
+                    workflow_run: Some(11),
                 },
-                json!({"kind": "automation_fired", "data": {"automation": 2, "firing": 5, "status": "started", "run": 9}}),
+                json!({"kind": "automation_fired", "data": {"automation": 2, "firing": 5, "workflow": "nightly", "status": "started", "run": 9, "workflow_run": 11}}),
             ),
             (
                 Event::CardAdded(card.clone()),

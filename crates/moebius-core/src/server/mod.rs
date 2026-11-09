@@ -320,6 +320,7 @@ impl Server {
         pi_bolt.runners = runners;
         pi_bolt.launcher.set(launcher);
         let harness = Arc::new(Harnesses::new(pi_bolt, &config.claude_code));
+        app.set_runs(harness.clone());
         let harness_repo = match &config.harness_url {
             Some(url) => Some(Arc::new(HarnessRepo::open(
                 &app,
@@ -331,6 +332,7 @@ impl Server {
             None => None,
         };
         if let Some(harness_repo) = &harness_repo {
+            // This also gives older automations the workflow files that hold them from now on.
             app.set_harness_repo(harness_repo.clone());
         }
         // A run of a workflow that waits for a person waits on with this server: its node rows are replayed, so a

@@ -83,22 +83,23 @@ impl Server {
         self.harness.pause_idle_chats(&self.app, Instant::now());
     }
 
-    /// Ends the chats of automations that have answered and fires the automations that came due, at the local minute.
+    /// Ends the chats of automations that have answered, at the local minute.
     fn on_automations(&self, runs: &dyn Runs) -> crate::app::Result<()> {
-        let now = self.app.store.local_minute()?;
-        match crate::app::cron::parse_minute(&now) {
-            Some(now) => crate::app::on_automation_schedule(&self.app, runs, now),
-            None => Ok(()),
-        }
+        crate::app::on_automation_schedule(&self.app, runs)
     }
 
-    /// Starts a run of every workflow whose `schedule` trigger came due, at the local minute.
+    /// Starts a run of every workflow whose `schedule` trigger came due, at the local minute; an automation's run
+    /// reaches its `chat` node and starts the chat there.
     fn on_workflow_schedules(&self) -> crate::app::Result<()> {
         let now = self.app.store.local_minute()?;
         match cron::parse_minute(&now) {
-            Some(now) => {
-                on_workflow_schedules(&self.app, self.harness_repo.as_deref(), now).map(|_| ())
-            }
+            Some(now) => on_workflow_schedules(
+                &self.app,
+                self.harness_repo.as_deref(),
+                Some(&*self.harness),
+                now,
+            )
+            .map(|_| ()),
             None => Ok(()),
         }
     }
@@ -113,6 +114,7 @@ impl Server {
 pub(crate) fn on_workflow_schedules(
     app: &Arc<App>,
     harness: Option<&HarnessRepo>,
+    runs: Option<&dyn Runs>,
     now: PrimitiveDateTime,
 ) -> crate::app::Result<Vec<WorkflowRun>> {
     // With no harness configuration repository there are no workflow files, so no workflow is on a schedule.
@@ -143,6 +145,25 @@ pub(crate) fn on_workflow_schedules(
         };
         app.store
             .record_schedule_firing(&name, &cron::format_minute(at))?;
+        if crate::app::is_automation(&definition) {
+            let Some(runs) = runs else {
+                eprintln!("moebius: automation {name} fires on its schedule with no harness");
+                continue;
+            };
+            match app.fire_automation_definition(runs, &name, &definition, at) {
+                Ok(firing) => {
+                    if let Some(id) = firing.workflow_run_id
+                        && let Some(run) = app.store.workflow_run(id)?
+                    {
+                        started.push(run);
+                    }
+                }
+                Err(why) => eprintln!(
+                    "moebius: automation {name} fires on its schedule and starts no run: {why}"
+                ),
+            }
+            continue;
+        }
         match start_on_schedule(app, &name, &trigger, at) {
             Ok(run) => started.push(run),
             Err(why) => {
@@ -340,7 +361,7 @@ port = "out"
     /// The workflows the server has woken at the local minute `now`.
     fn wake(app: &Arc<App>, now: PrimitiveDateTime) -> Vec<WorkflowRun> {
         let harness = app.harness_repo().ok().map(|repo| &**repo);
-        on_workflow_schedules(app, harness, now).unwrap()
+        on_workflow_schedules(app, harness, None, now).unwrap()
     }
 
     /// A server that starts again over the same store, which is all a restart keeps.

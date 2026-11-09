@@ -157,6 +157,13 @@ One execution of a workflow from its trigger to its last node, keeping the value
 run of a harness.
 _Avoid_: run, job, execution
 
+**Automation**:
+A workflow whose trigger is a schedule and whose one node starts an agent chat: recurring work that runs on its own. The
+Automations page reads and writes that workflow, keeping the automation's id for its firings; the `/v1/automations`
+routes and `automation` commands are a shortcut over it. Two automations may share a name, and each is then its own
+workflow file.
+_Avoid_: cron job, scheduled task, trigger
+
 **Attempt**:
 One of several runs a hard card gets in one go, each in a worktree and on a branch of its own and perhaps with another
 model; each is judged by the repository's checks and the reproduction test, and one that passed is picked, by a selection

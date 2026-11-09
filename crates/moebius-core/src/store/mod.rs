@@ -431,6 +431,8 @@ ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
     issues::COMMENT_ORIGIN,
     workflows::SCHEMA,
     workflow_schedules::SCHEMA,
+    "ALTER TABLE firings ADD COLUMN workflow_run_id INTEGER REFERENCES workflow_runs(id);",
+    "ALTER TABLE automations ADD COLUMN workflow TEXT;",
 ];
 
 pub fn now() -> i64 {

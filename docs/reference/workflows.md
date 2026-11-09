@@ -62,7 +62,7 @@ written `[[trigger]]` and has:
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `kind` | string | The trigger's kind. A kind with a module in [`workflows/trigger/`](#trigger-kinds) is read by that module and is not a node kind; any other kind is read by the node registry, like a node's kind. |
-| `params` | table | The kind's settings, read by that kind. Optional; defaults to an empty table. For `manual` these are the inputs a person gives the run; for `schedule` the cron, repository and the inputs the run starts with; for `webhook` its path, secret and repository. |
+| `params` | table | The kind's settings, read by that kind. Optional; defaults to an empty table. For `manual` these are the inputs a person gives the run; for `schedule` the cron, repository, whether it is enabled and the inputs the run starts with; for `webhook` its path, secret and repository. |
 
 An edge starts at the trigger with `from = "trigger"`; `trigger` is reserved and cannot be a node's id or an edge's
 target. A value leaves a trigger by its `out` port, which is what the edges leaving the trigger name.
@@ -209,6 +209,25 @@ Each node kind has one section here and one page in [`workflows/`](workflows/REA
 - [`approval`](workflows/approval.md): pauses the run for a person, who approves the value, replaces it, or rejects it.
 - [`http`](workflows/http.md): calls a URL on an allowed host, with secrets by name, and outputs the status, headers and body.
 - [`merge`](workflows/merge.md): joins two branches and emits what arrived by each side.
+- [`chat`](workflows/chat.md): starts an agent chat; an automation is one `schedule` trigger and one `chat` node.
+
+## Automations
+
+An automation is not a second kind of record: it is a workflow whose trigger is `schedule` and whose one node is a
+`chat`. The workflow's `name` is the automation's name, the trigger's `cron` and `enabled` are its schedule and switch,
+and the node's `agent`, `prompt` and `harness` are the chat it starts. Its `repository` is the trigger's repository, by
+name. The Automations page and the `/v1/automations` routes and `automation` commands read and write this file as a
+shortcut, keeping the automation's id for its firings; an automation whose name is not a safe file name, or whose
+name is already an ordinary workflow's or another automation's, is kept in `automation-<id>.toml`, with the name still
+in the file, so that the workflow or automation of that name keeps its file and each automation keeps firing. Two
+automations may share a name and are still two workflows, each with its own file. A run of it is a workflow run, started by the same workflow
+schedule as any other and reaching its `chat` node, so it fires once; the firing names that run. A file edited into an
+ordinary workflow is that workflow: its own schedule starts it, and the Automations page leaves its old row out and no
+longer fires it. An automation that works in the harness configuration repository starts its chat directly, because a
+workflow run belongs to a repository.
+Until an upgrade has written an older automation to a file, or on a server with no `[harness]` where there is nowhere
+to write it, its row is what fires it, on the same minute and within the same five minutes. The workflow schedule starts
+from the minute the automation was last checked or saved, so the minute of an upgrade or a save cannot fire again.
 
 ## Extending this page
 

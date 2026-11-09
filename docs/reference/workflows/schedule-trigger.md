@@ -33,11 +33,13 @@ run, and [an expression](expressions.md) reads the value it started the run with
 | `cron` | string | Required. Five fields — minute, hour, day of the month, month, day of the week — in the server's local time, spelled as an automation's schedule is (see [`automation.schedule`](../desktop-api.md)). A field is `*`, a number, a range `a-b`, either with a step (`*/15`, `8-18/2`), or a list of these separated by commas. When both the day of the month and the day of the week are restricted (neither starts with `*`), a day that matches either comes due, as in cron. |
 | `repository` | string | Required to start a run. The name of the repository the runs belong to, as the board knows it. A run belongs to a repository, so a schedule that names none starts nothing. |
 | `inputs` | table | What a run starts its inputs with: names and their defaults, such as `{ goal = "Read the board." }`. Optional; defaults to an empty table. |
+| `enabled` | boolean | Whether the schedule is on. Optional; defaults to true. A schedule that is off comes due no minute. Automations write their on/off switch here. |
 
 A cron that cannot be read is refused when the file loads, with a message that names which field is wrong:
 `workflows/nightly-triage.toml: trigger: "cron": the minute 70 is not between 0 and 59`. So is a `cron` that is not a
-string of five fields, an `inputs` that is not a table, and a `repository` that is not a name. A parameter that is not
-one of the three above is refused too: `trigger: unknown trigger parameters ["count"]`.
+string of five fields, an `inputs` that is not a table, a `repository` that is not a name, and an `enabled` that is not
+true or false. A parameter that is not one of the four above is refused too: `trigger: unknown trigger parameters
+["count"]`.
 
 ## The value a run starts with
 
@@ -76,6 +78,11 @@ repository holds, and for each one whose trigger is a `schedule`:
   spring-forward day skips is waited over.
 
 Two workflows on the same cron both fire: each keeps the minute it last fired at under its own name.
+
+A workflow with one [`chat`](chat.md) node is an automation, and this same clock fires it, once: a repository
+automation starts a workflow run whose `chat` node starts the chat and records the firing, while one that works in the
+harness configuration repository instead (or nowhere) starts its chat directly, since a run belongs to a repository.
+The firing names the workflow run when there is one.
 
 ## Removing a workflow's schedule
 

@@ -72,6 +72,8 @@ pub struct Firing {
     pub status: String,
     /// The chat it started.
     pub run_id: Option<i64>,
+    /// The workflow run that carries the firing, when the automation's node starts the chat.
+    pub workflow_run_id: Option<i64>,
     /// The status of that chat now.
     pub chat_status: Option<String>,
     /// Whether a person fired it ("Run now") rather than the schedule.
@@ -99,7 +101,7 @@ fn automation(r: &Row) -> rusqlite::Result<Automation> {
 }
 
 const FIRING_QUERY: &str =
-    "SELECT f.id, f.automation_id, f.status, f.run_id, r.status, f.manual, f.reason, f.at
+    "SELECT f.id, f.automation_id, f.status, f.run_id, r.status, f.manual, f.reason, f.at, f.workflow_run_id
      FROM firings f LEFT JOIN runs r ON r.id = f.run_id";
 
 fn firing(r: &Row) -> rusqlite::Result<Firing> {
@@ -112,6 +114,7 @@ fn firing(r: &Row) -> rusqlite::Result<Firing> {
         manual: r.get(5)?,
         reason: r.get(6)?,
         at: r.get(7)?,
+        workflow_run_id: r.get(8)?,
     })
 }
 
@@ -179,6 +182,33 @@ impl Store {
             .optional()?)
     }
 
+    /// The automation whose row keeps the workflow file `key`, when there is one.
+    pub fn automation_with_workflow_key(&self, key: &str) -> Result<Option<Automation>> {
+        Ok(self
+            .conn()
+            .query_row(
+                &format!("SELECT {AUTOMATION_COLUMNS} FROM automations WHERE workflow = ?1 ORDER BY id LIMIT 1"),
+                [key],
+                automation,
+            )
+            .optional()?)
+    }
+
+    /// The first automation called `name` that has no workflow file of its own yet.
+    pub fn automation_without_workflow_named(&self, name: &str) -> Result<Option<Automation>> {
+        Ok(self
+            .conn()
+            .query_row(
+                &format!(
+                    "SELECT {AUTOMATION_COLUMNS} FROM automations WHERE name = ?1 AND workflow IS NULL \
+                     ORDER BY id LIMIT 1"
+                ),
+                [name],
+                automation,
+            )
+            .optional()?)
+    }
+
     /// The automations, by name.
     pub fn automations(&self) -> Result<Vec<Automation>> {
         self.rows(
@@ -186,6 +216,28 @@ impl Store {
             [],
             automation,
         )
+    }
+
+    /// The workflow file the automation `id` is kept in, once it has been written to one.
+    pub fn automation_workflow_key(&self, id: i64) -> Result<Option<String>> {
+        Ok(self
+            .conn()
+            .query_row(
+                "SELECT workflow FROM automations WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten())
+    }
+
+    /// Remembers the workflow file the automation `id` is kept in, so that it keeps that file when its name is also
+    /// another workflow's; false when there is no such automation.
+    pub fn set_automation_workflow_key(&self, id: i64, key: &str) -> Result<bool> {
+        Ok(self.conn().execute(
+            "UPDATE automations SET workflow = ?2 WHERE id = ?1",
+            params![id, key],
+        )? == 1)
     }
 
     /// The local minute up to which the schedule of the automation `id` was looked at.
@@ -214,21 +266,69 @@ impl Store {
         automation_id: i64,
         status: &str,
         run_id: Option<i64>,
+        workflow_run_id: Option<i64>,
         manual: bool,
         reason: &str,
     ) -> Result<Firing> {
         let id = {
             let conn = self.conn();
             conn.execute(
-                "INSERT INTO firings (automation_id, status, run_id, manual, reason, at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![automation_id, status, run_id, manual, reason, now()],
+                "INSERT INTO firings (automation_id, status, run_id, workflow_run_id, manual, reason, at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![automation_id, status, run_id, workflow_run_id, manual, reason, now()],
             )?;
             conn.last_insert_rowid()
         };
         Ok(self
             .rows(&format!("{FIRING_QUERY} WHERE f.id = ?1"), [id], firing)?
             .remove(0))
+    }
+
+    /// Sets the chat of the firing that a workflow run started, once that run's node starts it.
+    pub fn set_firing_run(&self, id: i64, run_id: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE firings SET run_id = ?2 WHERE id = ?1",
+            params![id, run_id],
+        )?;
+        Ok(())
+    }
+
+    /// Sets the run that carries the firing, before the run's thread starts so that its first node finds it.
+    pub fn set_firing_workflow_run(&self, id: i64, workflow_run_id: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE firings SET workflow_run_id = ?2 WHERE id = ?1",
+            params![id, workflow_run_id],
+        )?;
+        Ok(())
+    }
+
+    /// Records that the firing started no run, and why.
+    pub fn fail_firing(&self, id: i64, reason: &str) -> Result<Firing> {
+        self.conn().execute(
+            "UPDATE firings SET status = 'failed', reason = ?2 WHERE id = ?1",
+            params![id, reason],
+        )?;
+        Ok(self
+            .rows(&format!("{FIRING_QUERY} WHERE f.id = ?1"), [id], firing)?
+            .remove(0))
+    }
+
+    /// The firing `id`, when there is one.
+    pub fn firing(&self, id: i64) -> Result<Option<Firing>> {
+        Ok(self
+            .rows(&format!("{FIRING_QUERY} WHERE f.id = ?1"), [id], firing)?
+            .pop())
+    }
+
+    /// The firing a workflow run carries, when it carries one.
+    pub fn firing_for_workflow_run(&self, workflow_run_id: i64) -> Result<Option<Firing>> {
+        Ok(self
+            .rows(
+                &format!("{FIRING_QUERY} WHERE f.workflow_run_id = ?1 ORDER BY f.id DESC LIMIT 1"),
+                [workflow_run_id],
+                firing,
+            )?
+            .pop())
     }
 
     /// The firings of the automation, newest first; at most `limit`.
@@ -334,6 +434,13 @@ mod tests {
             s.automation_checked(a.id).unwrap().as_deref(),
             Some("2026-10-29 08:00")
         );
+        assert_eq!(s.automation_workflow_key(a.id).unwrap(), None);
+        assert!(s.set_automation_workflow_key(a.id, "automation-7").unwrap());
+        assert_eq!(
+            s.automation_workflow_key(a.id).unwrap().as_deref(),
+            Some("automation-7")
+        );
+        assert!(!s.set_automation_workflow_key(a.id + 100, "gone").unwrap());
         let off = NewAutomation {
             enabled: false,
             ..nightly()
@@ -345,10 +452,10 @@ mod tests {
         let run = s.add_run(None, "Moebius", "pi-bolt", "chat").unwrap();
         s.set_run_status(run.id, "waiting").unwrap();
         let started = s
-            .add_firing(a.id, "started", Some(run.id), false, "")
+            .add_firing(a.id, "started", Some(run.id), None, false, "")
             .unwrap();
         assert_eq!(started.chat_status.as_deref(), Some("waiting"));
-        s.add_firing(a.id, "skipped", None, true, "still runs")
+        s.add_firing(a.id, "skipped", None, None, true, "still runs")
             .unwrap();
         let firings = s.firings(a.id, 10).unwrap();
         assert_eq!(
