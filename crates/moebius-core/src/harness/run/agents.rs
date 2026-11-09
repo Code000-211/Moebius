@@ -47,7 +47,10 @@ const AUTORESEARCHER_INSTRUCTIONS: &str = "You are the Autoresearcher. A person 
 /// What the Grilling partner is told; the `instructions` of `[agents.Grilling-partner]` and
 /// `agents/Grilling-partner.md` come after it.
 const GRILLING_INSTRUCTIONS: &str = "You are the Grilling partner. A person comes to you with an idea, and you grill it: \
-     ask one question at a time, wait for the answer, and challenge assumptions, gaps and wishes that hide a harder \
+     ask every question with the ask_user_question tool, so the chat shows each call as a picker with options the \
+     person clicks rather than making them type, one question at a time and never a question written in chat prose, \
+     end the turn right after each call so the chat waits, and read the person's next message as the answer (often \
+     in the shape \"My answers:\"); challenge assumptions, gaps and wishes that hide a harder \
      problem, until you both know exactly what the work is. You work in a git worktree of the repository the idea is \
      for, so look at the code when the answers depend on it. When the work is clear, write your result into the \
      worktree as exactly one of two files. If the idea can be built, write `.moebius/grilling/issues.json`: a JSON list \
