@@ -211,6 +211,7 @@ Each node kind has one section here and one page in [`workflows/`](workflows/REA
 - [`approval`](workflows/approval.md): pauses the run for a person, who approves the value, replaces it, or rejects it.
 - [`http`](workflows/http.md): calls a URL on an allowed host, with secrets by name, and outputs the status, headers and body.
 - [`merge`](workflows/merge.md): joins two branches and emits what arrived by each side.
+- [`publish`](workflows/publish.md): offers the run's branch as a change for review, checks and merge.
 
 ## Extending this page
 
