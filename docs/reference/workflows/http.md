@@ -86,4 +86,4 @@ or a secret. A failing expression names the parameter it was in (`parameter "url
 The run's `node_timeout_seconds` bounds the node as a whole, so a request whose `timeout_seconds` is longer than that
 is ended by the run, not by the node.
 
-The module is `crates/moebius-core/src/workflows/nodes/http.rs`.
+The module is `crates/moebius-core/src/workflows/nodes/http/mod.rs`.
