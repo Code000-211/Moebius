@@ -71,22 +71,21 @@ function distanceFromEnd(list: Locator): Promise<number> {
 }
 
 describe("the chat page", () => {
-  it("loads, lists the chats and offers a new one", async () => {
+  it("loads, holds the chats in the sidebar and offers a new one from it", async () => {
     await open("/chat");
-    // The column of chats says its own count, so the switcher is only there once the column is out of the way, and
-    // brings it back again.
-    await page.getByRole("heading", { name: /^Chats\b/ }).waitFor();
-    await page.getByRole("button", { name: "Hide the list of chats" }).click();
-    await page.getByRole("button", { name: /^Chats \(\d+\)/ }).waitFor();
-    await page.getByRole("button", { name: /^Chats \(\d+\)/ }).click();
-    await page.getByRole("heading", { name: /^Chats\b/ }).waitFor();
-    await page.getByRole("link", { name: "New" }).waitFor();
+    // The sidebar holds the list of chats now, and the way to start one is its button above the list; the top bar
+    // keeps only the title and its actions.
+    await page
+      .getByRole("navigation", { name: "Pages" })
+      .getByText(/^Chats$/, { exact: true })
+      .waitFor();
+    await page.getByRole("link", { name: "Start a new chat" }).waitFor();
     await page.getByRole("button", { name: /^Agent: / }).waitFor();
     await field().waitFor();
   });
 
   it.skipIf(usesRealServer)(
-    "lists the chats newest first and opens one from the list",
+    "lists the chats newest first and opens one from the sidebar",
     async () => {
       await open("/chat");
       const first = fake().seed({
@@ -98,12 +97,11 @@ describe("the chat page", () => {
         events: [["said", { message: "Newer chat" }]],
       });
       await page.reload();
-      const rows = page.getByTestId("chat-row");
+      const rows = page.getByTestId("chat-entry");
       await rows.first().waitFor();
-      expect(await rows.allInnerTexts()).toEqual([
-        expect.stringContaining("Newer chat"),
-        expect.stringContaining("Older chat"),
-      ]);
+      await expect
+        .poll(() => rows.allInnerTexts())
+        .toEqual([expect.stringContaining("Newer chat"), expect.stringContaining("Older chat")]);
       await rows.nth(1).click();
       await page.waitForURL(`**/chat/${first}`);
       await page.getByTestId("person-message").filter({ hasText: "Older chat" }).waitFor();
@@ -135,79 +133,11 @@ describe("the chat page", () => {
       const again = page.getByTestId("chat-title");
       await again.waitFor();
       expect.soft(await words(again), "a reload still says it").toContain(named);
-      const rows = page.getByTestId("chat-row");
+      const rows = page.getByTestId("chat-entry");
       await rows.first().waitFor();
-      expect.soft(await words(rows.first()), "and the list of chats says it too").toContain(named);
-    },
-  );
-
-  it.skipIf(usesRealServer)(
-    "scrolls a long list of chats once, and keeps every row's words inside its row",
-    async () => {
-      await open("/chat");
-      for (let index = 0; index < 14; index += 1) {
-        fake().seed({
-          title: `Chat ${index}: a title long enough to want more than one line in the list`,
-          events: [["said", { message: `Chat ${index}` }]],
-        });
-      }
-      await page.reload();
-      const menu = page.getByTestId("chat-list-rows");
-      await menu.waitFor();
       expect
-        .soft(
-          await menu.evaluate((element) => element.scrollHeight > element.clientHeight),
-          "the list itself scrolls",
-        )
-        .toBe(true);
-
-      // Nothing in the menu scrolls as well: a second scroller caps the height of the list, and a column of a
-      // fixed height shrinks the rows it holds, leaving their words outside the row's own fill.
-      const nested = await menu.evaluate(
-        (element) =>
-          [...element.querySelectorAll("*")].filter((child) => {
-            // A name that fades out hides the rest of itself on purpose: that is the one-line box of a `FadedLine`,
-            // which clips and does not wrap. Any other box that overflows without a scrollbar of its own is a row
-            // that was squeezed.
-            const style = getComputedStyle(child);
-            if (style.overflowX === "hidden" && style.whiteSpace === "nowrap") return false;
-            return (
-              child.scrollHeight > child.clientHeight + 1 ||
-              child.scrollWidth > child.clientWidth + 1
-            );
-          }).length,
-      );
-      expect.soft(nested, "nothing inside the list scrolls as well").toBe(0);
-      const spilled = await page
-        .getByTestId("chat-row")
-        .evaluateAll(
-          (rows) =>
-            rows.filter((row) =>
-              [...row.children].some(
-                (child) =>
-                  child.getBoundingClientRect().bottom > row.getBoundingClientRect().bottom + 1,
-              ),
-            ).length,
-        );
-      expect.soft(spilled, "no row's words fall outside its own box").toBe(0);
-
-      // And the last row is read in full: the list's own padding is below it, not cut off by an inner box.
-      // The scroll and the rows it brings settle over a few frames, so the gap is read until it holds.
-      await expect
-        .poll(async () => {
-          await menu.evaluate((element) => {
-            element.scrollTop = element.scrollHeight;
-          });
-          const [menuBottom, rowBottom] = await Promise.all([
-            menu.evaluate((element) => element.getBoundingClientRect().bottom),
-            page
-              .getByTestId("chat-row")
-              .last()
-              .evaluate((element) => element.getBoundingClientRect().bottom),
-          ]);
-          return menuBottom - rowBottom;
-        })
-        .toBeGreaterThanOrEqual(7);
+        .soft(await words(rows.first()), "and the chats of the sidebar say it too")
+        .toContain(named);
     },
   );
 
@@ -235,11 +165,11 @@ describe("the chat page", () => {
       .getByRole("link", { name: "Chat 1" })
       .waitFor();
 
-    // The list says the same thing with a dot rather than a word, and keeps the word in the row's own name.
-    const row = page.getByTestId("chat-row").filter({ hasText: "Done" });
+    // The entry says the same thing with a dot rather than a word, and keeps the word in the row's own name.
+    const row = page.getByTestId("chat-entry").filter({ hasText: "Done" });
     expect.soft(await row.getAttribute("data-unread")).toBe("true");
-    expect.soft(await row.getByTestId("unread-dot").count()).toBe(1);
-    await page.getByRole("link", { name: /New answers/ }).waitFor();
+    // The link's name is its chat's name, so the word for the unread dot is read as the text it holds.
+    await row.getByText("New answers").waitFor();
   });
 });
 
@@ -488,10 +418,10 @@ describe("what the agent does", () => {
       });
       fake().settle(run);
 
-      // The card is the question, and the list says the chat asks before the person has answered.
+      // The card is the question, and the bar on top of the chat says it asks before the person has answered.
       const card = page.getByTestId("question");
       await card.getByText("Shall I go on?").waitFor();
-      await page.getByTestId("chat-list-rows").getByText("Asks you").waitFor();
+      await page.getByTestId("chat-page").getByText("Asks you", { exact: true }).waitFor();
 
       // The person chooses the shorter label, which must not mark the longer one that holds it.
       await card.getByRole("radio", { name: "Yes Now" }).check();
@@ -499,7 +429,7 @@ describe("what the agent does", () => {
       await page.getByTestId("person-message").filter({ hasText: "My answers:" }).waitFor();
       expect(fake().said.at(-1)?.body.message).toBe('My answers:\n1. Go: "Yes"');
 
-      // The card closes into a record with the chosen option marked, and the list stops saying the chat asks.
+      // The card closes into a record with the chosen option marked, and the bar on top stops saying the chat asks.
       fake().agentStart(run);
       fake().delta(run, "Going on.");
       fake().settle(run, "Going on.");
@@ -508,7 +438,10 @@ describe("what the agent does", () => {
       await closed.getByText("Yes (chosen)", { exact: true }).waitFor();
       expect(await closed.getByText("Yes, but later (chosen)").count()).toBe(0);
       expect(await page.getByTestId("question").count()).toBe(0);
-      expect(await page.getByTestId("chat-list-rows").getByText("Asks you").count()).toBe(0);
+      await page
+        .getByTestId("chat-page")
+        .getByText("Asks you", { exact: true })
+        .waitFor({ state: "detached" });
     },
   );
 
@@ -871,7 +804,7 @@ describe("the floating chat", () => {
       await window.getByRole("button", { name: "Minimise the floating chat" }).click();
       await window.waitFor({ state: "detached" });
       await page.goto(`${server.url}/chat`);
-      await page.getByTestId("chat-row").filter({ hasText: "What is this page?" }).waitFor();
+      await page.getByTestId("chat-entry").filter({ hasText: "What is this page?" }).waitFor();
     },
   );
 
@@ -1061,60 +994,10 @@ describe("deleting a chat", () => {
       await dialog().getByRole("button", { name: "Delete" }).click();
       await page.waitForURL(`${server.url}/chat`);
       expect(fake().deleted).toEqual([going]);
-      // The list is updated and the other chat stays.
-      await page.getByTestId("chat-row").filter({ hasText: "Keep this one" }).waitFor();
-      expect(await page.getByTestId("chat-row").count()).toBe(1);
+      // The sidebar's list is updated and the other chat stays.
+      await page.getByTestId("chat-entry").filter({ hasText: "Keep this one" }).waitFor();
+      await expect.poll(() => page.getByTestId("chat-entry").count()).toBe(1);
       expect(kept).toBeGreaterThan(0);
-    },
-  );
-
-  it.skipIf(usesRealServer)(
-    "deletes a chat from its row in the list, which the list drops at once, and stays on the chat that is open",
-    async () => {
-      await open("/chat");
-      const open_ = fake().seed({ status: "waiting", title: "Open chat" });
-      const other = fake().seed({ status: "waiting", title: "Chat to delete" });
-      await page.goto(`${server.url}/chat/${open_}`);
-      await page.getByTestId("chat-row").filter({ hasText: "Chat to delete" }).hover();
-      await page.getByRole("button", { name: "Delete chat Chat to delete" }).click();
-      await dialog().getByRole("button", { name: "Delete" }).click();
-      await dialog().waitFor({ state: "detached" });
-      expect(fake().deleted).toEqual([other]);
-      expect(new URL(page.url()).pathname).toBe(`/chat/${open_}`);
-      // The heading says how many there are; the rows are the count it is read from.
-      await expect.poll(() => page.getByTestId("chat-row").count()).toBe(1);
-    },
-  );
-
-  it.skipIf(usesRealServer)(
-    "reaches the Delete of a row with Tab and asks with Enter",
-    async () => {
-      await open("/chat");
-      const id = fake().seed({ status: "waiting", title: "By keyboard" });
-      await page.goto(`${server.url}/chat/${id}`);
-      await page.getByTestId("chat-row").waitFor();
-      const trash = page.getByRole("button", { name: "Delete chat By keyboard" });
-      const inSight = () => trash.evaluate((element) => getComputedStyle(element).opacity);
-      expect.soft(await inSight(), "the chat on screen shows no Delete of its own").toBe("0");
-      // The Delete of a row is the control after its chat, so one key reaches it.
-      await page.getByTestId("chat-row").focus();
-      expect.soft(await inSight(), "the row holding the focus is no reason to show it").toBe("0");
-      await page.keyboard.press("Tab");
-      await expect
-        .poll(async () =>
-          page.evaluate(
-            () => document.activeElement?.getAttribute("aria-label") === "Delete chat By keyboard",
-          ),
-        )
-        .toBe(true);
-      await expect
-        .poll(inSight, { message: "the keyboard reaching the Delete brings it out" })
-        .toBe("1");
-      await page.keyboard.press("Enter");
-      await dialog().waitFor();
-      await dialog().getByRole("button", { name: "Delete" }).click();
-      await page.waitForURL(`${server.url}/chat`);
-      expect(fake().deleted).toEqual([id]);
     },
   );
 
@@ -1125,19 +1008,21 @@ describe("deleting a chat", () => {
       const id = fake().seed({ status: "waiting", title: "Doomed" });
       const other = fake().seed({ status: "waiting", title: "Survivor" });
       await page.goto(`${server.url}/chat/${id}`);
-      await expect.poll(() => page.getByTestId("chat-row").count()).toBe(2);
+      await expect.poll(() => page.getByTestId("chat-entry").count()).toBe(2);
       await page.evaluate(
         (chat) => fetch(`/v1/chats/${chat}`, { method: "DELETE", headers: { "X-Moebius": "1" } }),
         id,
       );
-      await page.waitForURL(`${server.url}/chat`);
-      await expect.poll(() => page.getByTestId("chat-row").count()).toBe(1);
+      // The URL has changed once the page has left the chat that is gone; the pathname alone is read, so any way
+      // the page gets there is what is awaited.
+      await expect.poll(() => new URL(page.url()).pathname, { timeout: 30_000 }).toBe("/chat");
+      await expect.poll(() => page.getByTestId("chat-entry").count()).toBe(1);
       expect(other).toBeGreaterThan(0);
     },
   );
 
   it.skipIf(usesRealServer)(
-    "shows the server's refusal in the dialog and keeps the chat",
+    "says the server's refusal in the dialog and keeps the chat",
     async () => {
       await open("/chat");
       const id = fake().seed({ status: "waiting", title: "Refused" });
@@ -1174,64 +1059,19 @@ async function openWith(
   await page.goto(`${server.url}${path}`);
 }
 
-describe("the column of chats", () => {
-  it("stays hidden after a reload once it was hidden", async () => {
-    await open("/chat");
-    await page.getByRole("button", { name: "Hide the list of chats" }).click();
-    await page.getByRole("button", { name: /^Chats \(/ }).waitFor();
-    await page.reload();
-    await page.getByTestId("chat-page").waitFor();
-    await page.getByRole("button", { name: /^Chats \(/ }).waitFor();
-    expect(await page.getByRole("button", { name: "Hide the list of chats" }).count()).toBe(0);
-  });
-
-  it("still shows the page when the browser lets it keep nothing", async () => {
-    await openWith("/chat", undefined, () => {
-      const refuse = () => {
-        throw new DOMException("blocked", "SecurityError");
-      };
-      Storage.prototype.getItem = refuse;
-      Storage.prototype.setItem = refuse;
-    });
-    await page.getByTestId("chat-page").waitFor();
-    await field().waitFor();
-    // Wide, so the column is shown, and hiding it works for the visit even though it cannot be remembered.
-    await page.getByRole("button", { name: "Hide the list of chats" }).click();
-    await page.getByRole("button", { name: /^Chats \(/ }).waitFor();
-  });
-
+describe("the chat page on a phone", () => {
   it.skipIf(usesRealServer)(
-    "starts hidden on a phone, leaves the composer usable and puts itself away when a chat is chosen",
+    "fills the screen beside the sidebar and the composer stays usable",
     async () => {
-      await openWith("/chat", { viewport: { width: 390, height: 844 }, hasTouch: true });
-      const id = fake().seed({
-        title: "Older chat",
-        events: [["said", { message: "Older chat" }]],
-      });
-      await page.reload();
+      await openWith("/chat", { viewport: { width: 390, height: 844 } });
       await page.getByTestId("chat-page").waitFor();
       await field().waitFor();
-      expect(await page.getByRole("button", { name: "Hide the list of chats" }).count()).toBe(0);
       const sideways = await page.evaluate(
         () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
       );
       expect(sideways, "the page scrolls sideways").toBe(false);
       await say("Hello from a phone");
       await page.getByText("You said: Hello from a phone").first().waitFor();
-
-      // Opened by hand the column lies over the chat, with its Delete in reach without hovering, and choosing a chat
-      // puts it away again.
-      await page.getByRole("button", { name: /^Chats \(/ }).click();
-      await page.getByTestId("chat-list-rows").waitFor();
-      await page.getByRole("button", { name: /^Delete chat Older chat/ }).waitFor();
-      expect(
-        await page.getByRole("button", { name: /^Delete chat Older chat/ }).isVisible(),
-        "the Delete of a row shows on a screen that cannot hover",
-      ).toBe(true);
-      await page.getByTestId("chat-row").filter({ hasText: "Older chat" }).click();
-      await page.waitForURL(`**/chat/${id}`);
-      await page.getByTestId("chat-list-rows").waitFor({ state: "detached" });
-      await field().waitFor();
     },
   );
 });

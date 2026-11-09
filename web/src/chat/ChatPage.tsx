@@ -1,54 +1,34 @@
 /**
- * The Chat page (the former desktop app's CH3-D): the column of chats beside one column a page title wide on the open canvas,
- * with the top bar that shows and hides that column and starts a new chat, and under it the form of a new chat
- * (`/chat`) or the chat chosen (`/chat/:id`). Whether the list is shown or hidden is remembered per browser; with
- * nothing remembered it is shown from a wide screen (`lg`) and hidden below it, where it would lie over the chat, and
- * choosing a chat there hides it again.
+ * The Chat page (the former desktop app's CH3-D): the full canvas beside the shell's sidebar, which holds the list of
+ * conversations, with the bar on top that says what the chat is, and under it the form of a new chat (`/chat`) or the
+ * chat chosen (`/chat/:id`).
  */
 import { TrashIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { snapshot as readSnapshot } from "../api/calls/board";
 import { chats as readChats } from "../api/calls/chat";
 import { keys } from "../api/keys";
-import { writeFlag } from "../app/storage";
+import { usePackageSheet } from "../packages/PackageSheetContext";
 import { Button } from "../ui/components/Button";
-import { useNow } from "../ui/lib/useNow";
-import { ChatList } from "./ChatColumn";
 import { ChatTopBar } from "./ChatTopBar";
 import { DeleteChat } from "./DeleteChat";
 import { NewChat } from "./NewChat";
 import { ChatActions, ChatTitle, OpenChat } from "./OpenChat";
-import { placeName } from "./places";
 
-/** Whether the column of chats is hidden, kept per browser like the shell's own sidebar. */
-const COLLAPSED_KEY = "moebius.chatlist.collapsed";
-
-/** The widest screens, where the column sits beside the chat: Tailwind's `lg`. */
-function isWide(): boolean {
-  return typeof matchMedia !== "function" || matchMedia("(min-width: 1024px)").matches;
-}
-
-/** What was chosen for the list in this browser, else shown only where it fits beside the chat. */
-function initialListOpen(): boolean {
-  try {
-    const stored = window.localStorage.getItem(COLLAPSED_KEY);
-    if (stored !== null) return stored !== "1";
-  } catch {
-    // Nothing is remembered; the screen decides.
-  }
-  return isWide();
-}
+/** Every chat the Chat page has shown since the app started, so a chat that vanishes from the list is known to be gone rather than new. */
+const seenChats = new Set<number>();
 
 export function ChatPage() {
   const params = useParams();
   const openId = params.id !== undefined && /^\d+$/.test(params.id) ? Number(params.id) : null;
   const chats = useQuery({ queryKey: keys.chats, queryFn: readChats });
   const snapshot = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
-  const now = useNow();
   const [notice, setNotice] = useState<string | null>(null);
-  const [listOpen, setListOpen] = useState(initialListOpen);
+  // The package sheet sits fixed at the right of the window; on narrower windows, where the shell holds no room for
+  // it, the chat gives way itself, so the sheet never lies over the conversation.
+  const packages = usePackageSheet();
 
   // A notice belongs to the chat it was said in.
   // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when another chat is opened
@@ -60,42 +40,25 @@ export function ChatPage() {
 
   // A chat that was in the list and is not any more was deleted (here, or by another client): its page is left for
   // the Chat page's start. A chat the list has not caught up with yet was never in it, so it is not taken for one.
+  // The chats the page has seen are kept for the module, not for the component: the page can be mounted again
+  // between the click and the answer, and what it keeps must survive that.
   const navigate = useNavigate();
-  const listed = useRef(new Set<number>());
-  for (const chat of all) listed.current.add(chat.id);
-  const gone = openId !== null && chats.data !== undefined && !open && listed.current.has(openId);
+  for (const chat of all) seenChats.add(chat.id);
+  const gone = openId !== null && chats.data !== undefined && !open && seenChats.has(openId);
   useEffect(() => {
     if (gone) void navigate("/chat", { replace: true });
   }, [gone, navigate]);
   const [deleting, setDeleting] = useState(false);
 
-  function toggleList() {
-    writeFlag(COLLAPSED_KEY, listOpen);
-    setListOpen(!listOpen);
-  }
-
-  // Where the column lies over the chat, choosing a chat is done with the column: it is put away, not remembered.
-  function chosen() {
-    if (!isWide()) setListOpen(false);
-  }
-
   return (
-    <div className="relative mx-auto flex h-full w-full max-w-5xl gap-4" data-testid="chat-page">
-      {listOpen && (
-        <ChatList
-          chats={all}
-          openId={openId}
-          now={now}
-          places={(chat) => placeName(snapshot.data, chat)}
-          onCollapse={toggleList}
-          onChoose={chosen}
-        />
-      )}
-      <div className="mx-auto flex h-full w-full min-w-0 max-w-3xl flex-col gap-4">
+    <div
+      className={`relative flex h-full w-full min-w-0 flex-col ${packages.shown ? "pr-[27.5rem] 2xl:pr-0" : ""}`}
+      data-testid="chat-page"
+    >
+      {/* 820px is the measure the conversation reads at: wide enough that a line of a diff fits beside its words,
+          narrow enough that a person's eye finds the next line without running back along it. */}
+      <div className="mx-auto flex h-full min-w-0 max-w-[820px] flex-1 flex-col gap-4">
         <ChatTopBar
-          chats={all}
-          listOpen={listOpen}
-          onToggleList={toggleList}
           title={
             open ? (
               <ChatTitle chat={open} onNotice={setNotice} />

@@ -262,9 +262,10 @@ describe("the package events", () => {
 describe("what a delete makes stale", () => {
   it("reads the lists the deleted thing was shown in, and the snapshot for the changes and inbox items it took", () => {
     const stale = (kind: string, data: Record<string, unknown>) => invalidates({ kind, data });
-    expect(stale("chat_deleted", { run: 3 })).toEqual(
-      expect.arrayContaining([keys.snapshot, keys.chats]),
-    );
+    // A chat's deletion is patched into the list of chats in place, so the list is not made stale:
+    // a read raced against it would put the deleted chat back, and nothing would take it out again.
+    expect(stale("chat_deleted", { run: 3 })).not.toContainEqual(keys.chats);
+    expect(stale("chat_deleted", { run: 3 })).toEqual(expect.arrayContaining([keys.snapshot]));
     expect(stale("research_deleted", { research: 2 })).toEqual(
       expect.arrayContaining([keys.snapshot, keys.research]),
     );
