@@ -5,6 +5,7 @@
 pub mod code;
 pub mod condition;
 pub mod for_each;
+pub mod http;
 pub mod merge;
 
 use serde_json::Value;
@@ -105,6 +106,7 @@ pub fn node(kind: &str, params: &Value) -> Result<Box<dyn Node>, NodeError> {
             params: params.clone(),
         })),
         for_each::KIND => Ok(Box::new(for_each::ForEach::from_params(params)?)),
+        http::KIND => Ok(Box::new(http::HttpNode::from_params(params)?)),
         merge::KIND => Ok(Box::new(merge::Merge::from_params(params)?)),
         other => Err(NodeError::UnknownKind(other.to_string())),
     }

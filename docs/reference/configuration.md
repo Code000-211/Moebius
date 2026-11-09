@@ -146,6 +146,14 @@ a change needs a restart.
 |---|---|---|---|
 | `packages.npm_registry` | string | `https://registry.npmjs.org` | The npm registry that `moebius ext` searches (`/-/v1/search`, always with the keyword `pi-package`) and installs npm packages from, also `npm install` for the dependencies. A mirror or a private registry; `http://` or `https://`, and credentials in the URL (`https://user:pass@host`) are used and are not shown in errors or in the settings. |
 
+## `[workflows]`
+
+What the nodes of a [workflow](workflows.md) may reach. The table is optional; a change needs a restart.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `workflows.http_hosts` | array of strings | `[]` | The host names (no scheme, port or path; compared in lower case) that the [`http` node](workflows/http.md) may call, over `https` or plain `http`. A call to any other host is refused and fails the node. |
+
 ## `[board]`
 
 | Key | Type | Default | Meaning and validation |
