@@ -10,7 +10,7 @@ use rusqlite::{OptionalExtension, params};
 use super::{Result, Store};
 
 /// The table of this part, one row per workflow whose schedule has fired.
-pub const SCHEMA: &str = r#"
+pub(super) const SCHEMA: &str = r#"
 CREATE TABLE workflow_schedules (
     workflow TEXT PRIMARY KEY,
     fired_at TEXT NOT NULL

@@ -57,18 +57,20 @@ The server looks once a minute (`server/schedule.rs`, the one clock everything t
 [the clock](../configuration.md#the-clock)). On each minute it reads every workflow the harness configuration
 repository holds, and for each one whose trigger is a `schedule`:
 
-- The cron is due when it names the minute just reached, and the workflow has not fired for that minute yet. The
-  minute a workflow last fired at is in the store (`workflow_schedules`), so one occurrence starts one run, and a
-  server that restarts reads the same minute and starts no second one.
+- The cron is due when it names the minute just reached, or a minute the five-minute reach still covers, and the
+  workflow has not fired for that minute yet. The minute a workflow last fired at is in the store
+  (`workflow_schedules`), so one occurrence starts one run, and a server that restarts reads the same minute and
+  starts no second one.
 - The firing is recorded before the run starts. A run that cannot start because the repository the trigger names is
   not one the server has is a line on the server's output, and the workflow waits for its next minute rather than
   start runs every minute.
 - A workflow file that cannot be read wakes no schedule of its own, and the schedules of the other workflows go on:
   what is wrong with the file is reported on the bus as `retro_error`, and it stays reported each minute the file
   remains as it is.
-- A workflow that fires for the first time is read from five minutes back: a firing that came due up to five minutes
-  ago is started, and an older one is not made up. A server that was off over the night starts no run for the hours
-  it missed.
+- A workflow that fires for the first time is read from five minutes back: the latest firing that came due up to five
+  minutes ago is started, and an older one is not made up. A schedule finer than that reach therefore starts on the
+  minute just reached rather than trailing the firings before it. A server that was off over the night starts no run
+  for the hours it missed.
 - The minutes are read as the clock reads them, so the season change fires a schedule once and not twice: the minute
   a fall-back day reads twice is the minute still to come, never one that has passed again, and an hour a
   spring-forward day skips is waited over.

@@ -255,6 +255,44 @@ to = "sweep"
 port = "out"
 "#;
 
+    /// A workflow that fires on every minute, finer than the five-minute reach.
+    const EVERY_MINUTE: &str = r#"
+name = "every-minute"
+description = "Reads the board every minute."
+
+[[trigger]]
+kind = "schedule"
+params = { cron = "* * * * *", repository = "demo" }
+
+[[nodes]]
+id = "sweep"
+kind = "test"
+
+[[edges]]
+from = "trigger"
+to = "sweep"
+port = "out"
+"#;
+
+    /// A workflow that fires at half past one in the morning, the minute a fall-back day reads twice.
+    const FALL_BACK: &str = r#"
+name = "fall-back"
+description = "Reads the board in the hour the clock repeats."
+
+[[trigger]]
+kind = "schedule"
+params = { cron = "30 1 * * *", repository = "demo" }
+
+[[nodes]]
+id = "sweep"
+kind = "test"
+
+[[edges]]
+from = "trigger"
+to = "sweep"
+port = "out"
+"#;
+
     /// A schedule whose runs belong to a repository the server has not been given.
     const STRAY: &str = r#"
 name = "stray"
@@ -359,6 +397,20 @@ port = "out"
     }
 
     #[test]
+    fn a_schedule_finer_than_the_look_back_starts_on_the_minute_just_reached() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = app_with_workflows(dir.path(), &[("every-minute", EVERY_MINUTE)]);
+        let started = wake(&app, datetime!(2026-11-09 03:30:00));
+        assert_eq!(started.len(), 1);
+        // It fires on the minute it was read at, not on one of the firings four minutes before it.
+        assert_eq!(started[0].value["fired"], "2026-11-09 03:30");
+        // The next minute it is on the next minute and no longer behind.
+        let started = wake(&app, datetime!(2026-11-09 03:31:00));
+        assert_eq!(started.len(), 1);
+        assert_eq!(started[0].value["fired"], "2026-11-09 03:31");
+    }
+
+    #[test]
     fn a_restart_does_not_start_the_same_occurrence_again() {
         let dir = tempfile::tempdir().unwrap();
         let app = app_with_workflows(dir.path(), &[("nightly-triage", NIGHTLY)]);
@@ -389,17 +441,18 @@ port = "out"
 
     #[test]
     fn the_minute_a_fall_back_day_reads_twice_fires_once() {
-        // The clock goes back an hour on the first of November, so the local minute of the firing comes round
-        // again. The reasoning is the store's (see `store::automations`): a minute the clock has gone back over is
-        // the minute still to come, so the schedule waits for the next night rather than fire twice.
+        // The clock goes back an hour on the first of November, so 01:30 is read twice. The reasoning is the
+        // store's (see `store::automations`): a minute the clock has gone back over is the minute still to come,
+        // so the schedule fires in the first reading and waits for the next night rather than fire again.
         let dir = tempfile::tempdir().unwrap();
-        let app = app_with_workflows(dir.path(), &[("nightly-triage", NIGHTLY)]);
-        app.store
-            .record_schedule_firing("nightly-triage", "2026-11-01 03:30")
-            .unwrap();
-        assert!(wake(&app, datetime!(2026-11-01 03:30:00)).is_empty());
+        let app = app_with_workflows(dir.path(), &[("fall-back", FALL_BACK)]);
+        assert_eq!(wake(&app, datetime!(2026-11-01 01:30:00)).len(), 1);
+        // The clock has gone back to 01:00 and reaches 01:30 a second time; the occurrence is spent.
+        assert!(wake(&app, datetime!(2026-11-01 01:00:00)).is_empty());
+        assert!(wake(&app, datetime!(2026-11-01 01:30:00)).is_empty());
+        assert!(wake(&app, datetime!(2026-11-01 02:00:00)).is_empty());
         // The next night it is the minute still to come, and it fires.
-        assert_eq!(wake(&app, datetime!(2026-11-02 03:30:00)).len(), 1);
+        assert_eq!(wake(&app, datetime!(2026-11-02 01:30:00)).len(), 1);
     }
 
     #[test]

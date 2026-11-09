@@ -62,7 +62,7 @@ written `[[trigger]]` and has:
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `kind` | string | The trigger's kind. A kind with a module in [`workflows/trigger/`](#trigger-kinds) is read by that module and is not a node kind; any other kind is read by the node registry, like a node's kind. |
-| `params` | table | The kind's settings, read by that kind. Optional; defaults to an empty table. For `manual` these are the inputs a person gives the run; for `schedule` the cron and the inputs the run starts with; for `webhook` its path, secret and repository. |
+| `params` | table | The kind's settings, read by that kind. Optional; defaults to an empty table. For `manual` these are the inputs a person gives the run; for `schedule` the cron, repository and the inputs the run starts with; for `webhook` its path, secret and repository. |
 
 An edge starts at the trigger with `from = "trigger"`; `trigger` is reserved and cannot be a node's id or an edge's
 target. A value leaves a trigger by its `out` port, which is what the edges leaving the trigger name.
@@ -196,6 +196,7 @@ registry](#the-node-registry). A trigger kind with no module there is read by th
 Each trigger kind has one page in [`workflows/`](workflows/README.md).
 
 - [`manual`](workflows/manual-trigger.md): a person starts each of its runs, with the inputs the trigger names.
+- [`schedule`](workflows/schedule-trigger.md): starts a run when a cron comes due, in the server's local time.
 - [`webhook`](workflows/webhook-trigger.md): a path on the server whose deliveries start runs of this workflow.
 
 ## Node kinds

@@ -30,9 +30,9 @@ const FIRED: &str = "fired";
 /// The key of the inputs' defaults, in the value its run starts with.
 const INPUTS: &str = "inputs";
 
-/// How far back a firing that came due while the server was not running is still made up. The same five minutes the
-/// clock automations look back (see `app::automations`), so a server that was away over the night starts no run for
-/// the hours it missed.
+/// How far back a firing that came due while the server was not running is still made up. The clock automations look
+/// back over at most the same five minutes (see `app::automations`), so a server that was away over the night starts
+/// no run for the hours it missed.
 const LOOK_BACK: time::Duration = time::Duration::minutes(5);
 
 /// What a workflow's `schedule` trigger asks for.
@@ -99,9 +99,13 @@ impl ScheduleTrigger {
         Ports::new(Vec::<String>::new(), ["out"])
     }
 
-    /// The firing that came due by `now`: the first firing after the minute `fired_at` fired at, when it has come
-    /// within what [`LOOK_BACK`] reaches back. `fired_at` is when the schedule last fired, or `None` before it first
-    /// does, when the schedule is read from five minutes back.
+    /// The firing that came due by `now`: the one nearest the minute just reached, after the minute `fired_at` fired
+    /// at, when it has come within what [`LOOK_BACK`] reaches back. `fired_at` is when the schedule last fired, or
+    /// `None` before it first does, when the schedule is read from five minutes back.
+    ///
+    /// Reading from five minutes back makes up the latest firing that came due in that reach and no older one. A
+    /// schedule finer than the reach therefore starts on the minute just reached rather than trailing the firings
+    /// before it, and a schedule coarser than it still makes up one that came due a couple of minutes late.
     ///
     /// The minutes are the server's local ones, read as the clock reads them, so the season change the store reasons
     /// about (see `store::automations`) fires a schedule once and not twice: the minute a fall-back day reads twice
@@ -112,9 +116,19 @@ impl ScheduleTrigger {
         now: PrimitiveDateTime,
     ) -> Option<PrimitiveDateTime> {
         let schedule = cron::parse(&self.cron).ok()?;
-        let since = fired_at.unwrap_or(now - LOOK_BACK).max(now - LOOK_BACK);
-        let next = schedule.next_after(since)?;
-        (next <= now).then_some(next)
+        let earliest = now - LOOK_BACK;
+        let since = fired_at.map_or(earliest, |fired| fired.max(earliest));
+        let mut firing = schedule.next_after(since)?;
+        if firing > now {
+            return None;
+        }
+        while let Some(later) = schedule.next_after(firing) {
+            if later > now {
+                break;
+            }
+            firing = later;
+        }
+        Some(firing)
     }
 
     /// The value a run started by the firing at `at` begins with: the minute it fired at and the inputs' defaults.
@@ -252,6 +266,24 @@ mod tests {
         // The next night it is due again.
         let next = datetime!(2026-11-10 03:30:00);
         assert_eq!(schedule.due(Some(now), next), Some(next));
+    }
+
+    #[test]
+    fn a_schedule_finer_than_the_look_back_fires_the_minute_just_reached() {
+        // Every minute is finer than the five-minute reach, so it starts on the minute it is read at and does not
+        // trail four minutes behind the firings that came before it.
+        let schedule = trigger("* * * * *");
+        let now = datetime!(2026-11-09 03:30:00);
+        assert_eq!(schedule.due(None, now), Some(now));
+        // The next minute is the one it fires at, even when the check came a few minutes late.
+        assert_eq!(
+            schedule.due(Some(now), datetime!(2026-11-09 03:31:00)),
+            Some(datetime!(2026-11-09 03:31:00))
+        );
+        assert_eq!(
+            schedule.due(Some(now), datetime!(2026-11-09 03:35:00)),
+            Some(datetime!(2026-11-09 03:35:00))
+        );
     }
 
     #[test]
