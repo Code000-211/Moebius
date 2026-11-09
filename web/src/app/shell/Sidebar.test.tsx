@@ -406,6 +406,89 @@ describe("the list of chats", () => {
   });
 });
 
+/**
+ * The compact dropdown beside "New chat" narrows the list by project: All projects, one per repository of the
+ * snapshot, and Without project for the chats whose place is the harness configuration repository or nowhere the
+ * snapshot can name. The choice is kept in this browser, and it filters the list itself.
+ */
+describe("the filter of the list of chats", () => {
+  const now = Math.floor(Date.now() / 1000);
+
+  /** The dropdown of the list of chats, read by the accessible name of its trigger. */
+  const trigger = () => screen.getByRole("button", { name: "Filter chats by project" });
+  // Radix menus open on a pointer press and commit a choice on its release, not on a click.
+  const choose = async (name: string) => {
+    fireEvent.pointerDown(trigger());
+    const item = await screen.findByRole("menuitemradio", { name });
+    fireEvent.pointerUp(item);
+    // Committing a choice closes the menu.
+    expect(screen.queryByRole("menu", { hidden: false })).toBeNull();
+  };
+
+  it("offers All projects, the repositories of the snapshot, and Without project", async () => {
+    show({ at: "/inbox", chats: [chat(9, now - 60)] });
+    await screen.findAllByTestId("chat-entry");
+    fireEvent.pointerDown(trigger());
+    const choices = await screen.findAllByRole("menuitemradio");
+    expect(choices.map((choice) => choice.textContent)).toEqual([
+      "All projects",
+      "moebius-platform",
+      "notes",
+      "Without project",
+    ]);
+    // The choice stands on its item, and is named on the trigger.
+    expect(choices[0]?.getAttribute("data-state")).toBe("checked");
+    expect(trigger().textContent).toContain("All projects");
+  });
+
+  it("filters the list to the repository chosen", async () => {
+    show({
+      at: "/inbox",
+      chats: [chat(9, now - 60, { repository_id: 1 }), chat(4, now - 60, { repository_id: 2 })],
+    });
+    await screen.findAllByTestId("chat-entry");
+    await choose("notes");
+    const rows = screen.getAllByTestId("chat-entry");
+    expect(rows.map((row) => row.getAttribute("href"))).toEqual(["/chat/4"]);
+    expect(trigger().textContent).toContain("notes");
+  });
+
+  it("puts the harness repository and the chats with no place under Without project", async () => {
+    show({
+      at: "/inbox",
+      chats: [
+        chat(9, now - 60, { harness_repository: true }),
+        chat(4, now - 60),
+        chat(2, now - 60, { repository_id: 1 }),
+      ],
+    });
+    await screen.findAllByTestId("chat-entry");
+    await choose("Without project");
+    const rows = screen.getAllByTestId("chat-entry");
+    expect(rows.map((row) => row.getAttribute("href"))).toEqual(["/chat/9", "/chat/4"]);
+  });
+
+  it("keeps the chosen filter for the next visit of this browser", async () => {
+    show({ at: "/inbox", chats: [chat(9, now - 60, { repository_id: 1 })] });
+    await screen.findAllByTestId("chat-entry");
+    await choose("moebius-platform");
+    // The filter is remembered not as a repository name, but as its id: a renamed repository keeps working.
+    expect(localStorage.getItem("moebius.sidebar.chatsRepository")).toBe("1");
+    cleanup();
+    show({ at: "/inbox", chats: [chat(9, now - 60, { repository_id: 1 })] });
+    await screen.findAllByTestId("chat-entry");
+    expect(trigger().textContent).toContain("moebius-platform");
+  });
+
+  it("falls back to every chat when what is stored names no repository", async () => {
+    localStorage.setItem("moebius.sidebar.chatsRepository", "gone");
+    show({ at: "/inbox", chats: [chat(9, now - 60)] });
+    await screen.findAllByTestId("chat-entry");
+    expect(trigger().textContent).toContain("All projects");
+    expect(screen.getAllByTestId("chat-entry")).toHaveLength(1);
+  });
+});
+
 describe("the rail", () => {
   it("keeps a board's work in the name of its icon", async () => {
     show({ collapsed: true });
