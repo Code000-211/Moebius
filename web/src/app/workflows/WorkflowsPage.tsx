@@ -5,13 +5,18 @@
  * status should be.
  *
  * The list is read from `GET /v1/workflows` and kept current by the run events, so a run that ends while the page is
- * open changes the card's last run without a reload.
+ * open changes the card's last run without a reload. The "New workflow" button — in the header, and in the empty state
+ * — opens the dialog that starts a canvas with a blank draft (`NewWorkflowDialog.tsx`).
  */
+
+import { PlusIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link } from "react-router";
 import { keys } from "../../api/keys";
 import { workflows } from "../../api/workflows";
 import { Tag } from "../../ui/chat/Tag";
+import { Button } from "../../ui/components/Button";
 import { ago, plural } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import { Empty } from "../../ui/page/Empty";
@@ -19,43 +24,54 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
 import { lastRunLine, needsAttention, runStatus, triggerName } from "./model";
+import { NewWorkflowDialog } from "./NewWorkflowDialog";
+
+const CTX = "Graphs of nodes that run on their own, what starts them, and how their last run went.";
 
 export function WorkflowsPage() {
   const now = useNow();
   const list = useQuery({ queryKey: keys.workflows, queryFn: workflows });
+  const [creating, setCreating] = useState(false);
+  // One way to begin, offered wherever the page has room for it: the header's right, and the empty state.
+  const newButton = (
+    <Button variant="secondary" size="sm" onClick={() => setCreating(true)}>
+      <PlusIcon className="size-4" aria-hidden="true" />
+      New workflow
+    </Button>
+  );
 
   if (list.isPending) {
     return (
       <>
-        <PageHeader title="Workflows" context="Graphs of nodes that run on their own." />
+        <PageHeader title="Workflows" context={CTX} actions={newButton} />
         <SkeletonList rows={3} message="Reading the workflows" />
+        <NewWorkflowDialog open={creating} onOpenChange={setCreating} />
       </>
     );
   }
   if (list.isError) {
     return (
       <>
-        <PageHeader title="Workflows" context="Graphs of nodes that run on their own." />
+        <PageHeader title="Workflows" context={CTX} actions={newButton} />
         <ReadFailed
           error={list.error}
           fallback="Could not read the workflows. Try again."
           busy={list.isFetching}
           onRetry={() => void list.refetch()}
         />
+        <NewWorkflowDialog open={creating} onOpenChange={setCreating} />
       </>
     );
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PageHeader
-        title="Workflows"
-        context="Graphs of nodes that run on their own, what starts them, and how their last run went."
-      />
+      <PageHeader title="Workflows" context={CTX} actions={newButton} />
       {list.data.length === 0 ? (
         <Empty
           title="No workflow yet"
           body="A workflow is a graph of nodes saved in the harness configuration. When one is added, it appears here with what starts it and how its last run went."
+          action={newButton}
         />
       ) : (
         <div className="min-h-0 overflow-y-auto">
@@ -107,6 +123,7 @@ export function WorkflowsPage() {
           </ul>
         </div>
       )}
+      <NewWorkflowDialog open={creating} onOpenChange={setCreating} />
     </div>
   );
 }

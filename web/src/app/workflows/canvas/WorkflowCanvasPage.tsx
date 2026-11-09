@@ -27,7 +27,7 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useBlocker, useParams } from "react-router";
+import { Link, useBlocker, useLocation, useParams } from "react-router";
 import { saveWorkflow, workflow, workflowRuns } from "../../../api/calls/workflows";
 import { ApiError } from "../../../api/http";
 import { keys } from "../../../api/keys";
@@ -74,9 +74,15 @@ const nodeTypes = { kind: NodeCard, trigger: TriggerCard };
 
 export function WorkflowCanvasPage() {
   const { name = "" } = useParams();
+  const location = useLocation();
+  // A draft passed as router state opens the canvas without a read: it is the blank graph the "New workflow" dialog
+  // starts, for a name no file holds yet, and its first save creates the workflow. Anything else the address carries
+  // is not a draft, and the definition is read as for an edit.
+  const incoming = draftOf(location.state);
   const definition = useQuery({
     queryKey: keys.workflow(name),
     queryFn: () => workflow(name),
+    enabled: incoming === null,
   });
   const back = (
     <Button asChild variant="ghost" size="sm">
@@ -86,6 +92,14 @@ export function WorkflowCanvasPage() {
       </Link>
     </Button>
   );
+
+  if (incoming !== null) {
+    return (
+      <ReactFlowProvider>
+        <Canvas key={incoming.name} name={incoming.name} loaded={incoming} isNew />
+      </ReactFlowProvider>
+    );
+  }
 
   if (definition.isPending) {
     return (
@@ -119,19 +133,52 @@ export function WorkflowCanvasPage() {
   );
 }
 
+/**
+ * The draft the "New workflow" dialog passes as router state, when the address carries one. Loosely checked: whatever
+ * the state is that is not a graph in the shape the canvas edits is not one.
+ */
+function draftOf(state: unknown): WorkflowDefinition | null {
+  if (typeof state !== "object" || state === null) {
+    return null;
+  }
+  const draft = (state as { draft?: unknown }).draft;
+  if (
+    typeof draft !== "object" ||
+    draft === null ||
+    typeof (draft as WorkflowDefinition).name !== "string" ||
+    !Array.isArray((draft as WorkflowDefinition).trigger) ||
+    !Array.isArray((draft as WorkflowDefinition).nodes)
+  ) {
+    return null;
+  }
+  return draft as WorkflowDefinition;
+}
+
 /** The editor for one workflow, starting from the graph as it is saved. */
-function Canvas({ name, loaded }: { name: string; loaded: WorkflowDefinition }) {
+function Canvas({
+  name,
+  loaded,
+  isNew = false,
+}: {
+  name: string;
+  loaded: WorkflowDefinition;
+  /** Set when the workflow has no file yet: it is unsaved until the first save, which creates it. */
+  isNew?: boolean;
+}) {
   const queryClient = useQueryClient();
   const board = useReactFlow();
   const [draft, setDraft] = useState<WorkflowDefinition>(loaded);
   const [saved, setSaved] = useState<WorkflowDefinition>(loaded);
+  // Before the first save the graph is not in a file, so it counts as unsaved however it looks, and the way back leads
+  // to the list rather than to a detail page of a workflow that does not exist yet.
+  const [savedOnce, setSavedOnce] = useState(!isNew);
   const [selection, setSelection] = useState<Selection>(null);
   const [runId, setRunId] = useState<number | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [commit, setCommit] = useState<string | null>(null);
   const [movedTrigger, setMovedTrigger] = useState<{ x: number; y: number } | null>(null);
 
-  const dirty = isDirty(saved, draft);
+  const dirty = !savedOnce || isDirty(saved, draft);
   const triggerIssue = triggerProblem(draft.trigger[0]);
   const runs = useQuery({ queryKey: keys.workflowRuns(name), queryFn: () => workflowRuns(name) });
   const run = useQuery({
@@ -151,6 +198,7 @@ function Canvas({ name, loaded }: { name: string; loaded: WorkflowDefinition }) 
       // cache too, in the shape its own route answers, and a part of it would leave that page short of a field.
       void queryClient.invalidateQueries({ queryKey: keys.workflow(name) });
       void queryClient.invalidateQueries({ queryKey: keys.workflows });
+      setSavedOnce(true);
     },
     onError: (error) => setProblem(problemFor(messageOf(error))),
   });
@@ -255,7 +303,7 @@ function Canvas({ name, loaded }: { name: string; loaded: WorkflowDefinition }) 
         title={name}
         back={
           <Button asChild variant="ghost" size="sm">
-            <Link to={`/workflows/${encodeURIComponent(name)}`}>
+            <Link to={savedOnce ? `/workflows/${encodeURIComponent(name)}` : "/workflows"}>
               <ArrowLeftIcon className="size-4" aria-hidden="true" />
               {name}
             </Link>
