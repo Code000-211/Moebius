@@ -80,7 +80,8 @@ describe("the chat page", () => {
     await page.getByRole("button", { name: /^Chats \(\d+\)/ }).waitFor();
     await page.getByRole("button", { name: /^Chats \(\d+\)/ }).click();
     await page.getByRole("heading", { name: /^Chats\b/ }).waitFor();
-    await page.getByRole("link", { name: "New" }).waitFor();
+    // The sidebar's chat list names its own way to start one, so the link is asked of the page it belongs to.
+    await page.getByTestId("chat-page").getByRole("link", { name: "New" }).waitFor();
     await page.getByRole("button", { name: /^Agent: / }).waitFor();
     await field().waitFor();
   });
@@ -230,9 +231,11 @@ describe("the chat page", () => {
     await open("/chat");
     fake().seed({ title: "Done", answered: 5, seen: 0, events: [["said", { message: "Done" }]] });
     await page.reload();
+    // The rail keeps the Chat entry with the count it was given, so the count is read there.
+    await page.getByRole("button", { name: "Collapse the sidebar" }).click();
     await page
       .getByRole("navigation", { name: "Pages" })
-      .getByRole("link", { name: "Chat 1" })
+      .getByRole("link", { name: "Chat. 1" })
       .waitFor();
 
     // The list says the same thing with a dot rather than a word, and keeps the word in the row's own name.
@@ -896,11 +899,12 @@ describe("the floating chat", () => {
       fake().agentStart(run);
       fake().delta(run, "The answer came late.");
       fake().settle(run, "The answer came late.");
-      // The count beside Chat in the sidebar is the app's word for it: one chat waits with an answer nobody read.
+      // The count's only home now is the rail's Chat icon, so the sidebar is closed to read it there: one chat
+      // waits with an answer nobody read.
+      await page.getByRole("button", { name: "Collapse the sidebar" }).click();
       await page
         .getByRole("navigation", { name: "Pages" })
-        .getByRole("link", { name: "Chat" })
-        .filter({ hasText: "1" })
+        .getByRole("link", { name: "Chat. 1" })
         .waitFor();
       expect(fake().seen).toHaveLength(0);
 

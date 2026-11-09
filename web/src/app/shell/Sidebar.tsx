@@ -1,9 +1,10 @@
 /**
- * The sidebar on every page: the app name with the connection, the search (the command bar), Inbox, Chat, Fleet,
+ * The sidebar on every page: the app name with the connection, the search (the command bar), Inbox, Fleet,
  * Automations and Workflows, then Projects (one entry per board), Improve, and the one entry for Settings. It collapses to a rail
  * of icons, where the words the rail drops — the connection, a board's work — stay with the icon as text a person can
  * hear or open, at the same heights the wide sidebar uses so that the rail is the same list seen closer. The counts
- * come from the snapshot.
+ * come from the snapshot. The rail alone keeps the Chat entry; the wide list leaves it to the chat list in the
+ * sidebar.
  *
  * The pages that set the server up rather than run the work — General, Models, Plugins, Terminal, Ports, Usage, Rules,
  * Agents, Skills and MCP servers — are not listed beside the everyday pages. Choosing Settings swaps this list for
@@ -147,6 +148,9 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
       (page) =>
         page.group === group &&
         !isSettingsPage(page.path) &&
+        // Chat is a row of the rail alone once the chat list lives in the sidebar: the wide list does not name it,
+        // and the rail keeps its single icon leading to the newest conversation.
+        (page.path !== "chat" || collapsed) &&
         (page.path !== "start" || (steps.data && !steps.data.done)),
     );
   // What waits for you is counted even when the answer is none — a zero on Inbox and Chat is the answer to the
