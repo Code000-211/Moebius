@@ -185,6 +185,9 @@ pub struct App {
     close_refused: Mutex<HashMap<i64, (std::time::Instant, String)>>,
     /// The cards whose forge refused a label for a script, with when: not asked again for `close_retry`. Not stored.
     label_refused: Mutex<HashMap<i64, std::time::Instant>>,
+    /// The cancellation flag of each workflow run: set when a person cancels the run and looked at by the thread of
+    /// the run between nodes and while its node goes (see `workflows::stopping`).
+    workflow_cancels: Mutex<HashMap<i64, Arc<AtomicBool>>>,
     /// How long a forge that refused to close an issue, or a label, is left alone.
     close_retry: Duration,
     forges: BTreeMap<&'static str, Box<dyn Forge>>,
@@ -228,6 +231,7 @@ impl App {
             workflow_drives: Mutex::default(),
             close_refused: Mutex::default(),
             label_refused: Mutex::default(),
+            workflow_cancels: Mutex::default(),
             close_retry: Duration::from_secs(600),
             forges,
             harness_repo: OnceLock::new(),

@@ -64,9 +64,29 @@ impl App {
     }
 
     /// A person rejects the change waiting to be merged: the decision is recorded and the card goes back to coding,
-    /// where the next round is told the reason. The change stays open and is updated by that round.
-    pub fn reject_change(&self, by: &Actor, change_id: i64, reason: &str) -> Result<Card> {
+    /// where the next round is told the reason. The change stays open and is updated by that round. A workflow run's
+    /// change has no card: its rejection is recorded, it is closed, and none is returned.
+    pub fn reject_change(&self, by: &Actor, change_id: i64, reason: &str) -> Result<Option<Card>> {
         let change = self.change(change_id)?;
+        if change.card_id.is_none() {
+            if change.run_id.is_none() || change.state != "open" {
+                return Err(AppError::Invalid(format!(
+                    "change {change_id} is not waiting to be merged"
+                )));
+            }
+            let repository = change
+                .repository_id
+                .map(|id| self.repository(id))
+                .transpose()?;
+            let name = repository.as_ref().map_or("harness", |r| r.name.as_str());
+            let context = BTreeMap::from([
+                ("repository".into(), name.to_string()),
+                ("branch".into(), change.branch.clone()),
+            ]);
+            self.record_action(by, "reject", None, None, context, reason)?;
+            self.change_closed(&change)?;
+            return Ok(None);
+        }
         let card = match change.card_id.map(|id| self.card(id)).transpose()? {
             Some(card) if change.state == "open" && card.column == columns::READY_TO_MERGE => card,
             _ => {
@@ -86,7 +106,7 @@ impl App {
         };
         self.store.set_card_note(card.id, note)?;
         self.store.resolve_inbox_for_card(card.id)?;
-        self.move_card(card.id, columns::IN_PROGRESS)
+        self.move_card(card.id, columns::IN_PROGRESS).map(Some)
     }
 
     /// Publishes the work of the card's latest successful `code` run on the branch of its change, `moebius/card-<number>`:
@@ -430,6 +450,9 @@ impl App {
         judgements: Option<&str>,
     ) -> Result<Change> {
         let mut data = json!({ "change": change.id, "branch": change.branch });
+        if let Some(run) = change.run_id {
+            data["run"] = json!(run);
+        }
         if let Some(judgements) = judgements {
             data["judgements"] = json!(judgements);
         }
@@ -448,12 +471,42 @@ impl App {
         title: &str,
         body: &str,
     ) -> Result<Change> {
+        self.offer_published_change(repository, None, branch, title, body)
+    }
+
+    /// Offers the branch of the workflow run `run_id` as the run's change: published through the repository's forge
+    /// like any other, with no card, and recorded with the run so its merge or rejection is the run's outcome.
+    pub fn offer_run_branch_change(
+        &self,
+        repository: &Repository,
+        run_id: i64,
+        branch: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<Change> {
+        self.offer_published_change(repository, Some(run_id), branch, title, body)
+    }
+
+    fn offer_published_change(
+        &self,
+        repository: &Repository,
+        run_id: Option<i64>,
+        branch: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<Change> {
         let head = git(Path::new(&repository.path), &["rev-parse", branch])?;
         let forge = self.forge(repository)?;
         let pull_request = forge.publish(repository, title, body, branch, None)?;
-        let change = self
-            .store
-            .add_change(repository.id, None, branch, pull_request, &head)?;
+        let change = match run_id {
+            Some(run_id) => {
+                self.store
+                    .add_run_change(repository.id, run_id, branch, pull_request, &head)?
+            }
+            None => self
+                .store
+                .add_change(repository.id, None, branch, pull_request, &head)?,
+        };
         self.put_in_inbox(change, title, None)
     }
 

@@ -1,13 +1,15 @@
 //! The executor of a workflow run. It follows the edges from the trigger, giving each node the value its predecessor
 //! left and taking the one value the node returns, and it follows the edge that leaves by the port the node names. A
 //! node that fails, a node that takes longer than its timeout, or a run that reaches its node ceiling fails the whole
-//! run closed; the edge from the node that just ran decides whether there is more work or the run is done.
+//! run closed; the edge from the node that just ran decides whether there is more work or the run is done. A person's
+//! cancellation ends the run `cancelled` at the node that is going.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use thiserror::Error;
@@ -16,12 +18,15 @@ use super::decorate::Scope;
 use super::definition::{NodeDefinition, TRIGGER_ID, WorkflowDefinition};
 use super::nodes::{NodeError, Routed};
 
-/// Why a run ended `failed`, or could not start.
+/// Why a run ended `failed` or `cancelled`, or could not start.
 #[derive(Debug, Clone, PartialEq, Error)]
 pub enum Error {
     /// The definition cannot be followed; no node ran.
     #[error("{0}")]
     Definition(String),
+    /// A person cancelled the run; the node going was given up and no further node starts.
+    #[error("the run was cancelled")]
+    Cancelled,
     /// An edge leads to a node the definition does not have.
     #[error("the edge from \"{from}\" names unknown node \"{to}\"")]
     UnknownNode { from: String, to: String },
@@ -138,13 +143,15 @@ impl Observer for () {
 }
 
 /// Follows `definition` from its trigger with `start`, recording every node through `observer`, and returns the value
-/// left by the last node. An unreadable graph fails before any node runs.
+/// left by the last node. An unreadable graph fails before any node runs. While `cancellation` is set, no node starts
+/// and the node going is given up, so a cancelled run stops at its current node.
 pub fn execute(
     definition: &WorkflowDefinition,
     start: Value,
     limits: Limits,
     runner: &Arc<dyn Runner>,
     observer: &mut dyn Observer,
+    cancellation: &AtomicBool,
 ) -> Result<Value, Error> {
     definition
         .validate(&format!("workflows/{}.toml", definition.name))
@@ -161,6 +168,7 @@ pub fn execute(
         limits,
         runner,
         observer,
+        cancellation,
     )
 }
 
@@ -175,14 +183,15 @@ pub struct Resume {
 
 /// Runs `definition` again from `resume`'s node, where a server restart left a run waiting: the node runs again with
 /// the value that reached it, while expressions see the run's trigger and the values the nodes before it left, and
-/// the run follows from it, so no node before it runs a second time.
-/// An unreadable graph fails before any node runs.
+/// the run follows from it, so no node before it runs a second time. A cancellation set before it starts means no node
+/// runs. An unreadable graph fails before any node runs.
 pub fn execute_from_node(
     definition: &WorkflowDefinition,
     resume: Resume,
     limits: Limits,
     runner: &Arc<dyn Runner>,
     observer: &mut dyn Observer,
+    cancellation: &AtomicBool,
 ) -> Result<Value, Error> {
     let Resume {
         node: node_id,
@@ -205,7 +214,19 @@ pub fn execute_from_node(
         return Err(Error::Ceiling(limits.max_nodes));
     }
     let mut earlier = earlier;
-    let (value, port) = step(runner, node, &trigger, &start, &earlier, limits, observer)?;
+    if cancellation.load(Ordering::Relaxed) {
+        return Err(Error::Cancelled);
+    }
+    let (value, port) = step(
+        runner,
+        node,
+        &trigger,
+        &start,
+        &earlier,
+        limits,
+        observer,
+        cancellation,
+    )?;
     earlier.insert(node.id.clone(), value.clone());
     walk(
         definition,
@@ -218,6 +239,7 @@ pub fn execute_from_node(
         limits,
         runner,
         observer,
+        cancellation,
     )
 }
 
@@ -234,6 +256,7 @@ fn walk(
     limits: Limits,
     runner: &Arc<dyn Runner>,
     observer: &mut dyn Observer,
+    cancellation: &AtomicBool,
 ) -> Result<Value, Error> {
     let mut from = from;
     let mut value = start;
@@ -242,6 +265,9 @@ fn walk(
     let mut ran = ran;
 
     loop {
+        if cancellation.load(Ordering::Relaxed) {
+            return Err(Error::Cancelled);
+        }
         // The next node is the one the edge out of this one leads to; a routing node chooses which of its output
         // ports that edge leaves by. A named port with no edge is a choice that has nowhere to go, so the run fails
         // closed rather than ending with it.
@@ -266,7 +292,16 @@ fn walk(
         }
         ran += 1;
 
-        let (output, chosen) = step(runner, node, &trigger, &value, &earlier, limits, observer)?;
+        let (output, chosen) = step(
+            runner,
+            node,
+            &trigger,
+            &value,
+            &earlier,
+            limits,
+            observer,
+            cancellation,
+        )?;
         earlier.insert(node.id.clone(), output.clone());
         value = output;
         port = chosen;
@@ -286,6 +321,7 @@ fn step(
     earlier: &BTreeMap<String, Value>,
     limits: Limits,
     observer: &mut dyn Observer,
+    cancellation: &AtomicBool,
 ) -> Result<(Value, Option<String>), Error> {
     observer.started(node, input)?;
     let scope = Scope {
@@ -294,7 +330,7 @@ fn step(
         nodes: earlier.clone(),
     };
     let timeout = runner.timeout(node).unwrap_or(limits.node_timeout);
-    let (result, port) = run_one(runner, node, scope, timeout);
+    let (result, port) = run_one(runner, node, scope, timeout, cancellation);
     observer.finished(node, &result)?;
     match result {
         StepResult::Succeeded(output) => Ok((output, port)),
@@ -302,13 +338,18 @@ fn step(
     }
 }
 
-/// Runs one node on a thread of its own, and gives up on it after `timeout`. Along with the result it returns the
-/// output port the node chose, if it chose one.
+/// How often a going node is looked at for a cancellation, while its timeout is counted down.
+const CANCEL_POLL: Duration = Duration::from_millis(20);
+
+/// Runs one node on a thread of its own, and gives up on it after `timeout` — or sooner, when `cancellation` is set,
+/// the way a timed-out node is given up: the node's thread is left and the run goes on without it. Along with the
+/// result it returns the output port the node chose, if it chose one.
 fn run_one(
     runner: &Arc<dyn Runner>,
     node: &NodeDefinition,
     scope: Scope,
     timeout: Duration,
+    cancellation: &AtomicBool,
 ) -> (StepResult, Option<String>) {
     let (sender, receiver) = channel();
     let runner = Arc::clone(runner);
@@ -326,18 +367,29 @@ fn run_one(
         return (StepResult::Failed(failed), None);
     }
 
-    match receiver.recv_timeout(timeout) {
-        Ok(Ok(Routed { value, port })) => (StepResult::Succeeded(value), port),
-        Ok(Err(error)) => (StepResult::Failed(Error::Node(error)), None),
-        Err(RecvTimeoutError::Timeout) => {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let now = Instant::now();
+        if now >= deadline {
             let failed = Error::TimedOut {
                 node: node.id.clone(),
                 seconds: timeout.as_secs_f64(),
             };
-            (StepResult::Failed(failed), None)
+            return (StepResult::Failed(failed), None);
         }
-        Err(RecvTimeoutError::Disconnected) => {
-            (StepResult::Failed(Error::NoValue(node.id.clone())), None)
+        let look = (deadline - now).min(CANCEL_POLL);
+        match receiver.recv_timeout(look) {
+            Ok(Ok(Routed { value, port })) => return (StepResult::Succeeded(value), port),
+            Ok(Err(NodeError::Cancelled)) => return (StepResult::Failed(Error::Cancelled), None),
+            Ok(Err(error)) => return (StepResult::Failed(Error::Node(error)), None),
+            Err(RecvTimeoutError::Timeout) => {
+                if cancellation.load(Ordering::Relaxed) {
+                    return (StepResult::Failed(Error::Cancelled), None);
+                }
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                return (StepResult::Failed(Error::NoValue(node.id.clone())), None);
+            }
         }
     }
 }
@@ -453,6 +505,7 @@ kind = "test"
             Limits::default(),
             &runner,
             &mut seen,
+            &std::sync::atomic::AtomicBool::new(false),
         )
         .unwrap();
 
@@ -490,6 +543,7 @@ kind = "test"
             Limits::default(),
             &runner,
             &mut seen,
+            &AtomicBool::new(false),
         )
         .unwrap();
 
@@ -512,8 +566,15 @@ kind = "test"
         });
         let mut seen = Seen::default();
 
-        let error =
-            execute(&definition, json!(1), Limits::default(), &runner, &mut seen).unwrap_err();
+        let error = execute(
+            &definition,
+            json!(1),
+            Limits::default(),
+            &runner,
+            &mut seen,
+            &std::sync::atomic::AtomicBool::new(false),
+        )
+        .unwrap_err();
 
         assert_eq!(
             error,
@@ -538,7 +599,15 @@ kind = "test"
             max_nodes: 10,
         };
 
-        let error = execute(&definition, json!(1), limits, &runner, &mut ()).unwrap_err();
+        let error = execute(
+            &definition,
+            json!(1),
+            limits,
+            &runner,
+            &mut (),
+            &std::sync::atomic::AtomicBool::new(false),
+        )
+        .unwrap_err();
         drop(release);
 
         assert!(matches!(error, Error::TimedOut { ref node, .. } if node == "one"));
@@ -566,8 +635,15 @@ kind = "test"
         let definition = chain();
         let runner: Arc<dyn Runner> = Arc::new(NamingPort);
 
-        let error =
-            execute(&definition, json!(1), Limits::default(), &runner, &mut ()).unwrap_err();
+        let error = execute(
+            &definition,
+            json!(1),
+            Limits::default(),
+            &runner,
+            &mut (),
+            &AtomicBool::new(false),
+        )
+        .unwrap_err();
 
         assert!(
             matches!(error, Error::NoEdge { ref node, ref port } if node == "one" && port == "nowhere"),
@@ -585,7 +661,15 @@ kind = "test"
             max_nodes: 2,
         };
 
-        let error = execute(&definition, json!(1), limits, &runner, &mut ()).unwrap_err();
+        let error = execute(
+            &definition,
+            json!(1),
+            limits,
+            &runner,
+            &mut (),
+            &std::sync::atomic::AtomicBool::new(false),
+        )
+        .unwrap_err();
 
         assert_eq!(error, Error::Ceiling(2));
     }
@@ -618,9 +702,107 @@ to = "missing"
         let runner: Arc<dyn Runner> =
             Arc::new(|_node: &NodeDefinition, input: &Value| Ok(input.clone()));
 
-        let error =
-            execute(&definition, json!(1), Limits::default(), &runner, &mut ()).unwrap_err();
+        let error = execute(
+            &definition,
+            json!(1),
+            Limits::default(),
+            &runner,
+            &mut (),
+            &std::sync::atomic::AtomicBool::new(false),
+        )
+        .unwrap_err();
 
         assert!(error.to_string().contains("missing"), "{error}");
+    }
+
+    #[test]
+    fn a_cancellation_before_the_run_starts_nothing() {
+        let definition = chain();
+        let ran = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counting = ran.clone();
+        let runner: Arc<dyn Runner> = Arc::new(move |_node: &NodeDefinition, input: &Value| {
+            counting.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Ok(input.clone())
+        });
+        let mut seen = Seen::default();
+        let cancelled = std::sync::atomic::AtomicBool::new(true);
+
+        let error = execute(
+            &definition,
+            json!(1),
+            Limits::default(),
+            &runner,
+            &mut seen,
+            &cancelled,
+        )
+        .unwrap_err();
+
+        assert_eq!(error, Error::Cancelled);
+        assert_eq!(*seen.started.lock().unwrap(), [] as [String; 0]);
+        assert_eq!(ran.load(std::sync::atomic::Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn a_cancellation_before_a_run_driven_from_a_node_starts_nothing() {
+        let definition = chain();
+        let ran = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counting = ran.clone();
+        let runner: Arc<dyn Runner> = Arc::new(move |_node: &NodeDefinition, input: &Value| {
+            counting.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Ok(input.clone())
+        });
+        let mut seen = Seen::default();
+        let cancelled = std::sync::atomic::AtomicBool::new(true);
+
+        let error = execute_from_node(
+            &definition,
+            Resume {
+                node: "two".into(),
+                trigger: json!({"trigger": true}),
+                input: json!({"waited": true}),
+                earlier: BTreeMap::new(),
+            },
+            Limits::default(),
+            &runner,
+            &mut seen,
+            &cancelled,
+        )
+        .unwrap_err();
+
+        assert_eq!(error, Error::Cancelled);
+        assert_eq!(*seen.started.lock().unwrap(), [] as [String; 0]);
+        assert_eq!(ran.load(std::sync::atomic::Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn a_cancellation_stops_the_run_at_its_current_node_and_starts_nothing_after() {
+        let definition = chain();
+        let cancellation = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        // The first node cancels the run, as a person would while it is going, and would then have run on for a
+        // long time.
+        let going = cancellation.clone();
+        let runner: Arc<dyn Runner> = Arc::new(move |_node: &NodeDefinition, input: &Value| {
+            going.store(true, std::sync::atomic::Ordering::Relaxed);
+            thread::sleep(Duration::from_secs(30));
+            Ok(input.clone())
+        });
+        let mut seen = Seen::default();
+
+        let error = execute(
+            &definition,
+            json!(1),
+            Limits::default(),
+            &runner,
+            &mut seen,
+            &cancellation,
+        )
+        .unwrap_err();
+
+        assert_eq!(error, Error::Cancelled);
+        assert_eq!(*seen.started.lock().unwrap(), vec!["one"]);
+        let finished = seen.finished.lock().unwrap();
+        assert_eq!(finished.len(), 1);
+        assert_eq!(finished[0].0, "one");
+        assert_eq!(finished[0].1, StepResult::Failed(Error::Cancelled));
     }
 }

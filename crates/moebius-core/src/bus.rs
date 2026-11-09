@@ -371,6 +371,7 @@ mod tests {
             id: 4,
             repository_id: Some(2),
             card_id: Some(7),
+            run_id: None,
             branch: "moebius/12".into(),
             state: "open".into(),
             pull_request: Some(31),

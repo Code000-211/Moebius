@@ -157,6 +157,7 @@ impl Node for Condition {
 mod tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
 
     use serde_json::json;
 
@@ -358,6 +359,7 @@ port = "other"
             run::Limits::default(),
             &runner,
             &mut started,
+            &AtomicBool::new(false),
         )
         .map(|_| started.0)
     }

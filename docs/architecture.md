@@ -362,7 +362,7 @@ start; its version is `PRAGMA user_version`.
 | `card_moves` | Each move of a card (`Store::move_card`, called by `App::move_card`): from, to, the card's note then, time. Moves before this table existed are not recorded. |
 | `dependencies` | For a card, the issue numbers it is blocked by. |
 | `card_labels`, `card_comments` | The labels of a card's issue; its comments, each with the id it has on the forge when it has one. `cards` also has `parent`, `closed`, `claimed_by` and `claimed_at`. |
-| `changes` | A card's or chat's branch `moebius/card-<number>`: repository (none, with `harness_repository` set, for the harness configuration repository), card, state (`open`, `merged`, `closed`), pull request number, the published commit and time, checks with the commit they are for, failing checks, output of the repository's own checks, review. |
+| `changes` | A card's, chat's or workflow run's branch (`moebius/card-<number>`, `moebius/chat-<run id>` or `moebius/workflow-run-<run id>`): repository (none, with `harness_repository` set, for the harness configuration repository), card or workflow run, state (`open`, `merged`, `closed`), pull request number, the published commit and time, checks with the commit they are for, failing checks, output of the repository's own checks, review. |
 | `runs` | One per harness run: card (none for a chat), agent, harness, purpose, status, worktree, repository (a chat's) or whether it works in the harness configuration repository, start and end, summary (the agent's final answer). |
 | `events` | Everything a run emitted, numbered per run, as JSON. |
 | `workflow_runs` | One per run of a workflow: workflow name, repository, trigger kind, status (`queued`, `running`, `waiting`, `succeeded`, `failed` or `cancelled`), the run's value as JSON text, when it was stored, started and finished, and its error. |
@@ -495,6 +495,7 @@ At the top:
 | `app/workflows/run.rs` | Starting a workflow run from its definition or its name, driving it off the request path, and recording and publishing each node and the run's end as they happen. |
 | `app/workflows/approval.rs` | The part of a run that waits for a person: the wait of the `approval` node, the decision coming back through the resume route, and driving again the runs a stopped server left waiting. |
 | `app/workflows/chat.rs` | The part of a run that starts the chat of a `chat` node, in the run's repository, and records that chat on the firing the run carries. |
+| `app/workflows/stopping.rs` | Cancelling a workflow run: the run's cancellation flag, what each status gives up, and ending the run `cancelled` once, whoever gets there first. |
 
 `config/`, `moebius.toml`:
 
@@ -590,7 +591,7 @@ At the top:
 | `server/api/chats.rs` | Chats with an agent (start, write, offer, end, seen, settings) and what grilling chats ended in. |
 | `server/api/harness.rs` | The agents, skills and MCP servers of the harness configuration repository, and `POST /v1/harness/setup`. |
 | `server/api/rules.rs` | The rules page and the rules in prose. |
-| `server/api/workflows.rs` | The workflows of the harness configuration repository: list, read, save and delete, saving and deleting as commits. |
+| `server/api/workflows.rs` | The workflows of the harness configuration repository: list, read, save and delete, saving and deleting as commits, a person's decision on a waiting run, and cancelling a run of one. |
 | `server/api/workflow_hooks.rs` | `POST /api/hooks/{path}` and `POST /api/hooks/{repository}/{path}`, the door a workflow's `webhook` trigger answers on: the credential it asks for, the run its body starts, and its ceiling of runs going at once. |
 | `server/api/workflow_runs.rs` | `GET /v1/workflows/{name}/run-inputs` and `POST /v1/workflows/{name}/runs`: the inputs a manual trigger names, and starting a run by hand with them. |
 | `server/api/settings.rs` | `moebius.toml`, the API keys and the restart, and what the Models, Plugins and Get started pages show. |
@@ -771,6 +772,9 @@ At the top:
 | `workflows/decorate.rs` | The expressions in a node's parameters: evaluating `{{ ... }}` in the sandbox column scripts use, with the trigger, the node's input and earlier nodes in scope. |
 | `workflows/definition.rs` | The workflow file (`workflows/<name>.toml`): its trigger, nodes and edges, parsing it whole, validating its graph, and reading and listing it from the harness configuration repository; saving and deleting it are commits in `harness/repo/edits.rs`. |
 | `workflows/nodes/mod.rs` | The node kinds: the `Node` trait, the ports and metadata a kind reports, the value and port a node returns, and the registry that maps a kind name and its parameters to a node. |
+| `workflows/nodes/agent/mod.rs` | The `agent` node: its kind, its parameters, its ports and metadata, and the value it takes from the fenced JSON block the agent ends with. |
+| `workflows/nodes/agent/run.rs` | Running an agent node: the workflow run's repository checked out into the worktree the run owns, the prompt filled from the run, the agent started through the picker, and its transcript kept in its run's log. |
+| `workflows/nodes/agent/value.rs` | The value of an agent node: the last fenced JSON block of the agent's final answer, parsed, or a failure closed when the block is missing or malformed. |
 | `workflows/nodes/code.rs` | The `code` node: Luau that reshapes the value in the expression sandbox, with the run's scope, and outputs what it returns. |
 | `workflows/nodes/condition.rs` | The `condition` node: one Luau expression per named output port, tried in order, the first true one taken, else the fallback port or a failure. |
 | `workflows/nodes/for_each.rs` | The `for_each` node: fans a list out over a sub-path once per element, gathers the outputs in order, and checks that the sub-path rejoins where the definition says. |
@@ -781,11 +785,12 @@ At the top:
 | `workflows/nodes/http/call.rs` | The `http` node's request: a named secret resolved and sent, no redirects, a time limit, the answer read as status, headers and body, and failures whose message carries no URL query or secret. |
 | `workflows/nodes/merge.rs` | The `merge` node: joins the two branches that reached it and emits what arrived by each side, one side's object or the list of the arrivals. |
 | `workflows/nodes/chat.rs` | The `chat` node: the agent, prompt and place of the agent chat an automation is stored as; the run that reaches it starts the chat from `app/workflows/chat.rs`. |
+| `workflows/nodes/publish.rs` | The `publish` node: the run's branch offered as its change with a title and body filled from the value, the failure closed when the run has no agent node or nothing was committed, and the change's id and kind as its value. |
 | `workflows/trigger/mod.rs` | The trigger kinds a workflow file may name, the module that owns each, and how a trigger's `kind` is resolved by its module when one owns it and by the node registry otherwise. |
 | `workflows/trigger/manual.rs` | The `manual` trigger: the inputs it names with their types, requiredness, defaults and choices, checked when the file is read, and the value a started run begins with. |
 | `workflows/trigger/schedule.rs` | The `schedule` trigger: a cron of five fields in the server's local time, its on/off switch, the minute it next comes due, the minute it last fired at, and the value a firing starts a run with; a cron that cannot be read is refused when the file loads, naming the wrong field. |
 | `workflows/trigger/webhook.rs` | The `webhook` trigger: the path its workflow answers on, the secret a delivery must carry and the repository its runs belong to, and which workflow a path leads to. |
-| `workflows/run.rs` | The executor: following the edges from the trigger with one value, giving each node the trigger's value and the values of the nodes that ran before, taking the edge that leaves by the port a node names, running each node under its timeout, failing the run on a node's error or its node ceiling, and reporting each step to an observer. |
+| `workflows/run.rs` | The executor: following the edges from the trigger with one value, giving each node the trigger's value and the values of the nodes that ran before, taking the edge that leaves by the port a node names, running each node under its timeout, failing the run on a node's error or its node ceiling, stopping where a person cancels the run, and reporting each step to an observer. |
 
 Outside `src/`: `kanban/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension
 loaded into every run, `bridge/moebius-ask.ts` the question tool of the agents that operate Moebius, `skill/` the built-in skills.

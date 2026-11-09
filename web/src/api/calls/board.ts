@@ -102,9 +102,9 @@ export function merge(change: number): Promise<{ commit: string }> {
   return post<{ commit: string }>(`/v1/changes/${change}/merge`, {});
 }
 
-/** Sends a change back to coding, with the reason as the card's note. */
-export function reject(change: number, reason: string): Promise<Card> {
-  return post<Card>(`/v1/changes/${change}/reject`, { reason });
+/** Sends a change back to coding, with the reason as the card's note; a run's change has no card. */
+export function reject(change: number, reason: string): Promise<Card | null> {
+  return post<Card | null>(`/v1/changes/${change}/reject`, { reason });
 }
 
 /** Gives a stuck card, or one whose pull request was closed, a fresh start. */

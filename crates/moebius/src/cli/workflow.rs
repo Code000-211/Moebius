@@ -1,6 +1,6 @@
 //! The workflow commands: list the workflows of the harness configuration repository, show one, save a file as one,
 //! run one by hand with the inputs its `manual` trigger names, and delete one. Saving and deleting are commits on
-//! that repository.
+//! that repository. A run of a workflow is cancelled by its id.
 
 use clap::Subcommand;
 use serde_json::{Map, Value, json};
@@ -46,6 +46,11 @@ pub enum WorkflowCommand {
     Delete {
         /// The workflow's name.
         name: String,
+    },
+    /// Cancel a run and stop its nodes; a run that has ended refuses the cancel.
+    Cancel {
+        /// The run's id.
+        id: i64,
     },
 }
 
@@ -103,6 +108,10 @@ pub fn workflow(
         }
         WorkflowCommand::Delete { name } => (
             Request::delete(format!("/v1/workflows/{name}")),
+            Show::Object,
+        ),
+        WorkflowCommand::Cancel { id } => (
+            Request::post(format!("/v1/workflows/runs/{id}/cancel"), json!({})),
             Show::Object,
         ),
     })

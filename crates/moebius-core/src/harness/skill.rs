@@ -455,6 +455,66 @@ const FILES: &[(&str, &str)] = &[
         "reference/workflows.md",
         include_str!("../../../../docs/reference/workflows.md"),
     ),
+    (
+        "reference/workflows/README.md",
+        include_str!("../../../../docs/reference/workflows/README.md"),
+    ),
+    (
+        "reference/workflows/agent.md",
+        include_str!("../../../../docs/reference/workflows/agent.md"),
+    ),
+    (
+        "reference/workflows/approval.md",
+        include_str!("../../../../docs/reference/workflows/approval.md"),
+    ),
+    (
+        "reference/workflows/cancel.md",
+        include_str!("../../../../docs/reference/workflows/cancel.md"),
+    ),
+    (
+        "reference/workflows/chat.md",
+        include_str!("../../../../docs/reference/workflows/chat.md"),
+    ),
+    (
+        "reference/workflows/code.md",
+        include_str!("../../../../docs/reference/workflows/code.md"),
+    ),
+    (
+        "reference/workflows/condition.md",
+        include_str!("../../../../docs/reference/workflows/condition.md"),
+    ),
+    (
+        "reference/workflows/expressions.md",
+        include_str!("../../../../docs/reference/workflows/expressions.md"),
+    ),
+    (
+        "reference/workflows/for-each.md",
+        include_str!("../../../../docs/reference/workflows/for-each.md"),
+    ),
+    (
+        "reference/workflows/http.md",
+        include_str!("../../../../docs/reference/workflows/http.md"),
+    ),
+    (
+        "reference/workflows/manual-trigger.md",
+        include_str!("../../../../docs/reference/workflows/manual-trigger.md"),
+    ),
+    (
+        "reference/workflows/merge.md",
+        include_str!("../../../../docs/reference/workflows/merge.md"),
+    ),
+    (
+        "reference/workflows/publish.md",
+        include_str!("../../../../docs/reference/workflows/publish.md"),
+    ),
+    (
+        "reference/workflows/schedule-trigger.md",
+        include_str!("../../../../docs/reference/workflows/schedule-trigger.md"),
+    ),
+    (
+        "reference/workflows/webhook-trigger.md",
+        include_str!("../../../../docs/reference/workflows/webhook-trigger.md"),
+    ),
 ];
 
 /// Where the built-in skill `name` is kept under the data directory.
@@ -484,13 +544,22 @@ mod tests {
     use super::*;
 
     fn pages(directory: &str) -> Vec<String> {
+        fn walk(root: &Path, directory: &str, pages: &mut Vec<String>) {
+            for entry in std::fs::read_dir(root.join(directory)).unwrap() {
+                let entry = entry.unwrap();
+                let name = entry.file_name().to_string_lossy().into_owned();
+                let path = format!("{directory}/{name}");
+                if entry.file_type().unwrap().is_dir() {
+                    walk(root, &path, pages);
+                } else if name.ends_with(".md") {
+                    pages.push(path);
+                }
+            }
+        }
+
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs");
-        let mut pages: Vec<String> = std::fs::read_dir(root.join(directory))
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .filter(|name| name.ends_with(".md"))
-            .map(|name| format!("{directory}/{name}"))
-            .collect();
+        let mut pages = Vec::new();
+        walk(&root, directory, &mut pages);
         pages.sort();
         pages
     }

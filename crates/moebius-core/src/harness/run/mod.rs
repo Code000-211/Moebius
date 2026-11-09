@@ -26,4 +26,6 @@ pub(crate) use agents::{
 pub(crate) use end::final_answer;
 pub(in crate::harness) use end::{finish, keep};
 pub(in crate::harness) use lifecycle::{RunningRun, chat_run, launch_or_undo, woken_chat};
-pub(in crate::harness) use start::{Launching, start_card, start_detached, start_trial};
+pub(in crate::harness) use start::{
+    Launching, start_card, start_detached, start_in_worktree, start_trial,
+};
