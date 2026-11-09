@@ -57,7 +57,8 @@ describe.skipIf(usesRealServer)("deleting a workflow from its detail page", () =
     await dialog.getByRole("button", { name: "Delete" }).click();
     await page.waitForURL(/\/workflows$/);
     await page.getByRole("link", { name: "deploy" }).waitFor();
-    expect(await page.getByRole("link", { name: "release" }).count()).toBe(0);
+    // The list is the query cache's stale copy until its refetch returns: poll for it to drop the deleted one.
+    await expect.poll(async () => page.getByRole("link", { name: "release" }).count()).toBe(0);
     expect(requests("DELETE", "/v1/workflows/release")).toHaveLength(1);
   });
 
