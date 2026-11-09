@@ -174,6 +174,7 @@ Only the kinds listed under [Node kinds](#node-kinds) are registered; a file nam
 
 Each node kind has one section here and one page in [`workflows/`](workflows/README.md).
 
+- [`code`](workflows/code.md): runs Luau that reshapes the value and outputs what it returns.
 - [`condition`](workflows/condition.md): sends the value down the first port whose expression is true.
 - [`for_each`](workflows/for-each.md): runs a sub-path once per element of a list and gathers the outputs.
 - [`merge`](workflows/merge.md): joins two branches and emits what arrived by each side.
