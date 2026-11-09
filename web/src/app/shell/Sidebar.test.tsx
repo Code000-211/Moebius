@@ -14,6 +14,16 @@ import type { Chat } from "../../api/types/chat";
 import { SETTINGS_PAGES, settingsLabel } from "../pages";
 import { Sidebar } from "./Sidebar";
 
+/** The pages inside the two collapsible groups, in the order the sidebar lists them. */
+const AUTOMATION_PAGES: readonly string[] = ["Automations", "Workflows"];
+const IMPROVE_PAGES: readonly string[] = ["Retro", "Experiments", "Decisions", "Usage"];
+
+/** The keys the open/closed state of each group is kept under, like `moebius.sidebar.collapsed` is. */
+const GROUP_KEYS = {
+  Automation: "moebius.sidebar.group.automation",
+  Improve: "moebius.sidebar.group.improve",
+};
+
 afterEach(() => {
   vi.unstubAllGlobals();
   localStorage.clear();
@@ -213,10 +223,87 @@ describe("the pages and the settings", () => {
 });
 
 /**
- * Which entry says "you are here", and where Chat leads: a conversation has an address of its own, so the entry stands
- * on every one of them while leading to the newest of them — asking for Chat gives a conversation rather than an
- * empty field, even while a different one is open.
+ * Which entry says "you are here", and where Chat leads: since the chat list lives in the sidebar, the wide list leaves
+ * Chat to the rail, whose single icon still opens a conversation rather than an empty field — the newest of them, with
+ * the unread trail on its name.
  */
+/**
+ * The two collapsible groups. Automation holds Automations and Workflows; Improve holds Retro, Experiments,
+ * Decisions and Usage. Both are open before anybody has chosen anything, the choice is kept per browser like the
+ * sidebar's own collapsed state is, and the rail — which has no room for a name on its group labels — never
+ * collapses them: there the groups behave as they always did, the label's room kept and every row under it.
+ * The group's name itself goes nowhere (`docs/design-web.md`); the caret beside it is the toggle.
+ */
+describe("the collapsible groups", () => {
+  it("holds its pages, and is open before anybody has chosen anything", async () => {
+    show();
+    const automation = screen.getByRole("button", { name: "Collapse Automation" });
+    expect(automation.getAttribute("aria-expanded")).toBe("true");
+    for (const page of AUTOMATION_PAGES) {
+      expect(await screen.findByRole("link", { name: new RegExp(`^${page}`) })).not.toBeNull();
+    }
+    const improve = screen.getByRole("button", { name: "Collapse Improve" });
+    expect(improve.getAttribute("aria-expanded")).toBe("true");
+    for (const page of IMPROVE_PAGES) {
+      expect(screen.getByRole("link", { name: new RegExp(`^${page}`) })).not.toBeNull();
+    }
+    // The groups that are not touched by this stay what they were.
+    expect(screen.getByRole("link", { name: /^Inbox/ })).not.toBeNull();
+    expect(screen.getByRole("link", { name: /^Fleet/ })).not.toBeNull();
+  });
+
+  it("closes on its own caret, and leaves the rows beside it standing", async () => {
+    show();
+    await screen.findByRole("link", { name: /^Automations/ });
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Automation" }));
+    expect(screen.queryByRole("link", { name: /^Automations/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^Workflows/ })).toBeNull();
+    // The rows of the other groups are not the closed group's to take down.
+    expect(screen.getByRole("link", { name: /^Inbox/ })).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Expand Automation" }).getAttribute("aria-expanded"),
+    ).toBe("false");
+    // The choice is kept in this browser the way the sidebar's shape is.
+    expect(localStorage.getItem(GROUP_KEYS.Automation)).toBe("0");
+  });
+
+  it("opens again on the same caret", async () => {
+    show();
+    await screen.findByRole("link", { name: /^Retro/ });
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Improve" }));
+    expect(screen.queryByRole("link", { name: /^Retro/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Expand Improve" }));
+    expect(screen.getByRole("link", { name: /^Retro/ })).not.toBeNull();
+    expect(localStorage.getItem(GROUP_KEYS.Improve)).toBe("1");
+  });
+
+  it("keeps a closed group closed the next time the sidebar is built", async () => {
+    show();
+    await screen.findByRole("link", { name: /^Retro/ });
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Improve" }));
+    cleanup();
+    show();
+    await screen.findByRole("link", { name: /^Inbox/ });
+    expect(screen.queryByRole("link", { name: /^Retro/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^Experiments/ })).toBeNull();
+    // A group left open is remembered open; nothing about the state of one group touches another.
+    expect(screen.getByRole("link", { name: /^Automations/ })).not.toBeNull();
+  });
+
+  it("keeps every row in the rail, whatever the groups were left as", async () => {
+    localStorage.setItem(GROUP_KEYS.Automation, "0");
+    localStorage.setItem(GROUP_KEYS.Improve, "0");
+    show({ collapsed: true });
+    // The rail's labels keep the room they always took, and carry no toggle there.
+    await screen.findByRole("link", { name: /^Inbox/ });
+    expect(screen.queryByRole("button", { name: "Collapse Automation" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Collapse Improve" })).toBeNull();
+    for (const page of [...AUTOMATION_PAGES, ...IMPROVE_PAGES]) {
+      expect(screen.getByRole("link", { name: new RegExp(`^${page}`) })).not.toBeNull();
+    }
+  });
+});
+
 describe("where an entry leads", () => {
   it("marks the one entry that leads to the page on screen", async () => {
     show({ at: "/inbox" });
@@ -239,14 +326,48 @@ describe("where an entry leads", () => {
     expect(marked).toHaveLength(1);
   });
 
-  it("leads Chat to the newest conversation and stands while any other one is open", async () => {
+  it("leaves Chat off the wide list once the chat list is in the sidebar", async () => {
     show({ at: "/chat/9", chats: [chat(9, 400), chat(21, 900)] });
-    const entry = () => screen.getByRole("link", { name: /^Chat/ });
+    await screen.findByRole("link", { name: /^Inbox/ });
+    expect(screen.queryByRole("link", { name: /^Chat/ })).toBeNull();
+  });
+
+  it("marks no everyday page on a conversation, the wide list having no Chat row to stand in", async () => {
+    show({ at: "/chat/9" });
+    await screen.findByRole("link", { name: /^Inbox/ });
+    // Chat was the row that stood for a conversation; with it gone from the wide list, no everyday page matches the
+    // address, so none of them says "you are here" — the rail keeps the standing Chat icon.
+    const marked = screen
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("aria-current") !== null);
+    expect(marked).toHaveLength(0);
+  });
+
+  it("keeps the rail's Chat icon leading to the newest conversation, with the unread trail", async () => {
+    show({
+      at: "/inbox",
+      collapsed: true,
+      chats: [chat(9, 400), { ...chat(21, 900), answered: 2, seen: 1 }],
+    });
     // The entry is drawn while the list is still on its way, and moves to the newest conversation once it lands.
-    await waitFor(() => expect(entry().getAttribute("href")).toBe("/chat/21"));
-    expect(entry().getAttribute("aria-current")).toBe("page");
-    // The conversation on screen is not the one Chat leads to; every other entry stays an ordinary page.
-    expect(screen.getByRole("link", { name: /^Inbox/ }).getAttribute("aria-current")).toBeNull();
+    const entry = await waitFor(() => {
+      const link = screen.getByRole("link", { name: /^Chat/ });
+      expect(link.getAttribute("href")).toBe("/chat/21");
+      return link;
+    });
+    expect(entry.getAttribute("aria-current")).toBeNull();
+    // The unread trail stands alone by the icon: the conversation the server counts not-yet-read, on the row's name.
+    expect(entry.getAttribute("aria-label")).toBe("Chat. 1");
+  });
+
+  it("keeps Chat at the front of the rail while a conversation is open there", async () => {
+    show({ at: "/chat/9", collapsed: true, chats: [chat(9, 400), chat(21, 900)] });
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: /^Chat/ }).getAttribute("href")).toBe("/chat/21"),
+    );
+    // A chat has an address of its own, so the entry stays standing on every conversation rather than leading back to
+    // the newest while it is read on screen.
+    expect(screen.getByRole("link", { name: /^Chat/ }).getAttribute("aria-current")).toBe("page");
   });
 });
 
@@ -297,7 +418,7 @@ describe("the list of chats", () => {
 
   it("sits a compact way to a new chat above the list", async () => {
     show({ at: "/chat" });
-    const fresh = await screen.findByRole("link", { name: "Start a new chat" });
+    const fresh = await screen.findByRole("link", { name: "Start a chat in the sidebar" });
     expect(fresh.getAttribute("href")).toBe("/chat");
   });
 
@@ -316,6 +437,165 @@ describe("the list of chats", () => {
     });
     const entry = await screen.findByTestId("chat-entry");
     expect(entry.textContent).toContain("moebius-platform");
+  });
+});
+
+/**
+ * The compact dropdown beside "New chat" narrows the list by project: All projects, one per repository of the
+ * snapshot, and Without project for the chats whose place is the harness configuration repository or nowhere the
+ * snapshot can name. The choice is kept in this browser, and it filters the list itself.
+ */
+describe("the filter of the list of chats", () => {
+  const now = Math.floor(Date.now() / 1000);
+
+  /** The dropdown of the list of chats, read by the accessible name of its trigger. */
+  const trigger = () => screen.getByRole("button", { name: "Filter chats by project" });
+  // Radix menus open on a pointer press and commit a choice on its release, not on a click.
+  const choose = async (name: string) => {
+    fireEvent.pointerDown(trigger());
+    const item = await screen.findByRole("menuitemradio", { name });
+    fireEvent.pointerUp(item);
+    // Committing a choice closes the menu.
+    expect(screen.queryByRole("menu", { hidden: false })).toBeNull();
+  };
+
+  it("offers All projects, the repositories of the snapshot, and Without project", async () => {
+    show({ at: "/inbox", chats: [chat(9, now - 60)] });
+    await screen.findAllByTestId("chat-entry");
+    fireEvent.pointerDown(trigger());
+    const choices = await screen.findAllByRole("menuitemradio");
+    expect(choices.map((choice) => choice.textContent)).toEqual([
+      "All projects",
+      "moebius-platform",
+      "notes",
+      "Without project",
+    ]);
+    // The choice stands on its item, and is named on the trigger.
+    expect(choices[0]?.getAttribute("data-state")).toBe("checked");
+    expect(trigger().textContent).toContain("All projects");
+  });
+
+  it("filters the list to the repository chosen", async () => {
+    show({
+      at: "/inbox",
+      chats: [chat(9, now - 60, { repository_id: 1 }), chat(4, now - 60, { repository_id: 2 })],
+    });
+    await screen.findAllByTestId("chat-entry");
+    await choose("notes");
+    const rows = screen.getAllByTestId("chat-entry");
+    expect(rows.map((row) => row.getAttribute("href"))).toEqual(["/chat/4"]);
+    expect(trigger().textContent).toContain("notes");
+  });
+
+  it("puts the harness repository and the chats with no place under Without project", async () => {
+    show({
+      at: "/inbox",
+      chats: [
+        chat(9, now - 60, { harness_repository: true }),
+        chat(4, now - 60),
+        chat(2, now - 60, { repository_id: 1 }),
+      ],
+    });
+    await screen.findAllByTestId("chat-entry");
+    await choose("Without project");
+    const rows = screen.getAllByTestId("chat-entry");
+    expect(rows.map((row) => row.getAttribute("href"))).toEqual(["/chat/9", "/chat/4"]);
+  });
+
+  it("keeps the chosen filter for the next visit of this browser", async () => {
+    show({ at: "/inbox", chats: [chat(9, now - 60, { repository_id: 1 })] });
+    await screen.findAllByTestId("chat-entry");
+    await choose("moebius-platform");
+    // The filter is remembered not as a repository name, but as its id: a renamed repository keeps working.
+    expect(localStorage.getItem("moebius.sidebar.chatsRepository")).toBe("1");
+    cleanup();
+    show({ at: "/inbox", chats: [chat(9, now - 60, { repository_id: 1 })] });
+    await screen.findAllByTestId("chat-entry");
+    expect(trigger().textContent).toContain("moebius-platform");
+  });
+
+  it("falls back to every chat when what is stored names no repository", async () => {
+    localStorage.setItem("moebius.sidebar.chatsRepository", "gone");
+    show({ at: "/inbox", chats: [chat(9, now - 60)] });
+    await screen.findAllByTestId("chat-entry");
+    expect(trigger().textContent).toContain("All projects");
+    expect(screen.getAllByTestId("chat-entry")).toHaveLength(1);
+  });
+});
+
+/**
+ * The field beside "New chat" and the project dropdown narrows the list by title while it is typed, on from what the
+ * dropdown takes away: a chat stays only when both take it. A chat without a title is read as the "New chat" its row
+ * names it, and an unmatched list says so quietly. It filters chats only — the search of the command bar is not
+ * duplicated.
+ */
+describe("the chat search", () => {
+  const now = Math.floor(Date.now() / 1000);
+  const DAY = 86_400;
+
+  /** The field of the list of chats, read by the accessible name it is given. */
+  const field = () => screen.getByRole("searchbox", { name: "Filter the chats" });
+  const type = (text: string) => fireEvent.change(field(), { target: { value: text } });
+
+  it("narrows the list to the chats whose title holds the words typed, as they are typed", async () => {
+    show({
+      at: "/inbox",
+      chats: [
+        chat(9, now - 60, { title: "Fix the login flow" }),
+        chat(4, now - DAY - 60, { title: "Write the tests" }),
+      ],
+    });
+    await screen.findAllByTestId("chat-entry");
+    type("login");
+    await waitFor(() => {
+      const rows = screen.getAllByTestId("chat-entry");
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.getAttribute("href")).toBe("/chat/9");
+    });
+  });
+
+  it("says No chats match when nothing the search is given fits, and gives the list back on a clear", async () => {
+    show({
+      at: "/inbox",
+      chats: [
+        chat(9, now - 60, { title: "Fix the login flow" }),
+        chat(4, now - DAY, { title: "Other" }),
+      ],
+    });
+    await screen.findAllByTestId("chat-entry");
+    type("zzz");
+    await waitFor(() => {
+      expect(screen.queryByTestId("chat-entry")).toBeNull();
+    });
+    expect(screen.getByText("No chats match", { selector: "p" })).toBeTruthy();
+    type("");
+    await waitFor(() => {
+      expect(screen.getAllByTestId("chat-entry")).toHaveLength(2);
+    });
+    expect(screen.queryByText("No chats match")).toBeNull();
+  });
+
+  it("combines with the project dropdown: a chat passes only when both take it", async () => {
+    show({
+      at: "/inbox",
+      chats: [
+        chat(9, now - 60, { title: "Fix the login flow", repository_id: 1 }),
+        chat(4, now - DAY, { title: "Fix the login feed of notes", repository_id: 2 }),
+      ],
+    });
+    await screen.findAllByTestId("chat-entry");
+    // The project only takes the chats of moebius-platform; from those, the words only take the first one.
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Filter chats by project" }));
+    const item = await screen.findByRole("menuitemradio", { name: "moebius-platform" });
+    fireEvent.pointerUp(item);
+    type("login");
+    await waitFor(() => {
+      const rows = screen.getAllByTestId("chat-entry");
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.getAttribute("href")).toBe("/chat/9");
+    });
+    // The search never broadens the project filter: its other chat holds the words but not the project.
+    expect(screen.queryByTestId("chat-entry")?.getAttribute("href")).not.toBe("/chat/4");
   });
 });
 
