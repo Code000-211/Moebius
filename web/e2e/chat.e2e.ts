@@ -80,7 +80,8 @@ describe("the chat page", () => {
     await page.getByRole("button", { name: /^Chats \(\d+\)/ }).waitFor();
     await page.getByRole("button", { name: /^Chats \(\d+\)/ }).click();
     await page.getByRole("heading", { name: /^Chats\b/ }).waitFor();
-    await page.getByRole("link", { name: "New" }).waitFor();
+    // The sidebar also offers a new chat (`Start a new chat`), so the page's own row is asked of the page.
+    await page.getByTestId("chat-page").getByRole("link", { name: "New" }).waitFor();
     await page.getByRole("button", { name: /^Agent: / }).waitFor();
     await field().waitFor();
   });
