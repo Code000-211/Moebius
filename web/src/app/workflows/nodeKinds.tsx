@@ -225,7 +225,13 @@ export const nodeKinds: NodeKind[] = [
         help: "The title of what the node publishes.",
         required: true,
       },
-      { type: "text", name: "body", label: "Body", help: "The body that goes with it." },
+      {
+        type: "text",
+        name: "body",
+        label: "Body",
+        help: "The body that goes with it.",
+        required: true,
+      },
     ],
   },
   {

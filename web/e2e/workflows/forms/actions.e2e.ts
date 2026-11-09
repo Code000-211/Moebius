@@ -187,4 +187,17 @@ describe.skipIf(usesRealServer)("the forms of the nodes that act", () => {
     await shows(state(), "Saved as");
     expect(paramsOf("ship")).toEqual({ title: "Release 1.4.1", body: "A patch release." });
   });
+
+  it("tells a person a publish node needs its body before it saves", async () => {
+    await openKinds();
+    await card("ship").click();
+    await shows(inspector(), "Title", "Body");
+
+    await page.getByRole("textbox", { name: "Body" }).fill("");
+    await shows(inspector(), "A publish node needs its body.");
+
+    await page.getByRole("textbox", { name: "Body" }).fill("What changed in this release.");
+    await save();
+    await shows(state(), "Saved as");
+  });
 });

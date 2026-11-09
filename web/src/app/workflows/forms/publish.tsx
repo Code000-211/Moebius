@@ -9,7 +9,9 @@ export function PublishForm({ node, onParams }: NodeFormProps) {
   const params = (node.params ?? {}) as Record<string, unknown>;
   const title = typeof params.title === "string" ? params.title : "";
   const body = typeof params.body === "string" ? params.body : "";
-  const missing = title.trim() === "";
+  const blank = (value: string) => value.trim() === "";
+  const noTitle = blank(title);
+  const noBody = blank(body);
 
   function give(name: string, value: unknown) {
     const next = { ...params };
@@ -26,7 +28,7 @@ export function PublishForm({ node, onParams }: NodeFormProps) {
       <Field
         label="Title"
         hint="The title of what the node publishes. Expressions such as {{ trigger.tag }} are filled before it does."
-        error={missing ? "A publish node needs its title." : undefined}
+        error={noTitle ? "A publish node needs its title." : undefined}
       >
         <Input
           aria-label="Title"
@@ -35,7 +37,11 @@ export function PublishForm({ node, onParams }: NodeFormProps) {
           placeholder="Release 1.4.0"
         />
       </Field>
-      <Field label="Body" hint="The body that goes with it.">
+      <Field
+        label="Body"
+        hint="The body that goes with it."
+        error={noBody ? "A publish node needs its body." : undefined}
+      >
         <TextArea
           aria-label="Body"
           rows={8}
