@@ -16,7 +16,8 @@ cookie of a [session](#post-v1session)). The token is the content of
 `token_file` (by default `<data_dir>/token`, created when the server first starts). A missing or wrong token is answered
 with `401` and the plain text `a valid token is needed`. The exceptions are `POST /v1/webhooks/{forge}`, which a forge
 sends and which carries the forge's signature instead, and `/v1/session`, which signs a browser in. The paths outside
-`/v1/` need no token: they are the [web app](#the-web-app).
+`/v1/` need no token: they are the [web app](#the-web-app) and the [hooks a workflow's `webhook` trigger answers
+on](#post-apihookspath), which the secret that trigger names opens instead.
 
 The run token of a run of the Moebius agent (`MOEBIUS_TOKEN` in its environment, see the [bridge
 protocol](bridge-protocol.md#the-environment-of-the-harness)) is accepted as well, while the run lasts: it is how the
@@ -1261,6 +1262,25 @@ A person deletes a workflow: the file is removed, committed on the default branc
 `person`). Response: `{"name": string, "commit": string}` (`commit` is left out when there was nothing to commit). Errors:
 `404` no such workflow; `409` a run of the workflow is queued, running or waiting, or the server has no `[harness]`; `422` an
 invalid name; `409` and `500` as for `PUT /v1/agents/{name}`.
+
+### `POST /api/hooks/{path}`
+
+Starts a run of the workflow whose `webhook` trigger names this path, in the repository that trigger names. No token:
+what opens the door is the secret the trigger names, when it names one. The body is one JSON value and is the value the
+run starts with; a body that is not JSON is refused `400` saying so. The answer is `202` with
+`{"run": number, "workflow": string}` as soon as the run is stored, its nodes running on a thread of their own. A path
+with no hook on it, a credential that is missing or wrong, and a secret the trigger names that the server does not
+have are answered alike, with `404` and the plain text `no hook on this path`, so nothing here says which paths have
+hooks. At most eight runs of one workflow may be queued or running at once through its hook; past that the answer is
+`429` saying to try again later, never a dropped delivery. Errors: `400` a body that is not JSON; `404` no hook this
+delivery opens, including a path claimed by two workflows that the delivery cannot open; `422` a trigger that names no
+repository, or two workflows claiming one path that the delivery opens; `429` past the ceiling. See the
+[`webhook` trigger](workflows/webhook-trigger.md).
+
+### `POST /api/hooks/{repository}/{path}`
+
+The same door for a delivery that names which repository the run belongs to. The repository in the address wins over
+the one the trigger names; a repository the server does not have is refused `422`.
 
 ### `GET /v1/workflows/{name}/run-inputs`
 

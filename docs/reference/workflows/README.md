@@ -10,6 +10,7 @@ does not edit another kind's page.
 - [`http`](http.md): one HTTP request to an allowed host, with secrets by name.
 - [`merge`](merge.md): joins two branches and emits what arrived by each side.
 
-The folder also holds the one trigger that is not a node kind:
+The folder also holds the trigger kinds, which are not node kinds:
 
 - [`manual`](manual-trigger.md): the trigger a person starts by hand, with the typed inputs it names.
+- [`webhook`](webhook-trigger.md): a path on the server whose deliveries start runs of the workflow.
