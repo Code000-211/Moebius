@@ -3,8 +3,11 @@
  * follow the stream at once, without reading the list again (the former desktop app's `Chats::on_event`), and the one the
  * sidebar opens when there is no chat id in the address.
  */
+
+import type { Snapshot } from "../api/types/board";
 import type { Chat } from "../api/types/chat";
 import type { ServerEvent } from "../api/types/events";
+import { placeName } from "./places";
 
 /** The chats after `event`; the same array when it changes none. */
 export function applyChatEvent(chats: Chat[], event: ServerEvent): Chat[] {
@@ -38,6 +41,40 @@ export function applyChatEvent(chats: Chat[], event: ServerEvent): Chat[] {
     );
   }
   return chats;
+}
+
+/** The project the sidebar's list of chats is narrowed to: every chat, a repository's, or those with none. */
+export type ChatFilter = "all" | "none" | number;
+
+/** The words a filter is kept under in this browser: `"all"`, `"none"`, or the repository's id. */
+export function formatChatFilter(filter: ChatFilter): string {
+  return typeof filter === "number" ? String(filter) : filter;
+}
+
+/**
+ * The filter its saved words name, `"all"` when nothing was saved or the words name nothing: a repository may have
+ * been removed since the choice was remembered, and a list that stays empty because of it reads as a broken page.
+ */
+export function parseChatFilter(stored: string | null): ChatFilter {
+  if (stored === "none") return "none";
+  const id = Number(stored);
+  return stored !== null && stored !== "" && Number.isInteger(id) && id > 0 ? id : "all";
+}
+
+/**
+ * The list narrowed to the project chosen. A repository keeps only its own chats; "Without project" keeps the chats
+ * of the harness configuration repository and of no known place — the ones `placeName` does not name after a board.
+ */
+export function filterChats(
+  chats: Chat[],
+  snapshot: Snapshot | undefined,
+  filter: ChatFilter,
+): Chat[] {
+  if (filter === "all") return chats;
+  if (filter === "none") {
+    return chats.filter((chat) => chat.harness_repository || placeName(snapshot, chat) === null);
+  }
+  return chats.filter((chat) => chat.repository_id === filter);
 }
 
 function replace(chats: Chat[], id: number, change: (chat: Chat) => Chat): Chat[] {
