@@ -320,6 +320,16 @@ and does not know anything the API does not say.
     of the automation's last started firing has neither ended nor answered; otherwise it calls `App::start_chat` with the
     automation's agent, place and prompt and the origin `automation`. Each firing is stored (`firings` table: `started`
     with its chat, `skipped` or `failed` with the reason) and published as `automation_fired`.
+12i. **The workflow schedules.** The same minute, `server/schedule.rs` asks `schedule::on_workflow_schedules`, which reads
+    every workflow file the harness configuration repository holds, one at a time (`workflows::definition::read`), and
+    for each one whose trigger is a `schedule` (`workflows/trigger/schedule.rs`) asks whether its cron came due after
+    the minute that workflow last fired at (`Store::schedule_firing`, at most five minutes back) and up to now. A file
+    that cannot be read wakes no schedule of its own and is published as `retro_error`, while the schedules of the
+    other workflows go on. The minute it fired at is recorded (`Store::record_schedule_firing`) before the run starts,
+    so one occurrence starts one run across a restart; the run goes through `App::start_workflow_run` with the
+    repository the trigger names and the value the firing gives (`fired` and the inputs' defaults). A firing that
+    starts no run is written to the log and spends the occurrence, so a workflow is not started every minute it is
+    awake.
 13. **The forge reports.** `poll::poll_requests` reads each open change's pull or merge request: checks and review
     (on GitLab, whether anyone approved; on Forgejo, the latest review given) are recorded (`change_updated`), a merged one calls `App::change_merged`, a
     closed one calls `App::change_closed`.
@@ -518,6 +528,7 @@ At the top:
 | `store/attempts.rs` | Attempts: the runs a card was tried with at once, how each fared, which was picked and why, and the rounds of which none passed. |
 | `store/runs.rs` | Runs: an agent's work in a harness, from its start to its end. |
 | `store/workflows.rs` | Workflow runs and the runs of each node of them, with their value, input and output redacted before they are stored. |
+| `store/workflow_schedules.rs` | The minute each workflow on a `schedule` trigger last fired at, so one occurrence of its cron starts one run even when the server restarts in between. |
 | `store/events.rs` | A run's events, in order, redacted before they are stored. |
 | `store/automations.rs` | Automations, their firings with the status of each chat, and the server's local minute. |
 | `store/chats.rs` | Chats: where they were started, what they work in and how far a person has read them. |
@@ -552,7 +563,7 @@ At the top:
 | `server/packages/plugin.rs` | Installing, updating and removing a plugin: its program, its `[[plugins]]` entry through the live settings, and starting it in the plugin host. |
 | `server/packages/propose.rs` | Kanban (`workflow`), rules and skills packages: their files proposed as a change to a repository or to the harness configuration repository. |
 | `server/packages/check.rs` | The nightly look for newer versions of the installed packages, and the inbox items it adds. |
-| `server/schedule.rs` | Once a minute: the Retro, trials, research, replays and automations when they are due, and the pause of chats that wait idle. |
+| `server/schedule.rs` | Once a minute: the Retro, trials, research, replays, automations and the workflows on a `schedule` trigger when they are due, and the pause of chats that wait idle. |
 | `server/fake_github.rs` | For the tests only: a fake GitHub with one repository, and a server that polls it. |
 | `server/fake_gitlab.rs` | For the tests only: a fake GitLab with one project, a server that polls it, and the tests of the GitLab forge through it. |
 | `server/fake_forgejo.rs` | For the tests only: a fake Forgejo with one repository, a server that polls it, and the tests of the Forgejo forge through it. |
@@ -753,8 +764,9 @@ At the top:
 | `workflows/nodes/http/policy.rs` | The `http` node's URL policy: `https` or `http`, no user name or password, and only a host the server configuration names. |
 | `workflows/nodes/http/call.rs` | The `http` node's request: a named secret resolved and sent, no redirects, a time limit, the answer read as status, headers and body, and failures whose message carries no URL query or secret. |
 | `workflows/nodes/merge.rs` | The `merge` node: joins the two branches that reached it and emits what arrived by each side, one side's object or the list of the arrivals. |
-| `workflows/trigger/mod.rs` | The triggers of a workflow: what starts its runs, and the manual trigger among them. |
+| `workflows/trigger/mod.rs` | The trigger kinds that read themselves rather than go through the node registry; one module per kind. |
 | `workflows/trigger/manual.rs` | The `manual` trigger: the inputs it names with their types, requiredness, defaults and choices, checked when the file is read, and the value a started run begins with. |
+| `workflows/trigger/schedule.rs` | The `schedule` trigger: a cron of five fields in the server's local time, the minute it next comes due, the minute it last fired at, and the value a firing starts a run with; a cron that cannot be read is refused when the file loads, naming the wrong field. |
 | `workflows/run.rs` | The executor: following the edges from the trigger with one value, giving each node the trigger's value and the values of the nodes that ran before, taking the edge that leaves by the port a node names, running each node under its timeout, failing the run on a node's error or its node ceiling, and reporting each step to an observer. |
 
 Outside `src/`: `kanban/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension

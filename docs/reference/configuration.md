@@ -83,6 +83,29 @@ up" of the web app's Get started, Skills, MCP servers and Agents pages, which on
 `[agents.*]` and `rules_file`; its other keys and comments stay. The server uses the repository after it restarts. The
 old skill and extension files and the rules file are left where they were.
 
+## The clock
+
+Everything that happens by itself goes off one clock: once a minute the server looks at what is due. The Retro is
+asked when the minute reaches `retro_at`; the oldest open proposal is tried, the replays follow and the oldest
+confirmed research starts, inside `[trial_window]`; a chat automation fires when its cron of five fields comes due
+(see [`automation.schedule`](desktop-api.md)); the installed Moebius packages are looked at for newer ones at night;
+a chat whose Pi has waited long for its next message is paused; and a workflow on a
+[`schedule` trigger](workflows/schedule-trigger.md) starts a run when its cron comes due.
+
+A minute is read in the server's local time, to the minute: no time zone is set in this file and nothing is kept in
+UTC. The rules are the same for everything on the clock:
+
+- **Once is once.** What came due is done once, and the minute it was done at is kept in the store, so a server that
+  restarts reads the same minute and does it no second time.
+- **Nothing is made up.** The clock reaches back five minutes at most. A firing a couple of minutes late is still
+  done; one that came due while the server was away for longer is passed over, so a server that was off over the
+  night starts nothing for the hours it missed.
+- **A season change fires once.** A minute is read as the clock reads it rather than as an instant: the minute a
+  fall-back day reads twice is the minute still to come and never one that has passed again, so what is due at it
+  happens once, and an hour a spring-forward day skips is waited over.
+- **What fails is said, not tried again.** A minute that could not do its work says so — on the bus, in the store, or
+  on the server's output — and waits for the next one rather than retry every minute.
+
 ## `[trial_window]`
 
 The daily stretch in which trials, replays and autoresearch may run without asking. Once a minute, inside the window, the

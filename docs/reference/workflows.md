@@ -61,8 +61,8 @@ written `[[trigger]]` and has:
 
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `kind` | string | The trigger's kind. `manual` is the trigger a person starts by hand and is read by itself, from [its page](workflows/manual-trigger.md); every other kind is resolved by the same registry that resolves a node's `kind`. |
-| `params` | table | The kind's settings, read by that kind. Optional; defaults to an empty table. For `manual` these are the inputs a person gives the run. |
+| `kind` | string | The trigger's kind. `manual` is the trigger a person starts by hand and is read by itself, from [its page](workflows/manual-trigger.md); `schedule` starts a run when a cron comes due and is read by itself, from [its page](workflows/schedule-trigger.md); every other kind is resolved by the same registry that resolves a node's `kind`. |
+| `params` | table | The kind's settings, read by that kind. Optional; defaults to an empty table. For `manual` these are the inputs a person gives the run; for `schedule` the cron and the inputs the run starts with. |
 
 An edge starts at the trigger with `from = "trigger"`; `trigger` is reserved and cannot be a node's id or an edge's
 target. A value leaves a trigger by its `out` port, which is what the edges leaving the trigger name.
@@ -70,6 +70,7 @@ target. A value leaves a trigger by its `out` port, which is what the edges leav
 The triggers that exist:
 
 - [`manual`](workflows/manual-trigger.md): a person starts each of its runs, with the inputs the trigger names.
+- [`schedule`](workflows/schedule-trigger.md): starts a run when a cron comes due, in the server's local time.
 
 ### `nodes`
 
@@ -103,9 +104,11 @@ refusal names the file and the node or edge it is about:
 - a node uses the reserved id `trigger`: `node "trigger": the id is reserved for the workflow's trigger`;
 - an edge names a source or target node that does not exist: `edge "<from>" -> "<to>": no node "<id>"`;
 - a node names a kind the registry does not know: `node "<id>": unknown node kind "<kind>"`; a trigger names a kind
-  that is neither `manual` nor one the registry knows: `trigger: unknown node kind "<kind>"`;
+  that is neither `manual`, `schedule` nor one the registry knows: `trigger: unknown node kind "<kind>"`;
 - a `manual` trigger's parameters are not its inputs: a message that names the input that is not one, as its
   [page](workflows/manual-trigger.md) spells them out;
+- a `schedule` trigger's parameters are not its own, or its cron has a field that is wrong: `trigger: "cron": the
+  minute 70 is not between 0 and 59`, naming the field, as its [page](workflows/schedule-trigger.md) spells out;
 - an edge leaves by a port the source node does not have: `node "<id>": edge to "<to>" leaves by port "<port>"`;
 - a node that routes, so chooses its output port (see `routes()` under [the node registry](#the-node-registry)),
   reports a port with no edge leaving by it, `fallback` included: `node "<id>": port "<port>" has no edge leaving by

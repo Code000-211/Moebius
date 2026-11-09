@@ -32,6 +32,7 @@ mod retros;
 mod runs;
 mod shadows;
 mod usage;
+mod workflow_schedules;
 mod workflows;
 
 use std::path::Path;
@@ -429,6 +430,7 @@ ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
     plugin_settings::APP_SCHEMA,
     issues::COMMENT_ORIGIN,
     workflows::SCHEMA,
+    workflow_schedules::SCHEMA,
 ];
 
 pub fn now() -> i64 {

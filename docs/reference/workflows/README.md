@@ -1,7 +1,9 @@
-# Workflow node kinds
+# Workflow node kinds and trigger kinds
 
-One page per node kind, linked from the [workflow reference](../workflows.md). A node-kind card adds its page here and
+One page per kind, linked from the [workflow reference](../workflows.md). A node-kind card adds its page here and
 does not edit another kind's page.
+
+Node kinds:
 
 - [`code`](code.md): runs Luau that reshapes the value and outputs what it returns.
 - [`condition`](condition.md): sends the value down the first port whose expression is true, or a fallback port.
@@ -9,6 +11,7 @@ does not edit another kind's page.
 - [`http`](http.md): one HTTP request to an allowed host, with secrets by name.
 - [`merge`](merge.md): joins two branches and emits what arrived by each side.
 
-The folder also holds the one trigger that is not a node kind:
+Trigger kinds:
 
 - [`manual`](manual-trigger.md): the trigger a person starts by hand, with the typed inputs it names.
+- [`schedule`](schedule-trigger.md): starts a run when a cron comes due, in the server's local time.

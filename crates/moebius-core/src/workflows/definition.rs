@@ -10,7 +10,7 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 
 use super::nodes::{Node, node};
-use super::trigger::manual;
+use super::trigger::{manual, schedule};
 
 /// The id an edge uses to start at the workflow's trigger.
 pub const TRIGGER_ID: &str = "trigger";
@@ -53,7 +53,8 @@ pub struct WorkflowDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Trigger {
-    /// The trigger kind: `manual`, or a kind resolved through the same registry as a node's kind.
+    /// The trigger kind: `manual` and `schedule` read their own parameters; any other kind is resolved through the
+    /// same registry as a node's kind.
     pub kind: String,
     /// The trigger kind's own settings.
     #[serde(default = "empty_params", skip_serializing_if = "is_empty_params")]
@@ -208,10 +209,16 @@ impl WorkflowDefinition {
 
     fn check_kinds_and_ports(&self, file: &str) -> Result<(), Error> {
         let trigger = &self.trigger[0];
-        // The manual trigger is not a node: its parameters are the inputs it names, checked against them, and a value
-        // leaves it by its `out`.
+        // A trigger whose kind has a module of its own is read there: the manual trigger's parameters are the inputs
+        // it names, and a `schedule` with a cron the clock cannot read is refused when the file loads. Any other
+        // kind is still resolved by the registry of node kinds, which is what the `test` placeholder and the kinds
+        // still to come go through.
         let trigger_ports = if trigger.kind == manual::KIND {
             manual::ManualTrigger::parse(&trigger.params)
+                .map_err(|message| Error::new(file, format!("trigger: {message}")))?
+                .ports()
+        } else if trigger.kind == schedule::KIND {
+            schedule::ScheduleTrigger::parse(&trigger.params)
                 .map_err(|message| Error::new(file, format!("trigger: {message}")))?
                 .ports()
         } else {
