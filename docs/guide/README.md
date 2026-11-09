@@ -35,6 +35,7 @@ Built and described here:
   skills and extensions from this guide; see [Agents](agents.md#the-moebius-agent).
 - The nightly Retro, trials and replays, autoresearch, grilling, the training-set export and the decision model.
 - [Automations](automations.md): chats that start on their own, on a schedule.
+- [Workflows](workflows.md): graphs of code, agent, condition, HTTP, approval and other nodes, started by a trigger.
 
 ## The how-tos
 
@@ -48,6 +49,7 @@ Built and described here:
 | Have an agent look for ways to improve a number you can measure, and keep what helps | [Autoresearch](autoresearch.md) |
 | Turn an idea into issues by being questioned about it | [Grilling](grilling.md) |
 | Have an agent do recurring work on a schedule, such as triaging new issues every morning | [Automations](automations.md) |
+| Have a trigger start a graph of steps, branch on a condition, wait for a person or call an HTTP service | [Workflows](workflows.md) |
 | Answer your own decision points with Rust code | [Plugins](plugins.md) |
 | Add behaviour inside the Pi process of a run | [Extensions](extensions.md) |
 | Operate Moebius from a terminal or a script, or let the Moebius agent do it | [Command line](command-line.md) |

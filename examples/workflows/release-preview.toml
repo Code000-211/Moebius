@@ -1,0 +1,63 @@
+# A person starts this workflow with a release's version and channel. A code node shapes the announcement, a
+# condition sends it down the stable or the preview branch, and an HTTP node announces it where that channel lives.
+name = "release-preview"
+description = "Announce a release on the channel the person chose."
+
+[[trigger]]
+kind = "manual"
+params = { inputs = [
+    { name = "release", type = "text", required = true },
+    { name = "channel", type = "choice", choices = ["stable", "preview"], default = "preview" },
+    { name = "api_base", type = "text", default = "https://api.example.com" },
+] }
+
+[[nodes]]
+id = "shape"
+kind = "code"
+params = { source = """
+local version = input.release
+local channel = input.channel
+return {
+    version = version,
+    channel = channel,
+    message = "Release " .. version .. " is out on " .. channel .. ".",
+}
+""" }
+
+[[nodes]]
+id = "branch"
+kind = "condition"
+params = { ports = [
+    { name = "stable", when = "input.channel == 'stable'" },
+    { name = "preview", when = "input.channel == 'preview'" },
+] }
+
+[[nodes]]
+id = "announce-stable"
+kind = "http"
+params = { method = "POST", url = "{{ trigger.api_base }}/announce/stable", body = "{{ input }}" }
+
+[[nodes]]
+id = "announce-preview"
+kind = "http"
+params = { method = "POST", url = "{{ trigger.api_base }}/announce/preview", body = "{{ input }}" }
+
+[[edges]]
+from = "trigger"
+to = "shape"
+port = "out"
+
+[[edges]]
+from = "shape"
+to = "branch"
+port = "out"
+
+[[edges]]
+from = "branch"
+to = "announce-stable"
+port = "stable"
+
+[[edges]]
+from = "branch"
+to = "announce-preview"
+port = "preview"

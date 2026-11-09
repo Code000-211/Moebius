@@ -1,0 +1,46 @@
+# A person starts this workflow, prepares the announcement and waits: nothing is published until a person approves.
+name = "approved-publish"
+description = "Prepare a release announcement, wait for a person, then publish it."
+
+[[trigger]]
+kind = "manual"
+params = { inputs = [
+    { name = "version", type = "text", required = true },
+    { name = "api_base", type = "text", default = "https://api.example.com" },
+] }
+
+[[nodes]]
+id = "prepare"
+kind = "code"
+params = { source = """
+local version = input.version
+return {
+    version = version,
+    announcement = "Version " .. version .. " is ready to publish.",
+}
+""" }
+
+[[nodes]]
+id = "approve"
+kind = "approval"
+params = { prompt = "Publish {{ input.announcement }}", timeout_seconds = 3600 }
+
+[[nodes]]
+id = "publish"
+kind = "http"
+params = { method = "POST", url = "{{ trigger.api_base }}/publish", body = "{{ input }}" }
+
+[[edges]]
+from = "trigger"
+to = "prepare"
+port = "out"
+
+[[edges]]
+from = "prepare"
+to = "approve"
+port = "out"
+
+[[edges]]
+from = "approve"
+to = "publish"
+port = "out"
