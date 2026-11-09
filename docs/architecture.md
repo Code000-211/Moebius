@@ -566,6 +566,7 @@ At the top:
 | `server/api/harness.rs` | The agents, skills and MCP servers of the harness configuration repository, and `POST /v1/harness/setup`. |
 | `server/api/rules.rs` | The rules page and the rules in prose. |
 | `server/api/workflows.rs` | The workflows of the harness configuration repository: list, read, save and delete, saving and deleting as commits. |
+| `server/api/workflow_runs.rs` | `GET /v1/workflows/{name}/run-inputs` and `POST /v1/workflows/{name}/runs`: the inputs a manual trigger names, and starting a run by hand with them. |
 | `server/api/settings.rs` | `moebius.toml`, the API keys and the restart, and what the Models, Plugins and Get started pages show. |
 | `server/api/lessons.rs` | The lessons: list, read, edit and delete. |
 | `server/api/extensions.rs` | `/v1/extensions/...`: search, info, the installed packages, and proposals to install, update and remove; and the refusal of an agent's merge of a change that touches a package. |
@@ -752,6 +753,8 @@ At the top:
 | `workflows/nodes/http/policy.rs` | The `http` node's URL policy: `https` or `http`, no user name or password, and only a host the server configuration names. |
 | `workflows/nodes/http/call.rs` | The `http` node's request: a named secret resolved and sent, no redirects, a time limit, the answer read as status, headers and body, and failures whose message carries no URL query or secret. |
 | `workflows/nodes/merge.rs` | The `merge` node: joins the two branches that reached it and emits what arrived by each side, one side's object or the list of the arrivals. |
+| `workflows/trigger/mod.rs` | The triggers of a workflow: what starts its runs, and the manual trigger among them. |
+| `workflows/trigger/manual.rs` | The `manual` trigger: the inputs it names with their types, requiredness, defaults and choices, checked when the file is read, and the value a started run begins with. |
 | `workflows/run.rs` | The executor: following the edges from the trigger with one value, giving each node the trigger's value and the values of the nodes that ran before, taking the edge that leaves by the port a node names, running each node under its timeout, failing the run on a node's error or its node ceiling, and reporting each step to an observer. |
 
 Outside `src/`: `kanban/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension
