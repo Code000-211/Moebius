@@ -4,30 +4,58 @@
  * what a person copies is what the harness configuration will read back.
  *
  * It reads `GET /v1/workflows/{name}`. A definition that could not be read says so and offers to read it again; a
- * workflow that does not exist is said as a missing workflow rather than as an empty graph.
+ * workflow that does not exist is said as a missing workflow rather than as an empty graph. Delete is
+ * `DELETE /v1/workflows/{name}`, asked twice: the actions open a dialog, which warns that a workflow shaped like an
+ * automation disappears from the Automations page too, and a run queued or running refuses the deletion in the dialog.
  */
-import { ArrowLeftIcon, PencilSimpleIcon, PlayIcon } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "react-router";
+import { ArrowLeftIcon, PencilSimpleIcon, PlayIcon, TrashIcon } from "@phosphor-icons/react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { Link, useNavigate, useParams } from "react-router";
+import { deleteWorkflow } from "../../api/calls/workflows";
+import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import { workflow } from "../../api/workflows";
 import { CodeBlock } from "../../ui/chat/CodeBlock";
 import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../../ui/components/Dialog";
 import { ago, plural } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
+import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
-import { lastRunLine, triggerName } from "./model";
+import { lastRunLine, looksLikeAutomation, triggerName } from "./model";
 import { WorkflowGraph } from "./WorkflowGraph";
 
 export function WorkflowPage() {
   const { name = "" } = useParams();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const now = useNow();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [removeRefusal, setRemoveRefusal] = useState<string | null>(null);
   const definition = useQuery({
     queryKey: keys.workflow(name),
     queryFn: () => workflow(name),
+  });
+  const remove = useMutation({
+    mutationFn: () => deleteWorkflow(definition.data?.name ?? name),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: keys.workflows });
+      queryClient.removeQueries({ queryKey: keys.workflow(definition.data?.name ?? name) });
+      queryClient.removeQueries({ queryKey: keys.workflowRuns(definition.data?.name ?? name) });
+      navigate("/workflows");
+    },
+    onError: (error) => setRemoveRefusal(sayError(error, "Could not delete it. Try again.")),
   });
   const back = (
     <Button asChild variant="ghost" size="sm">
@@ -62,6 +90,11 @@ export function WorkflowPage() {
 
   const saved = definition.data;
   const last = saved.last_run;
+  const leave = () => {
+    remove.reset();
+    setRemoveRefusal(null);
+    setConfirmingDelete(false);
+  };
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
@@ -84,9 +117,49 @@ export function WorkflowPage() {
                 </Link>
               </Button>
             ) : null}
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => setConfirmingDelete(true)}
+              disabled={confirmingDelete}
+            >
+              <TrashIcon className="size-4" aria-hidden="true" />
+              Delete workflow
+            </Button>
           </div>
         }
       />
+      {confirmingDelete && (
+        <Dialog open onOpenChange={(open) => !open && leave()}>
+          <DialogContent>
+            <form
+              className="flex flex-col gap-4 p-6"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!remove.isPending) remove.mutate();
+              }}
+            >
+              <DialogHeader>
+                <DialogTitle>{`Delete ${saved.name}?`}</DialogTitle>
+                <DialogDescription>
+                  The workflow's file is deleted and committed. Its past runs stay listed.
+                  {looksLikeAutomation(saved) &&
+                    " This workflow is an automation: a schedule that starts one chat. Deleting it stops the automation, and it leaves the Automations page."}
+                </DialogDescription>
+              </DialogHeader>
+              {removeRefusal && <Notice tone="error">{removeRefusal}</Notice>}
+              <DialogFooter>
+                <Button type="button" variant="ghost" onClick={leave}>
+                  Keep it
+                </Button>
+                <Button type="submit" variant="danger" disabled={remove.isPending}>
+                  {remove.isPending ? "Deleting" : "Delete"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <WorkflowGraph definition={saved} />
         <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto">
