@@ -51,6 +51,18 @@ fn cut_lines(stat: &str, at_most: usize) -> String {
     format!("{}\n…\n{totals}", lines[..at_most - 1].join("\n"))
 }
 
+/// The subject of the last commit on `branch`; None when git says nothing, so a merge keeps its plain line.
+fn branch_tip_subject(clone: &Path, branch: &str) -> Option<String> {
+    let subject = git(clone, &["log", "--format=%s", "-1", branch])
+        .ok()?
+        .trim()
+        .lines()
+        .next()?
+        .trim()
+        .to_owned();
+    (!subject.is_empty()).then_some(subject)
+}
+
 impl App {
     /// The repository a change belongs to; refused for a change of the harness configuration repository.
     pub(super) fn repository_of(&self, change: &Change) -> Result<Repository> {
@@ -263,8 +275,7 @@ impl App {
                     "chat {run_id} is working: its changes can be offered once the agent has answered"
                 )));
             }
-            let message =
-                format!("Chat {run_id}\n\nCommitted by Moebius when the chat's work was offered.");
+            let message = self.chat_commit_message(&run, "when the chat's work was offered");
             crate::repos::commit_all(&worktree, &message)?;
         }
         let change = match self.offer_chat_branch(&run)? {
@@ -346,10 +357,7 @@ impl App {
             return Ok(Ok(None));
         }
         let head = git(clone, &["rev-parse", &branch])?;
-        let body = format!(
-            "This change came from chat {} with the agent {}.\n\nMade by Moebius.",
-            run.id, run.agent
-        );
+        let body = self.chat_pull_request_body(run, &repository, &branch);
         Ok(Ok(match self.earlier_offer(&branch, &head)? {
             Earlier::Same(change) => change,
             Earlier::Open(change) => {
@@ -359,6 +367,37 @@ impl App {
             }
             Earlier::None => Some(self.offer_branch_change(&repository, &branch, &title, &body)?),
         }))
+    }
+
+    /// What the pull request of a chat's change says: what the chat's agent said it did in its last answer, the
+    /// stat of the files changed, which chat it was and what it was asked. Never just the chat's first message; a
+    /// section Moebius has nothing for is left out.
+    fn chat_pull_request_body(&self, run: &Run, repository: &Repository, branch: &str) -> String {
+        let mut body = String::new();
+        if let Some(said) = run
+            .summary
+            .as_deref()
+            .map(str::trim)
+            .filter(|said| !said.is_empty())
+        {
+            body.push_str("## What the chat did\n\n");
+            body.push_str(&cut(said, SAID_AT_MOST));
+            body.push('\n');
+        }
+        if let Some(stat) = self.files_changed(repository, branch) {
+            body.push_str(&format!("\n## Files changed\n\n```\n{stat}\n```\n"));
+        }
+        let asked = self.chat_title(run).unwrap_or_default();
+        let asked = if asked.is_empty() {
+            String::new()
+        } else {
+            format!(", asked to: {}.", asked.trim_end_matches('.').trim_end())
+        };
+        body.push_str(&format!(
+            "\nThis change came from chat {} with the agent {}{asked}\n\nMade by Moebius.",
+            run.id, run.agent
+        ));
+        body
     }
 
     /// What became of the last offer of a chat's `branch`, whose commit is now `head`.
@@ -554,7 +593,23 @@ impl App {
         )?;
         let message = match change.card_id.map(|id| self.card(id)).transpose()? {
             Some(card) => format!("Merge #{}: {}", card.number, card.title),
-            None => format!("Merge {}", change.branch),
+            None => {
+                // The merge says what it carries: the subject of the change's last commit, in the line the forge
+                // or the harness clone writes under it.
+                let subject = match &repository {
+                    Some(repository) => {
+                        branch_tip_subject(Path::new(&repository.path), &change.branch)
+                    }
+                    None => self
+                        .harness_repo()
+                        .ok()
+                        .and_then(|harness| branch_tip_subject(harness.path(), &change.branch)),
+                };
+                match subject {
+                    Some(subject) => format!("Merge {}: {subject}", change.branch),
+                    None => format!("Merge {}", change.branch),
+                }
+            }
         };
         let commit = match &repository {
             Some(repository) => self

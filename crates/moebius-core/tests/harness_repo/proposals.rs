@@ -227,6 +227,116 @@ async fn a_chat_in_the_harness_configuration_offers_a_change_whose_merge_lands_o
 }
 
 #[tokio::test]
+async fn the_work_a_chat_offers_says_what_the_chat_did_and_the_merge_is_named_after_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let origin = harness_origin(dir.path());
+    let server = server(dir.path(), &origin);
+    let api = Api::start(&server).await;
+    let clone = dir.path().join(".moebius/harness");
+
+    // The work is offered while the chat still waits: the commit on its branch says what the agent did — the
+    // first line of its last answer — and which chat it was, never just the chat's first message.
+    let chat = harness_chat(&api, &server, &skill_message()).await;
+    let (status, offered) = api
+        .call(
+            reqwest::Method::POST,
+            &format!("/v1/chats/{chat}/offer"),
+            Some(json!({})),
+        )
+        .await;
+    assert_eq!(status, 200, "{offered}");
+    let branch = format!("moebius/chat-{chat}");
+    let agent = server.app.store.run(chat).unwrap().unwrap().agent;
+    let message = git(&clone, &["log", "--format=%B", "-1", &branch]).unwrap();
+    assert_eq!(
+        message.lines().next().unwrap(),
+        "You said: Add a skill.",
+        "{message}"
+    );
+    assert!(
+        message.contains("[put skills/testing/SKILL.md]"),
+        "{message}"
+    );
+    assert!(
+        message.contains(&format!("Chat {chat}: Add a skill (agent {agent}).")),
+        "{message}"
+    );
+    assert!(
+        message.contains("Made by Moebius when the chat's work was offered."),
+        "{message}"
+    );
+
+    // The merge is named after what it carries: the subject of the change's last commit.
+    let change = &server.app.store.harness_changes().unwrap()[0];
+    let (status, merged) = api
+        .call(
+            reqwest::Method::POST,
+            &format!("/v1/changes/{}/merge", change.id),
+            Some(json!({ "reason": "named after what it carries" })),
+        )
+        .await;
+    assert_eq!(status, 200, "{merged}");
+    let merged_message = git(&origin, &["log", "--format=%B", "-1", "main"]).unwrap();
+    assert_eq!(
+        merged_message.lines().next().unwrap(),
+        format!("Merge {branch}: You said: Add a skill."),
+        "{merged_message}"
+    );
+    assert!(error_messages(&server, chat).is_empty());
+}
+
+#[tokio::test]
+async fn ending_a_repository_chat_commits_its_work_in_a_message_that_says_what_it_did() {
+    let dir = tempfile::tempdir().unwrap();
+    let server = server(dir.path(), &harness_origin(dir.path()));
+    let api = Api::start(&server).await;
+
+    // A repository chat without a forge: ending it commits what the agent left on the chat's own branch, and
+    // that commit says what the chat did and which chat it was, never just the first message.
+    let repo = server
+        .app
+        .add_repository("demo", source(dir.path()).to_str().unwrap())
+        .unwrap();
+    let (status, run) = api
+        .call(
+            reqwest::Method::POST,
+            "/v1/chats",
+            Some(json!({
+                "message": "Write the note.\n[put note.txt]\nA note.\n[/put]",
+                "repository": repo.id
+            })),
+        )
+        .await;
+    assert_eq!(status, 200, "{run}");
+    let run: Value = serde_json::from_str(&run).unwrap();
+    let chat = run["id"].as_i64().unwrap();
+    let agent = run["agent"].as_str().unwrap().to_owned();
+    wait_for(&server, chat, |run| run.status == "waiting").await;
+    end_chat(&api, &server, chat).await;
+
+    let repository = server.app.store.repository(repo.id).unwrap().unwrap();
+    let message = git(
+        Path::new(&repository.path),
+        &["log", "--format=%B", "-1", &format!("moebius/chat-{chat}")],
+    )
+    .unwrap();
+    assert_eq!(
+        message.lines().next().unwrap(),
+        "You said: Write the note.",
+        "{message}"
+    );
+    assert!(message.contains("A note."), "{message}");
+    assert!(
+        message.contains(&format!("Chat {chat}: Write the note (agent {agent}).")),
+        "{message}"
+    );
+    assert!(
+        message.contains("Made by Moebius when the chat ended."),
+        "{message}"
+    );
+}
+
+#[tokio::test]
 async fn a_chat_that_touches_what_is_not_harness_configuration_or_breaks_an_agent_is_not_offered() {
     let dir = tempfile::tempdir().unwrap();
     let server = server(dir.path(), &harness_origin(dir.path()));

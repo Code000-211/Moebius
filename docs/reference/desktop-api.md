@@ -770,7 +770,8 @@ A person merges an open change: the decision is recorded (kind `merge`, decider 
 no-fast-forward merge into the default branch of the clone for a repository without a forge; the GitHub API for a pull
 request; the GitLab API for a merge request, with the merge commit's message; the Forgejo API for a pull request, with a
 merge commit titled with the message), the change becomes `merged`, its inbox items are resolved and its card, if it has one, moves to `Done`. A
-change from a chat has no card: its `ready_to_merge` item is resolved and the commit message is `Merge <branch>`. A
+change from a chat has no card: its `ready_to_merge` item is resolved and the commit message names what it carries,
+`Merge <branch>: <the branch's last commit's subject>`, or `Merge <branch>` when the branch's last commit has no subject. A
 workflow run's change is merged the same way, and the change that belongs to the run becomes `merged`.
 
 A change of the harness configuration repository (`harness_repository` true) is merged into the default branch of its
@@ -2077,7 +2078,8 @@ ended for good (`succeeded`), `model` is blank or `thinking` is not one of `off`
 ### `POST /v1/chats/{id}/offer`
 
 Offers what the chat's worktree changes as a change, without ending the chat: what the agent left in the worktree is
-committed on the chat's branch (message `Chat <id>`, "Committed by Moebius when the chat's work was offered."), and the
+committed on the chat's branch in a message of the same shape as a chat's commits (see `POST /v1/chats/{id}/end`),
+under which is "Made by Moebius when the chat's work was offered.", and the
 branch is offered exactly as when the chat ends (see `POST /v1/chats/{id}/end`): a change without a card on
 `moebius/chat-<run id>`, published through the repository's forge, an open `ready_to_merge` inbox item with the chat's
 title and the event `change_offered`; for a chat in the harness configuration repository, after the same check of the
@@ -2160,15 +2162,22 @@ that is not a chat; `409` the chat is being started again, or does not end.
 The web app ends a grilling chat while it waits (its "End grilling" button); other open chats are stopped by a person
 while their agent works, and a chat that waits long frees its Pi by itself; the command line and the Moebius agent end
 chats with this route, and a grilling ends with it. A person ends a chat that has not ended: Pi is asked to shut down (its standard input is closed; a Pi that has not exited
-after 10 seconds is killed). With a repository, what the agent left in the worktree is committed on the chat's branch
-(a chat that changed nothing has still succeeded), and then the worktree, or the empty directory, is removed.
+after 10 seconds is killed). With a repository, what the agent left in the worktree is committed on the chat's branch,
+and then the worktree, or the empty directory, is removed. A chat that changed nothing has still succeeded. Its commit
+says what the chat did, never just the chat's first message: the subject is the first line of the agent's last answer
+(the chat's title when it left no answer), the body carries the rest of that answer, and the trailer names the chat,
+its title and its agent — `Chat <run id>: <title> (agent <agent>)`, under which is "Made by Moebius when the chat
+ended."
 
 If the chat's branch then has commits that the repository's default branch does not have, they are offered as a change
 that has no card: a `Change` with `card_id` null on the branch `moebius/chat-<run id>`, published through the
 repository's forge (on GitHub the branch is pushed and a pull request is opened whose title is the chat's title and
-whose body says it came from the chat; without a forge there is nothing to publish), an open `ready_to_merge` inbox item
+whose body says what the chat did — the agent's last answer under "What the chat did", the files changed under
+"Files changed", and that it came from the chat, asked to what its title says; without a forge there is nothing to
+publish), an open `ready_to_merge` inbox item
 with the chat's title (`card_id` null, `data.change`, `data.branch`) and the event `change_offered`. A person merges it
-with `POST /v1/changes/{id}/merge`, which resolves the item; the merge commit's message is `Merge <branch>`. A chat
+with `POST /v1/changes/{id}/merge`, which resolves the item; the merge commit's message is `Merge <branch>: <the
+branch's last commit's subject>`, and `Merge <branch>` when the branch's last commit has no subject. A chat
 whose work was offered with `POST /v1/chats/{id}/offer` updates its open change instead, and offers nothing new when it
 changed nothing since. A chat that changed nothing, or has no repository, offers nothing, and a chat that ends as `failed` offers nothing. If the offer
 fails, the chat's run gets a `moebius_error` event saying why and the work stays on the branch. A chat that is stopped
