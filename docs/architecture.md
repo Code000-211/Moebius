@@ -744,6 +744,7 @@ At the top:
 | `workflows/decorate.rs` | The expressions in a node's parameters: evaluating `{{ ... }}` in the sandbox column scripts use, with the trigger, the node's input and earlier nodes in scope. |
 | `workflows/definition.rs` | The workflow file (`workflows/<name>.toml`): its trigger, nodes and edges, parsing it whole, validating its graph, and reading and listing it from the harness configuration repository; saving and deleting it are commits in `harness/repo/edits.rs`. |
 | `workflows/nodes/mod.rs` | The node kinds: the `Node` trait, the ports and metadata a kind reports, the value and port a node returns, and the registry that maps a kind name and its parameters to a node. |
+| `workflows/nodes/code.rs` | The `code` node: Luau that reshapes the value in the expression sandbox, with the run's scope, and outputs what it returns. |
 | `workflows/nodes/condition.rs` | The `condition` node: one Luau expression per named output port, tried in order, the first true one taken, else the fallback port or a failure. |
 | `workflows/nodes/for_each.rs` | The `for_each` node: fans a list out over a sub-path once per element, gathers the outputs in order, and checks that the sub-path rejoins where the definition says. |
 | `workflows/nodes/merge.rs` | The `merge` node: joins the two branches that reached it and emits what arrived by each side, one side's object or the list of the arrivals. |
