@@ -365,6 +365,8 @@ export function createFakeChat(
       if (one && method === "POST") {
         const id = Number(one[1]);
         const chat = find(id);
+        // The run of a card is stopped by the board's fake, which the request falls through to.
+        if (!chat && one[2] === "/stop") return false;
         if (!chat) return reply(response, 404, "no such run");
         const body = JSON.parse((await readBody(request)) || "{}") as Record<string, unknown>;
         switch (one[2]) {

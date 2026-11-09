@@ -1,12 +1,13 @@
 /**
  * What a person decides about a card: approve an issue, merge a change, send it back, retry a stuck card, unblock a
- * blocked one (blocking and deleting ask a question first, in `CardDialogs.tsx`). One hook
+ * blocked one, stop a card's live run (blocking and deleting ask a question first, in `CardDialogs.tsx`). One hook
  * sends the request, tells the outcome in a sentence (what the server did, or why it refused) and reads the board
  * again; the events of the server do the same, so a second client sees it too.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { approve, merge, reject, retry, unblock } from "../../api/calls/board";
+import { stopRun } from "../../api/calls/chat";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 
@@ -14,6 +15,7 @@ export type Decision =
   | { kind: "approve"; card: number; number: number }
   | { kind: "retry"; card: number; number: number }
   | { kind: "unblock"; card: number; number: number }
+  | { kind: "stop"; run: number; number: number }
   | { kind: "merge"; change: number; number: number }
   | { kind: "reject"; change: number; number: number; reason: string };
 
@@ -27,6 +29,7 @@ const VERB: Record<Decision["kind"], string> = {
   approve: "approve",
   retry: "retry",
   unblock: "unblock",
+  stop: "stop",
   merge: "merge",
   reject: "send back",
 };
@@ -43,6 +46,9 @@ async function send(decision: Decision): Promise<string> {
     case "unblock":
       await unblock(decision.card);
       return `Unblocked ${n}. The board works on it again.`;
+    case "stop":
+      await stopRun(decision.run);
+      return `Stopping ${n}. It waits for you in the inbox once its agent has settled.`;
     case "merge": {
       const { commit } = await merge(decision.change);
       return `Merged ${n}. Commit ${commit.slice(0, 7)}.`;

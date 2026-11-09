@@ -23,6 +23,7 @@ import {
   NO_FILTERS,
   nextCard,
   parentOf,
+  pullRequestOf,
   pullUrl,
   rootOf,
   type Stack,
@@ -402,6 +403,33 @@ describe("the words and links of a card", () => {
     const none = { ...board([c]).repository, forge: "none" as const, github: null };
     expect(issueUrl(none, c)).toBeNull();
     expect(pullUrl({ ...none, forge: "gitlab", project: "g/p" }, 3)).toBeNull();
+  });
+
+  it("names the pull request of a change and where to open it", () => {
+    const repository = board([card(1)]).repository;
+    const change = {
+      id: 4,
+      repository_id: 1,
+      harness_repository: false,
+      card_id: 1,
+      branch: "b",
+      state: "open",
+      pull_request: 12,
+      checks: null,
+      review: null,
+      head: null,
+      published_at: null,
+    } satisfies Change;
+    expect(pullRequestOf(repository, change)).toEqual({
+      number: 12,
+      url: "https://github.com/acme/demo/pull/12",
+      status: "open",
+    });
+    // A change not yet published has no pull request to open.
+    expect(pullRequestOf(repository, { ...change, pull_request: null })).toBeNull();
+    expect(pullRequestOf(repository, undefined)).toBeNull();
+    const none = { ...repository, forge: "none" as const, github: null };
+    expect(pullRequestOf(none, change)?.url).toBeNull();
   });
 
   it("badges what runs, blocks and waits, in the order of the desktop board", () => {
