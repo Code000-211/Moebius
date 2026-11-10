@@ -769,6 +769,19 @@ describe("an open chat", () => {
       expect(await terminal.isEnabled()).toBe(true);
     },
   );
+
+  /**
+   * The measure stands: `mx-auto` on the column without a width lets the auto margins take the stretch, so the
+   * column sizes to its smallest content and the chat shows as a narrow strip in the middle of the page.
+   */
+  it.skipIf(usesRealServer)("keeps the thread at the column's full width", async () => {
+    await open("/chat");
+    const id = fake().seed({ title: "Hi", events: [["said", { message: "Hi" }]] });
+    await page.goto(`${server.url}/chat/${id}`);
+    await thread().waitFor();
+    const width = await thread().evaluate((el) => el.getBoundingClientRect().width);
+    expect(width).toBeGreaterThanOrEqual(700);
+  });
 });
 
 describe("the floating chat", () => {
