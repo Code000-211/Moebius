@@ -250,6 +250,39 @@ async fn a_day_with_errors_gets_a_report_and_the_analyst_proposes_a_branch_that_
 }
 
 #[tokio::test]
+async fn an_analyst_that_settles_without_an_answer_makes_the_retro_failed() {
+    // The provider turned the only model call of the analyst away; the run settled without an abort or an answer, and
+    // a retro that analysed nothing must not look like one that found nothing to propose.
+    let (_dir, _origin, server, day) =
+        bad_day_server(|day| format!("the provider read it all [provider error] {day}"));
+    let mut events = server.app.bus.subscribe();
+    let (status, started) = Api::start(&server)
+        .await
+        .call(
+            reqwest::Method::POST,
+            "/v1/retros",
+            Some(json!({ "date": day })),
+        )
+        .await;
+    assert_eq!(status, 200, "{started}");
+    let ended = done(&mut events).await;
+    assert_eq!(
+        ended,
+        json!({ "date": day, "status": "failed", "proposals": 0 })
+    );
+
+    let retro = server.app.store.retro(&day).unwrap().unwrap();
+    assert_eq!(retro.status, "failed");
+    assert!(
+        retro.warnings[0].contains("no answer"),
+        "{:?}",
+        retro.warnings
+    );
+    assert!(server.app.store.proposals(None).unwrap().is_empty());
+    // One that did answer but found nothing to propose is still not failed; only `proposed`.
+}
+
+#[tokio::test]
 async fn a_branch_that_does_not_change_harness_configuration_is_left_out_with_a_warning() {
     let (_dir, origin, server, day) =
         bad_day_server(|day| format!("[propose proposal/{day}-code src/main.rs]"));

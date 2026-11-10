@@ -10,6 +10,7 @@
 
 mod traces;
 
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,10 @@ use crate::store::{Found, Proposal, Retro, Store};
 
 /// How many characters of a text a report keeps.
 const TEXT_LIMIT: usize = 500;
+
+/// How many entries of one kind a report keeps at most, its earliest ones. The report goes to the analyst's model,
+/// and a busy day of one kind must not crowd the others out nor make the prompt unsendable.
+pub(crate) const KIND_LIMIT: usize = 100;
 
 /// One thing that went wrong, as the report has it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -89,6 +94,10 @@ fn shorten(text: &str) -> String {
     }
 }
 
+/// A card sent back from review repeats its findings in every round it is reviewed; only the latest entry of each
+/// kind is kept for each card, which is what the report keeps of `sent_back_cards`.
+const SENT_BACK: [&str; 3] = ["checks_failed", "conflict", "review_findings"];
+
 /// Collects the errors of the local day `day` (`YYYY-MM-DD`), from its first moment to the first of the next day.
 pub fn report(store: &Store, day: &str) -> Result<Report> {
     let (from, to) = store
@@ -102,6 +111,29 @@ pub fn report(store: &Store, day: &str) -> Result<Report> {
     found.extend(store.steering(from, to, None)?);
     found.extend(store.sent_back_cards(from, to)?);
     found.sort_by_key(|f| f.at);
+    // A repeated finding of the same card crowds the report and the analyst's prompt: one of each kind per card stays.
+    let mut last = HashMap::new();
+    let mut repeated = HashSet::new();
+    for (i, f) in found.iter().enumerate() {
+        let previous = f.card_id.and_then(|card| last.insert((f.kind, card), i));
+        if let Some(previous) = previous {
+            repeated.insert(previous);
+        }
+    }
+    let mut found: Vec<Found> = found
+        .into_iter()
+        .enumerate()
+        .filter(|(i, f)| !(repeated.contains(i) && SENT_BACK.contains(&f.kind)))
+        .map(|(_, f)| f)
+        .collect();
+    // One kind must not crowd the others out nor make the prompt unsendable: its earliest KIND_LIMIT entries stay.
+    let mut kept: HashMap<&str, usize> = HashMap::new();
+    found.retain(|f| {
+        let kept = kept.entry(f.kind).or_insert(0usize);
+        *kept += 1;
+        *kept <= KIND_LIMIT
+    });
+
     Ok(Report {
         date: day.to_string(),
         errors: found
@@ -327,18 +359,34 @@ fn conclude(
     run_id: i64,
 ) -> (&'static str, Vec<String>) {
     let run = app.store.run(run_id).ok().flatten();
-    if run.as_ref().is_none_or(|run| run.status != "succeeded") {
-        let status = run.map_or("gone".to_string(), |run| run.status);
-        let why = app
-            .store
-            .events(run_id)
-            .unwrap_or_default()
-            .iter()
-            .rev()
-            .find(|e| e.kind == "moebius_error")
-            .and_then(|e| e.data["message"].as_str().map(shorten))
-            .unwrap_or_default();
-        return ("failed", vec![format!("the analyst's run {status}: {why}")]);
+    // The last moebius_error of the run, if any, names why it ended.
+    let why = app
+        .store
+        .events(run_id)
+        .unwrap_or_default()
+        .iter()
+        .rev()
+        .find(|e| e.kind == "moebius_error")
+        .and_then(|e| e.data["message"].as_str().map(shorten))
+        .unwrap_or_default();
+    // A run that settled without any answer made no model call succeed: the retro did nothing, and must not look like
+    // one that analysed the day and found nothing to propose.
+    let analysed = run.as_ref().is_some_and(|run| {
+        run.status == "succeeded" && run.summary.as_deref().is_some_and(|s| !s.trim().is_empty())
+    });
+    if !analysed {
+        let status = run.map_or_else(|| "gone".to_string(), |run| run.status.clone());
+        let why = if why.is_empty() {
+            String::new()
+        } else {
+            format!(": {why}")
+        };
+        return (
+            "failed",
+            vec![format!(
+                "the analyst's run {status}, but the model made no answer{why}"
+            )],
+        );
     }
     let prefix = format!("proposal/{day}-");
     let own_warnings = match repo.take_own_branches(&prefix) {

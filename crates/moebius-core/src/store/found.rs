@@ -453,4 +453,64 @@ mod tests {
         assert_eq!(of_trial[0].run_id, Some(trial.id));
         assert_eq!(of_trial[0].text, "boom");
     }
+
+    #[test]
+    fn a_report_keeps_one_sent_back_entry_of_each_kind_per_card_and_caps_the_total() {
+        use crate::improve::retro::{KIND_LIMIT, ReportError, report};
+        let (_dir, s) = store();
+        let repo = s.add_repository("r", "/r", "none", "main").unwrap();
+        let card = s
+            .add_card(repo.id, "Flaky test", "", "leon", "Backlog")
+            .unwrap();
+        let (from, _to) = s.day_window("2026-03-10").unwrap().unwrap();
+        // The card is sent back from review round after round, its findings repeated each round.
+        for round in 0..3 {
+            let note = format!("The test is missing. (round {round})");
+            s.set_card_note(card.id, &note).unwrap();
+            s.move_card(card.id, "In review").unwrap();
+            s.move_card(card.id, "In progress").unwrap();
+            s.conn()
+                .execute(
+                    "UPDATE card_moves SET at = ?1 WHERE note = ?2 AND to_column = 'In progress'",
+                    params![from + 400 + round, note],
+                )
+                .unwrap();
+        }
+        // Failed tool calls beyond what a report keeps, one per minute.
+        let run = s
+            .add_run(Some(card.id), "Coder", "pi-bolt", "code")
+            .unwrap();
+        let result = |i: usize| {
+            json!({ "toolName": "bash", "isError": true,
+                    "result": { "content": [{ "type": "text", "text": format!("failed {i}") }] } })
+        };
+        for i in 0..KIND_LIMIT + 10 {
+            let seq = s
+                .append_event(run.id, "tool_execution_end", &result(i))
+                .unwrap();
+            s.conn()
+                .execute(
+                    "UPDATE events SET at = ?1 WHERE run_id = ?2 AND seq = ?3",
+                    params![from + i as i64, run.id, seq],
+                )
+                .unwrap();
+        }
+
+        let first = report(&s, "2026-03-10").unwrap();
+        let sent_back: Vec<&ReportError> = first
+            .errors
+            .iter()
+            .filter(|e| e.kind == "review_findings")
+            .collect();
+        assert_eq!(sent_back.len(), 1, "{sent_back:?}");
+        // The findings of the latest round are the ones kept.
+        assert!(sent_back[0].text.ends_with("(round 2)"));
+        let failed = first
+            .errors
+            .iter()
+            .filter(|e| e.kind == "tool_failed")
+            .count();
+        assert_eq!(failed, KIND_LIMIT);
+        assert_eq!(first.errors.len(), KIND_LIMIT + 1);
+    }
 }
