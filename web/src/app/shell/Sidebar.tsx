@@ -461,8 +461,9 @@ function ChatSection({
         />
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
+            {/* Bare like the `+` beside it: the label and the caret say enough, the hover does the rest. */}
             <Button
-              variant="secondary"
+              variant="ghost"
               size="sm"
               className="min-w-0 max-w-32 flex-1"
               aria-label="Filter chats by project"
