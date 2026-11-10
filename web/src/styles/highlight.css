@@ -1,62 +1,39 @@
 /*
- * The colours of highlighted code in the chat: the classes highlight.js puts on tokens (through rehype-highlight).
- * Every one is a token of theme.css, so a theme change carries the code with it, and every one holds 4.5 to 1 on the
- * code ground — `--code-keyword`, `--code-string` and `--code-number` exist for that reason, since the category hues
- * are the colour of a swatch rather than of text. Comments take the secondary text colour and are italic as well, so
- * they read as a note without depending on their hue. Keywords, strings and numbers are decoration on code that is
- * already legible in `--text`; additions and deletions say which they are by the sign in the line as well as the colour.
+ * The classes the shared highlighting of code (`ui/code/highlight.ts`, Lezer) puts on the tokens of a block of code,
+ * in the editor and in the chat. Every colour is a token of theme.css, so a theme change carries the code with it,
+ * and every one holds 4.5 to 1 on the code ground — `--code-keyword`, `--code-string` and `--code-number` exist for
+ * that reason, since the category hues are the colour of a swatch rather than of text. Comments take the secondary
+ * text colour and are italic as well, so they read as a note without depending on their hue. Keywords, strings and
+ * numbers are decoration on code that is already legible in `--text`; titles stand out by weight rather than hue.
+ * Additions and deletions say which they are by the sign in the line as well as the colour.
  */
-.hljs-keyword,
-.hljs-selector-tag,
-.hljs-built_in,
-.hljs-type {
+.tok-keyword {
   color: var(--code-keyword);
 }
 
-.hljs-string,
-.hljs-regexp,
-.hljs-symbol,
-.hljs-bullet {
+.tok-string {
   color: var(--code-string);
 }
 
-.hljs-number,
-.hljs-literal,
-.hljs-attr,
-.hljs-attribute,
-.hljs-variable,
-.hljs-template-variable {
+.tok-number {
   color: var(--code-number);
 }
 
-.hljs-comment,
-.hljs-quote,
-.hljs-meta {
+.tok-comment {
   color: var(--text-secondary);
   font-style: italic;
 }
 
-.hljs-title,
-.hljs-section,
-.hljs-name,
-.hljs-selector-id,
-.hljs-selector-class {
+.tok-title {
   color: var(--text);
   font-weight: 600;
 }
 
-.hljs-addition {
+.tok-add {
   color: var(--complete-text);
 }
 
-.hljs-deletion {
+.tok-del,
+.tok-invalid {
   color: var(--error-text);
-}
-
-.hljs-emphasis {
-  font-style: italic;
-}
-
-.hljs-strong {
-  font-weight: 600;
 }

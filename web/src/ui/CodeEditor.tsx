@@ -8,7 +8,6 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import {
   bracketMatching,
-  HighlightStyle,
   indentOnInput,
   StreamLanguage,
   syntaxHighlighting,
@@ -28,8 +27,8 @@ import {
   keymap,
   lineNumbers,
 } from "@codemirror/view";
-import { tags } from "@lezer/highlight";
 import { useEffect, useRef } from "react";
+import { editHighlight } from "./code/highlight";
 
 /** The languages the editor highlights, by the name a plugin gives them; any other is plain text. */
 const LANGUAGES = { dockerfile: dockerFile, lua, shell, toml, yaml } as const;
@@ -41,26 +40,12 @@ export interface CodeProblem {
 }
 
 /**
- * The colours of the tokens: the ones `styles/highlight.css` gives the chat's code blocks, so a keyword, a string, a
- * number and a comment look the same here as they do in an answer. Each holds 4.5 to 1 on the code ground in both
- * themes, which is why the code tokens exist rather than the category hues.
+ * The colours of the tokens: the palette `ui/code/highlight.ts` builds from the theme's code tokens, the one the
+ * chat's code blocks draw as classes, so a keyword, a string, a number and a comment look the same here as they do in
+ * an answer. Each holds 4.5 to 1 on the code ground in both themes, which is why the code tokens exist rather than
+ * the category hues. (The palette also covers the tags of a diff and HTML tags; the editor's languages do not carry
+ * them.)
  */
-const highlight = HighlightStyle.define([
-  { tag: [tags.keyword, tags.operatorKeyword, tags.controlKeyword], color: "var(--code-keyword)" },
-  { tag: [tags.string, tags.special(tags.string)], color: "var(--code-string)" },
-  { tag: [tags.number, tags.bool, tags.null, tags.atom], color: "var(--code-number)" },
-  {
-    tag: [tags.comment, tags.lineComment, tags.blockComment],
-    color: "var(--text-secondary)",
-    fontStyle: "italic",
-  },
-  // What the chat draws with `.hljs-title`: the ink of the page, semibold, so a call stands out without a hue.
-  {
-    tag: [tags.function(tags.variableName), tags.standard(tags.variableName)],
-    color: "var(--text)",
-    fontWeight: 600,
-  },
-]);
 
 const theme = EditorView.theme(
   {
@@ -150,7 +135,7 @@ export default function CodeEditor({
           ...(Object.hasOwn(LANGUAGES, first.current.language)
             ? [StreamLanguage.define(LANGUAGES[first.current.language as keyof typeof LANGUAGES])]
             : []),
-          syntaxHighlighting(highlight),
+          syntaxHighlighting(editHighlight),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           theme,
           EditorView.contentAttributes.of({
