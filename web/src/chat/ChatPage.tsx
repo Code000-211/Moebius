@@ -24,8 +24,8 @@ export function ChatPage() {
   const chats = useQuery({ queryKey: keys.chats, queryFn: readChats });
   const snapshot = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
   const [notice, setNotice] = useState<string | null>(null);
-  // The package sheet sits fixed at the right of the window; on narrower windows, where the shell holds no room for
-  // it, the chat gives way itself, so the sheet never lies over the conversation.
+  // The package sheet sits fixed at the right of the window and grows with it (26rem from xl, 30rem from 2xl); below
+  // 2xl, where the shell holds no room for it, the chat gives way itself, so it never lies over the conversation.
   const packages = usePackageSheet();
 
   // A notice belongs to the chat it was said in.
@@ -49,7 +49,7 @@ export function ChatPage() {
 
   return (
     <div
-      className={`relative flex h-full w-full min-w-0 flex-col ${packages.shown ? "pr-[27.5rem] 2xl:pr-0" : ""}`}
+      className={`relative flex h-full w-full min-w-0 flex-col ${packages.shown ? "pr-[27.5rem] xl:pr-[29.5rem] 2xl:pr-0" : ""}`}
       data-testid="chat-page"
     >
       {/* 820px is the measure the conversation reads at: wide enough that a line of a diff fits beside its words,
