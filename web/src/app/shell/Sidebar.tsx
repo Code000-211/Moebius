@@ -1,7 +1,8 @@
 /**
  * The sidebar on every page: the app name with the connection, the search (the command bar), Inbox, Fleet,
  * the folding groups Automation, Projects (one entry per board) and Improve, the list of chats below them in the
- * wide sidebar, then Setup and the one entry for Settings. It collapses
+ * wide sidebar, then Setup and, at the foot, the gear to Settings — one gear alone, drawn as the rail draws its rows
+ * and standing under the settings list's view as well, below the row that leaves the session. It collapses
  * to a rail of icons, where the words the rail drops — the connection, a board's work — stay with the icon as text a
  * person can hear or open, at the same heights the wide sidebar uses so that the rail is the same list seen close,
  * and where nothing folds. The counts come from the snapshot. The rail alone keeps the Chat entry; the wide list
@@ -402,22 +403,17 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
           <ChatSection chats={chatList.data ?? []} snapshot={data.data} at={at} />
         )}
         {!inSettings && groupSection("Setup", "Setup")}
-        {!inSettings && (
-          <Section collapsed={collapsed}>
-            <Entry
-              to="/settings"
-              icon={GearIcon}
-              label="Settings"
-              collapsed={collapsed}
-              current={here === "settings"}
-            />
-          </Section>
-        )}
         {inSettings && (
           <Section collapsed={collapsed}>
             <SignOut collapsed={collapsed} />
           </Section>
         )}
+        {/* The one row the list never exchanges: the gear to Settings is the foot of it on every page, drawn as the
+            rail draws its rows, so a hand that learned its place keeps it while the list above it is swapped for the
+            settings'. */}
+        <Section collapsed={collapsed}>
+          <SettingsFoot />
+        </Section>
       </ScrollFades>
     </nav>
   );
@@ -707,6 +703,37 @@ function SignOut({ collapsed }: { collapsed: boolean }) {
       ) : (
         row
       )}
+    </li>
+  );
+}
+
+/**
+ * The way to Settings at the foot of the list, on every view of it: the everyday list's, the settings list's and the
+ * rail's, because the foot is the one row the list never exchanges — a hand that learned its place keeps it while the
+ * pages above it are swapped. It is drawn as the rail draws a row, the gear alone at the height of every row, so it
+ * does not change shape when the sidebar does; the words a wide row would carry beside it are the tooltip's and the
+ * link's name, and the list above the foot says which page is on screen, so the foot says nothing about current.
+ */
+function SettingsFoot() {
+  const name = "Settings";
+  const link = (
+    <Link
+      to="/settings"
+      aria-label={name}
+      className={cn(
+        "flex min-h-10 items-center gap-2 rounded-control px-3 text-base",
+        "justify-center px-0",
+        "text-sidebar-text hover:bg-hover hover:text-text",
+      )}
+    >
+      <GearIcon className="size-5 shrink-0" weight="regular" />
+    </Link>
+  );
+  return (
+    <li>
+      <Tooltip content={name} side="right">
+        {link}
+      </Tooltip>
     </li>
   );
 }

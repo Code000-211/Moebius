@@ -175,6 +175,22 @@ describe("the pages and the settings", () => {
     expect(screen.getByRole("link", { name: "Settings" })).not.toBeNull();
   });
 
+  it("keeps the gear at the foot on a settings page too", async () => {
+    show({ at: "/models" });
+    await screen.findByRole("link", { name: "General" });
+    // The everyday list is exchanged for the settings' own; the foot under it is not.
+    expect(screen.getByRole("link", { name: "Settings" })).not.toBeNull();
+  });
+
+  it("draws the foot as the rail draws a row: the gear alone, its words in the name", async () => {
+    show();
+    const foot = await screen.findByRole("link", { name: "Settings" });
+    expect(foot.textContent).toBe("");
+    expect(foot.querySelector("svg")).not.toBeNull();
+    // The foot says nothing about the page on screen; the list above it does the marking.
+    expect(foot.getAttribute("aria-current")).toBeNull();
+  });
+
   it("becomes the list of settings pages on one of them, and says how to get back", async () => {
     show({ at: "/models" });
     const pages = await screen.findByRole("navigation", { name: "Pages" });
