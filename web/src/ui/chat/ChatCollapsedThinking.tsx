@@ -56,7 +56,7 @@ export function ChatCollapsedThinking({
   if (entries.length === 0) return null;
 
   return (
-    <div className={cn("flex max-w-prose flex-col", className)}>
+    <div className={cn("flex flex-col", className)}>
       <button
         type="button"
         className="flex min-h-8 cursor-pointer items-center gap-2 self-start rounded-control px-3 text-left text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"

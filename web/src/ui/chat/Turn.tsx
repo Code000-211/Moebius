@@ -3,7 +3,7 @@
  * answered as its body. Presentational: the turn comes in as data (see `chat/turns.ts`), and so do the folded state
  * and the clicks. A later page that shows a run's conversation draws it with this.
  *
- * The answer is body text on a readable measure. What the agent did is one row apiece — thinking, a tool, a group of
+ * The answer is body text across the full width of the column. What the agent did is one row apiece — thinking, a tool, a group of
  * reads, a changed file, a todo list — each a control 40px tall that says its state in a word, opens to the text it
  * worked with, and keeps that text on the colour of code rather than in a box of its own colours.
  */
@@ -318,11 +318,8 @@ function BlockView({
         <ChatAssistantMessage
           content={block.text}
           renderMarkdown={({ content }) => (
-            // The answer keeps the measure of the standard and takes every line the agent wrote; the wrapper the
-            // component copied is one box that says the same.
-            <div className="max-w-prose">
-              <Markdown content={content} className="break-words" keepNewlines />
-            </div>
+            // The answer takes the width of the column; a cap of its own would leave the room the conversation has empty.
+            <Markdown content={content} className="break-words" keepNewlines />
           )}
           actions={<CopyButton text={block.text} label="Copy message" />}
         />
@@ -423,7 +420,7 @@ export function Turn({
           headerRight={<CopyButton text={head.message} label="Copy your message" />}
           renderMarkdown={({ content }) => (
             <p
-              className="max-w-prose break-words whitespace-pre-wrap text-base leading-relaxed text-text"
+              className="break-words whitespace-pre-wrap text-base leading-relaxed text-text"
               data-testid="person-message"
             >
               {content}
