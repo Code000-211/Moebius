@@ -2288,9 +2288,11 @@ a Retro already; `422` the date is not a date.
 `RetroView`: `date`, `status` (`reported`: the report is all there is; `analysing`: the analyst is running; `proposed`: it
 ran and its proposals are stored, there may be none; `failed`: its run failed or was stopped, the server stopped
 meanwhile, or storing its proposals failed), `run_id` (the analyst's run, or null), `warnings` (array of strings: the branches left out and why, or why it
-failed), `at`, `report` and `proposals` (array of `Proposal`).
+failed; a run that settled with no answer at all counts as failed too), `at`, `report` and `proposals` (array of `Proposal`).
 
-`report`: `{"date", "errors": [...], "merged": [...]}`; `merged` are the cards that reached Done that day after one code
+`report`: `{"date", "errors": [...], "merged": [...]}`; each kind of error keeps at most 100 entries, its earliest
+ones, and a card sent back from review keeps only the latest entry of each kind per card, so that a busy day's repeated
+findings cannot make the prompt unsendable. `merged` are the cards that reached Done that day after one code
 run and without being sent back from review, each `{"card", "title", "text"}` (`text` the start of the issue), which the
 Retro analyst writes lessons from (see [lessons](#get-v1lessons)). A day with errors or merged cards starts the analyst.
 `errors` are in the order in time. Each error is `{"kind", "run", "card", "agent", "text"}`;

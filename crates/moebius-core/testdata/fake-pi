@@ -110,6 +110,13 @@ for line in sys.stdin.buffer:
             continue
         with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "prompt.txt"), "w") as f:
             f.write(command["message"])
+        if "[provider error]" in command["message"]:
+            # The provider turned the request away; as Pi does after an upstream error the turn ends without an
+            # answer, the run settles as not aborted, and no summary was set.
+            emit({"type": "agent_end", "messages": [{"role": "user", "content": command["message"]}],
+                  "willRetry": False})
+            emit({"type": "agent_settled", "aborted": False})
+            continue
         if not command["message"].startswith("Work on issue"):
             answer = "You said: " + command["message"]
             written = re.search(r"\[write ([^\]]+)\]", command["message"])
