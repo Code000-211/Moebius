@@ -445,10 +445,10 @@ function ChatSection({
   return (
     <Section title="Chats" collapsed={false}>
       <li className="flex items-center gap-1">
-        <Button asChild variant="secondary" size="sm" className="min-w-0 flex-1">
+        {/* The compact way to a new chat is a bare `+`: its place in the row and the accessible name say enough. */}
+        <Button asChild variant="icon" size="sm" title="New chat">
           <Link to="/chat" aria-label="Start a chat in the sidebar">
             <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
-            New chat
           </Link>
         </Button>
         <input
@@ -464,7 +464,7 @@ function ChatSection({
             <Button
               variant="secondary"
               size="sm"
-              className="max-w-32"
+              className="min-w-0 max-w-32 flex-1"
               aria-label="Filter chats by project"
             >
               <span className="min-w-0 truncate">{named}</span>
