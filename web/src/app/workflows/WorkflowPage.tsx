@@ -189,9 +189,7 @@ export function WorkflowPage() {
             <p className="mb-1 mt-1 text-sm text-secondary">
               The workflow as it is saved, ready to copy.
             </p>
-            <CodeBlock language="TOML" code={saved.file}>
-              {saved.file}
-            </CodeBlock>
+            <CodeBlock language="TOML" code={saved.file} />
           </section>
         </aside>
       </div>

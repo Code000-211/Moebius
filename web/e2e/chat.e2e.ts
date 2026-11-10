@@ -474,7 +474,7 @@ describe("what the agent does", () => {
       fake().settle(run);
       await page.getByRole("heading", { name: "Result" }).waitFor();
       await page.getByText("done", { exact: true }).waitFor();
-      await page.locator("pre .hljs-keyword").filter({ hasText: "const" }).waitFor();
+      await page.locator("pre .tok-keyword").filter({ hasText: "const" }).waitFor();
       await page.getByRole("table").getByRole("cell", { name: "2" }).waitFor();
     },
   );

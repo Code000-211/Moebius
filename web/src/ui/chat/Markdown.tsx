@@ -2,16 +2,15 @@
  * The agent's and the person's text as Markdown (GitHub flavoured: tables, task lists, strikethrough), drawn in the
  * app's colours. It is body text: 15px on a relaxed line, headings from the scale rather than shrunk headings, and
  * monospace only where a character counts — a path, a command, a block of code. A heading is drawn one level under
- * the Markdown that asks for it, so a page keeps its one `<h1>` and an agent's `#` lands as an `<h2>`. Code blocks are
- * highlighted by highlight.js through `rehype-highlight` (its common languages) and have a Copy button. What an agent
- * writes line by line is drawn line by line (`keepNewlines`); a Markdown file's own wrapping stays soft. Links open in
- * a new tab. Raw HTML in the text is not rendered, as `react-markdown` does by default.
+ * the Markdown that asks for it, so a page keeps its one `<h1>` and an agent's `#` lands as an `<h2>`. Code blocks
+ * are highlighted by the grammars of `ui/code/highlight.ts` (see `CodeBlock`) and have a Copy button. What an agent
+ * writes line by line is drawn line by line (`keepNewlines`); a Markdown file's own wrapping stays soft. Links open
+ * in a new tab. Raw HTML in the text is not rendered, as `react-markdown` does by default.
  */
 import { CheckSquareIcon, SquareIcon } from "@phosphor-icons/react";
 import type { Element, ElementContent } from "hast";
 import { memo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
-import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import { cn } from "../lib/cn";
 import { CodeBlock } from "./CodeBlock";
@@ -32,24 +31,18 @@ export function languageOf(node: Element | undefined): string | undefined {
 }
 
 const components: Components = {
-  pre({ node, children }) {
+  pre({ node }) {
     const code = node?.children.find(
       (child): child is Element => child.type === "element" && child.tagName === "code",
     );
     return (
-      <CodeBlock language={languageOf(code)} code={code ? textOf(code).replace(/\n$/, "") : ""}>
-        {children}
-      </CodeBlock>
+      <CodeBlock language={languageOf(code)} code={code ? textOf(code).replace(/\n$/, "") : ""} />
     );
   },
   code({ className, children }) {
-    // A block's `code` is inside `pre`; this is the inline one (or the block's own element, which keeps its classes).
-    const block = typeof className === "string" && className.includes("language-");
-    return (
-      <code className={cn(block ? className : "rounded-small bg-code px-2 font-mono text-sm")}>
-        {children}
-      </code>
-    );
+    // A block's `code` is drawn by `pre` above; `children` is built and dropped, so it renders only inline.
+    if (typeof className === "string" && className.includes("language-")) return null;
+    return <code className="rounded-small bg-code px-2 font-mono text-sm">{children}</code>;
   },
   a({ href, children }) {
     return (
@@ -123,8 +116,6 @@ const components: Components = {
 };
 
 const REMARK = [remarkGfm];
-// `detect` finds the language of a block that names none; `ignoreMissing` keeps an unknown name from throwing.
-const REHYPE = [[rehypeHighlight, { detect: false, ignoreMissing: true }]] as never;
 
 function MarkdownText({
   content,
@@ -149,7 +140,7 @@ function MarkdownText({
         className,
       )}
     >
-      <ReactMarkdown remarkPlugins={REMARK} rehypePlugins={REHYPE} components={components}>
+      <ReactMarkdown remarkPlugins={REMARK} components={components}>
         {content}
       </ReactMarkdown>
     </div>
