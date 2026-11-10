@@ -1,10 +1,14 @@
 /**
- * The chat's actions, held by a chip: an always-visible small button at the bottom right of the conversation that
- * says the chat's state in one word and opens, on click, the small panel that holds all of the chat's actions — the
- * terminal, offering what the worktree changed, publishing and ending a grilling, stopping the agent, the model and
- * reasoning choices, and Rename and Delete. The chip lives inside the chat area, so it moves with the chat wherever
- * the page puts it, including when the chat gives way to the package sheet; it replaces the actions row and the
- * trashcan that the page's top bar carried, which keeps only the title now.
+ * The chat's actions, held by a chip: an always-visible small button that says the chat's state in one word and opens,
+ * on click, the small panel that holds all of the chat's actions — the terminal, offering what the worktree changed,
+ * publishing and ending a grilling, stopping the agent, the model and reasoning choices, and Rename and Delete. In
+ * the chat's own composer it stands beside Send (`beside`), saying the state where the message goes and covering none
+ * of the conversation; the Terminal view, which has no composer to stand beside, keeps it floating over the bottom
+ * right of the conversation. The chip lives inside the chat, so it moves with the chat wherever the page puts it,
+ * including when the chat gives way to the package sheet; it replaces the actions row and the
+ * trashcan that the page's top bar carried, which keeps only the title now. Its own fill comes from the surface, and
+ * its words from the theme's own text colour: a state pill carries no emphasis, so it borrows none from the fill of a
+ * clear action.
  */
 
 import { CaretUpIcon } from "@phosphor-icons/react";
@@ -60,20 +64,33 @@ export function chipState(chat: Chat): string {
   }
 }
 
-/** The chip with its panel of the chat's actions, over the bottom right of the conversation. */
+/**
+ * The chip with its panel of the chat's actions. Beside Send (`beside`) it is a control in the row the composer's
+ * other buttons are, drawn to their height, with its panel taken out of the row so opening it covers nothing; over
+ * the conversation (the Terminal view) it floats at the bottom right, its panel growing upward from it. Whether the
+ * panel stands open is the page's, and the page says it to whichever chip it draws, so the panel goes with the chat
+ * when the view switches under it and the chip is drawn again.
+ */
 export function ChatChip({
   chat,
   openId,
   onNotice,
+  beside = false,
+  shown,
+  onShown,
 }: {
   chat: Chat;
   /** The chat the page is on, for the way the delete dialog leaves it. */
   openId: number;
   onNotice: (notice: string | null) => void;
+  /** Drawn into the composer's row, beside Send, instead of floating over the conversation. */
+  beside?: boolean;
+  /** Whether the panel of actions stands open — the page's to hold, not the chip's. */
+  shown: boolean;
+  onShown: (shown: boolean) => void;
 }) {
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
-  const [shown, setShown] = useState(false);
   const [confirming, setConfirming] = useState<false | "stop" | "end">(false);
   const [naming, setNaming] = useState(false);
   const [draft, setDraft] = useState(chat.title);
@@ -93,7 +110,7 @@ export function ChatChip({
     setDraft(chat.title);
     setNaming(false);
     setConfirming(false);
-    setShown((was) => !was);
+    onShown(!shown);
   }
   // The name is there to be changed, so the field opens focused with the old name selected.
   useEffect(() => {
@@ -201,11 +218,21 @@ export function ChatChip({
     );
 
   return (
-    <div className="pointer-events-none absolute right-3 bottom-3 z-10 flex flex-col items-end gap-2">
+    <div
+      className={cn(
+        "z-10 flex flex-col items-end",
+        beside ? "relative" : "pointer-events-none absolute right-3 bottom-3",
+      )}
+    >
       {shown && (
         <div
           data-testid="chat-chip-panel"
-          className="pointer-events-auto flex w-72 flex-col gap-1 rounded-card bg-surface p-2 shadow-raised"
+          className={cn(
+            "pointer-events-auto flex w-72 flex-col gap-1 rounded-card bg-surface p-2 shadow-raised",
+            // Beside Send the panel is taken out of the row, and opens upward; over the conversation it is in
+            // the flow of a wrapper that already floats, so it grows upward from the chip of its own accord.
+            beside && "absolute right-0 bottom-full mb-2",
+          )}
         >
           {confirming !== false ? (
             <div className="flex flex-wrap items-center gap-2 p-2">
@@ -283,7 +310,7 @@ export function ChatChip({
               <div className="mt-1 flex flex-col gap-1 border-t border-border pt-2">
                 {row("Rename", () => setNaming(true))}
                 {row("Delete this chat", () => {
-                  setShown(false);
+                  onShown(false);
                   setDeleting(true);
                 })}
               </div>
@@ -293,7 +320,8 @@ export function ChatChip({
       )}
       <Button
         type="button"
-        size="sm"
+        variant="secondary"
+        size={beside ? "md" : "sm"}
         onClick={togglePanel}
         aria-expanded={shown}
         data-testid="chat-chip"
