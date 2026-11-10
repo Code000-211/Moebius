@@ -263,6 +263,18 @@ fn recording_api(
 
     let log = record.clone();
     m.set(
+        "merge_change",
+        lua.create_function(move |_, reason: Option<String>| {
+            log(format!(
+                "merged the change, and the card moved to Done{}",
+                with_note(reason)
+            ));
+            Ok(String::from("0000000000000000000000000000000000000000"))
+        })?,
+    )?;
+
+    let log = record.clone();
+    m.set(
         "ask",
         lua.create_function(move |_, (kind, reason): (String, String)| {
             log(format!("asked a person ({kind}) and waited: {reason}"));

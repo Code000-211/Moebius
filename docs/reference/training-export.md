@@ -32,7 +32,7 @@ read in pages of 1000 and never all held in memory. A judgement recorded while t
 | `options` | array of strings | What could be chosen. |
 | `choice` | string | What was chosen. |
 | `reason` | string | Why. A refusal by a failing decider starts with `refused: `. |
-| `decider` | string | Who decided: `person`, or a plugin as `<plugin>` or `<plugin>/<part>` (such as `guard/patterns`), or `none` when no decider answers the kind. |
+| `decider` | string | Who decided: `person`; the Moebius agent as `agent:<name>`; a column script as `script:<column>` (`moebius.merge_change`, see [column scripts](column-scripts.md)); or a plugin as `<plugin>` or `<plugin>/<part>` (such as `guard/patterns`), or `none` when no decider answers the kind. |
 | `run` | number or null | The run the decision was made in. |
 | `card` | number or null | The card it was made for. |
 | `outcome` | string or null | What came of it, null until known: a card that is done gives each of its judgements without an outcome the card's outcome (`merged` when a change of the card was merged, `closed` when the card is done without one, closed on the forge or by a person, say), except those of `localize`, whose outcome is the files the change touched (below); a replayed refusal has `replayed: <how it ended>; <what happened to the files>` (see [the replays](harness-configuration.md#the-replays));. |

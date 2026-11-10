@@ -262,6 +262,54 @@ mod tests {
     }
 
     #[test]
+    fn a_script_that_merges_the_change_finishes_the_card_and_the_script_is_the_decider() {
+        let (_dir, app, engine, repo) = setup();
+        // The project decides in its settings that what both reviews approved is merged.
+        let project = app.harness_repo().unwrap().project_dir("demo");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(
+            project.join("merge.luau"),
+            r#"
+function on_card(card)
+  if card.change == nil then
+    return moebius.wait("waiting for the change")
+  end
+  moebius.merge_change("both reviews approved")
+end
+"#,
+        )
+        .unwrap();
+        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        for _ in 0..6 {
+            if app.card(card.id).unwrap().column == columns::DONE {
+                break;
+            }
+            engine.settle(card.id).unwrap();
+        }
+        assert_eq!(app.card(card.id).unwrap().column, columns::DONE);
+        assert!(
+            app.store
+                .inbox_for_card(card.id)
+                .unwrap()
+                .iter()
+                .all(|item| item.resolved_at.is_some()),
+            "the offer is resolved by the merge"
+        );
+        let change = app.store.changes(repo).unwrap().pop().unwrap();
+        assert_eq!(change.state, "merged");
+        let merge = app
+            .store
+            .judgements_for_card(card.id)
+            .unwrap()
+            .into_iter()
+            .find(|judgement| judgement.kind == "merge")
+            .expect("a merge judgement");
+        assert_eq!(merge.decider, "script:Ready to merge");
+        assert_eq!(merge.choice, "merge");
+        assert_eq!(merge.reason, "both reviews approved");
+    }
+
+    #[test]
     fn a_move_worked_out_from_a_stale_card_is_not_applied() {
         use super::Effects;
         let (_dir, app, engine, repo) = setup();

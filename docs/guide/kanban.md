@@ -22,7 +22,7 @@ Backlog -> Not started -> In progress -> In review -> Ready to merge -> Done
 | `Not started` | `ready.luau` | Waits while the issue is labelled `wayfinder:...` (a question, see [wayfinder](grilling.md#plan-a-big-piece-of-work-with-wayfinder)), while issues block the card, while the daily token budget is spent and while the run limit is reached. Then moves the card to `In progress`. |
 | `In progress` | `code.luau` | Starts a run of the agent `Coder` for each round, waits while it goes, and moves the card to `In review` when a round has succeeded. |
 | `In review` | `review.luau` | Publishes the change, waits for its checks, sends the card back when they fail or the change conflicts, has the built-in agent `Reviewer` read it along two axes, Standards and Spec, and offers the change to a person. |
-| `Ready to merge` | `merge.luau` | Waits for a person to merge. Sends the card back when the change no longer merges cleanly. |
+| `Ready to merge` | `merge.luau` | Waits for a person to merge. Sends the card back when the change no longer merges cleanly. A repository can override it to merge without a person (see [Merging without a person](#merging-without-a-person)). |
 | `Done` | `done.luau` | Records how every decision made for the card ended. |
 
 A card is trusted when its issue was made through the desktop API on a repository without a forge (its author is
@@ -385,6 +385,16 @@ Offering the change adds an inbox item `ready_to_merge` with `{change, branch}`,
 moves the card here. `merge.luau` waits with `waiting for a person to merge`. If the default branch moves so that the
 change no longer merges, it sends the card back to `In progress` with the conflict as the note, and the inbox item
 is resolved.
+
+### Merging without a person
+
+A repository whose changes should not wait for a person overrides `merge.luau` in its settings
+(`repos/<repository name>/merge.luau`): the script calls `moebius.merge_change(reason)` once it has checked what it wants
+to hold. The change is merged on the forge, its inbox item is resolved and the card moves to `Done`. The judgement is
+recorded as the column's script, `script:Ready to merge`, so a Retro and the training export can tell it from a person's
+merge; nothing a person did is recorded on its behalf. What the reviews and the checks catch still holds: keep the
+conflict test of the default script, and hold the card with `moebius.wait` while its checks run or after they failed.
+The exact function is in the [column script reference](../reference/column-scripts.md#the-moebius-table).
 
 ### Done
 

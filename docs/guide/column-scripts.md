@@ -313,7 +313,7 @@ tick. Follow `GET /v1/events` (see the [desktop API](desktop-api.md)) to see `bo
 | `no agent named <name>` | `moebius.start_run` named an agent that is not in `moebius.toml`. Test with `moebius.has_agent(name)` first. |
 | Runs pile up. | `moebius.start_run` does not look at `run_limit` and starts a run every time it is called. A script that calls it on every tick must wait while the card's latest run is going, as `code.luau` does. |
 | A card waits and nobody knows why. | Call `moebius.wait(reason)` on every path that leaves the card where it is. The reason appears in the snapshot's `waiting` and in `card_waiting` events. |
-| `the script ran out of time` | The limit is 2 seconds of the script's own time, and fixed. Time spent inside `moebius.decide`, `start_run`, `publish_change`, `run_checks` and `offer_change` does not count. |
+| `the script ran out of time` | The limit is 2 seconds of the script's own time, and fixed. Time spent inside `moebius.decide`, `start_run`, `publish_change`, `run_checks`, `offer_change` and `merge_change` does not count. |
 | A held card is decided again every tick. | `moebius.decide` records a judgement on every call (see [Plugins](plugins.md)). |
 
 The sandbox has no file system, network, processes or `require`, and a script sees only its own card: there is no way
