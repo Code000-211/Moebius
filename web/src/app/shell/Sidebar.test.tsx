@@ -420,6 +420,8 @@ describe("the list of chats", () => {
     show({ at: "/chat" });
     const fresh = await screen.findByRole("link", { name: "Start a chat in the sidebar" });
     expect(fresh.getAttribute("href")).toBe("/chat");
+    // The compact way is a bare `+`: the words that name it are the accessible name, never printed beside it.
+    expect(fresh.textContent).toBe("");
   });
 
   it("names the place a chat works in, and keeps the rail with its one Chat entry", async () => {
