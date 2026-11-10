@@ -3,8 +3,11 @@
  * follow the stream at once, without reading the list again (the former desktop app's `Chats::on_event`), and the one the
  * sidebar opens when there is no chat id in the address.
  */
+
+import type { Snapshot } from "../api/types/board";
 import type { Chat } from "../api/types/chat";
 import type { ServerEvent } from "../api/types/events";
+import { placeName } from "./places";
 
 /** The chats after `event`; the same array when it changes none. */
 export function applyChatEvent(chats: Chat[], event: ServerEvent): Chat[] {
@@ -40,6 +43,51 @@ export function applyChatEvent(chats: Chat[], event: ServerEvent): Chat[] {
   return chats;
 }
 
+/** The project the sidebar's list of chats is narrowed to: every chat, a repository's, or those with none. */
+export type ChatFilter = "all" | "none" | number;
+
+/** The words a filter is kept under in this browser: `"all"`, `"none"`, or the repository's id. */
+export function formatChatFilter(filter: ChatFilter): string {
+  return typeof filter === "number" ? String(filter) : filter;
+}
+
+/**
+ * The filter its saved words name, `"all"` when nothing was saved or the words name nothing: a repository may have
+ * been removed since the choice was remembered, and a list that stays empty because of it reads as a broken page.
+ */
+export function parseChatFilter(stored: string | null): ChatFilter {
+  if (stored === "none") return "none";
+  const id = Number(stored);
+  return stored !== null && stored !== "" && Number.isInteger(id) && id > 0 ? id : "all";
+}
+
+/**
+ * The list narrowed to the project chosen. A repository keeps only its own chats; "Without project" keeps the chats
+ * of the harness configuration repository and of no known place — the ones `placeName` does not name after a board.
+ * A `query` typed into the search field narrows on from there: a chat stays only when both the project and the words
+ * take it, each read by what it says — the project by the repository a chat works in, the words by the title the row
+ * names, folded to one case, with a chat without a title read as the "New chat" its row names it.
+ */
+export function filterChats(
+  chats: Chat[],
+  snapshot: Snapshot | undefined,
+  filter: ChatFilter,
+  query = "",
+): Chat[] {
+  const words = query.trim().toLowerCase();
+  const byProject = (chat: Chat): boolean => {
+    if (filter === "all") return true;
+    if (filter === "none") {
+      return chat.harness_repository || placeName(snapshot, chat) === null;
+    }
+    return chat.repository_id === filter;
+  };
+  return chats.filter(
+    (chat) =>
+      byProject(chat) && (words === "" || (chat.title || "New chat").toLowerCase().includes(words)),
+  );
+}
+
 function replace(chats: Chat[], id: number, change: (chat: Chat) => Chat): Chat[] {
   const index = chats.findIndex((chat) => chat.id === id);
   const chat = chats[index];
@@ -51,6 +99,36 @@ function replace(chats: Chat[], id: number, change: (chat: Chat) => Chat): Chat[
   const next = chats.slice();
   next[index] = changed;
   return next;
+}
+
+/** A day in seconds, so the chats are grouped by whole days the way `ago` splits its words, not by clocks. */
+const DAY = 86_400;
+
+/** The chats of one day of the list, named as the sidebar says it. */
+export interface ChatGroup {
+  label: string;
+  chats: Chat[];
+}
+
+/**
+ * Every chat falls under one of three days, in a fixed order the cache's updates cannot shake: "Today", then
+ * "Yesterday", then "Older", each group's own chats newest first. The day a chat belongs to is the whole day of its
+ * `started_at` against `now` (both Unix seconds), so a chat begun at 23:59 stays of the day it was begun; a clock a
+ * little behind the server's still puts a chat of tomorrow under Today. A day with no chat is dropped.
+ */
+export function groupChats(chats: Chat[], now: number): ChatGroup[] {
+  const today = Math.floor(now / DAY);
+  const inGroup = (chat: Chat): number =>
+    Math.min(2, Math.max(0, today - Math.floor(chat.started_at / DAY)));
+  const buckets: [string, Chat[]][] = [
+    ["Today", []],
+    ["Yesterday", []],
+    ["Older", []],
+  ];
+  for (const chat of chats) buckets[inGroup(chat)]?.[1].push(chat);
+  return buckets
+    .map(([label, chats]) => ({ label, chats: chats.sort((a, b) => b.started_at - a.started_at) }))
+    .filter((group) => group.chats.length > 0);
 }
 
 /**

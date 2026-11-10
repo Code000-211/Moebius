@@ -30,6 +30,9 @@ pub struct Run {
     /// A chat's name as a person wrote it (`POST /v1/chats/{id}/title`); none while its title is its first message.
     #[serde(default)]
     pub title: Option<String>,
+    /// The workflow run whose worktree an agent of a workflow works in; none for every other run.
+    #[serde(skip)]
+    pub workflow_run_id: Option<i64>,
 }
 
 impl Run {
@@ -37,6 +40,11 @@ impl Run {
     pub fn branch(&self) -> String {
         let kind = if self.purpose == "chat" {
             "chat"
+        } else if self.purpose == "workflow" {
+            if let Some(workflow_run) = self.workflow_run_id {
+                return format!("moebius/workflow-run-{workflow_run}");
+            }
+            "run"
         } else {
             "run"
         };
@@ -61,6 +69,7 @@ fn run_from_row(r: &rusqlite::Row) -> rusqlite::Result<Run> {
         origin: r.get(12)?,
         runner: r.get(13)?,
         title: r.get(14)?,
+        workflow_run_id: r.get(15)?,
     })
 }
 
@@ -94,6 +103,7 @@ impl Store {
             origin: "chat".into(),
             runner: None,
             title: None,
+            workflow_run_id: None,
         })
     }
 
@@ -104,7 +114,7 @@ impl Store {
     ) -> Result<Vec<Run>> {
         self.rows(&format!(
             "SELECT id, card_id, agent, harness, purpose, status, worktree, started_at, ended_at, summary, repository_id,
-                harness_repository, origin, runner, title
+                harness_repository, origin, runner, title, workflow_run_id
              FROM runs WHERE {clause} ORDER BY id"
         ), [param], run_from_row)
     }
@@ -141,7 +151,7 @@ impl Store {
     pub fn runs_for_board(&self, repository_id: i64, except_column: &str) -> Result<Vec<Run>> {
         self.rows(
             "SELECT r.id, r.card_id, r.agent, r.harness, r.purpose, r.status, r.worktree, r.started_at, r.ended_at,
-                    r.summary, r.repository_id, r.harness_repository, r.origin, r.runner, r.title
+                    r.summary, r.repository_id, r.harness_repository, r.origin, r.runner, r.title, r.workflow_run_id
              FROM runs r JOIN cards c ON c.id = r.card_id
              WHERE c.repository_id = ?1 AND c.column_name <> ?2 AND r.purpose <> 'trial' ORDER BY r.id",
             params![repository_id, except_column],
@@ -290,6 +300,15 @@ impl Store {
         self.conn().execute(
             "UPDATE runs SET worktree = ?1 WHERE id = ?2",
             params![worktree, id],
+        )?;
+        Ok(())
+    }
+
+    /// Records the workflow run whose worktree an agent of a workflow works in.
+    pub fn set_run_workflow_run(&self, id: i64, workflow_run: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE runs SET workflow_run_id = ?1 WHERE id = ?2",
+            params![workflow_run, id],
         )?;
         Ok(())
     }

@@ -93,6 +93,7 @@ pub(super) async fn start_with(
             .unwrap(),
         )),
     };
+    state.app.set_runs(state.runs.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(serve(listener, state.clone()));

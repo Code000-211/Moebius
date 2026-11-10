@@ -49,8 +49,10 @@ pub enum Event {
     AutomationFired {
         automation: i64,
         firing: i64,
+        workflow: String,
         status: String,
         run: Option<i64>,
+        workflow_run: Option<i64>,
     },
     CardAdded(Card),
     CardUpdated(Card),
@@ -241,6 +243,11 @@ pub enum Event {
         grilling: i64,
         status: String,
     },
+    /// A person published what an open grilling chat left, while the chat goes on; a later publish replaced it.
+    GrillingPublished {
+        grilling: i64,
+        status: String,
+    },
     /// A person deleted a grilling, or the chat it came from.
     GrillingDeleted {
         grilling: i64,
@@ -369,6 +376,7 @@ mod tests {
             id: 4,
             repository_id: Some(2),
             card_id: Some(7),
+            run_id: None,
             branch: "moebius/12".into(),
             state: "open".into(),
             pull_request: Some(31),
@@ -433,10 +441,12 @@ mod tests {
                 Event::AutomationFired {
                     automation: 2,
                     firing: 5,
+                    workflow: "nightly".into(),
                     status: "started".into(),
                     run: Some(9),
+                    workflow_run: Some(11),
                 },
-                json!({"kind": "automation_fired", "data": {"automation": 2, "firing": 5, "status": "started", "run": 9}}),
+                json!({"kind": "automation_fired", "data": {"automation": 2, "firing": 5, "workflow": "nightly", "status": "started", "run": 9, "workflow_run": 11}}),
             ),
             (
                 Event::CardAdded(card.clone()),
@@ -765,6 +775,13 @@ mod tests {
                     status: "proposed".into(),
                 },
                 json!({"kind": "grilling_ended", "data": {"grilling": 1, "status": "proposed"}}),
+            ),
+            (
+                Event::GrillingPublished {
+                    grilling: 1,
+                    status: "reported".into(),
+                },
+                json!({"kind": "grilling_published", "data": {"grilling": 1, "status": "reported"}}),
             ),
             (
                 Event::ForgeError {

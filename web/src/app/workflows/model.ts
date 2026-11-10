@@ -1,10 +1,11 @@
 /**
  * The words the Workflows pages use for the states the server sends: a trigger's kind, a run's status and a node's
  * status, each as the label a person reads and the tone it wears. They live here so the list, the definition and the
- * run cannot drift apart in what they call the same thing.
+ * run cannot drift apart in what they call the same thing. Also the shape test of the server (`is_automation`), which
+ * the pages need to say when a workflow is one of the Automations page's entries rather than a plain workflow.
  */
 
-import type { WorkflowRunSummary, WorkflowTrigger } from "../../api/workflows";
+import type { WorkflowDefinition, WorkflowRunSummary, WorkflowTrigger } from "../../api/workflows";
 import type { TagTone } from "../../ui/chat/Tag";
 
 /** The trigger in a few words: what starts it, and the schedule or event when it has one. */
@@ -54,4 +55,13 @@ export function lastRunLine(last: WorkflowRunSummary | null): string {
 /** Whether a workflow or run should be marked as needing attention. */
 export function needsAttention(status: string | null | undefined): boolean {
   return status === "failed" || status === "waiting";
+}
+
+/** Whether the workflow is an automation, the way the server's `is_automation` sees it: a schedule that starts one chat. */
+export function looksLikeAutomation(definition: WorkflowDefinition): boolean {
+  return (
+    definition.trigger.kind === "schedule" &&
+    definition.nodes.length === 1 &&
+    definition.nodes[0]?.kind === "chat"
+  );
 }

@@ -39,6 +39,7 @@ const SNAPSHOT_KINDS = new Set([
   "run_started",
   "run_ended",
   "grilling_ended",
+  "grilling_published",
   "chat_deleted",
   "research_deleted",
   "grilling_deleted",

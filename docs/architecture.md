@@ -126,11 +126,14 @@ and does not know anything the API does not say.
 9. **The change is published.** On a later tick `code.luau` sees the succeeded `code` run (and no `card.note`) and moves
    the card to `In review`. `review.luau` calls `moebius.publish_change`, which calls `App::publish_change`: the branch
    `moebius/card-<number>` is pointed at the latest successful `code` run's commit (`Repos::point_branch`; each round's
-   branch descends from the last, so the branch only moves forward) and the forge publishes it (`Forge::publish`:
-   `NoForge` does nothing; `GitHubForge` pushes and, the first time, opens the pull request; `GitLabForge` the same with a
-   merge request, `ForgejoForge` with a pull request on Forgejo). The change is stored
+   branch descends from the last, so the branch only moves forward) and the forge pushes it (`Forge::push`; `NoForge` does nothing). No pull request is opened yet: it opens when the
+   review approved the change and `moebius.offer_change` offers it (`Forge::publish`: `GitHubForge` pushes and, the first
+   time, opens the pull request; `GitLabForge` the same with a merge request, `ForgejoForge` with a pull request on
+   Forgejo). The change is stored
    (`Store::add_change`, later `Store::set_change_head`) with the published commit and time, and `change_updated` is
    published. A card has one change, one branch and one pull request for all its rounds.
+    The forge's own checks are read from the pull request, so a forge's checks come after the offer; `merge.luau` sends
+    the card back when they fail.
 10. **The change is checked.** On GitHub the poll records the check runs of the pull request's head commit, on GitLab
     the latest pipeline of the merge request's head commit and its failed jobs, on Forgejo the commit statuses of the
     pull request's head commit (`poll::poll_requests`, which reads them
@@ -140,7 +143,7 @@ and does not know anything the API does not say.
     runs it with `sh -c` in a throwaway worktree of the change's commit (`App::check_change`, `execute`) with the time
     limit `checks.timeout_seconds`, and records `success` or `failure` with the end of the output, redacted
     (`Store::set_local_checks`). `App::checks_of` gives scripts `card.change.checks`: checks for another commit than the
-    published one do not count, and on a forge the change is `pending` for a grace period after the publish and then
+    published one do not count, and on a forge the change is, once it has a pull request, `pending` for a grace period after the publish and then
     `none`. `App::conflict_of` asks `git merge-tree` whether the change still merges into the default branch
     (`Repos::conflicts`).
 11. **The change is sent back or reviewed.** `review.luau` waits while the checks are `pending`. Failing checks or a
@@ -311,15 +314,29 @@ and does not know anything the API does not say.
     `confirmed` together with its dependencies. `backlog.luau` moves such a card to Not started (`card.confirmed`); a
     `confirm_grilling` judgement by `person` is recorded and the inbox item resolved.
 12h. **Automations.** `POST /v1/automations` (`App::save_automation`) checks the schedule (`cron::parse`), the agent
-    (`CardRuns::has_agent`) and the place, and stores the automation (`automations` table) with `checked_at`, the local
-    minute it was made. Once a minute `server/schedule.rs` reads the server's local minute (`Store::local_minute`, SQLite's
-    `localtime`) and asks `automations::on_schedule`, which first ends each automation's chat that has answered and waits
-    (`Store::waiting_automation_chats`, `App::end_chat`, so its work is offered as for any chat), then fires each
-    automation that is on and whose schedule came due after its `checked_at` (at most five minutes back) and up to now,
-    and sets every `checked_at` to now. A firing (`fire`, also `POST /v1/automations/{id}/run`) is skipped while the chat
-    of the automation's last started firing has neither ended nor answered; otherwise it calls `App::start_chat` with the
-    automation's agent, place and prompt and the origin `automation`. Each firing is stored (`firings` table: `started`
-    with its chat, `skipped` or `failed` with the reason) and published as `automation_fired`.
+    (`CardRuns::has_agent`) and the place, and writes the automation as the `schedule` workflow with one `chat` node
+    (`App::automation_definition`) in the harness configuration repository, keeping its row (`automations` table) for the
+    id its firings use; a row saved before that is migrated to a file (`App::migrate_automations`). Once a minute
+    `automations::on_schedule` ends each automation's chat that has answered and waits (`Store::waiting_automation_chats`,
+    `App::end_chat`, so its work is offered as for any chat). The workflow schedule fires an automation (`fire`, also
+    `POST /v1/automations/{id}/run`): skipped while the chat of its last started firing has neither ended nor answered;
+    otherwise a repository automation starts a workflow run whose `chat` node starts the chat (`app/workflows/chat.rs`),
+    and one that works in the harness configuration repository calls `App::start_chat` directly. A row whose file was
+    edited into an ordinary workflow fires from neither its row nor the automation check: that workflow owns its
+    schedule. Each firing is stored (`firings` table: `started` with its chat and workflow run, `skipped` or `failed`
+    with the reason, also when the run's `chat` node cannot start the chat) and published as `automation_fired`, naming
+    the workflow run.
+12i. **The workflow schedules.** The same minute, `server/schedule.rs` asks `schedule::on_workflow_schedules`, which reads
+    every workflow file the harness configuration repository holds, one at a time (`workflows::definition::read`), and
+    for each one whose trigger is a `schedule` (`workflows/trigger/schedule.rs`) asks whether its cron came due after
+    the minute that workflow last fired at (`Store::schedule_firing`, at most five minutes back) and up to now. A file
+    that cannot be read wakes no schedule of its own and is published as `retro_error`, while the schedules of the
+    other workflows go on. The minute it fired at is recorded (`Store::record_schedule_firing`) before the run starts,
+    so one occurrence starts one run across a restart; the run goes through `App::start_workflow_run` with the
+    repository the trigger names and the value the firing gives (`fired` and the inputs' defaults). A firing that
+    starts no run is written to the log and spends the occurrence, so a workflow is not started every minute it is
+    awake. An automation is such a workflow, fired here instead of starting a run of its own definition's repository
+    when it works in the harness configuration repository.
 13. **The forge reports.** `poll::poll_requests` reads each open change's pull or merge request: checks and review
     (on GitLab, whether anyone approved; on Forgejo, the latest review given) are recorded (`change_updated`), a merged one calls `App::change_merged`, a
     closed one calls `App::change_closed`.
@@ -345,7 +362,7 @@ start; its version is `PRAGMA user_version`.
 | `card_moves` | Each move of a card (`Store::move_card`, called by `App::move_card`): from, to, the card's note then, time. Moves before this table existed are not recorded. |
 | `dependencies` | For a card, the issue numbers it is blocked by. |
 | `card_labels`, `card_comments` | The labels of a card's issue; its comments, each with the id it has on the forge when it has one. `cards` also has `parent`, `closed`, `claimed_by` and `claimed_at`. |
-| `changes` | A card's or chat's branch `moebius/card-<number>`: repository (none, with `harness_repository` set, for the harness configuration repository), card, state (`open`, `merged`, `closed`), pull request number, the published commit and time, checks with the commit they are for, failing checks, output of the repository's own checks, review. |
+| `changes` | A card's, chat's or workflow run's branch (`moebius/card-<number>`, `moebius/chat-<run id>` or `moebius/workflow-run-<run id>`): repository (none, with `harness_repository` set, for the harness configuration repository), card or workflow run, state (`open`, `merged`, `closed`), pull request number, the published commit and time, checks with the commit they are for, failing checks, output of the repository's own checks, review. |
 | `runs` | One per harness run: card (none for a chat), agent, harness, purpose, status, worktree, repository (a chat's) or whether it works in the harness configuration repository, start and end, summary (the agent's final answer). |
 | `events` | Everything a run emitted, numbered per run, as JSON. |
 | `workflow_runs` | One per run of a workflow: workflow name, repository, trigger kind, status (`queued`, `running`, `waiting`, `succeeded`, `failed` or `cancelled`), the run's value as JSON text, when it was stored, started and finished, and its error. |
@@ -454,7 +471,11 @@ At the top:
 | `app/issues/text.rs` | The lines of a description that hold a parent ("Part of #n") or a blocker ("Blocked by #n") where the forge has none. |
 | `app/stopping.rs` | Holding (blocking), releasing and deleting a card, which stops its runs and, for a delete, removes what it left in the clone. |
 | `app/runs.rs` | A person's hand in a run: steering, stopping, a shell in its worktree, a chat's terminal interface, and a shell on the server. |
-| `app/automations/mod.rs` | Automations: saving and listing them with their next firing, firing one (a chat with origin `automation`, or a skipped or failed firing), and the check once a minute that ends their answered chats and fires those that came due. |
+| `app/automations/mod.rs` | Automations: the automation origin, and the parts that make an automation a workflow, migrate a row to one, fire it and show it. |
+| `app/automations/definition.rs` | What makes a workflow an automation, and how an automation's row is read from its file and written to one. |
+| `app/automations/firing.rs` | Firing an automation: a workflow run whose `chat` node starts the chat, or a chat with origin `automation` for the harness configuration repository, or a skipped or failed firing; and the check once a minute that ends their answered chats and fires a row no file holds yet. |
+| `app/automations/migration.rs` | The upgrade that writes an older automation's row to a workflow file in the harness configuration repository. |
+| `app/automations/view.rs` | The automations as the page and the API read them, with their next firing and latest one; and the old routes' save and delete of the workflow file behind a row. |
 | `app/automations/cron.rs` | A schedule: a cron expression of five fields in the server's local time, parsed, and the next minute it comes due. |
 | `app/chats.rs` | Chats: starting one, continuing an ended one, writing to it, its model and reasoning, ending it, and the list of chats. |
 | `app/deletions.rs` | Deleting a chat: a chat that is going is stopped, then it is taken out of the store with its changes, inbox items and grillings, and its worktree and branch are removed; also the stop-and-wait that research and grillings share. |
@@ -472,6 +493,9 @@ At the top:
 | `app/reproduce.rs` | Test first: a repository's opt-in (the project's `test-first`), what a run names in the `REPRODUCE:` lines of its summary, and the runs of that reproduction test on the change and on the commit it starts from with the test's files added. |
 | `app/workflows/mod.rs` | The wiring that turns a stored workflow into a run, recording the run and its nodes in the store and on the bus. |
 | `app/workflows/run.rs` | Starting a workflow run from its definition or its name, driving it off the request path, and recording and publishing each node and the run's end as they happen. |
+| `app/workflows/approval.rs` | The part of a run that waits for a person: the wait of the `approval` node, the decision coming back through the resume route, and driving again the runs a stopped server left waiting. |
+| `app/workflows/chat.rs` | The part of a run that starts the chat of a `chat` node, in the run's repository, and records that chat on the firing the run carries. |
+| `app/workflows/stopping.rs` | Cancelling a workflow run: the run's cancellation flag, what each status gives up, and ending the run `cancelled` once, whoever gets there first. |
 
 `config/`, `moebius.toml`:
 
@@ -518,8 +542,9 @@ At the top:
 | `store/attempts.rs` | Attempts: the runs a card was tried with at once, how each fared, which was picked and why, and the rounds of which none passed. |
 | `store/runs.rs` | Runs: an agent's work in a harness, from its start to its end. |
 | `store/workflows.rs` | Workflow runs and the runs of each node of them, with their value, input and output redacted before they are stored. |
+| `store/workflow_schedules.rs` | The minute each workflow on a `schedule` trigger last fired at, so one occurrence of its cron starts one run even when the server restarts in between. |
 | `store/events.rs` | A run's events, in order, redacted before they are stored. |
-| `store/automations.rs` | Automations, their firings with the status of each chat, and the server's local minute. |
+| `store/automations.rs` | Automations, their firings with the status of each chat, and the server's local minute; the workflow file is the definition and the row keeps the id the firings use. |
 | `store/chats.rs` | Chats: where they were started, what they work in and how far a person has read them. |
 | `store/deletions.rs` | Deleting a chat, a research or a replay from the store in one transaction each; usage and judgements stay, without a run. |
 | `store/localize.rs` | The search index of `localize`: a repository's files in an FTS5 table of their own, split into words for ranking by BM25, and the commit it was made from. |
@@ -552,7 +577,7 @@ At the top:
 | `server/packages/plugin.rs` | Installing, updating and removing a plugin: its program, its `[[plugins]]` entry through the live settings, and starting it in the plugin host. |
 | `server/packages/propose.rs` | Kanban (`workflow`), rules and skills packages: their files proposed as a change to a repository or to the harness configuration repository. |
 | `server/packages/check.rs` | The nightly look for newer versions of the installed packages, and the inbox items it adds. |
-| `server/schedule.rs` | Once a minute: the Retro, trials, research, replays and automations when they are due, and the pause of chats that wait idle. |
+| `server/schedule.rs` | Once a minute: the Retro, trials, research, replays, the ending of answered automation chats, the workflows on a `schedule` trigger when they are due (automations included), and the pause of chats that wait idle. |
 | `server/fake_github.rs` | For the tests only: a fake GitHub with one repository, and a server that polls it. |
 | `server/fake_gitlab.rs` | For the tests only: a fake GitLab with one project, a server that polls it, and the tests of the GitLab forge through it. |
 | `server/fake_forgejo.rs` | For the tests only: a fake Forgejo with one repository, a server that polls it, and the tests of the Forgejo forge through it. |
@@ -561,11 +586,14 @@ At the top:
 | `server/api/issues.rs` | The issue tracker's routes: the issue list and one issue, parent, labels, blockers, claim, close and reopen, comments. |
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
 | `server/api/runs.rs` | A run and its events in pages, steering and stopping it. |
-| `server/api/automations.rs` | Automations: list, add, read, replace, delete, run now, and their firings. |
+| `server/api/automations/mod.rs` | Automations: list, add, read, replace, delete, run now, and their firings. |
+| `server/api/automations/tests.rs` | For the tests only: the automations routes, and an older row upgraded to a workflow beside a workflow of the same name. |
 | `server/api/chats.rs` | Chats with an agent (start, write, offer, end, seen, settings) and what grilling chats ended in. |
 | `server/api/harness.rs` | The agents, skills and MCP servers of the harness configuration repository, and `POST /v1/harness/setup`. |
 | `server/api/rules.rs` | The rules page and the rules in prose. |
-| `server/api/workflows.rs` | The workflows of the harness configuration repository: list, read, save and delete, saving and deleting as commits. |
+| `server/api/workflows.rs` | The workflows of the harness configuration repository: list, read, save and delete, saving and deleting as commits, a person's decision on a waiting run, and cancelling a run of one. |
+| `server/api/workflow_hooks.rs` | `POST /api/hooks/{path}` and `POST /api/hooks/{repository}/{path}`, the door a workflow's `webhook` trigger answers on: the credential it asks for, the run its body starts, and its ceiling of runs going at once. |
+| `server/api/workflow_runs.rs` | `GET /v1/workflows/{name}/run-inputs` and `POST /v1/workflows/{name}/runs`: the inputs a manual trigger names, and starting a run by hand with them. |
 | `server/api/settings.rs` | `moebius.toml`, the API keys and the restart, and what the Models, Plugins and Get started pages show. |
 | `server/api/lessons.rs` | The lessons: list, read, edit and delete. |
 | `server/api/extensions.rs` | `/v1/extensions/...`: search, info, the installed packages, and proposals to install, update and remove; and the refusal of an agent's merge of a change that touches a package. |
@@ -744,9 +772,25 @@ At the top:
 | `workflows/decorate.rs` | The expressions in a node's parameters: evaluating `{{ ... }}` in the sandbox column scripts use, with the trigger, the node's input and earlier nodes in scope. |
 | `workflows/definition.rs` | The workflow file (`workflows/<name>.toml`): its trigger, nodes and edges, parsing it whole, validating its graph, and reading and listing it from the harness configuration repository; saving and deleting it are commits in `harness/repo/edits.rs`. |
 | `workflows/nodes/mod.rs` | The node kinds: the `Node` trait, the ports and metadata a kind reports, the value and port a node returns, and the registry that maps a kind name and its parameters to a node. |
+| `workflows/nodes/agent/mod.rs` | The `agent` node: its kind, its parameters, its ports and metadata, and the value it takes from the fenced JSON block the agent ends with. |
+| `workflows/nodes/agent/run.rs` | Running an agent node: the workflow run's repository checked out into the worktree the run owns, the prompt filled from the run, the agent started through the picker, and its transcript kept in its run's log. |
+| `workflows/nodes/agent/value.rs` | The value of an agent node: the last fenced JSON block of the agent's final answer, parsed, or a failure closed when the block is missing or malformed. |
+| `workflows/nodes/code.rs` | The `code` node: Luau that reshapes the value in the expression sandbox, with the run's scope, and outputs what it returns. |
 | `workflows/nodes/condition.rs` | The `condition` node: one Luau expression per named output port, tried in order, the first true one taken, else the fallback port or a failure. |
 | `workflows/nodes/for_each.rs` | The `for_each` node: fans a list out over a sub-path once per element, gathers the outputs in order, and checks that the sub-path rejoins where the definition says. |
-| `workflows/run.rs` | The executor: following the edges from the trigger with one value, giving each node the trigger's value and the values of the nodes that ran before, taking the edge that leaves by the port a node names, running each node under its timeout, failing the run on a node's error or its node ceiling, and reporting each step to an observer. |
+| `workflows/nodes/approval.rs` | The `approval` node: the prompt, the deadline and what each of the three decisions leaves on the run; the waiting itself belongs to `app/workflows/approval.rs`. |
+| `workflows/nodes/http/mod.rs` | The `http` node: the node kind, its configuration from the server, and the run that fills its parameters and fails closed on a refused or failed call. |
+| `workflows/nodes/http/params.rs` | Reading the `http` node's parameters into a request, when the file is read and again when the run has filled its expressions. |
+| `workflows/nodes/http/policy.rs` | The `http` node's URL policy: `https` or `http`, no user name or password, and only a host the server configuration names. |
+| `workflows/nodes/http/call.rs` | The `http` node's request: a named secret resolved and sent, no redirects, a time limit, the answer read as status, headers and body, and failures whose message carries no URL query or secret. |
+| `workflows/nodes/merge.rs` | The `merge` node: joins the two branches that reached it and emits what arrived by each side, one side's object or the list of the arrivals. |
+| `workflows/nodes/chat.rs` | The `chat` node: the agent, prompt and place of the agent chat an automation is stored as; the run that reaches it starts the chat from `app/workflows/chat.rs`. |
+| `workflows/nodes/publish.rs` | The `publish` node: the run's branch offered as its change with a title and body filled from the value, the failure closed when the run has no agent node or nothing was committed, and the change's id and kind as its value. |
+| `workflows/trigger/mod.rs` | The trigger kinds a workflow file may name, the module that owns each, and how a trigger's `kind` is resolved by its module when one owns it and by the node registry otherwise. |
+| `workflows/trigger/manual.rs` | The `manual` trigger: the inputs it names with their types, requiredness, defaults and choices, checked when the file is read, and the value a started run begins with. |
+| `workflows/trigger/schedule.rs` | The `schedule` trigger: a cron of five fields in the server's local time, its on/off switch, the minute it next comes due, the minute it last fired at, and the value a firing starts a run with; a cron that cannot be read is refused when the file loads, naming the wrong field. |
+| `workflows/trigger/webhook.rs` | The `webhook` trigger: the path its workflow answers on, the secret a delivery must carry and the repository its runs belong to, and which workflow a path leads to. |
+| `workflows/run.rs` | The executor: following the edges from the trigger with one value, giving each node the trigger's value and the values of the nodes that ran before, taking the edge that leaves by the port a node names, running each node under its timeout, failing the run on a node's error or its node ceiling, stopping where a person cancels the run, and reporting each step to an observer. |
 
 Outside `src/`: `kanban/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension
 loaded into every run, `bridge/moebius-ask.ts` the question tool of the agents that operate Moebius, `skill/` the built-in skills.

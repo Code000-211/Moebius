@@ -46,6 +46,7 @@ use std::time::Duration;
 
 use moebius_plugin_api::Host;
 
+use crate::board::Runs;
 use crate::bus::{Bus, Event};
 use crate::config::{LocalizeConfig, PackagesConfig};
 use crate::decide::{Actor, Decisions, Question};
@@ -57,7 +58,7 @@ use crate::store::{Card, Change, Repository, Run, Store, StoreError};
 
 pub use attempts::{AttemptCheck, read_pick};
 pub use automations::{
-    AUTOMATION_ORIGIN, AutomationView, cron, on_schedule as on_automation_schedule,
+    AUTOMATION_ORIGIN, AutomationView, cron, is_automation, on_schedule as on_automation_schedule,
 };
 pub use board::{BoardFacts, CardFacts};
 pub use cards::HistoryEntry;
@@ -172,16 +173,28 @@ pub struct App {
     /// Why each waiting card waits, as its column script last said (`moebius.wait`, `ask`, `stuck`). Not stored: a
     /// reason is rebuilt by the next tick after a restart.
     waiting: Mutex<HashMap<i64, String>>,
+    /// The workflow runs waiting for a person's decision: the decision the resume route sends to the thread that waits
+    /// for it (see `workflows::approval`).
+    workflow_decisions:
+        Mutex<HashMap<i64, std::sync::mpsc::Sender<crate::workflows::nodes::approval::Decision>>>,
+    /// The workflow runs a thread drives now, so that a decision at the edge of a wait cannot start a second drive
+    /// of the same run (see `workflows::run`).
+    workflow_drives: Mutex<BTreeSet<i64>>,
     /// The cards whose forge refused to close their issue for a script, with when and what it said: not asked again for
     /// a while (see `issues`). Not stored.
     close_refused: Mutex<HashMap<i64, (std::time::Instant, String)>>,
     /// The cards whose forge refused a label for a script, with when: not asked again for `close_retry`. Not stored.
     label_refused: Mutex<HashMap<i64, std::time::Instant>>,
+    /// The cancellation flag of each workflow run: set when a person cancels the run and looked at by the thread of
+    /// the run between nodes and while its node goes (see `workflows::stopping`).
+    workflow_cancels: Mutex<HashMap<i64, Arc<AtomicBool>>>,
     /// How long a forge that refused to close an issue, or a label, is left alone.
     close_retry: Duration,
     forges: BTreeMap<&'static str, Box<dyn Forge>>,
     /// The harness configuration repository's clone, once the server has opened it.
     harness_repo: OnceLock<Arc<HarnessRepo>>,
+    /// What starts the chats of the server, once it has a harness.
+    runs: OnceLock<Arc<dyn Runs>>,
     /// Where the server and the web app run (see `whereabouts`).
     whereabouts: whereabouts::Whereabouts,
 }
@@ -214,11 +227,15 @@ impl App {
             researching: Mutex::default(),
             terminals: Arc::default(),
             waiting: Mutex::default(),
+            workflow_decisions: Mutex::default(),
+            workflow_drives: Mutex::default(),
             close_refused: Mutex::default(),
             label_refused: Mutex::default(),
+            workflow_cancels: Mutex::default(),
             close_retry: Duration::from_secs(600),
             forges,
             harness_repo: OnceLock::new(),
+            runs: OnceLock::new(),
             whereabouts: Default::default(),
         }
     }
@@ -237,9 +254,25 @@ impl App {
             })
     }
 
-    /// Tells the core which clone is the harness configuration repository, where chats can work.
+    /// Tells the core which clone is the harness configuration repository, where chats can work, and gives the
+    /// automations saved before it existed their workflow files.
     pub fn set_harness_repo(&self, repo: Arc<HarnessRepo>) {
         let _ = self.harness_repo.set(repo);
+        if let Err(error) = self.migrate_automations() {
+            eprintln!("Moebius cannot migrate the automations to workflows: {error}");
+        }
+    }
+
+    /// Tells the core what starts chats, so that a workflow's `chat` node can start one.
+    pub fn set_runs(&self, runs: Arc<dyn Runs>) {
+        let _ = self.runs.set(runs);
+    }
+
+    /// What starts chats; refused when the server has not set it.
+    pub(crate) fn runs(&self) -> Result<&Arc<dyn Runs>> {
+        self.runs
+            .get()
+            .ok_or_else(|| AppError::Invalid("the server has no harness to start a chat".into()))
     }
 
     /// The harness configuration repository; refused when the server has none.

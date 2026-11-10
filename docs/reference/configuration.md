@@ -83,6 +83,29 @@ up" of the web app's Get started, Skills, MCP servers and Agents pages, which on
 `[agents.*]` and `rules_file`; its other keys and comments stay. The server uses the repository after it restarts. The
 old skill and extension files and the rules file are left where they were.
 
+## The clock
+
+Everything that happens by itself goes off one clock: once a minute the server looks at what is due. The Retro is
+asked when the minute reaches `retro_at`; the oldest open proposal is tried, the replays follow and the oldest
+confirmed research starts, inside `[trial_window]`; a chat automation fires when its cron of five fields comes due
+(see [`automation.schedule`](desktop-api.md)); the installed Moebius packages are looked at for newer ones at night;
+a chat whose Pi has waited long for its next message is paused; and a workflow on a
+[`schedule` trigger](workflows/schedule-trigger.md) starts a run when its cron comes due.
+
+A minute is read in the server's local time, to the minute: no time zone is set in this file and nothing is kept in
+UTC. The rules are the same for everything on the clock:
+
+- **Once is once.** What came due is done once, and the minute it was done at is kept in the store, so a server that
+  restarts reads the same minute and does it no second time.
+- **Nothing is made up.** The clock reaches back five minutes at most. A firing a couple of minutes late is still
+  done; one that came due while the server was away for longer is passed over, so a server that was off over the
+  night starts nothing for the hours it missed.
+- **A season change fires once.** A minute is read as the clock reads it rather than as an instant: the minute a
+  fall-back day reads twice is the minute still to come and never one that has passed again, so what is due at it
+  happens once, and an hour a spring-forward day skips is waited over.
+- **What fails is said, not tried again.** A minute that could not do its work says so — on the bus, in the store, or
+  on the server's output — and waits for the next one rather than retry every minute.
+
 ## `[trial_window]`
 
 The daily stretch in which trials, replays and autoresearch may run without asking. Once a minute, inside the window, the
@@ -145,6 +168,14 @@ a change needs a restart.
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
 | `packages.npm_registry` | string | `https://registry.npmjs.org` | The npm registry that `moebius ext` searches (`/-/v1/search`, always with the keyword `pi-package`) and installs npm packages from, also `npm install` for the dependencies. A mirror or a private registry; `http://` or `https://`, and credentials in the URL (`https://user:pass@host`) are used and are not shown in errors or in the settings. |
+
+## `[workflows]`
+
+What the nodes of a [workflow](workflows.md) may reach. The table is optional; a change needs a restart.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `workflows.http_hosts` | array of strings | `[]` | The host names (no scheme, port or path; compared in lower case) that the [`http` node](workflows/http.md) may call, over `https` or plain `http`. A call to any other host is refused and fails the node. |
 
 ## `[board]`
 
@@ -476,7 +507,7 @@ changes to files under `.github/workflows`):
 | Metadata | read | Always granted; finds the repositories. |
 | Contents | read and write | Clones and fetches the repository, pushes the branch of a change over HTTPS, and merges a pull request. |
 | Issues | read and write | Lists the issues and their comments (`GET /repos/{owner}/{repo}/issues`, `.../issues/{n}/comments`); opens, edits, closes and reopens issues; sets labels; writes comments; reads and changes sub-issues (`.../issues/{n}/sub_issues`) and issue dependencies (`.../issues/{n}/dependencies/blocked_by`). |
-| Pull requests | read and write | Opens, reads and merges pull requests, and reads their reviews (`/pulls`, `/pulls/{n}`, `/pulls/{n}/reviews`, `/pulls/{n}/merge`). |
+| Pull requests | read and write | Opens, updates, reads and merges pull requests, and reads their reviews (`/pulls`, `/pulls/{n}`, `/pulls/{n}/reviews`, `/pulls/{n}/merge`; the one Moebius opened is updated with `PATCH /pulls/{n}`). |
 | Checks | read | Reads the check runs of a pull request's head commit (`/commits/{sha}/check-runs`). |
 | Workflows | read and write | Only to push changes to files under `.github/workflows`. |
 

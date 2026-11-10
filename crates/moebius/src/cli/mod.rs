@@ -237,7 +237,7 @@ impl Operate {
             Agents => agents::agents(),
             Agent { command } => agents::agent(command, get),
             Rules { command } => rules::rules(command.as_ref()),
-            Workflow { command } => workflow::workflow(command),
+            Workflow { command } => workflow::workflow(command, get),
             Pkg { command } => packages::pkg(command, get),
             Plugin { command } => plugins::plugin(command),
             Ext { command } => ext::ext(command),
@@ -592,6 +592,15 @@ pub(crate) mod tests {
         );
         assert_eq!(route(&["server", "restart"]).1, "/v1/server/restart");
         assert_eq!(route(&["agent", "delete", "Old"]).0, "DELETE");
+        assert_eq!(route(&["workflow", "list"]).1, "/v1/workflows");
+        assert_eq!(
+            route(&["workflow", "cancel", "12"]),
+            (
+                "POST".into(),
+                "/v1/workflows/runs/12/cancel".into(),
+                Some(json!({}))
+            )
+        );
     }
 
     #[test]

@@ -199,6 +199,7 @@ impl Server {
         let token = api::load_or_create_token(&config.token_file)
             .map_err(|e| format!("cannot read {}: {e}", config.token_file.display()))?;
         let secrets = Secrets::new(&config.data_dir);
+        crate::workflows::nodes::http::configure(&config);
         let upstreams = secrets.upstreams(&config)?;
         let router = Arc::new(
             Router::new(store.clone(), upstreams)
@@ -319,6 +320,7 @@ impl Server {
         pi_bolt.runners = runners;
         pi_bolt.launcher.set(launcher);
         let harness = Arc::new(Harnesses::new(pi_bolt, &config.claude_code));
+        app.set_runs(harness.clone());
         let harness_repo = match &config.harness_url {
             Some(url) => Some(Arc::new(HarnessRepo::open(
                 &app,
@@ -330,7 +332,13 @@ impl Server {
             None => None,
         };
         if let Some(harness_repo) = &harness_repo {
+            // This also gives older automations the workflow files that hold them from now on.
             app.set_harness_repo(harness_repo.clone());
+        }
+        // A run of a workflow that waits for a person waits on with this server: its node rows are replayed, so a
+        // decision made while no server ran is taken up and an open wait is waited for again.
+        if let Err(error) = app.resume_waiting_workflow_runs() {
+            eprintln!("Moebius cannot resume the workflow runs that wait: {error}");
         }
         warn_about_launch_agents(&config, &harness);
         let engine = Arc::new(Engine::new(

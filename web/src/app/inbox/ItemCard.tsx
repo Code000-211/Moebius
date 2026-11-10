@@ -339,11 +339,7 @@ function OwnChange({ item, proposed }: { item: InboxItem; proposed: Proposal | n
           <FadedClamp text={shown.reason} />
         </button>
       )}
-      {shown.diff !== "" && (
-        <CodeBlock language="diff" code={shown.diff}>
-          {shown.diff}
-        </CodeBlock>
-      )}
+      {shown.diff !== "" && <CodeBlock language="diff" code={shown.diff} />}
     </div>
   );
 }

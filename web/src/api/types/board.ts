@@ -100,6 +100,7 @@ export interface Change {
   repository_id: number | null;
   harness_repository: boolean;
   card_id: number | null;
+  run_id?: number | null;
   branch: string;
   state: "open" | "merged" | "closed";
   pull_request: number | null;

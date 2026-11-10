@@ -32,6 +32,7 @@ mod retros;
 mod runs;
 mod shadows;
 mod usage;
+mod workflow_schedules;
 mod workflows;
 
 use std::path::Path;
@@ -50,7 +51,7 @@ pub use deletions::{ChatRemoved, ResearchRemoved};
 pub use events::Event;
 pub use found::Found;
 pub use grillings::{Grilling, GrillingIssue};
-pub use inbox::InboxItem;
+pub use inbox::{InboxItem, WORKFLOW_APPROVAL};
 pub use issues::Comment;
 pub use judgements::{Judgement, NewJudgement};
 pub use lessons::{Lesson, NewLesson};
@@ -429,6 +430,12 @@ ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
     plugin_settings::APP_SCHEMA,
     issues::COMMENT_ORIGIN,
     workflows::SCHEMA,
+    "ALTER TABLE workflow_runs ADD COLUMN worktree TEXT;",
+    "ALTER TABLE runs ADD COLUMN workflow_run_id INTEGER;",
+    workflow_schedules::SCHEMA,
+    "ALTER TABLE firings ADD COLUMN workflow_run_id INTEGER REFERENCES workflow_runs(id);",
+    "ALTER TABLE automations ADD COLUMN workflow TEXT;",
+    "ALTER TABLE changes ADD COLUMN run_id INTEGER REFERENCES workflow_runs(id);",
 ];
 
 pub fn now() -> i64 {
@@ -580,6 +587,23 @@ mod tests {
 
     use super::test_store as store;
     use super::*;
+
+    /// A secret in an inbox item's title or data never reaches the store.
+    #[test]
+    fn a_secret_in_an_inbox_item_is_redacted_before_it_is_stored() {
+        let (_dir, s) = store();
+        let secret = "inbox-secret-227-a1b2c3";
+        crate::blobs::remember_secret(secret);
+
+        let item = s
+            .add_inbox_item("workflow_approval", None, secret, &json!({"value": secret}))
+            .unwrap();
+        assert!(!item.title.contains(secret));
+        assert!(!item.data.to_string().contains(secret));
+        let stored = s.inbox().unwrap().remove(0);
+        assert!(!stored.title.contains(secret));
+        assert!(!stored.data.to_string().contains(secret));
+    }
 
     #[test]
     fn the_schema_is_migrated_once_and_reopens() {

@@ -94,6 +94,32 @@ impl Store {
         .collect()
     }
 
+    /// The grilling a run's chat is stored as: publish and conclude keep one row per run, which a later publish
+    /// replaces ([`crate::harness::grilling::publish`]).
+    pub fn grilling_for_run(&self, run_id: i64) -> Result<Option<Grilling>> {
+        Ok(self
+            .grillings_where("run_id = ?1", run_id.into())?
+            .into_iter()
+            .next())
+    }
+
+    /// Replaces what a grilling holds with what its open chat left when the person published again. The reason of
+    /// why a grilling was `empty` is emptied out; a published one is `proposed` or `reported`.
+    pub fn update_grilling_result(
+        &self,
+        id: i64,
+        issues: &[GrillingIssue],
+        report: Option<&str>,
+        status: &str,
+    ) -> Result<()> {
+        self.conn().execute(
+            "UPDATE grillings SET issues = ?1, report = ?2, status = ?3, reason = '', at = ?4 \
+             WHERE id = ?5",
+            params![serde_json::to_string(issues)?, report, status, now(), id],
+        )?;
+        Ok(())
+    }
+
     pub fn grilling(&self, id: i64) -> Result<Option<Grilling>> {
         Ok(self.grillings_where("id = ?1", id.into())?.pop())
     }

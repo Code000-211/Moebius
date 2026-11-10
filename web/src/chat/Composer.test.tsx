@@ -127,6 +127,25 @@ describe("Composer", () => {
     ).toBeNull();
   });
 
+  it("stands the page's own controls left of Send", () => {
+    render(
+      <Composer
+        value="x"
+        onChange={() => {}}
+        onSend={() => {}}
+        canSend
+        actions={
+          <button type="button" data-testid="extra">
+            Extra
+          </button>
+        }
+      />,
+    );
+    expect(screen.getByTestId("extra").nextElementSibling).toBe(
+      screen.getByRole("button", { name: "Send" }),
+    );
+  });
+
   /**
    * The app draws one focus ring, the global `:focus-visible` outline in `styles/tailwind.css`. A field that writes its
    * own `outline-none` cancels it and leaves the field a person uses most — on Chat, on Run, in the floating chat — with

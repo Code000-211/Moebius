@@ -16,7 +16,7 @@
  * precision, but not out of the overflow and contrast checks.
  *
  * Some routes open a thing before they are measured — the search, the floating chat, a form, a menu — because a sheet
- * only shows what it is once it is on the screen. MOEBIUS_DESIGN_ONLY=chat-chats,inbox-search measures those routes
+ * only shows what it is once it is on the screen. MOEBIUS_DESIGN_ONLY=chat-menu,inbox-search measures those routes
  * alone, which is how one layer is looked at again without the other hundred.
  *
  * `pnpm e2e` does not run this. Run `pnpm build && pnpm audit:design`. Without MOEBIUS_DESIGN_URL it starts the fake
@@ -35,16 +35,7 @@ interface Route {
   path: string;
   name: string;
   /** Something to open before measuring, so a sheet is on the screen when it is the thing being judged. */
-  open?:
-    | "search"
-    | "chat"
-    | "new issue"
-    | "menu"
-    | "terminal"
-    | "chats"
-    | "diff"
-    | "changes"
-    | "steps";
+  open?: "search" | "chat" | "new issue" | "menu" | "terminal" | "diff" | "changes" | "steps";
 }
 
 /** One page as the browser measured it. Every list holds findings as plain sentences. */
@@ -113,6 +104,8 @@ const routes: Route[] = [
   { path: "/automations", name: "automations" },
   { path: "/workflows", name: "workflows" },
   { path: "/workflows/release", name: "workflow" },
+  // The graph edited on a canvas of its own.
+  { path: "/workflows/release/canvas", name: "workflow-canvas" },
   { path: "/workflow-runs/41", name: "workflow-run" },
   // A run that stopped at a node and asks what to do next.
   { path: "/workflow-runs/42", name: "workflow-run-waiting" },
@@ -144,7 +137,6 @@ const routes: Route[] = [
   // The same diff read on its own page, where it fills the page instead of a sheet.
   { path: "/runs/1000", name: "run-changes", open: "changes" },
   { path: "/chat", name: "chat-menu", open: "menu" },
-  { path: "/chat", name: "chat-chats", open: "chats" },
   // A conversation with a block of steps, folded and opened, which is the one place the log's 32px row is measured.
   { path: "/chat", name: "chat-steps", open: "steps" },
   { path: "/chat", name: "chat-steps-trouble", open: "steps" },
@@ -193,7 +185,7 @@ async function openPage(width: { width: number; height: number }, theme: string)
 
 /** Opens one page, waits for it to settle, and measures it. */
 async function audit(page: Page, route: Route, theme: string): Promise<PageAudit> {
-  chatsForSwitcher(route.open === "chats");
+  chatsForSwitcher();
   const path = route.open === "steps" ? stepsChat(route.name === "chat-steps-trouble") : route.path;
   const answer = await page.goto(`${base}${path}`);
   await page.waitForLoadState("networkidle").catch(() => {});
@@ -210,7 +202,7 @@ async function audit(page: Page, route: Route, theme: string): Promise<PageAudit
 /**
  * The path of a chat whose agent worked: it thought, read two files and ran a command, and with `trouble` the command
  * failed, which opens the block of steps by itself. Without a fake server there is no such chat, so the page that is
- * measured is the empty one. The chat is made again for each page, because the switcher's list is emptied before each.
+ * measured is the empty one. The chat is made again for each page, because the sidebar's list is emptied before it.
  */
 function stepsChat(trouble: boolean): string {
   if (!fake) return "/chat";
@@ -241,14 +233,13 @@ function stepsChat(trouble: boolean): string {
 }
 
 /**
- * The chat switcher is only worth measuring when its list has to scroll, and the fake server has no chats until
+ * The sidebar's list of chats is worth measuring when it has to scroll, and the fake server has no chats until
  * something puts them there. They go back the way they came, so the renders after this one are the renders before it.
  */
-function chatsForSwitcher(fill: boolean) {
+function chatsForSwitcher() {
   if (!fake) return;
-  // emptied first, so measuring this render twice puts the same fourteen chats there rather than twenty-eight.
+  // Emptied first, so measuring this render twice puts the same fourteen chats there rather than twenty-eight.
   fake.chat.chats.length = 0;
-  if (!fill) return;
   for (let index = 0; index < 14; index += 1) {
     fake.chat.seed({
       title: `Chat ${index}: a title long enough to want more than one line in the list`,
@@ -274,22 +265,7 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
     await page.getByRole("menu").first().waitFor({ timeout: 5_000 });
     return;
   }
-  if (what === "chats") {
-    // The column of chats is on the screen with the page and scrolls on its own, so nothing is opened to measure it:
-    // a row of a list that caps its own height is shorter than its own words, and only the scrollable list shows it.
-    // On a narrow window the column starts hidden, and the switcher above the chat brings it back.
-    const rows = page.getByTestId("chat-list-rows");
-    if (!(await rows.isVisible())) {
-      await page.getByRole("button", { name: /^Chats \(/ }).click();
-    }
-    await rows.waitFor({ timeout: 5_000 });
-    return;
-  }
   if (what === "steps") {
-    // The column of chats is kept open per browser, so on a narrow window the "chats" route before this one leaves it
-    // lying over the chat; it is hidden again here, as a person would to read the chat.
-    const hide = page.getByRole("button", { name: "Hide the list of chats" });
-    if (await hide.isVisible()) await hide.click();
     // A block of steps that went well is folded; the one with a failure is open already, and is left as it is.
     const folded = page.getByRole("button", { name: /^Worked · \d+ steps?$/ });
     if ((await folded.count()) > 0) await folded.click();

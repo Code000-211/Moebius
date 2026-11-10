@@ -30,8 +30,9 @@ pub(super) struct FakeGitLab {
     /// The issues it was asked to open, and the edits of issues, as `(iid, body)`.
     pub(super) created: Mutex<Vec<Value>>,
     pub(super) edited: Mutex<Vec<(i64, Value)>>,
-    /// The merge requests it was asked to open and to merge.
+    /// The merge requests it was asked to open, to update and to merge.
     pub(super) opened: Mutex<Vec<Value>>,
+    pub(super) updated: Mutex<Vec<Value>>,
     pub(super) merged: Mutex<Vec<Value>>,
     /// What it answers about merge request 7.
     pub(super) merge_request: Mutex<Value>,
@@ -145,6 +146,16 @@ pub(super) async fn fake_gitlab() -> (String, Arc<FakeGitLab>) {
                     widgets(&project)?;
                     assert_eq!(iid, 7);
                     Ok::<_, StatusCode>(axum::Json(fake.merge_request.lock().unwrap().clone()))
+                },
+            )
+            .put(
+                |State(fake): Fake,
+                 UrlPath((project, iid)): UrlPath<(String, i64)>,
+                 axum::Json(body): axum::Json<Value>| async move {
+                    widgets(&project)?;
+                    assert_eq!(iid, 7);
+                    fake.updated.lock().unwrap().push(body.clone());
+                    Ok::<_, StatusCode>(axum::Json(body))
                 },
             ),
         )
@@ -269,25 +280,44 @@ impl Fixture {
             .set_issues("W/\"v1\"", vec![issue(1, "opened", "leon", "Do it.")]);
         self.server.poll_gitlab().await;
         let card = self.card(1).unwrap();
-        let (app, repository, id) = (self.server.app.clone(), self.repository.clone(), card.id);
+        self.code(&card, "feature.txt").await;
+        self.server
+            .app
+            .store
+            .move_card(card.id, "In review")
+            .unwrap();
+        card
+    }
+
+    /// Has a succeeded `code` run of the card add `file` on top of its work so far, as a round of the Coder does.
+    pub(super) async fn code(&self, card: &Card, file: &'static str) {
+        let (app, repository, card) = (
+            self.server.app.clone(),
+            self.repository.clone(),
+            card.clone(),
+        );
         tokio::task::spawn_blocking(move || {
             let store = &app.store;
-            let run: Run = store.add_run(Some(id), "Coder", "test", "code").unwrap();
+            let run: Run = store
+                .add_run(Some(card.id), "Coder", "test", "code")
+                .unwrap();
             let clone = Path::new(&repository.path);
+            let base = store
+                .code_branch(card.id)
+                .unwrap()
+                .unwrap_or_else(|| repository.base_ref());
             let worktree = app
                 .repos
-                .add_worktree("widgets", clone, run.id, &repository.base_ref())
+                .add_worktree("widgets", clone, run.id, &base)
                 .unwrap();
-            std::fs::write(worktree.path.join("feature.txt"), "done\n").unwrap();
+            std::fs::write(worktree.path.join(file), "done\n").unwrap();
             git(&worktree.path, &["add", "."]).unwrap();
-            git(&worktree.path, &["commit", "--quiet", "-m", "feature"]).unwrap();
+            git(&worktree.path, &["commit", "--quiet", "-m", file]).unwrap();
             app.repos.remove_worktree(clone, &worktree.path).unwrap();
             store.set_run_status(run.id, "succeeded").unwrap();
-            store.move_card(id, "In review").unwrap();
         })
         .await
         .unwrap();
-        card
     }
 
     /// Runs the card's column script until it leaves the card, on a thread that may block, as the board does.
@@ -296,6 +326,15 @@ impl Fixture {
         tokio::task::spawn_blocking(move || engine.settle(id).unwrap())
             .await
             .unwrap()
+    }
+
+    /// Has the pull request of the card's work opened while the card stays in review, as it is once a round of the
+    /// review was approved and before the card moves on.
+    pub(super) async fn opened_pull_request(&self, card: &Card) {
+        let (app, id) = (self.server.app.clone(), card.id);
+        tokio::task::spawn_blocking(move || app.publish_card_change(id, true, None).unwrap())
+            .await
+            .unwrap();
     }
 
     /// Polls issue 1 into a card and has its work offered as a change.
@@ -430,6 +469,14 @@ mod tests {
                 .unwrap()
                 .starts_with("Closes #1\n")
         );
+        assert!(
+            opened[0]["description"]
+                .as_str()
+                .unwrap()
+                .contains("## Files changed"),
+            "the merge request says what it does: {}",
+            opened[0]
+        );
         assert_eq!(f.card(1).unwrap().column, "Ready to merge");
 
         f.fake.set_state("merged");
@@ -442,6 +489,33 @@ mod tests {
             .find(|e| e.kind == "change_merged")
             .unwrap();
         assert_eq!(merged.data["commit"], "abc123");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_merge_request_is_updated_when_the_branch_moves_on() {
+        let f = Fixture::new().await;
+        let change = f.offered_change().await;
+        assert_eq!(change.pull_request, Some(7));
+
+        // The next round adds to the branch and the change is offered again: the merge request is updated.
+        let card = f.card(1).unwrap();
+        f.code(&card, "more.txt").await;
+        f.opened_pull_request(&card).await;
+
+        assert_eq!(
+            f.fake.opened.lock().unwrap().len(),
+            1,
+            "no second merge request"
+        );
+        let updated = f.fake.updated.lock().unwrap().clone();
+        assert!(
+            updated[0]["description"]
+                .as_str()
+                .unwrap()
+                .contains("more.txt"),
+            "the updated body says what the branch does now: {}",
+            updated[0]
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -463,6 +537,7 @@ mod tests {
      {
         let f = Fixture::new().await;
         let card = f.card_in_review().await;
+        f.opened_pull_request(&card).await;
         let step = f.settle(&card).await;
         assert_eq!(step.waiting.as_deref(), Some("waiting for the checks"));
         let change = f.server.app.store.open_change(card.id).unwrap().unwrap();

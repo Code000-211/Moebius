@@ -1,6 +1,7 @@
 //! Ending a run, whatever its harness: the run's summary and events are kept as its records arrive (`keep`), and when its
 //! process is gone `finish` commits what the agent left (a chat's work is offered as a change, a grilling's result
-//! read), removes the worktree, revokes the run's token and publishes the end.
+//! read), revokes the run's token and publishes the end. It removes the worktree, except for a workflow run, whose
+//! worktree and branch stay for the run's later agents.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -55,8 +56,19 @@ pub(in crate::harness) fn finish<L>(
     ending: Result<bool, String>,
 ) {
     router.revoke_token(&run.token);
+    // What Moebius commits of a run's work: a chat's commits say what the chat did (see
+    // `crate::app::App::chat_commit_message`), never just the chat's first message; a run of a card or a workflow
+    // keeps the message it started with.
+    let commit_message = if run.purpose == "chat" {
+        app.run(run.id).map_or_else(
+            |_| run.commit_message.clone(),
+            |chat| app.chat_commit_message(&chat, "when the chat ended"),
+        )
+    } else {
+        run.commit_message.clone()
+    };
     // What the agent did on a runner is brought into the worktree first, so that all that follows sees it.
-    let ending = ending.and_then(|aborted| run.bring_back().map(|()| aborted));
+    let ending = ending.and_then(|aborted| run.bring_back(&commit_message).map(|()| aborted));
     let failed = |why: &str| {
         let _ = app.record_run_event(run.id, "moebius_error", &json!({ "message": why }));
         "failed"
@@ -72,15 +84,20 @@ pub(in crate::harness) fn finish<L>(
                 "succeeded"
             }
         }
-        Ok(aborted) if run.purpose == "chat" => match run.commit() {
+        Ok(aborted) if run.purpose == "chat" => match run.commit(&commit_message) {
             // A chat that changed nothing has still succeeded.
             Ok(_) if aborted => "stopped",
             Ok(_) => "succeeded",
             Err(e) => failed(&e.to_string()),
         },
         Ok(true) => "stopped",
+        Ok(false) if run.purpose == "workflow" => match run.commit(&run.commit_message) {
+            // An agent of a workflow run may answer only, leaving the branch as it found it.
+            Ok(_) => "succeeded",
+            Err(e) => failed(&e.to_string()),
+        },
         Ok(false) if !matches!(run.purpose.as_str(), "code" | "trial" | "attempt") => "succeeded",
-        Ok(false) => match run.commit() {
+        Ok(false) => match run.commit(&run.commit_message) {
             Ok(true) => "succeeded",
             Ok(false) => failed("the agent changed nothing"),
             Err(e) => failed(&e.to_string()),
@@ -88,16 +105,29 @@ pub(in crate::harness) fn finish<L>(
         Err(why) => failed(&why),
     };
     if grilling && status != "failed" {
-        // Before the worktree is removed, with the result in it.
-        if let Err(e) = crate::harness::grilling::conclude(app, run.id, &run.worktree) {
-            failed(&format!("cannot read the result of the grilling: {e}"));
+        // Before the worktree is removed, with the result in it. What the person published already is kept.
+        match app.store.grilling_for_run(run.id) {
+            Err(e) => {
+                failed(&e.to_string());
+            }
+            Ok(None) => {
+                if let Err(e) = crate::harness::grilling::conclude(app, run.id, &run.worktree) {
+                    failed(&format!("cannot read the result of the grilling: {e}"));
+                }
+            }
+            Ok(Some(_)) => {}
         }
     }
     if run.purpose == "code" && status == "succeeded" {
         // Before the worktree is removed, with the change in it.
         app.localize_run_ended(run.id, &run.worktree);
     }
-    run.remove_worktree(app);
+    if run.purpose == "workflow" {
+        // The workflow run keeps its worktree, on the branch its run is named for: the run's later agents reuse it.
+        app.terminals.close(run.id);
+    } else {
+        run.remove_worktree(app);
+    }
     if run.purpose == "chat" && !grilling && status != "failed" {
         // Before the status is set, so that an ended chat has offered what it made.
         if let Err(e) = app.offer_chat_change(run.id) {

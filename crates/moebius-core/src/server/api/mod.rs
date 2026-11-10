@@ -14,6 +14,7 @@
 //! - `extensions`: searching the catalog of Pi packages, and proposing to install, update and remove them.
 //! - `rules`: the rules page and the rules in prose.
 //! - `workflows`: the workflows of the harness configuration repository: listing, reading, saving and deleting.
+//! - `workflow_runs`: starting a run of a workflow by hand with the inputs its `manual` trigger names.
 //! - `settings`: `moebius.toml`, the API keys, the restart, and what the Models, Plugins and Get started pages show.
 //! - `improve`: usage, judgements and replays, the Retro and its proposals, the decision model, research and
 //!   exports.
@@ -27,13 +28,16 @@
 //! - `session`: signing in from a browser with a cookie, and the one-time codes that open the web app signed in.
 //! - `web`: the web app itself, served at `/` without a token.
 //! - `webhooks`: the deliveries of the forges, which need no token but a signature, and the secrets to set on the forges.
+//! - `workflow_hooks`: the door a workflow's `webhook` trigger answers on, which an outside service opens with the
+//!   trigger's own secret rather than the token.
 //!
 //! Every request to `/v1/` but a forge's webhook delivery and the sign-in of a browser carries
 //! `Authorization: Bearer <token>`: the server's token, or the run token of a run of the Moebius agent, which acts as
 //! that agent (`PUT /v1/secrets/{name}` and the terminal stay with a person), or the run token of a run of the Grilling
 //! partner, which is accepted for the routes of the issue tracker only (see [`issue_tracker_route`]) and within its chat's
 //! repository and the cards with a `wayfinder:*` label (see `scope`); or the `moebius_session` cookie of a
-//! browser that signed in, which acts as a person. Anything else is answered with 401.
+//! browser that signed in, which acts as a person. Anything else is answered with 401. The hook routes of a workflow's
+//! `webhook` trigger are outside `/v1/` as forge deliveries are, and a trigger's own secret opens them instead.
 
 mod automations;
 mod cards;
@@ -57,6 +61,8 @@ mod uploads;
 mod web;
 mod webhooks;
 mod whereabouts;
+mod workflow_hooks;
+mod workflow_runs;
 mod workflows;
 
 #[cfg(test)]
@@ -208,6 +214,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(extensions::routes())
         .merge(rules::routes())
         .merge(workflows::routes())
+        .merge(workflow_runs::routes())
         .merge(settings::routes())
         .merge(improve::routes())
         .merge(lessons::routes())
@@ -222,6 +229,7 @@ pub fn router(state: ApiState) -> Router {
         .fallback(web::fallback)
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))
         .merge(webhooks::public_routes())
+        .merge(workflow_hooks::public_routes())
         .merge(session::public_routes())
         .with_state(state)
 }

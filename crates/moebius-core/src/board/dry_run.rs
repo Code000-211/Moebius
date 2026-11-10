@@ -172,6 +172,15 @@ fn recording_api(
 
     let log = record.clone();
     m.set(
+        "open_pull_request",
+        lua.create_function(move |lua, ()| {
+            log("opened the change's pull request".into());
+            made_up_change(lua)
+        })?,
+    )?;
+
+    let log = record.clone();
+    m.set(
         "run_checks",
         lua.create_function(move |lua, ()| {
             log("started the checks of the change".into());

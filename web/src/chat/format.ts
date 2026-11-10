@@ -27,8 +27,8 @@ export function statusTag(status: string, asks: boolean): { label: string; tone:
 }
 
 /**
- * What the field says for a chat that takes no message: why it takes none, and what starts one again. The tag in the
- * title row names the state; the field answers the question the person is actually asking — can I go on here? A chat
+ * What the field says for a chat that takes no message: why it takes none, and what starts one again. The chip at the
+ * conversation's bottom right names the state; the field answers the question the person is actually asking — can I go on here? A chat
  * whose agent went away is not here: the next message starts that agent again in the same chat (see `takesMessage`).
  */
 export function endedHint(status: string, agent: string): string {

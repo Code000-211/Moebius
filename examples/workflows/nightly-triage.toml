@@ -1,0 +1,37 @@
+# Every night an agent reads the board and leaves a short report, which an HTTP node sends to the team's service.
+name = "nightly-triage"
+description = "Ask an agent what tomorrow's work should be, then post its report."
+
+[[trigger]]
+kind = "schedule"
+params = { cron = "30 3 * * *", repository = "demo", inputs = { goal = "Review the board and report what needs attention.", api_base = "https://api.example.com" } }
+
+[[nodes]]
+id = "triage"
+kind = "agent"
+params = { agent = "Coder", output = "report", prompt = """
+Nightly triage. The goal is: {{ trigger.inputs.goal }}
+
+Read the repository and decide what tomorrow's work should be.
+
+End with a fenced JSON block holding:
+
+```json
+{"goal": "{{ trigger.inputs.goal }}", "status": "ready"}
+```
+""" }
+
+[[nodes]]
+id = "send"
+kind = "http"
+params = { method = "POST", url = "{{ trigger.inputs.api_base }}/reports", body = "{{ input }}" }
+
+[[edges]]
+from = "trigger"
+to = "triage"
+port = "out"
+
+[[edges]]
+from = "triage"
+to = "send"
+port = "report"

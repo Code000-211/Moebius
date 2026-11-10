@@ -1,8 +1,8 @@
 /**
  * The island a message is written in: a field that grows with the text (Enter sends, Shift+Enter makes a new line, and
- * an Enter that confirms an input-method candidate does neither), the choices on its left and Send on its right. The
- * choices, the notice and what Send does are the page's; this holds the field, at the size the rest of the chat is
- * read at. Send is only ever pressable when there is something to send; when it is not, the reason waits in its
+ * an Enter that confirms an input-method candidate does neither), the choices on its left and Send on its right, with
+ * the page's further controls beside Send. The choices, the notice and what Send does are the page's; this holds the
+ * field, at the size the rest of the chat is read at. Send is only ever pressable when there is something to send; when it is not, the reason waits in its
  * tooltip.
  */
 import { PaperPlaneRightIcon } from "@phosphor-icons/react";
@@ -32,6 +32,8 @@ interface ComposerProps {
   sendTitle?: string;
   placeholder?: string;
   pills?: ReactNode;
+  /** The controls left of Send: the chip that says the chat's state and opens its actions. */
+  actions?: ReactNode;
   /** The last thing that went wrong, as a short line above the field. */
   error?: string | null;
   autoFocus?: boolean;
@@ -52,6 +54,7 @@ export function Composer({
   sendTitle,
   placeholder = "Write to the agent",
   pills,
+  actions,
   error,
   autoFocus,
   compact = false,
@@ -98,18 +101,21 @@ export function Composer({
         />
       }
       footerRight={
-        <Button
-          size={compact ? "icon" : "md"}
-          onClick={onSend}
-          disabled={!canSend}
-          aria-label={compact ? sendLabel : undefined}
-          // A control that simply has nothing to do says nothing; a reason is for what the page knows and the
-          // person cannot see — that a repository has to be chosen first, say.
-          title={canSend ? (compact ? sendLabel : sendTitle) : sendHint}
-        >
-          <PaperPlaneRightIcon aria-hidden="true" className="size-4" weight="fill" />
-          {compact ? null : sendLabel}
-        </Button>
+        <>
+          {actions}
+          <Button
+            size={compact ? "icon" : "md"}
+            onClick={onSend}
+            disabled={!canSend}
+            aria-label={compact ? sendLabel : undefined}
+            // A control that simply has nothing to do says nothing; a reason is for what the page knows and the
+            // person cannot see — that a repository has to be chosen first, say.
+            title={canSend ? (compact ? sendLabel : sendTitle) : sendHint}
+          >
+            <PaperPlaneRightIcon aria-hidden="true" className="size-4" weight="fill" />
+            {compact ? null : sendLabel}
+          </Button>
+        </>
       }
     />
   );

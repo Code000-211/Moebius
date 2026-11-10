@@ -105,6 +105,26 @@ impl Api {
     /// Has a grilling chat in `repository` leave `files` in its worktree, ends it and waits until it has ended;
     /// returns the chat's run id.
     async fn grill(&self, server: &Server, repository: i64, files: &[(&str, &str)]) -> i64 {
+        let id = self.started(server, repository, files).await;
+        let (status, ended) = self.post(&format!("/v1/chats/{id}/end"), json!({})).await;
+        assert_eq!(status, 200, "{ended}");
+        wait_for("the chat ends", || {
+            server
+                .app
+                .store
+                .run(id)
+                .unwrap()
+                .unwrap()
+                .ended_at
+                .map(|_| ())
+        })
+        .await;
+        id
+    }
+
+    /// Has a grilling chat in `repository` leave `files` in its worktree and waits until its agent has answered; the
+    /// chat waits for the next message now, and the run id is returned.
+    async fn started(&self, server: &Server, repository: i64, files: &[(&str, &str)]) -> i64 {
         let mut message = "Export the reports.".to_string();
         for (name, text) in files {
             message += &format!("\n[put .moebius/grilling/{name}]\n{text}\n[/put]");
@@ -120,19 +140,6 @@ impl Api {
         // The agent has answered, so it has written its files, when the chat waits for the next message.
         wait_for("the agent answers", || {
             (server.app.store.run(id).unwrap().unwrap().status == "waiting").then_some(())
-        })
-        .await;
-        let (status, ended) = self.post(&format!("/v1/chats/{id}/end"), json!({})).await;
-        assert_eq!(status, 200, "{ended}");
-        wait_for("the chat ends", || {
-            server
-                .app
-                .store
-                .run(id)
-                .unwrap()
-                .unwrap()
-                .ended_at
-                .map(|_| ())
         })
         .await;
         id
@@ -697,4 +704,147 @@ async fn deleting_a_grilling_takes_out_its_record_and_chat_and_leaves_the_cards(
         }
     }
     assert_eq!(announced, ["grilling_deleted", "chat_deleted"]);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_person_publishes_what_an_open_grilling_left_and_ending_it_publishes_nothing_more() {
+    let dir = tempfile::tempdir().unwrap();
+    let (server, repo) = server(dir.path());
+    let api = Api::start(&server).await;
+    let mut events = server.app.bus.subscribe();
+
+    // The grilling partner has answered, its result is in its worktree, and the chat waits: a publish stores it
+    // without the chat ending.
+    let run = api
+        .started(&server, repo, &[("issues.json", TWO_ISSUES)])
+        .await;
+    let (status, published) = api
+        .post(&format!("/v1/chats/{run}/publish"), json!({}))
+        .await;
+    assert_eq!(status, 200, "{published}");
+    let id = published["id"].as_i64().unwrap();
+    assert_eq!(
+        (
+            published["status"].as_str(),
+            published["repository_id"].as_i64()
+        ),
+        (Some("proposed"), Some(repo))
+    );
+    assert!(
+        server
+            .app
+            .store
+            .run(run)
+            .unwrap()
+            .unwrap()
+            .ended_at
+            .is_none()
+    );
+    let ended = loop {
+        let event = events.recv().await.unwrap();
+        if event.kind == "grilling_published" {
+            break event;
+        }
+    };
+    assert_eq!(ended.data, json!({ "grilling": id, "status": "proposed" }));
+    let inbox = server.app.store.inbox().unwrap();
+    assert_eq!(inbox.len(), 1);
+    assert_eq!(inbox[0].kind, "grilling_issues");
+    assert_eq!(inbox[0].title, "2 issues from a grilling");
+    assert_eq!(inbox[0].data["grilling"], id);
+
+    // The grilling goes on, the grilling partner leaves one issue: a publish replaces what was published, grilling
+    // and inbox item both, and nothing new appears.
+    let one = r#"[{"title": "Add the export button", "body": "A button on the report page.", "blocked_by": []}]"#;
+    let (status, _) = api
+        .post(
+            &format!("/v1/chats/{run}/messages"),
+            json!({ "message": format!("One is enough.\n[put .moebius/grilling/issues.json]\n{one}\n[/put]") }),
+        )
+        .await;
+    assert_eq!(status, 200);
+    let worktree = server
+        .app
+        .store
+        .run(run)
+        .unwrap()
+        .unwrap()
+        .worktree
+        .unwrap();
+    let file = std::path::Path::new(&worktree).join(".moebius/grilling/issues.json");
+    wait_for("the grilling partner replaces the issues", || {
+        std::fs::read_to_string(&file)
+            .ok()
+            .filter(|text| !text.contains("Write the CSV"))
+            .map(|_| ())
+    })
+    .await;
+    wait_for("the agent answers again", || {
+        (server.app.store.run(run).unwrap().unwrap().status == "waiting").then_some(())
+    })
+    .await;
+    let (status, published) = api
+        .post(&format!("/v1/chats/{run}/publish"), json!({}))
+        .await;
+    assert_eq!(status, 200, "{published}");
+    assert_eq!(published["id"], id);
+    assert_eq!(published["issues"].as_array().unwrap().len(), 1);
+    let inbox = server.app.store.inbox().unwrap();
+    assert_eq!(inbox.len(), 1, "the publish replaced the item");
+    assert_eq!(inbox[0].title, "1 issue from a grilling");
+
+    // The person dismisses it: a publish of the settled grilling is refused.
+    let (status, _) = api
+        .post(&format!("/v1/grillings/{id}/dismiss"), json!({}))
+        .await;
+    assert_eq!(status, 200);
+    let (status, why) = api
+        .post(&format!("/v1/chats/{run}/publish"), json!({}))
+        .await;
+    assert_eq!(status, 422, "{why}");
+    assert!(format!("{why}").contains("dismissed"), "{why}");
+
+    // Ending the chat keeps what was published: no grilling and no inbox item comes of the end.
+    let (status, _) = api.post(&format!("/v1/chats/{run}/end"), json!({})).await;
+    assert_eq!(status, 200);
+    wait_for("the chat ends", || {
+        server
+            .app
+            .store
+            .run(run)
+            .unwrap()
+            .unwrap()
+            .ended_at
+            .map(|_| ())
+    })
+    .await;
+    assert_eq!(server.app.store.grillings().unwrap().len(), 1);
+    assert_eq!(
+        server.app.store.grilling(id).unwrap().unwrap().status,
+        "dismissed"
+    );
+
+    // A grilling that has left nothing publishes nothing.
+    let empty = api.started(&server, repo, &[]).await;
+    let (status, why) = api
+        .post(&format!("/v1/chats/{empty}/publish"), json!({}))
+        .await;
+    assert_eq!(status, 422, "{why}");
+    assert!(format!("{why}").contains("nothing to publish"), "{why}");
+
+    // A chat that is not with the Grilling partner publishes nothing.
+    let (status, plain) = api
+        .post("/v1/chats", json!({ "agent": "Coder", "message": "Hello" }))
+        .await;
+    assert_eq!(status, 200, "{plain}");
+    let plain = plain["id"].as_i64().unwrap();
+    wait_for("the plain chat answers", || {
+        (server.app.store.run(plain).unwrap().unwrap().status == "waiting").then_some(())
+    })
+    .await;
+    let (status, why) = api
+        .post(&format!("/v1/chats/{plain}/publish"), json!({}))
+        .await;
+    assert_eq!(status, 422, "{why}");
+    assert!(format!("{why}").contains("not a grilling"), "{why}");
 }

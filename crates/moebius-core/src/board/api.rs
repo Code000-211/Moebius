@@ -13,7 +13,9 @@
 //! - `moebius.set_label(label, present)`: gives the card's issue the label (`present` true) or takes it away (false)
 //!   when the script returns, on its forge too.
 //! - `moebius.publish_change() -> change`: publishes the card's latest successful `code` run on the branch of its
-//!   change (once per commit) and returns the change, as `card.change` is.
+//!   change (once per commit), without a pull request, which `moebius.offer_change` opens, and returns the change, as `card.change` is.
+//! - `moebius.open_pull_request() -> change`: publishes the change as `moebius.publish_change` does and opens its
+//!   pull request at once, so the forge runs its checks while the review of the card still reads the change.
 //! - `moebius.run_checks() -> change`: starts the repository's own checks on the change, if it has any.
 //! - `moebius.reproduction() -> table`: what the card's runs name in their summaries as the reproduction test, for test first.
 //! - `moebius.run_test(command) -> test`, `moebius.run_test_at_base(command, files) -> test`: run the change's
@@ -171,6 +173,18 @@ impl Engine {
             lua.create_function(move |lua, ()| {
                 outside_script(&clock, || {
                     app.publish_change(card_id).map_err(mlua::Error::external)?;
+                    change_table(&app, lua, card_id)
+                })
+            })?,
+        )?;
+
+        let (app, clock) = (self.app.clone(), deadline.clone());
+        m.set(
+            "open_pull_request",
+            lua.create_function(move |lua, ()| {
+                outside_script(&clock, || {
+                    app.open_pull_request(card_id)
+                        .map_err(mlua::Error::external)?;
                     change_table(&app, lua, card_id)
                 })
             })?,

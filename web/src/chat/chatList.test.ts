@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
+import type { Snapshot } from "../api/types/board";
 import type { Chat } from "../api/types/chat";
-import { applyChatEvent, listChanged, recentChat } from "./chatList";
+import {
+  applyChatEvent,
+  filterChats,
+  groupChats,
+  listChanged,
+  parseChatFilter,
+  recentChat,
+} from "./chatList";
 
 const chat = (over: Partial<Chat> = {}): Chat => ({
   id: 7,
@@ -134,5 +142,119 @@ describe("recentChat", () => {
   it("takes the first of two that started in the same second, the order the server sends them in", () => {
     const [earlier, later] = [chat({ id: 4, started_at: 500 }), chat({ id: 6, started_at: 500 })];
     expect(recentChat([earlier, later])).toBe(earlier);
+  });
+});
+
+describe("groupChats", () => {
+  // A day is 86,400 seconds; the days here are the last three the helper can name.
+  const now = 4 * 86_400 + 12_000;
+  it("puts each chat under its own day, in the fixed order Today, Yesterday, Older", () => {
+    const chats = [
+      chat({ id: 1, started_at: now - 60 }), // Today
+      chat({ id: 2, started_at: now - 86_400 }), // Yesterday
+      chat({ id: 3, started_at: now - 2 * 86_400 - 1 }), // Older
+    ];
+    expect(groupChats(chats, now)).toEqual([
+      { label: "Today", chats: [chats[0]] },
+      { label: "Yesterday", chats: [chats[1]] },
+      { label: "Older", chats: [chats[2]] },
+    ]);
+  });
+
+  it("drops a day with no chat", () => {
+    const chats = [chat({ id: 1, started_at: now - 60 }), chat({ id: 2, started_at: 100 })];
+    expect(groupChats(chats, now)).toEqual([
+      { label: "Today", chats: [chats[0]] },
+      { label: "Older", chats: [chats[1]] },
+    ]);
+  });
+
+  it("puts the newest of each group first, whatever order the list arrives in", () => {
+    const later = chat({ id: 5, started_at: now - 10 });
+    const earlier = chat({ id: 6, started_at: now - 300 });
+    expect(groupChats([earlier, later], now)[0]?.chats.map((c) => c.id)).toEqual([5, 6]);
+  });
+
+  it("keeps a chat of just before midnight of the day before yesterday in Older", () => {
+    const old = chat({ id: 7, started_at: 3 * 86_400 - 1 });
+    expect(groupChats([old], now)[0]?.label).toBe("Older");
+  });
+});
+
+/** A snapshot with one board per repository name and id, as the filter tests read it. */
+const snapshot = (repositories: { id: number; name: string }[]) =>
+  ({
+    boards: repositories.map((repository) => ({ repository })),
+  }) as Snapshot;
+
+/** How the list is narrowed by the project it is asked about (`ChatFilter`). */
+describe("filterChats", () => {
+  const chats = [
+    chat({ id: 1, repository_id: 1 }), // on the snapshot's board
+    chat({ id: 2, repository_id: 9 }), // a repository the snapshot does not know
+    chat({ id: 3, harness_repository: true }), // the harness configuration repository
+    chat({ id: 4 }), // no repository at all
+  ];
+  const boards = snapshot([{ id: 1, name: "moebius" }]);
+
+  it("keeps the whole list when every chat is asked for", () => {
+    expect(filterChats(chats, boards, "all")).toEqual(chats);
+  });
+
+  it("keeps a repository's own chats, and none of the others", () => {
+    expect(filterChats(chats, boards, 1).map((c) => c.id)).toEqual([1]);
+    // A repository the snapshot does not know still filters by its id, so the choice can survive a rename.
+    expect(filterChats(chats, boards, 9).map((c) => c.id)).toEqual([2]);
+  });
+
+  it("keeps the harness repository and the chats with no known place under Without project", () => {
+    expect(filterChats(chats, boards, "none").map((c) => c.id)).toEqual([2, 3, 4]);
+    // Without a snapshot nothing resolves, so every chat is without a project.
+    expect(filterChats(chats, undefined, "none")).toHaveLength(4);
+  });
+
+  /** The same list titled as the sidebar's rows name it, plus one chat not yet titled. */
+  const titled = [
+    chat({ id: 1, repository_id: 1, title: "Fix the login flow" }),
+    chat({ id: 2, repository_id: 9, title: "Write the tests" }),
+    chat({ id: 3, repository_id: 1, title: "" }),
+  ];
+
+  it("keeps the chats whose title holds the words typed, whatever their case", () => {
+    expect(filterChats(titled, boards, "all", "  LOGIN ").map((c) => c.id)).toEqual([1]);
+  });
+
+  it("reads a chat without a title as the New chat its row names it", () => {
+    expect(filterChats(titled, boards, "all", "new ch").map((c) => c.id)).toEqual([3]);
+    expect(filterChats(titled, boards, "all", "work")).toEqual([]);
+  });
+
+  it("keeps every chat while the field is empty", () => {
+    expect(filterChats(titled, boards, "all")).toEqual(titled);
+  });
+
+  it("combines with the project filter: a chat passes only when both take it", () => {
+    // The search never broadens the project filter, and the project filter never keeps a chat the search drops.
+    expect(filterChats(titled, boards, 1, "tests")).toEqual([]);
+    expect(filterChats(titled, boards, 1, "write")).toEqual([]);
+    expect(filterChats(titled, boards, 1, "login").map((c) => c.id)).toEqual([1]);
+    // The only chat `Without project` takes is narrowed by the words it holds.
+    expect(filterChats(titled, boards, "none", "test").map((c) => c.id)).toEqual([2]);
+    expect(filterChats(titled, boards, "none", "login")).toEqual([]);
+  });
+});
+
+/** The filter this browser remembers between visits, read back defensively. */
+describe("parseChatFilter", () => {
+  it("returns the filter the words name", () => {
+    expect(parseChatFilter("all")).toBe("all");
+    expect(parseChatFilter("none")).toBe("none");
+    expect(parseChatFilter("5")).toBe(5);
+  });
+
+  it("falls back to every chat for nothing stored, or anything that names no filter", () => {
+    expect(parseChatFilter(null)).toBe("all");
+    expect(parseChatFilter("")).toBe("all");
+    expect(parseChatFilter("yesterday")).toBe("all");
   });
 });

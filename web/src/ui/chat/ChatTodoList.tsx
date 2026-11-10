@@ -40,7 +40,7 @@ export function ChatTodoList({ todos, expanded, onToggle }: ChatTodoListProps) {
   const done = todos.filter((todo) => todo.status?.toLowerCase() === "completed").length;
 
   return (
-    <div className="max-w-prose">
+    <div>
       <button
         type="button"
         className="flex min-h-10 w-full cursor-pointer items-center gap-3 rounded-control px-3 text-left text-base font-semibold text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"

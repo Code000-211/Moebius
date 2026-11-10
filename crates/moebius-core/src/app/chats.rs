@@ -17,7 +17,7 @@ use crate::config::{AgentConfig, THINKING_LEVELS};
 use crate::harness::terminal::tui_key;
 use crate::repos::git;
 use crate::router::Protocol;
-use crate::store::Run;
+use crate::store::{Grilling, Run};
 
 /// How many characters of a chat's first message its title keeps.
 const TITLE_LENGTH: usize = 80;
@@ -548,6 +548,24 @@ impl App {
         }
     }
 
+    /// What the Publish button of a grilling chat does: what the Grilling partner left in its worktree goes into the
+    /// inbox (see `crate::harness::grilling::publish`) while the chat goes on, instead of only when it ends (see
+    /// [`end_chat`]). Not for other chats.
+    pub fn publish_grilling(&self, run_id: i64) -> Result<Grilling> {
+        let run = self.running_chat(run_id)?;
+        if run.agent != crate::harness::pibolt::GRILLING_AGENT {
+            return Err(AppError::Invalid(format!(
+                "chat {run_id} is not a grilling: it runs with {}",
+                run.agent
+            )));
+        }
+        let worktree = run
+            .worktree
+            .as_deref()
+            .ok_or_else(|| AppError::Invalid(format!("chat {run_id} has no worktree")))?;
+        crate::harness::grilling::publish(self, run_id, Path::new(worktree))
+    }
+
     /// A person ends a chat that has not ended. It ends as `succeeded` once its agent has shut down and its work is
     /// committed and, if there is any, offered as a change (see `offer_chat_change`).
     pub fn end_chat(&self, runs: &dyn Runs, run_id: i64) -> Result<Run> {
@@ -677,6 +695,45 @@ impl App {
             .chars()
             .take(TITLE_LENGTH)
             .collect())
+    }
+
+    /// The commit message of what a chat left behind: its subject is what the agent did (the first line of its last
+    /// answer), the body carries the rest of that answer, and the trailer says which chat it was and what it was
+    /// asked. Never just the first message of the chat, in the same shape as the commits of a card's runs.
+    pub fn chat_commit_message(&self, run: &Run, when: &str) -> String {
+        let answer = run.summary.as_deref().unwrap_or("").trim();
+        let full = self.chat_title(run).unwrap_or_default();
+        let asked = full.trim_end_matches('.').trim_end();
+        // The subject is what the agent said it did; when its last answer is empty, what the chat was asked.
+        let (subject, rest) = match answer.lines().next() {
+            Some(line) if !line.trim().is_empty() => (
+                line.trim().to_owned(),
+                answer
+                    .lines()
+                    .skip(1)
+                    .collect::<Vec<&str>>()
+                    .join("\n")
+                    .trim()
+                    .to_owned(),
+            ),
+            _ => (asked.to_owned(), answer.to_owned()),
+        };
+        let subject = if subject.is_empty() {
+            format!("Chat {}", run.id)
+        } else {
+            subject
+        };
+        let trailer = if asked.is_empty() {
+            format!("Chat {} (agent {}).", run.id, run.agent)
+        } else {
+            format!("Chat {}: {asked} (agent {}).", run.id, run.agent)
+        };
+        let body = if rest.is_empty() {
+            String::new()
+        } else {
+            format!("\n\n{rest}")
+        };
+        format!("{subject}{body}\n\n{trailer}\nMade by Moebius {when}.")
     }
 
     /// How many files the worktree of the chat `run` changes against its default branch, committed or not; 0 for an

@@ -262,9 +262,8 @@ fn evaluate_expression(
         .set_environment(environment)
         .eval::<Value>();
     match result {
-        Ok(value) => {
-            lua_to_json(value).map_err(|error| Error::new(node, parameter, describe(&error)))
-        }
+        Ok(value) => lua_to_json(value, EXPRESSION)
+            .map_err(|error| Error::new(node, parameter, describe(&error))),
         Err(error) => Err(Error::new(node, parameter, describe(&error))),
     }
 }
@@ -282,7 +281,7 @@ fn describe(error: &mlua::Error) -> String {
     }
 }
 
-fn json_to_lua(lua: &Lua, value: &Json) -> mlua::Result<Value> {
+pub(crate) fn json_to_lua(lua: &Lua, value: &Json) -> mlua::Result<Value> {
     Ok(match value {
         Json::Null => Value::Nil,
         Json::Bool(value) => Value::Boolean(*value),
@@ -315,26 +314,45 @@ fn json_to_lua(lua: &Lua, value: &Json) -> mlua::Result<Value> {
     })
 }
 
-fn lua_to_json(value: Value) -> mlua::Result<Json> {
+/// How deeply a value may nest on its way from Lua to JSON. A table that holds itself, or one nested deeper than
+/// this, is refused rather than followed, so converting what a script returns cannot use up the stack. JSON read
+/// back is never this deep anyway: the parser itself stops at 128 levels.
+pub(crate) const MAX_DEPTH: usize = 100;
+
+/// What a conversion error calls the Luau whose value it converted, when the caller is an expression.
+const EXPRESSION: &str = "the expression";
+
+/// Turns what Luau returned into JSON. `from` is what an error calls the Luau that returned the value, so a node
+/// kind that runs Luau of its own says `the code` where an expression says `the expression`.
+pub(crate) fn lua_to_json(value: Value, from: &str) -> mlua::Result<Json> {
+    value_to_json(value, 0, from)
+}
+
+fn value_to_json(value: Value, depth: usize, from: &str) -> mlua::Result<Json> {
     Ok(match value {
         Value::Nil => Json::Null,
         Value::Boolean(value) => Json::Bool(value),
         Value::Integer(value) => Json::Number(Number::from(value)),
         Value::Number(value) => Number::from_f64(value).map(Json::Number).ok_or_else(|| {
-            mlua::Error::runtime("the expression returned a number JSON cannot hold")
+            mlua::Error::runtime(format!("{from} returned a number JSON cannot hold"))
         })?,
         Value::String(value) => Json::String(value.to_string_lossy()),
-        Value::Table(table) => table_to_json(table)?,
+        Value::Table(table) => table_to_json(table, depth, from)?,
         other => {
             return Err(mlua::Error::runtime(format!(
-                "the expression returned a {} JSON cannot hold",
+                "{from} returned a {} JSON cannot hold",
                 other.type_name()
             )));
         }
     })
 }
 
-fn table_to_json(table: mlua::Table) -> mlua::Result<Json> {
+fn table_to_json(table: mlua::Table, depth: usize, from: &str) -> mlua::Result<Json> {
+    if depth >= MAX_DEPTH {
+        return Err(mlua::Error::runtime(format!(
+            "{from} returned a value nested deeper than {MAX_DEPTH} levels"
+        )));
+    }
     let entries: Vec<(Value, Value)> =
         table.pairs::<Value, Value>().collect::<mlua::Result<_>>()?;
     if entries.is_empty() {
@@ -353,7 +371,7 @@ fn table_to_json(table: mlua::Table) -> mlua::Result<Json> {
         if let Some(index) = index
             && slots[index].is_none()
         {
-            slots[index] = Some(lua_to_json(value.clone())?);
+            slots[index] = Some(value_to_json(value.clone(), depth + 1, from)?);
             continue;
         }
         sequence = false;
@@ -372,7 +390,7 @@ fn table_to_json(table: mlua::Table) -> mlua::Result<Json> {
             Value::Boolean(key) => key.to_string(),
             _ => return Err(mlua::Error::runtime("a table key is not a string")),
         };
-        map.insert(key, lua_to_json(value)?);
+        map.insert(key, value_to_json(value, depth + 1, from)?);
     }
     Ok(Json::Object(map))
 }
@@ -486,6 +504,17 @@ mod tests {
         )
         .unwrap_err();
         assert!(by_time.to_string().contains("ran out of time"), "{by_time}");
+    }
+
+    #[test]
+    fn a_value_that_holds_itself_is_an_error_and_not_a_crash() {
+        let error = fill(
+            "test",
+            &json!({"command": "{{ (function() local t = {} t.t = t return t end)() }}"}),
+            &scope(),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("nested deeper than"), "{error}");
     }
 
     #[test]

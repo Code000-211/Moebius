@@ -171,9 +171,9 @@ takes a repository's name.
 | `chat end <id>` | `POST /v1/chats/{id}/end` | The run. |
 | `chat delete <id> [--reason <why>]` | `DELETE /v1/chats/{id}` | The chat's run, as it was. Stops the chat if it is going, then deletes it with its events, changes, inbox items, worktree and branch; only a person may (an agent's token gets `403`). |
 | `automation list` | `GET /v1/automations` | Table `id name schedule agent enabled next_firing` (`next_firing` in Unix seconds). |
-| `automation save --name <n> --schedule <cron> --prompt <text\|-> [--agent <name>] [--repository <id> \| --harness] [--off] [--id <id>]` | `POST /v1/automations`, or `PUT /v1/automations/{id}` with `--id` | The automation. Without `--agent` its chats are with the Moebius agent; `--off` saves it switched off; `-` as the prompt reads standard input. Replaces the whole automation, as the route does. |
-| `automation run <id>` | `POST /v1/automations/{id}/run` | The firing: `started` with its chat's `run_id`, or `skipped` or `failed` with the reason. |
-| `automation delete <id>` | `DELETE /v1/automations/{id}` | `deleted the automation <id>`. |
+| `automation save --name <n> --schedule <cron> --prompt <text\|-> [--agent <name>] [--repository <id> \| --harness] [--off] [--id <id>]` | `POST /v1/automations`, or `PUT /v1/automations/{id}` with `--id` | The automation. Without `--agent` its chats are with the Moebius agent; `--off` saves it switched off; `-` as the prompt reads standard input. Replaces the whole automation, as the route does. The command keeps its name and arguments as a shortcut: it writes the `schedule` workflow whose `chat` node is the automation, in `automation-<id>.toml` when its name is already another workflow's or automation's. |
+| `automation run <id>` | `POST /v1/automations/{id}/run` | The firing: `started` with its chat's `run_id` and its `workflow_run_id` when it starts a workflow run, or `skipped` or `failed` with the reason. |
+| `automation delete <id>` | `DELETE /v1/automations/{id}` | `deleted the automation <id>`, and the workflow behind it. |
 | `runners` | `GET /v1/runners` | Table `name host user max_runs busy`: the `[[runners]]` of `moebius.toml`, with how many runs go on each now. |
 | `agents` | `GET /v1/agents` | Table `name model protocol built_in error`. |
 | `agent show <name>` | `GET /v1/agents/{name}` | The agent: settings as JSON, instructions below, and for a built-in agent its built-in instructions and skills (`built_in`). |
@@ -184,7 +184,9 @@ takes a repository's name.
 | `workflow list` | `GET /v1/workflows` | Table `name description trigger_kind node_count`. |
 | `workflow show <name>` | `GET /v1/workflows/{name}` | The workflow's file and its parsed form, as JSON. |
 | `workflow save <name> <file\|->` | `PUT /v1/workflows/{name}` | The saved workflow, with `commit`. The file is checked as the route checks it, so an invalid definition is refused and nothing is written; `-` reads standard input. |
+| `workflow run <name> [--repository <name>] [--input <name=value>]... [--inputs <json\|file\|->]` | `GET /v1/workflows/{name}/run-inputs`, then `POST /v1/workflows/{name}/runs` | The run as it was recorded: `id`, `workflow`, `repository`, `trigger` (`manual`), `status` and the `value` its nodes start from. Each `--input` is one input the workflow's `manual` trigger names, and its text becomes the type the trigger declares, so `count=3` is the number 3 for a `number` and the text `3` for a `text`; the option is given again for each input. `--inputs` is the same inputs as one JSON object instead, and needs no lookup. The repository the run belongs to is `--repository`, or the one an input of type `repository` names. A trigger that is not `manual` is a `409`, and an input that is not right is refused by name. |
 | `workflow delete <name>` | `DELETE /v1/workflows/{name}` | `name` and `commit`; `409` while a run of the workflow is queued or running. |
+| `workflow cancel <id>` | `POST /v1/workflows/runs/{id}/cancel` | The run, ended `cancelled`; `409` for a run that has ended already. |
 | `settings` | `GET /v1/settings` | `file:`, then `<key> = <value>` for every key, `(default)` after a default, the stored key names and the keys that need a restart. |
 | `settings set <KEY=VALUE>... [--remove <key>]...` | `PUT /v1/settings` | `restart_needed` and `restart_keys`. |
 | `secrets set <name>` | `PUT /v1/secrets/{name}` | `stored the key <name>`. The key is read from standard input, one trailing new line removed; it is never an argument. |

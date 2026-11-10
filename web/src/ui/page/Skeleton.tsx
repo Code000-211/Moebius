@@ -176,8 +176,8 @@ export function SkeletonThread({
               <Skeleton className="w-1/2" />
             </div>
           </div>
-          {/* The answer: body text on a readable measure, and no box around it. */}
-          <div className="flex max-w-prose flex-col gap-2">
+          {/* The answer: body text the full width of the column, and no box around it. */}
+          <div className="flex flex-col gap-2">
             <Lines lines={3} />
           </div>
         </div>

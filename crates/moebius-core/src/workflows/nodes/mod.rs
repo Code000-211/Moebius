@@ -2,8 +2,15 @@
 //! may leave it by, and describes itself for the pages that list the kinds. The registry below is the one place a new
 //! node kind is added: one arm of [`node`], next to the others.
 
+pub mod agent;
+pub mod approval;
+pub mod chat;
+pub mod code;
 pub mod condition;
 pub mod for_each;
+pub mod http;
+pub mod merge;
+pub mod publish;
 
 use serde_json::Value;
 use thiserror::Error;
@@ -51,6 +58,9 @@ pub enum NodeError {
     UnknownKind(String),
     #[error("invalid parameters for node kind \"{kind}\": {message}")]
     Parameters { kind: String, message: String },
+    /// A person cancelled the run while the node waited; the node leaves what it was doing.
+    #[error("the run was cancelled")]
+    Cancelled,
     #[error("{0}")]
     Failed(String),
 }
@@ -96,12 +106,19 @@ pub trait Node: Send + Sync {
 /// lands, naming it is an [`NodeError::UnknownKind`].
 pub fn node(kind: &str, params: &Value) -> Result<Box<dyn Node>, NodeError> {
     match kind {
-        condition::KIND => Ok(Box::new(condition::Condition::new(params)?)),
+        chat::KIND => Ok(Box::new(chat::Chat::from_params(params)?)),
         #[cfg(test)]
         TEST_KIND => Ok(Box::new(TestNode {
             params: params.clone(),
         })),
+        agent::KIND => Ok(Box::new(agent::Agent::from_params(params)?)),
+        code::KIND => Ok(Box::new(code::CodeNode::from_params(params)?)),
+        condition::KIND => Ok(Box::new(condition::Condition::new(params)?)),
         for_each::KIND => Ok(Box::new(for_each::ForEach::from_params(params)?)),
+        http::KIND => Ok(Box::new(http::HttpNode::from_params(params)?)),
+        merge::KIND => Ok(Box::new(merge::Merge::from_params(params)?)),
+        publish::KIND => Ok(Box::new(publish::Publish::from_params(params)?)),
+        approval::KIND => Ok(Box::new(approval::Approval::from_params(params)?)),
         other => Err(NodeError::UnknownKind(other.to_string())),
     }
 }

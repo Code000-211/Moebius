@@ -317,6 +317,18 @@ impl Repos {
         self.add_named_worktree(name, clone, &format!("chat-{run_id}"), base)
     }
 
+    /// Creates a worktree for the workflow run `run_id` on a new branch `moebius/workflow-run-<id>` named for the run,
+    /// starting at `base`. The run's agents work in it through the run, and the run keeps its path.
+    pub fn add_workflow_worktree(
+        &self,
+        name: &str,
+        clone: &Path,
+        run_id: i64,
+        base: &str,
+    ) -> Result<Worktree> {
+        self.add_named_worktree(name, clone, &format!("workflow-run-{run_id}"), base)
+    }
+
     /// Creates a worktree for the trial of proposal `proposal` on card `card` on a new branch
     /// `moebius/trial-<proposal>-card-<card>` starting at `base`.
     pub fn add_trial_worktree(

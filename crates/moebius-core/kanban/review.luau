@@ -1,7 +1,7 @@
--- In review: the change is published (on GitHub that opens or updates the pull request), then waits for its checks,
+-- In review: the change is published (its branch is pushed; the pull request opens only when the change is offered), then waits for its checks,
 -- then must merge cleanly, then the Reviewer reads it along two axes, Standards and then Spec, each ending with
 -- findings that cite evidence. Failing checks, a conflict or blocking findings send the card back to In progress with
--- a note saying why. Approved, or without a Reviewer, the change is offered, with the judgement calls for the person.
+-- a note saying why. Approved, or without a Reviewer, the change is offered (on a forge that opens its pull request), with the judgement calls for the person.
 -- A review a person stopped, too many reviews or an agent's spent token budget put the card in the inbox as stuck;
 -- while the daily token budget is spent no review starts. In a repository that works test first (`card.test_first`),
 -- the change's reproduction test must also fail on the commit the change starts from and pass on the change before the

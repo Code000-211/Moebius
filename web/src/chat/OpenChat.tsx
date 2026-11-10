@@ -1,232 +1,53 @@
 /**
- * One chat, open: its conversation (virtualised, following the answer; or Pi-Bolt's terminal interface in its place), the change it offered, and the composer with
- * the pills of its place, model and reasoning; the agent it is written to is named by the field itself. The model and
- * the reasoning level change while the chat waits. Writing to a chat that ended goes on in a new chat that is told
- * this one. Once an answer is held its events are marked read, once per answer.
+ * One chat, open: its conversation (virtualised, following the answer; or Pi-Bolt's terminal interface in its place),
+ * the change it offered, and the composer with the pill of its place; the agent it is written to is named by the field
+ * itself. All of its actions — publishing and ending a grilling, offering its change, stopping the agent, the model
+ * and the reasoning level, naming, deleting — live on the chip beside the composer's Send (ChatChip), floating over
+ * the bottom right of the conversation only in the Terminal view, where no composer stands. The
+ * model and the reasoning level change while the chat waits. Writing to a chat that ended goes on in a new chat that
+ * is told this one. Once an answer is held its events are marked read, once per answer.
  */
 
-import { ArrowClockwiseIcon, PencilSimpleIcon } from "@phosphor-icons/react";
+import { ArrowClockwiseIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import {
-  changeChatSettings,
-  continueChat,
-  markSeen,
-  mergeChange,
-  nameChat,
-  offerChat,
-  chats as readChats,
-  say,
-  stopRun,
-} from "../api/calls/chat";
-import { sayError } from "../api/errorText";
+import { continueChat, markSeen, mergeChange, chats as readChats, say } from "../api/calls/chat";
 import { keys } from "../api/keys";
 import type { Snapshot } from "../api/types/board";
 import type { Chat } from "../api/types/chat";
 import { Terminal } from "../terminal/LazyTerminal";
-import { type PillOption, PillSelect } from "../ui/chat/PillSelect";
 import { Tag } from "../ui/chat/Tag";
 import { Button } from "../ui/components/Button";
-import { Tooltip } from "../ui/components/Tooltip";
 import { cn } from "../ui/lib/cn";
-import { CONTROL } from "../ui/lib/field";
-import { plural } from "../ui/lib/format";
 import { Empty } from "../ui/page/Empty";
 import { FadedLine } from "../ui/page/FadedLine";
 import { Notice } from "../ui/page/Notice";
+import { ChatChip } from "./ChatChip";
 import { Composer } from "./Composer";
 import { draftKey, readDraft, saveDraft } from "./drafts";
-import { agentGone, endedHint, isOpen, isWorking, statusTag, takesMessage } from "./format";
-import { levelChoices } from "./levels";
+import { agentGone, endedHint, isOpen, isWorking, takesMessage } from "./format";
 import { offeredChange, placeName } from "./places";
 import { seqToMark } from "./readMarkers";
 import { Starters } from "./Starters";
 import { ThreadView } from "./ThreadView";
-import { useChoices } from "./useChoices";
 import { useThread } from "./useThread";
 
 /**
- * The title row of the top bar for a chat: its name, which the person may change, and where its status stands. Who
- * the chat is with is not said here: the pills under the field say it, and they are where that choice lives. The way
- * to name it is a pencil that comes out of the quiet only while the row is hovered or the field has focus, so the
- * row reads as a title until it is needed.
+ * The title of an open chat, alone in the top bar now: all of the chat's actions live on its chip, and the chip's one
+ * word carries the state, so the bar says only what the chat is called.
  */
-export function ChatTitle({ chat, onNotice }: { chat: Chat; onNotice: (notice: string) => void }) {
-  const queryClient = useQueryClient();
-  const [naming, setNaming] = useState(false);
-  const [draft, setDraft] = useState(chat.title);
-  const tag = statusTag(chat.status, chat.asks);
+export function ChatTitle({ chat }: { chat: Chat }) {
   const name = chat.title || "New chat";
-
-  const field = useRef<HTMLInputElement>(null);
-  // The name is there to be changed, so the field opens focused with the old name selected.
-  useEffect(() => {
-    if (naming) field.current?.select();
-  }, [naming]);
-
-  function start() {
-    setDraft(chat.title);
-    setNaming(true);
-  }
-
-  /** Writes the name, unless nothing was changed; Enter and leaving the field both save, Escape leaves. */
-  async function save() {
-    if (!naming) return;
-    setNaming(false);
-    const title = draft.trim();
-    if (title === chat.title) return;
-    try {
-      const named = await nameChat(chat.id, title);
-      queryClient.setQueryData<Chat[]>(keys.chats, (chats) =>
-        chats?.map((each) => (each.id === named.id ? named : each)),
-      );
-    } catch (error) {
-      onNotice(sayError(error, "Could not name the chat. Try again."));
-    }
-  }
-
   return (
-    <>
-      {naming ? (
-        <input
-          ref={field}
-          aria-label="Name of the chat"
-          value={draft}
-          maxLength={80}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={() => void save()}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") void save();
-            if (event.key === "Escape") setNaming(false);
-          }}
-          className={cn(CONTROL, "min-w-0 flex-1")}
-          data-testid="chat-title-field"
-        />
-      ) : (
-        <span className="group flex min-w-0 flex-1 items-center gap-1" data-testid="chat-title">
-          <FadedLine
-            text={name}
-            keep="head"
-            title={name}
-            className="text-base font-semibold text-text"
-          />
-          <button
-            type="button"
-            onClick={start}
-            aria-label={`Name the chat${chat.title ? "" : " (it has none yet)"}`}
-            className={cn(
-              "inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-control",
-              "text-secondary opacity-0 transition-opacity duration-(--motion-routine) ease-out",
-              "hover:bg-hover hover:text-text focus-visible:opacity-100",
-              "group-hover:opacity-100 motion-reduce:transition-none",
-            )}
-          >
-            <PencilSimpleIcon className="size-4" aria-hidden="true" />
-          </button>
-        </span>
-      )}
-      {tag && <Tag tone={tag.tone}>{tag.label}</Tag>}
-    </>
-  );
-}
-
-/** The right of the top bar while the chat lasts: offering what its worktree changes, and stopping its agent. */
-export function ChatActions({
-  chat,
-  onNotice,
-}: {
-  chat: Chat;
-  onNotice: (notice: string) => void;
-}) {
-  const queryClient = useQueryClient();
-  const [confirming, setConfirming] = useState(false);
-  const [params, setParams] = useSearchParams();
-  if (!isOpen(chat.status)) return null;
-  const inTerminal = params.get("terminal") === "1";
-  const toggleTerminal = () =>
-    setParams(
-      (current) => {
-        const next = new URLSearchParams(current);
-        if (inTerminal) next.delete("terminal");
-        else next.set("terminal", "1");
-        return next;
-      },
-      { replace: true },
-    );
-  const working = isWorking(chat.status);
-
-  async function offer() {
-    try {
-      const change = await offerChat(chat.id);
-      onNotice(`Offered as a change on ${change.branch}: it waits in the Inbox, ready to merge.`);
-    } catch (e) {
-      onNotice(e instanceof Error ? e.message : "Couldn't offer the change. Try again.");
-    }
-    await queryClient.invalidateQueries({ queryKey: keys.chats });
-    await queryClient.invalidateQueries({ queryKey: keys.snapshot });
-  }
-
-  async function stop() {
-    setConfirming(false);
-    try {
-      await stopRun(chat.id);
-    } catch (e) {
-      onNotice(e instanceof Error ? e.message : "Couldn't stop the chat. Try again.");
-    }
-  }
-
-  if (confirming) {
-    return (
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-base text-text">Stop this chat?</span>
-        <Button variant="secondary" onClick={() => setConfirming(false)}>
-          Keep going
-        </Button>
-        <Button onClick={() => void stop()}>Stop chat</Button>
-      </div>
-    );
-  }
-  const label = `Offer changes (${plural(chat.changed_files, "file", "files")})`;
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      {inTerminal ? (
-        <Button variant="secondary" onClick={toggleTerminal}>
-          Conversation
-        </Button>
-      ) : chat.status === "waiting" ? (
-        <Button variant="secondary" onClick={toggleTerminal}>
-          Terminal
-        </Button>
-      ) : (
-        <Tooltip content="The terminal opens once the agent has answered">
-          <span>
-            <Button variant="secondary" disabled>
-              Terminal
-            </Button>
-          </span>
-        </Tooltip>
-      )}
-      {chat.changed_files > 0 &&
-        (working ? (
-          <Tooltip content="Offer once the agent has answered">
-            <span>
-              <Button variant="secondary" disabled>
-                {label}
-              </Button>
-            </span>
-          </Tooltip>
-        ) : (
-          <Button variant="secondary" className="tabular-nums" onClick={() => void offer()}>
-            {label}
-          </Button>
-        ))}
-      {working && (
-        <Button variant="secondary" onClick={() => setConfirming(true)}>
-          Stop
-        </Button>
-      )}
-    </div>
+    <span data-testid="chat-title">
+      <FadedLine
+        text={name}
+        keep="head"
+        title={name}
+        className="text-base font-semibold text-text"
+      />
+    </span>
   );
 }
 
@@ -289,10 +110,12 @@ export function OpenChat({
   const chats = useQuery({ queryKey: keys.chats, queryFn: readChats });
   const chat = chats.data?.find((each) => each.id === id);
   const thread = useThread(id);
-  const choices = useChoices();
   const [message, setMessage] = useState(() => readDraft(draftKey(id)));
   const [sent, setSent] = useState(0);
   const [sending, setSending] = useState(false);
+  // Whether the chip's panel of actions stands open. It is this page's, not the chip's: the composer and the Terminal
+  // view draw the chip anew each time the view switches under them, and the panel goes with the chat all the same.
+  const [panel, setPanel] = useState(false);
   const marked = useRef(0);
   // What the composer holds right now, which the closure of a send cannot see: an answer takes seconds, and what is
   // typed in those seconds is the next question, not something to throw away with the one that was sent.
@@ -358,14 +181,15 @@ export function OpenChat({
   const writesHere = takesMessage(chat.status);
   const gone = agentGone(chat.status);
 
-  // Pi-Bolt's own terminal interface takes the place of the conversation; the top bar's button brings it back.
+  // Pi-Bolt's own terminal interface takes the place of the conversation; the chip's button brings it back.
   if (open && params.get("terminal") === "1") {
     return (
-      <div className="flex min-h-0 flex-1 flex-col gap-3" data-testid="chat-terminal">
+      <div className="relative flex min-h-0 flex-1 flex-col gap-3" data-testid="chat-terminal">
+        <ChatChip chat={chat} openId={id} onNotice={onNotice} shown={panel} onShown={setPanel} />
         <Terminal path={`/v1/chats/${id}/tui`} autoFocus className="min-h-0 flex-1" />
         <p className="shrink-0 text-sm leading-relaxed text-secondary">
-          Pi-Bolt's terminal interface continues this chat. Closing it, or Conversation above, goes
-          back.
+          Pi-Bolt's terminal interface continues this chat. Closing it, or Conversation on the chip,
+          goes back.
         </p>
       </div>
     );
@@ -400,29 +224,8 @@ export function OpenChat({
     setSending(false);
   }
 
-  async function change(settings: { model?: string; thinking?: string }) {
-    if (!chat) return;
-    try {
-      await changeChatSettings(chat.id, settings);
-      onNotice(null);
-    } catch (e) {
-      onNotice(e instanceof Error ? e.message : "Couldn't change the chat. Try again.");
-    }
-    await queryClient.invalidateQueries({ queryKey: keys.chats });
-  }
-
-  const agent = choices.agents.find((each) => each.name === chat.agent);
-  const model = chat.model ?? (agent?.model || null);
-  const thinking = chat.thinking ?? agent?.thinking ?? null;
-  const waiting = chat.status === "waiting";
   const place = placeName(snapshot, chat);
-  const modelOptions: PillOption[] = [
-    ...(model && !choices.models.includes(model) ? [{ value: model, label: model }] : []),
-    ...choices.models.map((value) => ({ value, label: value })),
-  ];
-  // Only the levels the model's endpoint takes, plus this chat's own level when it has outlived the model.
-  const levelOptions: PillOption[] = levelChoices(choices.available, model ?? "", thinking ?? "");
-  // Nothing is said under the composer for a chat that has ended: its own tag in the header already says so, and
+  // Nothing is said under the composer for a chat that has ended: its chip beside Send already says so, and
   // writing to it is the ordinary thing the composer does.
   const hint = notice
     ? notice
@@ -432,50 +235,52 @@ export function OpenChat({
 
   return (
     <>
-      <div className="min-h-0 flex-1" data-testid="conversation">
-        {/* A conversation already read stays on screen: a failed read shows its reason above it, not instead of it. */}
-        {thread.error ? <Notice tone="error">{thread.error}</Notice> : null}
-        {thread.error && !thread.loaded ? null : (
-          <ThreadView
-            entries={thread.entries}
-            working={working}
-            sent={sent}
-            loading={!thread.loaded}
-            loadingMessage="Reading the chat"
-            hasOlder={thread.hasOlder}
-            olderLoading={thread.olderLoading}
-            olderError={thread.olderError}
-            loadOlder={thread.loadOlder}
-            // An answer to the agent's question is the person's next message.
-            onAnswer={writesHere ? (answer) => void send(answer) : undefined}
-            sending={sending}
-            // The banner that says what went wrong is where the person is already looking, so it is where going
-            // through the same message again is offered — the agent is made again in this chat, told what was said.
-            retryAction={
-              gone ? (
-                <Button
-                  size="sm"
-                  variant="danger"
-                  // The banner is the error's own fill, so the button of it needs its border to read as a button.
-                  className="ring-1 ring-error-border ring-inset"
-                  onClick={() => void send("")}
-                  disabled={sending}
-                >
-                  <ArrowClockwiseIcon aria-hidden="true" className="size-4" />
-                  Retry
-                </Button>
-              ) : undefined
-            }
-            empty={thread.loaded ? "Start with one of these, or write your own." : undefined}
-            // The starters are for the moment before anything is written; once a message is on its way they are in
-            // the way, and picking one would replace what was typed. The chat's state is not part of this: a chat
-            // whose agent went away takes these words itself, and one that ended for good starts a new chat told
-            // them, so the sentence above them is true wherever the chat has nothing said in it.
-            emptyAction={
-              thread.loaded && message.trim() === "" ? <Starters onPick={write} /> : undefined
-            }
-          />
-        )}
+      <div className="relative min-h-0 flex-1">
+        <div className="min-h-0 h-full" data-testid="conversation">
+          {/* A conversation already read stays on screen: a failed read shows its reason above it, not instead of it. */}
+          {thread.error ? <Notice tone="error">{thread.error}</Notice> : null}
+          {thread.error && !thread.loaded ? null : (
+            <ThreadView
+              entries={thread.entries}
+              working={working}
+              sent={sent}
+              loading={!thread.loaded}
+              loadingMessage="Reading the chat"
+              hasOlder={thread.hasOlder}
+              olderLoading={thread.olderLoading}
+              olderError={thread.olderError}
+              loadOlder={thread.loadOlder}
+              // An answer to the agent's question is the person's next message.
+              onAnswer={writesHere ? (answer) => void send(answer) : undefined}
+              sending={sending}
+              // The banner that says what went wrong is where the person is already looking, so it is where going
+              // through the same message again is offered — the agent is made again in this chat, told what was said.
+              retryAction={
+                gone ? (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    // The banner is the error's own fill, so the button of it needs its border to read as a button.
+                    className="ring-1 ring-error-border ring-inset"
+                    onClick={() => void send("")}
+                    disabled={sending}
+                  >
+                    <ArrowClockwiseIcon aria-hidden="true" className="size-4" />
+                    Retry
+                  </Button>
+                ) : undefined
+              }
+              empty={thread.loaded ? "Start with one of these, or write your own." : undefined}
+              // The starters are for the moment before anything is written; once a message is on its way they are in
+              // the way, and picking one would replace what was typed. The chat's state is not part of this: a chat
+              // whose agent went away takes these words itself, and one that ended for good starts a new chat told
+              // them, so the sentence above them is true wherever the chat has nothing said in it.
+              emptyAction={
+                thread.loaded && message.trim() === "" ? <Starters onPick={write} /> : undefined
+              }
+            />
+          )}
+        </div>
       </div>
       <OfferedChange chat={chat} snapshot={snapshot} />
       <Composer
@@ -484,43 +289,23 @@ export function OpenChat({
         onSend={() => void send()}
         canSend={message.trim() !== "" && !sending}
         // A chat that takes no message says on the button what pressing it really does: it starts a chat that carries
-        // this one on. The tag in the title row is still the only place the state itself is said.
+        // this one on. The chip beside Send is where the state itself is said.
         sendLabel={writesHere ? "Send" : "Continue"}
         sendTitle={writesHere ? undefined : "Starts a new chat, told what was said in this one"}
         // The field names who the message goes to, which is what the agent pill used to say and is the one thing
         // worth reading there. A chat that takes no message has nobody to write to, so the field says why, and what
         // the button does about it.
         placeholder={writesHere ? `Write to ${chat.agent}` : endedHint(chat.status, chat.agent)}
-        pills={
-          <>
-            <Tag>{place ?? "no repository"}</Tag>
-            {/* The model and the reasoning level are chosen wherever a message will be answered. While the agent is up
-                it is told them; after it went away there is nobody to tell yet, and the agent made again for the next
-                message starts on them, so the choice is still the person's to make here. */}
-            {writesHere && (
-              <>
-                <PillSelect
-                  label="Model"
-                  valueOnly
-                  value={model}
-                  placeholder="Server default"
-                  options={modelOptions}
-                  onChange={(value) => void change({ model: value })}
-                  disabled={!waiting && !gone}
-                  searchable
-                />
-                <PillSelect
-                  label="Reasoning"
-                  valueOnly
-                  value={thinking}
-                  placeholder="Not set"
-                  options={levelOptions}
-                  onChange={(value) => void change({ thinking: value })}
-                  disabled={!waiting && !gone}
-                />
-              </>
-            )}
-          </>
+        pills={<Tag>{place ?? "no repository"}</Tag>}
+        actions={
+          <ChatChip
+            chat={chat}
+            openId={id}
+            onNotice={onNotice}
+            beside
+            shown={panel}
+            onShown={setPanel}
+          />
         }
       />
       {hint && (

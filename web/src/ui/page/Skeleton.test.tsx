@@ -66,9 +66,9 @@ describe("a placeholder for a page being read", () => {
   it("draws a conversation as turns, not as rows", () => {
     render(<SkeletonThread turns={2} message="Reading the chat" />);
     const region = screen.getByRole("status");
-    // A person's message is a band of the sunken colour, and an answer is text on a measure with no box of its own.
+    // A person's message is a band of the sunken colour, and an answer is text the width of the column with no box of its own.
     expect(region.querySelectorAll(".bg-sunken")).toHaveLength(2);
-    expect(region.querySelectorAll(".max-w-prose")).toHaveLength(2);
+    expect(region.querySelector(".max-w-prose")).toBeNull();
     expect(region.querySelectorAll(".shadow-card")).toHaveLength(0);
   });
 

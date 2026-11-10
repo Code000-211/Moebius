@@ -16,7 +16,8 @@ cookie of a [session](#post-v1session)). The token is the content of
 `token_file` (by default `<data_dir>/token`, created when the server first starts). A missing or wrong token is answered
 with `401` and the plain text `a valid token is needed`. The exceptions are `POST /v1/webhooks/{forge}`, which a forge
 sends and which carries the forge's signature instead, and `/v1/session`, which signs a browser in. The paths outside
-`/v1/` need no token: they are the [web app](#the-web-app).
+`/v1/` need no token: they are the [web app](#the-web-app) and the [hooks a workflow's `webhook` trigger answers
+on](#post-apihookspath), which the secret that trigger names opens instead.
 
 The run token of a run of the Moebius agent (`MOEBIUS_TOKEN` in its environment, see the [bridge
 protocol](bridge-protocol.md#the-environment-of-the-harness)) is accepted as well, while the run lasts: it is how the
@@ -95,8 +96,9 @@ in `Done`), `labels` (array of text, in order) and `claimed_by` (who claimed it,
 
 `Issue`: a `Card` with `state` (`open` or `closed`), `blocked_by` (the numbers of the issues that block it and are not
 done) and `children` (its sub-issues, oldest first, each `{"id", "number", "title", "state", "column"}`).
-`Run`: `id`, `card_id` (null for a chat), `agent`, `harness`, `purpose` (`code`, `review`, other purposes of column scripts,
-`chat`, `retro`, the Retro analyst's run, `trial`, the trial of a proposal on a card, or `research`, a round of the Autoresearcher), `status` (`starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`; `waiting` is a chat waiting for
+`Run`: `id`, `card_id` (null for a chat or an agent of a workflow run), `agent`, `harness`, `purpose` (`code`, `review`, other purposes of column scripts,
+`chat`, `retro`, the Retro analyst's run, `trial`, the trial of a proposal on a card, `research`, a round of the Autoresearcher, or
+`workflow`, an agent of a workflow run), `status` (`starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`; `waiting` is a chat waiting for
 the person's next message), `worktree`, `started_at`, `ended_at`, `summary`, `repository_id` (the repository a chat
 works in, or null) and `harness_repository` (true for a chat that works in the [harness configuration
 repository](harness-configuration.md#changing-it-in-a-chat); `harness` is the name of the harness that runs the agent)
@@ -132,11 +134,12 @@ configuration repository), `enabled`, `created_at`, `next_firing` (when the sche
 null while it is off or when the schedule never comes due) and `last_firing` (its latest `Firing`, or null).
 
 `Firing`: `id`, `automation_id`, `status` (`started`, `skipped` or `failed`), `run_id` (the chat it started, or null),
-`chat_status` (that chat's status now, or null), `manual` (true when a person fired it with
+`workflow_run_id` (the workflow run that carries it, or null when it starts a chat directly, with no repository: in an
+empty directory or in the harness configuration repository), `chat_status` (that chat's status now, or null), `manual` (true when a person fired it with
 `POST /v1/automations/{id}/run`), `reason` (why it was skipped or failed; else empty) and `at`.
 
 `Change`: `id`, `repository_id` (null for a change of the harness configuration repository), `harness_repository` (true
-for such a change), `card_id` (or null), `branch`, `state` (`open`, `merged` or `closed`), `pull_request`
+for such a change), `card_id` (or null), `run_id` (the workflow run whose work it offers, or null), `branch`, `state` (`open`, `merged` or `closed`), `pull_request`
 (the number of the pull request on GitHub or Forgejo or of the merge request on GitLab, or null), `checks` (`pending`,
 `success`, `failure` or null; on GitLab the latest pipeline of the head commit: `failed` and `canceled` are `failure`,
 `success` and `skipped` are `success`, anything else is `pending`; on Forgejo the latest status of each context of the
@@ -145,11 +148,11 @@ latest review's state in lower case, such as `approved`; on GitLab `approved` on
 latest review given that was not dismissed, with `REQUEST_CHANGES` as `changes_requested`; or null), `head` (the published commit), `published_at`, `checks_head` (the commit
 `checks` are for), `failed_checks` (the failing checks of a pull request, the failed jobs of a pipeline, or the failed
 statuses of a commit, one per line, or null) and `check_output` (the
-end of the output of the repository's own checks, or null). A change's `branch` is `moebius/card-<number>`, `moebius/chat-<run id>` for the work of a chat, which has no card, or `research/<research id>-<name>` for a lever of a research, which has none either.
+end of the output of the repository's own checks, or null). A change's `branch` is `moebius/card-<number>`, `moebius/chat-<run id>` for the work of a chat, which has no card, `moebius/workflow-run-<run id>` for the work of a workflow run, which has none either and names the run in `run_id`, or `research/<research id>-<name>` for a lever of a research, which has none either.
 
 `InboxItem`: `id`, `kind`, `card_id` (or null), `title`, `data` (an object that depends on the kind), `resolved_at` (null
 in the snapshot, which holds only open items), `at`. Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
-(`data.reason`), `package_update` (`data.name`, `data.installed`, `data.version`; no card), `ready_to_merge` (`data.change`, `data.branch`, and `data.judgements`, the review's judgement calls, when it had any), `change_closed` (`data.change`, `data.pull_request`) and
+(`data.reason`), `package_update` (`data.name`, `data.installed`, `data.version`; no card), `ready_to_merge` (`data.change`, `data.branch`, `data.run` when the change is a workflow run's, and `data.judgements`, the review's judgement calls, when it had any), `change_closed` (`data.change`, `data.pull_request`) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
 addresses, and `data.regression`: the same for the cards of the regression set, empty when none was tried; its `title` is the
 proposal's and it has no card; a proposal for Moebius's own configuration has `data.kind` (`settings` or
@@ -158,10 +161,12 @@ instead of `data.trials`), `grilling_issues` (`data.grilling`, `data.repository`
 "body", "blocked_by"}`; its `title` is "N issues from a grilling" and it has no card) and `grilling_report` (`data.grilling`,
 `data.repository`, `data.report`: the text; no card) and `takeover` (`data.takeover`, `data.kind`, `data.agreement`,
 `data.count`; its `title` is "The decision model can take over <kind>" and it has no card) and `extension_update`
-(`data.package`, `data.from`, `data.to`, `data.source`; its `title` is "<package> <from> -> <to>" and it has no card). The
-nightly schedule, from `retro_at` on, once a day, puts one `extension_update` item in the inbox for each installed package
-with a newer version, and no second one for a version it has told of; the item is resolved when the package is current or
-an update is proposed.
+(`data.package`, `data.from`, `data.to`, `data.source`; its `title` is "<package> <from> -> <to>" and it has no card) and
+`workflow_approval` (`data.run`, `data.node`, `data.prompt`, `data.value` and `data.deadline` in whole seconds since the
+epoch; its `title` is the prompt and it has no card; it carries the decision a workflow run waits for, see
+[the approval node](workflows/approval.md)). The nightly schedule, from `retro_at` on, once a day, puts one
+`extension_update` item in the inbox for each installed package with a newer version, and no second one for a version it
+has told of; the item is resolved when the package is current or an update is proposed.
 A column script can add other kinds with `moebius.ask`.
 
 ## Endpoints
@@ -765,7 +770,9 @@ A person merges an open change: the decision is recorded (kind `merge`, decider 
 no-fast-forward merge into the default branch of the clone for a repository without a forge; the GitHub API for a pull
 request; the GitLab API for a merge request, with the merge commit's message; the Forgejo API for a pull request, with a
 merge commit titled with the message), the change becomes `merged`, its inbox items are resolved and its card, if it has one, moves to `Done`. A
-change from a chat has no card: its `ready_to_merge` item is resolved and the commit message is `Merge <branch>`.
+change from a chat has no card: its `ready_to_merge` item is resolved and the commit message names what it carries,
+`Merge <branch>: <the branch's last commit's subject>`, or `Merge <branch>` when the branch's last commit has no subject. A
+workflow run's change is merged the same way, and the change that belongs to the run becomes `merged`.
 
 A change of the harness configuration repository (`harness_repository` true) is merged into the default branch of its
 clone with a merge commit, which is pushed to `origin`; the agents are read again, so the next run uses what the change
@@ -782,11 +789,14 @@ branch does not merge cleanly; `500` the forge failed.
 A person rejects an open change whose card waits in `Ready to merge`: the decision is recorded (kind `reject`, decider
 `person`), the card's `ready_to_merge` inbox item is resolved, and the card moves back to `In progress` with the reason as
 its `note`, so that the next Coder round is told (without a reason the note says a person rejected the change). The change
-stays open: the next round updates it, and on GitHub its pull request stays.
+stays open: the next round updates it, and on GitHub its pull request stays. A workflow run's change has no card: rejecting
+it records the rejection and closes the change, so the run's change becomes `closed` and its `ready_to_merge` item is
+resolved.
 
 Request: `{"reason": "..."}`; `reason` is optional, but send `{}` without one.
 
-Response: the `Card`. Errors: `404` no such change; `422` the change is not `open` or its card is not in `Ready to merge`.
+Response: the `Card`, or `null` for a workflow run's change. Errors: `404` no such change; `422` the change is not `open`
+or its card is not in `Ready to merge`.
 
 ### `GET /v1/changes/{id}/diff`
 
@@ -984,7 +994,8 @@ Errors: `422` `days` is not from 1 to 365.
 ### `GET /v1/runs/{id}/diff`
 
 What a run changed, as a unified diff: while the run has a worktree, everything in it since the run started, uncommitted
-work included; afterwards the run's branch (`moebius/run-<id>`, `moebius/chat-<id>` for a chat) against the commit the
+work included; afterwards the run's branch (`moebius/run-<id>`, `moebius/chat-<id>` for a chat, or
+`moebius/workflow-run-<workflow run id>` for an agent of a workflow) against the commit the
 run started from. Response: `{"diff": string, "truncated": boolean}`, as for [a change](#get-v1changesiddiff); the diff
 is empty for a chat that has no repository. Errors: `404` no such run.
 
@@ -1257,8 +1268,73 @@ no `[harness]`; `409` and `500` as for `PUT /v1/agents/{name}`.
 A person deletes a workflow: the file is removed, committed on the default branch with the message
 `Delete the workflow <name>` and pushed to `origin`, and the decision is recorded (kind `edit_workflow`, decider
 `person`). Response: `{"name": string, "commit": string}` (`commit` is left out when there was nothing to commit). Errors:
-`404` no such workflow; `409` a run of the workflow is queued or running, or the server has no `[harness]`; `422` an
+`404` no such workflow; `409` a run of the workflow is queued, running or waiting, or the server has no `[harness]`; `422` an
 invalid name; `409` and `500` as for `PUT /v1/agents/{name}`.
+
+### `POST /v1/workflows/runs/{id}/cancel`
+
+Cancels a run of a workflow and ends it `cancelled`: a queued run never starts, a run going stops at its current node,
+and a run waiting on a person leaves its inbox item withdrawn. The run's worktree and branch are left as they are (see
+[cancelling a run](workflows/cancel.md)). Request: no body. Response: the run as the server has it now,
+`{"id": number, "workflow": string, "repository_id": number, "trigger": string, "status": string, "value": any,
+"created_at": number, "started_at": number or null, "finished_at": number or null, "error": string or null,
+"worktree": string or null}`, its
+`status` `cancelled` and its `error` `cancelled by a person`. Errors: `404` no such run; `409` the run has ended
+already, and the message names the status it ended as.
+
+### `POST /api/hooks/{path}`
+
+Starts a run of the workflow whose `webhook` trigger names this path, in the repository that trigger names. No token:
+what opens the door is the secret the trigger names, when it names one. The body is one JSON value and is the value the
+run starts with; a body that is not JSON is refused `400` saying so. The answer is `202` with
+`{"run": number, "workflow": string}` as soon as the run is stored, its nodes running on a thread of their own. A path
+with no hook on it, a credential that is missing or wrong, and a secret the trigger names that the server does not
+have are answered alike, with `404` and the plain text `no hook on this path`, so nothing here says which paths have
+hooks. At most eight runs of one workflow may be queued or running at once through its hook; past that the answer is
+`429` saying to try again later, never a dropped delivery. Errors: `400` a body that is not JSON; `404` no hook this
+delivery opens, including a path claimed by two workflows that the delivery cannot open; `422` a trigger that names no
+repository, or two workflows claiming one path that the delivery opens; `429` past the ceiling. See the
+[`webhook` trigger](workflows/webhook-trigger.md).
+
+### `POST /api/hooks/{repository}/{path}`
+
+The same door for a delivery that names which repository the run belongs to. The repository in the address wins over
+the one the trigger names; a repository the server does not have is refused `422`.
+
+### `GET /v1/workflows/{name}/run-inputs`
+
+The inputs the `manual` trigger of a workflow names, in the order its file names them, so a form builds itself from
+them; see the [manual trigger](workflows/manual-trigger.md).
+Response: `{"trigger_kind": "manual", "inputs": [{"name": string, "type": string, "required": boolean,
+"default": value, "choices": [string]}]}`, where `type` is `text`, `number`, `boolean`, `choice` or `repository`,
+`default` is left out when the input has none and `choices` when it is not a `choice`. Errors: `422` the workflow file
+cannot be used, as for `GET /v1/workflows/{name}`; `409` the workflow's trigger is not `manual`, or the server has no
+`[harness]`.
+
+### `POST /v1/workflows/{name}/runs`
+
+A person starts a run of the workflow by hand. Request: `{"repository": string, "inputs": object}`, both optional and
+any other key refused. `inputs` gives the trigger's inputs by the names it names them; a value is checked against the
+type its input names, a default stands in for an input that was not given, and an input that was given nothing and has
+no default is left out of the value the run starts with. The run belongs to the repository `repository` names, or, when
+the trigger names an input of type `repository`, to the repository that input names. A run started here is recorded with
+`manual` as the kind of the trigger that started it, and goes on off the request path as any other run does.
+Response: `{"id": number, "workflow": string, "repository": string, "trigger": "manual", "status": string,
+"value": object}`, the run as stored and the value its nodes start from. Errors: `422` an input the trigger does not
+name, a value that is not of the type its input names, a required input with neither a value nor a default, a
+repository that is not known, or a request giving `repository` when the trigger names an input of type `repository` —
+every message names the input or the repository it refused; `409` the workflow's trigger is not `manual`, or the server
+has no `[harness]`; `422` a workflow file that cannot be used, as for `GET /v1/workflows/{name}`.
+### `POST /v1/workflows/runs/{run_id}/resume`
+
+A person decides on a workflow run that waits for one, which is what the `approval` node leaves (see
+[the approval node](workflows/approval.md)). Request: `{"decision": "approve" | "edit" | "reject", "value": any, "reason":
+string}`, where `value` is what an `edit` replaces the run's value with and `reason` why a `reject` refuses it (`rejected`
+when left out); unknown keys are refused. The decision is recorded in the waiting node's row and the run's `workflow_approval`
+inbox item is resolved, and the run runs on: with the value it had for an `approve`, with the person's for an `edit`, or ended
+`failed` with the reason for a `reject`. Response: `{"run": id, "status": string}`, the run and the status it went to. Errors:
+`404` no such run; `409` the run does not wait, which is how a second decision on a finished wait is refused; `422` a
+`decision` that is none of the three, or an `edit` without a `value`.
 
 ### `GET /v1/skills`
 
@@ -2002,7 +2078,8 @@ ended for good (`succeeded`), `model` is blank or `thinking` is not one of `off`
 ### `POST /v1/chats/{id}/offer`
 
 Offers what the chat's worktree changes as a change, without ending the chat: what the agent left in the worktree is
-committed on the chat's branch (message `Chat <id>`, "Committed by Moebius when the chat's work was offered."), and the
+committed on the chat's branch in a message of the same shape as a chat's commits (see `POST /v1/chats/{id}/end`),
+under which is "Made by Moebius when the chat's work was offered.", and the
 branch is offered exactly as when the chat ends (see `POST /v1/chats/{id}/end`): a change without a card on
 `moebius/chat-<run id>`, published through the repository's forge, an open `ready_to_merge` inbox item with the chat's
 title and the event `change_offered`; for a chat in the harness configuration repository, after the same check of the
@@ -2024,6 +2101,20 @@ worktree may be half edited: offer once it has answered; `422` the run is not a 
 grilling, it works in no repository, it has nothing to offer (its branch changes nothing beyond the default branch, or
 nothing that was not offered in a change since merged or closed), or its harness configuration branch fails the check
 (the message says why).
+
+### `POST /v1/chats/{id}/publish`
+
+Stores what a grilling chat has left in its worktree the way its end would, without ending the chat and while the
+chat takes messages as before: the same grilling, its inbox item and `grilling_published` in place of
+`grilling_ended`. The first publish stores the grilling; a publish of the same chat that follows replaces what was
+stored — the grilling row and its open inbox item, kind included, since the chat may have gone from issues to a
+report or back — while what was published has not been confirmed or dismissed yet, so the grilling may go on after
+its person has the issues. Ending or stopping the chat after a publish publishes nothing more: what was published is
+the grilling of the run.
+
+Response: the `Grilling`. Errors: `404` no such run; `422` the run is not a chat, the chat has ended, it is not with
+the Grilling partner, what it left is `empty` (nothing usable in the worktree; the reason why comes with the error),
+or what was published was settled (`confirmed` or `dismissed`) already.
 
 ### `POST /v1/chats/{id}/seen`
 
@@ -2068,18 +2159,25 @@ that is not a chat; `409` the chat is being started again, or does not end.
 
 ### `POST /v1/chats/{id}/end`
 
-The web app offers no way to end a chat (its work is offered with `POST /v1/chats/{id}/offer`, and a chat that waits
-long frees its Pi by itself); the command line and the Moebius agent end chats with this route, and a grilling ends with
-it. A person ends a chat that has not ended: Pi is asked to shut down (its standard input is closed; a Pi that has not exited
-after 10 seconds is killed). With a repository, what the agent left in the worktree is committed on the chat's branch
-(a chat that changed nothing has still succeeded), and then the worktree, or the empty directory, is removed.
+The web app ends a grilling chat while it waits (its "End grilling" button); other open chats are stopped by a person
+while their agent works, and a chat that waits long frees its Pi by itself; the command line and the Moebius agent end
+chats with this route, and a grilling ends with it. A person ends a chat that has not ended: Pi is asked to shut down (its standard input is closed; a Pi that has not exited
+after 10 seconds is killed). With a repository, what the agent left in the worktree is committed on the chat's branch,
+and then the worktree, or the empty directory, is removed. A chat that changed nothing has still succeeded. Its commit
+says what the chat did, never just the chat's first message: the subject is the first line of the agent's last answer
+(the chat's title when it left no answer), the body carries the rest of that answer, and the trailer names the chat,
+its title and its agent — `Chat <run id>: <title> (agent <agent>)`, under which is "Made by Moebius when the chat
+ended."
 
 If the chat's branch then has commits that the repository's default branch does not have, they are offered as a change
 that has no card: a `Change` with `card_id` null on the branch `moebius/chat-<run id>`, published through the
 repository's forge (on GitHub the branch is pushed and a pull request is opened whose title is the chat's title and
-whose body says it came from the chat; without a forge there is nothing to publish), an open `ready_to_merge` inbox item
+whose body says what the chat did — the agent's last answer under "What the chat did", the files changed under
+"Files changed", and that it came from the chat, asked to what its title says; without a forge there is nothing to
+publish), an open `ready_to_merge` inbox item
 with the chat's title (`card_id` null, `data.change`, `data.branch`) and the event `change_offered`. A person merges it
-with `POST /v1/changes/{id}/merge`, which resolves the item; the merge commit's message is `Merge <branch>`. A chat
+with `POST /v1/changes/{id}/merge`, which resolves the item; the merge commit's message is `Merge <branch>: <the
+branch's last commit's subject>`, and `Merge <branch>` when the branch's last commit has no subject. A chat
 whose work was offered with `POST /v1/chats/{id}/offer` updates its open change instead, and offers nothing new when it
 changed nothing since. A chat that changed nothing, or has no repository, offers nothing, and a chat that ends as `failed` offers nothing. If the offer
 fails, the chat's run gets a `moebius_error` event saying why and the work stays on the branch. A chat that is stopped
@@ -2106,19 +2204,31 @@ ended; `409` the chat's agent is starting after a message woke it (try again in 
 
 ### `GET /v1/automations`
 
-The automations, by name: an array of `Automation`.
+The automations, by name: an array of `Automation`. An automation is a workflow with a `schedule` trigger and one `chat`
+node (see [workflows](workflows.md#automations)); these routes and the commands keep their old names and arguments as a
+shortcut over it. The workflow file is the definition, and the automation's row keeps the id its firings use. A row
+whose file has been edited into an ordinary workflow is not listed: the workflow owns its schedule, and the row fires
+it no more. Deleting the workflow's file also stops the automation, until the next start of the server writes it
+again; then the schedule fires it as before.
 
 ### `POST /v1/automations`
 
-Adds an automation: recurring work that runs on its own. Once a minute the server reads its local time; each automation
-that is on and whose schedule came due since the minute before (or, after a late check, within the last five minutes)
-fires: the server starts a chat as `POST /v1/chats` would, with the automation's agent, place and `prompt` as the first
-message, and `origin` `automation`. A firing that came due while the server was not running is not made up. A run never
-waits for a person: once the chat's agent has answered and the chat waits for a message, the next check ends it as
-`POST /v1/chats/{id}/end` does, so what it changed is offered as a change and lands in the inbox. A firing due while the
-chat of the automation's last started firing has neither ended nor answered is skipped and recorded as `skipped`. A chat
-that cannot be started (its agent can no longer run, say) is recorded as `failed` with the reason. Each firing publishes
-`automation_fired`.
+Adds an automation: recurring work that runs on its own. It writes the `schedule` workflow named after it, in the harness
+configuration repository, with one `chat` node; a name an ordinary workflow or another automation already holds gets
+`automation-<id>.toml` instead, so neither loses its file and two automations may share a name. Without a `[harness]`
+the automation keeps its row, is fired from it,
+and moves to a workflow when a harness configuration repository is configured. Once a minute the workflow schedule reads
+its local time; each automation that is on and whose schedule came due since the minute before (or, after a late check,
+within the last five minutes) fires once. It starts from the minute the automation was last checked or saved, so an
+upgrade or a save cannot fire the minute it happens in again. A repository automation starts a workflow run whose `chat`
+node starts a chat as `POST /v1/chats` would, with the automation's agent, place and `prompt` as the first message, and
+`origin` `automation`; an automation that works in the harness configuration repository starts that chat directly. A
+firing that came due while the server was not running is not made up. A run never waits for a person: once the chat's
+agent has answered and the chat waits for a message, the next check ends it as `POST /v1/chats/{id}/end` does, so what
+it changed is offered as a change and lands in the inbox. A firing due while the chat of the automation's last started
+firing has neither ended nor answered is skipped and recorded as `skipped`. A chat that cannot be started (its agent can
+no longer run, say) is recorded as `failed` with the reason. Each firing publishes `automation_fired`, whose `workflow`
+names the workflow behind it and whose `workflow_run` names the run that carries it.
 
 Request:
 
@@ -2142,22 +2252,26 @@ The `Automation`. Errors: `404` no such automation.
 
 ### `PUT /v1/automations/{id}`
 
-Replaces an automation: the same body and checks as `POST /v1/automations`. Its firings stay, and it fires next when
-its new schedule comes due. Response: the `Automation`. Errors: as `POST /v1/automations`, and `404` no such automation.
+Replaces an automation: the same body and checks as `POST /v1/automations`. Its firings stay, it fires next when its new
+schedule comes due, and the workflow file changes with it. Response: the `Automation`. Errors: as `POST
+/v1/automations`, and `404` no such automation.
 
 ### `DELETE /v1/automations/{id}`
 
-Deletes an automation and its firings; the chats it started stay. Response: `{}`. Errors: `404` no such automation.
+Deletes an automation, its workflow file and its firings; the chats it started stay. Response: `{}`. Errors: `404` no
+such automation.
 
 ### `POST /v1/automations/{id}/run`
 
 Fires an automation now ("Run now"), whether it is on or not, as its schedule would: it is skipped while the chat of its
-last started firing still runs. Request: `{}`. Response: the `Firing` (`manual` true). Errors: `404` no such automation.
+last started firing still runs, and a repository automation starts a workflow run like the schedule. Request: `{}`.
+Response: the `Firing` (`manual` true). Errors: `404` no such automation.
 
 ### `GET /v1/automations/{id}/firings`
 
-The automation's firings, newest first, at most 50: an array of `Firing`, each with its chat (`run_id`, whose events
-are `GET /v1/runs/{id}/events`) and that chat's status. Errors: `404` no such automation.
+The automation's firings, newest first, at most 50: an array of `Firing`, each with its workflow run
+(`workflow_run_id`), its chat (`run_id`, whose events are `GET /v1/runs/{id}/events`) and that chat's status. Errors:
+`404` no such automation.
 
 ### `POST /v1/retros`
 
@@ -2526,13 +2640,13 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `card_waiting` | The reason a card waits changed: set, replaced, or cleared because the card moved or its script did not wait. Not sent when it stays the same. | `{"card": id, "reason": string or null}` |
 | `chat_renamed` | A chat was given a name, or its name was cleared, through the API. | `{"run": id, "title": string}` (the title the list of chats shows now) |
 | `chat_deleted` | A chat was deleted through the API, with its changes and inbox items, or deleted with its grilling. Read the snapshot again. | `{"run": id}` |
-| `change_offered` | A card's change, the work of a chat or a kept lever of a research was offered to a person to merge. | The `Change` (`card_id` is null for a chat's or a lever's). |
+| `change_offered` | A card's change, the work of a chat, a kept lever of a research or a workflow run was offered to a person to merge. | The `Change` (`card_id` is null for a chat's, a lever's or a workflow run's; `run_id` is set for a workflow run's). |
 | `change_updated` | A change was published or published again, its checks started or ended, or the checks or review of its pull request changed. | The `Change`. |
 | `change_merged` | A change was merged, here or on its forge. | `{"change": id, "commit": sha or null}` |
 | `change_closed` | A change's pull or merge request was closed on its forge without a merge. | `{"change": id}` |
 | `attempt_judged` | An attempt of a card was judged by its tests and checks (`moebius.check_attempt`). | `{"card": id, "run": id, "result": "passed" \| "failed"}` |
 | `attempts_settled` | A card's open attempts were settled (`moebius.settle_attempts`): one picked, or none passed. | `{"card": id, "picked": id or null, "runs": [id]}` |
-| `run_started` | A harness process for a run started. | `{"run": id, "card": id or null}` (null for a chat) |
+| `run_started` | A harness process for a run started. | `{"run": id, "card": id or null}` (null for a chat or an agent of a workflow run) |
 | `run_event` | Something happened in a run. | `{"run": id, "seq": number, "kind": string, "data": object}` (below) |
 | `run_ended` | A run ended. | `{"run": id, "status": "succeeded" \| "failed" \| "stopped"}` |
 | `workflow_run_queued` | A workflow run was stored, queued for its first node. | `{"run": id, "workflow": string, "repository": id}` |
@@ -2554,7 +2668,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `extension_update_available` | The nightly check found a newer version of an installed Pi package; it is in the inbox as an `extension_update` item (once for each version). | `{"name": string, "version": string}` |
 | `package_check_error` | The nightly check could not read a registry, or failed. | `{"registry": string (empty when the check itself failed), "message": string}` |
 | `retro_done` | A Retro ended: it was `reported`, or the analyst's run ended and its proposals were stored (`proposed`), or it `failed`. | `{"date": "YYYY-MM-DD", "status": "reported" \| "proposed" \| "failed", "proposals": number}` |
-| `retro_error` | The schedule could not start the day's Retro, the trials of a proposal, a research or the replays, or the trials of a proposal broke off; it is tried again a minute later. | `{"message": string}` |
+| `retro_error` | The schedule could not start the day's Retro, the trials of a proposal, a research or the replays, or the trials of a proposal broke off; or a workflow file could not be read, and its schedule is left out; it is tried again a minute later. | `{"message": string}` |
 | `replayed` | A refused tool call was replayed and its judgement has the outcome. | `{"judgement": id, "run": id, "outcome": string}` |
 | `trial_done` | One trial of a proposal ended and was stored. | `{"proposal": id, "card": id or null, "outcome": "positive" \| "negative" \| "skipped" \| "failed", "regression": bool}` |
 | `proposal_status` | A proposal's status changed: it is being tried, was tried, was merged or dismissed, or a proposal for Moebius's own configuration was stored, `untried`. | `{"proposal": id, "status": string}` (the statuses above) |
@@ -2563,8 +2677,9 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `research_status` | A research was stored, its brief was edited, or it was confirmed, started, stopped or ended. | `{"research": id, "status": string}` (the statuses above) |
 | `research_deleted` | A research was deleted through the API, with its experiments and their changes. Read the snapshot again. | `{"research": id}` |
 | `experiment_done` | An experiment of a research ended and was stored. | `{"research": id, "lever": the lever's branch, "value": number or null, "kept": boolean}` |
-| `automation_fired` | An automation fired, by its schedule or `POST /v1/automations/{id}/run`. | `{"automation": id, "firing": id, "status": "started" \| "skipped" \| "failed", "run": id or null}` |
+| `automation_fired` | An automation fired, by its schedule or `POST /v1/automations/{id}/run`, for the workflow behind it. | `{"automation": id, "firing": id, "workflow": string, "status": "started" \| "skipped" \| "failed", "run": the chat's id or null, "workflow_run": the workflow run's id or null}` |
 | `grilling_ended` | A grilling chat ended and its result was stored. | `{"grilling": id, "status": "proposed" \| "reported" \| "empty"}` |
+| `grilling_published` | A person had what an open grilling chat left stored while the chat goes on; a later publish replaced it. | `{"grilling": id, "status": "proposed" \| "reported"}` |
 | `grilling_deleted` | A grilling was deleted through the API, or its chat was. | `{"grilling": id}` |
 | `export_deleted` | A training-set export was deleted through the API. | `{"export": id}` |
 | `replay_deleted` | A replay was deleted through the API. | `{"replay": id}` |

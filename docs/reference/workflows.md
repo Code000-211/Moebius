@@ -61,11 +61,18 @@ written `[[trigger]]` and has:
 
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `kind` | string | The kind name; the same registry resolves it as a node's `kind`. |
-| `params` | table | The kind's settings, read by that kind. Optional; defaults to an empty table. |
+| `kind` | string | The trigger's kind. A kind with a module in [`workflows/trigger/`](#trigger-kinds) is read by that module and is not a node kind; any other kind is read by the node registry, like a node's kind. |
+| `params` | table | The kind's settings, read by that kind. Optional; defaults to an empty table. For `manual` these are the inputs a person gives the run; for `schedule` the cron, repository, whether it is enabled and the inputs the run starts with; for `webhook` its path, secret and repository. |
 
 An edge starts at the trigger with `from = "trigger"`; `trigger` is reserved and cannot be a node's id or an edge's
-target.
+target. A value leaves a trigger by its `out` port, which is what the edges leaving the trigger name.
+
+The triggers that exist:
+
+- [`manual`](workflows/manual-trigger.md): a person starts each of its runs, with the inputs the trigger names.
+- [`schedule`](workflows/schedule-trigger.md): starts a run when a cron comes due, in the server's local time.
+- [`webhook`](workflows/webhook-trigger.md): a delivery to a path on the server starts a run with the delivery's JSON
+  body as its value.
 
 ### `nodes`
 
@@ -98,7 +105,14 @@ refusal names the file and the node or edge it is about:
 - two nodes have the same id: `node "<id>": duplicate id`;
 - a node uses the reserved id `trigger`: `node "trigger": the id is reserved for the workflow's trigger`;
 - an edge names a source or target node that does not exist: `edge "<from>" -> "<to>": no node "<id>"`;
-- a node or trigger names a kind the registry does not know: `node "<id>": unknown node kind "<kind>"`;
+- a node names a kind the registry does not know: `node "<id>": unknown node kind "<kind>"`; a trigger names a kind
+  that is neither `manual`, `schedule`, `webhook` nor one the registry knows: `trigger: unknown node kind "<kind>"`;
+- a `manual` trigger's parameters are not its inputs: a message that names the input that is not one, as its
+  [page](workflows/manual-trigger.md) spells them out;
+- a `schedule` trigger's parameters are not its own, or its cron has a field that is wrong: `trigger: "cron": the
+  minute 70 is not between 0 and 59`, naming the field, as its [page](workflows/schedule-trigger.md) spells out;
+- a `webhook` trigger's parameters are not its path, secret and repository: a message that names what is not one, as
+  its [page](workflows/webhook-trigger.md) spells them out;
 - an edge leaves by a port the source node does not have: `node "<id>": edge to "<to>" leaves by port "<port>"`;
 - a node that routes, so chooses its output port (see `routes()` under [the node registry](#the-node-registry)),
   reports a port with no edge leaving by it, `fallback` included: `node "<id>": port "<port>" has no edge leaving by
@@ -129,25 +143,34 @@ defaults when it does not:
 
 | Key | Default | What it limits |
 |---|---|---|
-| `node_timeout_seconds` | `300` | How long one node may run. A node still running after this fails the run. |
+| `node_timeout_seconds` | `300` | How long one node may run. A node still running after this fails the run. A node kind may name its own timeout, which replaces this one for its nodes. |
 | `max_nodes` | `100` | How many nodes one run may execute. Asking for one more fails the run. |
 
-A run moves from `queued` to `running` and ends `succeeded` or `failed`. Each node is one `workflow_node_runs` row,
-stored with its input before the node starts and its output (or error) after it finishes, so a run's nodes are readable
-while it is still going. A node gets the trigger's value, the value its predecessor returned, and the values of the
-nodes that ran before it; it returns one value for the edge that leaves it and, when it chooses, the name of the output
-port that edge leaves by. When no edge leaves the node that just ran, the run is `succeeded`; when a node names a port
-with no edge, the run is `failed` with `node "<id>" named port "<port>", which has no edge leaving by it`. A node's error
-ends the run `failed` with that error, and no later node runs. A timeout or a reached node ceiling also ends it
-`failed`, with an error that says which limit was reached.
+A run moves from `queued` to `running`, may go `waiting` while an `approval` node waits for a person, and ends
+`succeeded`, `failed` or `cancelled`. A person or the Moebius agent cancels a run that has not ended with
+`POST /v1/workflows/runs/4/cancel`, which is [cancelling a run](workflows/cancel.md) in full. Each node is one
+`workflow_node_runs` row, stored with its input before the node starts and its output (or error) after it finishes, so a
+run's nodes are readable while it is still going. A node gets the trigger's value, the value its predecessor returned,
+and the values of the nodes that ran before it; it returns one value for the edge that leaves it and, when it chooses,
+the name of the output port that edge leaves by. When no edge leaves the node that just ran, the run is `succeeded`;
+when a node names a port with no edge, the run is `failed` with `node "<id>" named port "<port>", which has no edge
+leaving by it`. A node's error ends the run `failed` with that error, and no later node runs. A timeout or a reached
+node ceiling also ends it `failed`, with an error that says which limit was reached.
 
 `workflows::run::execute` is the same executor without the store: it takes the definition, the starting value, the
-`Limits`, a `Runner` and an `Observer`. It reports each node to the observer before and after it runs, so the caller
-can record the step. The `Runner` trait runs one node: `run(node, input)` gives it the node and the value that reached
-it; `run_routed(node, scope)` gives it, in a `Scope`, the trigger's value, the input and the values of the nodes that
-ran before, and takes back a `Routed`, the value and the port the node named, if it named one. A run that cannot go on
-ends with a `workflows::run::Error` (a node's `NodeError`, a timeout, the ceiling, a port with no edge, an edge to an
-unknown node, or a step the observer could not record); its text is the run's `error`.
+`Limits`, a `Runner`, an `Observer` and the run's cancellation flag. `workflows::run::execute_from_node` starts at a
+named node with the value that reached it, for a run a server restart left waiting, so no node before it runs again; it
+takes the same arguments. Both report each node to the observer before and after it runs, so the caller can record the
+step. The `Runner` trait runs one node: `run(node, input)` gives it the node and the value that reached it;
+`run_routed(node, scope)` gives it, in a `Scope`, the trigger's value, the input and the values of the nodes that ran
+before, and takes back a `Routed`, the value and the port the node named, if it named one. A `Runner` may name a
+`timeout` for a node, which replaces the run's `node_timeout_seconds` for that node; the server does for an `approval`
+node, whose wait is bounded by its own deadline. The cancellation flag is set by a cancel and looked at before each node
+and while one goes; seeing it, the executor gives up on the node and ends the run with `Error::Cancelled`. A run that
+cannot go on ends with a `workflows::run::Error` (a node's `NodeError`, a timeout, the ceiling, a port with no edge, an
+edge to an unknown node, or a step the observer could not record); its text is the run's `error`. A cancellation is the
+exception: the run ends `cancelled` with the error `cancelled by a person`, and the node it was going is recorded with
+the cancellation's text, `the run was cancelled`.
 
 ## The node registry
 
@@ -170,14 +193,56 @@ Every `Node` reports five things:
 
 Only the kinds listed under [Node kinds](#node-kinds) are registered; a file naming any other kind is refused.
 
+## Trigger kinds
+
+A trigger is not a piece of work inside a run. When a module in `workflows/trigger/` owns the trigger's `kind`, that
+module reads its `params` and says which ports it has, and the kind is not one of the [node
+registry](#the-node-registry). A trigger kind with no module there is read by the node registry, like a node's kind.
+Each trigger kind has one page in [`workflows/`](workflows/README.md).
+
+- [`manual`](workflows/manual-trigger.md): a person starts each of its runs, with the inputs the trigger names.
+- [`schedule`](workflows/schedule-trigger.md): starts a run when a cron comes due, in the server's local time.
+- [`webhook`](workflows/webhook-trigger.md): a path on the server whose deliveries start runs of this workflow.
+
 ## Node kinds
 
 Each node kind has one section here and one page in [`workflows/`](workflows/README.md).
 
+- [`agent`](workflows/agent.md): runs an agent of the harness configuration in a worktree the run owns, on a
+  branch named for the run.
+- [`code`](workflows/code.md): runs Luau that reshapes the value and outputs what it returns.
 - [`condition`](workflows/condition.md): sends the value down the first port whose expression is true.
 - [`for_each`](workflows/for-each.md): runs a sub-path once per element of a list and gathers the outputs.
+- [`approval`](workflows/approval.md): pauses the run for a person, who approves the value, replaces it, or rejects it.
+- [`http`](workflows/http.md): calls a URL on an allowed host, with secrets by name, and outputs the status, headers and body.
+- [`merge`](workflows/merge.md): joins two branches and emits what arrived by each side.
+- [`chat`](workflows/chat.md): starts an agent chat; an automation is one `schedule` trigger and one `chat` node.
+- [`publish`](workflows/publish.md): offers the run's branch as a change for review, checks and merge.
+
+## Automations
+
+An automation is not a second kind of record: it is a workflow whose trigger is `schedule` and whose one node is a
+`chat`. The workflow's `name` is the automation's name, the trigger's `cron` and `enabled` are its schedule and switch,
+and the node's `agent`, `prompt` and `harness` are the chat it starts. Its `repository` is the trigger's repository, by
+name. The Automations page and the `/v1/automations` routes and `automation` commands read and write this file as a
+shortcut, keeping the automation's id for its firings; an automation whose name is not a safe file name, or whose
+name is already an ordinary workflow's or another automation's, is kept in `automation-<id>.toml`, with the name still
+in the file, so that the workflow or automation of that name keeps its file and each automation keeps firing. Two
+automations may share a name and are still two workflows, each with its own file. A run of it is a workflow run, started
+by the same workflow schedule as any other and reaching its `chat` node, so it fires once; the firing names that run. A
+file edited into an ordinary workflow is that workflow: its own schedule starts it, and the Automations page leaves its
+old row out and no longer fires it. An automation that works in the harness configuration repository starts its chat
+directly, because a workflow run belongs to a repository.
+
+The file is all that fires the automation where the repository exists: deleting its file stops the automation until
+the next start writes it again, and then it fires as its schedule says. On a server with no `[harness]`, where there
+is nowhere to write a file, the automation's row is what fires it, on the same minute and within the same five
+minutes. The workflow schedule starts
+from the minute the automation was last checked or saved, so the minute of an upgrade or a save cannot fire again.
 
 ## Extending this page
 
 A node-kind card adds its section under [Node kinds](#node-kinds), a page `workflows/<kind>.md`, its entry in the
-[node kind index](workflows/README.md), and its arm in the registry. It does not edit another kind's page.
+[node kind index](workflows/README.md), and its arm in the registry. It does not edit another kind's page. A
+trigger-kind card adds its section under [Trigger kinds](#trigger-kinds), a page `workflows/<kind>-trigger.md`, and a
+module of `workflows/trigger/` that reads its parameters, along with the door that starts runs of it.

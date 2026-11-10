@@ -40,9 +40,11 @@ pub(super) const TOKEN: &str = "ghp_0123456789abcdefghijklmnopqrstuvwxyz";
 /// The login the fake says that token belongs to.
 pub(super) const TOKEN_LOGIN: &str = "octo-user";
 
-/// The pull requests of the fake: what it was asked to open and merge, and what it answers about pull request 7.
+/// The pull requests of the fake: what it was asked to open, update and merge, and what it answers about pull
+/// request 7.
 pub(super) struct Pulls {
     pub(super) opened: Vec<Value>,
+    pub(super) updated: Vec<Value>,
     pub(super) merged: Vec<Value>,
     pub(super) pull: Value,
     pub(super) check_runs: Vec<Value>,
@@ -94,6 +96,7 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
         limited: std::sync::atomic::AtomicBool::new(false),
         pulls: Mutex::new(Pulls {
             opened: Vec::new(),
+            updated: Vec::new(),
             merged: Vec::new(),
             pull: pull("open", false),
             check_runs: Vec::new(),
@@ -204,6 +207,15 @@ pub(super) async fn fake_github() -> (String, Arc<FakeGitHub>) {
                     }
                     assert_eq!(number, 7);
                     axum::Json(fake.pulls.lock().unwrap().pull.clone()).into_response()
+                },
+            )
+            .patch(
+                |State(fake): State<Arc<FakeGitHub>>,
+                 UrlPath(number): UrlPath<u64>,
+                 axum::Json(body): axum::Json<Value>| async move {
+                    assert_eq!(number, 7);
+                    fake.pulls.lock().unwrap().updated.push(body.clone());
+                    axum::Json(body)
                 },
             ),
         )
@@ -438,6 +450,15 @@ impl Fixture {
             .unwrap()
     }
 
+    /// Has the pull request of the card's work opened while the card stays in review, as it is once a round of the
+    /// review was approved and before the card moves on.
+    pub(super) async fn opened_pull_request(&self, card: &Card) {
+        let (app, id) = (self.server.app.clone(), card.id);
+        tokio::task::spawn_blocking(move || app.publish_card_change(id, true, None).unwrap())
+            .await
+            .unwrap();
+    }
+
     /// Polls issue 1 into a card and has its work offered as a change.
     pub(super) async fn offered_change(&self) -> Change {
         let card = self.card_in_review().await;
@@ -506,6 +527,78 @@ mod tests {
         assert!(
             carried.iter().all(|c| *c == format!("Bearer {TOKEN}")),
             "{carried:?}"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_pull_request_says_what_the_change_did_and_what_the_review_found() {
+        let f = Fixture::new().await;
+        let card = f.card_in_review().await;
+        let run = f
+            .server
+            .app
+            .store
+            .runs_for_card(card.id)
+            .unwrap()
+            .into_iter()
+            .find(|run| run.purpose == "code")
+            .unwrap();
+        f.server
+            .app
+            .store
+            .set_run_summary(
+                run.id,
+                "Added the feature.\n\nREPRODUCE: cargo test --test feature\nREPRODUCE-FILE: tests/feature.rs\n",
+            )
+            .unwrap();
+        let (app, id) = (f.server.app.clone(), card.id);
+        tokio::task::spawn_blocking(move || {
+            app.offer_change_noted(id, Some("Kept the API plain."))
+        })
+        .await
+        .unwrap()
+        .unwrap();
+
+        let opened = f.fake.pulls.lock().unwrap().opened.clone();
+        assert_eq!(opened.len(), 1);
+        let body = opened[0]["body"].as_str().unwrap();
+        assert!(
+            body.starts_with("Closes #1\n"),
+            "the merge closes the issue: {body}"
+        );
+        assert!(
+            body.contains("## What changed\n\nAdded the feature."),
+            "{body}"
+        );
+        assert!(
+            !body.contains("REPRODUCE"),
+            "the reproduction test is the review's, not the pull request's: {body}"
+        );
+        assert!(
+            body.contains("## Files changed") && body.contains("feature.txt"),
+            "{body}"
+        );
+        assert!(body.contains("## Review\n\nKept the API plain."), "{body}");
+        assert!(body.trim_end().ends_with("Made by Moebius."), "{body}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_pull_request_is_updated_when_the_branch_moves_on() {
+        let f = Fixture::new().await;
+        let change = f.offered_change().await;
+        assert_eq!(change.pull_request, Some(7));
+
+        // The next round adds to the branch and the change is offered again: the pull request it opened is updated.
+        let card = f.card(1).unwrap();
+        f.code(&card, "more.txt").await;
+        f.opened_pull_request(&card).await;
+
+        let pulls = f.fake.pulls.lock().unwrap();
+        assert_eq!(pulls.opened.len(), 1, "no second pull request");
+        let updated = &pulls.updated[0]["body"];
+        assert!(
+            updated.as_str().unwrap().contains("more.txt"),
+            "the updated body says what the branch does now: {updated}"
         );
     }
 
@@ -668,5 +761,197 @@ mod tests {
         let _ = crate::repos::github::GitHub::with_token("http://127.0.0.1:1", token);
         assert!(!crate::blobs::redact(&format!("push failed for {token}")).contains(token));
         assert!(!crate::blobs::redact(&format!("Bearer {TOKEN}")).contains(TOKEN));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn open_pull_request_publishes_the_change_and_opens_its_pull_request_before_the_offer() {
+        let f = Fixture::new().await;
+        let card = f.card_in_review().await;
+        let (app, id) = (f.server.app.clone(), card.id);
+        let change = tokio::task::spawn_blocking(move || app.open_pull_request(id))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            change.pull_request,
+            Some(7),
+            "the pull request opened with the publish"
+        );
+        assert_eq!(f.change(change.id).id, change.id);
+        assert_eq!(f.card(1).unwrap().column, "In review", "the card stays");
+
+        // Calling it again opens nothing further: the change already has its pull request.
+        let (app, id) = (f.server.app.clone(), card.id);
+        let again = tokio::task::spawn_blocking(move || app.open_pull_request(id))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(again.id, change.id);
+        let pulls = f.fake.pulls.lock().unwrap();
+        assert_eq!(pulls.opened.len(), 1, "no second pull request");
+        assert!(pulls.updated.is_empty(), "no needless update either");
+    }
+
+    /// The review script of the flow a repository can choose: the pull request opens while the review reads the
+    /// change, and the offer waits for the forge's checks to be green.
+    fn the_review_that_offers_only_a_green_pull_request() -> String {
+        r#"function on_card(card)
+  moebius.set_label("in-progress", true)
+  local run = card.run
+  if run ~= nil and (run.status == "starting" or run.status == "running") then
+    moebius.wait("reading the change")
+    return
+  end
+  if run == nil or (run.purpose ~= "code" and run.purpose ~= "review")
+    or (run.purpose == "code" and run.status ~= "succeeded") then
+    moebius.move("In progress")
+    return
+  end
+  if card.review == nil or card.review.verdict ~= "approve" then
+    moebius.publish_change()
+    moebius.open_pull_request()
+    moebius.start_run("Reviewer", "review")
+    moebius.wait("reading the change")
+    return
+  end
+  local change = moebius.run_checks()
+  if change.checks == "pending" then
+    moebius.wait("waiting for the checks of the change")
+  elseif change.checks == "failure" then
+    moebius.move("In progress", "The checks failed:\n"
+      .. (change.failed_checks or change.check_output or ""))
+  elseif change.conflict ~= nil then
+    moebius.move("In progress", "The change no longer merges cleanly into " .. change.base .. ".")
+  else
+    moebius.offer_change()
+  end
+end"#
+            .to_string()
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_review_script_lets_the_forges_checks_run_while_it_reads_the_change() {
+        use crate::harness::repo::testing::{put, use_harness};
+        let f = Fixture::new().await;
+        use_harness(&f.server.app, f._dir.path());
+        put(
+            &f.server.app,
+            "widgets",
+            "review.luau",
+            &the_review_that_offers_only_a_green_pull_request(),
+        );
+        let card = f.card_in_review().await;
+
+        // The script published the change and opened its pull request while the review read it; the checks are not
+        // in yet.
+        let step = f.settle(&card).await;
+        assert_eq!(step.waiting.as_deref(), Some("reading the change"));
+        {
+            let pulls = f.fake.pulls.lock().unwrap();
+            assert_eq!(pulls.opened.len(), 1, "the pull request opened in review");
+        }
+        let opened = f.server.app.store.open_change(card.id).unwrap().unwrap();
+        assert_eq!(opened.pull_request, Some(7));
+
+        // The review approves, and the offer waits for the forge's checks.
+        let review = f
+            .server
+            .app
+            .store
+            .runs_for_card(card.id)
+            .unwrap()
+            .into_iter()
+            .find(|run| run.purpose == "review")
+            .unwrap();
+        f.server
+            .app
+            .store
+            .set_run_summary(review.id, "VERDICT: approve")
+            .unwrap();
+        f.server
+            .app
+            .store
+            .set_run_status(review.id, "succeeded")
+            .unwrap();
+        let step = f.settle(&card).await;
+        assert_eq!(
+            step.waiting.as_deref(),
+            Some("waiting for the checks of the change")
+        );
+        assert_eq!(f.card(1).unwrap().column, "In review");
+
+        // The check run of the pull request's head commit fails, and the card goes back to In progress instead of
+        // being offered.
+        let change = f.server.app.store.open_change(card.id).unwrap().unwrap();
+        f.fake.pulls.lock().unwrap().check_runs = vec![check("build", "completed", "failure")];
+        f.fake.set_head(change.head.as_deref().unwrap());
+        f.server.poll_github().await;
+        f.settle(&card).await;
+        let done = f.card(1).unwrap();
+        assert_eq!(done.column, "In progress");
+        assert!(
+            done.note
+                .as_deref()
+                .unwrap_or_default()
+                .contains("The checks failed:"),
+            "the card went back with the failed checks, note {:#?}",
+            done.note
+        );
+        assert_eq!(
+            f.fake.pulls.lock().unwrap().opened.len(),
+            1,
+            "the failure opened no second pull request"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_review_script_offers_the_change_once_the_forges_checks_are_green() {
+        use crate::harness::repo::testing::{put, use_harness};
+        let f = Fixture::new().await;
+        use_harness(&f.server.app, f._dir.path());
+        put(
+            &f.server.app,
+            "widgets",
+            "review.luau",
+            &the_review_that_offers_only_a_green_pull_request(),
+        );
+        let card = f.card_in_review().await;
+
+        f.settle(&card).await; // publish + open_pull_request + start the review
+        let review = f
+            .server
+            .app
+            .store
+            .runs_for_card(card.id)
+            .unwrap()
+            .into_iter()
+            .find(|run| run.purpose == "review")
+            .unwrap();
+        f.server
+            .app
+            .store
+            .set_run_summary(review.id, "VERDICT: approve")
+            .unwrap();
+        f.server
+            .app
+            .store
+            .set_run_status(review.id, "succeeded")
+            .unwrap();
+        f.settle(&card).await; // the offer waits for the checks
+        let change = f.server.app.store.open_change(card.id).unwrap().unwrap();
+        f.fake.pulls.lock().unwrap().check_runs = vec![check("build", "completed", "success")];
+        f.fake.set_head(change.head.as_deref().unwrap());
+        f.server.poll_github().await;
+
+        let step = f.settle(&card).await;
+        // The offer moved the card itself, so the step only shows the wait of the merge script that followed it.
+        assert!(step.moved.is_none());
+        assert_eq!(
+            step.waiting.as_deref(),
+            Some("waiting for a person to merge")
+        );
+        assert_eq!(f.card(1).unwrap().column, "Ready to merge");
+        let pulls = f.fake.pulls.lock().unwrap();
+        assert_eq!(pulls.opened.len(), 1, "the offer opened nothing further");
     }
 }

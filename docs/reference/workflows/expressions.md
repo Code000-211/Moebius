@@ -59,6 +59,9 @@ The expression runs under the sandbox's time and memory limits and a limit on th
 stops the expression and the node fails closed: no partially evaluated value is used. The error names the limit it hit,
 either `the expression ran out of time`, `the expression ran out of instructions` or `the expression ran out of memory`.
 
+A value nested deeper than 100 levels — a table that holds itself, for instance — is refused the same way, as
+`the expression returned a value nested deeper than 100 levels`, rather than followed until the stack is gone.
+
 An error in an expression is reported with the node's id and the parameter's name. A parameter nested in a table or
 array uses `.key` and `[n]` after its name; for example a failure in the second item of `args` in the `build` node is
 reported as node `"build"`, parameter `"args[1]"`.
