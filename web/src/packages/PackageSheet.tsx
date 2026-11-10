@@ -171,7 +171,9 @@ export function PackageSheet() {
         minimiseLabel="Minimise the package sheet"
         onMinimise={sheet.hide}
         hidden={!sheet.shown}
-        className="top-6 right-6 bottom-24 w-96"
+        // The same width as the floating chat, which shares the slot (`Sheet.tsx`): wider from xl, widest from 2xl,
+        // with the page's paddings (`Shell.tsx`, `ChatPage.tsx`) clear of its edge.
+        className="top-6 right-6 bottom-24 w-96 xl:w-[26rem] 2xl:w-[30rem]"
       >
         {/* A catalog of its own is a sheet of its own: switching it starts with a clean search and its own tabs. */}
         <Body

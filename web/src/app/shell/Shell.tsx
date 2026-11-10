@@ -76,7 +76,7 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
             its room, so what it was opened from is not covered. Below that the page keeps its width and the sheet
             lies over it: an editor squeezed beside it is worse than one that is covered until the sheet is minimised. */}
         <main
-          className={`min-h-0 flex-1 overflow-y-auto p-6 ${packages.shown ? "2xl:pr-[27.5rem]" : ""}`}
+          className={`min-h-0 flex-1 overflow-y-auto p-6 ${packages.shown ? "2xl:pr-[33.5rem]" : ""}`}
         >
           {/* A page is fetched when it opens, so the shell holds the space it needs while it arrives, and says so
               when it does not: the page is the thing that is missing, not the app around it. */}

@@ -160,7 +160,9 @@ export function FloatingChat() {
       line={`viewing ${where.name}`}
       minimiseLabel="Minimise the floating chat"
       onMinimise={hide}
-      className="top-6 right-6 bottom-24 w-96"
+      // The sheet grows with the window and only ever meets a cap (24rem, from xl 26rem, from 2xl 30rem): the paddings
+      // that hold a page its room (`Shell.tsx` above 2xl, `ChatPage.tsx` below it) clear the edge the wider sheet has.
+      className="top-6 right-6 bottom-24 w-96 xl:w-[26rem] 2xl:w-[30rem]"
       // Both belong to a conversation that exists: nothing is left behind, and nowhere else to open, when this is
       // one nobody has spoken in yet.
       actions={
