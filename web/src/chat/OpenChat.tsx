@@ -2,7 +2,8 @@
  * One chat, open: its conversation (virtualised, following the answer; or Pi-Bolt's terminal interface in its place),
  * the change it offered, and the composer with the pill of its place; the agent it is written to is named by the field
  * itself. All of its actions — publishing and ending a grilling, offering its change, stopping the agent, the model
- * and the reasoning level, naming, deleting — live on the chip over the conversation's bottom right (ChatChip). The
+ * and the reasoning level, naming, deleting — live on the chip beside the composer's Send (ChatChip), floating over
+ * the bottom right of the conversation only in the Terminal view, where no composer stands. The
  * model and the reasoning level change while the chat waits. Writing to a chat that ended goes on in a new chat that
  * is told this one. Once an answer is held its events are marked read, once per answer.
  */
@@ -112,6 +113,9 @@ export function OpenChat({
   const [message, setMessage] = useState(() => readDraft(draftKey(id)));
   const [sent, setSent] = useState(0);
   const [sending, setSending] = useState(false);
+  // Whether the chip's panel of actions stands open. It is this page's, not the chip's: the composer and the Terminal
+  // view draw the chip anew each time the view switches under them, and the panel goes with the chat all the same.
+  const [panel, setPanel] = useState(false);
   const marked = useRef(0);
   // What the composer holds right now, which the closure of a send cannot see: an answer takes seconds, and what is
   // typed in those seconds is the next question, not something to throw away with the one that was sent.
@@ -181,7 +185,7 @@ export function OpenChat({
   if (open && params.get("terminal") === "1") {
     return (
       <div className="relative flex min-h-0 flex-1 flex-col gap-3" data-testid="chat-terminal">
-        <ChatChip chat={chat} openId={id} onNotice={onNotice} />
+        <ChatChip chat={chat} openId={id} onNotice={onNotice} shown={panel} onShown={setPanel} />
         <Terminal path={`/v1/chats/${id}/tui`} autoFocus className="min-h-0 flex-1" />
         <p className="shrink-0 text-sm leading-relaxed text-secondary">
           Pi-Bolt's terminal interface continues this chat. Closing it, or Conversation on the chip,
@@ -221,7 +225,7 @@ export function OpenChat({
   }
 
   const place = placeName(snapshot, chat);
-  // Nothing is said under the composer for a chat that has ended: its chip at the bottom right already says so, and
+  // Nothing is said under the composer for a chat that has ended: its chip beside Send already says so, and
   // writing to it is the ordinary thing the composer does.
   const hint = notice
     ? notice
@@ -232,7 +236,6 @@ export function OpenChat({
   return (
     <>
       <div className="relative min-h-0 flex-1">
-        <ChatChip chat={chat} openId={id} onNotice={onNotice} />
         <div className="min-h-0 h-full" data-testid="conversation">
           {/* A conversation already read stays on screen: a failed read shows its reason above it, not instead of it. */}
           {thread.error ? <Notice tone="error">{thread.error}</Notice> : null}
@@ -286,7 +289,7 @@ export function OpenChat({
         onSend={() => void send()}
         canSend={message.trim() !== "" && !sending}
         // A chat that takes no message says on the button what pressing it really does: it starts a chat that carries
-        // this one on. The chip at the conversation's bottom right is where the state itself is said.
+        // this one on. The chip beside Send is where the state itself is said.
         sendLabel={writesHere ? "Send" : "Continue"}
         sendTitle={writesHere ? undefined : "Starts a new chat, told what was said in this one"}
         // The field names who the message goes to, which is what the agent pill used to say and is the one thing
@@ -294,6 +297,16 @@ export function OpenChat({
         // the button does about it.
         placeholder={writesHere ? `Write to ${chat.agent}` : endedHint(chat.status, chat.agent)}
         pills={<Tag>{place ?? "no repository"}</Tag>}
+        actions={
+          <ChatChip
+            chat={chat}
+            openId={id}
+            onNotice={onNotice}
+            beside
+            shown={panel}
+            onShown={setPanel}
+          />
+        }
       />
       {hint && (
         <p
