@@ -1,6 +1,7 @@
 /**
  * The sidebar on every page: the app name with the connection, the search (the command bar), Inbox, Fleet,
- * the folding groups Automation and Improve, then Projects (one entry per board), and the one entry for Settings. It collapses
+ * the folding groups Automation, Projects (one entry per board) and Improve, the list of chats below them in the
+ * wide sidebar, then Setup and the one entry for Settings. It collapses
  * to a rail of icons, where the words the rail drops — the connection, a board's work — stay with the icon as text a
  * person can hear or open, at the same heights the wide sidebar uses so that the rail is the same list seen close,
  * and where nothing folds. The counts come from the snapshot. The rail alone keeps the Chat entry; the wide list
@@ -89,9 +90,10 @@ type TrailingTone = "attention" | "progress" | "secondary";
 
 /**
  * The groups that fold. Automation holds Automations and Workflows; Improve holds Retro, Experiments, Decisions and
- * Usage. Whether each is open is kept per browser under its own key, like the sidebar's own shape is; a browser that
- * has never chosen anything has every group open. In the rail the groups do not fold — there a label keeps the room
- * it always took and every row under it stays where it was.
+ * Usage; Projects is folded by its own section, which keeps the row of every repository the snapshot names rather
+ * than one page to fold over. Whether each is open is kept per browser under its own key, like the sidebar's own
+ * shape is; a browser that has never chosen anything has every group open. In the rail the groups do not fold —
+ * there a label keeps the room it always took and every row under it stays where it was.
  */
 const COLLAPSIBLE: readonly { key: string; title: string; paths: readonly string[] }[] = [
   { key: "group.automation", title: "Automation", paths: ["automations", "workflows"] },
@@ -100,6 +102,7 @@ const COLLAPSIBLE: readonly { key: string; title: string; paths: readonly string
     title: "Improve",
     paths: ["retro", "experiments", "decision-model", "usage"],
   },
+  { key: "group.projects", title: "Projects", paths: [] },
 ];
 
 /** The words after an entry's name: the count or state of what it leads to. Colour supports them, never replaces them. */
@@ -171,6 +174,8 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
     setOpenGroups((openNow) => ({ ...openNow, [key]: open }));
     writeFlag(`moebius.sidebar.${key}`, open);
   };
+  // Whether the group of Projects is open; its rows are the boards the snapshot names, not pages of a list.
+  const projectsOpen = openGroups["group.projects"] ?? true;
 
   // "Get started" is listed only while the server says a step is missing.
   const pagesOf = (group: Group) =>
@@ -342,46 +347,60 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
         )}
         {!inSettings && groupSection("")}
         {!inSettings && collapsibleSection("Automation")}
-        {!inSettings && !collapsed && (
-          <ChatSection chats={chatList.data ?? []} snapshot={data.data} at={at} />
-        )}
         {!inSettings && (
-          <Section title="Projects" collapsed={collapsed}>
+          <Section
+            title="Projects"
+            collapsed={collapsed}
+            collapsible={{
+              // The group's own section builds its rows from the snapshot rather than from PAGES, so the folded
+              // state is taken from the group here and the rows under it are the boards.
+              open: projectsOpen,
+              onToggle: () => toggleGroup("group.projects", !projectsOpen),
+            }}
+          >
             {/* The label above is not a way to get anywhere; the whole list of repositories is a row of its own, at
-                the height of the boards under it. */}
-            <Entry
-              to="/projects"
-              icon={SquaresFourIcon}
-              label="All projects"
-              collapsed={collapsed}
-              current={here === "projects"}
-            />
-            {boards.map((board) => {
-              const live = liveRuns(board);
-              return (
+                the height of the boards under it. In the rail the group never folds, so the rows keep standing
+                whatever it was left as. */}
+            {(projectsOpen || collapsed) && (
+              <>
                 <Entry
-                  key={board.repository.id}
-                  to={boardPath(board.repository.id)}
-                  icon={FolderIcon}
-                  mark={{
-                    color: live > 0 ? "var(--progress)" : "var(--hairline-strong)",
-                    word: live > 0 ? `${live}` : "Idle",
-                    tone: "progress",
-                    printed: live > 0,
-                  }}
-                  label={board.repository.name}
+                  to="/projects"
+                  icon={SquaresFourIcon}
+                  label="All projects"
                   collapsed={collapsed}
-                  // The script of a column is a page of the same project, so it keeps its row marked.
-                  current={
-                    at.startsWith(`${boardPath(board.repository.id)}/`) ||
-                    at === boardPath(board.repository.id)
-                  }
+                  current={here === "projects"}
                 />
-              );
-            })}
+                {boards.map((board) => {
+                  const live = liveRuns(board);
+                  return (
+                    <Entry
+                      key={board.repository.id}
+                      to={boardPath(board.repository.id)}
+                      icon={FolderIcon}
+                      mark={{
+                        color: live > 0 ? "var(--progress)" : "var(--hairline-strong)",
+                        word: live > 0 ? `${live}` : "Idle",
+                        tone: "progress",
+                        printed: live > 0,
+                      }}
+                      label={board.repository.name}
+                      collapsed={collapsed}
+                      // The script of a column is a page of the same project, so it keeps its row marked.
+                      current={
+                        at.startsWith(`${boardPath(board.repository.id)}/`) ||
+                        at === boardPath(board.repository.id)
+                      }
+                    />
+                  );
+                })}
+              </>
+            )}
           </Section>
         )}
         {!inSettings && collapsibleSection("Improve")}
+        {!inSettings && !collapsed && (
+          <ChatSection chats={chatList.data ?? []} snapshot={data.data} at={at} />
+        )}
         {!inSettings && groupSection("Setup", "Setup")}
         {!inSettings && (
           <Section collapsed={collapsed}>
@@ -405,7 +424,8 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
 }
 
 /**
- * The list of the conversations, above Projects, in the wide sidebar only: the rail has no room for a list of them,
+ * The list of the conversations, under Projects and Improve, in the wide sidebar only: the rail has no room for a
+ * list of them,
  * so it keeps its one Chat entry instead. The chats stand under the day each was started (`groupChats`), each row
  * with its unread dot and the place it works in, and the one on screen marked by its own address the way a page is.
  * Above the list, the way to start a new one sits beside the compact dropdown and the field that narrow the list: All

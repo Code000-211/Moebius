@@ -14,7 +14,7 @@ import type { Chat } from "../../api/types/chat";
 import { SETTINGS_PAGES, settingsLabel } from "../pages";
 import { Sidebar } from "./Sidebar";
 
-/** The pages inside the two collapsible groups, in the order the sidebar lists them. */
+/** The pages inside the collapsible groups of Automation and Improve, in the order the sidebar lists them. */
 const AUTOMATION_PAGES: readonly string[] = ["Automations", "Workflows"];
 const IMPROVE_PAGES: readonly string[] = ["Retro", "Experiments", "Decisions", "Usage"];
 
@@ -22,6 +22,7 @@ const IMPROVE_PAGES: readonly string[] = ["Retro", "Experiments", "Decisions", "
 const GROUP_KEYS = {
   Automation: "moebius.sidebar.group.automation",
   Improve: "moebius.sidebar.group.improve",
+  Projects: "moebius.sidebar.group.projects",
 };
 
 afterEach(() => {
@@ -228,8 +229,9 @@ describe("the pages and the settings", () => {
  * the unread trail on its name.
  */
 /**
- * The two collapsible groups. Automation holds Automations and Workflows; Improve holds Retro, Experiments,
- * Decisions and Usage. Both are open before anybody has chosen anything, the choice is kept per browser like the
+ * The collapsible groups. Automation holds Automations and Workflows; Improve holds Retro, Experiments,
+ * Decisions and Usage; Projects holds the row of every repository the snapshot names, and folds like the others.
+ * Every group is open before anybody has chosen anything, the choice is kept per browser like the
  * sidebar's own collapsed state is, and the rail — which has no room for a name on its group labels — never
  * collapses them: there the groups behave as they always did, the label's room kept and every row under it.
  * The group's name itself goes nowhere (`docs/design-web.md`); the caret beside it is the toggle.
@@ -247,6 +249,12 @@ describe("the collapsible groups", () => {
     for (const page of IMPROVE_PAGES) {
       expect(screen.getByRole("link", { name: new RegExp(`^${page}`) })).not.toBeNull();
     }
+    // Projects folds like the others; its boards stand under its caret while it is open.
+    expect(
+      screen.getByRole("button", { name: "Collapse Projects" }).getAttribute("aria-expanded"),
+    ).toBe("true");
+    expect(screen.getByRole("link", { name: /^All projects/ })).not.toBeNull();
+    expect(await screen.findByRole("link", { name: /^moebius-platform/ })).not.toBeNull();
     // The groups that are not touched by this stay what they were.
     expect(screen.getByRole("link", { name: /^Inbox/ })).not.toBeNull();
     expect(screen.getByRole("link", { name: /^Fleet/ })).not.toBeNull();
@@ -290,17 +298,40 @@ describe("the collapsible groups", () => {
     expect(screen.getByRole("link", { name: /^Automations/ })).not.toBeNull();
   });
 
+  it("closes Projects on its caret, and keeps it closed the next time the sidebar is built", async () => {
+    show();
+    await screen.findByRole("link", { name: /^moebius-platform/ });
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Projects" }));
+    expect(
+      screen.getByRole("button", { name: "Expand Projects" }).getAttribute("aria-expanded"),
+    ).toBe("false");
+    expect(screen.queryByRole("link", { name: /^All projects/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^moebius-platform/ })).toBeNull();
+    // The choice is kept in this browser the way the sidebar's shape is.
+    expect(localStorage.getItem(GROUP_KEYS.Projects)).toBe("0");
+    cleanup();
+    show();
+    await screen.findByRole("link", { name: /^Inbox/ });
+    expect(screen.queryByRole("link", { name: /^All projects/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^notes/ })).toBeNull();
+  });
+
   it("keeps every row in the rail, whatever the groups were left as", async () => {
     localStorage.setItem(GROUP_KEYS.Automation, "0");
     localStorage.setItem(GROUP_KEYS.Improve, "0");
+    localStorage.setItem(GROUP_KEYS.Projects, "0");
     show({ collapsed: true });
     // The rail's labels keep the room they always took, and carry no toggle there.
     await screen.findByRole("link", { name: /^Inbox/ });
     expect(screen.queryByRole("button", { name: "Collapse Automation" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Collapse Improve" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Collapse Projects" })).toBeNull();
     for (const page of [...AUTOMATION_PAGES, ...IMPROVE_PAGES]) {
       expect(screen.getByRole("link", { name: new RegExp(`^${page}`) })).not.toBeNull();
     }
+    // Projects keeps its one entry per board, and its label above them.
+    expect(screen.getByRole("link", { name: /^All projects/ })).not.toBeNull();
+    expect(await screen.findByRole("link", { name: /^moebius-platform/ })).not.toBeNull();
   });
 });
 
@@ -375,14 +406,26 @@ describe("the list of chats", () => {
   const now = Math.floor(Date.now() / 1000);
   const DAY = 86_400;
 
-  it("groups the chats under their day, above Projects, in the wide sidebar only", async () => {
+  it("groups the chats under their day, below Projects and Improve, in the wide sidebar only", async () => {
     show({
       at: "/inbox",
       chats: [chat(9, now - 60), chat(4, now - DAY - 60), chat(2, now - 3 * DAY - 60)],
     });
-    // The list stands above the Projects one, its groups in the fixed order of the days.
+    // The list stands below the boards of Projects and the rows of Improve, its groups in the fixed order of the days.
     const labels = await screen.findAllByTestId("chat-group-label");
     expect(labels.map((label) => label.textContent)).toEqual(["Today", "Yesterday", "Older"]);
+  });
+
+  it("stands Projects and Improve above the list of chats", async () => {
+    show({ at: "/inbox", chats: [chat(9, now - 60)] });
+    const chats = await screen.findByText(/^Chats$/, { exact: true });
+    const projects = screen.getByText(/^Projects$/, { exact: true });
+    const improve = screen.getByText(/^Improve$/, { exact: true });
+    const boards = await screen.findByRole("link", { name: /^moebius-platform/ });
+    // The group's label and the row of a board stand before the list of chats, in the order of the page.
+    expect(projects.compareDocumentPosition(chats) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(improve.compareDocumentPosition(chats) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(boards.compareDocumentPosition(chats) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("orders the groups itself, the days fixed and the newest chat first within one", async () => {
