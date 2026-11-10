@@ -6,7 +6,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { availableModels, agents as readAgents, skills as readSkills } from "../api/calls/chat";
 import { keys } from "../api/keys";
-import type { Agent, AvailableModels } from "../api/types/chat";
+import type { Agent, AvailableModels, Chat } from "../api/types/chat";
+import type { PillOption } from "../ui/chat/PillSelect";
+import { levelChoices } from "./levels";
 
 const FIVE_MINUTES = 5 * 60 * 1000;
 
@@ -40,4 +42,36 @@ export function useChoices() {
     hasHarness: (skills.data?.length ?? 0) > 0,
     loaded: agents.isSuccess,
   };
+}
+
+/** The model and the reasoning level a chat starts its agent on, and the choices to offer instead. */
+export type ModelChoices = {
+  model: string | null;
+  thinking: string | null;
+  modelOptions: PillOption[];
+  levelOptions: PillOption[];
+};
+
+/** The model choices of one open chat, from the chat's own setting or its agent's default. */
+export function chatModelChoices(chat: Chat, choices: ReturnType<typeof useChoices>): ModelChoices {
+  const agent = choices.agents.find((each) => each.name === chat.agent);
+  const model = chat.model ?? (agent?.model || null);
+  const thinking = chat.thinking ?? agent?.thinking ?? null;
+  const modelOptions: PillOption[] = [
+    ...(model && !choices.models.includes(model) ? [{ value: model, label: model }] : []),
+    ...choices.models.map((value) => ({ value, label: value })),
+  ];
+  // Only the levels the model's endpoint takes, plus this chat's own level when it has outlived the model.
+  return {
+    model,
+    thinking,
+    modelOptions,
+    levelOptions: levelChoices(choices.available, model ?? "", thinking ?? ""),
+  };
+}
+
+/** The model choices of the chat's agent and settings, read fresh. */
+export function useChatModelChoices(chat: Chat): ModelChoices {
+  const choices = useChoices();
+  return chatModelChoices(chat, choices);
 }

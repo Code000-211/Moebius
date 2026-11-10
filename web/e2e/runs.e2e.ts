@@ -446,9 +446,14 @@ describe("the terminals", () => {
       });
       await page.goto(`${server.url}/chat/${id}`);
       await page.getByTestId("person-message").filter({ hasText: "Waiting" }).waitFor();
+      await page.getByTestId("chat-chip").click();
       await page.getByRole("button", { name: "Terminal" }).click();
       await connected().waitFor();
       expect(fake().terminals.at(-1)?.path).toBe(`/v1/chats/${id}/tui`);
+      // The panel is still open from the way in; the chip's own button closes it before it is opened again.
+      await page.getByTestId("chat-chip").click();
+      await page.getByTestId("chat-chip-panel").waitFor({ state: "detached" });
+      await page.getByTestId("chat-chip").click();
       await page.getByRole("button", { name: "Conversation" }).click();
       await page.getByTestId("person-message").filter({ hasText: "Waiting" }).waitFor();
       await expect.poll(() => fake().terminals.at(-1)?.closed).toBe(true);
