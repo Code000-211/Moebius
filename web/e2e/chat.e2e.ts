@@ -128,7 +128,8 @@ describe("the chat page", () => {
       await page.goto(`${server.url}/chat/${id}`);
       const title = page.getByTestId("chat-title");
       await title.waitFor();
-      await page.getByRole("button", { name: /^Name the chat/ }).click();
+      await page.getByTestId("chat-chip").click();
+      await page.getByRole("button", { name: "Rename" }).click();
       const field = page.getByTestId("chat-title-field");
       await field.fill("Where the login screen went wrong");
       await field.press("Enter");
@@ -677,6 +678,8 @@ describe("an open chat", () => {
     await open("/chat");
     const id = fake().seed({ title: "Hi", events: [["said", { message: "Hi" }]] });
     await page.goto(`${server.url}/chat/${id}`);
+    // The model and reasoning choices are on the chip's panel now.
+    await page.getByTestId("chat-chip").click();
     await page.getByRole("button", { name: /^Model: / }).click();
     await page.getByRole("menuitemradio", { name: "fake-small" }).click();
     await page.getByRole("button", { name: "Model: fake-small" }).waitFor();
@@ -706,9 +709,9 @@ describe("an open chat", () => {
         headers: { "X-Moebius": "1" },
       });
       expect(stopped.ok(), await stopped.text()).toBe(true);
-      // The actions of a chat that is up (its Terminal) are gone once its agent went away.
-      await page.getByRole("button", { name: "Terminal" }).waitFor({ state: "detached" });
-
+      // The actions of a chat that is up (its Terminal) are gone once its agent went away; the panel holds what is
+      // left, so it is opened to reach the model choices.
+      await page.getByTestId("chat-chip").click();
       await page.getByRole("button", { name: /^Model: / }).click();
       await page.getByRole("menuitemradio", { name: "fake-small" }).click();
       await page.getByRole("button", { name: "Model: fake-small" }).waitFor();
@@ -733,11 +736,15 @@ describe("an open chat", () => {
       await page.waitForURL(/\/chat\/\d+$/);
       const run = fake().chats[0]?.id as number;
       fake().agentStart(run);
+      await page.getByTestId("chat-chip").click();
       await page.getByRole("button", { name: "Stop" }).click();
       await page.getByText("Stop this chat?").waitFor();
       await page.getByRole("button", { name: "Keep going" }).click();
       await page.getByRole("button", { name: "Stop" }).click();
       await page.getByRole("button", { name: "Stop chat" }).click();
+      // The panel stays only while it is used; with the chat stopped it is closed again.
+      await page.getByTestId("chat-chip").click();
+      await page.getByTestId("chat-chip-panel").waitFor({ state: "detached" });
       await page.getByTestId("chat-title").waitFor();
       // The field still takes a message: the way on is this chat, not a new one, so nothing about the composer says
       // otherwise.
@@ -755,9 +762,11 @@ describe("an open chat", () => {
       expect(fake().chats.length).toBe(1);
       expect(fake().chats[0]?.status).toBe("waiting");
       await page.getByTestId("chat-title").waitFor();
-      // The chat is up again: its Terminal is back and can be pressed.
-      await page.getByRole("button", { name: "Terminal" }).waitFor();
-      expect(await page.getByRole("button", { name: "Terminal" }).isEnabled()).toBe(true);
+      // The chat is up again: its Terminal is back and can be pressed, once the chip's panel is opened.
+      await page.getByTestId("chat-chip").click();
+      const terminal = page.getByRole("button", { name: "Terminal" });
+      await terminal.waitFor();
+      expect(await terminal.isEnabled()).toBe(true);
     },
   );
 });
@@ -984,7 +993,7 @@ describe("deleting a chat", () => {
   const dialog = () => page.getByRole("dialog", { name: "Delete this chat?" });
 
   it.skipIf(usesRealServer)(
-    "asks once from the top bar, says that a chat that works is stopped first, and leaves the deleted chat's page",
+    "asks once on the chip's panel, says that a chat that works is stopped first, and leaves the deleted chat's page",
     async () => {
       await open("/chat");
       const kept = fake().seed({ status: "waiting", title: "Keep this one" });
@@ -994,6 +1003,7 @@ describe("deleting a chat", () => {
         .getByRole("heading", { name: "Still at work" })
         .or(page.getByText("Still at work").first())
         .waitFor();
+      await page.getByTestId("chat-chip").click();
       await page.getByRole("button", { name: "Delete this chat", exact: true }).click();
       await dialog()
         .getByText(/It is working now, so it is stopped first\./)
@@ -1003,6 +1013,7 @@ describe("deleting a chat", () => {
       await dialog().waitFor({ state: "detached" });
       expect(fake().deleted).toEqual([]);
 
+      await page.getByTestId("chat-chip").click();
       await page.getByRole("button", { name: "Delete this chat", exact: true }).click();
       await dialog().getByRole("button", { name: "Delete" }).click();
       await page.waitForURL(`${server.url}/chat`);
@@ -1049,6 +1060,7 @@ describe("deleting a chat", () => {
             })
           : route.continue(),
       );
+      await page.getByTestId("chat-chip").click();
       await page.getByRole("button", { name: "Delete this chat", exact: true }).click();
       await dialog().getByRole("button", { name: "Delete" }).click();
       await dialog().getByRole("alert").filter({ hasText: "chat is still stopping" }).waitFor();

@@ -1,9 +1,9 @@
 /**
  * The Chat page (the former desktop app's CH3-D): the full canvas beside the shell's sidebar, which holds the list of
  * conversations, with the bar on top that says what the chat is, and under it the form of a new chat (`/chat`) or the
- * chat chosen (`/chat/:id`).
+ * chat chosen (`/chat/:id`). All of an open chat's actions live on the chip over its conversation's bottom right;
+ * the bar on top keeps only the title.
  */
-import { TrashIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
@@ -11,11 +11,9 @@ import { snapshot as readSnapshot } from "../api/calls/board";
 import { chats as readChats } from "../api/calls/chat";
 import { keys } from "../api/keys";
 import { usePackageSheet } from "../packages/PackageSheetContext";
-import { Button } from "../ui/components/Button";
 import { ChatTopBar } from "./ChatTopBar";
-import { DeleteChat } from "./DeleteChat";
 import { NewChat } from "./NewChat";
-import { ChatActions, ChatTitle, OpenChat } from "./OpenChat";
+import { ChatTitle, OpenChat } from "./OpenChat";
 
 /** Every chat the Chat page has shown since the app started, so a chat that vanishes from the list is known to be gone rather than new. */
 const seenChats = new Set<number>();
@@ -48,7 +46,6 @@ export function ChatPage() {
   useEffect(() => {
     if (gone) void navigate("/chat", { replace: true });
   }, [gone, navigate]);
-  const [deleting, setDeleting] = useState(false);
 
   return (
     <div
@@ -61,37 +58,12 @@ export function ChatPage() {
         <ChatTopBar
           title={
             open ? (
-              <ChatTitle chat={open} onNotice={setNotice} />
+              <ChatTitle chat={open} />
             ) : (
               <span className="text-base font-semibold text-text">
                 {openId === null ? "New chat" : ""}
               </span>
             )
-          }
-          actions={
-            open ? (
-              <>
-                <ChatActions chat={open} onNotice={setNotice} />
-                {/* The dialog asks and says what it will do, so the bar needs no word of its own: a trashcan in the
-                    colours of a destructive action, in a row of controls, is the house way of making room for the
-                    title. */}
-                <Button
-                  variant="danger"
-                  size="icon"
-                  aria-label="Delete this chat"
-                  title="Delete this chat"
-                  onClick={() => setDeleting(true)}
-                >
-                  <TrashIcon aria-hidden="true" className="size-5" weight="bold" />
-                </Button>
-                <DeleteChat
-                  chat={open}
-                  open={deleting}
-                  onOpenChange={setDeleting}
-                  openId={openId}
-                />
-              </>
-            ) : null
           }
         />
         {openId === null ? (
