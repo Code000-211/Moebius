@@ -88,10 +88,7 @@ function OlderRow({ context }: { context: Older }) {
   return (
     <div className="flex min-h-14 items-center justify-center px-4 pb-3" data-testid="older">
       {context.olderLoading ? (
-        <Reading
-          message="Reading earlier messages"
-          className="flex w-full max-w-prose flex-col gap-2"
-        >
+        <Reading message="Reading earlier messages" className="flex w-full flex-col gap-2">
           <Skeleton className="h-4 w-1/4" />
           <Skeleton className="w-full" />
           <Skeleton className="w-3/4" />

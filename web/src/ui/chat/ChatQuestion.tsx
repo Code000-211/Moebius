@@ -185,7 +185,7 @@ export function ChatQuestion({ questions, answer, onAnswer, sending = false }: C
     return (
       <div
         data-testid="question-asked"
-        className="flex max-w-prose min-w-0 flex-col gap-4 rounded-card bg-sunken p-4"
+        className="flex min-w-0 flex-col gap-4 rounded-card bg-sunken p-4"
       >
         {questions.map((question, place) => (
           <ClosedQuestion
@@ -201,7 +201,7 @@ export function ChatQuestion({ questions, answer, onAnswer, sending = false }: C
     <form
       data-testid="question"
       aria-label="The agent asks"
-      className={cn("flex max-w-prose min-w-0 flex-col gap-4 rounded-card bg-sunken p-4")}
+      className={cn("flex min-w-0 flex-col gap-4 rounded-card bg-sunken p-4")}
       onSubmit={(event) => {
         event.preventDefault();
         if (message !== null && !sending) onAnswer(message);
