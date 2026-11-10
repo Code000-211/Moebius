@@ -54,7 +54,7 @@ export function ChatPage() {
     >
       {/* 820px is the measure the conversation reads at: wide enough that a line of a diff fits beside its words,
           narrow enough that a person's eye finds the next line without running back along it. */}
-      <div className="mx-auto flex h-full min-w-0 max-w-[820px] flex-1 flex-col gap-4">
+      <div className="mx-auto flex h-full w-full min-w-0 max-w-[820px] flex-1 flex-col gap-4">
         <ChatTopBar
           title={
             open ? (
