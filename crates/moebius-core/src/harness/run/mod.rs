@@ -1,7 +1,8 @@
 //! The life of a run, the same for every harness: the prompts a run of a card is told (`prompts`), the agents Moebius
 //! brings itself and the agent a run uses (`agents`), making the run, its worktree and its token and undoing them when
 //! its process cannot be started (`lifecycle`), starting a run on a harness's `launch` (`start`), and ending it when
-//! its process is gone (`end`). Pi-Bolt (`pibolt`) and Claude Code (`claude`) keep only how they spawn their process
+//! its process is gone (`end`), and the directory the run puts what it does not need again in, which is removed with it
+//! (`scratch`). Pi-Bolt (`pibolt`) and Claude Code (`claude`) keep only how they spawn their process
 //! (`process`) and how they read its output into run events (`reader`).
 
 mod agents;
@@ -9,6 +10,7 @@ mod coding_agents;
 mod end;
 mod lifecycle;
 mod prompts;
+pub(crate) mod scratch;
 mod start;
 // Unix only: the fake `pi-bolt` and the fake `claude` are Python scripts started by their `#!` lines.
 #[cfg(all(test, unix))]

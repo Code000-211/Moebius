@@ -228,9 +228,9 @@ fn an_unchanged_answer_starts_pi_as_without_a_launcher() {
     // The worktree and the agent directory are read and written (Pi writes its credential store there); the
     // bridge and the agent's extensions only read.
     assert!(request.read_write.contains(&request.dir));
-    // The directories of the run it is told to write are named, and the fake launcher failed the run, so it would not
-    // have succeeded, had one not existed when it was called.
-    for name in ["agent", "sessions", "tmp"] {
+    // The directories of the run it is told to write are named, its scratch directory included, and the fake launcher
+    // failed the run, so it would not have succeeded, had one not existed when it was called.
+    for name in ["agent", "sessions", "scratch"] {
         assert!(
             request.read_write.iter().any(|p| p.ends_with(name)),
             "the request does not name {name}"
@@ -251,7 +251,9 @@ fn an_unchanged_answer_starts_pi_as_without_a_launcher() {
         "moebius-ask.ts is not read only"
     );
     assert!(request.read_only.iter().any(|p| p == "/agent/own.ts"));
-    assert!(request.env["TMPDIR"].ends_with("tmp"));
+    // The run's temporary files go to its own scratch directory, which the launcher grants.
+    assert!(request.env["TMPDIR"].ends_with("scratch"));
+    assert_eq!(request.env["MOEBIUS_RUN_SCRATCH"], request.env["TMPDIR"]);
 }
 
 #[test]

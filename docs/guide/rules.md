@@ -16,14 +16,19 @@ Five built-in rules always apply, with fixed patterns that look at the tools `ba
 
 | Name | Refuses |
 |---|---|
-| `no-destructive-commands` | `rm` with a recursive flag outside the worktree, `dd` to a device, `mkfs`, a fork bomb. |
+| `no-destructive-commands` | `rm` with a recursive flag outside the worktree and the run's own scratch directory (`runs/<id>/scratch` under the data directory, which the run is given as `$MOEBIUS_RUN_SCRATCH`), `dd` to a device, `mkfs`, a fork bomb. |
 | `no-force-push` | `git push` with `--force`, `-f` or a `+` refspec. |
-| `stay-in-the-worktree` | Writing a file outside the run's worktree (`write`, `edit`, a redirect or `tee`), except `/tmp/` and `/dev/null`. Reading is allowed anywhere. |
+| `stay-in-the-worktree` | Writing a file outside the run's worktree (`write`, `edit`, a redirect or `tee`), except `/tmp/`, the run's own scratch directory and `/dev/null`. Reading is allowed anywhere. |
 | `no-secrets-in-commands` | A command that contains a key or token. |
 | `no-dumping-large-files` | `cat`, `less` or `more` of a file over 64 KB, unless piped or redirected; the reason says to read a range or grep. |
 
 The patterns are a first line. They do not see `sed -i`, `cp`, `mv`, scripts the agent writes and then runs, or
 variables. Rules in prose are for what the patterns cannot see.
+
+Every run on this machine gets a scratch directory of its own, `<data_dir>/runs/<id>/scratch`, which it is started with
+as its `TMPDIR`, `TEMP` and `TMP` and as `$MOEBIUS_RUN_SCRATCH`. A run may write there and delete what it put there with
+`rm -rf`, and Moebius deletes the whole directory when the run ends: what a run only needs until then belongs there, not
+in a shared `/tmp` (a run on a runner has none, and keeps the temporary directory of the runner).
 
 ## The steps
 

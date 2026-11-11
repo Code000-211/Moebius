@@ -14,6 +14,8 @@ pub(super) struct ToolCall<'a> {
     pub(super) tool: &'a str,
     pub(super) input: Value,
     pub(super) worktree: Option<&'a Path>,
+    /// The run's scratch directory, which it may delete what it put there (`crate::harness::run::scratch`).
+    pub(super) scratch: Option<&'a Path>,
 }
 
 impl ToolCall<'_> {
@@ -36,15 +38,26 @@ impl ToolCall<'_> {
     }
 
     /// Whether a shell command that writes to `path`, relative to `cwd`, writes somewhere it may not: not the
-    /// worktree, `/tmp` or the null device and standard streams.
+    /// worktree, the run's scratch directory, `/tmp` or the null device and standard streams.
     pub(super) fn writes_elsewhere(&self, cwd: &Path, path: &str) -> bool {
         let resolved = resolve(cwd, path);
         let allowed = !is_home(path)
             && (resolved.starts_with("/tmp")
+                || self.in_scratch(cwd, path)
                 || ["/dev/null", "/dev/stdout", "/dev/stderr"]
                     .iter()
                     .any(|stream| resolved == Path::new(stream)));
         !allowed && self.outside_worktree(cwd, path)
+    }
+
+    /// Whether `path`, relative to `cwd`, is the run's scratch directory or inside it, where the run may delete what
+    /// it put there. `~` is the home directory, never the scratch, whatever directory the command `cd`ed to. A run
+    /// without a scratch directory has no place it may delete from, as it has no worktree either.
+    pub(super) fn in_scratch(&self, cwd: &Path, path: &str) -> bool {
+        !is_home(path)
+            && self
+                .scratch
+                .is_some_and(|scratch| resolve(cwd, path).starts_with(normalise(scratch)))
     }
 }
 

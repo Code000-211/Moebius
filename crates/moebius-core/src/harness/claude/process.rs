@@ -18,7 +18,7 @@ use crate::bus::Event;
 use crate::config::AgentConfig;
 use crate::harness::mcp;
 use crate::harness::remote::Local;
-use crate::harness::run::{RunningRun, keep, operates};
+use crate::harness::run::{RunningRun, keep, operates, scratch};
 use crate::store::Card;
 
 /// A new session id for Claude Code's `--session-id`: a random UUID.
@@ -54,6 +54,9 @@ pub(super) struct Place<'a> {
     pub(super) run: i64,
     /// The repository the run works in, which `$MOEBIUS_REPOSITORY` names for an agent that operates Moebius.
     pub(super) repository: Option<i64>,
+    /// The directory the run puts what it does not need again in, as its own temporary directory, which the run may
+    /// delete (see `crate::harness::run::scratch`). None for a run on a runner, which has directories of its own.
+    pub(super) scratch: Option<&'a Path>,
 }
 
 impl ClaudeCode {
@@ -74,6 +77,13 @@ impl ClaudeCode {
             .env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
             .env("MOEBIUS", &self.moebius)
             .env("MOEBIUS_RUN_TOKEN", place.token);
+        if let Some(scratch) = place.scratch {
+            // What the run only needs until it ends goes to its own directory, which Moebius deletes with it, rather
+            // than to the shared temporary directory, which outlives the run.
+            for name in ["TMPDIR", "TEMP", "TMP", "MOEBIUS_RUN_SCRATCH"] {
+                command.env(name, scratch);
+            }
+        }
         if let (true, Some(url)) = (place.operates, self.api_url.get()) {
             command
                 .env("MOEBIUS_URL", url)
@@ -192,6 +202,11 @@ impl ClaudeCode {
         let stored = app.store.run(run.id).map_err(|e| e.to_string())?;
         let operates = stored.as_ref().is_some_and(|s| operates(&s.agent));
         let repository = stored.as_ref().and_then(|s| s.repository_id);
+        // Only a run on this machine has a scratch directory here: a runner has directories of its own.
+        let scratch = match &remote {
+            None => Some(scratch::make(&app.data_dir, run.id)?),
+            Some(_) => None,
+        };
         let place = Place {
             worktree: &run.worktree,
             config_dir: &config_dir,
@@ -202,6 +217,7 @@ impl ClaudeCode {
             operates,
             run: run.id,
             repository,
+            scratch: scratch.as_deref(),
         };
         let mut command = self.command(agent, &place);
         if let Some(remote) = &remote {

@@ -15,6 +15,7 @@ use super::process::Place;
 use super::{Closing, Paused, PiBolt, lock, run_dir};
 use crate::app::App;
 use crate::harness::run::operates;
+use crate::harness::run::scratch;
 use crate::harness::run::{finish, keep};
 
 impl PiBolt {
@@ -58,6 +59,7 @@ impl PiBolt {
             }
         }
         let sessions = run_dir.join("sessions");
+        let scratch = scratch::make(&app.data_dir, run_id)?;
         let place = Place {
             worktree: &run.worktree,
             agent_dir: &agent_dir,
@@ -69,6 +71,7 @@ impl PiBolt {
             operates: operates(&stored.agent),
             run: run_id,
             repository: stored.repository_id,
+            scratch: Some(&scratch),
         };
         let command = self.command(&config, &place, true);
         let follower = Follower::start(app.clone(), run_id, sessions);

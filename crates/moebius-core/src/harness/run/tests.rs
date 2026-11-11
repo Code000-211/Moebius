@@ -6,6 +6,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use serde_json::Value;
+
 use super::lifecycle::write_untracked;
 use super::prompts::{prompt_for, run_prompt};
 use super::testing::{
@@ -123,6 +125,48 @@ fn a_run_can_be_stopped() {
             "{name}"
         );
         assert!(!runs.stop(run.id), "{name}");
+    }
+}
+
+#[test]
+fn a_run_is_given_a_scratch_directory_and_loses_it_when_it_ends() {
+    let setup = setup();
+    for (name, runs) in setup.both() {
+        let card = setup
+            .app
+            .create_issue(setup.repo, "Please [hang]", "", "person")
+            .unwrap();
+        let run = runs
+            .start(
+                &setup.app,
+                &card,
+                "Coder",
+                ("code", None),
+                Variant::default(),
+            )
+            .unwrap();
+        wait_for_events(&setup.app, run.id, 2);
+        let scratch = setup.app.data_dir.join(format!("runs/{}/scratch", run.id));
+        assert!(scratch.is_dir(), "{name}");
+        // The run is told where its scratch is and keeps its temporary files there, so that they are deleted with it.
+        let env = match name {
+            "pi-bolt" => format!("runs/{}/agent/env.json", run.id),
+            _ => format!("runs/{}/claude/env.json", run.id),
+        };
+        let env: Value =
+            serde_json::from_str(&std::fs::read_to_string(setup.app.data_dir.join(env)).unwrap())
+                .unwrap();
+        assert_eq!(
+            env["MOEBIUS_RUN_SCRATCH"],
+            scratch.to_str().unwrap(),
+            "{name}"
+        );
+        assert_eq!(env["TMPDIR"], scratch.to_str().unwrap(), "{name}");
+        // What the run leaves there goes with it when it ends, whether it ends by itself or is stopped.
+        std::fs::create_dir_all(scratch.join("build/cache")).unwrap();
+        assert!(runs.stop(run.id), "{name}");
+        wait_until_ended(&setup.app, run.id);
+        assert!(!scratch.exists(), "{name}");
     }
 }
 
@@ -293,6 +337,8 @@ fn a_missing_program_fails_the_run_and_leaves_nothing() {
             .unwrap();
         assert_eq!(run.status, "failed", "{name}");
         assert!(!PathBuf::from(run.worktree.unwrap()).exists(), "{name}");
+        let scratch = super::scratch::dir(&setup.app.data_dir, run.id);
+        assert!(!scratch.exists(), "{name}: {scratch:?} outlived the run");
     }
 }
 

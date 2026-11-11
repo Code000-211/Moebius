@@ -135,6 +135,13 @@ mod a_run {
             World::with_pi(dir, testdata.join("fake-pi"))
         }
 
+        /// A world whose `pi-bolt` is not there: the program its agents are started by does not exist.
+        fn without_pi() -> World {
+            let dir = tempfile::tempdir().unwrap();
+            let missing = dir.path().join("no-pi-bolt");
+            World::with_pi(dir, missing)
+        }
+
         /// A world whose harness is `script`, a fake `pi-bolt` the test writes itself.
         fn with_script(script: &str) -> World {
             let dir = tempfile::tempdir().unwrap();
@@ -384,6 +391,34 @@ mod a_run {
         assert!(
             agent_runs(&world.app).is_empty(),
             "an agent that is not there"
+        );
+    }
+
+    #[test]
+    fn a_run_whose_harness_cannot_be_started_keeps_its_worktree_and_loses_its_scratch() {
+        let world = World::without_pi();
+        let run_id = world.workflow_run(json!({}));
+        let node = world.agent_node("Say hello.", "note");
+        let error = node
+            .run_node(&world.app, &world.runs, "draft", run_id, &json!(null))
+            .unwrap_err();
+        assert!(
+            matches!(&error, NodeError::Failed(why) if why.contains("cannot start the agent")),
+            "{error}"
+        );
+        // The later agent nodes of the run still work where the first one was to: its worktree is kept.
+        let worktree = world.worktree(run_id);
+        assert!(worktree.is_dir(), "the worktree {worktree:?} was kept");
+        // The run it could not start ended, and the scratch directory made for it went with it.
+        let agents = agent_runs(&world.app);
+        assert_eq!(agents.len(), 1, "the run was recorded");
+        assert_eq!(agents[0].status, "failed");
+        let dir = world.app.data_dir.join(format!("runs/{}", agents[0].id));
+        assert!(dir.is_dir(), "the run had a directory of its own: {dir:?}");
+        assert!(
+            !dir.join("scratch").exists(),
+            "the scratch directory {} outlived the run",
+            dir.join("scratch").display()
         );
     }
 

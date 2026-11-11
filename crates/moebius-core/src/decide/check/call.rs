@@ -14,6 +14,7 @@ use serde_json::{Value, json};
 
 use crate::app::App;
 use crate::decide::{Question, guard, rules};
+use crate::harness::run::scratch;
 use crate::router::Grant;
 
 /// A tool call to check: what the bridge sends, and what the MCP gateway asks for each call of an MCP tool.
@@ -78,6 +79,9 @@ pub(crate) fn decide_call(
 /// - `run_id`, `card_id`: the run being checked and its card (when it has one), as numbers in text. The teacher model's
 ///   tokens are counted against them.
 /// - `worktree`: the run's worktree path, when it has one.
+/// - `scratch`: the run's own scratch directory, which it may delete what it put there and which Moebius removes with
+///   the run, when the run is on this machine (see `crate::harness::run::scratch`). A run on a runner has none: it
+///   keeps the temporary directory of the runner, which the server neither made nor removes.
 /// - `card_title`, `card_body`: the card the run works on, when it has one.
 /// - `builtin_refusal`: the built-in rule the call breaks, tested on the call before redaction (see `guard`).
 /// - `rules`: the rules that apply, as Markdown (`## <name>` and the rule's text), the server's first (see `rules`).
@@ -101,8 +105,19 @@ fn tool_call_question(
     let run = app.store.run(grant.run_id).ok()?;
     // A chat or a detached run has no card; it works in the repository the run names.
     let run_repository = run.as_ref().and_then(|r| r.repository_id);
-    if let Some(worktree) = run.and_then(|r| r.worktree) {
+    // A run on a runner keeps the temporary directory of the runner, which the server neither made nor removes, so
+    // it has no scratch directory here to name.
+    let on_runner = run.as_ref().is_some_and(|r| r.runner.is_some());
+    if let Some(worktree) = run.as_ref().and_then(|r| r.worktree.clone()) {
         context.insert("worktree".into(), worktree);
+    }
+    if !on_runner {
+        context.insert(
+            "scratch".into(),
+            scratch::dir(&app.data_dir, grant.run_id)
+                .to_string_lossy()
+                .into_owned(),
+        );
     }
     let mut repository = None;
     if grant.card_id.is_none()
@@ -123,6 +138,7 @@ fn tool_call_question(
         &request.tool,
         &request.input,
         context.get("worktree").map(Path::new),
+        context.get("scratch").map(Path::new),
     ) {
         context.insert("builtin_refusal".into(), refusal);
     }
@@ -340,6 +356,47 @@ mod tests {
             reply.reason.starts_with("no-secrets-in-commands: "),
             "{}",
             reply.reason
+        );
+    }
+
+    #[test]
+    fn a_run_on_this_machine_is_told_its_scratch_directory_and_a_run_on_a_runner_is_not() {
+        let f = fixture(None, false, None);
+        let scratch = f
+            .app
+            .data_dir
+            .join(format!("runs/{}/scratch", f.grant.run_id));
+        // The shell the guard reads takes a `\` as an escape, so a command names the directory with `/` separators.
+        let named = scratch.to_string_lossy().replace('\\', "/");
+        let request = CheckRequest {
+            tool: "bash".into(),
+            input: json!({ "command": format!("rm -rf {named}") }),
+            tool_call_id: "c".into(),
+        };
+        // A run on this machine may clear out the scratch directory it was given, and is told which one it is.
+        let question = tool_call_question(&f.app, None, &f.grant, &request).unwrap();
+        assert_eq!(
+            question.context.get("scratch").map(String::as_str),
+            Some(scratch.to_string_lossy().as_ref())
+        );
+        assert!(
+            !question.context.contains_key("builtin_refusal"),
+            "{question:?}"
+        );
+        // A run on a runner keeps the temporary directory of the runner: it has no scratch directory here, so the
+        // call is a recursive delete outside its worktree like any other.
+        f.app
+            .store
+            .set_run_runner(f.grant.run_id, "build-1")
+            .unwrap();
+        let question = tool_call_question(&f.app, None, &f.grant, &request).unwrap();
+        assert!(!question.context.contains_key("scratch"), "{question:?}");
+        assert!(
+            question
+                .context
+                .get("builtin_refusal")
+                .is_some_and(|why| why.starts_with("no-destructive-commands")),
+            "{question:?}"
         );
     }
 

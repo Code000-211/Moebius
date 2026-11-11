@@ -201,6 +201,15 @@ fn a_code_run_on_claude_code_is_given_the_agent_and_the_router_and_commits_its_w
     assert!(token.starts_with("moebius-run-"));
     assert_eq!(env["MOEBIUS_RUN_TOKEN"], token);
     assert!(env["ANTHROPIC_AUTH_TOKEN"].is_null());
+    // What the run only needs until it ends goes to its own scratch directory, which Moebius deletes with the run,
+    // rather than to the shared temporary directory.
+    let scratch = s.app.data_dir.join(format!("runs/{}/scratch", run.id));
+    let scratch = scratch.to_str().unwrap();
+    for name in ["TMPDIR", "TEMP", "TMP", "MOEBIUS_RUN_SCRATCH"] {
+        assert_eq!(env[name], scratch, "{name}");
+    }
+    // The run has ended, so its scratch directory is gone with it.
+    assert!(!Path::new(scratch).exists(), "{scratch}");
     // The token is withdrawn once the run has ended.
     assert_eq!(s.claude.router.token_count(), 0);
     // The agent's skill is in the run's own configuration directory.
