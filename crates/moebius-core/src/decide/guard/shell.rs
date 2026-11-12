@@ -34,18 +34,13 @@ impl ToolCall<'_> {
         let Some(worktree) = self.worktree else {
             return true;
         };
-        is_home(path)
-            || self.names_untrusted_scratch(path)
-            || !self.resolved(cwd, path).starts_with(normalise(worktree))
+        is_home(path) || !resolve(cwd, path).starts_with(normalise(worktree))
     }
 
     /// Whether a shell command that writes to `path`, relative to `cwd`, writes somewhere it may not: not the
     /// worktree, the run's scratch directory, `/tmp` or the null device and standard streams.
     pub(super) fn writes_elsewhere(&self, cwd: &Path, path: &str) -> bool {
-        if self.names_untrusted_scratch(path) {
-            return true;
-        }
-        let resolved = self.resolved(cwd, path);
+        let resolved = resolve(cwd, path);
         let allowed = !is_home(path)
             && (resolved.starts_with("/tmp")
                 || self.in_scratch(cwd, path)
@@ -57,73 +52,13 @@ impl ToolCall<'_> {
 
     /// Whether `path`, relative to `cwd`, is the run's scratch directory or inside it, where the run may delete what
     /// it put there. `~` is the home directory, never the scratch, whatever directory the command `cd`ed to. A run
-    /// without a scratch directory has no place it may delete from, as it has no worktree either. A shell command may
-    /// name it as `$MOEBIUS_RUN_SCRATCH` or `${MOEBIUS_RUN_SCRATCH}`; a command that assigns the variable first is not
-    /// trusted with it, because then it does not name the directory the server made.
+    /// without a scratch directory has no place it may delete from, as it has no worktree either.
     pub(super) fn in_scratch(&self, cwd: &Path, path: &str) -> bool {
-        if is_home(path) {
-            return false;
-        }
-        let Some(scratch) = self.scratch.map(normalise) else {
-            return false;
-        };
-        self.resolved(cwd, path).starts_with(scratch)
+        !is_home(path)
+            && self
+                .scratch
+                .is_some_and(|scratch| resolve(cwd, path).starts_with(normalise(scratch)))
     }
-
-    /// Where `path`, relative to `cwd`, leads: the run's scratch directory with what follows when it names it as its
-    /// variable, and the directory itself otherwise.
-    fn resolved(&self, cwd: &Path, path: &str) -> PathBuf {
-        if let (Some(rest), Some(scratch)) = (self.scratch_variable_rest(path), self.scratch) {
-            normalise(&scratch.join(rest))
-        } else {
-            resolve(cwd, path)
-        }
-    }
-
-    /// Whether `path` names the run's scratch directory through a variable the command gave another value first, so
-    /// that it does not lead where the path says and the guard cannot tell where that is.
-    fn names_untrusted_scratch(&self, path: &str) -> bool {
-        scratch_rest(path).is_some() && !self.variable_is_trusted()
-    }
-
-    /// What `path` names after `$MOEBIUS_RUN_SCRATCH` or `${MOEBIUS_RUN_SCRATCH}`, when that is what it starts with and
-    /// the command does not assign the variable itself.
-    fn scratch_variable_rest<'p>(&self, path: &'p str) -> Option<&'p str> {
-        if self.variable_is_trusted() {
-            scratch_rest(path)
-        } else {
-            None
-        }
-    }
-
-    /// Whether every mention of `MOEBIUS_RUN_SCRATCH` in the command is a reference such as `$MOEBIUS_RUN_SCRATCH`, so
-    /// that a word it names is the value the server set and not one the command gave it first.
-    fn variable_is_trusted(&self) -> bool {
-        if self.tool != "bash" {
-            return false;
-        }
-        let mut rest = self.command();
-        while let Some(at) = rest.find("MOEBIUS_RUN_SCRATCH") {
-            let before = &rest[..at];
-            if !(before.ends_with('$') || before.ends_with("${")) {
-                return false;
-            }
-            rest = &rest[at + "MOEBIUS_RUN_SCRATCH".len()..];
-        }
-        true
-    }
-}
-
-/// What a path names after a leading `$MOEBIUS_RUN_SCRATCH` or `${MOEBIUS_RUN_SCRATCH}`, without the `/` that follows.
-fn scratch_rest(path: &str) -> Option<&str> {
-    for prefix in ["${MOEBIUS_RUN_SCRATCH}", "$MOEBIUS_RUN_SCRATCH"] {
-        if let Some(rest) = path.strip_prefix(prefix)
-            && (rest.is_empty() || rest.starts_with('/'))
-        {
-            return Some(rest.trim_start_matches('/'));
-        }
-    }
-    None
 }
 
 /// The call in the guard's vocabulary: Claude Code's tool names are mapped to `bash`, `write` and `edit`, and its
@@ -357,11 +292,10 @@ pub(super) const MAX_NESTING: usize = 4;
 /// Whether `test` holds for a simple command of `command` or of a shell it starts, given the directory the command
 /// is in. `cd` moves the directory for the commands after it.
 pub(super) fn any_simple(call: &ToolCall, test: &dyn Fn(&Simple, &Path) -> bool) -> bool {
-    script_any(call, call.command(), call.start_dir(), 0, test)
+    script_any(call.command(), call.start_dir(), 0, test)
 }
 
 fn script_any(
-    call: &ToolCall,
     script: &str,
     mut cwd: PathBuf,
     depth: usize,
@@ -370,11 +304,10 @@ fn script_any(
     depth > MAX_NESTING
         || simple_commands(script)
             .iter()
-            .any(|simple| command_any(call, simple, &mut cwd, depth, test))
+            .any(|simple| command_any(simple, &mut cwd, depth, test))
 }
 
 fn command_any(
-    call: &ToolCall,
     simple: &Simple,
     cwd: &mut PathBuf,
     depth: usize,
@@ -390,15 +323,8 @@ fn command_any(
         "cd" => {
             let dir = args.iter().find(|arg| !arg.starts_with('-') || *arg == "-");
             *cwd = match dir {
-                // `cd` alone, `cd ~`, `cd -` and a `cd` through a variable the command gave another value leave the
-                // worktree: the guard cannot tell where the last one goes.
-                Some(dir) if dir != "-" && !is_home(dir) => {
-                    if call.names_untrusted_scratch(dir) {
-                        PathBuf::from("~")
-                    } else {
-                        call.resolved(cwd, dir)
-                    }
-                }
+                // `cd` alone, `cd ~` and `cd -` leave the worktree.
+                Some(dir) if dir != "-" && !is_home(dir) => resolve(cwd, dir),
                 _ => PathBuf::from("~"),
             };
             false
@@ -406,23 +332,15 @@ fn command_any(
         "bash" | "sh" | "zsh" | "dash" => args
             .iter()
             .position(|arg| arg.starts_with('-') && !arg.starts_with("--") && arg.contains('c'))
-            .is_some_and(|at| {
-                script_any(
-                    call,
-                    &args[at + 1..].join(" "),
-                    cwd.clone(),
-                    depth + 1,
-                    test,
-                )
-            }),
-        "eval" => script_any(call, &args.join(" "), cwd.clone(), depth + 1, test),
+            .is_some_and(|at| script_any(&args[at + 1..].join(" "), cwd.clone(), depth + 1, test)),
+        "eval" => script_any(&args.join(" "), cwd.clone(), depth + 1, test),
         "xargs" => {
             let words = args.iter().skip_while(|arg| arg.starts_with('-')).cloned();
             let command = Simple {
                 words: without_prefixes(words.collect()),
                 writes: Vec::new(),
             };
-            command_any(call, &command, &mut cwd.clone(), depth, test)
+            command_any(&command, &mut cwd.clone(), depth, test)
         }
         _ => false,
     }
