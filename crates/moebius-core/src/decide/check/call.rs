@@ -362,10 +362,13 @@ mod tests {
     #[test]
     fn a_run_on_this_machine_is_told_its_scratch_directory_and_a_run_on_a_runner_is_not() {
         let f = fixture(None, false, None);
+        // Built the way `scratch::dir` builds it, so that the separators come out the same on Windows.
         let scratch = f
             .app
             .data_dir
-            .join(format!("runs/{}/scratch", f.grant.run_id));
+            .join("runs")
+            .join(f.grant.run_id.to_string())
+            .join("scratch");
         // The shell the guard reads takes a `\` as an escape, so a command names the directory with `/` separators.
         let named = scratch.to_string_lossy().replace('\\', "/");
         let request = CheckRequest {

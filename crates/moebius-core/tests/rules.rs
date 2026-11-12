@@ -294,16 +294,25 @@ async fn a_run_may_delete_recursively_in_its_own_scratch_directory_and_nowhere_e
         format!("rm -rf {named}"),
         format!("rm -rf {named}/build"),
         format!("cd {named} && rm -rf build"),
+        "rm -rf $MOEBIUS_RUN_SCRATCH/build".to_string(),
+        "rm -rf ${MOEBIUS_RUN_SCRATCH}".to_string(),
+        "cd $MOEBIUS_RUN_SCRATCH && rm -rf build".to_string(),
     ] {
         let (decision, reason) = setup.check(&command).await;
         assert_eq!(decision, "refuse", "{command}");
         assert!(reason.contains("no teacher"), "{command}: {reason}");
     }
-    // ... and refuses a recursive delete anywhere else outside the worktree, another run's scratch included.
+    // ... and refuses a recursive delete anywhere else outside the worktree, another run's scratch included. A
+    // command that gives the variable another value first, a target that climbs out with `..`, a path that is only a
+    // prefix of the scratch directory and `~` after a `cd` there stay refused.
     for command in [
         "rm -rf /tmp/other".to_string(),
         format!("rm -rf {named}/../other/scratch"),
         format!("rm -rf {}", named.replace("/scratch", "/")),
+        "MOEBIUS_RUN_SCRATCH=/tmp rm -rf $MOEBIUS_RUN_SCRATCH/build".to_string(),
+        "rm -rf $MOEBIUS_RUN_SCRATCH/../other/scratch".to_string(),
+        "rm -rf $MOEBIUS_RUN_SCRATCH-other".to_string(),
+        "cd $MOEBIUS_RUN_SCRATCH && rm -rf ~/work".to_string(),
     ] {
         let (_, reason) = setup.check(&command).await;
         assert!(
@@ -312,8 +321,14 @@ async fn a_run_may_delete_recursively_in_its_own_scratch_directory_and_nowhere_e
         );
     }
     // The run's temporary files go to its scratch directory, where a redirect may write them.
-    let (_, reason) = setup.check(&format!("echo hi > {named}/tmp.txt")).await;
-    assert!(reason.contains("no teacher"), "{reason}");
+    for path in [
+        format!("{named}/tmp.txt"),
+        "$MOEBIUS_RUN_SCRATCH/tmp.txt".to_string(),
+        "${MOEBIUS_RUN_SCRATCH}/tmp.txt".to_string(),
+    ] {
+        let (_, reason) = setup.check(&format!("echo hi > {path}")).await;
+        assert!(reason.contains("no teacher"), "{path}: {reason}");
+    }
 }
 
 #[tokio::test]

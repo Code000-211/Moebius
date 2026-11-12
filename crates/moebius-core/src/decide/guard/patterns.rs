@@ -235,17 +235,33 @@ mod tests {
             format!("rm -rf {scratch}/a {scratch}/b"),
             format!("echo hi > {scratch}/build/log"),
             format!("cargo test 2>&1 | tee {scratch}/test.log"),
+            "rm -rf $MOEBIUS_RUN_SCRATCH".to_string(),
+            "rm -rf $MOEBIUS_RUN_SCRATCH/build".to_string(),
+            "rm -rf ${MOEBIUS_RUN_SCRATCH}/build".to_string(),
+            "rm -rf ${MOEBIUS_RUN_SCRATCH}".to_string(),
+            "rm -rf $MOEBIUS_RUN_SCRATCH/a ${MOEBIUS_RUN_SCRATCH}/b".to_string(),
+            "cd $MOEBIUS_RUN_SCRATCH && rm -rf build".to_string(),
+            "cd ${MOEBIUS_RUN_SCRATCH} && rm -rf build".to_string(),
+            "echo hi > $MOEBIUS_RUN_SCRATCH/build/log".to_string(),
+            "cargo test 2>&1 | tee ${MOEBIUS_RUN_SCRATCH}/test.log".to_string(),
         ] {
             assert_eq!(bash_in_scratch(scratch, &command), None, "{command}");
         }
         // Nothing else outside the worktree becomes deletable: not a sibling of the scratch directory, not a prefix of
-        // it, not another run's, and not the home directory because the command `cd`ed there.
+        // it, not another run's, and not the home directory because the command `cd`ed there. The variable is not
+        // trusted either when the command gives it another value or when a path is only a prefix of what it names.
         for command in [
             "rm -rf /tmp/build".to_string(),
             format!("rm -rf {scratch}/../other/scratch"),
             format!("rm -rf {scratch}-other"),
             format!("cd {scratch} && rm -rf ~/work"),
             format!("rm -rf {scratch}/build /srv/other"),
+            "MOEBIUS_RUN_SCRATCH=/tmp rm -rf $MOEBIUS_RUN_SCRATCH".to_string(),
+            "export MOEBIUS_RUN_SCRATCH=/; rm -rf ${MOEBIUS_RUN_SCRATCH}/build".to_string(),
+            "MOEBIUS_RUN_SCRATCH=/tmp; cd $MOEBIUS_RUN_SCRATCH && rm -rf build".to_string(),
+            "rm -rf $MOEBIUS_RUN_SCRATCH/../other/scratch".to_string(),
+            "rm -rf $MOEBIUS_RUN_SCRATCH-other".to_string(),
+            "cd $MOEBIUS_RUN_SCRATCH && rm -rf ~/work".to_string(),
         ] {
             assert_eq!(
                 bash_in_scratch(scratch, &command),
@@ -253,10 +269,30 @@ mod tests {
                 "{command}"
             );
         }
-        assert_eq!(
-            bash_in_scratch(scratch, &format!("echo hi > {scratch}/../outside.txt")),
-            Some("stay-in-the-worktree")
-        );
+        for command in [
+            format!("echo hi > {scratch}/../outside.txt"),
+            "echo hi > $MOEBIUS_RUN_SCRATCH/../outside.txt".to_string(),
+            "echo hi > $MOEBIUS_RUN_SCRATCH-other/outside.txt".to_string(),
+            "MOEBIUS_RUN_SCRATCH=/tmp; echo hi > $MOEBIUS_RUN_SCRATCH/outside.txt".to_string(),
+        ] {
+            assert_eq!(
+                bash_in_scratch(scratch, &command),
+                Some("stay-in-the-worktree"),
+                "{command}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_run_without_a_scratch_directory_reads_the_variable_as_any_other_word() {
+        // A run on a runner has no scratch directory and no such variable, so nothing changes for it.
+        for command in [
+            "rm -rf $MOEBIUS_RUN_SCRATCH/build",
+            "cd $MOEBIUS_RUN_SCRATCH && rm -rf build",
+            "echo hi > $MOEBIUS_RUN_SCRATCH/log",
+        ] {
+            assert_eq!(bash(command), None, "{command}");
+        }
     }
 
     #[test]

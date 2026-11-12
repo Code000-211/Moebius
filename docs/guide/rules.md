@@ -23,12 +23,16 @@ Five built-in rules always apply, with fixed patterns that look at the tools `ba
 | `no-dumping-large-files` | `cat`, `less` or `more` of a file over 64 KB, unless piped or redirected; the reason says to read a range or grep. |
 
 The patterns are a first line. They do not see `sed -i`, `cp`, `mv`, scripts the agent writes and then runs, or
-variables. Rules in prose are for what the patterns cannot see.
+variables other than the run's own `$MOEBIUS_RUN_SCRATCH`. Rules in prose are for what the patterns cannot see.
 
 Every run on this machine gets a scratch directory of its own, `<data_dir>/runs/<id>/scratch`, which it is started with
 as its `TMPDIR`, `TEMP` and `TMP` and as `$MOEBIUS_RUN_SCRATCH`. A run may write there and delete what it put there with
 `rm -rf`, and Moebius deletes the whole directory when the run ends: what a run only needs until then belongs there, not
-in a shared `/tmp` (a run on a runner has none, and keeps the temporary directory of the runner).
+in a shared `/tmp` (a run on a runner has none, and keeps the temporary directory of the runner). The patterns read
+`$MOEBIUS_RUN_SCRATCH` and `${MOEBIUS_RUN_SCRATCH}` in a call as that directory, for a recursive `rm`, a redirect or
+`tee`, and a `cd`, so `rm -rf $MOEBIUS_RUN_SCRATCH/build` and `cd $MOEBIUS_RUN_SCRATCH && rm -rf build` are allowed.
+They still refuse a command that gives the variable another value first, a target that climbs out with `..`, a path that
+is only a prefix of the directory (a sibling such as `$MOEBIUS_RUN_SCRATCH-other`), and `~` after a `cd` there.
 
 ## The steps
 

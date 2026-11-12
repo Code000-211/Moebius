@@ -29,18 +29,26 @@ impl ToolCall<'_> {
     }
 
     /// Whether `path`, relative to `cwd`, is somewhere other than inside the run's worktree. A run without a
-    /// worktree has no place that is its own.
+    /// worktree has no place that is its own. A name of the run's scratch directory that the guard cannot follow,
+    /// such as a sibling `$MOEBIUS_RUN_SCRATCH-other`, is treated as outside, because it may lead anywhere.
     pub(super) fn outside_worktree(&self, cwd: &Path, path: &str) -> bool {
         let Some(worktree) = self.worktree else {
             return true;
         };
-        is_home(path) || !resolve(cwd, path).starts_with(normalise(worktree))
+        is_home(path)
+            || self.names_scratch_elsewhere(path)
+            || !self.resolved(cwd, path).starts_with(normalise(worktree))
     }
 
     /// Whether a shell command that writes to `path`, relative to `cwd`, writes somewhere it may not: not the
-    /// worktree, the run's scratch directory, `/tmp` or the null device and standard streams.
+    /// worktree, the run's scratch directory, `/tmp` or the null device and standard streams. A shell command may
+    /// name the scratch directory as `$MOEBIUS_RUN_SCRATCH` or `${MOEBIUS_RUN_SCRATCH}`; a command that gives the
+    /// variable another value first is not trusted with it.
     pub(super) fn writes_elsewhere(&self, cwd: &Path, path: &str) -> bool {
-        let resolved = resolve(cwd, path);
+        if self.names_scratch_elsewhere(path) {
+            return true;
+        }
+        let resolved = self.resolved(cwd, path);
         let allowed = !is_home(path)
             && (resolved.starts_with("/tmp")
                 || self.in_scratch(cwd, path)
@@ -52,12 +60,85 @@ impl ToolCall<'_> {
 
     /// Whether `path`, relative to `cwd`, is the run's scratch directory or inside it, where the run may delete what
     /// it put there. `~` is the home directory, never the scratch, whatever directory the command `cd`ed to. A run
-    /// without a scratch directory has no place it may delete from, as it has no worktree either.
+    /// without a scratch directory has no place it may delete from, as it has no worktree either. A shell command may
+    /// name the directory as `$MOEBIUS_RUN_SCRATCH` or `${MOEBIUS_RUN_SCRATCH}`, and a `cd` there moves the commands
+    /// after it into the directory.
     pub(super) fn in_scratch(&self, cwd: &Path, path: &str) -> bool {
         !is_home(path)
+            && !self.names_scratch_elsewhere(path)
             && self
                 .scratch
-                .is_some_and(|scratch| resolve(cwd, path).starts_with(normalise(scratch)))
+                .is_some_and(|scratch| self.resolved(cwd, path).starts_with(normalise(scratch)))
+    }
+
+    /// Where `path`, relative to `cwd`, leads: the run's scratch directory with what follows it when a shell command
+    /// names it as its variable, and the path itself otherwise.
+    fn resolved(&self, cwd: &Path, path: &str) -> PathBuf {
+        match (self.scratch_variable_rest(path), self.scratch) {
+            (Some(rest), Some(scratch)) => normalise(&scratch.join(rest.trim_start_matches('/'))),
+            _ => resolve(cwd, path),
+        }
+    }
+
+    /// What `path` names after the run's scratch variable, when the call may name the directory and a `/` or the end
+    /// of the word follows it, so that `path` is the directory or something inside it.
+    fn scratch_variable_rest<'p>(&self, path: &'p str) -> Option<&'p str> {
+        if self.may_name_scratch() {
+            after_scratch_variable(path)
+        } else {
+            None
+        }
+    }
+
+    /// Whether a shell command names the run's scratch directory in a way the guard cannot follow to the directory
+    /// the server made: the variable after the command gave it another value, or a form such as
+    /// `$MOEBIUS_RUN_SCRATCH-other` that may be a sibling. A run without a scratch directory has no such variable,
+    /// so nothing changes for it.
+    fn names_scratch_elsewhere(&self, path: &str) -> bool {
+        self.tool == "bash"
+            && self.scratch.is_some()
+            && names_scratch_variable(path)
+            && self.scratch_variable_rest(path).is_none()
+    }
+
+    /// Whether the call may name the run's scratch directory as its variable: a shell command that does not give the
+    /// variable another value, so that it is still the directory the server made.
+    fn may_name_scratch(&self) -> bool {
+        self.tool == "bash" && !self.assigns_scratch()
+    }
+
+    /// Whether the shell command gives `MOEBIUS_RUN_SCRATCH` a value, so that a word naming the variable no longer
+    /// leads to the directory the server made.
+    fn assigns_scratch(&self) -> bool {
+        const NAME: &str = "MOEBIUS_RUN_SCRATCH";
+        let mut rest = self.command();
+        while let Some(at) = rest.find(NAME) {
+            let before = &rest[..at];
+            if !(before.ends_with('$') || before.ends_with("${")) {
+                return true;
+            }
+            rest = &rest[at + NAME.len()..];
+        }
+        false
+    }
+}
+
+/// Whether `path` starts with `$MOEBIUS_RUN_SCRATCH` or `${MOEBIUS_RUN_SCRATCH}`, whatever follows it.
+fn names_scratch_variable(path: &str) -> bool {
+    path.starts_with("$MOEBIUS_RUN_SCRATCH") || path.starts_with("${MOEBIUS_RUN_SCRATCH}")
+}
+
+/// What follows `$MOEBIUS_RUN_SCRATCH` or `${MOEBIUS_RUN_SCRATCH}` when a `/` or the end of the word follows the
+/// name, so that the path is the directory or something inside it; nothing for a form such as
+/// `$MOEBIUS_RUN_SCRATCH-other`, which may be a sibling, or for a path that names something else.
+fn after_scratch_variable(path: &str) -> Option<&str> {
+    let rest = path
+        .strip_prefix("${MOEBIUS_RUN_SCRATCH}")
+        .or_else(|| path.strip_prefix("$MOEBIUS_RUN_SCRATCH"))?;
+    if rest.is_empty() {
+        Some(rest)
+    } else {
+        rest.strip_prefix('/')
     }
 }
 
@@ -292,10 +373,11 @@ pub(super) const MAX_NESTING: usize = 4;
 /// Whether `test` holds for a simple command of `command` or of a shell it starts, given the directory the command
 /// is in. `cd` moves the directory for the commands after it.
 pub(super) fn any_simple(call: &ToolCall, test: &dyn Fn(&Simple, &Path) -> bool) -> bool {
-    script_any(call.command(), call.start_dir(), 0, test)
+    script_any(call, call.command(), call.start_dir(), 0, test)
 }
 
 fn script_any(
+    call: &ToolCall,
     script: &str,
     mut cwd: PathBuf,
     depth: usize,
@@ -304,10 +386,11 @@ fn script_any(
     depth > MAX_NESTING
         || simple_commands(script)
             .iter()
-            .any(|simple| command_any(simple, &mut cwd, depth, test))
+            .any(|simple| command_any(call, simple, &mut cwd, depth, test))
 }
 
 fn command_any(
+    call: &ToolCall,
     simple: &Simple,
     cwd: &mut PathBuf,
     depth: usize,
@@ -323,8 +406,11 @@ fn command_any(
         "cd" => {
             let dir = args.iter().find(|arg| !arg.starts_with('-') || *arg == "-");
             *cwd = match dir {
-                // `cd` alone, `cd ~` and `cd -` leave the worktree.
-                Some(dir) if dir != "-" && !is_home(dir) => resolve(cwd, dir),
+                // `cd` alone, `cd ~`, `cd -` and a `cd` to a directory the guard cannot follow leave the
+                // worktree.
+                Some(dir) if dir != "-" && !is_home(dir) && !call.names_scratch_elsewhere(dir) => {
+                    call.resolved(cwd, dir)
+                }
                 _ => PathBuf::from("~"),
             };
             false
@@ -332,15 +418,23 @@ fn command_any(
         "bash" | "sh" | "zsh" | "dash" => args
             .iter()
             .position(|arg| arg.starts_with('-') && !arg.starts_with("--") && arg.contains('c'))
-            .is_some_and(|at| script_any(&args[at + 1..].join(" "), cwd.clone(), depth + 1, test)),
-        "eval" => script_any(&args.join(" "), cwd.clone(), depth + 1, test),
+            .is_some_and(|at| {
+                script_any(
+                    call,
+                    &args[at + 1..].join(" "),
+                    cwd.clone(),
+                    depth + 1,
+                    test,
+                )
+            }),
+        "eval" => script_any(call, &args.join(" "), cwd.clone(), depth + 1, test),
         "xargs" => {
             let words = args.iter().skip_while(|arg| arg.starts_with('-')).cloned();
             let command = Simple {
                 words: without_prefixes(words.collect()),
                 writes: Vec::new(),
             };
-            command_any(&command, &mut cwd.clone(), depth, test)
+            command_any(call, &command, &mut cwd.clone(), depth, test)
         }
         _ => false,
     }
