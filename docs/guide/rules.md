@@ -23,7 +23,8 @@ Five built-in rules always apply, with fixed patterns that look at the tools `ba
 | `no-dumping-large-files` | `cat`, `less` or `more` of a file over 64 KB, unless piped or redirected; the reason says to read a range or grep. |
 
 The patterns are a first line. They do not see `sed -i`, `cp`, `mv`, scripts the agent writes and then runs, or
-variables. Rules in prose are for what the patterns cannot see.
+variables (except `$MOEBIUS_RUN_SCRATCH` and `${MOEBIUS_RUN_SCRATCH}`, which name the run's own scratch directory
+unless the command assigns the variable first). Rules in prose are for what the patterns cannot see.
 
 Every run on this machine gets a scratch directory of its own, `<data_dir>/runs/<id>/scratch`, which it is started with
 as its `TMPDIR`, `TEMP` and `TMP` and as `$MOEBIUS_RUN_SCRATCH`. A run may write there and delete what it put there with

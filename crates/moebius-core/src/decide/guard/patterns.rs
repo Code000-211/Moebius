@@ -235,17 +235,25 @@ mod tests {
             format!("rm -rf {scratch}/a {scratch}/b"),
             format!("echo hi > {scratch}/build/log"),
             format!("cargo test 2>&1 | tee {scratch}/test.log"),
+            "rm -rf $MOEBIUS_RUN_SCRATCH/build".to_string(),
+            "rm -rf ${MOEBIUS_RUN_SCRATCH}".to_string(),
+            "cd $MOEBIUS_RUN_SCRATCH && rm -rf build".to_string(),
+            "echo hi > ${MOEBIUS_RUN_SCRATCH}/build/log".to_string(),
         ] {
             assert_eq!(bash_in_scratch(scratch, &command), None, "{command}");
         }
         // Nothing else outside the worktree becomes deletable: not a sibling of the scratch directory, not a prefix of
-        // it, not another run's, and not the home directory because the command `cd`ed there.
+        // it, not another run's, and not the home directory because the command `cd`ed there. A command that gives the
+        // variable another value is not the directory the server made, so it stays refused.
         for command in [
             "rm -rf /tmp/build".to_string(),
             format!("rm -rf {scratch}/../other/scratch"),
             format!("rm -rf {scratch}-other"),
             format!("cd {scratch} && rm -rf ~/work"),
             format!("rm -rf {scratch}/build /srv/other"),
+            "rm -rf $MOEBIUS_RUN_SCRATCH/../other/scratch".to_string(),
+            "MOEBIUS_RUN_SCRATCH=/ rm -rf $MOEBIUS_RUN_SCRATCH".to_string(),
+            "MOEBIUS_RUN_SCRATCH=/tmp rm -rf ${MOEBIUS_RUN_SCRATCH}/build".to_string(),
         ] {
             assert_eq!(
                 bash_in_scratch(scratch, &command),
