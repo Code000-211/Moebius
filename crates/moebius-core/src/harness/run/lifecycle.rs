@@ -19,6 +19,8 @@ use crate::repos::{Worktree, git};
 use crate::router::{Grant, Router};
 use crate::store::{Card, Repository, Run};
 
+use super::scratch;
+
 /// The run's token, which the router knows the run by. The router checks the tool calls of the answers to a harness
 /// without a bridge, Claude Code.
 pub(in crate::harness) fn issue_token(
@@ -221,12 +223,13 @@ impl RunningRun {
     }
 
     /// Closes the terminals open on the run, then removes the worktree, or the chat's empty directory, the whole
-    /// outputs of its tools that were saved and what the run left on its runner.
+    /// outputs of its tools that were saved, the scratch directory the run made and what the run left on its runner.
     pub(in crate::harness) fn remove_worktree(&self, app: &App) {
         app.terminals.close(self.id);
         if let Some(remote) = &self.remote {
             remote.cleanup();
         }
+        scratch::remove(&app.data_dir, self.id);
         match &self.clone {
             Some(clone) => drop(app.repos.remove_worktree(clone, &self.worktree)),
             None => drop(std::fs::remove_dir_all(&self.worktree)),
@@ -472,6 +475,7 @@ pub(in crate::harness) fn launch_or_undo(
 
 /// Starts the process of the run `running` with `launch` and returns the run; when the process cannot be started, the
 /// run has failed, and its worktree is kept, on the branch it is named for: the run's later agents work on it still.
+/// Its scratch directory is removed, since it never was used.
 pub(in crate::harness) fn launch_or_keep(
     app: &App,
     router: &Router,
@@ -480,6 +484,9 @@ pub(in crate::harness) fn launch_or_keep(
 ) -> Result<Run, StartError> {
     if let Err(e) = launch(running.clone()) {
         router.revoke_token(&running.token);
+        // The worktree is kept for the run's later agents, but the run that failed had no agent in its scratch
+        // directory to leave anything there, and it has ended.
+        scratch::remove(&app.data_dir, running.id);
         return Err(StartError::LaunchFailed(fail(app, running.id, e)));
     }
     app.store

@@ -99,11 +99,16 @@ The harness starts every Pi-Bolt run (and every Claude Code run) with a cleared 
 |---|---|
 | `MOEBIUS_CHECK_URL` | The router's base URL, such as `http://127.0.0.1:7172`, without a trailing slash. The client appends `/moebius/check`. |
 | `MOEBIUS_RUN_TOKEN` | The run's token, of the form `moebius-run-<48 hex digits>`. |
+| `MOEBIUS_RUN_SCRATCH` | The run's own scratch directory, `<data_dir>/runs/<id>/scratch`, which is also its `TMPDIR`, `TEMP` and `TMP` (a run on a runner has none, and keeps the temporary directory of the runner). It may write there and delete what it put there with `rm -rf`; Moebius deletes the whole directory when the run ends, so nothing a run only needs until then belongs in a shared `/tmp`. |
 | `MOEBIUS_REPOSITORY` | Only for a run of the Moebius agent or the Grilling partner in a repository: its id, which `"$MOEBIUS" issue create` and `issue list` take. |
 | `MOEBIUS_RUN` | Only for a run of the Moebius agent or the Grilling partner: the run's id, which the agent names its claims by (`"$MOEBIUS" issue claim <id> --as "wayfinder-$MOEBIUS_RUN"`). |
 | `MOEBIUS_URL` | Only for a run of the Moebius agent or the Grilling partner: the desktop API's base URL, such as `http://127.0.0.1:7171` (a server that listens on all interfaces is given as `127.0.0.1`). The `moebius` binary the agent runs as `$MOEBIUS` connects there (see [the command line](cli.md)). |
 | `MOEBIUS_TOKEN` | Only for a run of the Moebius agent or the Grilling partner (the desktop API accepts the latter's for the issue tracker only): the run's own token, the same as `MOEBIUS_RUN_TOKEN`, which the desktop API accepts while the run lasts (see [the desktop API](desktop-api.md#authentication)). |
 | `PI_CODING_AGENT_DIR` | The run's own agent directory, `<data_dir>/runs/<id>/agent`, which holds `models.json` that makes the router the `moebius` provider. |
+
+`TMPDIR`, `TEMP` and `TMP` are taken from the server's environment and then, for every run on this machine, name the
+run's own scratch directory instead, so that a build tree, a `mktemp -d` and the temporary files of a test are deleted
+with the run rather than left in the shared temporary directory.
 
 For each run the server writes the bridge to `<data_dir>/runs/<id>/moebius-bridge.ts` and starts Pi-Bolt with
 `--extension <bridge>` after the agent's own `extensions` (and, for the Moebius agent and the Grilling partner, after `<data_dir>/runs/<id>/moebius-ask.ts`, the question tool, [below](#the-question-tool)), so that the bridge is the last extension to run, and with `--no-extensions`

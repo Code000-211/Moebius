@@ -1,14 +1,17 @@
 //! What a server that stopped left going, ended at the next start: its runs are failed, so the board starts them
-//! again, and their worktrees removed; its Retros are failed, its research confirmed again and its trials reopened.
+//! again, and their worktrees and scratch directories removed; its Retros are failed, its research confirmed again and
+//! its trials reopened.
 
 use std::path::Path;
 
 use crate::app::App;
 use crate::harness::remote::Runners;
+use crate::harness::run::scratch;
 use crate::repos::git;
 
 /// Runs the last server left unended died with it: they are failed, so the board starts them again, and their
-/// worktrees removed. What a run on a runner left there (its directory and branch) is removed too.
+/// worktrees removed. What a run on a runner left there (its directory and branch) is removed too, and the scratch
+/// directory a run made, which no end hook removed because the server went away before the run ended.
 pub(super) fn end_runs_of_a_previous_server(app: &App, runners: &Runners) -> Result<(), String> {
     let runs = app
         .store
@@ -24,6 +27,8 @@ pub(super) fn end_runs_of_a_previous_server(app: &App, runners: &Runners) -> Res
         .reopen_trying_proposals()
         .map_err(|e| format!("cannot reopen the proposals of the last start: {e}"))?;
     for run in &runs {
+        // The run ended with the server, and nothing else removes what it put in its scratch.
+        scratch::remove(&app.data_dir, run.id);
         if let (Some(runner), Some(card_id)) = (&run.runner, run.card_id)
             && let Ok(card) = app.card(card_id)
         {
@@ -123,6 +128,9 @@ mod tests {
             .set_run_worktree(run.id, &worktree.path.to_string_lossy())
             .unwrap();
         first.app.store.set_run_status(run.id, "running").unwrap();
+        // What the run put in its scratch directory before the server went away.
+        let scratch = scratch::make(&first.app.data_dir, run.id).unwrap();
+        std::fs::write(scratch.join("build.log"), "built").unwrap();
         let chat = first
             .app
             .store
@@ -144,6 +152,8 @@ mod tests {
         assert!(second.app.store.active_runs().unwrap().is_empty());
         assert!(!worktree.path.exists());
         assert!(!empty.exists());
+        // A run that died with the server cannot remove its scratch directory itself.
+        assert!(!scratch.exists());
         assert_eq!(
             second.app.store.run(chat.id).unwrap().unwrap().status,
             "failed"

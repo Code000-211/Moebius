@@ -20,7 +20,7 @@ struct BuiltIn {
 const BUILT_IN: [BuiltIn; 5] = [
     BuiltIn {
         name: "no-destructive-commands",
-        prose: "commands that delete recursively outside the worktree, format a disk, overwrite a device or exhaust the machine are never run",
+        prose: "commands that delete recursively outside the worktree and the run's own scratch directory, format a disk, overwrite a device or exhaust the machine are never run",
         broken_by: destructive_command,
     },
     BuiltIn {
@@ -73,7 +73,8 @@ fn destructive_command(call: &ToolCall) -> bool {
             }))
 }
 
-/// `rm` with a recursive flag (`-r`, `-R`, `-rf`, `-fr`, `--recursive`) and a target outside the worktree.
+/// `rm` with a recursive flag (`-r`, `-R`, `-rf`, `-fr`, `--recursive`) and a target outside the worktree and the
+/// run's own scratch directory, which the run may clear out because Moebius deletes it with the run.
 fn recursive_rm_outside_worktree(call: &ToolCall, cwd: &Path, args: &[String]) -> bool {
     let recursive = args.iter().any(|arg| {
         arg == "--recursive"
@@ -83,7 +84,7 @@ fn recursive_rm_outside_worktree(call: &ToolCall, cwd: &Path, args: &[String]) -
         && args
             .iter()
             .filter(|arg| !arg.starts_with('-'))
-            .any(|target| call.outside_worktree(cwd, target))
+            .any(|target| !call.in_scratch(cwd, target) && call.outside_worktree(cwd, target))
 }
 
 fn force_push(call: &ToolCall) -> bool {
@@ -174,6 +175,7 @@ mod tests {
             tool,
             input,
             worktree: Some(Path::new(WORKTREE)),
+            scratch: None,
         };
         BUILT_IN
             .iter()
@@ -198,6 +200,7 @@ mod tests {
             tool: "bash",
             input: json!({ "command": "git push --force" }),
             worktree: Some(Path::new(WORKTREE)),
+            scratch: None,
         };
         let (name, description) = patterns[1];
         assert_eq!(broken_rule(&call), Some(format!("{name}: {description}")));
@@ -205,6 +208,63 @@ mod tests {
 
     fn bash(command: &str) -> Option<&'static str> {
         broken("bash", json!({ "command": command }))
+    }
+
+    /// The name of the rule that `bash` with `command` breaks in the worktree of a run whose scratch directory is
+    /// `scratch`.
+    fn bash_in_scratch(scratch: &str, command: &str) -> Option<&'static str> {
+        let call = ToolCall {
+            tool: "bash",
+            input: json!({ "command": command }),
+            worktree: Some(Path::new(WORKTREE)),
+            scratch: Some(Path::new(scratch)),
+        };
+        BUILT_IN
+            .iter()
+            .find(|rule| (rule.broken_by)(&call))
+            .map(|rule| rule.name)
+    }
+
+    #[test]
+    fn a_run_may_delete_recursively_in_its_own_scratch_directory_and_write_there() {
+        let scratch = "/srv/.moebius/runs/7/scratch";
+        for command in [
+            format!("rm -rf {scratch}"),
+            format!("rm -rf {scratch}/build"),
+            format!("cd {scratch} && rm -rf build"),
+            format!("rm -rf {scratch}/a {scratch}/b"),
+            format!("echo hi > {scratch}/build/log"),
+            format!("cargo test 2>&1 | tee {scratch}/test.log"),
+            "rm -rf $MOEBIUS_RUN_SCRATCH/build".to_string(),
+            "rm -rf ${MOEBIUS_RUN_SCRATCH}".to_string(),
+            "cd $MOEBIUS_RUN_SCRATCH && rm -rf build".to_string(),
+            "echo hi > ${MOEBIUS_RUN_SCRATCH}/build/log".to_string(),
+        ] {
+            assert_eq!(bash_in_scratch(scratch, &command), None, "{command}");
+        }
+        // Nothing else outside the worktree becomes deletable: not a sibling of the scratch directory, not a prefix of
+        // it, not another run's, and not the home directory because the command `cd`ed there. A command that gives the
+        // variable another value is not the directory the server made, so it stays refused.
+        for command in [
+            "rm -rf /tmp/build".to_string(),
+            format!("rm -rf {scratch}/../other/scratch"),
+            format!("rm -rf {scratch}-other"),
+            format!("cd {scratch} && rm -rf ~/work"),
+            format!("rm -rf {scratch}/build /srv/other"),
+            "rm -rf $MOEBIUS_RUN_SCRATCH/../other/scratch".to_string(),
+            "MOEBIUS_RUN_SCRATCH=/ rm -rf $MOEBIUS_RUN_SCRATCH".to_string(),
+            "MOEBIUS_RUN_SCRATCH=/tmp rm -rf ${MOEBIUS_RUN_SCRATCH}/build".to_string(),
+        ] {
+            assert_eq!(
+                bash_in_scratch(scratch, &command),
+                Some("no-destructive-commands"),
+                "{command}"
+            );
+        }
+        assert_eq!(
+            bash_in_scratch(scratch, &format!("echo hi > {scratch}/../outside.txt")),
+            Some("stay-in-the-worktree")
+        );
     }
 
     #[test]
@@ -496,6 +556,7 @@ mod tests {
             tool: "write",
             input: json!({ "path": "src/main.rs" }),
             worktree: None,
+            scratch: None,
         };
         assert!(write_outside_worktree(&call));
     }
@@ -532,6 +593,7 @@ mod tests {
                 tool: "bash",
                 input: json!({ "command": command }),
                 worktree: Some(dir.path()),
+                scratch: None,
             };
             broken_rule(&call)
         };

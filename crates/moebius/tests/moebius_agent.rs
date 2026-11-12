@@ -198,7 +198,15 @@ async fn the_moebius_agent_reads_the_board_and_creates_an_issue_through_the_comm
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
-    let requests = requests.lock().unwrap().clone();
+    // The chat's own requests carry its message; the issue it created is a card the board may start a Coder on, whose
+    // request to the model comes too and must not be counted as a turn of the chat.
+    let requests: Vec<Value> = requests
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|request| request.to_string().contains(message))
+        .cloned()
+        .collect();
     assert_eq!(requests.len(), 3);
     // The instructions tell it to learn the state from the server.
     let first = requests[0].to_string();
