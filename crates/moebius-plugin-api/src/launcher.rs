@@ -62,7 +62,7 @@ pub struct LaunchRequest {
     /// Paths the process needs to read: the bridge, and the agent's own extensions and skills.
     pub read_only: Vec<String>,
     /// Paths the process needs to read and write: the worktree, its agent directory, its sessions directory and the
-    /// run's temporary directory.
+    /// run's scratch directory.
     pub read_write: Vec<String>,
     pub urls: Urls,
     /// The clone of the repository that the worktree belongs to, whose git directory the worktree's git uses; none

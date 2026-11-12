@@ -55,7 +55,7 @@ An absolute path is used as it is.
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
-| `data_dir` | path | `.moebius` | Where Moebius keeps its files: `moebius.sqlite` (the store), `blobs/`, `repos/<name>` (the clones), `harness/` (the clone of the harness configuration repository), `worktrees/<name>/run-<id>` (`chat-<id>` for a chat), `chats/<id>` (the empty directory of a chat without a repository), `runs/<id>/` (a run's agent directory, bridge, sessions and `stderr.log`), `skills/<name>/` (the built-in skills, `moebius` and the task skills of the Moebius agent, written again at every start) and by default `token`. Created if missing. |
+| `data_dir` | path | `.moebius` | Where Moebius keeps its files: `moebius.sqlite` (the store), `blobs/`, `repos/<name>` (the clones), `harness/` (the clone of the harness configuration repository), `worktrees/<name>/run-<id>` (`chat-<id>` for a chat), `chats/<id>` (the empty directory of a chat without a repository), `runs/<id>/` (a run's agent directory, bridge, sessions, `stderr.log` and its own scratch directory, `scratch`), `skills/<name>/` (the built-in skills, `moebius` and the task skills of the Moebius agent, written again at every start) and by default `token`. Created if missing. |
 | `listen` | string | `127.0.0.1:7171` | The address of the desktop API, as `ip:port` (a host name is not accepted). Keep it on a private network. |
 | `token_file` | path | `token` | The file with the token the web app sends. Created with a random token (64 hex digits, readable by the owner only) when missing or empty. |
 | `run_limit` | integer | `3` | How many runs may go at once across all boards. At least 1, else the file is refused. Scripts read it as `moebius.run_limit`. |
@@ -625,8 +625,9 @@ An agent whose `harness` is `claude-code` runs as `claude -p --input-format stre
 - `ANTHROPIC_BASE_URL` the router and `ANTHROPIC_API_KEY` the run's token (`ANTHROPIC_AUTH_TOKEN`,
   `CLAUDE_CODE_USE_BEDROCK` and `CLAUDE_CODE_USE_VERTEX` removed), `CLAUDE_CONFIG_DIR` the run's own
   `<data_dir>/runs/<id>/claude/` with each of the agent's skills linked (copied on Windows) into `skills/`,
-  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, and `MOEBIUS`, `MOEBIUS_RUN_TOKEN` (and for the Moebius agent
-  `MOEBIUS_URL`, `MOEBIUS_TOKEN`) as a Pi-Bolt run has them.
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, and `MOEBIUS`, `MOEBIUS_RUN_TOKEN` and, for a run on this machine,
+  `MOEBIUS_RUN_SCRATCH`, `TMPDIR`, `TEMP` and `TMP` (and for the Moebius agent `MOEBIUS_URL`, `MOEBIUS_TOKEN`) as a
+  Pi-Bolt run has them.
 
 Claude Code has no bridge, so the router checks the tool calls of its model's answers instead (see
 [the router](router.md#the-check-of-a-harness-without-a-bridge)). Its records are kept as the run events a Pi-Bolt run
@@ -695,7 +696,9 @@ names none; a delivery that is not verified is answered with `401` and changes n
   environment by the server.
 - `MOEBIUS_PI_BOLT` is read only by the end-to-end tests in `crates/moebius-core/tests`; the server ignores it.
 - The server sets `PI_CODING_AGENT_DIR`, `MOEBIUS_CHECK_URL` and `MOEBIUS_RUN_TOKEN` for each Pi-Bolt process, see the
-  [bridge protocol](bridge-protocol.md). It also sets `MOEBIUS`, the path of the running `moebius` executable, so that
+  [bridge protocol](bridge-protocol.md), and for a run on this machine `MOEBIUS_RUN_SCRATCH`, `TMPDIR`, `TEMP` and
+  `TMP` to its own scratch directory (`<data_dir>/runs/<id>/scratch`), which Moebius deletes when the run ends. It also
+  sets `MOEBIUS`, the path of the running `moebius` executable, so that
   an agent can run `"$MOEBIUS" check-script <file>` (see [column scripts](column-scripts.md)). That path is not a key of
   the file.
 

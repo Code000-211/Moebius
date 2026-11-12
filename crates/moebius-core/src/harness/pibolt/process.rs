@@ -21,6 +21,7 @@ use crate::harness::mcp;
 use crate::harness::remote::Local;
 use crate::harness::run::RunningRun;
 use crate::harness::run::operates;
+use crate::harness::run::scratch;
 use crate::router::Protocol;
 use crate::store::Card;
 use moebius_plugin_api::{LaunchRun, Urls, UrlsInside};
@@ -42,15 +43,17 @@ pub(super) struct Place<'a> {
     pub(super) run: i64,
     /// The repository the run works in, which `$MOEBIUS_REPOSITORY` names for an agent that operates Moebius.
     pub(super) repository: Option<i64>,
+    /// The directory the run puts what it does not need again in, as its own temporary directory, which the run may
+    /// delete (see `crate::harness::run::scratch`). None for a run on a runner, which has directories of its own.
+    pub(super) scratch: Option<&'a Path>,
 }
 
-/// Where a run's Pi is started from, for the launcher: the agent's name, its card, its definition, the run's directory
-/// and the file Pi's standard error goes to.
+/// Where a run's Pi is started from, for the launcher: the agent's name, its card, its definition and the file Pi's
+/// standard error goes to.
 struct Spot<'a> {
     stored: &'a str,
     card: Option<&'a Card>,
     agent: &'a AgentConfig,
-    run_dir: &'a Path,
     log: &'a Path,
 }
 
@@ -88,6 +91,13 @@ impl PiBolt {
             .env("MOEBIUS", &self.moebius)
             .env("MOEBIUS_CHECK_URL", &self.router_url)
             .env("MOEBIUS_RUN_TOKEN", place.token);
+        if let Some(scratch) = place.scratch {
+            // What the run only needs until it ends goes to its own directory, which Moebius deletes with it, rather
+            // than to the shared temporary directory, which outlives the run.
+            for name in ["TMPDIR", "TEMP", "TMP", "MOEBIUS_RUN_SCRATCH"] {
+                command.env(name, scratch);
+            }
+        }
         if let (true, Some(url)) = (place.operates, self.api_url.get()) {
             // The Moebius agent and the Grilling partner operate Moebius with `$MOEBIUS`, as the run itself: its token
             // is accepted by the desktop API.
@@ -245,6 +255,11 @@ impl PiBolt {
         let operates = stored.as_ref().is_some_and(|s| operates(&s.agent));
         let repository = stored.as_ref().and_then(|s| s.repository_id);
         let sessions = run_dir.join("sessions");
+        // Only a run on this machine has a scratch directory here: a runner has directories of its own.
+        let scratch = match &remote {
+            None => Some(scratch::make(&app.data_dir, run.id)?),
+            Some(_) => None,
+        };
         let place = Place {
             worktree: &run.worktree,
             agent_dir: &agent_dir,
@@ -256,6 +271,7 @@ impl PiBolt {
             operates,
             run: run.id,
             repository,
+            scratch: scratch.as_deref(),
         };
         let mut command = self.command(agent, &place, false);
         let mut launched = None;
@@ -265,7 +281,6 @@ impl PiBolt {
                 stored: &stored.agent,
                 card,
                 agent,
-                run_dir: &run_dir,
                 log: &log,
             };
             launched = self.through_launcher(app, &launcher, &run, &place, spot, &mut command)?;
@@ -368,14 +383,10 @@ impl PiBolt {
             // own sessions directory only when nothing wraps it, so a local run has it made here, before the launcher is called.
             std::fs::create_dir_all(place.sessions)
                 .map_err(|e| format!("cannot make the sessions directory of the run: {e}"))?;
-            // Pi's temporary files go to a directory of the run, which only it can write, not to the shared one.
-            let tmp = spot.run_dir.join("tmp");
-            std::fs::create_dir_all(&tmp)
-                .map_err(|e| format!("cannot make the temporary directory of the run: {e}"))?;
-            for name in ["TMPDIR", "TEMP", "TMP"] {
-                command.env(name, &tmp);
-            }
-            read_write.push(tmp);
+        }
+        // A launcher grants the scratch directory of the run, where its temporary files go, as one it writes.
+        if let Some(scratch) = place.scratch {
+            read_write.push(scratch.to_path_buf());
         }
         let ask = Ask {
             run: LaunchRun {
@@ -598,6 +609,7 @@ mod tests {
                 operates: crate::harness::run::operates(name),
                 run: 12,
                 repository,
+                scratch: Some(Path::new("/scratch")),
             };
             let command = pi.command(&agent, &place, false);
             command
@@ -648,6 +660,7 @@ mod tests {
                 operates: crate::harness::run::operates(name),
                 run: 12,
                 repository: None,
+                scratch: Some(Path::new("/scratch")),
             };
             let args: Vec<_> = pi
                 .command(&agent, &place, false)

@@ -77,6 +77,7 @@ struct Setup {
     checks: String,
     token: String,
     run_token: String,
+    run: i64,
     client: reqwest::Client,
 }
 
@@ -143,6 +144,7 @@ impl Setup {
             checks,
             token: server.token.to_string(),
             run_token,
+            run: run_id,
             client: reqwest::Client::new(),
         }
     }
@@ -271,6 +273,53 @@ async fn the_page_shows_the_patterns_the_rules_and_a_repositorys_own_rules_and_c
     assert_eq!(decision, "refuse");
     assert!(reason.contains("no teacher"), "{reason}");
     assert_eq!(setup.get().await["refusals"], json!({"no-force-push": 2}));
+}
+
+#[tokio::test]
+async fn a_run_may_delete_recursively_in_its_own_scratch_directory_and_nowhere_else_outside_its_worktree()
+ {
+    let dir = tempfile::tempdir().unwrap();
+    let (server, _) = harness_server(dir.path());
+    let setup = Setup::start(&server, None).await;
+    let scratch = server
+        .app
+        .data_dir
+        .join(format!("runs/{}/scratch", setup.run));
+    std::fs::create_dir_all(scratch.join("build")).unwrap();
+    // The shell the guard reads takes a `\` as an escape, so a command names the directory with `/` separators.
+    let named = scratch.to_string_lossy().replace('\\', "/");
+
+    // The built-in rule lets a run clear out what it put in its scratch directory...
+    for command in [
+        format!("rm -rf {named}"),
+        format!("rm -rf {named}/build"),
+        format!("cd {named} && rm -rf build"),
+        "rm -rf $MOEBIUS_RUN_SCRATCH/build".to_string(),
+        "rm -rf ${MOEBIUS_RUN_SCRATCH}".to_string(),
+        "cd $MOEBIUS_RUN_SCRATCH && rm -rf build".to_string(),
+    ] {
+        let (decision, reason) = setup.check(&command).await;
+        assert_eq!(decision, "refuse", "{command}");
+        assert!(reason.contains("no teacher"), "{command}: {reason}");
+    }
+    // ... and refuses a recursive delete anywhere else outside the worktree, another run's scratch included, and a
+    // command that gives the variable another value first.
+    for command in [
+        "rm -rf /tmp/other".to_string(),
+        format!("rm -rf {named}/../other/scratch"),
+        format!("rm -rf {}", named.replace("/scratch", "/")),
+        "rm -rf $MOEBIUS_RUN_SCRATCH/../other".to_string(),
+        "MOEBIUS_RUN_SCRATCH=/ rm -rf $MOEBIUS_RUN_SCRATCH".to_string(),
+    ] {
+        let (_, reason) = setup.check(&command).await;
+        assert!(
+            reason.starts_with("no-destructive-commands: "),
+            "{command}: {reason}"
+        );
+    }
+    // The run's temporary files go to its scratch directory, where a redirect may write them.
+    let (_, reason) = setup.check(&format!("echo hi > {named}/tmp.txt")).await;
+    assert!(reason.contains("no teacher"), "{reason}");
 }
 
 #[tokio::test]

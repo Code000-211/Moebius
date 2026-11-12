@@ -305,6 +305,7 @@ fail-closed option `refuse`. All context values are strings:
 | `run_id` | always | The run's id, as decimal text. |
 | `card_id` | when the run has a card | The card's id, as decimal text. |
 | `worktree` | when the run has a worktree | The absolute path of the run's worktree. |
+| `scratch` | for every run on this machine | The absolute path of the run's own scratch directory (`<data_dir>/runs/<id>/scratch`), which the run is started with as its `TMPDIR`, `TEMP` and `TMP` and as `$MOEBIUS_RUN_SCRATCH`, whose contents the built-in rules let it delete and which Moebius removes when the run ends. A run on a runner has none, and keeps the temporary directory of the runner. |
 | `card_title`, `card_body` | when the card is found | The card's title and body. |
 | `rules` | unless `rules_error` is set | The rules that apply as Markdown (`## <name>` and the text), possibly empty. See [rules](rules.md). |
 | `builtin_refusal` | when the call breaks a built-in rule | The rule's name and what it says, tested on the call before the context was redacted and with Claude Code's tool names and keys (`Bash`, `Write`, `Edit`, `file_path`) read as `bash`, `write`, `edit` and `path`. The guard refuses with it. |
@@ -350,10 +351,10 @@ a chat's Pi is started again). The parameters are a `LaunchRequest`:
 | `run` | object | `id` (integer), `purpose` (`code`, `review`, `chat`, `retro`, `trial`, `research` and the like), `agent` (the agent's name), `chat` (boolean: the process stays up between messages) and `card` (the card's id or `null`). |
 | `program` | string | The harness's executable as the core would start it. |
 | `args` | array of strings | Its arguments. |
-| `env` | map of string to string | Its complete environment, the run token (`MOEBIUS_RUN_TOKEN`) included: not the server's, but the few variables every program needs and those Moebius sets. With a launcher, `TMPDIR`, `TEMP` and `TMP` name a directory of the run (`<data_dir>/runs/<id>/tmp`) instead of the shared one. |
+| `env` | map of string to string | Its complete environment, the run token (`MOEBIUS_RUN_TOKEN`) included: not the server's, but the few variables every program needs and those Moebius sets. A run on this machine has `TMPDIR`, `TEMP`, `TMP` and `MOEBIUS_RUN_SCRATCH` naming its own scratch directory, `<data_dir>/runs/<id>/scratch`, instead of the shared temporary directory. |
 | `dir` | string | The working directory: the run's worktree, or an empty directory for a chat without a repository. |
 | `read_only` | array of strings | Paths the process needs to read: the bridge extension, the agent's own extensions and skills, and the run's output folder (`<data_dir>/runs/<id>/out`), where the server saves the whole outputs of tools that were cut short and the agent reads them. They may be files or directories. |
-| `read_write` | array of strings | Paths it needs to read and write: the worktree, its agent directory (which holds the credential store of its harness), its sessions directory, and the run's temporary directory. |
+| `read_write` | array of strings | Paths it needs to read and write: the worktree, its agent directory (which holds the credential store of its harness), its sessions directory, and the run's scratch directory (see `env`). |
 | `urls` | object | `router`, `gateway` and `check`: the addresses the process must reach as the server reaches them, such as `http://127.0.0.1:7172`, `http://127.0.0.1:7172/mcp` and `http://127.0.0.1:7172` (the tool-call check the bridge asks, `MOEBIUS_CHECK_URL`). |
 | `clone` | string or `null` | The clone of the repository the worktree belongs to, whose git directory the worktree's git uses; `null` without a repository. |
 | `runner` | string or `null` | The name of the `[[runners]]` machine when the run goes there over SSH, else `null`. |
@@ -362,7 +363,7 @@ a chat's Pi is started again). The parameters are a `LaunchRequest`:
 | `app_settings` | map of string to string | The launcher's own [app settings](#plugin-settings), by key, those without a value left out. |
 
 The paths and URLs name what exists when the process starts. The agent directory, the sessions directory and the
-temporary directory (the last two for a run on this machine) are made before the call, and the agent directory is written
+scratch directory (the last two for a run on this machine) are made before the call, and the agent directory is written
 again if the answer names other addresses.
 
 The result is a `LaunchAnswer`, told apart by `answer`:

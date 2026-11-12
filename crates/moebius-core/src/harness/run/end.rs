@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 
 use super::GRILLING_AGENT;
 use super::lifecycle::RunningRun;
+use super::scratch;
 use crate::app::App;
 use crate::bus::Event;
 use crate::router::Router;
@@ -128,6 +129,8 @@ pub(in crate::harness) fn finish<L>(
     } else {
         run.remove_worktree(app);
     }
+    // What the run put in its scratch is deleted with it, so that nothing it left behind outlives it.
+    scratch::remove(&app.data_dir, run.id);
     if run.purpose == "chat" && !grilling && status != "failed" {
         // Before the status is set, so that an ended chat has offered what it made.
         if let Err(e) = app.offer_chat_change(run.id) {

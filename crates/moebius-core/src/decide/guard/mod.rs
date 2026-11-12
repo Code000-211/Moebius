@@ -46,12 +46,19 @@ pub use teacher::Teacher;
 /// The built-in rule that a call breaks, with what the rule says. `check` tests it on the call as it is executed and
 /// hands the answer to the guard in the question's context as `builtin_refusal`, because every other value of the
 /// context has been redacted by then, which can hide a command (inside a private key's markers) and its secret.
-pub fn builtin_refusal(tool: &str, input: &Value, worktree: Option<&Path>) -> Option<String> {
+/// `scratch` is the run's own scratch directory, which it may delete what it put there.
+pub fn builtin_refusal(
+    tool: &str,
+    input: &Value,
+    worktree: Option<&Path>,
+    scratch: Option<&Path>,
+) -> Option<String> {
     let (tool, input) = shell::normalise_call(tool, input.clone());
     broken_rule(&ToolCall {
         tool: &tool,
         input,
         worktree,
+        scratch,
     })
 }
 
@@ -128,6 +135,7 @@ impl Plugin for Guard {
             tool: &tool,
             input,
             worktree: context.get("worktree").map(Path::new),
+            scratch: context.get("scratch").map(Path::new),
         };
         let decision = if let Some(error) = context.get("rules_error") {
             decision(
