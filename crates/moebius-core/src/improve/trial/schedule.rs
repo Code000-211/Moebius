@@ -46,6 +46,15 @@ fn record(
     Ok(())
 }
 
+/// The outcomes of a proposal's trials, those of its regression set or of its own cards.
+fn outcomes(trials: &[Trial], regression: bool) -> Vec<&str> {
+    trials
+        .iter()
+        .filter(|t| t.regression == regression)
+        .map(|t| t.outcome.as_str())
+        .collect()
+}
+
 /// The trials of a proposal as its inbox item lists them: the card, the outcome and why.
 fn listed<'a>(trials: impl Iterator<Item = &'a Trial>) -> Vec<serde_json::Value> {
     trials
@@ -54,33 +63,40 @@ fn listed<'a>(trials: impl Iterator<Item = &'a Trial>) -> Vec<serde_json::Value>
 }
 
 /// Tries the proposal on each of its cards, one after the other, then, unless that made it negative, on the regression
-/// set when `regression` (its size) is above 0; then gives it its status. A positive or untried proposal goes to the
-/// inbox, with the results of both.
+/// set when `regression` (its size) is above 0; then gives it its status. Every proposal but a negative one goes to the
+/// inbox, with the results of both, so that a person decides about a mixed one too. `token_factor` is how many times
+/// the tokens of a card's first code run a trial may use.
 fn try_proposal(
     app: &Arc<App>,
     runs: &Arc<dyn Runs>,
     repo: &HarnessRepo,
     proposal: &Proposal,
     regression: usize,
+    token_factor: f64,
 ) -> Result<()> {
     if proposal.cards.is_empty() {
         let reason = "the proposal names no cards, so there is no task to try it on".to_string();
         record(app, proposal.id, (None, false), Tried::skipped(reason))?;
     }
     for &card in &proposal.cards {
-        let tried = try_card(app, runs, repo, proposal, card).unwrap_or_else(|tried| tried);
+        let tried =
+            try_card(app, runs, repo, proposal, card, token_factor).unwrap_or_else(|tried| tried);
         record(app, proposal.id, (Some(card), false), tried)?;
     }
-    let own = find(app, proposal.id)?.trials;
-    let outcomes: Vec<&str> = own.iter().map(|t| t.outcome.as_str()).collect();
-    if regression > 0 && status_of(&outcomes) != "negative" {
-        regression::try_set(app, runs, repo, proposal, regression, |card, tried| {
-            record(app, proposal.id, (Some(card), true), tried)
-        })?;
+    let tried = find(app, proposal.id)?.trials;
+    if regression > 0 && status_of(&outcomes(&tried, false), &[]) != "negative" {
+        regression::try_set(
+            app,
+            runs,
+            repo,
+            proposal,
+            regression,
+            token_factor,
+            |card, tried| record(app, proposal.id, (Some(card), true), tried),
+        )?;
     }
     let trials = find(app, proposal.id)?.trials;
-    let outcomes: Vec<&str> = trials.iter().map(|t| t.outcome.as_str()).collect();
-    let status = status_of(&outcomes);
+    let status = status_of(&outcomes(&trials, false), &outcomes(&trials, true));
     if status != "negative" {
         app.store.add_inbox_item(
             "proposal",
@@ -100,13 +116,15 @@ fn try_proposal(
 }
 
 /// Starts the trials of the open proposal `id` on a thread of its own and returns the proposal, which is `trying`.
-/// Only one proposal is tried at a time. `regression` is the size of the regression set, 0 when the gate is off.
+/// Only one proposal is tried at a time. `regression` is the size of the regression set, 0 when the gate is off, and
+/// `token_factor` how many times the tokens of a card's first code run a trial may use.
 pub fn start(
     app: &Arc<App>,
     runs: &Arc<dyn Runs>,
     repo: &Arc<HarnessRepo>,
     id: i64,
     regression: usize,
+    token_factor: f64,
 ) -> Result<Proposal> {
     let proposal = find(app, id)?;
     if proposal.kind != "harness" {
@@ -128,7 +146,9 @@ pub fn start(
         .spawn({
             let app = app.clone();
             move || {
-                if let Err(e) = try_proposal(&app, &runs, &repo, &proposal, regression) {
+                if let Err(e) =
+                    try_proposal(&app, &runs, &repo, &proposal, regression, token_factor)
+                {
                     // Whatever went wrong, the proposal is not left trying.
                     let _ = app.store.set_proposal_status(proposal.id, "untried");
                     publish_status(&app, proposal.id, "untried");
@@ -147,13 +167,14 @@ pub fn start(
 
 /// The schedule's check, once a minute: inside the trial window, and when no other proposal is being tried and the
 /// board has a run to spare (`run_limit`, counting the runs of cards) and no replay is going, starts the trials of the oldest open proposal,
-/// with a regression set of `regression` cards.
+/// with a regression set of `regression` cards and trials of at most `token_factor` times a card's first code run.
 pub fn on_schedule(
     app: &Arc<App>,
     runs: &Arc<dyn Runs>,
     repo: Option<&Arc<HarnessRepo>>,
     (window, run_limit): ((TimeOfDay, TimeOfDay), u32),
     regression: usize,
+    token_factor: f64,
 ) -> Result<()> {
     let Some(repo) = repo else {
         return Ok(());
@@ -188,7 +209,7 @@ pub fn on_schedule(
     }
     // The newest come first.
     match proposals.iter().rev().find(|p| p.status == "open") {
-        Some(oldest) => start(app, runs, repo, oldest.id, regression).map(drop),
+        Some(oldest) => start(app, runs, repo, oldest.id, regression, token_factor).map(drop),
         None => Ok(()),
     }
 }

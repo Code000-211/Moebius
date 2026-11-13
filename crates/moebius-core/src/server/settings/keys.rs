@@ -37,6 +37,7 @@ const KEYS: &[Key] = &[
     key("harness.url", "", false),
     key("trial_window.start", "\"00:00\"", true),
     key("trial_window.end", "\"06:00\"", true),
+    key("trial.token_factor", "1.5", true),
     key("regression.size", "5", true),
     key("regression.gate", "true", true),
     key("guard.enabled", "true", true),

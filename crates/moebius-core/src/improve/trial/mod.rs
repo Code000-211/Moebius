@@ -5,15 +5,18 @@
 //! repository's own checks run on what the agent made. A trial is positive when the errors the proposal addresses are
 //! gone and nothing got worse; the trial's branches and worktrees are removed and only the stored result stays.
 //!
-//! A proposal is `open` until it is tried, `trying` while it is, and then `positive` (every trial was), `negative`
-//! (some trial was) or `untried` (the rest: some trial was skipped or failed, so nobody knows). A positive or untried
-//! proposal waits in the inbox for a person to merge or dismiss it; a negative one stays on the Retro page. The
-//! schedule asks `on_schedule` once a minute, and trials only start inside the trial window; `POST
-//! /v1/proposals/{id}/trial` tries a proposal at any hour. Nothing here waits for a person.
+//! A proposal is `open` until it is tried, `trying` while it is, and then `positive` (every trial was), `negative` (a
+//! regression trial failed, or fewer than half of its own trials that ended were positive), `mixed` (some trial of its
+//! own was negative and at least half of those that ended were positive, with a clean regression set) or `untried` (the
+//! rest: some trial was skipped or failed, so nobody knows). A trial ended when it was `positive` or `negative`, not
+//! `skipped` or `failed`. Every proposal but a negative one waits in the inbox for a person to merge or dismiss it, with
+//! the results of every trial: a mixed one is a trade-off a person decides about, never a verdict that drops it. A
+//! negative one stays on the Retro page. The schedule asks `on_schedule` once a minute, and trials only start inside the
+//! trial window; `POST /v1/proposals/{id}/trial` tries a proposal at any hour. Nothing here waits for a person.
 //!
 //! Unless the regression gate is off (`[regression]`), a proposal whose own trials are not negative is also tried on the
 //! regression set of the repositories of its cards (see `regression`): past merged cards, which must not fail with it.
-//! The proposal is positive only when every trial of both was.
+//! The proposal is positive only when every trial of both was, and mixed only when no regression trial was negative.
 //!
 //! This module holds the trial window and what the parts share; `verdict` has what a trial measured and whether it is
 //! positive, `card` one card's trial, `regression` the regression set and its trials, `schedule` trying a proposal and

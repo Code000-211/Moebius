@@ -72,6 +72,7 @@ pub(super) fn try_card(
     repo: &HarnessRepo,
     proposal: &Proposal,
     card_id: i64,
+    token_factor: f64,
 ) -> std::result::Result<Tried, Tried> {
     let store = &app.store;
     let broken = |e: AppError| Tried::failed(None, e);
@@ -137,7 +138,14 @@ pub(super) fn try_card(
         agent: &agent,
         base: &repository.base_ref(),
     };
-    run_trial(app, runs, repo, proposal, task, (&kinds, &original))
+    run_trial(
+        app,
+        runs,
+        repo,
+        proposal,
+        task,
+        (&kinds, &original, token_factor),
+    )
 }
 
 /// What a trial run works on: the card's task, by `agent`, in a worktree of `repository` at `base`.
@@ -149,14 +157,15 @@ pub(super) struct Task<'a> {
 }
 
 /// Runs the task with the agent's definition from the proposal's branch, measures the run against `original`, looking
-/// for the error kinds `kinds`, and removes the trial's worktree and branch.
+/// for the error kinds `kinds` and allowing `token_factor` times its tokens, and removes the trial's worktree and
+/// branch.
 pub(super) fn run_trial(
     app: &Arc<App>,
     runs: &Arc<dyn Runs>,
     repo: &HarnessRepo,
     proposal: &Proposal,
     task: Task,
-    (kinds, original): (&BTreeSet<String>, &Original),
+    (kinds, original, token_factor): (&BTreeSet<String>, &Original, f64),
 ) -> std::result::Result<Tried, Tried> {
     let (card, agent) = (task.card, task.agent);
     let name = trial_name(proposal.id, card.id);
@@ -181,7 +190,13 @@ pub(super) fn run_trial(
         )),
         Ok(run) => {
             wait_for_end(app, &mut ended, run.id);
-            measure(app, task.repository, run.id, &name, kinds, original)
+            measure(
+                app,
+                task.repository,
+                run.id,
+                &name,
+                (kinds, original, token_factor),
+            )
         }
     };
     // The lessons the run was given are no help when it turned out worse.
@@ -203,8 +218,7 @@ fn measure(
     repository: &Repository,
     run_id: i64,
     name: &str,
-    kinds: &BTreeSet<String>,
-    original: &Original,
+    (kinds, original, token_factor): (&BTreeSet<String>, &Original, f64),
 ) -> std::result::Result<Tried, Tried> {
     let store = &app.store;
     let failed = |e: AppError| Tried::failed(Some(run_id), e);
@@ -239,7 +253,7 @@ fn measure(
         tokens: run_tokens(store, run_id).map_err(failed)?,
         rounds: 1,
     };
-    let (positive, reason) = compare(&measured, original);
+    let (positive, reason) = compare(&measured, original, token_factor);
     Ok(Tried {
         run: Some(run_id),
         outcome: if positive { "positive" } else { "negative" },

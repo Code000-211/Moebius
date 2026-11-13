@@ -121,6 +121,18 @@ start is empty, so nothing starts.
 | `trial_window.start` | string | `00:00` | Start, as `HH:MM` as for `retro_at`. |
 | `trial_window.end` | string | `06:00` | End, as `HH:MM`. |
 
+## `[trial]`
+
+How a trial is judged (see [the trials](harness-configuration.md#the-trials)). A trial run is compared with the card's
+first code run: among the four terms that make it positive, the tokens are the one a slow but otherwise fine proposal
+trips over, so they are weighed by a factor a file can raise. The factor decides which trials are positive, and with them
+whether a proposal is offered to a person at all: one whose only trial is over on tokens alone stays `negative` and gets
+no inbox item, and the factor raised past what that run used is what makes it `positive`.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `trial.token_factor` | number | `1.5` | How many times the tokens of the card's first code run (of the card's code runs together, for a regression trial) a trial run may use, above 0. `2` lets a proposal whose runs take twice the tokens still be positive. |
+
 ## `[regression]`
 
 The regression gate of the trials (see [the regression set](harness-configuration.md#the-regression-set)). Besides the
@@ -646,7 +658,7 @@ A change applies to the running server at once for these keys:
 
 - `run_limit`, `board.round_limit` and `budgets.day_tokens`: the limits column scripts and the router read;
 - `board.tick_ms`, `retro_at`, `trial_window.start` and `trial_window.end`: read by the board's loop and the schedule;
-- `regression.size` and `regression.gate`: read when a proposal's trials start;
+- `trial.token_factor`, `regression.size` and `regression.gate`: read when a proposal's trials start;
 - `router.upstreams`, with their keys;
 - `router.classes`, set as a whole table (`{"fast": ["a", {"model": "b", "day_tokens": 100}]}`);
 - `agents.<name>`, on a server without `[harness]`.

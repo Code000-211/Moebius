@@ -2317,9 +2317,13 @@ and `change` is the id of the change of the harness configuration repository a m
 an empty `diff`, `edits` `{}` and both null.
 
 `status` of a proposal: `open` (not tried yet), `trying` (its trials are going on), `positive` (every trial was positive),
-`negative` (some trial was), `untried` (no trial was negative, but some was skipped or failed, or it names no cards, so
-nobody knows), `merged` or `dismissed`. A `positive` or `untried` proposal has an open inbox item of the kind `proposal`.
-A `settings` or `repository` proposal is never tried: it is `untried` and in the inbox from the start.
+`mixed` (no regression trial was negative, some trial of its own cards was, and at least half of its own trials that
+ended were positive), `negative` (a regression trial was negative, or fewer than half of its own trials that ended were
+positive; a trial ended when it was `positive` or `negative`, not `skipped` or `failed`), `untried`
+(no trial was negative, but some was skipped or failed, or it names no cards, so nobody knows), `merged` or
+`dismissed`. Every proposal but a `negative` one has an open inbox item of the kind `proposal`, with the outcome and the
+reason of each of its trials; a `mixed` one is a trade-off a person decides about. A `settings` or `repository` proposal
+is never tried: it is `untried` and in the inbox from the start.
 
 `Trial`: `id`, `proposal_id`, `card_id` (the card it was tried on; null for the one trial of a proposal that names no
 cards), `regression` (true for a card of the regression set, see
@@ -2395,12 +2399,12 @@ at a time); `422` there is no harness configuration repository.
 
 ### `POST /v1/proposals/{id}/merge`
 
-A person merges a `positive` or `untried` proposal: its branch is merged into the default branch of the harness
+A person merges a `positive`, `mixed` or `untried` proposal: its branch is merged into the default branch of the harness
 configuration repository's clone with a merge commit, pushed to `origin`, and the agents are read again. Then the decision
 is recorded (kind `merge_proposal`, choice `merge_proposal`, decider `person`), the proposal's inbox item is resolved and
 its status becomes `merged`. A merge that conflicts, and a push that fails, change nothing. Request: `{"reason": string}`
-(optional). Response: the `Proposal`. Errors: `404` no such proposal; `409` the proposal is neither `positive` nor `untried`,
-or its branch does not merge cleanly; `422` there is no harness configuration repository.
+(optional). Response: the `Proposal`. Errors: `404` no such proposal; `409` the proposal is neither `positive`, `mixed`
+nor `untried`, or its branch does not merge cleanly; `422` there is no harness configuration repository.
 
 A `settings` proposal is merged by saving its `edits` to `moebius.toml` as `PUT /v1/settings` saves a change (refused
 with `422`, and nothing written, when the result is not a valid configuration), which records `edit_settings` too; when
@@ -2413,7 +2417,7 @@ does (`422` when the server has no `[harness]`), and `change` names it. Both rec
 
 ### `POST /v1/proposals/{id}/dismiss`
 
-A person dismisses a `positive` or `untried` proposal: the decision is recorded (kind `merge_proposal`, choice `dismiss`,
+A person dismisses a `positive`, `mixed` or `untried` proposal: the decision is recorded (kind `merge_proposal`, choice `dismiss`,
 decider `person`), the inbox item is resolved and the status becomes `dismissed`. The repository is not changed, nor is
 `moebius.toml` or any repository for a `settings` or `repository` proposal. Request and errors as for `merge`, without
 the conflict. Response: the `Proposal`.

@@ -7,8 +7,8 @@
 //! started at, which is where its trial starts, so that the task is the one the card had. The proposal's own cards are
 //! left out. A regression trial is the card's task run by the agent of its last code run with the definition from the
 //! proposal's branch, measured as any trial is, against the card's code runs together: it must succeed, the checks
-//! must pass, and it may use no more than 1.5 times their tokens. Each proposal adds at most `size` runs for each
-//! repository its cards belong to, one after the other; the first regression card that fails ends the rest.
+//! must pass, and it may use no more than `trial.token_factor` times their tokens. Each proposal adds at most `size` runs
+//! for each repository its cards belong to, one after the other; the first regression card that fails ends the rest.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -128,6 +128,7 @@ pub(super) fn try_set(
     repo: &HarnessRepo,
     proposal: &Proposal,
     size: usize,
+    token_factor: f64,
     mut record: impl FnMut(i64, Tried) -> Result<()>,
 ) -> Result<()> {
     let mut failed: Option<i64> = None;
@@ -146,8 +147,15 @@ pub(super) fn try_set(
                         base: &member.base,
                     };
                     let kinds = BTreeSet::new();
-                    run_trial(app, runs, repo, proposal, task, (&kinds, &member.original))
-                        .unwrap_or_else(|tried| tried)
+                    run_trial(
+                        app,
+                        runs,
+                        repo,
+                        proposal,
+                        task,
+                        (&kinds, &member.original, token_factor),
+                    )
+                    .unwrap_or_else(|tried| tried)
                 }
             };
             if tried.outcome == "negative" {

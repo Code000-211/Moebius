@@ -37,6 +37,13 @@ pub(super) struct RawRegression {
     pub(super) gate: Option<bool>,
 }
 
+/// The table of the trials: `[trial]`.
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct RawTrial {
+    pub(super) token_factor: Option<f64>,
+}
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawLocalize {
@@ -164,6 +171,8 @@ pub(super) struct Raw {
     pub(super) run_limit: Option<u32>,
     pub(super) retro_at: Option<String>,
     pub(super) trial_window: Option<RawWindow>,
+    #[serde(default)]
+    pub(super) trial: RawTrial,
     #[serde(default)]
     pub(super) regression: RawRegression,
     #[serde(default)]

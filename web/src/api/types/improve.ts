@@ -33,6 +33,7 @@ export type ProposalStatus =
   | "open"
   | "trying"
   | "positive"
+  | "mixed"
   | "negative"
   | "untried"
   | "merged"

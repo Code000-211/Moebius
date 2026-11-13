@@ -38,7 +38,7 @@ pub struct Proposal {
     pub agents: Vec<String>,
     /// The cards whose errors the proposal addresses, as the `Cards:` line ending its commit message names them.
     pub cards: Vec<i64>,
-    /// `open`, `trying`, `positive`, `negative`, `untried`, `merged` or `dismissed`.
+    /// `open`, `trying`, `positive`, `mixed`, `negative`, `untried`, `merged` or `dismissed`.
     pub status: String,
     /// The trials made of it, oldest first.
     pub trials: Vec<Trial>,
