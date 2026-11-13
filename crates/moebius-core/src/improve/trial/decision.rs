@@ -1,6 +1,6 @@
 //! A person's decision about a tried proposal: merged into the harness configuration or dismissed, while it is
-//! positive or untried, and its inbox item resolved. A proposal for Moebius's own configuration, which is never tried,
-//! is decided the same way through `own`.
+//! positive, mixed or untried, and its inbox item resolved. A proposal for Moebius's own configuration, which is never
+//! tried, is decided the same way through `own`.
 
 use super::{find, publish_status};
 use crate::app::{App, AppError, Result};
@@ -19,12 +19,13 @@ fn harness(repo: Option<&HarnessRepo>) -> Result<&HarnessRepo> {
     })
 }
 
-/// The proposal `id`, if a person can still decide about it: it was tried, and it was not negative.
+/// The proposal `id`, if a person can still decide about it: it was tried and partly positive, or not tried at all,
+/// rather than negative.
 fn to_decide(app: &App, id: i64) -> Result<Proposal> {
     let proposal = find(app, id)?;
-    if !matches!(proposal.status.as_str(), "positive" | "untried") {
+    if !matches!(proposal.status.as_str(), "positive" | "mixed" | "untried") {
         return Err(AppError::Conflict(format!(
-            "proposal {id} is {}, not positive or untried",
+            "proposal {id} is {}, not positive, mixed or untried",
             proposal.status
         )));
     }
@@ -39,8 +40,8 @@ fn decided(app: &App, id: i64, status: &str) -> Result<Proposal> {
     find(app, id)
 }
 
-/// A person merges a positive or untried proposal into the harness configuration, or into Moebius's own configuration
-/// (see `own::merge`). A conflict changes nothing.
+/// A person merges a positive, mixed or untried proposal into the harness configuration, or into Moebius's own
+/// configuration (see `own::merge`). A conflict changes nothing.
 pub fn merge(
     app: &App,
     by: &Actor,
@@ -58,7 +59,7 @@ pub fn merge(
     decided(app, id, "merged")
 }
 
-/// A person dismisses a positive or untried proposal.
+/// A person dismisses a positive, mixed or untried proposal.
 pub fn dismiss(
     app: &App,
     by: &Actor,

@@ -52,6 +52,7 @@ describe("the tags", () => {
 
   it("of a proposal", () => {
     expect(proposalTag("positive")).toEqual({ label: "Positive", tone: "complete" });
+    expect(proposalTag("mixed")).toEqual({ label: "Mixed", tone: "attention" });
     expect(proposalTag("negative").tone).toBe("error");
     expect(proposalTag("untried").tone).toBe("attention");
     expect(proposalTag("open").label).toBe("Open");

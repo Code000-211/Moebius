@@ -617,8 +617,8 @@ async fn trials_start_in_the_window_only_one_at_a_time_and_a_server_start_reopen
     let open = |id: i64| store.proposal(id).unwrap().unwrap().status == "open";
 
     // Outside the window, and with no run to spare, nothing starts.
-    trial::on_schedule(&server.app, &runs, repo, (around(120, 180), 3), 5).unwrap();
-    trial::on_schedule(&server.app, &runs, repo, (around(1380, 60), 0), 5).unwrap();
+    trial::on_schedule(&server.app, &runs, repo, (around(120, 180), 3), 5, 1.5).unwrap();
+    trial::on_schedule(&server.app, &runs, repo, (around(1380, 60), 0), 5, 1.5).unwrap();
     assert!(open(first) && open(second));
     assert!(trial::in_window(TimeOfDay(now), around(1380, 60)));
     assert!(!trial::in_window(TimeOfDay(now), around(120, 180)));
@@ -632,7 +632,7 @@ async fn trials_start_in_the_window_only_one_at_a_time_and_a_server_start_reopen
         .app
         .replaying
         .store(true, std::sync::atomic::Ordering::SeqCst);
-    trial::on_schedule(&server.app, &runs, repo, (around(1380, 60), 3), 5).unwrap();
+    trial::on_schedule(&server.app, &runs, repo, (around(1380, 60), 3), 5, 1.5).unwrap();
     assert!(open(first) && open(second));
     server
         .app
@@ -641,7 +641,7 @@ async fn trials_start_in_the_window_only_one_at_a_time_and_a_server_start_reopen
 
     // Inside it, the oldest open proposal is tried.
     let mut events = server.app.bus.subscribe();
-    trial::on_schedule(&server.app, &runs, repo, (around(1380, 60), 3), 5).unwrap();
+    trial::on_schedule(&server.app, &runs, repo, (around(1380, 60), 3), 5, 1.5).unwrap();
     let wait = async {
         loop {
             let event = events.recv().await.unwrap();
@@ -658,7 +658,7 @@ async fn trials_start_in_the_window_only_one_at_a_time_and_a_server_start_reopen
 
     // While one is going, no other starts.
     assert!(store.start_trying(second).unwrap());
-    trial::on_schedule(&server.app, &runs, repo, (around(1380, 60), 3), 5).unwrap();
+    trial::on_schedule(&server.app, &runs, repo, (around(1380, 60), 3), 5, 1.5).unwrap();
     assert_eq!(store.proposal(first).unwrap().unwrap().status, "untried");
     let (status, _) = Api::start(&server)
         .await
@@ -802,7 +802,7 @@ async fn a_proposal_that_fixes_its_card_but_breaks_a_regression_card_is_not_offe
     // With the gate off, the regression set is not tried, and the same change is positive.
     let runs: Arc<dyn Runs> = server.harness.clone();
     let harness = server.harness_repo.clone().unwrap();
-    let started = trial::start(&server.app, &runs, &harness, ungated, 0).unwrap();
+    let started = trial::start(&server.app, &runs, &harness, ungated, 0, 1.5).unwrap();
     assert_eq!(started.status, "trying");
     let wait = async {
         loop {
@@ -822,4 +822,145 @@ async fn a_proposal_that_fixes_its_card_but_breaks_a_regression_card_is_not_offe
     let trials = store.proposal(ungated).unwrap().unwrap().trials;
     assert_eq!(trials.len(), 1);
     assert!(!trials[0].regression);
+}
+
+/// A card of `repo` in a `title` whose first code run changed nothing and failed (see `testdata/fake-pi`).
+fn a_card_that_writes_nothing(server: &Server, repo: i64, title: &str) -> i64 {
+    let card = server.app.create_issue(repo, title, "", PERSON).unwrap();
+    let run = server
+        .harness
+        .start(
+            &server.app,
+            &card,
+            "Coder",
+            ("code", None),
+            Variant::default(),
+        )
+        .unwrap();
+    wait_until_ended(server, run.id);
+    assert_eq!(
+        server.app.store.run(run.id).unwrap().unwrap().status,
+        "failed"
+    );
+    card.id
+}
+
+#[tokio::test]
+async fn a_partly_positive_proposal_is_mixed_and_waits_for_a_person() {
+    let dir = tempfile::tempdir().unwrap();
+    let origin = harness_origin(dir.path());
+    let server = server(dir.path(), &origin);
+    // Cards whose run failed, which one proposal fixes and cannot fix: it writes whatever the card says unless the
+    // card is `[careful]`, which it breaks. The trials read the errors of the latest Retro's report, so it is stored
+    // once they are all there.
+    let store = &server.app.store;
+    let before = store.today().unwrap();
+    let repo = server
+        .app
+        .add_repository("demo", source(dir.path()).to_str().unwrap())
+        .unwrap();
+    let fixed = a_card_that_writes_nothing(&server, repo.id, "Fix it [nothing]");
+    let broken = a_card_that_writes_nothing(&server, repo.id, "Tidy up [nothing] [careful]");
+    let broken_too = a_card_that_writes_nothing(&server, repo.id, "Rename it [nothing] [careful]");
+    for day in [before, store.today().unwrap()] {
+        let report = retro::report(store, &day).unwrap();
+        if report.errors.is_empty() {
+            continue;
+        }
+        assert_eq!(report.errors.len(), 3, "{report:?}");
+        store
+            .add_retro(&day, &serde_json::to_value(&report).unwrap(), "proposed")
+            .unwrap();
+    }
+    let (file, text) = (
+        "agents/Coder.md",
+        "Keep changes small.\n[write anyway]\n[break careful]\nTrade-offs are reviewed.\n",
+    );
+    let partly = propose(
+        &server,
+        dir.path(),
+        "partly",
+        (file, text),
+        &[fixed, broken],
+    );
+    let other = propose(
+        &server,
+        dir.path(),
+        "other",
+        (
+            file,
+            "Keep changes small.\n[write anyway]\n[break careful]\nBe kind.\n",
+        ),
+        &[fixed, broken],
+    );
+    let mostly = propose(
+        &server,
+        dir.path(),
+        "mostly",
+        (
+            file,
+            "Keep changes small.\n[write anyway]\n[break careful]\nBe careful.\n",
+        ),
+        &[fixed, broken, broken_too],
+    );
+    let api = Api::start(&server).await;
+    let mut events = server.app.bus.subscribe();
+
+    // One trial of two was negative, so the proposal is neither positive nor dropped: it is a person's decision.
+    let (status, done) = api.try_now(&server, partly, &mut events).await;
+    assert_eq!(status, "mixed");
+    assert_eq!(
+        done,
+        [
+            json!({"proposal": partly, "card": fixed, "outcome": "positive", "regression": false}),
+            json!({"proposal": partly, "card": broken, "outcome": "negative", "regression": false}),
+        ]
+    );
+    let tried = store.proposal(partly).unwrap().unwrap();
+    assert_eq!(tried.status, "mixed");
+    assert_eq!(
+        tried.trials[1].reason,
+        "the run did not succeed; it still has run_failed"
+    );
+
+    // Fewer than half of its own trials positive and a person is not asked, as before.
+    let (status, done) = api.try_now(&server, mostly, &mut events).await;
+    assert_eq!(status, "negative");
+    assert_eq!(done.len(), 3);
+    assert_eq!(api.post(mostly, "merge", json!({})).await.0, 409);
+
+    // Both partly positive proposals waited in the inbox, with the outcome and the reason of every trial.
+    assert_eq!(api.try_now(&server, other, &mut events).await.0, "mixed");
+    let inbox = store.inbox().unwrap();
+    let items: Vec<&Value> = inbox
+        .iter()
+        .filter(|item| item.kind == "proposal")
+        .map(|item| &item.data)
+        .collect();
+    assert_eq!(items.len(), 2, "{items:?}");
+    let item = items
+        .iter()
+        .find(|data| data["proposal"] == partly)
+        .unwrap_or_else(|| panic!("{partly} in {items:?}"));
+    let trials = item["trials"].as_array().unwrap();
+    assert_eq!(trials.len(), 2, "{trials:?}");
+    assert_eq!(trials[0]["outcome"], "positive");
+    assert_eq!(trials[1]["outcome"], "negative");
+    assert_eq!(
+        trials[1]["reason"],
+        "the run did not succeed; it still has run_failed"
+    );
+
+    // A person merges one trade-off and dismisses the other.
+    let (status, merged) = api
+        .post(partly, "merge", json!({"reason": "worth it"}))
+        .await;
+    assert_eq!(status, 200, "{merged}");
+    assert_eq!(merged["status"], "merged");
+    let landed = git(&origin, &["show", &format!("main:{file}")]).unwrap();
+    assert!(landed.contains("Trade-offs are reviewed."), "{landed}");
+    assert_eq!(api.post(other, "dismiss", json!({})).await.0, 200);
+    assert_eq!(store.inbox().unwrap().len(), 0);
+    // A mixed proposal is over once a person has decided.
+    assert_eq!(api.post(partly, "merge", json!({})).await.0, 409);
 }

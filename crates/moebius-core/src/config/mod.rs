@@ -62,6 +62,8 @@ pub enum ConfigError {
     DecisionModelMinJudgements,
     #[error("localize.files must be between 1 and {max}, not {value}")]
     LocalizeFiles { value: u32, max: usize },
+    #[error("trial.token_factor must be above 0, not {0}")]
+    TrialTokenFactor(f64),
     #[error(
         "workflows.http_hosts: {0:?} is not a host name (no scheme, path, port, user name or blanks)"
     )]
@@ -184,6 +186,8 @@ pub struct Config {
     pub run_limit: u32,
     pub retro_at: TimeOfDay,
     pub trial_window: (TimeOfDay, TimeOfDay),
+    /// How many times the tokens of a card's first code run a trial run may use (see `trial::verdict`).
+    pub trial_token_factor: f64,
     /// How many past merged cards of a repository a proposal is also tried on (see `trial::regression`).
     pub regression_size: usize,
     /// Whether a proposal must pass the regression set to be positive; when off, it is not tried on it.
@@ -436,6 +440,10 @@ impl Config {
                 )?,
                 TimeOfDay::parse("trial_window.end", window.end.as_deref().unwrap_or("06:00"))?,
             ),
+            trial_token_factor: match raw.trial.token_factor.unwrap_or(1.5) {
+                factor if factor > 0.0 => factor,
+                factor => return Err(ConfigError::TrialTokenFactor(factor)),
+            },
             regression_size: raw.regression.size.unwrap_or(5) as usize,
             regression_gate: raw.regression.gate.unwrap_or(true),
             board_tick: Duration::from_millis(raw.board.tick_ms.unwrap_or(2000).max(50)),
@@ -591,6 +599,19 @@ mod tests {
         assert_eq!(c.trial_window, (TimeOfDay(0), TimeOfDay(6 * 60)));
         assert_eq!((c.regression_size, c.regression_gate), (5, true));
         assert_eq!(c.regression(), 5);
+        assert_eq!(c.trial_token_factor, 1.5);
+    }
+
+    #[test]
+    fn the_trials_have_a_token_factor_that_a_file_can_raise() {
+        assert_eq!(
+            parse("[trial]\ntoken_factor = 2.5\n")
+                .unwrap()
+                .trial_token_factor,
+            2.5
+        );
+        assert!(parse("[trial]\ntoken_factor = 0\n").is_err());
+        assert!(parse("[trial]\ntoken_factor = -1.5\n").is_err());
     }
 
     #[test]

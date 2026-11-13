@@ -294,6 +294,7 @@ impl Live {
         running.day_tokens = new.day_tokens;
         running.retro_at = new.retro_at;
         running.trial_window = new.trial_window;
+        running.trial_token_factor = new.trial_token_factor;
         running.regression_size = new.regression_size;
         running.regression_gate = new.regression_gate;
         running.board_tick = new.board_tick;
@@ -864,6 +865,7 @@ mod tests {
             "retro_at" => (json!("04:15"), field!(retro_at)),
             "trial_window.start" => (json!("01:10"), field!(trial_window.0)),
             "trial_window.end" => (json!("05:20"), field!(trial_window.1)),
+            "trial.token_factor" => (json!(2.5), field!(trial_token_factor)),
             "regression.size" => (json!(11), field!(regression_size)),
             "regression.gate" => (json!(false), field!(regression_gate)),
             "board.tick_ms" => (json!(123), field!(board_tick)),

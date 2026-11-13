@@ -230,9 +230,12 @@ async fn try_proposal(
     UrlPath(id): UrlPath<i64>,
 ) -> Result<axum::Json<Proposal>, ApiError> {
     let (runs, repo) = (state.runs.clone(), harness_repo(&state)?);
-    let regression = state.config.get().regression();
+    let (regression, token_factor) = {
+        let config = state.config.get();
+        (config.regression(), config.trial_token_factor)
+    };
     blocking(&state.app, move |app| {
-        trial::start(app, &runs, &repo, id, regression)
+        trial::start(app, &runs, &repo, id, regression, token_factor)
     })
     .await
 }

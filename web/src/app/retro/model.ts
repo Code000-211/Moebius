@@ -74,6 +74,8 @@ export function proposalTag(status: ProposalStatus): TagSpec {
       return { label: "Trying", tone: "progress" };
     case "positive":
       return { label: "Positive", tone: "complete" };
+    case "mixed":
+      return { label: "Mixed", tone: "attention" };
     case "negative":
       return { label: "Negative", tone: "error" };
     case "untried":

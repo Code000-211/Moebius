@@ -55,6 +55,7 @@ impl Server {
             repo,
             (window, limit),
             regression,
+            config.trial_token_factor,
         ));
         report(research::on_schedule(
             &self.app,

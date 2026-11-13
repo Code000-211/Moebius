@@ -30,6 +30,11 @@ retro_at = "23:30"
 start = "00:00"
 end = "06:00"
 
+# How many times the tokens of a card's first code run the trial run of a proposal may use and still be positive.
+# Raise it to count a proposal whose runs are slower but otherwise fine as positive; a person decides about a mixed one.
+[trial]
+token_factor = 1.5
+
 # Each proposal of the Retro is also tried on a regression set of each repository its cards belong to: the latest `size`
 # merged cards, those whose runs named a reproduction test (REPRODUCE: in their summaries) first. It is positive only when none of them fails
 # where it passed before. This adds at most `size` trial runs per repository to a proposal. With gate = false the

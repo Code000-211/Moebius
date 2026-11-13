@@ -564,17 +564,25 @@ proposal's branch, the run cannot start) is `failed`.
     the way the report looks for them (failed and refused tool calls, a failed or stopped run, steering, and failed
     checks);
   - the checks passed, or failed before as well (the card was once sent back because they failed), or there are none;
-  - the run used no more than 1.5 times the tokens of the first code run.
+  - the run used no more than `trial.token_factor` (default 1.5; see
+    [configuration](configuration.md#trial)) times the tokens of the first code run.
 
   A trial is one round, and the card needed at least one, so rounds never make a trial negative.
 - **Afterwards** the trial's branch and worktrees are removed; the trial is stored (`GET /v1/proposals`) with the
   measurements and the reason. Unless these trials made it negative, the proposal is then tried on the regression set
-  (below). The proposal becomes `positive` when every trial of both was positive, `negative` when some was
-  negative, and else `untried`. A `positive` or `untried` proposal gets an inbox item of the kind `proposal`; a `negative`
-  one gets none, and stays on the Retro page.
+  (below). The proposal becomes `positive` when every trial of both was positive. Else it is `negative` when a regression
+  trial was negative; and when only trials of its own cards came out negative, it is `mixed` when at least half of its
+  own trials that ended were positive, and `negative` when fewer were. A trial ended when it was `positive` or
+  `negative`; one that was `skipped` or `failed` did not end and is not counted. Else, when no trial was negative but
+  one was skipped or failed or it names no cards, it is `untried`. A `mixed` proposal is a trade-off (a run that took
+  longer, a card it cannot fix) and not a verdict: every proposal but a `negative` one gets an
+  inbox item of the kind `proposal`, with the outcome and the reason of every trial, so that a person merges or dismisses
+  it deliberately. A `negative` one gets none, and stays on the Retro page.
 - **Deciding.** `POST /v1/proposals/{id}/merge` merges the branch into the default branch of the clone with a merge commit,
-  pushes it to `origin` and reads the agents again; `POST /v1/proposals/{id}/dismiss` leaves it. Both record the person's
-  decision (kind `merge_proposal`) and resolve the inbox item. A merge that conflicts changes nothing.
+  pushes it to `origin` and reads the agents again; `POST /v1/proposals/{id}/dismiss` leaves it. Both are for a person
+  alone: they take a `positive`, `mixed` or `untried` proposal and answer `409` for a `negative` one or one decided
+  already. Both record the person's decision (kind `merge_proposal`) and resolve the inbox item. A merge that conflicts
+  changes nothing.
 - A server that starts finds the proposals the last server was trying and opens them again, without their trials, and ends
   the trial runs it left going as it ends other runs.
 
@@ -592,8 +600,8 @@ recorded the commit it started at; the proposal's own cards are left out.
   definition from the proposal's branch, in a fresh worktree at the commit the card's first code run started at (the
   repository as it was when the card was worked on), on `moebius/trial-<proposal id>-card-<card id>`, then the checks.
 - **The comparison** is with the card's code runs together, which passed: the card was merged. A regression trial is
-  positive when the run succeeded, the checks passed (or there are none), and it used no more than 1.5 times their
-  tokens; else negative. It is one round, never more than the card needed.
+  positive when the run succeeded, the checks passed (or there are none), and it used no more than `trial.token_factor`
+  times their tokens; else negative. It is one round, never more than the card needed.
 - **The bound.** A proposal adds at most `regression.size` runs for each repository of its cards. They run on the
   proposal's own thread, one at a time, like its other trials (so one proposal is tried at a time, and the schedule starts
   one only inside the trial window and when the board has a run to spare); the first regression card that fails ends the
