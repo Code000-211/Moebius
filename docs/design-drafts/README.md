@@ -1,7 +1,10 @@
 # Design drafts for people, projects and planning
 
 HTML drafts of the screens [the plan for people, projects, the wiki and planning](../plan/issues-people-wiki-planning.md)
-adds, drawn with the tokens of the web app (`web/src/styles/theme.css`) to choose between variants. They are drafts, not
+adds, to choose between variants. Rounds 1 to 7 chose the patterns (where things are and how they behave) and are drawn
+with the first standard's tokens; rounds 8, 9 and 9b chose the look that replaces it
+([ADR 0020](../adr/0020-a-quiet-standard-with-depth.md)), so the patterns of rounds 1 to 7 are to be drawn as round 9b
+draws them. They are drafts, not
 the standard: what is chosen here goes into [`design-web.md`](../design-web.md) with the issue that builds it. Patterns
 that trackers share are fair to use; no tracker's look, text or icons are copied.
 
@@ -40,3 +43,17 @@ that trackers share are fair to use; no tracker's look, text or icons are copied
 The other pages follow these choices without drafts of their own: Models, Plugins and Settings keep their shape and
 use the shared filter chips where they list things; Decisions gets the filter chips for project and agent; Get started,
 Terminal and Ports stay as they are. Every page's commands are in the command palette (12B).
+
+## The look (rounds 8 and 9)
+
+| # | Lever | Chosen |
+|---|---|---|
+| 30 | Foundation | Warm greys, 13px body, radii 6 and 8, rows of 28 to 36px, one head bar of 44px ([round 8](round-8.html)) |
+| 31 | Colour | Only small status icons (column, urgent, blocked, errors) and one accent for links, the chosen thing, focus and a running run |
+| 32 | Card keys | The project's key: `WEB-24`; a forge's issue keeps its number beside it |
+| 33 | Depth | The page as a surface on the sidebar, few soft lines, a primary button with slight relief ([round 9](round-9.html)) |
+| 34 | Cards | A quiet line and a short soft shadow that grows on hover; no gradient, no light edge ([round 9b](round-9b.html), K3) |
+| 35 | Glass | The palette, menus, dialogs and the head bar translucent with a blur |
+| 36 | Motion | 120 to 240ms ease-out: a 1px lift on hover, the sliding right sidebar, the palette opening with a small scale, tooltips after a moment |
+| 37 | Typography | Inter with optical sizes, tighter tracking in titles, tabular figures |
+| 38 | Light and detail | A faint accent wash at the top of the content, a soft glow on the chosen card, a soft focus ring, shortcuts in tooltips, even wrapping, accent selection |

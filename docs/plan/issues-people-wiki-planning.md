@@ -25,6 +25,15 @@ The [design drafts](../design-drafts/README.md) chose one way for each pattern. 
 Each issue writes its pattern into [`design-web.md`](../design-web.md) and keeps the design audit and the end-to-end
 tests passing. None needs a change to the server, except where an issue says so.
 
+### W0. The quiet standard with depth
+The tokens, the type scale and the radii of [ADR 0020](../adr/0020-a-quiet-standard-with-depth.md) replace those of
+`theme.css` in both themes; `tokens.test.ts` and the design audit hold the new values; the shared components of
+`web/src/ui/` are drawn anew (status as icons, labels as a dot and a word, cards with a line and a soft shadow, glass
+overlays, the motion with reduced motion honoured). `design-web.md` is rewritten for the look and keeps its rules for
+behaviour; the screenshots are taken again.
+**Done when** the token test fails for a value outside the new scale, every page passes the design audit in both
+themes at both widths, no pill is left for a state, and reduced motion stops every transition.
+
 ### W1. The right sidebar and the Moebius agent in it
 A sidebar at the right edge of the window, the whole height, foldable, which holds a page's properties; a page without
 any shows it as a rail. "Ask Moebius" (`Ctrl J`) is its last row; the opened chat lies over the sidebar, wider than it,
@@ -129,7 +138,7 @@ see the notification, and the design audit passes.
 ## P2 · Projects
 
 ### 8. Projects in the store
-A project has a name, a board, any number of repositories and a store of files of its own (a git repository Moebius
+A project has a name, a key (such as `WEB`, which names its cards `WEB-24`), a board, any number of repositories and a store of files of its own (a git repository Moebius
 keeps without a forge). A repository belongs to one or more projects and has a home project. The migration makes one
 project per repository, with its name, as its home project.
 **Done when** a store from before migrates with every card on the board of its repository's project, a project with
@@ -194,7 +203,7 @@ non-member.
 
 ### 17. Pages through the API
 Routes to list, read, write, rename, move and delete pages and to read a page's history and an older version. A link
-`[[Page name]]` leads to a page, `#12` and `project#12` to a card; each page knows the pages and cards that link to it.
+`[[Page name]]` leads to a page, `WEB-12` to a card (and `#12` to a card of the same project); each page knows the pages and cards that link to it.
 Members write, viewers read and comment.
 **Done when** every route is in `desktop-api.md`, a rename keeps the links to the page working, and a page lists its
 backlinks.

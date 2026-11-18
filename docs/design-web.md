@@ -1,5 +1,10 @@
 # Web app design standard
 
+> [!NOTE]
+> [ADR 0020](adr/0020-a-quiet-standard-with-depth.md) replaces the look described here (type, colour, radii, pills,
+> shadows) with a quiet standard with depth; this page is rewritten for it in the first issue of P0 of
+> [the plan](plan/issues-people-wiki-planning.md). Its rules for behaviour stay.
+
 The standard the web app (`web/`) is built to. It replaced the brief of the former desktop app, which is removed
 ([ADR 0016](adr/0016-the-web-app-has-its-own-design-standard.md), [ADR 0017](adr/0017-the-desktop-app-is-removed.md)). Every value below is a token in
 [`web/src/styles/theme.css`](../web/src/styles/theme.css), which holds the light and dark pair of every name;

@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design round 8</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* A minimal token set: warm greys, one accent, status colours only on small icons. */
+:root{color-scheme:dark;--bg:#111110;--panel:#161615;--raised:#1c1c1b;--hover:#1f1f1e;--sel:#262624;--line:rgb(255 255 250/7%);--line2:rgb(255 255 250/11%);--text:#ecebe8;--text2:#9d9c98;--text3:#6c6b67;--accent:#8b8cf5;--todo:#8a8985;--prog:#e8b44a;--review:#6aa7f0;--done:#5fb98a;--err:#e5686e;--side:#121211;--sideText:#8e8d89}
+:root[data-theme=light]{color-scheme:light;--bg:#fcfcfb;--panel:#f7f7f6;--raised:#fff;--hover:#f1f1ef;--sel:#ebebe8;--line:rgb(20 20 15/7%);--line2:rgb(20 20 15/12%);--text:#1d1d1b;--text2:#6a6965;--text3:#9c9b97;--accent:#5e5ff0;--todo:#9c9b97;--prog:#d39b1e;--review:#3b82e0;--done:#2f9a66;--err:#d2444b;--side:#f5f5f3;--sideText:#6a6965}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:13px/1.5 Inter,ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.top{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 20px;display:flex;justify-content:space-between;align-items:center;gap:16px}
+.top h1{font-size:15px;margin:0;font-weight:600}.top p{margin:2px 0 0;color:var(--text2)}
+.tbtn{font:inherit;background:none;border:1px solid var(--line2);color:var(--text2);border-radius:6px;padding:3px 8px;cursor:pointer}
+main{max-width:1320px;margin:0 auto;padding:20px 16px 64px}
+h2{font-size:15px;font-weight:600;margin:32px 0 4px}.lead{color:var(--text2);margin:0 0 12px;max-width:820px}
+.tag{font-size:11px;font-weight:600;border:1px solid var(--line2);border-radius:4px;padding:0 5px;color:var(--text2);margin-right:6px}
+/* window */
+.win{display:flex;height:620px;border:1px solid var(--line2);border-radius:10px;overflow:hidden;background:var(--bg)}
+.side{width:220px;flex:none;background:var(--side);padding:8px;display:flex;flex-direction:column;gap:1px;color:var(--sideText)}
+.ws{display:flex;align-items:center;gap:8px;padding:6px 8px 10px;color:var(--text);font-weight:500}
+.ws .lg{width:18px;height:18px;border-radius:5px;background:var(--text);color:var(--bg);display:grid;place-items:center;font-size:11px;font-weight:700}
+.it{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border-radius:6px}
+.it:hover{background:var(--hover)}.it.on{background:var(--sel);color:var(--text)}
+.it .n{margin-left:auto;color:var(--text3);font-size:12px}
+.ic{width:14px;height:14px;flex:none;display:inline-block;color:currentColor;opacity:.85}
+.gl{font-size:11px;color:var(--text3);padding:14px 8px 4px;font-weight:500}
+.sub{padding-left:30px}
+.mainp{flex:1;min-width:0;display:flex;flex-direction:column}
+.bar{height:44px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid var(--line)}
+.crumb{color:var(--text2)}.crumb b{color:var(--text);font-weight:500}
+.ghost{background:none;border:0;color:var(--text2);font:inherit;padding:4px 8px;border-radius:6px;display:inline-flex;gap:6px;align-items:center}
+.ghost:hover{background:var(--hover)}
+.prim{background:var(--text);color:var(--bg);border:0;border-radius:6px;font:inherit;font-weight:500;padding:4px 10px}
+.view{display:inline-flex;gap:2px}.view span{padding:3px 8px;border-radius:6px;color:var(--text2)}.view span.on{background:var(--sel);color:var(--text)}
+.sp{flex:1}
+.kb{font-size:11px;color:var(--text3);border:1px solid var(--line2);border-radius:4px;padding:0 4px}
+/* board */
+.board{flex:1;display:flex;gap:12px;padding:12px 16px;overflow:hidden}
+.col{width:210px;flex:none;display:flex;flex-direction:column;gap:6px}
+.ch{display:flex;align-items:center;gap:8px;height:28px;color:var(--text);font-weight:500}
+.ch .c{color:var(--text3);font-weight:400}.ch .pl{margin-left:auto;color:var(--text3)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+.card:hover{border-color:var(--line2)}
+.card .id{color:var(--text3);font-size:12px;display:flex;align-items:center;gap:6px}
+.card .t{color:var(--text);line-height:1.4}
+.card .m{display:flex;align-items:center;gap:8px;color:var(--text3);font-size:12px}
+.card.sel{border-color:var(--line2);background:var(--raised)}
+.av{width:16px;height:16px;border-radius:999px;display:inline-grid;place-items:center;font-size:9px;font-weight:600;color:#111;flex:none}
+.ag{width:16px;height:16px;border-radius:4px;display:inline-grid;place-items:center;font-size:9px;font-weight:700;background:var(--sel);color:var(--text2);flex:none}
+.add{color:var(--text3);padding:4px 2px}
+/* status icons */
+.st{width:14px;height:14px;flex:none}
+/* list */
+.lst{flex:1;overflow:hidden}
+.gh{display:flex;align-items:center;gap:8px;height:34px;padding:0 16px;background:var(--panel);color:var(--text);font-weight:500;border-bottom:1px solid var(--line)}
+.gh .c{color:var(--text3);font-weight:400}
+.row{display:flex;align-items:center;gap:10px;height:36px;padding:0 16px;border-bottom:1px solid var(--line)}
+.row:hover{background:var(--hover)}.row.on{background:var(--sel)}
+.row .id{color:var(--text3);width:52px;font-size:12px}
+.row .tt{flex:1;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .meta{color:var(--text3);font-size:12px}
+.lab{display:inline-flex;align-items:center;gap:5px;color:var(--text2);font-size:12px;border:1px solid var(--line2);border-radius:999px;padding:0 7px;height:20px}
+.lab i{width:6px;height:6px;border-radius:99px;display:inline-block}
+/* right panel */
+.rp{width:280px;flex:none;border-left:1px solid var(--line);background:var(--bg);display:flex;flex-direction:column}
+.rp .h{height:44px;display:flex;align-items:center;padding:0 16px;border-bottom:1px solid var(--line);color:var(--text2);gap:8px}
+.pr{display:grid;grid-template-columns:88px 1fr;align-items:center;height:30px;padding:0 16px;color:var(--text)}
+.pr .k{color:var(--text3)}
+.pr .v{display:flex;align-items:center;gap:6px;border-radius:6px;padding:2px 6px;margin-left:-6px}.pr .v:hover{background:var(--hover)}
+.ask{margin:auto 12px 12px;display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border:1px solid var(--line2);border-radius:8px;color:var(--text2)}
+/* issue */
+.issue{flex:1;padding:28px 40px;overflow:hidden;max-width:760px}
+.issue h3{font-size:20px;font-weight:600;margin:0 0 10px;letter-spacing:-.01em}
+.issue p{color:var(--text);margin:0 0 10px;font-size:14px;line-height:1.6}
+.act{border-top:1px solid var(--line);margin-top:20px;padding-top:12px}
+.ev{display:flex;align-items:center;gap:8px;color:var(--text3);font-size:12px;height:26px}
+.ev b{color:var(--text2);font-weight:500}
+.cm{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:6px 0;background:var(--panel)}
+.cm .w{display:flex;gap:6px;align-items:center;color:var(--text2);font-size:12px;margin-bottom:2px}.cm .w b{color:var(--text);font-weight:500}
+.inp{border:1px solid var(--line2);border-radius:8px;padding:8px 12px;color:var(--text3);margin-top:10px}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.cmp img{width:100%;border:1px solid var(--line2);border-radius:8px}
+.note{color:var(--text2);font-size:12px;margin-top:6px}
+.pill-old{display:inline-block;font-size:11px;border-radius:999px;padding:1px 7px;background:#3a3123;color:#f7b84b;border:1px solid #66502c}
+</style>
+</head>
+<body>
+<header class="top"><div><h1>Runde 8 · Viel einfacher</h1><p>Dieselben Seiten, minimal: warmes Grau, Farbe nur auf kleinen Status-Icons, 13 px, kleine Radien, kaum Linien, keine Pills.</p></div><button class="tbtn" onclick="document.documentElement.dataset.theme=document.documentElement.dataset.theme==='light'?'dark':'light'">Hell / dunkel</button></header>
+<main>
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="s-back" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--todo)" stroke-width="1.5" stroke-dasharray="2 2"/></symbol>
+<symbol id="s-todo" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--todo)" stroke-width="1.5"/></symbol>
+<symbol id="s-prog" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--prog)" stroke-width="1.5"/><path d="M7 3.5a3.5 3.5 0 0 1 0 7z" fill="var(--prog)"/></symbol>
+<symbol id="s-rev" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--review)" stroke-width="1.5"/><path d="M7 3.5a3.5 3.5 0 1 1-3.03 1.75L7 7z" fill="var(--review)"/></symbol>
+<symbol id="s-done" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6.25" fill="var(--done)"/><path d="M4.3 7.2l1.8 1.8 3.6-3.8" fill="none" stroke="var(--bg)" stroke-width="1.5"/></symbol>
+<symbol id="s-block" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--err)" stroke-width="1.5"/><path d="M3.2 10.8l7.6-7.6" stroke="var(--err)" stroke-width="1.5"/></symbol>
+<symbol id="p-h" viewBox="0 0 14 14"><rect x="2" y="8" width="2" height="4" rx=".5" fill="var(--text2)"/><rect x="6" y="5" width="2" height="7" rx=".5" fill="var(--text2)"/><rect x="10" y="2" width="2" height="10" rx=".5" fill="var(--text2)"/></symbol>
+<symbol id="p-m" viewBox="0 0 14 14"><rect x="2" y="8" width="2" height="4" rx=".5" fill="var(--text2)"/><rect x="6" y="5" width="2" height="7" rx=".5" fill="var(--text2)"/><rect x="10" y="2" width="2" height="10" rx=".5" fill="var(--line2)"/></symbol>
+<symbol id="p-l" viewBox="0 0 14 14"><rect x="2" y="8" width="2" height="4" rx=".5" fill="var(--text2)"/><rect x="6" y="5" width="2" height="7" rx=".5" fill="var(--line2)"/><rect x="10" y="2" width="2" height="10" rx=".5" fill="var(--line2)"/></symbol>
+<symbol id="p-u" viewBox="0 0 14 14"><rect x="1" y="1" width="12" height="12" rx="3" fill="var(--err)"/><rect x="6.2" y="3.5" width="1.6" height="4.5" fill="var(--bg)"/><rect x="6.2" y="9.2" width="1.6" height="1.6" fill="var(--bg)"/></symbol>
+<symbol id="i-inbox" viewBox="0 0 14 14"><path d="M1.5 8l1.6-5.5h7.8L12.5 8v3.5h-11zM1.5 8h3l1 1.5h3l1-1.5h3" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-me" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="7" cy="7" r="2" fill="currentColor"/></symbol>
+<symbol id="i-chat" viewBox="0 0 14 14"><path d="M2 2.5h10v7H6l-3 2.5v-2.5H2z" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-fleet" viewBox="0 0 14 14"><path d="M7.5 1.5L3 8h3.5l-1 4.5L10 6H6.5z" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-board" viewBox="0 0 14 14"><rect x="1.5" y="2" width="3" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="5.5" y="2" width="3" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="9.5" y="2" width="3" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-cyc" viewBox="0 0 14 14"><path d="M11.5 7a4.5 4.5 0 1 1-1.3-3.2M11.5 2v2.5H9" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-doc" viewBox="0 0 14 14"><path d="M3 1.5h5l3 3v8H3z M8 1.5v3h3" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-view" viewBox="0 0 14 14"><path d="M2 3.5h10M2 7h10M2 10.5h6" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-gear" viewBox="0 0 14 14"><circle cx="7" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.6"/></symbol>
+<symbol id="i-plus" viewBox="0 0 14 14"><path d="M7 2.5v9M2.5 7h9" stroke="currentColor" stroke-width="1.3"/></symbol>
+<symbol id="i-filter" viewBox="0 0 14 14"><path d="M2 3h10M4 7h6M6 11h2" stroke="currentColor" stroke-width="1.3"/></symbol>
+<symbol id="i-search" viewBox="0 0 14 14"><circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M9 9l3 3" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-down" viewBox="0 0 14 14"><path d="M4 5.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-run" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="20 10"/></symbol>
+</defs></svg>
+
+<h2><span class="tag">8A</span>Board</h2>
+<p class="lead">Statt farbiger Tags („Live“, „Blocked“, „Your turn“) ein kleines Status-Icon pro Spalte, das Agent-Kürzel und ein Lauf-Kreis. Eine Kopfzeile von 44 px mit Brotkrumen, Ansicht, Filter, Display. Keine Spaltenhintergründe.</p>
+<div class="win">
+<nav class="side">
+<div class="ws"><span class="lg">∞</span>Acme<span style="margin-left:auto;color:var(--text3)"><svg class="ic"><use href="#i-search"/></svg></span></div>
+<div class="it"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="n">3</span></div>
+<div class="it"><svg class="ic"><use href="#i-me"/></svg>My work</div>
+<div class="it"><svg class="ic"><use href="#i-chat"/></svg>Chat</div>
+<div class="it"><svg class="ic"><use href="#i-fleet"/></svg>Fleet<span class="n">3</span></div>
+<div class="gl">storefront ⌄</div>
+<div class="it on"><svg class="ic"><use href="#i-board"/></svg>Board</div>
+<div class="it"><svg class="ic"><use href="#i-cyc"/></svg>Cycles</div>
+<div class="it"><svg class="ic"><use href="#i-doc"/></svg>Wiki</div>
+<div class="gl">Plan</div>
+<div class="it"><svg class="ic"><use href="#i-view"/></svg>Views</div>
+<div class="it"><svg class="ic"><use href="#i-doc"/></svg>Milestones</div>
+<div class="gl">Automate</div>
+<div class="it"><svg class="ic"><use href="#i-cyc"/></svg>Automations</div>
+<div class="it"><svg class="ic"><use href="#i-view"/></svg>Workflows</div>
+<div class="it"><svg class="ic"><use href="#i-me"/></svg>Improve</div>
+<div style="margin-top:auto" class="it"><svg class="ic"><use href="#i-gear"/></svg></div>
+</nav>
+<div class="mainp">
+<div class="bar"><span class="crumb">storefront › <b>Board</b></span><span class="view" style="margin-left:12px"><span class="on">Board</span><span>List</span></span><span class="sp"></span><button class="ghost"><svg class="ic"><use href="#i-filter"/></svg>Filter</button><button class="ghost">Display</button><button class="prim">New issue</button></div>
+<div class="board">
+<div class="col"><div class="ch"><svg class="st"><use href="#s-back"/></svg>Backlog <span class="c">2</span><span class="pl">+</span></div>
+<div class="card"><div class="id">ACM-31</div><div class="t">Add pagination to the orders endpoint</div><div class="m"><svg class="st"><use href="#p-l"/></svg><span class="sp"></span></div></div>
+<div class="card"><div class="id">ACM-34 · needs approval</div><div class="t">Support Apple Pay at checkout</div><div class="m"><svg class="st"><use href="#p-m"/></svg><span class="sp"></span><span class="av" style="background:#a78bfa">K</span></div></div>
+<div class="add">+</div></div>
+<div class="col"><div class="ch"><svg class="st"><use href="#s-todo"/></svg>Not started <span class="c">3</span><span class="pl">+</span></div>
+<div class="card"><div class="id"><svg class="st"><use href="#s-block"/></svg>ACM-27</div><div class="t">Send the order confirmation email</div><div class="m"><svg class="st"><use href="#p-m"/></svg>Blocked</div></div>
+<div class="card"><div class="id">ACM-30</div><div class="t">Add the refunds endpoint</div><div class="m"><svg class="st"><use href="#p-h"/></svg>Waits on ACM-24<span class="sp"></span><span class="av" style="background:#93c552">L</span></div></div>
+<div class="card"><div class="id">ACM-29</div><div class="t">Cache the product catalogue for 60 seconds</div><div class="m"><svg class="st"><use href="#p-l"/></svg></div></div></div>
+<div class="col"><div class="ch"><svg class="st"><use href="#s-prog"/></svg>In progress <span class="c">2</span><span class="pl">+</span></div>
+<div class="card sel"><div class="id">ACM-24</div><div class="t">Fix the rounding of discounts in the cart</div><div class="m"><svg class="st"><use href="#p-u"/></svg><svg class="st"><use href="#i-run"/></svg>Coder · round 1<span class="sp"></span><span class="ag">C</span></div></div>
+<div class="card"><div class="id">ACM-26</div><div class="t">Retry failed webhook deliveries with backoff</div><div class="m"><svg class="st"><use href="#p-m"/></svg><svg class="st"><use href="#i-run"/></svg>Coder · round 2<span class="sp"></span><span class="ag">C</span></div></div></div>
+<div class="col"><div class="ch"><svg class="st"><use href="#s-rev"/></svg>In review <span class="c">1</span><span class="pl">+</span></div>
+<div class="card"><div class="id">ACM-22</div><div class="t">Validate the shipping address before payment</div><div class="m"><svg class="st"><use href="#p-m"/></svg><svg class="st"><use href="#i-run"/></svg>Reviewer<span class="sp"></span><span class="ag">R</span></div></div></div>
+<div class="col"><div class="ch"><svg class="st"><use href="#s-done"/></svg>Ready to merge <span class="c">1</span></div>
+<div class="card"><div class="id">ACM-19 · PR #214</div><div class="t">Add an index on orders.customer_id</div><div class="m"><svg class="st"><use href="#p-l"/></svg>Checks passed</div></div></div>
+</div></div>
+<aside class="rp" style="width:48px;align-items:center"><div class="h" style="padding:0;justify-content:center;width:100%">⇤</div><div style="margin-top:auto;margin-bottom:12px;color:var(--text2)"><svg class="ic"><use href="#i-chat"/></svg></div></aside>
+</div>
+<div class="note">Vorher hieß es im Board „Live“, „Blocked“, „Your turn“, „Waiting on #24“ als farbige Pills, z. B. <span class="pill-old">Waiting on #24</span>. Jetzt: eine Zeile grauer Text unter dem Titel.</div>
+
+<h2><span class="tag">8B</span>Issue mit Eigenschaften rechts</h2>
+<p class="lead">Der Text bekommt die Mitte und 14 px. Eigenschaften rechts als ruhige Zeilen ohne Kästen; der Verlauf ist eine Liste grauer Zeilen, nur Kommentare haben einen Rahmen. „Ask Moebius“ unten in der Leiste.</p>
+<div class="win">
+<nav class="side"><div class="ws"><span class="lg">∞</span>Acme</div><div class="it"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="n">3</span></div><div class="it"><svg class="ic"><use href="#i-me"/></svg>My work</div><div class="gl">storefront ⌄</div><div class="it on"><svg class="ic"><use href="#i-board"/></svg>Board</div><div class="it"><svg class="ic"><use href="#i-cyc"/></svg>Cycles</div><div class="it"><svg class="ic"><use href="#i-doc"/></svg>Wiki</div></nav>
+<div class="mainp"><div class="bar"><span class="crumb">storefront › Board › <b>ACM-24</b></span><span class="sp"></span><button class="ghost">⋯</button></div>
+<div class="issue"><h3>Fix the rounding of discounts in the cart</h3><p>A 15 % discount on three items rounds each line and the total, so the cart is one cent off. Round once, at the end, as <span style="color:var(--accent)">Payments</span> says.</p>
+<div class="act"><div class="ev"><span class="av" style="background:#93c552">L</span><b>Lea</b> created the issue · Mon</div><div class="ev"><svg class="st"><use href="#s-prog"/></svg><b>Board</b> moved it to In progress · 2h</div><div class="ev"><span class="ag">C</span><b>Coder</b> started round 1 · 1h · <span style="color:var(--text2)">View run</span></div>
+<div class="cm"><div class="w"><span class="av" style="background:#a78bfa">T</span><b>Tom</b>40m</div>Happens on iOS too.</div>
+<div class="ev"><span class="ag">R</span><b>Reviewer</b> asked for changes: missing test for iOS · 12m</div>
+<div class="inp">Leave a comment…</div></div></div></div>
+<aside class="rp"><div class="h">Properties<span class="sp"></span>⇥</div>
+<div class="pr"><span class="k">Status</span><span class="v"><svg class="st"><use href="#s-prog"/></svg>In progress</span></div>
+<div class="pr"><span class="k">Priority</span><span class="v"><svg class="st"><use href="#p-u"/></svg>Urgent</span></div>
+<div class="pr"><span class="k">Assignee</span><span class="v"><span class="ag">C</span>Coder</span></div>
+<div class="pr"><span class="k">For</span><span class="v"><span class="av" style="background:#93c552">L</span>Lea</span></div>
+<div class="pr"><span class="k">Estimate</span><span class="v">3</span></div>
+<div class="pr"><span class="k">Cycle</span><span class="v">Cycle 7</span></div>
+<div class="pr"><span class="k">Labels</span><span class="v"><span class="lab"><i style="background:var(--err)"></i>bug</span></span></div>
+<div class="pr"><span class="k">Repos</span><span class="v">api, web</span></div>
+<div class="pr"><span class="k">Run</span><span class="v"><svg class="st"><use href="#i-run"/></svg>round 1 of 5 · 41k</span></div>
+<div class="ask"><svg class="ic"><use href="#i-chat"/></svg>Ask Moebius<span class="sp"></span><span class="kb">⌘J</span></div></aside>
+</div>
+
+<h2><span class="tag">8C</span>Inbox</h2>
+<p class="lead">Zeilen von 36 px: Icon, Titel, eine graue Zeile Kontext, Zeit. Keine Kennzahlen-Kästen, keine Knöpfe; Tabs als leise Wörter.</p>
+<div class="win" style="height:340px">
+<nav class="side"><div class="ws"><span class="lg">∞</span>Acme</div><div class="it on"><svg class="ic"><use href="#i-inbox"/></svg>Inbox<span class="n">3</span></div><div class="it"><svg class="ic"><use href="#i-me"/></svg>My work</div><div class="it"><svg class="ic"><use href="#i-chat"/></svg>Chat</div><div class="it"><svg class="ic"><use href="#i-fleet"/></svg>Fleet</div></nav>
+<div class="mainp"><div class="bar"><b style="font-weight:500">Inbox</b><span class="view" style="margin-left:12px"><span class="on">All</span><span>Merge</span><span>Approve</span><span>Proposals</span><span>Mentions</span></span><span class="sp"></span><button class="ghost"><svg class="ic"><use href="#i-filter"/></svg>Filter</button></div>
+<div class="lst">
+<div class="row on"><svg class="st"><use href="#s-done"/></svg><span class="id">ACM-19</span><span class="tt">Add an index on orders.customer_id <span style="color:var(--text3)">· ready to merge · checks passed</span></span><span class="meta">23m</span></div>
+<div class="row"><svg class="st"><use href="#s-back"/></svg><span class="id">ACM-34</span><span class="tt">Support Apple Pay at checkout <span style="color:var(--text3)">· needs approval · outside author</span></span><span class="meta">1h</span></div>
+<div class="row"><svg class="st"><use href="#i-cyc"/></svg><span class="id">Retro</span><span class="tt">Tell the Coder to run the tests first <span style="color:var(--text3)">· 3 trials positive</span></span><span class="meta">11h</span></div>
+<div class="row"><span class="av" style="background:#a78bfa">T</span><span class="id">ACM-18</span><span class="tt">Tom mentioned you <span style="color:var(--text3)">· “@lea can you check the rounding?”</span></span><span class="meta">2d</span></div>
+</div></div>
+<aside class="rp" style="width:48px;align-items:center"><div class="h" style="padding:0;justify-content:center;width:100%">⇤</div><div style="margin-top:auto;margin-bottom:12px;color:var(--text2)"><svg class="ic"><use href="#i-chat"/></svg></div></aside>
+</div>
+
+<h2>Zum Vergleich: so sah der bisherige Entwurf aus</h2>
+<p class="lead">Runde 1–7 folgten dem jetzigen Standard (15 px, Radien 12/16, Pills, Schatten, Karten in Karten). Offen: <a style="color:var(--accent)" href="round-5.html">Runde 5</a>, <a style="color:var(--accent)" href="round-7c.html">Runde 7c</a>.</p>
+</main>
+</body>
+</html>

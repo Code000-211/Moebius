@@ -290,6 +290,11 @@ One board and the work on it, with any number of repositories, or none; work tha
 project's own store of files that Moebius keeps for it.
 _Avoid_: workspace, space
 
+**Project key**:
+A few capital letters that name a project's cards, such as `WEB` in `WEB-24`; chosen when the project is made and kept
+when it is renamed.
+_Avoid_: prefix, slug, project id
+
 **Access token**:
 The secret an owner makes for a person, with which that person signs in to the web app and uses the command line.
 _Avoid_: password, API key, login
