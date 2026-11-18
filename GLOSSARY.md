@@ -274,3 +274,53 @@ _Avoid_: test suite, benchmark
 **Trial window**:
 The daily stretch of time in which Moebius may run trials without asking.
 _Avoid_: test window, maintenance window
+
+## People and planning
+
+Planned in [ADR 0018](docs/adr/0018-more-than-one-person.md) and
+[the plan for people, the wiki and planning](docs/plan/issues-people-wiki-planning.md); not built yet.
+
+**Organisation**:
+Everyone who works on one Moebius server, with their projects; a server holds exactly one, and a second organisation
+runs a second server.
+_Avoid_: workspace, team, tenant
+
+**Project**:
+One board and the work on it, with any number of repositories, or none; work that needs no repository is done in the
+project's own store of files that Moebius keeps for it.
+_Avoid_: workspace, space
+
+**Access token**:
+The secret an owner makes for a person, with which that person signs in to the web app and uses the command line.
+_Avoid_: password, API key, login
+
+**Assignee**:
+A person a card is given to; whether an agent still works on the card is up to the column's script.
+_Avoid_: owner, claimer, responsible
+
+**Home project**:
+The project a repository's new issues land in, unless a `project:<name>` label sends one to another project the
+repository belongs to; a card is on exactly one board.
+_Avoid_: default project, main project
+
+**Card repositories**:
+The repositories a card may change, named before its run starts; a card with several gets one change in each, reviewed
+together and merged together in a fixed order.
+_Avoid_: targets, scope
+
+**Private project**:
+A project only its listed members see, with its wiki pages and what the Retro learns from it; an owner adds members.
+_Avoid_: hidden project, secret project
+
+**Cycle**:
+A time box of one project, with a start and an end, holding the cards the project means to finish in it.
+_Avoid_: sprint, iteration
+
+**Milestone**:
+A goal of the organisation with a target date, holding cards of any projects.
+_Avoid_: epic, module, release
+
+**Intake**:
+A project's way in for requests in a person's own words, which the Moebius agent turns into issues for a member to
+accept or decline.
+_Avoid_: triage, request queue, service desk
