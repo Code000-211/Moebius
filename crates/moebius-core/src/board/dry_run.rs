@@ -10,7 +10,7 @@ use mlua::{Lua, Table};
 
 use super::sandbox::run_sandboxed;
 use super::{Kanban, Limits, resolve_column};
-use crate::app::PERSON;
+use crate::app::is_person;
 
 /// Runs the column script `source`, called `name`, once in the same sandbox as the engine, on a made-up card in
 /// `column` with the given title and author, and returns what it did, one line for each call that has an effect, in
@@ -58,7 +58,7 @@ fn made_up_card(lua: &Lua, column: &str, title: &str, author: &str) -> mlua::Res
     t.set("body", "")?;
     t.set("author", author)?;
     t.set("column", column)?;
-    t.set("trusted", author == PERSON)?;
+    t.set("trusted", is_person(author))?;
     t.set("confirmed", false)?;
     t.set("held", mlua::Value::Nil)?;
     t.set("test_first", false)?;
@@ -355,6 +355,7 @@ mod tests {
     use mlua::Value;
 
     use super::*;
+    use crate::app::PERSON;
     use crate::board::engine::Effects;
     use crate::board::kanban::DEFAULT_SCRIPTS;
     use crate::board::testing::setup;

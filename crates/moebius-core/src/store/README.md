@@ -5,6 +5,19 @@ start. One module per kind of record; `mod.rs` opens the store, holds the migrat
 helpers, and re-exports every record type. Large content lives in `blobs`, and every value written through a record
 goes through secret redaction first.
 
+## People
+
+`store/people.rs` keeps the people of the organisation (ADR 0018).
+
+| Table | Holds |
+|---|---|
+| `people` | Handle (unique regardless of case, without the `@`), display name, role (`owner`, `member`, `viewer`), whether the person is disabled, and when they were added. A trigger refuses every delete: a person is only disabled. |
+
+The migration that adds the table makes the first owner (id 1, handle `owner`) and gives them what a person did before:
+`cards.author` of an issue written through Moebius (on a repository without a forge, or confirmed), `card_comments.author`
+of a comment written through Moebius, `judgements.decider`, `cards.held_by` and `cards.claimed_by`, each `person`
+before and `person:owner` after. A card or comment read from a forge keeps its author, even the login `person`.
+
 ## Workflow runs
 
 `store/workflows.rs` keeps what a workflow run and each of its nodes did; the engine writes them and the web app reads

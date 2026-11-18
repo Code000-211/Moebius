@@ -32,7 +32,7 @@ read in pages of 1000 and never all held in memory. A judgement recorded while t
 | `options` | array of strings | What could be chosen. |
 | `choice` | string | What was chosen. |
 | `reason` | string | Why. A refusal by a failing decider starts with `refused: `. |
-| `decider` | string | Who decided: `person`; the Moebius agent as `agent:<name>`; a column script as `script:<column>` (`moebius.merge_change`, see [column scripts](column-scripts.md)); or a plugin as `<plugin>` or `<plugin>/<part>` (such as `guard/patterns`), or `none` when no decider answers the kind. |
+| `decider` | string | Who decided: `person` for any person (the store's `person:<handle>` is written as `person`, since who decided is not what a decision model should learn from); the Moebius agent as `agent:<name>`; a column script as `script:<column>` (`moebius.merge_change`, see [column scripts](column-scripts.md)); or a plugin as `<plugin>` or `<plugin>/<part>` (such as `guard/patterns`), or `none` when no decider answers the kind. |
 | `run` | number or null | The run the decision was made in. |
 | `card` | number or null | The card it was made for. |
 | `outcome` | string or null | What came of it, null until known: a card that is done gives each of its judgements without an outcome the card's outcome (`merged` when a change of the card was merged, `closed` when the card is done without one, closed on the forge or by a person, say), except those of `localize`, whose outcome is the files the change touched (below); a replayed refusal has `replayed: <how it ended>; <what happened to the files>` (see [the replays](harness-configuration.md#the-replays));. |
@@ -62,4 +62,4 @@ by 32 bits and divide by 10. The judgement is `held_out` when the remainder is 0
 
 Each file has counts, which `moebius export` prints and `POST /v1/exports` returns, and `GET /v1/judgements/kinds`
 gives for what is stored now: `count` judgements, of which `with_outcome` have an outcome, `by_person` were decided by a
-person (decider `person`; the scarcest labels) and `held_out` are in the held-out tenth.
+person (decider `person` or `person:<handle>`; the scarcest labels) and `held_out` are in the held-out tenth.

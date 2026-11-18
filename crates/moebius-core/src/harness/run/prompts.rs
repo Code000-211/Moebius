@@ -2,7 +2,7 @@
 //! attempts), the issue's comments, the files likely to be relevant, the lessons of earlier cards, the rule of red then green in a repository
 //! that works test first, and the notes of the last round. The same for every harness.
 
-use crate::app::{App, PERSON};
+use crate::app::{App, is_person};
 use crate::blobs::redact;
 use crate::store::{Card, Comment, Repository};
 
@@ -148,7 +148,7 @@ fn trusted_voice(
 ) -> Option<Voice> {
     // A repository without a forge has no forge users: everything in it was written through Moebius.
     if local || repository.forge == "none" {
-        if comment.author == PERSON {
+        if is_person(&comment.author) {
             return Some(Voice::Person);
         }
         if let Some(agent) = comment.author.strip_prefix("agent:") {
@@ -363,6 +363,18 @@ mod tests {
         app.store
             .add_comment(card.id, author, body, None, Some(forge_id))
             .unwrap();
+    }
+
+    /// A known person's comment, and the first owner's after the migration, is a person's as the bare one is.
+    #[test]
+    fn a_known_persons_comment_is_told_as_the_persons() {
+        let (_dir, app, card) = setup("none");
+        local(&app, &card, "person:lea", "Use the new API.");
+        let prompt = prompt_for(&app, &card, "code", None);
+        assert!(
+            prompt.contains("[the person using Moebius] wrote:\n> Use the new API."),
+            "{prompt}"
+        );
     }
 
     #[test]

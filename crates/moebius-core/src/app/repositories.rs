@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use super::{App, AppError, PERSON, Result};
+use super::{App, AppError, Result, is_person};
 use crate::bus::Event;
 use crate::decide::Actor;
 use crate::store::{Card, Repository};
@@ -154,7 +154,7 @@ impl App {
             return false;
         };
         if repository.forge == "none" {
-            return card.author == PERSON;
+            return is_person(&card.author);
         }
         repository
             .trusted
@@ -234,6 +234,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::PERSON;
 
     use crate::app::columns;
     use crate::repos::git;
@@ -303,12 +304,18 @@ mod tests {
         };
         assert!(app.is_trusted(&card(&local, PERSON)));
         assert!(!app.is_trusted(&card(&local, "leon")));
+        assert!(
+            app.is_trusted(&card(&local, "person:lea")),
+            "a known person is trusted as the bare one is"
+        );
+        assert!(!app.is_trusted(&card(&local, "person:")));
         assert!(app.is_trusted(&card(&remote, "leon")), "logins ignore case");
         assert!(!app.is_trusted(&card(&remote, "mallory")));
         assert!(
             !app.is_trusted(&card(&remote, PERSON)),
             "a GitHub user named like the desktop's person is an outsider"
         );
+        assert!(!app.is_trusted(&card(&remote, "person:lea")));
     }
 
     #[test]

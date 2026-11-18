@@ -537,6 +537,7 @@ At the top:
 |---|---|
 | `store/mod.rs` | The store: opening the SQLite database, its migrations, the connection and the server's local clock, the helpers that read rows, and every record type re-exported as `store::<Type>`. |
 | `store/cards.rs` | Repositories, their cards, whether a card is held, the issues that block a card, the moves of a card between columns, deleting a card or a repository with all it has, and the numbers of deleted cards. |
+| `store/people.rs` | The people of the organisation (id, handle, display name, role, disabled), never deleted, and the migration that makes the first owner and gives them the records from before that say `person`. |
 | `store/issues.rs` | What an issue has besides its text: its parent, labels, claim, whether it was closed, and its comments. |
 | `store/changes.rs` | Changes: a branch offered for merging, with its pull request, checks and review. |
 | `store/attempts.rs` | Attempts: the runs a card was tried with at once, how each fared, which was picked and why, and the rounds of which none passed. |
