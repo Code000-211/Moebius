@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moebius prototype</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark;
+--ground:#0b0b0a;--page:#161615;--card:#1b1b1a;--raised:#212120;--hover:rgb(255 255 250/5%);--sel:rgb(255 255 250/8%);
+--line:rgb(255 255 250/7%);--line2:rgb(255 255 250/11%);--text:#ecebe8;--text2:#9d9c98;--text3:#6c6b67;
+--accent:#8b8cf5;--todo:#8a8985;--prog:#e8b44a;--review:#6aa7f0;--done:#5fb98a;--err:#e5686e;
+--edge:0 0 0 1px rgb(255 255 255/4.5%),inset 0 1px 0 rgb(255 255 255/3%);
+--cardShadow:0 1px 1px rgb(0 0 0/25%),0 2px 6px -2px rgb(0 0 0/30%);--cardShadowHover:0 1px 1px rgb(0 0 0/25%),0 6px 14px -4px rgb(0 0 0/40%);
+--overlay:0 12px 32px -8px rgb(0 0 0/55%);--glass:rgb(30 30 29/72%);--scrim:rgb(0 0 0/40%);--grain:.09}
+:root[data-theme=light]{color-scheme:light;
+--ground:#efefec;--page:#fdfdfc;--card:#fff;--raised:#fff;--hover:rgb(20 20 15/4%);--sel:rgb(20 20 15/7%);
+--line:rgb(20 20 15/7%);--line2:rgb(20 20 15/12%);--text:#1d1d1b;--text2:#6a6965;--text3:#9c9b97;
+--accent:#5e5ff0;--todo:#9c9b97;--prog:#d39b1e;--review:#3b82e0;--done:#2f9a66;--err:#d2444b;
+--edge:0 0 0 1px rgb(0 0 0/4%),0 1px 2px rgb(0 0 0/4%),0 4px 14px -4px rgb(0 0 0/6%),0 18px 48px -12px rgb(0 0 0/8%);
+--cardShadow:0 1px 1px rgb(0 0 0/4%),0 2px 6px -2px rgb(0 0 0/8%);--cardShadowHover:0 1px 1px rgb(0 0 0/5%),0 6px 14px -4px rgb(0 0 0/12%);
+--overlay:0 12px 32px -8px rgb(0 0 0/18%);--glass:rgb(255 255 255/75%);--scrim:rgb(20 20 15/18%);--grain:.12}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--ground);color:var(--text);font:13px/1.5 Inter,ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased;font-feature-settings:"cv11","ss01","ss03";letter-spacing:-.003em;overflow:hidden}
+::selection{background:color-mix(in srgb,var(--accent) 35%,transparent)}
+button{font:inherit;color:inherit}
+a{color:inherit;text-decoration:none}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px}
+.t2{color:var(--text2)}.t3{color:var(--text3)}.sp{flex:1}
+/* the ground with its texture */
+.app{position:relative;isolation:isolate;display:flex;height:100vh;padding:6px 0}
+.app::before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,color-mix(in srgb,var(--text) 5%,transparent),transparent 45%)}
+.app::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;opacity:var(--grain);mix-blend-mode:overlay;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
+:root[data-theme=light] .app::after{mix-blend-mode:multiply;filter:invert(1)}
+/* left sidebar */
+.side{width:232px;flex:none;padding:4px 8px 6px;display:flex;flex-direction:column;gap:1px;color:var(--text2);overflow:auto}
+.org{display:flex;align-items:center;gap:8px;padding:8px;margin-bottom:6px;border-radius:8px;background:color-mix(in srgb,var(--text) 4%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255/4%);color:var(--text);font-weight:600}
+.logo{width:20px;height:20px;border-radius:6px;background:var(--text);color:var(--ground);display:grid;place-items:center;font-size:12px;font-weight:700}
+.it{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border-radius:6px;cursor:pointer;transition:background .12s;white-space:nowrap}
+.it:hover{background:var(--hover)}
+.it.on{background:color-mix(in srgb,var(--text) 8%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255/5%),0 1px 2px rgb(0 0 0/25%);color:var(--text)}
+.it .n{margin-left:auto;font-size:12px;color:var(--text3)}
+.it.sub{padding-left:30px}
+.gl{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--text3);padding:14px 8px 4px;font-weight:500;display:flex;align-items:center}
+.sw{display:flex;align-items:center;gap:8px;height:32px;padding:0 8px;margin:10px 0 2px;border-radius:8px;cursor:pointer;color:var(--text);font-weight:500;border:1px solid var(--line2)}
+.sw:hover{background:var(--hover)}
+.pdot{width:16px;height:16px;border-radius:4px;display:inline-grid;place-items:center;font-size:9px;font-weight:700;color:#111;flex:none}
+.foot{margin-top:auto;display:flex;gap:2px;padding-top:8px}
+.foot .it{flex:none}
+.ic{width:14px;height:14px;flex:none}
+/* the page */
+.page{flex:1;min-width:0;background:var(--page);border-radius:12px;box-shadow:var(--edge);display:flex;flex-direction:column;overflow:hidden;position:relative;background-image:radial-gradient(900px 220px at 30% -80px,color-mix(in srgb,var(--accent) 7%,transparent),transparent)}
+.bar{height:44px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid var(--line)}
+.crumb{color:var(--text2);display:flex;align-items:center;gap:6px;white-space:nowrap}.crumb b{color:var(--text);font-weight:500;letter-spacing:-.01em}
+.crumb a:hover{color:var(--text)}
+.body{flex:1;overflow:auto;position:relative}
+.pad{padding:20px 24px}
+.btn{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 10px;border-radius:6px;border:1px solid var(--line2);background:transparent;color:var(--text);cursor:pointer;white-space:nowrap;transition:background .12s}
+.btn:hover{background:var(--hover)}
+.ghost{border-color:transparent;color:var(--text2)}.ghost:hover{color:var(--text)}
+.prim{background:linear-gradient(180deg,#fff,#dcdbd8);color:#111;border:0;font-weight:500;box-shadow:inset 0 1px 0 rgb(255 255 255/60%),0 1px 2px rgb(0 0 0/40%)}
+.prim:hover{background:linear-gradient(180deg,#fff,#e8e7e4)}
+:root[data-theme=light] .prim{background:linear-gradient(180deg,#2a2a28,#111);color:#fff}
+.danger{color:var(--err)}
+.kb{font-size:11px;color:var(--text3);border:1px solid var(--line2);border-radius:4px;padding:0 4px;line-height:16px;font-family:Inter}
+.seg{display:inline-flex;gap:2px}.seg span{padding:3px 8px;border-radius:6px;color:var(--text2);cursor:pointer}.seg span.on{background:var(--sel);color:var(--text)}
+.seg span:hover{color:var(--text)}
+.tabs{display:flex;gap:2px}
+h1{font-size:20px;font-weight:600;letter-spacing:-.02em;margin:0}
+h2{font-size:15px;font-weight:600;letter-spacing:-.01em;margin:0}
+h3{font-size:13px;font-weight:600;margin:0}
+.lead{color:var(--text2);margin:4px 0 0}
+/* status and priority */
+.st{width:14px;height:14px;flex:none;vertical-align:-2px}
+.av{width:18px;height:18px;border-radius:999px;display:inline-grid;place-items:center;font-size:9px;font-weight:600;color:#111;flex:none}
+.ag{width:18px;height:18px;border-radius:5px;display:inline-grid;place-items:center;font-size:9px;font-weight:700;background:var(--sel);color:var(--text2);flex:none}
+.lab{display:inline-flex;align-items:center;gap:5px;color:var(--text2);font-size:12px;border:1px solid var(--line2);border-radius:999px;padding:0 7px;height:20px;white-space:nowrap}
+.lab i{width:6px;height:6px;border-radius:99px;display:inline-block}
+.link{color:var(--accent);cursor:pointer}
+.chip{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 4px 0 8px;border-radius:6px;border:1px solid var(--line2);color:var(--text2);font-size:12px}
+.chip b{color:var(--text);font-weight:500}.chip .x{padding:0 4px;cursor:pointer;color:var(--text3)}.chip .x:hover{color:var(--text)}
+.toolbar{display:flex;align-items:center;gap:6px;padding:8px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+/* board */
+.board{display:flex;gap:14px;padding:14px 16px;align-items:flex-start;min-height:100%}
+.col{width:244px;flex:none;display:flex;flex-direction:column;gap:6px}
+.ch{display:flex;align-items:center;gap:8px;height:28px;color:var(--text);font-weight:500;letter-spacing:-.01em}
+.ch .c{color:var(--text3);font-weight:400}.ch .pl{margin-left:auto;color:var(--text3);cursor:pointer;padding:0 4px;border-radius:4px}.ch .pl:hover{background:var(--hover);color:var(--text)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 10px;display:flex;flex-direction:column;gap:6px;cursor:pointer;box-shadow:var(--cardShadow);transition:transform .18s cubic-bezier(.16,.84,.44,1),box-shadow .18s,border-color .18s;position:relative}
+.card:hover{transform:translateY(-1px);box-shadow:var(--cardShadowHover);border-color:var(--line2)}
+.card.sel{border-color:color-mix(in srgb,var(--accent) 55%,transparent);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 40%,transparent),0 0 22px -6px color-mix(in srgb,var(--accent) 40%,transparent)}
+.card .id{color:var(--text3);font-size:12px;display:flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums}
+.card .t{color:var(--text);line-height:1.4;letter-spacing:-.005em;text-wrap:pretty}
+.card .m{display:flex;align-items:center;gap:8px;color:var(--text3);font-size:12px;min-height:18px}
+.card .cb{position:absolute;top:8px;right:8px;opacity:0}.card:hover .cb,.card.chk .cb{opacity:1}
+.addrow{color:var(--text3);padding:4px 6px;border-radius:6px;cursor:pointer}.addrow:hover{background:var(--hover);color:var(--text)}
+.inline{background:var(--card);border:1px solid var(--text3);border-radius:8px;padding:8px 10px}
+.inline input{all:unset;width:100%;color:var(--text)}
+/* lists */
+.gh{display:flex;align-items:center;gap:8px;height:32px;padding:0 16px;background:color-mix(in srgb,var(--text) 2.5%,transparent);color:var(--text);font-weight:500;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:1;backdrop-filter:blur(12px)}
+.gh .c{color:var(--text3);font-weight:400}
+.row{display:flex;align-items:center;gap:10px;height:36px;padding:0 16px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s;white-space:nowrap}
+.row:hover{background:var(--hover)}.row.on{background:var(--sel)}
+.row .id{color:var(--text3);width:64px;font-size:12px;font-variant-numeric:tabular-nums;flex:none}
+.row .tt{flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;min-width:0}
+.row .tt span{color:var(--text3)}
+.row .meta{color:var(--text3);font-size:12px}
+.cb{width:14px;height:14px;border-radius:4px;border:1px solid var(--line2);display:inline-grid;place-items:center;flex:none;font-size:10px;cursor:pointer;background:var(--page)}
+.cb.on{background:var(--text);border-color:var(--text);color:var(--page)}
+.row .cb{opacity:0}.row:hover .cb,.row.chk .cb{opacity:1}
+.dot{width:7px;height:7px;border-radius:99px;background:var(--accent);flex:none}
+.empty{color:var(--text3);padding:40px;text-align:center}
+/* split list / detail */
+.split{display:flex;height:100%}
+.split .lst{width:280px;flex:none;border-right:1px solid var(--line);overflow:auto}
+.split .det{flex:1;overflow:auto;min-width:0}
+.li{padding:9px 14px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s}
+.li:hover{background:var(--hover)}.li.on{background:var(--sel)}
+.li b{font-weight:500;display:block;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.li span{color:var(--text3);font-size:12px}
+.field{border:1px solid var(--line2);border-radius:8px;padding:10px 12px;color:var(--text);background:color-mix(in srgb,var(--ground) 40%,transparent);line-height:1.6}
+textarea.field{width:100%;font:inherit;resize:vertical;min-height:120px}
+.sec{margin-top:22px}
+.sec>h3{margin-bottom:8px;color:var(--text2);font-weight:500}
+/* timeline */
+.tl{display:flex;flex-direction:column}
+.ev{display:flex;align-items:center;gap:8px;color:var(--text3);font-size:12px;min-height:28px}
+.ev b{color:var(--text2);font-weight:500}
+.cm{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:4px 0;background:var(--card)}
+.cm .w{display:flex;gap:6px;align-items:center;color:var(--text3);font-size:12px;margin-bottom:2px}.cm .w b{color:var(--text);font-weight:500}
+.composer{border:1px solid var(--line2);border-radius:10px;padding:10px 12px;color:var(--text3);margin-top:10px;background:var(--card)}
+/* right sidebar */
+.right{width:272px;flex:none;display:flex;flex-direction:column;padding:4px 8px 6px 6px;color:var(--text2);transition:width .24s cubic-bezier(.16,.84,.44,1);overflow:hidden;position:relative}
+.right.rail{width:52px}
+.rh{display:flex;align-items:center;height:32px;padding:0 6px;color:var(--text3);gap:8px;white-space:nowrap}
+.rh b{color:var(--text2);font-weight:500}
+.pr{display:grid;grid-template-columns:84px 1fr;align-items:center;min-height:30px;padding:0 6px;color:var(--text)}
+.pr .k{color:var(--text3)}
+.pr .v{display:flex;align-items:center;gap:6px;border-radius:6px;padding:3px 6px;margin-left:-6px;cursor:pointer;transition:background .12s;min-width:0;white-space:nowrap;overflow:hidden}
+.pr .v:hover{background:var(--hover)}
+.rtitle{padding:4px 6px 10px;color:var(--text);font-weight:600;font-size:14px;letter-spacing:-.015em}
+.rsep{height:1px;background:var(--line);margin:8px 6px}
+.ask{margin-top:auto;display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:8px;color:var(--text2);cursor:pointer;background:color-mix(in srgb,var(--text) 4%,transparent);box-shadow:inset 0 1px 0 rgb(255 255 255/4%);white-space:nowrap}
+.ask:hover{color:var(--text);background:color-mix(in srgb,var(--text) 7%,transparent)}
+.rail .ask{justify-content:center;padding:0}.rail .ask span{display:none}
+/* agent panel over the right sidebar */
+.agent{position:absolute;top:6px;right:6px;bottom:6px;width:400px;background:color-mix(in srgb,var(--page) 94%,transparent);backdrop-filter:blur(24px) saturate(1.4);border-radius:12px;box-shadow:var(--edge),var(--overlay);display:none;flex-direction:column;z-index:30;overflow:hidden}
+.agent.on{display:flex;animation:slide .22s cubic-bezier(.16,.84,.44,1)}
+@keyframes slide{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
+.agent .ah{height:44px;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid var(--line)}
+.agent .ab{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.bubble{background:color-mix(in srgb,var(--text) 6%,transparent);border-radius:10px;padding:8px 12px;align-self:flex-end;max-width:85%}
+.step{display:flex;gap:8px;align-items:center;color:var(--text3);font-size:12px}
+/* overlays */
+.scrim{position:fixed;inset:0;background:var(--scrim);backdrop-filter:blur(4px);display:none;place-items:start center;padding-top:12vh;z-index:50}
+.scrim.on{display:grid}
+.sheet{width:560px;max-width:calc(100vw - 32px);background:var(--glass);backdrop-filter:blur(24px) saturate(1.4);border-radius:12px;box-shadow:var(--edge),var(--overlay);overflow:hidden;animation:pop .16s cubic-bezier(.16,.84,.44,1)}
+@keyframes pop{from{opacity:0;transform:scale(.97) translateY(-4px)}to{opacity:1;transform:none}}
+.pal input{all:unset;display:block;width:100%;box-sizing:border-box;padding:14px 16px;font-size:15px;border-bottom:1px solid var(--line);color:var(--text)}
+.pal .g{padding:8px 16px 2px;color:var(--text3);font-size:11px}
+.pal .o{display:flex;gap:10px;align-items:center;height:34px;padding:0 16px;color:var(--text);cursor:pointer}
+.pal .o.on,.pal .o:hover{background:var(--sel)}.pal .o .kb{margin-left:auto}
+.pal .ft{display:flex;gap:14px;padding:8px 16px;border-top:1px solid var(--line);color:var(--text3);font-size:12px}
+.menu{position:fixed;z-index:60;min-width:200px;background:var(--glass);backdrop-filter:blur(24px) saturate(1.4);border-radius:10px;box-shadow:var(--edge),var(--overlay);padding:4px;display:none;animation:pop .14s cubic-bezier(.16,.84,.44,1)}
+.menu.on{display:block}
+.menu .o{display:flex;gap:8px;align-items:center;height:30px;padding:0 10px;border-radius:6px;cursor:pointer;color:var(--text)}
+.menu .o:hover{background:var(--sel)}.menu .o .kb{margin-left:auto}
+.menu .g{padding:6px 10px 2px;color:var(--text3);font-size:11px}
+.hover{position:fixed;z-index:70;width:300px;background:var(--glass);backdrop-filter:blur(24px);border-radius:10px;box-shadow:var(--edge),var(--overlay);padding:12px;display:none;pointer-events:none}
+.hover.on{display:block;animation:pop .14s cubic-bezier(.16,.84,.44,1)}
+.bulk{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);display:none;align-items:center;gap:6px;padding:6px 6px 6px 14px;border-radius:10px;background:var(--glass);backdrop-filter:blur(24px);box-shadow:var(--edge),var(--overlay);z-index:20;white-space:nowrap}
+.bulk.on{display:flex;animation:pop .16s cubic-bezier(.16,.84,.44,1)}
+.tip{position:fixed;z-index:80;background:var(--raised);border:1px solid var(--line2);color:var(--text);font-size:12px;border-radius:6px;padding:3px 8px;pointer-events:none;opacity:0;transition:opacity .12s}
+.tip.on{opacity:1;transition-delay:.35s}
+/* misc */
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;cursor:pointer;box-shadow:var(--cardShadow);transition:transform .18s,box-shadow .18s}
+.tile:hover{transform:translateY(-1px);box-shadow:var(--cardShadowHover)}
+.stat{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--card)}
+.stat .v{font-size:20px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.pbar{height:4px;border-radius:99px;background:var(--sel);overflow:hidden}.pbar i{display:block;height:100%;background:var(--done)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.code{font-family:"JetBrains Mono",monospace;font-size:12px;line-height:1.7;padding:14px 16px;white-space:pre;color:var(--text2);overflow:auto}
+.code .k{color:var(--accent)}.code .s{color:var(--done)}.code .c{color:var(--text3)}
+.term{background:color-mix(in srgb,var(--ground) 70%,transparent);border-radius:10px;padding:12px 14px;font-family:"JetBrains Mono",monospace;font-size:12px;line-height:1.7;color:var(--text2);height:100%}
+.term b{color:var(--done);font-weight:400}
+.doc{max-width:680px}
+.doc p{font-size:14px;line-height:1.65;margin:0 0 12px}.doc h2{margin:22px 0 8px}
+.toc{width:180px;flex:none;padding:28px 12px;color:var(--text3);font-size:12px;border-left:1px solid var(--line)}
+.toc div{padding:3px 0;cursor:pointer}.toc div:hover{color:var(--text)}
+.toggle{width:28px;height:16px;border-radius:99px;background:var(--sel);position:relative;display:inline-block;cursor:pointer;flex:none}
+.toggle.on{background:var(--done)}.toggle i{position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:99px;background:#fff;transition:left .16s}.toggle.on i{left:14px}
+.signin{position:fixed;inset:0;display:none;place-items:center;z-index:90;background:var(--ground)}
+.signin.on{display:grid}
+.tbl{width:100%;border-collapse:collapse}
+.tbl td,.tbl th{text-align:left;padding:8px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl th{color:var(--text3);font-weight:500;font-size:12px}
+.note{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);background:var(--glass);backdrop-filter:blur(20px);border-radius:8px;box-shadow:var(--edge),var(--overlay);padding:6px 12px;color:var(--text2);font-size:12px;z-index:85;display:none}
+.note.on{display:block;animation:pop .16s}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="s-back" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--todo)" stroke-width="1.5" stroke-dasharray="2 2"/></symbol>
+<symbol id="s-todo" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--todo)" stroke-width="1.5"/></symbol>
+<symbol id="s-prog" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--prog)" stroke-width="1.5"/><path d="M7 3.5a3.5 3.5 0 0 1 0 7z" fill="var(--prog)"/></symbol>
+<symbol id="s-rev" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--review)" stroke-width="1.5"/><path d="M7 3.5a3.5 3.5 0 1 1-3.03 1.75L7 7z" fill="var(--review)"/></symbol>
+<symbol id="s-merge" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--done)" stroke-width="1.5"/><circle cx="7" cy="7" r="2.6" fill="var(--done)"/></symbol>
+<symbol id="s-done" viewBox="0 0 14 14"><circle cx="7" cy="7" r="6.25" fill="var(--done)"/><path d="M4.3 7.2l1.8 1.8 3.6-3.8" fill="none" stroke="var(--page)" stroke-width="1.5"/></symbol>
+<symbol id="s-block" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--err)" stroke-width="1.5"/><path d="M3.2 10.8l7.6-7.6" stroke="var(--err)" stroke-width="1.5"/></symbol>
+<symbol id="p-h" viewBox="0 0 14 14"><rect x="2" y="8" width="2" height="4" rx=".5" fill="var(--text2)"/><rect x="6" y="5" width="2" height="7" rx=".5" fill="var(--text2)"/><rect x="10" y="2" width="2" height="10" rx=".5" fill="var(--text2)"/></symbol>
+<symbol id="p-m" viewBox="0 0 14 14"><rect x="2" y="8" width="2" height="4" rx=".5" fill="var(--text2)"/><rect x="6" y="5" width="2" height="7" rx=".5" fill="var(--text2)"/><rect x="10" y="2" width="2" height="10" rx=".5" fill="var(--line2)"/></symbol>
+<symbol id="p-l" viewBox="0 0 14 14"><rect x="2" y="8" width="2" height="4" rx=".5" fill="var(--text2)"/><rect x="6" y="5" width="2" height="7" rx=".5" fill="var(--line2)"/><rect x="10" y="2" width="2" height="10" rx=".5" fill="var(--line2)"/></symbol>
+<symbol id="p-n" viewBox="0 0 14 14"><path d="M3 7h2M6 7h2M9 7h2" stroke="var(--text3)" stroke-width="1.5"/></symbol>
+<symbol id="p-u" viewBox="0 0 14 14"><rect x="1" y="1" width="12" height="12" rx="3" fill="var(--err)"/><rect x="6.2" y="3.5" width="1.6" height="4.5" fill="var(--page)"/><rect x="6.2" y="9.2" width="1.6" height="1.6" fill="var(--page)"/></symbol>
+<symbol id="run" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="20 10"><animateTransform attributeName="transform" type="rotate" from="0 7 7" to="360 7 7" dur="1.6s" repeatCount="indefinite"/></circle></symbol>
+<symbol id="i-inbox" viewBox="0 0 14 14"><path d="M1.5 8l1.6-5.5h7.8L12.5 8v3.5h-11zM1.5 8h3l1 1.5h3l1-1.5h3" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-me" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="7" cy="7" r="2" fill="currentColor"/></symbol>
+<symbol id="i-chat" viewBox="0 0 14 14"><path d="M2 2.5h10v7H6l-3 2.5v-2.5H2z" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-fleet" viewBox="0 0 14 14"><path d="M7.5 1.5L3 8h3.5l-1 4.5L10 6H6.5z" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-board" viewBox="0 0 14 14"><rect x="1.5" y="2" width="3" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="5.5" y="2" width="3" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="9.5" y="2" width="3" height="5" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-cyc" viewBox="0 0 14 14"><path d="M11.5 7a4.5 4.5 0 1 1-1.3-3.2M11.5 2v2.5H9" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-doc" viewBox="0 0 14 14"><path d="M3 1.5h5l3 3v8H3z M8 1.5v3h3" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-in" viewBox="0 0 14 14"><path d="M7 1.5v7M4 5.5l3 3 3-3M2 9.5v3h10v-3" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-files" viewBox="0 0 14 14"><path d="M1.5 3h4l1 1.5h6v7h-11z" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-view" viewBox="0 0 14 14"><path d="M2 3.5h10M2 7h10M2 10.5h6" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-flag" viewBox="0 0 14 14"><path d="M3 12.5V2h7l-1.5 2.5L10 7H3" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-clock" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7 4v3l2 1.5" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-flow" viewBox="0 0 14 14"><rect x="1.5" y="5" width="3" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="9.5" y="1.5" width="3" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="9.5" y="8.5" width="3" height="4" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M4.5 7h2.5V3.5h2.5M7 7v3.5h2.5" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-up" viewBox="0 0 14 14"><path d="M2 11l3.5-4 2.5 2.5L12 4M9 4h3v3" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-gear" viewBox="0 0 14 14"><circle cx="7" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2 1.6"/></symbol>
+<symbol id="i-plus" viewBox="0 0 14 14"><path d="M7 2.5v9M2.5 7h9" stroke="currentColor" stroke-width="1.3"/></symbol>
+<symbol id="i-filter" viewBox="0 0 14 14"><path d="M2 3h10M4 7h6M6 11h2" stroke="currentColor" stroke-width="1.3"/></symbol>
+<symbol id="i-search" viewBox="0 0 14 14"><circle cx="6" cy="6" r="4" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M9 9l3 3" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-down" viewBox="0 0 14 14"><path d="M4 5.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-right" viewBox="0 0 14 14"><path d="M5.5 4l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-left" viewBox="0 0 14 14"><path d="M8.5 4l-3 3 3 3" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-more" viewBox="0 0 14 14"><circle cx="3" cy="7" r="1.1" fill="currentColor"/><circle cx="7" cy="7" r="1.1" fill="currentColor"/><circle cx="11" cy="7" r="1.1" fill="currentColor"/></symbol>
+<symbol id="i-moon" viewBox="0 0 14 14"><path d="M11.5 8.5A5 5 0 0 1 5.5 2.5a5 5 0 1 0 6 6z" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-collapse" viewBox="0 0 14 14"><rect x="1.5" y="2" width="11" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M9 2v10" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-lock" viewBox="0 0 14 14"><rect x="3" y="6" width="8" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M5 6V4.5a2 2 0 0 1 4 0V6" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+<symbol id="i-star" viewBox="0 0 14 14"><path d="M7 1.8l1.6 3.3 3.6.5-2.6 2.5.6 3.6L7 10l-3.2 1.7.6-3.6L1.8 5.6l3.6-.5z" fill="none" stroke="currentColor" stroke-width="1.1"/></symbol>
+<symbol id="i-term" viewBox="0 0 14 14"><rect x="1.5" y="2" width="11" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M4 5.5l2 1.5-2 1.5M7.5 9h2.5" fill="none" stroke="currentColor" stroke-width="1.2"/></symbol>
+</defs></svg>
+
+<div class="signin" id="signin"><div style="width:340px;text-align:center"><div class="logo" style="width:36px;height:36px;font-size:20px;margin:0 auto 16px;border-radius:10px">∞</div><h1>Sign in to Acme</h1><p class="lead" style="margin-bottom:20px">Paste the access token an owner gave you.</p><input class="field" style="width:100%;font:inherit;outline:none" placeholder="moebius_…" value="moebius_lea_8f3c…"><button class="btn prim" style="width:100%;justify-content:center;margin-top:10px;height:32px" onclick="go('#/inbox')">Sign in</button><p class="t3" style="margin-top:16px;font-size:12px">No token? Ask an owner of this server.</p></div></div>
+
+<div class="app">
+<nav class="side" id="side"></nav>
+<main class="page" id="page"><div class="bar" id="bar"></div><div class="body" id="body"></div><div class="bulk" id="bulk"></div></main>
+<aside class="right" id="right"></aside>
+<div class="agent" id="agent"><div class="ah"><b style="color:var(--text);font-weight:600">Moebius</b><span class="t3" id="agentCtx">viewing Board</span><span class="sp"></span><button class="btn ghost" onclick="agent(false)" title="Back to properties">Properties</button><button class="btn ghost" onclick="agent(false)">✕</button></div><div class="ab"><div class="bubble">What is waiting on the discount fix?</div><div class="step"><svg class="st"><use href="#s-done"/></svg><span class="mono">"$MOEBIUS" board storefront</span></div><div class="step"><svg class="st"><use href="#s-done"/></svg><span class="mono">"$MOEBIUS" card SHOP-30</span></div><div>One card: <span class="link" data-card="SHOP-30">SHOP-30</span>, the refunds endpoint, waits for <span class="link" data-card="SHOP-24">SHOP-24</span>. The Coder is in round 1 of 5 on it, so SHOP-30 should start within the hour.</div></div><div style="padding:12px"><div class="composer" style="margin:0">Write to Moebius</div></div></div>
+</div>
+<div class="scrim" id="scrim"></div>
+<div class="menu" id="menu"></div>
+<div class="hover" id="hov"></div>
+<div class="tip" id="tip"></div>
+<div class="note" id="note"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const svg=(id,c='st')=>`<svg class="${c}"><use href="#${id}"/></svg>`;
+const ic=id=>svg(id,'ic');
+const PEOPLE={L:['Lea','#93c552'],T:['Tom','#a78bfa'],K:['kfrost','#45b8c9'],M:['Mira','#f07ac0']};
+const av=k=>`<span class="av" style="background:${PEOPLE[k][1]}">${k}</span>`;
+const ag=n=>`<span class="ag">${n[0]}</span>`;
+const PRI={u:'p-u',h:'p-h',m:'p-m',l:'p-l',n:'p-n'},PRIN={u:'Urgent',h:'High',m:'Medium',l:'Low',n:'No priority'};
+const COLS=[['Backlog','s-back'],['Not started','s-todo'],['In progress','s-prog'],['In review','s-rev'],['Ready to merge','s-merge'],['Done','s-done']];
+const COLIC=Object.fromEntries(COLS);
+const PROJECTS=[{key:'SHOP',name:'Storefront',c:'#45b8c9',repos:['api','web','docs'],people:'LTK',open:9},{key:'MKT',name:'Marketing',c:'#f07ac0',repos:[],people:'M',open:4},{key:'LAW',name:'Contracts',c:'#cf7f4e',repos:[],people:'LT',open:2,priv:true}];
+let project=PROJECTS[0];
+const CARDS=[
+{id:'SHOP-31',t:'Add pagination to the orders endpoint',col:'Backlog',p:'l',kind:'Feature',est:3,repos:'api'},
+{id:'SHOP-34',t:'Support Apple Pay at checkout',col:'Backlog',p:'m',who:'K',note:'needs approval',kind:'Feature',est:5,repos:'api, web'},
+{id:'SHOP-27',t:'Send the order confirmation email',col:'Not started',p:'m',blocked:true,note:'Blocked: waiting for the mail provider',kind:'Task',est:2,repos:'api'},
+{id:'SHOP-30',t:'Add the refunds endpoint',col:'Not started',p:'h',who:'L',note:'Waits on SHOP-24',kind:'Feature',est:5,repos:'api'},
+{id:'SHOP-29',t:'Cache the product catalogue for 60 seconds',col:'Not started',p:'l',kind:'Task',est:2,repos:'api'},
+{id:'SHOP-24',t:'Fix the rounding of discounts in the cart',col:'In progress',p:'u',agent:'Coder',round:1,who:'L',kind:'Bug',est:3,repos:'api, web',cycle:'Cycle 7',ms:'Launch 2.0'},
+{id:'SHOP-26',t:'Retry failed webhook deliveries with backoff',col:'In progress',p:'m',agent:'Coder',round:2,kind:'Task',est:3,repos:'api'},
+{id:'SHOP-22',t:'Validate the shipping address before payment',col:'In review',p:'m',agent:'Reviewer',kind:'Bug',est:2,repos:'web'},
+{id:'SHOP-19',t:'Add an index on orders.customer_id',col:'Ready to merge',p:'l',note:'PR #214 · checks passed',kind:'Task',est:1,repos:'api'},
+{id:'SHOP-18',t:'Checkout total off by one cent',col:'Done',p:'u',who:'L',kind:'Bug',est:2,repos:'api'},
+];
+const card=id=>CARDS.find(c=>c.id===id);
+let state={layout:'board',filters:[['Assignee','Lea'],['Cycle','current']],checked:new Set(),improve:true,settings:false,agent:false,inline:null,msTimeline:false};
+
+/* ---------- shell ---------- */
+function sideHTML(){
+  const r=location.hash||'#/inbox';
+  const it=(h,icon,label,n='',cls='')=>`<a class="it ${cls} ${r===h||r.startsWith(h+'/')||(h==='#/board'&&/^#\/(issue|run)\//.test(r))||(h==='#/cycles'&&r==='#/cycle')||(h==='#/workflows'&&r==='#/workflow')||(h==='#/settings/projects'&&r==='#/settings/project')?'on':''}" href="${h}">${ic(icon)}<span>${label}</span>${n?`<span class="n">${n}</span>`:''}</a>`;
+  if(state.settings){
+    return `<div class="org"><span class="logo">∞</span>Acme</div>
+    <a class="it" onclick="state.settings=false;go('#/inbox')">${ic('i-left')}Back</a>
+    <div class="gl">Settings</div>
+    ${it('#/settings/general','i-gear','General')}${it('#/settings/people','i-me','People','4')}${it('#/settings/projects','i-files','Projects','3')}
+    ${it('#/settings/agents','i-fleet','Agents','3')}${it('#/settings/skills','i-star','Skills')}${it('#/settings/mcp','i-flow','MCP servers')}${it('#/settings/rules','i-flag','Rules')}
+    ${it('#/settings/models','i-up','Models')}${it('#/settings/plugins','i-plus','Plugins')}${it('#/settings/usage','i-up','Usage')}
+    ${it('#/settings/terminal','i-term','Terminal')}${it('#/settings/ports','i-flow','Ports')}${it('#/settings/start','i-star','Get started')}
+    <div class="foot"><a class="it" onclick="theme()" data-tip="Light or dark">${ic('i-moon')}</a><a class="it" onclick="go('#/signin')" data-tip="Sign out">${ic('i-left')}</a></div>`;
+  }
+  return `<div class="org"><span class="logo">∞</span>Acme<span class="sp"></span><span class="t3" style="cursor:pointer" onclick="pal(true)" data-tip="Search · Ctrl K">${ic('i-search')}</span></div>
+  ${it('#/inbox','i-inbox','Inbox','4')}${it('#/mywork','i-me','My work')}${it('#/chat','i-chat','Chat','2')}${it('#/fleet','i-fleet','Fleet','3')}
+  <div class="sw" onclick="projectMenu(event)"><span class="pdot" style="background:${project.c}">${project.key[0]}</span>${project.name}${project.priv?ic('i-lock'):''}<span class="sp"></span><span class="t3">${ic('i-down')}</span></div>
+  ${it('#/board','i-board','Board','9')}${it('#/cycles','i-cyc','Cycles')}${it('#/wiki','i-doc','Wiki')}${it('#/intake','i-in','Intake','1')}${project.repos.length?it('#/files','i-files','Files'):''}
+  <div class="gl">Plan</div>${it('#/views','i-view','Views')}${it('#/milestones','i-flag','Milestones')}${it('#/orgwiki','i-doc','Wiki')}
+  <div class="gl">Automate</div>${it('#/automations','i-clock','Automations')}${it('#/workflows','i-flow','Workflows')}
+  <a class="it" onclick="state.improve=!state.improve;render()">${ic('i-up')}<span>Improve</span><span class="n">${ic(state.improve?'i-down':'i-right')}</span></a>
+  ${state.improve?it('#/retro','i-cyc','Retro','','sub')+it('#/experiments','i-flow','Experiments','','sub')+it('#/decisions','i-up','Decisions','','sub'):''}
+  <div class="foot"><a class="it" onclick="state.settings=true;go('#/settings/general')" data-tip="Settings">${ic('i-gear')}</a><a class="it" onclick="theme()" data-tip="Light or dark">${ic('i-moon')}</a></div>`;
+}
+function bar(crumbs,right=''){return `<div class="crumb">${crumbs}</div><span class="sp"></span>${right}`}
+const crumbP=(...rest)=>`<span class="pdot" style="background:${project.c}">${project.key[0]}</span><a href="#/board">${project.name}</a>${rest.map((x,i)=>` <span class="t3">›</span> ${i===rest.length-1?`<b>${x}</b>`:x}`).join('')}`;
+const palBtn=`<button class="btn ghost" onclick="pal(true)" data-tip="Search and commands">${ic('i-search')}<span class="kb">Ctrl K</span></button>`;
+function rightHTML(props){
+  if(!props) return `<div class="rh" style="justify-content:center;padding:0">${ic('i-collapse')}</div><div class="ask" onclick="agent(true)" data-tip="Ask Moebius · Ctrl J">${ic('i-chat')}<span>Ask Moebius</span></div>`;
+  return `<div class="rh"><b>Properties</b><span class="sp"></span><span style="cursor:pointer" data-tip="Fold">${ic('i-collapse')}</span></div>${props}<div class="ask" onclick="agent(true)">${ic('i-chat')}<span>Ask Moebius</span><span class="sp"></span><span class="kb">Ctrl J</span></div>`;
+}
+const pr=(k,v)=>`<div class="pr"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+function cardProps(c){
+  return `<div class="rtitle">${c.t}</div>${pr('Status',svg(COLIC[c.col])+c.col)}${pr('Priority',svg(PRI[c.p])+PRIN[c.p])}${pr('Assignee',c.agent?ag(c.agent)+c.agent:c.who?av(c.who)+PEOPLE[c.who][0]:'<span class="t3">No one</span>')}${pr('For',c.who?av(c.who)+PEOPLE[c.who][0]:'<span class="t3">—</span>')}
+  ${pr('Kind',c.kind)}${pr('Estimate',c.est+' points')}${pr('Cycle',c.cycle||'<span class="t3">None</span>')}${pr('Milestone',c.ms||'<span class="t3">None</span>')}${pr('Labels','<span class="lab"><i style="background:var(--err)"></i>'+(c.kind==='Bug'?'bug':'checkout')+'</span>')}${pr('Repos',c.repos)}
+  <div class="rsep"></div>${c.agent?pr('Run',svg('run')+'round '+(c.round||1)+' of 5 · 41k')+pr('Time','6m 50s'):pr('Run','<span class="t3">Not started</span>')}${pr('Change',c.col==='Ready to merge'?'PR #214 · checks passed':'<span class="t3">None yet</span>')}`;
+}
+
+/* ---------- pages ---------- */
+const P={};
+P.inbox=()=>{
+  const items=[['s-merge','SHOP-19','Add an index on orders.customer_id','ready to merge · checks passed · review approved','23m',1],['s-back','SHOP-34','Support Apple Pay at checkout','needs approval · outside author kfrost','1h',1],['i-cyc','Retro','Tell the Coder to run the tests first','proposal · 3 trials positive','11h',1],['T','SHOP-18','Tom mentioned you','“@lea can you check the rounding?”','2d',0],['i-in','MKT-7','The newsletter form is broken','request in Intake · drafted by Moebius','2d',0]];
+  return {bar:bar('<b>Inbox</b> <span class="seg" style="margin-left:10px"><span class="on">All 5</span><span>Merge 1</span><span>Approve 1</span><span>Proposals 1</span><span>Mentions 1</span><span>Intake 1</span></span>',`<button class="btn ghost">${ic('i-filter')}Filter</button>`),
+  body:items.map((x,i)=>`<div class="row ${i===0?'on':''}" onclick="selRow(this)">${x[5]?'<span class="dot"></span>':'<span style="width:7px"></span>'}${x[0].length===1?av(x[0]):x[0].startsWith('i-')?`<span class="t3">${ic(x[0])}</span>`:svg(x[0])}<span class="id">${x[1]}</span><span class="tt">${x[2]} <span>· ${x[3]}</span></span><span class="meta">${x[4]}</span></div>`).join(''),
+  props:`<div class="rtitle">Add an index on orders.customer_id</div>${pr('Project','Storefront')}${pr('Card','<span class="link" data-card="SHOP-19">SHOP-19</span>')}${pr('Change','PR #214 · api')}${pr('Checks',svg('s-done')+'Passed')}${pr('Review',svg('s-done')+'Approved, both axes')}${pr('Rounds','1 · 38k tokens')}<div style="display:flex;gap:6px;padding:10px 6px"><button class="btn prim" onclick="note('Merged SHOP-19')">Merge</button><button class="btn">Send back…</button><button class="btn ghost">Open diff</button></div>`};
+};
+P.mywork=()=>({bar:bar('<b>My work</b> <span class="seg" style="margin-left:10px"><span class="on">Assigned 4</span><span>Created 7</span><span>Following 12</span></span>',palBtn),
+  body:[['Storefront',[CARDS[5],CARDS[3]]],['Marketing',[{id:'MKT-4',t:'Write the launch post',col:'Not started',p:'m'}]],['Contracts',[{id:'LAW-2',t:'Check the hosting contract',col:'Backlog',p:'m'}]]].map(([g,cs])=>`<div class="gh">${g} <span class="c">${cs.length}</span></div>`+cs.map(c=>listRow(c)).join('')).join(''),props:null});
+function listRow(c){return `<div class="row ${state.checked.has(c.id)?'chk on':''}" onclick="openCard('${c.id}')"><span class="cb ${state.checked.has(c.id)?'on':''}" onclick="event.stopPropagation();check('${c.id}')">${state.checked.has(c.id)?'✓':''}</span>${svg(PRI[c.p])}<span class="id">${c.id}</span>${svg(COLIC[c.col]||'s-todo')}<span class="tt">${c.t}${c.note?` <span>· ${c.note}</span>`:''}</span>${c.agent?svg('run')+`<span class="meta">${c.agent}</span>`:''}${c.est?`<span class="meta">${c.est}</span>`:''}${c.who?av(c.who):'<span style="width:18px"></span>'}</div>`}
+P.chat=()=>({bar:bar('<b>Chat</b>',`<button class="btn">${ic('i-plus')}New chat</button>`),
+  body:`<div class="split"><div class="lst"><div style="padding:8px 12px"><span class="seg"><span class="on">Mine 3</span><span>Shared 2</span></span></div>
+  <div class="li on"><b>${svg('run')} The CSV export of orders times out</b><span>Coder · Storefront · 4 min</span></div><div class="li"><b>Write a rule that keeps agents out of CI</b><span>Moebius · Storefront · 1 h</span></div><div class="li"><b>Why does the orders list scroll twice</b><span>Coder · Storefront · 1 h</span></div></div>
+  <div class="det" style="display:flex;flex-direction:column"><div class="bar"><b style="font-weight:500">The CSV export of orders times out</b><span class="sp"></span><button class="btn ghost">Terminal</button><button class="btn">Share</button><button class="btn">Stop</button></div>
+  <div class="pad" style="flex:1;max-width:760px"><div class="cm"><div class="w"><b>You</b>4m</div>The CSV export of orders times out for the bigger shops. Find out why and fix it. See <span class="link" data-card="SHOP-26">SHOP-26</span>.</div>
+  <p>I will start with the export handler and the query behind it.</p><div class="step">${svg('s-done')}<span class="mono">rg -n "fn export_orders" src</span></div><div class="step">${svg('s-done')}<span class="mono">read export.rs</span></div>
+  <p>The handler loads every order of the shop into memory before it writes the first line. For a shop with 400,000 orders that is the timeout.</p><div class="step">${svg('run')}<span class="mono">cargo test -p orders export</span></div></div>
+  <div style="padding:12px 24px 20px;max-width:760px"><div class="composer">Write to Coder<div style="display:flex;gap:6px;margin-top:10px"><span class="lab">Storefront</span><span class="lab">local-coder ⌄</span><span class="lab">medium ⌄</span></div></div></div></div></div>`,props:null});
+P.fleet=()=>({bar:bar('<b>Fleet</b> <span class="t3" style="margin-left:6px">3 agents working</span>',`<button class="btn ghost">${ic('i-filter')}Filter</button><button class="btn ghost">Display</button>`),
+  body:`<div class="toolbar"><span class="chip">Project is <b>Storefront</b><span class="x">✕</span></span><button class="btn ghost">${ic('i-plus')}Filter</button></div>`+
+  [['Coder',[['SHOP-24','Fix the rounding of discounts in the cart','cargo test -p cart discount','41k · 6m 50s'],['SHOP-26','Retry failed webhook deliveries with backoff','cargo clippy -p webhooks','118k · 18m']]],['Reviewer',[['SHOP-22','Validate the shipping address before payment','rg -n SHIPPING_COUNTRIES src','67k · 4m']]]].map(([g,rs])=>`<div class="gh">${ag(g)} ${g} <span class="c">${rs.length}</span></div>`+rs.map(r=>`<div class="row ${state.checked.has(r[0])?'chk on':''}" onclick="go('#/run/${r[0]}')"><span class="cb ${state.checked.has(r[0])?'on':''}" onclick="event.stopPropagation();check('${r[0]}')">${state.checked.has(r[0])?'✓':''}</span>${svg('run')}<span class="id">${r[0]}</span><span class="tt">${r[1]} <span class="mono">· ${r[2]}</span></span><span class="meta">${r[3]}</span></div>`).join('')).join(''),props:null});
+P.board=()=>{
+  const filt=`<div class="toolbar">${state.filters.map((f,i)=>`<span class="chip">${f[0]} is <b>${f[1]}</b><span class="x" onclick="state.filters.splice(${i},1);render()">✕</span></span>`).join('')}<button class="btn ghost" onclick="filterMenu(event)">${ic('i-plus')}Filter</button><span class="sp"></span><button class="btn ghost" onclick="displayMenu(event)">Display</button>${state.filters.length?'<button class="btn">Save view</button>':''}</div>`;
+  const layout=`<span class="seg" style="margin-left:10px"><span class="${state.layout==='board'?'on':''}" onclick="state.layout='board';render()">Board</span><span class="${state.layout==='list'?'on':''}" onclick="state.layout='list';render()">List</span></span>`;
+  let b;
+  if(state.layout==='board'){
+    b=`<div class="board">${COLS.slice(0,5).map(([c,s])=>{const cs=CARDS.filter(x=>x.col===c);return `<div class="col"><div class="ch">${svg(s)}${c} <span class="c">${cs.length}</span><span class="pl" onclick="state.inline='${c}';render()" data-tip="Add a card">+</span></div>${cs.map(x=>`<div class="card ${state.sel===x.id?'sel':''} ${state.checked.has(x.id)?'chk':''}" onclick="openCard('${x.id}')" onmouseenter="state.focus='${x.id}'"><span class="cb ${state.checked.has(x.id)?'on':''}" onclick="event.stopPropagation();check('${x.id}')">${state.checked.has(x.id)?'✓':''}</span><div class="id">${x.blocked?svg('s-block'):''}${x.id}</div><div class="t">${x.t}</div><div class="m">${svg(PRI[x.p])}${x.agent?svg('run')+x.agent+(x.round?' · round '+x.round:''):x.note?x.note:''}<span class="sp"></span>${x.agent?ag(x.agent):x.who?av(x.who):''}</div></div>`).join('')}${state.inline===c?`<div class="inline"><input autofocus placeholder="Title of the new card" onkeydown="if(event.key==='Enter'){note('Made a card in ${c}');state.inline=null;render()}if(event.key==='Escape'){state.inline=null;render()}"><div class="t3" style="font-size:11px;margin-top:6px"><span class="kb">↵</span> create · <span class="kb">Esc</span> cancel</div></div>`:`<div class="addrow" onclick="state.inline='${c}';render()">+ Add</div>`}</div>`}).join('')}</div>`;
+  } else {
+    b=COLS.slice(0,5).map(([c,s])=>{const cs=CARDS.filter(x=>x.col===c);return `<div class="gh">${svg(s)}${c} <span class="c">${cs.length}</span></div>`+cs.map(listRow).join('')}).join('');
+  }
+  return {bar:bar(crumbP('Board')+layout,`${palBtn}<button class="btn ghost" data-tip="A shell in the clone">${ic('i-term')}</button><button class="btn prim" onclick="newIssue()" data-tip="New issue · C">New issue</button>`),body:filt+b,props:state.sel?cardProps(card(state.sel)):null};
+};
+P.issue=id=>{const c=card(id)||CARDS[5];state.sel=c.id;
+  return {bar:bar(crumbP('<a href="#/board">Board</a>',c.id),`<button class="btn ghost" data-tip="Copy link">⧉</button><button class="btn ghost" onclick="cardMenu(event)">${ic('i-more')}</button>`),
+  body:`<div class="pad" style="max-width:780px;padding:32px 48px"><h1 style="font-size:22px">${c.t}</h1><div class="doc" style="margin-top:12px"><p>A 15 % discount on three items rounds each line and then the total, so the cart is one cent off. Round once, at the end, as <span class="link">Payments</span> in the wiki says.</p><p class="t2">Steps: add three items of 3.33, apply SAVE15, compare the total with the sum of the lines.</p></div>
+  <div style="display:flex;gap:6px;margin:6px 0 24px"><span class="lab">${ic('i-plus')} Sub-issue</span><span class="lab">Related: <span class="link" data-card="SHOP-18">SHOP-18</span></span></div>
+  <h3 style="color:var(--text2);font-weight:500;margin-bottom:8px">Activity</h3><div class="tl">
+  <div class="ev">${av('L')}<b>Lea</b> created the issue · Mon</div><div class="ev">${svg('s-todo')}<b>Board</b> moved it to Not started, set priority Urgent, assigned Coder · <span class="t2">3 changes</span> · Mon</div>
+  <div class="ev">${svg('s-prog')}<b>Board</b> moved it to In progress · 2h</div><div class="ev">${ag('Coder')}<b>Coder</b> started round 1 · 1h · <a class="t2" href="#/run/${c.id}">View run</a></div>
+  <div class="cm"><div class="w">${av('T')}<b>Tom</b>40m</div>Happens on iOS too. The total on the receipt is right, only the cart is off.</div>
+  <div class="ev">${ag('Reviewer')}<b>Reviewer</b> asked for changes: missing test for iOS · 12m</div><div class="ev">${svg('s-block')}<b>Rule</b> no-force-push refused <span class="mono">git push --force</span> · 8m</div></div>
+  <div class="composer">Leave a comment… <span class="t3">@ to mention, # to link</span></div></div>`,props:cardProps(c)};};
+P.run=id=>{const c=card(id)||CARDS[5];return {bar:bar(crumbP('<a href="#/board">Board</a>',`<a href="#/issue/${c.id}">${c.id}</a>`,'Run 41'),`<span class="seg"><span class="on">Conversation</span><span>Terminal</span><span>Changes</span></span><button class="btn">Stop run</button>`),
+  body:`<div class="pad" style="max-width:860px"><div style="display:flex;align-items:center;gap:8px">${svg('run')}<h2>${c.agent||'Coder'} · ${c.t}</h2></div><div class="t3" style="margin:4px 0 18px">Storefront · api, web · round 1 of 5 · 41k tokens · 6m 50s · for Lea</div>
+  <div class="tl"><div class="step">${svg('s-done')}Read <span class="mono">cart/discount.rs</span></div><div class="step">${svg('s-done')}Edited <span class="mono">cart/discount.rs</span> · +12 −4</div><p>The line totals are rounded in <span class="mono">line_total()</span>; I move the rounding to <span class="mono">cart_total()</span> and keep the lines exact.</p>
+  <div class="step">${svg('s-block')}Refused <span class="mono">git push --force</span> · rule no-force-push</div><div class="step">${svg('s-done')}Ran <span class="mono">cargo test -p cart</span> · 48 passed</div><div class="step">${svg('run')}Running <span class="mono">cargo test -p cart discount</span></div></div>
+  <div class="composer">Steer the run…</div></div>`,props:null};};
+P.cycles=()=>({bar:bar(crumbP('Cycles'),`<button class="btn">${ic('i-plus')}New cycle</button>`),
+  body:`<div class="row on" onclick="go('#/cycle')">${svg('s-prog')}<span class="tt">Cycle 7 <span>· Nov 11 – Nov 22 · 4 days left</span></span><div class="pbar" style="width:160px"><i style="width:55%"></i></div><span class="meta">11 of 20 points</span></div><div class="row">${svg('s-todo')}<span class="tt">Cycle 8 <span>· Nov 25 – Dec 6 · upcoming</span></span><div class="pbar" style="width:160px"><i style="width:0"></i></div><span class="meta">6 points planned</span></div><div class="row">${svg('s-done')}<span class="tt">Cycle 6 <span>· Oct 28 – Nov 8 · closed</span></span><div class="pbar" style="width:160px"><i style="width:100%"></i></div><span class="meta">18 of 18 points</span></div>`,props:null});
+P.cycle=()=>({bar:bar(crumbP('<a href="#/cycles">Cycles</a>','Cycle 7'),`<button class="btn">Close cycle</button>`),
+  body:`<div class="pad"><h1>Cycle 7</h1><p class="lead">Nov 11 – Nov 22 · 4 days left</p><div style="display:grid;grid-template-columns:1fr 180px;gap:12px;margin:18px 0"><div class="stat"><svg viewBox="0 0 400 120" width="100%" height="130"><line x1="0" y1="18" x2="400" y2="18" stroke="var(--line2)" stroke-dasharray="3 4"/><polyline fill="none" stroke="var(--text3)" stroke-width="1.5" points="0,110 400,18"/><polyline fill="none" stroke="var(--done)" stroke-width="2" points="0,110 50,104 100,92 150,86 200,68 250,60"/><circle cx="250" cy="60" r="3" fill="var(--done)"/><text x="4" y="12" font-size="11" fill="var(--text3)">Scope 20</text><text x="258" y="58" font-size="11" fill="var(--done)">Done 11</text></svg></div>
+  <div style="display:flex;flex-direction:column;gap:8px"><div class="stat"><div class="t3">Done</div><div class="v">11 pts</div></div><div class="stat"><div class="t3">By agents</div><div class="v">7 cards</div></div><div class="stat"><div class="t3">Tokens per point</div><div class="v">38k</div></div></div></div></div>`+
+  COLS.slice(1,4).map(([c,s])=>`<div class="gh">${svg(s)}${c}</div>`+CARDS.filter(x=>x.col===c).map(listRow).join('')).join(''),props:null});
+P.wiki=(org)=>({bar:bar(org?'<b>Wiki</b> <span class="t3">›</span> Engineering <span class="t3">›</span> <b>On call</b>':crumbP('Wiki','Payments'),`<button class="btn ghost">History</button><button class="btn">Edit</button>`),
+  body:`<div style="display:flex;height:100%"><div style="width:210px;flex:none;border-right:1px solid var(--line);padding:12px 8px;color:var(--text2)">${org?'<div class="gl" style="padding-top:0">Acme</div><a class="it">▾ Engineering</a><a class="it sub on">On call</a><a class="it sub">Release checklist</a><a class="it">▸ People</a><a class="it">Handbook</a>':'<div class="gl" style="padding-top:0">Storefront</div><a class="it">▾ Architecture</a><a class="it sub on">Payments</a><a class="it sub">Search</a><a class="it">▸ Runbooks</a><a class="it">Onboarding</a>'}<div class="addrow" style="margin-top:6px">+ New page</div></div>
+  <div class="pad" style="flex:1;padding:32px 48px;overflow:auto"><div class="doc"><div class="t3" style="font-size:12px">Edited by Lea · 2 days ago</div><h1 style="font-size:26px;margin:6px 0 14px">${org?'On call':'Payments'}</h1><p>How a checkout becomes an order, and where the money is rounded.</p><h2>Rounding</h2><p>Totals are rounded once, at the end, in <span class="mono">cart_total()</span>. Lines stay exact. See <span class="link" data-card="SHOP-18">SHOP-18</span> and <span class="link" data-card="SHOP-24">SHOP-24</span>.</p><h2>Providers</h2><p>Stripe for cards, invoices for business customers. Apple Pay is planned in <span class="link" data-card="SHOP-34">SHOP-34</span>.</p>
+  <div class="t3" style="border-top:1px solid var(--line);padding-top:12px;margin-top:24px;font-size:12px">Linked from · SHOP-18 Checkout total off by one cent · Runbooks / Refunds</div></div></div>
+  <div class="toc"><div style="color:var(--text2);font-weight:500">On this page</div><div>Rounding</div><div>Providers</div></div></div>`,props:null});
+P.orgwiki=()=>P.wiki(true);
+P.intake=()=>({bar:bar(crumbP('Intake'),`<button class="btn">${ic('i-plus')}New request</button>`),
+  body:`<div class="split"><div class="lst"><div class="li on"><b>The newsletter form is broken</b><span>Mira · 2d · drafted</span></div><div class="li"><b>Can we offer gift cards?</b><span>kfrost · 4d · waiting</span></div><div class="li"><b>Export invoices as PDF</b><span>Tom · 1w · accepted as SHOP-35</span></div></div>
+  <div class="det pad" style="padding:28px 36px"><div class="t3" style="font-size:12px">Request by Mira · 2 days ago</div><h1 style="margin:6px 0 10px">The newsletter form is broken</h1><div class="cm" style="max-width:640px">When I sign up with an address with a plus in it, nothing happens.</div>
+  <h3 style="margin:22px 0 8px;color:var(--text2);font-weight:500">Moebius drafted this issue</h3><div class="field" style="max-width:640px"><b>Newsletter sign-up rejects addresses with a plus</b><br><span class="t2">The form's check refuses “a+b@x.com”. Accept the plus, add a test with such an address, and show an error when the server refuses.</span></div>
+  <div style="display:flex;gap:6px;margin-top:12px"><button class="btn prim" onclick="note('Accepted as SHOP-36')">Accept as card</button><button class="btn">Edit</button><button class="btn ghost">Decline…</button></div></div></div>`,props:null});
+P.files=()=>({bar:bar(crumbP('Files','api','src/cart/discount.rs'),`<span class="lab">main</span><button class="btn">Save as commit</button>`),
+  body:`<div style="display:flex;height:100%"><div style="width:220px;flex:none;border-right:1px solid var(--line);padding:10px 8px;color:var(--text2)"><div class="seg" style="margin-bottom:6px"><span class="on">api</span><span>web</span><span>docs</span></div><a class="it">▾ src</a><a class="it sub">▾ cart</a><a class="it sub on" style="padding-left:44px">discount.rs</a><a class="it sub" style="padding-left:44px">total.rs</a><a class="it sub">▸ orders</a><a class="it">Cargo.toml</a><a class="it">README.md</a></div>
+  <div class="code" style="flex:1"><span class="c">// Discounts on a cart's lines; the total is rounded once in total.rs.</span>
+<span class="k">pub fn</span> line_total(line: &amp;Line, discount: Percent) -&gt; Money {
+    <span class="k">let</span> gross = line.price * line.quantity;
+    gross - gross.percent(discount)
+}
+
+<span class="k">#[test]</span>
+<span class="k">fn</span> three_items_with_fifteen_percent_add_up() {
+    <span class="k">let</span> cart = cart_of(&amp;[<span class="s">"3.33"</span>, <span class="s">"3.33"</span>, <span class="s">"3.33"</span>]);
+    assert_eq!(cart.total(Percent(15)), money(<span class="s">"8.49"</span>));
+}</div></div>`,props:null});
+P.views=()=>({bar:bar('<b>Views</b>',`<button class="btn">${ic('i-plus')}New view</button>`),
+  body:[['Bugs this week','Kind is Bug · Created this week','Shared','List',7],['My urgent work','Assignee is me · Priority is Urgent, High','Mine','List',3],['Launch 2.0 board','Milestone is Launch 2.0','Shared','Board',20],['Due this month','Due this month','Shared','Calendar',5]].map(v=>`<div class="row" onclick="go('#/board')">${ic('i-view')}<span class="tt">${v[0]} <span>· ${v[1]}</span></span><span class="lab">${v[3]}</span><span class="meta">${v[2]}</span><span class="meta" style="width:30px;text-align:right">${v[4]}</span></div>`).join(''),props:null});
+P.milestones=()=>{const ms=[['Launch 2.0','3 projects','Dec 12',65,'13 of 20 cards',5,40],['Payments v2','Storefront','Jan 20',20,'2 of 10 cards',20,50],['Annual report','Contracts','Feb 28',0,'0 of 6 cards',55,40]];
+  return {bar:bar('<b>Milestones</b> <span class="seg" style="margin-left:10px"><span class="'+(state.msTimeline?'':'on')+'" onclick="state.msTimeline=false;render()">List</span><span class="'+(state.msTimeline?'on':'')+'" onclick="state.msTimeline=true;render()">Timeline</span></span>',`<button class="btn">${ic('i-plus')}New milestone</button>`),
+  body:state.msTimeline?`<div class="pad"><div style="display:grid;grid-template-columns:180px 1fr;border:1px solid var(--line);border-radius:10px;overflow:hidden"><div class="gh" style="position:static">Milestone</div><div class="gh" style="position:static;justify-content:space-between"><span>Nov</span><span>Dec</span><span>Jan</span><span>Feb</span></div>${ms.map(m=>`<div style="padding:10px 16px;border-bottom:1px solid var(--line)">${m[0]}<div class="t3" style="font-size:12px">${m[1]} · ${m[2]}</div></div><div style="position:relative;border-bottom:1px solid var(--line)"><div style="position:absolute;top:14px;left:${m[5]}%;width:${m[6]}%;height:18px;border-radius:99px;background:var(--sel);overflow:hidden;box-shadow:inset 0 0 0 1px var(--line2)"><i style="display:block;height:100%;width:${m[3]}%;background:color-mix(in srgb,var(--done) 55%,transparent)"></i></div><div style="position:absolute;top:0;bottom:0;left:22%;width:1.5px;background:var(--prog)"></div></div>`).join('')}</div></div>`
+  :ms.map(m=>`<div class="row" style="height:52px">${ic('i-flag')}<span class="tt">${m[0]} <span>· ${m[1]}</span></span><div class="pbar" style="width:200px"><i style="width:${m[3]}%"></i></div><span class="meta" style="width:100px">${m[4]}</span><span class="meta">${m[2]}</span></div>`).join(''),props:null};};
+function listDetail(title,crumb,items,i,detail,props,btn){return {bar:bar(crumb,btn||''),body:`<div class="split"><div class="lst">${items.map((x,k)=>`<div class="li ${k===i?'on':''}"><b>${x[0]}</b><span>${x[1]}</span></div>`).join('')}</div><div class="det pad" style="padding:24px 32px">${detail}</div></div>`,props}}
+P.automations=()=>listDetail('Automations','<b>Automations</b>',[['Nightly dependency check','Daily 02:00 · in 3 h'],['Weekly release notes','Fri 09:00'],['Triage new issues','Paused']],0,
+  `<h1>Nightly dependency check</h1><div class="sec"><h3>Prompt</h3><textarea class="field">Check every repository of Storefront for outdated dependencies and open an issue per update with the changelog.</textarea></div><div class="sec"><h3>Past runs</h3><div class="ev">${svg('s-done')}<b>Yesterday 02:00</b> · 3 issues made · <span class="link">Open chat</span></div><div class="ev">${svg('s-done')}<b>Mon 02:00</b> · nothing to update</div><div class="ev">${svg('s-block')}<b>Sun 02:00</b> · failed: registry not reachable</div></div>`,
+  `<div class="rtitle">Nightly dependency check</div>${pr('Runs','<span class="toggle on"><i></i></span> On')}${pr('Schedule','Daily 02:00')}${pr('Next','in 3 h')}${pr('Agent',ag('Coder')+'Coder')}${pr('Project','Storefront')}${pr('Owner',av('L')+'Lea')}<div style="display:flex;gap:6px;padding:10px 6px"><button class="btn" onclick="note('Started Nightly dependency check')">Run now</button><button class="btn ghost danger">Delete…</button></div>`,`<button class="btn">${ic('i-plus')}New automation</button>`);
+P.workflows=()=>({bar:bar('<b>Workflows</b>',`<button class="btn ghost">${ic('i-filter')}Filter</button><button class="btn">${ic('i-plus')}New workflow</button>`),
+  body:[['Release','Cut a release when a milestone is done','On milestone done','7 nodes',svg('s-done')+'Succeeded 2d'],['Security review','Review changes that touch auth','On label security','4 nodes',svg('s-prog')+'Waiting for approval'],['Onboard a repository','Set a new repository up','Manual','5 nodes','<span class="t3">Never run</span>']].map(w=>`<div class="row" style="height:48px" onclick="go('#/workflow')">${ic('i-flow')}<span class="tt">${w[0]} <span>· ${w[1]}</span></span><span class="lab">${w[2]}</span><span class="meta" style="width:60px">${w[3]}</span><span class="meta" style="display:flex;gap:6px;align-items:center;width:170px">${w[4]}</span></div>`).join(''),props:null});
+P.workflow=()=>({bar:bar('<a href="#/workflows">Workflows</a> <span class="t3">›</span> <b>Release</b>',`<span class="t3">Saved</span><button class="btn">Run</button><button class="btn prim">Save</button>`),
+  body:`<div style="height:100%;background-image:radial-gradient(var(--line2) 1px,transparent 1px);background-size:16px 16px;position:relative"><svg width="100%" height="100%" style="position:absolute;inset:0"><g fill="none" stroke="var(--text3)" stroke-width="1.5"><path d="M230 140 C 280 140, 280 140, 330 140"/><path d="M490 140 C 540 140, 540 90, 590 90"/><path d="M490 140 C 540 140, 540 200, 590 200"/><path d="M750 90 C 800 90, 800 140, 850 140"/><path d="M750 200 C 800 200, 800 140, 850 140"/></g></svg>
+  ${[[70,116,'Start','On milestone done'],[330,116,'Agent','Write release notes'],[590,66,'Check','cargo test --workspace'],[590,176,'Approval','Lea approves'],[850,116,'Agent','Tag and publish']].map(n=>`<div class="card" style="position:absolute;left:${n[0]}px;top:${n[1]}px;width:160px;cursor:grab"><div class="id">${n[2]}</div><div class="t">${n[3]}</div></div>`).join('')}</div>`,props:`<div class="rtitle">Release</div>${pr('Trigger','On milestone done')}${pr('Nodes','5')}${pr('Last run',svg('s-done')+'2 days ago')}${pr('Deadline','24 h at approval')}`});
+P.retro=()=>listDetail('Retro','<b>Retro</b>',[['Tuesday, Nov 17','3 errors · 2 proposals'],['Monday, Nov 16','1 error · 1 proposal'],['Sunday, Nov 15','No errors']],0,
+  `<h1>Tuesday, Nov 17</h1><p class="lead">12 runs, 3 failed. The Retro read them at 02:00.</p><div class="sec"><h3>What went wrong</h3><div class="ev">${svg('s-block')}<b>Checks failed twice</b> · SHOP-24, SHOP-26 · the Coder stopped before running the tests</div><div class="ev">${svg('s-block')}<b>Refused tool call</b> · SHOP-24 · git push --force</div></div>
+  <div class="sec"><h3>Proposals</h3><div class="cm"><div class="w"><b>Tell the Coder to run the tests first</b>· Coder's instructions</div><div class="t2">3 trials positive · regression set still passes</div><div style="display:flex;gap:6px;margin-top:8px"><button class="btn prim">Merge</button><button class="btn ghost">Dismiss</button></div></div></div>
+  <div class="sec"><h3>Lessons</h3><div class="ev">${ic('i-star')}<b>Money is rounded once</b> · retrieved 4 times</div></div>`,
+  `<div class="rtitle">Retro of Nov 17</div>${pr('Ran at','02:00')}${pr('Runs read','12')}${pr('Errors','3')}${pr('Proposals','2')}${pr('Trials','3 positive')}<div style="padding:10px 6px"><button class="btn">Run again</button></div>`,`<button class="btn">Run now</button>`);
+P.experiments=()=>listDetail('Experiments','<b>Experiments</b>',[['Smaller model for reviews','Running · 4 of 6 levers'],['Shorter instructions','Draft'],['Test-first on api','Done · +12% pass rate']],0,
+  `<h1>Smaller model for reviews</h1><p class="lead">Can the Reviewer run on a smaller model without missing findings?</p><div class="sec"><h3>Levers</h3></div>`+
+  `<table class="tbl"><tr><th>Lever</th><th>Pass rate</th><th>Tokens</th><th>Result</th></tr><tr><td>Baseline</td><td>82%</td><td>64k</td><td class="t3">—</td></tr><tr><td>local-reviewer, medium</td><td>79%</td><td>21k</td><td>${svg('s-done')} kept</td></tr><tr><td>local-reviewer, low</td><td>61%</td><td>14k</td><td>${svg('s-block')} worse</td></tr><tr><td>local-reviewer, high</td><td>${svg('run')}</td><td></td><td class="t3">running</td></tr></table>`,
+  `<div class="rtitle">Smaller model for reviews</div>${pr('Status',svg('run')+'Running')}${pr('Window','Nightly 01:00–05:00')}${pr('Set','40 past cards')}${pr('Owner',av('T')+'Tom')}<div style="padding:10px 6px"><button class="btn">Stop</button></div>`,`<button class="btn">${ic('i-plus')}New brief</button>`);
+P.decisions=()=>({bar:bar('<b>Decisions</b>',`<button class="btn">Export training set</button>`),
+  body:`<div class="toolbar"><span class="chip">Project is <b>Storefront</b><span class="x">✕</span></span><button class="btn ghost">${ic('i-plus')}Filter</button></div><div class="pad"><div class="grid3"><div class="stat"><div class="t3">Judgements this week</div><div class="v">1,284</div></div><div class="stat"><div class="t3">Shadow agrees with teacher</div><div class="v">94%</div></div><div class="stat"><div class="t3">Taken over</div><div class="v">2 kinds</div></div></div></div>
+  <table class="tbl"><tr><th>Decision point</th><th>Decided by</th><th>Agreement</th><th>Status</th></tr><tr><td>tool_call</td><td>Teacher</td><td>96% of 1,102</td><td>${svg('s-done')} Taken over by the decision model</td></tr><tr><td>review_verdict</td><td>Teacher</td><td>88% of 140</td><td>${svg('run')} Shadowing</td></tr><tr><td>approve_issue</td><td>Person</td><td class="t3">—</td><td class="t3">Not shadowed</td></tr></table>`,props:null});
+/* settings */
+P['settings/general']=()=>({bar:bar('<b>General</b>'),body:`<div class="pad" style="max-width:640px"><h1>General</h1><div class="sec">${[['Organisation name','Acme'],['Server address','https://moebius.acme.internal'],['Daily token budget','20M tokens'],['Trial window','01:00 – 05:00']].map(f=>`<div style="display:grid;grid-template-columns:200px 1fr;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)"><span class="t2">${f[0]}</span><span>${f[1]}</span></div>`).join('')}<div style="display:grid;grid-template-columns:200px 1fr;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)"><span class="t2">Appearance</span><span class="seg"><span>Light</span><span class="on">Dark</span><span>System</span></span></div></div></div>`,props:null});
+P['settings/people']=()=>({bar:bar('<b>People</b>',`<button class="btn prim">${ic('i-plus')}Add person</button>`),
+  body:`<table class="tbl"><tr><th>Person</th><th>Role</th><th>Tokens</th><th>Last seen</th><th></th></tr>${[['L','lea','Owner','2 · used 2 min ago','now'],['T','tom','Member','1 · used 1 h ago','1 h'],['M','mira','Member','1 · used yesterday','1 d'],['K','kfrost','Viewer','1 · never used','—']].map(p=>`<tr><td><span style="display:inline-flex;gap:8px;align-items:center">${av(p[0])}${PEOPLE[p[0]][0]} <span class="t3">@${p[1]}</span></span></td><td><span class="lab">${p[2]} ⌄</span></td><td class="t2">${p[3]}</td><td class="t3">${p[4]}</td><td style="text-align:right"><button class="btn ghost">New token</button><button class="btn ghost">${ic('i-more')}</button></td></tr>`).join('')}</table>`,props:null});
+P['settings/projects']=()=>({bar:bar('<b>Projects</b>',`<button class="btn prim">${ic('i-plus')}New project</button>`),
+  body:`<div class="pad"><div class="tiles">${PROJECTS.map(p=>`<div class="tile" onclick="go('#/settings/project')"><div style="display:flex;gap:8px;align-items:center"><span class="pdot" style="background:${p.c}">${p.key[0]}</span><b style="font-weight:600">${p.name}</b>${p.priv?'<span class="t3">'+ic('i-lock')+'</span>':''}<span class="sp"></span><span class="t3 mono">${p.key}</span></div><div class="t3" style="margin:10px 0">${p.repos.length?p.repos.join(' · '):'No repository · its own files'}</div><div style="display:flex;gap:4px;align-items:center">${[...p.people].map(av).join('')}<span class="sp"></span><span class="t3">${p.open} open</span></div></div>`).join('')}</div></div>`,props:null});
+P['settings/project']=()=>({bar:bar('<a href="#/settings/projects">Projects</a> <span class="t3">›</span> <b>Storefront</b> <span class="seg" style="margin-left:10px"><span>General</span><span class="on">Repositories 3</span><span>Members 3</span><span>Workflow</span><span>Kinds</span><span>Plugins</span></span>',`<button class="btn">${ic('i-plus')}Add repository</button>`),
+  body:[['api','github.com/acme/api','home project','Checks · Test first'],['web','github.com/acme/web','home project','Checks'],['docs','codeberg.org/acme/docs','home: Docs','']].map(r=>`<div class="row" style="height:44px">${ic('i-files')}<span class="tt">${r[0]} <span>· ${r[1]} · ${r[2]}</span></span>${r[3]?`<span class="lab">${r[3]}</span>`:''}<button class="btn ghost">${ic('i-more')}</button></div>`).join(''),props:null});
+P['settings/agents']=()=>listDetail('Agents','<b>Agents</b>',[['Coder','Pi-Bolt · local-coder'],['Reviewer','Claude Code · reviewer'],['Moebius','The agent on every page']],0,
+  `<h1>Coder</h1><p class="lead">Works on a card in its own worktree until the checks pass.</p><div class="sec"><h3>Instructions</h3><textarea class="field" style="min-height:220px">You work on one card. Read the issue and the pages it links to. Write a failing test first when the project works test first. Run the checks before you stop.</textarea></div>`,
+  `<div class="rtitle">Coder</div>${pr('Harness','Pi-Bolt')}${pr('Model','local-coder')}${pr('Effort','medium')}${pr('Runner','gpu-box over SSH')}${pr('Skills','3')}${pr('Extensions','2')}${pr('Success','86% this week')}<div style="padding:10px 6px;display:flex;gap:6px"><button class="btn">Duplicate</button><button class="btn ghost danger">Delete…</button></div>`,`<button class="btn">${ic('i-plus')}New agent</button>`);
+P['settings/skills']=()=>listDetail('Skills','<b>Skills</b>',[['moebius','Built in · the Moebius reference'],['rust-style','Organisation'],['write-release-notes','Storefront']],1,
+  `<h1>rust-style</h1><div class="sec"><textarea class="field mono" style="min-height:240px">---\nname: rust-style\ndescription: How Acme writes Rust.\n---\n\nErrors are thiserror enums per module. No unwrap outside tests.</textarea></div>`,
+  `<div class="rtitle">rust-style</div>${pr('Scope','Organisation')}${pr('Used by','Coder, Reviewer')}${pr('Last edit',av('T')+'Tom · 3d')}`,`<button class="btn">${ic('i-plus')}New skill</button>`);
+P['settings/mcp']=()=>listDetail('MCP servers','<b>MCP servers</b>',[['github','12 tools · through the gateway'],['postgres-readonly','3 tools'],['sentry','5 tools']],0,
+  `<h1>github</h1><div class="sec"><h3>Tools</h3>${['list_issues','create_pull_request','get_file_contents','search_code'].map(t=>`<div class="ev">${svg('s-done')}<span class="mono">${t}</span> · checked by the rules</div>`).join('')}</div>`,
+  `<div class="rtitle">github</div>${pr('Command','npx github-mcp')}${pr('Agents','Coder, Moebius')}${pr('Calls','214 this week')}${pr('Refused','3')}`,`<button class="btn">${ic('i-plus')}Add server</button>`);
+P['settings/rules']=()=>listDetail('Rules','<b>Rules</b>',[['no-force-push','Built in · 3 refusals this week'],['stay-in-the-worktree','Built in · none'],['leave-ci-alone','Organisation · 1 this week'],['no-secrets-in-code','Organisation · none'],['ask-before-new-dependencies','Storefront · api']],3,
+  `<div class="mono" style="font-size:15px;color:var(--text);font-weight:600">no-secrets-in-code</div><p class="lead">The name a refusal says.</p><div class="sec"><textarea class="field">Never write an API key, a token or a password into a file. Read it from the environment. A test may use a fake value, and says so in its name.</textarea></div><div style="display:flex;gap:6px;margin-top:10px"><button class="btn prim">Save</button><button class="btn">✦ Rewrite with Moebius</button></div>`,
+  `<div class="rtitle">no-secrets-in-code</div>${pr('Scope','Organisation')}${pr('Checked by','Teacher')}${pr('Refusals','None this week')}${pr('Last edit',av('L')+'Lea · 2d')}<div style="padding:10px 6px"><button class="btn ghost danger">Delete rule…</button></div>`,`<button class="btn">✦ Write with Moebius</button><button class="btn">${ic('i-plus')}New rule</button>`);
+P['settings/models']=()=>({bar:bar('<b>Models</b>',`<button class="btn">${ic('i-plus')}Add provider</button>`),body:[['Anthropic','API key · 4 models','Teacher, Reviewer'],['local','http://gpu-box:8080 · 2 models','Coder'],['OpenAI','Subscription login · 3 models','—']].map(m=>`<div class="row" style="height:48px">${ic('i-up')}<span class="tt">${m[0]} <span>· ${m[1]}</span></span><span class="meta">${m[2]}</span><button class="btn ghost">${ic('i-more')}</button></div>`).join(''),props:null});
+P['settings/plugins']=()=>({bar:bar('<b>Plugins</b>',`<button class="btn">Browse packages</button>`),body:[['forge-github','1.4.0','Built in'],['decider-patterns','1.0.0','Built in'],['sandbox-bubblewrap','0.3.1','Registry'],['allow-reads','0.1.0','Process']].map(m=>`<div class="row">${ic('i-plus')}<span class="tt">${m[0]} <span>· ${m[1]}</span></span><span class="lab">${m[2]}</span><span class="toggle on"><i></i></span></div>`).join(''),props:null});
+P['settings/usage']=()=>({bar:bar('<b>Usage</b> <span class="seg" style="margin-left:10px"><span class="on">Today</span><span>7 days</span><span>30 days</span></span>'),
+  body:`<div class="toolbar"><span class="chip">Project is <b>Storefront</b><span class="x">✕</span></span><button class="btn ghost">${ic('i-plus')}Filter</button></div><div class="pad"><div class="stat"><div class="t3">Today</div><div class="v">3.1M <span class="t3" style="font-size:13px;font-weight:400">of 20M tokens</span></div><div class="pbar" style="margin-top:10px"><i style="width:16%;background:var(--accent)"></i></div></div>
+  <div class="grid2" style="margin-top:12px">${[['By project',[['Storefront',80,'2.5M'],['Marketing',15,'0.5M'],['Contracts',5,'0.1M']]],['By person',[['Lea',60,'1.9M'],['Tom',30,'0.9M'],['Mira',10,'0.3M']]],['By agent',[['Coder',70,'2.2M'],['Reviewer',22,'0.7M'],['Moebius',8,'0.2M']]],['By model',[['local-coder',62,'1.9M'],['reviewer',30,'0.9M'],['teacher',8,'0.3M']]]].map(([h,rs])=>`<div class="stat"><div class="t3" style="margin-bottom:8px">${h}</div>${rs.map(r=>`<div style="display:grid;grid-template-columns:90px 1fr 44px;gap:10px;align-items:center;height:26px"><span>${r[0]}</span><div class="pbar"><i style="width:${r[1]}%;background:var(--accent)"></i></div><span class="t3" style="text-align:right">${r[2]}</span></div>`).join('')}</div>`).join('')}</div></div>`,props:null});
+P['settings/terminal']=()=>({bar:bar('<b>Terminal</b>'),body:`<div class="pad" style="height:100%"><div class="term">lea@moebius:~$ moebius status<br><b>●</b> server up 4 d · 3 runs · 2 chats<br>lea@moebius:~$ <span style="background:var(--text);color:var(--page)"> </span></div></div>`,props:null});
+P['settings/ports']=()=>({bar:bar('<b>Ports</b>'),body:[['5173','vite · SHOP-24 run 41','ssh -L 5173:localhost:5173 moebius'],['8080','local models','ssh -L 8080:gpu-box:8080 moebius']].map(p=>`<div class="row">${ic('i-flow')}<span class="id">${p[0]}</span><span class="tt">${p[1]} <span class="mono">· ${p[2]}</span></span><button class="btn ghost">Copy</button></div>`).join(''),props:null});
+P['settings/start']=()=>({bar:bar('<b>Get started</b>'),body:`<div class="pad" style="max-width:600px"><h1>Get started</h1><p class="lead">Four steps, about ten minutes.</p><div class="sec">${[['Connect a model','Done',1],['Add a repository','Done',1],['Write your first rule','Next',0],['Invite your team','',0]].map((s,i)=>`<div class="row" style="height:48px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px">${svg(s[2]?'s-done':'s-todo')}<span class="tt">${i+1}. ${s[0]}</span>${s[1]==='Next'?'<button class="btn prim">Start</button>':`<span class="meta">${s[1]}</span>`}</div>`).join('')}</div></div>`,props:null});
+
+/* ---------- router ---------- */
+function render(){
+  const h=(location.hash||'#/inbox').slice(2);
+  $('#signin').classList.toggle('on',h==='signin');
+  state.settings=h.startsWith('settings');
+  const [name,arg]=h.split(/\/(?=[A-Z]{2,}-\d+$)/);
+  const key=P[h]?h:P[name]?name:h.split('/')[0];
+  const fn=P[key]||P.inbox;
+  if(key!=='board'&&key!=='issue') state.sel=key==='issue'?state.sel:null;
+  const v=fn(arg);
+  $('#side').innerHTML=sideHTML();
+  $('#bar').innerHTML=v.bar;$('#body').innerHTML=v.body;
+  const r=$('#right');r.classList.toggle('rail',!v.props);r.innerHTML=rightHTML(v.props);
+  $('#agentCtx').textContent='viewing '+($('#bar .crumb b')?.textContent||'this page');
+  bulk();wire();
+}
+function go(h){location.hash=h}
+addEventListener('hashchange',()=>{state.checked.clear();render()});
+
+/* ---------- interactions ---------- */
+function openCard(id){go('#/issue/'+id)}
+function selRow(el){document.querySelectorAll('.row.on').forEach(r=>r.classList.remove('on'));el.classList.add('on')}
+function check(id){state.checked.has(id)?state.checked.delete(id):state.checked.add(id);render()}
+function bulk(){const n=state.checked.size,b=$('#bulk');b.classList.toggle('on',n>0);b.innerHTML=`<b style="font-weight:500">${n} selected</b><span class="t3">·</span><button class="btn ghost">Assign</button><button class="btn ghost">Cycle</button><button class="btn ghost">Priority</button><button class="btn ghost">Move</button><button class="btn ghost" onclick="state.checked.clear();render()">✕</button>`}
+function theme(){const d=document.documentElement;d.dataset.theme=d.dataset.theme==='light'?'dark':'light'}
+function agent(on){$('#agent').classList.toggle('on',on)}
+function note(t){const n=$('#note');n.textContent=t;n.classList.add('on');clearTimeout(n._t);n._t=setTimeout(()=>n.classList.remove('on'),2200)}
+function menu(e,html){const m=$('#menu');m.innerHTML=html;m.classList.add('on');const r=e.currentTarget.getBoundingClientRect();m.style.left=Math.min(r.left,innerWidth-240)+'px';m.style.top=(r.bottom+6)+'px';e.stopPropagation()}
+addEventListener('click',()=>$('#menu').classList.remove('on'));
+function projectMenu(e){menu(e,'<div class="g">Projects</div>'+PROJECTS.map((p,i)=>`<div class="o" onclick="project=PROJECTS[${i}];render()"><span class="pdot" style="background:${p.c}">${p.key[0]}</span>${p.name}${p.priv?ic('i-lock'):''}<span class="kb">${p.key}</span></div>`).join('')+'<div class="o" onclick="state.settings=true;go(\'#/settings/projects\')">'+ic('i-plus')+'New project</div>')}
+function filterMenu(e){menu(e,'<div class="g">Filter by</div>'+['Assignee','Priority','Kind','Cycle','Milestone','Label','Repository','Column','Author'].map(f=>`<div class="o" onclick="state.filters.push(['${f}','${({Priority:'Urgent',Kind:'Bug',Milestone:'Launch 2.0',Label:'checkout',Repository:'api',Column:'In progress',Author:'Tom',Assignee:'Tom',Cycle:'current'})[f]}']);render()">${f}</div>`).join(''))}
+function displayMenu(e){menu(e,'<div class="g">Display</div><div class="o">Group by<span class="kb">Column</span></div><div class="o">Sort by<span class="kb">Priority</span></div><div class="g">Show on cards</div>'+['Priority','Assignee','Agent and round','Estimate','Labels','Sub-issues','Tokens and time'].map((f,i)=>`<div class="o"><span class="cb ${i<3?'on':''}">${i<3?'✓':''}</span>${f}</div>`).join(''))}
+function cardMenu(e){menu(e,'<div class="o">Assign to…<span class="kb">A</span></div><div class="o">Set priority…<span class="kb">P</span></div><div class="o">Block…<span class="kb">B</span></div><div class="o">Add a sub-issue</div><div class="o" style="color:var(--err)">Delete card…</div>')}
+function pal(on){const s=$('#scrim');if(!on){s.classList.remove('on');return}
+  const c=state.sel||state.focus;s.innerHTML=`<div class="sheet pal" onclick="event.stopPropagation()"><input id="palq" placeholder="${c?'Type a command for '+c+' or search…':'Type a command or search…'}" autofocus>
+  ${c?`<div class="g">${c} ${card(c)?card(c).t:''}</div><div class="o on">Assign to…<span class="kb">A</span></div><div class="o">Set priority…<span class="kb">P</span></div><div class="o">Move to cycle…<span class="kb">⇧C</span></div><div class="o">Block…<span class="kb">B</span></div>`:`<div class="g">Commands</div><div class="o on" onclick="pal(false);newIssue()">${ic('i-plus')}New issue<span class="kb">C</span></div><div class="o" onclick="pal(false);agent(true)">${ic('i-chat')}Ask Moebius<span class="kb">Ctrl J</span></div><div class="o" onclick="theme()">${ic('i-moon')}Switch light and dark</div>`}
+  <div class="g">Recent</div><div class="o" onclick="go('#/wiki');pal(false)">${ic('i-doc')}Payments<span class="t3" style="margin-left:auto">Wiki</span></div><div class="o" onclick="go('#/views');pal(false)">${ic('i-view')}Bugs this week<span class="t3" style="margin-left:auto">View</span></div><div class="o" onclick="go('#/issue/SHOP-24');pal(false)">${svg('p-u')}SHOP-24 Fix the rounding of discounts<span class="t3" style="margin-left:auto">Storefront</span></div>
+  <div class="ft"><span>↑↓ move</span><span>↵ run</span><span>Esc close</span></div></div>`;s.classList.add('on');s.onclick=()=>pal(false);setTimeout(()=>$('#palq')?.focus(),10)}
+function newIssue(){const s=$('#scrim');s.innerHTML=`<div class="sheet" onclick="event.stopPropagation()"><div style="display:flex;align-items:center;gap:8px;padding:12px 16px;color:var(--text3)"><span class="pdot" style="background:${project.c}">${project.key[0]}</span>${project.name} › New issue<span class="sp"></span><span style="cursor:pointer" onclick="pal(false)">✕</span></div><div style="padding:0 16px 12px"><input style="all:unset;display:block;width:100%;font-size:17px;font-weight:600;color:var(--text)" placeholder="Issue title" value="Export orders as CSV" autofocus><div class="t3" style="margin:6px 0 14px">Add a description…</div><div style="display:flex;gap:6px;flex-wrap:wrap"><span class="lab">${svg('s-back')} Backlog</span><span class="lab">Feature ⌄</span><span class="lab">${svg('p-n')} Priority</span><span class="lab">@ Assignee</span><span class="lab">Estimate</span><span class="lab">Cycle</span><span class="lab">Repos: api</span></div></div><div style="display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--line)"><span class="t2" style="cursor:pointer">✦ Write it out with Moebius</span><span class="sp"></span><span class="t2" style="display:flex;gap:6px;align-items:center"><span class="cb"></span>Create more</span><button class="btn prim" onclick="pal(false);note('Made SHOP-37')">Create issue</button></div></div>`;s.classList.add('on');s.onclick=()=>pal(false)}
+addEventListener('keydown',e=>{const k=e.key.toLowerCase();const typing=['INPUT','TEXTAREA'].includes(document.activeElement.tagName);
+  if((e.metaKey||e.ctrlKey)&&k==='k'){e.preventDefault();pal(!$('#scrim').classList.contains('on'))}
+  else if((e.metaKey||e.ctrlKey)&&k==='j'){e.preventDefault();agent(!$('#agent').classList.contains('on'))}
+  else if(k==='escape'){pal(false);agent(false);state.checked.clear();$('#menu').classList.remove('on');render()}
+  else if(!typing&&k==='c'&&!e.metaKey&&!e.ctrlKey){e.preventDefault();newIssue()}});
+function wire(){
+  document.querySelectorAll('[data-tip]').forEach(el=>{el.onmouseenter=()=>{const t=$('#tip'),r=el.getBoundingClientRect();t.textContent=el.dataset.tip;t.style.left=Math.min(r.left,innerWidth-200)+'px';t.style.top=(r.bottom+6)+'px';t.classList.add('on')};el.onmouseleave=()=>$('#tip').classList.remove('on')});
+  document.querySelectorAll('[data-card]').forEach(el=>{let timer;el.onmouseenter=()=>{timer=setTimeout(()=>{const c=card(el.dataset.card);if(!c)return;const h=$('#hov'),r=el.getBoundingClientRect();h.innerHTML=`<div class="t3" style="font-size:12px">Storefront · ${c.kind}</div><div style="font-weight:600;margin:2px 0 8px">${c.id} ${c.t}</div><div style="display:flex;gap:8px;align-items:center;color:var(--text2)">${svg(COLIC[c.col])}${c.col}${svg(PRI[c.p])}${c.est} pts<span class="sp"></span>${c.who?av(c.who):''}</div>${c.agent?`<div class="step" style="margin-top:8px">${svg('run')}${c.agent} running · round ${c.round||1}</div>`:''}`;h.style.left=Math.min(r.left,innerWidth-320)+'px';h.style.top=(r.bottom+8)+'px';h.classList.add('on')},350)};el.onmouseleave=()=>{clearTimeout(timer);$('#hov').classList.remove('on')};el.onclick=()=>openCard(el.dataset.card)});
+}
+render();
+</script>
+</body>
+</html>
