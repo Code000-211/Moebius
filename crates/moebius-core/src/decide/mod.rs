@@ -33,7 +33,13 @@ pub struct Question {
 /// Who acts through the desktop API: a person, or a run of the Moebius agent operating Moebius with its own token.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Actor {
+    /// A person who is not named: the one person of a server that knows no people yet.
     Person,
+    /// A person known by id and handle (ADR 0018); the call sites move to it from [`Actor::Person`] in later steps.
+    Member {
+        id: i64,
+        handle: String,
+    },
     Agent {
         name: String,
         run: i64,
@@ -45,10 +51,23 @@ pub enum Actor {
 }
 
 impl Actor {
-    /// The decider a judgement records for this actor: `person`, `agent:<name>` or `script:<column>`.
+    /// The actor of a person that may or may not be known: [`Actor::Member`] for a known one, else [`Actor::Person`].
+    pub fn person(known: Option<(i64, &str)>) -> Self {
+        match known {
+            Some((id, handle)) => Actor::Member {
+                id,
+                handle: handle.to_string(),
+            },
+            None => Actor::Person,
+        }
+    }
+
+    /// The decider a judgement records for this actor: `person`, `person:<handle>`, `agent:<name>` or
+    /// `script:<column>`.
     pub fn decider(&self) -> String {
         match self {
             Actor::Person => crate::app::PERSON.to_string(),
+            Actor::Member { handle, .. } => crate::app::person_author(Some(handle)),
             Actor::Agent { name, .. } => format!("agent:{name}"),
             Actor::Script { column } => format!("script:{column}"),
         }
@@ -334,6 +353,23 @@ mod tests {
     use moebius_plugin_api::{Call, Kind, Manifest, Plugin, PluginError};
     use serde_json::Value;
     use std::time::Duration;
+
+    #[test]
+    fn a_known_person_decides_as_person_colon_handle_and_an_unknown_one_as_person() {
+        let known = Actor::person(Some((7, "ada")));
+        assert_eq!(
+            known,
+            Actor::Member {
+                id: 7,
+                handle: "ada".into()
+            }
+        );
+        assert_eq!(known.decider(), "person:ada");
+        assert_eq!(Actor::person(None), Actor::Person);
+        assert_eq!(Actor::Person.decider(), "person");
+        assert_eq!(crate::app::person_author(Some("ada")), "person:ada");
+        assert_eq!(crate::app::person_author(None), "person");
+    }
 
     struct Refuser;
     impl Plugin for Refuser {

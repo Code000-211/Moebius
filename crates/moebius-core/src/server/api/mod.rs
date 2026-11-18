@@ -361,7 +361,7 @@ fn issue_tracker_route(method: &axum::http::Method, path: &str) -> bool {
 /// Refuses an agent what only a person may do.
 fn person_only(by: &Actor) -> Result<(), ApiError> {
     match by {
-        Actor::Person => Ok(()),
+        Actor::Person | Actor::Member { .. } => Ok(()),
         Actor::Agent { .. } | Actor::Script { .. } => Err(ApiError(
             StatusCode::FORBIDDEN,
             "only a person can do this".into(),

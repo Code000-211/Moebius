@@ -90,6 +90,14 @@ pub fn runs_since_retry<'a>(runs: &'a [Run], card: &Card) -> impl Iterator<Item 
 /// The author of issues a person created in the web app; their cards are trusted.
 pub const PERSON: &str = "person";
 
+/// The author or decider of a person's work: `person:<handle>` for a known person, `person` ([`PERSON`]) for none.
+pub fn person_author(handle: Option<&str>) -> String {
+    match handle {
+        Some(handle) => format!("{PERSON}:{handle}"),
+        None => PERSON.to_string(),
+    }
+}
+
 /// Why an operation failed.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
