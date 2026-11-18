@@ -197,10 +197,39 @@ textarea.field{width:100%;font:inherit;resize:vertical;min-height:120px}
 .tbl th{color:var(--text3);font-weight:500;font-size:12px}
 .note{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);background:var(--glass);backdrop-filter:blur(20px);border-radius:8px;box-shadow:var(--edge),var(--overlay);padding:6px 12px;color:var(--text2);font-size:12px;z-index:85;display:none}
 .note.on{display:block;animation:pop .16s}
+
+/* right sidebar variants */
+.shell{display:flex;flex:1;min-width:0;position:relative}
+.switch{position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:95;display:flex;gap:2px;padding:3px;border-radius:9px;background:var(--glass);backdrop-filter:blur(20px);box-shadow:var(--edge),var(--overlay);font-size:12px}
+.switch span{padding:3px 10px;border-radius:6px;color:var(--text2);cursor:pointer;white-space:nowrap}.switch span.on{background:var(--sel);color:var(--text)}
+/* A: one surface, the properties are the page's own right column */
+.ra .right{background:var(--page);border-radius:0 12px 12px 0;margin-right:6px;padding:4px 8px 8px;border-left:1px solid var(--line);position:relative}
+.ra .app::before{}
+.ra .page,.ra .right{outline:0}
+.ra .shell{display:flex;flex:1;min-width:0;border-radius:12px;box-shadow:var(--edge);margin-right:6px;overflow:hidden}
+.ra .shell .page{border-radius:0;box-shadow:none}
+.ra .shell .right{border-radius:0;margin:0}
+.ra .right .rh{height:44px;margin:-4px -8px 4px;padding:0 14px;border-bottom:1px solid var(--line)}
+.ra .right.rail{width:0;padding:0;border:0}
+.ra .barask{display:inline-flex}
+/* B: a second floating surface */
+.rb .right{background:var(--page);border-radius:12px;box-shadow:var(--edge);margin:0 6px 0 6px;padding:4px 8px 8px}
+.rb .right .rh{height:44px;margin:-4px -8px 4px;padding:0 14px;border-bottom:1px solid var(--line)}
+.rb .right.rail{width:0;padding:0;margin:0 6px 0 0;box-shadow:none}
+.rb .barask{display:inline-flex}
+/* C: no column at all; properties open as a floating panel over the page */
+.rc .right{position:absolute;top:56px;right:18px;bottom:auto;max-height:calc(100vh - 80px);width:280px;background:var(--glass);backdrop-filter:blur(24px) saturate(1.4);border-radius:12px;box-shadow:var(--edge),var(--overlay);padding:6px 8px 10px;z-index:25;animation:pop .16s cubic-bezier(.16,.84,.44,1)}
+.rc .right.rail{display:none}
+.rc .right .ask{display:none}
+.rc .barask{display:inline-flex}
+.rc .app{padding-right:6px}
+.barask{display:none}
+.ra .right .ask,.rb .right .ask{display:none}
+
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
-<body>
+<body class="ra"><div class="switch" id="sw"><span class="on" onclick="rv('ra',this)">A · eine Fläche</span><span onclick="rv('rb',this)">B · zweite Fläche</span><span onclick="rv('rc',this)">C · schwebend</span></div>
 <svg width="0" height="0" style="position:absolute"><defs>
 <symbol id="s-back" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--todo)" stroke-width="1.5" stroke-dasharray="2 2"/></symbol>
 <symbol id="s-todo" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--todo)" stroke-width="1.5"/></symbol>
@@ -248,8 +277,8 @@ textarea.field{width:100%;font:inherit;resize:vertical;min-height:120px}
 
 <div class="app">
 <nav class="side" id="side"></nav>
-<main class="page" id="page"><div class="bar" id="bar"></div><div class="body" id="body"></div><div class="bulk" id="bulk"></div></main>
-<aside class="right" id="right"></aside>
+<div class="shell" id="shell"><main class="page" id="page"><div class="bar" id="bar"></div><div class="body" id="body"></div><div class="bulk" id="bulk"></div></main>
+<aside class="right" id="right"></aside></div>
 <div class="agent" id="agent"><div class="ah"><b style="color:var(--text);font-weight:600">Moebius</b><span class="t3" id="agentCtx">viewing Board</span><span class="sp"></span><button class="btn ghost" onclick="agent(false)" title="Back to properties">Properties</button><button class="btn ghost" onclick="agent(false)">✕</button></div><div class="ab"><div class="bubble">What is waiting on the discount fix?</div><div class="step"><svg class="st"><use href="#s-done"/></svg><span class="mono">"$MOEBIUS" board storefront</span></div><div class="step"><svg class="st"><use href="#s-done"/></svg><span class="mono">"$MOEBIUS" card SHOP-30</span></div><div>One card: <span class="link" data-card="SHOP-30">SHOP-30</span>, the refunds endpoint, waits for <span class="link" data-card="SHOP-24">SHOP-24</span>. The Coder is in round 1 of 5 on it, so SHOP-30 should start within the hour.</div></div><div style="padding:12px"><div class="composer" style="margin:0">Write to Moebius</div></div></div>
 </div>
 <div class="scrim" id="scrim"></div>
@@ -309,12 +338,12 @@ function sideHTML(){
   ${state.improve?it('#/retro','i-cyc','Retro','','sub')+it('#/experiments','i-flow','Experiments','','sub')+it('#/decisions','i-up','Decisions','','sub'):''}
   <div class="foot"><a class="it" onclick="state.settings=true;go('#/settings/general')" data-tip="Settings">${ic('i-gear')}</a><a class="it" onclick="theme()" data-tip="Light or dark">${ic('i-moon')}</a></div>`;
 }
-function bar(crumbs,right=''){return `<div class="crumb">${crumbs}</div><span class="sp"></span>${right}`}
+function bar(crumbs,right=''){return `<div class="crumb">${crumbs}</div><span class="sp"></span>${right}<button class="btn ghost barask" onclick="agent(true)" data-tip="Ask Moebius · Ctrl J">${ic('i-chat')}Ask Moebius</button>`}
 const crumbP=(...rest)=>`<span class="pdot" style="background:${project.c}">${project.key[0]}</span><a href="#/board">${project.name}</a>${rest.map((x,i)=>` <span class="t3">›</span> ${i===rest.length-1?`<b>${x}</b>`:x}`).join('')}`;
 const palBtn=`<button class="btn ghost" onclick="pal(true)" data-tip="Search and commands">${ic('i-search')}<span class="kb">Ctrl K</span></button>`;
 function rightHTML(props){
   if(!props) return `<div class="rh" style="justify-content:center;padding:0">${ic('i-collapse')}</div><div class="ask" onclick="agent(true)" data-tip="Ask Moebius · Ctrl J">${ic('i-chat')}<span>Ask Moebius</span></div>`;
-  return `<div class="rh"><b>Properties</b><span class="sp"></span><span style="cursor:pointer" data-tip="Fold">${ic('i-collapse')}</span></div>${props}<div class="ask" onclick="agent(true)">${ic('i-chat')}<span>Ask Moebius</span><span class="sp"></span><span class="kb">Ctrl J</span></div>`;
+  return `<div class="rh"><b>Properties</b><span class="sp"></span><span style="cursor:pointer" data-tip="Fold" onclick="this.closest('.right').classList.add('rail')">${ic('i-collapse')}</span></div>${props}<div class="ask" onclick="agent(true)">${ic('i-chat')}<span>Ask Moebius</span><span class="sp"></span><span class="kb">Ctrl J</span></div>`;
 }
 const pr=(k,v)=>`<div class="pr"><span class="k">${k}</span><span class="v">${v}</span></div>`;
 function cardProps(c){
@@ -481,6 +510,7 @@ function openCard(id){go('#/issue/'+id)}
 function selRow(el){document.querySelectorAll('.row.on').forEach(r=>r.classList.remove('on'));el.classList.add('on')}
 function check(id){state.checked.has(id)?state.checked.delete(id):state.checked.add(id);render()}
 function bulk(){const n=state.checked.size,b=$('#bulk');b.classList.toggle('on',n>0);b.innerHTML=`<b style="font-weight:500">${n} selected</b><span class="t3">·</span><button class="btn ghost">Assign</button><button class="btn ghost">Cycle</button><button class="btn ghost">Priority</button><button class="btn ghost">Move</button><button class="btn ghost" onclick="state.checked.clear();render()">✕</button>`}
+function rv(c,el){document.body.classList.remove('ra','rb','rc');document.body.classList.add(c);document.querySelectorAll('#sw span').forEach(x=>x.classList.toggle('on',x===el))}
 function theme(){const d=document.documentElement;d.dataset.theme=d.dataset.theme==='light'?'dark':'light'}
 function agent(on){$('#agent').classList.toggle('on',on)}
 function note(t){const n=$('#note');n.textContent=t;n.classList.add('on');clearTimeout(n._t);n._t=setTimeout(()=>n.classList.remove('on'),2200)}
