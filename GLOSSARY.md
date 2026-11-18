@@ -324,3 +324,12 @@ _Avoid_: epic, module, release
 A project's way in for requests in a person's own words, which the Moebius agent turns into issues for a member to
 accept or decline.
 _Avoid_: triage, request queue, service desk
+
+**Kind of issue**:
+What an issue is, such as a bug or a feature, with the fields of its own an owner defined for the organisation; each
+project picks the kinds it uses.
+_Avoid_: issue type, work item type, template
+
+**Archive**:
+Where a column script puts a card that is to leave the board: it stays in the store, in search and in analytics.
+_Avoid_: trash, deleted, closed

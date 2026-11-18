@@ -1,7 +1,8 @@
 # Issues: people, projects, the wiki and planning
 
 What a team needs to plan its work in Moebius instead of a separate project-management tool: more than one person,
-projects over any number of repositories, the organisation's wiki, planning and intake. The decisions are
+projects over any number of repositories, the organisation's wiki, planning, intake, and what goes around the work
+(kinds of issues, templates, webhooks, an import from Jira and the keyboard). The decisions are
 [ADR 0018](../adr/0018-more-than-one-person.md) (people) and
 [ADR 0019](../adr/0019-a-project-is-a-board-over-any-repositories.md) (projects); the words are in the
 [glossary](../../GLOSSARY.md#people-and-planning). Each part builds on the ones before it.
@@ -215,11 +216,71 @@ follows, a declined request tells the viewer why, and a project without intake h
 
 ### 31. Review of P5
 
+## P6 · Around the work
+
+### 32. Kinds of issues and their fields
+Owners define kinds of issues for the organisation (such as bug, feature, task), each with fields of its own (text,
+number, choice, date, person); a project picks the kinds it uses. Scripts see `card.kind` and `card.fields`; views
+filter and sort by them across projects.
+**Done when** a field defined once is set on cards of two projects, a view across both filters by it, a project offers
+only the kinds it picked, and a script reads a field.
+
+### 33. Templates
+Templates for issues (per kind) and for wiki pages, kept in the harness configuration repository; a new issue or page
+starts from one. The Moebius agent can fill one in from a sentence.
+**Done when** an issue made from a template has its text and fields, a page made from one has its text, and a template
+edited through the API is a commit.
+
+### 34. Duplicates and related cards
+Besides parents and blockers, a card can be a duplicate of another (closing it and pointing to the other) or related
+to one. When an issue is made, the Moebius agent looks for likely duplicates and offers them; it never closes one on
+its own.
+**Done when** marking a duplicate closes it with a link to the original, related cards show each other, and a new issue
+with the words of an open one is offered that one.
+
+### 35. Stale cards and the archive, as column scripts
+No feature of its own: the board is the workflow. Scripts get `card.moved_at` (when the card last moved or was
+changed) and `moebius.archive(card)`; an archived card leaves the board but stays in the store, in search and in
+analytics. The default workflow marks a card that has not moved for a while with a hold and a notification to its
+people, and archives cards some days after they are done; a project changes both in its scripts.
+**Done when** a script sees `moebius.archive` and `card.moved_at` in the reference, the default scripts mark and archive
+a made-up history as they say, and an archived card is still found by search.
+
+### 36. Outgoing webhooks
+An owner adds a URL with the event kinds and projects it wants; Moebius posts each such event to it, signed with a
+secret (HMAC-SHA256 in a header), retried with backoff, and never with a private project's events unless the hook names
+that project. The secret is kept in `secrets.toml` and never logged.
+**Done when** a fake receiver on port 0 gets a signed event it can verify, a failing receiver is retried and then
+given up on with a note in the inbox, and an event of a private project reaches only a hook that names it.
+
+### 37. Importing from Jira
+A one-off import from Jira's REST API into a project: issues with their kind, fields, labels, priority, comments,
+parents, links (blocks, duplicates, relates), sprints as cycles and epics as milestones; Jira's users become people
+(disabled until an owner gives them a token) or stay names. Running it again updates what it imported before and makes
+nothing twice. The token for Jira goes into `secrets.toml`.
+**Done when** a fake Jira on port 0 is imported into a project with every kind of record above, a second import changes
+only what changed in the fake, and a Jira user without a person keeps their name on what they wrote.
+
+### 38. A command palette and keyboard shortcuts
+`Ctrl+K` (`Cmd+K` on a Mac) opens a palette that finds projects, cards, pages, views and people and runs commands (make
+an issue, assign, move, change the priority, open a page); single keys do the common ones on the card in focus. The
+shortcuts are listed on a page of their own and in the palette.
+**Done when** the end-to-end tests make, assign and move a card from the keyboard alone, every command of the palette
+has a test, and the design audit passes.
+
+### 39. Favourites and recently seen
+A person pins projects, views, cards and pages to the sidebar and sees what they opened lately, kept per person on the
+server.
+**Done when** a pin and the recent list survive signing in on another browser, and an item of a private project the
+person left is gone from both.
+
+### 40. Review of P6
+
 ## Later
 
 Not cut into issues yet, because each needs a decision first:
 
 - **Editing together in real time**, pages and issue bodies, with `yrs` on the server and Yjs in the web app.
-- **Public pages**: a board, a view or wiki pages readable without an account.
-- **Importing** from other tools through their APIs (issues, comments, cycles), never by reading their databases.
-- **Templates** for issues and pages, and **kinds of issues** with fields of their own.
+- **Public pages**: a board, a view or wiki pages readable without an account. A server listens only on a private
+  network ([ADR 0018](../adr/0018-more-than-one-person.md)), so they need a way out that does not open it.
+- **Importing from other tools** than Jira (Linear, Plane, GitHub Projects), through their APIs.
