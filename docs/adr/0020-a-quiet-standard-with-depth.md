@@ -23,9 +23,10 @@ The drafts it was chosen from are [round 8, 9 and 9b](../design-drafts/README.md
   14px, titles 15 to 20px; Inter with its optical sizes, tighter tracking in titles, tabular figures for numbers and
   keys. Radii 6 for controls and rows, 8 for cards, 10 to 12 for windows and dialogs. Rows 28px in the sidebar, 32 to
   36px in lists; the head of a page is one bar of 44px.
-- **The right sidebar is a second surface.** It floats beside the page with the same corners and edge, its head at
-  the height of the page's; folded it stays as a slim surface with the button that unfolds it and the agent's button
-  ([prototype](../design-drafts/prototype.html), B).
+- **The right sidebar belongs to the page.** It is the right column of the same surface, set apart by a soft line,
+  its head at the height of the page's; folded, and on a page without properties, it stays as a slim column with the
+  button that unfolds it and the agent's button. A second floating surface beside the page was tried and read as two
+  windows ([prototype](../design-drafts/prototype.html), A).
 - **Colour only on small things.** The status of a column, urgent, blocked and errors are small icons in their hue; one
   accent marks links, the chosen thing, focus and a run in progress. Everything else is grey. States that were pills
   ("Live", "Waiting on #24", "Your turn") are a line of grey text or an icon; labels are a dot and a word.

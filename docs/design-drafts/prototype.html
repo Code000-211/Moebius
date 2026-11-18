@@ -210,8 +210,9 @@ textarea.field{width:100%;font:inherit;resize:vertical;min-height:120px}
 .ra .shell .page{border-radius:0;box-shadow:none}
 .ra .shell .right{border-radius:0;margin:0}
 .ra .right .rh{height:44px;margin:-4px -8px 4px;padding:0 14px;border-bottom:1px solid var(--line)}
-.ra .right.rail{width:0;padding:0;border:0}
-.ra .barask{display:inline-flex}
+.ra .right.rail{width:44px;padding:4px 0 8px;align-items:center}
+.ra .right.rail .rh{margin:-4px 0 4px;padding:0;justify-content:center;width:100%}
+.ra .right.rail .ask{width:32px;height:32px;padding:0;justify-content:center}
 /* B: a second floating surface */
 .rb .right{background:var(--page);border-radius:12px;box-shadow:var(--edge);margin:0 6px 0 6px;padding:4px 8px 8px}
 .rb .right .rh{height:44px;margin:-4px -8px 4px;padding:0 14px;border-bottom:1px solid var(--line)}
@@ -228,12 +229,11 @@ textarea.field{width:100%;font:inherit;resize:vertical;min-height:120px}
 .rc .barask{display:inline-flex}
 .rc .app{padding-right:6px}
 .barask{display:none}
-.ra .right .ask{display:none}
 
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
-<body class="rb"><div class="switch" id="sw"><span onclick="rv('ra',this)">A · eine Fläche</span><span class="on" onclick="rv('rb',this)">B · zweite Fläche</span><span onclick="rv('rc',this)">C · schwebend</span></div>
+<body class="ra"><div class="switch" id="sw"><span class="on" onclick="rv('ra',this)">A · eine Fläche</span><span onclick="rv('rb',this)">B · zweite Fläche</span><span onclick="rv('rc',this)">C · schwebend</span></div>
 <svg width="0" height="0" style="position:absolute"><defs>
 <symbol id="s-back" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--todo)" stroke-width="1.5" stroke-dasharray="2 2"/></symbol>
 <symbol id="s-todo" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--todo)" stroke-width="1.5"/></symbol>

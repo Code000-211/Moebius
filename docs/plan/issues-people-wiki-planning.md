@@ -35,9 +35,9 @@ behaviour; the screenshots are taken again.
 themes at both widths, no pill is left for a state, and reduced motion stops every transition.
 
 ### W1. The right sidebar and the Moebius agent in it
-A sidebar at the right edge of the window, a second surface beside the page with its corners and edge, the whole
-height, which holds a page's properties; folded, and on a page without any, it stays as a slim surface with the button
-that unfolds it and the agent's button. "Ask Moebius" (`Ctrl J`) is its last row; the opened chat lies over the sidebar, wider than it,
+A sidebar at the right of the page, its right column on the same surface, the whole height, which holds a page's
+properties; folded, and on a page without any, it stays as a slim column with the button that unfolds it and the
+agent's button. "Ask Moebius" (`Ctrl J`) is its last row; the opened chat lies over the sidebar, wider than it,
 and gives the place back when closed. The package sheet opens in the same place. The floating button goes.
 **Done when** the end-to-end tests open and close the agent over a page with properties and over one without, the
 properties keep their state across it, the package sheet takes the same place, and the design audit passes.
