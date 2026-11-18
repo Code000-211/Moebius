@@ -27,8 +27,9 @@ The drafts it was chosen from are [round 8, 9 and 9b](../design-drafts/README.md
   accent marks links, the chosen thing, focus and a run in progress. Everything else is grey. States that were pills
   ("Live", "Waiting on #24", "Your turn") are a line of grey text or an icon; labels are a dot and a word.
 - **Depth through surfaces, not lines.** The page is a surface lying on the sidebar, a shade lighter, flush with it and
-  without a line, casting a soft shadow onto it (several layers that fade out, with a faint light edge in dark rather than a dark
-  line, since a hard shadow reads as a seam on a dark ground), with 6px of air above, below and at the right and all four corners round (radius 12;
+  without a line, in light casting a faint soft shadow onto it; in dark it casts none and is set apart by its lightness and a faint
+  light edge alone, because a wide shadow on a near-black ground has too few steps of grey and shows as bands. The same
+  holds for every large surface in dark: shadows there stay small (a card's, a menu's). It has 6px of air above, below and at the right and all four corners round (radius 12;
   [round 9d and 9e](../design-drafts/README.md), E2 with R2). The
   left sidebar has texture: a fine grain, light from above, the organisation and the chosen row as slightly raised
   surfaces, group names in small capitals ([round 9c](../design-drafts/round-9c.html), T4). The texture lies on the whole
