@@ -215,8 +215,12 @@ textarea.field{width:100%;font:inherit;resize:vertical;min-height:120px}
 /* B: a second floating surface */
 .rb .right{background:var(--page);border-radius:12px;box-shadow:var(--edge);margin:0 6px 0 6px;padding:4px 8px 8px}
 .rb .right .rh{height:44px;margin:-4px -8px 4px;padding:0 14px;border-bottom:1px solid var(--line)}
-.rb .right.rail{width:0;padding:0;margin:0 6px 0 0;box-shadow:none}
-.rb .barask{display:inline-flex}
+.rb .right.rail{width:44px;padding:4px 0 8px;align-items:center}
+.rb .right.rail .rh{margin:-4px 0 4px;padding:0;justify-content:center;width:100%}
+.rb .right .ask{display:flex}
+.rb .barask{display:none}
+.rb .right.rail .ask{width:32px;height:32px;padding:0;justify-content:center}
+.rail .rh span[data-tip]{cursor:pointer}
 /* C: no column at all; properties open as a floating panel over the page */
 .rc .right{position:absolute;top:56px;right:18px;bottom:auto;max-height:calc(100vh - 80px);width:280px;background:var(--glass);backdrop-filter:blur(24px) saturate(1.4);border-radius:12px;box-shadow:var(--edge),var(--overlay);padding:6px 8px 10px;z-index:25;animation:pop .16s cubic-bezier(.16,.84,.44,1)}
 .rc .right.rail{display:none}
@@ -224,12 +228,12 @@ textarea.field{width:100%;font:inherit;resize:vertical;min-height:120px}
 .rc .barask{display:inline-flex}
 .rc .app{padding-right:6px}
 .barask{display:none}
-.ra .right .ask,.rb .right .ask{display:none}
+.ra .right .ask{display:none}
 
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
-<body class="ra"><div class="switch" id="sw"><span class="on" onclick="rv('ra',this)">A · eine Fläche</span><span onclick="rv('rb',this)">B · zweite Fläche</span><span onclick="rv('rc',this)">C · schwebend</span></div>
+<body class="rb"><div class="switch" id="sw"><span onclick="rv('ra',this)">A · eine Fläche</span><span class="on" onclick="rv('rb',this)">B · zweite Fläche</span><span onclick="rv('rc',this)">C · schwebend</span></div>
 <svg width="0" height="0" style="position:absolute"><defs>
 <symbol id="s-back" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--todo)" stroke-width="1.5" stroke-dasharray="2 2"/></symbol>
 <symbol id="s-todo" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--todo)" stroke-width="1.5"/></symbol>
@@ -342,8 +346,8 @@ function bar(crumbs,right=''){return `<div class="crumb">${crumbs}</div><span cl
 const crumbP=(...rest)=>`<span class="pdot" style="background:${project.c}">${project.key[0]}</span><a href="#/board">${project.name}</a>${rest.map((x,i)=>` <span class="t3">›</span> ${i===rest.length-1?`<b>${x}</b>`:x}`).join('')}`;
 const palBtn=`<button class="btn ghost" onclick="pal(true)" data-tip="Search and commands">${ic('i-search')}<span class="kb">Ctrl K</span></button>`;
 function rightHTML(props){
-  if(!props) return `<div class="rh" style="justify-content:center;padding:0">${ic('i-collapse')}</div><div class="ask" onclick="agent(true)" data-tip="Ask Moebius · Ctrl J">${ic('i-chat')}<span>Ask Moebius</span></div>`;
-  return `<div class="rh"><b>Properties</b><span class="sp"></span><span style="cursor:pointer" data-tip="Fold" onclick="this.closest('.right').classList.add('rail')">${ic('i-collapse')}</span></div>${props}<div class="ask" onclick="agent(true)">${ic('i-chat')}<span>Ask Moebius</span><span class="sp"></span><span class="kb">Ctrl J</span></div>`;
+  if(!props||state.fold) return `<div class="rh" style="justify-content:center;padding:0"><span ${props?'onclick="state.fold=false;render()" data-tip="Show properties"':'class="t3" style="opacity:.4"'}>${ic('i-collapse')}</span></div><div class="ask" onclick="agent(true)" data-tip="Ask Moebius · Ctrl J">${ic('i-chat')}<span>Ask Moebius</span></div>`;
+  return `<div class="rh"><b>Properties</b><span class="sp"></span><span style="cursor:pointer" data-tip="Fold" onclick="state.fold=true;render()">${ic('i-collapse')}</span></div>${props}<div class="ask" onclick="agent(true)">${ic('i-chat')}<span>Ask Moebius</span><span class="sp"></span><span class="kb">Ctrl J</span></div>`;
 }
 const pr=(k,v)=>`<div class="pr"><span class="k">${k}</span><span class="v">${v}</span></div>`;
 function cardProps(c){
@@ -498,7 +502,7 @@ function render(){
   const v=fn(arg);
   $('#side').innerHTML=sideHTML();
   $('#bar').innerHTML=v.bar;$('#body').innerHTML=v.body;
-  const r=$('#right');r.classList.toggle('rail',!v.props);r.innerHTML=rightHTML(v.props);
+  const r=$('#right');r.classList.toggle('rail',!v.props||!!state.fold);r.innerHTML=rightHTML(v.props);
   $('#agentCtx').textContent='viewing '+($('#bar .crumb b')?.textContent||'this page');
   bulk();wire();
 }
