@@ -30,7 +30,9 @@ The drafts it was chosen from are [round 8, 9 and 9b](../design-drafts/README.md
   without a line, casting a soft shadow onto it, with 6px of air above, below and at the right and all four corners round (radius 12;
   [round 9d and 9e](../design-drafts/README.md), E2 with R2). The
   left sidebar has texture: a fine grain, light from above, the organisation and the chosen row as slightly raised
-  surfaces, group names in small capitals ([round 9c](../design-drafts/round-9c.html), T4). Lines are few and soft. Cards have
+  surfaces, group names in small capitals ([round 9c](../design-drafts/round-9c.html), T4). The texture lies on the whole
+  ground under the page, not on the sidebar alone, so the air and the rounded corners of the page sit on the same
+  surface as the sidebar. Lines are few and soft. Cards have
   a quiet line and a short soft shadow that grows on hover ([round 9b](../design-drafts/round-9b.html), K3), without
   gradients or a light edge. The primary button has a slight relief. Overlays (the palette, menus, dialogs, the head
   bar while content scrolls under it) are glass: translucent with a blur.
