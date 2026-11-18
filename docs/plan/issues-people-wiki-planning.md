@@ -144,7 +144,8 @@ servers are signed in to with access tokens.
 
 ### D1. The app around the web app
 `crates/moebius-desktop` (Tauri 2) shows the `web/dist` of the same release in a window of its own on Linux (an AppImage
-and a `.deb`) and Windows; there is no macOS build, with the window's controls in the textured ground. It asks a server for its version and refuses one of another
+and a `.deb`) and Windows, with no macOS build, and puts the window's controls in the textured ground. It asks a server
+for its version and refuses one of another
 minor version, naming the matching release.
 **Done when** the app builds in CI on Linux and Windows, opens the web app against a server on port 0, and refuses a
 fake server of another minor version with the release's name.
