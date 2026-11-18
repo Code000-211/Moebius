@@ -330,6 +330,11 @@ A project's way in for requests in a person's own words, which the Moebius agent
 accept or decline.
 _Avoid_: triage, request queue, service desk
 
+**Desktop app**:
+The web app in a native window of its own, with several servers, notifications, a tray icon and a global shortcut;
+built with Tauri, it refuses a server of another minor version.
+_Avoid_: client, native app, Electron app
+
 **Kind of issue**:
 What an issue is, such as a bug or a feature, with the fields of its own an owner defined for the organisation; each
 project picks the kinds it uses.

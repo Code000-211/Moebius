@@ -63,3 +63,11 @@ Terminal and Ports stay as they are. Every page's commands are in the command pa
 
 The [prototype](prototype.html) shows every page in the chosen look, with the palette, the agent, menus, previews and the
 bar for several cards.
+
+## The desktop app (round 10)
+
+| # | Piece | Chosen |
+|---|---|---|
+| 42 | Several servers | A rail at the far left on the textured ground, a rounded square per server with the Inbox's count, a grey dot when it cannot be reached, "+" to connect one ([round 10](round-10.html), 10A) |
+| 43 | Tray | Agents working, the Inbox, today's tokens; New issue, Ask Moebius, Open Moebius, Pause all agents (10C) |
+| 44 | Global shortcut | `Ctrl+Shift+Space` opens a small window to ask Moebius or make an issue (10D) |

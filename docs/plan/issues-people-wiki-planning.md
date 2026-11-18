@@ -6,7 +6,8 @@ projects over any number of repositories, the organisation's wiki, planning, int
 [ADR 0018](../adr/0018-more-than-one-person.md) (people) and
 [ADR 0019](../adr/0019-a-project-is-a-board-over-any-repositories.md) (projects); the words are in the
 [glossary](../../GLOSSARY.md#people-and-planning), and the screens chosen for them in the
-[design drafts](../design-drafts/README.md). Each part builds on the ones before it; P0 first moves the web app of today onto the chosen patterns.
+[design drafts](../design-drafts/README.md). Each part builds on the ones before it; P0 first moves the web app of today onto the chosen patterns, and PD, after
+people, brings the desktop app ([ADR 0021](../adr/0021-a-desktop-app-in-tauri.md)).
 
 Each issue is one card and one commit, and changes its references, examples and the glossary with it, as every issue
 does ([`CLAUDE.md`](../../CLAUDE.md)). Every milestone ends with a review issue: all tests run many times, the code read
@@ -135,6 +136,51 @@ assignments as items of the Inbox, under its Mentions tab (no bell).
 see the notification, and the design audit passes.
 
 ### 7. Review of P1
+
+## PD · The desktop app
+
+[ADR 0021](../adr/0021-a-desktop-app-in-tauri.md): a Tauri 2 app around the bundled web app, after people, because its
+servers are signed in to with access tokens.
+
+### D1. The app around the web app
+`crates/moebius-desktop` (Tauri 2) shows the `web/dist` of the same release in a window of its own on macOS, Windows and
+Linux, with the window's controls in the textured ground. It asks a server for its version and refuses one of another
+minor version, naming the matching release.
+**Done when** the app builds in CI on all three systems, opens the web app against a server on port 0, and refuses a
+fake server of another minor version with the release's name.
+
+### D2. Several servers in a rail
+The rail at the far left: a rounded square per server, the open one marked, the Inbox's count, a grey dot for one not
+reached, "+" to connect one by its address or over SSH (as `moebius connect`, setting it up after a yes). Tokens live
+in the system's keychain.
+**Done when** two fake servers are switched between with each keeping its page, an unreachable one shows the dot, a
+token is found in the keychain and in no file, and removing a server removes its token.
+
+### D3. A local server
+On Linux, and on Windows inside WSL 2, the first start offers to run a server on this machine: the app brings
+`moebius`, runs `init` and `serve` in the background, and connects to it with its token.
+**Done when** a first start on Linux makes a server, connects to it, and finds it again after the app restarts.
+
+### D4. Notifications
+What arrives in the Inbox for the person (a change ready to merge, a mention, an assignment) becomes a native
+notification that opens its place in the app, and the icon carries the count.
+**Done when** an event on a fake server gives exactly one notification, clicking it opens that item, and reading it
+lowers the count.
+
+### D5. The tray and pausing all agents
+A menu bar or tray icon with agents working, the Inbox and today's tokens; New issue, Ask Moebius, Open Moebius, and
+Pause all agents. The server gets `POST /v1/runs/pause` and `POST /v1/runs/resume`, kept in the store; while paused the
+board engine starts no run and the running ones are held.
+**Done when** pausing from the tray holds every run of a test server and starts none, resuming goes on, both routes
+are in `desktop-api.md` with a `"$MOEBIUS"` command, and the tray's figures follow the events.
+
+### D6. The global shortcut and the small window
+`Ctrl+Shift+Space` (changeable) opens a small window over everything: ask the Moebius agent, or make an issue in the
+chosen project; Enter sends, the window goes, the answer opens in the app.
+**Done when** the shortcut opens the window while the app is in the back, an issue made there appears on the board,
+and a changed shortcut is kept.
+
+### D7. Review of PD
 
 ## P2 · Projects
 
