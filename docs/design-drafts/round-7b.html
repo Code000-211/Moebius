@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design round 7b</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{color-scheme:dark;--background:#121212;--surface:#1b1b1c;--surface-raised:#232324;--surface-sunken:#0e0e0f;--field:#0e0e0f;--lane:#171718;--hover:#242426;--selected:#2c2c2e;--text:#f4f3f1;--text-secondary:#a3a29e;--text-muted:#6b6a67;--hairline:rgb(244 243 241/10%);--hairline-strong:rgb(244 243 241/20%);--progress:#5c8bff;--progress-text:#8fabff;--progress-fill:#242b3c;--progress-border:#314169;--attention-text:#f7b84b;--attention-fill:#3a3123;--attention-border:#66502c;--complete-text:#34c58a;--complete-fill:#1e332b;--complete-border:#245541;--error-text:#ff6369;--error-fill:#3b2527;--error-border:#693336;--on-ink:#121212;--cat-1:#a78bfa;--cat-2:#45b8c9;--cat-3:#f07ac0;--cat-4:#93c552;--cat-5:#cf7f4e;--sidebar:#171718;--sidebar-text:#a3a29e;--sidebar-group:#8d8c88;--shadow-card:0 1px 2px rgb(0 0 0/24%),0 8px 24px rgb(0 0 0/22%);--shadow-raised:0 2px 8px rgb(0 0 0/32%),0 16px 48px rgb(0 0 0/40%);--scrim:rgb(0 0 0/60%)}
+:root[data-theme=light]{color-scheme:light;--background:#fbfaf8;--surface:#fff;--surface-raised:#fff;--surface-sunken:#f3f1ee;--field:#fff;--lane:#f4f2ef;--hover:#f1efec;--selected:#e3e0da;--text:#111;--text-secondary:#5e5e5b;--text-muted:#9b9a96;--hairline:rgb(17 17 17/8%);--hairline-strong:rgb(17 17 17/16%);--progress:#2f6bff;--progress-text:#2456c8;--progress-fill:#e2eaff;--progress-border:#b8cdff;--attention-text:#7a4f05;--attention-fill:#f4ecdd;--attention-border:#e6d1ad;--complete-text:#0b6f46;--complete-fill:#ddede7;--complete-border:#add3c4;--error-text:#b4232a;--error-fill:#f7e1e2;--error-border:#ecb9bb;--on-ink:#fff;--sidebar:#f4f2ef;--sidebar-text:#5e5e5b;--sidebar-group:#6f6e6a;--shadow-card:0 1px 2px rgb(17 17 17/6%),0 8px 24px rgb(17 17 17/6%);--shadow-raised:0 2px 8px rgb(17 17 17/8%),0 16px 48px rgb(17 17 17/12%);--scrim:rgb(17 17 17/45%)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--background);color:var(--text);font:15px/1.45 Inter,ui-sans-serif,system-ui,sans-serif}
+header.top{position:sticky;top:0;z-index:5;background:var(--background);border-bottom:1px solid var(--hairline);padding:16px 24px;display:flex;gap:16px;align-items:center;justify-content:space-between}
+header.top h1{font-size:22px;margin:0;font-weight:600}
+header.top p{margin:2px 0 0;color:var(--text-secondary);font-size:13px}
+.btn{white-space:nowrap;font:inherit;font-size:13px;border:1px solid var(--hairline-strong);background:var(--surface);color:var(--text);border-radius:12px;padding:6px 12px;cursor:pointer}
+.btn.primary{background:var(--text);color:var(--on-ink);border-color:var(--text);font-weight:500}
+main{max-width:1240px;margin:0 auto;padding:24px 16px 64px}
+section.q{margin-bottom:48px}
+section.q>h2{font-size:22px;margin:0 0 4px;font-weight:600}
+section.q>p.lead{color:var(--text-secondary);margin:0 0 16px;max-width:820px}
+.variants{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,540px),1fr));gap:24px}
+.variant{background:var(--surface-sunken);border:1px solid var(--hairline);border-radius:16px;overflow:hidden}
+.variant>.vh{display:flex;align-items:baseline;gap:8px;padding:12px 16px;border-bottom:1px solid var(--hairline)}
+.tag{font-size:12px;font-weight:600;border-radius:999px;padding:2px 8px;background:var(--selected);color:var(--text)}
+.variant>.vh b{font-weight:600}
+.variant>.vh span.d{color:var(--text-secondary);font-size:13px}
+.stage{padding:16px;overflow:auto}
+.muted{color:var(--text-muted)}.sec{color:var(--text-secondary)}
+.small{font-size:13px}.cap{font-size:12px}
+/* app pieces */
+.app{display:flex;height:640px;border-radius:12px;overflow:hidden;border:1px solid var(--hairline);background:var(--background)}
+.sb{width:240px;flex:none;background:var(--sidebar);padding:12px 8px;display:flex;flex-direction:column;gap:2px;color:var(--sidebar-text);font-size:13px}
+.mark{display:flex;align-items:center;gap:8px;padding:4px 8px 12px;color:var(--text);font-weight:600;font-size:15px}
+.row{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px}
+.row.sel{background:var(--selected);color:var(--text);font-weight:600}
+.row .n{margin-left:auto;font-size:12px;color:var(--text-secondary)}
+.row.child{padding-left:28px}
+.grp{font-size:12px;color:var(--sidebar-group);padding:12px 8px 4px;letter-spacing:.02em}
+.ico{width:16px;text-align:center;opacity:.8}
+.foot{margin-top:auto;padding:8px;border-top:1px solid var(--hairline)}
+.page{flex:1;padding:16px;min-width:0}
+.ghost{background:var(--lane);border-radius:12px;height:100%;opacity:.6}
+.switcher{display:flex;align-items:center;justify-content:space-between;margin:8px 4px;padding:8px 12px;border-radius:12px;background:var(--surface);border:1px solid var(--hairline-strong);color:var(--text);font-weight:500}
+.dot{width:20px;height:20px;border-radius:6px;display:inline-grid;place-items:center;font-size:11px;font-weight:600;color:#111}
+/* dock */
+.dock{background:var(--surface);border-radius:16px;box-shadow:var(--shadow-card);border:1px solid var(--hairline);overflow:hidden}
+.dock-h{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--hairline)}
+.dock-h .t{font-weight:600;font-size:17px;flex:1}
+.dock-b{display:flex}
+.dock-main{flex:1;padding:16px;min-width:0}
+.props{width:220px;flex:none;border-left:1px solid var(--hairline);padding:12px}
+.prop{display:grid;grid-template-columns:84px 1fr;gap:8px;align-items:center;padding:5px 4px;border-radius:8px;font-size:13px}
+.prop:hover{background:var(--hover)}
+.prop .k{color:var(--text-secondary)}
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:500;border-radius:999px;padding:2px 8px;border:1px solid var(--hairline-strong);color:var(--text);background:var(--surface);white-space:nowrap}
+.pill.prog{background:var(--progress-fill);border-color:var(--progress-border);color:var(--progress-text)}
+.pill.att{background:var(--attention-fill);border-color:var(--attention-border);color:var(--attention-text)}
+.pill.err{background:var(--error-fill);border-color:var(--error-border);color:var(--error-text)}
+.pill.ok{background:var(--complete-fill);border-color:var(--complete-border);color:var(--complete-text)}
+.pill.add{border-style:dashed;color:var(--text-secondary)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.av{width:20px;height:20px;border-radius:999px;display:inline-grid;place-items:center;font-size:10px;font-weight:600;color:#111;flex:none}
+.bars{display:inline-flex;gap:2px;align-items:flex-end;height:12px}
+.bars i{width:3px;background:var(--text-muted);border-radius:1px}.bars i.on{background:var(--text)}
+.act{margin-top:16px;border-top:1px solid var(--hairline);padding-top:12px;display:flex;flex-direction:column;gap:10px;font-size:13px}
+.act .e{display:flex;gap:8px;align-items:center;color:var(--text-secondary)}
+.act .c{background:var(--surface-raised);border:1px solid var(--hairline);border-radius:12px;padding:8px 12px;color:var(--text)}
+.input{background:var(--field);border:1px solid var(--hairline-strong);border-radius:12px;padding:8px 12px;color:var(--text-muted);font-size:13px}
+/* list */
+.toolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px}
+.fchip{display:inline-flex;align-items:center;gap:6px;font-size:13px;border-radius:12px;padding:4px 6px 4px 10px;background:var(--surface);border:1px solid var(--hairline-strong)}
+.fchip .x{color:var(--text-muted);padding:0 4px}
+.fchip b{font-weight:500}.fchip i{font-style:normal;color:var(--text-secondary)}
+.seg{display:inline-flex;border:1px solid var(--hairline-strong);border-radius:12px;overflow:hidden;font-size:13px}
+.seg span{padding:4px 10px}.seg span.on{background:var(--selected);font-weight:600}
+.list{background:var(--surface);border:1px solid var(--hairline);border-radius:12px;overflow:hidden}
+.lrow{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid var(--hairline);font-size:13px}
+.lrow:first-child{border-top:0}
+.lrow .id{color:var(--text-muted);width:34px}
+.lrow .tt{flex:1;color:var(--text)}
+.ghead{display:flex;gap:8px;align-items:center;padding:6px 12px;background:var(--lane);font-size:12px;color:var(--text-secondary);font-weight:600}
+.pop{position:absolute;background:var(--surface-raised);border:1px solid var(--hairline-strong);border-radius:12px;box-shadow:var(--shadow-raised);padding:8px;font-size:13px;z-index:2}
+.pop .pr{display:flex;justify-content:space-between;gap:16px;padding:6px 8px;border-radius:8px}
+.pop .pr.hl{background:var(--selected);font-weight:600}
+.searchbox{display:flex;align-items:center;gap:8px;background:var(--field);border:1px solid var(--focus,var(--text));border-radius:12px;padding:8px 12px;font-size:13px;font-family:"JetBrains Mono",ui-monospace,monospace}
+.tok{color:var(--progress-text)}
+/* board */
+.board{display:flex;gap:12px}
+.lane{flex:1;background:var(--lane);border-radius:16px;padding:10px;min-width:0}
+.lane h4{margin:0 0 8px;font-size:13px;font-weight:600;display:flex;justify-content:space-between}
+.card{background:var(--surface);border:1px solid var(--hairline);border-radius:12px;padding:10px;margin-bottom:8px;font-size:13px;box-shadow:var(--shadow-card)}
+.card .meta{display:flex;gap:6px;align-items:center;margin-top:8px}
+.card.editing{border-color:var(--text);box-shadow:none}
+.addrow{color:var(--text-secondary);font-size:13px;padding:6px 4px}
+.kbd{font-size:11px;border:1px solid var(--hairline-strong);border-radius:6px;padding:0 5px;color:var(--text-secondary)}
+/* dialog */
+.scrim{background:var(--scrim);border-radius:12px;padding:32px 16px;display:grid;place-items:start center;min-height:400px}
+.dialog{width:100%;max-width:560px;background:var(--surface-raised);border-radius:16px;box-shadow:var(--shadow-raised);border:1px solid var(--hairline)}
+.dialog .dh{padding:12px 16px;display:flex;gap:8px;align-items:center;font-size:13px;color:var(--text-secondary)}
+.dialog .db{padding:0 16px 12px}
+.dialog .title{font-size:17px;font-weight:600;color:var(--text);margin:4px 0 6px}
+.dialog .df{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-top:1px solid var(--hairline)}
+.check{display:inline-flex;gap:6px;align-items:center;font-size:13px;color:var(--text-secondary)}
+.box{width:14px;height:14px;border:1px solid var(--hairline-strong);border-radius:4px;display:inline-block}
+</style>
+<style>
+.prio{display:inline-flex;align-items:center;gap:6px;font-size:13px}
+.ring{width:14px;height:14px;border-radius:999px;border:2px solid var(--text-muted);display:inline-block}
+.ring.half{border-color:var(--progress);background:conic-gradient(var(--progress) 0 50%,transparent 0)}
+.ring.done{border-color:var(--complete-text);background:var(--complete-text)}
+.pbar{height:6px;border-radius:999px;background:var(--selected);overflow:hidden;display:flex}
+.pbar i{display:block;height:100%}
+.bulk{position:absolute;left:50%;transform:translateX(-50%);bottom:16px;background:var(--surface-raised);border:1px solid var(--hairline-strong);box-shadow:var(--shadow-raised);border-radius:16px;padding:8px 8px 8px 16px;display:flex;gap:8px;align-items:center;font-size:13px;white-space:nowrap}
+.cb{width:16px;height:16px;border-radius:5px;border:1px solid var(--hairline-strong);display:inline-grid;place-items:center;font-size:11px;flex:none}
+.cb.on{background:var(--text);color:var(--on-ink);border-color:var(--text)}
+.lrow.sel{background:var(--selected)}
+.ctx{width:220px}
+.stat{background:var(--surface);border:1px solid var(--hairline);border-radius:12px;padding:12px}
+.stat .v{font-size:22px;font-weight:600}
+</style>
+<style>
+.split{display:grid;grid-template-columns:300px 1fr;height:420px;border:1px solid var(--hairline);border-radius:12px;overflow:hidden;background:var(--background)}
+.split .l{border-right:1px solid var(--hairline);background:var(--surface);overflow:hidden}
+.irow{padding:10px 12px;border-bottom:1px solid var(--hairline);font-size:13px}
+.irow.sel{background:var(--selected)}
+.irow .s{color:var(--text-secondary);font-size:12px;margin-top:2px}
+.udot{width:8px;height:8px;border-radius:999px;background:var(--progress);display:inline-block}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--hairline);margin-bottom:12px;font-size:13px}
+.tabs span{padding:8px 12px;color:var(--text-secondary)}.tabs span.on{color:var(--text);font-weight:600;box-shadow:inset 0 -2px 0 var(--text)}
+.wiki{display:grid;grid-template-columns:150px 1fr 110px;gap:0;height:440px;border:1px solid var(--hairline);border-radius:12px;overflow:hidden;background:var(--background)}
+.wiki .tree{background:var(--sidebar);padding:12px 8px;font-size:13px;color:var(--sidebar-text)}
+.wiki .doc{padding:20px 20px;overflow:hidden}
+.wiki .toc{padding:24px 12px;font-size:12px;color:var(--text-secondary);border-left:1px solid var(--hairline)}
+.doc h1{font-size:28px;margin:0 0 4px;font-weight:600}.doc h3{font-size:17px;margin:20px 0 6px}
+.doc p{margin:0 0 8px;color:var(--text);font-size:15px}
+.palette{width:100%;max-width:580px;background:var(--surface-raised);border:1px solid var(--hairline-strong);border-radius:16px;box-shadow:var(--shadow-raised);overflow:hidden}
+.palette .in{padding:14px 16px;border-bottom:1px solid var(--hairline);font-size:17px}
+.palette .g{padding:8px 16px 4px;font-size:12px;color:var(--text-secondary)}
+.palette .it{display:flex;gap:10px;align-items:center;padding:8px 16px;font-size:13px}
+.palette .it.hl{background:var(--selected)}
+.palette .it .k{margin-left:auto}
+.palette .ft{display:flex;gap:16px;padding:8px 16px;border-top:1px solid var(--hairline);font-size:12px;color:var(--text-secondary)}
+</style>
+<style>
+.hov{position:absolute;width:300px;background:var(--surface-raised);border:1px solid var(--hairline-strong);border-radius:12px;box-shadow:var(--shadow-raised);padding:12px;font-size:13px}
+.lnk{color:var(--progress-text);text-decoration:underline;text-underline-offset:3px}
+.tl{position:relative;padding-left:20px}.tl:before{content:"";position:absolute;left:7px;top:4px;bottom:4px;width:1px;background:var(--hairline-strong)}
+.tl .ev{position:relative;margin-bottom:12px;font-size:13px;color:var(--text-secondary)}.tl .ev:before{content:"";position:absolute;left:-17px;top:6px;width:7px;height:7px;border-radius:999px;background:var(--text-muted)}
+.gantt{display:grid;grid-template-columns:160px 1fr;font-size:13px;border:1px solid var(--hairline);border-radius:12px;overflow:hidden;background:var(--surface)}
+.gantt .h{background:var(--lane);color:var(--text-secondary);font-size:12px;padding:6px 12px;border-bottom:1px solid var(--hairline)}
+.gantt .n{padding:12px;border-bottom:1px solid var(--hairline)}
+.gantt .t{position:relative;border-bottom:1px solid var(--hairline);background:repeating-linear-gradient(90deg,transparent 0 24.8%,var(--hairline) 24.8% 25%)}
+.gantt .b{position:absolute;top:10px;height:20px;border-radius:999px;background:var(--selected);overflow:hidden;border:1px solid var(--hairline-strong)}
+.gantt .b i{display:block;height:100%;background:var(--complete-text);opacity:.55}
+.today{position:absolute;top:0;bottom:0;width:2px;background:var(--attention-text)}
+.bell{position:relative;display:inline-grid;place-items:center;width:32px;height:32px;border-radius:12px;background:var(--surface);border:1px solid var(--hairline-strong)}
+.bell .c{position:absolute;top:-4px;right:-4px;background:var(--progress);color:#fff;border-radius:999px;font-size:10px;padding:0 5px}
+</style>
+<style>
+.live{display:inline-flex;gap:3px;align-items:center}.live i{width:5px;height:5px;border-radius:999px;background:var(--progress)}
+.rounds{display:flex;gap:4px;margin-top:8px}.rounds i{flex:1;height:3px;border-radius:999px;background:var(--selected)}.rounds i.on{background:var(--progress)}
+.card.focus{border-color:var(--text)}
+.ph{display:flex;align-items:center;gap:8px;margin-bottom:12px}.ph .t{font-size:22px;font-weight:600;flex:1}
+.step{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--text-secondary);font-family:"JetBrains Mono",ui-monospace,monospace}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px}
+.frow{display:flex;gap:12px;align-items:center;padding:10px 12px;border-top:1px solid var(--hairline);font-size:13px}
+.frow:first-child{border-top:0}
+</style>
+<style>.win{display:flex;height:520px;border:1px solid var(--hairline);border-radius:12px;overflow:hidden;background:var(--background)}.rsb{width:260px;flex:none;background:var(--sidebar);border-left:1px solid var(--hairline);padding:12px;display:flex;flex-direction:column;gap:2px}.rsb h5{margin:0 0 8px;font-size:13px;font-weight:600;display:flex;justify-content:space-between}.fab{position:absolute;right:16px;bottom:16px;width:40px;height:40px;border-radius:999px;background:var(--text);color:var(--on-ink);display:grid;place-items:center}</style></head>
+<body>
+<header class="top">
+  <div><h1>Design-Grilling · Runde 7b · Rechte Seitenleiste</h1><p>Die Entscheidungen der vorigen Runden, angewandt auf: Die Eigenschaften als rechte Seitenleiste am Fensterrand.</p></div>
+  <button class="btn" onclick="document.documentElement.dataset.theme=document.documentElement.dataset.theme==='light'?'dark':'light'">Hell / dunkel</button>
+</header>
+<main>
+<section class="q"><h2>Eigenschaften als rechte Seitenleiste</h2>
+<p class="lead">Dein Hinweis zu 25A: Die Eigenschaften stehen nicht im Inhalt, sondern als Seitenleiste am rechten Fensterrand, über die volle Höhe und einklappbar (⇥). Rechts sitzt heute aber schon der schwebende Moebius-Agent. Wie teilen sich beide den Platz?</p>
+<div class="variants">
+<div class="variant" style="grid-column:1/-1"><div class="vh"><span class="tag">R1</span><b>Rechte Leiste, Agent ersetzt sie</b><span class="d">Öffnet man den Agenten, nimmt er den Platz der Leiste ein; schließt man ihn, ist die Leiste wieder da</span></div><div class="stage"><div class="win" style="position:relative"><nav class="sb" style="width:200px"><div class="mark">∞ Moebius</div><div class="row">← Back</div><div class="grp">Settings</div><div class="row">Agents</div><div class="row">MCP servers</div><div class="row sel">Rules</div><div class="row">Skills</div><div class="foot">⚙</div></nav><div style="flex:1;display:flex;min-width:0"><div class="l" style="width:230px;border-right:1px solid var(--hairline);background:var(--surface)"><div class="irow "><div class="mono" style="color:var(--text)">no-force-push</div><div class="s">Built-in · 3 this week</div></div><div class="irow "><div class="mono" style="color:var(--text)">leave-ci-alone</div><div class="s">Organisation · 1 this week</div></div><div class="irow sel"><div class="mono" style="color:var(--text)">no-secrets-in-code</div><div class="s">Organisation · None</div></div><div class="irow "><div class="mono" style="color:var(--text)">ask-before-new-dependencies</div><div class="s">storefront · api</div></div></div><div style="flex:1;padding:16px;min-width:0"><div class="mono" style="font-size:15px;font-weight:600">no-secrets-in-code</div><div class="cap sec" style="margin:4px 0 12px">The name a refusal says.</div><div class="input" style="color:var(--text);min-height:120px">Never write an API key, a token or a password into a file. Read it from the environment. A test may use a fake value, and says so in its name.</div><div style="margin-top:12px;display:flex;gap:8px"><button class="btn primary">Save</button><button class="btn">✦ Rewrite with Moebius</button></div></div></div><aside class="rsb"><h5>Properties <span class="muted">⇥</span></h5><div class="prop"><span class="k">Scope</span><span>Organisation</span></div><div class="prop"><span class="k">Checked by</span><span>Teacher</span></div><div class="prop"><span class="k">Refusals</span><span>None this week</span></div><div class="prop"><span class="k">Last edit</span><span><span class="av" style="background:var(--cat-4);width:16px;height:16px">L</span> Lea · 2d</span></div><div style="margin-top:auto"><button class="btn" style="color:var(--error-text)">Delete rule</button></div></aside><span class="fab">💬</span></div></div></div>
+<div class="variant" style="grid-column:1/-1"><div class="vh"><span class="tag">R2</span><b>Beide nebeneinander</b><span class="d">Agent kommt rechts neben die Leiste; der Inhalt wird schmaler (ab breiten Fenstern)</span></div><div class="stage"><div class="win"><nav class="sb" style="width:200px"><div class="mark">∞ Moebius</div><div class="row">← Back</div><div class="grp">Settings</div><div class="row">Agents</div><div class="row">MCP servers</div><div class="row sel">Rules</div><div class="row">Skills</div><div class="foot">⚙</div></nav><div style="flex:1;display:flex;min-width:0"><div class="l" style="width:230px;border-right:1px solid var(--hairline);background:var(--surface)"><div class="irow "><div class="mono" style="color:var(--text)">no-force-push</div><div class="s">Built-in · 3 this week</div></div><div class="irow "><div class="mono" style="color:var(--text)">leave-ci-alone</div><div class="s">Organisation · 1 this week</div></div><div class="irow sel"><div class="mono" style="color:var(--text)">no-secrets-in-code</div><div class="s">Organisation · None</div></div><div class="irow "><div class="mono" style="color:var(--text)">ask-before-new-dependencies</div><div class="s">storefront · api</div></div></div><div style="flex:1;padding:16px;min-width:0"><div class="mono" style="font-size:15px;font-weight:600">no-secrets-in-code</div><div class="cap sec" style="margin:4px 0 12px">The name a refusal says.</div><div class="input" style="color:var(--text);min-height:120px">Never write an API key, a token or a password into a file. Read it from the environment. A test may use a fake value, and says so in its name.</div><div style="margin-top:12px;display:flex;gap:8px"><button class="btn primary">Save</button><button class="btn">✦ Rewrite with Moebius</button></div></div></div><aside class="rsb"><h5>Properties <span class="muted">⇥</span></h5><div class="prop"><span class="k">Scope</span><span>Organisation</span></div><div class="prop"><span class="k">Checked by</span><span>Teacher</span></div><div class="prop"><span class="k">Refusals</span><span>None this week</span></div><div class="prop"><span class="k">Last edit</span><span><span class="av" style="background:var(--cat-4);width:16px;height:16px">L</span> Lea · 2d</span></div><div style="margin-top:auto"><button class="btn" style="color:var(--error-text)">Delete rule</button></div></aside><aside class="rsb" style="width:320px;background:var(--surface)"><h5>Moebius agent <span class="muted">— ✕</span></h5><div class="cap sec">viewing Rules · no-secrets-in-code</div><div class="c" style="margin-top:12px;background:var(--surface-raised);border-radius:12px;padding:8px 12px;font-size:13px">Make this rule also cover .env files.</div><div style="margin-top:auto" class="input">Ask the agent</div></aside></div></div></div>
+</div></section>
+</main></body></html>

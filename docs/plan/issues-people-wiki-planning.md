@@ -6,7 +6,7 @@ projects over any number of repositories, the organisation's wiki, planning, int
 [ADR 0018](../adr/0018-more-than-one-person.md) (people) and
 [ADR 0019](../adr/0019-a-project-is-a-board-over-any-repositories.md) (projects); the words are in the
 [glossary](../../GLOSSARY.md#people-and-planning), and the screens chosen for them in the
-[design drafts](../design-drafts/README.md). Each part builds on the ones before it.
+[design drafts](../design-drafts/README.md). Each part builds on the ones before it; P0 first moves the web app of today onto the chosen patterns.
 
 Each issue is one card and one commit, and changes its references, examples and the glossary with it, as every issue
 does ([`CLAUDE.md`](../../CLAUDE.md)). Every milestone ends with a review issue: all tests run many times, the code read
@@ -17,6 +17,69 @@ AGPL. Their features are ideas anyone may build; their code, texts, icons and na
 issues, person or agent, works from this plan and the public description of a feature, does not read the source of
 such a tool, and copies none of its text or assets. The editor in the web app may use Tiptap and Yjs (MIT), not a
 tool's own editor built on them.
+
+## P0 · The web app in the chosen patterns
+
+The [design drafts](../design-drafts/README.md) chose one way for each pattern. These issues build the shared pieces in
+`web/src/ui/` and move every page that exists today onto them, before the features of P1 to P6 add pages of their own.
+Each issue writes its pattern into [`design-web.md`](../design-web.md) and keeps the design audit and the end-to-end
+tests passing. None needs a change to the server, except where an issue says so.
+
+### W1. The right sidebar and the Moebius agent in it
+A sidebar at the right edge of the window, the whole height, foldable, which holds a page's properties; a page without
+any shows it as a rail. "Ask Moebius" (`Ctrl J`) is its last row; the opened chat lies over the sidebar, wider than it,
+and gives the place back when closed. The package sheet opens in the same place. The floating button goes.
+**Done when** the end-to-end tests open and close the agent over a page with properties and over one without, the
+properties keep their state across it, the package sheet takes the same place, and the design audit passes.
+
+### W2. Properties edited in place
+One component for a list of properties in the right sidebar, each a value that opens its own editor (a choice, a
+person, a date, a number, text) and saves on its own. The board's dock moves its facts into it; the dock keeps the
+issue, the change and the actions.
+**Done when** every fact the dock showed is in the sidebar, each editable one saves alone with its refusal beside it,
+and keyboard and screen reader tests pass.
+
+### W3. Filter chips and Display
+One filter bar: chips of "field is value", "+ Filter" with a menu of fields and their values, and Display for grouping,
+sorting, the layout and the fields shown; the state is in the address. It replaces the board's four selects and comes
+to the Inbox, Fleet, Workflows, Rules, Usage and Decisions.
+**Done when** every filter of the old bars is a chip, a reload keeps the filters, and each page's tests filter with it.
+
+### W4. The sidebar in its new order
+Inbox, My work, Chat and Fleet at the top; a project switcher, with the project's places under it (Board and Files
+today); Plan and Automate below, with Improve as one row whose Retro, Experiments and Decisions open under it; Setup
+behind the gear. Places that come with later issues (Cycles, Wiki, Intake, Views, Milestones, My work) are added by
+those issues.
+**Done when** every page of today is reached from the new sidebar and the rail, the switcher keeps the project across
+pages, and the design audit passes.
+
+### W5. The board, the Inbox and Fleet
+The board's head in two lines (the title with the layout switch, Terminal and New issue; the filter bar under it),
+"+ Add" at the foot of each column, and New issue as a dialog on `C` with "Create more". The Inbox as quiet rows with an
+unread dot and tabs by kind, deciding in the dock. Fleet as one row per run with its current step, grouped by agent.
+**Done when** the end-to-end tests make a card inline and from the dialog, merge from the Inbox through the dock, and
+read a run's step in Fleet, and the design audit passes.
+
+### W6. Choosing several things at once
+Checkboxes on hover and shift-click select rows and cards; a bar floats at the foot with the commands for all of them,
+and a right click opens the same commands with their keys. Fleet uses it to stop runs, the board to move and block
+cards.
+**Done when** the end-to-end tests select three cards with the keyboard and the mouse, move them in one go, stop two
+runs, and Escape clears the choice.
+
+### W7. Pages with a list and a detail
+Agents, Skills, MCP servers, Rules, Automations, Retro and Experiments become the list, what is read in the middle, and
+the properties in the right sidebar. Workflows becomes a list with the filter bar.
+**Done when** each page keeps everything it could do, its properties are edited in the sidebar, and its tests pass.
+
+### W8. One history, link previews and the palette
+A card's history is one timeline of comments, runs, moves and field changes, small changes folded together. A link to
+a card (`#18`) shows a preview card after a short hover or on focus. The command bar becomes the palette: the commands
+of what is in focus first, with their keys, then recent places, then search by kind.
+**Done when** the timeline of a made-up card is in order with its folds, the preview opens by keyboard too, and every
+command of the palette has a test.
+
+### W9. Review of P0
 
 ## P1 · People
 
@@ -56,8 +119,8 @@ input includes both.
 
 ### 6. People in the web app
 A sign-in page for a token, a People page for owners (add a person, change a role, disable, tokens and their last
-use), a page for a person's own tokens, avatars and assignee pickers, `@` completion in comments, and a notification
-list.
+use), a page for a person's own tokens, avatars and assignee pickers, `@` completion in comments, and mentions and
+assignments as items of the Inbox, under its Mentions tab (no bell).
 **Done when** the end-to-end tests sign in as an owner, add a member, sign in with their token, assign them a card and
 see the notification, and the design audit passes.
 
