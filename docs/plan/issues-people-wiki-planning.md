@@ -5,7 +5,8 @@ projects over any number of repositories, the organisation's wiki, planning, int
 (kinds of issues, templates, webhooks, an import from Jira and the keyboard). The decisions are
 [ADR 0018](../adr/0018-more-than-one-person.md) (people) and
 [ADR 0019](../adr/0019-a-project-is-a-board-over-any-repositories.md) (projects); the words are in the
-[glossary](../../GLOSSARY.md#people-and-planning). Each part builds on the ones before it.
+[glossary](../../GLOSSARY.md#people-and-planning), and the screens chosen for them in the
+[design drafts](../design-drafts/README.md). Each part builds on the ones before it.
 
 Each issue is one card and one commit, and changes its references, examples and the glossary with it, as every issue
 does ([`CLAUDE.md`](../../CLAUDE.md)). Every milestone ends with a review issue: all tests run many times, the code read
