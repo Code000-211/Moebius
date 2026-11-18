@@ -26,7 +26,10 @@ The drafts it was chosen from are [round 8, 9 and 9b](../design-drafts/README.md
 - **Colour only on small things.** The status of a column, urgent, blocked and errors are small icons in their hue; one
   accent marks links, the chosen thing, focus and a run in progress. Everything else is grey. States that were pills
   ("Live", "Waiting on #24", "Your turn") are a line of grey text or an icon; labels are a dot and a word.
-- **Depth through surfaces, not lines.** The page is a surface lying on the sidebar; lines are few and soft. Cards have
+- **Depth through surfaces, not lines.** The page is a surface lying on the sidebar, a shade lighter, flush with it and
+  without a line, casting a soft shadow onto it, with rounded corners ([round 9d and 9e](../design-drafts/README.md)). The
+  left sidebar has texture: a fine grain, light from above, the organisation and the chosen row as slightly raised
+  surfaces, group names in small capitals ([round 9c](../design-drafts/round-9c.html), T4). Lines are few and soft. Cards have
   a quiet line and a short soft shadow that grows on hover ([round 9b](../design-drafts/round-9b.html), K3), without
   gradients or a light edge. The primary button has a slight relief. Overlays (the palette, menus, dialogs, the head
   bar while content scrolls under it) are glass: translucent with a blur.

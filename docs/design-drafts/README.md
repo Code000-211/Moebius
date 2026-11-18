@@ -57,3 +57,5 @@ Terminal and Ports stay as they are. Every page's commands are in the command pa
 | 36 | Motion | 120 to 240ms ease-out: a 1px lift on hover, the sliding right sidebar, the palette opening with a small scale, tooltips after a moment |
 | 37 | Typography | Inter with optical sizes, tighter tracking in titles, tabular figures |
 | 38 | Light and detail | A faint accent wash at the top of the content, a soft glow on the chosen card, a soft focus ring, shortcuts in tooltips, even wrapping, accent selection |
+| 39 | The left sidebar's texture | A fine grain and light from above; the organisation and the chosen row as slightly raised surfaces; group names in small capitals ([round 9c](round-9c.html), T4) |
+| 40 | The edge between the sidebar and the page | Flush, no line, the page casting a soft shadow onto the sidebar ([round 9d](round-9d.html), E2), with rounded corners so the page does not sit on it square; which corners is still open ([round 9e](round-9e.html), R1 or R2) |
