@@ -143,10 +143,10 @@ see the notification, and the design audit passes.
 servers are signed in to with access tokens.
 
 ### D1. The app around the web app
-`crates/moebius-desktop` (Tauri 2) shows the `web/dist` of the same release in a window of its own on macOS, Windows and
-Linux, with the window's controls in the textured ground. It asks a server for its version and refuses one of another
+`crates/moebius-desktop` (Tauri 2) shows the `web/dist` of the same release in a window of its own on Linux (an AppImage
+and a `.deb`) and Windows; there is no macOS build, with the window's controls in the textured ground. It asks a server for its version and refuses one of another
 minor version, naming the matching release.
-**Done when** the app builds in CI on all three systems, opens the web app against a server on port 0, and refuses a
+**Done when** the app builds in CI on Linux and Windows, opens the web app against a server on port 0, and refuses a
 fake server of another minor version with the release's name.
 
 ### D2. Several servers in a rail
@@ -382,7 +382,7 @@ nothing twice. The token for Jira goes into `secrets.toml`.
 only what changed in the fake, and a Jira user without a person keeps their name on what they wrote.
 
 ### 38. A command palette and keyboard shortcuts
-`Ctrl+K` (`Cmd+K` on a Mac) opens a palette that finds projects, cards, pages, views and people and runs commands (make
+`Ctrl+K` opens a palette that finds projects, cards, pages, views and people and runs commands (make
 an issue, assign, move, change the priority, open a page); single keys do the common ones on the card in focus. The
 shortcuts are listed on a page of their own and in the palette.
 **Done when** the end-to-end tests make, assign and move a card from the keyboard alone, every command of the palette

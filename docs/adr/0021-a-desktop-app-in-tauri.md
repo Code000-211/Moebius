@@ -12,15 +12,16 @@ brings a desktop app back without a second front end: it is the web app in a nat
   shortcut, and no way to hold several servers.
 - **Electron**: Chromium on every system, so the look of [0020](0020-a-quiet-standard-with-depth.md) renders the same
   everywhere, at about 100MB and with a Node runtime beside a Rust server.
-- **Tauri 2**: Rust like the rest of Moebius and about 10MB, using the system's web engine (WebKit on macOS and Linux,
-  WebView2 on Windows).
+- **Tauri 2**: Rust like the rest of Moebius and about 10MB, using the system's web engine (WebKitGTK on Linux, WebView2
+  on Windows).
 - For the interface: **loaded from the server**, so it always matches the server's version, or **bundled in the app**,
   so it starts at once and without a network.
 
 ## Decision
 
-- **A Tauri 2 app, `crates/moebius-desktop`**, for macOS, Windows and Linux, built in every release, unsigned and without
-  automatic updates for now.
+- **A Tauri 2 app, `crates/moebius-desktop`, built for Linux first**, where the server runs and its people work, as an
+  AppImage and a `.deb`; a Windows build follows from the same code, since CI already builds Moebius there. There is
+  **no macOS build** for now. Every release builds them, unsigned and without automatic updates.
 - **The web app is bundled**: `web/dist` of the same release is in the app. The app asks a server for its version when
   it connects and **refuses a server of another minor version**, naming the release that matches; it never runs the
   interface against an API it was not built for.
@@ -30,8 +31,8 @@ brings a desktop app back without a second front end: it is the web app in a nat
   server with the count of its Inbox, a grey dot for one that cannot be reached, "+" to connect one
   ([round 10](../design-drafts/round-10.html), 10A). A server is connected by its address, over SSH as
   `moebius connect` does (setting it up after a yes), or as a **local server** the app starts on this machine where the
-  server runs (Linux, and Windows inside WSL 2). Access tokens are kept in the system's keychain (Keychain, Credential
-  Manager, Secret Service), never in a file.
+  server runs (Linux, and Windows inside WSL 2). Access tokens are kept in the system's keychain (Secret Service on
+  Linux, Credential Manager on Windows), never in a file.
 - **Native notifications** for what the Inbox gets (a change ready to merge, a mention, an assignment), and the count on
   the app's icon.
 - **A menu bar or tray icon** with the server's state: agents working, the Inbox, today's tokens against the budget;
@@ -42,10 +43,11 @@ brings a desktop app back without a second front end: it is the web app in a nat
 
 ## Consequences
 
-- The release builds three more archives, and CI builds the app on Linux, Windows and macOS. Unsigned builds warn on
-  their first start on macOS and Windows; the guide says how to open them.
+- The release builds the AppImage, the `.deb` and the Windows installer, and CI builds the app on Linux and Windows. An
+  unsigned build warns on its first start on Windows; the guide says how to open it.
 - Pausing all agents is a new route of the desktop API (`POST /v1/runs/pause`, `POST /v1/runs/resume`), held in the
   store, and the board engine starts no run while it holds; its reference and `"$MOEBIUS"` command come with it.
 - `moebius open` and `moebius connect` stay for people without the app.
-- On macOS the app is a client only until the server runs there.
+- A macOS build is left out until someone needs it; Tauri builds one from the same code, so adding it later is a
+  matter of CI, signing and a test on a Mac, not of design.
 - The name "desktop API" fits again.
