@@ -9,6 +9,10 @@ projects over any number of repositories, the organisation's wiki, planning, int
 [design drafts](../design-drafts/README.md). Each part builds on the ones before it; P0 first moves the web app of today onto the chosen patterns, and PD, after
 people, brings the desktop app ([ADR 0021](../adr/0021-a-desktop-app-in-tauri.md)).
 
+The plan is cut into 72 GitHub issues, [#321](https://github.com/Code000-211/Moebius/issues/321) to
+[#392](https://github.com/Code000-211/Moebius/issues/392), each with the issues that block it; they are the work, and this
+page is where it came from.
+
 Each issue is one card and one commit, and changes its references, examples and the glossary with it, as every issue
 does ([`CLAUDE.md`](../../CLAUDE.md)). Every milestone ends with a review issue: all tests run many times, the code read
 for bugs, overengineering and readability, and what is found fixed.
