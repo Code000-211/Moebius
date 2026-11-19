@@ -43,6 +43,10 @@ export const keys = {
   history: (card: number) => ["card", card, "history"] as const,
   cardRuns: (card: number) => ["card", card, "runs"] as const,
   comments: (card: number) => ["card", card, "comments"] as const,
+  /** Who follows a card; under `cards`, so the events that make a card stale make this one stale. */
+  followers: (card: number) => ["card", card, "followers"] as const,
+  /** The notices of the person signed in, which `notice_added` and `notice_read` make stale. */
+  notices: ["notices"] as const,
   /** The script of a column; `script_changed` makes all of them stale. */
   scripts: ["script"] as const,
   script: (repository: number, column: string) => ["script", repository, column] as const,

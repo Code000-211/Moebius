@@ -4,13 +4,16 @@
  * by repository and by change. Choosing a row reads it (it loses its dot) and shows what to decide in the right
  * sidebar (`Decision`). The list is the whole page, so an empty list says what belongs here. It reads the snapshot,
  * which the event stream keeps current, so an item arrives and leaves on its own. What is chosen is in the address
- * (`?kind=`, `?repository=`, `?change=`, `?item=`), so a reload keeps it.
+ * (`?kind=`, `?repository=`, `?change=`, `?item=`), so a reload keeps it. The Mentions tab (`?kind=mentions`) is the
+ * person's own notices — what was given to them, where they were mentioned, what changed on a card they follow — with
+ * a read mark the server keeps for them (`MentionsList`); there is no bell.
  */
 import { CheckCircleIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId } from "react";
 import { snapshot as readSnapshot } from "../../api/calls/board";
 import { changeInboxAssignees } from "../../api/calls/inbox";
+import { notices as readNotices } from "../../api/calls/notices";
 import { keys } from "../../api/keys";
 import type { Snapshot } from "../../api/types/board";
 import { Button } from "../../ui/components/Button";
@@ -27,7 +30,9 @@ import { TabPanel, Tabs } from "../../ui/page/Tabs";
 import { AssigneesProperty } from "../people/AssigneesProperty";
 import { Decision } from "./Decision";
 import { InboxRow } from "./InboxRow";
+import { MentionsList } from "./MentionsList";
 import { changeOf, chipName, count, type Filters, kindsOf, shown, summary } from "./model";
+import { MENTIONS, unreadCount } from "./notices";
 import { useRead } from "./read";
 
 /** The fields of the bar: the repository, while there is more than one, and the change an item is about. */
@@ -68,6 +73,7 @@ export function InboxPage() {
   const tabs = useId();
   const now = useNow();
   const { read, markRead } = useRead();
+  const mentions = useQuery({ queryKey: keys.notices, queryFn: readNotices });
   if (data.isPending)
     return (
       <>
@@ -96,7 +102,8 @@ export function InboxPage() {
     kind: params.get("kind"),
     repository: repository !== null && /^\d+$/.test(repository) ? Number(repository) : null,
   };
-  const items = shown(snapshot, filters);
+  const onMentions = filters.kind === MENTIONS;
+  const items = onMentions ? [] : shown(snapshot, filters);
   const total = snapshot.inbox.length;
   const choice = params.get("item");
   const chosen = items.find((each) => String(each.id) === choice) ?? null;
@@ -118,6 +125,7 @@ export function InboxPage() {
         onChange={(kind) => setQuery({ kind })}
         tabs={[
           { value: "", label: `All ${count(snapshot, null, filters.repository)}` },
+          { value: MENTIONS, label: `Mentions ${unreadCount(mentions.data ?? [])}` },
           ...kindsOf(snapshot).map((kind) => ({
             value: kind,
             label: `${chipName(kind)} ${count(snapshot, kind, filters.repository)}`,
@@ -125,18 +133,22 @@ export function InboxPage() {
         ]}
         className="mb-4"
       />
-      <FilterBar
-        label="Filter the inbox"
-        fields={filterFields(snapshot, filters)}
-        values={{
-          repository: filters.repository === null ? "" : String(filters.repository),
-          change: filters.change == null ? "" : String(filters.change),
-        }}
-        onFilter={(key, value) => setQuery({ [key]: value })}
-        onClear={() => setQuery({ repository: "", change: "" })}
-      />
+      {!onMentions && (
+        <FilterBar
+          label="Filter the inbox"
+          fields={filterFields(snapshot, filters)}
+          values={{
+            repository: filters.repository === null ? "" : String(filters.repository),
+            change: filters.change == null ? "" : String(filters.change),
+          }}
+          onFilter={(key, value) => setQuery({ [key]: value })}
+          onClear={() => setQuery({ repository: "", change: "" })}
+        />
+      )}
       <TabPanel idBase={tabs} value={filters.kind ?? ""} className="flex flex-col gap-4">
-        {items.length === 0 ? (
+        {onMentions ? (
+          <MentionsList snapshot={snapshot} now={now} />
+        ) : items.length === 0 ? (
           total === 0 ? (
             <Empty
               title="All caught up"

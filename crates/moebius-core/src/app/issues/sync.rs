@@ -313,6 +313,7 @@ impl App {
                 Some(*at).filter(|at| *at > 0),
                 Some(*forge_id),
             )? {
+                self.notify_comment(&comment);
                 self.bus.publish(Event::CardCommented { card: id, comment });
             }
         }

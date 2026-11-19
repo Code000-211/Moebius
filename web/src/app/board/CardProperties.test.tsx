@@ -82,6 +82,17 @@ function server(answers: Record<string, { status: number; body: unknown }> = {})
         const answer = answers[`GET ${url}`] ?? { status: 200, body: [] };
         return { ok: true, status: answer.status, text: async () => JSON.stringify(answer.body) };
       }
+      // Whether the person follows the card is read too, and is not what these tests are about.
+      if (method === "GET" && url === "/v1/session") {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ signed_in: true, person: PEOPLE[0] }),
+        };
+      }
+      if (method === "GET" && url.endsWith("/followers")) {
+        return { ok: true, status: 200, text: async () => "[]" };
+      }
       sent.push([method, url, init?.body ? JSON.parse(init.body) : undefined]);
       const answer = answers[`${method} ${url}`] ?? { status: 200, body: {} };
       return {

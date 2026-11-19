@@ -411,6 +411,7 @@ impl App {
             from: from.to_string(),
             to: column.to_string(),
         });
+        self.notify_moved(card_id, &from, column);
         self.set_waiting(card_id, None);
         self.card(card_id)
     }
@@ -442,6 +443,7 @@ impl App {
             from: from.to_string(),
             to: column.to_string(),
         });
+        self.notify_moved(card_id, from, column);
         self.set_waiting(card_id, None);
         self.card(card_id).map(Some)
     }

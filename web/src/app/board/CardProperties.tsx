@@ -32,6 +32,7 @@ import { PageProperties, Property } from "../../ui/page/Properties";
 import { PriorityBars } from "../../ui/page/StatusIcon";
 import { MilestonesProperty } from "../milestones/MilestonesProperty";
 import { AssigneesProperty } from "../people/AssigneesProperty";
+import { FollowProperty } from "../people/FollowProperty";
 import { cardKey } from "./cardKey";
 import {
   type CardStatus,
@@ -164,6 +165,7 @@ export function CardProperties({
           void queryClient.invalidateQueries({ queryKey: keys.milestones });
         }}
       />
+      <FollowProperty card={card.id} />
       <EditableProperty
         name="Priority"
         editor={{

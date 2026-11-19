@@ -37,6 +37,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { chats as readChats } from "../../api/calls/chat";
+import { notices as readNotices } from "../../api/calls/notices";
 import { seen } from "../../api/calls/places";
 import { start } from "../../api/calls/server";
 import { getSession } from "../../api/calls/session";
@@ -72,6 +73,7 @@ import { Tooltip } from "../../ui/components/Tooltip";
 import { cn } from "../../ui/lib/cn";
 import { getModifierKey } from "../../ui/lib/platform";
 import { ScrollFades } from "../../ui/page/ScrollFades";
+import { unreadCount as unreadNotices } from "../inbox/notices";
 import {
   boardPath,
   DEFAULT_PAGE,
@@ -175,7 +177,9 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
   // Chat leads to the conversation, not to an empty field: the most recent one when there is one, and a new chat
   // when the server has none yet.
   const recent = recentChat(chatList.data ?? []);
-  const inbox = data.data?.inbox.length ?? 0;
+  // What waits for you: the items of the inbox and the notices you have not read, which the Mentions tab holds.
+  const notices = useQuery({ queryKey: keys.notices, queryFn: readNotices });
+  const inbox = (data.data?.inbox.length ?? 0) + unreadNotices(notices.data ?? []);
   const working = boards.reduce((sum, board) => sum + liveRuns(board), 0);
   const state = STATE[connection];
   const modifier = getModifierKey();
