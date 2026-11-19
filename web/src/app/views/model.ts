@@ -6,6 +6,7 @@
 import type { Cycle } from "../../api/types/cycles";
 import type { View, ViewCard, ViewFields, ViewFilter, ViewLayout } from "../../api/types/views";
 import { COLUMNS, type Filters } from "../board/model";
+import { boardPath } from "../pages";
 
 export const LAYOUTS: Array<[ViewLayout, string]> = [
   ["list", "List"],
@@ -33,13 +34,26 @@ export const NO_FILTER: ViewFilter = {
   milestones: [],
   columns: [],
   authors: [],
+  agents: [],
+  statuses: [],
+  due: "",
   text: "",
 };
 
+/** How the board's sorts are kept in a view: its sort and whether it is turned round. */
+const SORT_OF_BOARD: Record<string, [string, boolean]> = {
+  "": ["created", false],
+  newest: ["created", true],
+  title: ["title", false],
+  priority: ["priority", false],
+  due: ["due", false],
+};
+
 /**
- * The view that "Save view" makes of a board: the repository it shows, its column, label and priority filters, and its
- * layout and sort. The agent, status and due filters of the board look at a run or at today, which a view does not
- * keep; `dropped` names the ones that were set, so the page can say they were left out.
+ * The view that "Save view" makes of a board: the repository it shows, its column, agent, status, label, priority and
+ * due filters, and its layout and sort. The agent is kept as the agents that ran on a card (any run, where the board's
+ * filter looks at the latest), and the status and the due range as the server works them out each time the view is
+ * opened.
  */
 export function viewOfBoard(
   name: string,
@@ -47,38 +61,82 @@ export function viewOfBoard(
   filters: Filters,
   layout: string,
   sort: string,
-): { fields: ViewFields; dropped: string[] } {
-  const dropped = [
-    ["agent", filters.agent],
-    ["status", filters.status],
-    ["due date", filters.due],
-  ]
-    .filter(([, value]) => value !== "")
-    .map(([word]) => word as string);
-  const sorts: Record<string, [string, boolean]> = {
-    "": ["created", false],
-    newest: ["created", true],
-    title: ["title", false],
-    priority: ["priority", false],
-    due: ["due", false],
-  };
-  const [by, descending] = sorts[sort] ?? ["created", false];
+): ViewFields {
+  const [by, descending] = SORT_OF_BOARD[sort] ?? ["created", false];
+  const one = (value: string) => (value === "" ? [] : [value]);
   return {
-    dropped,
-    fields: {
-      name,
-      shared: false,
-      layout: layout === "list" ? "list" : "board",
-      sort: by,
-      descending,
-      filter: {
-        repositories: [repository],
-        columns: filters.column === "" ? [] : [filters.column],
-        labels: filters.label === "" ? [] : [filters.label],
-        priorities: filters.priority === "" ? [] : [filters.priority],
-      },
+    name,
+    shared: false,
+    layout: layout === "list" ? "list" : "board",
+    sort: by,
+    descending,
+    filter: {
+      repositories: [repository],
+      columns: one(filters.column),
+      agents: one(filters.agent),
+      statuses: one(filters.status),
+      labels: one(filters.label),
+      priorities: one(filters.priority),
+      due: filters.due,
     },
   };
+}
+
+/**
+ * The filters the board can set for `view`, or none when the view asks for more than the board's filter bar holds:
+ * one repository and at most one of each of a column, agent, status, label and priority, and nothing else.
+ */
+export function boardFiltersOf(view: View): { repository: number; filters: Filters } | null {
+  const f = view.filter;
+  const single = (values: readonly string[]) => (values.length <= 1 ? (values[0] ?? "") : null);
+  const [column, agent, status, label, priority] = [
+    f.columns,
+    f.agents,
+    f.statuses,
+    f.labels,
+    f.priorities,
+  ].map(single);
+  const repository = f.repositories[0];
+  if (
+    f.repositories.length !== 1 ||
+    repository === undefined ||
+    [column, agent, status, label, priority].includes(null) ||
+    f.projects.length + f.assignees.length + f.cycles.length + f.milestones.length > 0 ||
+    f.authors.length > 0 ||
+    f.text !== ""
+  ) {
+    return null;
+  }
+  return {
+    repository,
+    filters: {
+      column: column ?? "",
+      agent: agent ?? "",
+      status: status ?? "",
+      label: label ?? "",
+      priority: priority ?? "",
+      due: f.due,
+    },
+  };
+}
+
+/**
+ * Where a saved view opens: the board of its repository with the view's filters, layout and sort, and `view` naming it
+ * in the filter bar. Only a view of the `board` or `list` layout (the two layouts of the board) whose filter the board
+ * can set opens there; any other opens on the Views page (null).
+ */
+export function boardOfView(view: View): string | null {
+  const board = view.layout === "board" || view.layout === "list" ? boardFiltersOf(view) : null;
+  if (board === null) return null;
+  const query = new URLSearchParams();
+  if (view.layout === "list") query.set("layout", "list");
+  for (const [key, value] of Object.entries(board.filters)) if (value !== "") query.set(key, value);
+  const sort = Object.entries(SORT_OF_BOARD).find(
+    ([, [by, descending]]) => by === view.sort && descending === view.descending,
+  );
+  if (sort && sort[0] !== "") query.set("sort", sort[0]);
+  query.set("view", String(view.id));
+  return `${boardPath(board.repository)}?${query.toString()}`;
 }
 
 /** The fields of an existing view, to change some of them. */
@@ -105,6 +163,9 @@ export function filterWords(filter: ViewFilter): string {
     ["milestone", filter.milestones],
     ["column", filter.columns],
     ["author", filter.authors],
+    ["agent", filter.agents],
+    ["status", filter.statuses],
+    ["due", filter.due === "" ? [] : [filter.due]],
     ["text", filter.text === "" ? [] : [`"${filter.text}"`]],
   ];
   const words = parts

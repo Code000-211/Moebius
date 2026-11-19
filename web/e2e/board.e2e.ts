@@ -1296,6 +1296,45 @@ describe("the filters", () => {
       });
     },
   );
+
+  it.skipIf(usesRealServer)(
+    "keeps the agent, status and due filters in a saved view, and opens it on the board with them set",
+    async () => {
+      await fresh();
+      await openBoard();
+      await addFilter(page, bar(), "Agent", "Reviewer");
+      await chip("Agent is Reviewer").waitFor();
+      await shownIs(1);
+      await bar().getByRole("button", { name: "Save view" }).click();
+      await status(/Saved this view as "View 3"/).waitFor();
+      // The notice no longer says a filter was left out, and the view carries the agent.
+      expect(await status(/without/).count()).toBe(0);
+      if (!("views" in server)) throw new Error("this test needs the fake server");
+      expect(server.views.requests.at(-1)).toMatchObject({
+        method: "POST",
+        path: "/v1/views",
+        body: { layout: "board", filter: { repositories: [1], agents: ["Reviewer"], due: "" } },
+      });
+      // Opened from the Views page, the view is the board it was saved from: its filter is set and its name is in the bar.
+      await page.goto(`${server.url}/views`);
+      await page.getByRole("link", { name: /View 3/ }).click();
+      await page.getByTestId("board-view").waitFor();
+      await page.waitForURL(/\/board\/1\?.*view=3/);
+      await chip("Agent is Reviewer").waitFor();
+      await shownIs(1);
+      expect(await page.getByTestId("board-view").textContent()).toContain("View 3");
+      // Changing the filter says the view is no longer what is shown, and closing it leaves the filter alone.
+      await bar().getByRole("button", { name: "Remove filter Agent is Reviewer" }).click();
+      await shownIs(7);
+      await page.getByTestId("board-view").getByText("(filters changed)").waitFor();
+      await page.getByRole("button", { name: "Close view" }).click();
+      await page.getByTestId("board-view").waitFor({ state: "detached" });
+      // Its page is still there to change or delete it.
+      await page.goto(`${server.url}/views/3?manage`);
+      await page.getByTestId("view").waitFor();
+      await page.getByRole("link", { name: "Open on the board" }).waitFor();
+    },
+  );
 });
 
 describe("Display", () => {

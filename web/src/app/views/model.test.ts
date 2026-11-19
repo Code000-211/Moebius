@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Card } from "../../api/types/board";
 import type { Cycle } from "../../api/types/cycles";
-import type { ViewCard } from "../../api/types/views";
+import type { View, ViewCard, ViewFilter } from "../../api/types/views";
 import { NO_FILTERS } from "../board/model";
 import {
+  boardFiltersOf,
+  boardOfView,
   byColumn,
   byCycle,
   byDueDate,
@@ -30,11 +32,18 @@ function card(id: number, column: string, due: string | null, in_cycle: Cycle | 
 }
 
 describe("a board saved as a view", () => {
-  it("keeps the repository, the column, label and priority filters, the layout and the sort", () => {
-    const { fields, dropped } = viewOfBoard(
+  it("keeps the repository, every filter, the layout and the sort", () => {
+    const fields = viewOfBoard(
       "View 1",
       7,
-      { ...NO_FILTERS, column: "Backlog", label: "bug", priority: "urgent" },
+      {
+        column: "Backlog",
+        agent: "coder",
+        status: "held",
+        label: "bug",
+        priority: "urgent",
+        due: "overdue",
+      },
       "list",
       "newest",
     );
@@ -47,24 +56,92 @@ describe("a board saved as a view", () => {
       filter: {
         repositories: [7],
         columns: ["Backlog"],
+        agents: ["coder"],
+        statuses: ["held"],
         labels: ["bug"],
         priorities: ["urgent"],
+        due: "overdue",
       },
     });
-    expect(dropped).toEqual([]);
   });
 
-  it("says which filters a view cannot keep", () => {
-    const { dropped, fields } = viewOfBoard(
-      "View 2",
-      1,
-      { ...NO_FILTERS, agent: "Coder", status: "held", due: "overdue" },
-      "board",
-      "due",
-    );
-    expect(dropped).toEqual(["agent", "status", "due date"]);
-    expect(fields.filter).toEqual({ repositories: [1], columns: [], labels: [], priorities: [] });
+  it("leaves a filter that is not set out of the view", () => {
+    const fields = viewOfBoard("View 2", 1, NO_FILTERS, "board", "due");
+    expect(fields.filter).toEqual({
+      repositories: [1],
+      columns: [],
+      agents: [],
+      statuses: [],
+      labels: [],
+      priorities: [],
+      due: "",
+    });
     expect(fields.sort).toBe("due");
+  });
+});
+
+describe("a saved view opened on the board", () => {
+  const made = (changes: Partial<View>): View => ({
+    id: 4,
+    name: "Mine",
+    owner_id: 1,
+    shared: false,
+    layout: "board",
+    sort: "created",
+    descending: false,
+    created_at: 1,
+    can_change: true,
+    ...changes,
+    filter: { ...NO_FILTER, repositories: [7], ...changes.filter },
+  });
+
+  it("is the board of its repository with the view's filter, sort and name in the address", () => {
+    const view = made({
+      sort: "created",
+      descending: true,
+      filter: {
+        ...NO_FILTER,
+        repositories: [7],
+        columns: ["Backlog"],
+        agents: ["coder"],
+        statuses: ["needs-you"],
+        labels: ["bug"],
+        priorities: ["urgent"],
+        due: "week",
+      },
+    });
+    const path = boardOfView(view) as string;
+    const [pathname, query] = path.split("?");
+    expect(pathname).toBe("/board/7");
+    expect(Object.fromEntries(new URLSearchParams(query))).toEqual({
+      column: "Backlog",
+      agent: "coder",
+      status: "needs-you",
+      label: "bug",
+      priority: "urgent",
+      due: "week",
+      sort: "newest",
+      view: "4",
+    });
+    expect(boardFiltersOf(view)?.filters.status).toBe("needs-you");
+  });
+
+  it("keeps the list layout of the board, and no sort that is the default", () => {
+    expect(boardOfView(made({ layout: "list" }))).toBe("/board/7?layout=list&view=4");
+  });
+
+  it("stays on the Views page when the board cannot say what the view asks", () => {
+    const filter = (changes: Partial<ViewFilter>) => made({ filter: { ...NO_FILTER, ...changes } });
+    expect(boardOfView(made({ layout: "calendar" }))).toBeNull();
+    expect(boardOfView(made({ layout: "timeline" }))).toBeNull();
+    expect(boardOfView(filter({ repositories: [] }))).toBeNull();
+    expect(boardOfView(filter({ repositories: [7, 8] }))).toBeNull();
+    expect(boardOfView(filter({ repositories: [7], agents: ["a", "b"] }))).toBeNull();
+    expect(boardOfView(filter({ repositories: [7], statuses: ["idle", "live"] }))).toBeNull();
+    expect(boardOfView(filter({ repositories: [7], assignees: ["lea"] }))).toBeNull();
+    expect(boardOfView(filter({ repositories: [7], authors: ["lea"] }))).toBeNull();
+    expect(boardOfView(filter({ repositories: [7], text: "login" }))).toBeNull();
+    expect(boardOfView(filter({ repositories: [7], cycles: [1] }))).toBeNull();
   });
 });
 
@@ -77,9 +154,14 @@ describe("a filter in words", () => {
         labels: ["bug"],
         priorities: ["urgent", "high"],
         cycles: [3],
+        agents: ["coder"],
+        statuses: ["live", "held"],
+        due: "overdue",
         text: "login",
       }),
-    ).toBe('label bug · priority urgent, high · cycle 3 · text "login"');
+    ).toBe(
+      'label bug · priority urgent, high · cycle 3 · agent coder · status live, held · due overdue · text "login"',
+    );
   });
 });
 

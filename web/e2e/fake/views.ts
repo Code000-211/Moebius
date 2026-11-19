@@ -96,6 +96,9 @@ function whole(filter: Record<string, unknown> | undefined): Record<string, unkn
     milestones: [],
     columns: [],
     authors: [],
+    agents: [],
+    statuses: [],
+    due: "",
     text: "",
     ...filter,
   };

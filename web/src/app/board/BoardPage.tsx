@@ -13,6 +13,7 @@
  * (`ui/filters`); `view.ts` says what the board offers it and `ListLayout.tsx` draws the list layout.
  */
 import {
+  BookmarkSimpleIcon,
   CaretDownIcon,
   CaretRightIcon,
   KanbanIcon,
@@ -52,7 +53,7 @@ import { ReadFailed } from "../../ui/page/ReadFailed";
 import { ScrollFades } from "../../ui/page/ScrollFades";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
-import { viewOfBoard } from "../views/model";
+import { boardFiltersOf, viewOfBoard } from "../views/model";
 import { useBulk } from "./bulk";
 import { BlockDialog, DeleteDialog, ParentDialog } from "./CardDialogs";
 import { CardFocus } from "./CardFocus";
@@ -181,6 +182,12 @@ export function BoardPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
+  // The saved view the address names, to say its name in the filter bar; a failed read only leaves the name out.
+  const views = useQuery({
+    queryKey: keys.views,
+    queryFn: listViews,
+    enabled: params.has("view"),
+  });
   const { decide, pending, notice, setNotice } = useDecisions();
   const queryClient = useQueryClient();
   const newIssue = useNewIssue();
@@ -293,12 +300,11 @@ export function BoardPage() {
       { replace: true },
     );
   const saveView = () => {
-    // The view is kept on the server, for this person; Views shares it. The board's agent, status and due-date
-    // filters look at a run or at today, which a view does not keep, so the notice says when they were left out.
+    // The view is kept on the server, for this person; Views shares it.
     void (async () => {
       try {
         const count = (await listViews()).length;
-        const { fields, dropped } = viewOfBoard(
+        const fields = viewOfBoard(
           `View ${count + 1}`,
           board.repository.id,
           filters,
@@ -309,9 +315,7 @@ export function BoardPage() {
         void queryClient.invalidateQueries({ queryKey: keys.views });
         setNotice({
           tone: "ok",
-          text:
-            `Saved this view as "${made.name}"` +
-            (dropped.length > 0 ? `, without the ${dropped.join(" and ")} filter` : ""),
+          text: `Saved this view as "${made.name}"`,
         });
       } catch (error) {
         setNotice({ tone: "error", text: sayError(error, "The view could not be saved.") });
@@ -319,6 +323,12 @@ export function BoardPage() {
     })();
   };
   const inspected = inspectedCard(board, inbox, params.get("card"));
+  const openView = views.data?.find((v) => String(v.id) === params.get("view"));
+  const asked = openView && boardFiltersOf(openView);
+  const viewChanged =
+    asked != null &&
+    (asked.repository !== board.repository.id ||
+      JSON.stringify(asked.filters) !== JSON.stringify(filters));
   const openForm = (parent: number | null) =>
     newIssue({
       repository: board.repository.id,
@@ -416,6 +426,26 @@ export function BoardPage() {
           under the filters spent the room it asks for and left the filters standing alone over nothing. */}
       <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start">
         <div className="flex min-w-0 flex-1 flex-col">
+          {openView && (
+            <p
+              className="m-0 mb-2 flex flex-wrap items-center gap-x-3 text-sm text-secondary"
+              data-testid="board-view"
+            >
+              <BookmarkSimpleIcon className="size-4" aria-hidden="true" />
+              <span>
+                View <strong className="font-semibold text-text">{openView.name}</strong>
+                {viewChanged ? " (filters changed)" : ""}
+              </span>
+              <Link to={`/views/${openView.id}?manage`}>Manage view</Link>
+              <button
+                type="button"
+                className="cursor-pointer border-0 bg-transparent p-0 text-sm text-secondary underline"
+                onClick={() => setQuery({ view: "" })}
+              >
+                Close view
+              </button>
+            </p>
+          )}
           <FilterBar
             label="Filter the cards"
             leading={

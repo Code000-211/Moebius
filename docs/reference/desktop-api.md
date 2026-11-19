@@ -1368,8 +1368,15 @@ may change or delete it (its owner and an owner of the organisation may), so a p
   asks nothing). `projects` and `repositories` (ids), `labels` (the labels people gave the card: its priority, due date and estimate are kept as `priority:`, `due:` and
   `estimate:` labels with a value that reads, and have filters of their own, so no label filter matches them), `assignees` (handles), `priorities` (`urgent`, `high`,
   `medium`, `low`, `none`), `cycles` and `milestones` (ids, a closed cycle included), `columns`, `authors` (all in any
-  case) and `text` (a word or phrase in the title or the body, in any case). At most 100 values for each part and 100
-  characters of text. A key that is not a part is refused.
+  case) and `text` (a word or phrase in the title or the body, in any case). The board's agent, status and due filters
+  are parts too: `agents` (handles, in any case: cards an agent of that handle ran on in any run, not only the
+  latest), `statuses` (what the card is doing, as the board names it: `held`, `live` (its latest run starts or runs),
+  `needs-you` (an open inbox item), `stuck` (an open `stuck` item; before `needs-you`), `blocked` (waits for issues),
+  `waiting` (waits for a reason, such as a limit) or `idle`; the first that applies counts, as on the board) and `due`
+  (one of `overdue` (before today), `today`, `week` (today and the seven days after it), `any` (has a due date) or
+  `none`; empty asks nothing). A day is the day of the server when the view is opened, and a card's due date is the one
+  it carries as a `due:` label. At most 100 values for each part and 100 characters of text. A status or a due range
+  that is not one of these is refused (`422`), and so is a key that is not a part.
 
 A view read by someone who may not see a project, repository or cycle its filter names has those ids left out, so a
 shared view does not tell them a private project exists; an edit checks only the ids it adds.

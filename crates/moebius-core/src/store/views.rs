@@ -61,6 +61,17 @@ pub struct ViewFilter {
     /// Cards made by any of these authors (in any case).
     #[serde(default)]
     pub authors: Vec<String>,
+    /// Cards an agent of any of these handles ran on (any run of the card, in any case).
+    #[serde(default)]
+    pub agents: Vec<String>,
+    /// Cards in any of these states, as the board names them: `held`, `live`, `needs-you`, `stuck`, `blocked`,
+    /// `waiting` or `idle`.
+    #[serde(default)]
+    pub statuses: Vec<String>,
+    /// Cards whose due date is in this range as of the day the view is opened (on the server): `overdue`, `today`,
+    /// `week` (today and the next seven days), `any` or `none`; empty asks nothing.
+    #[serde(default)]
+    pub due: String,
     /// Cards whose title or body has this text, in any case.
     #[serde(default)]
     pub text: String,

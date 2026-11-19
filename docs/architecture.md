@@ -603,6 +603,7 @@ At the top:
 | `app/jira/cards.rs` | Issues as cards, then their parent, milestone, cycle, comments and links; written only when what Jira shows differs from the note kept. |
 | `app/jira/tests.rs` | The import against a fake Jira: every record, a second import, names and mapped people. |
 | `app/milestones.rs` | Milestones (ADR 0019): making and editing them, putting a card in them, and their progress counted and listed only within the projects the asker may see (`App::may_see_project`). |
+| `app/view_filters.rs` | The parts of a saved view's filter that look at a run or at today: the agents that ran on a card, its status and its due range. |
 | `app/views.rs` | Saved views: making and changing them for a person or for everyone, and the cards each shows the person who opens it, within what they may see (`App::sight`). |
 | `app/intake.rs` | Intake (ADR 0019): a project's requests, written by anyone who may see it, grilled into a draft issue by a chat of the grilling agent and accepted into a card the requester follows, edited, or declined with a reason the requester is told. |
 | `app/projects/sight.rs` | Who sees what of a private project (ADR 0018): a person's `Sight` (the private projects they are no member of, and the repositories all of whose projects those are), whether it sees a card, run, lesson or judgement, which lessons a run of a project may find, and a Retro's proposal unquoted for someone who does not see a project it names. |

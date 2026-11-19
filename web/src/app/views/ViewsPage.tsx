@@ -4,12 +4,13 @@
  * member the same filter within what they may see. The cards are drawn in the view's layout: a list, the lanes of a
  * board, a calendar by due date or a timeline by cycle. A view is made from the board ("Save view") and changed here:
  * its name, whether it is shared, its layout and its sort. Only its owner (or an owner of the organisation) changes a
- * shared view.
+ * shared view. A view of the board layout whose filter the board's filter bar can hold opens on that board instead,
+ * with its filter set (as does a list); `?manage` keeps this page for it, to change or delete it.
  */
 import { BookmarkSimpleIcon, PencilSimpleIcon, TrashIcon, UsersIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router";
 import { deleteView, editView, listViews, viewCards } from "../../api/calls/views";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
@@ -33,11 +34,13 @@ import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
 import { cardKey } from "../board/cardKey";
 import { boardPath } from "../pages";
-import { fieldsOf, filterWords, groupsOf, LAYOUTS, SORTS } from "./model";
+import { boardOfView, fieldsOf, filterWords, groupsOf, LAYOUTS, SORTS } from "./model";
 
 export function ViewsPage() {
   const { id } = useParams();
   const selected = id === undefined ? null : Number(id);
+  // `?manage` opens the page of a view that would open on its board: the board links here to change or delete it.
+  const managing = useSearchParams()[0].has("manage");
   const views = useQuery({ queryKey: keys.views, queryFn: listViews });
   const [editing, setEditing] = useState<View | null>(null);
   const [deleting, setDeleting] = useState<View | null>(null);
@@ -66,6 +69,9 @@ export function ViewsPage() {
     );
   }
   const current = views.data.find((view) => view.id === selected) ?? null;
+  // A view of the board or list layout that the board can set is opened on its board, with its filter in the bar.
+  const board = current && !managing ? boardOfView(current) : null;
+  if (board !== null) return <Navigate to={board} replace />;
   return (
     <div data-testid="views-page" className="flex flex-col gap-4">
       <PageHeader
@@ -188,6 +194,12 @@ function OpenView({
       </div>
       <p className="m-0 text-sm text-secondary" data-testid="view-filter">
         Shows {filterWords(view.filter)}
+        {boardOfView(view) && (
+          <>
+            {" · "}
+            <Link to={boardOfView(view) as string}>Open on the board</Link>
+          </>
+        )}
       </p>
       {shown.isPending ? (
         <SkeletonList rows={3} message="Reading the cards" />
