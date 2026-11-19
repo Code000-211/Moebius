@@ -468,6 +468,7 @@ impl App {
                     card: card_id,
                     comment: comment.clone(),
                 });
+                self.notify_comment(&comment);
                 Ok(comment)
             }
             // The poll read it from the forge before this call stored it: it is that one, and it was announced.

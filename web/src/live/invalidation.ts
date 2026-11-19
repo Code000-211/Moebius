@@ -87,6 +87,7 @@ export function invalidates(event: ServerEvent): QueryKey[] {
   if (event.kind === "repository_added" || event.kind === "repository_removed") {
     stale.push(keys.start);
   }
+  if (event.kind === "notice_added" || event.kind === "notice_read") stale.push(keys.notices);
   if (event.kind === "run_started" || event.kind === "run_ended") stale.push(keys.runs);
   if (DIFF_KINDS.has(event.kind)) stale.push(keys.diffs);
   if (event.kind === "port_opened" || event.kind === "port_closed") stale.push(keys.ports);

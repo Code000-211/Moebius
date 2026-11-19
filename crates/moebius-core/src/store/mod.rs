@@ -9,8 +9,10 @@
 //! card gets in one go and which was picked), `research` (research, its runs and experiments), `automations`
 //! (automations, their firings and the local clock), `workflows` (workflow runs and what each node did),
 //! `plugin_settings` (what plugins keep for the server) and `people` (the people of the organisation, and the
-//! migration that gives earlier records to the first owner) and `assignees` (who cards and inbox items are given to), `planning` (a card's priority and due date, read from its labels) and `access` (their access tokens and the sessions of
-//! browsers, kept as hashes) and `favourites` (the places a person pinned and opened lately) and `projects` (the
+//! migration that gives earlier records to the first owner), `assignees` (who cards and inbox items are given to),
+//! `notices` (what concerns a person, and the cards they follow), `planning` (a card's priority and due date, read from
+//! its labels), `access` (their access tokens and the sessions of browsers, kept as hashes), `favourites` (the places a
+//! person pinned and opened lately), `projects` (the
 //! projects, their keys and repositories, and the migration that makes one for each repository) and `milestones` (goals
 //! of the organisation that hold cards of any projects).
 //! Every public type is re-exported here, as `store::Card` and the like.
@@ -34,6 +36,7 @@ mod lessons;
 mod links;
 mod localize;
 mod milestones;
+mod notices;
 mod outgoing;
 mod people;
 mod planning;
@@ -73,6 +76,7 @@ pub use lessons::{Lesson, NewLesson};
 pub use links::{DUPLICATE, Link, RELATED};
 pub use localize::IndexedFile;
 pub use milestones::{Milestone, MilestoneCard};
+pub use notices::{ASSIGNED, CHANGED, MENTIONED, NewNotice, Notice};
 pub use outgoing::OutgoingWebhook;
 pub use people::{FIRST_OWNER, Person, Role};
 pub use planning::{Priority, is_date, with_due, with_priority};
@@ -463,6 +467,7 @@ ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
     chats::SCHEMA,
     outgoing::SCHEMA,
     assignees::SCHEMA,
+    notices::SCHEMA,
     projects::SCHEMA,
     projects::FILES,
     links::SCHEMA,

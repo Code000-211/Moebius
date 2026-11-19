@@ -34,8 +34,15 @@ async fn events(
 /// them (see [`crate::app::chat_access`]).
 const OF_A_RUN: [&str; 4] = ["run_started", "run_event", "run_ended", "chat_renamed"];
 
+/// The events that tell one person something: only that person (`data.person`, a handle) is sent them.
+const OF_A_PERSON: [&str; 2] = ["notice_added", "notice_read"];
+
 /// Whether `by` may be told of `event`.
 fn visible(app: &crate::app::App, by: &Actor, event: &AppEvent) -> bool {
+    if OF_A_PERSON.contains(&event.kind.as_str()) {
+        return matches!(by, Actor::Member { handle, .. }
+            if event.data["person"].as_str().is_some_and(|p| p.eq_ignore_ascii_case(handle)));
+    }
     if !OF_A_RUN.contains(&event.kind.as_str()) {
         return true;
     }
@@ -125,6 +132,45 @@ mod tests {
                 title: "t".into()
             })
         ));
+    }
+
+    #[tokio::test]
+    async fn a_notice_reaches_the_person_it_is_for_and_no_one_else() {
+        let (_dir, state, _addr) = start().await;
+        let store = &state.app.store;
+        let lea = store
+            .add_person("lea", "Lea", crate::store::Role::Member)
+            .unwrap();
+        let ben = store
+            .add_person("ben", "Ben", crate::store::Role::Member)
+            .unwrap();
+        let notice = store
+            .add_notice(
+                lea.id,
+                &crate::store::NewNotice {
+                    kind: crate::store::MENTIONED,
+                    by: None,
+                    card_id: None,
+                    inbox_item_id: None,
+                    title: "t",
+                    body: "secret",
+                },
+            )
+            .unwrap();
+        let told = |kind: fn(String, crate::store::Notice) -> Event| {
+            AppEvent::from(kind("Lea".into(), notice.clone()))
+        };
+        let added = told(|person, notice| Event::NoticeAdded { person, notice });
+        let read = told(|person, notice| Event::NoticeRead { person, notice });
+        let agent = Actor::Agent {
+            name: "Moebius".into(),
+            run: 1,
+        };
+        for event in [&added, &read] {
+            assert!(visible(&state.app, &Actor::person(lea.id, "lea"), event));
+            assert!(!visible(&state.app, &Actor::person(ben.id, "ben"), event));
+            assert!(!visible(&state.app, &agent, event));
+        }
     }
 
     #[tokio::test]

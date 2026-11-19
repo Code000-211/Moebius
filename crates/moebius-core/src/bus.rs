@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 use crate::server::ports::Port;
-use crate::store::{Card, Change, Comment, Milestone, Project, Repository};
+use crate::store::{Card, Change, Comment, Milestone, Notice, Project, Repository};
 
 /// One thing that happened, as the web app receives it. It is built from an [`Event`] and deserializes from the
 /// `{kind, data}` a client is sent, so nothing outside [`Event`] can name a kind.
@@ -121,6 +121,17 @@ pub enum Event {
     },
     CardReopened {
         card: i64,
+    },
+    /// A person was told something: a notice of their Inbox's Mentions tab. Sent only to that person (`person` is their
+    /// handle).
+    NoticeAdded {
+        person: String,
+        notice: Notice,
+    },
+    /// A person read one of their notices; sent only to that person.
+    NoticeRead {
+        person: String,
+        notice: Notice,
     },
     ChatRenamed {
         run: i64,
@@ -471,6 +482,17 @@ mod tests {
     /// One of every [`Event`], with the `{kind, data}` `docs/reference/desktop-api.md` lists for it.
     fn fixtures() -> Vec<(Event, Value)> {
         let card = card();
+        let notice = Notice {
+            id: 3,
+            kind: "mentioned".into(),
+            by: Some("tom".into()),
+            card_id: Some(7),
+            inbox_item_id: None,
+            title: "Fix it".into(),
+            body: "Hi @lea".into(),
+            at: 5,
+            read: false,
+        };
         let change = change();
         let repository = repository();
         let project = Project {
@@ -626,6 +648,23 @@ mod tests {
             (
                 Event::CardReopened { card: 7 },
                 json!({"kind": "card_reopened", "data": {"card": 7}}),
+            ),
+            (
+                Event::NoticeAdded {
+                    person: "lea".into(),
+                    notice: notice.clone(),
+                },
+                json!({"kind": "notice_added", "data": {"person": "lea", "notice": {"id": 3, "kind": "mentioned", "by": "tom", "card_id": 7, "inbox_item_id": null, "title": "Fix it", "body": "Hi @lea", "at": 5, "read": false}}}),
+            ),
+            (
+                Event::NoticeRead {
+                    person: "lea".into(),
+                    notice: Notice {
+                        read: true,
+                        ..notice.clone()
+                    },
+                },
+                json!({"kind": "notice_read", "data": {"person": "lea", "notice": {"id": 3, "kind": "mentioned", "by": "tom", "card_id": 7, "inbox_item_id": null, "title": "Fix it", "body": "Hi @lea", "at": 5, "read": true}}}),
             ),
             (
                 Event::ChatRenamed {

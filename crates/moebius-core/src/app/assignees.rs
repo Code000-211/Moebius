@@ -2,17 +2,45 @@
 //! organisation: one that is nobody's is refused, and so is a disabled person who was not assigned before. Assigning
 //! replaces the whole set or adds or takes off one person (the change is applied to the people the card has now,
 //! so two made in quick succession both stay), is the same on every forge (Moebius keeps assignees itself and never writes the forge's),
-//! and is announced on the bus as `card_assignees_changed` or `inbox_assignees_changed`.
+//! and is announced on the bus as `card_assignees_changed` or `inbox_assignees_changed`; those newly given one are told
+//! (`notices`).
 
 use std::collections::BTreeSet;
 
 use super::{App, AppError, Result};
 use crate::bus::Event;
 
+/// The handles in `now` that were not in `before`.
+fn newly(before: &[String], now: &[String]) -> Vec<String> {
+    now.iter()
+        .filter(|h| !before.contains(h))
+        .cloned()
+        .collect()
+}
+
 impl App {
     /// Replaces the people the card is given to with those named by `handles` (with or without the `@`, in any case).
     /// Announces `card_assignees_changed` when the set changed.
     pub fn set_assignees(&self, card_id: i64, handles: &[String]) -> Result<crate::store::Card> {
+        self.assign_card(None, card_id, handles)
+    }
+
+    /// [`App::set_assignees`] done by `by`, who is not told of it when they gave the card to themselves.
+    pub fn set_assignees_by(
+        &self,
+        by: &crate::decide::Actor,
+        card_id: i64,
+        handles: &[String],
+    ) -> Result<crate::store::Card> {
+        self.assign_card(Some(by), card_id, handles)
+    }
+
+    fn assign_card(
+        &self,
+        by: Option<&crate::decide::Actor>,
+        card_id: i64,
+        handles: &[String],
+    ) -> Result<crate::store::Card> {
         let card = self.card(card_id)?;
         let people = self.people_named(handles, &card.assignees)?;
         let assignees = self.handles_of(&people)?;
@@ -22,8 +50,9 @@ impl App {
         self.store.set_card_assignees(card_id, &people)?;
         self.bus.publish(Event::CardAssigneesChanged {
             card: card_id,
-            assignees,
+            assignees: assignees.clone(),
         });
+        self.notify_assigned(&card, &newly(&card.assignees, &assignees), by);
         self.card(card_id)
     }
 
@@ -31,6 +60,25 @@ impl App {
     /// Announces `inbox_assignees_changed` when the set changed.
     pub fn set_inbox_assignees(
         &self,
+        item_id: i64,
+        handles: &[String],
+    ) -> Result<crate::store::InboxItem> {
+        self.assign_item(None, item_id, handles)
+    }
+
+    /// [`App::set_inbox_assignees`] done by `by`, who is not told of it when they gave the item to themselves.
+    pub fn set_inbox_assignees_by(
+        &self,
+        by: &crate::decide::Actor,
+        item_id: i64,
+        handles: &[String],
+    ) -> Result<crate::store::InboxItem> {
+        self.assign_item(Some(by), item_id, handles)
+    }
+
+    fn assign_item(
+        &self,
+        by: Option<&crate::decide::Actor>,
         item_id: i64,
         handles: &[String],
     ) -> Result<crate::store::InboxItem> {
@@ -46,23 +94,40 @@ impl App {
         self.store.set_inbox_assignees(item_id, &people)?;
         self.bus.publish(Event::InboxAssigneesChanged {
             item: item_id,
-            assignees,
+            assignees: assignees.clone(),
         });
+        self.notify_item_assigned(&item, &newly(&item.assignees, &assignees), by);
         Ok(self.store.inbox_item(item_id)?.unwrap_or(item))
     }
 
     /// Gives the card to one more person, whatever the card was given to meanwhile. Announces
     /// `card_assignees_changed` when the person was not on it.
     pub fn add_assignee(&self, card_id: i64, handle: &str) -> Result<crate::store::Card> {
-        self.change_assignee(card_id, handle, true)
+        self.change_assignee(None, card_id, handle, true)
+    }
+
+    /// [`App::add_assignee`] done by `by`, who is not told of it when they gave the card to themselves.
+    pub fn add_assignee_by(
+        &self,
+        by: &crate::decide::Actor,
+        card_id: i64,
+        handle: &str,
+    ) -> Result<crate::store::Card> {
+        self.change_assignee(Some(by), card_id, handle, true)
     }
 
     /// Takes the card off one person (also a disabled one); nothing happens when the card was not given to them.
     pub fn remove_assignee(&self, card_id: i64, handle: &str) -> Result<crate::store::Card> {
-        self.change_assignee(card_id, handle, false)
+        self.change_assignee(None, card_id, handle, false)
     }
 
-    fn change_assignee(&self, card_id: i64, handle: &str, add: bool) -> Result<crate::store::Card> {
+    fn change_assignee(
+        &self,
+        by: Option<&crate::decide::Actor>,
+        card_id: i64,
+        handle: &str,
+        add: bool,
+    ) -> Result<crate::store::Card> {
         let card = self.card(card_id)?;
         let person = self.person_to_change(handle, &card.assignees, add)?;
         let changed = if add {
@@ -76,6 +141,13 @@ impl App {
                 card: card_id,
                 assignees: card.assignees.clone(),
             });
+            if add {
+                self.notify_assigned(
+                    &card,
+                    &[handle.trim().trim_start_matches('@').to_string()],
+                    by,
+                );
+            }
         }
         Ok(card)
     }
@@ -86,7 +158,17 @@ impl App {
         item_id: i64,
         handle: &str,
     ) -> Result<crate::store::InboxItem> {
-        self.change_inbox_assignee(item_id, handle, true)
+        self.change_inbox_assignee(None, item_id, handle, true)
+    }
+
+    /// [`App::add_inbox_assignee`] done by `by`, who is not told of it when they gave the item to themselves.
+    pub fn add_inbox_assignee_by(
+        &self,
+        by: &crate::decide::Actor,
+        item_id: i64,
+        handle: &str,
+    ) -> Result<crate::store::InboxItem> {
+        self.change_inbox_assignee(Some(by), item_id, handle, true)
     }
 
     /// Takes the inbox item off one person; like [`App::remove_assignee`].
@@ -95,11 +177,12 @@ impl App {
         item_id: i64,
         handle: &str,
     ) -> Result<crate::store::InboxItem> {
-        self.change_inbox_assignee(item_id, handle, false)
+        self.change_inbox_assignee(None, item_id, handle, false)
     }
 
     fn change_inbox_assignee(
         &self,
+        by: Option<&crate::decide::Actor>,
         item_id: i64,
         handle: &str,
         add: bool,
@@ -120,6 +203,10 @@ impl App {
                 item: item_id,
                 assignees: item.assignees.clone(),
             });
+            if add {
+                let who = handle.trim().trim_start_matches('@').to_string();
+                self.notify_item_assigned(&item, &[who], by);
+            }
         }
         Ok(item)
     }
@@ -213,6 +300,9 @@ mod tests {
             serde_json::json!({"card": card.id, "assignees": ["lea", "tom"]})
         );
 
+        // Those newly given the card are told (see `notices`); that is all there is on the bus.
+        assert_eq!(events.try_recv().unwrap().kind, "notice_added");
+        assert_eq!(events.try_recv().unwrap().kind, "notice_added");
         app.set_assignees(card.id, &["lea".into(), "tom".into()])
             .unwrap();
         assert!(events.try_recv().is_err(), "no change, no event");
@@ -248,9 +338,16 @@ mod tests {
             ["lea", "tom"],
             "neither add undoes the other"
         );
-        assert_eq!(events.try_recv().unwrap().kind, "card_assignees_changed");
+        // Each add announces the set and then tells the person added (see `notices`).
+        let mut sets = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            if event.kind == "card_assignees_changed" {
+                sets.push(event.data);
+            }
+        }
+        assert_eq!(sets.len(), 2);
         assert_eq!(
-            events.try_recv().unwrap().data,
+            sets[1],
             serde_json::json!({"card": card.id, "assignees": ["lea", "tom"]})
         );
 

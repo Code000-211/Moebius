@@ -90,6 +90,12 @@ describe("invalidates", () => {
     }
   });
 
+  it("makes the notices stale when one is added or read, and who follows a card with the card", () => {
+    expect(invalidates({ kind: "notice_added", data: {} })).toContainEqual(keys.notices);
+    expect(invalidates({ kind: "notice_read", data: {} })).toContainEqual(keys.notices);
+    expect(keys.followers(7).slice(0, keys.cards.length)).toEqual([...keys.cards]);
+  });
+
   it("makes what is read about a card stale with the snapshot, and the scripts with their own event", () => {
     expect(invalidates({ kind: "card_moved", data: {} })).toContainEqual(keys.cards);
     // Comments are read per card under `keys.cards`, so a comment written elsewhere shows at once.
