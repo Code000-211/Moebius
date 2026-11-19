@@ -719,7 +719,7 @@ mod tests {
         );
         assert_eq!(change.review_verdict.as_deref(), Some("approve"));
         assert_eq!(change.repository, repo.name);
-        assert_eq!(shown.changes, [change.clone()]);
+        assert_eq!(shown.changes, std::slice::from_ref(change));
         assert_eq!(snap.inbox[0].card_id, Some(card.id));
 
         let blocked = view(blocker.number);
