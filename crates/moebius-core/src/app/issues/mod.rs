@@ -8,6 +8,8 @@
 //! the forge has them and a "Blocked by #n" line of the body where it does not (`text`). `sync` is the poll's side: what
 //! it reads back, which sub-issues count and which edges are refused.
 
+mod links;
+mod similar;
 mod sync;
 mod text;
 
@@ -20,6 +22,8 @@ use crate::bus::Event;
 use crate::decide::Actor;
 use crate::repos::forge::Forge;
 use crate::store::{Card, Comment, Repository};
+pub use links::Links;
+pub use similar::Similar;
 pub(crate) use sync::now_millis;
 use sync::waits_for;
 pub(super) use text::part_of;
@@ -38,7 +42,7 @@ pub struct IssueQuery {
     pub blocked: Option<bool>,
 }
 
-/// A sub-issue as its parent's view shows it.
+/// A sub-issue as its parent's view shows it, and an issue as the issues linked to it show it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Child {
     pub id: i64,
@@ -60,6 +64,9 @@ pub struct IssueView {
     pub blocked_by: Vec<i64>,
     /// Its sub-issues.
     pub children: Vec<Child>,
+    /// The issue it is a duplicate of, the issues that are duplicates of it and the issues related to it.
+    #[serde(flatten)]
+    pub links: Links,
 }
 
 /// Whether a card's issue is closed, as the word.
@@ -97,6 +104,7 @@ impl App {
             state: state_of(&card).into(),
             blocked_by: self.blocked_by(&card)?,
             children: self.children_of(&card)?,
+            links: self.links_of(&card)?,
             card,
         })
     }
@@ -271,6 +279,9 @@ impl App {
         self.store.release_card(card.id)?;
         let card = self.card(card.id)?;
         self.bus.publish(Event::CardAdded(card.clone()));
+        if let Err(e) = self.offer_duplicates(&card) {
+            warnings.push(format!("could not look for duplicates: {e}"));
+        }
         Ok((card, warnings))
     }
 

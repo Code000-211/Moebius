@@ -13,6 +13,7 @@ import type { Card, InboxItem } from "../../api/types/board";
 import { assignable } from "../people/AssigneesProperty";
 import { PaletteFocusFor } from "../shell/palette/focus";
 import { type CardActions, cardCommands } from "./cardCommands";
+import { cardKey } from "./cardKey";
 import type { Decision, Notice } from "./decisions";
 
 export function CardFocus({
@@ -79,7 +80,7 @@ export function CardFocus({
       reject: (c) => onReject(c),
     };
     return {
-      label: `#${card.number} ${card.title}`,
+      label: `${cardKey(card)} ${card.title}`,
       commands: cardCommands(card, item, actions, people),
     };
   }, [card, item, people, decide, mutate, onBlock, onAddSubIssue, onReject]);

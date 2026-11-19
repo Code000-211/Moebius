@@ -36,7 +36,10 @@ vi.mock("../../live/LiveProvider", () => ({ useServerEvents: () => {} }));
 const card = (number: number, extra: Partial<Card> = {}): Card => ({
   id: number + 100,
   repository_id: 1,
+  project_id: 1,
   number,
+  project_number: number,
+  project_key: "MOE",
   title: `Issue ${number}`,
   body: "",
   author: "person",
@@ -69,9 +72,12 @@ const BOARD: Board = {
     github: null,
     trusted: [],
     project: "Moebius",
+    home_project_id: 1,
   },
   cards: [
     card(18, { claimed_by: "agent:Coder" }),
+    // Its issue is #40 on the forge, its number in the project is 5.
+    card(40, { project_number: 5 }),
     card(19, { run: { id: 7, agent: "Coder", purpose: "code", status: "running" } }),
   ],
   round_limit: 5,
@@ -179,6 +185,24 @@ describe("the preview of a link to a card", () => {
     fireEvent.blur(running);
     fireEvent.focus(screen.getByRole("link", { name: "#18" }));
     expect(screen.queryByTestId("card-preview-run")).toBeNull();
+  });
+
+  it("links a card key on any board, and #5 means the card numbered 5 in the project", async () => {
+    inApp(<Markdown content="See MOE-18, moe-18, UTF-8, MOE-99 and #5, not #40" />);
+    const key = await screen.findByRole("link", { name: "MOE-18" });
+    expect(key.getAttribute("href")).toBe("/board/1?card=118");
+    const same = screen.getByRole("link", { name: "#5" });
+    expect(same.getAttribute("href")).toBe("/board/1?card=140");
+    fireEvent.focus(same);
+    expect(screen.getByTestId("card-preview").textContent).toContain("MOE-5");
+    expect(screen.getAllByRole("link").map((l) => l.textContent)).toEqual(["MOE-18", "#5", "#40"]);
+  });
+
+  it("does not link a key that goes on into another number", async () => {
+    inApp(<Markdown content="Not MOE-18-2 here" />);
+    await screen.findByText(/Not MOE-18-2/);
+    await act(async () => {});
+    expect(screen.queryAllByRole("link")).toHaveLength(0);
   });
 
   it("leaves a number that names no card as text", async () => {

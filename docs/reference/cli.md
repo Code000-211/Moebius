@@ -170,12 +170,14 @@ for `api`), `/v1/runs/...`, `/v1/judgements...`, `/v1/replays`, `DELETE /v1/repl
 ## Commands
 
 A repository, a card, a chat or anything else is named by its id, as the answers show it, except `board`, which also
-takes a repository's name.
+takes a repository's name, and a card, which is also named by its key (`WEB-24`, in any case) wherever a command takes a
+card's id: `card` and every `issue` command. A key is looked up with `GET /v1/cards/by-key/{key}` first. The numbers of
+issues (`--parent`, `--blocked-by`, `blocker`) stay the numbers of their issues in the repository.
 
 | Command | Route | Plain output |
 |---|---|---|
 | `board [<repository>]` | `GET /v1/snapshot` | For each repository, `<name> (repository <id>)`, then each column with its cards as `<id>  #<number>  <title>`, followed by `[<agent> <status>]` of the latest run and `(waiting: <reason>)`. Fails with `no repository <x>` for an unknown one. |
-| `card <id>` | `GET /v1/snapshot` | The card: number, title, repository, column, author, rounds and tokens, latest run, open change, why it waits, note, blockers and body. `no card <id>` if there is none. |
+| `card <id>` | `GET /v1/snapshot` | The card: its key and number (`WEB-24`, with the issue's number `(#17)` when that is another or the card is of a forge), number, title, repository, column, author, rounds and tokens, latest run, open change, why it waits, note, blockers and body. `no card <id>` if there is none. |
 | `card <id> --history` | `GET /v1/cards/{id}/history` | Table `at kind data`. |
 | `card <id> --runs` | `GET /v1/cards/{id}/runs` | Table `id agent purpose status summary`. |
 | `inbox` | `GET /v1/snapshot` | Table `id kind card title` of the open items. |
@@ -219,7 +221,7 @@ takes a repository's name.
 | `repo remove <id> [--reason <why>]` | `DELETE /v1/repositories/{id}` | The repository, as it last was. Removes it with its cards, changes and chats, and deletes its clone; `409` while one of its runs is still going. |
 | `issue create <repository> <title> [--body <text>] [--parent <n>] [--label <label>]... [--blocked-by <n>]...` | `POST /v1/repositories/{id}/issues` | The card, and `warnings` when a step after the issue was created failed. `--parent` and `--blocked-by` are issue numbers of the repository, checked before the issue is created. |
 | `issue list <repository> [--parent <n>] [--label <label>] [--state open\|closed] [--claimed \| --unclaimed] [--blocked \| --unblocked]` | `GET /v1/repositories/{id}/issues` | Table `id number state title labels claimed_by blocked_by`. `--blocked` keeps the issues an issue that is not done blocks. The frontier of a map is `--parent <map> --state open --unblocked --unclaimed`. |
-| `issue show <card>` | `GET /v1/cards/{id}` | The issue as lines, then its sub-issues as a table. |
+| `issue show <card>` | `GET /v1/cards/{id}` | The issue as lines, then its sub-issues, the issue it duplicates, its duplicates and its related issues as tables. |
 | `issue edit <card> [--title <text>] [--body <text>]` | `GET /v1/cards/{id}`, then `PUT /v1/cards/{id}` | The card. What is not given stays. |
 | `issue close <card> [--reason <why>]` | `POST /v1/cards/{id}/close` | The card, now in `Done`. |
 | `issue reopen <card> [--reason <why>]` | `POST /v1/cards/{id}/reopen` | The card, back in `Backlog`. |
@@ -229,6 +231,10 @@ takes a repository's name.
 | `issue parent <card> <number\|none>` | `PUT /v1/cards/{id}/parent` | The card. The number is of the parent issue, with or without `#`. |
 | `issue blocker add <card> <number>` | `POST /v1/cards/{id}/blockers` | The numbers that block the issue. Refused (status 422) when that makes a cycle, a blocker that is an ancestor of the issue included. On a forge that keeps no blocking (GitLab without Premium) it writes the line `Blocked by #n` into the description. |
 | `issue blocker remove <card> <number>` | `DELETE /v1/cards/{id}/blockers/{number}` | The numbers that still block it. A line of the description that names the blocker is taken out. |
+| `issue duplicate <card> <number\|none>` | `PUT /v1/cards/{id}/duplicate`, or `DELETE` for `none` | The card. Closes the issue with a comment that points to the issue `number`, the original (status 422 for itself, for an original that is a duplicate, and for an issue with duplicates, 409 while a run of it is going); `none` takes the link off and leaves it closed. |
+| `issue related add <card> <number>` | `POST /v1/cards/{id}/related` | The links of the issue: `duplicate_of`, `duplicates`, `related`. Each of the two issues shows the other. |
+| `issue related remove <card> <number>` | `DELETE /v1/cards/{id}/related/{number}` | The links that are left. |
+| `issue similar <card>` | `GET /v1/cards/{id}/similar` | Table `number score title`: the open issues that look like it by their words, as the comment on a new issue lists them. |
 | `issue comment <card> <text>` | `POST /v1/cards/{id}/comments` | The comment. |
 | `issue comments <card>` | `GET /v1/cards/{id}/comments` | Table `at author body`. |
 | `retro` | `GET /v1/retros` | Table `date status errors proposals`. |

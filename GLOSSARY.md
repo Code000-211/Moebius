@@ -123,6 +123,16 @@ _Avoid_: project, GitHub Project
 One issue on the board, or a change that belongs to no issue; a change that closes an issue belongs to that issue's card.
 _Avoid_: task, ticket, item
 
+**Duplicate**:
+An issue that says the same as another, its original: it is closed with a comment and a link that point to the original,
+which lists its duplicates. Only a person, or the Moebius agent told to by one, marks one; what Moebius offers when an issue
+is made is a list of likely duplicates, never a closing.
+_Avoid_: dupe, copy
+
+**Related issues**:
+Issues that belong together without one waiting for the other, as opposed to a parent and a blocker: each shows the other.
+_Avoid_: linked issues, see also
+
 **Run**:
 One use of a harness, as one agent, for one purpose, such as working on one card in its own worktree; a card has as many
 runs as its Kanban needs.
@@ -324,7 +334,9 @@ _Avoid_: project repository, scratch repository
 
 **Project key**:
 A few capital letters that name a project's cards, such as `WEB` in `WEB-24`: an uppercase letter and up to nine more
-uppercase letters or digits, unique on the server, chosen when the project is made and kept when it is renamed.
+uppercase letters or digits, unique on the server, chosen when the project is made and kept when it is renamed. A card is named by its project's key
+and its number in the project (`WEB-24`); a card of a forge keeps the forge's number beside it (`#17`), and `#24` in a
+comment names the card of that number in the project of the comment.
 _Avoid_: prefix, slug, project id
 
 **Wiki**:

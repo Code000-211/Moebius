@@ -27,6 +27,7 @@ const SNAPSHOT_KINDS = new Set([
   "card_assignees_changed",
   "inbox_assignees_changed",
   "card_blocking_changed",
+  "card_links_changed",
   "card_claimed",
   "card_released",
   "card_commented",

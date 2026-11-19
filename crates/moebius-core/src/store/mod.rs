@@ -30,6 +30,7 @@ mod inbox;
 mod issues;
 mod judgements;
 mod lessons;
+mod links;
 mod localize;
 mod outgoing;
 mod people;
@@ -66,10 +67,11 @@ pub use inbox::{InboxItem, WORKFLOW_APPROVAL};
 pub use issues::Comment;
 pub use judgements::{Judgement, NewJudgement};
 pub use lessons::{Lesson, NewLesson};
+pub use links::{DUPLICATE, Link, RELATED};
 pub use localize::IndexedFile;
 pub use outgoing::OutgoingWebhook;
 pub use people::{FIRST_OWNER, Person, Role};
-pub use projects::{KEY_LIMIT, Project, is_key};
+pub use projects::{KEY_LIMIT, Project, is_key, parse_card_key};
 pub use replays::Replay;
 pub use research::{Budget, BudgetKind, Experiment, Research};
 pub use retros::{OwnEdits, Proposal, Retro, Trial};
@@ -458,6 +460,8 @@ ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
     assignees::SCHEMA,
     projects::SCHEMA,
     projects::FILES,
+    links::SCHEMA,
+    projects::NUMBERS_SCHEMA,
 ];
 
 pub fn now() -> i64 {
