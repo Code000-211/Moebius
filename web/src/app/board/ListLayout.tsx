@@ -2,8 +2,10 @@
  * The list layout of the board: the cards that pass the filters as rows under a heading for each group, in place of
  * the lanes. A row says the number, the title, what the card is doing in words, its labels and its agent, and opens
  * the card in the dock; there is no dragging here, since a group is not always a column. Which parts a row shows
- * follows Display's fields, as the card does.
+ * follows Display's fields, as the card does. A row has a box that chooses it (`select`), and a right click on it opens
+ * the menu of the choice (`onContextMenu`).
  */
+import type { MouseEvent, ReactNode } from "react";
 import type { Board, Card, InboxItem } from "../../api/types/board";
 import { Empty } from "../../ui/page/Empty";
 import { MarkLabel } from "../../ui/page/MarkLabel";
@@ -17,6 +19,8 @@ function Row({
   hidden,
   selected,
   onSelect,
+  select,
+  onContextMenu,
 }: {
   board: Board;
   inbox: readonly InboxItem[];
@@ -24,16 +28,23 @@ function Row({
   hidden: ReadonlySet<string>;
   selected: boolean;
   onSelect: (card: Card) => void;
+  select?: (card: Card) => ReactNode;
+  onContextMenu?: (card: Card) => (event: MouseEvent) => void;
 }) {
   const status = cardStatus(card, inboxOf(inbox, card), board);
   const badges = cardBadges(card, status, false);
   return (
-    <li data-testid={`card-${card.number}`} className="min-w-0">
+    <li
+      data-testid={`card-${card.number}`}
+      className="group flex min-w-0 items-center gap-1"
+      onContextMenu={onContextMenu?.(card)}
+    >
+      {select && <div className="flex w-6 shrink-0 justify-center">{select(card)}</div>}
       <button
         type="button"
         onClick={() => onSelect(card)}
         aria-current={selected ? "true" : undefined}
-        className={`flex min-h-9 w-full min-w-0 cursor-pointer appearance-none flex-wrap items-center gap-x-3 gap-y-1 rounded-control px-3 py-1 text-left text-base transition-colors duration-(--motion-routine) ease-out hover:bg-hover ${selected ? "bg-selected" : "bg-transparent"}`}
+        className={`flex min-h-9 min-w-0 flex-1 cursor-pointer appearance-none flex-wrap items-center gap-x-3 gap-y-1 rounded-control px-3 py-1 text-left text-base transition-colors duration-(--motion-routine) ease-out hover:bg-hover ${selected ? "bg-selected" : "bg-transparent"}`}
       >
         <span className="font-mono text-sm text-secondary tabular-nums">#{card.number}</span>
         <span
@@ -71,6 +82,8 @@ export function ListLayout({
   hidden,
   inspectedId,
   onSelect,
+  select,
+  onContextMenu,
 }: {
   board: Board;
   inbox: readonly InboxItem[];
@@ -78,6 +91,8 @@ export function ListLayout({
   hidden: ReadonlySet<string>;
   inspectedId: number | undefined;
   onSelect: (card: Card) => void;
+  select?: (card: Card) => ReactNode;
+  onContextMenu?: (card: Card) => (event: MouseEvent) => void;
 }) {
   if (groups.length === 0) {
     return <Empty plain centered body="No card passes the filters." />;
@@ -102,6 +117,8 @@ export function ListLayout({
                 hidden={hidden}
                 selected={inspectedId === card.id}
                 onSelect={onSelect}
+                select={select}
+                onContextMenu={onContextMenu}
               />
             ))}
           </ul>

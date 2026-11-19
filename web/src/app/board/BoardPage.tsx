@@ -21,7 +21,7 @@ import {
   TerminalWindowIcon,
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { type SyntheticEvent, useMemo, useState } from "react";
+import { type ReactNode, type SyntheticEvent, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { readSettings } from "../../api/calls/projects";
@@ -51,6 +51,7 @@ import { ScrollFades } from "../../ui/page/ScrollFades";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
 import { readText, writeText } from "../storage";
+import { useBulk } from "./bulk";
 import { BlockDialog, DeleteDialog, ParentDialog } from "./CardDialogs";
 import { CardFocus } from "./CardFocus";
 import { CardMenu } from "./CardMenu";
@@ -95,6 +96,9 @@ const COLUMN_EMPTY: Record<string, string> = {
 };
 
 /** What the menus of the cards of a board do. */
+/** What chooses cards (`useBulk`): the box of a card and the menu of a right click. */
+type Bulk = Pick<ReturnType<typeof useBulk>, "boxFor" | "onContextMenu">;
+
 type CardMenuActions = {
   onBlock: (card: Card) => void;
   onUnblock: (card: Card) => void;
@@ -185,6 +189,8 @@ export function BoardPage() {
   const [rejectFor, setRejectFor] = useState<number | null>(null);
   // The card a menu asked to block or to delete, until the question is answered.
   const [blocking, setBlocking] = useState<Card | null>(null);
+  // The cards that are blocked with it, for the one reason, when several were chosen.
+  const [blockingMore, setBlockingMore] = useState<Card[]>([]);
   const [deleting, setDeleting] = useState<Card | null>(null);
 
   const board = data.data?.boards.find((b) => String(b.repository.id) === id);
@@ -214,6 +220,22 @@ export function BoardPage() {
         : [],
     [board, inbox, filters, display.layout, display.group, display.sort],
   );
+
+  const choosable = useMemo(
+    () =>
+      display.layout === "list" ? rows.flatMap((g) => g.cards) : groups.flatMap((g) => g.cards),
+    [display.layout, rows, groups],
+  );
+  const bulk = useBulk({
+    board,
+    inbox,
+    order: useMemo(() => choosable.map((card) => card.id), [choosable]),
+    onNotice: setNotice,
+    onBlock: (cards) => {
+      setBlocking(cards[0] ?? null);
+      setBlockingMore(cards.slice(1));
+    },
+  });
 
   if (data.isPending)
     return (
@@ -411,6 +433,8 @@ export function BoardPage() {
               hidden={hidden}
               inspectedId={inspected?.id}
               onSelect={(card) => setQuery({ card: String(card.id) })}
+              select={bulk.boxFor}
+              onContextMenu={bulk.onContextMenu}
             />
           ) : (
             <ScrollFades className="flex-1 pb-3">
@@ -430,6 +454,7 @@ export function BoardPage() {
                     inspectedId={inspected?.id}
                     onSelect={(card) => setQuery({ card: String(card.id) })}
                     menu={menu}
+                    bulk={bulk}
                     hidden={hidden}
                     adding={adding === column}
                     onAdding={(open) => setAdding(open ? column : null)}
@@ -501,9 +526,17 @@ export function BoardPage() {
       />
       <BlockDialog
         card={blocking}
-        onClose={() => setBlocking(null)}
-        onDone={(text) => setNotice({ tone: "ok", text })}
+        more={blockingMore}
+        onClose={() => {
+          setBlocking(null);
+          setBlockingMore([]);
+        }}
+        onDone={(text) => {
+          setNotice({ tone: "ok", text });
+          bulk.choice.clear();
+        }}
       />
+      {bulk.surface}
       <DeleteDialog
         card={deleting}
         repository={board.repository}
@@ -537,6 +570,7 @@ function BoardColumn({
   inspectedId,
   onSelect,
   menu,
+  bulk,
   hidden,
   adding,
   onAdding,
@@ -556,6 +590,7 @@ function BoardColumn({
   inspectedId: number | undefined;
   onSelect: (card: Card) => void;
   menu: CardMenuActions;
+  bulk: Bulk;
   /** The fields of a card Display switched off. */
   hidden: ReadonlySet<string>;
   /** The line for a new card is open in this column. */
@@ -592,6 +627,7 @@ function BoardColumn({
                 inspectedId={inspectedId}
                 onSelect={onSelect}
                 menu={menu}
+                bulk={bulk}
                 stack={stack}
                 open={open}
                 onToggleStack={() => onToggleStack(card)}
@@ -649,6 +685,7 @@ function BoardCard({
   inspectedId,
   onSelect,
   menu,
+  bulk,
   stack,
   open = false,
   onToggleStack,
@@ -659,6 +696,8 @@ function BoardCard({
   inbox: InboxItem[];
   card: Card;
   hidden: ReadonlySet<string>;
+  /** What chooses the card: left out for a sub-issue in a stack, which is not chosen with the cards of the column. */
+  bulk?: Bulk;
   /** The column the card is in: the one it is drawn in, or its own when it lies in the stack of its parent. */
   column: string;
   cards: Card[];
@@ -682,6 +721,7 @@ function BoardCard({
       isSelected={inspectedId === card.id}
       isLive={status === "live"}
       onOpen={() => onSelect(card)}
+      onContextMenu={bulk?.onContextMenu(card)}
     >
       <CardContent
         board={board}
@@ -690,6 +730,7 @@ function BoardCard({
         cards={cards}
         onOpen={() => onSelect(card)}
         menu={menu}
+        select={bulk?.boxFor(card)}
         stack={stack}
         open={open}
         onToggleStack={onToggleStack}
@@ -712,12 +753,15 @@ function CardContent({
   open = false,
   onToggleStack,
   inStack = false,
+  select,
   hidden,
 }: {
   board: Board;
   inbox: InboxItem[];
   card: Card;
   cards: Card[];
+  /** The box that chooses the card, in its corner; left out on the drag overlay. */
+  select?: ReactNode;
   /** The fields Display switched off. */
   hidden: ReadonlySet<string>;
   /** Opens the card; left out on the drag overlay, where the card is only a picture of itself. */
@@ -766,6 +810,7 @@ function CardContent({
       muted={card.column === "Done" || card.closed}
       onOpen={onOpen}
       menu={menu && <CardMenu card={card} {...menu} />}
+      select={select}
     />
   );
 }

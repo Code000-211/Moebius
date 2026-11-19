@@ -67,6 +67,17 @@ export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = [
     ],
   },
   {
+    title: "Several cards or runs chosen",
+    note: "Tab to the box of a card or a row and press Space, or click it (Shift-click chooses a range). While anything is chosen, the bar at the foot and a right click offer the commands, and these keys do them for all.",
+    shortcuts: [
+      { keys: ["A"], label: "Assign the cards to me, or unassign them" },
+      { keys: ["B"], label: "Block the cards (asks why), or unblock them" },
+      { keys: ["X"], label: "Stop their runs (on the board and in Fleet)" },
+      { keys: ["N", "I", "M"], label: "Move the cards to Not started, In progress or Done" },
+      { keys: ["Escape"], label: "Let go of the choice" },
+    ],
+  },
+  {
     title: "Moving a card on the board",
     note: "With a card focused on the board.",
     shortcuts: [

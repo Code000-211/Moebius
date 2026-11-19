@@ -4,13 +4,16 @@
  * what the run is for, its current step and how long it has run. The rows read their events when the page opens and
  * follow the stream's `run_event`s while it is open, so the step moves on its own; a row opens the card's board or the
  * chat. A read that fails says what could not be read and offers to try again, rather than saying that nothing is
- * working.
+ * working. A box at the left of a row chooses it (shift-click chooses a range), and a bar at the foot, or a right click,
+ * stops every chosen run in one go; Escape lets go of the choice.
  */
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { type MouseEvent, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { snapshot as readSnapshot } from "../../api/calls/board";
-import { chats as readChats } from "../../api/calls/chat";
+import { chats as readChats, stopRun } from "../../api/calls/chat";
 import { run as readRun } from "../../api/calls/fleet";
+import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import { inputPath, inputSummary, toolTitle } from "../../chat/conversation";
 import { useThread } from "../../chat/useThread";
@@ -18,16 +21,21 @@ import { thinkingLabel } from "../../ui/chat/ChatCollapsedThinking";
 import { ToolStatusDot } from "../../ui/chat/ToolStatusDot";
 import { toolStatus } from "../../ui/chat/Turn";
 import { Button } from "../../ui/components/Button";
+import { ContextMenu, useContextMenu } from "../../ui/components/ContextMenu";
 import { FilterBar } from "../../ui/filters/FilterBar";
 import { readFilters } from "../../ui/filters/model";
 import { useQueryParams } from "../../ui/filters/useQueryParams";
 import { cn } from "../../ui/lib/cn";
 import { useNow } from "../../ui/lib/useNow";
+import { useSelection } from "../../ui/lib/useSelection";
 import { Empty } from "../../ui/page/Empty";
 import { FadedLine } from "../../ui/page/FadedLine";
 import { MarkLabel } from "../../ui/page/MarkLabel";
+import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
+import { SelectBox } from "../../ui/page/SelectBox";
+import { SelectionBar, type SelectionCommand } from "../../ui/page/SelectionBar";
 import { SkeletonList } from "../../ui/page/Skeleton";
 import {
   afterSteps,
@@ -46,6 +54,9 @@ import {
   working,
   workStartedAt,
 } from "./model";
+
+/** What a row is chosen by: a card's run and a chat can share a number. */
+const choiceKey = (work: Work) => `${work.open.kind}:${work.run}`;
 
 export function FleetPage() {
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
@@ -131,39 +142,127 @@ export function FleetPage() {
           }
         />
       ) : (
-        <div className="flex flex-col gap-6">
-          {byAgent(list).map(([agent, runs]) => (
-            <section
-              key={agent}
-              aria-labelledby={`fleet-agent-${agent}`}
-              className="flex flex-col gap-2"
-            >
-              <h2
-                id={`fleet-agent-${agent}`}
-                className="m-0 flex items-baseline gap-2 px-1 text-sm font-semibold text-text"
-              >
-                <span>{agent}</span>
-                <span className="font-normal tabular-nums text-secondary">{runs.length}</span>
-              </h2>
-              <div className="overflow-hidden rounded-card bg-surface shadow-card">
-                {/* biome-ignore lint/a11y/noRedundantRoles: list-style: none drops the list in WebKit */}
-                <ul role="list" className="m-0 list-none divide-y divide-hairline p-0">
-                  {runs.map((work) => (
-                    <li key={work.run}>
-                      <Row work={work} now={now} />
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </section>
-          ))}
-        </div>
+        <RunGroups list={list} now={now} />
       )}
     </>
   );
 }
 
-function Row({ work, now }: { work: Work; now: number }) {
+/** The runs grouped by agent, with the choice of them and what is done with the chosen. */
+function RunGroups({ list, now }: { list: Work[]; now: number }) {
+  const queryClient = useQueryClient();
+  const menu = useContextMenu();
+  const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const groups = byAgent(list);
+  // The order the rows are drawn in, which a range chosen with Shift follows.
+  const choice = useSelection(groups.flatMap(([, runs]) => runs.map(choiceKey)));
+  const chosen = list.filter((work) => choice.has(choiceKey(work)));
+  const stopAll = async () => {
+    const targets = chosen;
+    const results = await Promise.allSettled(targets.map((work) => stopRun(work.run)));
+    void queryClient.invalidateQueries({ queryKey: keys.snapshot });
+    void queryClient.invalidateQueries({ queryKey: keys.chats });
+    const failed = results.flatMap((result, at) =>
+      result.status === "rejected" && targets[at]
+        ? [{ work: targets[at], error: result.reason }]
+        : [],
+    );
+    if (failed.length === 0) {
+      setNotice({
+        tone: "ok",
+        text: `Stopping ${targets.length} run${targets.length === 1 ? "" : "s"}.`,
+      });
+      choice.clear();
+      return;
+    }
+    const reason = isApiError(failed[0]?.error) ? failed[0].error.message : "something went wrong";
+    setNotice({
+      tone: "error",
+      text: `Could not stop ${failed.map((one) => one.work.title).join(", ")}: ${reason}`,
+    });
+  };
+  const commands: SelectionCommand[] =
+    chosen.length === 0
+      ? []
+      : [{ id: "stop", label: "Stop runs", key: "x", run: () => void stopAll() }];
+  return (
+    <>
+      {notice && (
+        <Notice
+          tone={notice.tone}
+          className="mb-4"
+          action={
+            <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
+              Dismiss
+            </Button>
+          }
+        >
+          {notice.text}
+        </Notice>
+      )}
+      <div className="flex flex-col gap-6">
+        {byAgent(list).map(([agent, runs]) => (
+          <section
+            key={agent}
+            aria-labelledby={`fleet-agent-${agent}`}
+            className="flex flex-col gap-2"
+          >
+            <h2
+              id={`fleet-agent-${agent}`}
+              className="m-0 flex items-baseline gap-2 px-1 text-sm font-semibold text-text"
+            >
+              <span>{agent}</span>
+              <span className="font-normal tabular-nums text-secondary">{runs.length}</span>
+            </h2>
+            <div className="overflow-hidden rounded-card bg-surface shadow-card">
+              {/* biome-ignore lint/a11y/noRedundantRoles: list-style: none drops the list in WebKit */}
+              <ul role="list" className="m-0 list-none divide-y divide-hairline p-0">
+                {runs.map((work) => (
+                  <li key={work.run}>
+                    <Row
+                      work={work}
+                      now={now}
+                      chosen={choice.has(choiceKey(work))}
+                      anyChosen={chosen.length > 0}
+                      onChoose={(range) => choice.toggle(choiceKey(work), range)}
+                      onContextMenu={(event) => {
+                        choice.ensure(choiceKey(work));
+                        menu.open(event);
+                      }}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+        ))}
+      </div>
+      <SelectionBar noun="run" count={chosen.length} commands={commands} onClear={choice.clear} />
+      <ContextMenu
+        point={menu.point}
+        title={`${chosen.length} run${chosen.length === 1 ? "" : "s"}`}
+        commands={commands}
+        onClose={menu.close}
+      />
+    </>
+  );
+}
+
+function Row({
+  work,
+  now,
+  chosen,
+  anyChosen,
+  onChoose,
+  onContextMenu,
+}: {
+  work: Work;
+  now: number;
+  chosen: boolean;
+  anyChosen: boolean;
+  onChoose: (range: boolean) => void;
+  onContextMenu: (event: MouseEvent) => void;
+}) {
   const navigate = useNavigate();
   const thread = useThread(work.run);
   // A card's run says when it started; a chat's start is in the list of chats.
@@ -195,48 +294,61 @@ function Row({ work, now }: { work: Work; now: number }) {
   const stops = work.status === "waiting" ? lastAt : now;
   const worked = began === null ? null : elapsed(stops - began);
   return (
-    <button
-      type="button"
-      data-testid="fleet-row"
-      onClick={open}
-      className="flex min-h-12 w-full cursor-pointer flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
-    >
-      <MarkLabel mark={status.mark} word={status.word} className="w-28 shrink-0" />
-      <span className="flex min-w-0 flex-1 basis-60 flex-col">
-        <span className="truncate text-base text-text">{work.title}</span>
-        <span className="flex min-w-0 gap-1 text-sm text-secondary">
-          <span className="shrink-0">{work.kind}</span>
-          {about && <span className="min-w-0 truncate">{about}</span>}
-        </span>
-      </span>
-      <span className="flex min-w-0 flex-1 basis-60 items-center gap-2 text-sm text-secondary">
-        {step === undefined ? (
-          <span>No step yet</span>
-        ) : step.kind === "tool" ? (
-          <>
-            <ToolStatusDot status={toolStatus(step.call)} className="shrink-0" />
-            <span className="shrink-0 font-mono text-text">{toolTitle(step.call)}</span>
-            {/* One line, as in a conversation: a command is read by its end, so what a line that runs out hides is
-                its beginning, and the whole of it stays in the tooltip. */}
-            <FadedLine
-              text={inputSummary(step.call.input)}
-              title={inputPath(step.call.input) ?? inputSummary(step.call.input)}
-              className="flex-1"
-            />
-          </>
-        ) : (
-          <>
-            <span
-              aria-hidden="true"
-              className={cn("size-2 shrink-0 rounded-full", atWork ? "bg-progress" : "bg-track")}
-            />
-            <span>{thinkingLabel(thoughtSeconds(recent, recent.length - 1, ended), atWork)}</span>
-          </>
+    // biome-ignore lint/a11y/noStaticElementInteractions: the right click is a second way to the menu the bar has
+    <div className="group relative" onContextMenu={onContextMenu}>
+      <SelectBox
+        label={`Choose ${work.title}`}
+        checked={chosen}
+        anyChosen={anyChosen}
+        onToggle={onChoose}
+        className="absolute top-1/2 left-3 z-10 -translate-y-1/2"
+      />
+      <button
+        type="button"
+        data-testid="fleet-row"
+        onClick={open}
+        className={cn(
+          "flex min-h-12 w-full cursor-pointer flex-wrap items-center gap-x-4 gap-y-1 py-2 pr-4 pl-10 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover",
+          chosen && "bg-selected",
         )}
-      </span>
-      <span className="w-16 shrink-0 text-right text-sm tabular-nums text-secondary">
-        {startedAt > 0 ? elapsed(now - startedAt) : (worked ?? "")}
-      </span>
-    </button>
+      >
+        <MarkLabel mark={status.mark} word={status.word} className="w-28 shrink-0" />
+        <span className="flex min-w-0 flex-1 basis-60 flex-col">
+          <span className="truncate text-base text-text">{work.title}</span>
+          <span className="flex min-w-0 gap-1 text-sm text-secondary">
+            <span className="shrink-0">{work.kind}</span>
+            {about && <span className="min-w-0 truncate">{about}</span>}
+          </span>
+        </span>
+        <span className="flex min-w-0 flex-1 basis-60 items-center gap-2 text-sm text-secondary">
+          {step === undefined ? (
+            <span>No step yet</span>
+          ) : step.kind === "tool" ? (
+            <>
+              <ToolStatusDot status={toolStatus(step.call)} className="shrink-0" />
+              <span className="shrink-0 font-mono text-text">{toolTitle(step.call)}</span>
+              {/* One line, as in a conversation: a command is read by its end, so what a line that runs out hides is
+                its beginning, and the whole of it stays in the tooltip. */}
+              <FadedLine
+                text={inputSummary(step.call.input)}
+                title={inputPath(step.call.input) ?? inputSummary(step.call.input)}
+                className="flex-1"
+              />
+            </>
+          ) : (
+            <>
+              <span
+                aria-hidden="true"
+                className={cn("size-2 shrink-0 rounded-full", atWork ? "bg-progress" : "bg-track")}
+              />
+              <span>{thinkingLabel(thoughtSeconds(recent, recent.length - 1, ended), atWork)}</span>
+            </>
+          )}
+        </span>
+        <span className="w-16 shrink-0 text-right text-sm tabular-nums text-secondary">
+          {startedAt > 0 ? elapsed(now - startedAt) : (worked ?? "")}
+        </span>
+      </button>
+    </div>
   );
 }

@@ -12,7 +12,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { modalIsOpen } from "../../../ui/lib/shortcuts";
+import { fieldHasKeys, modalIsOpen } from "../../../ui/lib/shortcuts";
 import type { PaletteFocus } from "./model";
 
 interface Registry {
@@ -22,15 +22,6 @@ interface Registry {
 
 const FocusContext = createContext<Registry>({ focus: null, set: () => {} });
 
-/** True when a key typed at `target` belongs to it (a field, a menu) and not to the page. */
-function keepsKeys(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  return (
-    target.closest("input, textarea, select, [role=menu], [role=listbox], [role=combobox]") !== null
-  );
-}
-
 export function PaletteFocusProvider({ children }: { children: ReactNode }) {
   const [focus, set] = useState<PaletteFocus | null>(null);
   const latest = useRef(focus);
@@ -39,7 +30,7 @@ export function PaletteFocusProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
-      if (modalIsOpen() || keepsKeys(event.target)) return;
+      if (modalIsOpen() || fieldHasKeys(event.target)) return;
       const command = latest.current?.commands.find((c) => c.key === event.key.toLowerCase());
       if (!command) return;
       event.preventDefault();
