@@ -61,8 +61,14 @@ const PortsPage = lazy(() =>
 const AddRepositoryPage = lazy(() =>
   import("./projects/AddRepositoryPage").then((all) => ({ default: all.AddRepositoryPage })),
 );
+const ProjectSettingsPage = lazy(() =>
+  import("./projects/ProjectSettingsPage").then((all) => ({ default: all.ProjectSettingsPage })),
+);
 const ProjectPage = lazy(() =>
   import("./projects/ProjectPage").then((all) => ({ default: all.ProjectPage })),
+);
+const CyclesPage = lazy(() =>
+  import("./cycles/CyclesPage").then((all) => ({ default: all.CyclesPage })),
 );
 const MilestonesPage = lazy(() =>
   import("./milestones/MilestonesPage").then((all) => ({ default: all.MilestonesPage })),
@@ -125,6 +131,7 @@ const PAGES_BUILT = new Set([
   "fleet",
   "projects",
   "milestones",
+  "cycles",
   "intake",
   "usage",
   "start",
@@ -156,10 +163,12 @@ export const routes = [
       { path: "inbox", element: <InboxPage /> },
       { path: "fleet", element: <FleetPage /> },
       { path: "milestones", element: <MilestonesPage /> },
+      { path: "cycles", element: <CyclesPage /> },
       { path: "intake", element: <IntakePage /> },
       { path: "projects", element: <ProjectsPage /> },
       { path: "projects/new", element: <AddRepositoryPage /> },
       { path: "projects/:id", element: <ProjectPage /> },
+      { path: "projects/:id/settings/:tab?", element: <ProjectSettingsPage /> },
       { path: "usage", element: <UsagePage /> },
       { path: "start", element: <StartPage /> },
       { path: "settings", element: <SettingsPage /> },

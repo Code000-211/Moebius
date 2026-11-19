@@ -384,6 +384,12 @@ impl PiBolt {
             std::fs::create_dir_all(place.sessions)
                 .map_err(|e| format!("cannot make the sessions directory of the run: {e}"))?;
         }
+        // A run of a card over several repositories writes in its other worktrees too, whose git keeps what it commits
+        // in the git directories of their clones (not in the clones' own checkouts).
+        for other in &run.others {
+            read_write.push(other.worktree.clone());
+            read_write.push(other.clone.join(".git"));
+        }
         // A launcher grants the scratch directory of the run, where its temporary files go, as one it writes.
         if let Some(scratch) = place.scratch {
             read_write.push(scratch.to_path_buf());

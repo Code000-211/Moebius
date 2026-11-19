@@ -67,6 +67,7 @@ pub fn reversible(tool: &str, input: &Value, worktree: &Path) -> Result<(), Stri
                 input: input.clone(),
                 worktree: Some(worktree),
                 scratch: None,
+                others: &[],
             };
             command_reversible(&call)
         }
@@ -125,6 +126,7 @@ pub fn replayable(tool: &str, input: &Value, worktree: &Path) -> Result<(), Stri
         input: input.clone(),
         worktree: Some(worktree),
         scratch: None,
+        others: &[],
     };
     static ASSIGNMENT: LazyLock<Regex> = LazyLock::new(|| {
         // `NAME=value` prefixes are not among the words of a command, so the text is read for them.

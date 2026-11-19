@@ -2,7 +2,7 @@
  * The properties of the card in the dock, in the page's right column (`ui/page/Properties.tsx`): every fact the dock
  * used to list beside the issue — where the card is, who wrote it, what it waits for, its run, checks and cost — and
  * what a person changes about the issue, each edited in place and saved alone (`ui/page/EditableProperty.tsx`): its
- * title, whether it is open, who it is given to (its assignees), its kind and the fields of that kind, the milestones it is in, who claimed it, its parent, its blockers and its
+ * title, whether it is open, who it is given to (its assignees), its kind and the fields of that kind, its cycle, the milestones it is in, who claimed it, its parent, its blockers and its
  * labels. Each save is a request to the
  * server (`api/calls/board.ts`) that reads the board again once answered, and what the server refuses is said under
  * the property that asked. The dock keeps the issue's text, its change and what a person decides.
@@ -31,10 +31,12 @@ import { EditableProperty, ListProperty } from "../../ui/page/EditableProperty";
 import { MarkLabel, type StateMark } from "../../ui/page/MarkLabel";
 import { PageProperties, Property } from "../../ui/page/Properties";
 import { PriorityBars } from "../../ui/page/StatusIcon";
+import { CycleProperty } from "../cycles/CycleProperty";
 import { KindProperties } from "../kinds/KindProperties";
 import { MilestonesProperty } from "../milestones/MilestonesProperty";
 import { AssigneesProperty } from "../people/AssigneesProperty";
 import { FollowProperty } from "../people/FollowProperty";
+import { WikiPagesProperty } from "../wiki/WikiBacklinks";
 import { cardKey } from "./cardKey";
 import {
   type CardStatus,
@@ -161,6 +163,14 @@ export function CardProperties({
         assignees={card.assignees}
         onSave={(next) => saved(changeAssignees(card.id, card.assignees, next))}
       />
+      <CycleProperty
+        card={card.id}
+        project={card.project_id}
+        onSaved={() => {
+          void queryClient.invalidateQueries({ queryKey: keys.cardCycle(card.id) });
+          void queryClient.invalidateQueries({ queryKey: keys.cycles });
+        }}
+      />
       <MilestonesProperty
         card={card.id}
         onSaved={() => {
@@ -169,6 +179,7 @@ export function CardProperties({
         }}
       />
       <FollowProperty card={card.id} />
+      {card.project_key !== "" && <WikiPagesProperty cardName={cardKey(card)} />}
       <EditableProperty
         name="Priority"
         editor={{

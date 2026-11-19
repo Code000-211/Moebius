@@ -8,6 +8,7 @@ import {
   mergeProposal,
   mergeTakeover,
 } from "../../api/calls/inbox";
+import { dismissWikiProposal, mergeWikiProposal } from "../../api/calls/wiki";
 import type { GrillingIssue } from "../../api/types/inbox";
 
 export type Action =
@@ -19,6 +20,8 @@ export type Action =
   | { kind: "dismissProposal"; proposal: number }
   | { kind: "mergeTakeover"; takeover: number }
   | { kind: "dismissTakeover"; takeover: number }
+  | { kind: "mergeWikiProposal"; item: number }
+  | { kind: "dismissWikiProposal"; item: number }
   | { kind: "confirmGrilling"; grilling: number; issues: GrillingIssue[] }
   | { kind: "dismissGrilling"; grilling: number };
 
@@ -31,6 +34,8 @@ const WORKING: Record<Action["kind"], string> = {
   dismissProposal: "Dismissing…",
   mergeTakeover: "Merging…",
   dismissTakeover: "Dismissing…",
+  mergeWikiProposal: "Merging…",
+  dismissWikiProposal: "Dismissing…",
   confirmGrilling: "Making the cards…",
   dismissGrilling: "Dismissing…",
 };
@@ -60,6 +65,10 @@ export async function perform(action: Action): Promise<void> {
       return mergeTakeover(action.takeover);
     case "dismissTakeover":
       return dismissTakeover(action.takeover);
+    case "mergeWikiProposal":
+      return mergeWikiProposal(action.item);
+    case "dismissWikiProposal":
+      return dismissWikiProposal(action.item);
     case "confirmGrilling":
       return confirmGrilling(action.grilling, action.issues);
     case "dismissGrilling":

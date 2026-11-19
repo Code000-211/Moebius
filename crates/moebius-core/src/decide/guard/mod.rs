@@ -28,7 +28,7 @@ mod shell;
 mod teacher;
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use moebius_plugin_api::{Call, DecideRequest, Decision, Kind, Manifest, Plugin, PluginError};
@@ -46,12 +46,14 @@ pub use teacher::Teacher;
 /// The built-in rule that a call breaks, with what the rule says. `check` tests it on the call as it is executed and
 /// hands the answer to the guard in the question's context as `builtin_refusal`, because every other value of the
 /// context has been redacted by then, which can hide a command (inside a private key's markers) and its secret.
-/// `scratch` is the run's own scratch directory, which it may delete what it put there.
+/// `scratch` is the run's own scratch directory, which it may delete what it put there, and `others` are the run's
+/// worktrees in its card's other repositories, where it may write as in `worktree`.
 pub fn builtin_refusal(
     tool: &str,
     input: &Value,
     worktree: Option<&Path>,
     scratch: Option<&Path>,
+    others: &[PathBuf],
 ) -> Option<String> {
     let (tool, input) = shell::normalise_call(tool, input.clone());
     broken_rule(&ToolCall {
@@ -59,7 +61,22 @@ pub fn builtin_refusal(
         input,
         worktree,
         scratch,
+        others,
     })
+}
+
+/// The run's other worktrees, as the question's context names them: `worktrees`, one path per line.
+pub fn other_worktrees(context: &BTreeMap<String, String>) -> Vec<PathBuf> {
+    context
+        .get("worktrees")
+        .map(|paths| {
+            paths
+                .lines()
+                .filter(|p| !p.is_empty())
+                .map(PathBuf::from)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The plugin's name, which `Decisions` routes `tool_call` to.
@@ -131,11 +148,13 @@ impl Plugin for Guard {
             .unwrap_or_default();
         let tool = context.get("tool").map_or("", String::as_str);
         let (tool, input) = shell::normalise_call(tool, input);
+        let others = other_worktrees(context);
         let tool_call = ToolCall {
             tool: &tool,
             input,
             worktree: context.get("worktree").map(Path::new),
             scratch: context.get("scratch").map(Path::new),
+            others: &others,
         };
         let decision = if let Some(error) = context.get("rules_error") {
             decision(

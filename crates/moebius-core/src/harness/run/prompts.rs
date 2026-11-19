@@ -1,7 +1,9 @@
 //! What a run of a card is told: the issue, the instructions of its purpose (`code`, the review axes, the choice between
 //! attempts), the issue's comments, the files likely to be relevant, the lessons of earlier cards, the rule of red then green in a repository
-//! that works test first, and the notes of the last round. The same for every harness.
+//! that works test first, the notes of the last round and, for a card over several repositories, where each of its
+//! worktrees is. The same for every harness.
 
+use super::lifecycle::RunningRun;
 use crate::app::{App, is_person};
 use crate::blobs::redact;
 use crate::store::{Card, Comment, Repository};
@@ -83,6 +85,54 @@ pub(crate) fn run_prompt(app: &App, card: &Card, purpose: &str, note: Option<&st
 /// test first is told the rule of red, then green.
 pub(crate) fn prompt_for(app: &App, card: &Card, purpose: &str, note: Option<&str>) -> String {
     prompt_with(app, card, purpose, note, None)
+}
+
+/// What a `code` run or an attempt of `card` is told of its repositories (ADR 0019): where the worktree of each is,
+/// when the card works in several, and, for a `code` run, which of the project's repositories it may ask for, with a
+/// line `REPOSITORY: <name>` of its summary, when there are any. Nothing for a card in one repository of a project that has
+/// no other.
+pub(super) fn repositories_prompt(app: &App, card: &Card, run: &RunningRun) -> String {
+    // An attempt is told where its worktrees are, but only a `code` run's ask for a repository is acted on.
+    let may_ask = run.purpose == "code";
+    let mut text = String::new();
+    if !run.others.is_empty() {
+        let own = card.repositories.first().cloned().unwrap_or_default();
+        let mut places = vec![format!(
+            "`{own}` at {} (your working directory)",
+            run.worktree.display()
+        )];
+        places.extend(
+            run.others
+                .iter()
+                .map(|other| format!("`{}` at {}", other.repository, other.worktree.display())),
+        );
+        text.push_str(&format!(
+            "\n\n## Repositories\n\nThe card works in these repositories, each in a git worktree of its own: {}. \
+             Make the change in each one the issue needs, and write nowhere else. Moebius commits what you leave in \
+             each worktree, and each repository gets a change of its own.",
+            places.join(", ")
+        ));
+    }
+    let more: Vec<String> = may_ask
+        .then(|| app.repositories_to_add(card).ok())
+        .flatten()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|r| format!("`{}`", r.name))
+        .collect();
+    if !more.is_empty() {
+        if text.is_empty() {
+            text.push_str("\n\n## Repositories\n\n");
+        } else {
+            text.push(' ');
+        }
+        text.push_str(&format!(
+            "If the work needs another repository of the project ({}), end your summary with a line \
+             `REPOSITORY: <name>` for each: the card then comes back to you with a worktree of it.",
+            more.join(", ")
+        ));
+    }
+    text
 }
 
 /// The text of the project's `review.md`, the repository's own notes for its reviews, when it has any.
@@ -632,5 +682,57 @@ mod tests {
             .add_card(repo.id, "Plain", "No links.", "person", "Not started")
             .unwrap();
         assert!(!prompt_for(&app, &plain, "code", None).contains("organisation's wiki"));
+    }
+
+    #[test]
+    fn a_private_projects_page_reaches_only_the_runs_of_its_own_cards() {
+        use crate::wiki::Wiki;
+        use crate::wiki::testing::{bare_origin, push_from_elsewhere};
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let secret = store
+            .add_repository("secret", "/srv/secret", "none", "main")
+            .unwrap();
+        let other = store
+            .add_repository("other", "/srv/other", "none", "main")
+            .unwrap();
+        let key = store.project(secret.home_project_id).unwrap().unwrap().key;
+        store
+            .set_project_access(secret.home_project_id, true, &[])
+            .unwrap();
+        let app = App::new(
+            store,
+            Arc::new(Host::new(Duration::from_secs(1))),
+            &dir.path().join("data"),
+        );
+        let origin = bare_origin(dir.path());
+        push_from_elsewhere(
+            dir.path(),
+            &origin,
+            &format!("projects/{key}/Plans.md"),
+            "The secret launch.\n",
+        );
+        push_from_elsewhere(dir.path(), &origin, "Plans.md", "Public plans.\n");
+        let wiki = Wiki::open(
+            &app,
+            &origin.to_string_lossy(),
+            &dir.path().join("data/wiki"),
+        )
+        .unwrap();
+        app.set_wiki(Arc::new(wiki));
+        let body = format!("See [[projects/{key}/Plans]] and [[plans]].");
+        let card = |repository: i64| {
+            app.store
+                .add_card(repository, "Plan", &body, "person", "Not started")
+                .unwrap()
+        };
+
+        let own = prompt_for(&app, &card(secret.id), "code", None);
+        assert!(own.contains("The secret launch."), "{own}");
+        let elsewhere = prompt_for(&app, &card(other.id), "code", None);
+        assert!(!elsewhere.contains("The secret launch."), "{elsewhere}");
+        assert!(!elsewhere.contains("### projects"), "{elsewhere}");
+        assert!(elsewhere.contains("Public plans."), "{elsewhere}");
     }
 }

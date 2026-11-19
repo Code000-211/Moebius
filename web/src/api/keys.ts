@@ -39,11 +39,18 @@ export const keys = {
   wikiPage: (path: string, at: string | null) => ["wiki", "page", path, at] as const,
   wikiHistory: (path: string) => ["wiki", "history", path] as const,
   wikiSearch: (query: string) => ["wiki", "search", query] as const,
+  wikiLinks: (path: string) => ["wiki", "links", path] as const,
+  wikiCardPages: (key: string) => ["wiki", "card", key] as const,
   /** The milestones with their progress, and one with its cards; what changes a card or a milestone makes them stale. */
   milestones: ["milestones"] as const,
   milestone: (id: number) => ["milestones", id] as const,
   /** The milestones one card is in. */
   cardMilestones: (card: number) => ["card", card, "milestones"] as const,
+  /** A project's cycles with their progress, one cycle with its burn-up and cards, and the open cycle of a card. */
+  cycles: ["cycles"] as const,
+  projectCycles: (project: number) => ["cycles", "project", project] as const,
+  cycle: (id: number) => ["cycles", id] as const,
+  cardCycle: (card: number) => ["card", card, "cycle"] as const,
   /** The kinds of issues with their fields. */
   issueKinds: ["issue-kinds"] as const,
   /** The cards of every project, as the Issues page asks for them: all of them, or the ones a query picks. */

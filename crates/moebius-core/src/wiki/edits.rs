@@ -7,7 +7,6 @@ use std::path::Path;
 use super::pages::name_of;
 use super::{Author, PageView, Wiki, file_of, literal, project_key};
 use crate::app::{App, AppError, Result};
-use crate::bus::Event;
 use crate::repos::kept;
 
 impl Wiki {
@@ -68,15 +67,23 @@ impl Wiki {
             } else {
                 format!("Move {from} to {to}")
             };
+            // The links to the page in the other pages follow it, in the same commit.
+            let relinked = self.retargeted(from, to)?;
             let write = || {
                 if let Some(folder) = target.parent() {
                     std::fs::create_dir_all(folder)?;
                 }
                 std::fs::rename(&source, &target)?;
                 remove_empty_folders(&self.path, &source);
+                for (file, text) in &relinked {
+                    std::fs::write(self.inside(file)?, text)?;
+                }
                 Ok(())
             };
-            self.commit(app, by, &[&literal(&old), &literal(&new)], &message, write)?;
+            let mut files = vec![literal(&old), literal(&new)];
+            files.extend(relinked.iter().map(|(file, _)| literal(file)));
+            let files: Vec<&str> = files.iter().map(String::as_str).collect();
+            self.commit(app, by, &files, &message, write)?;
         }
         self.page(to, None)
     }
@@ -117,7 +124,7 @@ impl Wiki {
         if let Some(commit) =
             kept::commit_pushed(app, &self.repos, &self.url, &self.path, &change, write)?
         {
-            app.bus.publish(Event::WikiChanged { commit });
+            self.changed(app, commit);
         }
         Ok(())
     }

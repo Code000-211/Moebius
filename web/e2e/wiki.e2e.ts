@@ -115,4 +115,130 @@ describe("the Wiki page", () => {
     }
     await context.close();
   });
+  it.skipIf(usesRealServer)(
+    "shows an agent's page edit in the Inbox with its diff, which a member merges or dismisses",
+    async () => {
+      server = await startServer();
+      if (!("wiki" in server)) return;
+      server.wiki.pushFromElsewhere("Runbooks/Refunds", "# Refunds\n\nOld rule.");
+      server.wiki.propose("Runbooks/Refunds", "# Refunds\n\nNew rule.", "Say the new rule");
+      server.wiki.propose("Runbooks/Refunds", "# Refunds\n\nWorse rule.", "Say a worse rule");
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      page.setDefaultTimeout(8000);
+      await page.goto(server.loginUrl);
+      await page.getByRole("navigation", { name: "Pages" }).waitFor();
+      await page.goto(`${server.url}/inbox`);
+      const item = (title: string) => page.getByTestId("inbox-item").filter({ hasText: title });
+      const decision = page.getByTestId("inbox-decision");
+
+      // The change is shown as the diff of the page, with the buttons a member has.
+      await item("Say the new rule").click();
+      await decision.getByText("+New rule.").waitFor();
+      await decision.getByText("-Old rule.").waitFor();
+      await decision.getByRole("button", { name: "Dismiss" }).waitFor();
+      await decision.getByRole("button", { name: "Merge" }).click();
+      await item("Say the new rule").waitFor({ state: "detached" });
+      await page.goto(`${server.url}/wiki?page=Runbooks%2FRefunds`);
+      await page.getByRole("article", { name: "Refunds" }).getByText("New rule.").waitFor();
+
+      // A dismissed edit leaves the page as it is.
+      await page.goto(`${server.url}/inbox`);
+      await item("Say a worse rule").click();
+      await decision.getByRole("button", { name: "Dismiss" }).click();
+      await item("Say a worse rule").waitFor({ state: "detached" });
+      await page.goto(`${server.url}/wiki?page=Runbooks%2FRefunds`);
+      await page.getByRole("article", { name: "Refunds" }).getByText("New rule.").waitFor();
+      await context.close();
+    },
+  );
+
+  it.skipIf(usesRealServer)("shows a viewer a page edit without its buttons", async () => {
+    server = await startServer();
+    if (!("wiki" in server)) return;
+    server.wiki.pushFromElsewhere("Runbooks/Refunds", "# Refunds\n\nOld rule.");
+    server.wiki.propose("Runbooks/Refunds", "# Refunds\n\nNew rule.", "Say the new rule");
+    const ownerContext = await browser.newContext();
+    await (await ownerContext.newPage()).goto(server.loginUrl);
+    const made = await ownerContext.request.post(`${server.url}/v1/people`, {
+      headers: { "X-Moebius": "1" },
+      data: { handle: "vi", name: "Vi", role: "viewer" },
+    });
+    const { token } = (await made.json()) as { token: { token: string } };
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    page.setDefaultTimeout(8000);
+    await page.goto(server.url);
+    await page.getByLabel("Token").fill(token.token);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.getByRole("navigation", { name: "Pages" }).waitFor();
+    await page.goto(`${server.url}/inbox`);
+    await page.getByTestId("inbox-item").filter({ hasText: "Say the new rule" }).click();
+    const decision = page.getByTestId("inbox-decision");
+    await decision.getByText("+New rule.").waitFor();
+    expect(await decision.getByRole("button", { name: "Merge" }).count()).toBe(0);
+    expect(await decision.getByRole("button", { name: "Dismiss" }).count()).toBe(0);
+    await context.close();
+    await ownerContext.close();
+  });
+  it("links pages, lists backlinks, completes while typing and keeps a link through a rename", async () => {
+    server = await startServer();
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    page.setDefaultTimeout(8000);
+    await page.goto(server.loginUrl);
+    await page.getByRole("navigation", { name: "Pages" }).waitFor();
+    await page.goto(`${server.url}/wiki`);
+    await page.getByText("No page yet", { exact: true }).first().waitFor();
+
+    const make = async (name: string, text: string) => {
+      await page.getByRole("button", { name: "New page", exact: true }).first().click();
+      const form = page.getByRole("form", { name: "New page" });
+      await form.getByLabel("Name").fill(name);
+      await form.getByLabel("Text").fill(text);
+      await form.getByRole("button", { name: "Save" }).click();
+      await form.waitFor({ state: "detached" });
+    };
+    await make("Team/On call", "# On call\n\nWho answers.");
+
+    // Typing [[ offers the pages; Enter writes the link.
+    await page.getByRole("button", { name: "New page", exact: true }).first().click();
+    const form = page.getByRole("form", { name: "New page" });
+    await form.getByLabel("Name").fill("Handbook");
+    await form.getByLabel("Text").fill("Start with [[On");
+    const choices = form.getByRole("listbox", { name: "Pages" });
+    await choices.getByRole("option", { name: /On call/ }).waitFor();
+    await form.getByLabel("Text").press("Enter");
+    await form.getByRole("region", { name: "Preview" }).getByText("Start with").waitFor();
+    expect(await form.getByLabel("Text").inputValue()).toBe("Start with [[On call]]");
+    await form.getByRole("button", { name: "Save" }).click();
+    await form.waitFor({ state: "detached" });
+
+    // The link leads to the page, which lists the page that links to it.
+    const handbook = page.getByRole("article", { name: "Handbook" });
+    await handbook.getByRole("link", { name: "On call" }).click();
+    const onCall = page.getByRole("article", { name: "On call" });
+    await onCall.getByText("Who answers.").waitFor();
+    await page
+      .getByRole("list", { name: "Linked from" })
+      .getByRole("link", { name: "Handbook" })
+      .waitFor();
+
+    // A rename keeps the link working.
+    await onCall.getByRole("button", { name: "Move" }).click();
+    const dialog = page.getByRole("dialog", { name: "Move the page" });
+    await dialog.getByLabel("Path").fill("Team/Rota");
+    await dialog.getByRole("button", { name: "Move" }).click();
+    await page.waitForURL(/page=Team%2FRota/);
+    await page
+      .getByRole("list", { name: "Linked from" })
+      .getByRole("link", { name: "Handbook" })
+      .click();
+    await page
+      .getByRole("article", { name: "Handbook" })
+      .getByRole("link", { name: "Rota" })
+      .click();
+    await page.getByRole("article", { name: "Rota" }).getByText("Who answers.").waitFor();
+    await context.close();
+  });
 });

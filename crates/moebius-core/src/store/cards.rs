@@ -124,6 +124,10 @@ pub struct Card {
     /// the others (a `person` field holds a handle, a `date` field `YYYY-MM-DD`).
     #[serde(default)]
     pub fields: std::collections::BTreeMap<String, serde_json::Value>,
+    /// The names of the repositories the card works in, in the order it names them: its own issue's repository first,
+    /// then those a person, the Moebius agent or a run asked for (see `card_repositories`).
+    #[serde(default)]
+    pub repositories: Vec<String>,
 }
 
 /// Why and by whom a card is held (blocked), and since when.
@@ -160,6 +164,7 @@ fn card_statements(cards: &str, runs: &str, judgements: &str) -> Vec<String> {
         ),
         format!("DELETE FROM card_assignees WHERE card_id IN ({cards})"),
         format!("DELETE FROM milestone_cards WHERE card_id IN ({cards})"),
+        format!("DELETE FROM cycle_cards WHERE card_id IN ({cards})"),
         format!("DELETE FROM card_follows WHERE card_id IN ({cards})"),
         format!("DELETE FROM notices WHERE card_id IN ({cards})"),
         format!("DELETE FROM card_fields WHERE card_id IN ({cards})"),
@@ -382,6 +387,15 @@ impl Store {
                 [home],
             )?;
         }
+        // So do its cycles, which hold no cards any more: those were deleted above.
+        tx.execute(
+            &format!("DELETE FROM cycle_cards WHERE cycle_id IN (SELECT id FROM cycles WHERE project_id = ?1) AND {unused}"),
+            [home],
+        )?;
+        tx.execute(
+            &format!("DELETE FROM cycles WHERE project_id = ?1 AND {unused}"),
+            [home],
+        )?;
         tx.execute(
             &format!("DELETE FROM projects WHERE id = ?1 AND {unused}"),
             [home],
@@ -516,6 +530,11 @@ impl Store {
             [project_id],
             |r| r.get(0),
         )?;
+        let repository_name: String = conn.query_row(
+            "SELECT name FROM repositories WHERE id = ?1",
+            [repository_id],
+            |r| r.get(0),
+        )?;
         conn.execute(
             "INSERT INTO cards (repository_id, number, title, body, author, column_name, created_at, project_id, project_number, moved_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?7)",
@@ -549,6 +568,7 @@ impl Store {
             archived_at: None,
             kind: None,
             fields: Default::default(),
+            repositories: vec![repository_name],
         })
     }
 
@@ -558,7 +578,7 @@ impl Store {
         params: impl rusqlite::Params,
     ) -> Result<Vec<Card>> {
         self.rows(&format!(
-            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {}, project_id, project_number, COALESCE((SELECT key FROM projects WHERE id = cards.project_id), ''), moved_at, archived_at, {}, {} FROM cards WHERE {clause} ORDER BY id", super::assignees::CARD_ASSIGNEES, super::kinds::CARD_KIND, super::kinds::CARD_FIELDS
+            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {}, project_id, project_number, COALESCE((SELECT key FROM projects WHERE id = cards.project_id), ''), moved_at, archived_at, {}, {}, {} FROM cards WHERE {clause} ORDER BY id", super::assignees::CARD_ASSIGNEES, super::kinds::CARD_KIND, super::kinds::CARD_FIELDS, super::card_repositories::CARD_REPOSITORIES
         ), params, |r| {
             let labels: Vec<String> = serde_json::from_str(&r.get::<_, String>(17)?).map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
@@ -602,6 +622,7 @@ impl Store {
                 project_key: r.get(21)?,
                 moved_at: r.get(22)?,
                 archived_at: r.get(23)?,
+                repositories: super::card_repositories::names(r, 26)?,
             })
         })
     }

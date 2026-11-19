@@ -332,6 +332,15 @@ impl Store {
         Ok(())
     }
 
+    /// Takes `repository_id` out of the repositories of the project `project_id`; false when it was not one. The
+    /// repository's home project is left to the caller to refuse.
+    pub fn unlink_repository(&self, project_id: i64, repository_id: i64) -> Result<bool> {
+        Ok(self.conn().execute(
+            "DELETE FROM project_repositories WHERE project_id = ?1 AND repository_id = ?2",
+            [project_id, repository_id],
+        )? == 1)
+    }
+
     /// Puts the card on the board of the project `project_id`; its column stays. It is named by the new project's key
     /// from then on, with its issue's number when the project has no card with that number, else the next free one.
     pub fn set_card_project(&self, card_id: i64, project_id: i64) -> Result<()> {

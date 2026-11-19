@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 use crate::server::ports::Port;
-use crate::store::{Card, Change, Comment, Kind, Milestone, Notice, Project, Repository};
+use crate::store::{Card, Change, Comment, Cycle, Kind, Milestone, Notice, Project, Repository};
 
 /// One thing that happened, as the web app receives it. It is built from an [`Event`] and deserializes from the
 /// `{kind, data}` a client is sent, so nothing outside [`Event`] can name a kind.
@@ -82,6 +82,11 @@ pub enum Event {
     CardMilestonesChanged {
         card: i64,
         milestones: Vec<i64>,
+    },
+    /// The open cycle a card is in changed (its id; none when the card is in no open cycle).
+    CardCycleChanged {
+        card: i64,
+        cycle: Option<i64>,
     },
     /// The people an inbox item is given to changed.
     InboxAssigneesChanged {
@@ -180,6 +185,12 @@ pub enum Event {
     /// A milestone was deleted; its cards stay.
     MilestoneRemoved {
         milestone: i64,
+    },
+    /// A cycle was made, edited or closed.
+    CycleChanged(Cycle),
+    /// A cycle was deleted; its cards stay.
+    CycleRemoved {
+        cycle: i64,
     },
     /// A kind of issue was made or changed (its name or its fields).
     KindChanged(Kind),
@@ -459,6 +470,7 @@ mod tests {
             archived_at: None,
             kind: None,
             fields: Default::default(),
+            repositories: Vec::new(),
         }
     }
 
@@ -541,6 +553,15 @@ mod tests {
             description: "Ship it".into(),
             created_at: 1_700_000_000,
         };
+        let cycle = Cycle {
+            id: 4,
+            project_id: 1,
+            name: "Cycle 4".into(),
+            starts_on: "2026-11-02".into(),
+            ends_on: "2026-11-15".into(),
+            closed_at: None,
+            created_at: 1_700_000_000,
+        };
         let port = port();
         vec![
             (
@@ -610,6 +631,21 @@ mod tests {
                     assignees: vec!["lea".into()],
                 },
                 json!({"kind": "card_assignees_changed", "data": {"card": 7, "assignees": ["lea"]}}),
+            ),
+            (
+                Event::CardCycleChanged {
+                    card: 7,
+                    cycle: Some(4),
+                },
+                json!({"kind": "card_cycle_changed", "data": {"card": 7, "cycle": 4}}),
+            ),
+            (
+                Event::CycleChanged(cycle.clone()),
+                json!({"kind": "cycle_changed", "data": cycle.clone()}),
+            ),
+            (
+                Event::CycleRemoved { cycle: 4 },
+                json!({"kind": "cycle_removed", "data": {"cycle": 4}}),
             ),
             (
                 Event::CardMilestonesChanged {

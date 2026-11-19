@@ -112,6 +112,8 @@ any route to any role that is not what its row says.
 | `POST /v1/wiki/moves` | member | no |
 | `GET /v1/wiki/history/{*path}` | viewer | yes |
 | `GET /v1/wiki/search` | viewer | yes |
+| `GET /v1/wiki/links/{*path}` | viewer | yes |
+| `GET /v1/wiki/cards/{key}` | viewer | yes |
 | `POST /v1/wiki/refresh` | member | yes |
 | `POST /v1/wiki/proposals` | member | yes |
 | `POST /v1/wiki/proposals/{id}/merge` | member | no |
@@ -129,6 +131,14 @@ any route to any role that is not what its row says.
 | `DELETE /v1/templates/issues/{kind}` | member | no |
 | `PUT /v1/templates/pages/{name}` | member | no |
 | `DELETE /v1/templates/pages/{name}` | member | no |
+| `GET /v1/projects/{id}/cycles` | viewer | yes |
+| `POST /v1/projects/{id}/cycles` | member | no |
+| `GET /v1/cycles/{id}` | viewer | yes |
+| `PATCH /v1/cycles/{id}` | member | no |
+| `DELETE /v1/cycles/{id}` | member | no |
+| `POST /v1/cycles/{id}/close` | member | no |
+| `GET /v1/cards/{id}/cycle` | viewer | yes |
+| `PUT /v1/cards/{id}/cycle` | member | no |
 | `GET /v1/milestones` | viewer | yes |
 | `POST /v1/milestones` | member | no |
 | `GET /v1/milestones/{id}` | viewer | yes |
@@ -147,6 +157,8 @@ any route to any role that is not what its row says.
 | `PUT /v1/projects/{id}/scripts/{column}` | owner | yes |
 | `DELETE /v1/projects/{id}/scripts/{column}` | owner | yes |
 | `PUT /v1/projects/{id}/access` | owner | no |
+| `POST /v1/projects/{id}/repositories` | owner | yes |
+| `DELETE /v1/projects/{id}/repositories/{repository}` | owner | yes |
 | `POST /v1/repositories` | owner | yes |
 | `PUT /v1/repositories/{id}` | owner | yes |
 | `DELETE /v1/repositories/{id}` | owner | yes |
@@ -168,6 +180,7 @@ any route to any role that is not what its row says.
 | `DELETE /v1/cards/{id}` | member | no |
 | `PUT /v1/cards/{id}/parent` | member | yes |
 | `PUT /v1/cards/{id}/labels` | member | yes |
+| `PUT /v1/cards/{id}/repositories` | member | yes |
 | `PUT /v1/cards/{id}/assignees` | member | no |
 | `PUT /v1/inbox/{id}/assignees` | member | no |
 | `PUT /v1/cards/{id}/priority` | member | no |
@@ -382,8 +395,8 @@ in `Done`), `labels` (array of text, in order), `claimed_by` (who claimed it, or
 the people it is given to, without the `@`, in the order the people were added; empty when it is no one's; see
 [Assignees](#assignees)), `priority` (`urgent`, `high`, `medium`, `low` or `none`) and `due` (a day as
 `YYYY-MM-DD`, or null) and `estimate` (points, or null); see [Priority and due date](#priority-and-due-date) and
-[Estimates](#estimates).
-[Assignees](#assignees)), `moved_at` (when the card last moved, was edited or was released from a hold, Unix seconds;
+[Estimates](#estimates). `repositories` names the repositories the card works in, its own issue's first (see
+[`PUT /v1/cards/{id}/repositories`](#put-v1cardsidrepositories)). It also has `moved_at` (when the card last moved, was edited or was released from a hold, Unix seconds;
 scripts read it as `card.moved_at`) and `archived_at` (null, or when a column script archived the card with
 `moebius.archive`). An archived card is not on the board: the snapshot (`GET /v1/snapshot`) leaves it out, and a
 move (a person's, or the forge reopening its issue) brings it back. It stays in the store, in the issue list and in the
@@ -761,6 +774,10 @@ themselves, sees neither its board, its cards, its runs nor its files. For someo
   is shown when the repository is.
 - A lesson learned from a private project's cards is put in the prompt of, and found by the `lessons` tool for, only
   that project's runs.
+- Its wiki pages (`projects/<key>/...`, see [the wiki](#the-wiki)) are left out the same way: the page, its history and
+  every older version of it, a write, delete, move or proposal naming one (as the page, or as the target of a move),
+  `POST /v1/wiki/from-template` into its folder, and the merge or dismissal of an agent's proposal for one all answer
+  `404`; the page list and the search leave them out, and so does the inbox (`wiki_proposal`).
 - An owner who is not a member still sees the project's record in `GET /v1/projects` and `GET /v1/projects/{id}`
   (`member` false, `open_cards` 0), can rename it, and names its members with `PUT /v1/projects/{id}/access`, themselves
   included; nothing of its board.
@@ -864,6 +881,28 @@ curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'content-type: application/j
   -d '{"private": true, "members": ["lea", "owner"]}' http://127.0.0.1:7171/v1/projects/2/access
 ```
 
+### `POST /v1/projects/{id}/repositories`
+
+An owner, or the Moebius agent, puts a repository among the repositories of a project; the repository is in its home
+project and in this one, and its issues are read into the home project as before. Request body: `{"repository":
+number, "reason"?: string}`. Nothing changes when the repository is one of the project's already. The decision is
+recorded (kind `edit_project_repositories`; its context has `project` the key, `change` `add` and `repository` the
+name) and `project_changed` is sent. Everyone who sees the project sees its repositories from then on, also when
+the repository's home project is private. Response: the `ProjectView`. Errors: `404` for no such project or repository, or
+one the person does not see.
+
+```sh
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"repository": 1}' http://127.0.0.1:7171/v1/projects/2/repositories
+```
+
+### `DELETE /v1/projects/{id}/repositories/{repository}`
+
+Takes the repository out of the project's repositories (decision `edit_project_repositories`, `change` `remove`;
+`project_changed` is sent). Response: the `ProjectView`. Errors: `404` for no such project or repository, or a
+repository the project does not have; `422` for the repository's home project, which keeps it until the repository is
+removed.
+
 ### The wiki
 
 The wiki ([ADR 0022](../adr/0022-the-wiki-is-a-git-repository.md)) is a git repository of Markdown pages that the
@@ -887,6 +926,14 @@ nothing makes no commit. Every commit, and a refresh that brings commits pushed 
 `wiki_changed`; the server refreshes the wiki every 30 seconds, and a failed refresh sends `wiki_error`. Only a person
 edits the wiki directly: an agent's run token is refused (`403`) on the routes above that write, and proposes its edit
 with `POST /v1/wiki/proposals` instead.
+
+**Private projects.** The pages of a private project ([ADR 0018](../adr/0018-more-than-one-person.md)) are seen only by
+its members, owners who are not members included: for anyone else every route that names such a page answers `404`
+(reading it or an older version, its history, writing, deleting, moving from or to it, proposing it, making it from a
+template, and merging or dismissing its proposal), `GET /v1/wiki/pages` and the search leave it out, and so does the
+inbox. The Moebius agent sees what the person of its chat sees; an agent without one sees none but the pages of the project of its run's card. The recorded `merge_proposal` decision about such a page holds none of its title or diff (they read `a private project` and nothing). A page moved out of a private project keeps its history, so older versions stay readable under the new name. Page names spelled `Projects/...` or `PROJECTS/...` are refused. A run's prompt holds
+the pages its issue links to with `[[...]]`, but a private project's page only for a card of that project. The
+organisation's pages, those of a public project and a folder of a key no project has are seen by everyone.
 
 A `PageView` is `{"path": string, "name": string, "text": string, "version": Version}`: `name` the last part of the
 path, `text` the Markdown, `version` the last commit that changed the page. A `Version` is `{"commit": string, "author":
@@ -945,9 +992,8 @@ first, `{"path": string, "name": string, "project": string | null, "snippet": st
 key of its project (`null` for the organisation's pages) and the words around the match as plain text. An empty `q`
 finds nothing (`[]`).
 
-**Only what the asker may see is returned**: a page under `projects/<key>/` of a project the asker may not see is never
-in the answer, and does not take the place of a page that is. (No project is private yet, so every asker sees every
-project's pages; private projects, ADR 0018, make it so for their members only.) The index is derived from the pages
+**Only what the asker may see is returned**: a page under `projects/<key>/` of a private project the asker is no member
+of is never in the answer, and does not take the place of a page that is. The index is derived from the pages
 and kept in the store; it is made again at the next search after the wiki's head moved (`wiki_changed`), so an edited,
 moved or deleted page, and one pushed from elsewhere, is found as it is now.
 
@@ -976,6 +1022,40 @@ clone and the item as they were.
 
 A member dismisses the proposal: its branch is deleted, the item resolved, and the wiki is as it was. Request body
 `{"reason"?: string}`. Response: `null`. Errors: `404` as for merging.
+
+### Links, backlinks and renames
+
+`[[Page name]]` in a page, or in a card's text, leads to a page, and `WEB-12` to a card (a card's [name](#projects):
+its project's key and its number in the project); in a project's page `#12` is the card `<key>-12` of that project.
+Code, inline or fenced, holds no links. `[[Page name|label]]` gives the link a label, which only readers of the
+Markdown see. A link names a page by its path (`[[Team/On call]]`) or by its name (`[[On call]]`), in any case; a name
+that several pages have leads to the one in the folder of the linking page, then the one of its project, then the first
+by path. A link to no page leads nowhere, and a card's text leads to pages as if it were in its project's folder.
+
+A page lists the pages and cards that link to it. The links between pages are kept in the store and made again from the
+files after every change of the wiki (`wiki_changed`), so a page edited with any git tool counts; the cards' links to
+pages are read from the cards' text when asked.
+
+A move or rename of a page rewrites the links to it in the other pages, in the commit of the move (`Rename` or `Move`
+shows the files in its diff): a link by path gets the new path, a link by name the new name, or the new path when
+another page has that name; the page's own links are written to lead where they led from its new place. So the links between pages keep
+leading to the page in the files too, and in a clone anyone reads. A card's text is an issue of a forge and is not
+rewritten: a `[[link]]` in it to a moved page, by its path or by a name no page has now, leads nowhere until the card's
+text is edited.
+
+### `GET /v1/wiki/links/{*path}`
+
+What the page links to and what links to it: `{"links": {"pages": [{"link": string, "path": string | null}], "cards":
+[{"key": string, "title": string | null}]}, "backlinks": {"pages": [{"path", "name"}], "cards": [{"key", "title"}]}}`.
+`links` is what the page's text says, each name with the page it leads to (`null` when there is none) and each card
+with its title (`null` when there is no such card); `backlinks` are the pages, sorted by path, and the cards, whose
+text has a `[[link]]` to the page. What a person may not see is left out: a private project's pages and cards they are not a member of are not listed (a link to such a page has `path` `null`, such a card a `title` `null`), and the page of a private project they may not see is `404`. A page that is not there has backlinks all the same, as a deleted page keeps them.
+Errors: `422` for a path that is not a page's.
+
+### `GET /v1/wiki/cards/{key}`
+
+The pages that link to the card `key`, such as `WEB-12`, sorted by path, without the pages of private projects the person is not a member of: `[{"path", "name"}]`. Errors: `404` for no
+such card (or one of a private project they may not see), `422` for a key that is not a card's name.
 
 ### `POST /v1/wiki/refresh`
 
@@ -1072,6 +1152,68 @@ Deletes it; response `{"commit": text}`. `404` when the kind has no template.
 
 Sets or deletes a page template. A name is letters, digits, `-` and `_`, up to 64 (`422` otherwise). Request body:
 `{"text": text}`. Response: `{"name", "text", "commit"}`; a delete answers `{"commit"}` and `404` for no such template.
+### Cycles
+
+A cycle (ADR 0019) is a time box of one project: a name (unique in its project in any case, 1 to 80 characters), a first
+and a last day (`YYYY-MM-DD`, the last not before the first, at most 366 days in all) and the cards of that project it
+holds. A project need not use cycles. A card is in at most one open cycle, and only in one of its own project's: putting
+it into another takes it out of the first, and a cycle of another project is refused with `422`. A cycle's progress
+follows its cards: a card is done when its issue is closed or it is in `Done`, and points are the cards' estimates (a
+card without one counts no points). A project the asker may not see has no cycles for them: `404`. People change
+cycles, never agents.
+
+A `Cycle` is `{"id", "project_id", "name", "starts_on", "ends_on", "closed_at": Unix seconds or null, "created_at"}`. A
+`CycleView` is a `Cycle` with `"cards"` (a count), `"done"`, `"points"` and `"points_done"`. A `CycleDetail` is a
+`CycleView` whose `"cards"` is a list instead of a count, with `"figures": {"by_agents": done cards an agent ran code for, "tokens": tokens the runs of its cards used,
+"tokens_per_point": tokens per done point rounded down, or null while no point is done}`, `"burn_up": [{"day", "scope",
+"done"}]` and the cards `[{"id", "repository_id", "number", "title", "column", "done", "estimate", "added_at",
+"done_at", "by_agent", "tokens"}]`. The burn-up has a day from the start to the end, or to the day it was closed or
+today if earlier (none before the start): `scope` is the points of the cards added by the end of that day and `done` the
+points done by then, each at the card's estimate now. Making or editing a cycle, or closing it, sends `cycle_changed`;
+deleting one `cycle_removed`; a card's open cycle changing `card_cycle_changed`. Scripts see `card.cycle`.
+
+#### `GET /v1/projects/{id}/cycles`
+
+The project's cycles with their progress, the latest start first: `[CycleView]`. Errors: `404` for no such project.
+
+#### `POST /v1/projects/{id}/cycles`
+
+A member or an owner makes an open cycle. Request: `{"name", "starts_on", "ends_on"}`. Response: the `Cycle`. Errors:
+`409` for a name the project has in any case; `422` for a name or date that is not valid, an end before the start or
+more than 366 days; `404` for no such project.
+
+#### `GET /v1/cycles/{id}`
+
+The `CycleDetail`. Errors: `404`.
+
+#### `PATCH /v1/cycles/{id}`
+
+Replaces the name and dates of an open cycle; the request is the one of `POST`. Setting what is set sends no event.
+Errors: as `POST`; `422` for a closed cycle; `404`.
+
+#### `DELETE /v1/cycles/{id}`
+
+Deletes a cycle, open or closed, and answers it; its cards stay. Errors: `404`.
+
+#### `POST /v1/cycles/{id}/close`
+
+Closes an open cycle; the person closing it chooses what becomes of the cards that are not done. Request:
+`{"carry": "next", "to"?: id}` moves them to the open cycle `to` of the same project, or with none given to the open
+cycle that starts next; `{"carry": "out"}` leaves them in no open cycle. The closed cycle keeps every card it held, so
+its page still shows what was planned and what was done. Response: `{"cycle": the closed Cycle, "carried_to": Cycle or
+null, "carried": [card id]}`. Errors: `422` for a cycle that is closed already, a `to` that is not another open cycle of
+the project, or no cycle that starts next (nothing changes); `404`.
+
+#### `GET /v1/cards/{id}/cycle`
+
+The open cycle the card is in, or `null`. Errors: `404` for no such card.
+
+#### `PUT /v1/cards/{id}/cycle`
+
+Puts the card into an open cycle of its project, or out of its open cycle with `null`. Request: `{"cycle": id or null}`.
+Sends `card_cycle_changed` when it changed. Response: the cycle, or `null`. Errors: `404` for no such card or cycle; `422`
+for a cycle of another project or a closed one.
+
 ### Milestones
 
 A milestone (ADR 0019) is a goal of the organisation, not of a project: it has a name (unique in any case, 1 to 80
@@ -1467,6 +1609,18 @@ forge refused.
 Replaces the issue's labels, on the forge too. Request: `{"labels": [text]}`; blank labels and repeats are dropped. The
 event `card_labels_changed` is sent. Response: the `Card`. Errors: `404` no such card; `500` the forge refused (a Forgejo
 repository without such a label, for one).
+
+### `PUT /v1/cards/{id}/repositories`
+
+Names the repositories the card works in besides its own issue's (ADR 0019), in the order their changes are to be
+merged. Request: `{"repositories": [name], "reason": text}`, each the name of a repository of the card's project or of
+its files, in any case; `reason` is optional. The card's own repository is always first and cannot be left out: naming
+it, or a name twice, changes nothing, and an empty list leaves the card its own repository only. The next run of the
+card gets a worktree of each (see [Cards over several repositories](column-scripts.md#cards-over-several-repositories));
+a run that is going keeps what it had. A repository in which the card has an open change cannot be left out until that change is merged or closed. A person or
+the Moebius agent does this; it is recorded as a decision of kind `set_repositories` with the card's `title` and the
+`repositories` named, and the event `card_updated` is sent. Response: the `Card`, whose `repositories` lists them all,
+its own first. Errors: `404` no such card; `422` a name that is no repository of the project, or a repository left out in which the card has an open change.
 
 ### Kinds of issues
 
@@ -3757,6 +3911,8 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `wiki_changed` | A person edited the wiki through the API, or a refresh brought commits pushed to its `origin` from elsewhere. | `{"commit": string (the full id the pages are now read at)}` |
 | `wiki_error` | The wiki could not follow its `origin` on the server's refresh (every 30 seconds). | `{"message": string}` |
 | `intake_changed` | A request to a project was made, drafted, edited, accepted or declined. It carries no text. | `{"project": id, "request": id, "status": string}` |
+| `cycle_changed` | A cycle was made, edited or closed through the API. | `{"id", "project_id", "name", "starts_on", "ends_on", "closed_at", "created_at"}` |
+| `cycle_removed` | A cycle was deleted through the API; its cards stay. | `{"cycle": id}` |
 | `milestone_changed` | A milestone was made or edited through the API. | `{"id", "name", "target_date", "description", "created_at"}` |
 | `milestone_removed` | A milestone was deleted through the API; its cards stay. | `{"milestone": id}` |
 | `file_changed` | A file of a repository was saved through the API. | `{"repository": id, "path": string}` |
@@ -3772,6 +3928,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `project_kinds_changed` | The kinds a project offers changed. | `{"project": id, "kinds": [id]}` |
 | `card_kind_changed` | A card got a kind, lost it or had the values of its fields changed (also when its kind's fields were). | `{"card": id, "kind": text or null, "fields": {name: value}}` |
 | `card_assignees_changed` | The people a card is given to changed. | `{"card": id, "assignees": [handle]}` |
+| `card_cycle_changed` | The open cycle a card is in changed, also when a cycle was closed and carried it on. | `{"card": id, "cycle": id or null}` |
 | `card_milestones_changed` | The milestones a card is in changed. | `{"card": id, "milestones": [id]}` (in the order of their target dates) |
 | `inbox_assignees_changed` | The people an inbox item is given to changed. | `{"item": id, "assignees": [handle]}` |
 | `notice_added` | A person was told something (assigned, mentioned, a followed card changed). Sent only to that person. | `{"person": handle, "notice": the Notice}` |

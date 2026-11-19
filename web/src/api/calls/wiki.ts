@@ -1,6 +1,6 @@
 /** The calls of the Wiki page: the pages, one page (or an older version of it), its history, and writing, moving and deleting one. */
 import { del, get, post, put } from "../http";
-import type { PageInfo, Version, WikiHit, WikiPageView } from "../types/wiki";
+import type { PageInfo, PageLinks, Version, WikiHit, WikiPageView } from "../types/wiki";
 
 /** A page's path in a URL: each part percent-encoded, the slashes kept. */
 export function pageUrl(path: string): string {
@@ -41,10 +41,30 @@ export function wikiHistory(path: string): Promise<Version[]> {
   return get<Version[]>(`/v1/wiki/history/${pageUrl(path)}`);
 }
 
+/** Merges the wiki proposal of inbox item `item`: the page changes and the item resolves. */
+export async function mergeWikiProposal(item: number): Promise<void> {
+  await post<unknown>(`/v1/wiki/proposals/${item}/merge`, {});
+}
+
+/** Dismisses the wiki proposal of inbox item `item`; the wiki stays as it is. */
+export async function dismissWikiProposal(item: number): Promise<void> {
+  await post<unknown>(`/v1/wiki/proposals/${item}/dismiss`, {});
+}
+
 /** The pages found by words of their title and text, the best first; with `project`, only that project's pages. */
 export function searchWiki(query: string, project?: string, limit?: number): Promise<WikiHit[]> {
   const params = new URLSearchParams({ q: query });
   if (project) params.set("project", project);
   if (limit) params.set("limit", String(limit));
   return get<WikiHit[]>(`/v1/wiki/search?${params}`);
+}
+
+/** What the page links to and what links to it, pages and cards. */
+export function wikiLinks(path: string): Promise<PageLinks> {
+  return get<PageLinks>(`/v1/wiki/links/${pageUrl(path)}`);
+}
+
+/** The pages that link to the card named `key`, such as `WEB-12`. */
+export function wikiCardPages(key: string): Promise<PageInfo[]> {
+  return get<PageInfo[]>(`/v1/wiki/cards/${encodeURIComponent(key)}`);
 }

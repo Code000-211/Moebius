@@ -137,15 +137,31 @@ impl Store {
         })
     }
 
-    /// The card's open change, if it has one.
+    /// The card's open change in its own issue's repository, if it has one.
     pub fn open_change(&self, card_id: i64) -> Result<Option<Change>> {
         Ok(self
             .conn()
             .query_row(
                 &format!(
-                    "SELECT {CHANGE_COLUMNS} FROM changes WHERE card_id = ?1 AND state = 'open' ORDER BY id DESC"
+                    "SELECT {CHANGE_COLUMNS} FROM changes WHERE card_id = ?1 AND state = 'open' \
+                     AND repository_id = (SELECT repository_id FROM cards WHERE id = ?1) ORDER BY id DESC"
                 ),
                 [card_id],
+                change_from_row,
+            )
+            .optional()?)
+    }
+
+    /// The card's open change in `repository_id`, one of the repositories it works in, if it has one there.
+    pub fn open_change_in(&self, card_id: i64, repository_id: i64) -> Result<Option<Change>> {
+        Ok(self
+            .conn()
+            .query_row(
+                &format!(
+                    "SELECT {CHANGE_COLUMNS} FROM changes WHERE card_id = ?1 AND repository_id = ?2 \
+                     AND state = 'open' ORDER BY id DESC"
+                ),
+                params![card_id, repository_id],
                 change_from_row,
             )
             .optional()?)

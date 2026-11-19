@@ -39,6 +39,17 @@ pub(super) fn end_runs_of_a_previous_server(app: &App, runners: &Runners) -> Res
         let Some(worktree) = run.worktree else {
             continue;
         };
+        // A run of a card over several repositories had a worktree in each of the others too.
+        for other in app.store.run_worktrees(run.id).unwrap_or_default() {
+            if other.path == worktree {
+                continue;
+            }
+            if let Ok(Some(repository)) = app.store.repository(other.repository_id) {
+                let _ = app
+                    .repos
+                    .remove_worktree(Path::new(&repository.path), Path::new(&other.path));
+            }
+        }
         let repository_id = match run.card_id {
             Some(card_id) => app.card(card_id).ok().map(|card| card.repository_id),
             None => run.repository_id,

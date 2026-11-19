@@ -74,6 +74,9 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
   through renames and moves, and what was pushed from elsewhere is read after the next refresh. A code run's prompt holds the pages its issue links to
   with `[[Page name]]`. The Moebius agent reads the wiki with `"$MOEBIUS" wiki` and proposes an edit with `wiki propose`: a
   branch of the clone that waits in the inbox (`wiki_proposal`) and changes the pages only once a member merges it.
+  `[[Page name]]` in a page or a card leads to a page and `WEB-12` to a card; a page lists the pages and cards that link
+  to it, a card the pages that link to it, and a rename or move rewrites the links to the page in the same commit. The
+  editor completes `[[` and a card's key.
 
 - **Connecting over SSH**, as an editor's remote mode does: `moebius connect <host>` logs in with the system's `ssh`
   (keys, the agent, `~/.ssh/config`), and when no server answers there it sets one up after a yes (`--yes` for

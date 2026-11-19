@@ -30,7 +30,7 @@ const BUILT_IN: [BuiltIn; 5] = [
     },
     BuiltIn {
         name: "stay-in-the-worktree",
-        prose: "files are written only inside the run's worktree",
+        prose: "files are written only inside the run's worktree, or one of its worktrees when its card works in several repositories",
         broken_by: write_outside_worktree,
     },
     BuiltIn {
@@ -176,6 +176,7 @@ mod tests {
             input,
             worktree: Some(Path::new(WORKTREE)),
             scratch: None,
+            others: &[],
         };
         BUILT_IN
             .iter()
@@ -201,6 +202,7 @@ mod tests {
             input: json!({ "command": "git push --force" }),
             worktree: Some(Path::new(WORKTREE)),
             scratch: None,
+            others: &[],
         };
         let (name, description) = patterns[1];
         assert_eq!(broken_rule(&call), Some(format!("{name}: {description}")));
@@ -218,6 +220,7 @@ mod tests {
             input: json!({ "command": command }),
             worktree: Some(Path::new(WORKTREE)),
             scratch: Some(Path::new(scratch)),
+            others: &[],
         };
         BUILT_IN
             .iter()
@@ -557,6 +560,7 @@ mod tests {
             input: json!({ "path": "src/main.rs" }),
             worktree: None,
             scratch: None,
+            others: &[],
         };
         assert!(write_outside_worktree(&call));
     }
@@ -594,6 +598,7 @@ mod tests {
                 input: json!({ "command": command }),
                 worktree: Some(dir.path()),
                 scratch: None,
+                others: &[],
             };
             broken_rule(&call)
         };

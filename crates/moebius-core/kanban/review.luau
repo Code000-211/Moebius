@@ -1,14 +1,29 @@
--- In review: the change is published (its branch is pushed; the pull request opens only when the change is offered), then waits for its checks,
--- then must merge cleanly, then the Reviewer reads it along two axes, Standards and then Spec, each ending with
+-- In review: the change is published, one per repository the card works in (its branch is pushed; the pull request
+-- opens only when the change is offered), then waits for their checks,
+-- then each must merge cleanly, then the Reviewer reads it along two axes, Standards and then Spec, each ending with
 -- findings that cite evidence. Failing checks, a conflict or blocking findings send the card back to In progress with
 -- a note saying why. Approved, or without a Reviewer, the change is offered (on a forge that opens its pull request), with the judgement calls for the person.
 -- A review a person stopped, too many reviews or an agent's spent token budget put the card in the inbox as stuck;
 -- while the daily token budget is spent no review starts. In a repository that works test first (`card.test_first`),
 -- the change's reproduction test must also fail on the commit the change starts from and pass on the change before the
 -- change is reviewed; a change that says it cannot be tested has the Spec axis judge why.
-local function conflict_note(change)
-  return "The change no longer merges cleanly into " .. change.base .. ". These files conflict:\n"
-    .. change.conflict .. "\nMerge " .. change.base .. " into your branch and resolve the conflicts."
+
+-- Which repository a note is about, when the card works in several: that of the change.
+local function where(card, change)
+  if #card.repositories > 1 then
+    return "In " .. change.repository .. ": "
+  end
+  return ""
+end
+
+-- Why a change that no longer merges cleanly goes back to coding.
+local function conflict_note(card, change)
+  local base = change.base
+  if #card.repositories > 1 then
+    base = base .. " of " .. change.repository
+  end
+  return "The change no longer merges cleanly into " .. base .. ". These files conflict:\n" .. change.conflict
+    .. "\nMerge " .. change.base .. " into your branch and resolve the conflicts."
 end
 
 -- A card that is stuck loses the label `in-progress` that marks the cards being worked on.
@@ -137,14 +152,22 @@ function on_card(card)
   end
 
   moebius.publish_change()
-  local change = moebius.run_checks()
-  if change.checks == "pending" then
-    moebius.wait("waiting for the checks")
-  elseif change.checks == "failure" then
-    moebius.move("In progress", "The checks failed:\n" .. (change.failed_checks or change.check_output or ""))
-  elseif change.conflict ~= nil then
-    moebius.move("In progress", conflict_note(change))
-  else
-    review(card, run)
+  local changes = moebius.run_checks()
+  for _, change in ipairs(changes) do
+    if change.checks == "pending" then
+      moebius.wait("waiting for the checks")
+      return
+    end
   end
+  for _, change in ipairs(changes) do
+    if change.checks == "failure" then
+      moebius.move("In progress", "The checks failed:\n" .. where(card, change)
+        .. (change.failed_checks or change.check_output or ""))
+      return
+    elseif change.conflict ~= nil then
+      moebius.move("In progress", conflict_note(card, change))
+      return
+    end
+  end
+  review(card, run)
 end

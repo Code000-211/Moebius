@@ -31,7 +31,8 @@ they chose.
 "$MOEBIUS" grillings             # then: "$MOEBIUS" grilling show 2
 "$MOEBIUS" retro                 # then: "$MOEBIUS" proposals
 "$MOEBIUS" automation list       # then: "$MOEBIUS" api GET /v1/automations/3/firings
-"$MOEBIUS" wiki list             # the wiki's pages; then: "$MOEBIUS" wiki read "Team/On call"
+"$MOEBIUS" wiki list             # the wiki's pages
+"$MOEBIUS" wiki search "on call" # search before you read: the best pages first (--project <key>, --limit <n>); then: "$MOEBIUS" wiki read "Team/On call"
 ```
 
 Add `--json` to any command to read fields (`"$MOEBIUS" board --json`). For anything without a command use

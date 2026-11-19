@@ -194,6 +194,11 @@ describe("how an item tells itself", () => {
     expect(why(item(1, "takeover", null, { agreement: 0.95, count: 120 }), {})).toContain(
       "95% of 120 judgements",
     );
+    expect(
+      why(item(1, "wiki_proposal", null, { page: "Team/On call", by: "Coder (agent)" }), {}),
+    ).toBe(
+      "Coder (agent) proposes this edit of the page Team/On call. Merging changes the wiki; dismissing leaves it as it is.",
+    );
     expect(why(item(1, "proposal", null, { kind: "settings" }), {})).toContain("moebius.toml");
     expect(why(item(1, "proposal", null, {}), {})).toContain("harness configuration");
     expect(why(script as InboxItem, {})).toBeNull();
@@ -366,5 +371,15 @@ describe("the key a row leads with", () => {
       [item(9, "needs_design", null, {}), ""],
     ];
     for (const [each, key] of others) expect(keyOf(each, found(snapshot, each))).toBe(key);
+  });
+});
+
+describe("a wiki proposal", () => {
+  it("is a Wiki edit with its own chip", () => {
+    expect(kindTag(item(1, "wiki_proposal", null, {}))).toEqual({
+      label: "Wiki edit",
+      mark: "none",
+    });
+    expect(chipName("wiki_proposal")).toBe("Wiki edits");
   });
 });

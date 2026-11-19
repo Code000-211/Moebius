@@ -9,7 +9,7 @@ mod files;
 mod settings;
 mod sight;
 
-pub use sight::Sight;
+pub use sight::{Sight, UNQUOTED};
 
 use serde::{Deserialize, Serialize};
 
@@ -219,6 +219,86 @@ impl App {
         self.project_view(changed, &self.sight(by)?)
     }
 
+    /// An owner puts the repository `repository` among the repositories of the project `id`; nothing changes when it is
+    /// one already. The repository's home project stays where its new issues land. Recorded as an
+    /// `edit_project_repositories` decision and announced as `project_changed`.
+    pub fn add_repository_to_project(
+        &self,
+        by: &Actor,
+        id: i64,
+        repository: i64,
+        reason: &str,
+    ) -> Result<ProjectView> {
+        let sight = self.sight(by)?;
+        let project = self.project_seen(id, &sight)?;
+        let repo = self.repository_of_project(repository, &sight)?;
+        if !project.repositories.contains(&repo.id) && repo.home_project_id != id {
+            self.store.link_repository(id, repo.id)?;
+            self.record_repositories(by, &project, "add", &repo.name, reason)?;
+        }
+        let changed = self.project(id)?;
+        self.bus.publish(Event::ProjectChanged(changed.clone()));
+        self.project_view(changed, &sight)
+    }
+
+    /// An owner takes the repository `repository` out of the project `id`. A repository's home project keeps it: the
+    /// repository has to be removed instead. Recorded as an `edit_project_repositories` decision.
+    pub fn remove_repository_from_project(
+        &self,
+        by: &Actor,
+        id: i64,
+        repository: i64,
+        reason: &str,
+    ) -> Result<ProjectView> {
+        let sight = self.sight(by)?;
+        let project = self.project_seen(id, &sight)?;
+        let repo = self.repository_of_project(repository, &sight)?;
+        if repo.home_project_id == id {
+            return Err(AppError::Invalid(format!(
+                "{} is the home project of {}: remove the repository to take it out",
+                project.name, repo.name
+            )));
+        }
+        if !self.store.unlink_repository(id, repo.id)? {
+            return Err(AppError::NotFound(format!(
+                "repository {} in project {id}",
+                repo.id
+            )));
+        }
+        self.record_repositories(by, &project, "remove", &repo.name, reason)?;
+        let changed = self.project(id)?;
+        self.bus.publish(Event::ProjectChanged(changed.clone()));
+        self.project_view(changed, &sight)
+    }
+
+    /// The repository `id` when `sight` sees it, or `NotFound`.
+    fn repository_of_project(&self, id: i64, sight: &Sight) -> Result<crate::store::Repository> {
+        if !sight.repository(id) {
+            return Err(AppError::NotFound(format!("repository {id}")));
+        }
+        self.store
+            .repository(id)?
+            .ok_or_else(|| AppError::NotFound(format!("repository {id}")))
+    }
+
+    /// Records an `edit_project_repositories` decision: `change` is `add` or `remove`.
+    fn record_repositories(
+        &self,
+        by: &Actor,
+        project: &Project,
+        change: &str,
+        repository: &str,
+        reason: &str,
+    ) -> Result<()> {
+        let context = std::collections::BTreeMap::from([
+            ("project".to_string(), project.key.clone()),
+            ("change".to_string(), change.to_string()),
+            ("repository".to_string(), repository.to_string()),
+        ]);
+        self.record_action(by, "edit_project_repositories", None, None, context, reason)?;
+        Ok(())
+    }
+
     /// The project `id`, or `NotFound`.
     pub fn project(&self, id: i64) -> Result<Project> {
         self.store
@@ -402,6 +482,59 @@ mod tests {
             app.rename_project(&Actor::first_owner(), 99, "Gone", None),
             Err(AppError::NotFound(_))
         ));
+    }
+
+    #[test]
+    fn an_owner_puts_a_repository_in_another_project_and_takes_it_out() {
+        let (dir, app) = app();
+        let path = dir.path().join("web").to_string_lossy().into_owned();
+        let web = app.add_repository("web", &path).unwrap();
+        let shop = app.add_project("Storefront", "SHOP").unwrap();
+        let owner = Actor::first_owner();
+        let mut events = app.bus.subscribe();
+        let added = app
+            .add_repository_to_project(&owner, shop.id, web.id, "the shop is built from web")
+            .unwrap();
+        assert_eq!(
+            added.repositories,
+            vec![ProjectRepository {
+                id: web.id,
+                name: "web".into(),
+                home: false
+            }]
+        );
+        assert_eq!(events.try_recv().unwrap().kind, "project_changed");
+        // Again changes nothing, and its home project keeps it too.
+        let again = app
+            .add_repository_to_project(&owner, shop.id, web.id, "")
+            .unwrap();
+        assert_eq!(again.repositories.len(), 1);
+        let home = app
+            .add_repository_to_project(&owner, web.home_project_id, web.id, "")
+            .unwrap();
+        assert!(home.repositories.iter().all(|r| r.home));
+        // The home project cannot give the repository up.
+        assert!(matches!(
+            app.remove_repository_from_project(&owner, web.home_project_id, web.id, ""),
+            Err(AppError::Invalid(_))
+        ));
+        let removed = app
+            .remove_repository_from_project(&owner, shop.id, web.id, "")
+            .unwrap();
+        assert!(removed.repositories.is_empty());
+        assert!(matches!(
+            app.remove_repository_from_project(&owner, shop.id, web.id, ""),
+            Err(AppError::NotFound(_))
+        ));
+        assert!(matches!(
+            app.add_repository_to_project(&owner, shop.id, 99, ""),
+            Err(AppError::NotFound(_))
+        ));
+        let kinds: Vec<_> = app
+            .store
+            .judgements_page(None, None, Some("edit_project_repositories"), 5)
+            .unwrap();
+        assert_eq!(kinds.len(), 2);
     }
 
     #[test]

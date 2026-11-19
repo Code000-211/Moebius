@@ -1,7 +1,8 @@
 //! Ending a run, whatever its harness: the run's summary and events are kept as its records arrive (`keep`), and when its
-//! process is gone `finish` commits what the agent left (a chat's work is offered as a change, a grilling's result
-//! read), revokes the run's token and publishes the end. It removes the worktree, except for a workflow run, whose
-//! worktree and branch stay for the run's later agents.
+//! process is gone `finish` commits what the agent left (in each worktree of a card over several repositories; a
+//! chat's work is offered as a change, a grilling's result read, a `code` run's ask for another repository granted),
+//! revokes the run's token and publishes the end. It removes the worktrees, except for a workflow run, whose worktree
+//! and branch stay for the run's later agents.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -77,6 +78,11 @@ pub(in crate::harness) fn finish<L>(
     // A grilling leaves its result for Moebius to read, not a change to offer.
     let grilling =
         run.purpose == "chat" && app.run(run.id).is_ok_and(|run| run.agent == GRILLING_AGENT);
+    // What a `code` run asks for in its summary, read before its status is decided (see `App::repositories_asked`).
+    let asked = match run.purpose.as_str() {
+        "code" => app.repositories_asked(run.id),
+        _ => Ok(None),
+    };
     let status = match ending {
         Ok(aborted) if grilling => {
             if aborted {
@@ -98,10 +104,12 @@ pub(in crate::harness) fn finish<L>(
             Err(e) => failed(&e.to_string()),
         },
         Ok(false) if !matches!(run.purpose.as_str(), "code" | "trial" | "attempt") => "succeeded",
-        Ok(false) => match run.commit(&run.commit_message) {
-            Ok(true) => "succeeded",
-            Ok(false) => failed("the agent changed nothing"),
-            Err(e) => failed(&e.to_string()),
+        Ok(false) => match (run.commit(&run.commit_message), &asked) {
+            (Ok(true), _) => "succeeded",
+            // A `code` run that needs another repository may have had nothing to change without it.
+            (Ok(false), Ok(Some(_))) => "succeeded",
+            (Ok(false), _) => failed("the agent changed nothing"),
+            (Err(e), _) => failed(&e.to_string()),
         },
         Err(why) => failed(&why),
     };
@@ -142,7 +150,30 @@ pub(in crate::harness) fn finish<L>(
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .remove(&run.id);
-    let _ = app.store.set_run_status(run.id, status);
+    // A `code` run that asks for another repository succeeds and sends its card back to coding with it, in one step.
+    let mut status = status;
+    let mut ended = false;
+    if status == "succeeded" {
+        match &asked {
+            Ok(Some(asked)) => match app.grant_asked(run.id, asked) {
+                Ok(()) => ended = true,
+                Err(e) => {
+                    status = failed(&format!(
+                        "cannot add the repositories the run asked for: {e}"
+                    ))
+                }
+            },
+            Ok(None) => {}
+            Err(e) => {
+                status = failed(&format!(
+                    "cannot read the repositories the run asked for: {e}"
+                ))
+            }
+        }
+    }
+    if !ended {
+        let _ = app.store.set_run_status(run.id, status);
+    }
     app.bus.publish(Event::RunEnded {
         run: run.id,
         status: status.into(),

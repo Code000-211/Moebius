@@ -13,7 +13,7 @@
 //! `notices` (what concerns a person, and the cards they follow), `planning` (a card's priority, due date and estimate, read
 //! from its labels), `access` (their access tokens and the sessions of browsers, kept as hashes), `favourites` (the places a
 //! person pinned and opened lately), `kinds` (kinds of issues, their fields and the values cards hold), `projects` (the
-//! projects, their keys and repositories, and the migration that makes one for each repository) and `milestones` (goals
+//! projects, their keys and repositories, and the migration that makes one for each repository) and `cycles` (a project's time boxes) and `milestones` (goals
 //! of the organisation that hold cards of any projects) and `wiki_search` (the wiki's search index, derived from its
 //! pages).
 //! Every public type is re-exported here, as `store::Card` and the like.
@@ -22,9 +22,11 @@ mod access;
 mod assignees;
 mod attempts;
 mod automations;
+mod card_repositories;
 mod cards;
 mod changes;
 mod chats;
+mod cycles;
 mod deletions;
 mod events;
 mod favourites;
@@ -51,6 +53,7 @@ mod retros;
 mod runs;
 mod shadows;
 mod usage;
+mod wiki_links;
 mod wiki_search;
 mod workflow_schedules;
 mod workflows;
@@ -66,8 +69,10 @@ use crate::blobs::BlobStore;
 pub use access::{AccessToken, hash_secret};
 pub use attempts::Attempt;
 pub use automations::{Automation, Firing, NewAutomation};
+pub use card_repositories::RunWorktree;
 pub use cards::{Card, CardMove, Held, Repository};
 pub use changes::Change;
+pub use cycles::{Cycle, CycleCard};
 pub use deletions::{ChatRemoved, ResearchRemoved};
 pub use events::Event;
 pub use favourites::{PLACE_KINDS, Place, RECENT_LIMIT};
@@ -98,6 +103,7 @@ pub use usage::{
     ANSWERING, ActivityUsage, AgentUsage, ClassUsage, ModelUsage, NO_RUN, Scope, ToolWait, UNKNOWN,
     Usage, UsageTotals,
 };
+pub use wiki_links::{CARD as WIKI_CARD, PAGE as WIKI_PAGE, WikiLink};
 pub(crate) use wiki_search::match_all;
 pub use wiki_search::{IndexedPage, WikiHit};
 pub use workflows::{WorkflowNodeRun, WorkflowRun};
@@ -492,6 +498,9 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     wiki_search::SCHEMA,
     intake::SCHEMA,
     projects::PRIVATE,
+    cycles::SCHEMA,
+    wiki_links::SCHEMA,
+    card_repositories::SCHEMA,
 ];
 
 pub fn now() -> i64 {

@@ -134,6 +134,31 @@ over the `[localize]` table of the server: `off` gives its runs no hint, and `fi
 most five. When the card's change is known, each hint is judged by the files the change touched; the web app shows
 how many of the hinted files they were. The rules are in the [decision model reference](../reference/decision-model.md#localize).
 
+### A card over several repositories
+
+A project can have several repositories (an API and the web app that uses it), and one card can need work in more than
+one. A card always works in its own issue's repository: the forge's for an issue that came from a forge, the project's
+files for a card of a project without repositories. A person or the Moebius agent names the others before the run, from
+the project's repositories, with `PUT /v1/cards/{id}/repositories` (see the [desktop API](../reference/desktop-api.md)),
+in the order their changes are to be merged; scripts see them all as `card.repositories`, the card's own first.
+
+1. A run of the card gets a worktree of each, on its branch `moebius/run-<id>` of each repository, and nothing else.
+   Its harness starts in the worktree of the card's own repository; the prompt of a `code` run names where the others
+   are. The tool-call check lets the run write in each of its worktrees and refuses a write anywhere else.
+2. A Coder that finds it needs another of the project's repositories ends its summary with a line
+   `REPOSITORY: <name>`. The run still succeeds, the repository is added to the card, and the card goes back to coding
+   with a note that says so, so the next round has a worktree of it. A name that is no repository of the project sends
+   the card back with a note that lists the ones it may ask for. The prompt lists them too.
+3. Each repository gets its own change: the card's own on `moebius/card-<number>`, another on
+   `moebius/card-<KEY>-<number>` (the card's key, such as `WEB-24`), once a round left commits in it. Scripts see them
+   as `card.changes`, in the order of `card.repositories`, each with its `repository`; `moebius.publish_change()`,
+   `moebius.open_pull_request()` and `moebius.run_checks()` return them the same way, and each repository's checks are
+   those of its own settings. The default `review.luau` and `merge.luau` send the card back when any change fails its
+   checks or conflicts, naming the repository; `moebius.offer_change` offers every change, and `moebius.merge_change`
+   merges them in order.
+
+A run over several repositories runs on the server, never on a runner.
+
 ### Test first
 
 Tests generated from the issue and used as a gate are the review step with the best evidence: in a study on SWE-bench
@@ -167,13 +192,15 @@ function on_card(card)
     return
   end
   moebius.publish_change()
-  local change = moebius.run_checks()
-  if change.checks == "pending" then
-    moebius.wait("waiting for the checks")
-    return
-  elseif change.checks == "failure" then
-    moebius.move("In progress", "The checks failed:\n" .. (change.failed_checks or change.check_output or ""))
-    return
+  -- One change per repository the card works in, each with its own checks.
+  for _, change in ipairs(moebius.run_checks()) do
+    if change.checks == "pending" then
+      moebius.wait("waiting for the checks of " .. change.repository)
+      return
+    elseif change.checks == "failure" then
+      moebius.move("In progress", "The checks failed:\n" .. (change.failed_checks or change.check_output or ""))
+      return
+    end
   end
 
   local test = moebius.reproduction()
@@ -394,7 +421,32 @@ to hold. The change is merged on the forge, its inbox item is resolved and the c
 recorded as the column's script, `script:Ready to merge`, so a Retro and the training export can tell it from a person's
 merge; nothing a person did is recorded on its behalf. What the reviews and the checks catch still holds: keep the
 conflict test of the default script, and hold the card with `moebius.wait` while its checks run or after they failed.
-The exact function is in the [column script reference](../reference/column-scripts.md#the-moebius-table).
+The exact function is in the [column script reference](../reference/column-scripts.md#the-moebius-table). This one
+merges a card's changes, one per repository it works in, once every one is green and merges cleanly:
+
+<!-- script: merge.luau -->
+```luau
+function on_card(card)
+  if #card.changes == 0 then
+    moebius.wait("waiting for the changes")
+    return
+  end
+  for _, change in ipairs(card.changes) do
+    if change.checks == "pending" then
+      moebius.wait("waiting for the checks of " .. change.repository)
+      return
+    elseif change.checks == "failure" then
+      moebius.move("In progress", "The checks failed:\n" .. (change.failed_checks or change.check_output or ""))
+      return
+    elseif change.conflict ~= nil then
+      moebius.move("In progress", "The change no longer merges cleanly into " .. change.base .. " of "
+        .. change.repository .. ". These files conflict:\n" .. change.conflict)
+      return
+    end
+  end
+  moebius.merge_change("every change is green and merges cleanly")
+end
+```
 
 ### Done
 

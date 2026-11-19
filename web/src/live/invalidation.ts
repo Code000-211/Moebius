@@ -76,12 +76,19 @@ export function invalidates(event: ServerEvent): QueryKey[] {
   const stale: QueryKey[] = [];
   if (SNAPSHOT_KINDS.has(event.kind)) {
     // A card's closing or move changes how far its milestones are.
-    stale.push(keys.snapshot, keys.cards, keys.projects, keys.milestones);
+    stale.push(keys.snapshot, keys.cards, keys.projects, keys.milestones, keys.cycles);
   }
   if (event.kind === "milestone_changed" || event.kind === "milestone_removed") {
     stale.push(keys.milestones, keys.cards);
   }
   if (event.kind === "card_milestones_changed") stale.push(keys.milestones, keys.cards);
+  if (
+    event.kind === "cycle_changed" ||
+    event.kind === "cycle_removed" ||
+    event.kind === "card_cycle_changed"
+  ) {
+    stale.push(keys.cycles, keys.cards);
+  }
   if (event.kind === "project_changed") stale.push(keys.projects);
   if (event.kind === "wiki_changed") stale.push(keys.wiki);
   if (KIND_KINDS.has(event.kind)) stale.push(keys.issueKinds, keys.issues, keys.projects);

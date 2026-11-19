@@ -38,3 +38,22 @@ export interface WikiHit {
   /** The words around the match, as plain text. */
   snippet: string;
 }
+
+/** A link in a page's text as written, with the page it leads to; `path` is null when there is no such page. */
+export interface PageLink {
+  link: string;
+  path: string | null;
+}
+
+/** A card as a link names it, with its title; `title` is null when there is no such card. */
+export interface CardRef {
+  /** The card's name, such as `WEB-12`. */
+  key: string;
+  title: string | null;
+}
+
+/** What a page links to, and what links to it: the pages and the cards. */
+export interface PageLinks {
+  links: { pages: PageLink[]; cards: CardRef[] };
+  backlinks: { pages: PageInfo[]; cards: CardRef[] };
+}

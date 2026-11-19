@@ -15,6 +15,7 @@ export function Switch({
   label,
   on = "On",
   off = "Off",
+  disabled = false,
   className,
 }: {
   /** Whether it is on. */
@@ -27,6 +28,8 @@ export function Switch({
   on?: string;
   /** The word that stands for off. */
   off?: string;
+  /** Whether it cannot be moved now, such as while a change is being saved. */
+  disabled?: boolean;
   className?: string;
 }) {
   return (
@@ -36,9 +39,10 @@ export function Switch({
         role="switch"
         aria-checked={checked}
         aria-label={label}
+        disabled={disabled}
         onClick={() => onChange(!checked)}
         className={cn(
-          "inline-flex min-h-7 w-9 shrink-0 cursor-pointer items-center rounded-control",
+          "inline-flex min-h-7 w-9 shrink-0 cursor-pointer items-center rounded-control disabled:cursor-not-allowed disabled:opacity-45",
           className,
         )}
       >

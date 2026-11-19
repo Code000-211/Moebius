@@ -329,7 +329,7 @@ mod tests {
             project.join("merge.luau"),
             r#"
 function on_card(card)
-  if card.change == nil then
+  if #card.changes == 0 then
     return moebius.wait("waiting for the change")
   end
   moebius.merge_change("both reviews approved")
@@ -367,6 +367,22 @@ end
         assert_eq!(merge.decider, "script:Ready to merge");
         assert_eq!(merge.choice, "merge");
         assert_eq!(merge.reason, "both reviews approved");
+    }
+
+    #[test]
+    fn a_script_that_reads_the_old_single_change_fails_and_leaves_the_card() {
+        let (_dir, app, engine, repo) = setup();
+        let project = app.harness_repo().unwrap().project_dir("demo");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(
+            project.join("backlog.luau"),
+            "function on_card(card)\n  if card.change == nil then moebius.move('Not started') end\nend\n",
+        )
+        .unwrap();
+        let card = app.create_issue(repo, "Add", "", OWNER_AUTHOR).unwrap();
+        let error = engine.settle(card.id).unwrap_err().to_string();
+        assert!(error.contains("card.change is now card.changes"), "{error}");
+        assert_eq!(app.card(card.id).unwrap().column, columns::BACKLOG);
     }
 
     #[test]
@@ -411,7 +427,9 @@ end
         // While the change was published, a person finished the card.
         app.move_card(card.id, columns::DONE, None).unwrap();
 
-        let (_, moved) = app.finish_offer(card.id, &seen, change, None).unwrap();
+        let (_, moved) = app
+            .finish_offer(card.id, &seen, vec![change], None)
+            .unwrap();
         assert!(!moved);
         assert_eq!(app.card(card.id).unwrap().column, columns::DONE);
         assert!(app.store.inbox_for_card(card.id).unwrap().is_empty());
@@ -901,6 +919,38 @@ end
             .card_table(&lua, &app.card(card.id).unwrap())
             .unwrap();
         assert_eq!(table.get::<u32>("estimate").unwrap(), 8);
+    }
+
+    #[test]
+    fn a_script_sees_the_name_of_the_open_cycle_or_nil() {
+        let (_dir, app, engine, repo) = setup();
+        let card = app.create_issue(repo, "Planned", "", OWNER_AUTHOR).unwrap();
+        let lua = mlua::Lua::new();
+        let cycle_of = || {
+            engine
+                .card_table(&lua, &app.card(card.id).unwrap())
+                .unwrap()
+                .get::<Option<String>>("cycle")
+                .unwrap()
+        };
+        assert_eq!(cycle_of(), None);
+        let who = crate::decide::Actor::first_owner();
+        let cycle = app
+            .add_cycle(
+                &who,
+                card.project_id,
+                &crate::app::CycleFields {
+                    name: "Cycle 1".into(),
+                    starts_on: "2026-11-02".into(),
+                    ends_on: "2026-11-15".into(),
+                },
+            )
+            .unwrap();
+        app.set_card_cycle(&who, card.id, Some(cycle.id)).unwrap();
+        assert_eq!(cycle_of().as_deref(), Some("Cycle 1"));
+        app.close_cycle(&who, cycle.id, &crate::app::Carry::Out)
+            .unwrap();
+        assert_eq!(cycle_of(), None);
     }
 
     #[test]
