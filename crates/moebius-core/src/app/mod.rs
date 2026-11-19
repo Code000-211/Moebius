@@ -11,6 +11,7 @@
 //! `projects` reads a project's settings from the harness configuration repository,
 //! `analytics` reads throughput, times, burn-ups and tokens per point from the moves and runs within what a person may see,
 //! `cycles` keeps a project's cycles and carries unfinished cards over when one closes,
+//! `views` keeps saved views and works out the cards each shows a person,
 //! `milestones` makes milestones and counts their cards within what a person may see,
 //! `whereabouts` knows where the server and the app run, `automations` keeps the automations and starts their chats
 //! when their schedules come due, and `plugin_settings` keeps what plugins ask of each repository and of the
@@ -45,6 +46,7 @@ mod reproduce;
 mod runs;
 mod stopping;
 mod templates;
+mod views;
 mod whereabouts;
 pub mod workflows;
 
@@ -162,6 +164,7 @@ pub use milestones::{MilestoneDetail, MilestoneFields, MilestoneProject, Milesto
 pub use projects::{Member, ProjectRepository, ProjectView, Sight, UNQUOTED};
 pub use stopping::CardStopWaits;
 pub use templates::{IssueTemplateView, PageTemplateView, Templates};
+pub use views::{ViewCard, ViewCards, ViewFields};
 
 /// Held by the thread of a research while it goes (see [`App::researching`]).
 pub(crate) struct Researching {

@@ -107,38 +107,3 @@ export function toggled(hidden: readonly string[], key: string, shown: boolean):
   const rest = hidden.filter((each) => each !== key);
   return shown ? rest : [...rest, key].sort();
 }
-
-/** A view saved from the bar: a name, and the parameters of the address it holds. */
-export interface SavedView {
-  name: string;
-  query: string;
-}
-
-/** The views kept under `stored` (the text of a browser's storage), none for text that is not a list of views. */
-export function parseViews(stored: string | null): SavedView[] {
-  try {
-    const list: unknown = JSON.parse(stored ?? "[]");
-    if (!Array.isArray(list)) return [];
-    return list.filter(
-      (each): each is SavedView =>
-        typeof each?.name === "string" && typeof each?.query === "string",
-    );
-  } catch {
-    return [];
-  }
-}
-
-/** The views with one more, named after how many there are: "View 1", "View 2". */
-export function withView(views: readonly SavedView[], query: string): SavedView[] {
-  return [...views, { name: `View ${views.length + 1}`, query }];
-}
-
-/** The parameters of `keys` that are set in `params`, as a query string, for a saved view. */
-export function viewQuery(params: URLSearchParams, keys: readonly string[]): string {
-  const kept = new URLSearchParams();
-  for (const key of keys) {
-    const value = params.get(key);
-    if (value !== null && value !== "") kept.set(key, value);
-  }
-  return kept.toString();
-}

@@ -146,6 +146,12 @@ any route to any role that is not what its row says.
 | `DELETE /v1/milestones/{id}` | member | no |
 | `GET /v1/cards/{id}/milestones` | viewer | yes |
 | `PUT /v1/cards/{id}/milestones` | member | no |
+| `GET /v1/views` | viewer | no |
+| `POST /v1/views` | member | no |
+| `GET /v1/views/{id}` | viewer | no |
+| `PATCH /v1/views/{id}` | member | no |
+| `DELETE /v1/views/{id}` | member | no |
+| `GET /v1/views/{id}/cards` | viewer | no |
 | `PUT /v1/projects/{id}/kinds` | owner | yes |
 | `GET /v1/kinds` | viewer | yes |
 | `POST /v1/kinds` | owner | no |
@@ -1279,6 +1285,70 @@ of a project the asker may not see.
 Replaces the milestones the card is in. Request: `{"milestones": [id]}`; repeats count once and `[]` takes the card out of
 all. The event `card_milestones_changed` is sent when the set changed. Response: the milestones the card is in. Errors:
 `404` for no such card or milestone.
+
+
+### Views
+
+A view is a filter of the filter bar with a layout and a sort, kept for the person who made it or shared with every
+member. It is a question, not an answer: the cards of a view are worked out each time it is opened, **for the person who
+opens it**, so a shared view shows every member the same filter within what each may see (a card of a private project
+the person is no member of is never in it, see [private projects](#private-projects)). A personal view is not found for
+anyone but its owner, not even an owner of the organisation. Only a person has views, never an agent.
+
+A `View` is `{"id": number, "name": string, "owner_id": number, "shared": boolean, "filter": ViewFilter, "layout":
+string, "sort": string, "descending": boolean, "created_at": number}`.
+
+- `name`: 1 to 80 characters, no control character, no space around it.
+- `layout`: `list`, `board`, `calendar` (cards by due date) or `timeline` (cards against their cycle). The layout is how
+  the page draws the cards; the server keeps it, and fills `cycle` in each card only for `timeline`.
+- `sort`: `created` (the order the cards were made, the default), `updated` (when the card last moved), `priority`
+  (most urgent first), `due`, `title` or `estimate`; `descending` turns it round. A card without a due date or an
+  estimate comes after those that have one, either way round.
+- `ViewFilter` asks of a card: every part that is set must match, and within a list any value matches (so an empty list
+  asks nothing). `projects` and `repositories` (ids), `labels`, `assignees` (handles), `priorities` (`urgent`, `high`,
+  `medium`, `low`, `none`), `cycles` and `milestones` (ids, a closed cycle included), `columns`, `authors` (all in any
+  case) and `text` (a word or phrase in the title or the body, in any case). At most 100 values for each part and 100
+  characters of text. A key that is not a part is refused.
+
+A view read by someone who may not see a project, repository or cycle its filter names has those ids left out, so a
+shared view does not tell them a private project exists; an edit checks only the ids it adds.
+
+A project, repository or cycle the maker may not see is refused as if it did not exist (`422`), so a view cannot be used
+to find out about a private project. Views send no events: a page reads them again when it opens.
+
+#### `GET /v1/views`
+
+The views of the person asking: their own and the shared ones, in the order they were made: `[View]`.
+
+#### `POST /v1/views`
+
+Makes a view. Request: `{"name": string, "shared": boolean, "filter": ViewFilter, "layout": string, "sort": string,
+"descending": boolean}`; only `name` is needed, the rest is not shared, no filter, `list`, `created`, ascending.
+Response: the `View`. Errors: `422` for a field that is not valid, `403` for a viewer.
+
+```sh
+curl -s -H "Authorization: Bearer $TOKEN" -d '{"name": "Urgent bugs", "shared": true, "layout": "board",
+  "filter": {"labels": ["bug"], "priorities": ["urgent", "high"]}}' http://127.0.0.1:7171/v1/views
+```
+
+#### `GET /v1/views/{id}`
+
+One view. Errors: `404` for no such view or a personal view of someone else.
+
+#### `PATCH /v1/views/{id}`
+
+Replaces every field of the view (the same body as `POST`; its owner stays). Only its owner and an owner of the
+organisation may; anyone else who can see it gets `403`. Errors as for `POST`, and `404` as for `GET`.
+
+#### `DELETE /v1/views/{id}`
+
+Deletes the view and answers it; who may is as for `PATCH`.
+
+#### `GET /v1/views/{id}/cards`
+
+The view with the cards it shows the person asking, in its order: `{"view": View, "cards": [card]}`. Each card is a card
+as in `GET /v1/issues`, with `"cycle": Cycle or null` added: the open cycle the card is in for the `timeline` layout,
+`null` for the others. Errors: `404` as for `GET`.
 
 ### `POST /v1/repositories`
 

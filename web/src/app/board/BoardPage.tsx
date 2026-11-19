@@ -20,11 +20,13 @@ import {
   PlusIcon,
   TerminalWindowIcon,
 } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, type SyntheticEvent, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { readSettings } from "../../api/calls/projects";
+import { addView, listViews } from "../../api/calls/views";
+import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { Board, Card, InboxItem } from "../../api/types/board";
 import { Button } from "../../ui/components/Button";
@@ -39,7 +41,7 @@ import {
 } from "../../ui/components/KanbanBoard";
 import { KanbanCardContent } from "../../ui/components/KanbanCardContent";
 import { FilterBar } from "../../ui/filters/FilterBar";
-import { displayQuery, parseViews, readDisplay, viewQuery, withView } from "../../ui/filters/model";
+import { displayQuery, readDisplay } from "../../ui/filters/model";
 import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
 import { Select } from "../../ui/page/Field";
@@ -50,7 +52,7 @@ import { ReadFailed } from "../../ui/page/ReadFailed";
 import { ScrollFades } from "../../ui/page/ScrollFades";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
-import { readText, writeText } from "../storage";
+import { viewOfBoard } from "../views/model";
 import { useBulk } from "./bulk";
 import { BlockDialog, DeleteDialog, ParentDialog } from "./CardDialogs";
 import { CardFocus } from "./CardFocus";
@@ -85,7 +87,7 @@ import {
 } from "./model";
 import { useNewIssue } from "./NewIssueHost";
 import { RepositoryTerminal } from "./RepositoryTerminal";
-import { DISPLAY_CHOICES, filterFields, listGroups, VIEW_KEYS } from "./view";
+import { DISPLAY_CHOICES, filterFields, listGroups } from "./view";
 
 /**
  * What a column holds when it is empty: one sentence for how a card comes to it. There is no title, because the
@@ -180,6 +182,7 @@ export function BoardPage() {
   const [params, setParams] = useSearchParams();
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
   const { decide, pending, notice, setNotice } = useDecisions();
+  const queryClient = useQueryClient();
   const newIssue = useNewIssue();
   // The column whose line for a new card is open.
   const [adding, setAdding] = useState<string | null>(null);
@@ -290,10 +293,30 @@ export function BoardPage() {
       { replace: true },
     );
   const saveView = () => {
-    const key = `moebius.views.${board.repository.id}`;
-    const views = withView(parseViews(readText(key)), viewQuery(params, VIEW_KEYS));
-    writeText(key, JSON.stringify(views));
-    setNotice({ tone: "ok", text: `Saved this view as "${views[views.length - 1]?.name}"` });
+    // The view is kept on the server, for this person; Views shares it. The board's agent, status and due-date
+    // filters look at a run or at today, which a view does not keep, so the notice says when they were left out.
+    void (async () => {
+      try {
+        const count = (await listViews()).length;
+        const { fields, dropped } = viewOfBoard(
+          `View ${count + 1}`,
+          board.repository.id,
+          filters,
+          display.layout,
+          display.sort,
+        );
+        const made = await addView(fields);
+        void queryClient.invalidateQueries({ queryKey: keys.views });
+        setNotice({
+          tone: "ok",
+          text:
+            `Saved this view as "${made.name}"` +
+            (dropped.length > 0 ? `, without the ${dropped.join(" and ")} filter` : ""),
+        });
+      } catch (error) {
+        setNotice({ tone: "error", text: sayError(error, "The view could not be saved.") });
+      }
+    })();
   };
   const inspected = inspectedCard(board, inbox, params.get("card"));
   const openForm = (parent: number | null) =>

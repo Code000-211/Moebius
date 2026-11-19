@@ -4,6 +4,7 @@
  */
 import {
   ArrowsClockwiseIcon,
+  BookmarkSimpleIcon,
   BookOpenTextIcon,
   ChartLineUpIcon,
   ChatCircleIcon,
@@ -57,6 +58,7 @@ export const PAGES: readonly PageDef[] = [
   { path: "workflows", title: "Workflows", group: "", icon: TreeStructureIcon },
   { path: "projects", title: "Projects", group: "Projects", icon: FolderIcon },
   { path: "milestones", title: "Milestones", group: "Plan", icon: FlagIcon },
+  { path: "views", title: "Views", group: "Plan", icon: BookmarkSimpleIcon },
   { path: "wiki", title: "Wiki", group: "Plan", icon: BookOpenTextIcon },
   { path: "issues", title: "Issues", group: "Projects", icon: ListChecksIcon },
   { path: "cycles", title: "Cycles", group: "Plan", icon: RepeatIcon },

@@ -401,6 +401,12 @@ A goal of the organisation with a target date, holding cards of any projects. It
 done, counting only the cards of projects the person looking may see.
 _Avoid_: epic, module, release
 
+**View**:
+A filter of the filter bar (projects, repositories, labels, assignees, priority, cycle, milestone, column, author, text)
+with a layout and a sort, saved for its person or shared with every member. Its cards are worked out for whoever opens
+it, so a shared view shows each member the same filter within what they may see.
+_Avoid_: saved search, report
+
 **Intake**:
 A project's way in for requests in a person's own words, which the Moebius agent turns into issues for a member to
 accept or decline.

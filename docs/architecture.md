@@ -579,6 +579,7 @@ At the top:
 | `app/analytics.rs` | Analytics (#389): throughput, the time from start to done and in each column, tokens per point and the burn-up of cycles and milestones, read from the cards the asker may see and narrowed by window, repository and agent. |
 | `app/cycles.rs` | Cycles (ADR 0019): a project's time boxes, a card in at most one open cycle of its own project, the figures and burn-up of a cycle's page, and closing, which carries unfinished cards to the next cycle or out. |
 | `app/milestones.rs` | Milestones (ADR 0019): making and editing them, putting a card in them, and their progress counted and listed only within the projects the asker may see (`App::may_see_project`). |
+| `app/views.rs` | Saved views: making and changing them for a person or for everyone, and the cards each shows the person who opens it, within what they may see (`App::sight`). |
 | `app/intake.rs` | Intake (ADR 0019): a project's requests, written by anyone who may see it, grilled into a draft issue by a chat of the grilling agent and accepted into a card the requester follows, edited, or declined with a reason the requester is told. |
 | `app/projects/sight.rs` | Who sees what of a private project (ADR 0018): a person's `Sight` (the private projects they are no member of, and the repositories all of whose projects those are), whether it sees a card, run, lesson or judgement, which lessons a run of a project may find, and a Retro's proposal unquoted for someone who does not see a project it names. |
 | `app/projects/settings.rs` | A project's and a repository's settings read from the harness configuration repository (`App::project_file`, `App::repository_file`), the migration of the repositories' column scripts to their home projects (`App::move_scripts_to_projects`), and the notice, once for each repository, that its default branch still has a `.moebius/` folder, which is not read. |
@@ -654,6 +655,7 @@ At the top:
 | `store/cycles.rs` | The cycles (project, name, start, end, closed) and which cards each holds, with the sums a cycle's page needs. |
 | `store/wiki_links.rs` | The links between the wiki's pages and to cards, derived from the files and replaced as a whole when the wiki changes, and the cards whose text may link to a page. |
 | `store/milestones.rs` | The milestones (name, target date, description) and which cards each holds, of any projects. |
+| `store/views.rs` | The saved views (name, owner, shared, filter, layout, sort). |
 | `store/intake.rs` | A project's switch for intake and the requests made to it, with their draft issue, status, card and reason. |
 | `store/projects.rs` | The projects (name, key, repositories in order), a repository's home project and a card's project, how a key is made from a name, the migration that makes one project for each repository and puts every card on it, whether a project is private with its members, and the project a judgement belongs to. |
 | `store/favourites.rs` | The places a person pinned, in their order, and the places they opened lately (the last 20), kept per person so they follow them to every browser. |
@@ -707,6 +709,7 @@ At the top:
 | `server/api/analytics.rs` | The analytics of a window of days, narrowed by repository and agent. |
 | `server/api/cycles.rs` | The cycles: a project's list, making, reading, editing, deleting and closing one, and a card's cycle. |
 | `server/api/milestones.rs` | The milestones: listing them with their progress, making, reading, editing and deleting one, and a card's milestones. |
+| `server/api/views.rs` | The saved views: listing, making, reading, editing and deleting one, and the cards it shows. |
 | `server/api/projects.rs` | The projects: listing them, making one with a free key, reading and renaming one, the column scripts of a project's board, and making one private with its members. |
 | `server/api/intake.rs` | Intake: turning it on for a project, making and reading its requests, editing a draft, accepting and declining. |
 | `server/api/templates.rs` | The routes of templates for issues and wiki pages, and making a wiki page from one. |
