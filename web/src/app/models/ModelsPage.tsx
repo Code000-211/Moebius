@@ -23,54 +23,35 @@ import {
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { AvailableModels } from "../../api/types/chat";
-import type { UpstreamOAuth } from "../../api/types/models";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { plural } from "../../ui/lib/format";
 import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
-import { Field, Select } from "../../ui/page/Field";
+import { Field } from "../../ui/page/Field";
 import { CELL, Table } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard } from "../../ui/page/Skeleton";
-import { StateLabel } from "../../ui/page/StateLabel";
 import { decisionChoices, modelChoices } from "../agents/model";
-import { Answered, couldNotAsk, ModelField } from "../harness/ModelField";
-import { DeleteKey } from "./DeleteKey";
-import { LoginRow, type LoginStep } from "./LoginRow";
+import { Answered } from "../harness/ModelField";
+import type { LoginStep } from "./LoginRow";
 import {
   blankUpstream,
   type ClassForm,
-  type Field as FieldForm,
-  KEY_MODES,
   type KeyChoice,
-  type KeyMode,
   type ModelsForm,
   modelsChanges,
   modelsDirty,
   nextUid,
-  type OptionalForm,
   PROTOCOLS,
   readForm,
   type UpstreamForm,
 } from "./model";
+import { OptionalBox } from "./OptionalBox";
 import { ProviderPanel } from "./ProviderPanel";
+import { Failure, UpstreamRow } from "./UpstreamRow";
 
 type Notice_ = { kind: "saved" } | { kind: "same" } | { kind: "failed"; text: string };
-
-/** An upstream that did not answer, as `GET /v1/models/available` reported it. */
-type AvailableError = AvailableModels["errors"][number];
-
-/** An upstream that did not answer: what the server said, and what to do about it. */
-function Failure({ upstream, message }: AvailableError) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="break-words text-sm text-error-text">{couldNotAsk(upstream, message)}</span>
-      <span className="text-sm text-secondary">Check the address and the key, then refresh.</span>
-    </div>
-  );
-}
 
 /** The models an upstream served, so a person can see that it works without opening anything. */
 const servedBy = (available: AvailableModels | undefined, baseUrl: string) =>
@@ -534,7 +515,6 @@ function tokens(count: number): string {
   if (count >= 1000) return `${Math.round(count / 1000)}k`;
   return String(count);
 }
-
 /** The line that says the server has to restart, with the button that restarts it. */
 function Banner({ children, action }: { children: React.ReactNode; action?: React.ReactNode }) {
   return (
@@ -545,310 +525,5 @@ function Banner({ children, action }: { children: React.ReactNode; action?: Reac
       <span className="min-w-0 break-words">{children}</span>
       {action}
     </div>
-  );
-}
-
-/**
- * One upstream, and the heart of the page: a word for whether it answers and a word for where its key comes from,
- * then the address, the protocol and the key. One that did not answer says what the server said and what to do, and
- * one that logs in carries its login under the fields.
- */
-function UpstreamRow({
-  upstream,
-  place,
-  oauth,
-  step,
-  failure,
-  served,
-  asked,
-  secrets,
-  onPatch,
-  onKey,
-  onStep,
-  onRemove,
-}: {
-  upstream: UpstreamForm;
-  place: number;
-  oauth: UpstreamOAuth | null | undefined;
-  step: LoginStep | undefined;
-  failure: AvailableError | undefined;
-  /** How many models this upstream served the last time the app asked. */
-  served: number;
-  /** Whether the app has asked the upstreams at all. */
-  asked: boolean;
-  secrets: string[];
-  onPatch: (patch: Partial<UpstreamForm>) => void;
-  onKey: (change: Partial<KeyChoice>) => void;
-  onStep: (step: LoginStep | undefined) => void;
-  onRemove: () => void;
-}) {
-  const needsAddress = upstream.baseUrl.trim() === "";
-  const answer = failure
-    ? { tone: "error" as const, text: "Did not answer" }
-    : served > 0
-      ? { tone: "complete" as const, text: plural(served, "model", "models") }
-      : needsAddress
-        ? { tone: "attention" as const, text: "Needs an address" }
-        : asked
-          ? { tone: "neutral" as const, text: "No models yet" }
-          : { tone: "neutral" as const, text: "Not asked yet" };
-  return (
-    <section data-testid="upstream" className="flex flex-col gap-4 rounded-control bg-sunken p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <StateLabel tone={answer.tone}>{answer.text}</StateLabel>
-          {oauth?.needs && <StateLabel tone="attention">Needs {oauth.needs}</StateLabel>}
-        </div>
-        <Button
-          variant="danger"
-          size="sm"
-          aria-label={`Remove provider ${place + 1}`}
-          onClick={onRemove}
-        >
-          Remove
-        </Button>
-      </div>
-      <div className="grid items-start gap-4 sm:grid-cols-2">
-        <Field label="Protocol">
-          {(id) => (
-            <Select
-              id={id}
-              aria-label="Protocol"
-              options={[...PROTOCOLS]}
-              value={upstream.protocol}
-              onChange={(protocol) => onPatch({ protocol })}
-            />
-          )}
-        </Field>
-        <Field label="Base URL" hint="The address Moebius sends the requests to.">
-          {(id) => (
-            <Input
-              id={id}
-              mono
-              aria-label="Base URL"
-              value={upstream.baseUrl}
-              placeholder="http://127.0.0.1:8080"
-              onChange={(event) => onPatch({ baseUrl: event.target.value })}
-            />
-          )}
-        </Field>
-      </div>
-      {oauth ? (
-        // Not a `Field` with an id: there is no control here, so the label would point at nothing.
-        <Field label="Key">
-          <span className="py-2 text-sm text-secondary">None: it logs in with OAuth</span>
-        </Field>
-      ) : (
-        <KeyField
-          label={`Key of provider ${place + 1}`}
-          choice={upstream.key}
-          secrets={secrets}
-          onChange={onKey}
-        />
-      )}
-      {failure && <Failure upstream={failure.upstream} message={failure.message} />}
-      {oauth && upstream.origin !== null && (
-        <LoginRow place={upstream.origin} oauth={oauth} step={step} onStep={onStep} />
-      )}
-    </section>
-  );
-}
-
-/** Where an API key comes from: no key, an environment variable, or a key typed here and sent once. */
-function KeyField({
-  label,
-  choice,
-  secrets,
-  onChange,
-}: {
-  label: string;
-  choice: KeyChoice;
-  secrets: string[];
-  onChange: (change: Partial<KeyChoice>) => void;
-}) {
-  const stored = choice.stored !== null && secrets.includes(choice.stored);
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="grid items-start gap-4 sm:grid-cols-2">
-        <Field label="Key" hint={keyHint(choice, stored)}>
-          {(id) => (
-            <Select
-              id={id}
-              aria-label={`${label}: where it comes from`}
-              options={KEY_MODES}
-              value={choice.mode}
-              onChange={(mode) => onChange({ mode: mode as KeyMode })}
-            />
-          )}
-        </Field>
-        {choice.mode === "env" && (
-          <Field
-            label="Environment variable"
-            hint="The server reads it from its own environment when a run starts."
-          >
-            {(id) => (
-              <Input
-                id={id}
-                mono
-                aria-label={`${label}: environment variable`}
-                value={choice.env}
-                placeholder="ANTHROPIC_API_KEY"
-                onChange={(event) => onChange({ env: event.target.value })}
-              />
-            )}
-          </Field>
-        )}
-        {choice.mode === "typed" && (
-          <Field
-            label="API key"
-            hint={
-              stored
-                ? "Stored on the server by name. Type to replace it; it is never shown back."
-                : "Sent once, then stored on the server by name and never shown back."
-            }
-          >
-            {(id) => (
-              <Input
-                id={id}
-                type="password"
-                autoComplete="new-password"
-                aria-label={`${label}: the key`}
-                value={choice.typed}
-                placeholder={stored ? "Stored; type to replace it" : "Paste the key"}
-                onChange={(event) => onChange({ typed: event.target.value })}
-              />
-            )}
-          </Field>
-        )}
-        {choice.mode === "typed" && stored && choice.stored !== null && (
-          <DeleteKey name={choice.stored} />
-        )}
-      </div>
-      {choice.mode === "none" && (
-        <p className="m-0 text-sm text-secondary">
-          No key: the address is open, or a login below supplies it.
-        </p>
-      )}
-    </div>
-  );
-}
-
-/** Whether a key is there, in a word, under the choice of where it comes from. */
-function keyHint(choice: KeyChoice, stored: boolean): string {
-  if (choice.mode === "env")
-    return choice.env.trim() === "" ? "Name the variable the server reads." : "Configured.";
-  if (choice.mode === "typed") return stored ? "Configured." : "Needs a key.";
-  return "No key.";
-}
-
-/** The teacher or the decision model: a box that can be turned on and off. */
-function OptionalBox({
-  heading,
-  about,
-  off,
-  optional,
-  choices,
-  secrets,
-  onToggle,
-  onField,
-  onPick,
-  onKey,
-}: {
-  heading: string;
-  about: string;
-  off: string;
-  optional: OptionalForm;
-  choices: ReturnType<typeof modelChoices>;
-  secrets?: string[];
-  onToggle: () => void;
-  onField: (key: string, text: string) => void;
-  onPick: (choice: ReturnType<typeof modelChoices>[number]) => void;
-  onKey?: (change: Partial<KeyChoice>) => void;
-}) {
-  if (!optional.on) {
-    return (
-      <Box title={heading} className="flex flex-col gap-4">
-        <p className="m-0 max-w-prose text-base text-secondary">
-          {optional.wasOn ? "Turned off; Save takes it out of the file." : off}
-        </p>
-        <div>
-          <Button
-            variant="secondary"
-            size="sm"
-            aria-label={`Turn on the ${heading.toLowerCase()}`}
-            onClick={onToggle}
-          >
-            Turn on
-          </Button>
-        </div>
-      </Box>
-    );
-  }
-  return (
-    <Box title={heading} className="flex flex-col gap-4">
-      <p className="m-0 max-w-prose text-base text-secondary">{about}</p>
-      <div className="grid items-start gap-4 sm:grid-cols-2">
-        {optional.fields.map((field: FieldForm) => (
-          <Field
-            key={field.key}
-            label={field.label}
-            hint={
-              field.default !== null && field.text.trim() === ""
-                ? `Default ${field.default}`
-                : undefined
-            }
-          >
-            {(id) =>
-              field.kind === "model" ? (
-                <ModelField
-                  id={id}
-                  choices={choices}
-                  value={field.text}
-                  placeholder={field.default ?? ""}
-                  onChange={(text) => onField(field.key, text)}
-                  onPick={onPick}
-                />
-              ) : field.kind === "pick" ? (
-                <Select
-                  id={id}
-                  options={[...PROTOCOLS]}
-                  value={field.text}
-                  onChange={(text) => onField(field.key, text)}
-                />
-              ) : (
-                <Input
-                  id={id}
-                  mono={field.kind === "code" || field.kind === "list"}
-                  className={
-                    field.kind === "whole" || field.kind === "decimal" ? "tabular-nums" : undefined
-                  }
-                  value={field.text}
-                  placeholder={field.default ?? ""}
-                  onChange={(event) => onField(field.key, event.target.value)}
-                />
-              )
-            }
-          </Field>
-        ))}
-      </div>
-      {optional.key && onKey && (
-        <KeyField
-          label="Key of the decision model"
-          choice={optional.key.now}
-          secrets={secrets ?? []}
-          onChange={onKey}
-        />
-      )}
-      <div>
-        <Button
-          variant="secondary"
-          size="sm"
-          aria-label={`Turn off the ${heading.toLowerCase()}`}
-          onClick={onToggle}
-        >
-          Turn off
-        </Button>
-      </div>
-    </Box>
   );
 }
