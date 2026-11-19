@@ -15,7 +15,7 @@ use axum::extract::{Path as UrlPath, State};
 use axum::response::Response;
 use axum::routing::get;
 
-use super::{ApiError, ApiState, blocking, person_only};
+use super::{ApiError, ApiState, blocking};
 use crate::decide::Actor;
 
 /// The routes of the terminals.
@@ -33,7 +33,6 @@ async fn run_terminal(
     UrlPath(id): UrlPath<i64>,
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
-    person_only(&by)?;
     let axum::Json((worktree, slot)) =
         blocking(&state.app, move |app| app.open_shell(&by, id)).await?;
     Ok(upgrade.on_upgrade(move |socket| async move {
@@ -47,7 +46,6 @@ async fn chat_tui(
     UrlPath(id): UrlPath<i64>,
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
-    person_only(&by)?;
     let runs = state.runs.clone();
     let axum::Json((tui, mut slot)) =
         blocking(&state.app, move |app| app.open_tui(&by, runs, id)).await?;
@@ -65,7 +63,6 @@ async fn server_terminal(
     Extension(by): Extension<Actor>,
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
-    person_only(&by)?;
     let file = state.config.get().file.clone();
     let dir = match file.parent() {
         Some(dir) if !dir.as_os_str().is_empty() => dir.to_path_buf(),
@@ -85,7 +82,6 @@ async fn repository_terminal(
     UrlPath(id): UrlPath<i64>,
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
-    person_only(&by)?;
     let axum::Json((dir, slot)) =
         blocking(&state.app, move |app| app.open_repository_shell(&by, id)).await?;
     Ok(upgrade.on_upgrade(move |socket| async move {

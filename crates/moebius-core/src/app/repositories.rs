@@ -147,19 +147,36 @@ impl App {
         Ok(())
     }
 
-    /// Whether the issue behind `card` may move on without a person's approval: a person created it in the desktop
-    /// app, or its author is one of the logins the repository trusts on its forge. Anything unknown is not trusted.
+    /// Whether the issue behind `card` may move on without a person's approval: a person who is no viewer created it
+    /// in the desktop app, or its author is one of the logins the repository trusts on its forge. Anything unknown is
+    /// not trusted.
     pub fn is_trusted(&self, card: &Card) -> bool {
         let Ok(Some(repository)) = self.store.repository(card.repository_id) else {
             return false;
         };
         if repository.forge == "none" {
-            return is_person(&card.author);
+            return is_person(&card.author) && !self.needs_approval(&card.author);
         }
         repository
             .trusted
             .iter()
             .any(|login| login.eq_ignore_ascii_case(&card.author))
+    }
+
+    /// Whether the issues of `author`, a person of the organisation, wait for approval as an outside author's do: a
+    /// viewer's do (ADR 0018), and so do those of a handle the store does not know or cannot say. Every
+    /// author that is no person (an agent, a forge login) is not asked about here.
+    pub(crate) fn needs_approval(&self, author: &str) -> bool {
+        let Some(handle) = author
+            .strip_prefix(super::PERSON)
+            .and_then(|rest| rest.strip_prefix(':'))
+        else {
+            return false;
+        };
+        !matches!(
+            self.store.person_by_handle(handle),
+            Ok(Some(person)) if person.role != crate::store::Role::Viewer
+        )
     }
 
     /// A person, or the Moebius agent, replaces the logins whose issues on a repository on a forge need no
@@ -304,9 +321,23 @@ mod tests {
         };
         assert!(app.is_trusted(&card(&local, OWNER_AUTHOR)));
         assert!(!app.is_trusted(&card(&local, "leon")));
+        store
+            .add_person("lea", "Lea", crate::store::Role::Member)
+            .unwrap();
         assert!(
             app.is_trusted(&card(&local, "person:lea")),
             "a known person is trusted as the bare one is"
+        );
+        store
+            .add_person("vera", "Vera", crate::store::Role::Viewer)
+            .unwrap();
+        assert!(
+            !app.is_trusted(&card(&local, "person:vera")),
+            "a viewer's issue waits for approval"
+        );
+        assert!(
+            !app.is_trusted(&card(&local, "person:nobody")),
+            "a handle the store does not know is not trusted"
         );
         assert!(!app.is_trusted(&card(&local, "person:")));
         assert!(app.is_trusted(&card(&remote, "leon")), "logins ignore case");

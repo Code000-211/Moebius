@@ -27,6 +27,7 @@
 //! - `events`: the WebSocket on which every event of the core arrives.
 //! - `session`: signing in from a browser with a cookie, and the one-time codes that open the web app signed in.
 //! - `people`: the people of the organisation, and the access tokens they sign in with.
+//! - `roles`: the role of the organisation each route needs, and whether an agent's run token may use it.
 //! - `web`: the web app itself, served at `/` without a token.
 //! - `webhooks`: the deliveries of the forges, which need no token but a signature, and the secrets to set on the forges.
 //! - `workflow_hooks`: the door a workflow's `webhook` trigger answers on, which an outside service opens with the
@@ -35,7 +36,7 @@
 //! Every request to `/v1/` but a forge's webhook delivery and the sign-in of a browser carries
 //! `Authorization: Bearer <token>`: a person's access token, which acts as that person with their role; the server's
 //! token, which acts as the first owner; or the run token of a run of the Moebius agent, which acts as
-//! that agent (`PUT /v1/secrets/{name}` and the terminal stay with a person), or the run token of a run of the Grilling
+//! that agent (on the routes `roles` lets it use), or the run token of a run of the Grilling
 //! partner, which is accepted for the routes of the issue tracker only (see [`issue_tracker_route`]) and within its chat's
 //! repository and the cards with a `wayfinder:*` label (see `scope`); or the `moebius_session` cookie of a
 //! browser that signed in, which acts as the person who signed in. Anything else is answered with 401. The hook routes of a workflow's
@@ -54,6 +55,7 @@ mod packages;
 mod people;
 mod ports;
 mod repositories;
+mod roles;
 mod rules;
 mod runs;
 mod scope;
@@ -89,7 +91,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use axum::Router;
-use axum::extract::{Request, State};
+use axum::extract::{MatchedPath, Request, State};
 use axum::http::{StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -324,9 +326,10 @@ fn owner_person(state: &ApiState) -> Option<crate::store::Person> {
         .filter(|person| !person.disabled)
 }
 
-/// Lets a request through as the actor it names (see [`identify`]). Anything else under `/v1/` is refused; the web app
-/// outside it needs nothing. A request that only a cookie vouches for has to be one a foreign page cannot make: a
-/// change carries `X-Moebius: 1`, and an `Origin` must be this server's own.
+/// Lets a request through as the actor it names (see [`identify`]) when its role may use the route (see [`roles`]).
+/// Anything else under `/v1/` is refused; the web app outside it needs nothing. A request that only a cookie vouches
+/// for has to be one a foreign page cannot make: a change carries `X-Moebius: 1`, and an `Origin` must be this
+/// server's own.
 async fn authenticate(State(state): State<ApiState>, mut request: Request, next: Next) -> Response {
     let path = request.uri().path();
     if path != "/v1" && !path.starts_with("/v1/") {
@@ -336,6 +339,15 @@ async fn authenticate(State(state): State<ApiState>, mut request: Request, next:
         Some(who) => {
             if who.via == Via::Cookie && !same_site(&request) {
                 return (StatusCode::FORBIDDEN, "cross-site request refused").into_response();
+            }
+            // A path under `/v1/` that is no route is answered 404 by the fallback, which needs no role.
+            if let Some(route) = request.extensions().get::<MatchedPath>() {
+                let role = who.signed_in.as_ref().map(|s| s.person.role);
+                if let Err(refused) =
+                    roles::check(&who.actor, role, request.method(), route.as_str())
+                {
+                    return refused.into_response();
+                }
             }
             request.extensions_mut().insert(who.actor);
             if let Some(signed_in) = who.signed_in {
@@ -412,17 +424,6 @@ fn issue_tracker_route(method: &axum::http::Method, path: &str) -> bool {
         (["v1", "cards", id, "close" | "reopen"], &Method::POST) => numeric(id),
         (["v1", "cards", id, "comments"], &Method::GET | &Method::POST) => numeric(id),
         _ => false,
-    }
-}
-
-/// Refuses an agent what only a person may do.
-fn person_only(by: &Actor) -> Result<(), ApiError> {
-    match by {
-        Actor::Member { .. } => Ok(()),
-        Actor::Agent { .. } | Actor::Script { .. } => Err(ApiError(
-            StatusCode::FORBIDDEN,
-            "only a person can do this".into(),
-        )),
     }
 }
 

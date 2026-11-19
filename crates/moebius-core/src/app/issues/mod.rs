@@ -239,7 +239,10 @@ impl App {
                 )));
             }
         }
-        let card = self.create_held_issue(&repository, title, body, true, &by.decider())?;
+        // A viewer's issue waits in the inbox for approval, as an outside author's does.
+        let author = by.decider();
+        let confirmed = !self.needs_approval(&author);
+        let card = self.create_held_issue(&repository, title, body, confirmed, &author)?;
         let mut warnings = Vec::new();
         let mut note = |what: String, result: Result<()>| {
             if let Err(e) = result {
@@ -1825,7 +1828,12 @@ mod tests {
     #[test]
     fn an_issue_a_known_person_creates_is_theirs_and_trusted() {
         let s = Setup::new(Some(true));
-        let ada = Actor::person(7, "ada");
+        let person = s
+            .app
+            .store
+            .add_person("ada", "Ada", crate::store::Role::Member)
+            .unwrap();
+        let ada = Actor::person(person.id, "ada");
         let (card, _) = s
             .app
             .create_tracked_issue(&ada, s.repository.id, "Mine", "", None, &[], &[])

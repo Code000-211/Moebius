@@ -613,6 +613,8 @@ At the top:
 | `server/api/session/mod.rs` | Signing in from a browser: with an access token, the server's token or a one-time login code, sessions kept in the store, the codes in memory, and `/v1/session` and `/v1/session/codes`. |
 | `server/api/session/tests.rs` | For the tests only: signing in with each kind of token and code, a session that survives a restart, and what ends one. |
 | `server/api/people.rs` | The people and their access tokens: listing people, an owner adding one with their first token, making, listing and revoking tokens. |
+| `server/api/roles/mod.rs` | The role each route of the desktop API needs, and whether the Moebius agent's run token may use it: the table the reference repeats, and the check `authenticate` makes with it. |
+| `server/api/roles/tests.rs` | For the tests only: the role table against the reference and the routes of the code, and every route called as a viewer, a member, an owner and the Moebius agent. |
 | `server/api/web.rs` | The web app embedded from `web/dist` and served at `/` without a token, with `index.html` for any path that is no file, or a page that says it was not built. |
 | `server/api/events.rs` | The event WebSocket `GET /v1/events`. |
 | `server/api/testing.rs` | For the tests only: a server on port 0 with a fake Pi, and the requests the tests of the API share. |

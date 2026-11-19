@@ -18,7 +18,7 @@ use axum::extract::{Path as UrlPath, State};
 use axum::routing::{get, post};
 use serde::Serialize;
 
-use super::{ApiError, ApiState, blocking, harness_repo, person_only};
+use super::{ApiError, ApiState, blocking, harness_repo};
 use crate::app::AppError;
 use crate::board::AgentInfo;
 use crate::decide::Actor;
@@ -77,7 +77,6 @@ async fn setup_harness(
     State(state): State<ApiState>,
     Extension(by): Extension<Actor>,
 ) -> Result<axum::Json<Saved>, ApiError> {
-    person_only(&by)?;
     let live = state.config.clone();
     blocking(&state.app, move |app| live.set_up_harness(app, &by)).await
 }

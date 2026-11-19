@@ -7,7 +7,6 @@
 //! - `GET /v1/webhooks`: for each forge that is set up, the path of its webhook and its secret, which only a person may
 //!   read. `POST /v1/webhooks/{forge}/secret` makes a new secret for the forge, replacing the old one.
 
-use axum::Extension;
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{Path as UrlPath, State};
@@ -15,10 +14,9 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use serde::Serialize;
 
-use super::{ApiError, ApiState, blocking, internal, person_only};
+use super::{ApiError, ApiState, blocking, internal};
 use crate::app::AppError;
 use crate::blobs::remember_secret;
-use crate::decide::Actor;
 use crate::server::webhooks::{self, FORGES};
 
 /// The route a forge's deliveries go to, which needs no token.
@@ -69,11 +67,7 @@ fn view(state: &ApiState, forge: &'static str) -> Result<WebhookView, AppError> 
     })
 }
 
-async fn list(
-    State(state): State<ApiState>,
-    Extension(by): Extension<Actor>,
-) -> Result<axum::Json<Vec<WebhookView>>, ApiError> {
-    person_only(&by)?;
+async fn list(State(state): State<ApiState>) -> Result<axum::Json<Vec<WebhookView>>, ApiError> {
     let views = FORGES
         .into_iter()
         .filter(|forge| configured(&state, forge))
@@ -84,10 +78,8 @@ async fn list(
 
 async fn new_secret(
     State(state): State<ApiState>,
-    Extension(by): Extension<Actor>,
     UrlPath(forge): UrlPath<String>,
 ) -> Result<axum::Json<WebhookView>, ApiError> {
-    person_only(&by)?;
     let Some(forge) = FORGES
         .into_iter()
         .find(|name| *name == forge && configured(&state, name))

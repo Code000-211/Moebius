@@ -7,7 +7,6 @@
 
 use std::time::Duration;
 
-use axum::Extension;
 use axum::Router;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path as UrlPath, State};
@@ -18,8 +17,7 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-use super::{ApiError, ApiState, internal, person_only};
-use crate::decide::Actor;
+use super::{ApiError, ApiState, internal};
 use crate::server::ports::{self, Port};
 
 /// How long the server waits for the port to take a connection.
@@ -41,11 +39,9 @@ async fn list(State(state): State<ApiState>) -> Result<axum::Json<Vec<Port>>, Ap
 }
 
 async fn tunnel(
-    Extension(by): Extension<Actor>,
     UrlPath(port): UrlPath<u16>,
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
-    person_only(&by)?;
     if port == 0 {
         return Err(ApiError(
             StatusCode::UNPROCESSABLE_ENTITY,
