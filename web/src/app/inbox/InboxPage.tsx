@@ -7,9 +7,10 @@
  * (`?kind=`, `?repository=`, `?change=`, `?item=`), so a reload keeps it.
  */
 import { CheckCircleIcon } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId } from "react";
 import { snapshot as readSnapshot } from "../../api/calls/board";
+import { setInboxAssignees } from "../../api/calls/inbox";
 import { keys } from "../../api/keys";
 import type { Snapshot } from "../../api/types/board";
 import { Button } from "../../ui/components/Button";
@@ -23,6 +24,7 @@ import { PageProperties } from "../../ui/page/Properties";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
 import { TabPanel, Tabs } from "../../ui/page/Tabs";
+import { AssigneesProperty } from "../people/AssigneesProperty";
 import { Decision } from "./Decision";
 import { InboxRow } from "./InboxRow";
 import { changeOf, chipName, count, type Filters, kindsOf, shown, summary } from "./model";
@@ -61,6 +63,7 @@ function filterFields(snapshot: Snapshot, filters: Filters): FilterField[] {
 
 export function InboxPage() {
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
+  const queryClient = useQueryClient();
   const [params, setQuery] = useQueryParams();
   const tabs = useId();
   const now = useNow();
@@ -178,6 +181,17 @@ export function InboxPage() {
       {chosen && <ReadOnShow id={chosen.id} markRead={markRead} />}
       {chosen && (
         <PageProperties label="Decide">
+          <AssigneesProperty
+            key={`assignees-${chosen.id}`}
+            assignees={chosen.assignees}
+            onSave={async (next) => {
+              try {
+                await setInboxAssignees(chosen.id, next);
+              } finally {
+                void queryClient.invalidateQueries({ queryKey: keys.snapshot });
+              }
+            }}
+          />
           <Decision key={chosen.id} item={chosen} snapshot={snapshot} />
         </PageProperties>
       )}

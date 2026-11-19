@@ -14,6 +14,7 @@ import { CaretDownIcon, PlusIcon, XIcon } from "@phosphor-icons/react";
 import { type ReactNode, useId, useRef, useState } from "react";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -40,6 +41,15 @@ export type PropertyEditor =
       /** The words of the row that chooses nobody, such as "No one". */
       none: string;
       onSave: (value: string | null) => Promise<unknown>;
+    }
+  | {
+      kind: "people";
+      /** The people who can be chosen, each a handle and the name that shows it. */
+      people: Array<[string, string]>;
+      /** The handles chosen now. */
+      value: string[];
+      /** Saves the handles chosen after a person was added or taken off. */
+      onSave: (value: string[]) => Promise<unknown>;
     }
   | {
       kind: "date";
@@ -244,6 +254,52 @@ export function EditableProperty({
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {after}
+      </Row>
+    );
+  }
+
+  if (editor.kind === "people") {
+    const chosen = new Set(editor.value);
+    // Someone assigned who is no longer on offer (a person who was disabled) stays on the list, so it is shown.
+    const offered = new Set(editor.people.map(([handle]) => handle));
+    const options = [
+      ...editor.people,
+      ...editor.value.filter((h) => !offered.has(h)).map((h): [string, string] => [h, `@${h}`]),
+    ];
+    const toggle = (handle: string, on: boolean) => {
+      const next = on ? [...editor.value, handle] : editor.value.filter((h) => h !== handle);
+      void run(() => editor.onSave(next));
+    };
+    return (
+      <Row nameId={nameId} name={name} refusal={refusal} refusalId={refusalId}>
+        <DropdownMenu open={open} onOpenChange={(next) => setOpen(next && !pending)}>
+          <DropdownMenuTrigger
+            aria-disabled={pending || undefined}
+            aria-busy={pending || undefined}
+            aria-labelledby={`${nameId} ${valueId}`}
+            aria-describedby={described}
+            className={VALUE}
+          >
+            {value}
+            <CaretDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-secondary" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-48">
+            {options.length === 0 && (
+              <div className="px-2 py-1.5 text-sm text-secondary">Nobody to choose</div>
+            )}
+            {options.map(([handle, words]) => (
+              <DropdownMenuCheckboxItem
+                key={handle}
+                checked={chosen.has(handle)}
+                onCheckedChange={(on) => toggle(handle, on)}
+                className="text-sm"
+              >
+                {words}
+              </DropdownMenuCheckboxItem>
+            ))}
           </DropdownMenuContent>
         </DropdownMenu>
         {after}

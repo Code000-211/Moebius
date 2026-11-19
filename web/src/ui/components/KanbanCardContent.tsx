@@ -10,6 +10,7 @@
 
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
+import { AvatarStack } from "../page/Avatar";
 import { FadedClamp } from "../page/FadedClamp";
 import { MarkLabel, type StateMark } from "../page/MarkLabel";
 import { PrBadge, type PrBadgeStatus } from "./PrBadge";
@@ -58,6 +59,8 @@ export type KanbanCardContentProps = {
   labels?: string[];
   /** Who claimed the issue, said under the labels; none while it is free. */
   claimedBy?: string | null;
+  /** The handles of the people the card is given to, shown as avatars with the labels; none while it is no one's. */
+  assignees?: string[];
   /** The box that chooses the card, drawn in its top left corner; left out where a card cannot be chosen. */
   select?: ReactNode;
   /** What a card with sub-issues shows at its foot: how many are done, and the control that opens the stack. */
@@ -79,6 +82,7 @@ export function KanbanCardContent({
   menu,
   labels = [],
   claimedBy,
+  assignees = [],
   stack,
   select,
   className,
@@ -148,7 +152,7 @@ export function KanbanCardContent({
       )}
 
       {/* The labels and the claim of the issue */}
-      {(labels.length > 0 || claimedBy) && (
+      {(labels.length > 0 || claimedBy || assignees.length > 0) && (
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           {labels.map((label) => (
             <span
@@ -158,6 +162,7 @@ export function KanbanCardContent({
               {label}
             </span>
           ))}
+          <AvatarStack handles={assignees} />
           {claimedBy && (
             <span className="text-sm text-secondary [overflow-wrap:anywhere]">
               Claimed by {claimedBy}

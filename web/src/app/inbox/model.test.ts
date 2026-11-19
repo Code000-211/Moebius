@@ -46,6 +46,7 @@ const card = (id: number, number: number, extra: Partial<Card> = {}): Card => ({
   closed: false,
   labels: [],
   claimed_by: null,
+  assignees: [],
   ...extra,
 });
 
@@ -86,7 +87,16 @@ const item = (
   card_id: number | null,
   data: Record<string, unknown>,
   at = 100,
-): InboxItem => ({ id, kind, card_id, title: `Item ${id}`, data, resolved_at: null, at });
+): InboxItem => ({
+  id,
+  kind,
+  card_id,
+  title: `Item ${id}`,
+  data,
+  resolved_at: null,
+  at,
+  assignees: [],
+});
 
 const proposed = (extra: Partial<Proposal> = {}): Proposal => ({
   id: 4,

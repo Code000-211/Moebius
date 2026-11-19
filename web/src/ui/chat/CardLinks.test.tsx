@@ -55,6 +55,7 @@ const card = (number: number, extra: Partial<Card> = {}): Card => ({
   closed: false,
   labels: [],
   claimed_by: null,
+  assignees: [],
   ...extra,
 });
 

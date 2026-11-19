@@ -9,6 +9,7 @@ function card(id: number, extra: Partial<Card> = {}): Card {
     title: `Card ${id}`,
     column: "Backlog",
     claimed_by: null,
+    assignees: [],
     held: null,
     run: null,
     closed: false,

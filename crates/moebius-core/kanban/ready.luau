@@ -3,6 +3,7 @@
 -- stays here until the wayfinder session that works it closes it.
 -- An issue with sub-issues is a parent: it starts no work of its own while one is open, and closes with the last one.
 -- A parent that has work of its own already (a run, or a change) goes on as any other card does.
+-- A card given to a person (`card.assignees`) is that person's: it starts no work and stays here until they change who has it.
 function on_card(card)
   moebius.set_label("in-progress", false)
   for _, label in ipairs(card.labels) do
@@ -23,6 +24,14 @@ function on_card(card)
     else
       moebius.close_issue("every sub-issue is done")
     end
+    return
+  end
+  if #card.assignees > 0 then
+    local handles = {}
+    for _, handle in ipairs(card.assignees) do
+      table.insert(handles, "@" .. handle)
+    end
+    moebius.wait("given to " .. table.concat(handles, ", "))
     return
   end
   if #card.blocked_by > 0 then

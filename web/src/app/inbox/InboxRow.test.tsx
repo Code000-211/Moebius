@@ -12,6 +12,7 @@ const item: InboxItem = {
   data: { reason: "the round limit is reached" },
   resolved_at: null,
   at: 100,
+  assignees: [],
 };
 
 function row(unread: boolean, onChoose = () => {}) {

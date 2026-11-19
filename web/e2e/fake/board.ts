@@ -41,6 +41,7 @@ interface FakeCard {
   closed: boolean;
   labels: string[];
   claimed_by: string | null;
+  assignees: string[];
 }
 
 interface FakeComment {
@@ -75,6 +76,7 @@ interface FakeInboxItem {
   title: string;
   data: Record<string, unknown>;
   resolved_at: number | null;
+  assignees: string[];
   at: number;
 }
 
@@ -135,6 +137,7 @@ function card(id: number, extra: Partial<FakeCard>): FakeCard {
     closed: false,
     labels: [],
     claimed_by: null,
+    assignees: [],
     ...extra,
   };
 }
@@ -228,6 +231,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       title: "Approve: Fix the login redirect",
       data: { reason: "An outside author opened it" },
       resolved_at: null,
+      assignees: [],
       at: NOW - 100,
     },
     {
@@ -237,6 +241,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       title: "Speed up the build is ready to merge",
       data: { change: 1, branch: "moebius/card-5" },
       resolved_at: null,
+      assignees: [],
       at: NOW - 90,
     },
     {
@@ -246,6 +251,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       title: "Stop the flaky test is stuck",
       data: { reason: "reached the round limit" },
       resolved_at: null,
+      assignees: [],
       at: NOW - 80,
     },
   ];
@@ -344,7 +350,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
   /** The routes of the issue tracker; undefined when `path` is none of them. */
   function tracker(method: string, path: string, body: unknown) {
     const parts =
-      /^\/v1\/cards\/(\d+)\/(parent|labels|blockers|claim|close|reopen|comments)(?:\/(\d+))?$/.exec(
+      /^\/v1\/cards\/(\d+)\/(parent|labels|assignees|blockers|claim|close|reopen|comments)(?:\/(\d+))?$/.exec(
         path,
       );
     if (!parts) return undefined;
@@ -408,6 +414,22 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
           return ok(target.blocked_by);
         }
         return undefined;
+      }
+      case "assignees": {
+        if (method !== "PUT") return undefined;
+        const handles = (body as { assignees?: unknown }).assignees;
+        if (!Array.isArray(handles) || !handles.every((h) => typeof h === "string")) {
+          return fail(422, "assignees are handles");
+        }
+        const next = [...new Set(handles.map((h) => h.replace(/^@/, "").toLowerCase()))];
+        if (next.join() !== target.assignees.join()) {
+          target.assignees = next;
+          updated({
+            kind: "card_assignees_changed",
+            data: { card: target.id, assignees: target.assignees },
+          });
+        }
+        return ok(view(target));
       }
       case "claim": {
         if (method === "POST") {
@@ -606,6 +628,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
           title: `Approve: Outside issue ${id}`,
           data: { reason: "An outside author opened it" },
           resolved_at: null,
+          assignees: [],
           at: NOW - 70,
         });
         made.push(id);

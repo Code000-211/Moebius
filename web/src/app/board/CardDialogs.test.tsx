@@ -37,6 +37,7 @@ const card = {
   closed: false,
   labels: [],
   claimed_by: null,
+  assignees: [],
 } satisfies Card;
 
 const repository = (forge: string): Repository => ({

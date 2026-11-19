@@ -184,6 +184,7 @@ function card(id: number, extra: Record<string, unknown>) {
     closed: false,
     labels: [] as string[],
     claimed_by: null,
+    assignees: [],
     ...extra,
   };
 }
@@ -276,6 +277,7 @@ export const snapshot = () => ({
       title: "Add an index on orders.customer_id is ready to merge",
       data: { change: 1, branch: "moebius/card-19" },
       resolved_at: null,
+      assignees: [],
       at: ago(1_400),
     },
     {
@@ -285,6 +287,7 @@ export const snapshot = () => ({
       title: "Approve: Support Apple Pay at checkout",
       data: { reason: "An outside author opened it" },
       resolved_at: null,
+      assignees: [],
       at: ago(7_100),
     },
     {
@@ -306,6 +309,7 @@ export const snapshot = () => ({
         regression: [{ card: 18, outcome: "positive", reason: "Still passes." }],
       },
       resolved_at: null,
+      assignees: [],
       at: ago(40_000),
     },
   ],

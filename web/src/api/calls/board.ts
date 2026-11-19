@@ -52,6 +52,11 @@ export function setLabels(card: number, labels: string[]): Promise<Card> {
   return put<Card>(`/v1/cards/${card}/labels`, { labels });
 }
 
+/** Replaces the people the card is given to (handles, with or without the `@`). */
+export function setAssignees(card: number, assignees: string[]): Promise<Card> {
+  return put<Card>(`/v1/cards/${card}/assignees`, { assignees });
+}
+
 /** Makes the issue with number `blocker` block the card's issue; refused when that makes a cycle. */
 export function addBlocker(card: number, blocker: number): Promise<number[]> {
   return post<number[]>(`/v1/cards/${card}/blockers`, { blocker });
