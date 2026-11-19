@@ -1,10 +1,9 @@
 /**
- * One item of the inbox: why it is here in a word and a sentence, what it shows (the facts of a change, the change a
- * proposal offers with the trials it was put through, the issues of a grilling to edit, a report) and the buttons that
- * act on it. The card is the only layer on this page, so the kind's word is the only pill on it and the parts are
- * apart by space. While a
- * request is on its way the buttons give way to what it does; a refusal of the server stays under the item in the
- * server's own words. The item leaves when the snapshot is read again, which the answer and the event cause.
+ * What to decide about the item chosen in the Inbox, drawn in the right sidebar: why it is here in a word and a
+ * sentence, what it shows (the facts of a change, the change a proposal offers with the trials it was put through, the
+ * issues of a grilling to edit, a report) and the buttons that act on it (merge, approve, send back). While a request
+ * is on its way the buttons give way to what it does; a refusal of the server stays under them in the server's own
+ * words. The item leaves the list when the snapshot is read again, which the answer and the event cause.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -19,7 +18,6 @@ import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { PrBadge } from "../../ui/components/PrBadge";
 import { cn } from "../../ui/lib/cn";
-import { ago } from "../../ui/lib/format";
 import { FadedClamp } from "../../ui/page/FadedClamp";
 import { Field, TextArea } from "../../ui/page/Field";
 import { MarkLabel } from "../../ui/page/MarkLabel";
@@ -56,15 +54,7 @@ import {
   why,
 } from "./model";
 
-export function ItemCard({
-  item,
-  snapshot,
-  now,
-}: {
-  item: InboxItem;
-  snapshot: Snapshot;
-  now: number;
-}) {
+export function Decision({ item, snapshot }: { item: InboxItem; snapshot: Snapshot }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const about = found(snapshot, item);
@@ -206,22 +196,16 @@ export function ItemCard({
   };
 
   return (
-    <article
-      data-testid="inbox-item"
-      data-kind={item.kind}
-      className="flex flex-col gap-4 rounded-card bg-surface p-4 shadow-card"
-    >
-      <div className="flex flex-wrap items-center gap-3">
+    <div data-testid="inbox-decision" data-kind={item.kind} className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <MarkLabel mark={mark} word={label} />
         {meta(item, about) !== "" && (
           <span className="min-w-0 break-words text-sm text-secondary">{meta(item, about)}</span>
         )}
-        <span className="flex-1" />
-        <span className="text-sm text-secondary tabular-nums">{ago(now, item.at)}</span>
       </div>
 
       <div className="flex flex-col gap-2">
-        <h2 className="m-0 break-words text-lg font-semibold tracking-tight text-text">
+        <h2 className="m-0 break-words text-base font-semibold tracking-tight text-text">
           {href ? (
             <Link
               to={href}
@@ -251,7 +235,7 @@ export function ItemCard({
       )}
       {footer()}
       {notice && <Notice tone="error">{notice}</Notice>}
-    </article>
+    </div>
   );
 }
 
