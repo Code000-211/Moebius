@@ -3,16 +3,17 @@
  * and a sentence, the facts of a change that waits, the filters and their counts, and the list of issues a grilling
  * proposes while a person edits it (the former desktop app's `screens/inbox`).
  */
-import type { Board, Card, Change, InboxItem, Snapshot } from "../../api/types/board";
+import type { Board, Card, Change, InboxItem, Repository, Snapshot } from "../../api/types/board";
 import type { Proposal } from "../../api/types/improve";
 import type { GrillingIssue } from "../../api/types/inbox";
 import type { StateMark } from "../../ui/page/MarkLabel";
-import { tokens } from "../board/model";
+import { mergeStopped, tokens } from "../board/model";
 
 export const READY_TO_MERGE = "ready_to_merge";
 export const APPROVE_ISSUE = "approve_issue";
 export const STUCK = "stuck";
 export const CHANGE_CLOSED = "change_closed";
+export const MERGE_STOPPED = "merge_stopped";
 export const PROPOSAL = "proposal";
 export const TAKEOVER = "takeover";
 export const WIKI_PROPOSAL = "wiki_proposal";
@@ -24,6 +25,7 @@ export const KINDS = [
   READY_TO_MERGE,
   APPROVE_ISSUE,
   STUCK,
+  MERGE_STOPPED,
   CHANGE_CLOSED,
   PROPOSAL,
   TAKEOVER,
@@ -83,23 +85,34 @@ export interface Found {
   board?: Board;
   card?: Card;
   change?: Change;
+  /** The repository the change is in, which is not the card's when the card works in several. */
+  changeRepository?: Repository;
 }
 
 export function found(snapshot: Snapshot, item: InboxItem): Found {
   const changeId = changeOf(item);
-  const board = snapshot.boards.find(
-    (each) =>
-      each.cards.some((card) => card.id === item.card_id) ||
-      each.changes.some((change) => change.id === changeId) ||
-      ((grillingOf(item) !== null || item.kind === PROPOSAL) &&
-        repositoryOf(item) === each.repository.id),
-  );
+  // A card's change in another repository is on the board of that repository, so the card's own board comes first.
+  const board =
+    snapshot.boards.find((each) => each.cards.some((card) => card.id === item.card_id)) ??
+    snapshot.boards.find(
+      (each) =>
+        each.changes.some((change) => change.id === changeId) ||
+        ((grillingOf(item) !== null || item.kind === PROPOSAL) &&
+          repositoryOf(item) === each.repository.id),
+    );
+  // The change is on the board of its repository; failing that, the card says which repository it is in.
+  const card = board?.cards.find((each) => each.id === item.card_id);
+  const named = card?.changes?.find((change) => change.id === changeId)?.repository;
+  const changeBoard =
+    snapshot.boards.find((each) => each.changes.some((change) => change.id === changeId)) ??
+    snapshot.boards.find((each) => named !== undefined && each.repository.name === named);
   return {
     board,
-    card: board?.cards.find((card) => card.id === item.card_id),
+    card,
     change:
-      board?.changes.find((change) => change.id === changeId) ??
+      changeBoard?.changes.find((change) => change.id === changeId) ??
       snapshot.harness_changes.find((change) => change.id === changeId),
+    changeRepository: changeBoard?.repository,
   };
 }
 
@@ -121,6 +134,8 @@ export function chipName(kind: string): string {
       return "Stuck";
     case CHANGE_CLOSED:
       return "Closed";
+    case MERGE_STOPPED:
+      return "Stopped merges";
     case PROPOSAL:
       return "Proposals";
     case TAKEOVER:
@@ -152,6 +167,8 @@ export function kindTag(item: InboxItem): { label: string; mark: StateMark } {
       return { label: "Outside issue", mark: "none" };
     case CHANGE_CLOSED:
       return { label: "Closed without a merge", mark: "none" };
+    case MERGE_STOPPED:
+      return { label: "Merge stopped", mark: "blocked" };
     case PROPOSAL:
       return { label: "Retro proposal", mark: "none" };
     case TAKEOVER:
@@ -205,6 +222,12 @@ export function why(item: InboxItem, about: Found, changes?: string): string | n
     }
     case READY_TO_MERGE:
       return null;
+    case MERGE_STOPPED: {
+      const { repository, reason, merged, open } = mergeStopped(item);
+      const stopped = `The merge in ${repository || "a repository"} stopped${reason !== "" ? `: ${reason}` : ""}.`;
+      const done = merged.length > 0 ? ` Merged: ${merged.join(", ")}.` : "";
+      return `${stopped}${done} Still open: ${open.join(", ")}.`;
+    }
     case TAKEOVER: {
       const agreement = Math.round(
         (typeof item.data.agreement === "number" ? item.data.agreement : 0) * 100,
@@ -242,7 +265,9 @@ export function why(item: InboxItem, about: Found, changes?: string): string | n
  */
 export function meta(item: InboxItem, about: Found): string {
   const parts: string[] = [];
-  if (about.board) parts.push(about.board.repository.name);
+  // A change of a card over several repositories is named by the repository it is in, not the card's.
+  const repository = (about.changeRepository ?? about.board?.repository)?.name;
+  if (repository !== undefined) parts.push(repository);
   if (about.card) {
     parts.push(`#${about.card.number}`);
     if (item.kind === APPROVE_ISSUE && about.card.author !== "")
@@ -286,6 +311,9 @@ export function facts(item: InboxItem, about: Found): Fact[] {
     value: review ? `${label} · review ${review}` : label,
     good: checks === "success",
   });
+  if (about.card && (about.card.repositories?.length ?? 1) > 1 && about.changeRepository) {
+    list.push({ label: "Repository", value: about.changeRepository.name });
+  }
   const branch = text(item.data.branch) || about.change?.branch;
   if (branch) list.push({ label: "Branch", value: branch, mono: true });
   return list;

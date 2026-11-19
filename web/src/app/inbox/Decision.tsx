@@ -42,6 +42,7 @@ import {
   grillingOf,
   issuesSent,
   kindTag,
+  MERGE_STOPPED,
   meta,
   PROPOSAL,
   proposalOf,
@@ -170,6 +171,15 @@ export function Decision({ item, snapshot }: { item: InboxItem; snapshot: Snapsh
         const chat = chatOf(item);
         buttons.push(plain("Open chat", chat === null ? null : () => navigate(`/chat/${chat}`)));
       }
+    } else if (item.kind === MERGE_STOPPED && item.card_id !== null) {
+      // What stopped is the forge's or a person's to fix; the card goes on when its last change is merged.
+      const board = about.board;
+      buttons.push(
+        plain(
+          "Open the card",
+          board ? () => navigate(`/board/${board.repository.id}?card=${item.card_id}`) : null,
+        ),
+      );
     } else if (item.kind === APPROVE_ISSUE && item.card_id !== null) {
       buttons.push(primary("Approve", { kind: "approve", card: item.card_id }));
     } else if ((item.kind === STUCK || item.kind === CHANGE_CLOSED) && item.card_id !== null) {
@@ -252,7 +262,9 @@ export function Decision({ item, snapshot }: { item: InboxItem; snapshot: Snapsh
 
 function Facts({ item, snapshot }: { item: InboxItem; snapshot: Snapshot }) {
   const about = found(snapshot, item);
-  const pullRequest = about.board ? pullRequestOf(about.board.repository, about.change) : null;
+  const pullRequest = about.board
+    ? pullRequestOf(about.changeRepository ?? about.board.repository, about.change)
+    : null;
   return (
     <>
       {pullRequest && (

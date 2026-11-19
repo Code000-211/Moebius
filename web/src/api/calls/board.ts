@@ -189,3 +189,8 @@ export function saveScript(
 export function deleteScript(project: number, column: string): Promise<ScriptDetail> {
   return del<ScriptDetail>(`/v1/projects/${project}/scripts/${encodeURIComponent(column)}`);
 }
+
+/** Names the repositories the card works in besides its own issue's, in the order its changes are merged. */
+export function setCardRepositories(card: number, repositories: string[]): Promise<Card> {
+  return put<Card>(`/v1/cards/${card}/repositories`, { repositories });
+}

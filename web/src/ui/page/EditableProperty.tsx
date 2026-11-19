@@ -52,6 +52,17 @@ export type PropertyEditor =
       onSave: (value: string[]) => Promise<unknown>;
     }
   | {
+      kind: "choices";
+      /** What can be chosen besides the fixed values, each a value and the words that show it. */
+      options: Array<[string, string]>;
+      /** The values chosen now, not counting the fixed ones. */
+      value: string[];
+      /** Values that are always among the chosen: shown first, checked and not to be taken off. */
+      fixed: string[];
+      /** Saves the values chosen after one was added or taken off. */
+      onSave: (value: string[]) => Promise<unknown>;
+    }
+  | {
       kind: "date";
       /** The date as `YYYY-MM-DD`, or none. */
       value: string | null;
@@ -261,13 +272,18 @@ export function EditableProperty({
     );
   }
 
-  if (editor.kind === "people") {
+  if (editor.kind === "people" || editor.kind === "choices") {
     const chosen = new Set(editor.value);
-    // Someone assigned who is no longer on offer (a person who was disabled) stays on the list, so it is shown.
-    const offered = new Set(editor.people.map(([handle]) => handle));
+    const fixed = editor.kind === "choices" ? editor.fixed : [];
+    const shown = editor.kind === "choices" ? editor.options : editor.people;
+    // A value chosen that is no longer on offer (a person who was disabled) stays on the list, so it is shown.
+    const offered = new Set(shown.map(([each]) => each));
     const options = [
-      ...editor.people,
-      ...editor.value.filter((h) => !offered.has(h)).map((h): [string, string] => [h, `@${h}`]),
+      ...fixed.map((each): [string, string] => [each, each]),
+      ...shown,
+      ...editor.value
+        .filter((h) => !offered.has(h))
+        .map((h): [string, string] => [h, editor.kind === "people" ? `@${h}` : h]),
     ];
     const toggle = (handle: string, on: boolean) => {
       const next = on ? [...editor.value, handle] : editor.value.filter((h) => h !== handle);
@@ -288,12 +304,15 @@ export function EditableProperty({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-48">
             {options.length === 0 && (
-              <div className="px-2 py-1.5 text-sm text-secondary">Nobody to choose</div>
+              <div className="px-2 py-1.5 text-sm text-secondary">
+                {editor.kind === "people" ? "Nobody to choose" : "Nothing to choose"}
+              </div>
             )}
             {options.map(([handle, words]) => (
               <DropdownMenuCheckboxItem
                 key={handle}
-                checked={chosen.has(handle)}
+                checked={chosen.has(handle) || fixed.includes(handle)}
+                disabled={fixed.includes(handle)}
                 onCheckedChange={(on) => toggle(handle, on)}
                 className="text-sm"
               >
