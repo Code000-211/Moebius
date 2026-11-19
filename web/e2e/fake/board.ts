@@ -42,6 +42,8 @@ interface FakeCard {
   labels: string[];
   claimed_by: string | null;
   assignees: string[];
+  priority: string;
+  due: string | null;
 }
 
 interface FakeComment {
@@ -138,6 +140,8 @@ function card(id: number, extra: Partial<FakeCard>): FakeCard {
     labels: [],
     claimed_by: null,
     assignees: [],
+    priority: "none",
+    due: null,
     ...extra,
   };
 }
@@ -350,7 +354,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
   /** The routes of the issue tracker; undefined when `path` is none of them. */
   function tracker(method: string, path: string, body: unknown) {
     const parts =
-      /^\/v1\/cards\/(\d+)\/(parent|labels|assignees|blockers|claim|close|reopen|comments)(?:\/(\d+))?$/.exec(
+      /^\/v1\/cards\/(\d+)\/(parent|labels|assignees|priority|due|blockers|claim|close|reopen|comments)(?:\/(\d+))?$/.exec(
         path,
       );
     if (!parts) return undefined;
@@ -378,6 +382,32 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
         if (method !== "PUT") return undefined;
         const names = Array.isArray(given.labels) ? (given.labels as string[]) : [];
         target.labels = [...new Set(names.map((l) => l.trim()).filter((l) => l !== ""))].sort();
+        updated({ kind: "card_labels_changed", data: { card: target.id, labels: target.labels } });
+        return ok(view(target));
+      }
+      case "priority":
+      case "due": {
+        if (method !== "PUT") return undefined;
+        // Both are labels of the card, as on the server.
+        const field = parts[2];
+        const value = given[field];
+        if (field === "priority") {
+          const names = ["urgent", "high", "medium", "low", "none"];
+          if (typeof value !== "string" || !names.includes(value.toLowerCase())) {
+            return fail(422, `${JSON.stringify(value)} is not a priority`);
+          }
+          target.priority = value.toLowerCase();
+        } else {
+          if (value !== null && !(typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value))) {
+            return fail(422, `${JSON.stringify(value)} is not a date (YYYY-MM-DD)`);
+          }
+          target.due = value;
+        }
+        target.labels = [
+          ...target.labels.filter((l) => !l.startsWith("priority:") && !l.startsWith("due:")),
+          ...(target.priority === "none" ? [] : [`priority:${target.priority}`]),
+          ...(target.due === null ? [] : [`due:${target.due}`]),
+        ].sort();
         updated({ kind: "card_labels_changed", data: { card: target.id, labels: target.labels } });
         return ok(view(target));
       }

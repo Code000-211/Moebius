@@ -130,6 +130,8 @@ any route to any role that is not what its row says.
 | `PUT /v1/cards/{id}/labels` | member | yes |
 | `PUT /v1/cards/{id}/assignees` | member | no |
 | `PUT /v1/inbox/{id}/assignees` | member | no |
+| `PUT /v1/cards/{id}/priority` | member | no |
+| `PUT /v1/cards/{id}/due` | member | no |
 | `POST /v1/cards/{id}/blockers` | member | yes |
 | `DELETE /v1/cards/{id}/blockers/{number}` | member | yes |
 | `POST /v1/cards/{id}/claim` | member | yes |
@@ -319,7 +321,8 @@ string or null, "by": "person" or "agent:Moebius", "at": number}` while a person
 `parent` (the number of the issue it is a sub-issue of, or null), `closed` (true when the issue was closed or the card is
 in `Done`), `labels` (array of text, in order), `claimed_by` (who claimed it, or null) and `assignees` (the handles of
 the people it is given to, without the `@`, in the order the people were added; empty when it is no one's; see
-[Assignees](#assignees)).
+[Assignees](#assignees)), `priority` (`urgent`, `high`, `medium`, `low` or `none`) and `due` (a day as
+`YYYY-MM-DD`, or null); see [Priority and due date](#priority-and-due-date).
 
 `Comment`: `id`, `card_id`, `author` (a forge login, `person`, `person:<handle>` or `agent:<name>`), `body`, `at`.
 
@@ -1042,6 +1045,27 @@ person who was not assigned already.
 
 The same for an item of the inbox, resolved or not; the event is `inbox_assignees_changed`. Response: the `InboxItem`.
 Errors: `404` no such item; `422` as above.
+
+### Priority and due date
+
+A card has a priority (`urgent`, `high`, `medium`, `low` or `none`) and an optional due date. Both are kept as labels of
+the card, `priority:<name>` and `due:YYYY-MM-DD`, so the forge shows and sets them as it does any label: setting one in
+Moebius writes the label to the forge (replacing the card's earlier `priority:` or `due:` label), and a label set on the
+forge becomes the card's priority or due date after the next poll. A card with several `priority:` labels has the most
+urgent, and one with several `due:` labels the earliest; a label that names no priority or no real date is just a label.
+Column scripts see `card.priority` and `card.due` (see [Column scripts](column-scripts.md)); the board settles urgent
+cards first, then those due first, then the oldest, so they take the free run slots first. A member or an owner sets
+them, never an agent. The event is `card_labels_changed`, as for any change of labels.
+
+### `PUT /v1/cards/{id}/priority`
+
+Sets the priority. Request: `{"priority": "urgent"}`, one of `urgent`, `high`, `medium`, `low` or `none` in any case;
+`none` takes the label away. Response: the `Card`. Errors: `404` no such card; `422` a name that is not a priority.
+
+### `PUT /v1/cards/{id}/due`
+
+Sets the due date. Request: `{"due": "2026-12-01"}`, a date that exists as `YYYY-MM-DD`, or `{"due": null}` for none.
+Response: the `Card`. Errors: `404` no such card; `422` a text that is not a date.
 
 ### `POST /v1/cards/{id}/blockers`
 

@@ -3,7 +3,7 @@
  * decides about a card or its change, a new issue, and the script behind a column (read, saved and given up).
  */
 import { del, get, post, put } from "../http";
-import type { Card, Comment, Snapshot } from "../types/board";
+import type { Card, Comment, Priority, Snapshot } from "../types/board";
 import type { HistoryEntry, Run, ScriptDetail } from "../types/cards";
 
 export function snapshot(): Promise<Snapshot> {
@@ -55,6 +55,16 @@ export function setLabels(card: number, labels: string[]): Promise<Card> {
 /** Replaces the people the card is given to (handles, with or without the `@`). */
 export function setAssignees(card: number, assignees: string[]): Promise<Card> {
   return put<Card>(`/v1/cards/${card}/assignees`, { assignees });
+}
+
+/** Sets the card's priority (a label `priority:<name>` on the issue). */
+export function setPriority(card: number, priority: Priority): Promise<Card> {
+  return put<Card>(`/v1/cards/${card}/priority`, { priority });
+}
+
+/** Sets the card's due date as `YYYY-MM-DD`, or none. */
+export function setDue(card: number, due: string | null): Promise<Card> {
+  return put<Card>(`/v1/cards/${card}/due`, { due });
 }
 
 /** Makes the issue with number `blocker` block the card's issue; refused when that makes a cycle. */

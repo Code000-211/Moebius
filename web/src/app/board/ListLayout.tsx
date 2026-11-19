@@ -9,7 +9,7 @@ import type { MouseEvent, ReactNode } from "react";
 import type { Board, Card, InboxItem } from "../../api/types/board";
 import { Empty } from "../../ui/page/Empty";
 import { MarkLabel } from "../../ui/page/MarkLabel";
-import { cardBadges, cardStatus, inboxOf } from "./model";
+import { cardBadges, cardStatus, inboxOf, isPlanningLabel } from "./model";
 import type { ListGroup } from "./view";
 
 function Row({
@@ -56,14 +56,16 @@ function Row({
           <MarkLabel key={badge.name} mark={badge.mark} word={badge.name} detail={badge.detail} />
         ))}
         {!hidden.has("labels") &&
-          card.labels.map((label) => (
-            <span
-              key={label}
-              className="inline-flex items-center rounded-full bg-hover px-2 py-0.5 text-xs text-secondary"
-            >
-              {label}
-            </span>
-          ))}
+          card.labels
+            .filter((label) => !isPlanningLabel(label))
+            .map((label) => (
+              <span
+                key={label}
+                className="inline-flex items-center rounded-full bg-hover px-2 py-0.5 text-xs text-secondary"
+              >
+                {label}
+              </span>
+            ))}
         {!hidden.has("detail") && card.run && (
           <span className="text-sm text-secondary">{card.run.agent}</span>
         )}

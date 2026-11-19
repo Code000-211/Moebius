@@ -27,6 +27,7 @@ mod diffs;
 mod issues;
 mod localize;
 mod packages;
+mod planning;
 pub mod plugin_settings;
 mod projects;
 mod repositories;

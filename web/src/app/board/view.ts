@@ -10,16 +10,18 @@ import {
   agentsOf,
   boardColumns,
   cardStatus,
+  DUE_WORDS,
   type Filters,
   inboxOf,
   labelsOf,
   matchesCard,
   orderCards,
+  PRIORITY_WORDS,
   STATUS_LABELS,
 } from "./model";
 
 /** The keys of the board's filters in the address, in the order the bar offers them. */
-export const FILTER_KEYS = ["column", "agent", "status", "label"] as const;
+export const FILTER_KEYS = ["column", "agent", "status", "label", "priority", "due"] as const;
 
 /** The query parameters a saved view of the board holds: its filters and its Display choices. */
 export const VIEW_KEYS = [...FILTER_KEYS, "layout", "group", "sort", "hide"];
@@ -34,6 +36,8 @@ export function filterFields(board: Board, filters: Filters): FilterField[] {
     { key: "agent", label: "Agent", options: pairs(agentsOf(board)) },
     { key: "status", label: "Status", options: Object.entries(STATUS_LABELS) },
     { key: "label", label: "Label", options: pairs(labels) },
+    { key: "priority", label: "Priority", options: PRIORITY_WORDS },
+    { key: "due", label: "Due date", options: DUE_WORDS },
   ];
 }
 
@@ -43,6 +47,7 @@ export const GROUPS: Array<[string, string]> = [
   ["status", "Status"],
   ["agent", "Agent"],
   ["label", "Label"],
+  ["priority", "Priority"],
   ["none", "None"],
 ];
 
@@ -51,6 +56,8 @@ export const SORTS: Array<[string, string]> = [
   ["", "Number"],
   ["newest", "Newest first"],
   ["title", "Title"],
+  ["priority", "Priority"],
+  ["due", "Due date"],
 ];
 
 /** The parts of a card that can be switched off. */
@@ -61,6 +68,8 @@ export const CARD_FIELDS: Array<[string, string]> = [
   ["rounds", "Round limit"],
   ["pullRequest", "Pull request"],
   ["claim", "Claimed by"],
+  ["priority", "Priority"],
+  ["due", "Due date"],
 ];
 
 export const DISPLAY_CHOICES: DisplayChoices = {
@@ -115,6 +124,11 @@ export function listGroups(
         ...labelsOf(board).map((name) => make(name, name, (card) => card.labels.includes(name))),
         make("", "No label", (card) => card.labels.length === 0),
       ];
+      break;
+    case "priority":
+      groups = PRIORITY_WORDS.map(([key, name]) =>
+        make(key, name, (card) => card.priority === key),
+      );
       break;
     case "none":
       groups = [make("", "Cards", () => true)];

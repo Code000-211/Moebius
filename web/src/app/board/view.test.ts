@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Board, Card } from "../../api/types/board";
-import { groupByColumn, NO_FILTERS, orderCards } from "./model";
+import { groupByColumn, matchesCard, NO_FILTERS, orderCards } from "./model";
 import { filterFields, listGroups } from "./view";
 
 function card(id: number, extra: Partial<Card> = {}): Card {
@@ -27,6 +27,8 @@ function card(id: number, extra: Partial<Card> = {}): Card {
     labels: [],
     claimed_by: null,
     assignees: [],
+    priority: "none",
+    due: null,
     ...extra,
   };
 }
@@ -59,9 +61,18 @@ const cards = [
 ];
 
 describe("the fields of the filter bar", () => {
-  it("offers the four filters the selects had, with their values", () => {
+  it("offers the filters of the cards, with their values, priority and due date among them", () => {
     const fields = filterFields(board(cards), NO_FILTERS);
-    expect(fields.map((f) => f.key)).toEqual(["column", "agent", "status", "label"]);
+    expect(fields.map((f) => f.key)).toEqual([
+      "column",
+      "agent",
+      "status",
+      "label",
+      "priority",
+      "due",
+    ]);
+    expect(fields[4]?.options.map(([v]) => v)).toEqual(["urgent", "high", "medium", "low", "none"]);
+    expect(fields[5]?.options.map(([v]) => v)).toEqual(["overdue", "today", "week", "any", "none"]);
     expect(fields[1]?.options).toEqual([["Coder", "Coder"]]);
     expect(fields[3]?.options).toEqual([
       ["spike", "spike"],
@@ -93,6 +104,54 @@ describe("sorting", () => {
       "title",
     ).find((g) => g.column === "Done");
     expect(lane?.cards.map((c) => c.number)).toEqual([5, 3]);
+  });
+});
+
+describe("priority and due date", () => {
+  const planned = [
+    card(1, { priority: "low", due: null }),
+    card(2, {
+      priority: "urgent",
+      due: "2026-12-10",
+      labels: ["priority:urgent", "due:2026-12-10"],
+    }),
+    card(3, { priority: "high", due: "2026-12-01" }),
+    card(4, { priority: "none", due: "2026-11-30" }),
+  ];
+
+  it("sorts by priority, most urgent first, and by due date, earliest first, undated last", () => {
+    const numbers = (sort: string) => orderCards(planned, sort).map((c) => c.number);
+    expect(numbers("priority")).toEqual([2, 3, 1, 4]);
+    expect(numbers("due")).toEqual([4, 3, 2, 1]);
+  });
+
+  it("filters by priority and by when a card is due", () => {
+    const b = board(planned);
+    const today = "2026-12-01";
+    const kept = (filters: Partial<typeof NO_FILTERS>) =>
+      planned
+        .filter((c) => matchesCard(c, { ...NO_FILTERS, ...filters }, [], b, today))
+        .map((c) => c.number);
+    expect(kept({ priority: "urgent" })).toEqual([2]);
+    expect(kept({ priority: "none" })).toEqual([4]);
+    expect(kept({ due: "overdue" })).toEqual([4]);
+    expect(kept({ due: "today" })).toEqual([3]);
+    expect(kept({ due: "week" })).toEqual([3]);
+    expect(kept({ due: "any" })).toEqual([2, 3, 4]);
+    expect(kept({ due: "none" })).toEqual([1]);
+    expect(kept({ priority: "high", due: "week" })).toEqual([3]);
+  });
+
+  it("groups the list by priority and keeps the labels that hold it out of the label filter", () => {
+    const b = board(planned);
+    const groups = listGroups(b, [], NO_FILTERS, "priority", "");
+    expect(groups.map((g) => [g.name, g.cards.map((c) => c.number)])).toEqual([
+      ["Urgent", [2]],
+      ["High", [3]],
+      ["Low", [1]],
+      ["No priority", [4]],
+    ]);
+    expect(filterFields(b, NO_FILTERS)[3]?.options).toEqual([]);
   });
 });
 

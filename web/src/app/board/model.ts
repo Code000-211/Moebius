@@ -4,7 +4,15 @@
  * words and links of a card. `screens/board.rs` of the former desktop app is the model: the columns, the order, the ten cards
  * of Done and the card the dock shows without a choice are the same.
  */
-import type { Board, Card, Change, Held, InboxItem, Repository } from "../../api/types/board";
+import type {
+  Board,
+  Card,
+  Change,
+  Held,
+  InboxItem,
+  Priority,
+  Repository,
+} from "../../api/types/board";
 import type { HistoryEntry, Run } from "../../api/types/cards";
 import { plural } from "../../ui/lib/format";
 import type { StateMark } from "../../ui/page/MarkLabel";
@@ -113,20 +121,93 @@ export interface Filters {
   agent: string;
   status: string;
   label: string;
+  /** A priority (`urgent`, `high`, `medium`, `low`, `none`), or empty. */
+  priority: string;
+  /** `overdue`, `today`, `week` (within the next seven days), `any` or `none`, or empty. */
+  due: string;
 }
 
-export const NO_FILTERS: Filters = { column: "", agent: "", status: "", label: "" };
+export const NO_FILTERS: Filters = {
+  column: "",
+  agent: "",
+  status: "",
+  label: "",
+  priority: "",
+  due: "",
+};
 
 export function hasFilters(filters: Filters): boolean {
-  return (
-    filters.column !== "" || filters.agent !== "" || filters.status !== "" || filters.label !== ""
-  );
+  return Object.values(filters).some((value) => value !== "");
+}
+
+/** The priorities, most urgent first, each with the words that show it. */
+export const PRIORITY_WORDS: Array<[Priority, string]> = [
+  ["urgent", "Urgent"],
+  ["high", "High"],
+  ["medium", "Medium"],
+  ["low", "Low"],
+  ["none", "No priority"],
+];
+
+/** How urgent a priority is, 0 for the most urgent. */
+export function priorityRank(priority: Priority): number {
+  const rank = PRIORITY_WORDS.findIndex(([name]) => name === priority);
+  return rank < 0 ? PRIORITY_WORDS.length : rank;
+}
+
+/** The choices of the due filter. */
+export const DUE_WORDS: Array<[string, string]> = [
+  ["overdue", "Overdue"],
+  ["today", "Due today"],
+  ["week", "Due within a week"],
+  ["any", "Has a due date"],
+  ["none", "No due date"],
+];
+
+/** Today as `YYYY-MM-DD` in the browser's own time zone. */
+export function todayIso(now: Date = new Date()): string {
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
+}
+
+/** `date` (`YYYY-MM-DD`) moved by `days`. */
+function addDays(date: string, days: number): string {
+  const [y = 0, m = 1, d = 1] = date.split("-").map(Number);
+  return todayIso(new Date(y, m - 1, d + days));
+}
+
+/** Whether a due date passes the due filter; `today` is as `todayIso`. */
+export function dueMatches(due: string | null, filter: string, today: string): boolean {
+  switch (filter) {
+    case "":
+      return true;
+    case "none":
+      return due === null;
+    case "any":
+      return due !== null;
+    case "overdue":
+      return due !== null && due < today;
+    case "today":
+      return due === today;
+    case "week":
+      return due !== null && due >= today && due <= addDays(today, 7);
+    default:
+      return false;
+  }
+}
+
+/** Whether a label is one of those that hold a card's priority or due date, which the card shows in its own way. */
+export function isPlanningLabel(label: string): boolean {
+  const lower = label.toLowerCase();
+  return lower.startsWith("priority:") || lower.startsWith("due:");
 }
 
 /** The labels the issues of a board carry, sorted. */
 export function labelsOf(board: Board): string[] {
   const names = new Set<string>();
-  for (const card of board.cards) for (const label of card.labels ?? []) names.add(label);
+  for (const card of board.cards) {
+    for (const label of card.labels ?? []) if (!isPlanningLabel(label)) names.add(label);
+  }
   return [...names].sort((a, b) => a.localeCompare(b));
 }
 
@@ -143,7 +224,10 @@ export function matchesCard(
   filters: Filters,
   inbox: readonly InboxItem[],
   board: Board,
+  today: string = todayIso(),
 ): boolean {
+  if (filters.priority !== "" && card.priority !== filters.priority) return false;
+  if (!dueMatches(card.due, filters.due, today)) return false;
   if (filters.agent !== "" && card.run?.agent !== filters.agent) return false;
   if (filters.status !== "" && cardStatus(card, inboxOf(inbox, card), board) !== filters.status) {
     return false;
@@ -216,6 +300,20 @@ export function orderCards(cards: readonly Card[], sort: string, column?: string
   }
   if (sort === "title") {
     return ordered.sort((a, b) => a.title.localeCompare(b.title) || a.number - b.number);
+  }
+  if (sort === "priority") {
+    return ordered.sort(
+      (a, b) => priorityRank(a.priority) - priorityRank(b.priority) || a.number - b.number,
+    );
+  }
+  if (sort === "due") {
+    // Dated cards first, the earliest day first; the cards without a date keep their order by number.
+    return ordered.sort(
+      (a, b) =>
+        (a.due === null ? 1 : 0) - (b.due === null ? 1 : 0) ||
+        (a.due ?? "").localeCompare(b.due ?? "") ||
+        a.number - b.number,
+    );
   }
   ordered.sort((a, b) => a.number - b.number);
   return column === "Done" ? ordered.reverse() : ordered;
