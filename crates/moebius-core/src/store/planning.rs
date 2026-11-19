@@ -90,6 +90,14 @@ fn after_prefix<'a>(label: &'a str, prefix: &str) -> Option<&'a str> {
         .then(|| label[prefix.len()..].trim())
 }
 
+/// Whether `label` only holds a card's priority, due date or estimate: those have filters of their own, and are no label
+/// a person gave the card.
+pub fn is_planning_label(label: &str) -> bool {
+    [PRIORITY_PREFIX, DUE_PREFIX, ESTIMATE_PREFIX]
+        .iter()
+        .any(|prefix| after_prefix(label, prefix).is_some())
+}
+
 /// The value of the label of `labels` that starts with `prefix`, in any case.
 fn values<'a>(labels: &'a [String], prefix: &'a str) -> impl Iterator<Item = &'a str> {
     labels

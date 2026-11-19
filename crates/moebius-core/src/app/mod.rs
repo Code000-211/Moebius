@@ -164,7 +164,7 @@ pub use milestones::{MilestoneDetail, MilestoneFields, MilestoneProject, Milesto
 pub use projects::{Member, ProjectRepository, ProjectView, Sight, UNQUOTED};
 pub use stopping::CardStopWaits;
 pub use templates::{IssueTemplateView, PageTemplateView, Templates};
-pub use views::{ViewCard, ViewCards, ViewFields};
+pub use views::{ViewCard, ViewCards, ViewEdit, ViewFields};
 
 /// Held by the thread of a research while it goes (see [`App::researching`]).
 pub(crate) struct Researching {

@@ -330,10 +330,17 @@ impl App {
         let burn = burn_up(&cycle, &cards, crate::store::now());
         let view = view(cycle, &cards);
         let tokens: i64 = cards.iter().map(|c| c.tokens).sum();
+        // As in the analytics, the tokens of the done cards that have an estimate, over their points: the tokens of a
+        // card still open or without an estimate would raise the cost of a point no point was done for.
+        let spent: i64 = cards
+            .iter()
+            .filter(|c| c.done && c.estimate.is_some())
+            .map(|c| c.tokens)
+            .sum();
         let figures = CycleFigures {
             by_agents: cards.iter().filter(|c| c.done && c.by_agent).count() as i64,
             tokens,
-            tokens_per_point: (view.points_done > 0).then(|| tokens / view.points_done),
+            tokens_per_point: (view.points_done > 0).then(|| spent / view.points_done),
         };
         Ok(CycleDetail {
             cycle: view.cycle,
@@ -708,6 +715,30 @@ mod tests {
             (3, 1, 3)
         );
         assert_eq!(detail.figures.tokens_per_point, Some(0));
+
+        // Only the tokens of done cards that have an estimate make the cost of a point: those of the open card b and of
+        // the done card c, which has none, are in the total and not in the ratio.
+        for (card, tokens) in [(a.id, 30), (b.id, 500), (c.id, 700)] {
+            let run = app
+                .store
+                .add_run(Some(card), "Coder", "fake", "code")
+                .unwrap();
+            app.store
+                .add_usage(&crate::store::Usage {
+                    run_id: Some(run.id),
+                    model: "m".into(),
+                    input_tokens: tokens,
+                    output_tokens: 0,
+                    cached_tokens: 0,
+                    duration_ms: 1,
+                    tools: vec![],
+                })
+                .unwrap();
+        }
+        app.store.move_card(c.id, "Done").unwrap();
+        let detail = app.cycle_detail(&who, cycle.id).unwrap();
+        assert_eq!(detail.figures.tokens, 1230);
+        assert_eq!(detail.figures.tokens_per_point, Some(10));
 
         // The burn-up as a pure function: scope when added, done when it got done, never past the end or the day.
         let cards = vec![

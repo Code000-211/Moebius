@@ -173,14 +173,18 @@ function OpenView({
           {view.descending ? ", reversed" : ""}
         </span>
         <span className="flex-1" />
-        <Button size="sm" variant="secondary" onClick={onEdit}>
-          <PencilSimpleIcon className="size-4" aria-hidden="true" />
-          Edit
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onDelete}>
-          <TrashIcon className="size-4" aria-hidden="true" />
-          Delete
-        </Button>
+        {view.can_change && (
+          <>
+            <Button size="sm" variant="secondary" onClick={onEdit}>
+              <PencilSimpleIcon className="size-4" aria-hidden="true" />
+              Edit
+            </Button>
+            <Button size="sm" variant="ghost" onClick={onDelete}>
+              <TrashIcon className="size-4" aria-hidden="true" />
+              Delete
+            </Button>
+          </>
+        )}
       </div>
       <p className="m-0 text-sm text-secondary" data-testid="view-filter">
         Shows {filterWords(view.filter)}
@@ -254,7 +258,11 @@ function ViewForm({
 }) {
   const [fields, setFields] = useState<ViewFields>(fieldsOf(view));
   const save = useMutation({
-    mutationFn: () => editView(view.id, { ...fields, name: fields.name.trim() }),
+    // The filter is not sent, so the server keeps it as it is, with ids this person may not see.
+    mutationFn: () => {
+      const { filter: _kept, ...changed } = fields;
+      return editView(view.id, { ...changed, name: fields.name.trim() });
+    },
     onSuccess: onDone,
   });
   const ready = fields.name.trim() !== "" && !save.isPending;

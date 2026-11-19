@@ -23,6 +23,7 @@ interface View {
   sort: string;
   descending: boolean;
   created_at: number;
+  can_change: boolean;
 }
 
 const CYCLE = {
@@ -113,9 +114,22 @@ export function createViewsFake(): ViewsFake {
       sort: "created",
       descending: false,
       created_at: 1,
+      can_change: true,
+    },
+    {
+      id: 2,
+      name: "Roadmap",
+      owner_id: 3,
+      shared: true,
+      filter: whole({}),
+      layout: "list",
+      sort: "created",
+      descending: false,
+      created_at: 1,
+      can_change: false,
     },
   ];
-  let nextId = 2;
+  let nextId = 3;
   const fields = (body: Record<string, unknown>) => ({
     name: typeof body.name === "string" ? body.name : "",
     shared: body.shared === true,
@@ -143,7 +157,13 @@ export function createViewsFake(): ViewsFake {
       if (method !== "GET") requests.push({ method, path, body });
       if (path === "/v1/views" && method === "GET") return reply(response, 200, views);
       if (path === "/v1/views" && method === "POST") {
-        const made = { id: nextId++, owner_id: 1, created_at: 2, ...fields(body) };
+        const made = {
+          id: nextId++,
+          owner_id: 1,
+          created_at: 2,
+          can_change: true,
+          ...fields(body),
+        };
         views = [...views, made];
         return reply(response, 200, made);
       }
@@ -153,7 +173,9 @@ export function createViewsFake(): ViewsFake {
       if (one[2] && method === "GET") return reply(response, 200, { view, cards: cardsOf(view) });
       if (method === "GET") return reply(response, 200, view);
       if (method === "PATCH") {
-        Object.assign(view, fields(body));
+        // A field left out stays as it was, as on the server.
+        const given = fields({ ...view, ...body });
+        Object.assign(view, given);
         return reply(response, 200, view);
       }
       if (method === "DELETE") {
