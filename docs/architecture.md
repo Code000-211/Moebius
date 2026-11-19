@@ -216,7 +216,7 @@ and does not know anything the API does not say.
     script sees `card.parent`, `card.children`, `card.labels` and `card.claimed_by`, and `moebius.close_issue` closes the
     issue when the script returns (`Effects::close`); the default `ready.luau` uses both for a parent. A card or an inbox item can also be given to people (`App::set_assignees`, `App::set_inbox_assignees`, routes in
     `server/api/assignees.rs`, events `card_assignees_changed` and `inbox_assignees_changed`); a script sees the handles as
-    `card.assignees`, and the default `ready.luau` leaves a card that has any in `Not started`.
+    `card.assignees`, and the default `ready.luau` leaves a card that has any in `Not started`. A card's priority and due date are its `priority:` and `due:` labels (`App::set_priority`, `App::set_due`, routes in `server/api/planning.rs`; a poll that brings the labels brings them), scripts see `card.priority` and `card.due`, and the tick settles urgent cards first (`server::loops::settle_order`).
 12b. **A person chats.** A chat is a run without a card and with purpose `chat`. `POST /v1/chats` (`App::start_chat`)
     calls `PiBolt::start_chat`: the run (`Store::add_run` with no card, and `Store::set_run_repository` when it works
     in a repository) gets a worktree on `moebius/chat-<id>` from the repository's base ref (`Repos::add_chat_worktree`),
@@ -485,6 +485,7 @@ At the top:
 | `app/automations/migration.rs` | The upgrade that writes an older automation's row to a workflow file in the harness configuration repository. |
 | `app/automations/view.rs` | The automations as the page and the API read them, with their next firing and latest one; and the old routes' save and delete of the workflow file behind a row. |
 | `app/automations/cron.rs` | A schedule: a cron expression of five fields in the server's local time, parsed, and the next minute it comes due. |
+| `app/planning.rs` | Setting a card's priority and due date: both are labels (`priority:high`, `due:2026-12-01`), so they are written to the forge and announced as labels are. |
 | `app/assignees.rs` | Giving a card or an inbox item to people: the handles are checked against the people of the organisation, the set is replaced, and a change is announced. |
 | `app/chat_access.rs` | Whose a chat is: its owner reads and writes it, others read it once it is shared, and the lists `mine` and `shared`; the Retro reads the store and so every chat. |
 | `app/chats.rs` | Chats: starting one, continuing an ended one, writing to it, its model and reasoning, ending it, and the list of chats. |
@@ -551,6 +552,7 @@ At the top:
 | `store/mod.rs` | The store: opening the SQLite database, its migrations, the connection and the server's local clock, the helpers that read rows, and every record type re-exported as `store::<Type>`. |
 | `store/cards.rs` | Repositories, their cards, whether a card is held, the issues that block a card, the moves of a card between columns, deleting a card or a repository with all it has, and the numbers of deleted cards. |
 | `store/access.rs` | Access tokens and the sessions of browsers, each kept as the SHA-256 of its secret: making, finding a person by one, the last use, revoking, and ending sessions. |
+| `store/planning.rs` | A card's priority and due date, read from its labels and written back into them; it keeps nothing of its own. |
 | `store/assignees.rs` | Who a card or an inbox item is given to: the tables `card_assignees` and `inbox_assignees`, set as a whole and read as handles. |
 | `store/people.rs` | The people of the organisation (id, handle, display name, role, disabled), never deleted, and the migration that makes the first owner and gives them the records from before that say `person`. |
 | `store/links.rs` | The links between issues besides parent and blockers: a duplicate to its original, and issues related in both directions. |
@@ -604,6 +606,7 @@ At the top:
 | `server/fake_forgejo.rs` | For the tests only: a fake Forgejo with one repository, a server that polls it, and the tests of the Forgejo forge through it. |
 | `server/api/mod.rs` | The desktop API: the state it needs, the token check, the router that merges the routes of its parts, how a failure becomes a status, and `GET /v1/health`. |
 | `server/api/cards.rs` | The snapshot of every board, issues, cards and their changes (edit, approve, block, unblock, delete, retry, merge, reject), a card's runs and history. |
+| `server/api/planning.rs` | The routes that set a card's priority and due date. |
 | `server/api/assignees.rs` | The routes that give a card or an inbox item to people. |
 | `server/api/issues.rs` | The issue tracker's routes: the issue list and one issue, parent, labels, blockers, claim, close and reopen, comments. |
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |

@@ -40,6 +40,8 @@ const snapshot: Snapshot = {
           labels: [],
           claimed_by: null,
           assignees: [],
+          priority: "none",
+          due: null,
         },
       ],
       round_limit: 5,

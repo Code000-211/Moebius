@@ -343,6 +343,15 @@ _Avoid_: prefix, slug, project id
 A person a card is given to; whether an agent still works on the card is up to the column's script.
 _Avoid_: owner, claimer, responsible
 
+**Priority**:
+How soon a card should be done: `urgent`, `high`, `medium`, `low` or `none`. Kept as the card's `priority:<name>` label,
+so the forge shows it, and the board starts urgent cards first.
+_Avoid_: severity, rank
+
+**Due date**:
+The day a card should be done by, as `YYYY-MM-DD`; kept as the card's `due:<date>` label.
+_Avoid_: deadline, target date (a milestone has a target date)
+
 **Home project**:
 The project a repository's new issues land in, unless a `project:<name>` label sends one to another project the
 repository belongs to; a card is on exactly one board.

@@ -37,6 +37,8 @@ const card = (id: number, extra: Partial<Card> = {}): Card => ({
   labels: [],
   claimed_by: null,
   assignees: [],
+  priority: "none",
+  due: null,
   ...extra,
 });
 

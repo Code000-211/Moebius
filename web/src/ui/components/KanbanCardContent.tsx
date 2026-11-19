@@ -6,13 +6,15 @@
 // targets and only the issue number is monospaced; the state words are the shared `MarkLabel` (a mark and grey text), and the card is
 // opened by its title being a button, so the card itself stays a group the links sit in; the labels of the issue, who
 // claimed it and a slot for the stack of its sub-issues (`stack`) are added, and a slot for the box that chooses the
-// card (`select`), which stands in the card's top left corner.
+// card (`select`), which stands in the card's top left corner; the priority as its bars and the due day beside the
+// labels.
 
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
 import { AvatarStack } from "../page/Avatar";
 import { FadedClamp } from "../page/FadedClamp";
 import { MarkLabel, type StateMark } from "../page/MarkLabel";
+import { type Priority, PriorityBars } from "../page/StatusIcon";
 import { PrBadge, type PrBadgeStatus } from "./PrBadge";
 import { Tooltip } from "./Tooltip";
 
@@ -61,6 +63,12 @@ export type KanbanCardContentProps = {
   claimedBy?: string | null;
   /** The handles of the people the card is given to, shown as avatars with the labels; none while it is no one's. */
   assignees?: string[];
+  /** How soon the card should be done; the bars show it unless it is none or left out. */
+  priority?: Priority;
+  /** The day the card is due as `YYYY-MM-DD`; none while it has none. */
+  due?: string | null;
+  /** Whether the due day has passed, which the date says in a stronger colour. */
+  overdue?: boolean;
   /** The box that chooses the card, drawn in its top left corner; left out where a card cannot be chosen. */
   select?: ReactNode;
   /** What a card with sub-issues shows at its foot: how many are done, and the control that opens the stack. */
@@ -83,6 +91,9 @@ export function KanbanCardContent({
   labels = [],
   claimedBy,
   assignees = [],
+  priority = "none",
+  due = null,
+  overdue = false,
   stack,
   select,
   className,
@@ -152,8 +163,20 @@ export function KanbanCardContent({
       )}
 
       {/* The labels and the claim of the issue */}
-      {(labels.length > 0 || claimedBy || assignees.length > 0) && (
+      {(labels.length > 0 ||
+        claimedBy ||
+        assignees.length > 0 ||
+        priority !== "none" ||
+        due !== null) && (
         <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {priority !== "none" && <PriorityBars priority={priority} />}
+          {due !== null && (
+            <span
+              className={cn("text-sm tabular-nums", overdue ? "text-error-text" : "text-secondary")}
+            >
+              {`Due ${due}`}
+            </span>
+          )}
           {labels.map((label) => (
             <span
               key={label}

@@ -241,7 +241,8 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::app::{OWNER_AUTHOR, columns};
-    use crate::board::testing::setup;
+    use crate::board::limits::Limits;
+    use crate::board::testing::{column, engine_with, setup};
 
     #[test]
     fn the_default_kanban_moves_a_card_from_backlog_to_done() {
@@ -786,6 +787,64 @@ end
         app.set_assignees(card.id, &[]).unwrap();
         engine.settle(card.id).unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "In progress");
+    }
+
+    #[test]
+    fn a_script_sees_priority_and_due_and_the_default_kanban_starts_an_urgent_card_before_an_older_low_one()
+     {
+        let (_dir, app, _engine, repo) = setup();
+        let engine = engine_with(
+            &app,
+            Limits {
+                run_limit: 1,
+                ..Limits::default()
+            },
+        );
+        let old_low = app.create_issue(repo, "Old", "", OWNER_AUTHOR).unwrap();
+        let new_urgent = app.create_issue(repo, "New", "", OWNER_AUTHOR).unwrap();
+        let none = app.create_issue(repo, "Plain", "", OWNER_AUTHOR).unwrap();
+        let lua = mlua::Lua::new();
+        let table = engine
+            .card_table(&lua, &app.card(none.id).unwrap())
+            .unwrap();
+        assert_eq!(table.get::<String>("priority").unwrap(), "none");
+        assert!(table.get::<mlua::Value>("due").unwrap().is_nil());
+
+        app.set_priority(old_low.id, "low").unwrap();
+        app.set_priority(new_urgent.id, "urgent").unwrap();
+        app.set_due(new_urgent.id, Some("2026-12-01")).unwrap();
+        let table = engine
+            .card_table(&lua, &app.card(new_urgent.id).unwrap())
+            .unwrap();
+        assert_eq!(table.get::<String>("priority").unwrap(), "urgent");
+        assert_eq!(table.get::<String>("due").unwrap(), "2026-12-01");
+
+        // The tick settles cards in this order; one run fits, and the urgent card gets it.
+        let mut cards = vec![
+            app.card(old_low.id).unwrap(),
+            app.card(none.id).unwrap(),
+            app.card(new_urgent.id).unwrap(),
+        ];
+        for card in &cards {
+            app.move_card(card.id, columns::NOT_STARTED).unwrap();
+        }
+        crate::server::loops::settle_order(&mut cards);
+        assert_eq!(
+            cards.iter().map(|c| c.id).collect::<Vec<_>>(),
+            [new_urgent.id, old_low.id, none.id]
+        );
+        for card in &cards {
+            engine.settle(card.id).unwrap();
+            if column(&app, card) == "In progress" {
+                // The one run the limit allows is going now (the fake harness ends its own at once).
+                app.store
+                    .add_run(Some(card.id), "Coder", "fake", "code")
+                    .unwrap();
+            }
+        }
+        assert_eq!(column(&app, &new_urgent), "In progress");
+        assert_eq!(column(&app, &old_low), "Not started");
+        assert_eq!(column(&app, &none), "Not started");
     }
 
     #[test]

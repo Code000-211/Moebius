@@ -354,6 +354,34 @@ describe("the issue in the dock", () => {
     await value("Assignee No one").waitFor();
   });
 
+  it("sets the priority and the due date of a card, and filters the board by them", async () => {
+    await openBoard();
+    await newIssue("Rush it");
+    await newIssue("Later");
+    await cardTitled("Rush it").click();
+    await dock().getByRole("heading", { name: "Rush it" }).waitFor();
+
+    await value("Priority No priority").click();
+    await page.getByRole("menuitemradio", { name: "Urgent" }).click();
+    await value("Priority Urgent").waitFor();
+    await cardTitled("Rush it").getByRole("img", { name: "Urgent" }).waitFor();
+
+    await value("Due date No date").click();
+    await page.locator('input[type="date"]').fill("2026-12-01");
+    await page.keyboard.press("Enter");
+    await value("Due date 2026-12-01").waitFor();
+    await cardTitled("Rush it").getByText("Due 2026-12-01").waitFor();
+    // The labels that hold them are not shown as labels.
+    await cardTitled("Rush it").getByText("priority:urgent").waitFor({ state: "detached" });
+
+    const filters = page.getByRole("search", { name: "Filter the cards" });
+    await addFilter(page, filters, "Priority", "Urgent");
+    await cardTitled("Rush it").waitFor();
+    await cardTitled("Later").waitFor({ state: "detached" });
+    await filters.getByRole("button", { name: "Clear filters" }).click();
+    await cardTitled("Later").waitFor();
+  });
+
   it("keeps both people when two are given the card one right after the other, from the palette and the right column", async () => {
     await openBoard();
     const made = await context.request.post(`${server.url}/v1/people`, {

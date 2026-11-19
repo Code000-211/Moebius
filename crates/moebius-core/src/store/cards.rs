@@ -100,6 +100,12 @@ pub struct Card {
     /// The handles of the people the card is given to, in the order the people were added; empty while it is no one's.
     #[serde(default)]
     pub assignees: Vec<String>,
+    /// How soon the card should be done, from its `priority:` labels; `none` while it has none.
+    #[serde(default)]
+    pub priority: super::planning::Priority,
+    /// The day the card is due, as `YYYY-MM-DD`, from its `due:` label; none while it has none.
+    #[serde(default)]
+    pub due: Option<String>,
     /// When the card last moved, was edited or was released from a hold (Unix seconds); scripts see it as
     /// `card.moved_at`.
     #[serde(default)]
@@ -516,6 +522,8 @@ impl Store {
             labels: Vec::new(),
             claimed_by: None,
             assignees: Vec::new(),
+            priority: Default::default(),
+            due: None,
             moved_at: at,
             archived_at: None,
         })
@@ -529,7 +537,16 @@ impl Store {
         self.rows(&format!(
             "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {}, project_id, project_number, COALESCE((SELECT key FROM projects WHERE id = cards.project_id), ''), moved_at, archived_at FROM cards WHERE {clause} ORDER BY id", super::assignees::CARD_ASSIGNEES
         ), params, |r| {
+            let labels: Vec<String> = serde_json::from_str(&r.get::<_, String>(17)?).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    17,
+                    rusqlite::types::Type::Text,
+                    e.into(),
+                )
+            })?;
             Ok(Card {
+                priority: super::planning::priority_of(&labels),
+                due: super::planning::due_of(&labels),
                 id: r.get(0)?,
                 repository_id: r.get(1)?,
                 number: r.get(2)?,
@@ -551,13 +568,7 @@ impl Store {
                 parent: r.get(14)?,
                 closed: r.get(15)?,
                 claimed_by: r.get(16)?,
-                labels: serde_json::from_str(&r.get::<_, String>(17)?).map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        17,
-                        rusqlite::types::Type::Text,
-                        e.into(),
-                    )
-                })?,
+                labels,
                 assignees: super::assignees::handles(r, 18)?,
                 project_id: r.get(19)?,
                 project_number: r.get(20)?,

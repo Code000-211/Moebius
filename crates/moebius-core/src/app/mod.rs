@@ -29,6 +29,7 @@ mod issues;
 mod localize;
 mod milestones;
 mod packages;
+mod planning;
 pub mod plugin_settings;
 mod projects;
 mod repositories;
