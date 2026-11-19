@@ -896,7 +896,7 @@ with `POST /v1/wiki/proposals` instead.
 its members, owners who are not members included: for anyone else every route that names such a page answers `404`
 (reading it or an older version, its history, writing, deleting, moving from or to it, proposing it, making it from a
 template, and merging or dismissing its proposal), `GET /v1/wiki/pages` and the search leave it out, and so does the
-inbox. The Moebius agent sees what the person of its chat sees; an agent without one sees none. A run's prompt holds
+inbox. The Moebius agent sees what the person of its chat sees; an agent without one sees none but the pages of the project of its run's card. The recorded `merge_proposal` decision about such a page holds none of its title or diff (they read `a private project` and nothing). A page moved out of a private project keeps its history, so older versions stay readable under the new name. Page names spelled `Projects/...` or `PROJECTS/...` are refused. A run's prompt holds
 the pages its issue links to with `[[...]]`, but a private project's page only for a card of that project. The
 organisation's pages, those of a public project and a folder of a key no project has are seen by everyone.
 

@@ -176,6 +176,10 @@ fn file_of(path: &str) -> Result<String> {
             return Err(invalid(&format!("it has the character {c:?}")));
         }
     }
+    if parts[0] != PROJECTS && parts[0].eq_ignore_ascii_case(PROJECTS) {
+        // On a file system that ignores case this would be the folder of the projects' pages.
+        return Err(invalid("projects is spelled in lower case"));
+    }
     if parts[0] == PROJECTS && parts.len() > 1 {
         if parts.len() < 3 {
             return Err(invalid(
@@ -295,6 +299,8 @@ mod tests {
             "a\nb",
             "projects/WEB",
             "projects/web/Page",
+            "Projects/WEB/Page",
+            "PROJECTS/WEB/Page",
         ] {
             assert!(file_of(bad).is_err(), "{bad:?} was taken");
         }

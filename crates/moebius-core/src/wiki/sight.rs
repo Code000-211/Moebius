@@ -16,9 +16,23 @@ pub struct Seen {
 
 impl Seen {
     /// What `by` sees of the wiki: what their memberships let them. The Moebius agent sees what the person of its chat
-    /// sees, and an agent without one no private project's pages.
+    /// sees, and an agent without one no private project's pages but those of the project of its run's card.
     pub fn of(app: &App, by: &Actor) -> Result<Self> {
-        Ok(Self::from_sight(app.sight(by)?))
+        let own = match by {
+            Actor::Agent { run, .. } => app
+                .store
+                .run(*run)?
+                .and_then(|run| run.card_id)
+                .map(|card| app.store.card(card))
+                .transpose()?
+                .flatten()
+                .map(|card| card.project_id),
+            _ => None,
+        };
+        Ok(Self {
+            sight: app.sight(by)?,
+            own,
+        })
     }
 
     /// What a person with `sight` sees, who is no agent's run.
@@ -49,5 +63,69 @@ impl Seen {
     /// Whether the page `path` is seen.
     pub fn page(&self, app: &App, path: &str) -> bool {
         project_key(path).is_none_or(|key| self.project(app, key))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use moebius_plugin_api::Host;
+
+    use super::*;
+    use crate::store::Store;
+
+    #[test]
+    fn a_run_reads_the_pages_of_its_own_private_project_and_no_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(dir.path()).unwrap());
+        let one = store
+            .add_repository("one", "/srv/one", "none", "main")
+            .unwrap();
+        let two = store
+            .add_repository("two", "/srv/two", "none", "main")
+            .unwrap();
+        for repository in [&one, &two] {
+            store
+                .set_project_access(repository.home_project_id, true, &[])
+                .unwrap();
+        }
+        let key = |repository: &crate::store::Repository| {
+            store
+                .project(repository.home_project_id)
+                .unwrap()
+                .unwrap()
+                .key
+        };
+        let card = store
+            .add_card(one.id, "Plan", "", "person", "Not started")
+            .unwrap();
+        let run = store
+            .add_run(Some(card.id), "Coder", "test", "code")
+            .unwrap();
+        let app = App::new(
+            store.clone(),
+            Arc::new(Host::new(Duration::from_secs(1))),
+            &dir.path().join("data"),
+        );
+        let agent = Actor::Agent {
+            name: "Coder".into(),
+            run: run.id,
+        };
+        let seen = Seen::of(&app, &agent).unwrap();
+        assert!(seen.page(&app, &format!("projects/{}/Plans", key(&one))));
+        assert!(!seen.page(&app, &format!("projects/{}/Plans", key(&two))));
+        // An agent of no card sees no private project.
+        let chat = store.add_run(None, "Moebius", "test", "chat").unwrap();
+        let chat = Actor::Agent {
+            name: "Moebius".into(),
+            run: chat.id,
+        };
+        assert!(
+            !Seen::of(&app, &chat)
+                .unwrap()
+                .page(&app, &format!("projects/{}/Plans", key(&one)))
+        );
     }
 }
