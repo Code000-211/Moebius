@@ -22,12 +22,13 @@ The other parts have one folder each:
 | Folder | What it holds |
 |---|---|
 | `server/` | The wiring, the loops, the desktop API (`server/api/`), the settings, the package manager (`server/packages/`). |
-| `repos/` | Git, the forges, GitHub, GitLab, Forgejo and their poll, the files of a repository. |
+| `repos/` | Git, the clones kept in step with their `origin` (`repos/kept.rs`), the forges, GitHub, GitLab, Forgejo and their poll, the files of a repository. |
 | `board/` | The board engine and its Luau sandbox, and editing a column's script. |
 | `decide/` | Decision points, the tool-call check, the guard, the rules, the files a code run is hinted, the decision model. |
 | `harness/` | One run lifecycle shared by every harness (`harness/run/`), Pi-Bolt and Claude Code runs and chats (`harness/pibolt/`, `harness/claude/`) with the harness picked per agent (`harness/pick.rs`), terminals, the harness configuration repository, MCP servers and the MCP gateway, skills, the Pi packages vendored into the harness configuration repository (`harness/packages/`), grilling, tool outputs kept small, runners (machines that run a harness over SSH). |
 | `improve/` | The Retro, trials, the Retro's proposals to Moebius's own configuration, replays, autoresearch, the training-set export. |
 | `workflows/` | The workflow files in the harness configuration repository, the expressions that fill parameters from earlier nodes, their graph validation, and the registry of node kinds. |
+| `wiki/` | The wiki: the organisation's pages in a git repository the server keeps, read, edited as commits by their person and followed through their history. |
 
 Outside `src/`:
 

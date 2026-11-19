@@ -319,8 +319,8 @@ _Avoid_: test window, maintenance window
 Planned in [ADR 0018](docs/adr/0018-more-than-one-person.md) and
 [the plan for people, the wiki and planning](docs/plan/issues-people-wiki-planning.md). The words for
 people that are built (organisation, person, role) are in the language above; of the words below, project, project key,
-home project and project files are built (a board still works in one repository, or in its project's files), the
-others not yet.
+home project, project files, wiki and page are built (a board still works in one repository, or in its project's
+files), the others not yet.
 
 **Project**:
 One board and the work on it, with any number of repositories, or none; work that needs no repository is done in the
@@ -338,6 +338,16 @@ uppercase letters or digits, unique on the server, chosen when the project is ma
 and its number in the project (`WEB-24`); a card of a forge keeps the forge's number beside it (`#17`), and `#24` in a
 comment names the card of that number in the project of the comment.
 _Avoid_: prefix, slug, project id
+
+**Wiki**:
+The organisation's pages, Markdown files in a git repository the server keeps in step with its `origin`: the
+organisation's at the top and a project's in `projects/<key>/`. An edit is a commit by its person.
+_Avoid_: docs, knowledge base, notes
+
+**Page**:
+One Markdown file of the wiki, named by its path without `.md`, such as `Team/On call`; renamed or moved, it keeps its
+history.
+_Avoid_: document, article, note
 
 **Assignee**:
 A person a card is given to; whether an agent still works on the card is up to the column's script.

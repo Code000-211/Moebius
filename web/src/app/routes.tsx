@@ -83,6 +83,7 @@ const TerminalPage = lazy(() =>
 const UsagePage = lazy(() =>
   import("./usage/UsagePage").then((all) => ({ default: all.UsagePage })),
 );
+const WikiPage = lazy(() => import("./wiki/WikiPage").then((all) => ({ default: all.WikiPage })));
 const WorkflowsPage = lazy(() =>
   import("./workflows/WorkflowsPage").then((all) => ({ default: all.WorkflowsPage })),
 );
@@ -126,6 +127,7 @@ const PAGES_BUILT = new Set([
   "workflows",
   "people",
   "tokens",
+  "wiki",
 ]);
 
 export const routes = [
@@ -160,6 +162,7 @@ export const routes = [
       { path: "retro", element: <RetroPage /> },
       { path: "experiments", element: <ExperimentsPage /> },
       { path: "decision-model", element: <DecisionModelPage /> },
+      { path: "wiki", element: <WikiPage /> },
       { path: "workflows", element: <WorkflowsPage /> },
       { path: "workflows/:name", element: <WorkflowPage /> },
       { path: "workflows/:name/canvas", element: <WorkflowCanvasPage /> },

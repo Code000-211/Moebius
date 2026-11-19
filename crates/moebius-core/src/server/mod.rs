@@ -336,6 +336,13 @@ impl Server {
             )?)),
             None => None,
         };
+        if let Some(url) = &config.wiki_url {
+            app.set_wiki(Arc::new(crate::wiki::Wiki::open(
+                &app,
+                url,
+                &config.wiki_dir(),
+            )?));
+        }
         if let Some(harness_repo) = &harness_repo {
             // This also gives older automations the workflow files that hold them from now on.
             app.set_harness_repo(harness_repo.clone());

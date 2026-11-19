@@ -67,6 +67,12 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
   poll of that repository run at once. The poll stays the source of truth and goes on at its pace (ADR 0012, amending
   ADR 0003).
 
+- **The wiki** (ADR 0022), optional: the organisation's pages, Markdown files in a git repository named by `[wiki] url`
+  that the server clones to `<data_dir>/wiki` and keeps as it keeps the harness configuration repository. The
+  organisation's pages are at the top and a project's in `projects/<key>/`. An edit on the Wiki page or through
+  `/v1/wiki/` is a commit by its person pushed to `origin`, undone when the push fails; a page's history follows it
+  through renames and moves, and what was pushed from elsewhere is read after the next refresh.
+
 - **Connecting over SSH**, as an editor's remote mode does: `moebius connect <host>` logs in with the system's `ssh`
   (keys, the agent, `~/.ssh/config`), and when no server answers there it sets one up after a yes (`--yes` for
   scripts): it finds or installs `moebius` (the release of its own version), runs `moebius init` and `moebius serve` (a

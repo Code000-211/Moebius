@@ -19,6 +19,7 @@ import { createPagesAFake, type PagesAFake } from "./fake/pages-a";
 import { createPagesBFake, type PagesBFake } from "./fake/pages-b";
 import { createPagesCFake, type PagesCFake } from "./fake/pages-c";
 import { createFakeRuns, type FakeRuns } from "./fake/runs";
+import { createWikiFake, type WikiFake } from "./fake/wiki";
 import { createWorkflowsFake, type WorkflowsFake } from "./fake/workflows";
 
 export const TOKEN = "fake-server-token";
@@ -82,6 +83,8 @@ export interface FakeServer {
   packages: PackagesFake;
   /** The workflows and their runs (e2e/fake/workflows.ts). */
   workflows: WorkflowsFake;
+  /** The wiki's pages and their versions (e2e/fake/wiki.ts). */
+  wiki: WikiFake;
 }
 
 function cookieOf(request: IncomingMessage): string | undefined {
@@ -166,6 +169,7 @@ export async function startFakeServer(): Promise<FakeServer> {
   const pagesB = createPagesBFake();
   const pagesC = createPagesCFake(broadcast);
   const workflows = createWorkflowsFake();
+  const wiki = createWikiFake(broadcast);
   const packages = createPackagesFake(broadcast, pagesA);
   let port = 0;
 
@@ -309,6 +313,11 @@ export async function startFakeServer(): Promise<FakeServer> {
       response.writeHead(204, { "set-cookie": "moebius_session=; HttpOnly; Path=/; Max-Age=0" });
       return response.end();
     }
+    const person = people.find((p) => p.id === asker);
+    if (person?.role === "viewer" && request.method !== "GET" && path.startsWith("/v1/wiki/"))
+      return text(response, 403, "a viewer reads the wiki");
+    if (await wiki.handle(request, response, path, person ?? { name: "Owner", handle: "owner" }))
+      return;
     // Answers only once a test of its pages has called use(), so the Settings page's fake keeps /v1/settings otherwise.
     if (await milestones.handle(request, response, path)) return;
     if (await packages.handle(request, response, path)) return;
@@ -397,6 +406,7 @@ export async function startFakeServer(): Promise<FakeServer> {
     pagesC,
     packages,
     workflows,
+    wiki,
     broadcast,
     notify(handle, notice) {
       const person = people.find((p) => p.handle === handle);

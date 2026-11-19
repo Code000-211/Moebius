@@ -6,6 +6,7 @@ pub mod forge;
 pub mod forgejo;
 pub mod github;
 pub mod gitlab;
+pub mod kept;
 pub mod poll;
 pub mod search;
 pub mod settings;

@@ -80,6 +80,7 @@ mod uploads;
 mod web;
 mod webhooks;
 mod whereabouts;
+mod wiki;
 mod workflow_hooks;
 mod workflow_runs;
 mod workflows;
@@ -232,6 +233,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(notices::routes())
         .merge(repositories::routes())
         .merge(projects::routes())
+        .merge(wiki::routes())
         .merge(milestones::routes())
         .merge(runs::routes())
         .merge(chats::routes())

@@ -74,6 +74,7 @@ export function invalidates(event: ServerEvent): QueryKey[] {
   }
   if (event.kind === "card_milestones_changed") stale.push(keys.milestones, keys.cards);
   if (event.kind === "project_changed") stale.push(keys.projects);
+  if (event.kind === "wiki_changed") stale.push(keys.wiki);
   if (event.kind === "script_changed") stale.push(keys.scripts, keys.projectSettingsAll);
   if (event.kind === "project_settings_changed") {
     stale.push(keys.projectSettingsAll);

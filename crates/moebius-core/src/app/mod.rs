@@ -222,6 +222,8 @@ pub struct App {
     forges: BTreeMap<&'static str, Box<dyn Forge>>,
     /// The harness configuration repository's clone, once the server has opened it.
     harness_repo: OnceLock<Arc<HarnessRepo>>,
+    /// The wiki's clone, once the server has opened it.
+    wiki: OnceLock<Arc<crate::wiki::Wiki>>,
     /// What starts the chats of the server, once it has a harness.
     runs: OnceLock<Arc<dyn Runs>>,
     /// Where the server and the web app run (see `whereabouts`).
@@ -282,6 +284,7 @@ impl App {
             close_retry: Duration::from_secs(600),
             forges,
             harness_repo: OnceLock::new(),
+            wiki: OnceLock::new(),
             runs: OnceLock::new(),
             whereabouts: Default::default(),
         }
@@ -328,6 +331,18 @@ impl App {
             AppError::Invalid(
                 "the server has no harness configuration repository ([harness])".into(),
             )
+        })
+    }
+
+    /// Tells the core which clone is the wiki.
+    pub fn set_wiki(&self, wiki: Arc<crate::wiki::Wiki>) {
+        let _ = self.wiki.set(wiki);
+    }
+
+    /// The wiki; a conflict when the server has none.
+    pub fn wiki(&self) -> Result<&Arc<crate::wiki::Wiki>> {
+        self.wiki.get().ok_or_else(|| {
+            AppError::Conflict("the server has no wiki: set [wiki] url in moebius.toml".into())
         })
     }
 

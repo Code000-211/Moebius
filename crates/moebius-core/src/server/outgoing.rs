@@ -152,8 +152,10 @@ pub fn scope(store: &Store, event: &AppEvent) -> Scope {
 
 /// Whether an event of `kind` that names no project is of the whole server.
 fn is_server_wide(kind: &str) -> bool {
-    const KINDS: [&str; 6] = [
+    const KINDS: [&str; 8] = [
         "harness_error",
+        "wiki_changed",
+        "wiki_error",
         "extension_update_available",
         "experiment_done",
         "trial_done",

@@ -148,6 +148,10 @@ describe("invalidates", () => {
     expect(invalidates({ kind: "run_event", data: {} })).not.toContainEqual(keys.projects);
   });
 
+  it("reads the wiki again when a page changed there", () => {
+    expect(invalidates({ kind: "wiki_changed", data: { commit: "abc" } })).toEqual([keys.wiki]);
+  });
+
   it("reads the first-start steps again when a repository comes or goes", () => {
     expect(invalidates({ kind: "repository_added", data: {} })).toContainEqual(keys.start);
   });
