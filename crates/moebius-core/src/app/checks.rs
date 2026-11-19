@@ -45,17 +45,28 @@ impl App {
     }
 
     /// Runs the repository's own checks, the command in the project's `checks` file (never in the change's repository,
-    /// so that its author cannot change them), on the card's change. They run on a thread of their own, in a throwaway
-    /// worktree; meanwhile the change's checks are `pending`. Does nothing for a repository on a forge, which has its
-    /// own checks, or without that file, or when the checks already ran or are running for the change's commit.
-    pub fn run_checks(self: &Arc<Self>, card_id: i64) -> Result<Change> {
+    /// so that its author cannot change them), on each of the card's open changes, with the `checks` of that change's
+    /// repository, and answers the changes in the order the card names their repositories. They run on a thread of
+    /// their own, in a throwaway worktree; meanwhile the change's checks are `pending`. Does nothing for a repository on
+    /// a forge, which has its own checks, or without that file, or when the checks already ran or are running for the
+    /// change's commit.
+    pub fn run_checks(self: &Arc<Self>, card_id: i64) -> Result<Vec<Change>> {
+        let changes = self.open_changes(&self.card(card_id)?)?;
+        if changes.is_empty() {
+            return Err(AppError::Invalid("the card has no change to check".into()));
+        }
+        changes
+            .iter()
+            .map(|change| self.run_checks_of(change.id))
+            .collect()
+    }
+
+    /// Runs the repository's own checks on the open change `change_id`, as `run_checks` says.
+    fn run_checks_of(self: &Arc<Self>, change_id: i64) -> Result<Change> {
         // Held while the change is read: checks that end record their result before they are removed from the set,
         // so a change read under the lock is final when its checks are not in the set.
         let mut checking = self.checking.lock().expect("checks are not poisoned");
-        let change = self
-            .store
-            .open_change(card_id)?
-            .ok_or_else(|| AppError::Invalid("the card has no change to check".into()))?;
+        let change = self.change(change_id)?;
         let repository = self.repository_of(&change)?;
         let (Some(head), Some(script)) = (change.head.clone(), self.checks_script(&repository))
         else {

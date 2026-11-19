@@ -19,6 +19,7 @@ mod assignees;
 mod attempts;
 mod automations;
 mod board;
+mod card_repositories;
 mod cards;
 mod changes;
 mod chat_access;

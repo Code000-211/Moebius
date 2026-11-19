@@ -16,6 +16,8 @@ pub(super) struct ToolCall<'a> {
     pub(super) worktree: Option<&'a Path>,
     /// The run's scratch directory, which it may delete what it put there (`crate::harness::run::scratch`).
     pub(super) scratch: Option<&'a Path>,
+    /// The run's worktrees in its card's other repositories (ADR 0019), which are as much its own as `worktree`.
+    pub(super) others: &'a [PathBuf],
 }
 
 impl ToolCall<'_> {
@@ -28,15 +30,19 @@ impl ToolCall<'_> {
         self.worktree.unwrap_or(Path::new("/")).to_path_buf()
     }
 
-    /// Whether `path`, relative to `cwd`, is somewhere other than inside the run's worktree. A run without a
-    /// worktree has no place that is its own.
+    /// Whether `path`, relative to `cwd`, is somewhere other than inside the run's worktree or one of its other
+    /// worktrees. A run without a worktree has no place that is its own.
     pub(super) fn outside_worktree(&self, cwd: &Path, path: &str) -> bool {
         let Some(worktree) = self.worktree else {
             return true;
         };
-        is_home(path)
-            || self.names_untrusted_scratch(path)
-            || !self.resolved(cwd, path).starts_with(normalise(worktree))
+        if is_home(path) || self.names_untrusted_scratch(path) {
+            return true;
+        }
+        let resolved = self.resolved(cwd, path);
+        !std::iter::once(worktree)
+            .chain(self.others.iter().map(PathBuf::as_path))
+            .any(|own| resolved.starts_with(normalise(own)))
     }
 
     /// Whether a shell command that writes to `path`, relative to `cwd`, writes somewhere it may not: not the

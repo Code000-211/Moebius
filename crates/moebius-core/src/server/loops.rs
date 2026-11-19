@@ -1172,6 +1172,7 @@ mod order_tests {
             assignees: Vec::new(),
             kind: None,
             fields: Default::default(),
+            repositories: Vec::new(),
             priority,
             due: due.map(String::from),
             estimate: None,

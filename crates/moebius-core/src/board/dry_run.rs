@@ -76,11 +76,16 @@ fn made_up_card(lua: &Lua, column: &str, title: &str, author: &str) -> mlua::Res
     t.set("fields", lua.create_table()?)?;
     t.set("estimate", mlua::Value::Nil)?;
     t.set("cycle", mlua::Value::Nil)?;
+    t.set("repositories", vec!["demo"])?;
+    let changes = lua.create_table()?;
+    super::card::array_of_changes(lua, &changes)?;
+    t.set("changes", changes)?;
     t.set("rounds", 0)?;
     t.set("reviews", 0)?;
     t.set("tokens", 0)?;
     t.set("stopped", false)?;
     t.set("attempts", lua.create_table()?)?;
+    super::card::refuse_the_old_change(lua, &t)?;
     Ok(t)
 }
 
@@ -174,7 +179,7 @@ fn recording_api(
         "publish_change",
         lua.create_function(move |lua, ()| {
             log("published the change".into());
-            made_up_change(lua)
+            made_up_changes(lua)
         })?,
     )?;
 
@@ -183,7 +188,7 @@ fn recording_api(
         "open_pull_request",
         lua.create_function(move |lua, ()| {
             log("opened the change's pull request".into());
-            made_up_change(lua)
+            made_up_changes(lua)
         })?,
     )?;
 
@@ -192,7 +197,7 @@ fn recording_api(
         "run_checks",
         lua.create_function(move |lua, ()| {
             log("started the checks of the change".into());
-            made_up_change(lua)
+            made_up_changes(lua)
         })?,
     )?;
 
@@ -374,13 +379,18 @@ fn recording_api(
     Ok(m)
 }
 
-/// The change that the dry run's `publish_change` and `run_checks` return: one without checks that merges cleanly.
-fn made_up_change(lua: &Lua) -> mlua::Result<Table> {
+/// The changes that the dry run's `publish_change` and `run_checks` return: one, in the card's own repository,
+/// without checks, that merges cleanly.
+fn made_up_changes(lua: &Lua) -> mlua::Result<Table> {
     let c = lua.create_table()?;
+    c.set("repository", "demo")?;
     c.set("branch", "moebius/card-1")?;
     c.set("base", "main")?;
     c.set("checks", "none")?;
-    Ok(c)
+    let changes = lua.create_table()?;
+    changes.push(c)?;
+    super::card::array_of_changes(lua, &changes)?;
+    Ok(changes)
 }
 
 #[cfg(test)]
@@ -407,7 +417,7 @@ mod tests {
             function on_card(card)
               local choice = moebius.decide("start", { title = card.title }, { "go", "wait" }, "wait")
               local run = moebius.start_run("Coder", "code", "Be careful.")
-              local change = moebius.publish_change()
+              local change = moebius.publish_change()[1]
               moebius.ask("approve_issue", "a person reads " .. card.author .. "'s issue")
               moebius.stuck("choice " .. choice .. ", run " .. run .. ", checks " .. change.checks)
               moebius.move("Done", "all well")
@@ -430,6 +440,24 @@ mod tests {
             dry("function on_card(card) end", "Not started", "leon").unwrap(),
             [] as [String; 0]
         );
+    }
+
+    /// `card.change` became `card.changes`, and `moebius.run_checks()` returns an array: a script written for one change
+    /// fails with a message saying so, rather than reading nil and offering a change whose checks never passed.
+    #[test]
+    fn a_script_written_for_one_change_fails_closed() {
+        for source in [
+            "function on_card(card) if card.change == nil then moebius.wait('none') end end",
+            "function on_card(card) local c = moebius.run_checks() if c.checks == 'failure' then moebius.move('In progress') end end",
+        ] {
+            let error = dry(source, "In review", "leon").unwrap_err();
+            assert!(
+                error.contains("card.changes") || error.contains("array of the card's changes"),
+                "{error}"
+            );
+        }
+        let source = "function on_card(card) for _, c in ipairs(moebius.run_checks()) do moebius.wait(c.checks) end end";
+        assert_eq!(dry(source, "In review", "leon").unwrap().len(), 2);
     }
 
     #[test]

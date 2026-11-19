@@ -108,7 +108,9 @@ finds the server again by that directory: it answers, or it is started again wit
 5. **A run starts.** `code.luau` calls `moebius.start_run("Coder", "code", note)`, which calls `PiBolt::start` (the
    `Runs` trait). It stores the run (`Store::add_run`), makes a worktree on branch `moebius/run-<id>` from the branch of the
    card's latest successful `code` run (`Store::code_branch`), or from the default branch when it has none
-   (`Repos::add_worktree`), issues the run's token (`Router::issue_token`, carrying the agent's budget), writes the run's
+   (`Repos::add_worktree`); a card over several repositories (`App::card_repositories`) gets one in each, from its branch
+   there (`Store::code_branch_in`), all recorded with `Store::add_run_worktree` so the tool-call check lets the run write
+   in each (the context key `worktrees`); then it issues the run's token (`Router::issue_token`, carrying the agent's budget), writes the run's
    agent directory and the bridge to `<data_dir>/runs/<id>/`, spawns Pi-Bolt (`PiBolt::launch`), sets the run `running`,
    publishes `run_started` and sends the prompt (`prompt_for`, `harness/run/prompts.rs`: the issue with its comments, the instructions for the run's purpose, and
    the note if there is one). The server's `Runs` is `Harnesses` (`harness/pick.rs`), which hands the run to the harness
@@ -149,10 +151,14 @@ finds the server again by that directory: it answers, or it is started again wit
 8. **The run ends.** At `agent_settled`, `Reader::end` closes Pi's standard input, revokes the token, commits what the
    agent left (`Reader::commit`: `git add --all` and a commit by Moebius; for `code` runs, and for chats, see 12b), sets the status (`succeeded`,
    `failed` when a `code` run changed nothing or anything went wrong, `stopped` when aborted), removes the worktree
-   (the branch stays) and publishes `run_ended`. The text of the agent's final answer, reported in Pi's `agent_end`
+   (the branch stays) and publishes `run_ended`. A `code` run whose summary asks for another repository
+   (`REPOSITORY: <name>`) succeeds with it added to the card and a note that sends the card back to coding
+   (`App::end_code_run`). The text of the agent's final answer, reported in Pi's `agent_end`
    event, was stored as the run's summary when that event came (`Store::set_run_summary`).
 9. **The change is published.** On a later tick `code.luau` sees the succeeded `code` run (and no `card.note`) and moves
-   the card to `In review`. `review.luau` calls `moebius.publish_change`, which calls `App::publish_change`: the branch
+   the card to `In review`. `review.luau` calls `moebius.publish_change`, which calls `App::publish_card_changes`, once
+   for each repository the card works in that has work (one change per repository; another than the card's own on
+   `moebius/card-<KEY>-<number>`): the branch
    `moebius/card-<number>` is pointed at the latest successful `code` run's commit (`Repos::point_branch`; each round's
    branch descends from the last, so the branch only moves forward) and the forge pushes it (`Forge::push`; `NoForge` does nothing). No pull request is opened yet: it opens when the
    review approved the change and `moebius.offer_change` offers it (`Forge::publish`: `GitHubForge` pushes and, the first
@@ -170,7 +176,7 @@ finds the server again by that directory: it answers, or it is started again wit
     a forge, `moebius.run_checks` calls `App::run_checks`: if the project has a `checks` file, a thread
     runs it with `sh -c` in a throwaway worktree of the change's commit (`App::check_change`, `execute`) with the time
     limit `checks.timeout_seconds`, and records `success` or `failure` with the end of the output, redacted
-    (`Store::set_local_checks`). `App::checks_of` gives scripts `card.change.checks`: checks for another commit than the
+    (`Store::set_local_checks`). `App::checks_of` gives scripts the `checks` of each of `card.changes`: checks for another commit than the
     published one do not count, and on a forge the change is, once it has a pull request, `pending` for a grace period after the publish and then
     `none`. `App::conflict_of` asks `git merge-tree` whether the change still merges into the default branch
     (`Repos::conflicts`).
@@ -535,12 +541,14 @@ At the top:
 | `app/notices.rs` | What concerns a person: the `@handle`s a text mentions, the notice each assignment, mention and change to a followed card makes, reading one, and following a card. |
 | `app/templates.rs` | Templates for issues and pages: listing and editing them in the harness configuration repository, starting an issue from its kind's template, making a page from a page template. |
 | `app/kinds.rs` | Kinds of issues and their fields: what is written is checked, a project picks the kinds it offers, a card gets a kind and values for its fields, and the cards of every project are filtered and sorted by a field. |
+| `app/card_repositories.rs` | The repositories a card works in: its own issue's first, the others a person or the Moebius agent names from the project's, and a `code` run's ask for another (`REPOSITORY:`), which adds it and sends the card back to coding. |
 | `app/assignees.rs` | Giving a card or an inbox item to people: the handles are checked against the people of the organisation, the set is replaced, and a change is announced. |
 | `app/chat_access.rs` | Whose a chat is: its owner reads and writes it, others read it once it is shared, and the lists `mine` and `shared`; the Retro reads the store and so every chat. |
 | `app/chats.rs` | Chats: starting one, continuing an ended one, writing to it, its model and reasoning, ending it, and the list of chats. |
 | `app/deletions.rs` | Deleting a chat: a chat that is going is stopped, then it is taken out of the store with its changes, inbox items and grillings, and its worktree and branch are removed; also the stop-and-wait that research and grillings share. |
 | `app/diffs.rs` | What a change or a run changed, as a unified diff (secrets removed, cut at 2 MB) for a client to draw. |
-| `app/changes.rs` | Changes: a card's work published through the forge, offered with a chat's work in the inbox, rejected or merged, and what the forge says became of them. |
+| `app/changes/mod.rs` | Changes: a card's work and a chat's work offered in the inbox, rejected or merged, and what the forge says became of them. |
+| `app/changes/publish.rs` | A card's work published through the forges of its repositories, one change per repository it works in, and offered in the inbox. |
 | `app/checks.rs` | How a change's checks stand, and a repository's own checks (the project's `checks`) run in a throwaway worktree with a time limit and a cleared environment. |
 | `app/board.rs` | What a board shows of a card, worked out once for the snapshot and the scripts: rounds, latest run, and the batched reads of a whole board. |
 | `app/attempts.rs` | Attempts: judging each attempt of a hard card by the repository's checks and its reproduction test on a thread of its own, settling a round (one picked, or none passed), and reading a selection run's pick. |
@@ -607,6 +615,7 @@ At the top:
 | `store/planning.rs` | A card's priority and due date, read from its labels and written back into them; it keeps nothing of its own. |
 | `store/notices.rs` | The notices of a person with their read mark, and the cards they follow: the tables `notices` and `card_follows`. |
 | `store/kinds.rs` | Kinds of issues, their fields, the kinds each project picked and the values cards hold: the tables `kinds`, `kind_fields`, `project_kinds` and `card_fields`, and `cards.kind_id`. |
+| `store/card_repositories.rs` | The repositories a card names besides its own (`card_repositories`) and the worktrees a run of it has in each (`run_worktrees`), with the code branch of the card in each repository. |
 | `store/assignees.rs` | Who a card or an inbox item is given to: the tables `card_assignees` and `inbox_assignees`, set as a whole and read as handles. |
 | `store/people.rs` | The people of the organisation (id, handle, display name, role, disabled), never deleted, and the migration that makes the first owner and gives them the records from before that say `person`. |
 | `store/links.rs` | The links between issues besides parent and blockers: a duplicate to its original, and issues related in both directions. |
@@ -667,6 +676,7 @@ At the top:
 | `server/api/planning.rs` | The routes that set a card's priority and due date. |
 | `server/api/notices.rs` | The routes of a person's notices and of following a card. |
 | `server/api/kinds.rs` | The routes of kinds of issues, the kinds a project offers, a card's kind and fields, and the cards of every project filtered and sorted by them. |
+| `server/api/card_repositories.rs` | The route that names the repositories a card works in. |
 | `server/api/assignees.rs` | The routes that give a card or an inbox item to people. |
 | `server/api/issues.rs` | The issue tracker's routes: the issue list and one issue, parent, labels, blockers, claim, close and reopen, comments. |
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
@@ -794,11 +804,12 @@ At the top:
 | `harness/run/agents.rs` | The built-in agents (the Moebius agent, the Grilling partner, the Coder, the Reviewer, the Retro analyst, the Autoresearcher) with their instructions and skills, and the agent a run uses, on either harness. |
 | `harness/run/coding_agents.rs` | The built-in instructions of the Coder and the Reviewer, which complement the per-run prompts of `prompts.rs`. |
 | `harness/run/prompts.rs` | What a run of a card is told: the issue and its comments, the instructions of its purpose, the files likely to matter, the lessons of earlier cards and the notes of the last round. |
-| `harness/run/lifecycle.rs` | Making a run, its worktree and its token (`card_run`, `detached_run`, `chat_run`), undoing them when its process cannot be started (`launch_or_undo`), and `RunningRun`, which commits what the agent left and removes the worktree. |
+| `harness/run/lifecycle.rs` | Making a run, its worktree (one in each repository of a card over several) and its token (`card_run`, `detached_run`, `chat_run`), undoing them when its process cannot be started (`launch_or_undo`), and `RunningRun`, which commits what the agent left and removes the worktree. |
 | `harness/run/start.rs` | Starting a run: the harness is asked only to start its process (`Launching`, `Launch`) in the run `lifecycle` made. |
 | `harness/run/end.rs` | Ending a run: its records kept as its events and summary (`keep`), and its end (`finish`). |
 | `harness/run/scratch.rs` | The run's own scratch directory, `<data_dir>/runs/<id>/scratch`: made before its process starts on this machine, named to it as its `TMPDIR`, `TEMP`, `TMP` and `$MOEBIUS_RUN_SCRATCH`, and removed when the run ends. A run on a runner has none, and keeps the temporary directory of the runner. |
 | `harness/run/testing.rs` | For the tests only: a server with one repository and both harnesses on the fake of each process, and ways to wait for a run. |
+| `harness/run/several_tests.rs` | For the tests only: a card over several repositories, on the fake `pi-bolt`: a worktree and a change in each, and a run that asks for another. |
 | `harness/run/tests.rs` | For the tests only: the run lifecycle tests, the same against Pi-Bolt and Claude Code. |
 | `harness/claude/mod.rs` | The Claude Code harness: what it holds of every run's process, and `CardRuns`, `ChatRuns` and `ImproveRuns` for it: card runs, trials, the Retro analyst, the Autoresearcher and chats, steered with a user message and stopped by killing it. |
 | `harness/claude/process.rs` | Starting Claude Code: its own configuration directory with the agent's skills, `mcp.json`, its command line and environment (the router and the run's token) and its process. |

@@ -816,7 +816,7 @@ mod tests {
     moebius.wait("reading the change")
     return
   end
-  local change = moebius.run_checks()
+  local change = moebius.run_checks()[1]
   if change.checks == "pending" then
     moebius.wait("waiting for the checks of the change")
   elseif change.checks == "failure" then

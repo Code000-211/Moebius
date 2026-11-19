@@ -305,6 +305,7 @@ fail-closed option `refuse`. All context values are strings:
 | `run_id` | always | The run's id, as decimal text. |
 | `card_id` | when the run has a card | The card's id, as decimal text. |
 | `worktree` | when the run has a worktree | The absolute path of the run's worktree. |
+| `worktrees` | when the run's card works in several repositories | The absolute paths of the run's other worktrees, one per line, one in each of the card's repositories after its own (see [Cards over several repositories](column-scripts.md#cards-over-several-repositories)). The built-in rules let the run write in them as in `worktree`. |
 | `scratch` | for every run on this machine | The absolute path of the run's own scratch directory (`<data_dir>/runs/<id>/scratch`), which the run is started with as its `TMPDIR`, `TEMP` and `TMP` and as `$MOEBIUS_RUN_SCRATCH`, whose contents the built-in rules let it delete and which Moebius removes when the run ends. A run on a runner has none, and keeps the temporary directory of the runner. |
 | `card_title`, `card_body` | when the card is found | The card's title and body. |
 | `rules` | unless `rules_error` is set | The rules that apply as Markdown (`## <name>` and the text), possibly empty. See [rules](rules.md). |
@@ -354,7 +355,7 @@ a chat's Pi is started again). The parameters are a `LaunchRequest`:
 | `env` | map of string to string | Its complete environment, the run token (`MOEBIUS_RUN_TOKEN`) included: not the server's, but the few variables every program needs and those Moebius sets. A run on this machine has `TMPDIR`, `TEMP`, `TMP` and `MOEBIUS_RUN_SCRATCH` naming its own scratch directory, `<data_dir>/runs/<id>/scratch`, instead of the shared temporary directory. |
 | `dir` | string | The working directory: the run's worktree, or an empty directory for a chat without a repository. |
 | `read_only` | array of strings | Paths the process needs to read: the bridge extension, the agent's own extensions and skills, and the run's output folder (`<data_dir>/runs/<id>/out`), where the server saves the whole outputs of tools that were cut short and the agent reads them. They may be files or directories. |
-| `read_write` | array of strings | Paths it needs to read and write: the worktree, its agent directory (which holds the credential store of its harness), its sessions directory, and the run's scratch directory (see `env`). |
+| `read_write` | array of strings | Paths it needs to read and write: the worktree, its agent directory (which holds the credential store of its harness), its sessions directory, and the run's scratch directory (see `env`); for a run of a card over several repositories also each of its other worktrees and the git directory (`.git`) of the clone it belongs to. |
 | `urls` | object | `router`, `gateway` and `check`: the addresses the process must reach as the server reaches them, such as `http://127.0.0.1:7172`, `http://127.0.0.1:7172/mcp` and `http://127.0.0.1:7172` (the tool-call check the bridge asks, `MOEBIUS_CHECK_URL`). |
 | `clone` | string or `null` | The clone of the repository the worktree belongs to, whose git directory the worktree's git uses; `null` without a repository. |
 | `runner` | string or `null` | The name of the `[[runners]]` machine when the run goes there over SSH, else `null`. |

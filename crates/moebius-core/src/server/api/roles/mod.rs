@@ -156,6 +156,7 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("DELETE", "/v1/cards/{id}", MEMBER_PERSON),
     ("PUT", "/v1/cards/{id}/parent", MEMBER),
     ("PUT", "/v1/cards/{id}/labels", MEMBER),
+    ("PUT", "/v1/cards/{id}/repositories", MEMBER),
     ("PUT", "/v1/cards/{id}/assignees", MEMBER_PERSON),
     ("PUT", "/v1/inbox/{id}/assignees", MEMBER_PERSON),
     ("PUT", "/v1/cards/{id}/priority", MEMBER_PERSON),

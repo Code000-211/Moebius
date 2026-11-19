@@ -1,5 +1,7 @@
-//! Changes: publishing a card's work through its repository's forge, offering it and a chat's work in the inbox,
+//! Changes: offering a card's work (`publish`, one change per repository it works in) and a chat's work in the inbox,
 //! rejecting and merging them, and what the forge says became of them.
+
+mod publish;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -24,9 +26,6 @@ enum Earlier {
 
 /// How much of what the code run said a pull request carries, in characters.
 const SAID_AT_MOST: usize = 8_000;
-
-/// How much of the review's judgements a pull request carries, in characters.
-const JUDGEMENTS_AT_MOST: usize = 4_000;
 
 /// How many files `git diff --stat` lists in a pull request before the rest is left to its line of totals.
 const FILES_AT_MOST: usize = 30;
@@ -120,119 +119,6 @@ impl App {
         self.store.resolve_inbox_for_card(card.id)?;
         self.move_card(card.id, columns::IN_PROGRESS, Some(by))
             .map(Some)
-    }
-
-    /// Publishes the work of the card's latest successful `code` run on the branch of its change, `moebius/card-<number>`:
-    /// the branch is pushed to the forge and the change is recorded, without a pull request. The pull request opens
-    /// only when the change is offered (see `offer_change`), once the review approved it. The branch belongs to
-    /// Moebius, so a round that rewrote its commit (an amended message, say) replaces what was published; the push is
-    /// refused if the forge's branch has moved on since. Does nothing when this work is published.
-    pub fn publish_change(&self, card_id: i64) -> Result<Change> {
-        self.publish_card_change(card_id, false, None)
-    }
-
-    /// Publishes the card's work as `publish_change` does and, if the change has no pull request yet, opens one
-    /// through the repository's forge; a forge without them has none to open. Without the review's `judgements`,
-    /// which only an offer has. A review script that calls this when the `code` run ended lets the forge run its
-    /// checks while the review of the card still reads the change.
-    pub fn open_pull_request(&self, card_id: i64) -> Result<Change> {
-        self.publish_card_change(card_id, true, None)
-    }
-
-    /// Publishes the card's work as `publish_change` does and, if the change has no pull request yet, opens one
-    /// through the repository's forge; a forge without them has none to open. The pull request says what the change
-    /// does (see `pull_request_body`), with the review's `judgements` in it when the offer has them.
-    pub(crate) fn publish_card_change(
-        &self,
-        card_id: i64,
-        open_pull_request: bool,
-        judgements: Option<&str>,
-    ) -> Result<Change> {
-        let card = self.card(card_id)?;
-        let repository = self.repository(card.repository_id)?;
-        let forge = self.forge(&repository)?;
-        let code_branch = self
-            .store
-            .code_branch(card_id)?
-            .ok_or_else(|| AppError::Invalid("the card has no code run to publish".into()))?;
-        let clone = Path::new(&repository.path);
-        let head = git(clone, &["rev-parse", &code_branch])?;
-        let existing = self.store.open_change(card_id)?;
-        let opened = |c: &Change| c.pull_request.is_some() || !open_pull_request;
-        if let Some(change) = existing
-            .as_ref()
-            .filter(|c| c.head.as_ref() == Some(&head) && opened(c))
-        {
-            return Ok(change.clone());
-        }
-        let branch = format!("moebius/card-{}", card.number);
-        self.repos.point_branch(clone, &branch, &head)?;
-        let pull_request = existing.as_ref().and_then(|c| c.pull_request);
-        let pull_request = if open_pull_request {
-            let body = self.pull_request_body(&card, &repository, &branch, judgements);
-            forge.publish(&repository, &card.title, &body, &branch, pull_request)?
-        } else {
-            forge.push(&repository, &branch)?;
-            pull_request
-        };
-        let change = match existing {
-            Some(change) => {
-                self.store.set_change_head(change.id, &head, now())?;
-                if pull_request != change.pull_request {
-                    self.store
-                        .set_change_pull_request(change.id, pull_request)?;
-                }
-                self.change(change.id)?
-            }
-            None => self.store.add_change(
-                card.repository_id,
-                Some(card_id),
-                &branch,
-                pull_request,
-                &head,
-            )?,
-        };
-        self.bus.publish(Event::ChangeUpdated(change.clone()));
-        Ok(change)
-    }
-
-    /// Publishes the card's change, opening its pull request, and puts it in the inbox, ready to merge.
-    pub fn offer_change(&self, card_id: i64) -> Result<Change> {
-        self.offer_change_noted(card_id, None)
-            .map(|(change, _)| change)
-    }
-
-    /// Like `offer_change`, with the judgements of the review attached to the inbox item as `judgements`. Also says
-    /// whether the card moved to Ready to merge: it does not when a person or the forge poll moved it while the
-    /// change was published, and then nothing is put in the inbox.
-    pub fn offer_change_noted(
-        &self,
-        card_id: i64,
-        judgements: Option<&str>,
-    ) -> Result<(Change, bool)> {
-        let seen = self.card(card_id)?.column;
-        let change = self.publish_card_change(card_id, true, judgements)?;
-        self.finish_offer(card_id, &seen, change, judgements)
-    }
-
-    /// Moves the card from the column it was `seen` in to Ready to merge and puts `change` in the inbox, only if the
-    /// card is still there; otherwise the card is left where it is and the inbox is left alone.
-    pub(crate) fn finish_offer(
-        &self,
-        card_id: i64,
-        seen: &str,
-        change: Change,
-        judgements: Option<&str>,
-    ) -> Result<(Change, bool)> {
-        if self
-            .move_card_from(card_id, seen, columns::READY_TO_MERGE, None, None)?
-            .is_none()
-        {
-            return Ok((change, false));
-        }
-        let card = self.card(card_id)?;
-        let change = self.put_in_inbox(change, &card.title, judgements)?;
-        Ok((change, true))
     }
 
     /// Offers what a chat in a repository left on its branch as a change without a card: published through the
@@ -428,59 +314,6 @@ impl App {
         self.put_in_inbox(self.change(change_id)?, title, None)
     }
 
-    /// What the pull request of a card's change says, in place of the `Closes #<number>` line alone: the line that
-    /// closes the issue when the change is merged, what the code run said it did, the stat of the files it changed,
-    /// what the review found, and who made it. A section Moebius has nothing for is left out.
-    fn pull_request_body(
-        &self,
-        card: &Card,
-        repository: &Repository,
-        branch: &str,
-        judgements: Option<&str>,
-    ) -> String {
-        let mut body = format!("Closes #{}\n", card.number);
-        if let Some(said) = self.what_the_code_run_said(card.id) {
-            body.push_str(&format!(
-                "\n## What changed\n\n{}\n",
-                cut(&said, SAID_AT_MOST)
-            ));
-        }
-        if let Some(stat) = self.files_changed(repository, branch) {
-            body.push_str(&format!("\n## Files changed\n\n```\n{stat}\n```\n"));
-        }
-        if let Some(judgements) = judgements.map(str::trim).filter(|text| !text.is_empty()) {
-            body.push_str(&format!(
-                "\n## Review\n\n{}\n",
-                cut(judgements, JUDGEMENTS_AT_MOST)
-            ));
-        }
-        body.push_str("\nMade by Moebius.\n");
-        body
-    }
-
-    /// What the card's latest successful `code` run answered last, without the lines that name its reproduction test:
-    /// those are for the board's review, not for a reader of the pull request.
-    fn what_the_code_run_said(&self, card_id: i64) -> Option<String> {
-        let said = self
-            .store
-            .runs_for_card(card_id)
-            .ok()?
-            .into_iter()
-            .rev()
-            .find(|run| run.purpose == "code" && run.status == "succeeded")?
-            .summary?;
-        let kept = said
-            .lines()
-            .filter(|line| {
-                let line = line.trim_start();
-                !line.starts_with("REPRODUCE:") && !line.starts_with("REPRODUCE-FILE:")
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        let kept = kept.trim();
-        (!kept.is_empty()).then(|| kept.to_string())
-    }
-
     /// The stat of what the change does to the repository, `git diff --stat` from where the branch left the
     /// repository's branch, cut to its first files when the list is long.
     fn files_changed(&self, repository: &Repository, branch: &str) -> Option<String> {
@@ -601,7 +434,14 @@ impl App {
             reason,
         )?;
         let message = match change.card_id.map(|id| self.card(id)).transpose()? {
-            Some(card) => format!("Merge #{}: {}", card.number, card.title),
+            // The issue's number is one of the card's own repository; another repository's merge names the card.
+            Some(card) if change.repository_id == Some(card.repository_id) => {
+                format!("Merge #{}: {}", card.number, card.title)
+            }
+            Some(card) => format!(
+                "Merge {}-{}: {}",
+                card.project_key, card.project_number, card.title
+            ),
             None => {
                 // The merge says what it carries: the subject of the change's last commit, in the line the forge
                 // or the harness clone writes under it.
@@ -632,7 +472,8 @@ impl App {
         Ok(commit)
     }
 
-    /// A change is merged, here or on the forge: its inbox items are resolved and its card, if it has one, is done.
+    /// A change is merged, here or on the forge: its inbox items are resolved and its card, if it has one, is done, once
+    /// no other change of the card is open; until then only the change's own inbox item is resolved.
     /// `by` is the person who merged it, who is not told that the card moved (none for the poll).
     pub fn change_merged(
         &self,
@@ -647,6 +488,10 @@ impl App {
         });
         self.localize_change_merged(change, commit);
         match change.card_id {
+            // A card over several repositories is done once its last open change is merged (ADR 0019).
+            Some(card_id) if !self.open_changes(&self.card(card_id)?)?.is_empty() => {
+                self.store.resolve_inbox_for_change(change.id)?;
+            }
             Some(card_id) => {
                 self.store.resolve_inbox_for_card(card_id)?;
                 self.move_card(card_id, columns::DONE, by)?;

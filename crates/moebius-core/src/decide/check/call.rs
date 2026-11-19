@@ -79,6 +79,8 @@ pub(crate) fn decide_call(
 /// - `run_id`, `card_id`: the run being checked and its card (when it has one), as numbers in text. The teacher model's
 ///   tokens are counted against them.
 /// - `worktree`: the run's worktree path, when it has one.
+/// - `worktrees`: the paths of a run's other worktrees, one per line, when its card works in several repositories
+///   (ADR 0019); the run may write in them as in `worktree`.
 /// - `scratch`: the run's own scratch directory, which it may delete what it put there and which Moebius removes with
 ///   the run, when the run is on this machine (see `crate::harness::run::scratch`). A run on a runner has none: it
 ///   keeps the temporary directory of the runner, which the server neither made nor removes.
@@ -109,6 +111,18 @@ fn tool_call_question(
     // it has no scratch directory here to name.
     let on_runner = run.as_ref().is_some_and(|r| r.runner.is_some());
     if let Some(worktree) = run.as_ref().and_then(|r| r.worktree.clone()) {
+        // A run of a card over several repositories has a worktree in each; the first is `worktree`.
+        let others: Vec<String> = app
+            .store
+            .run_worktrees(grant.run_id)
+            .ok()?
+            .into_iter()
+            .map(|w| w.path)
+            .filter(|path| *path != worktree)
+            .collect();
+        if !others.is_empty() {
+            context.insert("worktrees".into(), others.join("\n"));
+        }
         context.insert("worktree".into(), worktree);
     }
     if !on_runner {
@@ -139,6 +153,7 @@ fn tool_call_question(
         &request.input,
         context.get("worktree").map(Path::new),
         context.get("scratch").map(Path::new),
+        &guard::other_worktrees(&context),
     ) {
         context.insert("builtin_refusal".into(), refusal);
     }
@@ -342,6 +357,91 @@ mod tests {
         for outside in [
             clone.join("prices.md"),
             clone.parent().unwrap().join("x.md"),
+        ] {
+            let reply = f.call("write", json!({ "path": outside, "content": "10 EUR" }));
+            assert_eq!(reply.decision, "refuse", "{outside:?}");
+            assert!(
+                reply.reason.starts_with("stay-in-the-worktree: "),
+                "{}",
+                reply.reason
+            );
+        }
+    }
+
+    /// A run of a card over several repositories has a worktree in each (ADR 0019): the check lets it write in every
+    /// one of them, through a tool or a shell, and refuses a write anywhere else, the clones of those repositories
+    /// included. (A shell may also write under `/tmp`, where the test's directories are, so only the tool is tried
+    /// outside.)
+    #[test]
+    fn a_run_of_a_card_over_two_repositories_writes_in_both_worktrees_and_nowhere_else() {
+        let mut f = fixture(None, false, None);
+        let project = f.app.add_project("Shop", "SHOP").unwrap();
+        let files = f.app.repository(project.files.unwrap()).unwrap();
+        let web_origin = f._dir.path().join("web-origin");
+        std::fs::create_dir_all(&web_origin).unwrap();
+        let web = f
+            .app
+            .add_repository("web", web_origin.to_str().unwrap())
+            .unwrap();
+        crate::repos::git(
+            Path::new(&web.path),
+            &["commit", "--quiet", "--allow-empty", "-m", "first"],
+        )
+        .unwrap();
+        f.app.store.link_repository(project.id, web.id).unwrap();
+        let card = f
+            .app
+            .create_issue(files.id, "Sell it", "", "person:owner")
+            .unwrap();
+        f.app
+            .set_card_repositories(&Actor::first_owner(), card.id, &["web".into()], "")
+            .unwrap();
+        let run = f
+            .app
+            .store
+            .add_run(Some(card.id), "Coder", "pi-bolt", "code")
+            .unwrap();
+        let mut worktrees = Vec::new();
+        for repository in [&files, &web] {
+            let clone = Path::new(&repository.path);
+            let worktree = f
+                .app
+                .repos
+                .add_worktree(&repository.name, clone, run.id, &repository.base_ref())
+                .unwrap();
+            f.app
+                .store
+                .add_run_worktree(
+                    run.id,
+                    repository.id,
+                    &worktree.path.to_string_lossy(),
+                    "start",
+                )
+                .unwrap();
+            worktrees.push(worktree.path);
+        }
+        f.app
+            .store
+            .set_run_worktree(run.id, &worktrees[0].to_string_lossy())
+            .unwrap();
+        f.grant = Grant {
+            run_id: run.id,
+            card_id: Some(card.id),
+            budget: None,
+        };
+        for worktree in &worktrees {
+            let inside = worktree.join("page.md");
+            let reply = f.call("write", json!({ "path": inside, "content": "10 EUR" }));
+            assert_eq!(reply.decision, "allow", "{inside:?}: {}", reply.reason);
+            let reply = f.bash(&format!(
+                "echo hi > {}",
+                worktree.join("note.txt").display()
+            ));
+            assert_eq!(reply.decision, "allow", "{}", reply.reason);
+        }
+        for outside in [
+            Path::new(&web.path).join("page.md"),
+            worktrees[1].parent().unwrap().join("page.md"),
         ] {
             let reply = f.call("write", json!({ "path": outside, "content": "10 EUR" }));
             assert_eq!(reply.decision, "refuse", "{outside:?}");
