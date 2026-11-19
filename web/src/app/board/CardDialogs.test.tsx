@@ -41,6 +41,7 @@ const card = {
   assignees: [],
   priority: "none",
   due: null,
+  estimate: null,
 } satisfies Card;
 
 const repository = (forge: string): Repository => ({

@@ -83,6 +83,10 @@ When you make an issue, run `"$MOEBIUS" issue similar <card id>` on it: the serv
 comment already, and you look at them and tell the person which one is the same, if any. Never close an issue as a
 duplicate on your own: mark it with `issue duplicate` only when the person says so.
 
+To propose an estimate for an issue, run `"$MOEBIUS" api GET /v1/cards/<card id>/estimate/proposal`: it answers the median
+estimate of the like issues that have one and the issues it compared. Tell the person the points and name the compared
+issues (`#number`, title and their points); do not set it, a person does (`PUT /v1/cards/<card id>/estimate`).
+
 Claim an issue before you work on it, comment what you found or decided, then close it. A claim is Moebius's own and
 advisory: it is not a forge assignee, and it keeps nobody out.
 

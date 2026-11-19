@@ -24,6 +24,7 @@ use crate::repos::forge::Forge;
 use crate::store::{Card, Comment, Repository};
 pub use links::Links;
 pub use similar::Similar;
+pub(in crate::app) use similar::likeness;
 pub(crate) use sync::now_millis;
 use sync::waits_for;
 pub(super) use text::part_of;

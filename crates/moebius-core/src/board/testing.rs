@@ -130,7 +130,7 @@ impl CardRuns for FakeHarness {
     }
 }
 
-pub(super) fn setup() -> (tempfile::TempDir, Arc<App>, Engine, i64) {
+pub(crate) fn setup() -> (tempfile::TempDir, Arc<App>, Engine, i64) {
     setup_with(None)
 }
 

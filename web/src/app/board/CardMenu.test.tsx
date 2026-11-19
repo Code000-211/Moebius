@@ -38,6 +38,7 @@ function card(extra: Partial<Card> = {}): Card {
     assignees: [],
     priority: "none",
     due: null,
+    estimate: null,
     ...extra,
   };
 }

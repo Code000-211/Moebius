@@ -196,10 +196,10 @@ export function dueMatches(due: string | null, filter: string, today: string): b
   }
 }
 
-/** Whether a label is one of those that hold a card's priority or due date, which the card shows in its own way. */
+/** Whether a label is one of those that hold a card's priority, due date or estimate, which the card shows in its own way. */
 export function isPlanningLabel(label: string): boolean {
   const lower = label.toLowerCase();
-  return lower.startsWith("priority:") || lower.startsWith("due:");
+  return lower.startsWith("priority:") || lower.startsWith("due:") || lower.startsWith("estimate:");
 }
 
 /** The labels the issues of a board carry, sorted. */

@@ -163,6 +163,7 @@ function Day({ view, wanted }: { view: RetroView; wanted: string | null }) {
   const queryClient = useQueryClient();
   const groups = groupErrors(view.report.errors);
   const proposals = view.proposals ?? [];
+  const estimates = view.report.estimates ?? [];
   const warnings = view.warnings ?? [];
   const retry = useMutation({
     mutationFn: retryRetro,
@@ -232,6 +233,17 @@ function Day({ view, wanted }: { view: RetroView; wanted: string | null }) {
           </div>
         )}
       </Box>
+      {estimates.length > 0 && (
+        <Box title="Estimates furthest off" className="min-w-0">
+          <ul className="m-0 flex list-none flex-col gap-2 p-0">
+            {estimates.map((miss) => (
+              <li key={miss.card} className="text-base">
+                {`Card ${miss.card}, ${miss.title}: ${miss.estimate} ${miss.estimate === 1 ? "point" : "points"}, took ${miss.tokens_ratio}× the tokens its points are worth (${miss.minutes} min)`}
+              </li>
+            ))}
+          </ul>
+        </Box>
+      )}
       <Box
         title="Proposals"
         aside={

@@ -106,6 +106,9 @@ pub struct Card {
     /// The day the card is due, as `YYYY-MM-DD`, from its `due:` label; none while it has none.
     #[serde(default)]
     pub due: Option<String>,
+    /// The card's estimate in points, from its `estimate:` label; none while it has none.
+    #[serde(default)]
+    pub estimate: Option<u32>,
     /// When the card last moved, was edited or was released from a hold (Unix seconds); scripts see it as
     /// `card.moved_at`.
     #[serde(default)]
@@ -542,6 +545,7 @@ impl Store {
             assignees: Vec::new(),
             priority: Default::default(),
             due: None,
+            estimate: None,
             moved_at: at,
             archived_at: None,
             kind: None,
@@ -568,6 +572,7 @@ impl Store {
             Ok(Card {
                 priority: super::planning::priority_of(&labels),
                 due: super::planning::due_of(&labels),
+                estimate: super::planning::estimate_of(&labels),
                 id: r.get(0)?,
                 repository_id: r.get(1)?,
                 number: r.get(2)?,

@@ -44,6 +44,7 @@ const snapshot: Snapshot = {
           assignees: [],
           priority: "none",
           due: null,
+          estimate: null,
         },
       ],
       round_limit: 5,

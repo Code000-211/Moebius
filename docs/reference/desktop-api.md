@@ -165,6 +165,8 @@ any route to any role that is not what its row says.
 | `PUT /v1/inbox/{id}/assignees` | member | no |
 | `PUT /v1/cards/{id}/priority` | member | no |
 | `PUT /v1/cards/{id}/due` | member | no |
+| `PUT /v1/cards/{id}/estimate` | member | no |
+| `GET /v1/cards/{id}/estimate/proposal` | viewer | yes |
 | `PUT /v1/cards/{id}/assignees/{handle}` | member | no |
 | `DELETE /v1/cards/{id}/assignees/{handle}` | member | no |
 | `PUT /v1/inbox/{id}/assignees/{handle}` | member | no |
@@ -372,7 +374,8 @@ string or null, "by": "person" or "agent:Moebius", "at": number}` while a person
 in `Done`), `labels` (array of text, in order), `claimed_by` (who claimed it, or null) and `assignees` (the handles of
 the people it is given to, without the `@`, in the order the people were added; empty when it is no one's; see
 [Assignees](#assignees)), `priority` (`urgent`, `high`, `medium`, `low` or `none`) and `due` (a day as
-`YYYY-MM-DD`, or null); see [Priority and due date](#priority-and-due-date).
+`YYYY-MM-DD`, or null) and `estimate` (points, or null); see [Priority and due date](#priority-and-due-date) and
+[Estimates](#estimates).
 [Assignees](#assignees)), `moved_at` (when the card last moved, was edited or was released from a hold, Unix seconds;
 scripts read it as `card.moved_at`) and `archived_at` (null, or when a column script archived the card with
 `moebius.archive`). An archived card is not on the board: the snapshot (`GET /v1/snapshot`) leaves it out, and a
@@ -1485,6 +1488,29 @@ Sets the priority. Request: `{"priority": "urgent"}`, one of `urgent`, `high`, `
 
 Sets the due date. Request: `{"due": "2026-12-01"}`, a date that exists as `YYYY-MM-DD`, or `{"due": null}` for none.
 Response: the `Card`. Errors: `404` no such card; `422` a text that is not a date.
+
+### Estimates
+
+A card has an estimate in points, a whole number from 1 to 1000, or none. It is kept as the card's `estimate:<points>`
+label, so the forge shows and sets it as it does any label (the smallest `estimate:` label with a valid number is the
+estimate, and one that holds anything else is just a label), and column scripts see it as `card.estimate`. A member or an
+owner sets it, never an agent; the Moebius agent only proposes one. The event is `card_labels_changed`. After a Retro's
+day, the report lists the cards whose estimate was furthest off (see [`POST /v1/retros`](#post-v1retros)).
+
+### `PUT /v1/cards/{id}/estimate`
+
+Sets the estimate. Request: `{"estimate": 5}`, a whole number from 1 to 1000, or `{"estimate": null}` for none.
+Response: the `Card`. Errors: `404` no such card; `422` a number outside 1 to 1000, or a body that is not a whole number or null.
+
+### `GET /v1/cards/{id}/estimate/proposal`
+
+The estimate the Moebius agent proposes: the cards of the card's repository that have an estimate and look like it
+(the words of titles and bodies, as for `GET /v1/cards/{id}/similar`) are compared, at most five, the most alike first,
+and the proposal is the median of their estimates (the higher of a middle pair). Nothing is set. Response:
+`{"estimate": number or null, "compared": [{"id", "number", "title", "estimate", "score"}]}`; `estimate` is null and
+`compared` empty when no card with an estimate looks like this one. The agent names the `compared` cards when it
+proposes. Errors: `404` no such card.
+
 ### `PUT /v1/cards/{id}/assignees/{handle}` and `DELETE /v1/cards/{id}/assignees/{handle}`
 
 Give the card to one more person, or take it off one. `{handle}` is a handle with or without the `@`, in any case; there
@@ -3281,11 +3307,18 @@ ran and its proposals are stored, there may be none; `failed`: its run failed or
 meanwhile, or storing its proposals failed), `run_id` (the analyst's run, or null), `warnings` (array of strings: the branches left out and why, or why it
 failed; a run that settled with no answer at all counts as failed too), `at`, `report` and `proposals` (array of `Proposal`).
 
-`report`: `{"date", "errors": [...], "merged": [...]}`; each kind of error keeps at most 100 entries, its earliest
+`report`: `{"date", "errors": [...], "merged": [...], "estimates": [...]}`; each kind of error keeps at most 100 entries, its earliest
 ones, and a card sent back from review keeps only the latest entry of each kind per card, so that a busy day's repeated
 findings cannot make the prompt unsendable. `merged` are the cards that reached Done that day after one code
 run and without being sent back from review, each `{"card", "title", "text"}` (`text` the start of the issue), which the
 Retro analyst writes lessons from (see [lessons](#get-v1lessons)). A day with errors or merged cards starts the analyst.
+`estimates` are the cards that reached Done that day whose [estimate](#estimates) was furthest off, the furthest first
+(by whichever of tokens and time was further off), at most five, each `{"card", "title", "estimate", "tokens", "minutes", "tokens_ratio", "time_ratio"}`. A point is worth
+the median tokens (and minutes) per point of every done card that has an estimate and cost something; `tokens_ratio`
+is the tokens the card took over what its points are worth (3 is three times as many, 0.2 a fifth), and `time_ratio`
+the same for the minutes. A card is listed when it took at least one and a half times or at most two thirds of what its
+points are worth in tokens, or at least one and a half times in time. The list is empty while no done card says what a
+point is worth, and a card with no tokens is never listed.
 `errors` are in the order in time. Each error is `{"kind", "run", "card", "agent", "text"}`;
 `run`, `card` and `agent` are null where the error has none, and `text` is at most 500 characters, with secrets removed as
 stored. The kinds are `tool_failed` (a tool call that ended in error: the tool and the start of what it said, not a call

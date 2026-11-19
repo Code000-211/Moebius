@@ -180,6 +180,28 @@ impl Store {
     }
 }
 
+impl Store {
+    /// What the cards that reached Done cost: the card, the tokens and the milliseconds of all its runs except trials.
+    /// Both need a move of the card to Done: with `window` `[from, to)` only the cards that moved to Done in it; without, every card that is in Done now.
+    pub fn done_card_costs(&self, window: Option<(i64, i64)>) -> Result<Vec<(i64, i64, i64)>> {
+        let (from, to) = window.unwrap_or((i64::MIN, i64::MAX));
+        self.rows(
+            "SELECT c.id,
+                    (SELECT COALESCE(SUM(u.input_tokens + u.output_tokens), 0) FROM usage u JOIN runs r ON r.id = u.run_id
+                     WHERE r.card_id = c.id AND r.purpose <> 'trial'),
+                    (SELECT COALESCE(SUM(u.duration_ms), 0) FROM usage u JOIN runs r ON r.id = u.run_id
+                     WHERE r.card_id = c.id AND r.purpose <> 'trial')
+             FROM cards c
+             WHERE EXISTS (SELECT 1 FROM card_moves m WHERE m.card_id = c.id AND m.to_column = 'Done'
+                           AND m.at >= ?1 AND m.at < ?2)
+               AND (c.column_name = 'Done' OR ?3 = 1)
+             ORDER BY c.id",
+            params![from, to, window.is_some()],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -512,5 +534,76 @@ mod tests {
             .count();
         assert_eq!(failed, KIND_LIMIT);
         assert_eq!(first.errors.len(), KIND_LIMIT + 1);
+    }
+
+    #[test]
+    fn the_cards_whose_estimate_was_furthest_off_are_listed_furthest_first() {
+        let (_dir, s) = store();
+        let repo = s.add_repository("r", "/r", "none", "main").unwrap();
+        let (from, to) = s.day_window("2026-03-10").unwrap().unwrap();
+        // A done card with `points` that took `tokens`, on the day (`day`) or before it.
+        let done = |title: &str, points: Option<u32>, tokens: i64, day: bool| {
+            let labels: Vec<String> = points
+                .map(|p| format!("estimate:{p}"))
+                .into_iter()
+                .collect();
+            let card = s.add_card(repo.id, title, "", "leon", "Backlog").unwrap();
+            s.set_labels(card.id, &labels.into_iter().collect())
+                .unwrap();
+            let run = s
+                .add_run(Some(card.id), "Coder", "pi-bolt", "code")
+                .unwrap();
+            s.add_usage(&Usage {
+                run_id: Some(run.id),
+                model: "m".into(),
+                input_tokens: tokens,
+                output_tokens: 0,
+                cached_tokens: 0,
+                duration_ms: 60_000 * tokens / 100,
+                tools: Default::default(),
+            })
+            .unwrap();
+            s.move_card(card.id, "Done").unwrap();
+            let at = if day { from + 10 } else { from - 10 };
+            s.conn()
+                .execute(
+                    "UPDATE card_moves SET at = ?1 WHERE card_id = ?2 AND to_column = 'Done'",
+                    rusqlite::params![at, card.id],
+                )
+                .unwrap();
+            card
+        };
+        // Before: a point is worth 100 tokens.
+        done("Earlier 1", Some(2), 200, false);
+        done("Earlier 2", Some(5), 500, false);
+        done("Earlier 3", Some(3), 300, false);
+        // The day: one right, one three times too small, one a fifth of its points.
+        done("Right", Some(4), 400, true);
+        let big = done("Bigger", Some(1), 300, true);
+        let small = done("Smaller", Some(10), 200, true);
+        done("No estimate", None, 5000, true);
+
+        let off = crate::improve::retro::furthest_off(&s, (from, to)).unwrap();
+        assert_eq!(
+            off.iter().map(|m| m.card).collect::<Vec<_>>(),
+            [small.id, big.id]
+        );
+        assert_eq!(off[0].tokens_ratio, 0.2);
+        assert_eq!(off[1].tokens_ratio, 3.0);
+        assert_eq!(
+            (off[1].estimate, off[1].tokens, off[1].minutes),
+            (1, 300, 3)
+        );
+    }
+
+    #[test]
+    fn nothing_is_said_while_no_done_card_says_what_a_point_is_worth() {
+        let (_dir, s) = store();
+        let (from, to) = s.day_window("2026-03-10").unwrap().unwrap();
+        assert!(
+            crate::improve::retro::furthest_off(&s, (from, to))
+                .unwrap()
+                .is_empty()
+        );
     }
 }

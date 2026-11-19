@@ -372,6 +372,12 @@ One line of a person's Inbox under Mentions: a card or item given to them, a com
 `@handle`, or a change to a card they follow. It has a read mark that is theirs alone.
 _Avoid_: notification, alert, bell
 
+**Estimate**:
+A card's size in points, a whole number from 1 to 1000; kept as the card's `estimate:<points>` label. A person sets it or
+takes the Moebius agent's proposal, which is the median of the like cards that have one and names them; the Retro lists
+the cards whose estimate was furthest off from the tokens and time they took.
+_Avoid_: story points, size, effort
+
 **Home project**:
 The project a repository's new issues land in, unless a `project:<name>` label sends one to another project the
 repository belongs to; a card is on exactly one board.

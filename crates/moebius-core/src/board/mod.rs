@@ -25,7 +25,7 @@ mod runs;
 mod sandbox;
 pub mod scripts;
 #[cfg(test)]
-mod testing;
+pub(crate) mod testing;
 
 pub use card::{Review, latest_review};
 pub use dry_run::check_script;

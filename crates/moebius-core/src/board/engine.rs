@@ -888,6 +888,22 @@ end
     }
 
     #[test]
+    fn a_script_sees_the_estimate_as_points_or_nil() {
+        let (_dir, app, engine, repo) = setup();
+        let card = app.create_issue(repo, "Sized", "", OWNER_AUTHOR).unwrap();
+        let lua = mlua::Lua::new();
+        let table = engine
+            .card_table(&lua, &app.card(card.id).unwrap())
+            .unwrap();
+        assert!(table.get::<mlua::Value>("estimate").unwrap().is_nil());
+        app.set_estimate(card.id, Some(8)).unwrap();
+        let table = engine
+            .card_table(&lua, &app.card(card.id).unwrap())
+            .unwrap();
+        assert_eq!(table.get::<u32>("estimate").unwrap(), 8);
+    }
+
+    #[test]
     fn an_outside_issue_that_names_a_parent_does_not_hold_or_close_it() {
         let (_dir, app, engine, repo) = setup();
         let map = app.create_issue(repo, "Map", "", OWNER_AUTHOR).unwrap();

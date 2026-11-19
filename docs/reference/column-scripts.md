@@ -68,6 +68,7 @@ end
 | `card.due` | string or nil | The day the card is due as `YYYY-MM-DD` (it sorts as text), from its `due:` label; nil when it has none. Read-only. |
 | `card.kind` | string or nil | The name of the card's kind of issue (see [Kinds of issues](desktop-api.md#kinds-of-issues)), or nil while it has none. Read-only. |
 | `card.fields` | table | The values set for the fields of the card's kind, by field name: a number for a `number` field, a string for the others (a `person` field is a handle without the `@`, a `date` field `YYYY-MM-DD`); a field with no value is nil. An empty table (never nil) when none is set or the card has no kind. Read-only. |
+| `card.estimate` | number or nil | The card's estimate in points, a whole number from 1 to 1000, from its `estimate:` label; nil when it has none. A person sets it, or takes the Moebius agent's proposal (see [Estimates](desktop-api.md#estimates)). Read-only. |
 | `card.rounds` | number | How many runs with purpose `code` the card has had since it was last retried, whatever their status (a running one counts), and how many rounds of attempts of which none passed (see Attempts). |
 | `card.reviews` | number | How many review rounds the card has had since it was last retried, whatever their status: the runs with purpose `review` and those with purpose `review-standards` (one per round of the two-axis review). |
 | `card.tokens` | number | The input and output tokens the card's runs used since it was last retried (cached tokens are not added; the teacher's count too). |
@@ -423,7 +424,7 @@ configuration and no repository, and it stores and starts nothing.
 | `--title` | `A card to check the script with` | The card's `title`. |
 | `--author` | `person:owner` | The card's `author`. `card.trusted` is true only for a person (`person:<handle>`, or `person` on a record from before people), as on a repository without a forge. |
 
-The made-up card has `id` and `number` 1, an empty `body`, `blocked_by`, `children` and `labels` empty, no `parent` or `claimed_by`, `assignees` empty, `priority` `none`, no `due`, `kind` nil, `fields` empty, `merged` false, `rounds`, `reviews` and `tokens` 0, and
+The made-up card has `id` and `number` 1, an empty `body`, `blocked_by`, `children` and `labels` empty, no `parent` or `claimed_by`, `assignees` empty, `priority` `none`, no `due`, no `estimate`, `kind` nil, `fields` empty, `merged` false, `rounds`, `reviews` and `tokens` 0, and
 `stopped` and `test_first` false, and `attempts` empty. It has no `note`, `change`, `run`, `review` or `selection`. The `moebius` table has every constant and function of
 this page, but records its calls instead of acting:
 

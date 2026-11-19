@@ -42,6 +42,7 @@ const card = (id: number, extra: Partial<Card> = {}): Card => ({
   assignees: [],
   priority: "none",
   due: null,
+  estimate: null,
   ...extra,
 });
 
@@ -357,6 +358,22 @@ describe("the priority and the due date of a card", () => {
     fireEvent.keyDown(field, { key: "Enter" });
     await waitFor(() => expect(sent).toHaveLength(2));
     expect(sent[1]).toEqual(["PUT", "/v1/cards/5/due", { due: "2026-12-01" }]);
+  });
+});
+
+describe("the estimate of a card", () => {
+  it("shows its points and sets and clears them in place, without showing the label that holds them", async () => {
+    const sent = server();
+    properties(card(5, { estimate: 3, labels: ["bug", "estimate:3"] }));
+    expect(screen.queryByText("estimate:3")).toBeNull();
+    type("Estimate 3 points", { role: "textbox", name: "Estimate" }, "8");
+    await waitFor(() => expect(sent).toHaveLength(1));
+    type("Estimate 3 points", { role: "textbox", name: "Estimate" }, "");
+    await waitFor(() => expect(sent).toHaveLength(2));
+    expect(sent).toEqual([
+      ["PUT", "/v1/cards/5/estimate", { estimate: 8 }],
+      ["PUT", "/v1/cards/5/estimate", { estimate: null }],
+    ]);
   });
 });
 

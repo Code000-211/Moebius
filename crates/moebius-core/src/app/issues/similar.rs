@@ -61,7 +61,7 @@ fn overlap(a: &BTreeSet<String>, b: &BTreeSet<String>) -> (f64, usize) {
 /// How alike two issues, each a title and a body, are, from 0 to 1, or nothing when they are not alike enough: by the
 /// words of their titles, two of them at least (one when both titles are that one word), or by the words of titles and
 /// bodies together.
-pub(super) fn likeness(a: (&str, &str), b: (&str, &str)) -> Option<f64> {
+pub(in crate::app) fn likeness(a: (&str, &str), b: (&str, &str)) -> Option<f64> {
     let (a_title, b_title) = (words(a.0), words(b.0));
     let (title, shared) = overlap(&a_title, &b_title);
     let title = if shared >= 2 || (shared == 1 && a_title.len() == 1 && b_title.len() == 1) {

@@ -10,6 +10,8 @@
 //! - `card.priority`, `card.due`: how soon the card should be done, as `urgent`, `high`, `medium`, `low` or `none` (a
 //!   string, never nil), and the day it is due as `YYYY-MM-DD` (nil when it has none). Both are the card's `priority:` and
 //!   `due:` labels.
+//! - `card.estimate`: the card's estimate in points, a whole number (nil when it has none); the card's `estimate:`
+//!   label.
 //! - `card.moved_at`: when the card last moved, was edited or was released from a hold, in Unix seconds, to compare
 //!   with `moebius.now()`.
 //! - `card.kind`, `card.fields`: the name of the card's kind of issue (nil while it has none) and the values of its
@@ -157,6 +159,7 @@ impl Engine {
             }
         }
         t.set("fields", fields)?;
+        t.set("estimate", card.estimate)?;
         let children = lua.create_table()?;
         for child in self.app.children_of(card).map_err(mlua::Error::external)? {
             let c = lua.create_table()?;

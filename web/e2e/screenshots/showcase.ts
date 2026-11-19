@@ -189,6 +189,7 @@ function card(id: number, extra: Record<string, unknown>) {
     assignees: [],
     priority: "none",
     due: null,
+    estimate: null,
     ...extra,
   };
 }
