@@ -176,6 +176,8 @@ describe("invalidates", () => {
   it("reads the usage again when a run ends and the files of the repository whose file was saved", () => {
     expect(invalidates({ kind: "run_ended", data: {} })).toContainEqual(keys.usage);
     expect(invalidates({ kind: "run_event", data: {} })).not.toContainEqual(keys.usage);
+    expect(invalidates({ kind: "run_ended", data: {} })).toContainEqual(keys.analytics);
+    expect(invalidates({ kind: "card_cycle_changed", data: {} })).toContainEqual(keys.analytics);
     expect(invalidates({ kind: "file_changed", data: { repository: 3, path: "a" } })).toEqual([
       keys.files(3),
     ]);

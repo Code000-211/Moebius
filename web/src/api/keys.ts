@@ -15,6 +15,10 @@ export const keys = {
   usage: ["usage"] as const,
   usageDays: (days: number, repository: number | null, agent: string) =>
     ["usage", days, repository, agent] as const,
+  /** The analytics of a window with its filters; a card's move, a cycle's change and a finished run make them stale. */
+  analytics: ["analytics"] as const,
+  analyticsDays: (days: number, repository: number | null, agent: string) =>
+    ["analytics", days, repository, agent] as const,
   settings: ["settings"] as const,
   webhooks: ["webhooks"] as const,
   /** What a repository's files page has read: directories, one file, the paths for "Go to file", a search. */

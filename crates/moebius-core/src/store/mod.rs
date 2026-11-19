@@ -19,6 +19,7 @@
 //! Every public type is re-exported here, as `store::Card` and the like.
 
 mod access;
+mod analytics;
 mod assignees;
 mod attempts;
 mod automations;
@@ -67,6 +68,7 @@ use rusqlite::{Connection, OptionalExtension, Params, Row};
 use crate::blobs::BlobStore;
 
 pub use access::{AccessToken, hash_secret};
+pub use analytics::{AnalyticsCard, CardFilter, Moved};
 pub use attempts::Attempt;
 pub use automations::{Automation, Firing, NewAutomation};
 pub use card_repositories::RunWorktree;

@@ -95,6 +95,9 @@ const StartPage = lazy(() =>
 const TerminalPage = lazy(() =>
   import("./terminal/TerminalPage").then((all) => ({ default: all.TerminalPage })),
 );
+const AnalyticsPage = lazy(() =>
+  import("./analytics/AnalyticsPage").then((all) => ({ default: all.AnalyticsPage })),
+);
 const UsagePage = lazy(() =>
   import("./usage/UsagePage").then((all) => ({ default: all.UsagePage })),
 );
@@ -132,6 +135,7 @@ const PAGES_BUILT = new Set([
   "projects",
   "milestones",
   "cycles",
+  "analytics",
   "intake",
   "usage",
   "start",
@@ -164,6 +168,7 @@ export const routes = [
       { path: "fleet", element: <FleetPage /> },
       { path: "milestones", element: <MilestonesPage /> },
       { path: "cycles", element: <CyclesPage /> },
+      { path: "analytics", element: <AnalyticsPage /> },
       { path: "intake", element: <IntakePage /> },
       { path: "projects", element: <ProjectsPage /> },
       { path: "projects/new", element: <AddRepositoryPage /> },

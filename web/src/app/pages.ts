@@ -5,6 +5,7 @@
 import {
   ArrowsClockwiseIcon,
   BookOpenTextIcon,
+  ChartLineUpIcon,
   ChatCircleIcon,
   ClockIcon,
   CpuIcon,
@@ -59,6 +60,7 @@ export const PAGES: readonly PageDef[] = [
   { path: "wiki", title: "Wiki", group: "Plan", icon: BookOpenTextIcon },
   { path: "issues", title: "Issues", group: "Projects", icon: ListChecksIcon },
   { path: "cycles", title: "Cycles", group: "Plan", icon: RepeatIcon },
+  { path: "analytics", title: "Analytics", group: "Plan", icon: ChartLineUpIcon },
   { path: "intake", title: "Intake", group: "Projects", icon: TrayArrowDownIcon },
   // Agents, Skills, MCP servers and Rules are held by Settings, so the everyday list does not name their group;
   // the command bar still lists them under "Build".

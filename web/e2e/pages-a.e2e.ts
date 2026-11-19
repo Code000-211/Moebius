@@ -1153,6 +1153,33 @@ describe("usage", () => {
   });
 });
 
+describe("analytics", () => {
+  it.skipIf(usesRealServer)(
+    "shows what was done, the times, the burn-ups, and narrows to an agent and another window",
+    async () => {
+      await open("/analytics");
+      await page.getByRole("heading", { name: "Analytics", level: 1 }).waitFor();
+      await page.getByText("Start to done").waitFor();
+      await page.getByText("Time in each column").waitFor();
+      await page.getByRole("cell", { name: "demo" }).waitFor();
+      await page.getByText("Cycle 3").waitFor();
+      await page.getByText("Launch").waitFor();
+      await page.getByRole("button", { name: "7 days" }).click();
+      const tile = page.getByTestId("Cards done");
+      await tile.getByText("7", { exact: true }).waitFor();
+      const bar = page.getByRole("search", { name: "Filter the analytics" });
+      await addFilter(page, bar, "Agent", "Coder");
+      // The Coder's share of the same week.
+      await tile.getByText("4", { exact: true }).waitFor();
+      expect(path()).toBe("/analytics?agent=Coder");
+      await page.reload();
+      await bar.getByRole("button", { name: "Agent is Coder", exact: true }).waitFor();
+      await page.getByRole("button", { name: "30 days" }).click();
+      await page.locator('[data-window="30"]').waitFor();
+    },
+  );
+});
+
 describe("get started", () => {
   it("loads for a real server and for the fake", async () => {
     await open("/start");

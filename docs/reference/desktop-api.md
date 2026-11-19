@@ -295,6 +295,7 @@ any route to any role that is not what its row says.
 | `DELETE /v1/packages/{name}` | owner | no |
 | `POST /v1/packages/{name}/update` | owner | no |
 | `GET /v1/usage` | viewer | yes |
+| `GET /v1/analytics` | viewer | yes |
 | `GET /v1/judgements` | viewer | yes |
 | `GET /v1/judgements/kinds` | viewer | yes |
 | `POST /v1/judgements/{id}/replay` | owner | yes |
@@ -2232,6 +2233,66 @@ Response:
   the most tokens first. The same calls are counted under their model in `models` too.
 
 Errors: `422` `days` is not from 1 to 365.
+
+### `GET /v1/analytics`
+
+What the moves and runs the store keeps say about the work: how much is done, how long it takes, where cards wait and
+what a point costs, across the organisation and per project. Query: `days` (a whole number from 1 to 365, default 30)
+is the window, counted in local days of the server, today included; anything else is `422`. Two more parameters narrow
+every figure: `repository` (a repository id) keeps the cards of that repository, and `agent` keeps the cards that agent
+has a run on, counting only that agent's tokens. A `repository` the asker may not see is `404`.
+
+Only cards of projects the asker may see are in any figure, total, cycle or milestone (a private project they are no
+member of adds nothing, not even to the totals); a card that was archived is still in. A card is *done* when its issue
+is closed or it is in `Done`, and was done when it last moved into `Done`.
+
+Response:
+
+```json
+{
+  "today": "2026-11-19",
+  "days": 30,
+  "totals": {"done": 12, "points_done": 31, "tokens": 620000, "tokens_per_point": 20000, "open": 7},
+  "throughput": [{"day": "2026-10-21", "done": 1, "points": 3}],
+  "cycle_time": {"cards": 9, "median_seconds": 82600, "mean_seconds": 90100, "p90_seconds": 250000},
+  "lead_time": {"cards": 12, "median_seconds": 129600, "mean_seconds": 140000, "p90_seconds": 400000},
+  "columns": [{"column": "In progress", "cards": 12, "total_seconds": 990000, "mean_seconds": 82500}],
+  "projects": [{"id": 1, "name": "Web", "key": "WEB", "done": 12, "points_done": 31, "tokens": 620000, "tokens_per_point": 20000}],
+  "cycles": [{"id": 3, "name": "Cycle 3", "project": "Web", "starts_on": "2026-11-16", "ends_on": "2026-11-29",
+              "cards": 8, "done": 3, "points": 21, "points_done": 8,
+              "days": [{"day": "2026-11-16", "scope": 18, "done": 0}]}],
+  "milestones": [{"id": 1, "name": "Launch", "project": null, "starts_on": "2026-10-01", "ends_on": "2027-01-31",
+                  "cards": 20, "done": 6, "points": 50, "points_done": 14, "days": []}]
+}
+```
+
+- `totals` counts the cards done in the window: `done`, their `points_done` (the cards with an `estimate:` label count
+  their points, the others none), the `tokens` their runs used (runs of a trial are left out) and `tokens_per_point`
+  (the tokens of the done cards that have an estimate over their points, rounded down, so that a card with no estimate
+  adds no tokens to the ratio; null while no point is done; the same holds for a project's). `open` counts the cards that are not done and
+  not archived, whenever they were made.
+- `throughput` has one entry for each local day of the window, oldest first, days without a card included: the cards
+  and points done on it.
+- `cycle_time` is the time from a card's start to done, over the cards done in the window that were started; `lead_time`
+  from its making to done, over all cards done in it. A card starts at the earlier of its first `code` run and its
+  first move into the column named `In progress`. A card whose issue was closed outside `Done` is dated by its last
+  move, as the store keeps no close time. Days of the burn-ups are UTC days, those of `throughput` local ones. Each is null for no card, and gives the median (the mean of the two middle ones for
+  an even number), the mean and the nearest-rank 90th percentile, in whole seconds.
+- `columns` is the time cards sat in each column except `Done`, read from their moves: a sitting counts when it ended in
+  the window or is still going (a card that is not done sits in its column until now; one that is done until it
+  was done). `cards` is how many cards spent time in the column, `mean_seconds` the time one card spent there; the
+  column with the longest mean is first.
+- `projects` has each project that has a card in the figures, in the order the projects were made, with what its done
+  cards, points and tokens add up to. `totals` is their sum.
+- `cycles` has the latest 12 cycles of the projects the asker sees (by start), and `milestones` the 12 with the
+  latest target dates; neither is narrowed by the window. Each gives its cards, how many are done (a card counts when
+  it is done now), their points and its burn-up day by day, as `GET /v1/cycles/{id}` does for a cycle. A milestone
+  is not listed when none of its cards is in the figures. The burn-up of a milestone runs from the day it was made to
+  its target date or, once that has passed, today, and counts the cards it holds now for their points from the first
+  day, since the day a card joined a milestone is not recorded; no more than the last 366 days are given. With a
+  `repository` or `agent` set, a cycle without a card in the figures is left out, and the rest count only those cards.
+
+Errors: `422` `days` is not from 1 to 365; `404` a `repository` that is unseen.
 
 ### `GET /v1/runs/{id}/diff`
 
