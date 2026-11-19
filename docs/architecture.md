@@ -583,6 +583,13 @@ At the top:
 | `app/projects/files.rs` | A project's own store of files (ADR 0019): the git repository at `<data_dir>/projects/<key>` made for a project, kept as a repository without a forge whose `files_of` is the project, where the cards of a project without a repository run, are reviewed and are merged. |
 | `app/analytics.rs` | Analytics (#389): throughput, the time from start to done and in each column, tokens per point and the burn-up of cycles and milestones, read from the cards the asker may see and narrowed by window, repository and agent. |
 | `app/cycles.rs` | Cycles (ADR 0019): a project's time boxes, a card in at most one open cycle of its own project, the figures and burn-up of a cycle's page, and closing, which carries unfinished cards to the next cycle or out. |
+| `app/jira/mod.rs` | The import from Jira (issue #390): what a Jira record becomes in Moebius, the options and the report, and the order the parts run in; `App::import_jira` never talks to Jira. |
+| `app/jira/read.rs` | Reads what the client fetched into issues, sprints, links, comments and custom fields, with Jira's timestamps. |
+| `app/jira/kinds.rs` | Issue types as kinds and custom fields as their fields; an existing kind is completed. |
+| `app/jira/people.rs` | Jira's users as disabled people, mapped people or names. |
+| `app/jira/planning.rs` | Epics as milestones and sprints as cycles, and closing a closed sprint's cycle. |
+| `app/jira/cards.rs` | Issues as cards, then their parent, milestone, cycle, comments and links; written only when what Jira shows differs from the note kept. |
+| `app/jira/tests.rs` | The import against a fake Jira: every record, a second import, names and mapped people. |
 | `app/milestones.rs` | Milestones (ADR 0019): making and editing them, putting a card in them, and their progress counted and listed only within the projects the asker may see (`App::may_see_project`). |
 | `app/views.rs` | Saved views: making and changing them for a person or for everyone, and the cards each shows the person who opens it, within what they may see (`App::sight`). |
 | `app/intake.rs` | Intake (ADR 0019): a project's requests, written by anyone who may see it, grilled into a draft issue by a chat of the grilling agent and accepted into a card the requester follows, edited, or declined with a reason the requester is told. |
@@ -659,6 +666,7 @@ At the top:
 | `store/analytics.rs` | What the analytics need of every card (moves, start, done, estimate, tokens) read in a few passes, and the members of every cycle and milestone. |
 | `store/cycles.rs` | The cycles (project, name, start, end, closed) and which cards each holds, with the sums a cycle's page needs. |
 | `store/wiki_links.rs` | The links between the wiki's pages and to cards, derived from the files and replaced as a whole when the wiki changes, and the cards whose text may link to a page. |
+| `store/imports.rs` | What an import made (by source, kind and the source's id) with a note of how the source showed it, so that an import can be run again. |
 | `store/milestones.rs` | The milestones (name, target date, description) and which cards each holds, of any projects. |
 | `store/views.rs` | The saved views (name, owner, shared, filter, layout, sort). |
 | `store/intake.rs` | A project's switch for intake and the requests made to it, with their draft issue, status, card and reason. |
@@ -714,6 +722,7 @@ At the top:
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
 | `server/api/analytics.rs` | The analytics of a window of days, narrowed by repository and agent. |
 | `server/api/cycles.rs` | The cycles: a project's list, making, reading, editing, deleting and closing one, and a card's cycle. |
+| `server/api/jira.rs` | `POST /v1/projects/{id}/import/jira`: reads a Jira project with a token kept in `secrets.toml` and imports it. |
 | `server/api/milestones.rs` | The milestones: listing them with their progress, making, reading, editing and deleting one, and a card's milestones. |
 | `server/api/views.rs` | The saved views: listing, making, reading, editing and deleting one, and the cards it shows. |
 | `server/api/projects.rs` | The projects: listing them, making one with a free key, reading and renaming one, the column scripts of a project's board, and making one private with its members. |
@@ -772,6 +781,8 @@ At the top:
 | `repos/tracker_tests.rs` | Tests (only) of what the forge clients write and read for an issue tracker, against a fake forge that records its requests. |
 | `repos/github.rs` | The GitHub App client: JWT, installation tokens, issues newest-updated first with ETags (paging stops at the last poll's newest), pull requests, checks, reviews, merge. |
 | `repos/gitlab.rs` | The GitLab client: the access token, issues newest-updated first with ETags (paging stops at the last poll's newest), merge requests, pipelines and their failed jobs, approvals, merge. |
+| `repos/jira.rs` | The Jira client: the field catalogue, a project's issues over pages (by token, or by position where the site has no such search) and the comments they left out; the token never in an error. |
+| `repos/jira_fake.rs` | A fake Jira on a port of its own for the tests: a project with an epic, a story, a sub-task, duplicate bugs and sprints. |
 | `repos/forgejo.rs` | The Forgejo client (Codeberg, Forgejo, Gitea): the access token, issues with ETags where given, pull requests, commit statuses, reviews, merge. |
 | `repos/poll/mod.rs` | The poll of the forges: the loop over their repositories, issues into cards, and what became of each change (`Polled`, `Request`). |
 | `repos/poll/github.rs` | What GitHub answers, read for the poll: issues, a pull request with its check runs and latest review. |
