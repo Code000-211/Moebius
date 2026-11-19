@@ -38,6 +38,7 @@ const card = (id: number, number: number, run: CardRun | null, tokens = 0): Card
   closed: false,
   labels: [],
   claimed_by: null,
+  assignees: [],
 });
 
 const run = (id: number, status: CardRun["status"]): CardRun => ({

@@ -689,6 +689,46 @@ end
     }
 
     #[test]
+    fn a_script_sees_the_assignees_and_the_default_kanban_leaves_an_assigned_card_in_ready() {
+        let (_dir, app, engine, repo) = setup();
+        app.store
+            .add_person("lea", "Lea", crate::store::Role::Member)
+            .unwrap();
+        app.store
+            .add_person("tom", "Tom", crate::store::Role::Member)
+            .unwrap();
+        let card = app.create_issue(repo, "Given", "", OWNER_AUTHOR).unwrap();
+        let lua = mlua::Lua::new();
+        let assignees = |card: &crate::store::Card| -> Vec<String> {
+            engine
+                .card_table(&lua, card)
+                .unwrap()
+                .get::<mlua::Table>("assignees")
+                .unwrap()
+                .sequence_values::<String>()
+                .map(Result::unwrap)
+                .collect()
+        };
+        assert!(assignees(&app.card(card.id).unwrap()).is_empty());
+
+        app.move_card(card.id, columns::NOT_STARTED).unwrap();
+        app.set_assignees(card.id, &["tom".into(), "lea".into()])
+            .unwrap();
+        assert_eq!(assignees(&app.card(card.id).unwrap()), ["lea", "tom"]);
+
+        let step = engine.settle(card.id).unwrap();
+        assert_eq!(step.waiting.as_deref(), Some("given to @lea, @tom"));
+        assert!(step.started_run.is_none());
+        assert!(app.store.runs_for_card(card.id).unwrap().is_empty());
+        assert_eq!(app.card(card.id).unwrap().column, "Not started");
+
+        // Giving the card to no one lets it start as any card does.
+        app.set_assignees(card.id, &[]).unwrap();
+        engine.settle(card.id).unwrap();
+        assert_eq!(app.card(card.id).unwrap().column, "In progress");
+    }
+
+    #[test]
     fn an_outside_issue_that_names_a_parent_does_not_hold_or_close_it() {
         let (_dir, app, engine, repo) = setup();
         let map = app.create_issue(repo, "Map", "", OWNER_AUTHOR).unwrap();

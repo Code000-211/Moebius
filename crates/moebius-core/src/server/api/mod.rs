@@ -6,6 +6,7 @@
 //!
 //! - `cards`: the snapshot of every board, issues, cards and their changes, a card's runs and history.
 //! - `issues`: what is done to an issue besides editing it: its parent, blockers, labels, claim, comments, closing.
+//! - `assignees`: giving a card or an inbox item to people.
 //! - `repositories`: adding and editing repositories, and their column scripts and files.
 //! - `runs`: a run and its events, steering and stopping it.
 //! - `chats`: chats with an agent, and what grilling chats ended in.
@@ -44,6 +45,7 @@
 //! browser that signed in, which acts as the person who signed in. Anything else is answered with 401. The hook routes of a workflow's
 //! `webhook` trigger are outside `/v1/` as forge deliveries are, and a trigger's own secret opens them instead.
 
+mod assignees;
 mod automations;
 mod cards;
 mod chats;
@@ -217,6 +219,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/health", get(health))
         .merge(cards::routes())
         .merge(issues::routes())
+        .merge(assignees::routes())
         .merge(repositories::routes())
         .merge(runs::routes())
         .merge(chats::routes())

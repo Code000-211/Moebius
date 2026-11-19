@@ -320,6 +320,40 @@ describe("the issue in the dock", () => {
     await page.getByRole("dialog").waitFor({ state: "detached" });
   });
 
+  it("gives the card to a person from the right column and takes it back, and the card shows an avatar", async () => {
+    await openBoard();
+    await newIssue("Give it away");
+    await cardTitled("Give it away").click();
+    await dock().getByRole("heading", { name: "Give it away" }).waitFor();
+
+    await value("Assignee No one").click();
+    await page.getByRole("menuitemcheckbox", { name: "Owner (@owner)" }).click();
+    await value("Assignee @owner").waitFor();
+    await cardTitled("Give it away").getByRole("img", { name: "Given to @owner" }).waitFor();
+
+    await value("Assignee @owner").click();
+    await page.getByRole("menuitemcheckbox", { name: "Owner (@owner)" }).click();
+    await value("Assignee No one").waitFor();
+    await cardTitled("Give it away")
+      .getByRole("img", { name: "Given to @owner" })
+      .waitFor({ state: "detached" });
+  });
+
+  it("gives the card in the dock to a person from the palette, whose command names the person", async () => {
+    await openBoard();
+    await newIssue("Palette gift");
+    await cardTitled("Palette gift").click();
+    await dock().getByRole("heading", { name: "Palette gift" }).waitFor();
+
+    await page.keyboard.press("Control+k");
+    await page.getByRole("option", { name: /Assign to @owner/ }).click();
+    await value("Assignee @owner").waitFor();
+    await page.getByRole("dialog").waitFor({ state: "detached" });
+    await page.keyboard.press("Control+k");
+    await page.getByRole("option", { name: /Take off @owner/ }).click();
+    await value("Assignee No one").waitFor();
+  });
+
   it("filters the board by label, sub-issues included", async () => {
     await openBoard();
     await newIssue("Plan");

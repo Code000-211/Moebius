@@ -30,6 +30,7 @@ function card(extra: Partial<Card> = {}): Card {
     closed: false,
     labels: [],
     claimed_by: null,
+    assignees: [],
     ...extra,
   };
 }
@@ -48,16 +49,41 @@ function actions() {
     retry: vi.fn(),
     merge: vi.fn(),
     reject: vi.fn(),
+    assignTo: vi.fn(),
   } satisfies CardActions;
 }
 
 function item(kind: string): InboxItem {
-  return { id: 1, kind, card_id: 7, title: "", data: { change: 5 }, resolved_at: null, at: 0 };
+  return {
+    id: 1,
+    kind,
+    card_id: 7,
+    title: "",
+    data: { change: 5 },
+    resolved_at: null,
+    at: 0,
+    assignees: [],
+  };
 }
 
 const ids = (commands: { id: string }[]) => commands.map((c) => c.id);
 
 describe("the commands of a card", () => {
+  it("has a command for each person the card can be given to, which gives it or takes it back", () => {
+    const act = actions();
+    const given = cardCommands(card({ assignees: ["lea"] }), undefined, act, ["lea", "tom"]);
+    const lea = given.find((c) => c.id === "unassignee-lea");
+    const tom = given.find((c) => c.id === "assignee-tom");
+    expect([lea?.label, tom?.label]).toEqual(["Take off @lea", "Assign to @tom"]);
+    expect([lea?.key, tom?.key]).toEqual([undefined, undefined]);
+    tom?.run();
+    lea?.run();
+    expect(act.assignTo.mock.calls.map(([, handle, on]) => [handle, on])).toEqual([
+      ["tom", true],
+      ["lea", false],
+    ]);
+  });
+
   it("assigns, blocks, closes and adds a sub-issue, each on its key", () => {
     const act = actions();
     const commands = cardCommands(card(), undefined, act);
