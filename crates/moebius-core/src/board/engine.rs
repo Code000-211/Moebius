@@ -516,6 +516,31 @@ end
     }
 
     #[test]
+    fn a_script_sees_a_known_person_as_author_claimer_and_holder_and_trusts_their_card() {
+        let (_dir, app, engine, repo) = setup();
+        let ada = crate::decide::Actor::person(Some((7, "ada")));
+        let card = app.create_issue(repo, "By Ada", "", "person:ada").unwrap();
+        app.claim_issue(&ada, card.id, None).unwrap();
+        app.store
+            .hold_card(card.id, &ada.decider(), Some("thinking"))
+            .unwrap();
+        let card = app.card(card.id).unwrap();
+        let lua = mlua::Lua::new();
+        let table = engine.card_table(&lua, &card).unwrap();
+        assert_eq!(table.get::<String>("author").unwrap(), "person:ada");
+        assert_eq!(table.get::<String>("claimed_by").unwrap(), "person:ada");
+        let held: mlua::Table = table.get("held").unwrap();
+        assert_eq!(held.get::<String>("by").unwrap(), "person:ada");
+        assert!(table.get::<bool>("trusted").unwrap());
+
+        // The default backlog script moves a trusted card on without asking anyone.
+        app.store.release_card(card.id).unwrap();
+        engine.tick(card.id).unwrap();
+        assert_eq!(app.card(card.id).unwrap().column, "Not started");
+        assert!(app.store.inbox().unwrap().is_empty());
+    }
+
+    #[test]
     fn a_script_reads_who_holds_a_card_and_why() {
         let (_dir, app, engine, repo) = setup();
         let card = app.create_issue(repo, "Held", "", PERSON).unwrap();

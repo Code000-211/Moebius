@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde_json::json;
 
-use super::{App, AppError, PERSON, Result, columns};
+use super::{App, AppError, Result, columns};
 use crate::bus::Event;
 use crate::decide::{Actor, Question};
 use crate::repos::forge::Issue;
@@ -135,7 +135,7 @@ impl App {
             return Err(AppError::Invalid("an issue needs a title".into()));
         }
         if repository.forge != "none" {
-            return self.create_confirmed_issue(&repository, title, body, &BTreeSet::new());
+            return self.create_confirmed_issue(&repository, title, body, author, &BTreeSet::new());
         }
         let card = self
             .store
@@ -152,6 +152,7 @@ impl App {
         repository: &Repository,
         title: &str,
         body: &str,
+        author: &str,
         blocked_by: &BTreeSet<i64>,
     ) -> Result<Card> {
         let card = if repository.forge == "none" {
@@ -160,7 +161,7 @@ impl App {
                 None,
                 title,
                 body,
-                PERSON,
+                author,
                 columns::BACKLOG,
                 blocked_by,
             )?
@@ -181,7 +182,7 @@ impl App {
                 Some(number),
                 title,
                 &body,
-                PERSON,
+                author,
                 columns::BACKLOG,
                 blocked_by,
             )?
@@ -199,6 +200,7 @@ impl App {
         title: &str,
         body: &str,
         confirmed: bool,
+        author: &str,
     ) -> Result<Card> {
         if title.trim().is_empty() {
             return Err(AppError::Invalid("an issue needs a title".into()));
@@ -209,10 +211,10 @@ impl App {
                 None,
                 title,
                 body,
-                PERSON,
+                author,
                 columns::BACKLOG,
                 confirmed,
-                PERSON,
+                author,
             )?
         } else {
             let number = self
@@ -223,10 +225,10 @@ impl App {
                 Some(number),
                 title,
                 body,
-                PERSON,
+                author,
                 columns::BACKLOG,
                 confirmed,
-                PERSON,
+                author,
             )?
         };
         Ok(card)

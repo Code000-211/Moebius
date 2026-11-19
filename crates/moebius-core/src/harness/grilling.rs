@@ -317,8 +317,13 @@ pub fn confirm(app: &App, by: &Actor, id: i64, issues: Vec<GrillingIssue>) -> Re
             let issue = &issues[index];
             let blocked_by: BTreeSet<i64> = issue.blocked_by.iter().map(|b| numbers[*b]).collect();
             let issue = redacted(issue.clone());
-            let card =
-                app.create_confirmed_issue(&repository, &issue.title, &issue.body, &blocked_by)?;
+            let card = app.create_confirmed_issue(
+                &repository,
+                &issue.title,
+                &issue.body,
+                PERSON,
+                &blocked_by,
+            )?;
             numbers[index] = card.number;
         }
         Ok::<_, AppError>(())

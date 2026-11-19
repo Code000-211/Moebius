@@ -279,6 +279,7 @@ async fn create_issue(
             scope::related(app, &by, id, *number)?;
         }
         let (card, warnings) = app.create_tracked_issue(
+            &by,
             id,
             &issue.title,
             &issue.body,
