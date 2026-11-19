@@ -342,6 +342,15 @@ mod tests {
                 .status(),
             409
         );
+        // A claim that names nobody is the person's own, and an issue made through the API is the person's.
+        assert_eq!(tickets[0].author, "person:owner");
+        let own: Card = send(&state, &addr, reqwest::Method::POST, &claim, None)
+            .await
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(own.claimed_by.as_deref(), Some("person:owner"));
+        send(&state, &addr, reqwest::Method::DELETE, &claim, None).await;
 
         // Resolving a ticket: a comment, then closing; the ticket it blocked is on the frontier now.
         let comments = format!("/v1/cards/{}/comments", tickets[0].id);

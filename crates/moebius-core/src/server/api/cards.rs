@@ -647,6 +647,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(card.column, "Backlog");
+        assert_eq!(card.author, "person:owner");
 
         let app = state.app.clone();
         let clone = std::path::PathBuf::from(&repo.path);
