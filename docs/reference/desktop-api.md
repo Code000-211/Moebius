@@ -786,11 +786,24 @@ themselves, sees neither its board, its cards, its runs nor its files. For someo
   `GET /v1/places`, `GET /v1/notices`, `GET /v1/automations`, `GET /v1/research`, `GET /v1/ports`, and the report of `GET
   /v1/retros/{date}` (its errors and merged cards; the analyst's `run_id` is null when its day touched one, and the
   Retro's `warnings` are left out when anything was). `GET /v1/usage` and `GET /v1/judgements/kinds` answer `404` for such a `repository`.
+  `POST /v1/retros` and `POST /v1/retros/{date}/retry` answer with the Retro's view filtered the same way.
+- Nothing is started or saved in its repositories by a non-member, who is answered `404` as if the repository did not
+  exist: `POST /v1/automations` and `PUT /v1/automations/{id}` naming it as `repository`, `POST /v1/research` naming it,
+  and `POST /v1/workflows/{name}/runs` naming it as `repository` or through any input of type `repository`, or taking it
+  as such an input's default. `DELETE /v1/replays/{id}` of a replay of one of its runs is `404`, and the replay stays.
 - A Retro's proposal to the shared configuration (`harness` or `settings`) is shown to everyone without quoting the
   project: its `cards` leave out the project's cards, and in its `title`, `body` and `diff` the project's name and key
   and the titles of its cards read `a private project`, in `GET /v1/proposals`, a Retro's view, the answers of the
   routes that try, merge or dismiss it, and the title and data of its inbox item (`proposal`). A `repository` proposal
   is shown when the repository is.
+- A comment or a move on one of its cards tells a non-member nothing (no notice, even when it mentions them), and a
+  notice they got of one of its cards or inbox items before is left out of `GET /v1/notices` and answers
+  `POST /v1/notices/{id}/read` with `404`.
+- In a repository it shares with another project, its cards are not linked to by a non-member: `PUT
+  /v1/cards/{id}/parent`, `POST /v1/cards/{id}/blockers`, `PUT /v1/cards/{id}/duplicate`, `POST /v1/cards/{id}/related`
+  and `DELETE /v1/cards/{id}/related/{number}` naming one by its number answer `404` as for a number that is no issue,
+  and a card's `duplicate_of`, `duplicates` and `related` leave them out. `GET /v1/cards/{id}/estimate/proposal`
+  compares with no card of another project that is private, as `GET /v1/cards/{id}/similar` offers none.
 - A lesson learned from a private project's cards is put in the prompt of, and found by the `lessons` tool for, only
   that project's runs.
 - Its wiki pages (`projects/<key>/...`, see [the wiki](#the-wiki)) are left out the same way: the page, its history and

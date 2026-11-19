@@ -199,6 +199,7 @@ struct NewRetro {
 
 async fn start_retro(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     axum::Json(new): axum::Json<NewRetro>,
 ) -> Result<axum::Json<RetroView>, ApiError> {
     let (runs, repo, live) = (
@@ -211,13 +212,15 @@ async fn start_retro(
             Some(day) => day,
             None => app.store.today()?,
         };
-        retro::start(app, (&runs, &live), repo.as_ref(), &day)
+        let view = retro::start(app, (&runs, &live), repo.as_ref(), &day)?;
+        retro::seen_by(app, &app.sight(&by)?, view)
     })
     .await
 }
 
 async fn retry_retro(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(date): UrlPath<String>,
 ) -> Result<axum::Json<RetroView>, ApiError> {
     let (runs, repo, live) = (
@@ -226,7 +229,8 @@ async fn retry_retro(
         state.config.clone(),
     );
     blocking(&state.app, move |app| {
-        retro::retry(app, (&runs, &live), repo.as_ref(), &date)
+        let view = retro::retry(app, (&runs, &live), repo.as_ref(), &date)?;
+        retro::seen_by(app, &app.sight(&by)?, view)
     })
     .await
 }
@@ -389,9 +393,17 @@ async fn researches(
 
 async fn create_research(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     axum::Json(new): axum::Json<NewResearch>,
 ) -> Result<axum::Json<ResearchView>, ApiError> {
-    blocking(&state.app, move |app| research::create(app, new)).await
+    blocking(&state.app, move |app| {
+        // A repository of a private project the person is no member of is not found, as if it did not exist.
+        if !app.sight(&by)?.repository(new.repository) {
+            return Err(AppError::NotFound(format!("repository {}", new.repository)));
+        }
+        research::create(app, new)
+    })
+    .await
 }
 
 async fn get_research(

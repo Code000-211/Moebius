@@ -741,7 +741,11 @@ At the top:
 | `server/api/projects.rs` | The projects: listing them, making one with a free key, reading and renaming one, the column scripts of a project's board, and making one private with its members. |
 | `server/api/intake.rs` | Intake: turning it on for a project, making and reading its requests, editing a draft, accepting and declining. |
 | `server/api/templates.rs` | The routes of templates for issues and wiki pages, and making a wiki page from one. |
-| `server/api/privacy.rs` | The check, after the role, that answers `404` for a route naming by id a card, run, change, repository, project, lesson or other thing of a private project the person is no member of; and whether an inbox item is seen. |
+| `server/api/privacy/mod.rs` | The check, after the role, that answers `404` for a route naming by id a card, run, change, repository, project, lesson or other thing of a private project the person is no member of; and whether an inbox item is seen. |
+| `server/api/privacy/tests/mod.rs` | For the tests only: a private project with one thing of every guarded kind and the people who see it or not, every guarded route and list answered for them, and the event stream. |
+| `server/api/privacy/tests/body_ids.rs` | For the tests only: a repository of a private project named in a request's body (an automation, a research, a workflow run's input), a Retro started or retried, and a replay deleted, by someone who does not see it. |
+| `server/api/privacy/tests/links.rs` | For the tests only: an issue's relations and an estimate's comparison, which never name a card of a private project the asker does not see. |
+| `server/api/privacy/tests/stream.rs` | For the tests only: the events that name a private project's things by another field than its card or run, and the notices of a private project's cards. |
 | `server/api/wiki.rs` | The wiki's routes: its pages listed, read (an older version too), written, moved and deleted, a page's history, and a refresh now. |
 | `server/api/runs.rs` | A run and its events in pages, steering and stopping it. |
 | `server/api/automations/mod.rs` | Automations: list, add, read, replace, delete, run now, and their firings. |

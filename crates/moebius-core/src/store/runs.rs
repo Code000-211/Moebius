@@ -223,11 +223,13 @@ impl Store {
         self.runs_where("ended_at IS NULL AND ?1", 1.into())
     }
 
-    /// Whether a run that has not ended belongs to repository `id`, directly or through one of its cards.
+    /// Whether a run that has not ended belongs to repository `id`, directly or through one of its cards, or has a
+    /// worktree of it, as a run of a card over several repositories does (ADR 0019).
     pub fn repository_has_active_run(&self, id: i64) -> Result<bool> {
         Ok(self.conn().query_row(
             "SELECT EXISTS (SELECT 1 FROM runs WHERE ended_at IS NULL AND (repository_id = ?1 \
-             OR card_id IN (SELECT id FROM cards WHERE repository_id = ?1)))",
+             OR card_id IN (SELECT id FROM cards WHERE repository_id = ?1) \
+             OR id IN (SELECT run_id FROM run_worktrees WHERE repository_id = ?1)))",
             [id],
             |r| r.get(0),
         )?)

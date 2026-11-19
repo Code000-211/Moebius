@@ -215,13 +215,17 @@ impl App {
         if self.forge_differs(card, "state", state)? {
             let raw_closed = self.store.issue_closed(id)?;
             if !issue.open {
+                // The forge closes the issue when the pull request of the card's own repository is merged, which is
+                // merged first: a card over several repositories with a change still open stays where it is (ADR
+                // 0019), its issue closed, and is done when its last change is merged.
+                let merging = card.repositories.len() > 1 && !self.open_changes(card)?.is_empty();
                 let in_done = card.column == columns::DONE;
                 if !raw_closed {
                     self.store.set_issue_closed(id, true)?;
                     self.close_settled(id);
                     self.sub_issue_closed(card)?;
                 }
-                if !in_done {
+                if !in_done && !merging {
                     self.move_card(id, columns::DONE, None)?;
                 }
                 // A card in Done already reflects it (a store from before issues were closed has them all): that is

@@ -90,10 +90,12 @@ impl App {
                     continue;
                 }
             }
-            let branch = if own {
-                format!("moebius/card-{}", card.number)
-            } else {
-                format!("moebius/card-{}-{}", card.project_key, card.project_number)
+            // An open change keeps its branch, which its pull request is on, though the card has since moved to
+            // another project and so has another key.
+            let branch = match &existing {
+                Some(change) => change.branch.clone(),
+                None if own => format!("moebius/card-{}", card.number),
+                None => format!("moebius/card-{}-{}", card.project_key, card.project_number),
             };
             let publish = Publish {
                 card: &card,

@@ -78,13 +78,15 @@ pub fn replay(app: &App, id: i64, limit: Duration) -> Result<Replay> {
 
 /// A person deletes the replay `id`: its record and whatever of its copy is left on disk. The judgement it replayed
 /// keeps its outcome, and the schedule does not replay it again. Recorded as a `delete_replay` decision and announced
-/// as `replay_deleted`.
+/// as `replay_deleted`. A replay of a run that `by` does not see (see `app::projects::sight`) is not found.
 pub fn delete(app: &App, by: &crate::decide::Actor, id: i64, reason: &str) -> Result<Replay> {
+    let sight = app.sight(by)?;
     let replay = app
         .store
         .replays(None, None, i64::MAX)?
         .into_iter()
         .find(|replay| replay.id == id)
+        .filter(|replay| app.sees_run_id(&sight, replay.run).unwrap_or(false))
         .ok_or_else(|| AppError::NotFound(format!("replay {id}")))?;
     let directory = app.data_dir.join("replays");
     let name = replay.judgement.to_string();

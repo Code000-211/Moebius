@@ -152,7 +152,7 @@ pub(super) async fn show_issue_by_key(
     .await
 }
 
-/// Leaves out of `issue` the sub-issues of a private project that `sight` does not see.
+/// Leaves out of `issue` the sub-issues and linked issues of a private project that `sight` does not see.
 fn seen_children(app: &App, sight: &Sight, issue: &mut IssueView) -> crate::app::Result<()> {
     let mut children = Vec::new();
     for child in std::mem::take(&mut issue.children) {
@@ -161,6 +161,40 @@ fn seen_children(app: &App, sight: &Sight, issue: &mut IssueView) -> crate::app:
         }
     }
     issue.children = children;
+    seen_links(app, sight, &mut issue.links)
+}
+
+/// Leaves out of `links` the issues of a private project that `sight` does not see.
+fn seen_links(app: &App, sight: &Sight, links: &mut Links) -> crate::app::Result<()> {
+    if let Some(original) = &links.duplicate_of
+        && !app.sees_card(sight, original.id)?
+    {
+        links.duplicate_of = None;
+    }
+    for list in [&mut links.duplicates, &mut links.related] {
+        let mut seen = Vec::new();
+        for card in std::mem::take(list) {
+            if app.sees_card(sight, card.id)? {
+                seen.push(card);
+            }
+        }
+        *list = seen;
+    }
+    Ok(())
+}
+
+/// Refuses the issue `number` of the repository of card `id`, which a relation names, when it is a card of a private
+/// project that `by` does not see: it is answered as if there were none, with the words of [`App`]'s own refusal, so
+/// that no relation shows, changes or names it.
+fn seen_number(app: &App, by: &Actor, id: i64, number: i64, what: &str) -> crate::app::Result<()> {
+    let repository = scope::repository_of_card(app, id)?;
+    if let Some(card) = app.store.card_by_number(repository, number)?
+        && !app.sight(by)?.card(&card)
+    {
+        return Err(crate::app::AppError::NotFound(format!(
+            "issue #{number} (the {what})"
+        )));
+    }
     Ok(())
 }
 
@@ -174,6 +208,7 @@ async fn set_parent(
         scope::card(app, &by, id, true)?;
         if let Some(parent) = new.parent {
             scope::related(app, &by, scope::repository_of_card(app, id)?, parent)?;
+            seen_number(app, &by, id, parent, "parent")?;
         }
         app.set_parent(id, new.parent)
     })
@@ -203,6 +238,7 @@ async fn add_blocker(
     blocking(&state.app, move |app| {
         scope::card(app, &by, id, true)?;
         scope::related(app, &by, scope::repository_of_card(app, id)?, new.blocker)?;
+        seen_number(app, &by, id, new.blocker, "blocker")?;
         app.add_blocker(id, new.blocker)
     })
     .await
@@ -229,6 +265,7 @@ async fn mark_duplicate(
     blocking(&state.app, move |app| {
         scope::card(app, &by, id, true)?;
         scope::related(app, &by, scope::repository_of_card(app, id)?, new.original)?;
+        seen_number(app, &by, id, new.original, "original")?;
         app.mark_duplicate(&by, id, new.original)
     })
     .await
@@ -255,7 +292,10 @@ async fn add_related(
     blocking(&state.app, move |app| {
         scope::card(app, &by, id, true)?;
         scope::related(app, &by, scope::repository_of_card(app, id)?, new.related)?;
-        app.add_related(id, new.related)
+        seen_number(app, &by, id, new.related, "related issue")?;
+        let mut links = app.add_related(id, new.related)?;
+        seen_links(app, &app.sight(&by)?, &mut links)?;
+        Ok(links)
     })
     .await
 }
@@ -267,7 +307,10 @@ async fn remove_related(
 ) -> Result<axum::Json<Links>, ApiError> {
     blocking(&state.app, move |app| {
         scope::card(app, &by, id, true)?;
-        app.remove_related(id, number)
+        seen_number(app, &by, id, number, "related issue")?;
+        let mut links = app.remove_related(id, number)?;
+        seen_links(app, &app.sight(&by)?, &mut links)?;
+        Ok(links)
     })
     .await
 }

@@ -272,4 +272,22 @@ mod tests {
         assert!(s.card_repositories(card.id).unwrap().is_empty());
         assert!(s.run_worktrees(run.id).unwrap().is_empty());
     }
+
+    /// A repository is not removed from under a run that works in it for a card of another repository.
+    #[test]
+    fn a_run_with_a_worktree_of_a_repository_is_one_of_its_active_runs() {
+        let (s, _dir) = store();
+        let api = s.add_repository("api", "/r/api", "none", "main").unwrap();
+        let web = s.add_repository("web", "/r/web", "none", "main").unwrap();
+        let card = s.add_card(api.id, "Both", "", "leon", "Backlog").unwrap();
+        s.set_card_repositories(card.id, &[web.id]).unwrap();
+        let run = s
+            .add_run(Some(card.id), "Coder", "pi-bolt", "code")
+            .unwrap();
+        assert!(!s.repository_has_active_run(web.id).unwrap());
+        s.add_run_worktree(run.id, web.id, "/w/web", "b").unwrap();
+        assert!(s.repository_has_active_run(web.id).unwrap());
+        s.set_run_status(run.id, "succeeded").unwrap();
+        assert!(!s.repository_has_active_run(web.id).unwrap());
+    }
 }

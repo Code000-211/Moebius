@@ -9,8 +9,8 @@
 //! The notices are the person's own to read ([`App::read_notice`] marks one read for that person alone) and are
 //! announced on the bus as `notice_added` and `notice_read`, which the event stream sends only to the person they
 //! are for. Telling someone is never a reason for the change to fail: a notice that cannot be stored is printed and
-//! dropped. A person is told only about what they may see, which for now is everything; private projects will narrow
-//! that.
+//! dropped. A person is told only about what they may see: nothing of a card of a private project they are no member of
+//! (ADR 0018), and the desktop API leaves out a notice they no longer see.
 
 use super::{App, AppError, Result};
 use crate::bus::Event;
@@ -260,7 +260,17 @@ impl App {
         }
     }
 
+    /// Tells `person`, unless the notice is of a card of a private project they are no member of (ADR 0018): a mention
+    /// there tells them nothing, not even its title.
     pub(super) fn tell_person(&self, person: &Person, notice: NewNotice<'_>) {
+        if let Some(card) = notice.card_id {
+            let seen = self
+                .sight_of(Some(person.id))
+                .and_then(|sight| self.sees_card(&sight, card));
+            if !matches!(seen, Ok(true)) {
+                return;
+            }
+        }
         match self.store.add_notice(person.id, &notice) {
             Ok(notice) => self.bus.publish(Event::NoticeAdded {
                 person: person.handle.clone(),
