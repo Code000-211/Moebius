@@ -90,6 +90,16 @@ fn after_prefix<'a>(label: &'a str, prefix: &str) -> Option<&'a str> {
         .then(|| label[prefix.len()..].trim())
 }
 
+/// Whether `label` holds a card's priority, due date or estimate (a value that reads; `due:soon` is a label like any
+/// other): those have filters of their own, and are no label
+/// a person gave the card.
+pub fn is_planning_label(label: &str) -> bool {
+    let is = |prefix: &str, valid: fn(&str) -> bool| after_prefix(label, prefix).is_some_and(valid);
+    is(PRIORITY_PREFIX, |v| Priority::parse(v).is_some())
+        || is(DUE_PREFIX, is_date)
+        || is(ESTIMATE_PREFIX, |v| v.parse::<u32>().is_ok())
+}
+
 /// The value of the label of `labels` that starts with `prefix`, in any case.
 fn values<'a>(labels: &'a [String], prefix: &'a str) -> impl Iterator<Item = &'a str> {
     labels
@@ -160,6 +170,16 @@ fn without(labels: &[String], prefix: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_label_with_a_value_that_reads_is_a_planning_label() {
+        for label in ["priority:high", "Due:2026-12-02", "estimate:5"] {
+            assert!(is_planning_label(label), "{label}");
+        }
+        for label in ["priority:p0", "due:soon", "estimate:abc", "bug", "duel:1"] {
+            assert!(!is_planning_label(label), "{label}");
+        }
+    }
 
     fn labels(l: &[&str]) -> Vec<String> {
         l.iter().map(|s| s.to_string()).collect()

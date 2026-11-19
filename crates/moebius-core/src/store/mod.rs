@@ -98,7 +98,8 @@ pub use outgoing::OutgoingWebhook;
 pub use paused::Paused;
 pub use people::{FIRST_OWNER, Person, Role};
 pub use planning::{
-    ESTIMATE_LIMIT, Priority, estimate_of, is_date, with_due, with_estimate, with_priority,
+    ESTIMATE_LIMIT, Priority, estimate_of, is_date, is_planning_label, with_due, with_estimate,
+    with_priority,
 };
 pub use projects::{KEY_LIMIT, Project, is_key, parse_card_key};
 pub use replays::Replay;

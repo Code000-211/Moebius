@@ -31,6 +31,8 @@ export interface View {
   sort: string;
   descending: boolean;
   created_at: number;
+  /** Whether the person who asked may change or delete it: its owner, or an owner of the organisation. */
+  can_change: boolean;
 }
 
 /** What a person gives a view. */

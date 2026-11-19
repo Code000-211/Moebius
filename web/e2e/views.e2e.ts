@@ -83,7 +83,16 @@ describe.skipIf(usesRealServer)("the Views page", () => {
     await page.getByTestId("view").waitFor();
     await page.getByRole("button", { name: "Delete" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
-    await page.getByRole("heading", { name: "No view yet" }).waitFor();
+    await page.getByRole("link", { name: /Team board/ }).waitFor({ state: "detached" });
     expect(fake().requests.at(-1)).toMatchObject({ method: "DELETE", path: "/v1/views/1" });
+  });
+
+  it("offers Edit and Delete only for a view the person may change", async () => {
+    await open("/views/2");
+    await page.getByTestId("view").waitFor();
+    expect(await page.getByRole("button", { name: "Edit" }).count()).toBe(0);
+    expect(await page.getByRole("button", { name: "Delete" }).count()).toBe(0);
+    await page.getByRole("link", { name: /Team board/ }).click();
+    await page.getByRole("button", { name: "Edit" }).waitFor();
   });
 });

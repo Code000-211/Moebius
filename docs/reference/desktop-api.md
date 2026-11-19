@@ -1184,7 +1184,7 @@ cycles, never agents.
 A `Cycle` is `{"id", "project_id", "name", "starts_on", "ends_on", "closed_at": Unix seconds or null, "created_at"}`. A
 `CycleView` is a `Cycle` with `"cards"` (a count), `"done"`, `"points"` and `"points_done"`. A `CycleDetail` is a
 `CycleView` whose `"cards"` is a list instead of a count, with `"figures": {"by_agents": done cards an agent ran code for, "tokens": tokens the runs of its cards used,
-"tokens_per_point": tokens per done point rounded down, or null while no point is done}`, `"burn_up": [{"day", "scope",
+"tokens_per_point": the tokens of the done cards that have an estimate per done point, rounded down, or null while no point is done}`, `"burn_up": [{"day", "scope",
 "done"}]` and the cards `[{"id", "repository_id", "number", "title", "column", "done", "estimate", "added_at",
 "done_at", "by_agent", "tokens"}]`. The burn-up has a day from the start to the end, or to the day it was closed or
 today if earlier (none before the start): `scope` is the points of the cards added by the end of that day and `done` the
@@ -1355,7 +1355,8 @@ the person is no member of is never in it, see [private projects](#private-proje
 anyone but its owner, not even an owner of the organisation. Only a person has views, never an agent.
 
 A `View` is `{"id": number, "name": string, "owner_id": number, "shared": boolean, "filter": ViewFilter, "layout":
-string, "sort": string, "descending": boolean, "created_at": number}`.
+string, "sort": string, "descending": boolean, "created_at": number, "can_change": boolean}`; `can_change` says whether the person who asked
+may change or delete it (its owner and an owner of the organisation may), so a page can leave the buttons out.
 
 - `name`: 1 to 80 characters, no control character, no space around it.
 - `layout`: `list`, `board`, `calendar` (cards by due date) or `timeline` (cards against their cycle). The layout is how
@@ -1364,7 +1365,8 @@ string, "sort": string, "descending": boolean, "created_at": number}`.
   (most urgent first), `due`, `title` or `estimate`; `descending` turns it round. A card without a due date or an
   estimate comes after those that have one, either way round.
 - `ViewFilter` asks of a card: every part that is set must match, and within a list any value matches (so an empty list
-  asks nothing). `projects` and `repositories` (ids), `labels`, `assignees` (handles), `priorities` (`urgent`, `high`,
+  asks nothing). `projects` and `repositories` (ids), `labels` (the labels people gave the card: its priority, due date and estimate are kept as `priority:`, `due:` and
+  `estimate:` labels with a value that reads, and have filters of their own, so no label filter matches them), `assignees` (handles), `priorities` (`urgent`, `high`,
   `medium`, `low`, `none`), `cycles` and `milestones` (ids, a closed cycle included), `columns`, `authors` (all in any
   case) and `text` (a word or phrase in the title or the body, in any case). At most 100 values for each part and 100
   characters of text. A key that is not a part is refused.
@@ -1396,7 +1398,8 @@ One view. Errors: `404` for no such view or a personal view of someone else.
 
 #### `PATCH /v1/views/{id}`
 
-Replaces every field of the view (the same body as `POST`; its owner stays). Only its owner and an owner of the
+Changes the view. The body has the fields of `POST`, each optional: a field left out stays as it was (so sharing a
+view does not rename it, and renaming it does not unshare it); its owner stays. Only its owner and an owner of the
 organisation may; anyone else who can see it gets `403`. Errors as for `POST`, and `404` as for `GET`.
 
 #### `DELETE /v1/views/{id}`

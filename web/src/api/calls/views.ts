@@ -20,7 +20,8 @@ export function addView(fields: ViewFields): Promise<View> {
   return post<View>("/v1/views", fields);
 }
 
-export function editView(id: number, fields: ViewFields): Promise<View> {
+/** Sets the fields given and keeps the others, the filter included. */
+export function editView(id: number, fields: Partial<ViewFields>): Promise<View> {
   return patch<View>(`/v1/views/${id}`, fields);
 }
 

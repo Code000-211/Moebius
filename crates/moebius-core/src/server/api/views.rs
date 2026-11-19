@@ -4,7 +4,7 @@
 //! - `GET /v1/views`: the views of the person asking: their own and the shared ones, in the order they were made.
 //! - `POST /v1/views` `{name, shared, filter, layout, sort, descending}`: makes one.
 //! - `GET /v1/views/{id}`: one view; a personal view of someone else is `404`.
-//! - `PATCH /v1/views/{id}` (same body): replaces its fields; only its owner and an owner of the organisation.
+//! - `PATCH /v1/views/{id}` (the same fields, each optional: one left out stays as it is): changes it; only its owner and an owner of the organisation.
 //! - `DELETE /v1/views/{id}`: deletes it and answers it; who may is as for `PATCH`.
 //! - `GET /v1/views/{id}/cards`: the view with the cards it shows the person asking (`ViewCards`).
 //!
@@ -15,7 +15,7 @@ use axum::routing::get;
 use axum::{Extension, Json, Router};
 
 use super::{ApiError, ApiState, blocking};
-use crate::app::{ViewCards, ViewFields};
+use crate::app::{ViewCards, ViewEdit, ViewFields};
 use crate::decide::Actor;
 use crate::store::View;
 
@@ -57,9 +57,9 @@ async fn edit_view(
     State(state): State<ApiState>,
     Extension(actor): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
-    Json(fields): Json<ViewFields>,
+    Json(edit): Json<ViewEdit>,
 ) -> Result<Json<View>, ApiError> {
-    blocking(&state.app, move |app| app.edit_view(&actor, id, &fields)).await
+    blocking(&state.app, move |app| app.edit_view(&actor, id, &edit)).await
 }
 
 async fn delete_view(
@@ -159,6 +159,35 @@ mod tests {
         assert_eq!(status, Status::OK, "{edited}");
         let (_, shown) = call("GET", &addr, &token, &format!("/v1/views/{id}/cards"), None).await;
         assert_eq!(shown["cards"], json!([]));
+
+        // A field left out of a PATCH stays as it was: sharing a view does not rename it or reset its filter, and
+        // renaming it does not unshare it.
+        let (_, shared) = call(
+            "PATCH",
+            &addr,
+            &token,
+            &format!("/v1/views/{id}"),
+            Some(json!({"shared": true})),
+        )
+        .await;
+        assert_eq!(
+            (&shared["name"], &shared["shared"], &shared["layout"]),
+            (&json!("Else"), &json!(true), &json!("board"))
+        );
+        assert_eq!(shared["filter"]["columns"], json!(["Done"]));
+        assert_eq!(shared["can_change"], true);
+        let (_, renamed) = call(
+            "PATCH",
+            &addr,
+            &token,
+            &format!("/v1/views/{id}"),
+            Some(json!({"name": "Again"})),
+        )
+        .await;
+        assert_eq!(
+            (&renamed["name"], &renamed["shared"]),
+            (&json!("Again"), &json!(true))
+        );
 
         let (status, _) = call(
             "POST",

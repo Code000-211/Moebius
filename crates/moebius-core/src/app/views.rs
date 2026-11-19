@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use super::{App, AppError, Result};
 use crate::decide::Actor;
-use crate::store::{Card, Cycle, LAYOUTS, NewView, Priority, Role, SORTS, View, ViewFilter};
+use crate::store::{
+    Card, Cycle, LAYOUTS, NewView, Priority, Role, SORTS, View, ViewFilter, is_planning_label,
+};
 
 /// The most characters a view's name has.
 pub const NAME_LIMIT: usize = 80;
@@ -41,6 +43,33 @@ pub struct ViewFields {
     pub sort: String,
     #[serde(default)]
     pub descending: bool,
+}
+
+/// What a person changes of a view: every field is optional, and one left out stays as it is, so that renaming a view
+/// does not unshare it or reset its filter.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+pub struct ViewEdit {
+    pub name: Option<String>,
+    pub shared: Option<bool>,
+    pub filter: Option<ViewFilter>,
+    pub layout: Option<String>,
+    pub sort: Option<String>,
+    pub descending: Option<bool>,
+}
+
+impl ViewEdit {
+    /// The fields of `before` with what this edit sets.
+    fn onto(&self, before: &View) -> ViewFields {
+        let edit = self.clone();
+        ViewFields {
+            name: edit.name.unwrap_or_else(|| before.name.clone()),
+            shared: edit.shared.unwrap_or(before.shared),
+            filter: edit.filter.unwrap_or_else(|| before.filter.clone()),
+            layout: edit.layout.unwrap_or_else(|| before.layout.clone()),
+            sort: edit.sort.unwrap_or_else(|| before.sort.clone()),
+            descending: edit.descending.unwrap_or(before.descending),
+        }
+    }
 }
 
 /// A card of a view. `cycle` is the open cycle the card is in, filled in only for the `timeline` layout, which sets
@@ -150,11 +179,12 @@ impl App {
     /// The views `who` may open: the shared ones and their own, in the order they were made.
     pub fn views(&self, who: &Actor) -> Result<Vec<View>> {
         let sight = self.sight(who)?;
+        let person = Self::view_person(who)?;
         Ok(self
             .store
-            .views_of(Self::view_person(who)?)?
+            .views_of(person)?
             .into_iter()
-            .map(|view| self.unnamed(&sight, view))
+            .map(|view| self.unnamed(&sight, person, view))
             .collect())
     }
 
@@ -165,13 +195,15 @@ impl App {
         self.store
             .view(id)?
             .filter(|view| view.shared || view.owner_id == person)
-            .map(|view| self.unnamed(&sight, view))
+            .map(|view| self.unnamed(&sight, person, view))
             .ok_or_else(|| AppError::NotFound(format!("view {id}")))
     }
 
     /// `view` without the ids of the projects, repositories and cycles `sight` may not see, so that a shared view
     /// does not tell a non-member that a private project exists. The cards were never at risk: they pass `sight`.
-    fn unnamed(&self, sight: &crate::app::Sight, mut view: View) -> View {
+    /// It also says whether `person` may change it.
+    fn unnamed(&self, sight: &crate::app::Sight, person: i64, mut view: View) -> View {
+        view.can_change = self.may_change_view(person, &view).unwrap_or(false);
         view.filter.projects.retain(|id| sight.project(*id));
         view.filter.repositories.retain(|id| sight.repository(*id));
         view.filter.cycles.retain(|id| {
@@ -228,12 +260,14 @@ impl App {
         let person = Self::view_person(who)?;
         check(fields)?;
         self.check_filter(who, &fields.filter)?;
-        Ok(self.store.add_view(person, &new_view(fields))?)
+        let mut view = self.store.add_view(person, &new_view(fields))?;
+        view.can_change = true;
+        Ok(view)
     }
 
-    /// Replaces the fields of the view `id`. Its owner and an owner of the organisation may change it; anyone else
-    /// who can see it is refused.
-    pub fn edit_view(&self, who: &Actor, id: i64, fields: &ViewFields) -> Result<View> {
+    /// Sets the fields `edit` gives of the view `id` and keeps the others. Its owner and an owner of the organisation
+    /// may change it; anyone else who can see it is refused.
+    pub fn edit_view(&self, who: &Actor, id: i64, edit: &ViewEdit) -> Result<View> {
         let person = Self::view_person(who)?;
         let before = self.view(who, id)?;
         if !self.may_change_view(person, &before)? {
@@ -241,26 +275,36 @@ impl App {
                 "only the owner of a view or of the organisation changes it".into(),
             ));
         }
+        // What is kept is the stored filter, with the ids `who` may not see in it.
+        let stored = self
+            .store
+            .view(id)?
+            .ok_or_else(|| AppError::NotFound(format!("view {id}")))?;
+        let fields = &edit.onto(&stored);
         check(fields)?;
         // Only what the edit adds is checked, so a view whose project the person has since lost can still be renamed.
         let mut added = fields.filter.clone();
         added
             .projects
-            .retain(|p| !before.filter.projects.contains(p));
+            .retain(|p| !stored.filter.projects.contains(p));
         added
             .repositories
-            .retain(|r| !before.filter.repositories.contains(r));
-        added.cycles.retain(|c| !before.filter.cycles.contains(c));
+            .retain(|r| !stored.filter.repositories.contains(r));
+        added.cycles.retain(|c| !stored.filter.cycles.contains(c));
         added
             .milestones
-            .retain(|m| !before.filter.milestones.contains(m));
+            .retain(|m| !stored.filter.milestones.contains(m));
         self.check_filter(who, &added)?;
         self.store.edit_view(id, &new_view(fields))?;
         self.view(who, id).or_else(|_| {
             // Made personal by an owner of the organisation, who is not its owner: it is no longer theirs to see.
-            self.store
+            let mut view = self
+                .store
                 .view(id)?
-                .ok_or_else(|| AppError::NotFound(format!("view {id}")))
+                .ok_or_else(|| AppError::NotFound(format!("view {id}")))?;
+            // Reaching here means `may_change_view` passed.
+            view.can_change = true;
+            Ok(view)
         })
     }
 
@@ -318,6 +362,7 @@ impl App {
                         || card
                             .labels
                             .iter()
+                            .filter(|l| !is_planning_label(l))
                             .any(|l| filter.labels.iter().any(|w| w.eq_ignore_ascii_case(l))))
                     && (filter.assignees.is_empty()
                         || card.assignees.iter().any(|a| any_of(&filter.assignees, a)))
@@ -385,6 +430,14 @@ mod tests {
             layout: "list".into(),
             sort: "created".into(),
             descending: false,
+        }
+    }
+
+    /// An edit that only renames.
+    fn rename(name: &str) -> ViewEdit {
+        ViewEdit {
+            name: Some(name.into()),
+            ..ViewEdit::default()
         }
     }
 
@@ -543,6 +596,23 @@ mod tests {
             "every part must match"
         );
         assert!(by(with(|f| f.text = "nothing like it".into())).is_empty());
+        // The priority, due date and estimate of a card are kept as labels, and have filters of their own: a label
+        // filter does not match them.
+        for label in [
+            "priority:urgent",
+            "due:2026-12-02",
+            "estimate:3",
+            "Priority:High",
+        ] {
+            assert!(
+                by(with(|f| f.labels = vec![label.into()])).is_empty(),
+                "{label}"
+            );
+        }
+        assert_eq!(
+            by(with(|f| f.priorities = vec!["urgent".into()])),
+            ["Login fails"]
+        );
     }
 
     #[test]
@@ -675,7 +745,9 @@ mod tests {
         team.shared = true;
         let team = app.add_view(&lea, &team).unwrap();
 
-        assert_eq!(app.views(&ben).unwrap(), std::slice::from_ref(&team));
+        let seen = app.views(&ben).unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!((seen[0].id, seen[0].can_change), (team.id, false));
         assert!(matches!(
             app.view(&ben, mine.id),
             Err(AppError::NotFound(_))
@@ -687,7 +759,7 @@ mod tests {
         assert_eq!(app.view_cards(&ben, team.id).unwrap().cards.len(), 4);
         // Seeing a shared view is not changing it; its owner and an owner of the organisation may.
         assert!(matches!(
-            app.edit_view(&ben, team.id, &fields("Mine now")),
+            app.edit_view(&ben, team.id, &rename("Mine now")),
             Err(AppError::Forbidden(_))
         ));
         assert!(matches!(
@@ -698,7 +770,14 @@ mod tests {
             app.delete_view(&ben, mine.id),
             Err(AppError::NotFound(_))
         ));
-        let renamed = app.edit_view(&lea, team.id, &fields("Renamed")).unwrap();
+        // A rename alone keeps the view shared; unsharing says so.
+        let renamed = app.edit_view(&lea, team.id, &rename("Renamed")).unwrap();
+        assert_eq!((renamed.name.as_str(), renamed.shared), ("Renamed", true));
+        let unshared = ViewEdit {
+            shared: Some(false),
+            ..ViewEdit::default()
+        };
+        let renamed = app.edit_view(&lea, team.id, &unshared).unwrap();
         assert_eq!((renamed.name.as_str(), renamed.shared), ("Renamed", false));
         assert!(app.views(&ben).unwrap().is_empty());
         // Not even an owner of the organisation sees a personal view; they may delete a shared one.
@@ -706,8 +785,11 @@ mod tests {
             app.delete_view(&owner(), mine.id),
             Err(AppError::NotFound(_))
         ));
-        let mut again = fields("Team");
-        again.shared = true;
+        let again = ViewEdit {
+            name: Some("Team".into()),
+            shared: Some(true),
+            ..ViewEdit::default()
+        };
         app.edit_view(&lea, team.id, &again).unwrap();
         app.delete_view(&owner(), team.id).unwrap();
         assert_eq!(app.views(&lea).unwrap(), [mine]);
@@ -761,7 +843,26 @@ mod tests {
         assert!(app.view_cards(&ben, named.id).unwrap().cards.is_empty());
         // Losing sight of a project does not stop its view being renamed.
         app.store.set_project_access(w.api.1, true, &[]).unwrap();
-        assert!(app.edit_view(&lea, named.id, &fields("Renamed")).is_ok());
+        assert!(app.edit_view(&lea, named.id, &rename("Renamed")).is_ok());
+        // The rename kept the project lea can no longer see, and a filter sent in a PATCH replaces it.
+        assert_eq!(
+            app.store.view(named.id).unwrap().unwrap().filter.projects,
+            [w.api.1]
+        );
+        let emptied = ViewEdit {
+            filter: Some(ViewFilter::default()),
+            ..ViewEdit::default()
+        };
+        app.edit_view(&lea, named.id, &emptied).unwrap();
+        assert!(
+            app.store
+                .view(named.id)
+                .unwrap()
+                .unwrap()
+                .filter
+                .projects
+                .is_empty()
+        );
         // A private project is not named by a person who cannot see it.
         let mut naming = fields("Secret");
         naming.filter.projects = vec![w.api.1];

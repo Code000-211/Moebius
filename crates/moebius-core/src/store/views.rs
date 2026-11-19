@@ -82,6 +82,10 @@ pub struct View {
     pub sort: String,
     pub descending: bool,
     pub created_at: i64,
+    /// Whether the person who asked may change or delete it: its owner or an owner of the organisation. Worked out for
+    /// each answer by `app::views`; the store leaves it `false`.
+    #[serde(default)]
+    pub can_change: bool,
 }
 
 const COLUMNS: &str = "id, name, owner_id, shared, filter, layout, sort, descending, created_at";
@@ -98,6 +102,7 @@ fn view(row: &Row) -> rusqlite::Result<View> {
         sort: row.get(6)?,
         descending: row.get(7)?,
         created_at: row.get(8)?,
+        can_change: false,
     })
 }
 
