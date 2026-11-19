@@ -18,6 +18,16 @@ The migration that adds the table makes the first owner (id 1, handle `owner`) a
 of a comment written through Moebius, `judgements.decider`, `cards.held_by` and `cards.claimed_by`, each `person`
 before and `person:owner` after. A card or comment read from a forge keeps its author, even the login `person`.
 
+`store/access.rs` keeps how people prove who they are: their access tokens and the sessions of browsers.
+
+| Table | Holds |
+|---|---|
+| `access_tokens` | Person, name, the SHA-256 of the token, when it was made, last used (to the minute) and revoked. |
+| `sessions` | The SHA-256 of the session id, person, the access token it was opened with (none for the server's token or a one-time code the server printed), when it started and when it expires. |
+
+Neither a token nor a session id is stored as it is. Revoking a token deletes the sessions it opened; disabling a
+person deletes theirs; a session is refused once it expires, and forgotten when the next one starts.
+
 ## Workflow runs
 
 `store/workflows.rs` keeps what a workflow run and each of its nodes did; the engine writes them and the web app reads

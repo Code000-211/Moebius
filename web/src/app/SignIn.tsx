@@ -1,6 +1,6 @@
 /**
- * The sign-in page: the person pastes the server's token (the content of its token file), or arrives through the
- * `?login=` link the server prints, which `auth/login.ts` has already used by the time this page could show.
+ * The sign-in page: the person pastes their access token (or the server's, the content of its token file), or arrives
+ * through the `?login=` link the server prints, which `auth/login.ts` has already used by the time this page could show.
  */
 import { useState } from "react";
 import { signIn } from "../api/calls/session";
@@ -17,7 +17,7 @@ export function signInMessage(error: unknown): string {
     if (error.unreachable) return "The server could not be reached.";
     if (error.status === 401) return "That token is not accepted.";
     if (error.status === 403) {
-      return "That is a run token of an agent. Use the token of the server.";
+      return "That is a run token of an agent. Use your access token.";
     }
     return error.message;
   }
@@ -58,12 +58,12 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
         <div className="flex flex-col gap-2">
           <h1 className="m-0 text-xl font-semibold tracking-tight text-text">Moebius</h1>
           <p className="m-0 text-base leading-relaxed text-secondary">
-            Sign in with the token of this server, or open the link the server printed when it
-            started. The token is the content of{" "}
+            Sign in with the access token an owner gave you, or open the link the server printed
+            when it started. The server's own token, the content of{" "}
             <code className="rounded-small bg-sunken px-2 py-0.5 font-mono text-sm text-text">
               .moebius/token
             </code>
-            .
+            , signs in its first owner.
           </p>
         </div>
         <Field label="Token">

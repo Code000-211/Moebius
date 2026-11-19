@@ -71,12 +71,19 @@ in WSL (see [On Windows](#on-windows)). Every key named here is in the
    `moebius serve` prints a line `Open the web app: http://127.0.0.1:7171/?login=<code>`: open that address in a browser
    to use the web app from the same address as the API. The code signs in once and lasts 10 minutes; `moebius web`
    prints a new address (or sign in with the token of `.moebius/token` on the page). The browser keeps a session
-   until you sign out or the server restarts.
+   for 30 days, across restarts of the server, until you sign out.
 
    `moebius open` opens the web app in a window of its own, signed in. On the machine that runs the server the
    `moebius` commands find the address and the token by themselves when you run them in the directory of
-   `moebius.toml`, or with `--config`; from another machine, give `--server` and `--token`, or save `address` and `token`
-   in `cli.toml` of the config directory.
+   `moebius.toml`, or with `--config`; from another machine, give `--server` and `--token`, or save them with
+   `moebius --server <address> login`, which reads your access token from standard input and keeps it in `cli.toml`
+   of the config directory.
+
+   **More than one person.** Each person signs in with an access token of their own. An owner adds a person with
+   `moebius api POST /v1/people --body '{"handle": "lea", "name": "Lea", "role": "member"}'` and hands over the `token`
+   of the answer; it is shown once, and only its hash is kept. Lea pastes it on the sign-in page, or saves it with
+   `moebius login`, and makes more of her own with `POST /v1/tokens`. Revoking one (`DELETE /v1/tokens/{id}`) refuses
+   it and ends the sessions it opened at once (see [the desktop API](../reference/desktop-api.md#people-and-access-tokens)).
 
    An upstream can log in to a provider with OAuth instead of a key: write its client id and URLs in a
    `[router.upstreams.oauth]` table (see [configuration](../reference/configuration.md#routerupstreamsoauth)), then press

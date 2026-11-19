@@ -102,6 +102,10 @@ enum Command {
         #[arg(long, env = "MOEBIUS_BROWSER")]
         browser: Option<PathBuf>,
     },
+    /// Save a person's access token, and the server's address, in `cli.toml` of the config directory for the commands
+    /// that follow. The token is `--token`, else the first line of standard input; the server is `--server`, else the
+    /// address saved before, else the `listen` of the configuration file. It is checked with the server first.
+    Login,
     #[command(flatten)]
     Operate(cli::Operate),
 }
@@ -248,6 +252,22 @@ fn run(cli: Cli) -> Result<(), String> {
                 std::process::exit(130);
             }
             ended
+        }
+        Some(Command::Login) => {
+            if cli.ssh.is_some() {
+                return Err("login saves a server's address; give --server, not --ssh".into());
+            }
+            let settings =
+                cli::settings_path().ok_or("there is no config directory to save the token in")?;
+            let logged_in = cli::login::login(
+                cli.server.as_deref(),
+                cli.token.as_deref(),
+                &settings,
+                &cli.config,
+                &mut std::io::stdin().lock(),
+            )?;
+            println!("{}", cli::login::describe(&logged_in, &settings));
+            Ok(())
         }
         Some(Command::Open { browser }) => {
             let settings = cli::settings_path();

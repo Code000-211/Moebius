@@ -26,17 +26,19 @@
 //! - `whereabouts`: where the server runs and what the web app reports about itself.
 //! - `events`: the WebSocket on which every event of the core arrives.
 //! - `session`: signing in from a browser with a cookie, and the one-time codes that open the web app signed in.
+//! - `people`: the people of the organisation, and the access tokens they sign in with.
 //! - `web`: the web app itself, served at `/` without a token.
 //! - `webhooks`: the deliveries of the forges, which need no token but a signature, and the secrets to set on the forges.
 //! - `workflow_hooks`: the door a workflow's `webhook` trigger answers on, which an outside service opens with the
 //!   trigger's own secret rather than the token.
 //!
 //! Every request to `/v1/` but a forge's webhook delivery and the sign-in of a browser carries
-//! `Authorization: Bearer <token>`: the server's token, or the run token of a run of the Moebius agent, which acts as
+//! `Authorization: Bearer <token>`: a person's access token, which acts as that person with their role; the server's
+//! token, which acts as the first owner; or the run token of a run of the Moebius agent, which acts as
 //! that agent (`PUT /v1/secrets/{name}` and the terminal stay with a person), or the run token of a run of the Grilling
 //! partner, which is accepted for the routes of the issue tracker only (see [`issue_tracker_route`]) and within its chat's
 //! repository and the cards with a `wayfinder:*` label (see `scope`); or the `moebius_session` cookie of a
-//! browser that signed in, which acts as a person. Anything else is answered with 401. The hook routes of a workflow's
+//! browser that signed in, which acts as the person who signed in. Anything else is answered with 401. The hook routes of a workflow's
 //! `webhook` trigger are outside `/v1/` as forge deliveries are, and a trigger's own secret opens them instead.
 
 mod automations;
@@ -49,6 +51,7 @@ mod improve;
 mod issues;
 mod lessons;
 mod packages;
+mod people;
 mod ports;
 mod repositories;
 mod rules;
@@ -75,9 +78,11 @@ pub use cards::{
 pub use chats::{ChatMessage, ConfirmedIssues, NewChat, NewChatSettings};
 pub use improve::{DayUsage, UsageAnswer, UsageTotals};
 pub use issues::{Claim, NewBlocker, NewComment, NewLabels, NewParent};
+use people::TOKEN_PREFIX;
+pub use people::{AddedPerson, IssuedToken};
 pub use repositories::{EditedRepository, NewRepository};
 pub use runs::Steer;
-pub use session::{CODE_LIFETIME, LoginCode, Sessions, login_url};
+pub use session::{CODE_LIFETIME, Codes, LoginCode, SessionStatus, login_url};
 pub use uploads::{UPLOAD_LIMIT, Upload};
 
 use std::path::Path;
@@ -114,8 +119,8 @@ pub struct ApiState {
     /// What the server runs with, which the Models and Settings screens show and edit. The rounds a card gets and the
     /// day's token budget, which boards and the usage screen show, are read from it.
     pub config: Arc<Live>,
-    /// The browsers that signed in, and the one-time codes that sign one in.
-    pub sessions: Sessions,
+    /// The one-time codes that sign a browser in; the sessions themselves are in the store.
+    pub codes: Codes,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -226,6 +231,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(webhooks::routes())
         .merge(whereabouts::routes())
         .merge(session::routes())
+        .merge(people::routes())
         .fallback(web::fallback)
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))
         .merge(webhooks::public_routes())
@@ -246,41 +252,76 @@ enum Via {
     Cookie,
 }
 
-/// Who the request is and how it proved it: a person with the server's token or with the cookie of a session, or the
-/// run of the Moebius agent whose unrevoked run token it is. A bearer token that is not valid is refused even with a
-/// valid cookie.
+/// Who a request is: the actor, how it proved it, and the person behind it when it is one.
+struct Who {
+    actor: Actor,
+    via: Via,
+    signed_in: Option<session::SignedIn>,
+}
+
+impl Who {
+    fn person(person: crate::store::Person, token: Option<i64>, via: Via) -> Self {
+        Self {
+            actor: Actor::person(Some((person.id, &person.handle))),
+            via,
+            signed_in: Some(session::SignedIn { person, token }),
+        }
+    }
+}
+
+/// Who the request is and how it proved it: the first owner with the server's token, a person with one of their access
+/// tokens or with the cookie of a session, or the run of the Moebius agent whose unrevoked run token it is. A bearer
+/// token that is not valid is refused even with a valid cookie, and so is anything the store cannot answer about.
 fn identify(
     state: &ApiState,
     headers: &axum::http::HeaderMap,
     method: &axum::http::Method,
     path: &str,
-) -> Option<(Actor, Via)> {
+) -> Option<Who> {
     let given = headers
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "));
+    let store = &state.app.store;
     match given {
         Some(token) if same(token.as_bytes(), state.token.as_bytes()) => {
-            Some((owner_actor(state), Via::Bearer))
+            Some(match owner_person(state) {
+                Some(owner) => Who::person(owner, None, Via::Bearer),
+                // A store without its first owner (who is never deleted) leaves the bare person.
+                None => Who {
+                    actor: Actor::Person,
+                    via: Via::Bearer,
+                    signed_in: None,
+                },
+            })
         }
-        Some(_) => agent_of(state, headers, method, path).map(|actor| (actor, Via::Bearer)),
-        None => session::cookie_of(headers)
-            .filter(|id| state.sessions.has(id))
-            .map(|_| (owner_actor(state), Via::Cookie)),
+        Some(token) if token.starts_with(TOKEN_PREFIX) => {
+            let (person, id) = store.person_of_token(token, crate::store::now()).ok()??;
+            Some(Who::person(person, Some(id), Via::Bearer))
+        }
+        Some(_) => agent_of(state, headers, method, path).map(|actor| Who {
+            actor,
+            via: Via::Bearer,
+            signed_in: None,
+        }),
+        None => {
+            let id = session::cookie_of(headers)?;
+            let (person, token) = store.person_of_session(id, crate::store::now()).ok()??;
+            Some(Who::person(person, token, Via::Cookie))
+        }
     }
 }
 
-/// The person the server's token and a signed-in browser stand for: the first owner, so the judgements they make
-/// record `person:owner`. A store without that person (it is never deleted) leaves the bare [`Actor::Person`].
-fn owner_actor(state: &ApiState) -> Actor {
-    let owner = state
+/// The person the server's token stands for: the first owner, while they are not disabled, so the judgements made with
+/// it record `person:owner`.
+fn owner_person(state: &ApiState) -> Option<crate::store::Person> {
+    state
         .app
         .store
         .person_by_handle(crate::store::FIRST_OWNER)
         .ok()
         .flatten()
-        .filter(|person| !person.disabled);
-    Actor::person(owner.as_ref().map(|p| (p.id, p.handle.as_str())))
+        .filter(|person| !person.disabled)
 }
 
 /// Lets a request through as the actor it names (see [`identify`]). Anything else under `/v1/` is refused; the web app
@@ -292,11 +333,14 @@ async fn authenticate(State(state): State<ApiState>, mut request: Request, next:
         return next.run(request).await;
     }
     match identify(&state, request.headers(), request.method(), path) {
-        Some((actor, via)) => {
-            if via == Via::Cookie && !same_site(&request) {
+        Some(who) => {
+            if who.via == Via::Cookie && !same_site(&request) {
                 return (StatusCode::FORBIDDEN, "cross-site request refused").into_response();
             }
-            request.extensions_mut().insert(actor);
+            request.extensions_mut().insert(who.actor);
+            if let Some(signed_in) = who.signed_in {
+                request.extensions_mut().insert(signed_in);
+            }
             next.run(request).await
         }
         None => (StatusCode::UNAUTHORIZED, "a valid token is needed").into_response(),

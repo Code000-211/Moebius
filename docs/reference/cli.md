@@ -13,7 +13,7 @@ The commands `init`, `serve`, `export` and `check-script` work on files and do n
 | Option | Environment | Meaning |
 |---|---|---|
 | `--server <url>` | `MOEBIUS_URL` | The server's address, such as `http://127.0.0.1:7171`. Without a scheme, `http://` is assumed. |
-| `--token <token>` | `MOEBIUS_TOKEN` | The token the server accepts: the server's [token](desktop-api.md#authentication), or a run token of the Moebius agent (or of the Grilling partner, for the `issue` commands). |
+| `--token <token>` | `MOEBIUS_TOKEN` | The token the server accepts: a person's [access token](desktop-api.md#people-and-access-tokens), the server's [token](desktop-api.md#authentication), or a run token of the Moebius agent (or of the Grilling partner, for the `issue` commands). |
 | `--ssh <host>` | | Reach the server of an SSH host through a tunnel opened for this command; conflicts with `--server`. |
 | `--json` | | Write the API's JSON as it came (pretty printed) instead of plain text. |
 | `--config <file>` | | The configuration file (default `moebius.toml`), read when nothing else names the server. |
@@ -34,6 +34,7 @@ The server is the first of these that exists:
    `address`, `token` and `ssh_program`; on Linux `~/.config/moebius/cli.toml`, on Windows
    `%APPDATA%\moebius\cli.toml`). If `cli.toml` does not exist but a `desktop.toml` does, which the desktop app of
    earlier releases kept there with the same keys, that is read instead. A `--token` alone replaces the saved token.
+   [`login`](#login) writes `address` and `token` there.
 3. The `moebius.toml` of the current directory (or `--config`): its `listen` address (`0.0.0.0` is reached as
    `127.0.0.1`) and the content of its token file. The file must exist; the server must have started once so that the
    token exists. A `--token` alone replaces the file's token.
@@ -100,6 +101,21 @@ replace the release, and set the server up, with the systemd user service that i
 when the host has systemd) and answering `[y/N]`; only `y` or `yes` is a yes. `--yes` (`-y`) answers yes without asking. Without `--yes` and without a terminal (standard input
 and standard error must both be one), `connect` stops with an error that names `moebius connect <host> --yes` and
 changes nothing. A host that cannot be logged in to is an error that no setup follows.
+
+### `login`
+
+Saves a person's access token, with the server's address, in `cli.toml` (see 2. above) for the commands that follow.
+The token is `--token` (or `MOEBIUS_TOKEN`), else the first line of standard input (asked for with `Access token: ` on a
+terminal), so that it stays out of the shell's history. The server is `--server` (which needs no `--token` here), else
+the `address` saved before, else the `listen` of `moebius.toml` as in 3. above; `--ssh` is refused, since a tunnel's
+address does not last. The token is checked with `GET /v1/session` first: a token the server refuses (the answer's
+status and message are the error) or one that is no person's, such as a run token, is not saved. Then `address` and
+`token` of `cli.toml` are written, its other keys kept, readable by its owner only (mode 0600), and the command prints
+`Logged in to <url> as <name> (@<handle>); the token is saved in <file>.`
+
+```sh
+moebius --server http://moebius.internal:7171 login < lea.token
+```
 
 ### `open [--browser <path>]`
 

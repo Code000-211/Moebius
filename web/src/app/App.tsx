@@ -34,7 +34,11 @@ export function App() {
   if (isApiError(error) && error.unauthorized) {
     return (
       <SignIn
-        onSignedIn={() => queryClient.setQueryData(keys.session, { signed_in: true as const })}
+        onSignedIn={() => {
+          // In at once, and then the session again for whom the token belongs to.
+          queryClient.setQueryData(keys.session, { signed_in: true as const });
+          void queryClient.invalidateQueries({ queryKey: keys.session });
+        }}
       />
     );
   }

@@ -10,7 +10,7 @@
 //! for reading input and writing answers. `client` finds the server and sends the requests; each other module is one
 //! group of commands, with its requests and how its answers are written: `api` (any route), `board` (the board,
 //! cards, the inbox and issues), `chats` (chats and grillings), `automations`, `agents`, `rules`, `workflow`, `packages`, `plugins` (turning a plugin off or on), `ext` (Pi packages), `repos`
-//! (repositories), `ssh` (a server reached through an SSH tunnel), `window` (the web app as a window of its own), `setup` (`doctor`, settings, API keys, usage and the server itself) and `improve` (Retros,
+//! (repositories), `login` (saving a person's access token), `ssh` (a server reached through an SSH tunnel), `window` (the web app as a window of its own), `setup` (`doctor`, settings, API keys, usage and the server itself) and `improve` (Retros,
 //! proposals, research, the decision model and its takeovers).
 
 mod agents;
@@ -21,6 +21,7 @@ mod chats;
 mod client;
 mod ext;
 mod improve;
+pub mod login;
 mod packages;
 mod plugins;
 pub mod remote;

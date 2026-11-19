@@ -19,12 +19,30 @@ export interface ServerInfo {
   arch: string;
 }
 
-/** `GET /v1/session`: the answer of a signed-in browser. */
-export interface Session {
-  signed_in: true;
+/** A person of the organisation (`GET /v1/people`). */
+export interface Person {
+  id: number;
+  /** Without the `@`. */
+  handle: string;
+  name: string;
+  role: "owner" | "member" | "viewer";
+  disabled: boolean;
+  created_at: number;
 }
 
-/** The body of `POST /v1/session`: the server's token, or the one-time code of a `?login=` link. */
+/**
+ * `GET /v1/session`: the answer of a signed-in browser, with the person it is signed in as. `person` is null for an
+ * agent's run token, and absent for the moment between signing in and reading the session again.
+ */
+export interface Session {
+  signed_in: true;
+  person?: Person | null;
+}
+
+/**
+ * The body of `POST /v1/session`: a person's access token or the server's token, or the one-time code of a `?login=`
+ * link.
+ */
 export type SignIn = { token: string } | { code: string };
 
 /** `GET /v1/start`: one step of the first start. */

@@ -237,6 +237,17 @@ What a person may do in the organisation: an `owner` everything, a `member` the 
 merges, a `viewer` reads, comments and writes issues that wait in the inbox.
 _Avoid_: permission, group, admin
 
+**Access token**:
+The secret that signs a person in, to the web app once and to the command line with `moebius login`: an owner makes a
+person's first one when adding them, the person makes more of their own, and any is revoked. It lasts until it is
+revoked and is kept only as a hash; the server's own token is the first owner's.
+_Avoid_: password, API key, login
+
+**Session**:
+What a browser's cookie names once it signed in with an access token: kept in the store as a hash, it lasts thirty days
+and ends sooner when the person signs out, its token is revoked or the person is disabled.
+_Avoid_: login, cookie (the cookie only carries it)
+
 **Inbox**:
 The one place, across all boards, where everything that needs a person arrives: proposals, cards ready to merge and cards
 that got stuck.
@@ -306,10 +317,6 @@ _Avoid_: workspace, space
 A few capital letters that name a project's cards, such as `WEB` in `WEB-24`; chosen when the project is made and kept
 when it is renamed.
 _Avoid_: prefix, slug, project id
-
-**Access token**:
-The secret an owner makes for a person, with which that person signs in to the web app and uses the command line.
-_Avoid_: password, API key, login
 
 **Assignee**:
 A person a card is given to; whether an agent still works on the card is up to the column's script.

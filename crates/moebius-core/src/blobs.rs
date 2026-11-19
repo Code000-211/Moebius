@@ -38,6 +38,7 @@ static SECRETS: LazyLock<Vec<Pattern>> = LazyLock::new(|| {
         ("aws-access-key", r"AKIA[0-9A-Z]{16}"),
         ("webhook-secret", r"whsec_[A-Za-z0-9]{20,}"),
         ("run-token", r"moebius-run-[0-9a-f]{32,}"),
+        ("access-token", r"moebius-access-[0-9a-f]{32,}"),
     ]
     .into_iter()
     .map(|(name, pattern)| Pattern {
@@ -255,6 +256,13 @@ mod tests {
         let text = redact(&format!("the launcher failed: {token}"));
         assert_eq!(text, "the launcher failed: [redacted:run-token]");
         assert_eq!(redact("moebius-run-nope"), "moebius-run-nope");
+    }
+
+    #[test]
+    fn a_persons_access_token_is_redacted() {
+        let token = format!("moebius-access-{}", "0123456789abcdef".repeat(4));
+        let text = redact(&format!("export MOEBIUS_TOKEN={token}"));
+        assert_eq!(text, "export MOEBIUS_TOKEN=[redacted:access-token]");
     }
 
     #[test]

@@ -81,8 +81,17 @@ fn config_settings(config: &Path) -> Result<Option<Connection>, String> {
     }))
 }
 
+/// The URL of the server of a `moebius.toml` that exists: its `listen` address.
+pub(super) fn config_url(config: &Path) -> Result<Option<String>, String> {
+    if !config.is_file() {
+        return Ok(None);
+    }
+    let config = moebius_core::config::Config::load(config).map_err(|e| e.to_string())?;
+    Ok(Some(listen_url(config.listen)))
+}
+
 /// `http://` before an address that has no scheme, and no `/` at the end.
-fn address_url(address: &str) -> String {
+pub(super) fn address_url(address: &str) -> String {
     let address = address.trim().trim_end_matches('/');
     if address.contains("://") {
         address.to_string()

@@ -38,6 +38,7 @@ import { Link, useLocation, useNavigate } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { chats as readChats } from "../../api/calls/chat";
 import { start } from "../../api/calls/server";
+import { getSession } from "../../api/calls/session";
 import type { ConnectionState } from "../../api/events";
 import { keys } from "../../api/keys";
 import type { Snapshot } from "../../api/types/board";
@@ -383,6 +384,7 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
         {!inSettings && groupSection("Setup", "Setup")}
         {inSettings && (
           <Section collapsed={collapsed}>
+            {!collapsed && <SignedInAs />}
             <SignOut collapsed={collapsed} />
           </Section>
         )}
@@ -782,6 +784,23 @@ function Back({ collapsed, to }: { collapsed: boolean; to: string }) {
     </Tooltip>
   ) : (
     link
+  );
+}
+
+/**
+ * Whom this browser is signed in as, above the way out: a line of text and no row to press, since it goes nowhere. It
+ * reads the session the app already holds and never asks for it itself.
+ */
+function SignedInAs() {
+  const session = useQuery({ queryKey: keys.session, queryFn: getSession, enabled: false });
+  const person = session.data?.person;
+  if (!person) return null;
+  return (
+    <li className="flex min-h-8 min-w-0 items-center px-3 text-sm text-secondary">
+      <span className="truncate">
+        Signed in as {person.name} <span className="text-text">@{person.handle}</span>
+      </span>
+    </li>
   );
 }
 

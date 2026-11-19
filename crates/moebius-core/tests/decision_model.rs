@@ -720,7 +720,7 @@ impl Api {
             .unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         let state = ApiState {
-            sessions: Default::default(),
+            codes: Default::default(),
             app: server.app.clone(),
             runs: server.harness.clone(),
             harness_repo: None,
