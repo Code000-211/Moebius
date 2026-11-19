@@ -51,7 +51,7 @@ end
 | `card.number` | number | The issue number: on GitHub the issue's number, otherwise a counter per repository starting at 1. |
 | `card.title` | string | The issue's title. |
 | `card.body` | string | The issue's body; an empty string when there is none. |
-| `card.author` | string | Who created the issue: `person` for an issue made in the web app, otherwise the GitHub login. |
+| `card.author` | string | Who created the issue: `person:<handle>` for an issue a known person made in the web app (an issue from before people belongs to the first owner, `person:owner`), `person` for one made without a known person, otherwise the forge login. |
 | `card.column` | string | The column the card is in. |
 | `card.confirmed` | boolean | True for a card made from a grilling a person confirmed (see `desktop-api.md`, grillings); the person has decided on it, so it needs no approval. |
 | `card.trusted` | boolean | True when the issue may move on without approval: it was made by a person in the web app on a repository without a forge, or its author is one of the repository's trusted GitHub logins (compared without regard to case). |
@@ -61,11 +61,11 @@ end
 | `card.children` | table (array of tables) | The card's sub-issues, oldest first; empty (never nil) when it has none. Each has `id` (the card's id), `number`, `title`, `state` (`open` or `closed`) and `column`. Only issues a person can have vouched for are listed: those of a trusted author, those a person approved and those of a confirmed grilling. An issue of anyone else that says "Part of #n" is shown under its parent but is not one of its `children`, so it cannot hold the parent back or close it. |
 | `card.merged` | boolean | True when a change of the card was merged. A card is in `Done` because its change was merged, or because its issue was closed (by a person, a script or the forge), which is when this is false. |
 | `card.labels` | table (array of strings) | The issue's labels, in order; empty when it has none. |
-| `card.claimed_by` | string or nil | Who claimed the issue (`person`, `agent:<name>` or a name a session gave), or nil. |
+| `card.claimed_by` | string or nil | Who claimed the issue (`person`, `person:<handle>`, `agent:<name>` or a name a session gave), or nil. |
 | `card.rounds` | number | How many runs with purpose `code` the card has had since it was last retried, whatever their status (a running one counts), and how many rounds of attempts of which none passed (see Attempts). |
 | `card.reviews` | number | How many review rounds the card has had since it was last retried, whatever their status: the runs with purpose `review` and those with purpose `review-standards` (one per round of the two-axis review). |
 | `card.tokens` | number | The input and output tokens the card's runs used since it was last retried (cached tokens are not added; the teacher's count too). |
-| `card.held` | table or nil | Set while a person or the Moebius agent holds the card (`POST /v1/cards/{id}/block` in `desktop-api.md`): `held.reason` (string or nil), `held.by` (`person` or `agent:Moebius`) and `held.at` (Unix seconds). Read-only. The engine skips a held card before its script is called, so a script never runs for one and sees `card.held` only as nil; the dry run of `check-script` makes up a card that is not held. |
+| `card.held` | table or nil | Set while a person or the Moebius agent holds the card (`POST /v1/cards/{id}/block` in `desktop-api.md`): `held.reason` (string or nil), `held.by` (`person`, `person:<handle>` or `agent:Moebius`) and `held.at` (Unix seconds). Read-only. The engine skips a held card before its script is called, so a script never runs for one and sees `card.held` only as nil; the dry run of `check-script` makes up a card that is not held. |
 | `card.stopped` | boolean | True when the card's latest run was stopped by a person and the card has not been retried since. |
 | `card.review` | table or nil | The latest review of the card's work: the newest `review` run that `succeeded` after the card's latest `code` run, or a `review-spec` run that `succeeded` after a `review-standards` run that `succeeded` (the two axes of one round). nil when there is none, so a new `code` run clears it. |
 | `card.review.verdict` | string | `approve` or `changes`. Read from the review run's summary (see below). |
@@ -393,7 +393,7 @@ configuration and no repository, and it stores and starts nothing.
 | `<file>` | required | The script, such as `ready.luau` (the file name in a project's settings). |
 | `--column` | `Backlog` | The column the card is in: one of the six columns, spelled as in the table at the top (`Ready` for `Not started` too). |
 | `--title` | `A card to check the script with` | The card's `title`. |
-| `--author` | `person` | The card's `author`. `card.trusted` is true only for `person`, as on a repository without a forge. |
+| `--author` | `person` | The card's `author`. `card.trusted` is true only for a person (`person` or `person:<handle>`), as on a repository without a forge. |
 
 The made-up card has `id` and `number` 1, an empty `body`, `blocked_by`, `children` and `labels` empty, no `parent` or `claimed_by`, `merged` false, `rounds`, `reviews` and `tokens` 0, and
 `stopped` and `test_first` false, and `attempts` empty. It has no `note`, `change`, `run`, `review` or `selection`. The `moebius` table has every constant and function of

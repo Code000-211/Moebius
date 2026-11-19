@@ -7,8 +7,9 @@
 //! `shadows` (the decision model's shadows and takeovers), `usage`, `found` (what the Retro collects), `retros`
 //! (Retros, proposals and trials), `lessons` (what the Retro learned from earlier cards), `attempts` (the runs a hard
 //! card gets in one go and which was picked), `research` (research, its runs and experiments), `automations`
-//! (automations, their firings and the local clock), `workflows` (workflow runs and what each node did) and
-//! `plugin_settings` (what plugins keep for the server).
+//! (automations, their firings and the local clock), `workflows` (workflow runs and what each node did),
+//! `plugin_settings` (what plugins keep for the server) and `people` (the people of the organisation, and the
+//! migration that gives earlier records to the first owner).
 //! Every public type is re-exported here, as `store::Card` and the like.
 
 mod attempts;
@@ -25,6 +26,7 @@ mod issues;
 mod judgements;
 mod lessons;
 mod localize;
+mod people;
 mod plugin_settings;
 mod replays;
 mod research;
@@ -56,6 +58,7 @@ pub use issues::Comment;
 pub use judgements::{Judgement, NewJudgement};
 pub use lessons::{Lesson, NewLesson};
 pub use localize::IndexedFile;
+pub use people::{FIRST_OWNER, Person, Role};
 pub use replays::Replay;
 pub use research::{Budget, BudgetKind, Experiment, Research};
 pub use retros::{OwnEdits, Proposal, Retro, Trial};
@@ -436,6 +439,7 @@ ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
     "ALTER TABLE firings ADD COLUMN workflow_run_id INTEGER REFERENCES workflow_runs(id);",
     "ALTER TABLE automations ADD COLUMN workflow TEXT;",
     "ALTER TABLE changes ADD COLUMN run_id INTEGER REFERENCES workflow_runs(id);",
+    people::SCHEMA,
 ];
 
 pub fn now() -> i64 {

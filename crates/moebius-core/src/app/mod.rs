@@ -98,6 +98,16 @@ pub fn person_author(handle: Option<&str>) -> String {
     }
 }
 
+/// Whether `author` (or a decider) is a person of the organisation: `person`, or `person:<handle>` for a known one. A
+/// forge login cannot hold a `:`, so no forge user is taken for one.
+pub fn is_person(author: &str) -> bool {
+    author == PERSON
+        || author
+            .strip_prefix(PERSON)
+            .and_then(|rest| rest.strip_prefix(':'))
+            .is_some_and(|handle| !handle.is_empty())
+}
+
 /// Why an operation failed.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {

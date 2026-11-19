@@ -92,7 +92,7 @@ string or null, "by": "person" or "agent:Moebius", "at": number}` while a person
 `parent` (the number of the issue it is a sub-issue of, or null), `closed` (true when the issue was closed or the card is
 in `Done`), `labels` (array of text, in order) and `claimed_by` (who claimed it, or null).
 
-`Comment`: `id`, `card_id`, `author` (a forge login, `person` or `agent:<name>`), `body`, `at`.
+`Comment`: `id`, `card_id`, `author` (a forge login, `person`, `person:<handle>` or `agent:<name>`), `body`, `at`.
 
 `Issue`: a `Card` with `state` (`open` or `closed`), `blocked_by` (the numbers of the issues that block it and are not
 done) and `children` (its sub-issues, oldest first, each `{"id", "number", "title", "state", "column"}`).
@@ -908,7 +908,7 @@ deleted `Replay`. Errors: `403` for an agent's run token (only a person deletes)
 
 What the store holds now, per kind of judgement, kinds in alphabetical order. Response: an array of `KindCounts`:
 `{"kind": string, "count": number, "with_outcome": number, "by_person": number, "held_out": number}`. `count` is the
-judgements of the kind, `with_outcome` those with an outcome, `by_person` those whose decider is `person`, `held_out`
+judgements of the kind, `with_outcome` those with an outcome, `by_person` those whose decider is a person (`person` or `person:<handle>`), `held_out`
 those in the held-out tenth (see [the training export](training-export.md#the-split)).
 
 ### `POST /v1/exports`

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::app::{App, AppError, PERSON};
+use crate::app::{App, AppError, PERSON, is_person};
 use crate::blobs::redact_json;
 use crate::bus::Event;
 use crate::decide::{Actor, Question};
@@ -70,7 +70,7 @@ impl KindCounts {
     fn add(&mut self, id: i64, has_outcome: bool, decider: &str) {
         self.count += 1;
         self.with_outcome += i64::from(has_outcome);
-        self.by_person += i64::from(decider == PERSON);
+        self.by_person += i64::from(is_person(decider));
         self.held_out += i64::from(held_out(id));
     }
 }
@@ -135,7 +135,8 @@ fn line(store: &Store, j: &Judgement) -> Result<String, ExportError> {
         "options": j.options,
         "choice": j.choice,
         "reason": j.reason,
-        "decider": j.decider,
+        // Who decided is not what a decision model should learn from (ADR 0018): every person is `person`.
+        "decider": if is_person(&j.decider) { PERSON } else { &j.decider },
         "run": j.run_id,
         "card": j.card_id,
         "outcome": j.outcome,
@@ -452,6 +453,32 @@ mod tests {
         let text = std::fs::read_to_string(out.join("tool_call.jsonl")).unwrap();
         assert!(!text.contains("sk-ant-"), "{text}");
         assert!(text.contains("[redacted:anthropic-key]"));
+    }
+
+    /// Who decided is left out of what a decision model learns from: the first owner, a second person and the bare
+    /// person are all `person`, and all count as decided by a person.
+    #[test]
+    fn every_person_is_exported_as_person() {
+        let (dir, store) = setup();
+        let owner = store
+            .person_by_handle(crate::store::FIRST_OWNER)
+            .unwrap()
+            .unwrap();
+        let lea = store
+            .add_person("lea", "Lea", crate::store::Role::Member)
+            .unwrap();
+        judge(&store, "merge", "{}", &owner.author());
+        judge(&store, "merge", "{}", &lea.author());
+        judge(&store, "merge", "{}", PERSON);
+        judge(&store, "merge", "{}", "agent:Moebius");
+        let out = dir.path().join("out");
+        let summary = export(&store, &out, None).unwrap();
+        let deciders: Vec<Value> = lines(&out.join("merge.jsonl"))
+            .into_iter()
+            .map(|line| line["decider"].clone())
+            .collect();
+        assert_eq!(deciders, ["person", "person", "person", "agent:Moebius"]);
+        assert_eq!(summary.kinds[0].counts.by_person, 3);
     }
 
     #[test]

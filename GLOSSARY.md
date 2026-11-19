@@ -221,6 +221,22 @@ A person whose issues start the Kanban without anyone's approval; issues from an
 them.
 _Avoid_: collaborator, maintainer, allowlisted user
 
+**Organisation**:
+Everyone who works on one Moebius server, with their projects; a server holds exactly one, and a second organisation
+runs a second server.
+_Avoid_: workspace, team, tenant
+
+**Person**:
+Someone of the organisation, with a handle (`@lea`), a display name and a role; the author and decider of what they
+did as `person:<handle>`. A person is never deleted, only disabled, and stays the author of what they did. The first
+owner (`@owner`) is made with the store and was given everything earlier records say `person` did.
+_Avoid_: user, account, member (that word is a role)
+
+**Role**:
+What a person may do in the organisation: an `owner` everything, a `member` the issues, cards, comments, chats and
+merges, a `viewer` reads, comments and writes issues that wait in the inbox.
+_Avoid_: permission, group, admin
+
 **Inbox**:
 The one place, across all boards, where everything that needs a person arrives: proposals, cards ready to merge and cards
 that got stuck.
@@ -278,12 +294,8 @@ _Avoid_: test window, maintenance window
 ## People and planning
 
 Planned in [ADR 0018](docs/adr/0018-more-than-one-person.md) and
-[the plan for people, the wiki and planning](docs/plan/issues-people-wiki-planning.md); not built yet.
-
-**Organisation**:
-Everyone who works on one Moebius server, with their projects; a server holds exactly one, and a second organisation
-runs a second server.
-_Avoid_: workspace, team, tenant
+[the plan for people, the wiki and planning](docs/plan/issues-people-wiki-planning.md); not built yet. The words for
+people that are built (organisation, person, role) are in the language above.
 
 **Project**:
 One board and the work on it, with any number of repositories, or none; work that needs no repository is done in the
