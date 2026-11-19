@@ -296,7 +296,7 @@ async fn poll_request<F: Polled>(
     let app = app.clone();
     match request {
         Request::Merged { commit } => {
-            blocking(move || app.change_merged(&change, commit.as_deref())).await
+            blocking(move || app.change_merged(&change, commit.as_deref(), None)).await
         }
         Request::Closed => blocking(move || app.change_closed(&change)).await,
         Request::Open(status) => {
@@ -425,7 +425,7 @@ mod tests {
         // An issue that is closed, and one with no card: nothing is kept of them.
         let closed = open_card(&app, &repository, 8);
         app.store.set_issue_closed(closed.id, true).unwrap();
-        app.move_card(closed.id, columns::DONE).unwrap();
+        app.move_card(closed.id, columns::DONE, None).unwrap();
         let fake = Fake::new(Duration::ZERO);
         for number in 1..=9 {
             fake.remembered.put("acme/w", number, "t1", Vec::new());

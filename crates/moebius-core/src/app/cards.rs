@@ -315,7 +315,7 @@ impl App {
             reason,
         )?;
         self.store.resolve_inbox_for_card(card_id)?;
-        self.move_card(card_id, columns::NOT_STARTED)
+        self.move_card(card_id, columns::NOT_STARTED, Some(by))
     }
 
     /// A person retries a card that is stuck or whose pull request was closed without a merge: the decision is
@@ -337,7 +337,7 @@ impl App {
         if closed {
             self.store
                 .set_card_note(card_id, "The pull request was closed without a merge.")?;
-            return self.move_card(card_id, columns::IN_PROGRESS);
+            return self.move_card(card_id, columns::IN_PROGRESS, Some(by));
         }
         self.set_waiting(card_id, None);
         self.card(card_id)
@@ -403,7 +403,9 @@ impl App {
         Ok(history)
     }
 
-    pub fn move_card(&self, card_id: i64, column: &str) -> Result<Card> {
+    /// Moves the card to `column`; `by` is the person who did it, who is not told of it (none for the engine and
+    /// scripts, which tell every follower). Announces `card_moved`.
+    pub fn move_card(&self, card_id: i64, column: &str, by: Option<&Actor>) -> Result<Card> {
         let from = self.card(card_id)?.column;
         self.store.move_card(card_id, column)?;
         self.bus.publish(Event::CardMoved {
@@ -411,7 +413,7 @@ impl App {
             from: from.to_string(),
             to: column.to_string(),
         });
-        self.notify_moved(card_id, &from, column);
+        self.notify_moved(card_id, &from, column, by);
         self.set_waiting(card_id, None);
         self.card(card_id)
     }
@@ -427,13 +429,14 @@ impl App {
     }
 
     /// Moves the card from `from` to `column` only if it is still in `from`, setting its note to `note` when one is
-    /// given; none when something else moved it first, which is left as it is.
+    /// given; none when something else moved it first, which is left as it is. `by` is as for [`App::move_card`].
     pub fn move_card_from(
         &self,
         card_id: i64,
         from: &str,
         column: &str,
         note: Option<&str>,
+        by: Option<&Actor>,
     ) -> Result<Option<Card>> {
         if !self.store.move_card_from(card_id, from, column, note)? {
             return Ok(None);
@@ -443,7 +446,7 @@ impl App {
             from: from.to_string(),
             to: column.to_string(),
         });
-        self.notify_moved(card_id, from, column);
+        self.notify_moved(card_id, from, column, by);
         self.set_waiting(card_id, None);
         self.card(card_id).map(Some)
     }

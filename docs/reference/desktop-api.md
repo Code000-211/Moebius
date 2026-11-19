@@ -1445,8 +1445,8 @@ the person who caused it where that is known:
   an address such as `me@example.com` names no one), written through the API or read from the forge (a comment more than a day old is history, and tells no one). A handle that is
   nobody's or is disabled tells no one. A person mentioned twice is told once. A mention in a page is told the same
   way, by the wiki that writes it.
-- **changed**: the followers of a card when it moves to another column (whoever moved it; closing a card moves it to `Done`, and
-  reopening it moves it back) and when it is commented on. A follower who is mentioned in that comment gets the
+- **changed**: the followers of a card when it moves to another column (except the person who moved it, when a person did; the board and
+  scripts tell every follower. Closing a card moves it to `Done`, and reopening it moves it back) and when it is commented on. A follower who is mentioned in that comment gets the
   mention alone.
 
 A person follows the cards they wrote and the cards they are given, until they stop, and any other card they choose to

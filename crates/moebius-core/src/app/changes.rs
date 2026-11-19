@@ -118,7 +118,8 @@ impl App {
         };
         self.store.set_card_note(card.id, note)?;
         self.store.resolve_inbox_for_card(card.id)?;
-        self.move_card(card.id, columns::IN_PROGRESS).map(Some)
+        self.move_card(card.id, columns::IN_PROGRESS, Some(by))
+            .map(Some)
     }
 
     /// Publishes the work of the card's latest successful `code` run on the branch of its change, `moebius/card-<number>`:
@@ -224,7 +225,7 @@ impl App {
         judgements: Option<&str>,
     ) -> Result<(Change, bool)> {
         if self
-            .move_card_from(card_id, seen, columns::READY_TO_MERGE, None)?
+            .move_card_from(card_id, seen, columns::READY_TO_MERGE, None, None)?
             .is_none()
         {
             return Ok((change, false));
@@ -627,12 +628,18 @@ impl App {
                 .harness_repo()?
                 .merge_branch(self, by, &change.branch, &message)?,
         };
-        self.change_merged(&change, Some(&commit))?;
+        self.change_merged(&change, Some(&commit), Some(by))?;
         Ok(commit)
     }
 
     /// A change is merged, here or on the forge: its inbox items are resolved and its card, if it has one, is done.
-    pub fn change_merged(&self, change: &Change, commit: Option<&str>) -> Result<()> {
+    /// `by` is the person who merged it, who is not told that the card moved (none for the poll).
+    pub fn change_merged(
+        &self,
+        change: &Change,
+        commit: Option<&str>,
+        by: Option<&Actor>,
+    ) -> Result<()> {
         self.store.set_change_state(change.id, "merged")?;
         self.bus.publish(Event::ChangeMerged {
             change: change.id,
@@ -642,7 +649,7 @@ impl App {
         match change.card_id {
             Some(card_id) => {
                 self.store.resolve_inbox_for_card(card_id)?;
-                self.move_card(card_id, columns::DONE)?;
+                self.move_card(card_id, columns::DONE, by)?;
             }
             None => self.store.resolve_inbox_for_change(change.id)?,
         }

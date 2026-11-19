@@ -222,7 +222,7 @@ impl App {
                     self.sub_issue_closed(card)?;
                 }
                 if !in_done {
-                    self.move_card(id, columns::DONE)?;
+                    self.move_card(id, columns::DONE, None)?;
                 }
                 // A card in Done already reflects it (a store from before issues were closed has them all): that is
                 // not news.
@@ -230,7 +230,7 @@ impl App {
                     self.bus.publish(Event::CardClosed { card: id });
                 }
             } else if raw_closed {
-                self.reopened(id)?;
+                self.reopened(id, None)?;
             }
             self.forge_saw(card, "state", state)?;
         }
