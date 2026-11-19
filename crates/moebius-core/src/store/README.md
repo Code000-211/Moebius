@@ -25,6 +25,13 @@ before and `person:owner` after. A card or comment read from a forge keeps its a
 | `access_tokens` | Person, name, the SHA-256 of the token, when it was made, last used (to the minute) and revoked. |
 | `sessions` | The SHA-256 of the session id, person, the access token it was opened with (none for the server's token or a one-time code the server printed), when it started and when it expires. |
 
+`store/favourites.rs` keeps what a person keeps for themselves in the sidebar.
+
+| Table | Holds |
+|---|---|
+| `favourites` | The places a person pinned: kind (`project`, `view`, `card`, `page`), repository, key, title and position. |
+| `recent_places` | The places they opened lately, the same way with when, newest first; the last 20 are kept. |
+
 Neither a token nor a session id is stored as it is. Revoking a token deletes the sessions it opened; disabling a
 person deletes theirs; a session is refused once it expires, and forgotten when the next one starts.
 
