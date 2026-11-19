@@ -359,7 +359,7 @@ async fn an_edit_is_a_commit_that_is_pushed_and_the_next_check_uses_the_new_rule
             judgements[0].decider.as_str(),
             judgements[0].choice.as_str()
         ),
-        ("person", "edit_rules")
+        ("person:owner", "edit_rules")
     );
 
     setup.check("ls").await;

@@ -85,7 +85,7 @@ async fn an_edit_through_the_api_is_a_commit_that_is_pushed_and_a_failed_push_un
             judgements[0].decider.as_str(),
             judgements[0].choice.as_str()
         ),
-        ("person", "edit_agent")
+        ("person:owner", "edit_agent")
     );
 
     // An agent that is new is added, and an edit that changes nothing commits nothing.

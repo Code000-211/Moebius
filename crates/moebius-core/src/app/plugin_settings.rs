@@ -107,7 +107,7 @@ impl App {
         values: &BTreeMap<String, String>,
         reason: &str,
     ) -> Result<PluginSettings> {
-        if !matches!(by, Actor::Person) {
+        if !by.is_person() {
             return Err(AppError::Forbidden(
                 "only a person changes the settings of a plugin".into(),
             ));

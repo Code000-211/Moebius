@@ -164,7 +164,7 @@ async fn a_chat_in_the_harness_configuration_offers_a_change_whose_merge_lands_o
     );
     let judgements = server.app.store.judgements("merge").unwrap();
     assert_eq!(judgements.len(), 1);
-    assert_eq!(judgements[0].decider, "person");
+    assert_eq!(judgements[0].decider, "person:owner");
     assert_eq!(judgements[0].reason, "good skill");
 
     // The Coder's next run gets the skill.

@@ -109,7 +109,7 @@ pub(super) async fn refuse_agent_merge(
     by: &Actor,
     id: i64,
 ) -> Result<(), ApiError> {
-    if matches!(by, Actor::Person) {
+    if by.is_person() {
         return Ok(());
     }
     let touches = blocking(&state.app, move |app| app.change_touches_packages(id))
@@ -124,7 +124,7 @@ pub(super) async fn refuse_agent_proposal(
     by: &Actor,
     id: i64,
 ) -> Result<(), ApiError> {
-    if matches!(by, Actor::Person) {
+    if by.is_person() {
         return Ok(());
     }
     let repo = state.harness_repo.clone();

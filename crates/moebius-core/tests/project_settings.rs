@@ -217,7 +217,7 @@ async fn the_files_of_a_project_are_listed_saved_as_commits_and_removed() {
     );
     let decisions = app.store.judgements("edit_project_file").unwrap();
     assert_eq!(decisions.len(), 1);
-    assert_eq!(decisions[0].decider, "person");
+    assert_eq!(decisions[0].decider, "person:owner");
     assert_eq!(decisions[0].reason, "because");
     assert_eq!(file(&setup.get(repo.id).await, "review.md")["exists"], true);
 

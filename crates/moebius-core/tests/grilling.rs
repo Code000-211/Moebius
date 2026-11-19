@@ -261,7 +261,7 @@ async fn a_grilling_ends_in_issues_that_become_cards_that_move_on_to_ready() {
     // The decision is recorded with the final list.
     let decisions = server.app.store.judgements("confirm_grilling").unwrap();
     assert_eq!(decisions.len(), 1);
-    assert_eq!(decisions[0].decider, "person");
+    assert_eq!(decisions[0].decider, "person:owner");
     let context = server
         .app
         .store
@@ -659,7 +659,7 @@ async fn deleting_a_grilling_takes_out_its_record_and_chat_and_leaves_the_cards(
         .unwrap();
     assert_eq!(
         (recorded.len(), recorded[0].decider.as_str()),
-        (1, "person")
+        (1, "person:owner")
     );
     let mut announced = vec![];
     while let Ok(event) = events.try_recv() {

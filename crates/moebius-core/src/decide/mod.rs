@@ -35,7 +35,7 @@ pub struct Question {
 pub enum Actor {
     /// A person who is not named: the one person of a server that knows no people yet.
     Person,
-    /// A person known by id and handle (ADR 0018); the call sites move to it from [`Actor::Person`] in later steps.
+    /// A person known by id and handle (ADR 0018); the API names the first owner with it; other call sites still use [`Actor::Person`] until they move.
     Member {
         id: i64,
         handle: String,
@@ -60,6 +60,11 @@ impl Actor {
             },
             None => Actor::Person,
         }
+    }
+
+    /// Whether this is a person, named or not: what may be asked of a person only (agents and scripts are refused).
+    pub fn is_person(&self) -> bool {
+        matches!(self, Actor::Person | Actor::Member { .. })
     }
 
     /// The decider a judgement records for this actor: `person`, `person:<handle>`, `agent:<name>` or
@@ -367,6 +372,20 @@ mod tests {
         assert_eq!(known.decider(), "person:ada");
         assert_eq!(Actor::person(None), Actor::Person);
         assert_eq!(Actor::Person.decider(), "person");
+        assert!(Actor::Person.is_person() && known.is_person());
+        assert!(
+            !Actor::Script {
+                column: "Ready".into()
+            }
+            .is_person()
+        );
+        assert!(
+            !Actor::Agent {
+                name: "Moebius".into(),
+                run: 1
+            }
+            .is_person()
+        );
         assert_eq!(crate::app::person_author(Some("ada")), "person:ada");
         assert_eq!(crate::app::person_author(None), "person");
     }

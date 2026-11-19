@@ -22,7 +22,7 @@ on](#post-apihookspath), which the secret that trigger names opens instead.
 The run token of a run of the Moebius agent (`MOEBIUS_TOKEN` in its environment, see the [bridge
 protocol](bridge-protocol.md#the-environment-of-the-harness)) is accepted as well, while the run lasts: it is how the
 agent operates Moebius with the [command line](cli.md). A request made with it acts as the agent: every decision it
-records has the decider `agent:Moebius` instead of `person`, and the run is the judgement's `run` (for a decision about
+records has the decider `agent:Moebius` instead of `person:owner`, and the run is the judgement's `run` (for a decision about
 another run, such as a steer, the judgement keeps that run, and the agent's run is in the context as `acting_run`).
 The run token of a run of the Grilling partner is accepted for the routes of [the issue tracker](#the-issue-tracker) only,
 as `agent:Grilling-partner`: `GET` and `POST /v1/repositories/{id}/issues`, `GET` and `PUT /v1/cards/{id}`, `PUT
@@ -41,12 +41,12 @@ other route answers it `401`, as it does the run token of any other agent, and a
 `403` with `only a person can do this` to a run token: `PUT /v1/secrets/{name}` (an agent must not set keys),
 `GET /v1/webhooks` and `POST /v1/webhooks/{forge}/secret` (they hold the webhook secrets),
 `POST /v1/session` and `POST /v1/session/codes` (a run token never signs in or makes a login code), `POST /v1/harness/setup` (moving the agents is a person's choice) and `GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui`, `GET /v1/terminal` and `GET /v1/repositories/{id}/terminal` (the shells) and `GET /v1/ports/{port}/tunnel`, and `PUT /v1/client` (what the app says of itself). Where a route below says "a person" and "decider
-`person`", an agent that uses its token is the decider instead.
+`person`" (it is `person:owner` for the server's token and a signed-in browser, until people have tokens of their own), an agent that uses its token is the decider instead.
 
 A browser signs in once and then carries the cookie `moebius_session` (`HttpOnly; SameSite=Strict; Path=/`, and `Secure` when
 a proxy in front of the server says with `X-Forwarded-Proto: https` that the browser used TLS). Every route, the
 WebSocket upgrades included, accepts a valid cookie as the person's token, as a person: a person's route is open to it
-and the decider of a decision is `person`. A bearer token that is not valid is refused even when the request also has a
+and the decider of a decision is the first owner, `person:owner`. A bearer token that is not valid is refused even when the request also has a
 valid cookie. Because a browser sends a cookie by itself, a request that only a cookie vouches for has to prove that
 it comes from the web app: a method other than `GET`, `HEAD` and `OPTIONS` needs the header `X-Moebius: 1`, and an
 `Origin` header, which browsers send on changes and on WebSocket upgrades, must name the host of the `Host` header

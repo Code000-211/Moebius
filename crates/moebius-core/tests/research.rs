@@ -367,7 +367,7 @@ async fn a_brief_is_checked_and_only_a_confirmed_one_starts() {
     assert_eq!(decisions.len(), 1);
     assert_eq!(
         (decisions[0].choice.as_str(), decisions[0].decider.as_str()),
-        ("confirm", "person")
+        ("confirm", "person:owner")
     );
     let (status, _) = api
         .post(&format!("/v1/research/{id}/confirm"), json!({}))
@@ -772,7 +772,7 @@ async fn deleting_a_research_takes_out_its_experiments_runs_changes_and_branches
     assert_eq!(recorded.len(), 1);
     assert_eq!(
         (recorded[0].decider.as_str(), recorded[0].reason.as_str()),
-        ("person", "done with it")
+        ("person:owner", "done with it")
     );
     let mut announced = vec![];
     while let Ok(event) = events.try_recv() {

@@ -64,7 +64,7 @@ A proposal is a takeover with the status `open` (kind, the agreement and the num
 item of the kind `takeover` titled "The decision model can take over <kind>" and the event `takeover_proposed`.
 
 A person decides in the app, or through the [desktop API](desktop-api.md#post-v1takeoversidmerge). Each decision is recorded
-as a judgement of kind `takeover` (decider `person`; choices `merge`, `dismiss` and `release`) with the reason.
+as a judgement of kind `takeover` (decider `person:<handle>`, as in `person:owner`; choices `merge`, `dismiss` and `release`) with the reason.
 
 - **Merge** (`open` to `merged`): the kind is routed to the decision model from now on, and after a restart (the merged
   takeovers are read from the store at start).

@@ -745,7 +745,7 @@ async fn proposals_for_moebius_itself_wait_in_the_inbox_as_diffs_and_merging_app
     assert!(
         decisions
             .iter()
-            .all(|d| d.choice == "merge_proposal" && d.decider == "person")
+            .all(|d| d.choice == "merge_proposal" && d.decider == "person:owner")
     );
 }
 

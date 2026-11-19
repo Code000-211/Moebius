@@ -290,7 +290,7 @@ async fn a_file_is_saved_as_a_commit_and_the_decision_names_who() {
     let decisions = app.store.judgements("edit_file").unwrap();
     let mut deciders: Vec<_> = decisions.iter().map(|d| d.decider.as_str()).collect();
     deciders.sort();
-    assert_eq!(deciders, ["agent:Moebius", "person", "person"]);
+    assert_eq!(deciders, ["agent:Moebius", "person:owner", "person:owner"]);
     assert!(decisions.iter().any(|d| d.reason == "greet"));
 }
 
