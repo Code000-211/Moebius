@@ -26,7 +26,8 @@ import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard } from "../../ui/page/Skeleton";
-import { Status, type Tone } from "../../ui/page/Status";
+import { StateLabel } from "../../ui/page/StateLabel";
+import type { Tone } from "../../ui/page/Status";
 import { TabPanel, Tabs } from "../../ui/page/Tabs";
 
 type Tab = "conversation" | "terminal" | "changes";
@@ -167,7 +168,7 @@ function OpenRun({ id }: { id: number }) {
     <div className="flex h-full min-h-0 flex-col" data-testid="run-page">
       <PageHeader title={`Run ${id}`} />
       <div className="mb-3 flex flex-wrap items-center gap-3" data-testid="run-info">
-        <Status tone={standing.tone}>{standing.word}</Status>
+        <StateLabel tone={standing.tone}>{standing.word}</StateLabel>
         <span className="text-base text-text">
           <span className="font-semibold">{data.agent}</span>
           <span className="text-secondary"> · {data.purpose}</span>

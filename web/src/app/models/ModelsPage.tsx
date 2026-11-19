@@ -34,7 +34,7 @@ import { CELL, Table } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard } from "../../ui/page/Skeleton";
-import { Status } from "../../ui/page/Status";
+import { StateLabel } from "../../ui/page/StateLabel";
 import { decisionChoices, modelChoices } from "../agents/model";
 import { Answered, couldNotAsk, ModelField } from "../harness/ModelField";
 import { DeleteKey } from "./DeleteKey";
@@ -596,8 +596,8 @@ function UpstreamRow({
     <section data-testid="upstream" className="flex flex-col gap-4 rounded-control bg-sunken p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Status tone={answer.tone}>{answer.text}</Status>
-          {oauth?.needs && <Status tone="attention">Needs {oauth.needs}</Status>}
+          <StateLabel tone={answer.tone}>{answer.text}</StateLabel>
+          {oauth?.needs && <StateLabel tone="attention">Needs {oauth.needs}</StateLabel>}
         </div>
         <Button
           variant="danger"

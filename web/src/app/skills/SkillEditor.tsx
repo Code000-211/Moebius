@@ -19,7 +19,7 @@ import { Box } from "../../ui/page/Box";
 import { Field } from "../../ui/page/Field";
 import { MarkdownBody, type MarkdownView } from "../../ui/page/MarkdownBody";
 import { Notice } from "../../ui/page/Notice";
-import { Status } from "../../ui/page/Status";
+import { StateLabel } from "../../ui/page/StateLabel";
 import { Committed, EditorHead, useDraft } from "../harness/form";
 
 import { updateRequest } from "../harness/importRequest";
@@ -165,7 +165,7 @@ export function SkillEditor({
         readOnly={
           builtIn ? (
             <div className="flex flex-wrap items-center gap-3">
-              <Status>Built in · read only</Status>
+              <StateLabel>Built in · read only</StateLabel>
               {source && (
                 <Button
                   variant="secondary"

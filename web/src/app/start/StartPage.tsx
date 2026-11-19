@@ -19,7 +19,7 @@ import { Box } from "../../ui/page/Box";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard } from "../../ui/page/Skeleton";
-import { Status } from "../../ui/page/Status";
+import { StateLabel } from "../../ui/page/StateLabel";
 import { context, fix } from "./model";
 
 export function StartPage() {
@@ -95,9 +95,9 @@ export function StartPage() {
                         lead && "bg-sunken",
                       )}
                     >
-                      <Status tone={step.done ? "complete" : "attention"} className="shrink-0">
+                      <StateLabel tone={step.done ? "complete" : "attention"} className="shrink-0">
                         {step.done ? "Done" : "To do"}
-                      </Status>
+                      </StateLabel>
                       <span className="flex min-w-0 flex-1 flex-col gap-1">
                         <span
                           className={cn(

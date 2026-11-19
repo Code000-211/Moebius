@@ -18,7 +18,7 @@ import { Chip } from "../../ui/page/Chip";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { Reading, SkeletonCard } from "../../ui/page/Skeleton";
-import { Status } from "../../ui/page/Status";
+import { StateLabel } from "../../ui/page/StateLabel";
 import { AgentsBox, ModelsBox, TimeBox, WaitsBox } from "./Boxes";
 import { short } from "./figures";
 import { Heatmap } from "./Heatmap";
@@ -38,7 +38,7 @@ function WindowBox({ report }: { report: UsageReport }) {
     <section className="flex flex-col gap-4 rounded-card bg-surface p-4 shadow-card">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="m-0 text-lg font-semibold tracking-tight text-text">{title}</h2>
-        {meter && <Status tone={meter.tone}>{meter.word}</Status>}
+        {meter && <StateLabel tone={meter.tone}>{meter.word}</StateLabel>}
       </div>
       <div className="flex flex-wrap items-baseline gap-3">
         <span className="text-2xl font-semibold tabular-nums text-text">{value}</span>
