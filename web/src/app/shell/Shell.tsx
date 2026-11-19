@@ -5,8 +5,8 @@
  * while the server cannot be reached, what the route draws, and its right column (`RightColumn.tsx`) for the page's
  * properties and the Moebius agent, which is part of the same surface behind a soft line. The agent and the package
  * sheet, which pages open from where a person meets plugins and extensions, lie over that column in one place. It owns
- * the command palette and its shortcut, holds what is in focus for it (`palette/focus.tsx`), and notes the places seen
- * and the sidebar's collapsed state (kept per browser).
+ * the command palette and its shortcut, the form of a new issue and `C` (`board/NewIssueHost.tsx`), holds what is in
+ * focus for it (`palette/focus.tsx`), and notes the places seen and the sidebar's collapsed state (kept per browser).
  */
 import { Suspense, useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router";
@@ -19,6 +19,7 @@ import { PageBoundary } from "../../ui/page/PageBoundary";
 import { PropertiesProvider } from "../../ui/page/Properties";
 import { SheetSlotProvider } from "../../ui/page/SheetSlot";
 import { SkeletonCard } from "../../ui/page/Skeleton";
+import { NewIssueProvider } from "../board/NewIssueHost";
 import { readFlag, writeFlag } from "../storage";
 import { CommandBar } from "./CommandBar";
 import { ConnectionBanner } from "./ConnectionBanner";
@@ -35,7 +36,9 @@ export function Shell(props: { unreachable: boolean; onRetry: () => void }) {
       <PackageSheetProvider>
         <PropertiesProvider>
           <PaletteFocusProvider>
-            <Frame {...props} />
+            <NewIssueProvider>
+              <Frame {...props} />
+            </NewIssueProvider>
           </PaletteFocusProvider>
         </PropertiesProvider>
       </PackageSheetProvider>

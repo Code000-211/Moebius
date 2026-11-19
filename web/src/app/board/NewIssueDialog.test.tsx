@@ -74,6 +74,18 @@ describe("the refusal of a new issue", () => {
   });
 });
 
+describe("where a refusal stands", () => {
+  it("is beside the title when it is about the title", async () => {
+    const line = await refused("the title is empty");
+    expect(line.previousElementSibling?.contains(screen.getByLabelText("Title"))).toBe(true);
+  });
+
+  it("is at the foot when it is about neither field", async () => {
+    const line = await refused("the forge refused the issue");
+    expect(line.previousElementSibling?.contains(screen.getByLabelText("Description"))).toBe(true);
+  });
+});
+
 describe("the parent of a new issue", () => {
   /** The sheet opened for `parent`, with the title typed and Create pressed; the body of the request it sent. */
   async function created(parent: number | null) {
