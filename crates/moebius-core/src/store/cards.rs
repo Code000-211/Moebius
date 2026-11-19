@@ -84,6 +84,9 @@ pub struct Card {
     /// Who claimed the issue: `person`, `agent:<name>` or a name a session gave; none while it is free.
     #[serde(default)]
     pub claimed_by: Option<String>,
+    /// The handles of the people the card is given to, in the order the people were added; empty while it is no one's.
+    #[serde(default)]
+    pub assignees: Vec<String>,
 }
 
 /// Why and by whom a card is held (blocked), and since when.
@@ -115,6 +118,10 @@ fn card_statements(cards: &str, runs: &str, judgements: &str) -> Vec<String> {
         format!("DELETE FROM replays WHERE judgement_id IN ({judgements}) OR run_id IN ({runs})"),
         format!("DELETE FROM shadows WHERE judgement_id IN ({judgements})"),
         format!("DELETE FROM judgements WHERE id IN ({judgements})"),
+        format!(
+            "DELETE FROM inbox_assignees WHERE item_id IN (SELECT id FROM inbox_items WHERE card_id IN ({cards}))"
+        ),
+        format!("DELETE FROM card_assignees WHERE card_id IN ({cards})"),
         format!("DELETE FROM inbox_items WHERE card_id IN ({cards})"),
         format!("DELETE FROM dependencies WHERE card_id IN ({cards})"),
         format!("DELETE FROM card_labels WHERE card_id IN ({cards})"),
@@ -469,6 +476,7 @@ impl Store {
             closed: false,
             labels: Vec::new(),
             claimed_by: None,
+            assignees: Vec::new(),
         })
     }
 
@@ -478,7 +486,7 @@ impl Store {
         params: impl rusqlite::Params,
     ) -> Result<Vec<Card>> {
         self.rows(&format!(
-            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), project_id FROM cards WHERE {clause} ORDER BY id"
+            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {}, project_id FROM cards WHERE {clause} ORDER BY id", super::assignees::CARD_ASSIGNEES
         ), params, |r| {
             Ok(Card {
                 id: r.get(0)?,
@@ -509,7 +517,8 @@ impl Store {
                         e.into(),
                     )
                 })?,
-                project_id: r.get(18)?,
+                assignees: super::assignees::handles(r, 18)?,
+                project_id: r.get(19)?,
             })
         })
     }

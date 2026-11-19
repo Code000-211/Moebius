@@ -3,12 +3,14 @@
  * does. Requests of its own (assign, close) are sent here and read the board again; the decisions, and the questions
  * that need a dialog, are the page's, passed in.
  */
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { claim, closeIssue, release, reopenIssue } from "../../api/calls/board";
+import { claim, closeIssue, release, reopenIssue, setAssignees } from "../../api/calls/board";
+import { people as loadPeople } from "../../api/calls/people";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Card, InboxItem } from "../../api/types/board";
+import { assignable } from "../people/AssigneesProperty";
 import { PaletteFocusFor } from "../shell/palette/focus";
 import { type CardActions, cardCommands } from "./cardCommands";
 import type { Decision, Notice } from "./decisions";
@@ -46,6 +48,8 @@ export function CardFocus({
     },
   });
   const { mutate } = send;
+  const list = useQuery({ queryKey: keys.people, queryFn: loadPeople });
+  const people = useMemo(() => assignable(list.data).map(([handle]) => handle), [list.data]);
 
   const focus = useMemo(() => {
     const n = (c: Card) => `#${c.number}`;
@@ -54,6 +58,15 @@ export function CardFocus({
       release: (c) => mutate({ change: () => release(c.id), text: `Unassigning ${n(c)}` }),
       close: (c) => mutate({ change: () => closeIssue(c.id), text: `Closing ${n(c)}` }),
       reopen: (c) => mutate({ change: () => reopenIssue(c.id), text: `Reopening ${n(c)}` }),
+      assignTo: (c, handle, on) =>
+        mutate({
+          change: () =>
+            setAssignees(
+              c.id,
+              on ? [...c.assignees, handle] : c.assignees.filter((h) => h !== handle),
+            ),
+          text: `${on ? "Assigning" : "Taking off"} @${handle} on ${n(c)}`,
+        }),
       block: onBlock,
       unblock: (c) => decide({ kind: "unblock", card: c.id, number: c.number }),
       stop: (c) => {
@@ -67,9 +80,9 @@ export function CardFocus({
     };
     return {
       label: `#${card.number} ${card.title}`,
-      commands: cardCommands(card, item, actions),
+      commands: cardCommands(card, item, actions, people),
     };
-  }, [card, item, decide, mutate, onBlock, onAddSubIssue, onReject]);
+  }, [card, item, people, decide, mutate, onBlock, onAddSubIssue, onReject]);
 
   return <PaletteFocusFor focus={focus} />;
 }

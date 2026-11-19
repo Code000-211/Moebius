@@ -128,6 +128,8 @@ any route to any role that is not what its row says.
 | `DELETE /v1/cards/{id}` | member | no |
 | `PUT /v1/cards/{id}/parent` | member | yes |
 | `PUT /v1/cards/{id}/labels` | member | yes |
+| `PUT /v1/cards/{id}/assignees` | member | no |
+| `PUT /v1/inbox/{id}/assignees` | member | no |
 | `POST /v1/cards/{id}/blockers` | member | yes |
 | `DELETE /v1/cards/{id}/blockers/{number}` | member | yes |
 | `POST /v1/cards/{id}/claim` | member | yes |
@@ -315,7 +317,9 @@ back to coding, or null), `retried_after` (the id of the card's latest run when 
 string or null, "by": "person" or "agent:Moebius", "at": number}` while a person or the Moebius agent holds the card; see
 `POST /v1/cards/{id}/block`). The card is also an issue of a tracker (see [the issue tracker](#the-issue-tracker)):
 `parent` (the number of the issue it is a sub-issue of, or null), `closed` (true when the issue was closed or the card is
-in `Done`), `labels` (array of text, in order) and `claimed_by` (who claimed it, or null).
+in `Done`), `labels` (array of text, in order), `claimed_by` (who claimed it, or null) and `assignees` (the handles of
+the people it is given to, without the `@`, in the order the people were added; empty when it is no one's; see
+[Assignees](#assignees)).
 
 `Comment`: `id`, `card_id`, `author` (a forge login, `person`, `person:<handle>` or `agent:<name>`), `body`, `at`.
 
@@ -376,7 +380,8 @@ statuses of a commit, one per line, or null) and `check_output` (the
 end of the output of the repository's own checks, or null). A change's `branch` is `moebius/card-<number>`, `moebius/chat-<run id>` for the work of a chat, which has no card, `moebius/workflow-run-<run id>` for the work of a workflow run, which has none either and names the run in `run_id`, or `research/<research id>-<name>` for a lever of a research, which has none either.
 
 `InboxItem`: `id`, `kind`, `card_id` (or null), `title`, `data` (an object that depends on the kind), `resolved_at` (null
-in the snapshot, which holds only open items), `at`. Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
+in the snapshot, which holds only open items), `at` and `assignees` (the handles of the people it is given to, like a
+`Card`'s). Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
 (`data.reason`), `package_update` (`data.name`, `data.installed`, `data.version`; no card), `ready_to_merge` (`data.change`, `data.branch`, `data.run` when the change is a workflow run's, and `data.judgements`, the review's judgement calls, when it had any), `change_closed` (`data.change`, `data.pull_request`) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
 addresses, and `data.regression`: the same for the cards of the regression set, empty when none was tried; its `title` is the
@@ -1006,6 +1011,26 @@ forge refused.
 Replaces the issue's labels, on the forge too. Request: `{"labels": [text]}`; blank labels and repeats are dropped. The
 event `card_labels_changed` is sent. Response: the `Card`. Errors: `404` no such card; `500` the forge refused (a Forgejo
 repository without such a label, for one).
+
+### Assignees
+
+A card and an item of the inbox can be given to people (ADR 0018). Moebius keeps assignees itself: nothing is written to
+a forge and the assignees a forge has are not read. They are the handles of people of the organisation, which column
+scripts see as `card.assignees`; what a card's assignees mean is up to the column's script, and the default `ready.luau`
+starts no work on a card that has one (see [Column scripts](column-scripts.md)). A person who was disabled after being
+assigned stays assigned until someone changes it. A member or an owner assigns, never an agent.
+
+### `PUT /v1/cards/{id}/assignees`
+
+Replaces the people the card is given to. Request: `{"assignees": [handle]}`, each with or without the `@` and in any
+case; repeats are dropped, and `[]` gives the card to no one. The event `card_assignees_changed` is sent; setting what is
+set changes nothing. Response: the `Card`. Errors: `404` no such card; `422` a handle that is nobody's, or a disabled
+person who was not assigned already.
+
+### `PUT /v1/inbox/{id}/assignees`
+
+The same for an item of the inbox, resolved or not; the event is `inbox_assignees_changed`. Response: the `InboxItem`.
+Errors: `404` no such item; `422` as above.
 
 ### `POST /v1/cards/{id}/blockers`
 
@@ -3052,6 +3077,8 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `card_updated` | The title or body of a card changed: edited through the API, or changed on GitHub, GitLab or Forgejo; or it was held or released (`held`). | The `Card`. |
 | `card_parent_changed` | An issue got a parent, was moved to another or lost it, through the API or on the forge. | `{"card": id, "parent": issue number or null}` |
 | `card_labels_changed` | The labels of an issue changed, through the API or on the forge. | `{"card": id, "labels": [text]}` |
+| `card_assignees_changed` | The people a card is given to changed. | `{"card": id, "assignees": [handle]}` |
+| `inbox_assignees_changed` | The people an inbox item is given to changed. | `{"item": id, "assignees": [handle]}` |
 | `card_blocking_changed` | A blocker was added or removed through the API, or the blockers the forge and the body name changed. | `{"card": id, "blocked_by": [number]}` (every blocker, done or not) |
 | `card_claimed` | An issue was claimed. Not sent for a claim by the claimer again. | `{"card": id, "by": text}` |
 | `card_released` | A claim was released. | `{"card": id}` |

@@ -73,6 +73,16 @@ pub enum Event {
         card: i64,
         parent: Option<i64>,
     },
+    /// The people a card is given to changed (their handles, in the order the people were added).
+    CardAssigneesChanged {
+        card: i64,
+        assignees: Vec<String>,
+    },
+    /// The people an inbox item is given to changed.
+    InboxAssigneesChanged {
+        item: i64,
+        assignees: Vec<String>,
+    },
     CardLabelsChanged {
         card: i64,
         labels: Vec<String>,
@@ -376,6 +386,7 @@ mod tests {
             closed: false,
             labels: Vec::new(),
             claimed_by: None,
+            assignees: Vec::new(),
         }
     }
 
@@ -497,6 +508,20 @@ mod tests {
                     parent: Some(3),
                 },
                 json!({"kind": "card_parent_changed", "data": {"card": 7, "parent": 3}}),
+            ),
+            (
+                Event::CardAssigneesChanged {
+                    card: 7,
+                    assignees: vec!["lea".into()],
+                },
+                json!({"kind": "card_assignees_changed", "data": {"card": 7, "assignees": ["lea"]}}),
+            ),
+            (
+                Event::InboxAssigneesChanged {
+                    item: 4,
+                    assignees: vec!["lea".into()],
+                },
+                json!({"kind": "inbox_assignees_changed", "data": {"item": 4, "assignees": ["lea"]}}),
             ),
             (
                 Event::CardLabelsChanged {

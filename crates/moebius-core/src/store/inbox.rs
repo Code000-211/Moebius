@@ -19,6 +19,9 @@ pub struct InboxItem {
     pub data: serde_json::Value,
     pub resolved_at: Option<i64>,
     pub at: i64,
+    /// The handles of the people the item is given to; empty while it is no one's.
+    #[serde(default)]
+    pub assignees: Vec<String>,
 }
 
 impl Store {
@@ -45,6 +48,7 @@ impl Store {
             data,
             resolved_at: None,
             at,
+            assignees: Vec::new(),
         })
     }
 
@@ -58,10 +62,14 @@ impl Store {
         self.inbox_where("card_id = ?1", card_id.into())
     }
 
-    fn inbox_where(&self, clause: &str, param: rusqlite::types::Value) -> Result<Vec<InboxItem>> {
+    pub(super) fn inbox_where(
+        &self,
+        clause: &str,
+        param: rusqlite::types::Value,
+    ) -> Result<Vec<InboxItem>> {
         let conn = self.conn();
         let mut stmt = conn.prepare(&format!(
-            "SELECT id, kind, card_id, title, data, resolved_at, at FROM inbox_items WHERE {clause} ORDER BY id"
+            "SELECT id, kind, card_id, title, data, resolved_at, at, {} FROM inbox_items WHERE {clause} ORDER BY id", super::assignees::INBOX_ASSIGNEES
         ))?;
         let rows = stmt.query_map([param], |r| self.inbox_row(r))?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -83,6 +91,7 @@ impl Store {
             })?,
             resolved_at: r.get(5)?,
             at: r.get(6)?,
+            assignees: super::assignees::handles(r, 7)?,
         })
     }
 
@@ -138,9 +147,12 @@ impl Store {
         Ok(self
             .conn()
             .query_row(
-                "SELECT id, kind, card_id, title, data, resolved_at, at FROM inbox_items \
+                &format!(
+                    "SELECT id, kind, card_id, title, data, resolved_at, at, {} FROM inbox_items \
                  WHERE kind IN ('grilling_issues', 'grilling_report') \
                  AND json_extract(data, '$.grilling') = ?1 AND resolved_at IS NULL",
+                    super::assignees::INBOX_ASSIGNEES
+                ),
                 params![grilling_id],
                 |r| self.inbox_row(r),
             )
@@ -191,9 +203,12 @@ impl Store {
         Ok(self
             .conn()
             .query_row(
-                "SELECT id, kind, card_id, title, data, resolved_at, at FROM inbox_items \
+                &format!(
+                    "SELECT id, kind, card_id, title, data, resolved_at, at, {} FROM inbox_items \
                  WHERE card_id IS NULL AND kind = ?1 AND json_extract(data, '$.run') = ?2 \
                  AND resolved_at IS NULL ORDER BY id DESC LIMIT 1",
+                    super::assignees::INBOX_ASSIGNEES
+                ),
                 params![WORKFLOW_APPROVAL, run_id],
                 |r| self.inbox_row(r),
             )

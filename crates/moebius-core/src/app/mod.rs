@@ -13,6 +13,7 @@
 //! when their schedules come due, and `plugin_settings` keeps what plugins ask of each repository and of the
 //! server.
 
+mod assignees;
 mod attempts;
 mod automations;
 mod board;

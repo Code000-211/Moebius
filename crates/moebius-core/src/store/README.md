@@ -18,6 +18,13 @@ The migration that adds the table makes the first owner (id 1, handle `owner`) a
 of a comment written through Moebius, `judgements.decider`, `cards.held_by` and `cards.claimed_by`, each `person`
 before and `person:owner` after. A card or comment read from a forge keeps its author, even the login `person`.
 
+`store/assignees.rs` keeps who cards and inbox items are given to.
+
+| Table | Holds |
+|---|---|
+| `card_assignees` | A card and a person it is given to. |
+| `inbox_assignees` | An inbox item and a person it is given to; a trigger removes them with the item. |
+
 `store/access.rs` keeps how people prove who they are: their access tokens and the sessions of browsers.
 
 | Table | Holds |

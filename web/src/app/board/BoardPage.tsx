@@ -795,6 +795,7 @@ function CardContent({
       }
       labels={hidden.has("labels") ? [] : card.labels}
       claimedBy={hidden.has("claim") ? null : card.claimed_by}
+      assignees={card.assignees}
       stack={
         stack && onToggleStack ? (
           <StackToggle card={card} stack={stack} open={open} onToggle={onToggleStack} />

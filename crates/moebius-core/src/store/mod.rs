@@ -9,12 +9,13 @@
 //! card gets in one go and which was picked), `research` (research, its runs and experiments), `automations`
 //! (automations, their firings and the local clock), `workflows` (workflow runs and what each node did),
 //! `plugin_settings` (what plugins keep for the server) and `people` (the people of the organisation, and the
-//! migration that gives earlier records to the first owner) and `access` (their access tokens and the sessions of
+//! migration that gives earlier records to the first owner) and `assignees` (who cards and inbox items are given to) and `access` (their access tokens and the sessions of
 //! browsers, kept as hashes) and `favourites` (the places a person pinned and opened lately) and `projects` (the
 //! projects, their keys and repositories, and the migration that makes one for each repository).
 //! Every public type is re-exported here, as `store::Card` and the like.
 
 mod access;
+mod assignees;
 mod attempts;
 mod automations;
 mod cards;
@@ -454,6 +455,7 @@ ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
     favourites::SCHEMA,
     chats::SCHEMA,
     outgoing::SCHEMA,
+    assignees::SCHEMA,
     projects::SCHEMA,
 ];
 

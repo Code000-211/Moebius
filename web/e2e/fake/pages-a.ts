@@ -41,6 +41,7 @@ interface InboxItem {
   title: string;
   data: Record<string, unknown>;
   resolved_at: number | null;
+  assignees: string[];
   at: number;
 }
 
@@ -483,6 +484,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
       card_id: null,
       data: {},
       resolved_at: null,
+      assignees: [],
       at: ++clock,
       ...fields,
     };

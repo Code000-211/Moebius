@@ -55,6 +55,7 @@ function card(id: number, extra: Partial<Card> = {}): Card {
     closed: false,
     labels: [],
     claimed_by: null,
+    assignees: [],
     ...extra,
   };
 }
@@ -82,7 +83,16 @@ function board(cards: Card[], extra: Partial<Board> = {}): Board {
 }
 
 function item(kind: string, cardId: number | null, data: Record<string, unknown> = {}): InboxItem {
-  return { id: 1, kind, card_id: cardId, title: kind, data, resolved_at: null, at: 0 };
+  return {
+    id: 1,
+    kind,
+    card_id: cardId,
+    title: kind,
+    data,
+    resolved_at: null,
+    at: 0,
+    assignees: [],
+  };
 }
 
 const running = { id: 1, agent: "Coder", purpose: "code", status: "running" as const };

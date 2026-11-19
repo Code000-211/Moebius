@@ -2,7 +2,8 @@
  * The decisions of the inbox that are not about a card or its change (those are in `board.ts`): merging or dismissing a
  * proposal of the Retro or a takeover of the decision model, and confirming or dismissing a grilling.
  */
-import { del, post } from "../http";
+import { del, post, put } from "../http";
+import type { InboxItem } from "../types/board";
 import type { GrillingIssue } from "../types/inbox";
 
 export async function mergeProposal(proposal: number): Promise<void> {
@@ -33,4 +34,9 @@ export async function deleteGrilling(grilling: number): Promise<void> {
 
 export async function dismissGrilling(grilling: number): Promise<void> {
   await post<unknown>(`/v1/grillings/${grilling}/dismiss`, {});
+}
+
+/** Replaces the people an inbox item is given to (handles, with or without the `@`). */
+export function setInboxAssignees(item: number, assignees: string[]): Promise<InboxItem> {
+  return put<InboxItem>(`/v1/inbox/${item}/assignees`, { assignees });
 }
