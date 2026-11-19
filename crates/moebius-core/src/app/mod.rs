@@ -9,6 +9,7 @@
 //! of the harness configuration repository, `localize` gives a code run the files its issue is likely to touch and
 //! records what came of it, `reproduce` runs a change's reproduction test for a repository that works test first,
 //! `projects` reads a project's settings from the harness configuration repository,
+//! `milestones` makes milestones and counts their cards within what a person may see,
 //! `whereabouts` knows where the server and the app run, `automations` keeps the automations and starts their chats
 //! when their schedules come due, and `plugin_settings` keeps what plugins ask of each repository and of the
 //! server.
@@ -26,6 +27,7 @@ mod deletions;
 mod diffs;
 mod issues;
 mod localize;
+mod milestones;
 mod packages;
 mod planning;
 pub mod plugin_settings;
@@ -138,6 +140,7 @@ pub enum AppError {
 
 pub type Result<T> = std::result::Result<T, AppError>;
 
+pub use milestones::{MilestoneDetail, MilestoneFields, MilestoneProject, MilestoneView};
 pub use projects::{Member, ProjectRepository, ProjectView};
 pub use stopping::CardStopWaits;
 

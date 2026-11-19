@@ -30,7 +30,7 @@ import { matches, type PaletteCommand, readRecent } from "./palette/model";
 import { NEW_ISSUE_KEY, SHORTCUTS_KEY } from "./palette/shortcuts";
 import { useRole } from "./session";
 
-const GROUPS: readonly Group[] = ["", "Projects", "Build", "Improve", "Setup"];
+const GROUPS: readonly Group[] = ["", "Projects", "Plan", "Build", "Improve", "Setup"];
 /** Cards shown for a query: the list is for choosing, and a longer one is a reason to type more. */
 const CARDS_SHOWN = 8;
 

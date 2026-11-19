@@ -77,6 +77,11 @@ function server(answers: Record<string, { status: number; body: unknown }> = {})
       if (method === "GET" && url === "/v1/people") {
         return { ok: true, status: 200, text: async () => JSON.stringify(PEOPLE) };
       }
+      // The milestones on offer and the card's own are reads too: none exist unless an answer names them.
+      if (method === "GET" && /^\/v1\/(milestones|cards\/\d+\/milestones)$/.test(url)) {
+        const answer = answers[`GET ${url}`] ?? { status: 200, body: [] };
+        return { ok: true, status: answer.status, text: async () => JSON.stringify(answer.body) };
+      }
       sent.push([method, url, init?.body ? JSON.parse(init.body) : undefined]);
       const answer = answers[`${method} ${url}`] ?? { status: 200, body: {} };
       return {
@@ -387,5 +392,47 @@ describe("the assignees of a card", () => {
     server();
     properties(card(5));
     expect(screen.getByRole("button", { name: "Assignee No one" })).toBeTruthy();
+  });
+});
+
+describe("the milestones of a card", () => {
+  const launch = {
+    id: 1,
+    name: "Launch",
+    target_date: "2027-01-31",
+    description: "",
+    created_at: 0,
+  };
+  const report = {
+    id: 2,
+    name: "Report",
+    target_date: "2027-03-01",
+    description: "",
+    created_at: 0,
+  };
+  const view = (m: typeof launch) => ({ ...m, cards: 0, done: 0, projects: [] });
+
+  it("says none while the card is in no milestone", async () => {
+    server();
+    properties(card(5));
+    expect(await screen.findByRole("button", { name: "Milestone None" })).toBeTruthy();
+  });
+
+  it("shows the milestones the card is in and saves the whole set when another is added", async () => {
+    const sent = server({
+      "GET /v1/cards/5/milestones": { status: 200, body: [launch] },
+      "GET /v1/milestones": { status: 200, body: [view(launch), view(report)] },
+    });
+    properties(card(5));
+    const property = await screen.findByRole("button", { name: "Milestone Launch" });
+    fireEvent.keyDown(property, { key: "Enter" });
+    expect(
+      (await screen.findByRole("menuitemcheckbox", { name: "Launch" })).getAttribute(
+        "aria-checked",
+      ),
+    ).toBe("true");
+    fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Report" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual(["PUT", "/v1/cards/5/milestones", { milestones: [1, 2] }]);
   });
 });

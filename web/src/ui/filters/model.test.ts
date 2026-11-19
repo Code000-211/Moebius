@@ -71,6 +71,20 @@ describe("display in the address", () => {
     expect(hasDisplay(display)).toBe(true);
   });
 
+  it("reads the layouts a page offers, and the timeline only where it is offered", () => {
+    const timelines = {
+      ...choices,
+      layouts: [
+        ["list", "List"],
+        ["timeline", "Timeline"],
+      ] as Array<[string, string]>,
+    };
+    expect(readDisplay(new URLSearchParams("layout=timeline"), timelines).layout).toBe("timeline");
+    expect(readDisplay(new URLSearchParams("layout=list"), timelines).layout).toBe("list");
+    expect(readDisplay(new URLSearchParams("layout=board"), timelines).layout).toBe("board");
+    expect(readDisplay(new URLSearchParams("layout=timeline"), choices).layout).toBe("board");
+  });
+
   it("writes a default as an empty value, which removes the parameter", () => {
     expect(displayQuery(readDisplay(new URLSearchParams(), choices))).toEqual({
       layout: "",

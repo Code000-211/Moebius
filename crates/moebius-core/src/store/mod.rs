@@ -11,7 +11,8 @@
 //! `plugin_settings` (what plugins keep for the server) and `people` (the people of the organisation, and the
 //! migration that gives earlier records to the first owner) and `assignees` (who cards and inbox items are given to), `planning` (a card's priority and due date, read from its labels) and `access` (their access tokens and the sessions of
 //! browsers, kept as hashes) and `favourites` (the places a person pinned and opened lately) and `projects` (the
-//! projects, their keys and repositories, and the migration that makes one for each repository).
+//! projects, their keys and repositories, and the migration that makes one for each repository) and `milestones` (goals
+//! of the organisation that hold cards of any projects).
 //! Every public type is re-exported here, as `store::Card` and the like.
 
 mod access;
@@ -32,6 +33,7 @@ mod judgements;
 mod lessons;
 mod links;
 mod localize;
+mod milestones;
 mod outgoing;
 mod people;
 mod planning;
@@ -70,6 +72,7 @@ pub use judgements::{Judgement, NewJudgement};
 pub use lessons::{Lesson, NewLesson};
 pub use links::{DUPLICATE, Link, RELATED};
 pub use localize::IndexedFile;
+pub use milestones::{Milestone, MilestoneCard};
 pub use outgoing::OutgoingWebhook;
 pub use people::{FIRST_OWNER, Person, Role};
 pub use planning::{Priority, is_date, with_due, with_priority};
@@ -469,6 +472,7 @@ ALTER TABLE cards ADD COLUMN moved_at INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE cards ADD COLUMN archived_at INTEGER;
 UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_id = cards.id), created_at);
 "#,
+    milestones::SCHEMA,
 ];
 
 pub fn now() -> i64 {
