@@ -52,9 +52,21 @@ export function setLabels(card: number, labels: string[]): Promise<Card> {
   return put<Card>(`/v1/cards/${card}/labels`, { labels });
 }
 
-/** Replaces the people the card is given to (handles, with or without the `@`). */
-export function setAssignees(card: number, assignees: string[]): Promise<Card> {
-  return put<Card>(`/v1/cards/${card}/assignees`, { assignees });
+/**
+ * Gives the card to one more person, or takes it off one (a handle, with or without the `@`). The server applies each
+ * to the people the card has then, so two made before the board refreshes both stay.
+ */
+export function assignTo(card: number, handle: string, on: boolean): Promise<Card> {
+  const path = `/v1/cards/${card}/assignees/${encodeURIComponent(handle)}`;
+  return on ? put<Card>(path, undefined) : del<Card>(path);
+}
+
+/** Changes the people the card is given to from `before` to `after`, one person at a time (see [`assignTo`]). */
+export async function changeAssignees(card: number, before: string[], after: string[]) {
+  const had = new Set(before);
+  const wants = new Set(after);
+  for (const handle of before) if (!wants.has(handle)) await assignTo(card, handle, false);
+  for (const handle of after) if (!had.has(handle)) await assignTo(card, handle, true);
 }
 
 /** Sets the card's priority (a label `priority:<name>` on the issue). */

@@ -248,7 +248,9 @@ async fn snapshot(State(state): State<ApiState>) -> Result<axum::Json<Snapshot>,
     blocking(&state.app, move |app| {
         let mut boards = Vec::new();
         for repository in app.store.repositories()? {
-            let cards = app.store.cards(repository.id)?;
+            // An archived card is off the board.
+            let mut cards = app.store.cards(repository.id)?;
+            cards.retain(|card| card.archived_at.is_none());
             let waiting = app.waiting(&cards);
             let facts = app.board_facts(repository.id, &cards)?;
             boards.push(Board {
@@ -483,6 +485,61 @@ mod tests {
         );
         let facts = app.board_facts(repo.id, &cards).unwrap();
         assert!(facts.refusals.is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_snapshot_leaves_out_an_archived_card_that_the_issue_list_still_has() {
+        let (dir, state, addr) = start().await;
+        let app = &state.app;
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let kept = app
+            .store
+            .add_card(repo.id, "Kept", "", "person", "Done")
+            .unwrap();
+        let gone = app
+            .store
+            .add_card(repo.id, "Gone", "", "person", "Done")
+            .unwrap();
+        assert!(app.archive_card(gone.id).unwrap());
+        let get = |path: String| {
+            let url = format!("http://{addr}{path}");
+            let token = state.token.clone();
+            async move {
+                reqwest::Client::new()
+                    .get(url)
+                    .bearer_auth(&*token)
+                    .send()
+                    .await
+                    .unwrap()
+                    .json::<serde_json::Value>()
+                    .await
+                    .unwrap()
+            }
+        };
+        let snap = get("/v1/snapshot".into()).await;
+        let board = snap["boards"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|b| b["repository"]["id"] == repo.id)
+            .unwrap();
+        let titles = |cards: &serde_json::Value| -> Vec<String> {
+            cards
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| c["title"].as_str().unwrap().to_string())
+                .collect()
+        };
+        assert_eq!(titles(&board["cards"]), ["Kept"]);
+        let issues = get(format!("/v1/repositories/{}/issues", repo.id)).await;
+        assert_eq!(titles(&issues), ["Kept", "Gone"]);
+        let archived = get(format!("/v1/repositories/{}/issues?archived=true", repo.id)).await;
+        assert_eq!(titles(&archived), ["Gone"]);
+        assert!(archived[0]["archived_at"].is_number());
+        let _ = kept;
     }
 
     #[tokio::test]

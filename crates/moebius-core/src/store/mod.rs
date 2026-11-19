@@ -464,6 +464,11 @@ ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
     projects::FILES,
     links::SCHEMA,
     projects::NUMBERS_SCHEMA,
+    r#"
+ALTER TABLE cards ADD COLUMN moved_at INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE cards ADD COLUMN archived_at INTEGER;
+UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_id = cards.id), created_at);
+"#,
 ];
 
 pub fn now() -> i64 {

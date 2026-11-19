@@ -60,6 +60,7 @@ fn made_up_card(lua: &Lua, column: &str, title: &str, author: &str) -> mlua::Res
     t.set("column", column)?;
     t.set("trusted", is_person(author))?;
     t.set("confirmed", false)?;
+    t.set("moved_at", crate::store::now())?;
     t.set("held", mlua::Value::Nil)?;
     t.set("test_first", false)?;
     t.set("blocked_by", lua.create_table()?)?;
@@ -312,6 +313,35 @@ fn recording_api(
             Ok(())
         })?,
     )?;
+
+    let log = record.clone();
+    m.set(
+        "archive",
+        lua.create_function(move |_, _card: Table| {
+            log("archived the card".to_string());
+            Ok(())
+        })?,
+    )?;
+
+    let log = record.clone();
+    m.set(
+        "hold",
+        lua.create_function(move |_, reason: String| {
+            log(format!("held the card: {reason}"));
+            Ok(())
+        })?,
+    )?;
+
+    let log = record.clone();
+    m.set(
+        "notify",
+        lua.create_function(move |_, (kind, text): (String, String)| {
+            log(format!("told the card's people ({kind}): {text}"));
+            Ok(())
+        })?,
+    )?;
+
+    m.set("now", lua.create_function(|_, ()| Ok(crate::store::now()))?)?;
 
     let log = record.clone();
     m.set(

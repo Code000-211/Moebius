@@ -133,6 +133,10 @@ any route to any role that is not what its row says.
 | `PUT /v1/inbox/{id}/assignees` | member | no |
 | `PUT /v1/cards/{id}/priority` | member | no |
 | `PUT /v1/cards/{id}/due` | member | no |
+| `PUT /v1/cards/{id}/assignees/{handle}` | member | no |
+| `DELETE /v1/cards/{id}/assignees/{handle}` | member | no |
+| `PUT /v1/inbox/{id}/assignees/{handle}` | member | no |
+| `DELETE /v1/inbox/{id}/assignees/{handle}` | member | no |
 | `POST /v1/cards/{id}/blockers` | member | yes |
 | `DELETE /v1/cards/{id}/blockers/{number}` | member | yes |
 | `PUT /v1/cards/{id}/duplicate` | member | yes |
@@ -331,6 +335,11 @@ in `Done`), `labels` (array of text, in order), `claimed_by` (who claimed it, or
 the people it is given to, without the `@`, in the order the people were added; empty when it is no one's; see
 [Assignees](#assignees)), `priority` (`urgent`, `high`, `medium`, `low` or `none`) and `due` (a day as
 `YYYY-MM-DD`, or null); see [Priority and due date](#priority-and-due-date).
+[Assignees](#assignees)), `moved_at` (when the card last moved, was edited or was released from a hold, Unix seconds;
+scripts read it as `card.moved_at`) and `archived_at` (null, or when a column script archived the card with
+`moebius.archive`). An archived card is not on the board: the snapshot (`GET /v1/snapshot`) leaves it out, and a
+move (a person's, or the forge reopening its issue) brings it back. It stays in the store, in the issue list and in the
+analytics.
 
 `Comment`: `id`, `card_id`, `author` (a forge login, `person`, `person:<handle>` or `agent:<name>`), `body`, `at`.
 
@@ -395,7 +404,7 @@ end of the output of the repository's own checks, or null). A change's `branch` 
 `InboxItem`: `id`, `kind`, `card_id` (or null), `title`, `data` (an object that depends on the kind), `resolved_at` (null
 in the snapshot, which holds only open items), `at` and `assignees` (the handles of the people it is given to, like a
 `Card`'s). Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
-(`data.reason`), `package_update` (`data.name`, `data.installed`, `data.version`; no card), `ready_to_merge` (`data.change`, `data.branch`, `data.run` when the change is a workflow run's, and `data.judgements`, the review's judgement calls, when it had any), `change_closed` (`data.change`, `data.pull_request`) and
+(`data.reason`), `stale` (`data.reason`; a column script told the people a card is given to that it is held for not having moved, and releasing the card resolves it), `package_update` (`data.name`, `data.installed`, `data.version`; no card), `ready_to_merge` (`data.change`, `data.branch`, `data.run` when the change is a workflow run's, and `data.judgements`, the review's judgement calls, when it had any), `change_closed` (`data.change`, `data.pull_request`) and
 `project_label` (`data.label`, `data.repository`; its `title` says the label names no project of the repository, and the card it is about stays where it is: see [the project label](#the-project-label)) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
 addresses, and `data.regression`: the same for the cards of the regression set, empty when none was tried; its `title` is the
@@ -802,7 +811,8 @@ blocker would make a cycle; `500` the forge refuses to open the issue (no card i
 
 The issues of a repository, oldest first, as `Issue`s. Every filter that is given must match; they are query
 parameters: `parent` (an issue number: only its sub-issues), `label` (an exact label), `state` (`open` or `closed`),
-`claimed` (`true` or `false`) and `blocked` (`true` for the issues an issue that is not done blocks, `false` for the
+`claimed` (`true` or `false`), `archived` (`true` for the issues whose card is archived, `false` for the others; archived
+issues are listed too without it) and `blocked` (`true` for the issues an issue that is not done blocks, `false` for the
 others). The frontier of a map of tickets, the open sub-issues that nothing blocks and nobody claimed, is
 `?parent=<map>&state=open&blocked=false&claimed=false`. Errors: `404` no such repository.
 
@@ -1072,7 +1082,8 @@ assigned stays assigned until someone changes it. A member or an owner assigns, 
 
 ### `PUT /v1/cards/{id}/assignees`
 
-Replaces the people the card is given to. Request: `{"assignees": [handle]}`, each with or without the `@` and in any
+Replaces the people the card is given to. Send it only when the whole set is meant: a client that builds the set from
+a card it loaded earlier loses a change made meanwhile, so to add or take off one person use the routes below. Request: `{"assignees": [handle]}`, each with or without the `@` and in any
 case; repeats are dropped, and `[]` gives the card to no one. The event `card_assignees_changed` is sent; setting what is
 set changes nothing. Response: the `Card`. Errors: `404` no such card; `422` a handle that is nobody's, or a disabled
 person who was not assigned already.
@@ -1102,6 +1113,19 @@ Sets the priority. Request: `{"priority": "urgent"}`, one of `urgent`, `high`, `
 
 Sets the due date. Request: `{"due": "2026-12-01"}`, a date that exists as `YYYY-MM-DD`, or `{"due": null}` for none.
 Response: the `Card`. Errors: `404` no such card; `422` a text that is not a date.
+### `PUT /v1/cards/{id}/assignees/{handle}` and `DELETE /v1/cards/{id}/assignees/{handle}`
+
+Give the card to one more person, or take it off one. `{handle}` is a handle with or without the `@`, in any case; there
+is no body. The change is applied to the people the card has when the server handles it, so two made in quick succession
+(from the palette and the sidebar, say) both stay. Adding someone already on the card, or taking off someone who is not,
+changes nothing and sends no event; otherwise `card_assignees_changed` is sent with the whole new set. A disabled person
+can be taken off. Response: the `Card`. Errors: `404` no such card; `422` a handle that is nobody's, or adding a disabled
+person who was not assigned already.
+
+### `PUT /v1/inbox/{id}/assignees/{handle}` and `DELETE /v1/inbox/{id}/assignees/{handle}`
+
+The same for an item of the inbox; the event is `inbox_assignees_changed`. Response: the `InboxItem`. Errors: `404` no
+such item; `422` as above.
 
 ### `POST /v1/cards/{id}/blockers`
 

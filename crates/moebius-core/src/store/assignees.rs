@@ -1,5 +1,5 @@
 //! Who a card or an inbox item is given to (ADR 0018): people of `people`, named in the records by their handle.
-//! Assigning replaces the whole set; a card keeps its assignees until a person changes them, so a card in any column
+//! Assigning replaces the whole set, or adds or takes off one person; a card keeps its assignees until a person changes them, so a card in any column
 //! and an inbox item until it is deleted. A person is never deleted, so an assignment never dangles; a disabled
 //! person stays assigned until someone changes it.
 
@@ -67,6 +67,39 @@ impl Store {
             )?;
         }
         Ok(tx.commit()?)
+    }
+
+    /// Gives the card to one more person; false when the card was already given to them. One statement, so two
+    /// changes made at once never overwrite each other.
+    pub fn add_card_assignee(&self, card_id: i64, person: i64) -> Result<bool> {
+        Ok(self.conn().execute(
+            "INSERT OR IGNORE INTO card_assignees (card_id, person_id) VALUES (?1, ?2)",
+            params![card_id, person],
+        )? > 0)
+    }
+
+    /// Takes the card off one person; false when the card was not given to them.
+    pub fn remove_card_assignee(&self, card_id: i64, person: i64) -> Result<bool> {
+        Ok(self.conn().execute(
+            "DELETE FROM card_assignees WHERE card_id = ?1 AND person_id = ?2",
+            params![card_id, person],
+        )? > 0)
+    }
+
+    /// Gives the inbox item to one more person; false when it was already given to them.
+    pub fn add_inbox_assignee(&self, item_id: i64, person: i64) -> Result<bool> {
+        Ok(self.conn().execute(
+            "INSERT OR IGNORE INTO inbox_assignees (item_id, person_id) VALUES (?1, ?2)",
+            params![item_id, person],
+        )? > 0)
+    }
+
+    /// Takes the inbox item off one person; false when it was not given to them.
+    pub fn remove_inbox_assignee(&self, item_id: i64, person: i64) -> Result<bool> {
+        Ok(self.conn().execute(
+            "DELETE FROM inbox_assignees WHERE item_id = ?1 AND person_id = ?2",
+            params![item_id, person],
+        )? > 0)
     }
 
     /// The inbox item with `id`, resolved or not.

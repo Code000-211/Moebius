@@ -699,4 +699,145 @@ mod tests {
         engine.settle(card.id).unwrap();
         assert_eq!(column(&app, &card), "Ready to merge");
     }
+
+    const DAY: i64 = 86_400;
+
+    /// A card whose last move was `days` days ago.
+    fn aged(app: &App, card: &Card, days: i64) {
+        app.store
+            .set_card_moved_at(card.id, crate::store::now() - days * DAY)
+            .unwrap();
+    }
+
+    #[test]
+    fn a_card_waiting_in_the_backlog_for_a_month_is_held_and_a_younger_one_is_not() {
+        let (_dir, app, engine, repo) = setup_unreviewed();
+        let young = app.create_issue(repo, "Young", "", "stranger").unwrap();
+        let old = app.create_issue(repo, "Old", "", "stranger").unwrap();
+        assert_eq!(column(&app, &old), "Backlog");
+        aged(&app, &young, 29);
+        aged(&app, &old, 31);
+
+        engine.tick(young.id).unwrap();
+        assert!(app.card(young.id).unwrap().held.is_none());
+        let step = engine.tick(old.id).unwrap();
+        let held = app.card(old.id).unwrap().held.unwrap();
+        assert_eq!(held.by, "script:Backlog");
+        assert_eq!(
+            held.reason.as_deref(),
+            Some("stale: it has not moved for 30 days")
+        );
+        assert_eq!(step.waiting, held.reason);
+        assert_eq!(column(&app, &old), "Backlog", "it stays in its column");
+        // Held, the board leaves it alone until a person releases it, which starts its time again.
+        assert_eq!(engine.tick(old.id).unwrap(), Default::default());
+        app.unblock_card(&crate::decide::Actor::first_owner(), old.id, "still wanted")
+            .unwrap();
+        engine.tick(old.id).unwrap();
+        assert!(app.card(old.id).unwrap().held.is_none());
+
+        // Stale again later: the people are told again, since the release resolved the first item.
+        aged(&app, &old, 31);
+        engine.tick(old.id).unwrap();
+        assert!(app.card(old.id).unwrap().held.is_some());
+        let open = |app: &App| {
+            app.store
+                .inbox()
+                .unwrap()
+                .iter()
+                .filter(|item| item.kind == "stale" && item.resolved_at.is_none())
+                .count()
+        };
+        assert_eq!(open(&app), 1);
+    }
+
+    #[test]
+    fn a_parent_waiting_for_its_sub_issues_is_not_held_as_stale() {
+        let (_dir, app, engine, repo) = setup_unreviewed();
+        let parent = app.create_issue(repo, "Plan", "", OWNER_AUTHOR).unwrap();
+        let child = app.create_issue(repo, "Step", "", OWNER_AUTHOR).unwrap();
+        app.store.set_parent(child.id, Some(parent.number)).unwrap();
+        app.move_card(parent.id, "Not started").unwrap();
+        aged(&app, &parent, 90);
+        engine.tick(parent.id).unwrap();
+        assert!(app.card(parent.id).unwrap().held.is_none());
+    }
+
+    #[test]
+    fn a_stale_card_tells_the_people_it_is_given_to_once() {
+        use crate::store::Role;
+        let (_dir, app, engine, repo) = setup_unreviewed();
+        let lea = app.store.add_person("lea", "Lea", Role::Member).unwrap();
+        let card = app.create_issue(repo, "Mine", "", OWNER_AUTHOR).unwrap();
+        app.move_card(card.id, "Not started").unwrap();
+        app.store
+            .set_card_assignees(card.id, &std::collections::BTreeSet::from([lea.id]))
+            .unwrap();
+        aged(&app, &card, 45);
+
+        engine.tick(card.id).unwrap();
+        let inbox = app.store.inbox().unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox[0].kind, "stale");
+        assert_eq!(inbox[0].card_id, Some(card.id));
+        assert_eq!(inbox[0].assignees, ["lea"]);
+        assert!(app.card(card.id).unwrap().held.is_some());
+    }
+
+    #[test]
+    fn a_card_done_for_two_weeks_is_archived_and_stays_in_the_issue_list() {
+        use crate::app::IssueQuery;
+        let (_dir, app, engine, repo) = setup_unreviewed();
+        let fresh = app.create_issue(repo, "Fresh", "", OWNER_AUTHOR).unwrap();
+        let old = app.create_issue(repo, "Old", "", OWNER_AUTHOR).unwrap();
+        for card in [&fresh, &old] {
+            app.move_card(card.id, "Done").unwrap();
+        }
+        aged(&app, &fresh, 13);
+        aged(&app, &old, 15);
+
+        engine.tick(fresh.id).unwrap();
+        engine.tick(old.id).unwrap();
+        assert_eq!(app.card(fresh.id).unwrap().archived_at, None);
+        assert!(app.card(old.id).unwrap().archived_at.is_some());
+        assert_eq!(column(&app, &old), "Done", "it is not moved or deleted");
+
+        // Archived, it is still found: the issue list has it, and filters by it.
+        let titles = |archived| {
+            app.issues(
+                repo,
+                &IssueQuery {
+                    archived,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+            .into_iter()
+            .map(|issue| issue.card.title)
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(titles(None), ["Fresh", "Old"]);
+        assert_eq!(titles(Some(true)), ["Old"]);
+        assert_eq!(titles(Some(false)), ["Fresh"]);
+    }
+
+    #[test]
+    fn a_script_archives_only_its_own_card_and_a_move_brings_an_archived_card_back() {
+        let (_dir, app, engine, repo) = setup_unreviewed();
+        let card = app.create_issue(repo, "Mine", "", OWNER_AUTHOR).unwrap();
+        let project = app.harness_repo().unwrap().project_dir("demo");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(
+            project.join("backlog.luau"),
+            "function on_card(card) moebius.archive({ id = card.id + 1 }) end",
+        )
+        .unwrap();
+        let error = engine.tick(card.id).unwrap_err().to_string();
+        assert!(error.contains("its own card"), "{error}");
+
+        assert!(app.archive_card(card.id).unwrap());
+        assert!(!app.archive_card(card.id).unwrap(), "once");
+        app.move_card(card.id, "Backlog").unwrap();
+        assert_eq!(app.card(card.id).unwrap().archived_at, None);
+    }
 }

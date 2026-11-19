@@ -9,5 +9,7 @@ export default defineConfig({
     testTimeout: 60_000,
     hookTimeout: 120_000,
     fileParallelism: false,
+    // A poll waits for what the page shows, however long a loaded machine takes: the test's own time limit ends it.
+    expect: { poll: { timeout: 20_000 } },
   },
 });

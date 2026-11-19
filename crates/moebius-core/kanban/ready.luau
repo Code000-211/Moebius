@@ -5,6 +5,10 @@
 -- A parent that has work of its own already (a run, or a change) goes on as any other card does.
 -- The board settles urgent cards first, then those due first, then the oldest (`card.priority`, `card.due`), so they take the free run slots first.
 -- A card given to a person (`card.assignees`) is that person's: it starts no work and stays here until they change who has it.
+-- A card that has not moved for more than `STALE_AFTER_DAYS` days is held and its people are told: a person releases it
+-- (or closes the issue) to say what is to happen. Change the number in this script for a project that wants another time.
+local STALE_AFTER_DAYS = 30
+
 function on_card(card)
   moebius.set_label("in-progress", false)
   for _, label in ipairs(card.labels) do
@@ -25,6 +29,11 @@ function on_card(card)
     else
       moebius.close_issue("every sub-issue is done")
     end
+    return
+  end
+  if moebius.now() - card.moved_at > STALE_AFTER_DAYS * 86400 then
+    moebius.notify("stale", "the card has not moved for " .. STALE_AFTER_DAYS .. " days")
+    moebius.hold("stale: it has not moved for " .. STALE_AFTER_DAYS .. " days")
     return
   end
   if #card.assignees > 0 then
