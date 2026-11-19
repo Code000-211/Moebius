@@ -1,4 +1,4 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: no i18n and no "add task" button (a card comes from an issue); a column is a lane of the canvas with no border, and its header counts the cards in it; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); a card has a quiet line and a short soft shadow that grows as it lifts on hover, and the chosen one glows in the accent, and it is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); the card is a group and not a named button, and its title is the button that opens it, so the issue link and the pull-request badge inside it stay in the accessibility tree; dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
+// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: no i18n; the header takes actions, the column's "+"; a column is a lane of the canvas with no border, and its header counts the cards in it; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); a card has a quiet line and a short soft shadow that grows as it lifts on hover, and the chosen one glows in the accent, and it is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); the card is a group and not a named button, and its title is the button that opens it, so the issue link and the pull-request badge inside it stay in the accessibility tree; dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
 import {
   type Announcements,
   type CollisionDetection,
@@ -194,10 +194,19 @@ export type KanbanHeaderProps = {
    * own — the name is beside it — and says nothing to the person hearing the page, so it is hidden from them.
    */
   mark?: ReactNode;
+  /** What stands after the count: the column's "+". */
+  actions?: ReactNode;
   className?: string;
 };
 
-export const KanbanHeader = ({ name, count, total, mark, className }: KanbanHeaderProps) => (
+export const KanbanHeader = ({
+  name,
+  count,
+  total,
+  mark,
+  actions,
+  className,
+}: KanbanHeaderProps) => (
   <header
     className={cn(
       "mb-2 flex min-h-7 shrink-0 flex-wrap items-center justify-between gap-2",
@@ -212,6 +221,7 @@ export const KanbanHeader = ({ name, count, total, mark, className }: KanbanHead
       <span className="text-sm text-secondary tabular-nums">
         {total !== undefined && total > count ? `${count} of ${total}` : count}
       </span>
+      {actions}
     </div>
   </header>
 );

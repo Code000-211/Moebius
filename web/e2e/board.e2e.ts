@@ -155,6 +155,90 @@ describe("the board page", () => {
     expect(await page.getByRole("dialog").getByLabel("Title").inputValue()).toBe("Doomed");
   });
 
+  it("makes a card in place in a column, and leaves the line on Escape", async () => {
+    await fresh();
+    await openBoard();
+    const backlog = column("Backlog");
+    await backlog.getByRole("button", { name: "Add a card to Backlog, at the foot" }).click();
+    const line = backlog.getByLabel("Title of the new card in Backlog");
+    await line.fill("Never made");
+    await line.press("Escape");
+    await line.waitFor({ state: "detached" });
+    expect(await page.getByText("Never made").count()).toBe(0);
+
+    // The "+" in the head opens the same line.
+    await backlog.getByRole("button", { name: "Add a card to Backlog", exact: true }).click();
+    await line.fill("Made in place");
+    await line.press("Enter");
+    await status('Created "Made in place"').waitFor();
+    await backlog.getByText("Made in place").waitFor();
+    await line.waitFor({ state: "detached" });
+    if (!usesRealServer) {
+      expect(fake().requests.at(-1)).toMatchObject({
+        method: "POST",
+        path: "/v1/repositories/1/issues",
+        body: { title: "Made in place" },
+      });
+    }
+  });
+
+  it.skipIf(usesRealServer)("keeps a refusal of the line in a column under it", async () => {
+    await fresh();
+    await openBoard();
+    fake().refuseNext("POST", "/v1/repositories/1/issues", 500, "the forge refused the issue");
+    const backlog = column("Backlog");
+    await backlog.getByRole("button", { name: "Add a card to Backlog, at the foot" }).click();
+    const line = backlog.getByLabel("Title of the new card in Backlog");
+    await line.fill("Doomed");
+    await line.press("Enter");
+    await backlog.getByRole("alert").filter({ hasText: "the forge refused the issue" }).waitFor();
+    expect(await line.inputValue()).toBe("Doomed");
+  });
+
+  it("opens the form of a new issue on C from another page, and keeps it for the next with Create more", async () => {
+    await fresh();
+    await openBoard();
+    await page.goto(`${server.url}/agents`);
+    await page.getByRole("heading", { level: 1 }).waitFor();
+    await page.keyboard.press("c");
+    const form = page.getByRole("dialog", { name: "New issue" });
+    await form.waitFor();
+    // A c typed into the title is typing, not a second opening.
+    await form.getByLabel("Title").fill("First of two");
+    await form.getByLabel("Title").press("c");
+    expect(await form.getByLabel("Title").inputValue()).toBe("First of twoc");
+    await form.getByLabel("Title").fill("First of two");
+    await form.getByLabel("Create more").check();
+    await form.getByRole("button", { name: "Create", exact: true }).click();
+    await form.getByText(/^Created #\d+ First of two$/).waitFor();
+    // Still open, empty and ready for the next card.
+    expect(await form.getByLabel("Title").inputValue()).toBe("");
+    await form.getByLabel("Title").fill("Second of two");
+    await form.getByRole("button", { name: "Create", exact: true }).click();
+    await form.getByText(/^Created #\d+ Second of two$/).waitFor();
+    await form.getByRole("button", { name: "Cancel" }).click();
+    await form.waitFor({ state: "detached" });
+    await openBoard();
+    await page.getByText("First of two").first().waitFor();
+    await page.getByText("Second of two").first().waitFor();
+  });
+
+  it.skipIf(usesRealServer)("keeps the refusal of the form beside its title", async () => {
+    await fresh();
+    await openBoard();
+    fake().refuseNext("POST", "/v1/repositories/1/issues", 422, "the title is already taken");
+    await page.keyboard.press("c");
+    const form = page.getByRole("dialog", { name: "New issue" });
+    await form.getByLabel("Title").fill("Taken");
+    await form.getByRole("button", { name: "Create", exact: true }).click();
+    await form.getByRole("alert").filter({ hasText: "already taken" }).waitFor();
+    // It stands directly under the title, before the description.
+    const order = await form.locator("label, [role=alert]").allTextContents();
+    const at = (text: string) => order.findIndex((t) => t.includes(text));
+    expect(at("Title")).toBeLessThan(at("already taken"));
+    expect(at("already taken")).toBeLessThan(at("Description"));
+  });
+
   it.skipIf(usesRealServer)(
     "shows each card with its issue, status, agent, attempts, change and pull request",
     async () => {

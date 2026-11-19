@@ -1,7 +1,9 @@
 /**
  * The board of a repository: its columns of the default workflow with their cards (dragged only where a person may
- * move them), the filters, the inspector dock, the form of a new issue and a shell in the repository's clone, in a sheet over the
- * board. The
+ * move them), the filters, the inspector dock and a shell in the repository's clone, in a sheet over the board. The
+ * head is two lines: the title with the layout switch, Terminal and New issue (the form of a new issue, which the shell
+ * holds and `C` opens too), and the filter bar under it. A column ends in "+ Add", which makes a card in place
+ * (`ColumnAdd.tsx`). The
  * column of work in progress is the point of the page, so everything else is quiet: the header counts in one sentence,
  * the filters are chips, a column says what its cards are doing in a word, and an empty column says
  * what will arrive there. Everything comes from the snapshot, which the event stream keeps current
@@ -10,7 +12,14 @@
  * `?group=`, `?sort=`, `?hide=`), so a reload and a link keep them. The filters are the chips of the shared bar
  * (`ui/filters`); `view.ts` says what the board offers it and `ListLayout.tsx` draws the list layout.
  */
-import { CaretDownIcon, CaretRightIcon, PlusIcon, TerminalWindowIcon } from "@phosphor-icons/react";
+import {
+  CaretDownIcon,
+  CaretRightIcon,
+  KanbanIcon,
+  ListBulletsIcon,
+  PlusIcon,
+  TerminalWindowIcon,
+} from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { type SyntheticEvent, useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
@@ -43,6 +52,7 @@ import { readText, writeText } from "../storage";
 import { BlockDialog, DeleteDialog, ParentDialog } from "./CardDialogs";
 import { CardFocus } from "./CardFocus";
 import { CardMenu } from "./CardMenu";
+import { ColumnAdd, ColumnAddButton } from "./ColumnAdd";
 import { ColumnMark } from "./ColumnMark";
 import { Dock } from "./Dock";
 import { type Decision, useDecisions } from "./decisions";
@@ -65,7 +75,7 @@ import {
   type Stack,
   stackWords,
 } from "./model";
-import { NewIssueDialog } from "./NewIssueDialog";
+import { useNewIssue } from "./NewIssueHost";
 import { RepositoryTerminal } from "./RepositoryTerminal";
 import { DISPLAY_CHOICES, filterFields, listGroups, VIEW_KEYS } from "./view";
 
@@ -122,15 +132,46 @@ function LeftoverNotice({ repository }: { repository: number }) {
   );
 }
 
+/** The two layouts as two buttons in the head of the page; Display holds the same choice among the rest. */
+function LayoutSwitch({
+  layout,
+  onChange,
+}: {
+  layout: "board" | "list";
+  onChange: (layout: "board" | "list") => void;
+}) {
+  const choices = [
+    ["board", "Board", KanbanIcon],
+    ["list", "List", ListBulletsIcon],
+  ] as const;
+  return (
+    <fieldset aria-label="Layout" className="m-0 flex min-w-0 items-center gap-0.5 border-0 p-0">
+      {choices.map(([value, label, Icon]) => (
+        <Button
+          key={value}
+          variant={layout === value ? "secondary" : "ghost"}
+          size="sm"
+          aria-pressed={layout === value}
+          aria-label={`${label} layout`}
+          title={`${label} layout`}
+          onClick={() => onChange(value)}
+        >
+          <Icon className="size-4" aria-hidden="true" />
+        </Button>
+      ))}
+    </fieldset>
+  );
+}
+
 export function BoardPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
   const { decide, pending, notice, setNotice } = useDecisions();
-  // The form of a new issue: closed, or open with the number of the issue it is a sub-issue of (none for a new issue of
-  // its own). The key makes a form opened for another parent start afresh.
-  const [creating, setCreating] = useState<{ parent: number | null } | null>(null);
+  const newIssue = useNewIssue();
+  // The column whose line for a new card is open.
+  const [adding, setAdding] = useState<string | null>(null);
   // The card a menu asked to move below another, until the question is answered.
   const [moving, setMoving] = useState<Card | null>(null);
   // The stacks a person opened, by the id of the card at the top.
@@ -223,6 +264,12 @@ export function BoardPage() {
     setNotice({ tone: "ok", text: `Saved this view as "${views[views.length - 1]?.name}"` });
   };
   const inspected = inspectedCard(board, inbox, params.get("card"));
+  const openForm = (parent: number | null) =>
+    newIssue({
+      repository: board.repository.id,
+      parent,
+      onCreated: (card) => setNotice({ tone: "ok", text: `Created "${card.title}"` }),
+    });
   const menu = {
     onBlock: setBlocking,
     onUnblock: (card: Card) => decide({ kind: "unblock", card: card.id, number: card.number }),
@@ -230,7 +277,7 @@ export function BoardPage() {
       if (card.run) decide({ kind: "stop", run: card.run.id, number: card.number });
     },
     onDelete: setDeleting,
-    onAddSubIssue: (card: Card) => setCreating({ parent: card.number }),
+    onAddSubIssue: (card: Card) => openForm(card.number),
     onMoveParent: setMoving,
   };
   // A stack is open when a person opened it, and while the dock shows one of its sub-issues: closing it there would hide
@@ -294,11 +341,15 @@ export function BoardPage() {
           title={board.repository.name}
           actions={
             <>
+              <LayoutSwitch
+                layout={display.layout}
+                onChange={(layout) => setQuery(displayQuery({ ...display, layout }))}
+              />
               <Button variant="secondary" onClick={() => setTerminalOpen(true)}>
                 <TerminalWindowIcon className="size-4" aria-hidden="true" />
                 Terminal
               </Button>
-              <Button onClick={() => setCreating({ parent: null })}>
+              <Button onClick={() => openForm(null)}>
                 <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
                 New issue
               </Button>
@@ -377,6 +428,17 @@ export function BoardPage() {
                     onSelect={(card) => setQuery({ card: String(card.id) })}
                     menu={menu}
                     hidden={hidden}
+                    adding={adding === column}
+                    onAdding={(open) => setAdding(open ? column : null)}
+                    onCreated={(card, where) =>
+                      setNotice({
+                        tone: "ok",
+                        text:
+                          where === "Backlog"
+                            ? `Created "${card.title}"`
+                            : `Created "${card.title}" in the Backlog`,
+                      })
+                    }
                   />
                 ))}
               </KanbanProvider>
@@ -417,7 +479,7 @@ export function BoardPage() {
           decide={decide}
           onNotice={setNotice}
           onBlock={setBlocking}
-          onAddSubIssue={(card) => setCreating({ parent: card.number })}
+          onAddSubIssue={(card) => openForm(card.number)}
           onReject={(card) => setRejectFor(card.id)}
         />
       )}
@@ -447,16 +509,6 @@ export function BoardPage() {
         onClose={() => setMoving(null)}
         onDone={(text) => setNotice({ tone: "ok", text })}
       />
-      <NewIssueDialog
-        key={creating?.parent ?? "none"}
-        repository={board.repository.id}
-        name={board.repository.name}
-        board={board}
-        parent={creating?.parent ?? null}
-        open={creating !== null}
-        onOpenChange={(open) => !open && setCreating(null)}
-        onCreated={(card) => setNotice({ tone: "ok", text: `Created "${card.title}"` })}
-      />
     </>
   );
 }
@@ -475,6 +527,9 @@ function BoardColumn({
   onSelect,
   menu,
   hidden,
+  adding,
+  onAdding,
+  onCreated,
 }: {
   board: Board;
   inbox: InboxItem[];
@@ -492,6 +547,10 @@ function BoardColumn({
   menu: CardMenuActions;
   /** The fields of a card Display switched off. */
   hidden: ReadonlySet<string>;
+  /** The line for a new card is open in this column. */
+  adding: boolean;
+  onAdding: (open: boolean) => void;
+  onCreated: (card: Card, column: string) => void;
 }) {
   return (
     <KanbanBoard name={name}>
@@ -500,6 +559,7 @@ function BoardColumn({
         count={cards.length}
         total={total}
         mark={<ColumnMark name={name} />}
+        actions={<ColumnAddButton column={name} onClick={() => onAdding(true)} />}
       />
       <KanbanCards className="min-h-9">
         {cards.map((card) => {
@@ -555,6 +615,14 @@ function BoardColumn({
             that reads as a card which has lost its words. */}
         {cards.length === 0 && <Empty plain centered body={COLUMN_EMPTY[name] ?? ANY_COLUMN} />}
       </KanbanCards>
+      <ColumnAdd
+        repository={board.repository.id}
+        column={name}
+        open={adding}
+        onOpen={() => onAdding(true)}
+        onClose={() => onAdding(false)}
+        onCreated={onCreated}
+      />
     </KanbanBoard>
   );
 }
