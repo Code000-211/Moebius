@@ -194,14 +194,16 @@ and does not know anything the API does not say.
     one transaction (the statements it shares with `Store::delete_repository`). On a forge the card's number goes
     into `deleted_cards`, which `App::sync_issues` consults so that the poll never makes the card again. It records
     `delete_card` and publishes `card_deleted`.
-12ab. **Issues are a tracker.** An issue has a parent (`cards.parent`, an issue number of the same repository), blockers
+12ab. **Issues are a tracker.** (Duplicates and related issues are Moebius's own links, `store/links.rs`, made by
+    `App::mark_duplicate` and `add_related` in `app/issues/links.rs`; `create_tracked_issue` offers the open issues
+    alike in words, `app/issues/similar.rs`, in a comment of the Moebius agent and closes none.) An issue has a parent (`cards.parent`, an issue number of the same repository), blockers
     (`dependencies`), labels (`card_labels`), a claim (`cards.claimed_by`), comments (`card_comments`) and a state
     (`cards.closed`, which with a card in `Done` makes `Card::closed`), all in `store/issues.rs`. `App::set_parent`,
     `set_labels`, `add_blocker` (refusing a cycle), `remove_blocker`, `claim_issue`, `release_issue`, `comment_issue`,
     `close_issue` and `reopen_issue` (`app/issues/`) tell the forge first, through the `Forge` trait (`set_issue_labels`,
     `set_issue_blocker`, `set_issue_parent` where `has_sub_issues`, `comment_issue`, `set_issue_open`; GitLab and Forgejo
     keep a parent as a line `Part of #n` of the body), then store, then publish an event of their own
-    (`card_parent_changed`, `card_labels_changed`, `card_blocking_changed`, `card_claimed`, `card_released`,
+    (`card_parent_changed`, `card_labels_changed`, `card_blocking_changed`, `card_links_changed`, `card_claimed`, `card_released`,
     `card_commented`, `card_closed`, `card_reopened`). The poll reads the forge's side back: the clients put labels, a
     parent and a comment count in the forge-neutral `Issue`, `poll_issues` reads the comments and (`Polled::blockers`,
     kept per issue while it is unchanged) the blockers of the issues it syncs, and `App::sync_issue_details` copies it
@@ -471,6 +473,8 @@ At the top:
 | `app/repositories.rs` | Adding a repository (a path, a URL or GitHub), whom a GitHub repository trusts, and whether a card's issue is trusted. |
 | `app/cards.rs` | Cards and their issues: kept in line with the forge's issues, created, edited, approved, retried and moved; why a card waits, what blocks it, its history. |
 | `app/issues/mod.rs` | The issue tracker: parents and sub-issues, blocking that is written as well as read (cycles refused), labels, claims, comments, closing and reopening, creating an issue with all of that, and the queries over them. |
+| `app/issues/links.rs` | Duplicates and related issues: marking a duplicate (closing it with a comment that points to the original), relating issues in both directions, and the offer of likely duplicates in a comment when an issue is made. |
+| `app/issues/similar.rs` | The words of an issue and how alike two issues are, for finding the open issues that probably say the same. |
 | `app/issues/sync.rs` | What the poll copies besides an issue's text, acting only on what the forge changed; which sub-issues count; the graph of what waits for what. |
 | `app/issues/text.rs` | The lines of a description that hold a parent ("Part of #n") or a blocker ("Blocked by #n") where the forge has none. |
 | `app/stopping.rs` | Holding (blocking), releasing and deleting a card, which stops its runs and, for a delete, removes what it left in the clone. |
@@ -548,6 +552,7 @@ At the top:
 | `store/access.rs` | Access tokens and the sessions of browsers, each kept as the SHA-256 of its secret: making, finding a person by one, the last use, revoking, and ending sessions. |
 | `store/assignees.rs` | Who a card or an inbox item is given to: the tables `card_assignees` and `inbox_assignees`, set as a whole and read as handles. |
 | `store/people.rs` | The people of the organisation (id, handle, display name, role, disabled), never deleted, and the migration that makes the first owner and gives them the records from before that say `person`. |
+| `store/links.rs` | The links between issues besides parent and blockers: a duplicate to its original, and issues related in both directions. |
 | `store/issues.rs` | What an issue has besides its text: its parent, labels, claim, whether it was closed, and its comments. |
 | `store/changes.rs` | Changes: a branch offered for merging, with its pull request, checks and review. |
 | `store/attempts.rs` | Attempts: the runs a card was tried with at once, how each fared, which was picked and why, and the rounds of which none passed. |

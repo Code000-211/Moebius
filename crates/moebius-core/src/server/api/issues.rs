@@ -8,6 +8,11 @@
 //! - `PUT /v1/cards/{id}/parent` `{parent}`: gives the issue a parent, or none.
 //! - `PUT /v1/cards/{id}/labels` `{labels}`: replaces its labels.
 //! - `POST /v1/cards/{id}/blockers` `{blocker}` and `DELETE /v1/cards/{id}/blockers/{number}`: adds and removes a blocker.
+//! - `PUT /v1/cards/{id}/duplicate` `{original}` and `DELETE /v1/cards/{id}/duplicate`: closes the issue as a duplicate of
+//!   another, and takes that link off.
+//! - `POST /v1/cards/{id}/related` `{related}` and `DELETE /v1/cards/{id}/related/{number}`: relates two issues, and
+//!   stops that.
+//! - `GET /v1/cards/{id}/similar`: the open issues likely to be the same as this one.
 //! - `POST /v1/cards/{id}/claim` `{by}` and `DELETE /v1/cards/{id}/claim` `{by}`: claims and releases it (a person
 //!   releases any claim, the Moebius agent only its own, which it may name with `by`).
 //! - `POST /v1/cards/{id}/close` `{reason}` and `POST /v1/cards/{id}/reopen` `{reason}`: closes and reopens it.
@@ -20,7 +25,7 @@ use axum::routing::{get, post, put};
 use serde::{Deserialize, Serialize};
 
 use super::{ApiError, ApiState, Reason, blocking, scope};
-use crate::app::{IssueQuery, IssueView};
+use crate::app::{IssueQuery, IssueView, Links, Similar};
 use crate::decide::Actor;
 use crate::store::{Card, Comment};
 
@@ -34,6 +39,16 @@ pub(super) fn routes() -> Router<ApiState> {
             "/v1/cards/{id}/blockers/{number}",
             axum::routing::delete(remove_blocker),
         )
+        .route(
+            "/v1/cards/{id}/duplicate",
+            put(mark_duplicate).delete(unmark_duplicate),
+        )
+        .route("/v1/cards/{id}/related", post(add_related))
+        .route(
+            "/v1/cards/{id}/related/{number}",
+            axum::routing::delete(remove_related),
+        )
+        .route("/v1/cards/{id}/similar", get(similar))
         .route("/v1/cards/{id}/claim", post(claim).delete(release))
         .route("/v1/cards/{id}/close", post(close))
         .route("/v1/cards/{id}/reopen", post(reopen))
@@ -56,6 +71,18 @@ pub struct NewLabels {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NewBlocker {
     pub blocker: i64,
+}
+
+/// The body of `PUT /v1/cards/{id}/duplicate`: the issue number of the original.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewDuplicate {
+    pub original: i64,
+}
+
+/// The body of `POST /v1/cards/{id}/related`: the issue number of the related issue.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NewRelated {
+    pub related: i64,
 }
 
 /// The body of `POST /v1/cards/{id}/claim`: who claims; the caller when left out.
@@ -148,6 +175,70 @@ async fn remove_blocker(
     blocking(&state.app, move |app| {
         scope::card(app, &by, id, true)?;
         app.remove_blocker(id, number)
+    })
+    .await
+}
+
+async fn mark_duplicate(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(new): axum::Json<NewDuplicate>,
+) -> Result<axum::Json<Card>, ApiError> {
+    blocking(&state.app, move |app| {
+        scope::card(app, &by, id, true)?;
+        scope::related(app, &by, scope::repository_of_card(app, id)?, new.original)?;
+        app.mark_duplicate(&by, id, new.original)
+    })
+    .await
+}
+
+async fn unmark_duplicate(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<Card>, ApiError> {
+    blocking(&state.app, move |app| {
+        scope::card(app, &by, id, true)?;
+        app.unmark_duplicate(id)
+    })
+    .await
+}
+
+async fn add_related(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(new): axum::Json<NewRelated>,
+) -> Result<axum::Json<Links>, ApiError> {
+    blocking(&state.app, move |app| {
+        scope::card(app, &by, id, true)?;
+        scope::related(app, &by, scope::repository_of_card(app, id)?, new.related)?;
+        app.add_related(id, new.related)
+    })
+    .await
+}
+
+async fn remove_related(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath((id, number)): UrlPath<(i64, i64)>,
+) -> Result<axum::Json<Links>, ApiError> {
+    blocking(&state.app, move |app| {
+        scope::card(app, &by, id, true)?;
+        app.remove_related(id, number)
+    })
+    .await
+}
+
+async fn similar(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<Vec<Similar>>, ApiError> {
+    blocking(&state.app, move |app| {
+        scope::card(app, &by, id, false)?;
+        app.similar_issues(id)
     })
     .await
 }
@@ -459,5 +550,199 @@ mod tests {
                 "{expected} in {kinds:?}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn a_new_issue_with_the_words_of_an_open_one_is_offered_it_and_a_duplicate_is_closed_with_a_link()
+     {
+        let (_dir, state, addr) = start().await;
+        let issues = "/v1/repositories/1/issues".to_string();
+        let make = |title: &'static str| {
+            let (state, addr, issues) = (state.clone(), addr.clone(), issues.clone());
+            async move {
+                post(&state, &addr, issues, json!({ "title": title }))
+                    .await
+                    .json::<Card>()
+                    .await
+                    .unwrap()
+            }
+        };
+        let mut events = state.app.bus.subscribe();
+        let original = make("Cache the model downloads").await;
+        let twin = make("Cache model downloads").await;
+        let other = make("A dark theme for the settings page").await;
+
+        // The twin is offered the original in a comment of the Moebius agent, and nothing is closed; the unlike issue
+        // and the first one have no offer.
+        let offered: Vec<Comment> =
+            get(&state, &addr, &format!("/v1/cards/{}/comments", twin.id)).await;
+        assert_eq!(offered.len(), 1, "{offered:?}");
+        assert_eq!(offered[0].author, "agent:Moebius");
+        assert!(
+            offered[0]
+                .body
+                .contains(&format!("#{}: Cache the model downloads", original.number)),
+            "{}",
+            offered[0].body
+        );
+        for card in [&original, &other] {
+            let none: Vec<Comment> =
+                get(&state, &addr, &format!("/v1/cards/{}/comments", card.id)).await;
+            assert!(none.is_empty(), "{none:?}");
+        }
+        let shown: IssueView = get(&state, &addr, &format!("/v1/cards/{}", twin.id)).await;
+        assert_eq!(shown.state, "open");
+        let similar: Vec<Similar> =
+            get(&state, &addr, &format!("/v1/cards/{}/similar", twin.id)).await;
+        assert_eq!(
+            similar
+                .iter()
+                .map(|s| (s.number, s.score))
+                .collect::<Vec<_>>(),
+            [(original.number, 1.0)]
+        );
+
+        // Marking the twin a duplicate closes it with a comment that links the original; both show the link.
+        let duplicate = format!("/v1/cards/{}/duplicate", twin.id);
+        let marked = send(
+            &state,
+            &addr,
+            reqwest::Method::PUT,
+            &duplicate,
+            Some(json!({ "original": original.number })),
+        )
+        .await;
+        assert_eq!(marked.status(), 200);
+        let shown: IssueView = get(&state, &addr, &format!("/v1/cards/{}", twin.id)).await;
+        assert_eq!(shown.state, "closed");
+        assert_eq!(
+            shown.links.duplicate_of.as_ref().map(|c| c.number),
+            Some(original.number)
+        );
+        let comments: Vec<Comment> =
+            get(&state, &addr, &format!("/v1/cards/{}/comments", twin.id)).await;
+        assert_eq!(
+            comments.last().unwrap().body,
+            format!("Duplicate of #{}.", original.number)
+        );
+        let shown: IssueView = get(&state, &addr, &format!("/v1/cards/{}", original.id)).await;
+        assert_eq!(shown.state, "open");
+        assert_eq!(
+            shown
+                .links
+                .duplicates
+                .iter()
+                .map(|c| c.number)
+                .collect::<Vec<_>>(),
+            [twin.number]
+        );
+        // A closed issue is not offered any more.
+        let similar: Vec<Similar> =
+            get(&state, &addr, &format!("/v1/cards/{}/similar", original.id)).await;
+        assert!(similar.is_empty());
+
+        // The refusals: itself, no such issue, an original that is a duplicate itself, an issue with duplicates.
+        for (id, number, status) in [
+            (twin.id, twin.number, 422),
+            (twin.id, 99, 404),
+            (other.id, twin.number, 422),
+            (original.id, other.number, 422),
+        ] {
+            let refused = send(
+                &state,
+                &addr,
+                reqwest::Method::PUT,
+                &format!("/v1/cards/{id}/duplicate"),
+                Some(json!({ "original": number })),
+            )
+            .await;
+            assert_eq!(refused.status(), status, "{id} -> {number}");
+        }
+
+        // Related issues show each other, and stop doing so from either side.
+        let related = format!("/v1/cards/{}/related", other.id);
+        let added = post(
+            &state,
+            &addr,
+            related.clone(),
+            json!({ "related": original.number }),
+        )
+        .await;
+        assert_eq!(added.status(), 200);
+        assert_eq!(
+            post(
+                &state,
+                &addr,
+                related.clone(),
+                json!({ "related": original.number })
+            )
+            .await
+            .status(),
+            200
+        );
+        for (card, shows) in [(&other, &original), (&original, &other)] {
+            let shown: IssueView = get(&state, &addr, &format!("/v1/cards/{}", card.id)).await;
+            assert_eq!(
+                shown
+                    .links
+                    .related
+                    .iter()
+                    .map(|c| c.number)
+                    .collect::<Vec<_>>(),
+                [shows.number]
+            );
+        }
+        let itself = post(
+            &state,
+            &addr,
+            related.clone(),
+            json!({ "related": other.number }),
+        )
+        .await;
+        assert_eq!(itself.status(), 422);
+        let removed = send(
+            &state,
+            &addr,
+            reqwest::Method::DELETE,
+            &format!("{related}/{}", original.number),
+            None,
+        )
+        .await;
+        assert_eq!(removed.status(), 200);
+        let shown: IssueView = get(&state, &addr, &format!("/v1/cards/{}", original.id)).await;
+        assert!(shown.links.related.is_empty());
+        let again = send(
+            &state,
+            &addr,
+            reqwest::Method::DELETE,
+            &format!("{related}/{}", original.number),
+            None,
+        )
+        .await;
+        assert_eq!(again.status(), 404);
+
+        // Taking the duplicate link off leaves the issue closed.
+        let unmarked = send(&state, &addr, reqwest::Method::DELETE, &duplicate, None).await;
+        assert_eq!(unmarked.status(), 200);
+        let shown: IssueView = get(&state, &addr, &format!("/v1/cards/{}", twin.id)).await;
+        assert_eq!(
+            (shown.state.as_str(), shown.links.duplicate_of),
+            ("closed", None)
+        );
+        assert_eq!(
+            send(&state, &addr, reqwest::Method::DELETE, &duplicate, None)
+                .await
+                .status(),
+            404
+        );
+
+        let mut kinds = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            kinds.push(event.kind);
+        }
+        assert!(
+            kinds.contains(&"card_links_changed".to_string()),
+            "{kinds:?}"
+        );
     }
 }

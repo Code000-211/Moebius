@@ -219,7 +219,7 @@ takes a repository's name.
 | `repo remove <id> [--reason <why>]` | `DELETE /v1/repositories/{id}` | The repository, as it last was. Removes it with its cards, changes and chats, and deletes its clone; `409` while one of its runs is still going. |
 | `issue create <repository> <title> [--body <text>] [--parent <n>] [--label <label>]... [--blocked-by <n>]...` | `POST /v1/repositories/{id}/issues` | The card, and `warnings` when a step after the issue was created failed. `--parent` and `--blocked-by` are issue numbers of the repository, checked before the issue is created. |
 | `issue list <repository> [--parent <n>] [--label <label>] [--state open\|closed] [--claimed \| --unclaimed] [--blocked \| --unblocked]` | `GET /v1/repositories/{id}/issues` | Table `id number state title labels claimed_by blocked_by`. `--blocked` keeps the issues an issue that is not done blocks. The frontier of a map is `--parent <map> --state open --unblocked --unclaimed`. |
-| `issue show <card>` | `GET /v1/cards/{id}` | The issue as lines, then its sub-issues as a table. |
+| `issue show <card>` | `GET /v1/cards/{id}` | The issue as lines, then its sub-issues, the issue it duplicates, its duplicates and its related issues as tables. |
 | `issue edit <card> [--title <text>] [--body <text>]` | `GET /v1/cards/{id}`, then `PUT /v1/cards/{id}` | The card. What is not given stays. |
 | `issue close <card> [--reason <why>]` | `POST /v1/cards/{id}/close` | The card, now in `Done`. |
 | `issue reopen <card> [--reason <why>]` | `POST /v1/cards/{id}/reopen` | The card, back in `Backlog`. |
@@ -229,6 +229,10 @@ takes a repository's name.
 | `issue parent <card> <number\|none>` | `PUT /v1/cards/{id}/parent` | The card. The number is of the parent issue, with or without `#`. |
 | `issue blocker add <card> <number>` | `POST /v1/cards/{id}/blockers` | The numbers that block the issue. Refused (status 422) when that makes a cycle, a blocker that is an ancestor of the issue included. On a forge that keeps no blocking (GitLab without Premium) it writes the line `Blocked by #n` into the description. |
 | `issue blocker remove <card> <number>` | `DELETE /v1/cards/{id}/blockers/{number}` | The numbers that still block it. A line of the description that names the blocker is taken out. |
+| `issue duplicate <card> <number\|none>` | `PUT /v1/cards/{id}/duplicate`, or `DELETE` for `none` | The card. Closes the issue with a comment that points to the issue `number`, the original (status 422 for itself, for an original that is a duplicate, and for an issue with duplicates, 409 while a run of it is going); `none` takes the link off and leaves it closed. |
+| `issue related add <card> <number>` | `POST /v1/cards/{id}/related` | The links of the issue: `duplicate_of`, `duplicates`, `related`. Each of the two issues shows the other. |
+| `issue related remove <card> <number>` | `DELETE /v1/cards/{id}/related/{number}` | The links that are left. |
+| `issue similar <card>` | `GET /v1/cards/{id}/similar` | Table `number score title`: the open issues that look like it by their words, as the comment on a new issue lists them. |
 | `issue comment <card> <text>` | `POST /v1/cards/{id}/comments` | The comment. |
 | `issue comments <card>` | `GET /v1/cards/{id}/comments` | Table `at author body`. |
 | `retro` | `GET /v1/retros` | Table `date status errors proposals`. |

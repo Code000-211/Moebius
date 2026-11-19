@@ -92,6 +92,14 @@ pub enum Event {
         card: i64,
         blocked_by: Vec<i64>,
     },
+    /// The duplicate and related links of an issue changed (all numbers of the same repository; `duplicate_of` is the
+    /// original it was closed for, `duplicates` the issues closed for it).
+    CardLinksChanged {
+        card: i64,
+        duplicate_of: Option<i64>,
+        duplicates: Vec<i64>,
+        related: Vec<i64>,
+    },
     CardClaimed {
         card: i64,
         by: String,
@@ -538,6 +546,15 @@ mod tests {
                     blocked_by: vec![2, 3],
                 },
                 json!({"kind": "card_blocking_changed", "data": {"card": 7, "blocked_by": [2, 3]}}),
+            ),
+            (
+                Event::CardLinksChanged {
+                    card: 7,
+                    duplicate_of: Some(2),
+                    duplicates: vec![],
+                    related: vec![4],
+                },
+                json!({"kind": "card_links_changed", "data": {"card": 7, "duplicate_of": 2, "duplicates": [], "related": [4]}}),
             ),
             (
                 Event::CardClaimed {
