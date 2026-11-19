@@ -777,3 +777,50 @@ describe("the rail", () => {
     expect((await screen.findByTestId("connection")).textContent).toContain("Reconnecting");
   });
 });
+
+describe("the pins and recent places", () => {
+  const places = {
+    favourites: [
+      { id: 1, kind: "project", repository_id: 1, key: "", title: "moebius-platform" },
+      { id: 2, kind: "card", repository_id: 1, key: "7", title: "Fix the login" },
+    ],
+    recent: [
+      { id: 5, kind: "card", repository_id: 2, key: "9", title: "Write notes" },
+      { id: 6, kind: "card", repository_id: 1, key: "7", title: "Fix the login" },
+    ],
+  };
+
+  it("lists the pins with the means to move and remove them, and the recent places not pinned yet", async () => {
+    ROUTES["/v1/places"] = places;
+    try {
+      show();
+      await screen.findByRole("link", { name: "Fix the login" });
+      expect(screen.getByRole("button", { name: "Move moebius-platform up" })).toHaveProperty(
+        "disabled",
+        true,
+      );
+      expect(screen.getByRole("button", { name: "Move Fix the login down" })).toHaveProperty(
+        "disabled",
+        true,
+      );
+      expect(screen.getByRole("button", { name: "Unpin Fix the login" })).toBeTruthy();
+      // A place that is pinned is not offered for pinning again.
+      expect(screen.getAllByRole("link", { name: "Fix the login" })).toHaveLength(1);
+      expect(screen.getByRole("button", { name: "Pin Write notes" })).toBeTruthy();
+    } finally {
+      delete ROUTES["/v1/places"];
+    }
+  });
+
+  it("shows neither list in the rail", async () => {
+    ROUTES["/v1/places"] = places;
+    try {
+      show({ collapsed: true });
+      // The rail has read the snapshot once its board row is there; by then the places have been asked for too.
+      await screen.findByRole("link", { name: /^Board/ });
+      expect(screen.queryByRole("link", { name: "Write notes" })).toBeNull();
+    } finally {
+      delete ROUTES["/v1/places"];
+    }
+  });
+});

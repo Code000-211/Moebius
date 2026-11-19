@@ -547,6 +547,7 @@ At the top:
 | `store/runs.rs` | Runs: an agent's work in a harness, from its start to its end. |
 | `store/workflows.rs` | Workflow runs and the runs of each node of them, with their value, input and output redacted before they are stored. |
 | `store/workflow_schedules.rs` | The minute each workflow on a `schedule` trigger last fired at, so one occurrence of its cron starts one run even when the server restarts in between. |
+| `store/favourites.rs` | The places a person pinned, in their order, and the places they opened lately (the last 20), kept per person so they follow them to every browser. |
 | `store/events.rs` | A run's events, in order, redacted before they are stored. |
 | `store/automations.rs` | Automations, their firings with the status of each chat, and the server's local minute; the workflow file is the definition and the row keeps the id the firings use. |
 | `store/chats.rs` | Chats: where they were started, what they work in and how far a person has read them. |
@@ -612,6 +613,7 @@ At the top:
 | `server/api/scope.rs` | What a Grilling partner's run token reaches in the issue tracker: its chat's repository and the cards with a `wayfinder:` label. |
 | `server/api/session/mod.rs` | Signing in from a browser: with an access token, the server's token or a one-time login code, sessions kept in the store, the codes in memory, and `/v1/session` and `/v1/session/codes`. |
 | `server/api/session/tests.rs` | For the tests only: signing in with each kind of token and code, a session that survives a restart, and what ends one. |
+| `server/api/favourites.rs` | A person's pins and recent places: listing both, pinning, reordering and removing a pin, noting a place opened, and forgetting the places they can no longer see. |
 | `server/api/people.rs` | The people and their access tokens: listing people, an owner adding one with their first token, making, listing and revoking tokens. |
 | `server/api/roles/mod.rs` | The role each route of the desktop API needs, and whether the Moebius agent's run token may use it: the table the reference repeats, and the check `authenticate` makes with it. |
 | `server/api/roles/tests.rs` | For the tests only: the role table against the reference and the routes of the code, and every route called as a viewer, a member, an owner and the Moebius agent. |

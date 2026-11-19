@@ -27,6 +27,7 @@
 //! - `events`: the WebSocket on which every event of the core arrives.
 //! - `session`: signing in from a browser with a cookie, and the one-time codes that open the web app signed in.
 //! - `people`: the people of the organisation, and the access tokens they sign in with.
+//! - `favourites`: what a person pins to the sidebar and what they opened lately, kept for them on the server.
 //! - `roles`: the role of the organisation each route needs, and whether an agent's run token may use it.
 //! - `web`: the web app itself, served at `/` without a token.
 //! - `webhooks`: the deliveries of the forges, which need no token but a signature, and the secrets to set on the forges.
@@ -47,6 +48,7 @@ mod cards;
 mod chats;
 mod events;
 mod extensions;
+mod favourites;
 mod harness;
 mod improve;
 mod issues;
@@ -234,6 +236,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(whereabouts::routes())
         .merge(session::routes())
         .merge(people::routes())
+        .merge(favourites::routes())
         .fallback(web::fallback)
         .layer(middleware::from_fn_with_state(state.clone(), authenticate))
         .merge(webhooks::public_routes())

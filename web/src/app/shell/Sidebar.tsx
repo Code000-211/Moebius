@@ -37,6 +37,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { chats as readChats } from "../../api/calls/chat";
+import { seen } from "../../api/calls/places";
 import { start } from "../../api/calls/server";
 import { getSession } from "../../api/calls/session";
 import type { ConnectionState } from "../../api/events";
@@ -82,6 +83,8 @@ import {
   settingsLabel,
 } from "../pages";
 import { readFlagOr, readText, writeFlag, writeText } from "../storage";
+import { PlacesSection } from "./PlacesSection";
+import { placeAt } from "./places";
 import { leaveSession } from "./session";
 
 const STATE: Record<ConnectionState, { label: string; color: string }> = {
@@ -201,6 +204,24 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
     writeText(PROJECT_KEY, String(id));
     navigate(boardPath(id));
   };
+
+  // What a person opens is kept for them on the server: a project's board or a card open on it. A place is noted
+  // once for each time the address changes to it, and the lists are read again, so a pin or a place the person can
+  // no longer see is up to date.
+  const queryClient = useQueryClient();
+  const { pathname, search } = location;
+  useEffect(() => {
+    const place = placeAt(pathname, search);
+    if (!place) return;
+    seen(place)
+      .then((next) => queryClient.setQueryData(keys.places, next))
+      .catch(() => {});
+  }, [pathname, search, queryClient]);
+  // A project that was removed takes its places with it, so the lists are read again when the projects change.
+  const projects = boards.length;
+  useEffect(() => {
+    if (projects >= 0) void queryClient.invalidateQueries({ queryKey: keys.places });
+  }, [projects, queryClient]);
 
   // "Get started" is listed only while the server says a step is missing.
   const pagesOf = (group: Group) =>
@@ -362,6 +383,7 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
             onChoose={choose}
           />
         )}
+        {!inSettings && !collapsed && <PlacesSection at={at} />}
         {!inSettings && (
           <Section title="Automate" collapsed={collapsed}>
             {AUTOMATE_PATHS.map(pageByPath)

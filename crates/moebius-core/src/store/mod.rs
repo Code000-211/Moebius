@@ -10,7 +10,7 @@
 //! (automations, their firings and the local clock), `workflows` (workflow runs and what each node did),
 //! `plugin_settings` (what plugins keep for the server) and `people` (the people of the organisation, and the
 //! migration that gives earlier records to the first owner) and `access` (their access tokens and the sessions of
-//! browsers, kept as hashes).
+//! browsers, kept as hashes) and `favourites` (the places a person pinned and opened lately).
 //! Every public type is re-exported here, as `store::Card` and the like.
 
 mod access;
@@ -21,6 +21,7 @@ mod changes;
 mod chats;
 mod deletions;
 mod events;
+mod favourites;
 mod found;
 mod grillings;
 mod inbox;
@@ -54,6 +55,7 @@ pub use cards::{Card, CardMove, Held, Repository};
 pub use changes::Change;
 pub use deletions::{ChatRemoved, ResearchRemoved};
 pub use events::Event;
+pub use favourites::{PLACE_KINDS, Place, RECENT_LIMIT};
 pub use found::Found;
 pub use grillings::{Grilling, GrillingIssue};
 pub use inbox::{InboxItem, WORKFLOW_APPROVAL};
@@ -444,6 +446,7 @@ ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
     "ALTER TABLE changes ADD COLUMN run_id INTEGER REFERENCES workflow_runs(id);",
     people::SCHEMA,
     access::SCHEMA,
+    favourites::SCHEMA,
 ];
 
 pub fn now() -> i64 {
