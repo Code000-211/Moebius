@@ -162,6 +162,12 @@ describe("invalidates", () => {
     expect(invalidates({ kind: "wiki_changed", data: { commit: "abc" } })).toEqual([keys.wiki]);
   });
 
+  it("makes one project's requests and the snapshot stale when a request changes", () => {
+    expect(
+      invalidates({ kind: "intake_changed", data: { project: 4, request: 9, status: "drafted" } }),
+    ).toEqual([keys.requests(4), keys.snapshot]);
+  });
+
   it("reads the first-start steps again when a repository comes or goes", () => {
     expect(invalidates({ kind: "repository_added", data: {} })).toContainEqual(keys.start);
   });

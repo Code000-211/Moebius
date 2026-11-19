@@ -180,6 +180,8 @@ fn store_result(
     replace: Option<&Grilling>,
 ) -> Result<Grilling> {
     let replace_id = replace.map(|grilling| grilling.id);
+    // A grilling of an intake request gives the request its draft, and tells the members through the request.
+    let intake = app.intake_grilled(run_id, &outcome)?;
     match outcome {
         Outcome::Issues(issues) => {
             let issues: Vec<GrillingIssue> = issues.into_iter().map(redacted).collect();
@@ -198,7 +200,9 @@ fn store_result(
             };
             let data =
                 json!({ "grilling": grilling.id, "repository": repository_id, "issues": issues });
-            put_into_inbox(app, grilling.id, "grilling_issues", &title, &data)?;
+            if !intake {
+                put_into_inbox(app, grilling.id, "grilling_issues", &title, &data)?;
+            }
             Ok(grilling)
         }
         Outcome::Report(report) => {
@@ -214,13 +218,15 @@ fn store_result(
             )?;
             let data =
                 json!({ "grilling": grilling.id, "repository": repository_id, "report": report });
-            put_into_inbox(
-                app,
-                grilling.id,
-                "grilling_report",
-                "A research report from a grilling",
-                &data,
-            )?;
+            if !intake {
+                put_into_inbox(
+                    app,
+                    grilling.id,
+                    "grilling_report",
+                    "A research report from a grilling",
+                    &data,
+                )?;
+            }
             Ok(grilling)
         }
         Outcome::Empty(reason) => app

@@ -25,6 +25,7 @@ mod chats;
 mod checks;
 mod deletions;
 mod diffs;
+mod intake;
 mod issues;
 mod kinds;
 mod localize;

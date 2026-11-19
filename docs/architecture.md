@@ -503,6 +503,7 @@ At the top:
 | `app/projects/mod.rs` | Projects (ADR 0019): making one with a name and a key no other has (the name is also a folder), renaming it with its key kept and its settings moved, and the `ProjectView` the Projects page shows (repositories, members, open cards). |
 | `app/projects/files.rs` | A project's own store of files (ADR 0019): the git repository at `<data_dir>/projects/<key>` made for a project, kept as a repository without a forge whose `files_of` is the project, where the cards of a project without a repository run, are reviewed and are merged. |
 | `app/milestones.rs` | Milestones (ADR 0019): making and editing them, putting a card in them, and their progress counted and listed only within the projects the asker may see (`App::may_see_project`). |
+| `app/intake.rs` | Intake (ADR 0019): a project's requests, written by anyone who may see it, grilled into a draft issue by a chat of the grilling agent and accepted into a card the requester follows, edited, or declined with a reason the requester is told. |
 | `app/projects/settings.rs` | A project's and a repository's settings read from the harness configuration repository (`App::project_file`, `App::repository_file`), the migration of the repositories' column scripts to their home projects (`App::move_scripts_to_projects`), and the notice, once for each repository, that its default branch still has a `.moebius/` folder, which is not read. |
 | `app/localize.rs` | The hint of files a code run is given, whether a repository wants it, and the outcome recorded from the files the card's change touched at the end of a code run and on merge. |
 | `app/plugin_settings.rs` | The settings plugins ask of each repository and of the server in their manifest: what the repository's page and the Settings page show, a person's save checked against the manifest and recorded; a repository's values are files of its project settings, the server's are kept by plugin name. |
@@ -572,6 +573,7 @@ At the top:
 | `store/outgoing.rs` | The outgoing webhooks (URL, event kinds, projects named) and the flag that makes a repository private. |
 | `store/wiki_search.rs` | The wiki's search index (SQLite FTS5, a title counting far more than the text): derived data, replaced whole when the wiki's head moves. |
 | `store/milestones.rs` | The milestones (name, target date, description) and which cards each holds, of any projects. |
+| `store/intake.rs` | A project's switch for intake and the requests made to it, with their draft issue, status, card and reason. |
 | `store/projects.rs` | The projects (name, key, repositories in order), a repository's home project and a card's project, how a key is made from a name, and the migration that makes one project for each repository and puts every card on it. |
 | `store/favourites.rs` | The places a person pinned, in their order, and the places they opened lately (the last 20), kept per person so they follow them to every browser. |
 | `store/events.rs` | A run's events, in order, redacted before they are stored. |
@@ -622,6 +624,7 @@ At the top:
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
 | `server/api/milestones.rs` | The milestones: listing them with their progress, making, reading, editing and deleting one, and a card's milestones. |
 | `server/api/projects.rs` | The projects: listing them, making one with a free key, reading and renaming one, and the column scripts of a project's board. |
+| `server/api/intake.rs` | Intake: turning it on for a project, making and reading its requests, editing a draft, accepting and declining. |
 | `server/api/wiki.rs` | The wiki's routes: its pages listed, read (an older version too), written, moved and deleted, a page's history, and a refresh now. |
 | `server/api/runs.rs` | A run and its events in pages, steering and stopping it. |
 | `server/api/automations/mod.rs` | Automations: list, add, read, replace, delete, run now, and their firings. |

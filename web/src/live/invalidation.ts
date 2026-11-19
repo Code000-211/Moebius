@@ -85,6 +85,10 @@ export function invalidates(event: ServerEvent): QueryKey[] {
   if (event.kind === "project_changed") stale.push(keys.projects);
   if (event.kind === "wiki_changed") stale.push(keys.wiki);
   if (KIND_KINDS.has(event.kind)) stale.push(keys.issueKinds, keys.issues, keys.projects);
+  if (event.kind === "intake_changed") {
+    // A draft is an inbox item, and a card is made when a request is accepted.
+    stale.push(keys.requests(Number(event.data.project)), keys.snapshot);
+  }
   if (event.kind === "script_changed") stale.push(keys.scripts, keys.projectSettingsAll);
   if (event.kind === "project_settings_changed") {
     stale.push(keys.projectSettingsAll);
