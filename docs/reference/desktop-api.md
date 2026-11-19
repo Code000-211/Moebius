@@ -15,7 +15,7 @@ Every request to `/v1/`, the WebSocket upgrade included, carries `Authorization:
 cookie of a [session](#post-v1session)). The token is a person's [access token](#people-and-access-tokens), which acts
 as that person with their role, or the server's token, the content of `token_file` (by default `<data_dir>/token`,
 created when the server first starts), which acts as the first owner, `person:owner`. A missing or wrong token, a
-revoked access token and one of a disabled person are answered
+revoked access token, one of a disabled person and the server's token while the first owner is disabled are answered
 with `401` and the plain text `a valid token is needed`. The exceptions are `POST /v1/webhooks/{forge}`, which a forge
 sends and which carries the forge's signature instead, and `/v1/session`, which signs a browser in. The paths outside
 `/v1/` need no token: they are the [web app](#the-web-app) and the [hooks a workflow's `webhook` trigger answers

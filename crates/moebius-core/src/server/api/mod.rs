@@ -313,15 +313,16 @@ fn identify(
     let store = &state.app.store;
     match given {
         Some(token) if same(token.as_bytes(), state.token.as_bytes()) => {
-            Some(match owner_person(state) {
-                Some(owner) => Who::person(owner, None, Via::Bearer),
+            match server_owner(state) {
+                ServerOwner::Person(owner) => Some(Who::person(owner, None, Via::Bearer)),
                 // A store without its first owner (who is never deleted) leaves the bare person.
-                None => Who {
+                ServerOwner::Missing => Some(Who {
                     actor: Actor::first_owner(),
                     via: Via::Bearer,
                     signed_in: None,
-                },
-            })
+                }),
+                ServerOwner::Refused => None,
+            }
         }
         Some(token) if token.starts_with(TOKEN_PREFIX) => {
             let (person, id) = store.person_of_token(token, crate::store::now()).ok()??;
@@ -340,16 +341,23 @@ fn identify(
     }
 }
 
-/// The person the server's token stands for: the first owner, while they are not disabled, so the judgements made with
-/// it record `person:owner`.
-fn owner_person(state: &ApiState) -> Option<crate::store::Person> {
-    state
-        .app
-        .store
-        .person_by_handle(crate::store::FIRST_OWNER)
-        .ok()
-        .flatten()
-        .filter(|person| !person.disabled)
+/// Whom the server's token stands for.
+enum ServerOwner {
+    /// The first owner, who is not disabled: the judgements made with the token record `person:owner`.
+    Person(crate::store::Person),
+    /// The store has no first owner, who is never deleted.
+    Missing,
+    /// The first owner is disabled, or the store could not say: the token is refused, as their own tokens are.
+    Refused,
+}
+
+fn server_owner(state: &ApiState) -> ServerOwner {
+    match state.app.store.person_by_handle(crate::store::FIRST_OWNER) {
+        Ok(Some(owner)) if owner.disabled => ServerOwner::Refused,
+        Ok(Some(owner)) => ServerOwner::Person(owner),
+        Ok(None) => ServerOwner::Missing,
+        Err(_) => ServerOwner::Refused,
+    }
 }
 
 /// Lets a request through as the actor it names (see [`identify`]) when its role may use the route (see [`roles`]).
