@@ -1068,7 +1068,7 @@ What the page links to and what links to it: `{"links": {"pages": [{"link": stri
 [{"key": string, "title": string | null}]}, "backlinks": {"pages": [{"path", "name"}], "cards": [{"key", "title"}]}}`.
 `links` is what the page's text says, each name with the page it leads to (`null` when there is none) and each card
 with its title (`null` when there is no such card); `backlinks` are the pages, sorted by path, and the cards, whose
-text has a `[[link]]` to the page. What a person may not see is left out: a private project's pages and cards they are not a member of are not listed (a link to such a page has `path` `null`, such a card a `title` `null`; the page's own links and the cards' links lead only among the pages the person sees, so a page they do not see never takes the place of one they do, but the page backlinks are still those of the index, which resolves among every page), and the page of a private project they may not see is `404`. A page that is not there has backlinks all the same, as a deleted page keeps them.
+text has a `[[link]]` to the page. What a person may not see is left out: a private project's pages and cards they are not a member of are not listed (a link to such a page has `path` `null`, such a card a `title` `null`; the page's own links, the cards' links and the page backlinks lead only among the pages the person sees, so a page they do not see never takes the place of one they do: a page is a backlink when its links, resolved among the pages the person sees, lead to this page), and the page of a private project they may not see is `404`.
 Errors: `422` for a path that is not a page's.
 
 ### `GET /v1/wiki/cards/{key}`
