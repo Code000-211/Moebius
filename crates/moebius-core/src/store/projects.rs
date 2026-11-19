@@ -223,6 +223,26 @@ impl Store {
         )? == 1)
     }
 
+    /// Makes `repository_id` one of the repositories of the project `project_id`, after the ones it has; nothing
+    /// happens when it is one already. The repository's home project does not change.
+    pub fn link_repository(&self, project_id: i64, repository_id: i64) -> Result<()> {
+        self.conn().execute(
+            "INSERT OR IGNORE INTO project_repositories (project_id, repository_id, position)
+             VALUES (?1, ?2, COALESCE((SELECT MAX(position) + 1 FROM project_repositories WHERE project_id = ?1), 0))",
+            [project_id, repository_id],
+        )?;
+        Ok(())
+    }
+
+    /// Puts the card on the board of the project `project_id`; its column stays.
+    pub fn set_card_project(&self, card_id: i64, project_id: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE cards SET project_id = ?1 WHERE id = ?2",
+            [project_id, card_id],
+        )?;
+        Ok(())
+    }
+
     /// How many cards on the project's board are open: not closed and not in `Done`.
     pub fn open_cards(&self, project_id: i64) -> Result<i64> {
         Ok(self.conn().query_row(

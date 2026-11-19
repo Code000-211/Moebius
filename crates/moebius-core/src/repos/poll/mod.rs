@@ -507,4 +507,117 @@ mod tests {
         poll("t2").await.unwrap();
         assert_eq!(*fake.comment_reads.lock().unwrap(), [1, 1]);
     }
+
+    /// Polls `numbers` of `labels` (each issue with its labels) and returns the project each card is on.
+    async fn polled_projects(
+        app: &Arc<App>,
+        fake: &Fake,
+        repository: &Repository,
+        issues: &[(i64, &[&str])],
+    ) -> Vec<i64> {
+        *fake.issues.lock().unwrap() = Some(
+            issues
+                .iter()
+                .map(|(number, labels)| Issue {
+                    number: *number,
+                    title: format!("Issue {number}"),
+                    open: true,
+                    author: "person".into(),
+                    labels: labels.iter().map(|l| l.to_string()).collect(),
+                    updated: format!("{labels:?}"),
+                    blocked_by: Some(Vec::new()),
+                    ..Issue::default()
+                })
+                .collect(),
+        );
+        poll_issues(app, fake, repository.clone(), "acme/w")
+            .await
+            .unwrap();
+        issues
+            .iter()
+            .map(|(number, _)| {
+                app.store
+                    .card_by_number(repository.id, *number)
+                    .unwrap()
+                    .unwrap()
+                    .project_id
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn an_issue_lands_in_the_home_project_or_in_the_one_its_label_names() {
+        let (_dir, app, repository) = setup();
+        let other = app.store.add_project("Other", "OTH").unwrap();
+        app.store.link_repository(other.id, repository.id).unwrap();
+        let fake = Fake::new(Duration::from_secs(600));
+        let home = repository.home_project_id;
+
+        let projects = polled_projects(
+            &app,
+            &fake,
+            &repository,
+            &[
+                (1, &[]),
+                (2, &["project:Other"]),
+                (3, &["bug", "PROJECT:other"]),
+            ],
+        )
+        .await;
+        assert_eq!(projects, [home, other.id, other.id]);
+        assert!(app.store.inbox().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn changing_the_label_moves_the_card_and_removing_it_sends_it_home() {
+        let (_dir, app, repository) = setup();
+        let other = app.store.add_project("Other", "OTH").unwrap();
+        app.store.link_repository(other.id, repository.id).unwrap();
+        let fake = Fake::new(Duration::from_secs(600));
+        let home = repository.home_project_id;
+
+        let at = |labels: &'static [&'static str]| {
+            let (app, fake, repository) = (&app, &fake, &repository);
+            async move { polled_projects(app, fake, repository, &[(1, labels)]).await }
+        };
+        assert_eq!(at(&[]).await, [home]);
+        assert_eq!(at(&["project:Other"]).await, [other.id]);
+        // The card stays where a person put it while its labels do not change.
+        assert_eq!(at(&["project:Other"]).await, [other.id]);
+        assert_eq!(at(&["project:Other", "bug"]).await, [other.id]);
+        assert_eq!(at(&["bug"]).await, [home]);
+    }
+
+    #[tokio::test]
+    async fn a_label_naming_a_project_the_repository_is_not_in_leaves_the_card_and_tells_the_inbox()
+    {
+        let (_dir, app, repository) = setup();
+        // A project that exists, which the repository is not in, and one that does not exist.
+        app.store.add_project("Elsewhere", "ELS").unwrap();
+        let fake = Fake::new(Duration::from_secs(600));
+        let home = repository.home_project_id;
+
+        let projects = polled_projects(
+            &app,
+            &fake,
+            &repository,
+            &[(1, &["project:Elsewhere"]), (2, &["project:Nowhere"])],
+        )
+        .await;
+        assert_eq!(projects, [home, home]);
+        let inbox = app.store.inbox().unwrap();
+        assert_eq!(inbox.len(), 2);
+        assert!(inbox.iter().all(|i| i.kind == "project_label"));
+        assert_eq!(inbox[0].data["label"], "project:Elsewhere");
+
+        // The same label at the next poll does not make a second note.
+        polled_projects(
+            &app,
+            &fake,
+            &repository,
+            &[(1, &["project:Elsewhere"]), (2, &["project:Nowhere"])],
+        )
+        .await;
+        assert_eq!(app.store.inbox().unwrap().len(), 2);
+    }
 }
