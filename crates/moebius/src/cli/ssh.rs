@@ -429,6 +429,24 @@ mod tests {
             (found.url.as_str(), found.token.as_str()),
             (format!("http://127.0.0.1:{port}").as_str(), "tok")
         );
+        // The same port, still ours but no longer listening: a port that was only freed could be taken by a test
+        // running in parallel, which would then answer. A socket that is bound and does not listen refuses.
+        let stale =
+            socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::STREAM, None).unwrap();
+        stale
+            .bind(
+                &"127.0.0.1:0"
+                    .parse::<std::net::SocketAddr>()
+                    .unwrap()
+                    .into(),
+            )
+            .unwrap();
+        let stale_port = stale.local_addr().unwrap().as_socket().unwrap().port();
+        std::fs::write(
+            &path,
+            format!("host = \"build\"\nurl = \"http://127.0.0.1:{stale_port}\"\ntoken = \"tok\"\n"),
+        )
+        .unwrap();
         drop(listener);
         assert!(connected(Some(&path)).is_none());
         assert!(!path.exists());
