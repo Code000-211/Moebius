@@ -213,7 +213,8 @@ impl App {
 
     /// What the pull request of a card's change says, in place of the `Closes #<number>` line alone: the line that
     /// closes the issue when the change is merged (for a change in another repository than the card's own, a line
-    /// that names the card instead), what the code run said it did, the stat of the files it changed,
+    /// that names the card instead), for a card over several repositories the line that names them in the order they
+    /// are merged, what the code run said it did, the stat of the files it changed,
     /// what the review found, and who made it. A section Moebius has nothing for is left out.
     pub(crate) fn pull_request_body(
         &self,
@@ -234,6 +235,15 @@ impl App {
                 card.project_key, card.project_number, card.number
             )
         };
+        // A card over several repositories is merged together (ADR 0019): each pull request says with which.
+        if card.repositories.len() > 1 {
+            body.push_str(&format!(
+                "\nOne of the changes of {}-{} in {}, which Moebius merges together, in that order.\n",
+                card.project_key,
+                card.project_number,
+                card.repositories.join(", ")
+            ));
+        }
         if let Some(said) = self.what_the_code_run_said(card.id) {
             body.push_str(&format!(
                 "\n## What changed\n\n{}\n",

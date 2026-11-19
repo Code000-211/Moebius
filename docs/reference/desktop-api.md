@@ -466,7 +466,12 @@ end of the output of the repository's own checks, or null). A change's `branch` 
 `InboxItem`: `id`, `kind`, `card_id` (or null), `title`, `data` (an object that depends on the kind), `resolved_at` (null
 in the snapshot, which holds only open items), `at` and `assignees` (the handles of the people it is given to, like a
 `Card`'s). Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
-(`data.reason`), `stale` (`data.reason`; a column script told the people a card is given to that it is held for not having moved, and releasing the card resolves it), `package_update` (`data.name`, `data.installed`, `data.version`; no card), `ready_to_merge` (`data.change`, `data.branch`, `data.run` when the change is a workflow run's, and `data.judgements`, the review's judgement calls, when it had any), `change_closed` (`data.change`, `data.pull_request`) and
+(`data.reason`), `stale` (`data.reason`; a column script told the people a card is given to that it is held for not having moved, and releasing the card resolves it), `package_update` (`data.name`, `data.installed`, `data.version`; no card), `ready_to_merge` (`data.change`, `data.branch`, `data.run` when the change is a workflow run's, and `data.judgements`, the review's judgement calls, when it had any), `change_closed` (`data.change`, `data.pull_request`), `merge_stopped` (`data.change`, the change whose merge failed;
+`data.repository`, its repository's name; `data.reason`, why; `data.merged`, the names of the card's repositories whose
+changes are merged; `data.open`, the names of those whose changes are still open, in merge order, the failed one
+first: a merge of a card's changes stopped there, by `moebius.merge_change` or by a person's merge while another change
+of the card is merged, and the card stays where it is until its last change is merged, which resolves the item; the
+same change failing again keeps it, another stop replaces it) and
 `project_label` (`data.label`, `data.repository`; its `title` says the label names no project of the repository, and the card it is about stays where it is: see [the project label](#the-project-label)) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
 addresses, and `data.regression`: the same for the cards of the regression set, empty when none was tried; its `title` is the
@@ -1986,7 +1991,9 @@ the card has not ended after being stopped.
 A person merges an open change: the decision is recorded (kind `merge`, decider `person`), the forge merges it (a
 no-fast-forward merge into the default branch of the clone for a repository without a forge; the GitHub API for a pull
 request; the GitLab API for a merge request, with the merge commit's message; the Forgejo API for a pull request, with a
-merge commit titled with the message), the change becomes `merged`, its inbox items are resolved and its card, if it has one, moves to `Done`. A
+merge commit titled with the message), the change becomes `merged`, its inbox items are resolved and its card, if it has one, moves to `Done`
+once it has no other open change. A card over several repositories has its changes merged in the order of its
+`repositories`: a change is refused while one before it is open. A
 change from a chat has no card: its `ready_to_merge` item is resolved and the commit message names what it carries,
 `Merge <branch>: <the branch's last commit's subject>`, or `Merge <branch>` when the branch's last commit has no subject. A
 workflow run's change is merged the same way, and the change that belongs to the run becomes `merged`.
@@ -1998,7 +2005,8 @@ the repository `harness`.
 
 Request: `{"reason": "..."}`; `reason` is optional, but the body is not: send `{}`.
 
-Response: `{"commit": "<sha of the merge commit>"}`. Errors: `404` no such change; `422` the change is not `open`; `409` the
+Response: `{"commit": "<sha of the merge commit>"}`. Errors: `404` no such change; `422` the change is not `open`, or a
+change of its card before it is open (`merge the change in <repository> first: ...`); `409` the
 branch does not merge cleanly; `500` the forge failed.
 
 ### `POST /v1/changes/{id}/reject`

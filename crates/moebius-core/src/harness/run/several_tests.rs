@@ -8,7 +8,7 @@ use super::testing::{Setup, prompt_of, setup, wait_until_ended};
 use crate::board::{CardRuns, Variant};
 use crate::decide::Actor;
 use crate::repos::git;
-use crate::store::{Card, Repository, Run};
+use crate::store::{Card, Change, Repository, Run};
 
 /// A git repository with one commit on `main` at `dir/name`, added to Moebius as `name` and to the project of the
 /// setup's repository.
@@ -438,4 +438,290 @@ fn an_attempt_is_told_its_worktrees_but_not_that_it_may_ask_for_a_repository() {
     let prompt = prompt_of(&setup.app, &run);
     assert!(prompt.contains("`web` at "), "{prompt}");
     assert!(!prompt.contains("REPOSITORY:"), "{prompt}");
+}
+
+/// Starts a run of `card` by the Reviewer for `purpose` on Pi-Bolt and waits for it to end.
+fn review_run(setup: &Setup, card: &Card, purpose: &str) -> Run {
+    let run = setup
+        .harnesses
+        .pi_bolt
+        .start(
+            &setup.app,
+            card,
+            "Reviewer",
+            (purpose, None),
+            Variant::default(),
+        )
+        .unwrap();
+    wait_until_ended(&setup.app, run.id)
+}
+
+/// A card over `demo` and `web` whose code run left work in both, and its two open changes, offered.
+fn offered_over_two(setup: &Setup) -> (Card, Repository, Vec<Change>) {
+    let web = second_repository(setup, "web");
+    let card = setup
+        .app
+        .create_issue(setup.repo, "Change both [everywhere]", "", "person")
+        .unwrap();
+    let card = setup
+        .app
+        .set_card_repositories(&Actor::first_owner(), card.id, &["web".into()], "")
+        .unwrap();
+    assert_eq!(code_run(setup, &card).status, "succeeded");
+    let (changes, moved) = setup.app.offer_change_noted(card.id, None).unwrap();
+    assert!(moved);
+    assert_eq!(changes.len(), 2);
+    (card, web, changes)
+}
+
+#[test]
+fn a_review_of_a_card_with_two_repositories_sees_both_diffs_each_standards_with_its_own_notes() {
+    let setup = setup();
+    let web = second_repository(&setup, "web");
+    crate::harness::repo::testing::put(&setup.app, "demo", "review.md", "Use British spelling.\n");
+    crate::harness::repo::testing::put(&setup.app, "web", "review.md", "No inline styles.\n");
+    let card = setup
+        .app
+        .create_issue(setup.repo, "Change both [everywhere]", "", "person")
+        .unwrap();
+    let card = setup
+        .app
+        .set_card_repositories(&Actor::first_owner(), card.id, &["web".into()], "")
+        .unwrap();
+    assert_eq!(code_run(&setup, &card).status, "succeeded");
+    setup
+        .app
+        .publish_card_changes(card.id, false, None)
+        .unwrap();
+
+    let standards = review_run(&setup, &card, "review-standards");
+    let worktrees = setup.app.store.run_worktrees(standards.id).unwrap();
+    assert_eq!(
+        worktrees
+            .iter()
+            .map(|w| w.repository_id)
+            .collect::<Vec<_>>(),
+        [setup.repo, web.id]
+    );
+    // Each worktree is on the branch of the card's work in its repository, so its diff is that change.
+    let web_change = setup
+        .app
+        .store
+        .open_change_in(card.id, web.id)
+        .unwrap()
+        .unwrap();
+    let web_head = git(Path::new(&web.path), &["rev-parse", &web_change.branch]).unwrap();
+    assert_eq!(worktrees[1].start, web_head);
+    let prompt = prompt_of(&setup.app, &standards);
+    assert!(
+        prompt.contains(&format!(
+            "`demo` at {} (your working directory): `git diff main...HEAD`",
+            worktrees[0].path
+        )),
+        "{prompt}"
+    );
+    assert!(
+        prompt.contains(&format!(
+            "`web` at {}: `git -C {} diff main...HEAD`",
+            worktrees[1].path, worktrees[1].path
+        )),
+        "{prompt}"
+    );
+    // The standards axis is per repository, each with its own notes.
+    assert!(prompt.contains("Use British spelling."), "{prompt}");
+    assert!(
+        prompt.contains("The review notes of `web`:\n\nNo inline styles."),
+        "{prompt}"
+    );
+    assert!(
+        prompt.contains("judge its change against those alone"),
+        "{prompt}"
+    );
+
+    // The spec axis sees both diffs too, and judges the issue over the card as a whole.
+    let spec = review_run(&setup, &card, "review-spec");
+    let prompt = prompt_of(&setup.app, &spec);
+    let worktrees = setup.app.store.run_worktrees(spec.id).unwrap();
+    for worktree in &worktrees {
+        assert!(prompt.contains(&worktree.path), "{prompt}");
+    }
+    assert!(prompt.contains("over all the changes together"), "{prompt}");
+    assert!(!prompt.contains("No inline styles."), "{prompt}");
+
+    // A single review covers both axes over every repository.
+    let review = review_run(&setup, &card, "review");
+    let prompt = prompt_of(&setup.app, &review);
+    assert!(
+        prompt.contains("judge its change against those alone"),
+        "{prompt}"
+    );
+    assert!(prompt.contains("over all the changes together"), "{prompt}");
+    assert!(prompt.contains("No inline styles."), "{prompt}");
+}
+
+#[test]
+fn merging_a_card_over_two_repositories_merges_both_in_the_order_the_card_names_them() {
+    let setup = setup();
+    let (card, web, changes) = offered_over_two(&setup);
+    let by = Actor::first_owner();
+    // A change after another that is open is not merged before it.
+    let refused = setup.app.merge_change(&by, changes[1].id, "").unwrap_err();
+    assert!(
+        refused
+            .to_string()
+            .contains("merge the change in demo first"),
+        "{refused}"
+    );
+
+    let mut events = setup.app.bus.subscribe();
+    let merge = setup.app.merge_card(&by, card.id, "both approved").unwrap();
+    assert!(merge.stopped.is_none());
+    assert_eq!(
+        merge
+            .merged
+            .iter()
+            .map(|(change, _)| change.id)
+            .collect::<Vec<_>>(),
+        [changes[0].id, changes[1].id]
+    );
+    let demo = setup.app.store.repository(setup.repo).unwrap().unwrap();
+    for ((_, commit), clone) in merge.merged.iter().zip([&demo.path, &web.path]) {
+        assert_eq!(
+            &git(Path::new(clone), &["rev-parse", "main"]).unwrap(),
+            commit
+        );
+    }
+    // The forges were told of the merges in that order.
+    let mut merged_in = Vec::new();
+    while let Ok(event) = events.try_recv() {
+        if event.kind == "change_merged" {
+            merged_in.push(event.data["change"].as_i64().unwrap());
+        }
+    }
+    assert_eq!(merged_in, [changes[0].id, changes[1].id]);
+    assert_eq!(setup.app.card(card.id).unwrap().column, "Done");
+    // Each pull request names the card's repositories in the order they are merged.
+    let body = setup
+        .app
+        .pull_request_body(&card, &web, &changes[1].branch, None);
+    assert!(
+        body.contains(&format!(
+            "One of the changes of {}-1 in demo, web, which Moebius merges together",
+            card.project_key
+        )),
+        "{body}"
+    );
+}
+
+#[test]
+fn a_failing_second_merge_leaves_the_first_merged_and_the_card_marked_until_the_second_is_merged() {
+    let setup = setup();
+    let (card, web, changes) = offered_over_two(&setup);
+    // Meanwhile web's default branch got a commit that conflicts with the card's change there.
+    let clone = Path::new(&web.path);
+    std::fs::write(clone.join("done.txt"), "someone else\n").unwrap();
+    git(clone, &["add", "."]).unwrap();
+    git(clone, &["commit", "--quiet", "-m", "conflict"]).unwrap();
+
+    let by = Actor::first_owner();
+    let merge = setup.app.merge_card(&by, card.id, "").unwrap();
+    assert_eq!(
+        merge
+            .merged
+            .iter()
+            .map(|(change, _)| change.id)
+            .collect::<Vec<_>>(),
+        [changes[0].id]
+    );
+    let (stopped, why) = merge.stopped.expect("the merge in web fails");
+    assert_eq!(stopped.id, changes[1].id);
+    assert!(why.contains("does not merge cleanly"), "{why}");
+    let state = |id| setup.app.store.change(id).unwrap().unwrap().state;
+    assert_eq!(state(changes[0].id), "merged");
+    assert_eq!(state(changes[1].id), "open");
+    let card_now = setup.app.card(card.id).unwrap();
+    assert_eq!(card_now.column, "Ready to merge");
+    let open: Vec<_> = setup
+        .app
+        .store
+        .inbox_for_card(card.id)
+        .unwrap()
+        .into_iter()
+        .filter(|item| item.resolved_at.is_none())
+        .collect();
+    let marked = open
+        .iter()
+        .find(|item| item.kind == "merge_stopped")
+        .expect("the card is marked");
+    assert_eq!(marked.data["change"], changes[1].id);
+    assert_eq!(marked.data["repository"], "web");
+    assert_eq!(marked.data["merged"], serde_json::json!(["demo"]));
+    assert_eq!(marked.data["open"], serde_json::json!(["web"]));
+    // The offer of web is still open; that of demo is resolved by its merge.
+    assert!(
+        open.iter()
+            .any(|item| item.kind == "ready_to_merge" && item.data["change"] == changes[1].id)
+    );
+    assert!(
+        !open
+            .iter()
+            .any(|item| item.kind == "ready_to_merge" && item.data["change"] == changes[0].id)
+    );
+
+    // A merge script tried again on the next tick fails again, and the card still says demo is merged.
+    let again = setup.app.merge_card(&by, card.id, "").unwrap();
+    assert!(again.merged.is_empty());
+    assert_eq!(
+        again.stopped.map(|(change, _)| change.id),
+        Some(changes[1].id)
+    );
+    let items: Vec<_> = setup
+        .app
+        .store
+        .inbox_for_card(card.id)
+        .unwrap()
+        .into_iter()
+        .filter(|item| item.kind == "merge_stopped")
+        .collect();
+    assert_eq!(items.len(), 1, "the same failure keeps its item");
+    assert_eq!(items[0].data["merged"], serde_json::json!(["demo"]));
+
+    // Once the conflict is gone, merging the second finishes the card.
+    git(clone, &["reset", "--quiet", "--hard", "HEAD~1"]).unwrap();
+    setup.app.merge_change(&by, changes[1].id, "").unwrap();
+    assert_eq!(setup.app.card(card.id).unwrap().column, "Done");
+    assert!(
+        setup
+            .app
+            .store
+            .inbox_for_card(card.id)
+            .unwrap()
+            .iter()
+            .all(|item| item.resolved_at.is_some())
+    );
+}
+
+#[test]
+fn a_person_s_failing_merge_of_the_second_change_marks_the_card_too() {
+    let setup = setup();
+    let (card, web, changes) = offered_over_two(&setup);
+    let by = Actor::first_owner();
+    setup.app.merge_change(&by, changes[0].id, "").unwrap();
+    let clone = Path::new(&web.path);
+    std::fs::write(clone.join("done.txt"), "someone else\n").unwrap();
+    git(clone, &["add", "."]).unwrap();
+    git(clone, &["commit", "--quiet", "-m", "conflict"]).unwrap();
+
+    assert!(setup.app.merge_change(&by, changes[1].id, "").is_err());
+    let marked = setup
+        .app
+        .store
+        .inbox_for_card(card.id)
+        .unwrap()
+        .into_iter()
+        .find(|item| item.kind == "merge_stopped" && item.resolved_at.is_none())
+        .expect("the card is marked");
+    assert_eq!(marked.data["merged"], serde_json::json!(["demo"]));
+    assert_eq!(marked.data["open"], serde_json::json!(["web"]));
+    assert_eq!(setup.app.card(card.id).unwrap().column, "Ready to merge");
 }

@@ -9,7 +9,7 @@ use super::lifecycle::{
     RunningRun, card_run, detached_run, in_worktree_run, launch_or_keep, launch_or_undo,
     undo_unlaunched,
 };
-use super::prompts::{prompt_for, repositories_prompt, run_prompt};
+use super::prompts::{prompt_for, repositories_prompt, review_repositories_prompt, run_prompt};
 use crate::app::App;
 use crate::board::{StartError, Variant};
 use crate::config::AgentConfig;
@@ -113,7 +113,8 @@ pub(in crate::harness) fn start_trial(
 
 /// Starts the run of `card` in the worktree `worktree` makes in the card's own repository and in one of each of
 /// `others` (see [`card_run`]); a `code` run or an attempt is told where the worktrees are and which repositories it
-/// may ask for (see [`repositories_prompt`]).
+/// may ask for (see [`repositories_prompt`]), and a review where the change in each is (see
+/// [`review_repositories_prompt`]).
 fn run_card(
     app: &Arc<App>,
     routing: (&Router, &Arc<Runners>),
@@ -135,9 +136,15 @@ fn run_card(
         worktree,
         others,
     )?;
-    let prompt = match matches!(purpose, "code" | "attempt") {
-        true => format!("{prompt}{}", repositories_prompt(app, card, &running)),
-        false => prompt.to_string(),
+    let prompt = match purpose {
+        "code" | "attempt" => format!("{prompt}{}", repositories_prompt(app, card, &running)),
+        "review" | "review-standards" | "review-spec" => {
+            format!(
+                "{prompt}{}",
+                review_repositories_prompt(app, card, &running)
+            )
+        }
+        _ => prompt.to_string(),
     };
     let prompt = prompt.as_str();
     // The run exists now, so a block that comes in from here on finds it; one that came in before is seen here.

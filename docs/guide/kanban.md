@@ -156,6 +156,13 @@ in the order their changes are to be merged; scripts see them all as `card.repos
    those of its own settings. The default `review.luau` and `merge.luau` send the card back when any change fails its
    checks or conflicts, naming the repository; `moebius.offer_change` offers every change, and `moebius.merge_change`
    merges them in order.
+4. The review sees every diff of the card at once: its prompt names each repository's worktree with the command that
+   shows its change there. The standards axis judges each repository by its own standards and `review.md`, the spec
+   axis the issue over all of them, and findings send the whole card back to coding.
+5. The changes are merged in the order of `card.repositories`, and a person cannot merge one before an earlier one is
+   merged. There is no atomic merge across forges: a merge that fails stops there. The changes before it stay merged,
+   the card stays in `Ready to merge` with an inbox item `merge_stopped` that names what is merged and what is not, and
+   the card is done once its last change is merged.
 
 A run over several repositories runs on the server, never on a runner.
 
@@ -444,7 +451,11 @@ function on_card(card)
       return
     end
   end
-  moebius.merge_change("every change is green and merges cleanly")
+  local _, failure = moebius.merge_change("every change is green and merges cleanly")
+  if failure ~= nil then
+    -- What merged stays merged; the card waits, marked, for a person to merge the rest.
+    moebius.notify("merge_failed", failure)
+  end
 end
 ```
 
@@ -463,7 +474,7 @@ to say. See the [desktop API](desktop-api.md) for a script that does all of this
 | Approve an issue | The card is in `Backlog`. | `POST /v1/cards/{id}/approve` `{"reason": "..."}` | The card's inbox items are resolved and the card moves to `Not started`. |
 | Retry a card | The card has an open `stuck` item, or a `change_closed` item because its pull request was closed without a merge. | `POST /v1/cards/{id}/retry` `{"reason": "..."}` | The item is resolved and the card's rounds, reviews and tokens count from zero. The board starts work again. A card with a closed pull request goes back to `In progress` with the note `The pull request was closed without a merge.`, and its next publish opens a new pull request. |
 | Reject a change | The change is open and its card is in `Ready to merge`. | `POST /v1/changes/{id}/reject` `{"reason": "..."}` | The card goes back to `In progress`, the reason is its note (`A person rejected the change.` without one), and the next Coder round is told. The change stays open. |
-| Merge a change | The change is `open`. | `POST /v1/changes/{id}/merge` `{"reason": "..."}` | The default branch of the clone gets a merge commit (without a forge) or the pull request is merged (GitHub). The answer is `{"commit": ...}`. The card moves to `Done`. |
+| Merge a change | The change is `open`, and no change of its card before it is. | `POST /v1/changes/{id}/merge` `{"reason": "..."}` | The default branch of the clone gets a merge commit (without a forge) or the pull request is merged (GitHub). The answer is `{"commit": ...}`. The card moves to `Done` once it has no other open change. |
 | Steer a run | The run is running. | `POST /v1/runs/{id}/steer` `{"message": "..."}` | The agent gets the message while it works. The run stores a `steered` event. |
 | Stop a run | The run is running. | `POST /v1/runs/{id}/stop` `{"reason": "..."}` | The agent is asked to abort and the run ends `stopped`. The card is then stuck with `stopped by a person` until a person retries it. |
 
