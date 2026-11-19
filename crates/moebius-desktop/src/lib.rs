@@ -10,8 +10,10 @@
 //! WSL 2 on Windows) for the connect page's first-start offer. [`rail`] keeps the servers the app remembers (their tokens
 //! in the system's keychain) and the page of each, for the rail at the window's left.
 
+pub mod badge;
 pub mod links;
 pub mod local;
+pub mod notices;
 pub mod proxy;
 pub mod rail;
 pub mod server;

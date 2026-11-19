@@ -68,6 +68,10 @@ fn note_page(window: &tauri::WebviewWindow, rail: &mut Rail) {
 fn show(app: &tauri::AppHandle, rail: &Rail, url: &str) -> Result<(), String> {
     let window = app.get_webview_window(MAIN).ok_or("the window is gone")?;
     app.state::<Connected>().set(rail.open_origin());
+    match rail.open_server() {
+        Some(server) => crate::notifications::start(app, server),
+        None => crate::notifications::stop(app),
+    }
     window
         .navigate(url.parse().map_err(|e| format!("{e}"))?)
         .map_err(|e| e.to_string())
@@ -77,6 +81,7 @@ fn show(app: &tauri::AppHandle, rail: &Rail, url: &str) -> Result<(), String> {
 fn show_connect_page(app: &tauri::AppHandle) -> Result<(), String> {
     let window = app.get_webview_window(MAIN).ok_or("the window is gone")?;
     app.state::<Connected>().set(None);
+    crate::notifications::stop(app);
     let page = app
         .state::<Servers>()
         .connect_page
