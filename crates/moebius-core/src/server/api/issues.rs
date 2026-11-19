@@ -123,6 +123,20 @@ pub(super) async fn show_issue(
     .await
 }
 
+/// `GET /v1/cards/by-key/{key}`: the issue named by a project key and number, such as `WEB-24`.
+pub(super) async fn show_issue_by_key(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(key): UrlPath<String>,
+) -> Result<axum::Json<IssueView>, ApiError> {
+    blocking(&state.app, move |app| {
+        let card = app.card_named(&key)?;
+        scope::card(app, &by, card.id, false)?;
+        app.issue(card.id)
+    })
+    .await
+}
+
 async fn set_parent(
     State(state): State<ApiState>,
     Extension(by): Extension<Actor>,
@@ -346,6 +360,34 @@ mod tests {
             request = request.json(&body);
         }
         request.send().await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_card_key_names_the_issue_in_any_case_and_an_unknown_one_is_refused() {
+        let (_dir, state, addr) = start().await;
+        let card = state.app.store.card(1).unwrap().unwrap();
+        assert!(!card.project_key.is_empty());
+        for key in [
+            format!("{}-{}", card.project_key, card.project_number),
+            format!(
+                "{}-{}",
+                card.project_key.to_lowercase(),
+                card.project_number
+            ),
+        ] {
+            let issue: Value = get(&state, &addr, &format!("/v1/cards/by-key/{key}")).await;
+            assert_eq!(issue["id"], card.id, "{key}");
+            assert_eq!(issue["project_key"], card.project_key.as_str());
+        }
+        for (path, status) in [
+            (format!("/v1/cards/by-key/{}-999", card.project_key), 404),
+            ("/v1/cards/by-key/NOPE-1".to_string(), 404),
+            ("/v1/cards/by-key/%2324".to_string(), 422),
+            ("/v1/cards/by-key/web".to_string(), 422),
+        ] {
+            let response = send(&state, &addr, reqwest::Method::GET, &path, None).await;
+            assert_eq!(response.status(), status, "{path}");
+        }
     }
 
     #[tokio::test]

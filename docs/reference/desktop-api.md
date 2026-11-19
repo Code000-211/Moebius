@@ -123,6 +123,7 @@ any route to any role that is not what its row says.
 | `GET /v1/repositories/{id}/search` | viewer | yes |
 | `GET /v1/repositories/{id}/files/{*path}` | viewer | yes |
 | `PUT /v1/repositories/{id}/files/{*path}` | member | yes |
+| `GET /v1/cards/by-key/{key}` | viewer | yes |
 | `GET /v1/cards/{id}` | viewer | yes |
 | `PUT /v1/cards/{id}` | member | yes |
 | `DELETE /v1/cards/{id}` | member | no |
@@ -318,7 +319,7 @@ GitLab, such as `group/project`, or the repository on Forgejo as `owner/repo`, o
 files the repository holds, see [a project's own files](#a-projects-own-files), or null for every repository a person
 added).
 
-`Card`: `id`, `repository_id`, `project_id` (the [project](#projects) whose board it is on), `number`, `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
+`Card`: `id`, `repository_id`, `project_id` (the [project](#projects) whose board it is on), `number` (the number of its issue in its repository: the forge's number for an issue of a forge), `project_number` (its number in its project) and `project_key` (the key of its project), which together name it, `WEB-24`; `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
 back to coding, or null), `retried_after` (the id of the card's latest run when a person last retried it, or null) and
 `confirmed` (true for a card made from a confirmed grilling, which needs no approval) and `held` (null, or `{"reason":
 string or null, "by": "person" or "agent:Moebius", "at": number}` while a person or the Moebius agent holds the card; see
@@ -1032,6 +1033,15 @@ Where each thing lives depends on the forge; what a forge cannot express, Moebiu
 
 One issue: the `Issue` of the card, with its state, the blockers that are not done and its sub-issues. Errors: `404` no
 such card.
+
+### `GET /v1/cards/by-key/{key}`
+
+The issue a card key names, as `GET /v1/cards/{id}` answers it. A card is named by its project's key and its number in
+the project (`WEB-24`), unique across projects; the key may be written in any case. A new card takes the number of its
+issue as its number in the project while the project has no card with that number, else the next free one, so that a
+project over several repositories never has two `WEB-7`; a card that was there before projects keeps its number. A
+card of a forge keeps the forge's number beside its key (`number`). The project's key stays when it is renamed. Errors:
+`404` no such card or project; `422` the text is not a key and a number.
 
 ### `PUT /v1/cards/{id}/parent`
 

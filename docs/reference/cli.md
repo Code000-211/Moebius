@@ -170,12 +170,14 @@ for `api`), `/v1/runs/...`, `/v1/judgements...`, `/v1/replays`, `DELETE /v1/repl
 ## Commands
 
 A repository, a card, a chat or anything else is named by its id, as the answers show it, except `board`, which also
-takes a repository's name.
+takes a repository's name, and a card, which is also named by its key (`WEB-24`, in any case) wherever a command takes a
+card's id: `card` and every `issue` command. A key is looked up with `GET /v1/cards/by-key/{key}` first. The numbers of
+issues (`--parent`, `--blocked-by`, `blocker`) stay the numbers of their issues in the repository.
 
 | Command | Route | Plain output |
 |---|---|---|
 | `board [<repository>]` | `GET /v1/snapshot` | For each repository, `<name> (repository <id>)`, then each column with its cards as `<id>  #<number>  <title>`, followed by `[<agent> <status>]` of the latest run and `(waiting: <reason>)`. Fails with `no repository <x>` for an unknown one. |
-| `card <id>` | `GET /v1/snapshot` | The card: number, title, repository, column, author, rounds and tokens, latest run, open change, why it waits, note, blockers and body. `no card <id>` if there is none. |
+| `card <id>` | `GET /v1/snapshot` | The card: its key and number (`WEB-24`, with the issue's number `(#17)` when that is another or the card is of a forge), number, title, repository, column, author, rounds and tokens, latest run, open change, why it waits, note, blockers and body. `no card <id>` if there is none. |
 | `card <id> --history` | `GET /v1/cards/{id}/history` | Table `at kind data`. |
 | `card <id> --runs` | `GET /v1/cards/{id}/runs` | Table `id agent purpose status summary`. |
 | `inbox` | `GET /v1/snapshot` | Table `id kind card title` of the open items. |

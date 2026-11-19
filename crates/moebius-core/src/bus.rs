@@ -381,6 +381,8 @@ mod tests {
             repository_id: 2,
             project_id: 2,
             number: 12,
+            project_number: 12,
+            project_key: "WEB".into(),
             title: "Fix the bug".into(),
             body: "It fails".into(),
             author: "ada".into(),

@@ -334,7 +334,9 @@ _Avoid_: project repository, scratch repository
 
 **Project key**:
 A few capital letters that name a project's cards, such as `WEB` in `WEB-24`: an uppercase letter and up to nine more
-uppercase letters or digits, unique on the server, chosen when the project is made and kept when it is renamed.
+uppercase letters or digits, unique on the server, chosen when the project is made and kept when it is renamed. A card is named by its project's key
+and its number in the project (`WEB-24`); a card of a forge keeps the forge's number beside it (`#17`), and `#24` in a
+comment names the card of that number in the project of the comment.
 _Avoid_: prefix, slug, project id
 
 **Assignee**:

@@ -99,6 +99,7 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("GET", "/v1/repositories/{id}/search", VIEWER),
     ("GET", "/v1/repositories/{id}/files/{*path}", VIEWER),
     ("PUT", "/v1/repositories/{id}/files/{*path}", MEMBER),
+    ("GET", "/v1/cards/by-key/{key}", VIEWER),
     ("GET", "/v1/cards/{id}", VIEWER),
     ("PUT", "/v1/cards/{id}", MEMBER),
     ("DELETE", "/v1/cards/{id}", MEMBER_PERSON),

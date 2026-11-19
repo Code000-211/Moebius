@@ -102,6 +102,21 @@ async function drag(target: Locator, steps: number) {
   await page.keyboard.press("Space");
 }
 
+describe("a card named by its key", () => {
+  it.skipIf(usesRealServer)(
+    "is opened from its address, and a forge's card shows its key beside its number",
+    async () => {
+      await fresh();
+      await page.goto(`${server.url}/card/demo-31`);
+      await page.waitForURL(/\/board\/1\?card=7$/);
+      await dock().getByText("DEMO-31 · #7").first().waitFor();
+      await card(7).getByText("DEMO-31 · #7").waitFor();
+      await page.goto(`${server.url}/card/DEMO-99`);
+      await page.getByText("There is no such card").waitFor();
+    },
+  );
+});
+
 describe("the board page", () => {
   it("loads for a real server and for the fake, with the columns of the default workflow", async () => {
     await fresh();

@@ -22,6 +22,7 @@ import {
   CommandItem,
   CommandList,
 } from "../../ui/components/Command";
+import { cardKey } from "../board/cardKey";
 import { useNewIssue } from "../board/NewIssueHost";
 import { boardPath, type Group, PAGES, shownTo } from "../pages";
 import { usePaletteFocus } from "./palette/focus";
@@ -104,7 +105,9 @@ export function CommandBar({
       ? []
       : boards
           .flatMap((board) => board.cards.map((card) => ({ card, board })))
-          .filter(({ card }) => matches(query, `#${card.number} ${card.title} card`))
+          .filter(({ card }) =>
+            matches(query, `${cardKey(card)} #${card.number} ${card.title} card`),
+          )
           .slice(0, CARDS_SHOWN);
 
   // What was seen lately, by name, where the name is still known; the place a person is at is not offered to go to.
@@ -194,7 +197,7 @@ export function CommandBar({
                   onSelect={() => go(`${boardPath(board.repository.id)}?card=${card.id}`)}
                 >
                   <KanbanIcon className="size-5" weight="regular" />
-                  <span className="truncate">{`#${card.number} ${card.title}`}</span>
+                  <span className="truncate">{`${cardKey(card)} ${card.title}`}</span>
                   <span className="ml-auto shrink-0 text-xs text-muted">
                     {board.repository.name}
                   </span>
