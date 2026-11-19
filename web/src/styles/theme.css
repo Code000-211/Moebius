@@ -127,7 +127,10 @@
   --terminal-cursor: #ecebe8;
   --terminal-selection: #2c2c2b;
 
-  /* Layers, in the names the shell uses. The sidebar lies on the ground; the page is the lighter surface beside it. */
+  /*
+   * Layers, in the names the shell uses. The sidebar lies on the ground without a surface of its own; the page is the
+   * lighter surface beside it. `--sidebar` is the ground's colour under that name, for what sits on the sidebar.
+   */
   --sidebar: #0b0b0a;
   --sidebar-text: #9d9c98;
   --sidebar-group: #8c8b87;
@@ -136,8 +139,13 @@
   --steps-ink: #ecebe8;
   --online-text: #6cc496;
   --scrollbar-thumb: #3a3a38;
-  /* How strongly the fine grain of the ground shows, an opacity. */
+  /*
+   * The fine grain of the ground: how strongly it shows, an opacity, and how it is laid on. In dark the white noise
+   * lightens the ground where it falls; in light it is turned dark and multiplied in.
+   */
   --grain: 0.09;
+  --grain-blend: overlay;
+  --grain-filter: none;
 
   /*
    * Shadows. `--edge` sets a large surface apart: in dark a faint light line and a light from above, no wide shadow.
@@ -191,6 +199,8 @@
   /* Widths. */
   --sidebar-width: 280px;
   --rail-width: 56px;
+  /* The page's right column while it holds no properties, or holds them folded. */
+  --column-rail-width: 44px;
   --connect-width: 448px;
   --scrollbar-width: 8px;
 
@@ -308,6 +318,8 @@
   --online-text: #1d6e47;
   --scrollbar-thumb: #c4c3bf;
   --grain: 0.12;
+  --grain-blend: multiply;
+  --grain-filter: invert(1);
 
   --edge:
     0 0 0 1px rgb(0 0 0 / 4%), 0 1px 2px rgb(0 0 0 / 4%), 0 4px 14px -4px rgb(0 0 0 / 6%),

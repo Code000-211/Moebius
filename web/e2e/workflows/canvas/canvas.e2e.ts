@@ -143,7 +143,10 @@ async function join(from: Locator, to: Locator) {
   const b = await box(to);
   await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
   await page.mouse.down();
-  await page.mouse.move(a.x + a.width / 2 + 30, a.y + a.height / 2 + 14, { steps: 6 });
+  // The first step leaves the port toward where the hand is going, so it never comes near the edge of the graph,
+  // where the view would pan under the pointer and carry the other port away.
+  const toward = Math.sign(b.x - a.x) || 1;
+  await page.mouse.move(a.x + a.width / 2 + 30 * toward, a.y + a.height / 2 + 14, { steps: 6 });
   await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 12 });
   await page.mouse.up();
 }

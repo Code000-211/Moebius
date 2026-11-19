@@ -32,8 +32,8 @@ export async function offers(page: Page, trigger: Locator): Promise<string[]> {
  * Checks how a page which puts a list beside a detail holds its two columns. The window is made short first, so the
  * detail really has more behind its edge than fits, and then: neither the page nor the document scrolls — a column
  * that leaks past the window, as an absolutely placed thing inside a scroller can, gives the whole UI a second
- * scrollbar; the detail scrolls where it stands and leaves the list where it was; and each column ends at the edge of
- * the window rather than a band of padding above it.
+ * scrollbar; the detail scrolls where it stands and leaves the list where it was; and each column ends at the bottom
+ * edge of the page's surface rather than a band of padding above it.
  */
 export async function columnsScrollEach(page: Page): Promise<void> {
   await page.setViewportSize({ width: 1280, height: 520 });
@@ -48,7 +48,9 @@ export async function columnsScrollEach(page: Page): Promise<void> {
       const doc = document.scrollingElement;
       const read = (testId: string) => {
         const el = document.querySelector(`[data-testid="${testId}"]`);
-        return el ? Math.round(window.innerHeight - el.getBoundingClientRect().bottom) : null;
+        const surface = document.querySelector('[data-surface="page"]');
+        const bottom = surface ? surface.getBoundingClientRect().bottom : window.innerHeight;
+        return el ? Math.round(bottom - el.getBoundingClientRect().bottom) : null;
       };
       return {
         document: doc ? doc.scrollHeight - doc.clientHeight : 0,
@@ -72,10 +74,10 @@ export async function columnsScrollEach(page: Page): Promise<void> {
   await expect.poll(() => top(detail), { message: "the detail did not scroll" }).toBeGreaterThan(0);
   expect(await top(frame), "the page scrolled with the detail").toBe(0);
   expect(await top(list), "the list scrolled with the detail").toBe(0);
-  // Each column runs to the edge of the window: no band of padding under it.
+  // Each column runs to the bottom edge of the page: no band of padding under it.
   const reached = await edges();
-  expect(Math.abs(reached.list ?? 0), "the list stops short of the window's edge").toBeLessThan(2);
-  expect(Math.abs(reached.detail ?? 0), "the detail stops short of the window's edge").toBeLessThan(
+  expect(Math.abs(reached.list ?? 0), "the list stops short of the page's edge").toBeLessThan(2);
+  expect(Math.abs(reached.detail ?? 0), "the detail stops short of the page's edge").toBeLessThan(
     2,
   );
 }

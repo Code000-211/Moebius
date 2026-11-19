@@ -802,8 +802,9 @@ describe("the dock", () => {
     await dock().getByRole("heading", { name: "Document the API" }).waitFor();
     const box = await dock().boundingBox();
     expect(box, "the drawer is drawn").not.toBeNull();
-    // Beside the board, against the right edge, rather than stacked under the whole board.
-    expect(box?.x).toBeGreaterThanOrEqual(1024 - 384 - 1);
+    // Beside the board, against the right edge of the page's surface (6px of air from the window's), rather than
+    // stacked under the whole board.
+    expect(box?.x).toBeGreaterThanOrEqual(1024 - 6 - 384 - 1);
     expect(box?.y).toBeLessThan(100);
     // Below 1024px it stacks again.
     await page.setViewportSize({ width: 900, height: 800 });
