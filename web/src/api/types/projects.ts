@@ -14,6 +14,8 @@ export interface Project {
   members: Array<{ id: number; handle: string; name: string }>;
   /** The cards on its board that are neither closed nor in Done. */
   open_cards: number;
+  /** The repository that holds the project's own files, whose board is the project's when it has no repository. */
+  files: number | null;
 }
 
 /** The body of `POST /v1/projects`. */

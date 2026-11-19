@@ -1,7 +1,9 @@
 //! Projects (ADR 0019): making one with a name and a key, renaming it (its key stays), and what the Projects page shows
 //! of each: its repositories, its members and its open cards. The records are in `store::projects`; the settings of a
-//! project, the files the harness configuration repository keeps for it, are in `settings`.
+//! project, the files the harness configuration repository keeps for it, are in `settings`; the project's own store of
+//! files, where the cards of a project without a repository are worked on, is in `files`.
 
+mod files;
 mod settings;
 
 use serde::{Deserialize, Serialize};
@@ -43,6 +45,9 @@ pub struct ProjectView {
     pub members: Vec<Member>,
     /// The cards on the project's board that are neither closed nor in `Done`.
     pub open_cards: i64,
+    /// The id of the repository that holds the project's own files (see `files`), once it is made; the board of a
+    /// project without a repository is that repository's.
+    pub files: Option<i64>,
 }
 
 /// Refuses a name for a project: empty, longer than [`NAME_LIMIT`], starting with a dot, or with a slash, a backslash
@@ -77,9 +82,10 @@ fn taken(error: StoreError, what: &str) -> AppError {
 }
 
 impl App {
-    /// Makes a project with `name` and `key` and no repository yet. The key is an uppercase letter and then 1 to 9
-    /// uppercase letters or digits, and no other project may have it; no other project may have the name either, in
-    /// any case.
+    /// Makes a project with `name` and `key` and no repository yet, with its own files (see `files`). The key is an
+    /// uppercase letter and then 1 to 9 uppercase letters or digits, and no other project may have it, nor a
+    /// repository as its name, since it names the project's files; no other project may have the name either, in any
+    /// case.
     pub fn add_project(&self, name: &str, key: &str) -> Result<ProjectView> {
         check_name(name)?;
         if !is_key(key) {
@@ -94,12 +100,22 @@ impl App {
         if self.store.project_by_name(name)?.is_some() {
             return Err(AppError::Exists(format!("a project named {name}")));
         }
+        if self
+            .store
+            .repositories()?
+            .iter()
+            .any(|r| r.name.eq_ignore_ascii_case(key))
+        {
+            return Err(AppError::Exists(format!("a repository named {key}")));
+        }
+        // The files are made first: a project whose files cannot be made is not made either.
+        let (path, branch) = self.init_project_files(key)?;
         let project = self
             .store
             .add_project(name, key)
             .map_err(|e| taken(e, &format!("a project named {name} or with the key {key}")))?;
-        self.bus.publish(Event::ProjectChanged(project.clone()));
-        self.project_view(project)
+        self.record_project_files(&project, &path, &branch)?;
+        self.project_view_of(project.id)
     }
 
     /// Renames the project `id`; its key stays as it was, and a `key` that is not the project's own is refused. A name
@@ -183,6 +199,7 @@ impl App {
             created_at: project.created_at,
             repositories,
             members,
+            files: project.files,
         })
     }
 }
@@ -214,6 +231,8 @@ mod tests {
         let shop = app.add_project("Storefront", "SHOP").unwrap();
         assert_eq!((shop.key.as_str(), shop.open_cards), ("SHOP", 0));
         assert!(shop.repositories.is_empty());
+        // Its files are announced, then the project with them.
+        assert_eq!(events.try_recv().unwrap().kind, "repository_added");
         assert_eq!(events.try_recv().unwrap().kind, "project_changed");
 
         let taken = app.add_project("Shop", "SHOP").unwrap_err();

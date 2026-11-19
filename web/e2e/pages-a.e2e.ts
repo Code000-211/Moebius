@@ -513,12 +513,23 @@ describe("projects", () => {
       await dialog.getByRole("button", { name: "Make project" }).click();
       await dialog.waitFor({ state: "detached" });
       const shop = page.getByTestId("project").filter({ hasText: "Storefront" });
-      await shop.getByText("No repository yet").waitFor();
+      await shop.getByText("No repository: its own files").waitFor();
       await shop.getByText("SHOP", { exact: true }).waitFor();
       expect(lastBody(fake().requests, "POST", "/v1/projects")).toEqual({
         name: "Storefront",
         key: "SHOP",
       });
+
+      // Without a repository the tile opens the project's own files, listed on their Files page; they have no Delete.
+      await shop.getByRole("link").click();
+      await page.waitForURL("**/projects/200");
+      await page.getByRole("heading", { name: "Storefront", level: 1 }).waitFor();
+      await page.getByText("These are the project's own files").waitFor();
+      await page
+        .getByRole("list", { name: "Files" })
+        .getByRole("button", { name: "README.md" })
+        .waitFor();
+      expect(await page.getByRole("button", { name: "Delete repository" }).count()).toBe(0);
     },
   );
 

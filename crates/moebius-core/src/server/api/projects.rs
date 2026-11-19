@@ -124,6 +124,42 @@ mod tests {
             (made["key"].as_str(), made["open_cards"].as_i64()),
             (Some("SHOP"), Some(0))
         );
+        assert_eq!(made["repositories"], json!([]));
+        assert_eq!(
+            radiance["files"],
+            Value::Null,
+            "a repository's project needs none"
+        );
+        // Its own files are a board of their own, listed on the Files page and never removed by themselves.
+        let files = made["files"].as_i64().expect("the project has its files");
+        let (status, tree) = call(
+            "GET",
+            &addr,
+            &token,
+            &format!("/v1/repositories/{files}/tree"),
+            None,
+        )
+        .await;
+        assert_eq!((status, &tree["entries"]), (Status::OK, &json!([])));
+        let (status, card) = call(
+            "POST",
+            &addr,
+            &token,
+            &format!("/v1/repositories/{files}/issues"),
+            Some(json!({"title": "Write the prices", "body": ""})),
+        )
+        .await;
+        assert_eq!(status, Status::OK, "{card}");
+        assert_eq!(card["project_id"], made["id"]);
+        let (status, _) = call(
+            "DELETE",
+            &addr,
+            &token,
+            &format!("/v1/repositories/{files}"),
+            None,
+        )
+        .await;
+        assert_eq!(status, Status::UNPROCESSABLE_ENTITY);
         let (status, taken) = call(
             "POST",
             &addr,

@@ -439,11 +439,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         {
             let conn = rusqlite::Connection::open(dir.path().join("moebius.sqlite")).unwrap();
-            let last = super::super::MIGRATIONS.len() - 1;
-            for sql in &super::super::MIGRATIONS[..last] {
+            // Every migration before the one that makes issues a tracker, whatever is added after it.
+            let before = super::super::MIGRATIONS
+                .iter()
+                .position(|sql| *sql == SCHEMA)
+                .expect("a migration makes issues a tracker");
+            for sql in &super::super::MIGRATIONS[..before] {
                 conn.execute_batch(sql).unwrap();
             }
-            conn.pragma_update(None, "user_version", last as i64)
+            conn.pragma_update(None, "user_version", before as i64)
                 .unwrap();
             conn.execute_batch(
                 "INSERT INTO repositories (name, path, forge, default_branch) VALUES ('old', '/srv/old', 'none', 'main');

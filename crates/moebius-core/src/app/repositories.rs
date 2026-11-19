@@ -139,7 +139,13 @@ impl App {
                 "{name:?} is not a repository name"
             )));
         }
-        if self.store.repositories()?.iter().any(|r| r.name == name) {
+        // Names differ in more than case: a clone and its worktrees are folders named so, and some disks ignore case.
+        if self
+            .store
+            .repositories()?
+            .iter()
+            .any(|r| r.name.eq_ignore_ascii_case(name))
+        {
             return Err(AppError::Invalid(format!(
                 "the repository name {name:?} is taken"
             )));
@@ -148,6 +154,16 @@ impl App {
         if self.store.project_by_name(name)?.is_some() {
             return Err(AppError::Invalid(format!(
                 "the name {name:?} is taken by a project"
+            )));
+        }
+        // A project's key is the name of its own files (see `projects::files`), in any case.
+        if self
+            .store
+            .project_by_key(&name.to_ascii_uppercase())?
+            .is_some()
+        {
+            return Err(AppError::Invalid(format!(
+                "the name {name:?} is a project's key, which names the project's own files"
             )));
         }
         Ok(())
@@ -236,6 +252,12 @@ impl App {
     /// `delete_repository` decision and announced as `repository_removed`.
     pub fn remove_repository(&self, by: &Actor, id: i64, reason: &str) -> Result<Repository> {
         let repository = self.repository(id)?;
+        if repository.files_of.is_some() {
+            return Err(AppError::Invalid(format!(
+                "{} holds a project's own files, which go only with the project",
+                repository.name
+            )));
+        }
         if self.store.repository_has_active_run(id)? {
             return Err(AppError::Conflict(format!(
                 "{} has a run in progress; stop it before removing the repository",

@@ -457,6 +457,7 @@ ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
     outgoing::SCHEMA,
     assignees::SCHEMA,
     projects::SCHEMA,
+    projects::FILES,
 ];
 
 pub fn now() -> i64 {
