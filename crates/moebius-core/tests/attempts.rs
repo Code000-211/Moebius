@@ -107,7 +107,7 @@ fn setup(models: &str) -> Setup {
             OWNER_AUTHOR,
         )
         .unwrap();
-    let card = app.move_card(card.id, "In progress").unwrap();
+    let card = app.move_card(card.id, "In progress", None).unwrap();
     Setup {
         _dir: dir,
         app,

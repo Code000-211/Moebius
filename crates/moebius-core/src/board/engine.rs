@@ -173,7 +173,7 @@ impl Engine {
             // Only if the card is still where the script saw it: a person or the forge poll may have moved it since.
             let moved = self
                 .app
-                .move_card_from(card_id, &card.column, &to, effects.note.as_deref())?
+                .move_card_from(card_id, &card.column, &to, effects.note.as_deref(), None)?
                 .is_some();
             if !moved {
                 // What the script worked out, why the card waits included, was for a column it has left.
@@ -376,7 +376,7 @@ end
         let card = app.create_issue(repo, "Add", "", OWNER_AUTHOR).unwrap();
         // The script saw the card in the backlog; meanwhile a person or the forge poll finished it.
         let seen = app.card(card.id).unwrap();
-        app.move_card(card.id, columns::DONE).unwrap();
+        app.move_card(card.id, columns::DONE, None).unwrap();
         let moves = app.store.moves_for_card(card.id).unwrap().len();
 
         let step = engine
@@ -409,7 +409,7 @@ end
             .add_change(repo, Some(card.id), "moebius/card-1", None, "abc")
             .unwrap();
         // While the change was published, a person finished the card.
-        app.move_card(card.id, columns::DONE).unwrap();
+        app.move_card(card.id, columns::DONE, None).unwrap();
 
         let (_, moved) = app.finish_offer(card.id, &seen, change, None).unwrap();
         assert!(!moved);
@@ -718,7 +718,7 @@ end
             app.set_parent(ticket.id, Some(map.number)).unwrap();
         }
         // The parent is ready, and waits for its open sub-issues instead of starting a run.
-        app.move_card(map.id, columns::NOT_STARTED).unwrap();
+        app.move_card(map.id, columns::NOT_STARTED, None).unwrap();
         let step = engine.settle(map.id).unwrap();
         assert_eq!(
             step.waiting.as_deref(),
@@ -767,7 +767,7 @@ end
         };
         assert!(assignees(&app.card(card.id).unwrap()).is_empty());
 
-        app.move_card(card.id, columns::NOT_STARTED).unwrap();
+        app.move_card(card.id, columns::NOT_STARTED, None).unwrap();
         app.set_assignees(card.id, &["tom".into(), "lea".into()])
             .unwrap();
         assert_eq!(assignees(&app.card(card.id).unwrap()), ["lea", "tom"]);
@@ -821,7 +821,7 @@ end
             app.card(new_urgent.id).unwrap(),
         ];
         for card in &cards {
-            app.move_card(card.id, columns::NOT_STARTED).unwrap();
+            app.move_card(card.id, columns::NOT_STARTED, None).unwrap();
         }
         crate::server::loops::settle_order(&mut cards);
         assert_eq!(
@@ -897,7 +897,7 @@ end
             .add_card(repo, "Outside", "Part of #1", "mallory", columns::BACKLOG)
             .unwrap();
         app.store.set_parent(outside.id, Some(map.number)).unwrap();
-        app.move_card(map.id, columns::NOT_STARTED).unwrap();
+        app.move_card(map.id, columns::NOT_STARTED, None).unwrap();
 
         // It is not a sub-issue, so the parent is a card like any other and starts its work, and closing the outside
         // issue closes nothing.
@@ -920,7 +920,7 @@ end
             .add_run(Some(map.id), "Coder", "test", "code")
             .unwrap();
         app.store.set_run_status(run.id, "succeeded").unwrap();
-        app.move_card(map.id, columns::NOT_STARTED).unwrap();
+        app.move_card(map.id, columns::NOT_STARTED, None).unwrap();
         let step = engine.tick(map.id).unwrap();
         assert_eq!(step.moved.as_deref(), Some("In progress"));
         assert!(!app.card(map.id).unwrap().closed);
@@ -940,7 +940,7 @@ end
         // The prefix is matched in any case (the ticket above); a label that only starts like it is no wayfinder label.
         app.set_labels(task.id, &["wayfinder".to_string()]).unwrap();
         for card in [&map, &ticket, &task] {
-            app.move_card(card.id, columns::NOT_STARTED).unwrap();
+            app.move_card(card.id, columns::NOT_STARTED, None).unwrap();
         }
 
         for card in [&map, &ticket] {

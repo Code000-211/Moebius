@@ -943,8 +943,8 @@ mod tests {
         let first = item.at;
         until("the next second", || crate::store::now() > first).await;
         app.store.set_card_note(1, "Add a test.").unwrap();
-        app.move_card(1, "Not started").unwrap();
-        app.move_card(1, "In progress").unwrap();
+        app.move_card(1, "Not started", None).unwrap();
+        app.move_card(1, "In progress", None).unwrap();
         let run = app.store.add_run(Some(1), "Coder", "test", "code").unwrap();
         app.store.set_run_status(run.id, "failed").unwrap();
         app.store

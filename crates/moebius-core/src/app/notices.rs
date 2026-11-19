@@ -4,7 +4,7 @@
 //! - assigning a card or an inbox item tells those newly given it (`assigned`), but not the person who did it;
 //! - a comment (less than a day old: the poll reads old ones too) tells the people it mentions with `@handle` (`mentioned`), and the other followers of its card
 //!   (`changed`), never its author, and never one person twice;
-//! - a card that moves tells its followers (`changed`); closing and reopening move a card, so they are told that way.
+//! - a card that moves tells its followers (`changed`), except the person who moved it; closing and reopening move a card, so they are told that way.
 //!
 //! The notices are the person's own to read ([`App::read_notice`] marks one read for that person alone) and are
 //! announced on the bus as `notice_added` and `notice_read`, which the event stream sends only to the person they
@@ -221,8 +221,8 @@ impl App {
         }
     }
 
-    /// Tells the followers of the card that it moved from one column to another.
-    pub(super) fn notify_moved(&self, card_id: i64, from: &str, to: &str) {
+    /// Tells the followers of the card that it moved from one column to another, except the person who moved it.
+    pub(super) fn notify_moved(&self, card_id: i64, from: &str, to: &str, by: Option<&Actor>) {
         let Ok(card) = self.card(card_id) else {
             return;
         };
@@ -230,12 +230,13 @@ impl App {
             .store
             .followers(card.id, author_handle(&card.author))
             .unwrap_or_default();
-        for person in followers {
+        let by = by_handle(by);
+        for person in followers.iter().filter(|p| !is_by(&by, &p.handle)) {
             self.tell_person(
-                &person,
+                person,
                 NewNotice {
                     kind: CHANGED,
-                    by: None,
+                    by: by.as_deref(),
                     card_id: Some(card.id),
                     inbox_item_id: None,
                     title: &card.title,
@@ -355,7 +356,7 @@ mod tests {
         assert!(texts(&app, "lea").is_empty(), "not the author");
 
         // A move tells every follower, and nobody else.
-        app.move_card(card.id, "Not started").unwrap();
+        app.move_card(card.id, "Not started", None).unwrap();
         assert_eq!(
             texts(&app, "lea"),
             [("changed".into(), "Moved from Backlog to Not started".into())]
@@ -373,6 +374,61 @@ mod tests {
         told.sort();
         let expected = ["ada", "ada", "ada", "lea", "tom", "tom", "tom", "zed"];
         assert_eq!(told, expected);
+    }
+
+    #[test]
+    fn a_person_who_moves_a_card_is_not_told_of_it_but_the_other_followers_are() {
+        let (_dir, app) = app();
+        let lea = app.store.add_person("lea", "Lea", Role::Member).unwrap();
+        app.store.add_person("tom", "Tom", Role::Member).unwrap();
+        let repo = app.store.add_repository("r", "/r", "none", "main").unwrap();
+        let card = app
+            .store
+            .add_card(repo.id, "t", "b", "person:tom", "Backlog")
+            .unwrap();
+        app.set_following(&Actor::person(lea.id, "lea"), card.id, true)
+            .unwrap();
+
+        app.move_card(card.id, "Not started", Some(&Actor::person(lea.id, "lea")))
+            .unwrap();
+        assert!(texts(&app, "lea").is_empty(), "lea moved it herself");
+        assert_eq!(texts(&app, "tom").len(), 1, "tom follows it");
+
+        // The engine and scripts have no actor and tell everybody.
+        app.move_card(card.id, "In progress", None).unwrap();
+        assert_eq!(texts(&app, "lea").len(), 1);
+        assert_eq!(texts(&app, "tom").len(), 2);
+        app.move_card_from(card.id, "In progress", "In review", None, None)
+            .unwrap();
+        assert_eq!(texts(&app, "lea").len(), 2);
+        assert_eq!(texts(&app, "tom").len(), 3);
+    }
+
+    #[test]
+    fn a_person_who_merges_a_change_is_not_told_but_the_poll_tells_every_follower() {
+        let (_dir, app) = app();
+        let lea = app.store.add_person("lea", "Lea", Role::Member).unwrap();
+        app.store.add_person("tom", "Tom", Role::Member).unwrap();
+        let repo = app.store.add_repository("r", "/r", "none", "main").unwrap();
+        let by = Actor::person(lea.id, "lea");
+        for (merged_by, lea_told) in [(Some(&by), 0), (None, 1)] {
+            let card = app
+                .store
+                .add_card(repo.id, "t", "b", "person:tom", "Ready to merge")
+                .unwrap();
+            app.set_following(&by, card.id, true).unwrap();
+            let change = app
+                .store
+                .add_change(repo.id, Some(card.id), "b", None, "h")
+                .unwrap();
+            app.change_merged(&change, None, merged_by).unwrap();
+            assert_eq!(texts(&app, "lea").len(), lea_told);
+            assert_eq!(app.card(card.id).unwrap().column, "Done");
+            for (_, notice) in texts(&app, "lea") {
+                assert_eq!(notice, "Moved from Ready to merge to Done");
+            }
+            app.store.set_following(card.id, lea.id, false).unwrap();
+        }
     }
 
     #[test]

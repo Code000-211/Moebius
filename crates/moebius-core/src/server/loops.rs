@@ -392,7 +392,7 @@ mod tests {
         f.server.poll_github().await;
         let app = &f.server.app;
         let card = f.card(1).unwrap();
-        app.move_card(card.id, columns::DONE).unwrap();
+        app.move_card(card.id, columns::DONE, None).unwrap();
         // Done a moment ago: the script has nothing to archive yet. Done long ago: the sweep archives it.
         f.server.tick();
         assert_eq!(app.card(card.id).unwrap().archived_at, None);

@@ -827,7 +827,7 @@ mod tests {
         let parent = app.create_issue(repo, "Plan", "", OWNER_AUTHOR).unwrap();
         let child = app.create_issue(repo, "Step", "", OWNER_AUTHOR).unwrap();
         app.store.set_parent(child.id, Some(parent.number)).unwrap();
-        app.move_card(parent.id, "Not started").unwrap();
+        app.move_card(parent.id, "Not started", None).unwrap();
         aged(&app, &parent, 90);
         engine.tick(parent.id).unwrap();
         assert!(app.card(parent.id).unwrap().held.is_none());
@@ -839,7 +839,7 @@ mod tests {
         let (_dir, app, engine, repo) = setup_unreviewed();
         let lea = app.store.add_person("lea", "Lea", Role::Member).unwrap();
         let card = app.create_issue(repo, "Mine", "", OWNER_AUTHOR).unwrap();
-        app.move_card(card.id, "Not started").unwrap();
+        app.move_card(card.id, "Not started", None).unwrap();
         app.store
             .set_card_assignees(card.id, &std::collections::BTreeSet::from([lea.id]))
             .unwrap();
@@ -861,7 +861,7 @@ mod tests {
         let fresh = app.create_issue(repo, "Fresh", "", OWNER_AUTHOR).unwrap();
         let old = app.create_issue(repo, "Old", "", OWNER_AUTHOR).unwrap();
         for card in [&fresh, &old] {
-            app.move_card(card.id, "Done").unwrap();
+            app.move_card(card.id, "Done", None).unwrap();
         }
         aged(&app, &fresh, 13);
         aged(&app, &old, 15);
@@ -907,7 +907,7 @@ mod tests {
 
         assert!(app.archive_card(card.id).unwrap());
         assert!(!app.archive_card(card.id).unwrap(), "once");
-        app.move_card(card.id, "Backlog").unwrap();
+        app.move_card(card.id, "Backlog", None).unwrap();
         assert_eq!(app.card(card.id).unwrap().archived_at, None);
     }
 }

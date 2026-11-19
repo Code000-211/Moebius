@@ -113,7 +113,7 @@ fn ready_card(app: &App, repository: i64, title: &str) -> Card {
     let card = app
         .create_issue(repository, title, "", OWNER_AUTHOR)
         .unwrap();
-    app.move_card(card.id, "Not started").unwrap()
+    app.move_card(card.id, "Not started", None).unwrap()
 }
 
 #[test]

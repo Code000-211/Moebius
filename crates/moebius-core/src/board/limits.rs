@@ -63,7 +63,7 @@ mod tests {
         let card = app
             .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
             .unwrap();
-        app.move_card(card.id, "In progress").unwrap();
+        app.move_card(card.id, "In progress", None).unwrap();
         let run = app
             .store
             .add_run(Some(card.id), "Coder", "fake", "code")
@@ -175,7 +175,7 @@ mod tests {
 
         let first = app.create_issue(repo, "First", "", OWNER_AUTHOR).unwrap();
         let second = app.create_issue(repo, "Second", "", OWNER_AUTHOR).unwrap();
-        app.move_card(second.id, "Not started").unwrap();
+        app.move_card(second.id, "Not started", None).unwrap();
 
         // A card's run uses the one run the limit allows; the chat does not.
         let coding = app
@@ -201,13 +201,13 @@ mod tests {
         let (busy, run) = card_after_a_run(&app, repo, "succeeded");
         use_tokens(&app, run.id, 499);
         let ready = app.create_issue(repo, "Waiting", "", OWNER_AUTHOR).unwrap();
-        app.move_card(ready.id, "Not started").unwrap();
+        app.move_card(ready.id, "Not started", None).unwrap();
         let (second_round, failed) = card_after_a_run(&app, repo, "failed");
 
         // 499 of 500 tokens are used: cards go on.
         engine.tick(ready.id).unwrap();
         assert_eq!(column(&app, &ready), "In progress");
-        app.move_card(ready.id, "Not started").unwrap();
+        app.move_card(ready.id, "Not started", None).unwrap();
 
         use_tokens(&app, failed.id, 1);
         let step = engine.settle(ready.id).unwrap();

@@ -554,7 +554,7 @@ impl Fixture {
         if column == "Backlog" {
             card
         } else {
-            self.app.move_card(card.id, column).unwrap()
+            self.app.move_card(card.id, column, None).unwrap()
         }
     }
 

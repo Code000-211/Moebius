@@ -505,7 +505,7 @@ impl App {
                 card.number
             )));
         }
-        let closed = self.close_card(card_id)?;
+        let closed = self.close_card_by(card_id, Some(by))?;
         let context = BTreeMap::from([("title".into(), card.title.clone())]);
         self.record_action(by, "close_issue", Some(card_id), None, context, reason)?;
         Ok(closed)
@@ -514,6 +514,11 @@ impl App {
     /// Closes the card's issue and moves its card to Done, without a decision (a column script does it too). Says
     /// nothing and does nothing for an issue that is closed already.
     pub(crate) fn close_card(&self, card_id: i64) -> Result<Card> {
+        self.close_card_by(card_id, None)
+    }
+
+    /// [`App::close_card`] for a person, who is not told that the card moved.
+    fn close_card_by(&self, card_id: i64, by: Option<&Actor>) -> Result<Card> {
         let card = self.card(card_id)?;
         if self.store.issue_closed(card_id)? {
             return Ok(card);
@@ -526,7 +531,7 @@ impl App {
         self.store.set_issue_closed(card_id, true)?;
         self.sub_issue_closed(&card)?;
         if card.column != columns::DONE {
-            self.move_card(card_id, columns::DONE)?;
+            self.move_card(card_id, columns::DONE, by)?;
         }
         self.wrote_forge(card_id, repository.forge != "none")?;
         self.close_settled(card_id);
@@ -659,7 +664,7 @@ impl App {
             self.forge(&repository)?
                 .set_issue_open(&repository, card.number, true)?;
         }
-        self.reopened(card_id)?;
+        self.reopened(card_id, Some(by))?;
         self.wrote_forge(card_id, repository.forge != "none")?;
         let context = BTreeMap::from([("title".into(), card.title.clone())]);
         self.record_action(by, "reopen_issue", Some(card_id), None, context, reason)?;
@@ -667,12 +672,12 @@ impl App {
     }
 
     /// What reopening does here: the issue is no longer closed and a card in Done goes back to the backlog.
-    pub(in crate::app) fn reopened(&self, card_id: i64) -> Result<()> {
+    pub(in crate::app) fn reopened(&self, card_id: i64, by: Option<&Actor>) -> Result<()> {
         self.store.set_issue_closed(card_id, false)?;
         // Whoever reopened it wants it open: it is not closed again for the sub-issues that are done already.
         self.store.set_kept_open(card_id, true)?;
         if self.card(card_id)?.column == columns::DONE {
-            self.move_card(card_id, columns::BACKLOG)?;
+            self.move_card(card_id, columns::BACKLOG, by)?;
         }
         self.bus.publish(Event::CardReopened { card: card_id });
         Ok(())
@@ -1069,7 +1074,7 @@ mod tests {
     fn closing_moves_the_card_to_done_and_reopening_takes_it_back_to_the_backlog() {
         let mut s = Setup::new(None);
         let a = s.card("A");
-        s.app.move_card(a.id, columns::IN_PROGRESS).unwrap();
+        s.app.move_card(a.id, columns::IN_PROGRESS, None).unwrap();
         s.kinds();
 
         // A run that is going has to be stopped first.
@@ -1336,7 +1341,7 @@ mod tests {
         s.app.sync_issues(&s.repository, &[two.clone()]).unwrap();
         assert_eq!(s.app.card(card.id).unwrap().column, "Backlog");
         assert_eq!(s.kinds(), ["card_moved", "card_reopened"]);
-        s.app.move_card(card.id, columns::DONE).unwrap();
+        s.app.move_card(card.id, columns::DONE, None).unwrap();
         s.app.sync_issues(&s.repository, &[two]).unwrap();
         assert_eq!(s.app.card(card.id).unwrap().column, "Done");
     }
@@ -1430,7 +1435,7 @@ mod tests {
         // What a migrated store has: a merged card in Done whose issue was never closed on its forge.
         let mut s = Setup::new(Some(true));
         let a = s.card("A");
-        s.app.move_card(a.id, columns::DONE).unwrap();
+        s.app.move_card(a.id, columns::DONE, None).unwrap();
         assert!(!s.app.store.issue_closed(a.id).unwrap());
         s.kinds();
         s.app
@@ -1870,7 +1875,7 @@ mod tests {
         let mut s = Setup::new(Some(true));
         let a = s.card("A");
         // A store from before issues were closed: the card is in Done, and its issue is not marked closed.
-        s.app.move_card(a.id, columns::DONE).unwrap();
+        s.app.move_card(a.id, columns::DONE, None).unwrap();
         s.kinds();
         let mut closed = open_issue(1, "A");
         closed.open = false;
