@@ -9,9 +9,8 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::get;
 
-use super::{ApiError, ApiState, person_only};
+use super::{ApiError, ApiState};
 use crate::app::{ClientInfo, ServerInfo};
-use crate::decide::Actor;
 
 pub(super) fn routes() -> Router<ApiState> {
     Router::new()
@@ -38,10 +37,8 @@ async fn client(State(state): State<ApiState>) -> Result<axum::Json<ClientInfo>,
 
 async fn report(
     State(state): State<ApiState>,
-    axum::Extension(by): axum::Extension<Actor>,
     axum::Json(info): axum::Json<ClientInfo>,
 ) -> Result<axum::Json<ClientInfo>, ApiError> {
-    person_only(&by)?;
     Ok(axum::Json(state.app.set_client_info(info)))
 }
 
@@ -108,10 +105,11 @@ mod tests {
 
     #[test]
     fn an_agent_may_not_report() {
-        let agent = Actor::Agent {
+        let agent = crate::decide::Actor::Agent {
             name: "Moebius".into(),
             run: 1,
         };
-        assert!(person_only(&agent).is_err());
+        let put = axum::http::Method::PUT;
+        assert!(super::super::roles::check(&agent, None, &put, "/v1/client").is_err());
     }
 }

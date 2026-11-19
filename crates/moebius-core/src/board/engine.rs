@@ -431,6 +431,41 @@ end
     }
 
     #[test]
+    fn a_viewers_issue_waits_in_the_inbox_and_a_members_moves_on() {
+        let (_dir, app, engine, repo) = setup();
+        let person = |handle: &str, role| {
+            let p = app.store.add_person(handle, handle, role).unwrap();
+            crate::decide::Actor::person(p.id, &p.handle)
+        };
+        let viewer = person("vera", crate::store::Role::Viewer);
+        let member = person("lea", crate::store::Role::Member);
+        let create = |by: &crate::decide::Actor, title: &str| {
+            app.create_tracked_issue(by, repo, title, "", None, &[], &[])
+                .unwrap()
+                .0
+        };
+
+        let asked = create(&viewer, "Please add");
+        assert_eq!(asked.author, "person:vera");
+        assert!(!asked.confirmed && !app.is_trusted(&asked));
+        let step = engine.settle(asked.id).unwrap();
+        assert_eq!(
+            step.waiting.as_deref(),
+            Some("waiting for a person to approve the issue")
+        );
+        let inbox = app.store.inbox().unwrap();
+        assert_eq!((inbox.len(), inbox[0].kind.as_str()), (1, "approve_issue"));
+
+        let written = create(&member, "Add");
+        engine.settle(written.id).unwrap();
+        assert_ne!(app.card(written.id).unwrap().column, "Backlog");
+        assert_eq!(app.store.inbox().unwrap().len(), 1);
+
+        app.approve_issue(&member, asked.id, "fine").unwrap();
+        assert_eq!(app.card(asked.id).unwrap().column, "Not started");
+    }
+
+    #[test]
     fn a_repository_script_that_moves_a_card_to_ready_moves_it_to_not_started() {
         let (_dir, app, engine, repo) = setup();
         let put =
@@ -528,7 +563,11 @@ end
     #[test]
     fn a_script_sees_a_known_person_as_author_claimer_and_holder_and_trusts_their_card() {
         let (_dir, app, engine, repo) = setup();
-        let ada = crate::decide::Actor::person(7, "ada");
+        let person = app
+            .store
+            .add_person("ada", "Ada", crate::store::Role::Member)
+            .unwrap();
+        let ada = crate::decide::Actor::person(person.id, "ada");
         let card = app.create_issue(repo, "By Ada", "", "person:ada").unwrap();
         app.claim_issue(&ada, card.id, None).unwrap();
         app.store

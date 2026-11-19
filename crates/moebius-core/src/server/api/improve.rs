@@ -31,7 +31,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use serde::{Deserialize, Serialize};
 
-use super::{ApiError, ApiState, Reason, blocking, harness_repo, person_only};
+use super::{ApiError, ApiState, Reason, blocking, harness_repo};
 use crate::app::AppError;
 use crate::decide::Actor;
 use crate::decide::model;
@@ -408,7 +408,6 @@ async fn delete_research(
     UrlPath(id): UrlPath<i64>,
     body: Option<axum::Json<Reason>>,
 ) -> Result<axum::Json<crate::store::Research>, ApiError> {
-    person_only(&by)?;
     let reason = body.map(|body| body.0.reason).unwrap_or_default();
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {
@@ -423,7 +422,6 @@ async fn delete_export(
     UrlPath(id): UrlPath<i64>,
     body: Option<axum::Json<Reason>>,
 ) -> Result<axum::Json<Export>, ApiError> {
-    person_only(&by)?;
     let reason = body.map(|body| body.0.reason).unwrap_or_default();
     blocking(&state.app, move |app| export::delete(app, &by, id, &reason)).await
 }
@@ -434,7 +432,6 @@ async fn delete_replay(
     UrlPath(id): UrlPath<i64>,
     body: Option<axum::Json<Reason>>,
 ) -> Result<axum::Json<Replay>, ApiError> {
-    person_only(&by)?;
     let reason = body.map(|body| body.0.reason).unwrap_or_default();
     blocking(&state.app, move |app| replay::delete(app, &by, id, &reason)).await
 }

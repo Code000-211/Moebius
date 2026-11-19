@@ -153,9 +153,8 @@ async fn add_person(
     signed_in: Option<Extension<SignedIn>>,
     Json(new): Json<NewPerson>,
 ) -> Result<Json<AddedPerson>, ApiError> {
-    if asker(signed_in)?.person.role != Role::Owner {
-        return Err(not_an_owner());
-    }
+    // Only an owner gets here (see `roles`).
+    asker(signed_in)?;
     let handle = handle(&new.handle)?;
     let name = name("name", &new.name)?;
     let store = &state.app.store;

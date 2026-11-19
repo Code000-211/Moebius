@@ -14,7 +14,7 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use serde::Deserialize;
 
-use super::{ApiError, ApiState, internal, person_only};
+use super::{ApiError, ApiState, internal};
 use crate::decide::Actor;
 use crate::server::packages::{Info, Installed, Outcome, PackageError, Packages, Request, Search};
 
@@ -101,7 +101,6 @@ async fn update(
     Extension(by): Extension<Actor>,
     UrlPath(name): UrlPath<String>,
 ) -> Result<axum::Json<Outcome>, ApiError> {
-    person_only(&by)?;
     run(&state, move |p| p.update(&by, &name)).await
 }
 
@@ -110,7 +109,6 @@ async fn remove(
     Extension(by): Extension<Actor>,
     UrlPath(name): UrlPath<String>,
 ) -> Result<axum::Json<Outcome>, ApiError> {
-    person_only(&by)?;
     run(&state, move |p| p.remove(&by, &name)).await
 }
 

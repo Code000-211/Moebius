@@ -39,11 +39,9 @@ label and `parent` and `blocked_by` name wayfinder issues; `PUT /v1/cards/{id}` 
 /v1/cards/{id}/labels` for a list without one, and `parent` and `blockers` for an issue that is no wayfinder card; reads
 (`GET` of an issue, its comments and the list) are open for the repository's cards. The message says what is refused. The
 Moebius agent and a person are not held to any of this. Every
-other route answers it `401`, as it does the run token of any other agent, and a revoked one. Two routes stay with a person and answer
-`403` with `only a person can do this` to a run token: `PUT /v1/secrets/{name}` (an agent must not set keys),
-`GET /v1/webhooks` and `POST /v1/webhooks/{forge}/secret` (they hold the webhook secrets),
-`POST /v1/session` and `POST /v1/session/codes` (a run token never signs in or makes a login code), the routes of
-[people and access tokens](#people-and-access-tokens), `POST /v1/harness/setup` (moving the agents is a person's choice) and `GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui`, `GET /v1/terminal` and `GET /v1/repositories/{id}/terminal` (the shells) and `GET /v1/ports/{port}/tunnel`, and `PUT /v1/client` (what the app says of itself). Where a route below says "a person" and "decider
+other route answers it `401`, as it does the run token of any other agent, and a revoked one. Which routes the Moebius
+agent's run token may use is the column Run token of [Roles](#roles); the others answer it `403` with `only a person
+can do this`. Where a route below says "a person" and "decider
 `person`" (it is `person:<handle>` of the person whose access token or session it is, and `person:owner` for the
 server's token), an agent that uses its token is the decider instead.
 Records from before people had identities keep the author or decider `person`, which the migration gave to the first owner; no new record is made with it.
@@ -63,6 +61,211 @@ TOKEN=$(cat .moebius/token)
 curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7171/v1/health
 ```
 
+## Roles
+
+Every person of the organisation has a role (ADR 0018), and every route needs one: `viewer` (reads, comments, and
+writing issues, which wait in the inbox for approval as an outside author's do: the column script of the Backlog asks
+`approve_issue` for them, since such a card is neither `card.trusted` nor `card.confirmed`), `member` (issues and cards,
+chats, runs and merging a change, besides what a viewer does) or `owner` (everything: the configuration, plugins, rules,
+agents, secrets, repositories, people and the Retro's work). The server's token acts as the first owner, a person's
+access token and the cookie of their session as that person. A person whose role may not use a route gets `403` with
+`only an owner can do this` or `only a member or an owner can do this`, before anything is done. Run token says whether
+the run token of the Moebius agent may use the route (`no`: `403` with `only a person can do this`); the Grilling
+partner's is held to the routes of [the issue tracker](#the-issue-tracker) besides (see Authentication). A route marked
+`none` needs no token and checks its own credential. A route that is in no row is refused with `403`, and a test fails
+for a route of the code that is missing here, for a row here that the code does not name the same, and for an answer of
+any route to any role that is not what its row says.
+
+| Route | Role | Run token |
+|---|---|---|
+| `GET /v1/health` | viewer | yes |
+| `POST /v1/session` | none | — |
+| `GET /v1/session` | none | — |
+| `DELETE /v1/session` | none | — |
+| `POST /v1/session/codes` | viewer | no |
+| `GET /v1/people` | viewer | no |
+| `POST /v1/people` | owner | no |
+| `GET /v1/people/{id}/tokens` | viewer | no |
+| `GET /v1/tokens` | viewer | no |
+| `POST /v1/tokens` | viewer | no |
+| `DELETE /v1/tokens/{id}` | viewer | no |
+| `GET /v1/server` | viewer | yes |
+| `GET /v1/client` | viewer | yes |
+| `PUT /v1/client` | viewer | no |
+| `GET /v1/snapshot` | viewer | yes |
+| `GET /v1/events` | viewer | yes |
+| `POST /v1/repositories` | owner | yes |
+| `PUT /v1/repositories/{id}` | owner | yes |
+| `DELETE /v1/repositories/{id}` | owner | yes |
+| `POST /v1/repositories/{id}/issues` | viewer | yes |
+| `GET /v1/repositories/{id}/issues` | viewer | yes |
+| `GET /v1/repositories/{id}/scripts/{column}` | viewer | yes |
+| `PUT /v1/repositories/{id}/scripts/{column}` | owner | yes |
+| `DELETE /v1/repositories/{id}/scripts/{column}` | owner | yes |
+| `GET /v1/repositories/{id}/settings` | viewer | yes |
+| `PUT /v1/repositories/{id}/settings/{file}` | owner | yes |
+| `DELETE /v1/repositories/{id}/settings/{file}` | owner | yes |
+| `GET /v1/repositories/{id}/plugin-settings` | viewer | yes |
+| `PUT /v1/repositories/{id}/plugin-settings/{plugin}` | owner | yes |
+| `GET /v1/repositories/{id}/tree` | viewer | yes |
+| `GET /v1/repositories/{id}/files` | viewer | yes |
+| `GET /v1/repositories/{id}/search` | viewer | yes |
+| `GET /v1/repositories/{id}/files/{*path}` | viewer | yes |
+| `PUT /v1/repositories/{id}/files/{*path}` | member | yes |
+| `GET /v1/cards/{id}` | viewer | yes |
+| `PUT /v1/cards/{id}` | member | yes |
+| `DELETE /v1/cards/{id}` | member | no |
+| `PUT /v1/cards/{id}/parent` | member | yes |
+| `PUT /v1/cards/{id}/labels` | member | yes |
+| `POST /v1/cards/{id}/blockers` | member | yes |
+| `DELETE /v1/cards/{id}/blockers/{number}` | member | yes |
+| `POST /v1/cards/{id}/claim` | member | yes |
+| `DELETE /v1/cards/{id}/claim` | member | yes |
+| `POST /v1/cards/{id}/close` | member | yes |
+| `POST /v1/cards/{id}/reopen` | member | yes |
+| `GET /v1/cards/{id}/comments` | viewer | yes |
+| `POST /v1/cards/{id}/comments` | viewer | yes |
+| `POST /v1/cards/{id}/approve` | member | yes |
+| `POST /v1/cards/{id}/block` | member | yes |
+| `POST /v1/cards/{id}/unblock` | member | yes |
+| `POST /v1/cards/{id}/retry` | member | yes |
+| `GET /v1/cards/{id}/runs` | viewer | yes |
+| `GET /v1/cards/{id}/history` | viewer | yes |
+| `POST /v1/changes/{id}/merge` | member | yes |
+| `POST /v1/changes/{id}/reject` | member | yes |
+| `GET /v1/changes/{id}/diff` | viewer | yes |
+| `GET /v1/runs/{id}` | viewer | yes |
+| `GET /v1/runs/{id}/events` | viewer | yes |
+| `GET /v1/runs/{id}/diff` | viewer | yes |
+| `POST /v1/runs/{id}/steer` | member | yes |
+| `POST /v1/runs/{id}/stop` | member | yes |
+| `GET /v1/runs/{id}/terminal` | owner | no |
+| `GET /v1/chats` | viewer | yes |
+| `POST /v1/chats` | member | yes |
+| `DELETE /v1/chats/{id}` | member | no |
+| `POST /v1/chats/{id}/messages` | member | yes |
+| `POST /v1/chats/{id}/offer` | member | yes |
+| `POST /v1/chats/{id}/publish` | member | yes |
+| `POST /v1/chats/{id}/end` | member | yes |
+| `POST /v1/chats/{id}/seen` | member | yes |
+| `POST /v1/chats/{id}/settings` | member | yes |
+| `POST /v1/chats/{id}/title` | member | yes |
+| `GET /v1/chats/{id}/tui` | member | no |
+| `GET /v1/grillings` | viewer | yes |
+| `GET /v1/grillings/{id}` | viewer | yes |
+| `DELETE /v1/grillings/{id}` | member | no |
+| `POST /v1/grillings/{id}/confirm` | member | yes |
+| `POST /v1/grillings/{id}/dismiss` | member | yes |
+| `GET /v1/terminal` | owner | no |
+| `GET /v1/repositories/{id}/terminal` | owner | no |
+| `GET /v1/ports` | viewer | yes |
+| `GET /v1/ports/{port}/tunnel` | member | no |
+| `POST /v1/uploads` | member | yes |
+| `GET /v1/runners` | viewer | yes |
+| `GET /v1/agents` | viewer | yes |
+| `GET /v1/agents/{name}` | viewer | yes |
+| `PUT /v1/agents/{name}` | owner | yes |
+| `DELETE /v1/agents/{name}` | owner | yes |
+| `POST /v1/harness/setup` | owner | no |
+| `GET /v1/skills` | viewer | yes |
+| `GET /v1/skills/{name}` | viewer | yes |
+| `PUT /v1/skills/{name}` | owner | yes |
+| `DELETE /v1/skills/{name}` | owner | yes |
+| `GET /v1/skills/{name}/files/{*path}` | viewer | yes |
+| `PUT /v1/skills/{name}/files/{*path}` | owner | yes |
+| `DELETE /v1/skills/{name}/files/{*path}` | owner | yes |
+| `GET /v1/mcp-servers` | viewer | yes |
+| `GET /v1/mcp-servers/{name}` | viewer | yes |
+| `PUT /v1/mcp-servers/{name}` | owner | yes |
+| `DELETE /v1/mcp-servers/{name}` | owner | yes |
+| `GET /v1/rules` | viewer | yes |
+| `PUT /v1/rules` | owner | yes |
+| `GET /v1/workflows` | viewer | yes |
+| `GET /v1/workflows/{name}` | viewer | yes |
+| `PUT /v1/workflows/{name}` | owner | yes |
+| `DELETE /v1/workflows/{name}` | owner | yes |
+| `GET /v1/workflows/{name}/run-inputs` | viewer | yes |
+| `POST /v1/workflows/{name}/runs` | member | yes |
+| `POST /v1/workflows/runs/{id}/cancel` | member | yes |
+| `POST /v1/workflows/runs/{run_id}/resume` | member | yes |
+| `GET /v1/automations` | viewer | yes |
+| `POST /v1/automations` | owner | yes |
+| `GET /v1/automations/{id}` | viewer | yes |
+| `PUT /v1/automations/{id}` | owner | yes |
+| `DELETE /v1/automations/{id}` | owner | yes |
+| `POST /v1/automations/{id}/run` | owner | yes |
+| `GET /v1/automations/{id}/firings` | viewer | yes |
+| `GET /v1/extensions/search` | viewer | yes |
+| `GET /v1/extensions/info` | viewer | yes |
+| `GET /v1/extensions/packages` | viewer | yes |
+| `POST /v1/extensions/packages` | owner | yes |
+| `POST /v1/extensions/packages/{name}/update` | owner | yes |
+| `DELETE /v1/extensions/packages/{name}` | owner | yes |
+| `POST /v1/extensions/update` | owner | yes |
+| `GET /v1/packages/search` | viewer | yes |
+| `GET /v1/packages` | viewer | yes |
+| `POST /v1/packages` | owner | yes |
+| `GET /v1/packages/{name}` | viewer | yes |
+| `DELETE /v1/packages/{name}` | owner | no |
+| `POST /v1/packages/{name}/update` | owner | no |
+| `GET /v1/usage` | viewer | yes |
+| `GET /v1/judgements` | viewer | yes |
+| `GET /v1/judgements/kinds` | viewer | yes |
+| `POST /v1/judgements/{id}/replay` | owner | yes |
+| `GET /v1/replays` | viewer | yes |
+| `DELETE /v1/replays/{id}` | owner | no |
+| `GET /v1/exports` | viewer | yes |
+| `POST /v1/exports` | owner | yes |
+| `DELETE /v1/exports/{id}` | owner | no |
+| `GET /v1/exports/{id}/{file}` | viewer | yes |
+| `GET /v1/retros` | viewer | yes |
+| `POST /v1/retros` | owner | yes |
+| `GET /v1/retros/{date}` | viewer | yes |
+| `POST /v1/retros/{date}/retry` | owner | yes |
+| `GET /v1/proposals` | viewer | yes |
+| `POST /v1/proposals/{id}/trial` | owner | yes |
+| `POST /v1/proposals/{id}/merge` | owner | yes |
+| `POST /v1/proposals/{id}/dismiss` | owner | yes |
+| `GET /v1/decision-model` | viewer | yes |
+| `GET /v1/takeovers` | viewer | yes |
+| `POST /v1/takeovers/{id}/merge` | owner | yes |
+| `POST /v1/takeovers/{id}/dismiss` | owner | yes |
+| `POST /v1/takeovers/{id}/release` | owner | yes |
+| `GET /v1/research` | viewer | yes |
+| `POST /v1/research` | owner | yes |
+| `GET /v1/research/{id}` | viewer | yes |
+| `PUT /v1/research/{id}` | owner | yes |
+| `DELETE /v1/research/{id}` | owner | no |
+| `POST /v1/research/{id}/confirm` | owner | yes |
+| `POST /v1/research/{id}/start` | owner | yes |
+| `POST /v1/research/{id}/stop` | owner | yes |
+| `GET /v1/lessons` | viewer | yes |
+| `GET /v1/lessons/{id}` | viewer | yes |
+| `PUT /v1/lessons/{id}` | owner | yes |
+| `DELETE /v1/lessons/{id}` | owner | yes |
+| `GET /v1/models` | viewer | yes |
+| `GET /v1/models/available` | viewer | yes |
+| `GET /v1/models/providers` | viewer | yes |
+| `GET /v1/models/upstreams/{place}/login` | viewer | yes |
+| `POST /v1/models/upstreams/{place}/login` | owner | no |
+| `POST /v1/models/upstreams/{place}/login/code` | owner | no |
+| `GET /v1/start` | viewer | yes |
+| `GET /v1/plugins` | viewer | yes |
+| `GET /v1/plugins/settings` | viewer | yes |
+| `PUT /v1/plugins/{plugin}/enabled` | owner | no |
+| `PUT /v1/plugins/{plugin}/settings` | owner | yes |
+| `GET /v1/plugins/{plugin}/settings-ui` | viewer | yes |
+| `GET /v1/settings` | viewer | yes |
+| `PUT /v1/settings` | owner | yes |
+| `PUT /v1/secrets/{name}` | owner | no |
+| `DELETE /v1/secrets/{name}` | owner | yes |
+| `POST /v1/server/restart` | owner | yes |
+| `POST /v1/webhooks/{forge}` | none | — |
+| `GET /v1/webhooks` | owner | no |
+| `POST /v1/webhooks/{forge}/secret` | owner | no |
+| `POST /api/hooks/{path}` | none | — |
+| `POST /api/hooks/{repository}/{path}` | none | — |
+
 ## Errors
 
 A failed request has a status code and a plain-text message as its body.
@@ -70,7 +273,7 @@ A failed request has a status code and a plain-text message as its body.
 | Status | Meaning |
 |---|---|
 | `401` | No valid token. |
-| `403` | A run token of the Moebius agent on a route that only a person may use. |
+| `403` | The person's [role](#roles) may not use the route (`only an owner can do this`, `only a member or an owner can do this`), or a run token of the Moebius agent is on a route that only a person may use (`only a person can do this`). |
 | `404` | The repository, card, change or run in the path does not exist. |
 | `409` | A merge conflicts: the default branch is left as it was. |
 | `422` | The request is understood but not allowed: invalid values, or a card or change in the wrong state. Also what axum answers for a JSON body with a missing or mistyped field. |

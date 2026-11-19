@@ -23,7 +23,7 @@ use axum::extract::{Path as UrlPath, Query, State};
 use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 
-use super::{ApiError, ApiState, Reason, blocking, person_only};
+use super::{ApiError, ApiState, Reason, blocking};
 use crate::app::Chat;
 use crate::decide::Actor;
 use crate::harness::grilling;
@@ -150,7 +150,6 @@ async fn delete_grilling(
     UrlPath(id): UrlPath<i64>,
     body: Option<axum::Json<Reason>>,
 ) -> Result<axum::Json<Grilling>, ApiError> {
-    person_only(&by)?;
     let reason = body.map(|body| body.0.reason).unwrap_or_default();
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {
@@ -165,7 +164,6 @@ async fn delete_chat(
     UrlPath(id): UrlPath<i64>,
     body: Option<axum::Json<Reason>>,
 ) -> Result<axum::Json<Run>, ApiError> {
-    person_only(&by)?;
     let reason = body.map(|body| body.0.reason).unwrap_or_default();
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {

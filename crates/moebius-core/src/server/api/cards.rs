@@ -25,7 +25,7 @@ use axum::extract::{Path as UrlPath, State};
 use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 
-use super::{ApiError, ApiState, Reason, blocking, person_only, scope};
+use super::{ApiError, ApiState, Reason, blocking, scope};
 use crate::app::{App, BoardFacts, HistoryEntry};
 use crate::board::latest_review;
 use crate::decide::Actor;
@@ -335,7 +335,6 @@ async fn delete_card(
     UrlPath(id): UrlPath<i64>,
     body: Option<axum::Json<Reason>>,
 ) -> Result<axum::Json<Card>, ApiError> {
-    person_only(&by)?;
     let reason = body.map(|body| body.0.reason).unwrap_or_default();
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {

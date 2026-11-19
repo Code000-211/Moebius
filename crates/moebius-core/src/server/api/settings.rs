@@ -30,7 +30,7 @@ use axum::response::IntoResponse;
 use axum::routing::{get, post, put};
 use serde::Deserialize;
 
-use super::{ApiError, ApiState, blocking, person_only};
+use super::{ApiError, ApiState, blocking};
 use crate::app::AppError;
 use crate::app::plugin_settings::{AppSettings, PluginSettings, Scope};
 use crate::decide::Actor;
@@ -137,7 +137,6 @@ async fn start_login(
     UrlPath(place): UrlPath<usize>,
     axum::Json(request): axum::Json<StartLogin>,
 ) -> Result<axum::Json<Login>, ApiError> {
-    person_only(&by)?;
     let login = state
         .router
         .start_login(place, request.accept_terms)
@@ -170,11 +169,9 @@ struct PastedCode {
 
 async fn paste_login(
     State(state): State<ApiState>,
-    Extension(by): Extension<Actor>,
     UrlPath(place): UrlPath<usize>,
     axum::Json(request): axum::Json<PastedCode>,
 ) -> Result<axum::Json<Login>, ApiError> {
-    person_only(&by)?;
     state
         .router
         .paste_login(place, &request.pasted)
@@ -234,7 +231,6 @@ async fn put_plugin_enabled(
     UrlPath(plugin): UrlPath<String>,
     axum::Json(new): axum::Json<NewEnabled>,
 ) -> Result<axum::Json<PluginEnabled>, ApiError> {
-    person_only(&by)?;
     let live = state.config.clone();
     blocking(&state.app, move |app| {
         live.set_plugin_enabled(
@@ -306,11 +302,9 @@ struct NewSecret {
 
 async fn put_secret(
     State(state): State<ApiState>,
-    Extension(by): Extension<Actor>,
     UrlPath(name): UrlPath<String>,
     axum::Json(secret): axum::Json<NewSecret>,
 ) -> Result<axum::Json<Vec<String>>, ApiError> {
-    person_only(&by)?;
     let live = state.config.clone();
     blocking(&state.app, move |_| {
         live.secrets().set(&name, &secret.value)?;
