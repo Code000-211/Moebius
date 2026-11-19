@@ -35,7 +35,6 @@ afterAll(async () => {
 
 /** A new server and a normal browser (the columns are wider than it, so some start out of view), signed in. */
 async function fresh() {
-  demo = null;
   server = await startServer();
   context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   page = await context.newPage();
@@ -46,6 +45,7 @@ async function fresh() {
 afterEach(async () => {
   await context.close();
   await server.stop().catch(() => {});
+  demo = null;
   for (const directory of directories.splice(0))
     rmSync(directory, { recursive: true, force: true });
 });

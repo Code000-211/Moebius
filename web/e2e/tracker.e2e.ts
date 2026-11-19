@@ -409,25 +409,11 @@ describe("the issue in the dock", () => {
     await value(/^Assignee @owner.*@lea/).click();
     await page.getByRole("menuitemcheckbox", { name: "Owner (@owner)" }).click();
     // The menu closes on a choice and opens again once the first is saved, which may be before the page has the card as
-    // it left it: it is opened again as soon as it will, and the second person taken off from the open menu, not from
-    // the one still fading out.
+    // it left it; the second person is taken off from the menu open again, not from the one still fading out.
     const lea = page
       .locator('[role="menu"][data-state="open"]')
       .getByRole("menuitemcheckbox", { name: "Lea (@lea)" });
-    await expect
-      .poll(
-        async () => {
-          try {
-            await value(/^Assignee /).click({ timeout: 2000 });
-            await lea.waitFor({ timeout: 2000 });
-            return true;
-          } catch {
-            return false;
-          }
-        },
-        { timeout: 30_000 },
-      )
-      .toBe(true);
+    await value(/^Assignee /).click();
     await lea.click();
     await value("Assignee No one").waitFor();
   });

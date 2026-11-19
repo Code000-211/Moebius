@@ -1119,7 +1119,7 @@ describe("usage", () => {
       // The tokens, the calls and the agents' table are the Coder's alone.
       await page.getByText("1.12M", { exact: true }).first().waitFor();
       await page.getByText("702", { exact: true }).first().waitFor();
-      // Each figure is read on its own, so wait for the ones of every agent to leave.
+      // The Coder's figures are also in the agents table before the filter applies: wait for the others' to leave.
       await expect.poll(() => page.getByText("1,284", { exact: true }).count()).toBe(0);
       await expect.poll(() => page.getByRole("cell", { name: "Reviewer" }).count()).toBe(0);
       await page.getByRole("cell", { name: "Coder" }).waitFor();
