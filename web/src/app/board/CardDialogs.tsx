@@ -41,11 +41,14 @@ function refusal(error: unknown, fallback: string): string {
 
 export function BlockDialog({
   card,
+  more = [],
   onClose,
   onDone,
 }: {
   /** The card to block; the dialog is open while there is one. */
   card: Card | null;
+  /** Cards blocked with it, for one reason, when several were chosen. */
+  more?: readonly Card[];
   onClose: () => void;
   /** The server blocked the card: the sentence that says so. */
   onDone: (text: string) => void;
@@ -54,12 +57,24 @@ export function BlockDialog({
   const shown = useShown(card);
   const [reason, setReason] = useState("");
   const send = useMutation({
-    mutationFn: (target: Card) => block(target.id, reason.trim()),
+    mutationFn: async (target: Card) => {
+      const all = [target, ...more];
+      const results = await Promise.allSettled(all.map((one) => block(one.id, reason.trim())));
+      const refused = results.find((result) => result.status === "rejected");
+      if (refused) {
+        void queryClient.invalidateQueries({ queryKey: keys.snapshot });
+        throw (refused as PromiseRejectedResult).reason;
+      }
+    },
     onSuccess: (_, target) => {
       void queryClient.invalidateQueries({ queryKey: keys.snapshot });
       setReason("");
       onClose();
-      onDone(`Blocked #${target.number}. Its runs are stopped.`);
+      onDone(
+        more.length === 0
+          ? `Blocked #${target.number}. Its runs are stopped.`
+          : `Blocked ${more.length + 1} cards. Their runs are stopped.`,
+      );
     },
   });
   const leave = () => {
@@ -80,10 +95,13 @@ export function BlockDialog({
             }}
           >
             <DialogHeader>
-              <DialogTitle>{`Block #${shown.number}`}</DialogTitle>
+              <DialogTitle>
+                {more.length === 0 ? `Block #${shown.number}` : `Block ${more.length + 1} cards`}
+              </DialogTitle>
               <DialogDescription>
-                Its runs are stopped, and the board does nothing with it until you unblock it. It
-                stays in {shown.column}.
+                {more.length === 0
+                  ? `Its runs are stopped, and the board does nothing with it until you unblock it. It stays in ${shown.column}.`
+                  : "Their runs are stopped, and the board does nothing with them until you unblock them. They stay in their columns."}
               </DialogDescription>
             </DialogHeader>
             <Field label="Reason" hint="Optional. It shows on the card, for whoever opens it.">

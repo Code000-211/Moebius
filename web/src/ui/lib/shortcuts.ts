@@ -21,3 +21,14 @@ export function isShortcut(
   if (event.defaultPrevented || event.altKey || event.shiftKey !== shift) return false;
   return (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === key;
 }
+
+/** True when a key typed at `target` belongs to it (a field, a menu) and not to the page. */
+export function fieldHasKeys(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  return (
+    target.closest(
+      "input:not([type=checkbox]), textarea, select, [role=menu], [role=listbox], [role=combobox]",
+    ) !== null
+  );
+}

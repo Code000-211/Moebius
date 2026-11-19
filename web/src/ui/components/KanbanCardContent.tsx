@@ -5,7 +5,8 @@
 // fills with its own menu, beside the title, and a state word may carry a hint, shown in a tooltip; both links are 32px
 // targets and only the issue number is monospaced; the state words are the shared `MarkLabel` (a mark and grey text), and the card is
 // opened by its title being a button, so the card itself stays a group the links sit in; the labels of the issue, who
-// claimed it and a slot for the stack of its sub-issues (`stack`) are added.
+// claimed it and a slot for the stack of its sub-issues (`stack`) are added, and a slot for the box that chooses the
+// card (`select`), which stands in the card's top left corner.
 
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
@@ -57,6 +58,8 @@ export type KanbanCardContentProps = {
   labels?: string[];
   /** Who claimed the issue, said under the labels; none while it is free. */
   claimedBy?: string | null;
+  /** The box that chooses the card, drawn in its top left corner; left out where a card cannot be chosen. */
+  select?: ReactNode;
   /** What a card with sub-issues shows at its foot: how many are done, and the control that opens the stack. */
   stack?: ReactNode;
   className?: string;
@@ -77,10 +80,12 @@ export function KanbanCardContent({
   labels = [],
   claimedBy,
   stack,
+  select,
   className,
 }: KanbanCardContentProps) {
   return (
-    <div className={cn("flex min-w-0 flex-col gap-2", className)}>
+    <div className={cn("relative flex min-w-0 flex-col gap-2", className)}>
+      {select && <div className="absolute -top-1.5 -left-3 z-10">{select}</div>}
       {/* Row 1: the state of the card, in words */}
       {badges.length > 0 && (
         <div className="flex min-w-0 flex-wrap items-center gap-2">

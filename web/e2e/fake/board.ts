@@ -170,6 +170,11 @@ export interface BoardFake {
   ): { status: number; body: unknown } | undefined;
   /** Moves a card as the board engine does, and returns the event the server sends for it. */
   moveCard(id: number, column: string): ServerEvent;
+  /**
+   * Puts `count` more cards in the Backlog that wait for a person's approval, as an outside author's issues do, and
+   * returns their numbers. The page reads the board again on the next event.
+   */
+  seedApprovals(count: number): number[];
   /** Makes the next request with `method` to `path` fail with `status` and `message`. */
   refuseNext(method: string, path: string, status: number, message: string): void;
   /** The non-GET requests the board routes received, in order. */
@@ -586,6 +591,26 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       const target = find(id);
       if (!target) throw new Error(`no card ${id}`);
       return move(target, column);
+    },
+    seedApprovals(count) {
+      const made: number[] = [];
+      for (let i = 0; i < count; i++) {
+        const id = Math.max(...cards.map((c) => c.id)) + 1;
+        cards.push(
+          card(id, { title: `Outside issue ${id}`, column: "Backlog", author: "stranger" }),
+        );
+        inbox.push({
+          id: Math.max(...inbox.map((item) => item.id)) + 1,
+          kind: "approve_issue",
+          card_id: id,
+          title: `Approve: Outside issue ${id}`,
+          data: { reason: "An outside author opened it" },
+          resolved_at: null,
+          at: NOW - 70,
+        });
+        made.push(id);
+      }
+      return made;
     },
     refuseNext(method, path, status, message) {
       refusals.set(`${method} ${path}`, { status, message });
