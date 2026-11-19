@@ -372,7 +372,8 @@ A time box of one project, with a start and an end, holding the cards the projec
 _Avoid_: sprint, iteration
 
 **Milestone**:
-A goal of the organisation with a target date, holding cards of any projects.
+A goal of the organisation with a target date, holding cards of any projects. Its progress is how many of its cards are
+done, counting only the cards of projects the person looking may see.
 _Avoid_: epic, module, release
 
 **Intake**:

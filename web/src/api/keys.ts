@@ -38,6 +38,11 @@ export const keys = {
   wikiPages: ["wiki", "pages"] as const,
   wikiPage: (path: string, at: string | null) => ["wiki", "page", path, at] as const,
   wikiHistory: (path: string) => ["wiki", "history", path] as const,
+  /** The milestones with their progress, and one with its cards; what changes a card or a milestone makes them stale. */
+  milestones: ["milestones"] as const,
+  milestone: (id: number) => ["milestones", id] as const,
+  /** The milestones one card is in. */
+  cardMilestones: (card: number) => ["card", card, "milestones"] as const,
   /** Everything read about one card (its history and its runs) starts with this, so an event can make it all stale. */
   cards: ["card"] as const,
   history: (card: number) => ["card", card, "history"] as const,

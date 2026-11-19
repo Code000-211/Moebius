@@ -1,7 +1,7 @@
 /**
  * The sidebar on every page, in the order of the drafts: the organisation (the app name with the connection) as a
  * slightly raised surface, the search (the command bar), Inbox and Fleet, the project switcher with the chosen
- * project's places under it (its Board and its Files, and the Wiki), Automate (Automations, Workflows and Improve as one row that
+ * project's places under it (its Board and its Files), Automate (Automations, Workflows and Improve as one row that
  * folds over Retro, Experiments and Decisions), the list of chats below them in the wide sidebar, then Setup and, at
  * the foot, the gear to Settings. The chosen row is a slightly raised surface too, and the names of the groups are in
  * small capitals. Places that come with later issues are added by them. The gear is — one gear alone, drawn as the rail draws its rows
@@ -21,7 +21,6 @@
 import {
   ArrowLeftIcon,
   ArrowsClockwiseIcon,
-  BookOpenTextIcon,
   CaretDownIcon,
   FilesIcon,
   FolderIcon,
@@ -387,6 +386,7 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
             onChoose={choose}
           />
         )}
+        {!inSettings && groupSection("Plan", "Plan")}
         {!inSettings && !collapsed && <PlacesSection at={at} />}
         {!inSettings && (
           <Section title="Automate" collapsed={collapsed}>
@@ -598,7 +598,7 @@ function ChatEntry({
 }
 
 /**
- * The project switcher and the places of the chosen project under it: its Board and its Files, and the Wiki. The switcher is a
+ * The project switcher and the places of the chosen project under it: its Board and its Files. The switcher is a
  * raised row that opens the list of the projects of the snapshot, with All projects at the end of it; choosing one
  * leads to its board. In the rail it is the folder alone, its words in its name and its tooltip.
  */
@@ -696,14 +696,6 @@ function ProjectSection({
           />
         </>
       )}
-      {/* One wiki holds the organisation's pages and a folder for each project, so its row stands with or without one. */}
-      <Entry
-        to="/wiki"
-        icon={BookOpenTextIcon}
-        label="Wiki"
-        collapsed={collapsed}
-        current={here === "wiki"}
-      />
       {/* The list of every project is a page of its own, reached from the switcher and from here when no project is
           chosen yet. */}
       {chosen === null && (

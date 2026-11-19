@@ -9,6 +9,7 @@ import {
   ClockIcon,
   CpuIcon,
   FadersHorizontalIcon,
+  FlagIcon,
   FlaskIcon,
   FolderIcon,
   GaugeIcon,
@@ -31,7 +32,7 @@ import {
 } from "@phosphor-icons/react";
 
 /** The sidebar group a page is in; the first group has no name. */
-export type Group = "" | "Projects" | "Build" | "Improve" | "Setup";
+export type Group = "" | "Projects" | "Plan" | "Build" | "Improve" | "Setup";
 
 export interface PageDef {
   /** The path, without the leading slash. */
@@ -50,7 +51,8 @@ export const PAGES: readonly PageDef[] = [
   { path: "automations", title: "Automations", group: "", icon: ClockIcon },
   { path: "workflows", title: "Workflows", group: "", icon: TreeStructureIcon },
   { path: "projects", title: "Projects", group: "Projects", icon: FolderIcon },
-  { path: "wiki", title: "Wiki", group: "Projects", icon: BookOpenTextIcon },
+  { path: "milestones", title: "Milestones", group: "Plan", icon: FlagIcon },
+  { path: "wiki", title: "Wiki", group: "Plan", icon: BookOpenTextIcon },
   // Agents, Skills, MCP servers and Rules are held by Settings, so the everyday list does not name their group;
   // the command bar still lists them under "Build".
   { path: "agents", title: "Agents", group: "Build", icon: RobotIcon },

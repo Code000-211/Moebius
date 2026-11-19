@@ -112,6 +112,13 @@ any route to any role that is not what its row says.
 | `POST /v1/wiki/moves` | member | no |
 | `GET /v1/wiki/history/{*path}` | viewer | yes |
 | `POST /v1/wiki/refresh` | member | yes |
+| `GET /v1/milestones` | viewer | yes |
+| `POST /v1/milestones` | member | no |
+| `GET /v1/milestones/{id}` | viewer | yes |
+| `PATCH /v1/milestones/{id}` | member | no |
+| `DELETE /v1/milestones/{id}` | member | no |
+| `GET /v1/cards/{id}/milestones` | viewer | yes |
+| `PUT /v1/cards/{id}/milestones` | member | no |
 | `POST /v1/repositories` | owner | yes |
 | `PUT /v1/repositories/{id}` | owner | yes |
 | `DELETE /v1/repositories/{id}` | owner | yes |
@@ -785,6 +792,65 @@ page keeps its history, its deletion first. Errors: `404` for a page that never 
 
 Fetches `origin` and fast-forwards the clone now, rather than at the next refresh, so that what someone pushed there is
 read. Response: `null`. Errors: the fetch's failure.
+### Milestones
+
+A milestone (ADR 0019) is a goal of the organisation, not of a project: it has a name (unique in any case, 1 to 80
+characters, no control character), a target date (`YYYY-MM-DD`), a description (up to 10 000 characters) and holds
+cards of any projects. A card is in any number of milestones. A milestone's progress is how many of its cards are done,
+a card being done when its issue is closed or it is in `Done`.
+
+**A person counts and sees only the cards of projects they may see.** Every card and every number below is worked out
+for the asker: a card of a project they may not see is not listed, not counted in `cards`, `done` or `projects`, and
+its `GET /v1/cards/{id}/milestones` and `PUT` answer `404`, as if there were no card. No project is private yet, so
+everyone sees every project; the check is `App::may_see_project`, which private projects make true only for a
+project's members.
+
+A `MilestoneView` is `{"id": number, "name": string, "target_date": string, "description": string, "created_at":
+number, "cards": number, "done": number, "projects": [{"id": number, "name": string, "key": string, "cards": number,
+"done": number}]}`; `projects` are the visible projects the milestone holds cards of, in the order the projects were
+made. A `MilestoneDetail` is a `MilestoneView` whose `cards` is a list instead of a count: `[{"id", "project_id",
+"repository_id", "number", "title", "column", "done"}]`, in the order the cards were made. A milestone made or edited
+sends `milestone_changed`, a deleted one `milestone_removed`, and a card's set of milestones changing
+`card_milestones_changed`.
+
+#### `GET /v1/milestones`
+
+Every milestone with its progress, the nearest target date first: `[MilestoneView]`.
+
+#### `POST /v1/milestones`
+
+A member or an owner makes a milestone. Request: `{"name": string, "target_date": string, "description"?: string}`.
+Response: the milestone, `{"id", "name", "target_date", "description", "created_at"}`. Errors: `409` for a name another
+milestone has in any case; `422` for a name, a date that is not one (`2027-02-30`) or a description that is not valid.
+
+```sh
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"name": "Launch 2.0", "target_date": "2027-01-31"}' http://127.0.0.1:7171/v1/milestones
+```
+
+#### `GET /v1/milestones/{id}`
+
+One milestone with the cards the asker may see: the `MilestoneDetail`. Errors: `404` for no such milestone.
+
+#### `PATCH /v1/milestones/{id}`
+
+Replaces a milestone's name, target date and description; the request is the one of `POST`. Setting what is set changes
+nothing and sends no event. Response: the milestone. Errors: as `POST`, and `404` for no such milestone.
+
+#### `DELETE /v1/milestones/{id}`
+
+Deletes a milestone and answers it; the cards it held stay. Errors: `404` for no such milestone.
+
+#### `GET /v1/cards/{id}/milestones`
+
+The milestones the card is in, the nearest target date first: `[milestone]`. Errors: `404` for no such card, or a card
+of a project the asker may not see.
+
+#### `PUT /v1/cards/{id}/milestones`
+
+Replaces the milestones the card is in. Request: `{"milestones": [id]}`; repeats count once and `[]` takes the card out of
+all. The event `card_milestones_changed` is sent when the set changed. Response: the milestones the card is in. Errors:
+`404` for no such card or milestone.
 
 ### `POST /v1/repositories`
 
@@ -3267,6 +3333,8 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `project_changed` | A project was made or renamed through the API. A repository's home project, made with it, comes with `repository_added`. | `{"id", "name", "key", "created_at", "repositories": [id]}` |
 | `wiki_changed` | A person edited the wiki through the API, or a refresh brought commits pushed to its `origin` from elsewhere. | `{"commit": string (the full id the pages are now read at)}` |
 | `wiki_error` | The wiki could not follow its `origin` on the server's refresh (every 30 seconds). | `{"message": string}` |
+| `milestone_changed` | A milestone was made or edited through the API. | `{"id", "name", "target_date", "description", "created_at"}` |
+| `milestone_removed` | A milestone was deleted through the API; its cards stay. | `{"milestone": id}` |
 | `file_changed` | A file of a repository was saved through the API. | `{"repository": id, "path": string}` |
 | `script_changed` | A column's script was saved or removed for a repository's project, through the API. | `{"repository": id, "column": string, "path": string (from the root of the harness configuration repository)}` |
 | `project_settings_changed` | A file of a project's settings other than a column's script was saved or removed, through the API. | `{"repository": id, "file": string}` |
@@ -3276,6 +3344,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `card_parent_changed` | An issue got a parent, was moved to another or lost it, through the API or on the forge. | `{"card": id, "parent": issue number or null}` |
 | `card_labels_changed` | The labels of an issue changed, through the API or on the forge. | `{"card": id, "labels": [text]}` |
 | `card_assignees_changed` | The people a card is given to changed. | `{"card": id, "assignees": [handle]}` |
+| `card_milestones_changed` | The milestones a card is in changed. | `{"card": id, "milestones": [id]}` (in the order of their target dates) |
 | `inbox_assignees_changed` | The people an inbox item is given to changed. | `{"item": id, "assignees": [handle]}` |
 | `card_blocking_changed` | A blocker was added or removed through the API, or the blockers the forge and the body name changed. | `{"card": id, "blocked_by": [number]}` (every blocker, done or not) |
 | `card_links_changed` | The duplicate or related links of an issue changed (sent for each issue they touch). | `{"card": id, "duplicate_of": number or null, "duplicates": [number], "related": [number]}` |

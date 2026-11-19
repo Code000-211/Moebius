@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 use crate::server::ports::Port;
-use crate::store::{Card, Change, Comment, Project, Repository};
+use crate::store::{Card, Change, Comment, Milestone, Project, Repository};
 
 /// One thing that happened, as the web app receives it. It is built from an [`Event`] and deserializes from the
 /// `{kind, data}` a client is sent, so nothing outside [`Event`] can name a kind.
@@ -77,6 +77,11 @@ pub enum Event {
     CardAssigneesChanged {
         card: i64,
         assignees: Vec<String>,
+    },
+    /// The milestones a card is in changed (their ids, in the order of their target dates).
+    CardMilestonesChanged {
+        card: i64,
+        milestones: Vec<i64>,
     },
     /// The people an inbox item is given to changed.
     InboxAssigneesChanged {
@@ -151,6 +156,12 @@ pub enum Event {
     /// The wiki could not follow `origin` on the server's refresh.
     WikiError {
         message: String,
+    },
+    /// A milestone was made or edited.
+    MilestoneChanged(Milestone),
+    /// A milestone was deleted; its cards stay.
+    MilestoneRemoved {
+        milestone: i64,
     },
     RunStarted {
         run: i64,
@@ -468,6 +479,13 @@ mod tests {
             repositories: vec![2],
             files: None,
         };
+        let milestone = Milestone {
+            id: 3,
+            name: "Launch".into(),
+            target_date: "2027-01-31".into(),
+            description: "Ship it".into(),
+            created_at: 1_700_000_000,
+        };
         let port = port();
         vec![
             (
@@ -537,6 +555,13 @@ mod tests {
                     assignees: vec!["lea".into()],
                 },
                 json!({"kind": "card_assignees_changed", "data": {"card": 7, "assignees": ["lea"]}}),
+            ),
+            (
+                Event::CardMilestonesChanged {
+                    card: 7,
+                    milestones: vec![2, 5],
+                },
+                json!({"kind": "card_milestones_changed", "data": {"card": 7, "milestones": [2, 5]}}),
             ),
             (
                 Event::InboxAssigneesChanged {
@@ -680,6 +705,14 @@ mod tests {
                     message: "boom".into(),
                 },
                 json!({"kind": "wiki_error", "data": {"message": "boom"}}),
+            ),
+            (
+                Event::MilestoneChanged(milestone.clone()),
+                json!({"kind": "milestone_changed", "data": milestone.clone()}),
+            ),
+            (
+                Event::MilestoneRemoved { milestone: 3 },
+                json!({"kind": "milestone_removed", "data": {"milestone": 3}}),
             ),
             (
                 Event::RunStarted {

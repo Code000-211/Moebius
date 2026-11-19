@@ -368,7 +368,7 @@ export function BoardPage() {
           actions={
             <>
               <LayoutSwitch
-                layout={display.layout}
+                layout={display.layout === "list" ? "list" : "board"}
                 onChange={(layout) => setQuery(displayQuery({ ...display, layout }))}
               />
               <Button variant="secondary" onClick={() => setTerminalOpen(true)}>
