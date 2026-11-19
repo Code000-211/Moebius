@@ -2,7 +2,8 @@
  * The Projects page (pattern 21 of the design drafts): every project as a tile, with its key, its repositories, the
  * people who work in it and its open cards. A tile opens the settings and files of the project's first repository,
  * where the repository can also be removed; the board is in the sidebar's project switcher. "New project" makes a
- * project with a name and a key the server checks is free; "Add a repository" makes a repository with a project of its
+ * project with a name and a key the server checks is free, and its tile opens the project's own files, where its cards
+ * are worked on until it has a repository; "Add a repository" makes a repository with a project of its
  * own, as every repository has.
  */
 import { PlusIcon } from "@phosphor-icons/react";
@@ -113,9 +114,9 @@ export function ProjectsPage() {
   );
 }
 
-/** One project's tile; with a repository it opens that repository's settings and files. */
+/** One project's tile; it opens its first repository's settings and files, or without one the project's own files. */
 function Tile({ project }: { project: Project }) {
-  const first = project.repositories[0];
+  const opens = project.repositories[0]?.id ?? project.files;
   const body = (
     <>
       <span className="flex min-w-0 items-center gap-2">
@@ -144,9 +145,9 @@ function Tile({ project }: { project: Project }) {
   const tile = "flex min-w-0 flex-col gap-3 rounded-card bg-surface p-4 no-underline";
   return (
     <li data-testid="project" className="min-w-0">
-      {first ? (
+      {opens != null ? (
         <Link
-          to={`/projects/${first.id}`}
+          to={`/projects/${opens}`}
           aria-label={`${project.name}, ${project.key}`}
           className={cn(tile, "lift")}
         >

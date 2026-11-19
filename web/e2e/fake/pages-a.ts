@@ -21,6 +21,8 @@ interface Repository {
   github: string | null;
   trusted: string[];
   project: string | null;
+  /** The project whose own files this repository holds. */
+  files_of?: number | null;
 }
 
 /** A project as `GET /v1/projects` answers it. */
@@ -32,6 +34,7 @@ interface Project {
   repositories: Array<{ id: number; name: string; home: boolean }>;
   members: Array<{ id: number; handle: string; name: string }>;
   open_cards: number;
+  files: number | null;
 }
 
 interface InboxItem {
@@ -547,18 +550,21 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
       boards: Array<{ repository: Repository; cards: Array<{ column: string; closed?: boolean }> }>;
     };
     const members = [{ id: 1, handle: "owner", name: "Owner" }];
-    const homes = boards.map(({ repository, cards }) => ({
-      id: repository.id,
-      name: repository.name,
-      key: repository.name
-        .replace(/[^A-Za-z0-9]/g, "")
-        .toUpperCase()
-        .slice(0, 10),
-      created_at: NOW,
-      repositories: [{ id: repository.id, name: repository.name, home: true }],
-      members,
-      open_cards: cards.filter((card) => !card.closed && card.column !== "Done").length,
-    }));
+    const homes = boards
+      .filter(({ repository }) => repository.files_of == null)
+      .map(({ repository, cards }) => ({
+        id: repository.id,
+        name: repository.name,
+        key: repository.name
+          .replace(/[^A-Za-z0-9]/g, "")
+          .toUpperCase()
+          .slice(0, 10),
+        created_at: NOW,
+        repositories: [{ id: repository.id, name: repository.name, home: true }],
+        members,
+        open_cards: cards.filter((card) => !card.closed && card.column !== "Done").length,
+        files: null,
+      }));
     return [...homes, ...madeProjects.map((project) => ({ ...project, members }))];
   }
 
@@ -924,14 +930,30 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         if (projects().some((each) => each.name.toLowerCase() === name.toLowerCase())) {
           return fail(response, 409, `a project named ${name} exists already`);
         }
+        // The project's own files are a repository without a forge, named by its key.
+        const id = 100 + madeProjects.length;
+        const files: Repository = {
+          id: 200 + madeProjects.length,
+          name: key,
+          path: `/srv/moebius/projects/${key}`,
+          forge: "none",
+          default_branch: "main",
+          github: null,
+          trusted: [],
+          project: null,
+          files_of: id,
+        };
+        repositories = [...repositories, files];
+        send({ kind: "repository_added", data: files });
         const made = {
-          id: 100 + madeProjects.length,
+          id,
           name,
           key,
           created_at: NOW,
           repositories: [],
           members: [],
           open_cards: 0,
+          files: files.id,
         };
         madeProjects = [...madeProjects, made];
         send({ kind: "project_changed", data: { ...made, repositories: [] } });

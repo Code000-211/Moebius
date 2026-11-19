@@ -263,6 +263,41 @@ mod tests {
         );
     }
 
+    /// A project without a repository is a full board (ADR 0019): its card is coded in a worktree of the project's
+    /// own files, reviewed on both axes, and its change merged into them.
+    #[test]
+    fn a_card_of_a_project_without_a_repository_is_worked_on_and_merged_in_its_files() {
+        let (_dir, app, engine, _repo) = setup();
+        let project = app.add_project("Pricing page", "PRICE").unwrap();
+        let files = app.repository(project.files.unwrap()).unwrap();
+        let card = app
+            .create_issue(files.id, "Write the prices", "", OWNER_AUTHOR)
+            .unwrap();
+        assert_eq!(card.project_id, project.id);
+        for _ in 0..4 {
+            engine.settle(card.id).unwrap();
+        }
+        assert_eq!(app.card(card.id).unwrap().column, "Ready to merge");
+        let runs = app.store.runs_for_card(card.id).unwrap();
+        let purposes: Vec<_> = runs.iter().map(|r| r.purpose.as_str()).collect();
+        assert_eq!(purposes, ["code", "review-standards", "review-spec"]);
+
+        let change = app.store.changes(files.id).unwrap().pop().unwrap();
+        app.merge_change(&crate::decide::Actor::first_owner(), change.id, "fine")
+            .unwrap();
+        assert_eq!(app.card(card.id).unwrap().column, "Done");
+        let store = std::path::Path::new(&files.path);
+        let written = format!("main:run-{}.txt", runs[0].id);
+        assert_eq!(
+            crate::repos::git(store, &["show", &written]).unwrap(),
+            "Write the prices"
+        );
+        // The Files page lists what was merged.
+        let tree = crate::repos::files::tree(&app, files.id, "").unwrap();
+        let names: Vec<_> = tree.entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, [format!("run-{}.txt", runs[0].id)]);
+    }
+
     #[test]
     fn a_script_that_merges_the_change_finishes_the_card_and_the_script_is_the_decider() {
         let (_dir, app, engine, repo) = setup();

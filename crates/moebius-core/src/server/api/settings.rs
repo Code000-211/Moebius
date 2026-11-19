@@ -195,9 +195,17 @@ async fn login(
 async fn start_steps(State(state): State<ApiState>) -> Result<axum::Json<setup::Start>, ApiError> {
     let available = state.router.available_models(false).await;
     let agents = state.runs.agents();
-    let repositories = blocking(&state.app, |app| Ok(app.store.repositories()?.len()))
-        .await?
-        .0;
+    // A project's own files are no repository a person added.
+    let repositories = blocking(&state.app, |app| {
+        Ok(app
+            .store
+            .repositories()?
+            .iter()
+            .filter(|r| r.files_of.is_none())
+            .count())
+    })
+    .await?
+    .0;
     let config = state.config.get();
     Ok(axum::Json(
         setup::start(&config, available, &agents, repositories).await,

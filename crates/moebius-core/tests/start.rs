@@ -92,7 +92,9 @@ async fn a_server_with_nothing_set_up_says_what_is_missing() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("no-such-pi-bolt");
     let toml = format!("[pi_bolt]\nprogram = {:?}\n", missing.display().to_string());
-    let (_server, base, token) = serve(dir.path(), &toml).await;
+    let (server, base, token) = serve(dir.path(), &toml).await;
+    // A project's own files are no repository a person added.
+    server.app.add_project("Pricing page", "PRICE").unwrap();
     let (answer, _) = start(&base, &token).await;
     assert_eq!(answer["done"], false);
     let steps = steps(&answer);
