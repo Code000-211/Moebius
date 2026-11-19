@@ -3,9 +3,13 @@
 //! project, where its new issues land; every card is on the board of exactly one project (`cards.project_id`).
 //!
 //! The migration that adds the tables makes one project per repository, with the repository's name and id, as its
-//! home project, and puts each card on it. SQL cannot make a key from a name, so the migration leaves a provisional key,
+//! home project, and puts each card on it. Repository names were unique only in their case and project names are
+//! unique in any case, so a repository whose name an earlier one has in another case gets `<name> (<id>)`, which no
+//! repository name can be, since those have no spaces. SQL cannot make a key from a name, so the migration leaves a provisional key,
 //! `#<id>`, which no project can choose; [`give_keys`] replaces every such key with one made from the name as soon as
 //! the store is open. A repository added later makes its home project the same way (see `cards`).
+
+use std::collections::HashSet;
 
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
@@ -31,7 +35,12 @@ ALTER TABLE repositories ADD COLUMN home_project_id INTEGER REFERENCES projects(
 ALTER TABLE cards ADD COLUMN project_id INTEGER REFERENCES projects(id);
 CREATE INDEX cards_by_project ON cards (project_id);
 INSERT INTO projects (id, name, key, created_at)
-    SELECT id, name, '#' || id, CAST(strftime('%s', 'now') AS INTEGER) FROM repositories;
+    SELECT id,
+           CASE WHEN EXISTS (SELECT 1 FROM repositories AS earlier
+                             WHERE earlier.name = repositories.name COLLATE NOCASE AND earlier.id < repositories.id)
+                THEN name || ' (' || id || ')' ELSE name END,
+           '#' || id, CAST(strftime('%s', 'now') AS INTEGER)
+    FROM repositories;
 INSERT INTO project_repositories (project_id, repository_id, position) SELECT id, id, 0 FROM repositories;
 UPDATE repositories SET home_project_id = id;
 UPDATE cards SET project_id = repository_id;
@@ -46,7 +55,7 @@ pub struct Project {
     pub id: i64,
     /// Unique regardless of case; a project can be renamed.
     pub name: String,
-    /// An uppercase letter and then 1 to 9 uppercase letters or digits, such as `WEB`; unique, and kept for good.
+    /// An uppercase letter and then 1 to 9 uppercase letters or digits, such as `WEB`; unique, and kept when the project is renamed.
     pub key: String,
     pub created_at: i64,
     /// The ids of the project's repositories, in the order the project names them.
@@ -64,7 +73,7 @@ pub fn is_key(key: &str) -> bool {
 /// A key made from `name` that `taken` does not refuse: the name's letters and digits in capitals, after a `P` when it
 /// does not start with a letter, cut to [`KEY_LIMIT`]; a number is put at its end while that is taken or shorter than
 /// two characters, so `web` becomes `WEB`, a second `web-` `WEB2`, and `2fa` `P2FA`.
-pub fn key_for(name: &str, taken: impl Fn(&str) -> bool) -> String {
+fn key_for(name: &str, taken: impl Fn(&str) -> bool) -> String {
     let letters: String = name
         .chars()
         .filter(char::is_ascii_alphanumeric)
@@ -88,12 +97,10 @@ pub fn key_for(name: &str, taken: impl Fn(&str) -> bool) -> String {
         .expect("some number makes a key that is free")
 }
 
-/// Whether `key` is taken by a project on `conn`.
-fn key_taken(conn: &Connection, key: &str) -> rusqlite::Result<bool> {
-    Ok(conn
-        .query_row("SELECT 1 FROM projects WHERE key = ?1", [key], |_| Ok(()))
-        .optional()?
-        .is_some())
+/// The keys the projects on `conn` have.
+fn taken_keys(conn: &Connection) -> rusqlite::Result<HashSet<String>> {
+    let mut stmt = conn.prepare("SELECT key FROM projects")?;
+    stmt.query_map([], |r| r.get(0))?.collect()
 }
 
 /// Gives every project with a provisional key (`#<id>`, which the migration leaves) a key made from its name, in the
@@ -105,19 +112,25 @@ pub(super) fn give_keys(conn: &Connection) -> rusqlite::Result<()> {
         stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
             .collect::<rusqlite::Result<_>>()?
     };
+    if unkeyed.is_empty() {
+        return Ok(());
+    }
+    let mut taken = taken_keys(conn)?;
     for (id, name) in unkeyed {
-        let key = key_for(&name, |key| key_taken(conn, key).unwrap_or(true));
+        let key = key_for(&name, |key| taken.contains(key));
         conn.execute(
             "UPDATE projects SET key = ?1 WHERE id = ?2",
             params![key, id],
         )?;
+        taken.insert(key);
     }
     Ok(())
 }
 
 /// Makes the home project of a new repository on `conn`: the repository's name and a key made from it. Returns its id.
 pub(super) fn insert_home_project(conn: &Connection, name: &str) -> rusqlite::Result<i64> {
-    let key = key_for(name, |key| key_taken(conn, key).unwrap_or(true));
+    let taken = taken_keys(conn)?;
+    let key = key_for(name, |key| taken.contains(key));
     conn.execute(
         "INSERT INTO projects (name, key, created_at) VALUES (?1, ?2, ?3)",
         params![name, key, now()],
@@ -268,6 +281,7 @@ mod tests {
                 "INSERT INTO repositories (id, name, path, forge, default_branch) VALUES (1, 'web', '/srv/web', 'none', 'main');
                  INSERT INTO repositories (id, name, path, forge, default_branch) VALUES (2, 'api', '/srv/api', 'github', 'main');
                  INSERT INTO repositories (id, name, path, forge, default_branch) VALUES (3, 'web-', '/srv/web-', 'none', 'main');
+                 INSERT INTO repositories (id, name, path, forge, default_branch) VALUES (4, 'Web', '/srv/Web', 'none', 'main');
                  INSERT INTO cards (id, repository_id, number, title, body, author, column_name, created_at)
                      VALUES (1, 1, 1, 'Front page', '', 'person:owner', 'Backlog', 1);
                  INSERT INTO cards (id, repository_id, number, title, body, author, column_name, created_at)
@@ -293,6 +307,7 @@ mod tests {
                 (1, "web".into(), "WEB".into(), vec![1]),
                 (2, "api".into(), "API".into(), vec![2]),
                 (3, "web-".into(), "WEB2".into(), vec![3]),
+                (4, "Web (4)".into(), "WEB4".into(), vec![4]),
             ]
         );
         for repository in store.repositories().unwrap() {

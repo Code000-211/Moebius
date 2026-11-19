@@ -614,12 +614,13 @@ client sends are ignored; closing the socket ends the stream.
 
 A project (ADR 0019) is one board and the work on it, with any number of repositories. Its `key` names its cards
 (`WEB-24`): an uppercase letter and then 1 to 9 uppercase letters or digits, unique on the server, chosen when the
-project is made and kept for good; renaming changes only the `name`, which is unique regardless of case. Every
+project is made and kept for as long as the project is; renaming changes only the `name`, which is unique regardless of case. Every
 repository has a home project, where its new issues land: adding a repository makes one with the repository's name and a
 key made from it (its letters and digits in capitals, after a `P` when it does not start with a letter, at most 10, with
 a number at its end when that key is taken: `web` is `WEB`, a second `web-` `WEB2`, `2fa` `P2FA`), and removing a
-repository removes its home project when no repository and no card is left on it. A server from before projects has one
-project per repository after its first start, with the repository's name and id, and every card on it.
+repository removes its home project when no repository and no card is left on it, and its key can then be taken again. A
+server from before projects has one project per repository after its first start, with the repository's name and id,
+and every card on it; a repository whose name an earlier one has in another case gets the project name `<name> (<id>)`.
 
 A `ProjectView` is `{"id": number, "name": string, "key": string, "created_at": number, "repositories": [{"id": number,
 "name": string, "home": bool}], "members": [{"id": number, "handle": string, "name": string}], "open_cards": number}`:

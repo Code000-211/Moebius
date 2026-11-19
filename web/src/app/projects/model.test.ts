@@ -3,7 +3,6 @@ import type { Repository } from "../../api/types/board";
 import { rank, score } from "./fuzzy";
 import {
   addFailure,
-  cardsText,
   EMPTY_FORM,
   firstLine,
   forgeTag,
@@ -79,8 +78,6 @@ describe("how a repository is told", () => {
     );
     expect(onForge(repository({}))).toBe(false);
     expect(onForge(repository({ forge: "gitlab", project: "a/b" }))).toBe(true);
-    expect(cardsText(1)).toBe("1 card");
-    expect(cardsText(0)).toBe("0 cards");
   });
 });
 

@@ -5,7 +5,6 @@
  */
 import type { Forge, Repository } from "../../api/types/board";
 import type { FileDetail, NewRepository, Project } from "../../api/types/projects";
-import { plural } from "../../ui/lib/format";
 
 /** The forge and the repository's name there, as a page shows it: `GitHub · acme/radiance`. */
 export function forgeTag(repository: Repository): string {
@@ -19,10 +18,6 @@ export function forgeTag(repository: Repository): string {
 /** Whether the repository is on a forge, whose logins it may trust. */
 export function onForge(repository: Repository): boolean {
   return repository.github !== null || Boolean(repository.project);
-}
-
-export function cardsText(count: number): string {
-  return plural(count, "card", "cards");
 }
 
 /** The most characters a project's key has. */

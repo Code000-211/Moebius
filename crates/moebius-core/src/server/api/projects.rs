@@ -1,4 +1,4 @@
-//! The projects (ADR 0019): each with a name, a key that names its cards and is kept for good, a board and its
+//! The projects (ADR 0019): each with a name, a key that names its cards and is kept while the project is, a board and its
 //! repositories. Every repository has a home project, made with it, so a server from before has one project per
 //! repository.
 //!
@@ -8,7 +8,6 @@
 //! - `PATCH /v1/projects/{id}` `{name}`: renames a project. Its key stays: a body that names another key is refused.
 
 use axum::extract::{Path as UrlPath, State};
-use axum::http::StatusCode;
 use axum::routing::get;
 use axum::{Json, Router};
 use serde::Deserialize;
@@ -61,19 +60,10 @@ async fn rename_project(
     UrlPath(id): UrlPath<i64>,
     Json(edited): Json<EditedProject>,
 ) -> Result<Json<ProjectView>, ApiError> {
-    if let Some(key) = edited.key {
-        let project = state.app.project(id)?;
-        if key != project.key {
-            return Err(ApiError(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                format!(
-                    "a project keeps its key {}: the keys of its cards would change",
-                    project.key
-                ),
-            ));
-        }
-    }
-    blocking(&state.app, move |app| app.rename_project(id, &edited.name)).await
+    blocking(&state.app, move |app| {
+        app.rename_project(id, &edited.name, edited.key.as_deref())
+    })
+    .await
 }
 
 #[cfg(test)]

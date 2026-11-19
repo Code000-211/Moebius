@@ -68,7 +68,7 @@ pub use lessons::{Lesson, NewLesson};
 pub use localize::IndexedFile;
 pub use outgoing::OutgoingWebhook;
 pub use people::{FIRST_OWNER, Person, Role};
-pub use projects::{KEY_LIMIT, Project, is_key, key_for};
+pub use projects::{KEY_LIMIT, Project, is_key};
 pub use replays::Replay;
 pub use research::{Budget, BudgetKind, Experiment, Research};
 pub use retros::{OwnEdits, Proposal, Retro, Trial};

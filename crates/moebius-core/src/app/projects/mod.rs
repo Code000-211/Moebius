@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{App, AppError, Result};
 use crate::bus::Event;
-use crate::store::{KEY_LIMIT, Project, is_key};
+use crate::store::{KEY_LIMIT, Project, StoreError, is_key};
 
 /// The most characters a project's name has.
 pub const NAME_LIMIT: usize = 80;
@@ -64,6 +64,18 @@ fn check_name(name: &str) -> Result<()> {
     }
 }
 
+/// A store error, as `Exists` with `what` when it is a unique column refusing a value another project took meanwhile.
+fn taken(error: StoreError, what: &str) -> AppError {
+    match error {
+        StoreError::Sql(rusqlite::Error::SqliteFailure(e, _))
+            if e.code == rusqlite::ErrorCode::ConstraintViolation =>
+        {
+            AppError::Exists(what.to_string())
+        }
+        other => other.into(),
+    }
+}
+
 impl App {
     /// Makes a project with `name` and `key` and no repository yet. The key is an uppercase letter and then 1 to 9
     /// uppercase letters or digits, and no other project may have it; no other project may have the name either, in
@@ -82,14 +94,24 @@ impl App {
         if self.store.project_by_name(name)?.is_some() {
             return Err(AppError::Exists(format!("a project named {name}")));
         }
-        let project = self.store.add_project(name, key)?;
+        let project = self
+            .store
+            .add_project(name, key)
+            .map_err(|e| taken(e, &format!("a project named {name} or with the key {key}")))?;
         self.bus.publish(Event::ProjectChanged(project.clone()));
         self.project_view(project)
     }
 
-    /// Renames the project `id`; its key stays as it was. A name another project has, in any case, is refused.
-    pub fn rename_project(&self, id: i64, name: &str) -> Result<ProjectView> {
+    /// Renames the project `id`; its key stays as it was, and a `key` that is not the project's own is refused. A name
+    /// another project has, in any case, is refused.
+    pub fn rename_project(&self, id: i64, name: &str, key: Option<&str>) -> Result<ProjectView> {
         let project = self.project(id)?;
+        if key.is_some_and(|key| key != project.key) {
+            return Err(AppError::Invalid(format!(
+                "a project keeps its key {}: the keys of its cards would change",
+                project.key
+            )));
+        }
         check_name(name)?;
         if project.name == name {
             return self.project_view(project);
@@ -101,7 +123,9 @@ impl App {
         {
             return Err(AppError::Exists(format!("a project named {name}")));
         }
-        self.store.rename_project(id, name)?;
+        self.store
+            .rename_project(id, name)
+            .map_err(|e| taken(e, &format!("a project named {name}")))?;
         let renamed = self.project(id)?;
         self.bus.publish(Event::ProjectChanged(renamed.clone()));
         self.project_view(renamed)
@@ -223,20 +247,37 @@ mod tests {
         let (_dir, app) = app();
         let shop = app.add_project("Storefront", "SHOP").unwrap();
         app.add_project("Marketing", "MKT").unwrap();
-        let renamed = app.rename_project(shop.id, "Shop").unwrap();
+        let renamed = app.rename_project(shop.id, "Shop", None).unwrap();
         assert_eq!(
             (renamed.name.as_str(), renamed.key.as_str()),
             ("Shop", "SHOP")
         );
         assert_eq!(app.project_view_of(shop.id).unwrap().key, "SHOP");
         // Its own name in another case is no clash; another project's is.
-        assert_eq!(app.rename_project(shop.id, "SHOP").unwrap().name, "SHOP");
+        assert_eq!(
+            app.rename_project(shop.id, "SHOP", Some("SHOP"))
+                .unwrap()
+                .name,
+            "SHOP"
+        );
         assert!(matches!(
-            app.rename_project(shop.id, "marketing"),
+            app.rename_project(shop.id, "marketing", None),
             Err(AppError::Exists(_))
         ));
         assert!(matches!(
-            app.rename_project(99, "Gone"),
+            app.rename_project(shop.id, "Shop", Some("SHOPS")),
+            Err(AppError::Invalid(_))
+        ));
+        // A name taken between the check and the write is still a taken name, not a failure of the server.
+        assert!(matches!(
+            taken(
+                app.store.add_project("Marketing", "OTHER").unwrap_err(),
+                "a project named Marketing"
+            ),
+            AppError::Exists(_)
+        ));
+        assert!(matches!(
+            app.rename_project(99, "Gone", None),
             Err(AppError::NotFound(_))
         ));
     }

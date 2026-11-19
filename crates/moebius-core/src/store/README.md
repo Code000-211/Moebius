@@ -46,11 +46,12 @@ person deletes theirs; a session is refused once it expires, and forgotten when 
 
 `repositories.home_project_id` is the project a repository's new issues land in, and `cards.project_id` the project
 whose board a card is on. Adding a repository makes its home project in the same transaction, with the repository's
-name and a key made from it (`store::key_for`: `web` is `WEB`, a second `web-` `WEB2`); a new card takes its
-repository's home project; removing a repository removes its home project when nothing is left on it.
+name and a key made from it (`key_for` in `store/projects.rs`: `web` is `WEB`, a second `web-` `WEB2`); a new card takes its
+repository's home project; removing a repository removes its home project when nothing is left on it, and its key can then be taken again.
 
 The migration that adds the tables makes one project per repository, with its name and id, as its home project, and
-puts every card on it. It gives each a provisional key, `#<id>`, which no project can choose, because SQL cannot make a
+puts every card on it; a repository whose name an earlier one has in another case gets the project name `<name>
+(<id>)`, since project names are unique in any case. It gives each a provisional key, `#<id>`, which no project can choose, because SQL cannot make a
 key from a name; opening the store replaces each with a key made from the name, in the order the projects were made.
 
 ## Workflow runs
