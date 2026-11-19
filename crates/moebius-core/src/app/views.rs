@@ -298,9 +298,13 @@ impl App {
         self.store.edit_view(id, &new_view(fields))?;
         self.view(who, id).or_else(|_| {
             // Made personal by an owner of the organisation, who is not its owner: it is no longer theirs to see.
-            self.store
+            let mut view = self
+                .store
                 .view(id)?
-                .ok_or_else(|| AppError::NotFound(format!("view {id}")))
+                .ok_or_else(|| AppError::NotFound(format!("view {id}")))?;
+            // Reaching here means `may_change_view` passed.
+            view.can_change = true;
+            Ok(view)
         })
     }
 
@@ -840,6 +844,25 @@ mod tests {
         // Losing sight of a project does not stop its view being renamed.
         app.store.set_project_access(w.api.1, true, &[]).unwrap();
         assert!(app.edit_view(&lea, named.id, &rename("Renamed")).is_ok());
+        // The rename kept the project lea can no longer see, and a filter sent in a PATCH replaces it.
+        assert_eq!(
+            app.store.view(named.id).unwrap().unwrap().filter.projects,
+            [w.api.1]
+        );
+        let emptied = ViewEdit {
+            filter: Some(ViewFilter::default()),
+            ..ViewEdit::default()
+        };
+        app.edit_view(&lea, named.id, &emptied).unwrap();
+        assert!(
+            app.store
+                .view(named.id)
+                .unwrap()
+                .unwrap()
+                .filter
+                .projects
+                .is_empty()
+        );
         // A private project is not named by a person who cannot see it.
         let mut naming = fields("Secret");
         naming.filter.projects = vec![w.api.1];

@@ -1307,7 +1307,7 @@ may change or delete it (its owner and an owner of the organisation may), so a p
   estimate comes after those that have one, either way round.
 - `ViewFilter` asks of a card: every part that is set must match, and within a list any value matches (so an empty list
   asks nothing). `projects` and `repositories` (ids), `labels` (the labels people gave the card: its priority, due date and estimate are kept as `priority:`, `due:` and
-  `estimate:` labels and have filters of their own, so no label filter matches them), `assignees` (handles), `priorities` (`urgent`, `high`,
+  `estimate:` labels with a value that reads, and have filters of their own, so no label filter matches them), `assignees` (handles), `priorities` (`urgent`, `high`,
   `medium`, `low`, `none`), `cycles` and `milestones` (ids, a closed cycle included), `columns`, `authors` (all in any
   case) and `text` (a word or phrase in the title or the body, in any case). At most 100 values for each part and 100
   characters of text. A key that is not a part is refused.
