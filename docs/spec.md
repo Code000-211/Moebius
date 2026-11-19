@@ -71,7 +71,9 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
   that the server clones to `<data_dir>/wiki` and keeps as it keeps the harness configuration repository. The
   organisation's pages are at the top and a project's in `projects/<key>/`. An edit on the Wiki page or through
   `/v1/wiki/` is a commit by its person pushed to `origin`, undone when the push fails; a page's history follows it
-  through renames and moves, and what was pushed from elsewhere is read after the next refresh.
+  through renames and moves, and what was pushed from elsewhere is read after the next refresh. A code run's prompt holds the pages its issue links to
+  with `[[Page name]]`. The Moebius agent reads the wiki with `"$MOEBIUS" wiki` and proposes an edit with `wiki propose`: a
+  branch of the clone that waits in the inbox (`wiki_proposal`) and changes the pages only once a member merges it.
 
 - **Connecting over SSH**, as an editor's remote mode does: `moebius connect <host>` logs in with the system's `ssh`
   (keys, the agent, `~/.ssh/config`), and when no server answers there it sets one up after a yes (`--yes` for

@@ -438,6 +438,7 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `cli/automations.rs` | `automation` (list, save, run, delete). |
 | `cli/agents.rs` | `agents` and `agent` (show, save, delete). |
 | `cli/rules.rs` | `rules` and `rules save`. |
+| `cli/wiki.rs` | `wiki list`, `wiki read` and `wiki propose`: the pages of the wiki, and an edit that waits in the inbox. |
 | `cli/workflow.rs` | `workflow list`, `show`, `save` and `delete`. |
 | `cli/packages.rs` | `pkg search`, `info`, `install`, `update`, `remove` and `list`, and how their answers are written. |
 | `cli/plugins.rs` | `plugin enable` and `plugin disable [--unwrap-runs] [--allow-unchecked]`: turning a plugin off or on, and how the answer is written. |
@@ -840,6 +841,8 @@ At the top:
 |---|---|
 | `wiki/mod.rs` | The wiki's clone (a kept clone, `repos/kept.rs`): opened, refreshed with `wiki_changed` when that brought commits, the names of pages and the folder of a project's, and the person an edit is by. |
 | `wiki/pages.rs` | Reading the wiki: the list of pages, a page as it is or as a commit of its history left it, and its history through renames and moves. |
+| `wiki/proposals.rs` | An agent's edit of a page: a branch of the clone with one commit that waits in the inbox as a `wiki_proposal` and reaches the pages, and `origin`, only when a person merges it. |
+| `wiki/prompt.rs` | The pages a card's issue links to with `[[Page name]]`, as the section of a run's prompt that holds them. |
 | `wiki/edits.rs` | A person's edits: a page written, moved or deleted, each a commit by the person after following `origin`, pushed or undone. |
 
 Outside `src/`: `kanban/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension

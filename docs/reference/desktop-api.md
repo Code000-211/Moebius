@@ -112,6 +112,9 @@ any route to any role that is not what its row says.
 | `POST /v1/wiki/moves` | member | no |
 | `GET /v1/wiki/history/{*path}` | viewer | yes |
 | `POST /v1/wiki/refresh` | member | yes |
+| `POST /v1/wiki/proposals` | member | yes |
+| `POST /v1/wiki/proposals/{id}/merge` | member | no |
+| `POST /v1/wiki/proposals/{id}/dismiss` | member | no |
 | `GET /v1/milestones` | viewer | yes |
 | `POST /v1/milestones` | member | no |
 | `GET /v1/milestones/{id}` | viewer | yes |
@@ -428,7 +431,7 @@ in the snapshot, which holds only open items), `at` and `assignees` (the handles
 addresses, and `data.regression`: the same for the cards of the regression set, empty when none was tried; its `title` is the
 proposal's and it has no card; a proposal for Moebius's own configuration has `data.kind` (`settings` or
 `repository`), `data.repository` (the repository's id, or null), `data.reason` (the Retro's reason) and `data.diff`
-instead of `data.trials`), `grilling_issues` (`data.grilling`, `data.repository`, `data.issues`: an array of `{"title",
+instead of `data.trials`), `wiki_proposal` (`data.branch`, `data.page`, `data.message`, `data.by`, `data.commit`, `data.diff`; an agent's edit of a wiki page, no card: see [`POST /v1/wiki/proposals`](#post-v1wikiproposals)), `grilling_issues` (`data.grilling`, `data.repository`, `data.issues`: an array of `{"title",
 "body", "blocked_by"}`; its `title` is "N issues from a grilling" and it has no card) and `grilling_report` (`data.grilling`,
 `data.repository`, `data.report`: the text; no card) and `takeover` (`data.takeover`, `data.kind`, `data.agreement`,
 `data.count`; its `title` is "The decision model can take over <kind>" and it has no card) and `extension_update`
@@ -748,7 +751,8 @@ Moebius is the committer), made after the clone has followed `origin` and then p
 the commit is undone and the clone is as it was: `409` with git's message, any key in it redacted. Text that changes
 nothing makes no commit. Every commit, and a refresh that brings commits pushed to `origin` from elsewhere, sends
 `wiki_changed`; the server refreshes the wiki every 30 seconds, and a failed refresh sends `wiki_error`. Only a person
-edits the wiki: an agent's run token is refused (`403`).
+edits the wiki directly: an agent's run token is refused (`403`) on the routes above that write, and proposes its edit
+with `POST /v1/wiki/proposals` instead.
 
 A `PageView` is `{"path": string, "name": string, "text": string, "version": Version}`: `name` the last part of the
 path, `text` the Markdown, `version` the last commit that changed the page. A `Version` is `{"commit": string, "author":
@@ -795,6 +799,32 @@ path that is not a page's or `to` the same as `from`.
 
 The commits that changed the page, newest first, following it through its renames and moves: `[Version]`. A deleted
 page keeps its history, its deletion first. Errors: `404` for a page that never was.
+
+### `POST /v1/wiki/proposals`
+
+An agent's edit of a page, or a member's who would rather it were reviewed (the run token of the Moebius agent is
+accepted). Request body: `{"path": string, "text": string, "message"?: string}`, as `PUT` takes them. Nothing is
+pushed and no page changes: the clone gets a branch `proposal/run-<run id>-<n>` (`proposal/<handle>-<n>` for a person)
+that holds the change as one commit, authored `<name> (agent) <agent@moebius>` for an agent, and the inbox gets an item
+of the kind `wiki_proposal` with the title `Wiki: <message>` and no card. Response: that `InboxItem`, whose `data` is
+`{"branch": string, "page": string, "message": string, "by": string, "commit": string, "diff": string}`; `diff` is the
+page's change, cut at 40 000 bytes. Errors: `409` while the wiki has no page yet (a person writes the first), `422` for
+a path that is not a page's, under `projects/` a key no project has, or a text the page has already, `403` for a column
+script.
+
+### `POST /v1/wiki/proposals/{id}/merge`
+
+A member merges the proposal of the inbox item `id`. The clone follows `origin`, the branch is merged into the clone's
+branch with the commit `Merge the proposal: <message>` and pushed to `origin`; the branch is deleted, the item resolved,
+the decision recorded as `merge_proposal` and `wiki_changed` sent. Request body: `{"reason"?: string}`. Response:
+`{"commit": string}`, the commit the pages are now read at. Errors: `404` for no open `wiki_proposal` item `id`, `409`
+for a merge that conflicts with what was pushed since (the page changed meanwhile) or a push that fails; both leave the
+clone and the item as they were.
+
+### `POST /v1/wiki/proposals/{id}/dismiss`
+
+A member dismisses the proposal: its branch is deleted, the item resolved, and the wiki is as it was. Request body
+`{"reason"?: string}`. Response: `null`. Errors: `404` as for merging.
 
 ### `POST /v1/wiki/refresh`
 

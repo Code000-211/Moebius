@@ -31,6 +31,7 @@ they chose.
 "$MOEBIUS" grillings             # then: "$MOEBIUS" grilling show 2
 "$MOEBIUS" retro                 # then: "$MOEBIUS" proposals
 "$MOEBIUS" automation list       # then: "$MOEBIUS" api GET /v1/automations/3/firings
+"$MOEBIUS" wiki list             # the wiki's pages; then: "$MOEBIUS" wiki read "Team/On call"
 ```
 
 Add `--json` to any command to read fields (`"$MOEBIUS" board --json`). For anything without a command use
@@ -42,6 +43,7 @@ Add `--json` to any command to read fields (`"$MOEBIUS" board --json`). For anyt
 | The person wants | Command |
 |---|---|
 | An inbox item answered as the app's button does | `"$MOEBIUS" inbox act <item> <approve\|reject\|merge\|retry\|confirm\|dismiss> --reason "..."` |
+| A wiki page changed or added (you never write the wiki; the edit is a branch that waits in the inbox as an item of the kind `wiki_proposal`, and the wiki changes only once a member merges it) | `"$MOEBIUS" wiki propose "Team/On call" <file or -> --message "..."` |
 | A repository added | `"$MOEBIUS" repo add <name> <url>` (`--github owner/repo` for GitHub, `--gitlab group/project` for GitLab, `--forgejo owner/repo` for Codeberg or another Forgejo) |
 | An issue (a card in the backlog) | `"$MOEBIUS" issue create <repository id> "<title>" --body "..."` (`--parent <n>`, `--label <label>`, `--blocked-by <n>` as it is made) |
 | A card's title or body changed (on a forge the issue too; "blocked by #n" and "Part of #n" lines in the body set its blockers and parent) | `"$MOEBIUS" issue edit <card id> --title "..." --body "..."` |
