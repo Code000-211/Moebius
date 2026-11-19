@@ -403,6 +403,38 @@ describe("a card over several repositories in the Inbox", () => {
     expect(about.changeRepository?.name).toBe("web");
   });
 
+  it("takes the repository of a change from the card when no board lists the change", () => {
+    const own = {
+      id: 2,
+      repository: "demo",
+      state: "open",
+      checks: "success" as const,
+      review_verdict: null,
+    };
+    const web = {
+      id: 3,
+      repository: "web",
+      state: "open",
+      checks: "failure" as const,
+      review_verdict: null,
+    };
+    const unlisted: Snapshot = {
+      ...two,
+      boards: [
+        board(
+          1,
+          "demo",
+          [card(45, 45, { repositories: ["demo", "web"], changes: [own, web] })],
+          [change(2)],
+        ),
+        board(2, "web", [], []),
+      ],
+    };
+    const about = found(unlisted, offer);
+    expect(about.changeRepository?.name).toBe("web");
+    expect(meta(offer, about)).toBe("web · #45");
+  });
+
   it("names the repository the change is in, in the words above the title and in the facts", () => {
     const about = found(two, offer);
     expect(meta(offer, about)).toBe("web · #45");

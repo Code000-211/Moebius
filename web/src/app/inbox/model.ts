@@ -100,12 +100,15 @@ export function found(snapshot: Snapshot, item: InboxItem): Found {
         ((grillingOf(item) !== null || item.kind === PROPOSAL) &&
           repositoryOf(item) === each.repository.id),
     );
-  const changeBoard = snapshot.boards.find((each) =>
-    each.changes.some((change) => change.id === changeId),
-  );
+  // The change is on the board of its repository; failing that, the card says which repository it is in.
+  const card = board?.cards.find((each) => each.id === item.card_id);
+  const named = card?.changes?.find((change) => change.id === changeId)?.repository;
+  const changeBoard =
+    snapshot.boards.find((each) => each.changes.some((change) => change.id === changeId)) ??
+    snapshot.boards.find((each) => named !== undefined && each.repository.name === named);
   return {
     board,
-    card: board?.cards.find((card) => card.id === item.card_id),
+    card,
     change:
       changeBoard?.changes.find((change) => change.id === changeId) ??
       snapshot.harness_changes.find((change) => change.id === changeId),

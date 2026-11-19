@@ -680,7 +680,7 @@ Everything the app shows. Response:
 ```
 
 `harness_changes` are the `Change`s of the harness configuration repository, which belongs to no board.
-`boards` has one entry per repository, with all its cards and changes. `round_limit` is the most `code` rounds a card
+`boards` has one entry per repository, with all its cards and changes; a change of a card over several repositories is on the board of the repository it is in, which does not list the card. `round_limit` is the most `code` rounds a card
 gets. Each entry of `cards` is a `Card` with what a board shows of it, so that a client needs no other read:
 
 | Field | Meaning |

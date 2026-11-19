@@ -277,14 +277,26 @@ async fn snapshot(
     blocking(&state.app, move |app| {
         let sight = app.sight(&by)?;
         let mut boards = Vec::new();
-        for repository in app.store.repositories()? {
+        let repositories = app.store.repositories()?;
+        // A card over several repositories is on its own repository's board, and its change in another repository is
+        // on that repository's board, so a change is left out only when its card is hidden or archived everywhere.
+        let mut seen = std::collections::HashSet::new();
+        for repository in &repositories {
+            if sight.repository(repository.id) {
+                for card in app.store.cards(repository.id)? {
+                    if card.archived_at.is_none() && sight.card(&card) {
+                        seen.insert(card.id);
+                    }
+                }
+            }
+        }
+        for repository in repositories {
             if !sight.repository(repository.id) {
                 continue;
             }
             // An archived card is off the board.
             let mut cards = app.store.cards(repository.id)?;
             cards.retain(|card| card.archived_at.is_none() && sight.card(card));
-            let seen: std::collections::HashSet<i64> = cards.iter().map(|card| card.id).collect();
             let waiting = app.waiting(&cards);
             let facts = app.board_facts(repository.id, &cards)?;
             boards.push(Board {
@@ -788,6 +800,16 @@ mod tests {
         assert_eq!(
             seen,
             [(first.id, "demo", "none"), (other.id, "web", "failure")]
+        );
+        // The change in `web` is on the board of `web`, which does not list the card.
+        let on_web = snap
+            .boards
+            .iter()
+            .find(|b| b.repository.id == web.id)
+            .unwrap();
+        assert_eq!(
+            on_web.changes.iter().map(|c| c.id).collect::<Vec<_>>(),
+            [other.id]
         );
         // `change` stays the change in the card's own repository.
         assert_eq!(shown.change.as_ref().map(|c| c.id), Some(first.id));
