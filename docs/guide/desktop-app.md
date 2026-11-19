@@ -97,7 +97,9 @@ server's state: **the agents working**, **the Inbox**, and **today's tokens** ag
 figures follow the server's events. Under them: **New issue** and **Ask Moebius** bring the window up and open the
 form of a new issue or a new chat, **Open Moebius** brings the window up, also when it was minimized, and **Pause all
 agents** holds every run of the server and starts none until you choose **Resume all agents**, which the same item
-says while they are paused. Hovering the icon shows the same figures. Closing the window quits the app and its icon.
+says while they are paused. Hovering the icon shows the same figures. Closing the window quits the app and its
+icon, so that no invisible app is left behind on a desktop that shows no tray; to keep the shortcut, the notifications
+and the tray going, minimize the window instead.
 
 A server on another machine is reached as the web app reaches it: on its address if it listens on the network, or
 through the tunnel of `moebius connect <host> --no-window`, then `127.0.0.1:7171` in the app (see
@@ -166,4 +168,3 @@ The answer's `token` (it starts with `moebius-access-`) goes into the app with t
   settings that starts `moebius-desktop` if it does not.
 - **No notification appears on Linux**: the desktop needs a notification service (`org.freedesktop.Notifications`,
   which GNOME, KDE and most others have). Without one the count still shows in the title.
-- The token is kept in the app's memory only, for now: the app asks for it on every start.

@@ -60,7 +60,7 @@ pub enum LocalError {
 }
 
 /// What the machine has, as the status script reports it.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Default, PartialEq, Eq)]
 struct Found {
     system: String,
     binary: Option<String>,
@@ -68,6 +68,20 @@ struct Found {
     configured: bool,
     token: Option<String>,
     listen: Option<String>,
+}
+
+/// Shows what was found without the server's token, so that a log or a failed test never prints it.
+impl std::fmt::Debug for Found {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Found")
+            .field("system", &self.system)
+            .field("binary", &self.binary)
+            .field("version", &self.version)
+            .field("configured", &self.configured)
+            .field("token", &self.token.as_ref().map(|_| "<kept secret>"))
+            .field("listen", &self.listen)
+            .finish()
+    }
 }
 
 impl Found {
@@ -241,6 +255,14 @@ mod tests {
         assert_eq!(Found::parse("").url(), "http://127.0.0.1:7171");
         let wildcard = Found::parse("MOEBIUS-LISTEN 0.0.0.0:7000");
         assert_eq!(wildcard.url(), "http://127.0.0.1:7000");
+    }
+
+    #[test]
+    fn what_was_found_never_prints_the_token() {
+        let found = Found::parse("MOEBIUS-TOKEN moebius-access-secret\nMOEBIUS-CONFIG yes");
+        let shown = format!("{found:?}");
+        assert!(!shown.contains("moebius-access-secret"), "{shown}");
+        assert!(shown.contains("configured: true"), "{shown}");
     }
 
     #[test]

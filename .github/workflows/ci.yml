@@ -115,6 +115,21 @@ jobs:
         working-directory: crates/moebius-desktop
         run: pnpm dlx @tauri-apps/cli@2.12.4 build --debug --bundles ${{ matrix.bundles }} -- --locked
       - run: ls target/debug/bundle/*/
+      # What the guide promises a person on Linux: the `.deb` installs and the app starts, and so does the AppImage. A
+      # start that is still running when `timeout` ends it (status 124) has not crashed; the session has a bus and no
+      # tray host, as a minimal desktop has. The runner has the build's WebKitGTK libraries already, so this does not
+      # show that the `.deb` names every library it needs; it shows that the bundles start.
+      - if: runner.os == 'Linux'
+        name: Install the .deb and start both bundles
+        run: |
+          sudo apt-get install -y xvfb dbus-x11 ./target/debug/bundle/deb/*.deb
+          set +e
+          xvfb-run -a dbus-run-session -- timeout 20 moebius-desktop
+          test $? -eq 124 || { echo "the installed app did not stay up"; exit 1; }
+          appimage=$(echo target/debug/bundle/appimage/*.AppImage)
+          chmod +x "$appimage"
+          APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a dbus-run-session -- timeout 30 "$appimage"
+          test $? -eq 124 || { echo "the AppImage did not stay up"; exit 1; }
 
   # The web app (`web/`): type check, lint, unit tests and the build on Linux and Windows. The end-to-end tests run on
   # Linux only: Playwright's Chromium is installed there with its system libraries in one step.
