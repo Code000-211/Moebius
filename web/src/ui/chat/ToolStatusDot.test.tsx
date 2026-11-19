@@ -2,7 +2,7 @@
 /**
  * Almost every tool call in a chat and in the Fleet finished, so a pill on each one hides the few rows that matter. A
  * call that finished is one quiet gray check that still says its word to a screen reader; anything unfinished is
- * still the word and its hue together, because the row has to be read.
+ * a status icon and the word together, because the row has to be read.
  */
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -31,12 +31,12 @@ describe("a tool's state", () => {
     expect(drawn("success").textContent).toBe(statusWord("success"));
   });
 
-  it("is still the word and its hue where a call did not finish", () => {
-    const pill = drawn("failed");
-    expect(pill.textContent).toBe("Failed");
-    expect(pill.className).toContain("rounded-full");
-    expect(pill.className).toContain("bg-error-fill");
-    expect(pill.querySelector("svg")).toBeNull();
+  it("is a status icon and the word, with no pill, where a call did not finish", () => {
+    const mark = drawn("failed");
+    expect(mark.textContent).toBe("Failed");
+    expect(mark.className).not.toContain("rounded-full");
+    expect(mark.className).not.toContain("bg-error-fill");
+    expect(mark.querySelector("svg")).not.toBeNull();
   });
 
   it("carries the classes of the row it stands in, either way", () => {

@@ -15,7 +15,7 @@ import type {
   PiUpdates,
 } from "../api/types/packages";
 import { short } from "../app/usage/figures";
-import type { Tone } from "../ui/page/Status";
+import type { Tone } from "../ui/page/StateLabel";
 
 /** Which package manager the sheet is pointed at: the registries of Moebius, or the pi.dev catalog. */
 export type Catalog = "moebius" | "pi";

@@ -10,7 +10,9 @@
  * (11 to 20); interactive rows under the 28px of the quiet standard's smallest row; the contrast of text against what
  * is really behind it; children of a centred row whose middle is
  * not in line; a raised surface inside another raised surface, which stacks one elevation on another; and a sheet
- * whose last thing stops short of its own bottom padding, which leaves a band of nothing under it; and a control or
+ * whose last thing stops short of its own bottom padding, which leaves a band of nothing under it; a coloured pill that
+ * stands for a state (`pills.ts`: a short, control-high or fully rounded box filled with, or outlined in, the colour of
+ * progress, attention, complete or error), which the strict run fails on; and a control or
  * row shorter than the words it holds, which then draw below its box. Terminals and code
  * editors are left out of the type, radius, spacing and elevation checks, where the standard wants monospace
  * precision, but not out of the overflow and contrast checks.
@@ -29,6 +31,7 @@ import { join } from "node:path";
 import { type Browser, chromium, type Page } from "playwright";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { type FakeServer, startFakeServer } from "../fakeServer";
+import { findPills } from "./pills";
 
 /** A page to open, and the name its picture is kept under. */
 interface Route {
@@ -63,6 +66,8 @@ interface PageAudit {
   spilled: string[];
   /** A sheet with a band of nothing under the last thing in it. */
   chins: string[];
+  /** A coloured pill that stands for a state: a rounded box filled with the tint of progress, attention, complete or error. */
+  pills: string[];
   body: { family: string; size: string; weight: string; lineHeight: string };
 }
 
@@ -196,7 +201,8 @@ async function audit(page: Page, route: Route, theme: string): Promise<PageAudit
     await page.waitForTimeout(400);
   }
   const found = await page.evaluate(measure, { path, theme });
-  return { ...found, name: route.name, path: route.path, status: answer?.status() ?? 0 };
+  const pills = await page.evaluate(findPills);
+  return { ...found, pills, name: route.name, path: route.path, status: answer?.status() ?? 0 };
 }
 
 /**
@@ -301,7 +307,7 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
 function measure(input: {
   path: string;
   theme: string;
-}): Omit<PageAudit, "name" | "path" | "status"> {
+}): Omit<PageAudit, "name" | "path" | "status" | "pills"> {
   const radii = new Set([0, 6, 8, 12]);
   const sizes = new Set([11, 12, 13, 14, 15, 17, 20]);
   const canvas: [number, number, number, number] =
@@ -685,13 +691,13 @@ function report(rows: Row[]): string {
     "",
     `Pages: ${rows.length}. Counts are findings; the whole list is in report.json.`,
     "",
-    "| Theme | Width | Page | Overflow | Clipped | Radii | Spacing | Outlined | Type | Weight | Rows <28px | Spilled | Contrast | Alignment | Layers | Chins |",
-    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    "| Theme | Width | Page | Overflow | Clipped | Radii | Spacing | Outlined | Type | Weight | Rows <28px | Spilled | Contrast | Alignment | Layers | Chins | Pills |",
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
   ];
   for (const row of rows) {
     const page = row.page;
     lines.push(
-      `| ${row.theme} | ${row.width} | ${page.path} | ${page.overflow.length} | ${page.clipped.length} | ${page.radii.length} | ${page.spacing.length} | ${page.outlined.length} | ${page.type.length} | ${page.weights.length} | ${page.targets.length} | ${page.spilled.length} | ${page.contrast.length} | ${page.alignment.length} | ${page.layers.length} | ${page.chins.length} |`,
+      `| ${row.theme} | ${row.width} | ${page.path} | ${page.overflow.length} | ${page.clipped.length} | ${page.radii.length} | ${page.spacing.length} | ${page.outlined.length} | ${page.type.length} | ${page.weights.length} | ${page.targets.length} | ${page.spilled.length} | ${page.contrast.length} | ${page.alignment.length} | ${page.layers.length} | ${page.chins.length} | ${page.pills.length} |`,
     );
   }
   const kinds: Array<[string, (page: PageAudit) => string[]]> = [
@@ -708,6 +714,7 @@ function report(rows: Row[]): string {
     ["stacked elevation", (page) => page.layers],
     ["words below the row", (page) => page.spilled],
     ["bands of nothing", (page) => page.chins],
+    ["state pills", (page) => page.pills],
   ];
   for (const [kind, pick] of kinds) {
     const at = rows.find((row) => pick(row.page).length > 0);
@@ -767,7 +774,7 @@ it("audits every page in both themes and both widths", async () => {
       (p) => p.layers,
     )}, words below their row ${total((p) => p.spilled)}, bands of nothing ${total(
       (p) => p.chins,
-    )}\n`,
+    )}, state pills ${total((p) => p.pills)}\n`,
   );
   process.stdout.write(`Pictures and report: ${join(out, label)}\n\n`);
 
@@ -778,6 +785,7 @@ it("audits every page in both themes and both widths", async () => {
       expect(row.page.overflow, row.page.path).toEqual([]);
       expect(row.page.clipped, row.page.path).toEqual([]);
       expect(row.page.spilled, row.page.path).toEqual([]);
+      expect(row.page.pills, row.page.path).toEqual([]);
     }
   }
 });
