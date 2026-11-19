@@ -264,6 +264,31 @@ end
 Try it: `moebius issue create 1 "Plan" --label plan`, then `moebius issue create 1 "Step" --parent 1`. The plan waits with
 `waiting for sub-issues #2`; `moebius issue close <step's card id>` lets the next tick close the plan too.
 
+### Archive sooner, and keep what was closed on the board
+
+The default `done.luau` archives a card 14 days after it moved to `Done` (`moebius.archive(card)`, with `card.moved_at`
+and `moebius.now()` in Unix seconds); the default `backlog.luau` and `ready.luau` hold a card that has not moved for 30
+days and tell the people it is given to (`moebius.hold`, `moebius.notify`). An archived card leaves the board but stays
+in the store, in the issue list (`?archived=true` finds exactly those) and in the analytics. This version archives a
+merged card after a week and leaves a card that was closed without a merge on the board for a person to look at.
+
+<!-- script: done.luau -->
+```luau
+local ARCHIVE_AFTER_DAYS = 7
+
+function on_card(card)
+  moebius.set_label("in-progress", false)
+  moebius.record_outcome(card.merged and "merged" or "closed")
+  if card.merged and moebius.now() - card.moved_at > ARCHIVE_AFTER_DAYS * 86400 then
+    moebius.archive(card)
+  end
+end
+```
+
+Try it: `moebius check-script done.luau` runs it against a card made up to be done just now, so it archives nothing; a
+card whose last move is a week old is archived at the next tick of the board, which looks at the cards in `Done` every
+ten minutes.
+
 ## How to try a script
 
 **Check it with the command.** `moebius check-script` runs the script once against a made-up card and prints what it did,

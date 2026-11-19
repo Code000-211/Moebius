@@ -121,6 +121,15 @@ impl Store {
         Ok(())
     }
 
+    /// Resolves the card's open items of `kind`.
+    pub fn resolve_inbox_kind_for_card(&self, card_id: i64, kind: &str) -> Result<()> {
+        self.conn().execute(
+            "UPDATE inbox_items SET resolved_at = ?1 WHERE card_id = ?2 AND kind = ?3 AND resolved_at IS NULL",
+            params![now(), card_id, kind],
+        )?;
+        Ok(())
+    }
+
     /// Resolves the open "ready to merge" item of a change, which has no card to resolve it through.
     pub fn resolve_inbox_for_change(&self, change_id: i64) -> Result<()> {
         self.conn().execute(

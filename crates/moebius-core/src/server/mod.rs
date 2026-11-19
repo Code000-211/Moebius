@@ -93,6 +93,8 @@ pub struct Server {
     pub token: Arc<str>,
     /// The one-time codes that sign a browser in to the web app.
     pub codes: api::Codes,
+    /// When the cards in Done last ran their script, which they do now and then (see `tick`).
+    pub done_sweep: std::sync::Mutex<Option<std::time::Instant>>,
 }
 
 /// The access token of `forge` from where the configuration keeps it: a file, or a secret. An empty token is an error.
@@ -373,6 +375,7 @@ impl Server {
             forgejo,
             token: token.into(),
             codes: api::Codes::default(),
+            done_sweep: Default::default(),
         })
     }
 
