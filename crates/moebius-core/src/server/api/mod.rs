@@ -8,6 +8,7 @@
 //! - `issues`: what is done to an issue besides editing it: its parent, blockers, labels, claim, comments, closing.
 //! - `assignees`: giving a card or an inbox item to people.
 //! - `planning`: a card's priority and due date.
+//! - `notices`: what concerns a person (given, mentioned, a followed card changed), and following cards.
 //! - `repositories`: adding and editing repositories, and their column scripts and files.
 //! - `milestones`: goals of the organisation with a target date, holding cards of any projects, with their progress.
 //! - `projects`: the projects, each with a key, a board and its repositories; making and renaming one.
@@ -60,6 +61,7 @@ mod improve;
 mod issues;
 mod lessons;
 mod milestones;
+mod notices;
 mod outgoing;
 mod packages;
 mod people;
@@ -227,6 +229,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(issues::routes())
         .merge(assignees::routes())
         .merge(planning::routes())
+        .merge(notices::routes())
         .merge(repositories::routes())
         .merge(projects::routes())
         .merge(milestones::routes())

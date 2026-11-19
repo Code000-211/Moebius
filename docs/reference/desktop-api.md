@@ -144,6 +144,10 @@ any route to any role that is not what its row says.
 | `DELETE /v1/cards/{id}/assignees/{handle}` | member | no |
 | `PUT /v1/inbox/{id}/assignees/{handle}` | member | no |
 | `DELETE /v1/inbox/{id}/assignees/{handle}` | member | no |
+| `GET /v1/notices` | viewer | no |
+| `POST /v1/notices/{id}/read` | viewer | no |
+| `GET /v1/cards/{id}/followers` | viewer | yes |
+| `PUT /v1/cards/{id}/follow` | viewer | no |
 | `POST /v1/cards/{id}/blockers` | member | yes |
 | `DELETE /v1/cards/{id}/blockers/{number}` | member | yes |
 | `PUT /v1/cards/{id}/duplicate` | member | yes |
@@ -1193,6 +1197,45 @@ person who was not assigned already.
 
 The same for an item of the inbox; the event is `inbox_assignees_changed`. Response: the `InboxItem`. Errors: `404` no
 such item; `422` as above.
+
+### Mentions and following
+
+What concerns a person is a **notice** of their own, shown in the Inbox under Mentions with a read mark that is theirs
+alone (ADR 0018; there is no bell). Each happening tells exactly the people it concerns, one notice each, and never
+the person who caused it where that is known:
+
+- **assigned**: the people newly given a card or an inbox item (`PUT .../assignees`); those already given it are not
+  told again. A person who gives something to themselves is not told of it.
+- **mentioned**: the people a comment names with `@handle` (a handle after an `@` that starts a word, in any case;
+  an address such as `me@example.com` names no one), written through the API or read from the forge (a comment more than a day old is history, and tells no one). A handle that is
+  nobody's or is disabled tells no one. A person mentioned twice is told once. A mention in a page is told the same
+  way, by the wiki that writes it.
+- **changed**: the followers of a card when it moves to another column (whoever moved it; closing a card moves it to `Done`, and
+  reopening it moves it back) and when it is commented on. A follower who is mentioned in that comment gets the
+  mention alone.
+
+A person follows the cards they wrote and the cards they are given, until they stop, and any other card they choose to
+follow. Disabled people are told nothing. Notices go with their card when it is deleted. An agent has no notices.
+
+### `GET /v1/notices`
+
+The notices of the person asking, newest first, at most 200. Response: an array of `Notice`: `id`, `kind` (`assigned`,
+`mentioned` or `changed`), `by` (the handle of the person who caused it, or null), `card_id` and `inbox_item_id` (each
+or null), `title` (of the card or item), `body` (the start of the comment, or what changed), `at` and `read`.
+
+### `POST /v1/notices/{id}/read`
+
+Marks one of the asking person's notices read; reading it again changes nothing. Sends `notice_read` to that person.
+Response: the `Notice`. Errors: `404` no such notice, which is also the answer for another person's.
+
+### `GET /v1/cards/{id}/followers`
+
+The handles of the people who follow the card, in the order the people were added. Errors: `404` no such card.
+
+### `PUT /v1/cards/{id}/follow`
+
+The person asking follows the card or stops following it. Request: `{"following": true or false}`. Response: the
+handles of the followers now. Errors: `404` no such card.
 
 ### `POST /v1/cards/{id}/blockers`
 
@@ -3288,6 +3331,8 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `card_assignees_changed` | The people a card is given to changed. | `{"card": id, "assignees": [handle]}` |
 | `card_milestones_changed` | The milestones a card is in changed. | `{"card": id, "milestones": [id]}` (in the order of their target dates) |
 | `inbox_assignees_changed` | The people an inbox item is given to changed. | `{"item": id, "assignees": [handle]}` |
+| `notice_added` | A person was told something (assigned, mentioned, a followed card changed). Sent only to that person. | `{"person": handle, "notice": the Notice}` |
+| `notice_read` | A person read one of their notices. Sent only to that person. | `{"person": handle, "notice": the Notice}` |
 | `card_blocking_changed` | A blocker was added or removed through the API, or the blockers the forge and the body name changed. | `{"card": id, "blocked_by": [number]}` (every blocker, done or not) |
 | `card_links_changed` | The duplicate or related links of an issue changed (sent for each issue they touch). | `{"card": id, "duplicate_of": number or null, "duplicates": [number], "related": [number]}` |
 | `card_claimed` | An issue was claimed. Not sent for a claim by the claimer again. | `{"card": id, "by": text}` |

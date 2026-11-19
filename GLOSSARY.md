@@ -352,6 +352,11 @@ _Avoid_: severity, rank
 The day a card should be done by, as `YYYY-MM-DD`; kept as the card's `due:<date>` label.
 _Avoid_: deadline, target date (a milestone has a target date)
 
+**Notice**:
+One line of a person's Inbox under Mentions: a card or item given to them, a comment that mentions them with
+`@handle`, or a change to a card they follow. It has a read mark that is theirs alone.
+_Avoid_: notification, alert, bell
+
 **Home project**:
 The project a repository's new issues land in, unless a `project:<name>` label sends one to another project the
 repository belongs to; a card is on exactly one board.

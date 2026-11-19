@@ -51,6 +51,17 @@ export interface FakeServer {
   restart(): Promise<void>;
   /** Sends an event to every connected event stream. */
   broadcast(event: { kind: string; data: unknown }): void;
+  /** Tells the person with `handle` something, as the server does for a mention: the notice and its event. */
+  notify(
+    handle: string,
+    notice: {
+      kind: "assigned" | "mentioned" | "changed";
+      by?: string;
+      card_id?: number;
+      title: string;
+      body: string;
+    },
+  ): void;
   /** The board of the repository `demo` (`fake/board.ts`): move cards, make a route fail, read the requests. */
   board: BoardFake;
   /** The `X-Moebius` header of each non-GET request that carried the cookie, as received. */
@@ -115,6 +126,9 @@ export async function startFakeServer(): Promise<FakeServer> {
       revoked_at: number | null;
     }
   >();
+  /** The notices of each person, as the Mentions tab reads them, and who follows which card (person ids). */
+  const notices: Array<{ person: number; notice: Record<string, unknown> }> = [];
+  const followers = new Map<number, Set<number>>();
   /** The person a token stands for: the first owner for the server's token; none for a revoked token or a disabled person. */
   const personOf = (token: string | undefined) => {
     if (token === TOKEN) return 1;
@@ -252,6 +266,40 @@ export async function startFakeServer(): Promise<FakeServer> {
       found.revoked_at = 1;
       return json(response, found);
     }
+    if (path === "/v1/notices" && method === "GET")
+      return json(
+        response,
+        notices
+          .filter((n) => n.person === asker)
+          .map((n) => n.notice)
+          .reverse(),
+      );
+    const read = /^\/v1\/notices\/(\d+)\/read$/.exec(path);
+    if (read && method === "POST") {
+      const found = notices.find((n) => n.person === asker && n.notice.id === Number(read[1]));
+      if (!found) return text(response, 404, `notice ${read[1]}`);
+      found.notice.read = true;
+      broadcast({
+        kind: "notice_read",
+        data: { person: people.find((p) => p.id === asker)?.handle, notice: found.notice },
+      });
+      return json(response, found.notice);
+    }
+    const follows = /^\/v1\/cards\/(\d+)\/(followers|follow)$/.exec(path);
+    if (follows) {
+      const card = Number(follows[1]);
+      const set = followers.get(card) ?? new Set<number>();
+      if (follows[2] === "follow" && method === "PUT") {
+        const body = JSON.parse((await readBody(request)) || "{}") as { following?: boolean };
+        if (body.following) set.add(asker);
+        else set.delete(asker);
+        followers.set(card, set);
+      }
+      return json(
+        response,
+        people.filter((p) => set.has(p.id)).map((p) => p.handle),
+      );
+    }
     if (path === "/v1/session" && method === "GET") {
       const id = sessions.get(cookieOf(request) as string);
       return json(response, { signed_in: true, person: people.find((p) => p.id === id) ?? null });
@@ -350,6 +398,21 @@ export async function startFakeServer(): Promise<FakeServer> {
     packages,
     workflows,
     broadcast,
+    notify(handle, notice) {
+      const person = people.find((p) => p.handle === handle);
+      if (!person) throw new Error(`no person @${handle}`);
+      const made = {
+        id: notices.length + 1,
+        by: null,
+        card_id: null,
+        inbox_item_id: null,
+        at: Math.floor(Date.now() / 1000),
+        read: false,
+        ...notice,
+      };
+      notices.push({ person: person.id, notice: made });
+      broadcast({ kind: "notice_added", data: { person: handle, notice: made } });
+    },
     async stop() {
       for (const ws of sockets) ws.terminate();
       runs.stop();

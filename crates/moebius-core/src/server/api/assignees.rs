@@ -35,9 +35,10 @@ pub(super) fn routes() -> Router<ApiState> {
 
 async fn add_card_assignee(
     State(state): State<ApiState>,
+    axum::Extension(by): axum::Extension<crate::decide::Actor>,
     UrlPath((id, handle)): UrlPath<(i64, String)>,
 ) -> Result<Json<Card>, ApiError> {
-    blocking(&state.app, move |app| app.add_assignee(id, &handle)).await
+    blocking(&state.app, move |app| app.add_assignee_by(&by, id, &handle)).await
 }
 
 async fn remove_card_assignee(
@@ -49,9 +50,13 @@ async fn remove_card_assignee(
 
 async fn add_inbox_assignee(
     State(state): State<ApiState>,
+    axum::Extension(by): axum::Extension<crate::decide::Actor>,
     UrlPath((id, handle)): UrlPath<(i64, String)>,
 ) -> Result<Json<InboxItem>, ApiError> {
-    blocking(&state.app, move |app| app.add_inbox_assignee(id, &handle)).await
+    blocking(&state.app, move |app| {
+        app.add_inbox_assignee_by(&by, id, &handle)
+    })
+    .await
 }
 
 async fn remove_inbox_assignee(
@@ -72,19 +77,24 @@ pub struct NewAssignees {
 
 async fn set_card_assignees(
     State(state): State<ApiState>,
+    axum::Extension(by): axum::Extension<crate::decide::Actor>,
     UrlPath(id): UrlPath<i64>,
     Json(new): Json<NewAssignees>,
 ) -> Result<Json<Card>, ApiError> {
-    blocking(&state.app, move |app| app.set_assignees(id, &new.assignees)).await
+    blocking(&state.app, move |app| {
+        app.set_assignees_by(&by, id, &new.assignees)
+    })
+    .await
 }
 
 async fn set_inbox_assignees(
     State(state): State<ApiState>,
+    axum::Extension(by): axum::Extension<crate::decide::Actor>,
     UrlPath(id): UrlPath<i64>,
     Json(new): Json<NewAssignees>,
 ) -> Result<Json<InboxItem>, ApiError> {
     blocking(&state.app, move |app| {
-        app.set_inbox_assignees(id, &new.assignees)
+        app.set_inbox_assignees_by(&by, id, &new.assignees)
     })
     .await
 }

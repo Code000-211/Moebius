@@ -25,6 +25,13 @@ before and `person:owner` after. A card or comment read from a forge keeps its a
 | `card_assignees` | A card and a person it is given to. |
 | `inbox_assignees` | An inbox item and a person it is given to; a trigger removes them with the item. |
 
+`store/notices.rs` keeps what concerns a person and the cards they follow.
+
+| Table | Holds |
+|---|---|
+| `notices` | One line for one person about a card or an inbox item (`assigned`, `mentioned`, `changed`), with a read mark. |
+| `card_follows` | A person's choice to follow a card or to stop; a card with no row is followed by its author and its assignees. |
+
 `store/access.rs` keeps how people prove who they are: their access tokens and the sessions of browsers.
 
 | Table | Holds |

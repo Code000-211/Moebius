@@ -28,6 +28,7 @@ import { useNow } from "../../ui/lib/useNow";
 import { Field, TextArea } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { SkeletonLines } from "../../ui/page/Skeleton";
+import { MentionTextArea } from "../people/MentionTextArea";
 import { foldLabel, type TimelineEvent, timelineOf } from "./timeline";
 
 /** What the server said when it refused, or a sentence for a failure that said nothing. */
@@ -162,9 +163,7 @@ export function ActivitySection({ card }: { card: Card }) {
         }}
       >
         <Field label="Write a comment">
-          {(id) => (
-            <TextArea id={id} value={text} onChange={(e) => setText(e.target.value)} rows={3} />
-          )}
+          {(id) => <MentionTextArea id={id} value={text} onValueChange={setText} rows={3} />}
         </Field>
         <Refusal text={write.isError ? said(write.error, "Could not write the comment.") : null} />
         <Button type="submit" size="sm" className="w-fit" disabled={!ready}>

@@ -28,6 +28,7 @@ mod diffs;
 mod issues;
 mod localize;
 mod milestones;
+mod notices;
 mod packages;
 mod planning;
 pub mod plugin_settings;
@@ -39,6 +40,7 @@ mod stopping;
 mod whereabouts;
 pub mod workflows;
 
+pub use notices::handles_in;
 pub use packages::{
     Available, Offered, PackageInfo, PackageView, UPDATE_ITEM, UpdateFailure, Updates,
 };
