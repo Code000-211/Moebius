@@ -548,6 +548,34 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
   /** The projects made with `POST /v1/projects`, which have no repository. */
   let madeProjects: Project[] = [];
 
+  /** What an owner changed in a project's settings: its name, its access, and the repositories put in it. */
+  const renamed = new Map<number, string>();
+  const access = new Map<number, { private: boolean; members: string[] }>();
+  const linked = new Map<number, number[]>();
+
+  /** The project with what an owner changed in its settings applied. */
+  function settled(project: Project): Project {
+    const { boards } = snapshot() as unknown as { boards: Array<{ repository: Repository }> };
+    const taken = access.get(project.id);
+    return {
+      ...project,
+      name: renamed.get(project.id) ?? project.name,
+      repositories: [
+        ...project.repositories,
+        ...(linked.get(project.id) ?? []).flatMap((id) => {
+          const repository = boards.find((each) => each.repository.id === id)?.repository;
+          return repository ? [{ id, name: repository.name, home: false }] : [];
+        }),
+      ],
+      ...(taken
+        ? {
+            private: taken.private,
+            members: taken.members.map((handle, at) => ({ id: at + 1, handle, name: handle })),
+          }
+        : {}),
+    };
+  }
+
   /** Every project, as `GET /v1/projects` answers: each repository's home project (with its id), then the ones made. */
   function projects(): Project[] {
     const { boards } = snapshot() as unknown as {
@@ -572,7 +600,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         private: false,
         member: true,
       }));
-    return [...homes, ...madeProjects.map((project) => ({ ...project, members }))];
+    return [...homes, ...madeProjects.map((project) => ({ ...project, members }))].map(settled);
   }
 
   function snapshot() {
@@ -808,6 +836,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         path === "/v1/harness/setup" ||
         path === "/v1/repositories" ||
         path === "/v1/projects" ||
+        /^\/v1\/projects\/\d+(\/access|\/repositories(\/\d+)?)?$/.test(path) ||
         /^\/v1\/projects\/\d+\/scripts$/.test(path) ||
         /^\/v1\/webhooks\/[a-z]+\/secret$/.test(path) ||
         /^\/v1\/repositories\/\d+(\/(tree|files|search|settings|plugin-settings)(\/.*)?)?$/.test(
@@ -927,6 +956,49 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
       }
 
       if (path === "/v1/projects" && method === "GET") return ok(response, projects());
+      const project = /^\/v1\/projects\/(\d+)(\/access|\/repositories(?:\/(\d+))?)?$/.exec(path);
+      if (project) {
+        const id = Number(project[1]);
+        const found = projects().find((each) => each.id === id);
+        if (!found) return fail(response, 404, `no project ${id}`);
+        const change = (answer: Project) => {
+          send({ kind: "project_changed", data: answer });
+          return ok(response, answer);
+        };
+        const settledNow = () => projects().find((each) => each.id === id) as Project;
+        if (project[2] === undefined && method === "PATCH") {
+          const name = typeof body.name === "string" ? body.name : "";
+          if (
+            projects().some(
+              (each) => each.id !== id && each.name.toLowerCase() === name.toLowerCase(),
+            )
+          )
+            return fail(response, 409, `a project named ${name} exists already`);
+          renamed.set(id, name);
+          return change(settledNow());
+        }
+        if (project[2] === "/access" && method === "PUT") {
+          access.set(id, {
+            private: body.private === true,
+            members: Array.isArray(body.members) ? (body.members as string[]) : [],
+          });
+          return change(settledNow());
+        }
+        if (project[2] === "/repositories" && method === "POST") {
+          const repository = Number(body.repository);
+          linked.set(id, [...(linked.get(id) ?? []), repository]);
+          return change(settledNow());
+        }
+        if (project[3] !== undefined && method === "DELETE") {
+          if (found.repositories.some((each) => each.id === Number(project[3]) && each.home))
+            return fail(response, 422, "it is the home project of the repository");
+          linked.set(
+            id,
+            (linked.get(id) ?? []).filter((each) => each !== Number(project[3])),
+          );
+          return change(settledNow());
+        }
+      }
       const scripts = /^\/v1\/projects\/(\d+)\/scripts$/.exec(path);
       if (scripts && method === "GET") {
         // The home project of the first repository has a Not started script of its own; the others have none.

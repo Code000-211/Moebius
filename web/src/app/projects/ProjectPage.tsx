@@ -1,5 +1,5 @@
 /**
- * The page of one repository (`/projects/:id`; the former desktop app's `screens/project`): where it is and what it
+ * The page of one repository (`/projects/:id`, the repository's id; the project's settings are `ProjectSettingsPage`): where it is and what it
  * trusts, with the logins of a repository on a forge to edit, the settings Moebius keeps for it, the settings plugins
  * ask of it, and its files on the default branch, which can be read, edited and saved as a commit. The parts are
  * borderless cards grouped by space. The board of the repository is its own page. Delete, in the header, removes the
@@ -104,6 +104,11 @@ function RepositoryView({ repository }: { repository: Repository }) {
         }
         actions={
           <>
+            <Button asChild size="sm" variant="secondary">
+              <Link to={`/projects/${filesOf ?? repository.home_project_id}/settings`}>
+                Project settings
+              </Link>
+            </Button>
             <Button asChild size="sm" variant="secondary">
               <Link to={boardPath(repository.id)}>Open board</Link>
             </Button>

@@ -115,6 +115,12 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("PUT", "/v1/projects/{id}/scripts/{column}", OWNER),
     ("DELETE", "/v1/projects/{id}/scripts/{column}", OWNER),
     ("PUT", "/v1/projects/{id}/access", OWNER_PERSON),
+    ("POST", "/v1/projects/{id}/repositories", OWNER),
+    (
+        "DELETE",
+        "/v1/projects/{id}/repositories/{repository}",
+        OWNER,
+    ),
     ("POST", "/v1/repositories", OWNER),
     ("PUT", "/v1/repositories/{id}", OWNER),
     ("DELETE", "/v1/repositories/{id}", OWNER),

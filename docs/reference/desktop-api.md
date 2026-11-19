@@ -147,6 +147,8 @@ any route to any role that is not what its row says.
 | `PUT /v1/projects/{id}/scripts/{column}` | owner | yes |
 | `DELETE /v1/projects/{id}/scripts/{column}` | owner | yes |
 | `PUT /v1/projects/{id}/access` | owner | no |
+| `POST /v1/projects/{id}/repositories` | owner | no |
+| `DELETE /v1/projects/{id}/repositories/{repository}` | owner | no |
 | `POST /v1/repositories` | owner | yes |
 | `PUT /v1/repositories/{id}` | owner | yes |
 | `DELETE /v1/repositories/{id}` | owner | yes |
@@ -867,6 +869,27 @@ handle no person has.
 curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
   -d '{"private": true, "members": ["lea", "owner"]}' http://127.0.0.1:7171/v1/projects/2/access
 ```
+
+### `POST /v1/projects/{id}/repositories`
+
+An owner, or the Moebius agent, puts a repository among the repositories of a project; the repository is in its home
+project and in this one, and its issues are read into the home project as before. Request body: `{"repository":
+number, "reason"?: string}`. Nothing changes when the repository is one of the project's already. The decision is
+recorded (kind `edit_project_repositories`; its context has `project` the key, `change` `add` and `repository` the
+name) and `project_changed` is sent. Response: the `ProjectView`. Errors: `404` for no such project or repository, or
+one the person does not see.
+
+```sh
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"repository": 1}' http://127.0.0.1:7171/v1/projects/2/repositories
+```
+
+### `DELETE /v1/projects/{id}/repositories/{repository}`
+
+Takes the repository out of the project's repositories (decision `edit_project_repositories`, `change` `remove`;
+`project_changed` is sent). Response: the `ProjectView`. Errors: `404` for no such project or repository, or a
+repository the project does not have; `422` for the repository's home project, which keeps it until the repository is
+removed.
 
 ### The wiki
 

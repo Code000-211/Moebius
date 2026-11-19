@@ -2,7 +2,7 @@
  * The calls about projects (listing and making one) and repositories: adding, the trusted logins, removing, reading and writing their files, their settings, and
  * the settings plugins ask of them.
  */
-import { del, get, post, put } from "../http";
+import { del, get, patch, post, put } from "../http";
 import type { Repository } from "../types/board";
 import type {
   FileDetail,
@@ -25,6 +25,29 @@ export function listProjects(): Promise<Project[]> {
 /** Makes a project with no repository yet; the server refuses a key another project has. */
 export function addProject(project: NewProject): Promise<Project> {
   return post<Project>("/v1/projects", project);
+}
+
+/** Renames a project (an owner); its key stays and its settings move with it. */
+export function renameProject(project: number, name: string): Promise<Project> {
+  return patch<Project>(`/v1/projects/${project}`, { name });
+}
+
+/** Makes a project private or public and names its members by handle (an owner); the list replaces the old one. */
+export function setProjectAccess(
+  project: number,
+  access: { private: boolean; members: string[] },
+): Promise<Project> {
+  return put<Project>(`/v1/projects/${project}/access`, access);
+}
+
+/** Puts a repository among a project's repositories (an owner). */
+export function addProjectRepository(project: number, repository: number): Promise<Project> {
+  return post<Project>(`/v1/projects/${project}/repositories`, { repository });
+}
+
+/** Takes a repository out of a project; its home project keeps it (an owner). */
+export function removeProjectRepository(project: number, repository: number): Promise<Project> {
+  return del<Project>(`/v1/projects/${project}/repositories/${repository}`);
 }
 
 /** Clones a repository into the server's data directory; the server makes its home project with it. */
