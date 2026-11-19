@@ -31,6 +31,8 @@ export const keys = {
   pluginProjectSettings: (repository: number) => ["plugin-project-settings", repository] as const,
   projectSettings: (repository: number) => ["project-settings", repository] as const,
   snapshot: ["snapshot"] as const,
+  /** The projects as their tiles show them; what changes the snapshot changes their open cards and repositories. */
+  projects: ["projects"] as const,
   /** Everything read about one card (its history and its runs) starts with this, so an event can make it all stale. */
   cards: ["card"] as const,
   history: (card: number) => ["card", card, "history"] as const,

@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use super::App;
+use crate::app::App;
 use crate::bus::Event;
 use crate::repos::git;
 use crate::store::Repository;
@@ -16,9 +16,9 @@ impl App {
     /// when the server has none, since then the project has no settings to change.
     pub(crate) fn project_harness_repo(
         &self,
-    ) -> super::Result<&std::sync::Arc<crate::harness::repo::HarnessRepo>> {
+    ) -> crate::app::Result<&std::sync::Arc<crate::harness::repo::HarnessRepo>> {
         self.harness_repo.get().ok_or_else(|| {
-            super::AppError::Conflict(
+            crate::app::AppError::Conflict(
                 "a project's settings are files of the harness configuration repository, and the server has none ([harness])"
                     .into(),
             )

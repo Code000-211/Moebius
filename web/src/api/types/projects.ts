@@ -1,5 +1,26 @@
-/** Types of the calls about repositories and their files; they follow docs/reference/desktop-api.md. */
+/** Types of the calls about projects, repositories and their files; they follow docs/reference/desktop-api.md. */
 import type { Forge } from "./board";
+
+/** A project as `GET /v1/projects` answers it (`ProjectView`): a board over its repositories, with a key for good. */
+export interface Project {
+  id: number;
+  name: string;
+  /** Such as `WEB`, which names the project's cards; kept when the project is renamed. */
+  key: string;
+  created_at: number;
+  /** In the order the project names them; `home` when this project is where the repository's new issues land. */
+  repositories: Array<{ id: number; name: string; home: boolean }>;
+  /** Everyone who is not disabled, while no project is private. */
+  members: Array<{ id: number; handle: string; name: string }>;
+  /** The cards on its board that are neither closed nor in Done. */
+  open_cards: number;
+}
+
+/** The body of `POST /v1/projects`. */
+export interface NewProject {
+  name: string;
+  key: string;
+}
 
 /** The body of `POST /v1/repositories`. */
 export interface NewRepository {

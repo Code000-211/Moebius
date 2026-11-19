@@ -2,14 +2,16 @@
  * The page of one repository (`/projects/:id`; the former desktop app's `screens/project`): where it is and what it
  * trusts, with the logins of a repository on a forge to edit, the settings Moebius keeps for it, the settings plugins
  * ask of it, and its files on the default branch, which can be read, edited and saved as a commit. The parts are
- * borderless cards grouped by space. The board of the repository is its own page.
+ * borderless cards grouped by space. The board of the repository is its own page. Delete, in the header, removes the
+ * repository and asks first, because it takes the repository's cards, changes and chats with it and deletes its clone;
+ * the server refuses while one of its runs is still going, and its sentence is shown in the dialog.
  */
 import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { snapshot as readSnapshot } from "../../api/calls/board";
-import { editTrusted } from "../../api/calls/projects";
+import { editTrusted, removeRepository } from "../../api/calls/projects";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Repository } from "../../api/types/board";
@@ -18,6 +20,7 @@ import { Input } from "../../ui/components/Input";
 import { Tooltip } from "../../ui/components/Tooltip";
 import { cn } from "../../ui/lib/cn";
 import { Box } from "../../ui/page/Box";
+import { ConfirmDelete } from "../../ui/page/ConfirmDelete";
 import { Empty } from "../../ui/page/Empty";
 import { Field } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
@@ -86,9 +89,12 @@ export function ProjectPage() {
           </Tooltip>
         }
         actions={
-          <Button asChild size="sm" variant="secondary">
-            <Link to={boardPath(repository.id)}>Open board</Link>
-          </Button>
+          <>
+            <Button asChild size="sm" variant="secondary">
+              <Link to={boardPath(repository.id)}>Open board</Link>
+            </Button>
+            <Remove repository={repository} />
+          </>
         }
       />
       <div className="flex flex-col gap-6">
@@ -127,6 +133,36 @@ function Fact({ label, value, mono }: { label: string; value: string; mono?: boo
         {value}
       </dd>
     </div>
+  );
+}
+
+/** Deleting the repository, asked once; the page goes back to the projects when it is done. */
+function Remove({ repository }: { repository: Repository }) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button size="sm" variant="danger" onClick={() => setOpen(true)}>
+        Delete repository
+      </Button>
+      <ConfirmDelete
+        open={open}
+        onOpenChange={setOpen}
+        title={`Delete ${repository.name}?`}
+        onConfirm={async () => {
+          await removeRepository(repository.id);
+          await Promise.all(
+            [keys.snapshot, keys.start, keys.projects].map((queryKey) =>
+              queryClient.invalidateQueries({ queryKey }),
+            ),
+          );
+          navigate("/projects");
+        }}
+      >
+        {`${repository.name} goes with its cards, changes and chats, and its clone on the server is deleted. The repository on its forge stays.`}
+      </ConfirmDelete>
+    </>
   );
 }
 

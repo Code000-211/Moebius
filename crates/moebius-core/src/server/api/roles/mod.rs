@@ -73,6 +73,10 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     // Boards, issues and cards.
     ("GET", "/v1/snapshot", VIEWER),
     ("GET", "/v1/events", VIEWER),
+    ("GET", "/v1/projects", VIEWER),
+    ("POST", "/v1/projects", OWNER),
+    ("GET", "/v1/projects/{id}", VIEWER),
+    ("PATCH", "/v1/projects/{id}", OWNER),
     ("POST", "/v1/repositories", OWNER),
     ("PUT", "/v1/repositories/{id}", OWNER),
     ("DELETE", "/v1/repositories/{id}", OWNER),

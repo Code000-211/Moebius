@@ -1,6 +1,7 @@
 //! Repositories and their cards: a repository Moebius works in, the cards of its issues, the issues that block a card,
 //! the moves of a card from column to column, whether a person or the Moebius agent holds a card, and the numbers of
-//! the issues whose cards were deleted.
+//! the issues whose cards were deleted. A new repository gets its home project here, and a new card lands on it
+//! (see `projects`).
 
 use std::collections::BTreeSet;
 
@@ -24,6 +25,9 @@ pub struct Repository {
     /// on Forgejo; none for GitHub and without a forge.
     #[serde(default)]
     pub project: Option<String>,
+    /// The project the repository's new issues land in (see `projects`).
+    #[serde(default)]
+    pub home_project_id: i64,
 }
 
 impl Repository {
@@ -49,6 +53,9 @@ impl Repository {
 pub struct Card {
     pub id: i64,
     pub repository_id: i64,
+    /// The project whose board the card is on.
+    #[serde(default)]
+    pub project_id: i64,
     pub number: i64,
     pub title: String,
     pub body: String,
@@ -189,10 +196,12 @@ impl Store {
             "github" => (forge_name, None),
             _ => (None, forge_name),
         };
-        let conn = self.conn();
-        conn.execute(
-            "INSERT INTO repositories (name, path, forge, default_branch, github, trusted, project)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let home = super::projects::insert_home_project(&tx, name)?;
+        tx.execute(
+            "INSERT INTO repositories (name, path, forge, default_branch, github, trusted, project, home_project_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 name,
                 path,
@@ -200,11 +209,18 @@ impl Store {
                 default_branch,
                 github,
                 serde_json::to_string(trusted)?,
-                project
+                project,
+                home
             ],
         )?;
+        let id = tx.last_insert_rowid();
+        tx.execute(
+            "INSERT INTO project_repositories (project_id, repository_id, position) VALUES (?1, ?2, 0)",
+            [home, id],
+        )?;
+        tx.commit()?;
         Ok(Repository {
-            id: conn.last_insert_rowid(),
+            id,
             name: name.into(),
             path: path.into(),
             forge: forge.into(),
@@ -212,11 +228,12 @@ impl Store {
             github: github.map(Into::into),
             trusted: trusted.to_vec(),
             project: project.map(Into::into),
+            home_project_id: home,
         })
     }
 
     pub fn repositories(&self) -> Result<Vec<Repository>> {
-        self.rows("SELECT id, name, path, forge, default_branch, github, trusted, project FROM repositories ORDER BY id", [], |r| {
+        self.rows("SELECT id, name, path, forge, default_branch, github, trusted, project, home_project_id FROM repositories ORDER BY id", [], |r| {
             let trusted: String = r.get(6)?;
             Ok(Repository {
                 id: r.get(0)?,
@@ -233,6 +250,7 @@ impl Store {
                     )
                 })?,
                 project: r.get(7)?,
+                home_project_id: r.get(8)?,
             })
         })
     }
@@ -299,10 +317,24 @@ impl Store {
             "DELETE FROM forge_seen WHERE repository_id = ?1".to_string(),
         ]);
         statements.extend(card_records_last(&runs, &changes, cards));
+        statements.push("DELETE FROM project_repositories WHERE repository_id = ?1".to_string());
+        let home: i64 = tx.query_row(
+            "SELECT home_project_id FROM repositories WHERE id = ?1",
+            [id],
+            |r| r.get(0),
+        )?;
         statements.push("DELETE FROM repositories WHERE id = ?1".to_string());
         for statement in &statements {
             tx.execute(statement, [id])?;
         }
+        // The home project goes with its last repository, unless cards or another repository are still on it.
+        tx.execute(
+            "DELETE FROM projects WHERE id = ?1
+               AND NOT EXISTS (SELECT 1 FROM project_repositories WHERE project_id = ?1)
+               AND NOT EXISTS (SELECT 1 FROM cards WHERE project_id = ?1)
+               AND NOT EXISTS (SELECT 1 FROM repositories WHERE home_project_id = ?1)",
+            [home],
+        )?;
         tx.execute(
             &format!("DROP TABLE IF EXISTS {}", super::localize::table(id)),
             [],
@@ -415,14 +447,21 @@ impl Store {
         column: &str,
     ) -> Result<Card> {
         let at = now();
+        // A new card lands on its repository's home project.
+        let project_id: i64 = conn.query_row(
+            "SELECT home_project_id FROM repositories WHERE id = ?1",
+            [repository_id],
+            |r| r.get(0),
+        )?;
         conn.execute(
-            "INSERT INTO cards (repository_id, number, title, body, author, column_name, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![repository_id, number, title, body, author, column, at],
+            "INSERT INTO cards (repository_id, number, title, body, author, column_name, created_at, project_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![repository_id, number, title, body, author, column, at, project_id],
         )?;
         Ok(Card {
             id: conn.last_insert_rowid(),
             repository_id,
+            project_id,
             number,
             title: title.into(),
             body: body.into(),
@@ -447,7 +486,7 @@ impl Store {
         params: impl rusqlite::Params,
     ) -> Result<Vec<Card>> {
         self.rows(&format!(
-            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {} FROM cards WHERE {clause} ORDER BY id", super::assignees::CARD_ASSIGNEES
+            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {}, project_id FROM cards WHERE {clause} ORDER BY id", super::assignees::CARD_ASSIGNEES
         ), params, |r| {
             Ok(Card {
                 id: r.get(0)?,
@@ -479,6 +518,7 @@ impl Store {
                     )
                 })?,
                 assignees: super::assignees::handles(r, 18)?,
+                project_id: r.get(19)?,
             })
         })
     }

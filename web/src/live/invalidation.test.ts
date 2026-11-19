@@ -132,6 +132,13 @@ describe("invalidates", () => {
     expect(stale(queryClient, keys.changeDiff(1))).toBe(true);
   });
 
+  it("reads the projects again when one is made or renamed, and when a card or a repository changes", () => {
+    expect(invalidates({ kind: "project_changed", data: {} })).toEqual([keys.projects]);
+    expect(invalidates({ kind: "repository_removed", data: {} })).toContainEqual(keys.projects);
+    expect(invalidates({ kind: "card_moved", data: {} })).toContainEqual(keys.projects);
+    expect(invalidates({ kind: "run_event", data: {} })).not.toContainEqual(keys.projects);
+  });
+
   it("reads the first-start steps again when a repository comes or goes", () => {
     expect(invalidates({ kind: "repository_added", data: {} })).toContainEqual(keys.start);
   });

@@ -137,6 +137,7 @@ pub enum AppError {
 
 pub type Result<T> = std::result::Result<T, AppError>;
 
+pub use projects::{Member, ProjectRepository, ProjectView};
 pub use stopping::CardStopWaits;
 
 /// Held by the thread of a research while it goes (see [`App::researching`]).

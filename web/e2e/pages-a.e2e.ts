@@ -450,10 +450,9 @@ describe("the inbox", () => {
 });
 
 describe("projects", () => {
-  it("adds a repository, opens its board, lists it and removes it", async () => {
+  it("adds a repository, opens its board, shows its project as a tile and removes it", async () => {
     await open("/projects");
     await page.getByRole("heading", { name: "Projects", level: 1 }).waitFor();
-    // With no repository yet the empty page offers the link too; the header's is the one every page has.
     await page.locator("header").getByRole("link", { name: "Add a repository" }).click();
     await page.waitForURL("**/projects/new");
     const add = page.getByRole("button", { name: "Add", exact: true });
@@ -464,54 +463,89 @@ describe("projects", () => {
     await page.waitForURL(/\/board\/\d+$/);
     await page.getByRole("heading", { name: "fresh", level: 1 }).waitFor();
 
-    // The list of every project is the last item of the switcher.
+    // The list of every project is the last item of the switcher; the new repository has a project of its own.
     await page
       .getByRole("navigation", { name: "Pages" })
       .getByRole("button", { name: "Change project" })
       .click();
     await page.getByRole("menuitem", { name: "All projects" }).click();
     await page.waitForURL("**/projects");
-    const row = page.getByTestId("repository").filter({ hasText: "fresh" });
-    await row.getByText("No forge · 0 cards").waitFor();
-    await row.getByRole("button", { name: "Delete" }).click();
-    await row.getByText("Delete fresh with its cards and chats?").waitFor();
-    await row.getByRole("button", { name: "Delete" }).click();
-    await row.waitFor({ state: "detached" });
+    const tile = page.getByTestId("project").filter({ hasText: "fresh" });
+    await tile.getByText("FRESH", { exact: true }).waitFor();
+    await tile.getByText("0 open").waitFor();
+
+    // Its tile opens the repository's settings, where it is deleted.
+    await tile.getByRole("link").click();
+    await page.getByRole("heading", { name: "fresh", level: 1 }).waitFor();
+    await page.getByRole("button", { name: "Delete repository" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByText("fresh goes with its cards, changes and chats").waitFor();
+    await dialog.getByRole("button", { name: "Delete" }).click();
+    await page.waitForURL("**/projects");
+    await page.getByRole("heading", { name: "Projects", level: 1 }).waitFor();
+    await tile.waitFor({ state: "detached" });
   });
 
   it.skipIf(usesRealServer)(
-    "lists the repositories with their forge and cards, and asks before it deletes",
+    "shows each project's key, repositories and open cards, and makes one with a free key",
     async () => {
       await open("/projects");
-      const demo = page.getByTestId("repository").filter({ hasText: "demo" });
-      await demo.getByText("GitHub · acme/demo · 7 cards").waitFor();
-      await demo.getByRole("button", { name: "Delete" }).click();
-      await demo.getByText("Delete demo with its cards and chats?").waitFor();
-      await demo.getByRole("button", { name: "Keep" }).click();
-      await demo.getByRole("button", { name: "Delete" }).waitFor();
-      expect(await page.getByText("Delete demo with its cards and chats?").count()).toBe(0);
+      const demo = page.getByTestId("project").filter({ hasText: "demo" });
+      await demo.getByText("DEMO", { exact: true }).waitFor();
+      await demo.getByText(/^\d+ open$/).waitFor();
+      await demo.getByRole("img", { name: "Owner" }).waitFor();
+
+      await page.getByRole("button", { name: "New project" }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByLabel("Name").fill("Storefront");
+      // The key is offered from the name; a key another project has is refused with the server's words.
+      expect(await dialog.getByLabel("Key").inputValue()).toBe("STOREFRONT");
+      await dialog.getByLabel("Key").fill("demo");
+      expect(await dialog.getByLabel("Key").inputValue()).toBe("DEMO");
+      await dialog.getByRole("button", { name: "Make project" }).click();
+      await dialog.getByText("a project with the key DEMO exists already").waitFor();
+      await dialog.getByLabel("Key").fill("SHOP");
+      await dialog.getByRole("button", { name: "Make project" }).click();
+      await dialog.waitFor({ state: "detached" });
+      const shop = page.getByTestId("project").filter({ hasText: "Storefront" });
+      await shop.getByText("No repository yet").waitFor();
+      await shop.getByText("SHOP", { exact: true }).waitFor();
+      expect(lastBody(fake().requests, "POST", "/v1/projects")).toEqual({
+        name: "Storefront",
+        key: "SHOP",
+      });
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "asks before it deletes a repository, and keeps it while a run goes on",
+    async () => {
+      await open("/projects/1");
+      await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
+      await page.getByRole("button", { name: "Delete repository" }).click();
+      const dialog = page.getByRole("dialog");
+      await dialog.getByText("demo goes with its cards, changes and chats").waitFor();
+      await dialog.getByRole("button", { name: "Keep" }).click();
+      await dialog.waitFor({ state: "detached" });
       expect(fake().requests.filter((r) => r.method === "DELETE")).toHaveLength(0);
 
-      // A run that goes on keeps the repository, and the server says so.
-      await demo.getByRole("button", { name: "Delete" }).click();
-      await demo.getByRole("button", { name: "Delete" }).click();
-      await alert("run 1 of demo is still going").waitFor();
-      await demo.getByRole("link", { name: /demo/ }).waitFor();
+      // A run that goes on keeps the repository, and the server says so in the dialog.
+      await page.getByRole("button", { name: "Delete repository" }).click();
+      await dialog.getByRole("button", { name: "Delete" }).click();
+      await dialog.getByText("run 1 of demo is still going").waitFor();
       expect(fake().requests.filter((r) => r.method === "DELETE")).toHaveLength(1);
     },
   );
 
   it.skipIf(usesRealServer)(
-    "opens the board and the settings of a repository from the list",
+    "opens the settings of a repository from its project's tile",
     async () => {
       await open("/projects");
-      const demo = page.getByTestId("repository").filter({ hasText: "demo" });
-      await demo.getByRole("link", { name: /demo/ }).first().click();
-      await page.waitForURL("**/board/1");
-      await page.goBack();
-      await page.getByRole("link", { name: "Settings and files" }).click();
+      await page.getByTestId("project").filter({ hasText: "demo" }).getByRole("link").click();
       await page.waitForURL("**/projects/1");
       await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
+      await page.getByRole("link", { name: "Open board" }).click();
+      await page.waitForURL("**/board/1");
     },
   );
 

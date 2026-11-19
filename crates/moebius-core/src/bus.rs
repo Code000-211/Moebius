@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 use crate::server::ports::Port;
-use crate::store::{Card, Change, Comment, Repository};
+use crate::store::{Card, Change, Comment, Project, Repository};
 
 /// One thing that happened, as the web app receives it. It is built from an [`Event`] and deserializes from the
 /// `{kind, data}` a client is sent, so nothing outside [`Event`] can name a kind.
@@ -134,6 +134,8 @@ pub enum Event {
     RepositoryAdded(Repository),
     RepositoryUpdated(Repository),
     RepositoryRemoved(Repository),
+    /// A project was made or renamed.
+    ProjectChanged(Project),
     RunStarted {
         run: i64,
         card: Option<i64>,
@@ -369,6 +371,7 @@ mod tests {
         Card {
             id: 7,
             repository_id: 2,
+            project_id: 2,
             number: 12,
             title: "Fix the bug".into(),
             body: "It fails".into(),
@@ -417,6 +420,7 @@ mod tests {
             github: Some("owner/repo".into()),
             trusted: vec!["ada".into()],
             project: None,
+            home_project_id: 2,
         }
     }
 
@@ -435,6 +439,13 @@ mod tests {
         let card = card();
         let change = change();
         let repository = repository();
+        let project = Project {
+            id: 2,
+            name: "moebius".into(),
+            key: "MOEBIUS".into(),
+            created_at: 1_700_000_000,
+            repositories: vec![2],
+        };
         let port = port();
         vec![
             (
@@ -622,6 +633,10 @@ mod tests {
             (
                 Event::RepositoryRemoved(repository.clone()),
                 json!({"kind": "repository_removed", "data": repository.clone()}),
+            ),
+            (
+                Event::ProjectChanged(project.clone()),
+                json!({"kind": "project_changed", "data": project.clone()}),
             ),
             (
                 Event::RunStarted {
