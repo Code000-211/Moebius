@@ -46,8 +46,22 @@ impl App {
         open_pull_request: bool,
         judgements: Option<&str>,
     ) -> Result<Change> {
-        let mut changes = self.publish_card_changes(card_id, open_pull_request, judgements)?;
-        Ok(changes.remove(0))
+        let changes = self.publish_card_changes(card_id, open_pull_request, judgements)?;
+        self.own_change(card_id, changes)
+    }
+
+    /// The change of the card's own repository among `changes`, or an error when it has none there: its change was
+    /// merged and a later round left nothing new in that repository.
+    fn own_change(&self, card_id: i64, changes: Vec<Change>) -> Result<Change> {
+        let own = self.card(card_id)?.repository_id;
+        changes
+            .into_iter()
+            .find(|change| change.repository_id == Some(own))
+            .ok_or_else(|| {
+                AppError::Invalid(
+                    "the card has nothing new to publish in its own repository, whose change is merged".into(),
+                )
+            })
     }
 
     /// Publishes the card's work in each of its repositories, in the order it names them (ADR 0019): one change per
@@ -56,7 +70,8 @@ impl App {
     /// request says what the change does (see `pull_request_body`), with the review's `judgements` in it when the offer
     /// has them. The card's own repository always has its change, on `moebius/card-<number>`; another repository has
     /// one, on `moebius/card-<KEY>-<number in the project>`, once a `code` run left commits in it beyond its default
-    /// branch. Refused when the card has no successful `code` run.
+    /// branch. The own repository has none either when its change was merged and nothing new was committed in it since.
+    /// Refused when the card has no successful `code` run.
     pub(crate) fn publish_card_changes(
         &self,
         card_id: i64,
@@ -84,7 +99,13 @@ impl App {
             let clone = Path::new(&repository.path);
             let head = git(clone, &["rev-parse", &code_branch])?;
             let existing = self.store.open_change_in(card_id, repository.id)?;
-            if !own && existing.is_none() {
+            // A repository where the card has no open change gets one only for commits it has not merged: a change
+            // with none is a pull request the forge refuses (GitHub answers 422). The card's own repository has its
+            // change always, unless that was merged and a later round, which reworks another repository, left nothing
+            // new in it.
+            if existing.is_none()
+                && (!own || self.store.has_merged_change_in(card_id, repository.id)?)
+            {
                 let beyond_base = format!("{}..{head}", repository.base_ref());
                 if git(clone, &["rev-list", "--count", &beyond_base])? == "0" {
                     continue;
@@ -172,8 +193,8 @@ impl App {
     /// Publishes the card's change, opening its pull request, and puts it in the inbox, ready to merge. A card over
     /// several repositories has each of its changes offered; this answers the change of its own repository.
     pub fn offer_change(&self, card_id: i64) -> Result<Change> {
-        self.offer_change_noted(card_id, None)
-            .map(|(mut changes, _)| changes.remove(0))
+        let (changes, _) = self.offer_change_noted(card_id, None)?;
+        self.own_change(card_id, changes)
     }
 
     /// Like `offer_change`, with the judgements of the review attached to the inbox items as `judgements`, and
@@ -187,6 +208,11 @@ impl App {
     ) -> Result<(Vec<Change>, bool)> {
         let seen = self.card(card_id)?.column;
         let changes = self.publish_card_changes(card_id, true, judgements)?;
+        if changes.is_empty() {
+            return Err(AppError::Invalid(
+                "the card has nothing new to offer: its changes are merged".into(),
+            ));
+        }
         self.finish_offer(card_id, &seen, changes, judgements)
     }
 

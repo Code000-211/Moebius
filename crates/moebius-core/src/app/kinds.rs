@@ -30,6 +30,15 @@ pub struct KindView {
     pub projects: Vec<i64>,
 }
 
+impl KindView {
+    /// The view as `sight` sees it: without the private projects whose records it does not see, so that the list
+    /// does not tell that they exist (see `app::projects::sight`).
+    pub fn seen_by(mut self, sight: &super::Sight) -> Self {
+        self.projects.retain(|id| sight.project_record(*id));
+        self
+    }
+}
+
 /// A question across projects: every part that is set must match. See [`App::issues_across`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CardQuery {
@@ -233,17 +242,30 @@ impl App {
     }
 
     /// Deletes the kind `id`, with its fields. A kind that a card has is not deleted: the cards would lose what they say.
-    pub fn delete_kind(&self, id: i64) -> Result<()> {
+    /// The refusal counts only the cards `sight` sees; when every card is in a private project it does not see, it says
+    /// so without a number (that the kind is in use is all it can tell, since the kind is not deleted).
+    pub fn delete_kind(&self, id: i64, sight: &super::Sight) -> Result<()> {
         let kind = self
             .store
             .kind(id)?
             .ok_or_else(|| AppError::NotFound(format!("kind {id}")))?;
-        let cards = self.store.cards_of_kind(id, None)?;
-        if cards > 0 {
-            return Err(AppError::Conflict(format!(
-                "{cards} cards are a {}: give them another kind first",
-                kind.name
-            )));
+        let all = self.store.cards_of_kind(id, None)?;
+        if all > 0 {
+            let mut cards = all;
+            for project in sight.hidden() {
+                cards -= self.store.cards_of_kind(id, Some(*project))?;
+            }
+            return Err(AppError::Conflict(if cards > 0 {
+                format!(
+                    "{cards} cards are a {}: give them another kind first",
+                    kind.name
+                )
+            } else {
+                format!(
+                    "cards of projects you do not see are a {}: they must have another kind first",
+                    kind.name
+                )
+            }));
         }
         let projects = self.kind_view(id)?.projects;
         self.store.delete_kind(id)?;
@@ -531,6 +553,7 @@ mod tests {
     use moebius_plugin_api::Host;
     use serde_json::json;
 
+    use super::super::Sight;
     use super::*;
     use crate::store::{Role, Store};
 
@@ -821,15 +844,15 @@ mod tests {
             .unwrap();
         app.set_card_kind(card.id, Some("defect")).unwrap();
         assert!(matches!(
-            app.delete_kind(bug.kind.id),
+            app.delete_kind(bug.kind.id, &Sight::everything()),
             Err(AppError::Conflict(_))
         ));
         app.set_card_kind(card.id, None).unwrap();
         let mut events = app.bus.subscribe();
-        app.delete_kind(bug.kind.id).unwrap();
+        app.delete_kind(bug.kind.id, &Sight::everything()).unwrap();
         assert_eq!(events.try_recv().unwrap().kind, "kind_removed");
         assert_eq!(events.try_recv().unwrap().kind, "project_kinds_changed");
         assert!(app.kind_views().unwrap().is_empty());
-        assert!(app.delete_kind(bug.kind.id).is_err());
+        assert!(app.delete_kind(bug.kind.id, &Sight::everything()).is_err());
     }
 }

@@ -745,6 +745,7 @@ At the top:
 | `server/api/privacy/tests/mod.rs` | For the tests only: a private project with one thing of every guarded kind and the people who see it or not, every guarded route and list answered for them, and the event stream. |
 | `server/api/privacy/tests/body_ids.rs` | For the tests only: a repository of a private project named in a request's body (an automation, a research, a workflow run's input), a Retro started or retried, and a replay deleted, by someone who does not see it. |
 | `server/api/privacy/tests/links.rs` | For the tests only: an issue's relations and an estimate's comparison, which never name a card of a private project the asker does not see. |
+| `server/api/privacy/tests/counts.rs` | For the tests only: what a private project would show through a list or a count (a kind's projects, the count of a refused kind delete, the Retro list's errors, a card's blockers). |
 | `server/api/privacy/tests/stream.rs` | For the tests only: the events that name a private project's things by another field than its card or run, and the notices of a private project's cards. |
 | `server/api/wiki.rs` | The wiki's routes: its pages listed, read (an older version too), written, moved and deleted, a page's history, and a refresh now. |
 | `server/api/runs.rs` | A run and its events in pages, steering and stopping it. |

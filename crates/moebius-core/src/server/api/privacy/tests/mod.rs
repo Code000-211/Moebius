@@ -719,6 +719,7 @@ fn every_route_with_a_parameter_is_guarded_or_named_as_of_no_project() {
     );
 }
 
+mod counts;
 mod links;
 mod stream;
 

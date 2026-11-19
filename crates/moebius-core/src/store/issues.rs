@@ -198,6 +198,15 @@ impl Store {
         )?)
     }
 
+    /// Whether the card's change in `repository_id` was merged.
+    pub fn has_merged_change_in(&self, card_id: i64, repository_id: i64) -> Result<bool> {
+        Ok(self.conn().query_row(
+            "SELECT EXISTS (SELECT 1 FROM changes WHERE card_id = ?1 AND repository_id = ?2 AND state = 'merged')",
+            [card_id, repository_id],
+            |r| r.get(0),
+        )?)
+    }
+
     /// Adds a blocker (an issue number) to a card.
     pub fn add_dependency(&self, card_id: i64, blocked_by: i64) -> Result<()> {
         self.conn().execute(

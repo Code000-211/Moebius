@@ -239,24 +239,22 @@ pub fn seen_by(
     Ok(view)
 }
 
-/// All Retros, the latest day first, without their reports.
-pub fn summaries(store: &Store) -> Result<Vec<RetroSummary>> {
-    let proposals = store.proposals(None)?;
-    Ok(store
-        .retros()?
-        .into_iter()
-        .map(|retro| RetroSummary {
-            errors: retro.report["errors"].as_array().map_or(0, Vec::len),
-            proposals: proposals
-                .iter()
-                .filter(|p| p.retro_date == retro.date)
-                .count(),
-            date: retro.date,
-            status: retro.status,
-            run_id: retro.run_id,
-            at: retro.at,
-        })
-        .collect())
+/// All Retros, the latest day first, without their reports, as `sight` sees them: the errors and proposals counted
+/// are those of its `seen_by` view, so that the counts do not tell of cards of private projects it does not see.
+pub fn summaries(app: &crate::app::App, sight: &crate::app::Sight) -> Result<Vec<RetroSummary>> {
+    let mut summaries = Vec::new();
+    for retro in app.store.retros()? {
+        let view = seen_by(app, sight, view_of(&app.store, retro)?)?;
+        summaries.push(RetroSummary {
+            errors: view.report.errors.len(),
+            proposals: view.proposals.len(),
+            date: view.date,
+            status: view.status,
+            run_id: view.run_id,
+            at: view.at,
+        });
+    }
+    Ok(summaries)
 }
 
 /// What the analyst is told after the report; `own` is what it is told about proposals for Moebius's own

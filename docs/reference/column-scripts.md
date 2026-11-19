@@ -238,7 +238,8 @@ scripts take it away, so an issue carries it exactly while its card is in `In pr
 `moebius.publish_change()` returns the card's changes as an array like `card.changes`.
 : Publishes the work of the card's latest successful `code` run on the branch of its change in each repository the card
 works in: the branch is pointed at that run's last commit there and pushed to that repository's forge. The card's own
-repository always has a change, on `moebius/card-<number>`; another repository has one, on
+repository always has a change, on `moebius/card-<number>`, unless that change was merged and no commit was made in it
+since (the card went back for another repository): a pull request with no commits is not opened. Another repository has one, on
 `moebius/card-<KEY>-<number in the project>`, once a `code` run left commits in it beyond its default branch. The first
 time this creates the change, without a pull request: the pull request opens when the change is offered
 (`moebius.offer_change`), so not before the review approved it. Once a change has a pull request, publishing a later
@@ -323,7 +324,7 @@ it is empty) becomes the card's `note`, which the next round is told. The other 
 the event `attempts_settled` with `{card, picked, runs}`. Raises an error `the card has no open attempts`, `attempt <n>
 did not pass, so it cannot be picked` or `run <n> is not an open attempt of the card`.
 
-`moebius.offer_change(judgements)` returns the id (a number) of the change in the card's own repository. `judgements`
+`moebius.offer_change(judgements)` returns the id (a number) of the change in the card's own repository (the first change when that one was merged and the card went back for another repository). It raises an error `the card has nothing new to offer` when every change of the card is merged. `judgements`
 is optional text, which is stored in each inbox item as `data.judgements` for the person to read.
 : Publishes the changes as `moebius.publish_change` does and opens each one's pull request if it has none (on GitHub,
 with a body that says `Closes #<number>`, or `Part of <KEY>-<number in the project> (issue #<number> in <repository>)`
@@ -392,6 +393,7 @@ Error messages that come from Moebius:
 | `there is no runner named <name>` | `moebius.start_run` with a runner that is not configured. |
 | a message starting `the runner` and containing `is busy` | `moebius.start_run` on a runner that has `max_runs` runs going; no run was made, so a script may try again on a later tick. |
 | `the card has no code run to publish` | `moebius.publish_change` or `moebius.offer_change` on a card without a successful `code` run. |
+| `the card has nothing new to offer: its changes are merged` | `moebius.offer_change` on a card all of whose changes are merged and that has no new commits. |
 | `the card has no change to check` | `moebius.run_checks` before the change is published. |
 | `the card has no open change to merge` | `moebius.merge_change` on a card without a change. |
 | `the card has no change to test` | `moebius.reproduction`, `moebius.run_test` or `moebius.run_test_at_base` before the change is published. |
