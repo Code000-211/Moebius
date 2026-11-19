@@ -74,6 +74,12 @@ on Linux (an AppImage and a `.deb`) and Windows (an installer):
    forge, opens in the system's browser (`links::target`). Every page of the window gets `window.moebiusDesktop` first, which the web app's
    `desktop/WindowControls.tsx` calls to minimize, maximize and close the window from a strip on the textured ground.
 
+The connect page also offers a server on this machine (Linux, and Windows inside WSL 2). `local_state` only looks; the
+button calls `local_connect`, which has `local::Local::start` bring the release of the app's version into `~/.moebius/bin`
+(checked against `SHA256SUMS`), run `init` in `~/.moebius/server`, start `serve` in a process of its own that outlives
+the app, and read the token the server writes there; the token goes to the proxy and never to the page. The next start
+finds the server again by that directory: it answers, or it is started again without a new `init`.
+
 ## The life of a card
 
 1. **An issue arrives.** Without a forge: `POST /v1/repositories/{id}/issues` (`api::create_issue`) calls
@@ -485,8 +491,11 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `main.rs` | The `moebius-desktop` program, without a console window of its own on Windows. |
 | `lib.rs` | The parts tested without a window, and how a window comes to show the web app against one server. |
 | `links.rs` | Where an address goes: the window keeps the connect page and the web app on the proxy's origin, and sends forges, chat links and the rest to the system's browser. |
+| `local/mod.rs` | A server of this machine that the app sets up and starts (D3): what the machine has (`State`: not set up, stopped, running, unavailable), and `start`, which brings `moebius`, runs `init` where there is no configuration, starts `serve` in the background and waits for its token and its answer. It shares `~/.moebius/bin` and `~/.moebius/server` with `moebius connect`. |
+| `local/host.rs` | The system the local server runs on, reached through a POSIX shell: `sh` on Linux, `wsl.exe -e sh` on Windows (WSL 2). |
+| `local/release.rs` | The program the app brings: `moebius` of the app's own version downloaded from its release, checked against that release's `SHA256SUMS` and put in `~/.moebius/bin`. |
 | `server.rs` | A server the app connects to (`Server`: its address and the access token), and `check`: the token and the server's version with `GET /v1/health`, refusing a server of another minor version with the release that matches. |
-| `window.rs` | The Tauri side, in the program rather than the library so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, the `connect` command of the connect page, and the handlers that send a link leaving the app to the browser. |
+| `window.rs` | The Tauri side, in the program rather than the library so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, the commands of the connect page (`connect`, `local_state`, `local_connect`), and the handlers that send a link leaving the app to the browser. |
 | `proxy/mod.rs` | The app's own address on the loopback: the web app at every path, `/v1/` forwarded to the server, and the key, `Host` and `Origin` checks that let only the window use it. |
 | `proxy/assets.rs` | The web app embedded from `web/dist`, served with the policies of `web/csp.json`. |
 | `proxy/forward.rs` | Forwarding to the server with the token: HTTP streamed both ways, and a WebSocket relayed message by message. |
