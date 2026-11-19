@@ -114,6 +114,13 @@ pub struct Card {
     /// store, in the issue list and in the analytics, and leaves the board; a move brings it back.
     #[serde(default)]
     pub archived_at: Option<i64>,
+    /// The name of the card's kind of issue (see `kinds`); none while it has none.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// The values of the fields of the card's kind that are set, by field name: a number for a `number` field, text for
+    /// the others (a `person` field holds a handle, a `date` field `YYYY-MM-DD`).
+    #[serde(default)]
+    pub fields: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 /// Why and by whom a card is held (blocked), and since when.
@@ -152,6 +159,7 @@ fn card_statements(cards: &str, runs: &str, judgements: &str) -> Vec<String> {
         format!("DELETE FROM milestone_cards WHERE card_id IN ({cards})"),
         format!("DELETE FROM card_follows WHERE card_id IN ({cards})"),
         format!("DELETE FROM notices WHERE card_id IN ({cards})"),
+        format!("DELETE FROM card_fields WHERE card_id IN ({cards})"),
         format!("DELETE FROM inbox_items WHERE card_id IN ({cards})"),
         format!("DELETE FROM dependencies WHERE card_id IN ({cards})"),
         format!("DELETE FROM card_links WHERE card_id IN ({cards}) OR other_id IN ({cards})"),
@@ -361,6 +369,14 @@ impl Store {
             tx.execute(statement, [id])?;
         }
         // The home project goes with its last repository, unless cards or another repository are still on it.
+        // What the project picked goes with it.
+        tx.execute(
+            "DELETE FROM project_kinds WHERE project_id = ?1
+               AND NOT EXISTS (SELECT 1 FROM project_repositories WHERE project_id = ?1)
+               AND NOT EXISTS (SELECT 1 FROM cards WHERE project_id = ?1)
+               AND NOT EXISTS (SELECT 1 FROM repositories WHERE home_project_id = ?1)",
+            [home],
+        )?;
         tx.execute(
             "DELETE FROM projects WHERE id = ?1
                AND NOT EXISTS (SELECT 1 FROM project_repositories WHERE project_id = ?1)
@@ -528,6 +544,8 @@ impl Store {
             due: None,
             moved_at: at,
             archived_at: None,
+            kind: None,
+            fields: Default::default(),
         })
     }
 
@@ -537,7 +555,7 @@ impl Store {
         params: impl rusqlite::Params,
     ) -> Result<Vec<Card>> {
         self.rows(&format!(
-            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {}, project_id, project_number, COALESCE((SELECT key FROM projects WHERE id = cards.project_id), ''), moved_at, archived_at FROM cards WHERE {clause} ORDER BY id", super::assignees::CARD_ASSIGNEES
+            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {}, project_id, project_number, COALESCE((SELECT key FROM projects WHERE id = cards.project_id), ''), moved_at, archived_at, {}, {} FROM cards WHERE {clause} ORDER BY id", super::assignees::CARD_ASSIGNEES, super::kinds::CARD_KIND, super::kinds::CARD_FIELDS
         ), params, |r| {
             let labels: Vec<String> = serde_json::from_str(&r.get::<_, String>(17)?).map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(
@@ -546,6 +564,7 @@ impl Store {
                     e.into(),
                 )
             })?;
+            let kind_and_fields = super::kinds::card_kind(r, 24, 25)?;
             Ok(Card {
                 priority: super::planning::priority_of(&labels),
                 due: super::planning::due_of(&labels),
@@ -572,6 +591,8 @@ impl Store {
                 claimed_by: r.get(16)?,
                 labels,
                 assignees: super::assignees::handles(r, 18)?,
+                kind: kind_and_fields.0,
+                fields: kind_and_fields.1,
                 project_id: r.get(19)?,
                 project_number: r.get(20)?,
                 project_key: r.get(21)?,
@@ -583,6 +604,11 @@ impl Store {
 
     pub fn card(&self, id: i64) -> Result<Option<Card>> {
         Ok(self.cards_where("id = ?1", [id])?.pop())
+    }
+
+    /// Every card of every project, oldest first.
+    pub fn all_cards(&self) -> Result<Vec<Card>> {
+        self.cards_where("1 = 1", [])
     }
 
     pub fn cards(&self, repository_id: i64) -> Result<Vec<Card>> {

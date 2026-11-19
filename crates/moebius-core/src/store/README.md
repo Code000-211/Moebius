@@ -85,6 +85,22 @@ key from a name; opening the store replaces each with a key made from the name, 
 A milestone belongs to no project, so the store hands out every card of one with its project (`milestone_cards`); what a
 person may see of it is decided in `app/milestones.rs`. Deleting a card or a milestone deletes the membership.
 
+## Kinds of issues
+
+`store/kinds.rs` keeps the kinds of issues of the organisation, their fields and the values cards hold (see the glossary).
+
+| Table | Holds |
+|---|---|
+| `kinds` | Name (unique regardless of case) and its place in the order the kinds were made. |
+| `kind_fields` | A kind's field: its name (unique in the kind regardless of case), its type (`text`, `number`, `choice`, `date` or `person`), the options of a choice as a JSON array of text, and its place in the kind. |
+| `project_kinds` | The kinds a project picked: one row for each project and kind. |
+| `card_fields` | The value a card has for a field, as text: a number as its decimal text, a date as `YYYY-MM-DD`, a person as a handle. A row exists only for a value that is set. |
+
+`cards.kind_id` names the card's kind. A card that changes kind loses its `card_fields`; replacing a kind's fields keeps the
+rows of a field that stays (the same name), and removes those of a field that goes or of a choice's option that went.
+Deleting a card deletes its rows. The values are read with the card: `Card::kind` and `Card::fields` (a number as a
+JSON number, anything else as text).
+
 ## Workflow runs
 
 `store/workflows.rs` keeps what a workflow run and each of its nodes did; the engine writes them and the web app reads

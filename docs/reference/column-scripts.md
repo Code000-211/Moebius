@@ -66,6 +66,8 @@ end
 | `card.assignees` | table (array of strings) | The handles of the people the card is given to (see [Assignees](desktop-api.md#assignees)), without the `@`, in the order the people were added; empty (never nil) when it is no one's. A person who was disabled after being assigned stays in the list. Read-only. |
 | `card.priority` | string | How soon the card should be done: `urgent`, `high`, `medium`, `low` or `none`; never nil. It is the card's `priority:` label (see [Priority and due date](desktop-api.md#priority-and-due-date)). Read-only. |
 | `card.due` | string or nil | The day the card is due as `YYYY-MM-DD` (it sorts as text), from its `due:` label; nil when it has none. Read-only. |
+| `card.kind` | string or nil | The name of the card's kind of issue (see [Kinds of issues](desktop-api.md#kinds-of-issues)), or nil while it has none. Read-only. |
+| `card.fields` | table | The values set for the fields of the card's kind, by field name: a number for a `number` field, a string for the others (a `person` field is a handle without the `@`, a `date` field `YYYY-MM-DD`); a field with no value is nil. An empty table (never nil) when none is set or the card has no kind. Read-only. |
 | `card.rounds` | number | How many runs with purpose `code` the card has had since it was last retried, whatever their status (a running one counts), and how many rounds of attempts of which none passed (see Attempts). |
 | `card.reviews` | number | How many review rounds the card has had since it was last retried, whatever their status: the runs with purpose `review` and those with purpose `review-standards` (one per round of the two-axis review). |
 | `card.tokens` | number | The input and output tokens the card's runs used since it was last retried (cached tokens are not added; the teacher's count too). |
@@ -421,7 +423,7 @@ configuration and no repository, and it stores and starts nothing.
 | `--title` | `A card to check the script with` | The card's `title`. |
 | `--author` | `person:owner` | The card's `author`. `card.trusted` is true only for a person (`person:<handle>`, or `person` on a record from before people), as on a repository without a forge. |
 
-The made-up card has `id` and `number` 1, an empty `body`, `blocked_by`, `children` and `labels` empty, no `parent` or `claimed_by`, `assignees` empty, `priority` `none`, no `due`, `merged` false, `rounds`, `reviews` and `tokens` 0, and
+The made-up card has `id` and `number` 1, an empty `body`, `blocked_by`, `children` and `labels` empty, no `parent` or `claimed_by`, `assignees` empty, `priority` `none`, no `due`, `kind` nil, `fields` empty, `merged` false, `rounds`, `reviews` and `tokens` 0, and
 `stopped` and `test_first` false, and `attempts` empty. It has no `note`, `change`, `run`, `review` or `selection`. The `moebius` table has every constant and function of
 this page, but records its calls instead of acting:
 

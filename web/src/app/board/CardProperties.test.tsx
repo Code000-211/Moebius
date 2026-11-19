@@ -82,6 +82,10 @@ function server(answers: Record<string, { status: number; body: unknown }> = {})
         const answer = answers[`GET ${url}`] ?? { status: 200, body: [] };
         return { ok: true, status: answer.status, text: async () => JSON.stringify(answer.body) };
       }
+      // No kind of issue is defined here; the Kind property is tested with `KindProperties`.
+      if (method === "GET" && url === "/v1/kinds") {
+        return { ok: true, status: 200, text: async () => "[]" };
+      }
       // Whether the person follows the card is read too, and is not what these tests are about.
       if (method === "GET" && url === "/v1/session") {
         return {

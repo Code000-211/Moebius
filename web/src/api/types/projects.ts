@@ -16,6 +16,8 @@ export interface Project {
   open_cards: number;
   /** The repository that holds the project's own files, whose board is the project's when it has no repository. */
   files: number | null;
+  /** The ids of the kinds of issues the project offers, in the order the kinds were made. */
+  kinds: number[];
 }
 
 /** The body of `POST /v1/projects`. */

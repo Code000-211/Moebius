@@ -43,6 +43,11 @@ export const keys = {
   milestone: (id: number) => ["milestones", id] as const,
   /** The milestones one card is in. */
   cardMilestones: (card: number) => ["card", card, "milestones"] as const,
+  /** The kinds of issues with their fields. */
+  issueKinds: ["issue-kinds"] as const,
+  /** The cards of every project, as the Issues page asks for them: all of them, or the ones a query picks. */
+  issues: ["issues"] as const,
+  issuesFor: (query: string) => ["issues", query] as const,
   /** Everything read about one card (its history and its runs) starts with this, so an event can make it all stale. */
   cards: ["card"] as const,
   history: (card: number) => ["card", card, "history"] as const,

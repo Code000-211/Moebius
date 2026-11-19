@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 use crate::server::ports::Port;
-use crate::store::{Card, Change, Comment, Milestone, Notice, Project, Repository};
+use crate::store::{Card, Change, Comment, Kind, Milestone, Notice, Project, Repository};
 
 /// One thing that happened, as the web app receives it. It is built from an [`Event`] and deserializes from the
 /// `{kind, data}` a client is sent, so nothing outside [`Event`] can name a kind.
@@ -173,6 +173,23 @@ pub enum Event {
     /// A milestone was deleted; its cards stay.
     MilestoneRemoved {
         milestone: i64,
+    },
+    /// A kind of issue was made or changed (its name or its fields).
+    KindChanged(Kind),
+    /// A kind of issue was deleted.
+    KindRemoved {
+        kind: i64,
+    },
+    /// The kinds a project offers changed (their ids, in the order the kinds were made).
+    ProjectKindsChanged {
+        project: i64,
+        kinds: Vec<i64>,
+    },
+    /// A card got a kind, lost it or had the values of its fields changed.
+    CardKindChanged {
+        card: i64,
+        kind: Option<String>,
+        fields: std::collections::BTreeMap<String, serde_json::Value>,
     },
     RunStarted {
         run: i64,
@@ -431,6 +448,8 @@ mod tests {
             due: None,
             moved_at: 1_700_000_000,
             archived_at: None,
+            kind: None,
+            fields: Default::default(),
         }
     }
 
@@ -754,6 +773,33 @@ mod tests {
             (
                 Event::MilestoneRemoved { milestone: 3 },
                 json!({"kind": "milestone_removed", "data": {"milestone": 3}}),
+            ),
+            (
+                Event::KindChanged(Kind {
+                    id: 2,
+                    name: "Bug".into(),
+                    fields: Vec::new(),
+                }),
+                json!({"kind": "kind_changed", "data": {"id": 2, "name": "Bug", "fields": []}}),
+            ),
+            (
+                Event::KindRemoved { kind: 2 },
+                json!({"kind": "kind_removed", "data": {"kind": 2}}),
+            ),
+            (
+                Event::ProjectKindsChanged {
+                    project: 1,
+                    kinds: vec![2],
+                },
+                json!({"kind": "project_kinds_changed", "data": {"project": 1, "kinds": [2]}}),
+            ),
+            (
+                Event::CardKindChanged {
+                    card: 7,
+                    kind: Some("Bug".into()),
+                    fields: [("Estimate".to_string(), json!(3))].into(),
+                },
+                json!({"kind": "card_kind_changed", "data": {"card": 7, "kind": "Bug", "fields": {"Estimate": 3}}}),
             ),
             (
                 Event::RunStarted {

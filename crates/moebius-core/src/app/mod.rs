@@ -26,6 +26,7 @@ mod checks;
 mod deletions;
 mod diffs;
 mod issues;
+mod kinds;
 mod localize;
 mod milestones;
 mod notices;
@@ -142,6 +143,7 @@ pub enum AppError {
 
 pub type Result<T> = std::result::Result<T, AppError>;
 
+pub use kinds::{CardQuery, KindView};
 pub use milestones::{MilestoneDetail, MilestoneFields, MilestoneProject, MilestoneView};
 pub use projects::{Member, ProjectRepository, ProjectView};
 pub use stopping::CardStopWaits;
