@@ -89,6 +89,7 @@ describe("the Rules page", () => {
     await open("/rules", "Rules");
     await region("Built-in patterns").waitFor();
     await region("Built-in patterns").getByText("no-force-push").waitFor();
+    await page.getByRole("button", { name: /Server rules/ }).click();
     await region("Rules in prose").waitFor();
   });
 
@@ -123,10 +124,12 @@ describe("the Rules page", () => {
     await patterns.getByText("git push --force rewrites history on the remote").waitFor();
     await patterns.getByText("3 refusals this week").waitFor();
     await patterns.getByText("No refusals this week").waitFor();
+    await page.getByRole("button", { name: /Server rules/ }).click();
     const prose = region("Rules in prose");
     await prose.getByText("leave-ci-alone").waitFor();
     await prose.getByText("1 refusal this week").waitFor();
     await prose.getByText("Do not copy dependencies into the tree.").waitFor();
+    await page.getByRole("button", { name: /^demo/ }).click();
     await region("demo").getByText("keep-migrations").waitFor();
     await region("demo")
       .getByText("Saved as a commit in the harness configuration repository (repos/demo/rules.md).")
@@ -135,7 +138,7 @@ describe("the Rules page", () => {
 
   it.skipIf(usesRealServer)("saves a rule edited in its card as the whole file", async () => {
     await fresh();
-    await open("/rules", "Rules");
+    await open("/rules?set=server", "Rules");
     const prose = region("Rules in prose");
     await prose.getByRole("button", { name: "Edit rule no-vendoring" }).click();
     const text = prose.getByLabel("Rule text");
@@ -156,7 +159,7 @@ describe("the Rules page", () => {
 
   it.skipIf(usesRealServer)("keeps a refused rule open and says why", async () => {
     await fresh();
-    await open("/rules", "Rules");
+    await open("/rules?set=server", "Rules");
     const prose = region("Rules in prose");
     await prose.getByRole("button", { name: "Add a rule" }).click();
     const save = prose.getByRole("button", { name: "Save", exact: true });
@@ -173,7 +176,7 @@ describe("the Rules page", () => {
 
   it.skipIf(usesRealServer)("adds a rule at the end and deletes one after asking", async () => {
     await fresh();
-    await open("/rules", "Rules");
+    await open("/rules?set=server", "Rules");
     const prose = region("Rules in prose");
     await prose.getByRole("button", { name: "Add a rule" }).click();
     expect(await prose.getByRole("button", { name: "Delete rule" }).count()).toBe(0);
@@ -199,7 +202,7 @@ describe("the Rules page", () => {
 
   it.skipIf(usesRealServer)("saves the rules of a repository in its own file", async () => {
     await fresh();
-    await open("/rules", "Rules");
+    await open("/rules?set=1", "Rules");
     const box = region("demo");
     await box.getByRole("button", { name: "Edit rule keep-migrations" }).click();
     await box.getByLabel("Rule text").fill("Do not edit a migration that exists, ever.");
@@ -220,7 +223,7 @@ describe("the Rules page", () => {
 
   it.skipIf(usesRealServer)("asks the Moebius agent to write the rules", async () => {
     await fresh();
-    await open("/rules", "Rules");
+    await open("/rules?set=server", "Rules");
     const prose = region("Rules in prose");
     await prose.getByRole("button", { name: "Write with agent" }).click();
     const ask = prose.getByRole("button", { name: "Submit" });
@@ -251,12 +254,15 @@ describe("the Automations page", () => {
     await page.getByLabel("Prompt").fill("Sum up what the agents did this week.");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await status("Saved.").waitFor();
-    await page.getByRole("button", { name: /Weekly cleanup/ }).waitFor();
+    await page.getByTestId("list-card").filter({ hasText: "Weekly cleanup" }).waitFor();
     // Saved, it can be fired and deleted.
     await page.getByRole("button", { name: "Delete automation" }).click();
     await page.getByText("Delete this automation?").waitFor();
     await page.getByRole("button", { name: "Delete", exact: true }).click();
-    await page.getByRole("button", { name: /Weekly cleanup/ }).waitFor({ state: "detached" });
+    await page
+      .getByTestId("list-card")
+      .filter({ hasText: "Weekly cleanup" })
+      .waitFor({ state: "detached" });
   });
 
   it.skipIf(usesRealServer)(
@@ -275,20 +281,33 @@ describe("the Automations page", () => {
         .getByText("the agent Coder cannot run: its model is not served")
         .waitFor();
       await morning.click();
-      expect(await page.getByLabel("Name of the automation").inputValue()).toBe("Morning triage");
-      expect(await page.getByLabel("Cron, in the server's local time").inputValue()).toBe(
-        "0 8 * * 1-5",
+      expect(new URL(page.url()).search).toBe("?automation=1");
+      const properties = page.getByRole("region", { name: /^Properties of/ });
+      expect(await showing(properties.getByRole("button", { name: /^Name / }))).toBe(
+        "Morning triage",
       );
-      expect(await showing(page.getByLabel("Repeats"))).toBe("Weekdays at 8");
-      expect(await showing(page.getByLabel("Works in"))).toBe("demo");
+      expect(await showing(properties.getByRole("button", { name: /^Cron / }))).toBe("0 8 * * 1-5");
+      expect(await showing(properties.getByRole("button", { name: /^Repeats / }))).toBe(
+        "Weekdays at 8",
+      );
+      expect(await showing(properties.getByRole("button", { name: /^Works in / }))).toBe("demo");
       await page.getByText("Fires next in 3 h.").waitFor();
       const runs = region("Past runs");
       await runs.getByText("the chat of the firing before (41) still runs").waitFor();
       const started = runs.getByRole("link", { name: /Chat 41 · succeeded/ });
       expect(await started.getAttribute("href")).toBe("/chat/41");
-      // A change of the schedule says that the next firing is not known until it is saved.
-      await pickOption(page, page.getByLabel("Repeats"), "Every Friday at 9");
-      await page.getByText("Save to see when it fires next.").waitFor();
+      // A property is saved alone, as soon as it is chosen.
+      await pickOption(
+        page,
+        properties.getByRole("button", { name: /^Repeats / }),
+        "Every Friday at 9",
+      );
+      await page.waitForFunction(() => document.body.textContent?.includes("Every Friday at 9"));
+      expect(lastRequest()).toMatchObject({
+        method: "PUT",
+        path: "/v1/automations/1",
+        body: { schedule: "0 9 * * 5", name: "Morning triage" },
+      });
     },
   );
 
@@ -302,15 +321,17 @@ describe("the Automations page", () => {
     const link = region("Past runs").getByRole("link", { name: /Chat 52 · running/ });
     expect(await link.getAttribute("href")).toBe("/chat/52");
 
-    await page.getByLabel("Name of the automation").fill("Morning triage, early");
-    await pickOption(page, page.getByLabel("Agent"), "Coder");
-    // One switch, not two buttons: it says which end it is on, and moving it is the whole of the change.
-    const runsOn = page.getByRole("switch", { name: "Runs on its schedule" });
-    expect(await runsOn.getAttribute("aria-checked")).toBe("true");
-    await runsOn.click();
-    expect(await runsOn.getAttribute("aria-checked")).toBe("false");
-    await page.getByRole("button", { name: "Save", exact: true }).click();
-    await status("Saved.").waitFor();
+    // Each property is saved alone, with the rest of the automation as it is stored.
+    const properties = page.getByRole("region", { name: /^Properties of/ });
+    await properties.getByRole("button", { name: /^Name / }).click();
+    const name = properties.getByLabel("Name");
+    await name.fill("Morning triage, early");
+    await name.press("Enter");
+    await properties.getByRole("button", { name: /^Name Morning triage, early/ }).waitFor();
+    await pickOption(page, properties.getByRole("button", { name: /^Agent / }), "Coder");
+    await properties.getByRole("button", { name: /^Agent Coder/ }).waitFor();
+    await pickOption(page, properties.getByRole("button", { name: /^Runs / }), "Only when run now");
+    await properties.getByRole("button", { name: /^Runs Only when run now/ }).waitFor();
     expect(lastRequest()).toMatchObject({
       method: "PUT",
       path: "/v1/automations/1",
@@ -337,17 +358,21 @@ describe("the Automations page", () => {
       await open("/automations", "Automations");
       await page.getByRole("button", { name: /Morning triage/ }).click();
       fake().refuseNext("PUT", "/v1/automations/1", 422, "the agent Ghost does not exist");
-      // Save waits for something to save, so the refusal is asked for by changing the form first.
-      await page.getByLabel("Name of the automation").fill("Morning triage, once more");
-      await page.getByRole("button", { name: "Save", exact: true }).click();
+      const properties = page.getByRole("region", { name: /^Properties of/ });
+      await properties.getByRole("button", { name: /^Name / }).click();
+      const name = properties.getByLabel("Name");
+      await name.fill("Morning triage, once more");
+      await name.press("Enter");
       await alert("the agent Ghost does not exist").waitFor();
       fake().refuseNext("POST", "/v1/automations/1/run", 404, "no such automation");
       await page.getByRole("button", { name: "Run now" }).click();
       await alert("no such automation").waitFor();
       // A schedule with four fields is stopped before it is sent.
       const sent = fake().requests.length;
-      await page.getByLabel("Cron, in the server's local time").fill("0 8 * *");
-      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await properties.getByRole("button", { name: /^Cron / }).click();
+      const cron = properties.getByLabel("Cron");
+      await cron.fill("0 8 * *");
+      await cron.press("Enter");
       await alert("A schedule has five fields").waitFor();
       expect(fake().requests.length).toBe(sent);
     },

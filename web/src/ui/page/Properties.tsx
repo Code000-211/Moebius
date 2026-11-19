@@ -91,3 +91,16 @@ export function Property({ name, children }: { name: string; children: ReactNode
     </div>
   );
 }
+
+/**
+ * Form fields held in the right column, for the properties of a thing that is saved as a whole — a file in the harness
+ * configuration repository, written in one commit — rather than one value at a time. They stack in the column's width
+ * and are saved with the editor's own Save; the page that uses them keeps the form's state.
+ */
+export function PropertyFields({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <PageProperties label={label}>
+      <div className="flex flex-col gap-4 px-1 py-2">{children}</div>
+    </PageProperties>
+  );
+}

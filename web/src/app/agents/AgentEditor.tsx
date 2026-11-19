@@ -22,6 +22,7 @@ import { Box } from "../../ui/page/Box";
 import { Chip } from "../../ui/page/Chip";
 import { Field, Select, TextArea } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
+import { PropertyFields } from "../../ui/page/Properties";
 import { ActionRow, Committed, EditorHead, useDraft } from "../harness/form";
 import { instructionsRequest } from "../harness/importRequest";
 import { ModelField, ModelNote } from "../harness/ModelField";
@@ -296,90 +297,86 @@ export function AgentEditor(props: EditorProps) {
           </p>
         </>
       ) : (
-        <>
-          <div className="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            <Field label="Model">
-              {(id) => (
-                <ModelField
-                  id={id}
-                  choices={choices}
-                  value={form.model}
-                  placeholder="Model name"
-                  onChange={(model) => change({ model })}
-                  onPick={(choice) =>
-                    change({
-                      model: choice.id,
-                      ...((PROTOCOLS as readonly string[]).includes(choice.protocol)
-                        ? { protocol: choice.protocol }
-                        : {}),
-                    })
-                  }
-                />
-              )}
-            </Field>
-            <Field label="Protocol">
-              {(id) => (
-                <Select
-                  id={id}
-                  options={[...PROTOCOLS]}
-                  value={form.protocol}
-                  onChange={(protocol) => change({ protocol })}
-                />
-              )}
-            </Field>
-            <Field label="Harness">
-              {(id) => (
-                <Select
-                  id={id}
-                  options={[...HARNESSES]}
-                  value={form.harness}
-                  onChange={(harness) => change({ harness })}
-                />
-              )}
-            </Field>
-            {(runners.length > 0 || form.runner !== null) && (
-              <Field label="Runner">
-                {(id) => (
-                  <Select
-                    id={id}
-                    options={places}
-                    value={form.runner ?? THIS_SERVER}
-                    onChange={(runner) =>
-                      change({ runner: runner === THIS_SERVER ? null : runner })
-                    }
-                  />
-                )}
-              </Field>
+        <PropertyFields label={`Properties of ${form.name || "the new agent"}`}>
+          <Field label="Model">
+            {(id) => (
+              <ModelField
+                id={id}
+                choices={choices}
+                value={form.model}
+                placeholder="Model name"
+                onChange={(model) => change({ model })}
+                onPick={(choice) =>
+                  change({
+                    model: choice.id,
+                    ...((PROTOCOLS as readonly string[]).includes(choice.protocol)
+                      ? { protocol: choice.protocol }
+                      : {}),
+                  })
+                }
+              />
             )}
-            <Field label="Thinking">
+          </Field>
+          <Field label="Protocol">
+            {(id) => (
+              <Select
+                id={id}
+                options={[...PROTOCOLS]}
+                value={form.protocol}
+                onChange={(protocol) => change({ protocol })}
+              />
+            )}
+          </Field>
+          <Field label="Harness">
+            {(id) => (
+              <Select
+                id={id}
+                options={[...HARNESSES]}
+                value={form.harness}
+                onChange={(harness) => change({ harness })}
+              />
+            )}
+          </Field>
+          {(runners.length > 0 || form.runner !== null) && (
+            <Field label="Runner">
               {(id) => (
                 <Select
                   id={id}
-                  options={levels}
-                  value={form.thinking ?? NOT_SET}
-                  onChange={(level) => change({ thinking: level === NOT_SET ? null : level })}
+                  options={places}
+                  value={form.runner ?? THIS_SERVER}
+                  onChange={(runner) => change({ runner: runner === THIS_SERVER ? null : runner })}
                 />
               )}
             </Field>
-            <Field label="Token budget per card">
-              {(id) => (
-                <Input
-                  id={id}
-                  value={form.budget}
-                  placeholder="No limit"
-                  className="tabular-nums"
-                  onChange={(event) => change({ budget: event.target.value })}
-                />
-              )}
-            </Field>
-          </div>
+          )}
+          <Field label="Thinking">
+            {(id) => (
+              <Select
+                id={id}
+                options={levels}
+                value={form.thinking ?? NOT_SET}
+                onChange={(level) => change({ thinking: level === NOT_SET ? null : level })}
+              />
+            )}
+          </Field>
+          <Field label="Token budget per card">
+            {(id) => (
+              <Input
+                id={id}
+                value={form.budget}
+                placeholder="No limit"
+                className="tabular-nums"
+                onChange={(event) => change({ budget: event.target.value })}
+              />
+            )}
+          </Field>
           <ModelNote
             available={available}
             onRefresh={() => void refresh()}
             refreshing={refreshing}
             answered={answered}
           />
-        </>
+        </PropertyFields>
       )}
       {problem && <Notice tone="error">{problem}</Notice>}
       {showSaved &&

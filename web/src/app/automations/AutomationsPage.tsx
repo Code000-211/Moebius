@@ -12,7 +12,7 @@
 import { PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import {
   automations,
   deleteAutomation,
@@ -32,11 +32,13 @@ import { Input } from "../../ui/components/Input";
 import { ago } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import { Box } from "../../ui/page/Box";
+import { EditableProperty } from "../../ui/page/EditableProperty";
 import { Empty } from "../../ui/page/Empty";
 import { Field, Select, TextArea } from "../../ui/page/Field";
 import { ListCard, ListDetail } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
+import { PageProperties, Property } from "../../ui/page/Properties";
 import { SkeletonCard, SkeletonLines, SkeletonList } from "../../ui/page/Skeleton";
 import { Switch } from "../../ui/page/Switch";
 import {
@@ -44,6 +46,7 @@ import {
   formOf,
   newForm,
   nextLine,
+  type Place,
   PRESETS,
   request,
   SUGGESTED_AUTOMATIONS,
@@ -76,7 +79,25 @@ function listLine(automation: Automation, now: number): string {
 export function AutomationsPage() {
   const now = useNow();
   const list = useQuery({ queryKey: keys.automations, queryFn: automations });
-  const [chosen, setChosen] = useState<number | typeof NEW | null>(null);
+  // The automation is in the address (`?automation=<id>`, or `new`), so a reload and a link keep it.
+  const [params, setParams] = useSearchParams();
+  const asked = params.get("automation");
+  const chosen: number | typeof NEW | null =
+    asked === "new"
+      ? NEW
+      : asked !== null && Number.isInteger(Number(asked))
+        ? Number(asked)
+        : null;
+  const setChosen = (next: number | typeof NEW | null) =>
+    setParams(
+      (current) => {
+        const query = new URLSearchParams(current);
+        if (next === null) query.delete("automation");
+        else query.set("automation", next === NEW ? "new" : String(next));
+        return query;
+      },
+      { replace: true },
+    );
   /** The automation the form starts from, when the page offered one. */
   const [starting, setStarting] = useState<Form | null>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
@@ -278,6 +299,13 @@ function Editor({
   const names = new Set(agentList.data?.map((agent) => agent.name) ?? []);
   names.add(form.agent);
   const preset = PRESETS.find(([, cron]) => cron === form.schedule.trim());
+  const places: Array<[string, string]> = [
+    ["nowhere", "An empty directory"],
+    ...(repositories.data?.boards.map(
+      (board) => [`repository:${board.repository.id}`, board.repository.name] as [string, string],
+    ) ?? []),
+    ["harness", "Harness configuration"],
+  ];
   // An automation that exists has nothing to save until a field of it changes; a new one can be saved as it was
   // offered, because there is no stored form to compare it with.
   const dirty = saved === undefined || JSON.stringify(form) !== JSON.stringify(formOf(saved));
@@ -311,16 +339,18 @@ function Editor({
         }
       >
         <div className="flex flex-col gap-4">
-          <Field label="Name of the automation">
-            {(fieldId) => (
-              <Input
-                id={fieldId}
-                placeholder="Morning triage"
-                value={form.name}
-                onChange={(event) => edit({ name: event.target.value })}
-              />
-            )}
-          </Field>
+          {!saved && (
+            <Field label="Name of the automation">
+              {(fieldId) => (
+                <Input
+                  id={fieldId}
+                  placeholder="Morning triage"
+                  value={form.name}
+                  onChange={(event) => edit({ name: event.target.value })}
+                />
+              )}
+            </Field>
+          )}
           {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
           {confirming && (
             <div className="flex flex-col gap-4 rounded-control bg-sunken p-4 sm:flex-row sm:items-center">
@@ -345,90 +375,30 @@ function Editor({
         </div>
       </Box>
 
-      <Box
-        title="Schedule"
-        actions={
-          <Switch
-            checked={form.enabled}
-            onChange={(next) => edit({ enabled: next })}
-            label="Runs on its schedule"
+      <PageProperties label={`Properties of ${saved?.name ?? "the new automation"}`}>
+        {saved ? (
+          <SavedProperties
+            saved={saved}
+            places={places}
+            agentNames={[...names]}
+            now={now}
+            onChanged={(patch) => setForm((held) => ({ ...held, ...patch }))}
+            onRefused={() => setNotice(null)}
           />
-        }
-      >
-        <div className="flex flex-col gap-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Repeats">
-              {(fieldId) => (
-                <Select
-                  id={fieldId}
-                  options={[
-                    ...PRESETS.map(([name, cron]) => [cron, name] as [string, string]),
-                    ...(!preset ? [["custom", "Custom"] as [string, string]] : []),
-                  ]}
-                  value={preset ? preset[1] : "custom"}
-                  onChange={(picked) => {
-                    if (picked !== "custom") edit({ schedule: picked });
-                  }}
-                />
-              )}
-            </Field>
-            <Field
-              label="Cron, in the server's local time"
-              hint="Five fields: minute, hour, day of the month, month, day of the week."
-            >
-              {(fieldId) => (
-                <Input
-                  id={fieldId}
-                  className="font-mono text-sm"
-                  placeholder="0 8 * * 1-5"
-                  value={form.schedule}
-                  onChange={(event) => edit({ schedule: event.target.value })}
-                />
-              )}
-            </Field>
-          </div>
-          <Body>
-            <span className="tabular-nums">
-              {nextLine(saved, form.schedule, form.enabled, now)}
-            </span>
-          </Body>
-        </div>
-      </Box>
+        ) : (
+          <NewProperties
+            form={form}
+            edit={edit}
+            places={places}
+            agentNames={[...names]}
+            preset={preset}
+            now={now}
+          />
+        )}
+      </PageProperties>
 
       <Box title="Chat" aside="Ends once the agent has answered">
         <div className="flex flex-col gap-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Agent">
-              {(fieldId) => (
-                <Select
-                  id={fieldId}
-                  options={[...names]}
-                  value={form.agent}
-                  onChange={(picked) => edit({ agent: picked })}
-                />
-              )}
-            </Field>
-            <Field label="Works in">
-              {(fieldId) => (
-                <Select
-                  id={fieldId}
-                  options={[
-                    ["nowhere", "An empty directory"],
-                    ...(repositories.data?.boards.map(
-                      (board) =>
-                        [`repository:${board.repository.id}`, board.repository.name] as [
-                          string,
-                          string,
-                        ],
-                    ) ?? []),
-                    ["harness", "Harness configuration"],
-                  ]}
-                  value={form.place}
-                  onChange={(picked) => edit({ place: picked as Form["place"] })}
-                />
-              )}
-            </Field>
-          </div>
           <Field label="Prompt">
             {(fieldId) => (
               <TextArea
@@ -491,5 +461,195 @@ function FiringRow({ firing, now }: { firing: Firing; now: number }) {
     <Link to={`/chat/${firing.run_id}`} className={`${row} hover:bg-raised`}>
       {body}
     </Link>
+  );
+}
+
+type Props = {
+  places: Array<[string, string]>;
+  agentNames: string[];
+  now: number;
+};
+
+/** Every schedule the picker offers, and "Custom" for one it does not. */
+function repeatOptions(schedule: string): Array<[string, string]> {
+  const preset = PRESETS.find(([, cron]) => cron === schedule.trim());
+  return [
+    ...PRESETS.map(([name, cron]) => [cron, name] as [string, string]),
+    ...(preset ? [] : [[schedule.trim(), "Custom"] as [string, string]]),
+  ];
+}
+
+/**
+ * The properties of an automation that exists, each edited where it stands and saved alone: its name, whether it runs on
+ * its schedule, the schedule, its agent and where its chats work. A save sends the automation as it is stored with that
+ * one change, and the list is read again once the server answered.
+ */
+function SavedProperties({
+  saved,
+  places,
+  agentNames,
+  now,
+  onChanged,
+  onRefused,
+}: Props & {
+  saved: Automation;
+  onChanged: (patch: Partial<Form>) => void;
+  onRefused: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const save = async (patch: Partial<Form>) => {
+    onRefused();
+    const made = request({ ...formOf(saved), ...patch });
+    if ("problem" in made) throw new Error(made.problem);
+    await saveAutomation(saved.id, made.ok);
+    onChanged(patch);
+    await queryClient.invalidateQueries({ queryKey: keys.automations });
+  };
+  const stored = formOf(saved);
+  const place = places.find(([value]) => value === stored.place)?.[1] ?? stored.place;
+  return (
+    <>
+      <EditableProperty
+        name="Name"
+        editor={{ kind: "text", value: stored.name, onSave: (name) => save({ name }) }}
+      >
+        {stored.name}
+      </EditableProperty>
+      <EditableProperty
+        name="Runs"
+        editor={{
+          kind: "choice",
+          options: [
+            ["on", "On its schedule"],
+            ["off", "Only when run now"],
+          ],
+          value: stored.enabled ? "on" : "off",
+          onSave: (value) => save({ enabled: value === "on" }),
+        }}
+      >
+        {stored.enabled ? "On its schedule" : "Only when run now"}
+      </EditableProperty>
+      <EditableProperty
+        name="Repeats"
+        editor={{
+          kind: "choice",
+          options: repeatOptions(stored.schedule),
+          value: stored.schedule.trim(),
+          onSave: (schedule) => save({ schedule }),
+        }}
+      >
+        {scheduleName(stored.schedule)}
+      </EditableProperty>
+      <EditableProperty
+        name="Cron"
+        editor={{ kind: "text", value: stored.schedule, onSave: (schedule) => save({ schedule }) }}
+      >
+        <span className="font-mono text-sm">{stored.schedule}</span>
+      </EditableProperty>
+      <Property name="Next">
+        <span className="tabular-nums">
+          {nextLine(saved, stored.schedule, stored.enabled, now)}
+        </span>
+      </Property>
+      <EditableProperty
+        name="Agent"
+        editor={{
+          kind: "choice",
+          options: agentNames.map((name) => [name, name] as [string, string]),
+          value: stored.agent,
+          onSave: (agent) => save({ agent }),
+        }}
+      >
+        {stored.agent}
+      </EditableProperty>
+      <EditableProperty
+        name="Works in"
+        editor={{
+          kind: "choice",
+          options: places,
+          value: stored.place,
+          onSave: (value) => save({ place: value as Place }),
+        }}
+      >
+        {place}
+      </EditableProperty>
+    </>
+  );
+}
+
+/** The properties of an automation not yet saved: the same fields, held by the editor until Save makes it. */
+function NewProperties({
+  form,
+  edit,
+  places,
+  agentNames,
+  preset,
+  now,
+}: Props & {
+  form: Form;
+  edit: (change: Partial<Form>) => void;
+  preset: readonly [string, string] | undefined;
+}) {
+  return (
+    <div className="flex flex-col gap-4 px-1 py-2">
+      <Switch
+        checked={form.enabled}
+        onChange={(next) => edit({ enabled: next })}
+        label="Runs on its schedule"
+      />
+      <Field label="Repeats">
+        {(fieldId) => (
+          <Select
+            id={fieldId}
+            options={repeatOptions(form.schedule).map(([value, name]) =>
+              !preset && name === "Custom" ? (["custom", name] as [string, string]) : [value, name],
+            )}
+            value={preset ? preset[1] : "custom"}
+            onChange={(picked) => {
+              if (picked !== "custom") edit({ schedule: picked });
+            }}
+          />
+        )}
+      </Field>
+      <Field
+        label="Cron, in the server's local time"
+        hint="Five fields: minute, hour, day of the month, month, day of the week."
+      >
+        {(fieldId) => (
+          <Input
+            id={fieldId}
+            className="font-mono text-sm"
+            placeholder="0 8 * * 1-5"
+            value={form.schedule}
+            onChange={(event) => edit({ schedule: event.target.value })}
+          />
+        )}
+      </Field>
+      <Body>
+        <span className="tabular-nums">
+          {nextLine(undefined, form.schedule, form.enabled, now)}
+        </span>
+      </Body>
+      <Field label="Agent">
+        {(fieldId) => (
+          <Select
+            id={fieldId}
+            options={agentNames}
+            value={form.agent}
+            onChange={(agent) => edit({ agent })}
+          />
+        )}
+      </Field>
+      <Field label="Works in">
+        {(fieldId) => (
+          <Select
+            id={fieldId}
+            options={places}
+            value={form.place}
+            onChange={(picked) => edit({ place: picked as Place })}
+          />
+        )}
+      </Field>
+    </div>
   );
 }
