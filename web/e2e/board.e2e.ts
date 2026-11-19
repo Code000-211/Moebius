@@ -20,6 +20,8 @@ let server: TestServer;
 let context: BrowserContext;
 let page: Page;
 const directories: string[] = [];
+/** The board a real server was given in this test, opened again rather than made twice (its name is taken). */
+let demo: number | null = null;
 
 beforeAll(async () => {
   browser = await chromium.launch({
@@ -43,6 +45,7 @@ async function fresh() {
 afterEach(async () => {
   await context.close();
   await server.stop().catch(() => {});
+  demo = null;
   for (const directory of directories.splice(0))
     rmSync(directory, { recursive: true, force: true });
 });
@@ -52,15 +55,17 @@ async function openBoard(): Promise<void> {
   if (!usesRealServer) {
     await page.goto(`${server.url}/board/1`);
   } else {
-    const directory = mkdtempSync(join(tmpdir(), "moebius-e2e-repo-"));
-    directories.push(directory);
-    const response = await context.request.post(`${server.url}/v1/repositories`, {
-      headers: { "X-Moebius": "1" },
-      data: { name: "demo", url: directory },
-    });
-    expect(response.ok(), await response.text()).toBe(true);
-    const made = (await response.json()) as { id: number };
-    await page.goto(`${server.url}/board/${made.id}`);
+    if (demo === null) {
+      const directory = mkdtempSync(join(tmpdir(), "moebius-e2e-repo-"));
+      directories.push(directory);
+      const response = await context.request.post(`${server.url}/v1/repositories`, {
+        headers: { "X-Moebius": "1" },
+        data: { name: "demo", url: directory },
+      });
+      expect(response.ok(), await response.text()).toBe(true);
+      demo = ((await response.json()) as { id: number }).id;
+    }
+    await page.goto(`${server.url}/board/${demo}`);
   }
   await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
 }
@@ -516,6 +521,8 @@ describe("live data", () => {
       const add = facts.getByRole("button", { name: "Add a label" });
       await add.focus();
       await page.keyboard.press("Enter");
+      // The keys go to the field once it is there, not to the button it takes the place of.
+      await facts.getByRole("textbox", { name: "Add a label" }).waitFor();
       await page.keyboard.type("docs");
       await page.keyboard.press("Enter");
       const remove = facts.getByRole("button", { name: "Remove label docs" });
@@ -527,6 +534,7 @@ describe("live data", () => {
       // And the blockers, by number.
       await facts.getByRole("button", { name: "Add a blocker by its number" }).focus();
       await page.keyboard.press("Enter");
+      await facts.getByRole("textbox", { name: "Add a blocker by its number" }).waitFor();
       await page.keyboard.type("1");
       await page.keyboard.press("Enter");
       await facts.getByRole("button", { name: "Remove blocker #1" }).waitFor();

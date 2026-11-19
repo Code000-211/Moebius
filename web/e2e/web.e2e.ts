@@ -3,6 +3,9 @@
  * with the token and with the `?login=` link, the sidebar, the command bar, and the banner for a server that does not
  * answer. Every wait is on something the page shows, never on time.
  */
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { AGENT_TOKEN } from "./fakeServer";
@@ -30,10 +33,30 @@ async function fresh() {
   page = await context.newPage();
 }
 
+/** The folders of the projects a real server was given, removed after each test. */
+const directories: string[] = [];
+
 afterEach(async () => {
   await context.close();
   await server.stop().catch(() => {});
+  for (const directory of directories.splice(0))
+    rmSync(directory, { recursive: true, force: true });
 });
+
+/**
+ * Gives a real server a project, as the fake starts with one: the sidebar lists the Board and Files of the chosen
+ * project, and a server with none lists "All projects" in their place.
+ */
+async function withProject() {
+  if (!usesRealServer) return;
+  const directory = mkdtempSync(join(tmpdir(), "moebius-e2e-repo-"));
+  directories.push(directory);
+  const response = await context.request.post(`${server.url}/v1/repositories`, {
+    headers: { "X-Moebius": "1", Authorization: `Bearer ${server.token}` },
+    data: { name: "demo", url: directory },
+  });
+  expect(response.ok(), await response.text()).toBe(true);
+}
 
 const pages = () => page.getByRole("navigation", { name: "Pages" });
 const path = () => new URL(page.url()).pathname;
@@ -137,6 +160,7 @@ describe("the shell", () => {
 
   it("lists the everyday pages, then the pages Settings holds, and the boards", async () => {
     await fresh();
+    await withProject();
     await page.goto(server.loginUrl);
     await pages().waitFor();
     for (const name of [

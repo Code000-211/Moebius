@@ -4,9 +4,12 @@
  * `prefers-reduced-motion: reduce` no element of a page has a transition left, and a card does not lift on hover;
  * without it, the same card does.
  */
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { type Browser, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { startServer, type TestServer } from "./server";
+import { startServer, type TestServer, usesRealServer } from "./server";
 
 let browser: Browser;
 let server: TestServer;
@@ -21,9 +24,37 @@ afterAll(async () => {
   await browser.close();
 });
 
+/** The folders of the projects a real server was given, removed after each test. */
+const directories: string[] = [];
+
 afterEach(async () => {
   await server.stop().catch(() => {});
+  for (const directory of directories.splice(0))
+    rmSync(directory, { recursive: true, force: true });
 });
+
+/**
+ * The board to open, with a card on it: the fake's first, or, on a real server, a project made for the test with one
+ * issue on its board.
+ */
+async function boardWithCard(page: Page): Promise<number> {
+  if (!usesRealServer) return 1;
+  const directory = mkdtempSync(join(tmpdir(), "moebius-e2e-repo-"));
+  directories.push(directory);
+  const headers = { "X-Moebius": "1" };
+  const made = await page.request.post(`${server.url}/v1/repositories`, {
+    headers,
+    data: { name: "demo", url: directory },
+  });
+  expect(made.ok(), await made.text()).toBe(true);
+  const { id } = (await made.json()) as { id: number };
+  const issue = await page.request.post(`${server.url}/v1/repositories/${id}/issues`, {
+    headers,
+    data: { title: "Lift me", body: "" },
+  });
+  expect(issue.ok(), await issue.text()).toBe(true);
+  return id;
+}
 
 /**
  * The board of the repository of a server of its own, since a `?login=` link signs in once, with motion as the person
@@ -35,7 +66,7 @@ async function board(reducedMotion: "reduce" | "no-preference"): Promise<Page> {
   const page = await context.newPage();
   await page.goto(server.loginUrl);
   await page.getByRole("navigation", { name: "Pages" }).waitFor();
-  await page.goto(`${server.url}/board/1`);
+  await page.goto(`${server.url}/board/${await boardWithCard(page)}`);
   await page.locator(".lift").first().waitFor();
   return page;
 }

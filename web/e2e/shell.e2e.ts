@@ -246,14 +246,22 @@ describe.skipIf(usesRealServer)("the right column and the Moebius agent", () => 
     const agent = page.getByRole("dialog", { name: "Moebius agent" });
     await agent.waitFor();
     // It lies over the column, wider than it, flush with the page's top, right and bottom; the page keeps its width.
-    const surface = await box(page, '[data-surface="page"]');
-    const over = await box(page, '[role="dialog"][aria-label="Moebius agent"]');
-    const column = await box(page, COLUMN);
-    expect(over.x).toBeLessThan(column.x);
-    expect(over.x + over.width).toBe(surface.x + surface.width);
-    expect(over.y).toBe(surface.y);
-    expect(over.height).toBe(surface.height);
-    expect(await box(page, "main")).toEqual(main);
+    // The boxes are read together, once the layout the sheet opened has settled: on a busy machine the page can be
+    // measured while it is drawn again, a scrollbar narrower, and the sheet a moment later.
+    const layout = async () => {
+      const surface = await box(page, '[data-surface="page"]');
+      const over = await box(page, '[role="dialog"][aria-label="Moebius agent"]');
+      return {
+        overLeftOfColumn: over.x < (await box(page, COLUMN)).x,
+        right: over.x + over.width - (surface.x + surface.width),
+        top: over.y - surface.y,
+        height: over.height - surface.height,
+        main: await box(page, "main"),
+      };
+    };
+    await expect
+      .poll(layout)
+      .toEqual({ overLeftOfColumn: true, right: 0, top: 0, height: 0, main });
 
     // "Properties" gives the place back, and they are as they were.
     await agent.getByRole("button", { name: "Properties" }).click();

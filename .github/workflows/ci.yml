@@ -1,8 +1,17 @@
 name: CI
 
+# A branch is built by its pull request; a push builds only main, so a push to a branch with a pull request does not
+# run the whole workflow twice.
 on:
   push:
+    branches: [main]
   pull_request:
+
+# A newer push to a pull request cancels the run it supersedes, so the queue holds only runs that count. A run of main
+# is not cancelled once it started, so every commit on main gets its verdict.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_TERM_COLOR: always
