@@ -3,6 +3,8 @@
 //! - `GET /v1/runs/{id}`: a run. `GET /v1/runs/{id}/events?after=&before=&tail=&limit=`: its stored events, in pages.
 //! - `GET /v1/runs/{id}/diff`: what the run changed, as a unified diff.
 //! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
+//! - `POST /v1/runs/pause` and `POST /v1/runs/resume`: a person pauses all agents, which holds every run and starts
+//!   none, and resumes them.
 //! - `POST /v1/runs/{id}/stop` `{reason}`: a person stops a running run; a chat ends as stopped.
 
 use axum::Extension;
@@ -19,6 +21,8 @@ use crate::store::{Event, Run};
 /// The routes of the runs.
 pub(super) fn routes() -> Router<ApiState> {
     Router::new()
+        .route("/v1/runs/pause", post(pause_runs))
+        .route("/v1/runs/resume", post(resume_runs))
         .route("/v1/runs/{id}", get(get_run))
         .route("/v1/runs/{id}/events", get(run_events))
         .route("/v1/runs/{id}/diff", get(run_diff))
@@ -47,6 +51,52 @@ struct EventsQuery {
     #[serde(default)]
     tail: bool,
     limit: Option<i64>,
+}
+
+/// Whether all agents are paused, as the pause and resume routes answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PauseState {
+    pub paused: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<i64>,
+}
+
+async fn pause_runs(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    body: Option<axum::Json<Reason>>,
+) -> Result<axum::Json<PauseState>, ApiError> {
+    let runs = state.runs.clone();
+    let reason = body.map(|b| b.0.reason).unwrap_or_default();
+    blocking(&state.app, move |app| {
+        let paused = app.pause_runs(&by, &*runs, &reason)?;
+        Ok(PauseState {
+            paused: true,
+            by: Some(paused.by),
+            at: Some(paused.at),
+        })
+    })
+    .await
+}
+
+async fn resume_runs(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    body: Option<axum::Json<Reason>>,
+) -> Result<axum::Json<PauseState>, ApiError> {
+    let runs = state.runs.clone();
+    let reason = body.map(|b| b.0.reason).unwrap_or_default();
+    blocking(&state.app, move |app| {
+        app.resume_runs(&by, &*runs, &reason)?;
+        Ok(PauseState {
+            paused: false,
+            by: None,
+            at: None,
+        })
+    })
+    .await
 }
 
 async fn run_diff(
@@ -239,6 +289,150 @@ mod tests {
         assert_eq!(steer("Too late.").await.status(), 422);
         assert_eq!(stop(run.id).await.status(), 422);
         assert_eq!(stop(99).await.status(), 404);
+    }
+
+    // Unix only: the fake Pi is a Python script started by its `#!` line, and a process group is held by a signal.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn pausing_holds_the_runs_going_and_starts_none_until_resumed() {
+        let (dir, state, addr) = start().await;
+        let app = state.app.clone();
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let engine = Arc::new(Engine::new(
+            app.clone(),
+            state.runs.clone(),
+            Kanban::default(),
+            Limits::default(),
+        ));
+        let settle = |card: i64| {
+            let engine = engine.clone();
+            async move {
+                tokio::task::spawn_blocking(move || engine.settle(card).unwrap())
+                    .await
+                    .unwrap()
+            }
+        };
+        let first = app
+            .create_issue(repo.id, "Please [hang]", "", OWNER_AUTHOR)
+            .unwrap();
+        settle(first.id).await;
+        let run = app.store.runs_for_card(first.id).unwrap().pop().unwrap();
+        let events = |run: i64| app.store.events(run).unwrap();
+        until("Pi takes the prompt", || events(run.id).len() >= 2).await;
+
+        let mut stream = connect(&state, &addr).await;
+        let paused: PauseState = post(
+            &state,
+            &addr,
+            "/v1/runs/pause".into(),
+            serde_json::json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+        assert!(paused.paused);
+        assert_eq!(paused.by.as_deref(), Some("person:owner"));
+        let event = loop {
+            let event = stream.next().await.unwrap();
+            if event.kind == "runs_paused" {
+                break event;
+            }
+        };
+        assert_eq!(event.data["by"], "person:owner");
+        let snapshot: serde_json::Value = get(&state, &addr, "/v1/snapshot").await;
+        assert_eq!(snapshot["paused"]["by"], "person:owner");
+        // Pausing again changes nothing: one decision, the same pause.
+        let again: PauseState = post(
+            &state,
+            &addr,
+            "/v1/runs/pause".into(),
+            serde_json::json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+        assert_eq!(again, paused);
+        assert_eq!(app.store.judgements("pause_runs").unwrap().len(), 1);
+
+        // The run is held: Pi takes a steer but does not answer it. No run starts for another card either.
+        let steer = post(
+            &state,
+            &addr,
+            format!("/v1/runs/{}/steer", run.id),
+            serde_json::json!({ "message": "Use tabs." }),
+        )
+        .await;
+        assert_eq!(steer.status(), 200);
+        let second = app
+            .create_issue(repo.id, "Another", "", OWNER_AUTHOR)
+            .unwrap();
+        let step = settle(second.id).await;
+        assert_eq!((step.moved, step.started_run), (None, None));
+        assert!(app.store.runs_for_card(second.id).unwrap().is_empty());
+        assert!(
+            !events(run.id)
+                .iter()
+                .any(|e| e.kind == "response" && e.data["echo"] == "Use tabs.")
+        );
+        assert_eq!(app.store.run(run.id).unwrap().unwrap().status, "running");
+
+        // Resuming lets the held run answer and the board start the next one.
+        let resumed: PauseState = post(
+            &state,
+            &addr,
+            "/v1/runs/resume".into(),
+            serde_json::json!({}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+        assert!(!resumed.paused);
+        until("the held run answers", || {
+            events(run.id)
+                .iter()
+                .any(|e| e.kind == "response" && e.data["echo"] == "Use tabs.")
+        })
+        .await;
+        settle(second.id).await;
+        assert_eq!(app.store.runs_for_card(second.id).unwrap().len(), 1);
+        let snapshot: serde_json::Value = get(&state, &addr, "/v1/snapshot").await;
+        assert!(snapshot.get("paused").is_none());
+        assert_eq!(app.store.judgements("resume_runs").unwrap().len(), 1);
+        // Resuming what is not paused changes nothing.
+        let none = post(
+            &state,
+            &addr,
+            "/v1/runs/resume".into(),
+            serde_json::json!({}),
+        )
+        .await;
+        assert_eq!(none.status(), 200);
+        assert_eq!(app.store.judgements("resume_runs").unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_pause_is_recorded_with_its_reason_and_kept_in_the_store() {
+        let (_dir, state, addr) = start().await;
+        let app = &state.app;
+        assert!(app.runs_paused().unwrap().is_none());
+        let response = post(
+            &state,
+            &addr,
+            "/v1/runs/pause".into(),
+            serde_json::json!({ "reason": "lunch" }),
+        )
+        .await;
+        assert_eq!(response.status(), 200);
+        assert_eq!(
+            app.store.judgements("pause_runs").unwrap()[0].reason,
+            "lunch"
+        );
+        assert_eq!(app.runs_paused().unwrap().unwrap().by, "person:owner");
     }
 
     async fn connect(state: &ApiState, addr: &str) -> impl StreamExt<Item = AppEvent> + Unpin {

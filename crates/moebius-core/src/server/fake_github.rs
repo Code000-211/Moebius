@@ -312,6 +312,10 @@ impl CardRuns for IdleRuns {
     fn stop(&self, _: i64) -> bool {
         false
     }
+
+    fn hold(&self, held: bool) {
+        let _ = held;
+    }
 }
 
 /// A server polling the fake GitHub for the repository `acme/widgets`, whose trusted author is `leon`.

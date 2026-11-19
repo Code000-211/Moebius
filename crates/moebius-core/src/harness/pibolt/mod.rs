@@ -315,6 +315,13 @@ impl CardRuns for PiBolt {
         )
     }
 
+    /// Holds every Pi that is going, and what it started (see `platform::suspend_tree`), or lets them go on.
+    fn hold(&self, held: bool) {
+        for live in lock(&self.live).values() {
+            hold_process(live, held);
+        }
+    }
+
     /// Asks Pi to abort; the run ends with status `stopped` once Pi has settled. A Pi that does not exit within
     /// `STOP_GRACE` is killed.
     fn stop(&self, run_id: i64) -> bool {
@@ -467,6 +474,16 @@ fn shut_down(live: &Live) {
 fn finish_launch(live: &Live) {
     if let Some(launched) = &live.launched {
         launched.finish();
+    }
+}
+
+/// Holds Pi and everything it started, or lets them go on (see `platform::own_group`).
+fn hold_process(live: &Live, held: bool) {
+    let pid = lock(&live.child).id();
+    if held {
+        crate::platform::suspend_tree(pid);
+    } else {
+        crate::platform::resume_tree(pid);
     }
 }
 

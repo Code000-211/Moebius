@@ -225,6 +225,8 @@ any route to any role that is not what its row says.
 | `POST /v1/changes/{id}/merge` | member | yes |
 | `POST /v1/changes/{id}/reject` | member | yes |
 | `GET /v1/changes/{id}/diff` | viewer | yes |
+| `POST /v1/runs/pause` | member | no |
+| `POST /v1/runs/resume` | member | no |
 | `GET /v1/runs/{id}` | viewer | yes |
 | `GET /v1/runs/{id}/events` | viewer | yes |
 | `GET /v1/runs/{id}/diff` | viewer | yes |
@@ -685,6 +687,9 @@ Everything the app shows. Response:
   "inbox": []
 }
 ```
+
+`paused` is added, as `{"by": "person:ada", "at": 1790000000}`, while all agents are paused (see
+[`POST /v1/runs/pause`](#post-v1runspause-and-post-v1runsresume)), and left out otherwise.
 
 `harness_changes` are the `Change`s of the harness configuration repository, which belongs to no board.
 `boards` has one entry per repository, with all its cards and changes; a change of a card over several repositories is on the board of the repository it is in, which does not list the card. `round_limit` is the most `code` rounds a card
@@ -2384,6 +2389,28 @@ works as in `POST /v1/chats`: the agent is told it before the message (secrets r
 the `said` event holds only the message.
 
 Response: the `Run`. Errors: `404` no such run; `422` the message is blank or the run is not running.
+
+### `POST /v1/runs/pause` and `POST /v1/runs/resume`
+
+A person pauses all agents of the server, as the desktop app's tray does with "Pause all agents", and resumes them. The
+pause is kept in the store, so a restart leaves the server paused until a person resumes it. While it is in force:
+
+- the board engine starts no run: a card's column script is not run at all, so no card moves either, and every other
+  starter of a card's run (a column script's `start`, attempts, workflow nodes) is refused;
+- every run that is going is held, with what its agent started: Pi-Bolt and Claude Code get `SIGSTOP` to their process
+  group, so nothing works and nothing is printed, and the runs stay `running`. Resuming sends `SIGCONT` and they go on
+  where they were. Where the system has no such signal (Windows) the runs going are not held, and the pause only starts no
+  further run. A run that a launcher wraps is held as far as the process group of its wrapper reaches.
+
+Runs that belong to no card (the Retro, research, trials, automations' chats) are not stopped from starting: they start and are held at once, so they take a place and a worktree until the agents are resumed. After a crash of the server while paused, what it held stays held until someone ends it. What a person does by hand is not held: a chat started or written to meanwhile starts its agent, which is held at once.
+
+Pausing is recorded as a decision (kind `pause_runs`, decider `person`) and announced as `runs_paused`; resuming as
+`resume_runs` and `runs_resumed`. Pausing what is paused, or resuming what is not, changes nothing, records nothing and
+announces nothing. The snapshot's `paused` says who paused the agents and when while they are paused.
+
+Request: `{"reason": "..."}`; `reason` is optional, and the body may be left out. Response: `{"paused": true, "by":
+"person:ada", "at": 1790000000}` after a pause, whose `by` and `at` are those of the pause in force, and `{"paused":
+false}` after a resume. Errors: `403` for an agent's run token.
 
 ### `POST /v1/runs/{id}/stop`
 
@@ -4085,6 +4112,8 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `card_waiting` | The reason a card waits changed: set, replaced, or cleared because the card moved or its script did not wait. Not sent when it stays the same. | `{"card": id, "reason": string or null}` |
 | `chat_renamed` | A chat was given a name, or its name was cleared, through the API. | `{"run": id, "title": string}` (the title the list of chats shows now) |
 | `chat_shared` | The owner of a chat shared it with the organisation or took it back. Sent to everyone, so that a client reads the list of chats again. | `{"run": id, "shared": boolean}` |
+| `runs_paused` | A person paused all agents. | `{"by": string, "at": number}` |
+| `runs_resumed` | A person resumed all agents. | `{}` |
 | `chat_deleted` | A chat was deleted through the API, with its changes and inbox items, or deleted with its grilling. Read the snapshot again. | `{"run": id}` |
 | `change_offered` | A card's change, the work of a chat, a kept lever of a research or a workflow run was offered to a person to merge. | The `Change` (`card_id` is null for a chat's, a lever's or a workflow run's; `run_id` is set for a workflow run's). |
 | `change_updated` | A change was published or published again, its checks started or ended, or the checks or review of its pull request changed. | The `Change`. |

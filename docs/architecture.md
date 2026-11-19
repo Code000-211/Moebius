@@ -225,7 +225,9 @@ finds the server again by that directory: it answers, or it is started again wit
     `In progress` with the reason as its note, the change staying open; `POST /v1/runs/{id}/steer` and
     `POST /v1/runs/{id}/stop` (`App::steer_run`, `App::stop_run`) go through the harness (`CardRuns::steer`, `CardRuns::stop`,
     which `ApiState` holds), a steer also leaving a `steered` run event. A stopped run ends `stopped` and
-    `card.stopped` makes the scripts mark the card stuck instead of starting another run.
+    `card.stopped` makes the scripts mark the card stuck instead of starting another run. `POST /v1/runs/pause` and `/resume`
+    (`App::pause_runs`, `App::resume_runs`) keep a pause in `runs_paused`: `Engine::tick` returns at once while it holds,
+    `board::may_start` refuses every starter, and `CardRuns::hold` signals the process groups of the runs going.
 12aa. **A person, or the agent, holds a card, and a person deletes one.** `POST /v1/cards/{id}/block` (`App::block_card`)
     sets `cards.held_by`, `held_reason` and `held_at` (`Card::held`) and stops the card's runs that have not ended with
     `App::stop_run` (a run still starting is tried again for a few seconds; `board::may_start` makes every starter,
@@ -523,6 +525,8 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `notices.rs` | A person's notices on a server for the app: `watch` follows `/v1/events` (and reads `GET /v1/notices` after each connection) with the token and says, as `Effect`s, to notify a notice once and what the count of unread ones is; the first read is the baseline and notifies nothing. |
 | `badge.rs` | What the icon says of that count: the title `(3) Moebius`, and the red disc with digits drawn over the taskbar icon on Windows. |
 | `notifications.rs` | The Tauri side of notices, in the program: the system's notification (a click shows the window and opens the notice in the web app), the badge count of the icon, the overlay and the title. |
+| `tray.rs` | What the tray shows of a server and asks of it: the figures read from the snapshot and the usage (agents working, the Inbox, today's tokens against the budget, whether all agents are paused), their lines, `follow`, which reads them again after every burst of events, and the pause and resume routes. |
+| `tray_icon.rs` | The Tauri side of the tray, in the program: the icon and its menu (the figures as lines, New issue, Ask Moebius, Open Moebius, Pause all agents), following the server the window is connected to. |
 | `proxy/mod.rs` | The app's own address on the loopback: the web app at every path, `/v1/` forwarded to the server, and the key, `Host` and `Origin` checks that let only the window use it. |
 | `proxy/assets.rs` | The web app embedded from `web/dist`, served with the policies of `web/csp.json`. |
 | `proxy/forward.rs` | Forwarding to the server with the token: HTTP streamed both ways, and a WebSocket relayed message by message. |
@@ -551,6 +555,7 @@ At the top:
 | `app/issues/sync.rs` | What the poll copies besides an issue's text, acting only on what the forge changed; which sub-issues count; the graph of what waits for what. |
 | `app/issues/text.rs` | The lines of a description that hold a parent ("Part of #n") or a blocker ("Blocked by #n") where the forge has none. |
 | `app/stopping.rs` | Holding (blocking), releasing and deleting a card, which stops its runs and, for a delete, removes what it left in the clone. |
+| `app/pausing.rs` | Pausing all agents: the pause kept in the store, which the board engine and every starter of a run read, and the harness holding the runs going. |
 | `app/runs.rs` | A person's hand in a run: steering, stopping, a shell in its worktree, a chat's terminal interface, and a shell on the server. |
 | `app/automations/mod.rs` | Automations: the automation origin, and the parts that make an automation a workflow, migrate a row to one, fire it and show it. |
 | `app/automations/definition.rs` | What makes a workflow an automation, and how an automation's row is read from its file and written to one. |
@@ -658,6 +663,7 @@ At the top:
 | `store/views.rs` | The saved views (name, owner, shared, filter, layout, sort). |
 | `store/intake.rs` | A project's switch for intake and the requests made to it, with their draft issue, status, card and reason. |
 | `store/projects.rs` | The projects (name, key, repositories in order), a repository's home project and a card's project, how a key is made from a name, the migration that makes one project for each repository and puts every card on it, whether a project is private with its members, and the project a judgement belongs to. |
+| `store/paused.rs` | Whether all agents are paused, who paused them and when: the table `runs_paused`, one row at most. |
 | `store/favourites.rs` | The places a person pinned, in their order, and the places they opened lately (the last 20), kept per person so they follow them to every browser. |
 | `store/events.rs` | A run's events, in order, redacted before they are stored. |
 | `store/automations.rs` | Automations, their firings with the status of each chat, and the server's local minute; the workflow file is the definition and the row keeps the id the firings use. |

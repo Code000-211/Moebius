@@ -7,7 +7,7 @@
 //! move the window, since it draws the window's controls on its own ground. The bridge calls Tauri's window commands,
 //! which `capabilities/web-app.json` allows the web app on the loopback, and the rail's commands (`servers`), which both
 //! capabilities allow. An address the window does not keep (`links::target`) opens in the system's
-//! browser.
+//! browser. The tray icon (`tray_icon`) is made with the window and follows the server that is open.
 
 use std::sync::{Arc, Mutex};
 
@@ -81,6 +81,7 @@ pub fn run() {
             let navigating = connected.clone();
             let opening = connected.clone();
             let handle = app.handle().clone();
+            crate::tray_icon::create(app)?;
             let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
                 .title("Moebius")
                 .inner_size(1280.0, 800.0)

@@ -8,7 +8,7 @@
 //! (Retros, proposals and trials), `lessons` (what the Retro learned from earlier cards), `attempts` (the runs a hard
 //! card gets in one go and which was picked), `research` (research, its runs and experiments), `automations`
 //! (automations, their firings and the local clock), `workflows` (workflow runs and what each node did),
-//! `plugin_settings` (what plugins keep for the server) and `people` (the people of the organisation, and the
+//! `plugin_settings` (what plugins keep for the server), `paused` (whether all agents are paused) and `people` (the people of the organisation, and the
 //! migration that gives earlier records to the first owner), `assignees` (who cards and inbox items are given to),
 //! `notices` (what concerns a person, and the cards they follow), `planning` (a card's priority, due date and estimate, read
 //! from its labels), `access` (their access tokens and the sessions of browsers, kept as hashes), `favourites` (the places a
@@ -44,6 +44,7 @@ mod localize;
 mod milestones;
 mod notices;
 mod outgoing;
+mod paused;
 mod people;
 mod planning;
 mod plugin_settings;
@@ -92,6 +93,7 @@ pub use localize::IndexedFile;
 pub use milestones::{Milestone, MilestoneCard};
 pub use notices::{ASSIGNED, CHANGED, MENTIONED, NewNotice, Notice};
 pub use outgoing::OutgoingWebhook;
+pub use paused::Paused;
 pub use people::{FIRST_OWNER, Person, Role};
 pub use planning::{
     ESTIMATE_LIMIT, Priority, estimate_of, is_date, with_due, with_estimate, with_priority,
@@ -506,6 +508,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     wiki_links::SCHEMA,
     card_repositories::SCHEMA,
     views::SCHEMA,
+    paused::SCHEMA,
 ];
 
 pub fn now() -> i64 {

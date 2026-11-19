@@ -299,7 +299,7 @@ impl Rail {
         }
     }
 
-    /// The server that is open, with its token, which the notifications follow.
+    /// The server that is open, with its token, which the notifications and the tray follow.
     pub fn open_server(&self) -> Option<Server> {
         self.live.get(self.open.as_ref()?).map(|l| l.server.clone())
     }

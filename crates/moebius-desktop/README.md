@@ -15,6 +15,8 @@ app is in [`docs/architecture.md`](../../docs/architecture.md#the-desktop-app).
 | `src/local/` | The server of this machine the app sets up and starts: `mod.rs` (state, `start`), `host.rs` (the shell: `sh`, or `wsl.exe` on Windows), `release.rs` (downloading `moebius` and checking it against `SHA256SUMS`). |
 | `src/server.rs` | `Server` (an address and an access token) and `check`, which asks `GET /v1/health` and refuses a server of another minor version, naming the release that matches. |
 | `src/proxy/` | The app's own address on the loopback: `assets.rs` serves the web app embedded from `web/dist`, `forward.rs` forwards `/v1/` to the server with the token (HTTP and WebSockets), `mod.rs` lets only the window use it. |
+| `src/tray.rs` | What the tray shows of a server and asks of it: the figures, their lines, `follow` (reads them again after every burst of the server's events) and the routes that pause and resume all agents. |
+| `src/tray_icon.rs` | The Tauri side of the tray, in the program: the icon, its menu and what its items do. |
 | `src/rail/` | The rail of servers: `mod.rs` (the remembered servers, a proxy and a page of each, adding, opening, removing, `poll`), `records.rs` (`servers.json`, no token), `secrets.rs` (the system's keychain), `ssh.rs` (a server over an SSH tunnel) and `status.rs` (whether a server answers and its Inbox's count). |
 | `src/servers.rs` | The rail's commands on the Tauri side: `connect`, `connect_ssh`, `servers`, `switch_server` and `remove_server`, and `local_state` and `local_connect` for the server of this machine. |
 | `src/window.rs` | The Tauri side, a module of the program so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, and links that leave the app opened in the browser. |
@@ -28,11 +30,12 @@ app is in [`docs/architecture.md`](../../docs/architecture.md#the-desktop-app).
 | `tests/rail.rs` | The rail against fake servers (and a fake `ssh`): two servers switched between with each keeping its page, a grey dot for one that does not answer, a token in the keychain and in no file, and a removed server that takes its token with it. |
 
 | `tests/local.rs` | The local server against a fake release and a fake `moebius`: a first start makes and connects to a server, a restart finds it again, a stopped one is started without a new `init`, a bad checksum or a missing release installs nothing. |
+| `tests/tray.rs` | The tray's figures against a real server on port 0: they follow its events, pausing from the tray pauses the server, and a server that cannot be reached shows none. |
 | `tests/connect.rs` | The app against a real server on port 0 and against fake servers: signing in with an access token, the web app and the event stream through the proxy, the refusal of another minor version, and who may use the proxy. |
 
 ## Building
 
-On Linux, Tauri needs WebKitGTK 4.1 (on Debian and Ubuntu: `sudo apt install libwebkit2gtk-4.1-dev librsvg2-dev`). On
+On Linux, Tauri needs WebKitGTK 4.1 (on Debian and Ubuntu: `sudo apt install libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev`). On
 Windows it needs what the rest of the workspace needs: Rust with the MSVC build tools, and NASM for `aws-lc-sys` or
 `AWS_LC_SYS_PREBUILT_NASM=1` to use its prebuilt objects, as CI does; the WebView2 runtime is part of Windows 10 and 11.
 The app embeds `web/dist`, so build the web app first:

@@ -26,6 +26,7 @@ they chose.
 "$MOEBIUS" usage --days 7        # tokens, calls and model time by agent and model
 "$MOEBIUS" repos
 "$MOEBIUS" agents
+"$MOEBIUS" pause                   # hold every run and start none; a person does it, then: "$MOEBIUS" resume
 "$MOEBIUS" doctor                # what is still missing for a first card
 "$MOEBIUS" research              # then: "$MOEBIUS" research 3
 "$MOEBIUS" grillings             # then: "$MOEBIUS" grilling show 2

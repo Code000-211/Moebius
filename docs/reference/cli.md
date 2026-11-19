@@ -196,6 +196,8 @@ issues (`--parent`, `--blocked-by`, `blocker`) stay the numbers of their issues 
 | `automation save --name <n> --schedule <cron> --prompt <text\|-> [--agent <name>] [--repository <id> \| --harness] [--off] [--id <id>]` | `POST /v1/automations`, or `PUT /v1/automations/{id}` with `--id` | The automation. Without `--agent` its chats are with the Moebius agent; `--off` saves it switched off; `-` as the prompt reads standard input. Replaces the whole automation, as the route does. The command keeps its name and arguments as a shortcut: it writes the `schedule` workflow whose `chat` node is the automation, in `automation-<id>.toml` when its name is already another workflow's or automation's. |
 | `automation run <id>` | `POST /v1/automations/{id}/run` | The firing: `started` with its chat's `run_id` and its `workflow_run_id` when it starts a workflow run, or `skipped` or `failed` with the reason. |
 | `automation delete <id>` | `DELETE /v1/automations/{id}` | `deleted the automation <id>`, and the workflow behind it. |
+| `pause [--reason <text>]` | `POST /v1/runs/pause` | `paused: true`, `by` and `at`. Holds every run that is going and starts none, for everyone, until `resume`; for a person only. |
+| `resume [--reason <text>]` | `POST /v1/runs/resume` | `paused: false`. |
 | `runners` | `GET /v1/runners` | Table `name host user max_runs busy`: the `[[runners]]` of `moebius.toml`, with how many runs go on each now. |
 | `agents` | `GET /v1/agents` | Table `name model protocol built_in error`. |
 | `agent show <name>` | `GET /v1/agents/{name}` | The agent: settings as JSON, instructions below, and for a built-in agent its built-in instructions and skills (`built_in`). |
