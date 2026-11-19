@@ -2,8 +2,10 @@
 // standard: the menu is glass at the card radius with the raised shadow and no border, every item is a 32px row
 // with a 16px icon and a label that wraps, the hover is the selected fill rather than an accent, the chosen one of a
 // radio group is set semibold on the selected fill rather than marked with a dot, and the layer comes from the tokens.
-// React 19 ComponentRef in place of ElementRef.
+// React 19 ComponentRef in place of ElementRef. Added for the filter bar: the checkbox row and the sub-menu (a row that
+// opens a second menu).
 
+import { CaretRightIcon, CheckIcon } from "@phosphor-icons/react";
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 import * as React from "react";
 
@@ -83,6 +85,62 @@ const DropdownMenuRadioItem = React.forwardRef<
 ));
 DropdownMenuRadioItem.displayName = DropdownMenuPrimitive.RadioItem.displayName;
 
+/** A row that is on or off, in a menu that stays open while several are set. */
+const DropdownMenuCheckboxItem = React.forwardRef<
+  React.ComponentRef<typeof DropdownMenuPrimitive.CheckboxItem>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.CheckboxItem>
+>(({ className, children, ...props }, ref) => (
+  <DropdownMenuPrimitive.CheckboxItem
+    ref={ref}
+    className={cn(ITEM, "break-words data-[state=checked]:font-semibold", className)}
+    {...props}
+  >
+    <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
+      <DropdownMenuPrimitive.ItemIndicator>
+        <CheckIcon weight="bold" />
+      </DropdownMenuPrimitive.ItemIndicator>
+    </span>
+    {children}
+  </DropdownMenuPrimitive.CheckboxItem>
+));
+DropdownMenuCheckboxItem.displayName = DropdownMenuPrimitive.CheckboxItem.displayName;
+
+const DropdownMenuSub = DropdownMenuPrimitive.Sub;
+
+/** A row that opens a second menu beside it; the right arrow opens it and the left arrow closes it. */
+const DropdownMenuSubTrigger = React.forwardRef<
+  React.ComponentRef<typeof DropdownMenuPrimitive.SubTrigger>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubTrigger>
+>(({ className, children, ...props }, ref) => (
+  <DropdownMenuPrimitive.SubTrigger
+    ref={ref}
+    className={cn(ITEM, "data-[state=open]:bg-selected", className)}
+    {...props}
+  >
+    {children}
+    <CaretRightIcon className="ml-auto" aria-hidden="true" />
+  </DropdownMenuPrimitive.SubTrigger>
+));
+DropdownMenuSubTrigger.displayName = DropdownMenuPrimitive.SubTrigger.displayName;
+
+const DropdownMenuSubContent = React.forwardRef<
+  React.ComponentRef<typeof DropdownMenuPrimitive.SubContent>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubContent>
+>(({ className, ...props }, ref) => (
+  <DropdownMenuPrimitive.Portal>
+    <DropdownMenuPrimitive.SubContent
+      ref={ref}
+      className={cn(
+        SHEET,
+        "max-h-(--radix-dropdown-menu-content-available-height) overflow-y-auto overflow-x-hidden",
+        className,
+      )}
+      {...props}
+    />
+  </DropdownMenuPrimitive.Portal>
+));
+DropdownMenuSubContent.displayName = DropdownMenuPrimitive.SubContent.displayName;
+
 const DropdownMenuLabel = React.forwardRef<
   React.ComponentRef<typeof DropdownMenuPrimitive.Label>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Label> & {
@@ -103,10 +161,14 @@ DropdownMenuLabel.displayName = DropdownMenuPrimitive.Label.displayName;
 
 export {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 };

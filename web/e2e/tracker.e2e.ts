@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Browser, type BrowserContext, chromium, type Locator, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { pickOption } from "./controls";
+import { addFilter, pickOption } from "./controls";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
 let browser: Browser;
@@ -293,7 +293,7 @@ describe("the issue in the dock", () => {
     await cardTitled("Spike it").getByText("spike", { exact: true }).waitFor();
 
     const filters = page.getByRole("search", { name: "Filter the cards" });
-    await pickOption(page, filters.getByLabel("Label"), "spike");
+    await addFilter(page, filters, "Label", "spike");
     // The plan stays for the sub-issue that passes; the one that does not is hidden, and so is the other card.
     await cardTitled("Spike it").waitFor();
     await cardTitled("Write it").waitFor({ state: "detached" });
