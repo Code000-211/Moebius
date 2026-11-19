@@ -122,6 +122,7 @@ const routes: Route[] = [
   { path: "/retro?day=2026-10-26", name: "retro-failed" },
   { path: "/experiments", name: "experiments" },
   { path: "/decision-model", name: "decision-model" },
+  { path: "/analytics", name: "analytics" },
   { path: "/usage", name: "usage" },
   { path: "/agents", name: "agents" },
   { path: "/skills", name: "skills" },

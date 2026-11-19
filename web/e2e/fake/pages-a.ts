@@ -150,6 +150,92 @@ function readBody(request: IncomingMessage): Promise<string> {
 }
 
 /**
+ * The analytics of `days`: a month of work on two projects with a cycle and a milestone. Narrowed to the agent
+ * Coder (`GET /v1/analytics?agent=Coder`) it is a smaller share of the same history.
+ */
+function analyticsReport(days: number, agent = "") {
+  const last = Date.parse(`${TODAY}T00:00:00Z`);
+  const throughput = Array.from({ length: days }, (_, back) => {
+    const at = days - 1 - back;
+    const day = new Date(last - at * 86_400_000).toISOString().slice(0, 10);
+    const done = at % 3 === 0 ? 2 : at % 5 === 0 ? 1 : 0;
+    return { day, done: agent ? Math.min(done, 1) : done, points: done * 3 };
+  });
+  const burn = Array.from({ length: 7 }, (_, day) => ({
+    day: new Date(last - (6 - day) * 86_400_000).toISOString().slice(0, 10),
+    scope: day < 2 ? 8 : 13,
+    done: Math.min(day * 2, 11),
+  }));
+  const done = throughput.reduce((sum, d) => sum + d.done, 0);
+  const points = throughput.reduce((sum, d) => sum + d.points, 0);
+  const tokens = done * 41_000;
+  return {
+    today: TODAY,
+    days,
+    totals: {
+      done,
+      points_done: points,
+      tokens,
+      tokens_per_point: points > 0 ? Math.floor(tokens / points) : null,
+      open: agent ? 2 : 5,
+    },
+    throughput,
+    cycle_time:
+      done > 0
+        ? { cards: done, median_seconds: 93_600, mean_seconds: 101_000, p90_seconds: 250_000 }
+        : null,
+    lead_time:
+      done > 0
+        ? { cards: done, median_seconds: 190_000, mean_seconds: 204_000, p90_seconds: 400_000 }
+        : null,
+    columns: [
+      { column: "Backlog", cards: 9, total_seconds: 900_000, mean_seconds: 100_000 },
+      { column: "In progress", cards: 7, total_seconds: 280_000, mean_seconds: 40_000 },
+      { column: "In review", cards: 6, total_seconds: 36_000, mean_seconds: 6000 },
+    ],
+    projects: [
+      {
+        id: 1,
+        name: "demo",
+        key: "DEMO",
+        done,
+        points_done: points,
+        tokens,
+        tokens_per_point: points > 0 ? Math.floor(tokens / points) : null,
+      },
+    ],
+    cycles: [
+      {
+        id: 1,
+        name: "Cycle 3",
+        project: "demo",
+        starts_on: burn[0]?.day ?? TODAY,
+        ends_on: TODAY,
+        cards: 5,
+        done: 3,
+        points: 13,
+        points_done: 11,
+        days: burn,
+      },
+    ],
+    milestones: [
+      {
+        id: 1,
+        name: "Launch",
+        project: null,
+        starts_on: burn[0]?.day ?? TODAY,
+        ends_on: "2027-01-31",
+        cards: 8,
+        done: 4,
+        points: 20,
+        points_done: 11,
+        days: burn,
+      },
+    ],
+  };
+}
+
+/**
  * The usage of `days`. Narrowed to an agent (`GET /v1/usage?agent=`), every figure is the agent's share of the whole:
  * the totals, the models, the agents' table and the day by day tokens, as the server narrows them.
  */
@@ -822,6 +908,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         path === "/v1/snapshot" ||
         path === "/v1/start" ||
         path === "/v1/usage" ||
+        path === "/v1/analytics" ||
         path === "/v1/settings" ||
         path === "/v1/plugins/settings" ||
         path === "/v1/plugins/podman-sandbox/settings" ||
@@ -872,6 +959,13 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
           return fail(response, 422, "days must be a whole number from 1 to 365");
         }
         return ok(response, usageReport(days, url.searchParams.get("agent") ?? ""));
+      }
+      if (path === "/v1/analytics") {
+        const days = Number(url.searchParams.get("days") ?? 30);
+        if (!Number.isInteger(days) || days < 1 || days > 365) {
+          return fail(response, 422, "days must be a whole number from 1 to 365");
+        }
+        return ok(response, analyticsReport(days, url.searchParams.get("agent") ?? ""));
       }
       if (path === "/v1/proposals" && method === "GET") return ok(response, proposals);
       if (path === "/v1/retros" && method === "GET") return ok(response, retros);

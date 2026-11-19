@@ -76,7 +76,14 @@ export function invalidates(event: ServerEvent): QueryKey[] {
   const stale: QueryKey[] = [];
   if (SNAPSHOT_KINDS.has(event.kind)) {
     // A card's closing or move changes how far its milestones are.
-    stale.push(keys.snapshot, keys.cards, keys.projects, keys.milestones, keys.cycles);
+    stale.push(
+      keys.snapshot,
+      keys.cards,
+      keys.projects,
+      keys.milestones,
+      keys.cycles,
+      keys.analytics,
+    );
   }
   if (event.kind === "milestone_changed" || event.kind === "milestone_removed") {
     stale.push(keys.milestones, keys.cards);
@@ -87,7 +94,7 @@ export function invalidates(event: ServerEvent): QueryKey[] {
     event.kind === "cycle_removed" ||
     event.kind === "card_cycle_changed"
   ) {
-    stale.push(keys.cycles, keys.cards);
+    stale.push(keys.cycles, keys.cards, keys.analytics);
   }
   if (event.kind === "project_changed") stale.push(keys.projects);
   if (event.kind === "wiki_changed") stale.push(keys.wiki);
@@ -112,7 +119,7 @@ export function invalidates(event: ServerEvent): QueryKey[] {
   if (event.kind === "run_started" || event.kind === "run_ended") stale.push(keys.runs);
   if (DIFF_KINDS.has(event.kind)) stale.push(keys.diffs);
   if (event.kind === "port_opened" || event.kind === "port_closed") stale.push(keys.ports);
-  if (event.kind === "run_ended") stale.push(keys.usage);
+  if (event.kind === "run_ended") stale.push(keys.usage, keys.analytics);
   if (event.kind === "file_changed" && typeof event.data.repository === "number") {
     stale.push(keys.files(event.data.repository));
   }
