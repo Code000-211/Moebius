@@ -16,7 +16,7 @@ import { cn } from "../lib/cn";
 export const indent = (depth: number) => ({ paddingLeft: `${8 + depth * 16}px` });
 
 const ROW =
-  "flex min-h-10 w-full items-center gap-2 rounded-control pr-2 text-left transition-colors duration-(--motion-routine) ease-out";
+  "flex min-h-8 w-full items-center gap-2 rounded-control pr-2 text-left transition-colors duration-(--motion-routine) ease-out";
 
 interface RowProps {
   /** The last part of the path, which is what the row prints. */

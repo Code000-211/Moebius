@@ -1,6 +1,6 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/PrBadge.tsx (Apache-2.0), changed: the url is optional (GitLab
 // and Forgejo pull requests have no address the app knows), then the badge is not a link; the state is a word beside
-// the number, so it does not rest on colour; the colours are the status tokens; the link is a 40px target.
+// the number, so it does not rest on colour; the colours are the status tokens; the link is a 28px target.
 import { GitPullRequestIcon } from "@phosphor-icons/react";
 import { cn } from "../lib/cn";
 
@@ -23,7 +23,7 @@ export interface PrBadgeProps {
 export function PrBadge({ number, url, status, className }: PrBadgeProps) {
   const state = STATES[status];
   const classes = cn(
-    "inline-flex min-h-10 shrink-0 items-center gap-2 rounded-control px-2",
+    "inline-flex min-h-7 shrink-0 items-center gap-2 rounded-control px-2",
     "text-sm font-semibold transition-colors duration-(--motion-routine) ease-out",
     state.tone,
     className,

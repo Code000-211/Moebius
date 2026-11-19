@@ -155,7 +155,7 @@ function LessonCard({
       </div>
       {asking && (
         <div className="flex flex-col gap-4 rounded-control bg-surface p-4 sm:flex-row sm:items-center">
-          <p className="m-0 flex min-h-10 min-w-0 flex-1 items-center break-words text-base text-text">
+          <p className="m-0 flex min-h-8 min-w-0 flex-1 items-center break-words text-base text-text">
             Delete this lesson?
           </p>
           <div className="flex gap-2">

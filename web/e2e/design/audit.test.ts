@@ -6,9 +6,9 @@
  *
  * What it measures, per page: sideways overflow and who causes it; text clipped by its own box, where a line that
  * fades out where it runs short is saying there is more rather than being cut; border radii outside
- * the scale; padding, margin and gap that are not on the grid; type sizes and weights outside the scale; interactive
- * rows under their floor (40px, or 32 in a conversation's step log); the contrast of text against what is really
- * behind it; children of a centred row whose middle is
+ * the scale (6, 8, 12); padding, margin and gap that are not on the grid; type sizes and weights outside the scale
+ * (11 to 20); interactive rows under the 28px of the quiet standard's smallest row; the contrast of text against what
+ * is really behind it; children of a centred row whose middle is
  * not in line; a raised surface inside another raised surface, which stacks one elevation on another; and a sheet
  * whose last thing stops short of its own bottom padding, which leaves a band of nothing under it; and a control or
  * row shorter than the words it holds, which then draw below its box. Terminals and code
@@ -294,18 +294,18 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
 }
 
 /**
- * The measurements, run inside the page. The numbers it allows are the scale of the standard: radii 16 for cards and
- * sheets and 12 for controls and full for pills, spacing a multiple of 4 — the half-step of the standard's 8pt grid,
- * with anything 2 and under left alone — and 12, 13, 15, 17, 22 and 28 for type.
+ * The measurements, run inside the page. The numbers it allows are the scale of the quiet standard: radii 6 for
+ * controls and rows, 8 for cards, 12 for windows and dialogs and full for dots; spacing a multiple of 4, with 6 and 10
+ * for the tight places of a dense row and anything 2 and under left alone; and 11, 12, 13, 14, 15, 17 and 20 for type.
  */
 function measure(input: {
   path: string;
   theme: string;
 }): Omit<PageAudit, "name" | "path" | "status"> {
-  const radii = new Set([0, 4, 8, 12, 16]);
-  const sizes = new Set([12, 13, 15, 17, 22, 28]);
+  const radii = new Set([0, 6, 8, 12]);
+  const sizes = new Set([11, 12, 13, 14, 15, 17, 20]);
   const canvas: [number, number, number, number] =
-    input.theme === "light" ? [251, 250, 248, 1] : [18, 18, 18, 1];
+    input.theme === "light" ? [253, 253, 252, 1] : [22, 22, 21, 1];
   const skipped = (el: Element) =>
     el.closest(".xterm") !== null ||
     el.closest(".cm-editor") !== null ||
@@ -472,13 +472,13 @@ function measure(input: {
       ] as const) {
         if (pushed && property.startsWith("margin")) continue;
         const value = px(style[property]);
-        if (value > 2 && value % 4 !== 0) {
+        if (value > 2 && value % 4 !== 0 && value !== 6 && value !== 10) {
           found.spacing.push(name(el, `${property} ${value}px`));
           break;
         }
       }
-      // A card or a control that still has a line round it. The standard lifts a layer with a shadow instead; a
-      // hairline is allowed on a rule, a divider or an unfocused field, which is why only a rounded box counts.
+      // A window or a dialog that draws a line round itself. A card has a quiet line, but the larger surfaces are set
+      // apart by their lightness, a faint edge and in light a soft shadow, which is why only a radius of 12 counts.
       const edges = [
         px(style.borderTopWidth),
         px(style.borderRightWidth),
@@ -511,8 +511,9 @@ function measure(input: {
   const interactive = 'a[href], button, [role="button"], [role="menuitem"], [role="tab"], select';
   for (const el of document.querySelectorAll(interactive)) {
     if (!visible(el)) continue;
-    // 40px is the size of a thing you aim at: a control, or a link with a fill or its own padding that reads as a
-    // button or a row. A link inside a sentence is not that, and holding it to 40px would blow the line apart.
+    // 28px is the smallest row of the quiet standard, a row of the sidebar or a small button: the size of a thing you
+    // aim at, a control or a link with a fill or its own padding that reads as a button or a row. A link inside a
+    // sentence is not that, and holding it to 28px would blow the line apart.
     const style = getComputedStyle(el);
     const role = el.getAttribute("role") ?? "";
     const aimable =
@@ -526,12 +527,7 @@ function measure(input: {
     if (!aimable) continue;
     const box = el.getBoundingClientRect();
     const label = (ownText(el) || el.getAttribute("aria-label") || "").slice(0, 30);
-    // A conversation's step log is the one list whose rows are shorter than a thing you aim at. A thought and a tool
-    // call are lines of a log read top to bottom, the whole line opens one of them, and the standard's own answer to a
-    // page that is too loose is to cut rows rather than shrink them — so the log keeps 32px, a floor rather than no
-    // floor. `Turn.tsx` marks the block, and nothing else may wear the marker to slip past this.
-    const floor = el.closest('[data-audit="log"]') ? 32 : 40;
-    if (box.height < floor)
+    if (box.height < 28)
       found.targets.push(`${name(el, `${Math.round(box.height)}px tall`)} ${label}`);
   }
 
@@ -597,7 +593,11 @@ function measure(input: {
     if (shadow === "" || shadow === "none") return false;
     // A field draws its edge as an inset shadow, which sits inside the box and lifts nothing; only a shadow that
     // falls outside the box is an elevation.
-    return shadow.split(/,(?![^(]*\))/).some((part) => !part.includes("inset"));
+    // Tailwind writes every shadow utility as a list of five with the unused ones transparent, which lift nothing
+    // either.
+    return shadow
+      .split(/,(?![^(]*\))/)
+      .some((part) => !part.includes("inset") && parse(part)[3] > 0);
   };
   const floats = (el: Element) =>
     el.closest(
@@ -609,7 +609,7 @@ function measure(input: {
       if (!raised(node)) continue;
       const holder = getComputedStyle(node);
       const corner = Math.max(...holder.borderRadius.split(" ").map(px));
-      if (parse(holder.backgroundColor)[3] > 0 && corner >= 12) {
+      if (parse(holder.backgroundColor)[3] > 0 && corner >= 8) {
         found.layers.push(name(el, `raised inside ${name(node, "")}`));
         break;
       }
@@ -682,7 +682,7 @@ function report(rows: Row[]): string {
     "",
     `Pages: ${rows.length}. Counts are findings; the whole list is in report.json.`,
     "",
-    "| Theme | Width | Page | Overflow | Clipped | Radii | Spacing | Outlined | Type | Weight | Rows <40px | Spilled | Contrast | Alignment | Layers | Chins |",
+    "| Theme | Width | Page | Overflow | Clipped | Radii | Spacing | Outlined | Type | Weight | Rows <28px | Spilled | Contrast | Alignment | Layers | Chins |",
     "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
   ];
   for (const row of rows) {
@@ -699,7 +699,7 @@ function report(rows: Row[]): string {
     ["outlined cards", (page) => page.outlined],
     ["type", (page) => page.type],
     ["weights", (page) => page.weights],
-    ["rows under 40px", (page) => page.targets],
+    ["rows under 28px", (page) => page.targets],
     ["contrast", (page) => page.contrast],
     ["alignment", (page) => page.alignment],
     ["stacked elevation", (page) => page.layers],
@@ -758,7 +758,7 @@ it("audits every page in both themes and both widths", async () => {
       (p) => p.radii,
     )}, spacing ${total((p) => p.spacing)}, type ${total((p) => p.type)}, weights ${total(
       (p) => p.weights,
-    )}, rows under 40px ${total((p) => p.targets)}, contrast ${total(
+    )}, rows under 28px ${total((p) => p.targets)}, contrast ${total(
       (p) => p.contrast,
     )}, alignment ${total((p) => p.alignment)}, stacked elevation ${total(
       (p) => p.layers,

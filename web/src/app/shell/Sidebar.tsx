@@ -307,7 +307,7 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
           onClick={onSearch}
           aria-label="Search"
           className={cn(
-            "flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-control bg-sunken px-3 text-base text-secondary",
+            "flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-control bg-sunken px-3 text-base text-secondary",
             "transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text",
             collapsed && "justify-center px-0",
           )}
@@ -556,7 +556,7 @@ function ChatEntry({
         data-testid="chat-entry"
         data-unread={unread ? "true" : undefined}
         className={cn(
-          "flex min-h-10 items-center gap-2 rounded-control px-3 text-base",
+          "flex min-h-8 items-center gap-2 rounded-control px-3 text-base",
           current
             ? "bg-selected font-semibold text-text"
             : "text-sidebar-text hover:bg-hover hover:text-text",
@@ -610,7 +610,7 @@ function Section({
               onClick={collapsible.onToggle}
               aria-expanded={collapsible.open}
               aria-label={`${collapsible.open ? "Collapse" : "Expand"} ${title}`}
-              className="cursor-pointer text-sidebar-group"
+              className="-my-1.5 inline-flex size-7 cursor-pointer items-center justify-center rounded-control text-sidebar-group hover:bg-hover"
             >
               <CaretDownIcon
                 className={cn(
@@ -647,7 +647,7 @@ function Back({ collapsed, to }: { collapsed: boolean; to: string }) {
       to={to}
       aria-label={collapsed ? name : undefined}
       className={cn(
-        "flex min-h-10 items-center gap-2 rounded-control px-3 text-base text-sidebar-text",
+        "flex min-h-8 items-center gap-2 rounded-control px-3 text-base text-sidebar-text",
         "transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text",
         collapsed && "justify-center px-0",
       )}
@@ -679,7 +679,7 @@ function SignOut({ collapsed }: { collapsed: boolean }) {
       aria-label={collapsed ? name : undefined}
       disabled={leaving}
       className={cn(
-        "flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-control px-3 text-base text-sidebar-text",
+        "flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-control px-3 text-base text-sidebar-text",
         "transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text",
         "disabled:cursor-default disabled:opacity-45",
         collapsed && "justify-center px-0",
@@ -721,7 +721,7 @@ function SettingsFoot() {
       to="/settings"
       aria-label={name}
       className={cn(
-        "flex min-h-10 items-center gap-2 rounded-control px-3 text-base",
+        "flex min-h-8 items-center gap-2 rounded-control px-3 text-base",
         "justify-center px-0",
         "text-sidebar-text hover:bg-hover hover:text-text",
       )}
@@ -795,7 +795,7 @@ function Entry({
     </>
   );
   const shape = cn(
-    "flex min-h-10 items-center gap-2 rounded-control px-3 text-base",
+    "flex min-h-8 items-center gap-2 rounded-control px-3 text-base",
     collapsed && "justify-center px-0",
   );
   // The entry that stands wears the same fill as the chosen row of a page's list, so one fill means one thing

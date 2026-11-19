@@ -55,7 +55,7 @@ export function Appearance() {
               tabIndex={chosen ? 0 : -1}
               onClick={() => setPreference(each.value)}
               className={cn(
-                "inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-control px-3 text-base",
+                "inline-flex min-h-8 cursor-pointer items-center gap-2 rounded-control px-3 text-base",
                 "transition-colors duration-(--motion-routine) ease-out",
                 chosen
                   ? "bg-selected font-semibold text-text"

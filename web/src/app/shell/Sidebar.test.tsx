@@ -681,7 +681,7 @@ describe("the rail", () => {
     show({ collapsed: true });
     const inbox = await screen.findByRole("link", { name: /^Inbox/ });
     const row = inbox.getAttribute("class") ?? "";
-    expect(row).toContain("min-h-10");
+    expect(row).toContain("min-h-8");
     expect(row).toContain("justify-center");
     // A tooltip's trigger folds a function `className` into text rather than calling it, which is how the rail's rows
     // once lost their whole shape and left their icons uncentred at half height.

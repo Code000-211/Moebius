@@ -97,7 +97,7 @@ export function Composer({
             event.preventDefault();
             if (canSend) onSend();
           }}
-          className="max-h-60 min-h-10 resize-none"
+          className="max-h-60 min-h-8 resize-none"
         />
       }
       footerRight={

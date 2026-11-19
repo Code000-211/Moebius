@@ -1,4 +1,4 @@
-/** A filter: a pill that is pressed or not, at least 40px tall, with the status colour only where it means something. */
+/** A filter: a chip that is pressed or not, 28px tall at the control radius, with the status colour only where it means something. */
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
 
@@ -30,7 +30,7 @@ export function Chip({
       aria-pressed={selected}
       onClick={onClick}
       className={cn(
-        "inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-full px-4 text-sm font-semibold transition-colors duration-(--motion-routine) ease-out",
+        "inline-flex min-h-7 cursor-pointer items-center gap-2 rounded-control px-2 text-sm font-medium transition-colors duration-(--motion-routine) ease-out",
         selected ? on : "bg-sunken text-secondary hover:bg-hover hover:text-text",
         className,
       )}

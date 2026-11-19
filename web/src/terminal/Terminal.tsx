@@ -196,7 +196,7 @@ export function Terminal({ path, autoFocus, focused, onEnded, className }: Termi
       <div
         role={status === "ended" ? (opened ? "status" : "alert") : "status"}
         data-testid={status === "ended" ? "terminal-ended" : undefined}
-        className="flex min-h-10 flex-wrap items-center gap-3"
+        className="flex min-h-8 flex-wrap items-center gap-3"
       >
         {status === "ended" ? (
           <>

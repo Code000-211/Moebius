@@ -105,7 +105,7 @@ export function ChangesCard({
       <SkeletonLines
         lines={1}
         message="Reading the changes"
-        className="min-h-10 justify-center rounded-control bg-sunken px-3"
+        className="min-h-8 justify-center rounded-control bg-sunken px-3"
       />
     );
   if (query.isError || headline === null) {
@@ -131,7 +131,7 @@ export function ChangesCard({
         type="button"
         data-testid="diff-card"
         onClick={() => setOpen(true)}
-        className="flex min-h-10 w-full items-center gap-3 rounded-control bg-sunken px-3 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
+        className="flex min-h-8 w-full items-center gap-3 rounded-control bg-sunken px-3 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
       >
         <span
           className={`text-sm text-secondary tabular-nums ${worktree ? "shrink-0" : "min-w-0 flex-1"}`}

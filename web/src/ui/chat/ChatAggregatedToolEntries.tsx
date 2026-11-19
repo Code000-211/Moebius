@@ -1,5 +1,5 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/ChatAggregatedToolEntries.tsx (Apache-2.0), changed: the header
-// is a real button 40px tall; the count is a figure that does not shift as it grows; a file is named by its name with
+// is a real button 32px tall; the count is a figure that does not shift as it grows; a file is named by its name with
 // its whole path kept as the tooltip on one line whose end stays in view; the state of the group is a word with a hue;
 // the caret that says the row opens is always drawn rather than shown only while the pointer is over it.
 import { CaretDownIcon, ListMagnifyingGlassIcon } from "@phosphor-icons/react";

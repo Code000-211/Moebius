@@ -1,5 +1,5 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/Input.tsx (Apache-2.0), changed to this app's design standard:
-// the field is borderless on the sunken colour and 40px tall, the label and any error come from `ui/page/Field.tsx`,
+// the field is on the field colour with its edge drawn inside and 32px tall, the label and any error come from `ui/page/Field.tsx`,
 // the line that explains the field is named by `aria-describedby` rather than read as part of its name, and the focus
 // ring comes from the global `:focus-visible` rule.
 import type * as React from "react";

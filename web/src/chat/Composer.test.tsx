@@ -155,7 +155,7 @@ describe("Composer", () => {
     render(<Harness onSend={vi.fn()} />);
     const classes = screen.getByLabelText("Message").className.split(/\s+/);
     for (const ofTheControl of [
-      "min-h-10",
+      "min-h-8",
       "w-full",
       "rounded-control",
       "bg-field",

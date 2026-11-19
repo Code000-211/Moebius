@@ -36,15 +36,15 @@ export function ListCard({
       disabled={!onClick}
       onClick={onClick}
       className={cn(
-        "flex min-h-10 w-full cursor-pointer flex-col gap-2 rounded-control p-3 text-left",
+        "flex min-h-9 w-full cursor-pointer flex-col gap-1 rounded-control px-3 py-2 text-left",
         "transition-colors duration-(--motion-routine) ease-out",
         selected
           ? "bg-selected"
-          : "bg-surface hover:bg-hover disabled:cursor-default disabled:hover:bg-surface",
+          : "bg-transparent hover:bg-hover disabled:cursor-default disabled:hover:bg-transparent",
       )}
     >
       <span className="flex min-w-0 items-start justify-between gap-3">
-        <span className="min-w-0 break-words text-base font-semibold text-text">{title}</span>
+        <span className="min-w-0 break-words text-base font-medium text-text">{title}</span>
         {tags && tags.length > 0 && (
           <span className="flex shrink-0 gap-2">
             {tags.map((tag) => (
@@ -109,7 +109,7 @@ function Rows({ children }: { children: ReactNode }) {
       {other}
       {cards.length > 0 && (
         // biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely
-        <ul role="list" className="m-0 flex flex-col gap-2 p-0">
+        <ul role="list" className="m-0 flex flex-col gap-0.5 p-0">
           {cards.map((card) => (
             <li key={card.key ?? undefined} className="flex flex-col">
               {card}

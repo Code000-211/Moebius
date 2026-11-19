@@ -91,7 +91,7 @@ export function StartPage() {
                       key={step.key}
                       data-testid="start-step"
                       className={cn(
-                        "flex min-h-10 flex-wrap items-center gap-4 rounded-control p-3",
+                        "flex min-h-8 flex-wrap items-center gap-4 rounded-control p-3",
                         lead && "bg-sunken",
                       )}
                     >

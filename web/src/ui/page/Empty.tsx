@@ -45,7 +45,8 @@ export function Empty({
       className={cn(
         "flex flex-col gap-3",
         centered ? "flex-1 items-center justify-center text-center" : "items-start",
-        !plain && "rounded-card bg-surface p-6 shadow-card",
+        !plain &&
+          "rounded-card bg-surface p-6 shadow-card outline outline-1 -outline-offset-1 outline-hairline",
         className,
       )}
     >

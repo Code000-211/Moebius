@@ -1,7 +1,7 @@
 /**
  * A box of a page: a heading, a line that sums it up at its right, the box's own actions, and the content. The Usage,
- * Settings, Projects, Agents and Models pages are made of these. It is a card, so it is borderless and rounded at 16
- * and marks its layer with a soft shadow rather than a line.
+ * Settings, Projects, Agents and Models pages are made of these. It is a card, so it is rounded at 8 with a quiet
+ * line and a short soft shadow.
  */
 import { type ReactNode, useId } from "react";
 import { cn } from "../lib/cn";
@@ -33,7 +33,7 @@ export function Box({
       aria-labelledby={title ? headingId : undefined}
       data-testid={testId}
       className={cn(
-        "rounded-card bg-surface shadow-card",
+        "rounded-card bg-surface shadow-card outline outline-1 -outline-offset-1 outline-hairline",
         padded && "p-4",
         "transition-shadow duration-(--motion-routine)",
         className,

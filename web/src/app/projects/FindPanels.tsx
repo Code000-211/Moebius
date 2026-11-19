@@ -190,7 +190,7 @@ export function GoToFile({
                       onClick={() => open(path)}
                       title={path}
                       className={cn(
-                        "flex min-h-10 w-full items-center rounded-control px-3 py-2 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover",
+                        "flex min-h-8 w-full items-center rounded-control px-3 py-2 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover",
                         at === selected ? "bg-selected text-text" : "text-secondary",
                       )}
                     >
@@ -244,7 +244,7 @@ export function SearchInFiles({
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <SearchBar label="Search in files" value={query} fieldRef={fieldRef} onValue={setQuery} />
-        <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-control px-3 text-sm text-secondary hover:bg-hover">
+        <label className="flex min-h-8 cursor-pointer items-center gap-2 rounded-control px-3 text-sm text-secondary hover:bg-hover">
           <input
             type="checkbox"
             className="size-4 accent-current"
@@ -295,7 +295,7 @@ export function SearchInFiles({
                         <button
                           type="button"
                           onClick={() => onOpen(file.path, hit.line)}
-                          className="flex min-h-10 w-full items-start gap-2 rounded-control px-3 py-2 text-left font-mono text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
+                          className="flex min-h-8 w-full items-start gap-2 rounded-control px-3 py-2 text-left font-mono text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
                         >
                           <span className="w-10 shrink-0 text-right text-secondary tabular-nums">
                             {hit.line}

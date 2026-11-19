@@ -168,7 +168,7 @@ export function SkeletonThread({
         >
           {/* The person's message, in the band of the sunken colour it is always written in. */}
           <div className="w-full rounded-control bg-sunken">
-            <div className="flex min-h-10 items-center gap-3 px-4">
+            <div className="flex min-h-8 items-center gap-3 px-4">
               <Skeleton className="size-4" />
               <Skeleton className="h-4 w-16" />
             </div>

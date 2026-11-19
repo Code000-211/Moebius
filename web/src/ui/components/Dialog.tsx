@@ -1,6 +1,6 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/Dialog.tsx (Apache-2.0), changed to this app's design standard:
-// a sheet at 16 with the raised shadow and no border, the overlay the canvas behind it dimmed, the close control a
-// 40px square, and the routine transition at 180ms. React 19 ComponentRef in place of ElementRef.
+// glass at the window radius of 12 with the raised shadow and no border, the overlay the canvas behind it dimmed, the close control a
+// 32px square, and the routine transition at 180ms. React 19 ComponentRef in place of ElementRef.
 //
 // The sheet is as tall as what is in it: `inset-0` with `margin: auto` centres a box whose height is set, so it is
 // `h-fit` against a maximum, not a box stretched to the window with its content parked at the top.
@@ -49,7 +49,7 @@ const DialogContent = React.forwardRef<
         className={cn(
           "fixed inset-0 z-sheet m-auto flex h-fit max-h-[calc(100%_-_2rem)] w-full max-w-lg",
           "flex-col overflow-y-auto",
-          "rounded-sheet bg-surface shadow-raised",
+          "glass rounded-sheet shadow-raised",
           "data-[state=open]:animate-in data-[state=closed]:animate-out",
           "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
           "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
@@ -60,8 +60,8 @@ const DialogContent = React.forwardRef<
       >
         {children}
         {!hideCloseButton && (
-          <DialogPrimitive.Close className="absolute top-2 right-2 inline-flex size-10 cursor-pointer items-center justify-center rounded-control text-secondary transition-colors duration-(--motion-routine) hover:bg-hover hover:text-text disabled:pointer-events-none">
-            <XIcon className="size-5" />
+          <DialogPrimitive.Close className="absolute top-2 right-2 inline-flex size-8 cursor-pointer items-center justify-center rounded-control text-secondary transition-colors duration-(--motion-routine) hover:bg-hover hover:text-text disabled:pointer-events-none">
+            <XIcon className="size-4" />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
         )}
@@ -72,7 +72,7 @@ const DialogContent = React.forwardRef<
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("flex flex-col gap-2 pr-10", className)} {...props} />
+  <div className={cn("flex flex-col gap-2 pr-8", className)} {...props} />
 );
 DialogHeader.displayName = "DialogHeader";
 
@@ -90,7 +90,7 @@ const DialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn("break-words text-lg font-semibold text-text", className)}
+    className={cn("break-words text-lg font-semibold tracking-tight text-text", className)}
     {...props}
   />
 ));

@@ -1,5 +1,5 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/ChatCollapsedThinking.tsx (Apache-2.0), changed: no i18n; the
-// row is a real button 40px tall with a readable label, and the thinking it holds is body text at the size of the
+// row is a real button 32px tall with a readable label, and the thinking it holds is body text at the size of the
 // conversation rather than a muted line; `workspaceId` is gone.
 import { CaretRightIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
@@ -39,7 +39,7 @@ export function thinkingLabel(seconds: number | null | undefined, ongoing: boole
 }
 
 /**
- * A collapsible group for thinking entries. Collapsed it is one 40px row that says what it was and how long it
+ * A collapsible group for thinking entries. Collapsed it is one 32px row that says what it was and how long it
  * took, at the size of the other steps of the turn so that a thought does not shout over the answer it led to; opened,
  * it is the thinking itself, as prose that is quieter than the answer but no smaller. The caret that says the row opens
  * is always drawn and turns with the state, so the affordance does not depend on a mouse being over it.

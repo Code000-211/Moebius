@@ -70,7 +70,7 @@ export function SheetOpener({
       aria-label={label}
       title={title}
       onClick={onOpen}
-      className={cn("fixed bottom-6 z-sheet size-12 rounded-full p-0", className)}
+      className={cn("fixed bottom-6 z-sheet size-10 rounded-full p-0", className)}
     >
       {icon}
     </Button>
@@ -114,7 +114,7 @@ export function SheetFrame({
       // The attribute, not a class: preflight hides it, and a person hearing the page does not find a sheet that is away.
       hidden={hidden}
       className={cn(
-        "fixed z-sheet flex max-w-full flex-col gap-3 rounded-card bg-surface p-3 shadow-raised",
+        "glass fixed z-sheet flex max-w-full flex-col gap-3 rounded-sheet p-3 shadow-raised",
         className,
       )}
     >
@@ -135,7 +135,7 @@ export function SheetFrame({
           title={minimiseLabel}
           onClick={onMinimise}
         >
-          <MinusIcon aria-hidden="true" className="size-5" weight="bold" />
+          <MinusIcon aria-hidden="true" className="size-4" weight="bold" />
         </Button>
       </header>
       {children}

@@ -258,7 +258,7 @@ export function SkillEditor({
                     });
                     setFileSaved(undefined);
                   }}
-                  className={`flex min-h-10 w-full cursor-pointer items-center gap-3 rounded-control px-3 text-left font-mono text-sm transition-colors duration-(--motion-routine) ease-out ${
+                  className={`flex min-h-8 w-full cursor-pointer items-center gap-3 rounded-control px-3 text-left font-mono text-sm transition-colors duration-(--motion-routine) ease-out ${
                     open ? "bg-selected text-text" : "text-secondary hover:bg-hover hover:text-text"
                   }`}
                 >

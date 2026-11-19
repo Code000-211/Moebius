@@ -72,7 +72,7 @@ function IssueLink({ card, onOpen }: { card: Card; onOpen: (card: Card) => void 
     <button
       type="button"
       onClick={() => onOpen(card)}
-      className="min-h-10 cursor-pointer appearance-none rounded-control bg-transparent px-0 text-left text-base font-semibold text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
+      className="min-h-8 cursor-pointer appearance-none rounded-control bg-transparent px-0 text-left text-base font-semibold text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
     >
       {`#${card.number} ${card.title}`}
     </button>

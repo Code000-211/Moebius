@@ -1,6 +1,6 @@
 /**
  * The switch between the views of one thing — a run's events, changes and terminal. Each is a
- * 40px pill, the chosen one is the selected fill rather than an underline. The row is a tablist with the focus on one
+ * 32px row at the control radius, the chosen one is the selected fill rather than an underline. The row is a tablist with the focus on one
  * tab: only the chosen one is in the tab order, and an arrow key moves the choice and the focus with it, so Tab steps
  * out of the row rather than through it. `TabPanel` is the view a tab chooses; it names the tab that shows it, and the
  * chosen tab names it in turn. A page takes one id from `useId` and gives it to both, under `idBase`.
@@ -65,10 +65,10 @@ export function Tabs<T extends string>({
             aria-controls={chosen ? panelId(idBase, each.value) : undefined}
             onClick={() => onChange(each.value)}
             className={cn(
-              "inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-control px-4 text-base transition-colors duration-(--motion-routine) ease-out",
+              "inline-flex min-h-8 cursor-pointer items-center gap-2 rounded-control px-3 text-base transition-colors duration-(--motion-fast) ease-out",
               chosen
-                ? "bg-selected font-semibold text-text"
-                : "bg-sunken text-secondary hover:bg-hover hover:text-text",
+                ? "bg-selected font-medium text-text"
+                : "bg-transparent text-secondary hover:bg-hover hover:text-text",
             )}
           >
             {each.label}

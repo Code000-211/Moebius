@@ -201,7 +201,7 @@ function FailureNote({ failure }: { failure: Failure }) {
       {failure.next !== "" && <p className="m-0 text-sm">{failure.next}</p>}
       {failure.detail !== null && (
         <details className="text-sm">
-          <summary className="flex min-h-10 cursor-pointer items-center">
+          <summary className="flex min-h-8 cursor-pointer items-center">
             What the server said
           </summary>
           <pre className="m-0 mt-2 break-all rounded-small bg-sunken p-2 font-mono text-xs whitespace-pre-wrap text-secondary">

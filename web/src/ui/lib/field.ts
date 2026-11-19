@@ -16,7 +16,7 @@ import { createContext, useContext } from "react";
  * primitive must not reach up into the page pieces.
  */
 export const CONTROL =
-  "min-h-10 w-full rounded-control bg-field field-edge px-3 py-2 text-base font-normal text-text placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-45";
+  "min-h-8 w-full rounded-control bg-field field-edge px-3 py-1.5 text-base font-normal text-text placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-45";
 
 /** The two lines of the field a control sits in. */
 interface FieldIds {

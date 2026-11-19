@@ -112,7 +112,7 @@ function Paths({
     <Box title={heading} aside={aside} className="flex flex-col gap-4">
       {paths.length === 0 && <p className="m-0 text-base text-secondary">{empty}</p>}
       {paths.map((path) => (
-        <div key={path} className="flex min-h-10 flex-wrap items-center justify-between gap-3">
+        <div key={path} className="flex min-h-8 flex-wrap items-center justify-between gap-3">
           <span className="min-w-0 flex-1 break-all font-mono text-sm text-text">{path}</span>
           <Button
             variant="danger"

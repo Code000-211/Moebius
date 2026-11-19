@@ -36,6 +36,6 @@ describe("a switch", () => {
 
   it("is at least as tall as every other control", () => {
     render(<Switch checked={false} onChange={() => {}} label="Runs on its schedule" />);
-    expect(screen.getByRole("switch").getAttribute("class")).toContain("min-h-10");
+    expect(screen.getByRole("switch").getAttribute("class")).toContain("min-h-7");
   });
 });
