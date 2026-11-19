@@ -208,8 +208,10 @@ impl App {
     /// before anything is created on the forge: the parent and the blockers have to be issues of the repository, and
     /// must not make the new issue wait for itself. If a step after the creation still fails (the forge refuses a
     /// label, say), the issue exists and is returned with a warning for each step that failed, not an error.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_tracked_issue(
         &self,
+        by: &Actor,
         repository_id: i64,
         title: &str,
         body: &str,
@@ -237,7 +239,7 @@ impl App {
                 )));
             }
         }
-        let card = self.create_held_issue(&repository, title, body, true)?;
+        let card = self.create_held_issue(&repository, title, body, true, &by.decider())?;
         let mut warnings = Vec::new();
         let mut note = |what: String, result: Result<()>| {
             if let Err(e) = result {
@@ -1801,13 +1803,32 @@ mod tests {
     }
 
     #[test]
+    fn an_issue_a_known_person_creates_is_theirs_and_trusted() {
+        let s = Setup::new(Some(true));
+        let ada = Actor::person(Some((7, "ada")));
+        let (card, _) = s
+            .app
+            .create_tracked_issue(&ada, s.repository.id, "Mine", "", None, &[], &[])
+            .unwrap();
+        assert_eq!(card.author, "person:ada");
+        assert!(card.confirmed);
+    }
+
+    #[test]
     fn an_issue_is_created_with_a_parent_labels_and_blockers_or_with_warnings() {
         let s = Setup::new(Some(true));
         let (parent, blocker) = (s.card("Parent"), s.card("Blocker"));
         let create = |parent: Option<i64>, labels: &[&str], blocked_by: &[i64]| {
             let labels: Vec<String> = labels.iter().map(|l| l.to_string()).collect();
-            s.app
-                .create_tracked_issue(s.repository.id, "New", "", parent, &labels, blocked_by)
+            s.app.create_tracked_issue(
+                &Actor::Person,
+                s.repository.id,
+                "New",
+                "",
+                parent,
+                &labels,
+                blocked_by,
+            )
         };
 
         // What is named has to be there, and not make the issue wait for itself, before anything is created.
@@ -1857,6 +1878,7 @@ mod tests {
         let (card, warnings) = s
             .app
             .create_tracked_issue(
+                &Actor::Person,
                 s.repository.id,
                 "New",
                 "",

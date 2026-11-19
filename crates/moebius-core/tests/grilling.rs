@@ -568,7 +568,7 @@ async fn creating_an_issue_on_a_github_repository_opens_it_and_the_card_moves_on
     assert_eq!(status, 200, "{card}");
     assert_eq!(card["number"], FIRST_NUMBER);
     assert_eq!(card["column"], "Backlog");
-    assert_eq!(card["author"], "person");
+    assert_eq!(card["author"], "person:owner");
     assert_eq!(card["confirmed"], true);
     let opened = fake.opened.lock().unwrap().clone();
     assert_eq!(opened.len(), 1);
