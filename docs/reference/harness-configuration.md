@@ -68,7 +68,27 @@ packages/<name>/       a vendored Pi package with its production dependencies (s
 packages.lock          what each vendored package was fetched as
 repos/<repository>/... the settings of one repository (see Repository settings)
 projects/<project>/... the settings of one project, its column scripts (see Project settings)
+templates/...          templates for issues and wiki pages (see Templates)
 ```
+
+### Templates
+
+`templates/issues/<id>.toml` is what a new issue of the kind starts from, the file named by the kind's id (`GET /v1/kinds`), so
+any name a kind has works and renaming the kind keeps its template; a template whose kind was deleted is not listed:
+
+```toml
+title = "Bug: "
+body = "## Steps\n\n## Expected\n\n## Actual\n"
+
+[fields]
+severity = "high"
+```
+
+`title`, `body` and `fields` are each optional; `fields` gives values by field name, checked against the kind's fields when
+an issue is made from the template. `templates/pages/<name>.md` is the text a new wiki page starts from. Names are letters,
+digits, `-` and `_`. A file that is a link or whose name is another is not read. An edit through the desktop API (see
+[templates](desktop-api.md#templates)) is a commit with the message `Add` or `Update the issue template <id>` or `the page
+template <name>`, and `Delete the ... template`, recorded as the decision `edit_template`.
 
 Nothing else is read. The Moebius agent stays built in: `agents/Moebius.toml` configures it as `[agents.Moebius]` does, and
 `agents/Moebius.md` is added after its built-in instructions (see [configuration](configuration.md)). So do the

@@ -152,6 +152,16 @@ pub struct NewIssue {
     /// The issue numbers that block it.
     #[serde(default)]
     pub blocked_by: Vec<i64>,
+    /// The kind of the issue, one its project offers.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// Values for the fields of the kind.
+    #[serde(default)]
+    pub fields: std::collections::BTreeMap<String, serde_json::Value>,
+    /// Starts from the kind's template: its title and body are used where the issue has none, and its field values
+    /// where `fields` has none.
+    #[serde(default)]
+    pub use_template: bool,
 }
 
 /// The answer to `POST /v1/repositories/{id}/issues`: the new issue's card, and what could not be set on it after it was
@@ -285,15 +295,35 @@ async fn create_issue(
         for number in issue.parent.iter().chain(&issue.blocked_by) {
             scope::related(app, &by, id, *number)?;
         }
-        let (card, warnings) = app.create_tracked_issue(
-            &by,
-            id,
+        let (title, body, fields) = app.issue_start(
+            issue.kind.as_deref(),
+            issue.use_template,
             &issue.title,
             &issue.body,
+            &issue.fields,
+        )?;
+        let (mut card, mut warnings) = app.create_tracked_issue(
+            &by,
+            id,
+            &title,
+            &body,
             issue.parent,
             &issue.labels,
             &issue.blocked_by,
         )?;
+        if let Some(kind) = &issue.kind {
+            let set = app.set_card_kind(card.id, Some(kind)).and_then(|card| {
+                if fields.is_empty() {
+                    Ok(card)
+                } else {
+                    app.set_card_fields(card.id, &fields)
+                }
+            });
+            match set {
+                Ok(done) => card = done,
+                Err(e) => warnings.push(format!("kind {kind}: {e}")),
+            }
+        }
         Ok(CreatedIssue { card, warnings })
     })
     .await

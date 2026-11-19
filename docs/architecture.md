@@ -524,6 +524,7 @@ At the top:
 | `app/automations/cron.rs` | A schedule: a cron expression of five fields in the server's local time, parsed, and the next minute it comes due. |
 | `app/planning.rs` | Setting a card's priority, due date and estimate: all are labels (`priority:high`, `due:2026-12-01`, `estimate:5`), so they are written to the forge and announced as labels are; and proposing an estimate from the like cards that have one. |
 | `app/notices.rs` | What concerns a person: the `@handle`s a text mentions, the notice each assignment, mention and change to a followed card makes, reading one, and following a card. |
+| `app/templates.rs` | Templates for issues and pages: listing and editing them in the harness configuration repository, starting an issue from its kind's template, making a page from a page template. |
 | `app/kinds.rs` | Kinds of issues and their fields: what is written is checked, a project picks the kinds it offers, a card gets a kind and values for its fields, and the cards of every project are filtered and sorted by a field. |
 | `app/assignees.rs` | Giving a card or an inbox item to people: the handles are checked against the people of the organisation, the set is replaced, and a change is announced. |
 | `app/chat_access.rs` | Whose a chat is: its owner reads and writes it, others read it once it is shared, and the lists `mine` and `shared`; the Retro reads the store and so every chat. |
@@ -659,6 +660,7 @@ At the top:
 | `server/api/milestones.rs` | The milestones: listing them with their progress, making, reading, editing and deleting one, and a card's milestones. |
 | `server/api/projects.rs` | The projects: listing them, making one with a free key, reading and renaming one, and the column scripts of a project's board. |
 | `server/api/intake.rs` | Intake: turning it on for a project, making and reading its requests, editing a draft, accepting and declining. |
+| `server/api/templates.rs` | The routes of templates for issues and wiki pages, and making a wiki page from one. |
 | `server/api/wiki.rs` | The wiki's routes: its pages listed, read (an older version too), written, moved and deleted, a page's history, and a refresh now. |
 | `server/api/runs.rs` | A run and its events in pages, steering and stopping it. |
 | `server/api/automations/mod.rs` | Automations: list, add, read, replace, delete, run now, and their firings. |
@@ -800,6 +802,7 @@ At the top:
 | `harness/repo/projects.rs` | A project's settings, the files of `projects/<project name>/` (its column scripts): read from the clone, written or removed as commits like any edit, moved when the project is renamed, and the migration that moves a repository's scripts to its home project. |
 | `harness/repo/repositories.rs` | A repository's settings, the files of `repos/<repository name>/` (rules, review notes, checks, test first, the hint of files, plugins' settings): read from the clone, and written or removed as commits like any edit. |
 | `harness/repo/edits.rs` | A person's edits of agents, skills, MCP servers and rules, as commits pushed to its origin. |
+| `harness/repo/templates.rs` | Templates in the clone: `templates/issues/<kind>.toml` and `templates/pages/<name>.md`, read and edited as commits. |
 | `harness/repo/skill_files.rs` | A skill's other files, beside its `SKILL.md`: read, and written or deleted as commits like any edit. |
 | `harness/repo/packages.rs` | The Pi packages in the clone: the lock of the default branch, the agents that name a package, the branch that installs, updates or removes one (made in a throwaway worktree), and its file diff. |
 | `harness/packages/mod.rs` | Pi packages vendored into the harness configuration repository (`packages/<name>/`, `packages.lock`): the folder's parts and `PackagesError`. |
