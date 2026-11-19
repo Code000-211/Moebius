@@ -38,18 +38,24 @@ export function Switch({
         aria-label={label}
         onClick={() => onChange(!checked)}
         className={cn(
-          "inline-flex min-h-10 w-14 shrink-0 cursor-pointer items-center gap-2 rounded-full px-1 transition-colors duration-(--motion-routine) ease-out",
-          checked ? "bg-text" : "bg-selected",
+          "inline-flex min-h-7 w-9 shrink-0 cursor-pointer items-center rounded-control",
           className,
         )}
       >
         <span
           aria-hidden="true"
           className={cn(
-            "size-6 shrink-0 rounded-full bg-surface outline outline-1 -outline-offset-1 outline-hairline-strong transition-transform duration-(--motion-routine) ease-out",
-            checked ? "translate-x-6" : "translate-x-0",
+            "inline-flex h-5 w-9 items-center rounded-full px-0.5 transition-colors duration-(--motion-routine) ease-out",
+            checked ? "bg-status-done" : "bg-track",
           )}
-        />
+        >
+          <span
+            className={cn(
+              "size-4 shrink-0 rounded-full bg-surface transition-transform duration-(--motion-routine) ease-out",
+              checked ? "translate-x-4" : "translate-x-0",
+            )}
+          />
+        </span>
       </button>
       <span className="text-sm text-secondary">{checked ? on : off}</span>
     </span>

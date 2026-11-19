@@ -369,7 +369,7 @@ export function Dock({
             <li key={run.id} className="flex min-w-0 flex-wrap items-center gap-3">
               <Link
                 to={`/runs/${run.id}`}
-                className="-ml-2 inline-flex min-h-10 items-center rounded-control px-2 text-base font-semibold text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
+                className="-ml-2 inline-flex min-h-8 items-center rounded-control px-2 text-base font-semibold text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
               >
                 {`Run ${run.id}`}
               </Link>

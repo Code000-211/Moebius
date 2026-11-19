@@ -324,7 +324,7 @@ function Editor({
           {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
           {confirming && (
             <div className="flex flex-col gap-4 rounded-control bg-sunken p-4 sm:flex-row sm:items-center">
-              <p className="m-0 flex min-h-10 min-w-0 flex-1 items-center break-words text-base text-text">
+              <p className="m-0 flex min-h-8 min-w-0 flex-1 items-center break-words text-base text-text">
                 Delete this automation? Its past runs stay listed.
               </p>
               <div className="flex gap-2">
@@ -484,7 +484,7 @@ function FiringRow({ firing, now }: { firing: Firing; now: number }) {
     </>
   );
   const row =
-    "flex min-h-10 flex-col gap-2 rounded-control bg-sunken p-4 transition-colors duration-(--motion-routine) ease-out";
+    "flex min-h-8 flex-col gap-2 rounded-control bg-sunken p-4 transition-colors duration-(--motion-routine) ease-out";
   return firing.run_id === null ? (
     <div className={row}>{body}</div>
   ) : (

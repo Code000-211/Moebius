@@ -1,7 +1,8 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/Button.tsx (Apache-2.0), changed to this app's design standard:
 // the variants are primary, secondary, ghost, danger and attention; the primary fills with the ink colour and labels it
-// with the canvas colour; the attention one also wears an outline (not a ring, which is a shadow) in the warning's border colour, because its fill is close
-// to the canvas of a warning banner; nothing else carries a border, a size under 40px, or a colour of its own; the focus ring comes from the
+// with the canvas colour and has a slight relief drawn inside its box; the attention one also wears an outline (not a ring, which is a shadow) in the
+// warning's border colour, because its fill is close to the canvas of a warning banner; nothing else carries a border, a size under 28px, or a colour
+// of its own; the focus ring comes from the
 // global `:focus-visible` rule in `styles/tailwind.css`; a button that cannot be pressed and has a reason stays
 // focusable (`aria-disabled`), shows the reason in the app's own tooltip on hover and on focus, and keeps it for a
 // screen reader in `aria-describedby`, rather than in a line beside it or the browser's own tooltip box; Deep Velvet's
@@ -21,16 +22,17 @@ import { Tooltip } from "./Tooltip";
  * alternatives beside it; `danger` is the destructive one, which says what it does in its label or, when it is only a
  * trashcan, in its `aria-label`, and `attention` is the action of a warning, which wears the warning's own colours.
  * Both hover to a token of their own (`--error-hover`, `--attention-hover`), opaque and checked for contrast in
- * `styles/tokens.test.ts`, so the text stays readable under the pointer. Every size is at least 40px tall, which is
- * the smallest touch target the standard allows.
+ * `styles/tokens.test.ts`, so the text stays readable under the pointer. The sizes are the rows of the quiet
+ * standard: 28px for `sm`, 32 for `md` and 36 for `lg`, at a radius of 6.
  */
 const buttonVariants = cva(
-  "inline-flex w-fit shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-control font-semibold text-text transition-colors duration-(--motion-routine) ease-out disabled:cursor-not-allowed disabled:opacity-45 aria-disabled:cursor-not-allowed aria-disabled:opacity-45 [&_svg]:shrink-0",
+  "inline-flex w-fit shrink-0 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-control font-medium text-text transition-colors duration-(--motion-routine) ease-out disabled:cursor-not-allowed disabled:opacity-45 aria-disabled:cursor-not-allowed aria-disabled:opacity-45 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        primary: "bg-text text-on-ink hover:bg-text/85",
-        secondary: "bg-sunken text-text hover:bg-hover",
+        primary: "bg-text text-on-ink shadow-relief hover:bg-text/90",
+        secondary:
+          "bg-transparent text-text outline outline-1 -outline-offset-1 outline-hairline-strong hover:bg-hover",
         ghost: "bg-transparent text-secondary hover:bg-hover hover:text-text",
         danger: "bg-error-fill text-error-text hover:bg-error-hover",
         attention:
@@ -38,16 +40,16 @@ const buttonVariants = cva(
         icon: "bg-transparent text-secondary hover:bg-hover hover:text-text",
       },
       size: {
-        sm: "min-h-10 px-3 text-sm",
-        md: "min-h-11 px-4 text-base",
-        lg: "min-h-12 px-6 text-base",
-        icon: "size-10",
+        sm: "min-h-7 px-2 text-base",
+        md: "min-h-8 px-3 text-base",
+        lg: "min-h-9 px-4 text-base",
+        icon: "size-8",
       },
     },
     compoundVariants: [
-      { variant: "icon", size: "sm", class: "size-10" },
-      { variant: "icon", size: "md", class: "size-11" },
-      { variant: "icon", size: "lg", class: "size-12" },
+      { variant: "icon", size: "sm", class: "size-7" },
+      { variant: "icon", size: "md", class: "size-8" },
+      { variant: "icon", size: "lg", class: "size-9" },
     ],
     defaultVariants: {
       variant: "primary",

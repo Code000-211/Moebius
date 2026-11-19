@@ -88,12 +88,12 @@ export function KanbanIssuePanel({
               href={issueUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="-ml-2 inline-flex min-h-10 items-center rounded-control px-2 transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
+              className="-ml-2 inline-flex min-h-7 items-center rounded-control px-2 transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
             >
               {number}
             </a>
           ) : (
-            <span className="-ml-2 inline-flex min-h-10 items-center rounded-control px-2">
+            <span className="-ml-2 inline-flex min-h-7 items-center rounded-control px-2">
               {number}
             </span>
           )}
@@ -118,7 +118,7 @@ export function KanbanIssuePanel({
         style={fades.style}
         className="min-h-0 flex-1 overflow-y-auto"
       >
-        <h2 className="m-0 px-4 pt-2 pb-4 text-lg font-semibold tracking-tight text-text [overflow-wrap:anywhere]">
+        <h2 className="m-0 px-4 pt-2 pb-4 text-xl font-semibold tracking-tight text-text [overflow-wrap:anywhere]">
           {title}
         </h2>
         {children}

@@ -1,6 +1,6 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/ChatFileEntry.tsx (Apache-2.0), changed: one layout for both
 // cases (the original repeated the header); the diff is given as `children`, not as a diff input and a renderer; no
-// VSCode, no "open in changes" and no i18n; the header is a real button 40px tall; the file is named by its name, with
+// VSCode, no "open in changes" and no i18n; the header is a real button 32px tall; the file is named by its name, with
 // the whole path kept as a tooltip — a row of the same folder over and over says nothing — its state is a word with a
 // hue, and the counts of changed lines are figures that do not shift.
 import { CaretDownIcon, FileIcon as DefaultFileIcon } from "@phosphor-icons/react";

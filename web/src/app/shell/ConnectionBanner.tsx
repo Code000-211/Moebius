@@ -9,7 +9,7 @@ export function ConnectionBanner({ onRetry }: { onRetry: () => void }) {
   return (
     <div
       role="alert"
-      className="flex min-h-12 items-center gap-3 bg-attention-fill px-6 py-3 text-base text-attention-text"
+      className="flex min-h-9 items-center gap-3 bg-attention-fill px-6 py-3 text-base text-attention-text"
     >
       <WarningIcon className="size-5 shrink-0" weight="bold" aria-hidden="true" />
       <span className="flex-1">Cannot reach the server. It is trying again.</span>

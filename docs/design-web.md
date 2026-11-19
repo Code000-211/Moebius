@@ -1,12 +1,9 @@
 # Web app design standard
 
-> [!NOTE]
-> [ADR 0020](adr/0020-a-quiet-standard-with-depth.md) replaces the look described here (type, colour, radii, pills,
-> shadows) with a quiet standard with depth; this page is rewritten for it in the first issue of P0 of
-> [the plan](plan/issues-people-wiki-planning.md). Its rules for behaviour stay.
-
 The standard the web app (`web/`) is built to. It replaced the brief of the former desktop app, which is removed
-([ADR 0016](adr/0016-the-web-app-has-its-own-design-standard.md), [ADR 0017](adr/0017-the-desktop-app-is-removed.md)). Every value below is a token in
+([ADR 0016](adr/0016-the-web-app-has-its-own-design-standard.md), [ADR 0017](adr/0017-the-desktop-app-is-removed.md)),
+and its look is the quiet standard with depth of [ADR 0020](adr/0020-a-quiet-standard-with-depth.md), chosen from the
+[drafts](design-drafts/README.md) (patterns 30 to 41 and the [prototype](design-drafts/prototype.html)). Every value below is a token in
 [`web/src/styles/theme.css`](../web/src/styles/theme.css), which holds the light and dark pair of every name;
 `web/src/styles/tokens.test.ts` holds the tokens to it, and `web/e2e/design/audit.test.ts` (`pnpm audit:design`)
 measures every page against it in both themes at both widths.
@@ -14,14 +11,14 @@ measures every page against it in both themes at both widths.
 This page governs the look, the words and the behaviour of every screen of the web app, so that the code, the tests and
 the documentation can cite one thing; `web/README.md` maps the modules it is built from.
 
-Aim for the clarity, warmth, and polish of a well-designed consumer app: thoughtful spacing, plain words, precise status, care with small details. A first-time user starts the primary task within 10 seconds. One glance answers what is happening, what matters, and whether anything needs attention.
+Aim for an app that feels premium: quiet, dense and made with care, as the best trackers are, without copying any of them. Thoughtful spacing, plain words, precise status, care with small details. A first-time user starts the primary task within 10 seconds. One glance answers what is happening, what matters, and whether anything needs attention.
 
 
 ## Principles
 - One focal point per screen.
 - Show outcomes, not machinery.
 - Keep the person in control: preserve input, allow cancellation, keep unrelated actions usable during background work.
-- Color carries meaning. Neutral foundation; strong color only where attention is warranted.
+- Color carries meaning. A warm grey foundation; colour only on small status marks and one accent.
 - Motion and notifications mark meaningful change only.
 - Nothing should make someone feel slow, behind, or overwhelmed.
 
@@ -72,28 +69,41 @@ Never: decorative punctuation and exclamation marks, throat clearing ("Let me", 
 - A description that is cut short stops at a whole number of lines and lets the last of them fade out, so the cut reads as a cut and not as writing that happened to end there. A compact list stops at four lines, the whole of the description one click away in the detail beside it. A board card is stricter — three lines (`ui/page/FadedClamp.tsx`) — because a column of them is scanned side by side, and it earns its fade the way a scroller does, by measuring first (`ui/lib/useBoxWatch.ts`): a description that fits the three lines is drawn plain, because a fade over writing that is all there is a lie.
 
 ## Type, color, shape
-System font, or an equally readable alternative; monospace only where character precision matters. Scale: 12 caption, 13 metadata, 15 body, 17 emphasized, 22 section title, 28 page title. Body line height about 1.5. Regular and semibold for most content; heavier weights for a few headings. Tabular numbers for changing counts and timers.
+Inter, with its optical sizes (`font-optical-sizing: auto`: a title is drawn with the tighter letters of a display cut, metadata with the open ones of a text cut) and a few of its plainer letter forms; JetBrains Mono only where character precision matters. Scale: 11 for keys and small capitals, 12 for captions and metadata, 13 for body text, 14 for the text of an issue or a page, and titles of 15, 17 and 20 (`text-2xs`, `text-xs`/`text-sm`, `text-base`, `text-md`, `text-lg`, `text-xl`, `text-2xl`). Body line height about 1.5, the text of an issue 1.6. Regular and medium for most content, semibold for titles; titles are tracked a little tighter and wrap evenly (`text-wrap: balance`), paragraphs wrap without leaving one word on a line. Tabular figures for numbers, keys and timers.
+
+Warm greys in both themes, dark by default. The page is a surface a shade lighter than the ground the sidebar lies on; cards lie on the page.
 
 | Token | Light | Dark | Purpose |
 | --- | --- | --- | --- |
-| Background | #FBFAF8 | #121212 | Main canvas |
-| Surface | #FFFFFF | #1B1B1C | Cards and overlays |
-| Field | #FFFFFF | #0E0E0F | What is typed into, inside a card |
-| Primary text | #111111 | #F4F3F1 | Main content |
-| Secondary text | #5E5E5B | #A3A29E | Supporting content |
-| Muted | #9B9A96 | #6B6A67 | Decorative or inactive detail |
-| Hairline | Primary text at 8% | Primary text at 10% | Dividers and borders |
-| In progress | #2F6BFF | #5C8BFF | Active work |
-| Needs attention | #F5A524 | #F7B84B | Input or decisions needed |
-| Complete | #1FA971 | #34C58A | Successful completion |
-| Error | #E5484D | #FF6369 | Failure or blocked work |
+| `--ground` | #EFEFEC | #0B0B0A | The ground the sidebar and the page lie on |
+| `--page`, `--background` | #FDFDFC | #161615 | The page |
+| `--surface` | #FFFFFF | #1B1B1A | Cards |
+| `--surface-raised` | #FFFFFF | #212120 | A layer above a card |
+| `--field` | #FFFFFF | #111110 | What is typed into |
+| `--hover`, `--selected` | #F3F3F1, #EBEBE8 | #222221, #292928 | The page with 4 to 8% of the text colour over it |
+| `--text` | #1D1D1B | #ECEBE8 | Main content |
+| `--text-secondary` | #6A6965 | #9D9C98 | Supporting content |
+| `--text-muted` | #9C9B97 | #6C6B67 | Decorative or inactive detail |
+| `--hairline`, `--hairline-strong` | text at 7%, 12% | white at 7%, 11% | Lines, few and soft |
+| `--accent` | #5E5FF0 | #8B8CF5 | Links, the chosen thing, focus, a run in progress |
+| `--status-todo` | #9C9B97 | #8A8985 | A column not started |
+| `--status-progress` | #D39B1E | #E8B44A | A column in progress |
+| `--status-review` | #3B82E0 | #6AA7F0 | A column in review |
+| `--status-done` | #2F9A66 | #5FB98A | A column done |
+| `--status-error` | #D2444B | #E5686E | Urgent, blocked, an error |
+| `--glass` | white at 75% | #1E1E1D at 72% | Overlays, with a blur |
 
-- Fill primary buttons with primary text color and a contrasting label. Keep category colors distinct from status colors, and use restrained tints for categories, avatars, and diagrams.
-- Pair color with text, icons, or shapes. Check contrast in both themes; muted must never make required information unreadable.
+- Colour only on small things. The status of a column, urgent, blocked and errors are small marks in their hue (`--status-*`); one accent (`--accent`, read as words in `--accent-text`) marks links, the chosen thing, focus and a run in progress. Everything else is grey. Words that carry a state use the tones `--progress` (the accent), `--attention`, `--complete` and `--error`, each with a `-text` value readable on its own `-fill`.
+- Fill primary buttons with the text colour and a contrasting label (`--on-ink`), with a slight relief drawn inside the box (`--shadow-relief`). Keep category colours (`--cat-*`) distinct from status colours, and use restrained tints for categories, avatars and diagrams.
+- Pair colour with text, icons, or shapes. Check contrast in both themes; muted must never make required information unreadable.
 - A state that almost every row is in is a quiet mark, not a pill: a finished tool call is a gray check, so the eye lands on the rare row that failed, is blocked or waits. The same holds for an action whose usual outcome is success — asking the upstreams again ends in a gray check beside the button, because the answer that went wrong is already said in words, in red, above it. The word stays for a screen reader, and in a tooltip only where the mark stands for a state a person is weighing. The same reasoning empties a list of a repeated word: rows that are nearly all waiting print "Idle" as many times as there are rows, and the word that repeats is the one nobody reads — so the mark moves to the end of the row, the word goes, and the name of the row keeps it for whoever cannot take the colour in (`app/shell/Sidebar.tsx`).
 - Follow the system theme, with an explicit override when useful.
-- 8pt spacing grid. Interactive rows at least 40px tall, at the same height whether a sidebar is open or a rail, so nothing moves when the width changes. One exception, measured rather than waved through: a row of a conversation's step log — the thought, the tool call, the file an agent wrote, all of them disclosures you click — is 32px tall and its rows sit 4px apart, in the page and in the dock alike, so a log of what an agent did reads as one body of small marks rather than a list to choose from. The block that earns that height is the one `Turn.tsx` marks, and `web/e2e/design/audit.test.ts` holds a marked log to 32 and everything else to 40. Where a row reads crowded but the control inside it is the size it should be, take back the slack rather than the target: a negative margin equal to the slack keeps the 40px the hand aims at and puts the line of type one gap from its neighbours, which is what a card's title does. Neither is an excuse for a control that has not arrived yet to hold the space it will need: a control that only appears when a block is being looked at is out of the flow until it does (`copy-float`), because an invisible 32px row under every message is a band of nothing that pushes the words up, and where nothing can be hovered it stays in the flow and stays visible. Radii: 16 for cards and sheets, 12 for inputs and buttons, full for pills and avatars. Leave generous space between unrelated groups. Resolve crowding by cutting content or rearranging, not shrinking.
-- A shadow marks a floating layer, and marks it once: a card inside a card, a reply inside a card, sits flat on the surface it is read against. Two elevations stacked read as two sheets of plastic, and say nothing about which one is on top. Cards are borderless; a hairline is for rules, dividers and an unfocused field. A grouped navigation list is held apart by its labels and the space around them, not by a rule under every group — a rail shows no labels, so the line would divide nothing and be the one thing that moves when the width changes. A group's label names it and goes nowhere; the way into everything the group holds is a row of the group, at the height of the rows beside it — the Projects list opens on an "All projects" row, not on the word over it. A panel that stays while a thing is selected — the inspector a card opens beside its board — is read as part of the page rather than a layer laid over it, so it runs the window's whole height flush to its three edges, keeps its corners square, and says where it begins with a hairline rather than with a radius and a shadow.
+- Radii: 6 for controls and rows (`--radius-control`), 8 for cards (`--radius-card`), 12 for windows, dialogs and sheets (`--radius-sheet`), full for dots and avatars.
+- Spacing on a 4px grid, with 2, 6 and 10 for the tight places of a dense row (`--space-*`). Rows are 28px in the sidebar (`--row-sidebar`), 32 for a control and a row of a log (`--row-control`) and up to 36 in a list (`--row-list`); the head of a page is one bar of 44px (`--head-bar`, `ui/page/PageHeader.tsx`). Rows stay at the same height whether a sidebar is open or a rail, so nothing moves when the width changes; `web/e2e/design/audit.test.ts` holds every control and row to 28 at least. A conversation's step log — the thought, the tool call, the file an agent wrote — is rows of 32 that sit 4px apart, in the page and in the dock alike, so a log of what an agent did reads as one body of small marks rather than a list to choose from. Where a row reads crowded but the control inside it is the size it should be, take back the slack rather than the target: a negative margin equal to the slack keeps the row the hand aims at and puts the line of type one gap from its neighbours, which is what a card's title does. Neither is an excuse for a control that has not arrived yet to hold the space it will need: a control that only appears when a block is being looked at is out of the flow until it does (`copy-float`), because an invisible row under every message is a band of nothing that pushes the words up, and where nothing can be hovered it stays in the flow and stays visible. Leave clear space between unrelated groups. Resolve crowding by cutting content or rearranging, not shrinking.
+- Depth through surfaces, not lines. In light a large surface casts a faint soft shadow; in dark it casts none — a wide shadow on a near-black ground has too few steps of grey and shows as bands — and is set apart by its lightness and a faint light edge alone (`--edge`). Shadows in dark stay small: a card's (`--shadow-card`, growing to `--shadow-card-hover` as it lifts 1px on hover, the `lift` utility) and a floating layer's (`--shadow-raised`). Cards have no gradient and no light edge. The chosen card glows softly in the accent (`--glow`).
+- Overlays are glass (the `glass` utility): the palette, menus, dialogs, the floating sheets and tooltips are translucent with a blur, and an opaque surface (`--glass-solid`) where the browser has no `backdrop-filter`. Glass is kept to overlays, because a blur costs paint time on a weak machine.
+- Light and detail: a faint wash of the accent at the top of the content (`--wash`, the `wash` utility), focus as a soft ring of the accent, selected text tinted with the accent (`--selection`), and tooltips that name the shortcut. The ground carries a fine grain (`--grain`).
+- A shadow marks a layer, and marks it once: a card inside a card, a reply inside a card, sits flat on the surface it is read against. Two elevations stacked read as two sheets of plastic, and say nothing about which one is on top. A card has a quiet line and a short soft shadow; a window or a dialog has no line round it, only its edge; a hairline is otherwise for rules, dividers and an unfocused field, and lines are few. A grouped navigation list is held apart by its labels and the space around them, not by a rule under every group — a rail shows no labels, so the line would divide nothing and be the one thing that moves when the width changes. A group's label names it and goes nowhere; the way into everything the group holds is a row of the group, at the height of the rows beside it — the Projects list opens on an "All projects" row, not on the word over it. A panel that stays while a thing is selected — the inspector a card opens beside its board — is read as part of the page rather than a layer laid over it, so it runs the window's whole height flush to its three edges, keeps its corners square, and says where it begins with a hairline rather than with a radius and a shadow.
 
 ## Components
 - Buttons: one clear primary action, quieter alternatives, consistent sizing. A button is as wide as its label, never the width of the row it happens to sit in. An action that starts a new thing says it with a plus, on the page header and in an empty place alike, so the same verb is drawn the same way wherever a person meets it. A destructive action is the `danger` variant wherever it appears, including the button that opens the question.
@@ -181,11 +191,12 @@ a surface rather than a list of rows. What that asks for, once:
 
 ## Motion and imagery
 - Update content in place. Never scroll someone away from what they are reading; follow newly arriving content only when they are already at the end. A step someone opens is read where it is: unfolding one lets go of the end, even when the list was sitting on it. Do not animate the same content twice.
-- About 180ms ease-out for routine transitions. Springs sparingly. One restrained moment at completion.
-- Activity indicators stay subtle and carry real status text. Respect reduced-motion preferences.
-- One icon family, consistent stroke weight, 16px inline and 20px in controls. Service logos only to identify that service. No decorative symbols that imply intelligence without explaining it.
+- Motion that answers: 120 to 240ms, ease-out (`--motion-fast`, `--motion-routine`, `--motion-slow`). A card lifts 1px on hover, a sidebar slides, the palette and a menu open with a small scale, tooltips wait a moment. Nothing moves that the person did not cause. One restrained moment at completion.
+- Reduced motion turns every transition off and ends every animation before it is seen, and nothing lifts on hover (`src/styles/tailwind.css`, outside every layer so no utility outranks it; `e2e/motion.e2e.ts` holds it).
+- Activity indicators stay subtle and carry real status text.
+- One icon family, consistent stroke weight, 14 to 16px inline and 16px in controls. Service logos only to identify that service. No decorative symbols that imply intelligence without explaining it.
 - Meaningful images get useful alternative text and room enough to inspect.
-- Skip decorative gradients and glows, progress without context, unsupported time estimates, unnecessary celebration, and redundant success messages.
+- Skip decorative gradients and glows beyond the wash, the chosen card's glow and the primary button's relief, progress without context, unsupported time estimates, unnecessary celebration, and redundant success messages.
 
 ## Docs
 Shared principles, voice, visual language, interaction patterns, and the shared component contract live in this page. Feature behavior goes in the doc comments of the feature's own modules and in the layout of `web/README.md`, which link here instead of repeating these rules.

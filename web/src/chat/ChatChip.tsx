@@ -325,7 +325,7 @@ export function ChatChip({
         onClick={togglePanel}
         aria-expanded={shown}
         data-testid="chat-chip"
-        className="pointer-events-auto rounded-full bg-surface px-3.5 shadow-raised"
+        className="pointer-events-auto rounded-full bg-surface px-3"
       >
         {chipState(chat)}
         <CaretUpIcon className="size-4" aria-hidden="true" />

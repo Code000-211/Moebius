@@ -76,7 +76,7 @@ export function PortsPage() {
                     <CopyButton
                       text={command}
                       label={`Copy the command for port ${port.port}`}
-                      className="min-h-10 rounded-control px-3"
+                      className="min-h-8 rounded-control px-3"
                     />
                   </span>
                 </td>

@@ -1,5 +1,5 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/Command.tsx (Apache-2.0), changed to this app's design
-// standard: every item is 40px tall and carries the control radius, the field of the query is the sunken fill rather
+// standard: every item is 32px tall and carries the control radius, the field of the query sits on the glass rather
 // than a rule, group headings are the small label rather than muted monospace, React 19 ComponentRef in place of
 // ElementRef, and one word — Search — for the dialog, the sidebar's entry and the field of the query.
 
@@ -15,10 +15,7 @@ const Command = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <CommandPrimitive
     ref={ref}
-    className={cn(
-      "flex w-full min-h-0 flex-col gap-2 overflow-hidden bg-surface p-3 text-text",
-      className,
-    )}
+    className={cn("flex w-full min-h-0 flex-col gap-2 overflow-hidden p-2 text-text", className)}
     {...props}
   />
 ));
@@ -55,19 +52,16 @@ const CommandInput = React.forwardRef<
   React.ComponentRef<typeof CommandPrimitive.Input>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.Input>
 >(({ className, ...props }, ref) => (
-  <div
-    className="flex shrink-0 items-center gap-3 rounded-control bg-sunken px-4 py-2"
-    cmdk-input-wrapper=""
-  >
+  <div className="flex shrink-0 items-center gap-3 rounded-control px-3 py-2" cmdk-input-wrapper="">
     <MagnifyingGlassIcon
       aria-hidden="true"
-      className="size-5 shrink-0 text-secondary"
+      className="size-4 shrink-0 text-secondary"
       weight="regular"
     />
     <CommandPrimitive.Input
       ref={ref}
       className={cn(
-        "min-h-10 w-full bg-transparent text-base text-text outline-none",
+        "min-h-8 w-full bg-transparent text-base text-text outline-none",
         "placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-45",
         className,
       )}
@@ -125,7 +119,7 @@ const CommandItem = React.forwardRef<
   <CommandPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex min-h-10 cursor-pointer select-none items-center gap-3 rounded-control px-3 text-base outline-none",
+      "relative flex min-h-8 cursor-pointer select-none items-center gap-3 rounded-control px-3 text-base outline-none",
       "data-[selected=true]:bg-selected data-[selected=true]:text-text",
       "data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-45",
       className,

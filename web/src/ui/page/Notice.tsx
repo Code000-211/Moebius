@@ -25,12 +25,12 @@ export function Notice({
     <p
       role={tone === "error" ? "alert" : "status"}
       className={cn(
-        "m-0 flex min-h-10 flex-wrap items-center gap-3 rounded-control px-4 py-2 text-base",
+        "m-0 flex min-h-9 flex-wrap items-center gap-2 rounded-control px-3 py-1.5 text-base",
         tone === "error" ? "bg-error-fill text-error-text" : "bg-complete-fill text-complete-text",
         className,
       )}
     >
-      <Icon className="size-5 shrink-0" aria-hidden="true" />
+      <Icon className="size-4 shrink-0" aria-hidden="true" />
       {/* The words are a box of their own, so they wrap into whatever is left over rather than the longest
           unbreakable word deciding how wide the sheet has to be. */}
       <span className="min-w-0 flex-1 break-words">{children}</span>

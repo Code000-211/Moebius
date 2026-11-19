@@ -1,11 +1,12 @@
 // @vitest-environment node
 /**
  * Keeps the tokens of `theme.css` and `tailwind.css` inside the design standard,
- * [`docs/design-web.md`](../../../docs/design-web.md). The web app follows that standard rather than the former desktop app's
- * Deep Velvet palette ([ADR 0016](../../../docs/adr/0016-the-web-app-has-its-own-design-standard.md)), so this test reads the standard's own numbers
- * rather than a theme of the former desktop app: both themes define the same names, every radius and every step of the type and spacing scale
- * is one the standard lists, text is readable on the surface it sits on in both themes, and no colour literal appears
- * anywhere else in the app. It also fails a name that no theme defines, because a declaration that names a token which
+ * [`docs/design-web.md`](../../../docs/design-web.md), the quiet standard with depth of
+ * [ADR 0020](../../../docs/adr/0020-a-quiet-standard-with-depth.md). It reads the standard's own numbers: both themes
+ * define the same names, every token of the standard (the accent, the status hues, the edge, the card's shadows, glass
+ * and grain) is there in both, every radius and every step of the type and spacing scale is one the standard lists,
+ * text is readable on the surface it sits on in both themes, reduced motion turns every transition off, and no colour
+ * literal appears anywhere else in the app. It also fails a name that no theme defines, because a declaration that names a token which
  * is not there is dropped in silence and the control simply loses its colour, its border or its focus ring.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -17,12 +18,46 @@ const css = readFileSync(new URL("./theme.css", import.meta.url), "utf8");
 const tailwind = readFileSync(new URL("./tailwind.css", import.meta.url), "utf8");
 const srcRoot = fileURLToPath(new URL("..", import.meta.url));
 
-/** The radii the standard allows: cards and sheets, controls, small pieces, pills. */
-const RADII = new Set(["16px", "12px", "8px", "999px"]);
-/** The type scale: 12 caption, 13 metadata, 15 body, 17 emphasized, 22 section title, 28 page title. */
-const SIZES = new Set(["12px", "13px", "15px", "17px", "22px", "28px"]);
-/** The 8pt grid, with 2 left for hairlines and optical nudges. */
-const SPACES = new Set(["0", "2px", "4px", "8px", "12px", "16px", "24px", "32px", "40px", "48px"]);
+/** The radii the standard allows: 6 for controls and rows, 8 for cards, 12 for windows and dialogs, full for dots. */
+const RADII = new Set(["6px", "8px", "12px", "999px"]);
+/**
+ * The type scale: 11 for keys and small capitals, 12 for captions and metadata, 13 body, 14 the text of an issue or a
+ * page, and titles of 15, 17 and 20.
+ */
+const SIZES = new Set(["11px", "12px", "13px", "14px", "15px", "17px", "20px"]);
+/** A 4px grid, with 2, 6 and 10 for the tight places of a dense row. */
+const SPACES = new Set([
+  "0",
+  "2px",
+  "4px",
+  "6px",
+  "8px",
+  "10px",
+  "12px",
+  "16px",
+  "20px",
+  "24px",
+  "32px",
+  "40px",
+  "48px",
+]);
+/** The heights of the standard: a row of the sidebar, a control, a row of a list, the head bar of a page. */
+const HEIGHTS: [string, string][] = [
+  ["row-sidebar", "28px"],
+  ["row-control", "32px"],
+  ["row-list", "36px"],
+  ["head-bar", "44px"],
+];
+/** The tokens of the standard that are not plain colours, which both themes must still set for themselves. */
+const DEPTH = [
+  "edge",
+  "shadow-card",
+  "shadow-card-hover",
+  "shadow-raised",
+  "shadow-relief",
+  "glow",
+  "grain",
+];
 
 type Tokens = Map<string, string>;
 
@@ -103,6 +138,11 @@ const readable: [string, string][] = [
   ["text-secondary", "background"],
   ["text-secondary", "surface"],
   ["text-secondary", "sidebar"],
+  ["text-secondary", "ground"],
+  ["text-secondary", "selected"],
+  ["accent-text", "background"],
+  ["accent-text", "accent-fill"],
+  ["text", "glass-solid"],
   ["on-ink", "text"],
   ["progress-text", "background"],
   ["progress-text", "progress-fill"],
@@ -161,29 +201,60 @@ describe("the tokens", () => {
 
   it("keeps the values of the standard", () => {
     const expected: [Tokens, string, string][] = [
-      [dark, "background", "#121212"],
-      [dark, "surface", "#1b1b1c"],
-      [dark, "text", "#f4f3f1"],
-      [dark, "text-secondary", "#a3a29e"],
-      [dark, "progress", "#5c8bff"],
-      [dark, "attention", "#f7b84b"],
-      [dark, "complete", "#34c58a"],
-      [dark, "error", "#ff6369"],
-      [light, "background", "#fbfaf8"],
+      [dark, "ground", "#0b0b0a"],
+      [dark, "page", "#161615"],
+      [dark, "surface", "#1b1b1a"],
+      [dark, "text", "#ecebe8"],
+      [dark, "text-secondary", "#9d9c98"],
+      [dark, "text-muted", "#6c6b67"],
+      [dark, "accent", "#8b8cf5"],
+      [dark, "status-todo", "#8a8985"],
+      [dark, "status-progress", "#e8b44a"],
+      [dark, "status-review", "#6aa7f0"],
+      [dark, "status-done", "#5fb98a"],
+      [dark, "status-error", "#e5686e"],
+      [dark, "glass", "rgb(30 30 29 / 72%)"],
+      [dark, "grain", "0.09"],
+      [light, "ground", "#efefec"],
+      [light, "page", "#fdfdfc"],
       [light, "surface", "#ffffff"],
-      [light, "text", "#111111"],
-      [light, "text-secondary", "#5e5e5b"],
-      [light, "progress", "#2f6bff"],
-      [light, "attention", "#f5a524"],
-      [light, "complete", "#1fa971"],
-      [light, "error", "#e5484d"],
+      [light, "text", "#1d1d1b"],
+      [light, "text-secondary", "#6a6965"],
+      [light, "text-muted", "#9c9b97"],
+      [light, "accent", "#5e5ff0"],
+      [light, "status-todo", "#9c9b97"],
+      [light, "status-progress", "#d39b1e"],
+      [light, "status-review", "#3b82e0"],
+      [light, "status-done", "#2f9a66"],
+      [light, "status-error", "#d2444b"],
+      [light, "glass", "rgb(255 255 255 / 75%)"],
+      [light, "grain", "0.12"],
     ];
     for (const [theme, name, value] of expected) {
       expect(theme.get(name), `--${name}`).toBe(value);
     }
   });
 
-  it("radii are cards, controls, small pieces and pills", () => {
+  it("sets depth for each theme: the edge, the card's shadows, the relief, the glow and the grain", () => {
+    for (const name of DEPTH) {
+      expect(dark.has(name), `--${name} in dark`).toBe(true);
+      expect(light.has(name), `--${name} in light`).toBe(true);
+    }
+    // In dark a wide shadow bands on the near-black ground, so the edge of a large surface is a line and a light
+    // from above, with no blur at all.
+    const blurs = (value: string) =>
+      [...value.matchAll(/(?:^|,)\s*(?:inset\s+)?-?\d+(?:px)?\s+-?\d+(?:px)?\s+(\d+)px/g)].map(
+        (m) => Number(m[1]),
+      );
+    expect(Math.max(0, ...blurs(dark.get("edge") ?? "")), "--edge in dark").toBe(0);
+    expect(Math.max(0, ...blurs(light.get("edge") ?? "")), "--edge in light").toBeGreaterThan(0);
+  });
+
+  it("keeps the heights of rows and of the head bar", () => {
+    for (const [name, value] of HEIGHTS) expect(dark.get(name), `--${name}`).toBe(value);
+  });
+
+  it("radii are controls, cards, windows and dots", () => {
     const radii = [...css.matchAll(/--radius-[a-z0-9-]+:\s*([^;]+);/g)]
       .map((m) => (m[1] ?? "").trim())
       .filter((value) => !value.startsWith("var("));
@@ -191,7 +262,7 @@ describe("the tokens", () => {
     for (const radius of radii) expect(RADII.has(radius), radius).toBe(true);
   });
 
-  it("spacing is on the 8pt grid", () => {
+  it("spacing is on the grid", () => {
     const spaces = [...css.matchAll(/--space-[a-z0-9]+:\s*([^;]+);/g)].map((m) =>
       (m[1] ?? "").trim(),
     );
@@ -210,6 +281,18 @@ describe("the tokens", () => {
     );
     expect(heights.length).toBeGreaterThanOrEqual(7);
     for (const height of heights) expect(height).toBeGreaterThanOrEqual(1.1);
+    const named = [...css.matchAll(/--size-[a-z-]+:\s*([^;]+);/g)].map((m) => (m[1] ?? "").trim());
+    expect(named.length).toBeGreaterThanOrEqual(7);
+    for (const size of named) expect(SIZES.has(size), size).toBe(true);
+    expect(dark.get("size-body"), "body text").toBe("13px");
+    expect(dark.get("size-issue"), "the text of an issue").toBe("14px");
+  });
+
+  it("turns every transition off for reduced motion", () => {
+    const block =
+      /@media \(prefers-reduced-motion: reduce\) \{\s*\*,[^}]*\}/.exec(tailwind)?.[0] ?? "";
+    expect(block).toContain("transition: none;");
+    expect(block).toContain("animation-duration: 1ms;");
   });
 
   it("gives text 4.5 to 1 on what it sits on, in both themes", () => {

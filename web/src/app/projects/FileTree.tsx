@@ -32,7 +32,7 @@ function Directory({ path, depth, ...props }: TreeProps & { path: string; depth:
   });
   if (listing.isPending) {
     return (
-      <li className="min-h-10 py-2 pr-2 text-sm text-secondary" style={indent(depth)}>
+      <li className="min-h-8 py-2 pr-2 text-sm text-secondary" style={indent(depth)}>
         Reading
       </li>
     );
@@ -41,7 +41,7 @@ function Directory({ path, depth, ...props }: TreeProps & { path: string; depth:
     return (
       <li
         role="alert"
-        className="min-h-10 break-words py-2 pr-2 text-sm text-error-text"
+        className="min-h-8 break-words py-2 pr-2 text-sm text-error-text"
         style={indent(depth)}
       >
         <span className="font-semibold">Couldn't read this folder. </span>
@@ -51,7 +51,7 @@ function Directory({ path, depth, ...props }: TreeProps & { path: string; depth:
   }
   if (listing.data.entries.length === 0) {
     return (
-      <li className="min-h-10 py-2 pr-2 text-sm text-secondary" style={indent(depth)}>
+      <li className="min-h-8 py-2 pr-2 text-sm text-secondary" style={indent(depth)}>
         No files in this folder.
       </li>
     );

@@ -1,4 +1,4 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: no i18n and no "add task" button (a card comes from an issue); a column is a lane of the canvas with no border, and its header counts the cards in it; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); a card is a borderless sheet whose state is a word, and it is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); the card is a group and not a named button, and its title is the button that opens it, so the issue link and the pull-request badge inside it stay in the accessibility tree; dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
+// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: no i18n and no "add task" button (a card comes from an issue); a column is a lane of the canvas with no border, and its header counts the cards in it; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); a card has a quiet line and a short soft shadow that grows as it lifts on hover, and the chosen one glows in the accent, and it is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); the card is a group and not a named button, and its title is the button that opens it, so the issue link and the pull-request badge inside it stay in the accessibility tree; dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
 import {
   type Announcements,
   type CollisionDetection,
@@ -39,8 +39,8 @@ export const KanbanBoard = ({ children, name, className }: KanbanBoardProps) => 
       ref={setNodeRef}
       aria-label={name}
       className={cn(
-        "flex min-h-40 min-w-72 flex-1 flex-col rounded-card bg-lane p-3",
-        isOver && "ring-2 ring-text ring-inset",
+        "flex min-h-40 min-w-64 flex-1 flex-col rounded-card bg-lane p-2",
+        isOver && "ring-2 ring-accent ring-inset",
         className,
       )}
     >
@@ -67,10 +67,14 @@ export type KanbanCardFaceProps = {
 
 const faceClass = ({ isLive, isSelected, isOpen, className }: KanbanCardFaceProps) =>
   cn(
-    "rounded-card bg-surface p-4 shadow-card",
-    "transition-shadow duration-(--motion-routine) ease-out hover:shadow-raised",
-    isLive && "ring-1 ring-progress-border ring-inset",
-    isSelected ? "ring-2 ring-text ring-inset" : isOpen && "ring-2 ring-hairline-strong ring-inset",
+    "lift rounded-card bg-surface px-3 py-2 outline outline-1 -outline-offset-1",
+    isSelected
+      ? "shadow-glow outline-accent hover:shadow-glow"
+      : isOpen
+        ? "outline-hairline-strong"
+        : isLive
+          ? "outline-progress-border"
+          : "outline-hairline",
     className,
   );
 
@@ -80,9 +84,9 @@ export const KanbanCardFace = (props: KanbanCardFaceProps) => (
     aria-hidden
     // A picture of a card, so nothing in it is a target: the links it shows belong to the card being dragged.
     inert
-    className={faceClass({ ...props, className: cn("shadow-raised", props.className) })}
+    className={faceClass({ ...props, className: cn("shadow-card-hover", props.className) })}
   >
-    {props.children ?? <p className="m-0 text-base font-semibold">{props.name}</p>}
+    {props.children ?? <p className="m-0 text-base font-medium">{props.name}</p>}
   </div>
 );
 
@@ -159,7 +163,7 @@ export const KanbanCard = ({
         if (e.key === "Enter" && !e.defaultPrevented) onOpen?.();
       }}
     >
-      {children ?? <p className="m-0 text-base font-semibold">{name}</p>}
+      {children ?? <p className="m-0 text-base font-medium">{name}</p>}
     </div>
   );
 };
@@ -172,7 +176,7 @@ export type KanbanCardsProps = {
 };
 
 export const KanbanCards = ({ children, className }: KanbanCardsProps) => (
-  <div className={cn("flex flex-1 flex-col gap-3", className)}>{children}</div>
+  <div className={cn("flex flex-1 flex-col gap-2", className)}>{children}</div>
 );
 
 // =============================================================================
@@ -195,9 +199,12 @@ export type KanbanHeaderProps = {
 
 export const KanbanHeader = ({ name, count, total, mark, className }: KanbanHeaderProps) => (
   <header
-    className={cn("mb-3 flex shrink-0 flex-wrap items-center justify-between gap-2", className)}
+    className={cn(
+      "mb-2 flex min-h-7 shrink-0 flex-wrap items-center justify-between gap-2",
+      className,
+    )}
   >
-    <h2 className="m-0 flex min-w-0 items-center gap-2 text-lg font-semibold tracking-tight text-text">
+    <h2 className="m-0 flex min-w-0 items-center gap-2 text-base font-medium tracking-tight text-text">
       {mark}
       {name}
     </h2>
@@ -340,7 +347,7 @@ export const KanbanProvider = ({
       }}
       onDragCancel={() => setActiveId(null)}
     >
-      <div className={cn("flex min-h-full items-stretch gap-4", className)}>{children}</div>
+      <div className={cn("flex min-h-full items-stretch gap-3", className)}>{children}</div>
       <DragOverlay dropAnimation={null}>
         {activeId ? <div {...{ [OVERLAY_ATTRIBUTE]: "" }}>{renderOverlay(activeId)}</div> : null}
       </DragOverlay>

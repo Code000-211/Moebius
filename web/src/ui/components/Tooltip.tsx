@@ -1,5 +1,5 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/Tooltip.tsx (Apache-2.0), changed to this app's design
-// standard: the bubble is a raised surface at the sheet radius with the raised shadow, a tooltip supplements and never
+// standard: the bubble is glass at the control radius with the raised shadow, at 12px, a tooltip supplements and never
 // carries anything essential.
 
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
@@ -23,8 +23,8 @@ export function Tooltip({ children, content, side = "bottom", className }: Toolt
             side={side}
             sideOffset={4}
             className={cn(
-              "z-tip flex items-center gap-2 rounded-control bg-raised px-3 py-2 text-sm text-text shadow-raised",
-              "animate-in fade-in-0 zoom-in-95 duration-(--motion-routine)",
+              "glass z-tip flex items-center gap-2 rounded-control px-2 py-1 text-xs text-text shadow-raised",
+              "animate-in fade-in-0 zoom-in-95 duration-(--motion-fast)",
               className,
             )}
           >

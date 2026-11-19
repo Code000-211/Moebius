@@ -136,7 +136,7 @@ export function FilesPanel({ repository }: { repository: number }) {
                     <div
                       key={path}
                       className={cn(
-                        "flex min-h-10 items-center rounded-control",
+                        "flex min-h-8 items-center rounded-control",
                         path === current ? "bg-selected" : "bg-sunken hover:bg-hover",
                       )}
                     >
@@ -147,7 +147,7 @@ export function FilesPanel({ repository }: { repository: number }) {
                         title={path}
                         onClick={() => setCurrent(path)}
                         className={cn(
-                          "min-h-10 min-w-0 max-w-64 break-words px-3 text-sm",
+                          "min-h-8 min-w-0 max-w-64 break-words px-3 text-sm",
                           path === current ? "font-semibold text-text" : "text-secondary",
                         )}
                       >

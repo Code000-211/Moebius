@@ -4,7 +4,7 @@
  * and the clicks. A later page that shows a run's conversation draws it with this.
  *
  * The answer is body text across the full width of the column. What the agent did is one row apiece — thinking, a tool, a group of
- * reads, a changed file, a todo list — each a control 40px tall that says its state in a word, opens to the text it
+ * reads, a changed file, a todo list — each a row 32px tall that says its state in a word, opens to the text it
  * worked with, and keeps that text on the colour of code rather than in a box of its own colours.
  */
 import { CaretRightIcon, CircleNotchIcon } from "@phosphor-icons/react";
@@ -219,10 +219,8 @@ function troubleOf(steps: StepView[]): { refused: number; failed: number } {
  * said on the row itself, in the colour of an error, and the row opens by itself then: what went wrong is not
  * something to fold away. The person can still close it, which is kept under the key of the block with `:closed`
  * after it, so a group that opens itself and one the person opened do not read the same set the same way. A row of the
- * log is 32px rather than the 40px of a thing you aim at, and the rows sit 4px apart, so a log of what the agent did
- * reads as one block of small marks rather than a list to choose from. The whole block, the row that folds it
- * included, is the log, and the marker is what tells `e2e/design/audit.test.ts` these rows are a log at 32px rather
- * than controls at 40px.
+ * log is 32px, a row of a list in the quiet standard, and the rows sit 4px apart, so a log of what the agent did
+ * reads as one block of small marks rather than a list to choose from.
  */
 function StepsGroup({
   block,
@@ -243,7 +241,7 @@ function StepsGroup({
     trouble.failed > 0 ? `${trouble.failed} failed` : null,
   ].filter((part) => part !== null);
   return (
-    <div className="flex min-w-0 flex-col" data-audit="log">
+    <div className="flex min-w-0 flex-col">
       <button
         type="button"
         className={cn(

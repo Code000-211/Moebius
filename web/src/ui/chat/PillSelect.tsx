@@ -80,7 +80,7 @@ export function PillSelect({
         aria-label={`${label}: ${shownValue}`}
         title={label}
         className={cn(
-          "inline-flex min-h-10 max-w-64 cursor-pointer items-center gap-3 rounded-control bg-sunken px-3 text-left",
+          "inline-flex min-h-8 max-w-64 cursor-pointer items-center gap-2 rounded-control px-2 text-left hover:bg-hover",
           "transition-colors duration-(--motion-routine) ease-out hover:bg-hover",
           "disabled:cursor-not-allowed disabled:opacity-45",
           className,
@@ -125,7 +125,7 @@ export function PillSelect({
             <DropdownMenuRadioItem
               key={option.value}
               value={option.value}
-              className="min-h-10 gap-3 rounded-control py-2"
+              className="min-h-8 gap-2 rounded-control py-1"
             >
               <span className="flex min-w-0 flex-col">
                 <span

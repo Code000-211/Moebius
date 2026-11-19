@@ -371,7 +371,7 @@ export function DiffView({ diff, truncated = false }: { diff: string; truncated?
                   aria-pressed={mode === each}
                   onClick={() => setMode(each)}
                   className={cn(
-                    "min-h-10 rounded-control px-3 text-sm font-semibold transition-colors duration-(--motion-routine) ease-out",
+                    "min-h-8 rounded-control px-3 text-sm font-semibold transition-colors duration-(--motion-routine) ease-out",
                     mode === each ? "bg-selected text-text" : "text-secondary hover:bg-hover",
                   )}
                 >

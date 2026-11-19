@@ -22,7 +22,7 @@ export function PageHeader({
   back?: ReactNode;
 }) {
   return (
-    <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
+    <header className="mb-6 flex min-h-head-bar flex-wrap items-center justify-between gap-4">
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-1">
           {back}
@@ -30,7 +30,7 @@ export function PageHeader({
             {title}
           </h1>
         </div>
-        {context && <p className="mt-2 max-w-prose text-base text-secondary">{context}</p>}
+        {context && <p className="mt-1 max-w-prose text-base text-secondary">{context}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </header>
@@ -39,5 +39,5 @@ export function PageHeader({
 
 /** A sentence of a box. */
 export function Body({ children }: { children: ReactNode }) {
-  return <p className="m-0 max-w-prose text-base leading-relaxed text-text">{children}</p>;
+  return <p className="m-0 max-w-prose text-md text-text">{children}</p>;
 }

@@ -94,7 +94,7 @@ function QuestionField({
   const name = useId();
   const optionKeys = keysOf(question.options.map((option) => option.label));
   const row =
-    "flex min-h-10 cursor-pointer items-start gap-3 rounded-control px-3 py-2 text-base text-text hover:bg-hover";
+    "flex min-h-8 cursor-pointer items-start gap-3 rounded-control px-3 py-2 text-base text-text hover:bg-hover";
   const pick = (place: number, on: boolean) => {
     if (question.multiple) {
       const picked = on

@@ -1,6 +1,6 @@
 /**
  * The controls of a form, in one place: a labelled field, and the text, multi-line and choice controls that go in it.
- * A field is borderless on the sunken colour and at least 40px tall; its label sits above it and its hint or its error
+ * A field is on the field colour with its edge drawn inside, 32px tall; its label sits above it and its hint or its error
  * under it, so the explanation of a constraint is where the constraint is.
  *
  * `Field` wraps its control in a `<label>`, so a screen reader and a test find the control by its label. A caller that
@@ -107,7 +107,7 @@ type SelectProps = Omit<ComponentProps<"button">, "onChange" | "value" | "childr
 
 /**
  * A choice of one from a list, drawn like every other field and opened like every other list of choices: the app's
- * menu, so the rows are the same 40px rows with the chosen one semibold on the selected fill, in the colours of the
+ * menu, so the rows are the same 32px rows with the chosen one semibold on the selected fill, in the colours of the
  * theme rather than of the operating system. The trigger shows what is chosen now.
  *
  * A long list that needs searching is a different thing — the composer's `PillSelect` carries a field for it — and two

@@ -1,5 +1,5 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/ChatToolSummary.tsx (Apache-2.0), changed: the icon is picked
-// from the tool's name (read, edit, write, bash, search, web) instead of Vibe Kanban's action types; the row is 40px
+// from the tool's name (read, edit, write, bash, search, web) instead of Vibe Kanban's action types; the row is 32px
 // tall, the tool is named in a label rather than small monospace, a file is named by its name with its whole path kept
 // as the tooltip, what it was given is one line whose end is kept in view and whose beginning fades when the line runs
 // out, and its state is a word with a hue.

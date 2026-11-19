@@ -437,7 +437,7 @@ function BoardColumn({
         total={total}
         mark={<ColumnMark name={name} />}
       />
-      <KanbanCards className="min-h-12">
+      <KanbanCards className="min-h-9">
         {cards.map((card) => {
           const stack = stacks.get(card.id);
           const open = stack !== undefined && stackOpen(card);
@@ -638,7 +638,7 @@ function StackToggle({
         event.stopPropagation();
         onToggle();
       }}
-      className="-mx-2 flex min-h-10 cursor-pointer appearance-none items-center gap-2 rounded-control bg-transparent px-2 text-left text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
+      className="-mx-2 flex min-h-8 cursor-pointer appearance-none items-center gap-2 rounded-control bg-transparent px-2 text-left text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
     >
       <Caret className="size-4 shrink-0" weight="bold" aria-hidden="true" />
       {stackWords(stack)}

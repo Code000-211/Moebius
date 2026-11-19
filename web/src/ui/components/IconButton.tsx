@@ -1,5 +1,5 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/IconButton.tsx (Apache-2.0), changed to this app's design
-// standard: 40px on a side, no border, `ghost` and `secondary` in place of the old default and tertiary, and a
+// standard: 32px on a side, no border, `ghost` and `secondary` in place of the old default and tertiary, and a
 // mandatory accessible name.
 
 import type { Icon } from "@phosphor-icons/react";
@@ -32,7 +32,7 @@ export function IconButton({
     <button
       type="button"
       className={cn(
-        "inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-control transition-colors duration-(--motion-routine) ease-out hover:text-text disabled:cursor-not-allowed disabled:opacity-45",
+        "inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-control transition-colors duration-(--motion-routine) ease-out hover:text-text disabled:cursor-not-allowed disabled:opacity-45",
         variant === "ghost"
           ? "text-secondary hover:bg-hover"
           : "bg-sunken text-text hover:bg-hover",
@@ -43,7 +43,7 @@ export function IconButton({
       aria-label={ariaLabel}
       title={title}
     >
-      <IconComponent className={cn("size-5", iconClassName)} weight="bold" />
+      <IconComponent className={cn("size-4", iconClassName)} weight="bold" />
     </button>
   );
 }

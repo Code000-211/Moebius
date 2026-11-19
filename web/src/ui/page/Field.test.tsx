@@ -66,14 +66,14 @@ describe("a choice in a field", () => {
       </Field>,
     );
     const control = screen.getByRole("button", { name: "Kind" });
-    expect(control.className).toContain("min-h-10");
+    expect(control.className).toContain("min-h-8");
     expect(control.className).toContain("rounded-control");
     // The caller's own classes ride along; they do not replace the control's.
     expect(control.className).toContain("w-auto");
   });
 
   /**
-   * A choice opens this app's menu rather than the list the operating system draws, so the rows are the same 40px
+   * A choice opens this app's menu rather than the list the operating system draws, so the rows are the same 32px
    * rows as every other list and are coloured by the theme. The list is not there until it is opened, and the trigger
    * says what stands now.
    */

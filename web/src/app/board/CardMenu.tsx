@@ -68,7 +68,7 @@ export function CardMenu({
         onKeyDown={keep}
         onClick={keep}
         className={cn(
-          "inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-control bg-transparent text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text data-[state=open]:bg-hover data-[state=open]:text-text",
+          "inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-control bg-transparent text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text data-[state=open]:bg-hover data-[state=open]:text-text",
           className,
         )}
       >

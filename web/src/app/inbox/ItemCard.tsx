@@ -334,7 +334,7 @@ function OwnChange({ item, proposed }: { item: InboxItem; proposed: Proposal | n
           type="button"
           disabled={proposed === null}
           onClick={open}
-          className="flex min-h-10 w-full max-w-prose cursor-pointer items-center text-left text-base text-secondary transition-colors duration-(--motion-routine) ease-out hover:text-text disabled:cursor-default disabled:hover:text-secondary"
+          className="flex min-h-8 w-full max-w-prose cursor-pointer items-center text-left text-base text-secondary transition-colors duration-(--motion-routine) ease-out hover:text-text disabled:cursor-default disabled:hover:text-secondary"
         >
           <FadedClamp text={shown.reason} />
         </button>

@@ -2,7 +2,7 @@
 // shows what a Moebius card has — the state of its run and its change in words, its title, the agent and the round,
 // the rounds it has left of the most it gets, and the links to its issue and its pull request — in place of priority,
 // assignees, tags, relationships and the description preview; the "more actions" button is a slot (`menu`) the page
-// fills with its own menu, beside the title, and a state word may carry a hint, shown in a tooltip; both links are 40px
+// fills with its own menu, beside the title, and a state word may carry a hint, shown in a tooltip; both links are 32px
 // targets and only the issue number is monospaced; the state words are the shared `Status` pill, and the card is
 // opened by its title being a button, so the card itself stays a group the links sit in; the labels of the issue, who
 // claimed it and a slot for the stack of its sub-issues (`stack`) are added.
@@ -82,7 +82,7 @@ export function KanbanCardContent({
   className,
 }: KanbanCardContentProps) {
   return (
-    <div className={cn("flex min-w-0 flex-col gap-3", className)}>
+    <div className={cn("flex min-w-0 flex-col gap-2", className)}>
       {/* Row 1: the state of the card, in words */}
       {(isLoading || badges.length > 0) && (
         <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -116,9 +116,9 @@ export function KanbanCardContent({
               onOpen();
             }}
             className={cn(
-              // The title keeps the 40px a control is asked to have and takes back the slack inside it, so the line of
+              // The title keeps the 28px a row is asked to have and takes back the slack inside it, so the line of
               // type sits the row's own gap from the state above it and the body below it rather than a gap and a half.
-              "-my-2 flex min-h-10 min-w-0 flex-1 appearance-none items-center rounded-control bg-transparent p-0 text-left text-base font-semibold [overflow-wrap:anywhere]",
+              "-my-1 flex min-h-7 min-w-0 flex-1 appearance-none items-center rounded-control bg-transparent p-0 text-left text-base font-medium [overflow-wrap:anywhere]",
               muted ? "text-secondary" : "text-text",
             )}
           >
@@ -127,7 +127,7 @@ export function KanbanCardContent({
         ) : (
           <span
             className={cn(
-              "min-w-0 flex-1 text-base font-semibold [overflow-wrap:anywhere]",
+              "min-w-0 flex-1 text-base font-medium [overflow-wrap:anywhere]",
               muted ? "text-secondary" : "text-text",
             )}
           >
@@ -191,7 +191,7 @@ export function KanbanCardContent({
       {/* The sub-issues of the card: how many are done, and the control that opens them */}
       {stack}
 
-      {/* Row 6: where the card lives outside Moebius, each link a 40px target */}
+      {/* Row 6: where the card lives outside Moebius, each link a 28px target */}
       {(issueUrl || pullRequest) && (
         <div className="-mx-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
           {issueUrl ? (
@@ -201,7 +201,7 @@ export function KanbanCardContent({
               rel="noopener noreferrer"
               aria-label={`Issue ${displayId} on its forge`}
               onClick={(e) => e.stopPropagation()}
-              className="inline-flex min-h-10 items-center rounded-control px-2 font-mono text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
+              className="inline-flex min-h-7 items-center rounded-control px-2 font-mono text-sm text-secondary tabular-nums transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
             >
               {displayId}
             </a>
