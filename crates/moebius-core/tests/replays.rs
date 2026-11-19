@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use moebius_core::app::PERSON;
+use moebius_core::app::OWNER_AUTHOR;
 use moebius_core::board::{CardRuns, Variant};
 use moebius_core::bus::{AppEvent, Event};
 use moebius_core::config::Config;
@@ -80,7 +80,7 @@ fn waiting_run(server: &Server, dir: &Path) -> Run {
         .unwrap();
     let card = server
         .app
-        .create_issue(repo.id, "Tidy up [hang]", "", PERSON)
+        .create_issue(repo.id, "Tidy up [hang]", "", OWNER_AUTHOR)
         .unwrap();
     let run = server
         .harness
@@ -296,7 +296,7 @@ async fn a_replayed_refusal_gets_an_outcome_and_the_worktree_is_untouched() {
     server
         .app
         .stop_run(
-            &moebius_core::decide::Actor::Person,
+            &moebius_core::decide::Actor::first_owner(),
             &*server.harness,
             run.id,
             "done",
@@ -404,7 +404,7 @@ async fn a_call_that_is_not_reversible_is_refused_by_the_api_and_never_picked() 
         .app
         .decisions
         .record_by(
-            &moebius_core::decide::Actor::Person,
+            &moebius_core::decide::Actor::first_owner(),
             &Question {
                 kind: "stop".into(),
                 run_id: Some(run.id),
@@ -471,7 +471,7 @@ async fn a_call_that_is_not_reversible_is_refused_by_the_api_and_never_picked() 
     server
         .app
         .stop_run(
-            &moebius_core::decide::Actor::Person,
+            &moebius_core::decide::Actor::first_owner(),
             &*server.harness,
             run.id,
             "done",
@@ -512,7 +512,7 @@ async fn a_command_that_hangs_is_killed_at_the_time_limit() {
     server
         .app
         .stop_run(
-            &moebius_core::decide::Actor::Person,
+            &moebius_core::decide::Actor::first_owner(),
             &*server.harness,
             run.id,
             "done",
@@ -538,7 +538,7 @@ async fn secrets_in_what_a_call_printed_are_not_stored() {
     server
         .app
         .stop_run(
-            &moebius_core::decide::Actor::Person,
+            &moebius_core::decide::Actor::first_owner(),
             &*server.harness,
             run.id,
             "done",

@@ -56,7 +56,7 @@ impl App {
                     let definition = self.automation_definition(&new)?;
                     harness.save_workflow(
                         self,
-                        &crate::decide::Actor::Person,
+                        &crate::decide::Actor::first_owner(),
                         &key,
                         &definition,
                     )?;
@@ -66,7 +66,11 @@ impl App {
                     self.store
                         .record_schedule_firing(&key, &self.store.local_minute()?)?;
                     if old.is_some_and(|definition| super::is_automation(&definition)) {
-                        harness.delete_workflow(self, &crate::decide::Actor::Person, &old_key)?;
+                        harness.delete_workflow(
+                            self,
+                            &crate::decide::Actor::first_owner(),
+                            &old_key,
+                        )?;
                     }
                 }
                 if !self.store.update_automation(id, &new)? {
@@ -83,7 +87,7 @@ impl App {
                     let key = self.derived_workflow_key(added.id, &new.name)?;
                     if let Err(error) = harness.save_workflow(
                         self,
-                        &crate::decide::Actor::Person,
+                        &crate::decide::Actor::first_owner(),
                         &key,
                         &definition,
                     ) {
@@ -112,7 +116,7 @@ impl App {
             && super::is_automation(&definition)
         {
             let key = self.workflow_key(id, &automation.name)?;
-            harness.delete_workflow(self, &crate::decide::Actor::Person, &key)?;
+            harness.delete_workflow(self, &crate::decide::Actor::first_owner(), &key)?;
         }
         if !self.store.delete_automation(id)? {
             return Err(AppError::NotFound(format!("automation {id}")));

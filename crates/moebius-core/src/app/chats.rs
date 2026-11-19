@@ -932,7 +932,7 @@ mod tests {
         };
         conflict(app.say_in_chat(&*runs, chat.id, "Hello", None).unwrap_err());
         conflict(
-            app.stop_run(&Actor::Person, &*runs, chat.id, "")
+            app.stop_run(&Actor::first_owner(), &*runs, chat.id, "")
                 .unwrap_err(),
         );
         conflict(app.end_chat(&*runs, chat.id).unwrap_err());

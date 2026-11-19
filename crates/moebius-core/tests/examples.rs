@@ -10,7 +10,7 @@ use std::time::Duration;
 use axum::body::Bytes;
 use axum::http::{Method, Uri};
 use axum::{Json, Router};
-use moebius_core::app::{App, PERSON};
+use moebius_core::app::{App, OWNER_AUTHOR};
 use moebius_core::board::{CardRuns, Engine, Kanban, Limits, StartError, Variant};
 use moebius_core::decide::rules;
 #[cfg(unix)] // Only the scheduled-agent example runs an agent node.
@@ -110,7 +110,9 @@ fn engine_with_ready_script(script: &str) -> (tempfile::TempDir, Arc<App>, Engin
 
 /// A new card, moved to Not started by hand.
 fn ready_card(app: &App, repository: i64, title: &str) -> Card {
-    let card = app.create_issue(repository, title, "", PERSON).unwrap();
+    let card = app
+        .create_issue(repository, title, "", OWNER_AUTHOR)
+        .unwrap();
     app.move_card(card.id, "Not started").unwrap()
 }
 
@@ -121,7 +123,9 @@ fn the_large_cards_script_gives_a_large_card_the_machine_to_itself() {
     let column = |card: &Card| app.card(card.id).unwrap().column;
 
     // An ordinary card starts while fewer than run_limit (3) runs are going.
-    let busy = app.create_issue(repository, "Busy", "", PERSON).unwrap();
+    let busy = app
+        .create_issue(repository, "Busy", "", OWNER_AUTHOR)
+        .unwrap();
     app.store
         .add_run(Some(busy.id), "Coder", "idle", "code")
         .unwrap();
@@ -153,7 +157,9 @@ fn the_large_cards_script_gives_a_large_card_the_machine_to_itself() {
 fn the_large_cards_script_still_waits_for_blockers() {
     let (_dir, app, engine, repository) =
         engine_with_ready_script(&example("scripts/ready-large-cards-alone.luau"));
-    let blocker = app.create_issue(repository, "First", "", PERSON).unwrap();
+    let blocker = app
+        .create_issue(repository, "First", "", OWNER_AUTHOR)
+        .unwrap();
     let card = ready_card(&app, repository, "Second");
     app.store
         .set_dependencies(card.id, &[blocker.number].into())

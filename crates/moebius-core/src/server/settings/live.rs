@@ -847,7 +847,7 @@ mod tests {
     use crate::server::Server;
 
     fn actor() -> Actor {
-        Actor::Person
+        Actor::first_owner()
     }
 
     /// A change to the live key `name`, and what the running server shows of it.

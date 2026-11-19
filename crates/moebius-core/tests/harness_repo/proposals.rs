@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use moebius_core::app::PERSON;
+use moebius_core::app::OWNER_AUTHOR;
 use moebius_core::board::{CardRuns, Variant};
 use moebius_core::config::Config;
 use moebius_core::repos::git;
@@ -174,7 +174,7 @@ async fn a_chat_in_the_harness_configuration_offers_a_change_whose_merge_lands_o
         .unwrap();
     let card = server
         .app
-        .create_issue(repo.id, "Write done.txt", "", PERSON)
+        .create_issue(repo.id, "Write done.txt", "", OWNER_AUTHOR)
         .unwrap();
     let run = server
         .harness

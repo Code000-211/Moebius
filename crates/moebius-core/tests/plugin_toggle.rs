@@ -131,7 +131,7 @@ impl Fixture {
     ) -> Result<moebius_core::server::settings::PluginEnabled, AppError> {
         self.server.live.set_plugin_enabled(
             &self.server.app,
-            &Actor::Person,
+            &Actor::first_owner(),
             plugin,
             enabled,
             unwrap_runs,
@@ -231,7 +231,7 @@ async fn a_decider_is_turned_off_and_on_at_once_with_its_process_entry_and_setti
     f.server
         .app
         .save_plugin_settings(
-            &Actor::Person,
+            &Actor::first_owner(),
             moebius_core::app::plugin_settings::Scope::App,
             "gate",
             &[("registry".to_string(), "r.example".to_string())].into(),
@@ -972,7 +972,14 @@ async fn a_plugin_that_decides_tool_call_keeps_it_and_gives_it_back_to_what_is_o
     f.set("guard", false, false).unwrap_err();
     f.server
         .live
-        .set_plugin_enabled(&f.server.app, &Actor::Person, "guard", false, false, true)
+        .set_plugin_enabled(
+            &f.server.app,
+            &Actor::first_owner(),
+            "guard",
+            false,
+            false,
+            true,
+        )
         .unwrap();
     // The plugin decides it; the guard being off changes nothing for the calls it checks.
     assert_eq!(decision_of(&f, "tool_call").decider, "gate");

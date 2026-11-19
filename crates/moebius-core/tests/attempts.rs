@@ -12,7 +12,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use moebius_core::app::{App, PERSON};
+use moebius_core::app::{App, OWNER_AUTHOR};
 use moebius_core::board::{Engine, Kanban, Limits};
 use moebius_core::config::AgentConfig;
 use moebius_core::harness::pibolt::PiBolt;
@@ -100,7 +100,12 @@ fn setup(models: &str) -> Setup {
         Limits::default(),
     );
     let card = app
-        .create_issue(repository.id, "[hard] Say hello", "Write hello.", PERSON)
+        .create_issue(
+            repository.id,
+            "[hard] Say hello",
+            "Write hello.",
+            OWNER_AUTHOR,
+        )
         .unwrap();
     let card = app.move_card(card.id, "In progress").unwrap();
     Setup {

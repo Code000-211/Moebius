@@ -208,7 +208,7 @@ mod tests {
     use std::rc::Rc;
     use std::sync::Arc;
 
-    use crate::app::PERSON;
+    use crate::app::OWNER_AUTHOR;
     use crate::board::engine::Effects;
     use crate::board::testing::{FakeHarness, setup_with_harness};
     use crate::store::Card;
@@ -233,7 +233,7 @@ mod tests {
     fn start_runs_starts_attempts_in_turn_with_the_models_and_records_them_as_one_group() {
         let harness = Arc::new(FakeHarness::default());
         let (_dir, app, engine, repo) = setup_with_harness(None, harness.clone());
-        let card = app.create_issue(repo, "Hard", "", PERSON).unwrap();
+        let card = app.create_issue(repo, "Hard", "", OWNER_AUTHOR).unwrap();
         let effects = run(
             &engine,
             &card,
@@ -304,9 +304,9 @@ mod tests {
     fn a_card_held_after_the_tick_looked_gets_no_run_from_either_starter() {
         let harness = Arc::new(FakeHarness::default());
         let (_dir, app, engine, repo) = setup_with_harness(None, harness.clone());
-        let card = app.create_issue(repo, "Work", "", PERSON).unwrap();
+        let card = app.create_issue(repo, "Work", "", OWNER_AUTHOR).unwrap();
         // The script sees the card as it was before the hold.
-        assert!(app.store.hold_card(card.id, PERSON, None).unwrap());
+        assert!(app.store.hold_card(card.id, OWNER_AUTHOR, None).unwrap());
         for source in [
             r#"moebius.start_run("Coder", "code")"#,
             r#"moebius.start_runs("Coder", 2)"#,
@@ -322,7 +322,7 @@ mod tests {
     #[test]
     fn start_runs_refuses_a_number_of_attempts_it_does_not_allow() {
         let (_dir, app, engine, repo) = setup_with_harness(None, Arc::new(FakeHarness::default()));
-        let card = app.create_issue(repo, "Hard", "", PERSON).unwrap();
+        let card = app.create_issue(repo, "Hard", "", OWNER_AUTHOR).unwrap();
         for n in [0, 9, -1] {
             let error = run(
                 &engine,
@@ -339,7 +339,7 @@ mod tests {
     #[test]
     fn a_card_whose_attempts_all_ended_shows_the_selection_of_the_reviewer() {
         let (_dir, app, engine, repo) = setup_with_harness(None, Arc::new(FakeHarness::default()));
-        let card = app.create_issue(repo, "Hard", "", PERSON).unwrap();
+        let card = app.create_issue(repo, "Hard", "", OWNER_AUTHOR).unwrap();
         run(&engine, &card, r#"moebius.start_runs("Coder", 2)"#).unwrap();
         let first = app.store.open_attempts(card.id).unwrap()[0].run_id;
         let select = app
@@ -374,7 +374,7 @@ mod tests {
     fn the_token_budget_counts_the_tokens_of_every_attempt_together() {
         let harness = Arc::new(FakeHarness::default());
         let (_dir, app, _, repo) = setup_with_harness(None, harness);
-        let card = app.create_issue(repo, "Hard", "", PERSON).unwrap();
+        let card = app.create_issue(repo, "Hard", "", OWNER_AUTHOR).unwrap();
         let engine = crate::board::testing::engine_with(&app, crate::board::Limits::default());
         run(&engine, &card, r#"moebius.start_runs("Coder", 3)"#).unwrap();
         let runs = app.store.open_attempts(card.id).unwrap();

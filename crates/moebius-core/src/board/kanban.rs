@@ -92,7 +92,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    use crate::app::{App, PERSON};
+    use crate::app::{App, OWNER_AUTHOR};
     use crate::board::Limits;
     use crate::board::testing::{FakeHarness, column, setup_unreviewed, setup_with_harness};
     use crate::repos::git;
@@ -107,7 +107,9 @@ mod tests {
             "Fine now.\nVERDICT: approve",
         ]));
         let (_dir, app, engine, repo) = setup_with_harness(None, harness.clone());
-        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
 
         // Round one: coded, then reviewed, and the review wants changes.
         engine.settle(card.id).unwrap();
@@ -180,7 +182,9 @@ mod tests {
     ) {
         let harness = Arc::new(FakeHarness::with_reviewer(&[standards, spec]));
         let (dir, app, engine, repo) = setup_with_harness(None, harness.clone());
-        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
         engine.settle(card.id).unwrap();
         engine.settle(card.id).unwrap();
         engine.settle(card.id).unwrap();
@@ -238,7 +242,9 @@ mod tests {
             ..FakeHarness::default()
         });
         let (_dir, app, engine, repo) = setup_with_harness(None, harness);
-        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
         for _ in 0..4 {
             engine.settle(card.id).unwrap();
         }
@@ -251,7 +257,9 @@ mod tests {
     fn a_review_without_a_verdict_sends_the_card_back_to_coding() {
         let harness = Arc::new(FakeHarness::with_reviewer(&["Looks fine to me."]));
         let (_dir, app, engine, repo) = setup_with_harness(None, harness.clone());
-        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
         for _ in 0..4 {
             engine.settle(card.id).unwrap();
         }
@@ -269,7 +277,9 @@ mod tests {
     fn a_failed_review_is_tried_again_until_the_round_limit() {
         let harness = Arc::new(FakeHarness::with_reviewer(&[]));
         let (_dir, app, engine, repo) = setup_with_harness(None, harness);
-        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
         engine.settle(card.id).unwrap();
         // The code run is done and the card moves to review.
         engine.tick(card.id).unwrap();
@@ -299,14 +309,16 @@ mod tests {
     fn a_rejected_change_goes_back_to_coding_with_the_reason_and_stays_the_same_change() {
         let harness = Arc::new(FakeHarness::without_review());
         let (_dir, app, engine, repo) = setup_with_harness(None, harness.clone());
-        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
         engine.settle(card.id).unwrap();
         engine.settle(card.id).unwrap();
         assert_eq!(column(&app, &card), "Ready to merge");
         let change = app.store.changes(repo).unwrap().pop().unwrap();
 
         app.reject_change(
-            &crate::decide::Actor::Person,
+            &crate::decide::Actor::first_owner(),
             change.id,
             "Please add a test.",
         )
@@ -336,13 +348,15 @@ mod tests {
     fn the_reason_of_a_rejection_is_redacted_in_the_note_and_the_judgement() {
         let harness = Arc::new(FakeHarness::without_review());
         let (_dir, app, engine, repo) = setup_with_harness(None, harness);
-        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
         engine.settle(card.id).unwrap();
         engine.settle(card.id).unwrap();
         let change = app.store.changes(repo).unwrap().pop().unwrap();
         let key = format!("sk-ant-api03-{}", "x".repeat(40));
         app.reject_change(
-            &crate::decide::Actor::Person,
+            &crate::decide::Actor::first_owner(),
             change.id,
             &format!("Remove {key}"),
         )
@@ -408,7 +422,9 @@ mod tests {
             count.display()
         );
         setting(&app, "checks", &checks);
-        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
 
         engine.settle(card.id).unwrap();
         engine.tick(card.id).unwrap();
@@ -465,7 +481,9 @@ mod tests {
     #[test]
     fn a_repository_without_checks_has_none_and_the_card_goes_on() {
         let (_dir, app, engine, repo) = setup_unreviewed();
-        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
         engine.settle(card.id).unwrap();
         engine.settle(card.id).unwrap();
         assert_eq!(column(&app, &card), "Ready to merge");
@@ -485,7 +503,9 @@ mod tests {
         });
         let (_dir, app, engine, repo) = setup_with_harness(None, harness);
         setting(&app, "checks", "exit 0\n");
-        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
         engine.settle(card.id).unwrap();
         engine.tick(card.id).unwrap();
         engine.tick(card.id).unwrap();
@@ -500,7 +520,9 @@ mod tests {
     fn a_change_that_no_longer_merges_goes_back_with_the_conflicting_files() {
         let harness = Arc::new(FakeHarness::default());
         let (_dir, app, engine, repo) = setup_with_harness(None, harness.clone());
-        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
         engine.settle(card.id).unwrap();
         // The base meanwhile took a different file of the same name.
         commit_to_base(&app, repo, "run-1.txt", "something else\n");
@@ -522,7 +544,9 @@ mod tests {
     #[test]
     fn a_conflict_that_appears_while_the_change_waits_to_be_merged_sends_it_back() {
         let (_dir, app, engine, repo) = setup_unreviewed();
-        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
         engine.settle(card.id).unwrap();
         engine.settle(card.id).unwrap();
         assert_eq!(column(&app, &card), "Ready to merge");
@@ -577,7 +601,9 @@ mod tests {
         });
         let (dir, app, engine, repo) = setup_with_harness(None, harness.clone());
         setting(&app, "test-first", "");
-        let card = app.create_issue(repo, "Fix a bug", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Fix a bug", "", OWNER_AUTHOR)
+            .unwrap();
         engine.settle(card.id).unwrap();
         engine.tick(card.id).unwrap();
         assert_eq!(column(&app, &card), "In review");
@@ -666,7 +692,9 @@ mod tests {
     #[test]
     fn without_test_first_the_reproduction_test_is_not_asked_for() {
         let (_dir, app, engine, repo) = setup_unreviewed();
-        let card = app.create_issue(repo, "Fix a bug", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Fix a bug", "", OWNER_AUTHOR)
+            .unwrap();
         engine.settle(card.id).unwrap();
         engine.settle(card.id).unwrap();
         assert_eq!(column(&app, &card), "Ready to merge");

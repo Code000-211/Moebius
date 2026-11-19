@@ -46,6 +46,7 @@ other route answers it `401`, as it does the run token of any other agent, and a
 [people and access tokens](#people-and-access-tokens), `POST /v1/harness/setup` (moving the agents is a person's choice) and `GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui`, `GET /v1/terminal` and `GET /v1/repositories/{id}/terminal` (the shells) and `GET /v1/ports/{port}/tunnel`, and `PUT /v1/client` (what the app says of itself). Where a route below says "a person" and "decider
 `person`" (it is `person:<handle>` of the person whose access token or session it is, and `person:owner` for the
 server's token), an agent that uses its token is the decider instead.
+Records from before people had identities keep the author or decider `person`, which the migration gave to the first owner; no new record is made with it.
 
 A browser signs in once and then carries the cookie `moebius_session` (`HttpOnly; SameSite=Strict; Path=/`, and `Secure` when
 a proxy in front of the server says with `X-Forwarded-Proto: https` that the browser used TLS). Every route, the
@@ -418,7 +419,7 @@ curl -s -X DELETE -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7171/v1/rep
 
 ### `POST /v1/repositories/{id}/issues`
 
-Creates an issue from a person in the app. Its card starts in `Backlog`, with the author `person`.
+Creates an issue from a person in the app. Its card starts in `Backlog`, with the author `person:<handle>` of the person who made it.
 
 Without a forge the card is trusted and moves on. On a repository with a forge the issue is opened there first, the same
 way a confirmed grilling opens its issues, and the card gets the issue's number right away, so that the poll finds it
@@ -658,7 +659,7 @@ Where each thing lives depends on the forge; what a forge cannot express, Moebiu
   ancestor, nor have a parent that waits for it, directly or through others; what the API refuses with `422`, the poll
   ignores when the forge says it.
 - **Claims are Moebius's own and advisory.** A run is not a forge user, so a claim is not an assignee: nothing is written
-  to the forge and the assignees the forge has are not read. A claim names a person (`person`), the Moebius agent
+  to the forge and the assignees the forge has are not read. A claim names a person (`person:<handle>`), the Moebius agent
   (`agent:<name>`) or a name a session gave itself, which is free text: the claim keeps honest sessions from taking the
   same issue, it does not keep anyone out, and the default Kanban does not look at it.
 - **Comments** read from the forge are stored once each, by the id they have there, and are read again when the forge's
@@ -711,7 +712,7 @@ is not a blocker; `500` the forge refused.
 ### `POST /v1/cards/{id}/claim`
 
 Claims the issue, so that two sessions do not take the same one. Request: `{"by": text}`, optional: the name that claims,
-`person` or `agent:<name>` for the caller when left out; a claim is advisory (see above). Claiming again as the claimer changes
+`person:<handle>` or `agent:<name>` for the caller when left out; a claim is advisory (see above). Claiming again as the claimer changes
 nothing. The event
 `card_claimed` is sent. Response: the `Card`. Errors: `404` no such card; `409` somebody else claimed it, and the message
 says who.
@@ -750,7 +751,7 @@ Errors: `404` no such card; `422` the comment is blank; `500` the forge refused 
 ### `POST /v1/cards/{id}/block`
 
 A person, or the Moebius agent, holds a card, so that work on it stops and stays stopped. The card's `held` is set to
-`{"reason", "by", "at"}` (`by` is `person` or `agent:Moebius`), the card's runs that have not ended are stopped with the
+`{"reason", "by", "at"}` (`by` is `person:<handle>` or `agent:Moebius`), the card's runs that have not ended are stopped with the
 stop of `POST /v1/runs/{id}/stop` (each recorded as a `stop` decision), and the reason it waited for is cleared. A run
 the board is still starting cannot be stopped until its harness has registered it, so the block keeps trying for up to
 10 seconds; if a run still cannot be stopped by then the card is released again, nothing is recorded and the answer is

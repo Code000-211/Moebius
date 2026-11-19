@@ -353,7 +353,7 @@ mod tests {
         f.server.poll_github().await;
         let app = &f.server.app;
         let card = f.card(1).unwrap();
-        app.delete_card(&Actor::Person, &IdleRuns, card.id, "")
+        app.delete_card(&Actor::first_owner(), &IdleRuns, card.id, "")
             .unwrap();
         // What a tick that was already going left behind.
         app.set_waiting(card.id, Some("script error: old".into()));
@@ -384,7 +384,7 @@ mod tests {
         let app = &f.server.app;
         let doomed = f.card(1).unwrap();
         let kept_id = f.card(2).unwrap().id;
-        app.delete_card(&Actor::Person, &IdleRuns, doomed.id, "not wanted")
+        app.delete_card(&Actor::first_owner(), &IdleRuns, doomed.id, "not wanted")
             .unwrap();
         assert!(f.card(1).is_none());
 
@@ -816,7 +816,7 @@ mod tests {
         let card = f.card(1).unwrap();
         let app = f.server.app.clone();
         let retried = tokio::task::spawn_blocking(move || {
-            app.retry_card(&crate::decide::Actor::Person, card.id, "Try again.")
+            app.retry_card(&crate::decide::Actor::first_owner(), card.id, "Try again.")
         })
         .await
         .unwrap()
@@ -893,7 +893,11 @@ mod tests {
 
         let app = f.server.app.clone();
         let commit = tokio::task::spawn_blocking(move || {
-            app.merge_change(&crate::decide::Actor::Person, change.id, "looks good")
+            app.merge_change(
+                &crate::decide::Actor::first_owner(),
+                change.id,
+                "looks good",
+            )
         })
         .await
         .unwrap()

@@ -499,7 +499,7 @@ mod tests {
 
         // A merged takeover makes the model judge the prose; the patterns still come first.
         let takeover = f.app.store.add_takeover("tool_call", 0.95, 20).unwrap();
-        model::merge(&f.app, &Actor::Person, takeover.id, "ok").unwrap();
+        model::merge(&f.app, &Actor::first_owner(), takeover.id, "ok").unwrap();
         let reply = f.bash("ls");
         assert_eq!(
             (reply.decision.as_str(), reply.decider.as_str()),

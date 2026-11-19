@@ -172,7 +172,12 @@ async fn the_agents_and_rules_move_into_a_new_repository_that_the_restarted_serv
         instructions: String::new(),
     };
     let saved = repo
-        .save_agent(&restarted.app, &Actor::Person, "Planner", &definition)
+        .save_agent(
+            &restarted.app,
+            &Actor::first_owner(),
+            "Planner",
+            &definition,
+        )
         .unwrap();
     assert!(saved.commit.is_some());
     assert!(read("agents/Planner.toml").contains("planner-model"));

@@ -38,7 +38,7 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
-    use crate::app::{App, PERSON};
+    use crate::app::{App, OWNER_AUTHOR};
     use crate::board::testing::{FakeHarness, column, engine_with, setup, setup_with_harness};
     use crate::board::{Engine, Kanban};
     use crate::store::{Card, Run};
@@ -60,7 +60,9 @@ mod tests {
 
     /// A card in progress whose latest `code` run ended as `status`.
     fn card_after_a_run(app: &App, repo: i64, status: &str) -> (Card, Run) {
-        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
         app.move_card(card.id, "In progress").unwrap();
         let run = app
             .store
@@ -142,7 +144,9 @@ mod tests {
                 ..Limits::default()
             },
         );
-        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
         engine.settle(card.id).unwrap();
         let code = app.store.runs_for_card(card.id).unwrap().pop().unwrap();
         use_tokens(&app, code.id, 100);
@@ -169,8 +173,8 @@ mod tests {
         let chat = app.store.add_run(None, "Coder", "fake", "chat").unwrap();
         app.store.set_run_status(chat.id, "waiting").unwrap();
 
-        let first = app.create_issue(repo, "First", "", PERSON).unwrap();
-        let second = app.create_issue(repo, "Second", "", PERSON).unwrap();
+        let first = app.create_issue(repo, "First", "", OWNER_AUTHOR).unwrap();
+        let second = app.create_issue(repo, "Second", "", OWNER_AUTHOR).unwrap();
         app.move_card(second.id, "Not started").unwrap();
 
         // A card's run uses the one run the limit allows; the chat does not.
@@ -196,7 +200,7 @@ mod tests {
         );
         let (busy, run) = card_after_a_run(&app, repo, "succeeded");
         use_tokens(&app, run.id, 499);
-        let ready = app.create_issue(repo, "Waiting", "", PERSON).unwrap();
+        let ready = app.create_issue(repo, "Waiting", "", OWNER_AUTHOR).unwrap();
         app.move_card(ready.id, "Not started").unwrap();
         let (second_round, failed) = card_after_a_run(&app, repo, "failed");
 
@@ -265,7 +269,7 @@ mod tests {
 
         // Neither the round limit nor the budget stops it any more.
         app.retry_card(
-            &crate::decide::Actor::Person,
+            &crate::decide::Actor::first_owner(),
             card.id,
             "I raised the budget.",
         )
@@ -277,13 +281,13 @@ mod tests {
         let judgements = app.store.judgements("retry").unwrap();
         assert_eq!(
             (judgements.len(), judgements[0].decider.as_str()),
-            (1, "person")
+            (1, "person:owner")
         );
 
         // A stopped card, too, starts again instead of being stuck again.
         let (stopped, _) = card_after_a_run(&app, repo, "stopped");
         engine.settle(stopped.id).unwrap();
-        app.retry_card(&crate::decide::Actor::Person, stopped.id, "Go on.")
+        app.retry_card(&crate::decide::Actor::first_owner(), stopped.id, "Go on.")
             .unwrap();
         let step = engine.settle(stopped.id).unwrap();
         assert!(step.started_run.is_some(), "{step:?}");

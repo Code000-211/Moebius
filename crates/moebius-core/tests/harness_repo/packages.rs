@@ -1115,7 +1115,7 @@ async fn the_merge_itself_refuses_an_agent_a_package_whatever_was_checked_before
     );
     repo.merge_branch(
         &env.server.app,
-        &moebius_core::decide::Actor::Person,
+        &moebius_core::decide::Actor::first_owner(),
         branch,
         "m",
     )

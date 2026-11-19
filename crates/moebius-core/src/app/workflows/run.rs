@@ -640,7 +640,7 @@ to = "two"
             .add_workflow_run("recorded", repository.id, "test", &json!({}))
             .unwrap();
         let mut events = app.bus.subscribe();
-        app.cancel_workflow_run(&crate::decide::Actor::Person, &NoRuns, run.id)
+        app.cancel_workflow_run(&crate::decide::Actor::first_owner(), &NoRuns, run.id)
             .unwrap();
 
         app.drive_workflow_run(run.id, chain(), None).unwrap();

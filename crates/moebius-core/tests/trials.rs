@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use moebius_core::app::PERSON;
+use moebius_core::app::OWNER_AUTHOR;
 use moebius_core::board::{CardRuns, Runs, Variant};
 use moebius_core::bus::AppEvent;
 use moebius_core::config::{Config, TimeOfDay};
@@ -154,7 +154,7 @@ fn a_card_that_failed(server: &Server, dir: &Path) -> i64 {
         .unwrap();
     let card = server
         .app
-        .create_issue(repo.id, "Fix it [nothing]", "", PERSON)
+        .create_issue(repo.id, "Fix it [nothing]", "", OWNER_AUTHOR)
         .unwrap();
     let before = server.app.store.today().unwrap();
     let run = server
@@ -688,7 +688,7 @@ async fn trials_start_in_the_window_only_one_at_a_time_and_a_server_start_reopen
 /// also names a reproduction test in its summary. Returns the card's id.
 fn a_merged_card(server: &Server, repo: i64, title: &str, reproduce: bool) -> i64 {
     let app = &server.app;
-    let card = app.create_issue(repo, title, "", PERSON).unwrap();
+    let card = app.create_issue(repo, title, "", OWNER_AUTHOR).unwrap();
     let run = server
         .harness
         .start(app, &card, "Coder", ("code", None), Variant::default())
@@ -826,7 +826,10 @@ async fn a_proposal_that_fixes_its_card_but_breaks_a_regression_card_is_not_offe
 
 /// A card of `repo` in a `title` whose first code run changed nothing and failed (see `testdata/fake-pi`).
 fn a_card_that_writes_nothing(server: &Server, repo: i64, title: &str) -> i64 {
-    let card = server.app.create_issue(repo, title, "", PERSON).unwrap();
+    let card = server
+        .app
+        .create_issue(repo, title, "", OWNER_AUTHOR)
+        .unwrap();
     let run = server
         .harness
         .start(

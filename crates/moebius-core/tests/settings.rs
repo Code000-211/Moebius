@@ -201,7 +201,7 @@ async fn board_limits_budgets_and_agents_apply_without_a_restart() {
     let card = f
         .server
         .app
-        .create_issue(plain.id, "Anything", "", "person")
+        .create_issue(plain.id, "Anything", "", "person:owner")
         .unwrap();
     // The card's script tells the limits it is given.
     let settings = common::use_harness(&f.server.app, f.dir.path());

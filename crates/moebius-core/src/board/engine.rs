@@ -215,13 +215,15 @@ impl Engine {
 mod tests {
     use std::collections::BTreeMap;
 
-    use crate::app::{PERSON, columns};
+    use crate::app::{OWNER_AUTHOR, columns};
     use crate::board::testing::setup;
 
     #[test]
     fn the_default_kanban_moves_a_card_from_backlog_to_done() {
         let (_dir, app, engine, repo) = setup();
-        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
 
         // Backlog -> Not started -> In progress, where the Coder run starts.
         let step = engine.settle(card.id).unwrap();
@@ -248,7 +250,7 @@ mod tests {
         assert_eq!(runs[0].summary.as_deref(), Some("Done."));
         let change = app.store.changes(repo).unwrap().pop().unwrap();
         assert_eq!(change.branch, "moebius/card-1");
-        app.merge_change(&crate::decide::Actor::Person, change.id, "fine")
+        app.merge_change(&crate::decide::Actor::first_owner(), change.id, "fine")
             .unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Done");
         engine.settle(card.id).unwrap();
@@ -279,7 +281,9 @@ end
 "#,
         )
         .unwrap();
-        let card = app.create_issue(repo, "Add a feature", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
         for _ in 0..6 {
             if app.card(card.id).unwrap().column == columns::DONE {
                 break;
@@ -313,7 +317,7 @@ end
     fn a_move_worked_out_from_a_stale_card_is_not_applied() {
         use super::Effects;
         let (_dir, app, engine, repo) = setup();
-        let card = app.create_issue(repo, "Add", "", PERSON).unwrap();
+        let card = app.create_issue(repo, "Add", "", OWNER_AUTHOR).unwrap();
         // The script saw the card in the backlog; meanwhile a person or the forge poll finished it.
         let seen = app.card(card.id).unwrap();
         app.move_card(card.id, columns::DONE).unwrap();
@@ -342,7 +346,7 @@ end
     #[test]
     fn an_offer_is_not_made_for_a_card_moved_while_the_change_was_published() {
         let (_dir, app, _engine, repo) = setup();
-        let card = app.create_issue(repo, "Add", "", PERSON).unwrap();
+        let card = app.create_issue(repo, "Add", "", OWNER_AUTHOR).unwrap();
         let seen = app.card(card.id).unwrap().column;
         let change = app
             .store
@@ -387,7 +391,7 @@ end
         );
 
         // Once the card moves it waits for something else or for nothing.
-        app.approve_issue(&crate::decide::Actor::Person, card.id, "fine")
+        app.approve_issue(&crate::decide::Actor::first_owner(), card.id, "fine")
             .unwrap();
         assert!(app.waiting(&cards).is_empty());
         let cleared = std::iter::from_fn(|| events.try_recv().ok())
@@ -416,13 +420,13 @@ end
         let inbox = app.store.inbox().unwrap();
         assert_eq!((inbox.len(), inbox[0].kind.as_str()), (1, "approve_issue"));
 
-        app.approve_issue(&crate::decide::Actor::Person, card.id, "fine by me")
+        app.approve_issue(&crate::decide::Actor::first_owner(), card.id, "fine by me")
             .unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Not started");
         assert!(app.store.inbox().unwrap().is_empty());
         assert_eq!(
             app.store.judgements("approve_issue").unwrap()[0].decider,
-            "person"
+            "person:owner"
         );
     }
 
@@ -439,7 +443,9 @@ end
             "ready.luau",
             "function on_card(card) moebius.wait('held') end",
         );
-        let card = app.create_issue(repo, "Old script", "", PERSON).unwrap();
+        let card = app
+            .create_issue(repo, "Old script", "", OWNER_AUTHOR)
+            .unwrap();
         engine.settle(card.id).unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Not started");
     }
@@ -453,7 +459,7 @@ end
             "ready.luau",
             "function on_card(card) moebius.wait('held by the repository') end",
         );
-        let card = app.create_issue(repo, "Held", "", PERSON).unwrap();
+        let card = app.create_issue(repo, "Held", "", OWNER_AUTHOR).unwrap();
         let step = engine.settle(card.id).unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Not started");
         assert_eq!(step.waiting.as_deref(), Some("held by the repository"));
@@ -462,8 +468,8 @@ end
     #[test]
     fn a_blocked_card_waits_in_ready_until_its_blocker_is_done() {
         let (_dir, app, engine, repo) = setup();
-        let blocker = app.create_issue(repo, "First", "", PERSON).unwrap();
-        let card = app.create_issue(repo, "Second", "", PERSON).unwrap();
+        let blocker = app.create_issue(repo, "First", "", OWNER_AUTHOR).unwrap();
+        let card = app.create_issue(repo, "Second", "", OWNER_AUTHOR).unwrap();
         app.store
             .set_dependencies(card.id, &[blocker.number].into())
             .unwrap();
@@ -483,7 +489,7 @@ end
     #[test]
     fn a_card_blocked_by_an_issue_without_a_card_waits() {
         let (_dir, app, engine, repo) = setup();
-        let card = app.create_issue(repo, "Second", "", PERSON).unwrap();
+        let card = app.create_issue(repo, "Second", "", OWNER_AUTHOR).unwrap();
         app.store.set_dependencies(card.id, &[99].into()).unwrap();
         let step = engine.settle(card.id).unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Not started");
@@ -500,8 +506,12 @@ end
             "backlog.luau",
             "function on_card(card) moebius.move('Done') error('the script was called') end",
         );
-        let card = app.create_issue(repo, "Held", "", PERSON).unwrap();
-        assert!(app.store.hold_card(card.id, PERSON, Some("later")).unwrap());
+        let card = app.create_issue(repo, "Held", "", OWNER_AUTHOR).unwrap();
+        assert!(
+            app.store
+                .hold_card(card.id, OWNER_AUTHOR, Some("later"))
+                .unwrap()
+        );
 
         for _ in 0..2 {
             assert_eq!(engine.tick(card.id).unwrap(), super::Step::default());
@@ -518,7 +528,7 @@ end
     #[test]
     fn a_script_sees_a_known_person_as_author_claimer_and_holder_and_trusts_their_card() {
         let (_dir, app, engine, repo) = setup();
-        let ada = crate::decide::Actor::person(Some((7, "ada")));
+        let ada = crate::decide::Actor::person(7, "ada");
         let card = app.create_issue(repo, "By Ada", "", "person:ada").unwrap();
         app.claim_issue(&ada, card.id, None).unwrap();
         app.store
@@ -543,7 +553,7 @@ end
     #[test]
     fn a_script_reads_who_holds_a_card_and_why() {
         let (_dir, app, engine, repo) = setup();
-        let card = app.create_issue(repo, "Held", "", PERSON).unwrap();
+        let card = app.create_issue(repo, "Held", "", OWNER_AUTHOR).unwrap();
         let lua = mlua::Lua::new();
         assert!(
             !engine
@@ -565,13 +575,17 @@ end
     #[test]
     fn a_script_reads_the_parent_the_children_the_labels_and_the_claim_of_a_card() {
         let (_dir, app, engine, repo) = setup();
-        let map = app.create_issue(repo, "Map", "", PERSON).unwrap();
-        let ticket = app.create_issue(repo, "Ticket", "", PERSON).unwrap();
+        let map = app.create_issue(repo, "Map", "", OWNER_AUTHOR).unwrap();
+        let ticket = app.create_issue(repo, "Ticket", "", OWNER_AUTHOR).unwrap();
         app.set_parent(ticket.id, Some(map.number)).unwrap();
         app.set_labels(ticket.id, &["wayfinder:spike".into()])
             .unwrap();
-        app.claim_issue(&crate::decide::Actor::Person, ticket.id, Some("session 1"))
-            .unwrap();
+        app.claim_issue(
+            &crate::decide::Actor::first_owner(),
+            ticket.id,
+            Some("session 1"),
+        )
+        .unwrap();
         let lua = mlua::Lua::new();
         let table = |card: &crate::store::Card| engine.card_table(&lua, card).unwrap();
 
@@ -600,10 +614,10 @@ end
     #[test]
     fn the_default_kanban_starts_no_work_on_a_parent_and_closes_it_with_its_last_sub_issue() {
         let (_dir, app, engine, repo) = setup();
-        let map = app.create_issue(repo, "Map", "", PERSON).unwrap();
+        let map = app.create_issue(repo, "Map", "", OWNER_AUTHOR).unwrap();
         let (a, b) = (
-            app.create_issue(repo, "A", "", PERSON).unwrap(),
-            app.create_issue(repo, "B", "", PERSON).unwrap(),
+            app.create_issue(repo, "A", "", OWNER_AUTHOR).unwrap(),
+            app.create_issue(repo, "B", "", OWNER_AUTHOR).unwrap(),
         );
         for ticket in [&a, &b] {
             app.set_parent(ticket.id, Some(map.number)).unwrap();
@@ -638,7 +652,7 @@ end
     #[test]
     fn an_outside_issue_that_names_a_parent_does_not_hold_or_close_it() {
         let (_dir, app, engine, repo) = setup();
-        let map = app.create_issue(repo, "Map", "", PERSON).unwrap();
+        let map = app.create_issue(repo, "Map", "", OWNER_AUTHOR).unwrap();
         // Written by anyone, its description says "Part of #1"; nobody approved it.
         let outside = app
             .store
@@ -659,8 +673,8 @@ end
     #[test]
     fn a_parent_that_has_work_of_its_own_keeps_its_normal_flow() {
         let (_dir, app, engine, repo) = setup();
-        let map = app.create_issue(repo, "Map", "", PERSON).unwrap();
-        let ticket = app.create_issue(repo, "Ticket", "", PERSON).unwrap();
+        let map = app.create_issue(repo, "Map", "", OWNER_AUTHOR).unwrap();
+        let ticket = app.create_issue(repo, "Ticket", "", OWNER_AUTHOR).unwrap();
         app.set_parent(ticket.id, Some(map.number)).unwrap();
         // It was coded before the ticket was put under it.
         let run = app
@@ -677,9 +691,9 @@ end
     #[test]
     fn a_wayfinder_map_and_its_tickets_are_questions_that_the_default_kanban_never_starts() {
         let (_dir, app, engine, repo) = setup();
-        let map = app.create_issue(repo, "Map", "", PERSON).unwrap();
-        let ticket = app.create_issue(repo, "Ticket", "", PERSON).unwrap();
-        let task = app.create_issue(repo, "Task", "", PERSON).unwrap();
+        let map = app.create_issue(repo, "Map", "", OWNER_AUTHOR).unwrap();
+        let ticket = app.create_issue(repo, "Ticket", "", OWNER_AUTHOR).unwrap();
+        let task = app.create_issue(repo, "Task", "", OWNER_AUTHOR).unwrap();
         app.set_parent(ticket.id, Some(map.number)).unwrap();
         app.set_labels(map.id, &["wayfinder:map".to_string()])
             .unwrap();
@@ -721,7 +735,7 @@ end
     fn done_records_merged_for_a_card_whose_change_was_merged_and_closed_for_one_that_was_closed() {
         let (_dir, app, engine, repo) = setup();
         let card = app
-            .create_issue(repo, "Closed unmerged", "", PERSON)
+            .create_issue(repo, "Closed unmerged", "", OWNER_AUTHOR)
             .unwrap();
         let judgement = |card_id| {
             app.store

@@ -292,7 +292,7 @@ async fn the_moebius_agent_uses_the_tracker_routes_and_no_other_agent_does() {
         .unwrap();
     let issue = |title: &str| {
         store
-            .add_card(repository.id, title, "", "person", "Backlog")
+            .add_card(repository.id, title, "", "person:owner", "Backlog")
             .unwrap()
     };
     let (map, ticket, other) = (issue("Map"), issue("Ticket"), issue("Other"));
@@ -711,7 +711,7 @@ impl Scoped {
             .unwrap();
         let card = |repository: i64, title: &str, labels: &[&str]| {
             let card = store
-                .add_card(repository, title, "", "person", "Backlog")
+                .add_card(repository, title, "", "person:owner", "Backlog")
                 .unwrap();
             let labels = labels.iter().map(|l| l.to_string()).collect();
             store.set_labels(card.id, &labels).unwrap();

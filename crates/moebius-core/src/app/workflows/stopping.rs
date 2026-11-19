@@ -346,7 +346,7 @@ port = "out"
         assert_eq!(run.status, "queued");
 
         let done = app
-            .cancel_workflow_run(&Actor::Person, &Harness::default(), run.id)
+            .cancel_workflow_run(&Actor::first_owner(), &Harness::default(), run.id)
             .unwrap();
 
         assert_eq!(done.status, "cancelled");
@@ -373,7 +373,7 @@ port = "out"
         });
 
         let done = app
-            .cancel_workflow_run(&Actor::Person, &Harness::default(), run.id)
+            .cancel_workflow_run(&Actor::first_owner(), &Harness::default(), run.id)
             .unwrap();
 
         assert_eq!(done.status, "cancelled");
@@ -414,7 +414,7 @@ port = "out"
             .unwrap();
 
         let done = app
-            .cancel_workflow_run(&Actor::Person, &Harness::default(), run.id)
+            .cancel_workflow_run(&Actor::first_owner(), &Harness::default(), run.id)
             .unwrap();
 
         assert_eq!(done.status, "cancelled");
@@ -434,7 +434,7 @@ port = "out"
         wait_for(|| store.inbox_for_workflow_run(run.id).unwrap().is_some());
 
         let done = app
-            .cancel_workflow_run(&Actor::Person, &Harness::default(), run.id)
+            .cancel_workflow_run(&Actor::first_owner(), &Harness::default(), run.id)
             .unwrap();
 
         assert_eq!(done.status, "cancelled");
@@ -468,7 +468,7 @@ port = "out"
             .unwrap();
 
         let error = app
-            .cancel_workflow_run(&Actor::Person, &Harness::default(), run.id)
+            .cancel_workflow_run(&Actor::first_owner(), &Harness::default(), run.id)
             .unwrap_err();
         assert!(
             matches!(
@@ -481,7 +481,7 @@ port = "out"
         );
         // And an unknown run is not found.
         assert!(matches!(
-            app.cancel_workflow_run(&Actor::Person, &Harness::default(), run.id + 100)
+            app.cancel_workflow_run(&Actor::first_owner(), &Harness::default(), run.id + 100)
                 .unwrap_err(),
             CancelWorkflowRunError::NotFound
         ));
@@ -515,7 +515,7 @@ port = "out"
         let harness = Harness::default();
 
         let done = app
-            .cancel_workflow_run(&Actor::Person, &harness, run.id)
+            .cancel_workflow_run(&Actor::first_owner(), &harness, run.id)
             .unwrap();
 
         assert_eq!(done.status, "cancelled");
@@ -557,7 +557,7 @@ port = "out"
             .unwrap();
 
         let done = app
-            .cancel_workflow_run(&Actor::Person, &Harness::default(), run.id)
+            .cancel_workflow_run(&Actor::first_owner(), &Harness::default(), run.id)
             .unwrap();
 
         assert_eq!(done.status, "cancelled");
@@ -585,7 +585,7 @@ port = "out"
             .unwrap();
         store.set_workflow_run_status(run.id, "running").unwrap();
         let harness = Harness::default();
-        app.cancel_workflow_run(&Actor::Person, &harness, run.id)
+        app.cancel_workflow_run(&Actor::first_owner(), &harness, run.id)
             .unwrap();
         assert!(
             harness.stopped.lock().unwrap().is_empty(),

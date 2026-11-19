@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::app::{App, AppError, PERSON, Result};
+use crate::app::{App, AppError, OWNER_AUTHOR, Result};
 use crate::board::{self, Column};
 use crate::bus::Event;
 use crate::decide::Actor;
@@ -94,7 +94,7 @@ pub fn save_script(
         &text,
         &column.name,
         "A card to check the script with",
-        PERSON,
+        OWNER_AUTHOR,
     )
     .map_err(AppError::Invalid)?;
     let message = format!(

@@ -621,13 +621,19 @@ mod tests {
         let repository = f.repository.id;
         let (commit, created, edited) = tokio::task::spawn_blocking(move || {
             let commit = app
-                .merge_change(&Actor::Person, change.id, "looks good")
+                .merge_change(&Actor::first_owner(), change.id, "looks good")
                 .unwrap();
             let created = app
                 .create_issue(repository, "New", "Blocked by #1", "person")
                 .unwrap();
             let edited = app
-                .edit_card(&Actor::Person, created.id, "Newer", "Blocked by #2", "")
+                .edit_card(
+                    &Actor::first_owner(),
+                    created.id,
+                    "Newer",
+                    "Blocked by #2",
+                    "",
+                )
                 .unwrap();
             (commit, created, edited)
         })

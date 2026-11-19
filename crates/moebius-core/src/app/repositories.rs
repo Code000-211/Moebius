@@ -234,7 +234,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::PERSON;
+    use crate::app::OWNER_AUTHOR;
 
     use crate::app::columns;
     use crate::repos::git;
@@ -302,7 +302,7 @@ mod tests {
                 .add_card(repository.id, "Card", "", author, columns::BACKLOG)
                 .unwrap()
         };
-        assert!(app.is_trusted(&card(&local, PERSON)));
+        assert!(app.is_trusted(&card(&local, OWNER_AUTHOR)));
         assert!(!app.is_trusted(&card(&local, "leon")));
         assert!(
             app.is_trusted(&card(&local, "person:lea")),
@@ -312,7 +312,7 @@ mod tests {
         assert!(app.is_trusted(&card(&remote, "leon")), "logins ignore case");
         assert!(!app.is_trusted(&card(&remote, "mallory")));
         assert!(
-            !app.is_trusted(&card(&remote, PERSON)),
+            !app.is_trusted(&card(&remote, OWNER_AUTHOR)),
             "a GitHub user named like the desktop's person is an outsider"
         );
         assert!(!app.is_trusted(&card(&remote, "person:lea")));
@@ -332,11 +332,11 @@ mod tests {
         let gone = app.add_repository("mine", &path("mine")).unwrap();
         let kept = app.add_repository("other", &path("other")).unwrap();
         store
-            .add_card(gone.id, "Card", "", PERSON, columns::BACKLOG)
+            .add_card(gone.id, "Card", "", OWNER_AUTHOR, columns::BACKLOG)
             .unwrap();
 
         let removed = app
-            .remove_repository(&Actor::Person, gone.id, "not wanted")
+            .remove_repository(&Actor::first_owner(), gone.id, "not wanted")
             .unwrap();
 
         assert_eq!(removed.name, "mine");
@@ -350,7 +350,7 @@ mod tests {
             "the other repository stays"
         );
         assert!(
-            app.remove_repository(&Actor::Person, gone.id, "again")
+            app.remove_repository(&Actor::first_owner(), gone.id, "again")
                 .is_err()
         );
     }
@@ -371,7 +371,7 @@ mod tests {
         store.set_run_repository(run.id, repository.id).unwrap();
 
         let refused = app
-            .remove_repository(&Actor::Person, repository.id, "not wanted")
+            .remove_repository(&Actor::first_owner(), repository.id, "not wanted")
             .unwrap_err();
 
         assert!(
@@ -384,7 +384,7 @@ mod tests {
         // Once the run has ended, the repository goes.
         store.set_run_status(run.id, "succeeded").unwrap();
         assert!(
-            app.remove_repository(&Actor::Person, repository.id, "not wanted")
+            app.remove_repository(&Actor::first_owner(), repository.id, "not wanted")
                 .is_ok()
         );
     }
@@ -401,7 +401,7 @@ mod tests {
         let path = dir.path().join("mine").to_string_lossy().into_owned();
         let repository = app.add_repository("mine", &path).unwrap();
         let card = store
-            .add_card(repository.id, "Card", "", PERSON, columns::BACKLOG)
+            .add_card(repository.id, "Card", "", OWNER_AUTHOR, columns::BACKLOG)
             .unwrap();
         // A card run has a card but no repository of its own.
         let run = store
@@ -409,7 +409,7 @@ mod tests {
             .unwrap();
 
         let refused = app
-            .remove_repository(&Actor::Person, repository.id, "not wanted")
+            .remove_repository(&Actor::first_owner(), repository.id, "not wanted")
             .unwrap_err();
 
         assert!(matches!(refused, AppError::Conflict(_)), "{refused}");
@@ -417,7 +417,7 @@ mod tests {
         assert!(store.run(run.id).unwrap().is_some());
         store.set_run_status(run.id, "succeeded").unwrap();
         assert!(
-            app.remove_repository(&Actor::Person, repository.id, "not wanted")
+            app.remove_repository(&Actor::first_owner(), repository.id, "not wanted")
                 .is_ok()
         );
     }
@@ -475,7 +475,7 @@ mod tests {
         item("proposal", serde_json::json!({ "proposal": proposal }));
         let unrelated = item("takeover", serde_json::json!({ "takeover": 1 }));
 
-        app.remove_repository(&Actor::Person, gone.id, "not wanted")
+        app.remove_repository(&Actor::first_owner(), gone.id, "not wanted")
             .unwrap();
 
         let open: Vec<i64> = store.inbox().unwrap().iter().map(|i| i.id).collect();
