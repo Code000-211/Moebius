@@ -141,7 +141,7 @@ fn signed(given: &str, secret: &str, body: &[u8]) -> bool {
 }
 
 /// The HMAC-SHA256 of `message` under `key` (RFC 2104).
-fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
+pub(crate) fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
     const BLOCK: usize = 64;
     let mut block = [0u8; BLOCK];
     if key.len() > BLOCK {

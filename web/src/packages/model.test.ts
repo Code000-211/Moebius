@@ -228,6 +228,7 @@ describe("the updates the nightly check left in the inbox", () => {
     data,
     resolved_at: null,
     at: 1,
+    assignees: [],
   });
 
   it("reads the Pi ones by package and ignores the rest", () => {

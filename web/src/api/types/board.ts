@@ -73,6 +73,8 @@ export interface Card {
   labels: string[];
   /** Who claimed the issue: `person`, `agent:<name>` or a name a session gave. */
   claimed_by: string | null;
+  /** The handles, without the `@`, of the people the card is given to, in the order the people were added. */
+  assignees: string[];
 }
 
 /** A comment on an issue, written here or read from the forge. */
@@ -130,6 +132,8 @@ export interface InboxItem {
   data: Record<string, unknown>;
   resolved_at: number | null;
   at: number;
+  /** The handles of the people the item is given to. */
+  assignees: string[];
 }
 
 /** `GET /v1/snapshot`. */

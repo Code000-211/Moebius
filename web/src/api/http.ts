@@ -32,7 +32,7 @@ export function isApiError(error: unknown): error is ApiError {
   return error instanceof ApiError;
 }
 
-export type Method = "GET" | "POST" | "PUT" | "DELETE";
+export type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export interface RequestOptions {
   /** A JSON body; the request then has `Content-Type: application/json`. */
@@ -110,5 +110,7 @@ export const post = <T>(path: string, body: unknown, options?: RequestOptions) =
   request<T>("POST", path, { ...options, body });
 export const put = <T>(path: string, body: unknown, options?: RequestOptions) =>
   request<T>("PUT", path, { ...options, body });
+export const patch = <T>(path: string, body: unknown, options?: RequestOptions) =>
+  request<T>("PATCH", path, { ...options, body });
 export const del = <T>(path: string, options?: RequestOptions) =>
   request<T>("DELETE", path, options);

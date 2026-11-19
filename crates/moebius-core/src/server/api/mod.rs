@@ -6,6 +6,7 @@
 //!
 //! - `cards`: the snapshot of every board, issues, cards and their changes, a card's runs and history.
 //! - `issues`: what is done to an issue besides editing it: its parent, blockers, labels, claim, comments, closing.
+//! - `assignees`: giving a card or an inbox item to people.
 //! - `repositories`: adding and editing repositories, and their column scripts and files.
 //! - `runs`: a run and its events, steering and stopping it.
 //! - `chats`: chats with an agent, and what grilling chats ended in.
@@ -30,6 +31,7 @@
 //! - `favourites`: what a person pins to the sidebar and what they opened lately, kept for them on the server.
 //! - `roles`: the role of the organisation each route needs, and whether an agent's run token may use it.
 //! - `web`: the web app itself, served at `/` without a token.
+//! - `outgoing`: the owner's outgoing webhooks, which post events to a URL.
 //! - `webhooks`: the deliveries of the forges, which need no token but a signature, and the secrets to set on the forges.
 //! - `workflow_hooks`: the door a workflow's `webhook` trigger answers on, which an outside service opens with the
 //!   trigger's own secret rather than the token.
@@ -43,6 +45,7 @@
 //! browser that signed in, which acts as the person who signed in. Anything else is answered with 401. The hook routes of a workflow's
 //! `webhook` trigger are outside `/v1/` as forge deliveries are, and a trigger's own secret opens them instead.
 
+mod assignees;
 mod automations;
 mod cards;
 mod chats;
@@ -53,6 +56,7 @@ mod harness;
 mod improve;
 mod issues;
 mod lessons;
+mod outgoing;
 mod packages;
 mod people;
 mod ports;
@@ -215,6 +219,7 @@ pub fn router(state: ApiState) -> Router {
         .route("/v1/health", get(health))
         .merge(cards::routes())
         .merge(issues::routes())
+        .merge(assignees::routes())
         .merge(repositories::routes())
         .merge(runs::routes())
         .merge(chats::routes())
@@ -233,6 +238,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(ports::routes())
         .merge(events::routes())
         .merge(webhooks::routes())
+        .merge(outgoing::routes())
         .merge(whereabouts::routes())
         .merge(session::routes())
         .merge(people::routes())

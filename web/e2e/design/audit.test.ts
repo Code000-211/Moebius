@@ -130,6 +130,8 @@ const routes: Route[] = [
   { path: "/settings", name: "settings" },
   { path: "/terminal", name: "terminal" },
   { path: "/ports", name: "ports" },
+  { path: "/people", name: "people" },
+  { path: "/tokens", name: "tokens" },
   { path: "/nothing-here", name: "not-found" },
   // The layers that only exist once a person opens them.
   { path: "/inbox", name: "inbox-search", open: "search" },

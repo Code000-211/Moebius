@@ -6,6 +6,10 @@ export const keys = {
   session: ["session"] as const,
   health: ["health"] as const,
   server: ["server"] as const,
+  /** The people of the organisation, and the access tokens of one person or of the person asking. */
+  people: ["people"] as const,
+  tokensOf: (person: number) => ["people", "tokens", person] as const,
+  ownTokens: ["own-tokens"] as const,
   start: ["start"] as const,
   /** The usage of a window of days; a finished run makes all of them stale. */
   usage: ["usage"] as const,

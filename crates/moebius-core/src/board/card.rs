@@ -5,6 +5,8 @@
 //! - `card.parent`, `card.children`, `card.labels`, `card.claimed_by`: the issue's parent (a number), its sub-issues
 //!   (each with `id`, `number`, `title`, `state` and `column`; only those a person can have vouched for, see
 //!   `App::counts_as_sub_issue`), its labels and who claimed it.
+//! - `card.assignees`: the handles of the people the card is given to, without the `@`, in the order the people were
+//!   added; an empty list when it is no one's.
 //! - `card.merged`: whether a change of the card was merged, which is what tells a card that is done because its work
 //!   was merged from one that was closed.
 //! - `card.review`: the verdict and findings of the review since the card's latest `code` run, if there is one; for a
@@ -133,6 +135,7 @@ impl Engine {
         )?;
         t.set("labels", card.labels.clone())?;
         t.set("claimed_by", card.claimed_by.as_deref())?;
+        t.set("assignees", card.assignees.clone())?;
         let children = lua.create_table()?;
         for child in self.app.children_of(card).map_err(mlua::Error::external)? {
             let c = lua.create_table()?;

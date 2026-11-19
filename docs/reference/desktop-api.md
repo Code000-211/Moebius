@@ -85,6 +85,7 @@ any route to any role that is not what its row says.
 | `POST /v1/session/codes` | viewer | no |
 | `GET /v1/people` | viewer | no |
 | `POST /v1/people` | owner | no |
+| `PATCH /v1/people/{id}` | owner | no |
 | `GET /v1/people/{id}/tokens` | viewer | no |
 | `GET /v1/tokens` | viewer | no |
 | `POST /v1/tokens` | viewer | no |
@@ -123,6 +124,8 @@ any route to any role that is not what its row says.
 | `DELETE /v1/cards/{id}` | member | no |
 | `PUT /v1/cards/{id}/parent` | member | yes |
 | `PUT /v1/cards/{id}/labels` | member | yes |
+| `PUT /v1/cards/{id}/assignees` | member | no |
+| `PUT /v1/inbox/{id}/assignees` | member | no |
 | `POST /v1/cards/{id}/blockers` | member | yes |
 | `DELETE /v1/cards/{id}/blockers/{number}` | member | yes |
 | `POST /v1/cards/{id}/claim` | member | yes |
@@ -267,6 +270,10 @@ any route to any role that is not what its row says.
 | `PUT /v1/secrets/{name}` | owner | no |
 | `DELETE /v1/secrets/{name}` | owner | yes |
 | `POST /v1/server/restart` | owner | yes |
+| `GET /v1/outgoing-webhooks` | owner | no |
+| `POST /v1/outgoing-webhooks` | owner | no |
+| `DELETE /v1/outgoing-webhooks/{id}` | owner | no |
+| `PUT /v1/repositories/{id}/private` | owner | no |
 | `POST /v1/webhooks/{forge}` | none | — |
 | `GET /v1/webhooks` | owner | no |
 | `POST /v1/webhooks/{forge}/secret` | owner | no |
@@ -305,7 +312,9 @@ back to coding, or null), `retried_after` (the id of the card's latest run when 
 string or null, "by": "person" or "agent:Moebius", "at": number}` while a person or the Moebius agent holds the card; see
 `POST /v1/cards/{id}/block`). The card is also an issue of a tracker (see [the issue tracker](#the-issue-tracker)):
 `parent` (the number of the issue it is a sub-issue of, or null), `closed` (true when the issue was closed or the card is
-in `Done`), `labels` (array of text, in order) and `claimed_by` (who claimed it, or null).
+in `Done`), `labels` (array of text, in order), `claimed_by` (who claimed it, or null) and `assignees` (the handles of
+the people it is given to, without the `@`, in the order the people were added; empty when it is no one's; see
+[Assignees](#assignees)).
 
 `Comment`: `id`, `card_id`, `author` (a forge login, `person`, `person:<handle>` or `agent:<name>`), `body`, `at`.
 
@@ -366,7 +375,8 @@ statuses of a commit, one per line, or null) and `check_output` (the
 end of the output of the repository's own checks, or null). A change's `branch` is `moebius/card-<number>`, `moebius/chat-<run id>` for the work of a chat, which has no card, `moebius/workflow-run-<run id>` for the work of a workflow run, which has none either and names the run in `run_id`, or `research/<research id>-<name>` for a lever of a research, which has none either.
 
 `InboxItem`: `id`, `kind`, `card_id` (or null), `title`, `data` (an object that depends on the kind), `resolved_at` (null
-in the snapshot, which holds only open items), `at`. Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
+in the snapshot, which holds only open items), `at` and `assignees` (the handles of the people it is given to, like a
+`Card`'s). Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
 (`data.reason`), `package_update` (`data.name`, `data.installed`, `data.version`; no card), `ready_to_merge` (`data.change`, `data.branch`, `data.run` when the change is a workflow run's, and `data.judgements`, the review's judgement calls, when it had any), `change_closed` (`data.change`, `data.pull_request`) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
 addresses, and `data.regression`: the same for the cards of the regression set, empty when none was tried; its `title` is the
@@ -377,6 +387,7 @@ instead of `data.trials`), `grilling_issues` (`data.grilling`, `data.repository`
 `data.repository`, `data.report`: the text; no card) and `takeover` (`data.takeover`, `data.kind`, `data.agreement`,
 `data.count`; its `title` is "The decision model can take over <kind>" and it has no card) and `extension_update`
 (`data.package`, `data.from`, `data.to`, `data.source`; its `title` is "<package> <from> -> <to>" and it has no card) and
+`webhook_failed` (`data.webhook`, `data.url`, `data.event`, `data.error`, `data.attempts`; its `title` says which webhook was given up on and it has no card; see [Outgoing webhooks](configuration.md#outgoing-webhooks)) and
 `workflow_approval` (`data.run`, `data.node`, `data.prompt`, `data.value` and `data.deadline` in whole seconds since the
 epoch; its `title` is the prompt and it has no card; it carries the decision a workflow run waits for, see
 [the approval node](workflows/approval.md)). The nightly schedule, from `retro_at` on, once a day, puts one
@@ -456,6 +467,13 @@ string, "name": string, "role": "owner" | "member" | "viewer"}`; the handle may 
 is 1 to 39 lowercase letters, digits, `-` and `_`, starting with a letter or a digit. Response: `{"person": Person,
 "token": AccessToken & {"token": string}}`. Errors: `403` with `only an owner can do this`, `409` for a handle that is
 taken in any case, `422` for a handle or an empty or longer than 100 characters name.
+
+### `PATCH /v1/people/{id}`
+
+An owner changes a person's role or disables or enables them. Request body: `{"role"?: "owner" | "member" | "viewer",
+"disabled"?: bool}`; what is absent stays. Disabling signs the person out at once: their tokens and sessions are
+refused. Response: the `Person`. Errors: `403` with `only an owner can do this`, `404` for no such person, `422` for
+changing the last owner who is not disabled to another role or disabling them.
 
 ### `GET /v1/people/{id}/tokens`
 
@@ -943,6 +961,26 @@ forge refused.
 Replaces the issue's labels, on the forge too. Request: `{"labels": [text]}`; blank labels and repeats are dropped. The
 event `card_labels_changed` is sent. Response: the `Card`. Errors: `404` no such card; `500` the forge refused (a Forgejo
 repository without such a label, for one).
+
+### Assignees
+
+A card and an item of the inbox can be given to people (ADR 0018). Moebius keeps assignees itself: nothing is written to
+a forge and the assignees a forge has are not read. They are the handles of people of the organisation, which column
+scripts see as `card.assignees`; what a card's assignees mean is up to the column's script, and the default `ready.luau`
+starts no work on a card that has one (see [Column scripts](column-scripts.md)). A person who was disabled after being
+assigned stays assigned until someone changes it. A member or an owner assigns, never an agent.
+
+### `PUT /v1/cards/{id}/assignees`
+
+Replaces the people the card is given to. Request: `{"assignees": [handle]}`, each with or without the `@` and in any
+case; repeats are dropped, and `[]` gives the card to no one. The event `card_assignees_changed` is sent; setting what is
+set changes nothing. Response: the `Card`. Errors: `404` no such card; `422` a handle that is nobody's, or a disabled
+person who was not assigned already.
+
+### `PUT /v1/inbox/{id}/assignees`
+
+The same for an item of the inbox, resolved or not; the event is `inbox_assignees_changed`. Response: the `InboxItem`.
+Errors: `404` no such item; `422` as above.
 
 ### `POST /v1/cards/{id}/blockers`
 
@@ -2210,6 +2248,29 @@ not allowed.
 Removes the key stored under `name`. Response: the names of the keys left. Errors: `404` there is none. A key that
 `api_key_secret` still names is not checked: the next start fails until the name is stored again.
 
+### `GET /v1/outgoing-webhooks`
+
+The outgoing webhooks, oldest first: `[{"id", "url", "kinds", "projects", "created_at"}]`, `projects` being the names of the
+repositories the hook names (empty for none). Never the secret. See [Outgoing webhooks](configuration.md#outgoing-webhooks).
+
+### `POST /v1/outgoing-webhooks`
+
+Adds a hook. Body: `{"url": "https://...", "kinds": ["card_moved"], "projects": ["name"]}`; `url` is an `http` or `https`
+address, `kinds` is at least one event kind of [the events](#events) (lowercase letters, digits and `_`),
+`projects` names repositories and may be left out. Response: the hook as above and its `secret`, a new random `whsec_...`
+shown this once and kept as `outgoing-webhook-<id>` in `secrets.toml`. Errors: `403` to a run token; `422` the url, the
+kinds or a project is not allowed.
+
+### `DELETE /v1/outgoing-webhooks/{id}`
+
+Removes the hook and its secret. Answers `204`. Errors: `403` to a run token; `404` there is no such hook.
+
+### `PUT /v1/repositories/{id}/private`
+
+An owner makes a repository private, or public again. Request: `{"private": bool}`. Response: `{"id", "private"}`. The
+events of a private repository go only to an outgoing webhook that names it (see
+[Outgoing webhooks](configuration.md#outgoing-webhooks)). Errors: `403` to a run token; `404` no such repository.
+
 ### `POST /v1/webhooks/{forge}`
 
 A forge's webhook delivery (`github`, `gitlab` or `forgejo`; see [Webhooks](configuration.md#webhooks)). It needs no
@@ -2965,6 +3026,8 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `card_updated` | The title or body of a card changed: edited through the API, or changed on GitHub, GitLab or Forgejo; or it was held or released (`held`). | The `Card`. |
 | `card_parent_changed` | An issue got a parent, was moved to another or lost it, through the API or on the forge. | `{"card": id, "parent": issue number or null}` |
 | `card_labels_changed` | The labels of an issue changed, through the API or on the forge. | `{"card": id, "labels": [text]}` |
+| `card_assignees_changed` | The people a card is given to changed. | `{"card": id, "assignees": [handle]}` |
+| `inbox_assignees_changed` | The people an inbox item is given to changed. | `{"item": id, "assignees": [handle]}` |
 | `card_blocking_changed` | A blocker was added or removed through the API, or the blockers the forge and the body name changed. | `{"card": id, "blocked_by": [number]}` (every blocker, done or not) |
 | `card_claimed` | An issue was claimed. Not sent for a claim by the claimer again. | `{"card": id, "by": text}` |
 | `card_released` | A claim was released. | `{"card": id}` |

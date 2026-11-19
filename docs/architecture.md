@@ -212,7 +212,9 @@ and does not know anything the API does not say.
     sub-issues (`App::counts_as_sub_issue`, which the snapshot's cards say too), and edges that would make issues wait
     for each other are refused (`waits_for`) or, from a forge, ignored with a `forge_error`. The routes are in `server/api/issues.rs`; `GET /v1/repositories/{id}/issues` filters. A column
     script sees `card.parent`, `card.children`, `card.labels` and `card.claimed_by`, and `moebius.close_issue` closes the
-    issue when the script returns (`Effects::close`); the default `ready.luau` uses both for a parent.
+    issue when the script returns (`Effects::close`); the default `ready.luau` uses both for a parent. A card or an inbox item can also be given to people (`App::set_assignees`, `App::set_inbox_assignees`, routes in
+    `server/api/assignees.rs`, events `card_assignees_changed` and `inbox_assignees_changed`); a script sees the handles as
+    `card.assignees`, and the default `ready.luau` leaves a card that has any in `Not started`.
 12b. **A person chats.** A chat is a run without a card and with purpose `chat`. `POST /v1/chats` (`App::start_chat`)
     calls `PiBolt::start_chat`: the run (`Store::add_run` with no card, and `Store::set_run_repository` when it works
     in a repository) gets a worktree on `moebius/chat-<id>` from the repository's base ref (`Repos::add_chat_worktree`),
@@ -479,6 +481,7 @@ At the top:
 | `app/automations/migration.rs` | The upgrade that writes an older automation's row to a workflow file in the harness configuration repository. |
 | `app/automations/view.rs` | The automations as the page and the API read them, with their next firing and latest one; and the old routes' save and delete of the workflow file behind a row. |
 | `app/automations/cron.rs` | A schedule: a cron expression of five fields in the server's local time, parsed, and the next minute it comes due. |
+| `app/assignees.rs` | Giving a card or an inbox item to people: the handles are checked against the people of the organisation, the set is replaced, and a change is announced. |
 | `app/chat_access.rs` | Whose a chat is: its owner reads and writes it, others read it once it is shared, and the lists `mine` and `shared`; the Retro reads the store and so every chat. |
 | `app/chats.rs` | Chats: starting one, continuing an ended one, writing to it, its model and reasoning, ending it, and the list of chats. |
 | `app/deletions.rs` | Deleting a chat: a chat that is going is stopped, then it is taken out of the store with its changes, inbox items and grillings, and its worktree and branch are removed; also the stop-and-wait that research and grillings share. |
@@ -541,6 +544,7 @@ At the top:
 | `store/mod.rs` | The store: opening the SQLite database, its migrations, the connection and the server's local clock, the helpers that read rows, and every record type re-exported as `store::<Type>`. |
 | `store/cards.rs` | Repositories, their cards, whether a card is held, the issues that block a card, the moves of a card between columns, deleting a card or a repository with all it has, and the numbers of deleted cards. |
 | `store/access.rs` | Access tokens and the sessions of browsers, each kept as the SHA-256 of its secret: making, finding a person by one, the last use, revoking, and ending sessions. |
+| `store/assignees.rs` | Who a card or an inbox item is given to: the tables `card_assignees` and `inbox_assignees`, set as a whole and read as handles. |
 | `store/people.rs` | The people of the organisation (id, handle, display name, role, disabled), never deleted, and the migration that makes the first owner and gives them the records from before that say `person`. |
 | `store/issues.rs` | What an issue has besides its text: its parent, labels, claim, whether it was closed, and its comments. |
 | `store/changes.rs` | Changes: a branch offered for merging, with its pull request, checks and review. |
@@ -548,6 +552,7 @@ At the top:
 | `store/runs.rs` | Runs: an agent's work in a harness, from its start to its end. |
 | `store/workflows.rs` | Workflow runs and the runs of each node of them, with their value, input and output redacted before they are stored. |
 | `store/workflow_schedules.rs` | The minute each workflow on a `schedule` trigger last fired at, so one occurrence of its cron starts one run even when the server restarts in between. |
+| `store/outgoing.rs` | The outgoing webhooks (URL, event kinds, projects named) and the flag that makes a repository private. |
 | `store/favourites.rs` | The places a person pinned, in their order, and the places they opened lately (the last 20), kept per person so they follow them to every browser. |
 | `store/events.rs` | A run's events, in order, redacted before they are stored. |
 | `store/automations.rs` | Automations, their firings with the status of each chat, and the server's local minute; the workflow file is the definition and the row keeps the id the firings use. |
@@ -589,6 +594,7 @@ At the top:
 | `server/fake_forgejo.rs` | For the tests only: a fake Forgejo with one repository, a server that polls it, and the tests of the Forgejo forge through it. |
 | `server/api/mod.rs` | The desktop API: the state it needs, the token check, the router that merges the routes of its parts, how a failure becomes a status, and `GET /v1/health`. |
 | `server/api/cards.rs` | The snapshot of every board, issues, cards and their changes (edit, approve, block, unblock, delete, retry, merge, reject), a card's runs and history. |
+| `server/api/assignees.rs` | The routes that give a card or an inbox item to people. |
 | `server/api/issues.rs` | The issue tracker's routes: the issue list and one issue, parent, labels, blockers, claim, close and reopen, comments. |
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
 | `server/api/runs.rs` | A run and its events in pages, steering and stopping it. |
@@ -626,7 +632,9 @@ At the top:
 | `server/settings/keys.rs` | Every key with its default and whether it takes effect at once, and their values without passwords. |
 | `server/settings/live.rs` | The configuration the running server reads: a change saved and its live keys applied, the agents and rules moved into a new harness configuration repository, and the restart. |
 | `server/settings/secrets.rs` | The API keys kept in `secrets.toml`, and the keys the upstreams and the decision model are given. |
+| `server/outgoing.rs` | Outgoing webhooks: listens to the bus, picks the hooks that want an event's kind and may see its project (a private project's events go only to a hook that names it), posts it signed with HMAC-SHA256, retries with backoff, and gives up with a `webhook_failed` item in the inbox. |
 | `server/webhooks.rs` | Webhooks from the forges (ADR 0012): the check of a delivery against the secret of its forge (HMAC-SHA256 or token, in constant time), and the wake-up that makes the poll of a forge run at once. |
+| `server/api/outgoing.rs` | `GET` and `POST /v1/outgoing-webhooks` and `DELETE /v1/outgoing-webhooks/{id}`: the owner's outgoing webhooks, and the secret each is signed with. |
 | `server/api/webhooks.rs` | `POST /v1/webhooks/{forge}` (no token, a signature instead), `GET /v1/webhooks` and `POST /v1/webhooks/{forge}/secret`. |
 | `server/setup.rs` | What the Models, Plugins and Get started pages show: the router's upstreams, the agents, the teacher, the decision model and the plugins, without a secret, and the steps to a first card (`GET /v1/start`). |
 

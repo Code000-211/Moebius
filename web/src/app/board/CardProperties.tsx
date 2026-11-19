@@ -2,7 +2,8 @@
  * The properties of the card in the dock, in the page's right column (`ui/page/Properties.tsx`): every fact the dock
  * used to list beside the issue — where the card is, who wrote it, what it waits for, its run, checks and cost — and
  * what a person changes about the issue, each edited in place and saved alone (`ui/page/EditableProperty.tsx`): its
- * title, whether it is open, who claimed it, its parent, its blockers and its labels. Each save is a request to the
+ * title, whether it is open, who it is given to (its assignees), who claimed it, its parent, its blockers and its
+ * labels. Each save is a request to the
  * server (`api/calls/board.ts`) that reads the board again once answered, and what the server refuses is said under
  * the property that asked. The dock keeps the issue's text, its change and what a person decides.
  */
@@ -17,6 +18,7 @@ import {
   release,
   removeBlocker,
   reopenIssue,
+  setAssignees,
   setLabels,
   setParent,
 } from "../../api/calls/board";
@@ -25,6 +27,7 @@ import type { Board, Card, InboxItem } from "../../api/types/board";
 import { EditableProperty, ListProperty } from "../../ui/page/EditableProperty";
 import { MarkLabel, type StateMark } from "../../ui/page/MarkLabel";
 import { PageProperties, Property } from "../../ui/page/Properties";
+import { AssigneesProperty } from "../people/AssigneesProperty";
 import {
   type CardStatus,
   cardStatus,
@@ -143,6 +146,10 @@ export function CardProperties({
       <Property name="Column">{card.column}</Property>
       <Property name="Repository">{board.repository.name}</Property>
       <Property name="Author">{card.author}</Property>
+      <AssigneesProperty
+        assignees={card.assignees}
+        onSave={(next) => saved(setAssignees(card.id, next))}
+      />
       <EditableProperty
         name="Claim"
         editor={{

@@ -6,7 +6,7 @@
 //! left going, `loops` holds the board's tick, the polls of the forges and the refresh of the clones, and `schedule` what is
 //! looked at once a minute. `api` is the desktop API, `settings` edits `moebius.toml` while the server runs, and
 //! `setup` is what the Models, Plugins and Get started pages show. `plugins` starts the plugins in their own process, `packages` is the package manager, and
-//! `webhooks` is how a forge's webhook wakes its poll.
+//! `webhooks` is how a forge's webhook wakes its poll, and `outgoing` posts events to the URLs of the owner's outgoing webhooks.
 
 pub mod api;
 #[cfg(test)]
@@ -17,6 +17,7 @@ mod fake_github;
 mod fake_gitlab;
 mod leftovers;
 mod loops;
+pub mod outgoing;
 pub mod packages;
 pub mod plugins;
 pub mod ports;
@@ -430,8 +431,14 @@ impl Server {
             ))
             .merge(lessons::tool::routes(self.app.clone(), self.router.clone()))
             .merge(gateway.clone().routes());
+        let outgoing = outgoing::Outgoing::new(
+            self.app.clone(),
+            self.live.secrets().clone(),
+            outgoing::Policy::default(),
+        );
         tokio::select! {
             served = api::serve(api_listener, state) => served,
+            () = outgoing.run() => Ok(()),
             served = axum::serve(router_listener, router_routes) => served,
             () = gateway.stop_ended_runs() => Ok(()),
             () = loops::board(self.clone()) => Ok(()),

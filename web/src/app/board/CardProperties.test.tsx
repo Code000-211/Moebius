@@ -38,6 +38,7 @@ const card = (id: number, extra: Partial<Card> = {}): Card => ({
   closed: false,
   labels: [],
   claimed_by: null,
+  assignees: [],
   ...extra,
 });
 
@@ -57,6 +58,12 @@ const board = (cards: Card[], waiting: Record<string, string> = {}): Board => ({
   changes: [],
 });
 
+const PEOPLE = [
+  { id: 1, handle: "owner", name: "Owner", role: "owner", disabled: false, created_at: 0 },
+  { id: 2, handle: "lea", name: "Lea", role: "member", disabled: false, created_at: 0 },
+  { id: 3, handle: "tom", name: "Tom", role: "member", disabled: true, created_at: 0 },
+];
+
 /** The requests a server was sent, as method, path and body; it answers with `answer` for each path it has one for. */
 function server(answers: Record<string, { status: number; body: unknown }> = {}) {
   const sent: Array<[string, string, unknown]> = [];
@@ -64,6 +71,10 @@ function server(answers: Record<string, { status: number; body: unknown }> = {})
     "fetch",
     vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
       const method = init?.method ?? "GET";
+      // Who can be given the card is read once and is no save: it is answered here and left out of what was sent.
+      if (method === "GET" && url === "/v1/people") {
+        return { ok: true, status: 200, text: async () => JSON.stringify(PEOPLE) };
+      }
       sent.push([method, url, init?.body ? JSON.parse(init.body) : undefined]);
       const answer = answers[`${method} ${url}`] ?? { status: 200, body: {} };
       return {
@@ -313,5 +324,47 @@ describe("the number of an issue as typed", () => {
     expect(() => issueNumber("0")).toThrow();
     expect(() => issueNumber("1.5")).toThrow();
     expect(() => issueNumber("twelve")).toThrow();
+  });
+});
+
+describe("the assignees of a card", () => {
+  it("offers the people who are not disabled and saves the whole set when one is added", async () => {
+    const sent = server();
+    properties(card(5, { assignees: ["owner"] }));
+    fireEvent.keyDown(screen.getByRole("button", { name: "Assignee @owner" }), { key: "Enter" });
+    expect(
+      (await screen.findByRole("menuitemcheckbox", { name: "Owner (@owner)" })).getAttribute(
+        "aria-checked",
+      ),
+    ).toBe("true");
+    expect(
+      screen.getByRole("menuitemcheckbox", { name: "Lea (@lea)" }).getAttribute("aria-checked"),
+    ).toBe("false");
+    expect(screen.queryByRole("menuitemcheckbox", { name: /tom/ })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Lea (@lea)" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual(["PUT", "/v1/cards/5/assignees", { assignees: ["owner", "lea"] }]);
+  });
+
+  it("takes a person off, and keeps showing one who was disabled after being assigned", async () => {
+    const sent = server();
+    properties(card(5, { assignees: ["lea", "tom"] }));
+    fireEvent.keyDown(screen.getByRole("button", { name: /^Assignee @lea/ }), {
+      key: "Enter",
+    });
+    // The people are read once the menu is open, so wait for a name only they give.
+    const lea = await screen.findByRole("menuitemcheckbox", { name: "Lea (@lea)" });
+    expect(
+      screen.getByRole("menuitemcheckbox", { name: "@tom" }).getAttribute("aria-checked"),
+    ).toBe("true");
+    fireEvent.click(lea);
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual(["PUT", "/v1/cards/5/assignees", { assignees: ["tom"] }]);
+  });
+
+  it("says no one while the card is given to nobody", () => {
+    server();
+    properties(card(5));
+    expect(screen.getByRole("button", { name: "Assignee No one" })).toBeTruthy();
   });
 });
