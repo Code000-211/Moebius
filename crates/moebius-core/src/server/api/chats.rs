@@ -24,7 +24,7 @@ use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 
 use super::{ApiError, ApiState, Reason, blocking};
-use crate::app::Chat;
+use crate::app::{Chat, ChatScope};
 use crate::decide::Actor;
 use crate::harness::grilling;
 use crate::store::{Change, Grilling, GrillingIssue, Run};
@@ -41,6 +41,7 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/chats/{id}/seen", post(chat_seen))
         .route("/v1/chats/{id}/settings", post(change_chat_settings))
         .route("/v1/chats/{id}/title", post(rename_chat))
+        .route("/v1/chats/{id}/share", post(share_chat))
         .route("/v1/grillings", get(grillings))
         .route(
             "/v1/grillings/{id}",
@@ -113,17 +114,42 @@ pub struct ChatMessage {
 struct ChatsQuery {
     #[serde(default)]
     all: bool,
+    /// `mine`, `shared` or `all` (the default): the chats the person started, those others shared, or both.
+    scope: Option<String>,
 }
 
-async fn grillings(State(state): State<ApiState>) -> Result<axum::Json<Vec<Grilling>>, ApiError> {
-    blocking(&state.app, |app| Ok(app.store.grillings()?)).await
+/// The body of `POST /v1/chats/{id}/share`: whether the chat is shared with every person of the organisation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatShare {
+    pub shared: bool,
+}
+
+async fn grillings(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+) -> Result<axum::Json<Vec<Grilling>>, ApiError> {
+    blocking(&state.app, move |app| {
+        Ok(app
+            .store
+            .grillings()?
+            .into_iter()
+            .filter(|grilling| app.chat_access(&by, grilling.run_id, false).is_ok())
+            .collect())
+    })
+    .await
 }
 
 async fn get_grilling(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
 ) -> Result<axum::Json<Grilling>, ApiError> {
-    blocking(&state.app, move |app| grilling::view(app, id)).await
+    blocking(&state.app, move |app| {
+        let view = grilling::view(app, id)?;
+        app.chat_access(&by, view.run_id, false)?;
+        Ok(view)
+    })
+    .await
 }
 
 /// The body of `POST /v1/grillings/{id}/confirm`: the issues as the person left them.
@@ -139,6 +165,8 @@ async fn confirm_grilling(
     axum::Json(confirmed): axum::Json<ConfirmedIssues>,
 ) -> Result<axum::Json<Grilling>, ApiError> {
     blocking(&state.app, move |app| {
+        let run = grilling::view(app, id)?.run_id;
+        app.chat_access(&by, run, true)?;
         grilling::confirm(app, &by, id, confirmed.issues)
     })
     .await
@@ -153,6 +181,8 @@ async fn delete_grilling(
     let reason = body.map(|body| body.0.reason).unwrap_or_default();
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {
+        let run = grilling::view(app, id)?.run_id;
+        app.chat_access(&by, run, true)?;
         grilling::delete(app, &by, &*runs, id, &reason)
     })
     .await
@@ -167,6 +197,7 @@ async fn delete_chat(
     let reason = body.map(|body| body.0.reason).unwrap_or_default();
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {
+        app.chat_access(&by, id, true)?;
         app.delete_chat(&by, &*runs, id, &reason)
     })
     .await
@@ -174,9 +205,15 @@ async fn delete_chat(
 
 async fn dismiss_grilling(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
 ) -> Result<axum::Json<Grilling>, ApiError> {
-    blocking(&state.app, move |app| grilling::dismiss(app, id)).await
+    blocking(&state.app, move |app| {
+        let run = grilling::view(app, id)?.run_id;
+        app.chat_access(&by, run, true)?;
+        grilling::dismiss(app, id)
+    })
+    .await
 }
 
 /// The protocols the router's upstreams list `model` under, or the models of the class it names; none without a model.
@@ -199,11 +236,16 @@ async fn served(state: &ApiState, model: Option<&str>) -> Vec<crate::router::Pro
 
 async fn start_chat(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     axum::Json(chat): axum::Json<NewChat>,
 ) -> Result<axum::Json<Run>, ApiError> {
     let runs = state.runs.clone();
     let served = served(&state, chat.model.as_deref()).await;
     blocking(&state.app, move |app| {
+        // A chat goes on from one the person may read, which is told to the agent.
+        if let Some(earlier) = chat.continues {
+            app.chat_access(&by, earlier, false)?;
+        }
         app.start_chat(
             &*runs,
             chat.agent.as_deref(),
@@ -213,6 +255,10 @@ async fn start_chat(
             chat.context.as_deref(),
             chat.continues,
             chat.origin.as_deref(),
+            match by {
+                Actor::Member { id, .. } => Some(id),
+                _ => None,
+            },
             (chat.model.as_deref(), chat.thinking.as_deref(), &served),
         )
     })
@@ -221,12 +267,14 @@ async fn start_chat(
 
 async fn change_chat_settings(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(settings): axum::Json<NewChatSettings>,
 ) -> Result<axum::Json<Run>, ApiError> {
     let runs = state.runs.clone();
     let served = served(&state, settings.model.as_deref()).await;
     blocking(&state.app, move |app| {
+        app.chat_access(&by, id, true)?;
         let chosen = (
             settings.model.as_deref(),
             settings.thinking.as_deref(),
@@ -239,26 +287,47 @@ async fn change_chat_settings(
 
 async fn rename_chat(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(named): axum::Json<ChatTitle>,
 ) -> Result<axum::Json<Chat>, ApiError> {
-    blocking(&state.app, move |app| app.rename_chat(id, &named.title)).await
+    blocking(&state.app, move |app| {
+        app.chat_access(&by, id, true)?;
+        app.rename_chat(&by, id, &named.title)
+    })
+    .await
+}
+
+async fn share_chat(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    axum::Json(share): axum::Json<ChatShare>,
+) -> Result<axum::Json<Chat>, ApiError> {
+    blocking(&state.app, move |app| app.share_chat(&by, id, share.shared)).await
 }
 
 async fn chats(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     Query(query): Query<ChatsQuery>,
 ) -> Result<axum::Json<Vec<Chat>>, ApiError> {
-    blocking(&state.app, move |app| app.chats(query.all)).await
+    blocking(&state.app, move |app| {
+        let scope = ChatScope::parse(query.scope.as_deref())?;
+        app.chats_for(&by, query.all, scope)
+    })
+    .await
 }
 
 async fn say_in_chat(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(said): axum::Json<ChatMessage>,
 ) -> Result<axum::Json<Run>, ApiError> {
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {
+        app.chat_access(&by, id, true)?;
         app.say_in_chat(&*runs, id, &said.message, said.context.as_deref())
     })
     .await
@@ -272,6 +341,7 @@ async fn offer_chat_changes(
 ) -> Result<axum::Json<Change>, ApiError> {
     let reason = body.map(|body| body.0.reason).unwrap_or_default();
     blocking(&state.app, move |app| {
+        app.chat_access(&by, id, true)?;
         app.offer_chat_changes(&by, id, &reason)
     })
     .await
@@ -279,19 +349,29 @@ async fn offer_chat_changes(
 
 async fn end_chat(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
 ) -> Result<axum::Json<Run>, ApiError> {
     let runs = state.runs.clone();
-    blocking(&state.app, move |app| app.end_chat(&*runs, id)).await
+    blocking(&state.app, move |app| {
+        app.chat_access(&by, id, true)?;
+        app.end_chat(&*runs, id)
+    })
+    .await
 }
 
 /// What a grilling chat that waits has left goes into the inbox (see [`crate::app::App::publish_grilling`]); the chat
 /// keeps going.
 async fn publish_grilling(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
 ) -> Result<axum::Json<Grilling>, ApiError> {
-    blocking(&state.app, move |app| app.publish_grilling(id)).await
+    blocking(&state.app, move |app| {
+        app.chat_access(&by, id, true)?;
+        app.publish_grilling(id)
+    })
+    .await
 }
 
 /// How far a person has read a chat.
@@ -302,10 +382,12 @@ struct Seen {
 
 async fn chat_seen(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(seen): axum::Json<Seen>,
 ) -> Result<axum::Json<serde_json::Value>, ApiError> {
     blocking(&state.app, move |app| {
+        app.chat_access(&by, id, true)?;
         app.mark_chat_seen(id, seen.seq)
             .map(|()| serde_json::json!({}))
     })
@@ -1293,5 +1375,238 @@ mod tests {
             .map(|c| c.branch)
             .collect();
         assert_eq!(branches, [run.branch(), writing.branch()]);
+    }
+
+    /// A person with the role `role` and a token for them; `n` makes the token differ from other tests' tokens.
+    fn person_token(state: &ApiState, handle: &str, n: u32) -> (i64, String) {
+        let person = state
+            .app
+            .store
+            .add_person(handle, handle, crate::store::Role::Member)
+            .unwrap();
+        let token = format!("{}{:064}", crate::server::api::TOKEN_PREFIX, n);
+        state
+            .app
+            .store
+            .add_access_token(person.id, "test", &token)
+            .unwrap();
+        (person.id, token)
+    }
+
+    async fn call(
+        addr: &str,
+        token: &str,
+        method: reqwest::Method,
+        path: &str,
+        body: serde_json::Value,
+    ) -> reqwest::Response {
+        reqwest::Client::new()
+            .request(method, format!("http://{addr}{path}"))
+            .bearer_auth(token)
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_second_member_neither_reads_nor_writes_a_chat_until_it_is_shared_and_then_only_reads()
+     {
+        use reqwest::Method;
+        let (_dir, state, addr) = crate::server::api::testing::start().await;
+        let (lea, lea_token) = person_token(&state, "lea", 21);
+        let (_, ben_token) = person_token(&state, "ben", 22);
+        let run = state
+            .app
+            .store
+            .add_run(None, "Moebius", "fake", "chat")
+            .unwrap();
+        state.app.store.set_chat_owner(run.id, lea).unwrap();
+        let id = run.id;
+        let answer = |token: &str, method: Method, path: String, body: serde_json::Value| {
+            let (token, addr) = (token.to_string(), addr.clone());
+            async move { call(&addr, &token, method, &path, body).await.status() }
+        };
+        let reads = [
+            format!("/v1/runs/{id}"),
+            format!("/v1/runs/{id}/events"),
+            format!("/v1/runs/{id}/diff"),
+        ];
+        let writes = [
+            (
+                Method::POST,
+                format!("/v1/chats/{id}/messages"),
+                serde_json::json!({"message": "hi"}),
+            ),
+            (
+                Method::POST,
+                format!("/v1/chats/{id}/title"),
+                serde_json::json!({"title": "mine"}),
+            ),
+            (
+                Method::POST,
+                format!("/v1/chats/{id}/seen"),
+                serde_json::json!({"seq": 1}),
+            ),
+            (
+                Method::POST,
+                format!("/v1/chats/{id}/end"),
+                serde_json::json!({}),
+            ),
+            (
+                Method::POST,
+                format!("/v1/chats/{id}/offer"),
+                serde_json::json!({}),
+            ),
+            (
+                Method::POST,
+                format!("/v1/chats/{id}/settings"),
+                serde_json::json!({"thinking": "low"}),
+            ),
+            (
+                Method::POST,
+                format!("/v1/runs/{id}/steer"),
+                serde_json::json!({"message": "x"}),
+            ),
+            (
+                Method::POST,
+                format!("/v1/runs/{id}/stop"),
+                serde_json::json!({"reason": "x"}),
+            ),
+            (
+                Method::DELETE,
+                format!("/v1/chats/{id}"),
+                serde_json::json!({}),
+            ),
+            (
+                Method::POST,
+                format!("/v1/chats/{id}/share"),
+                serde_json::json!({"shared": true}),
+            ),
+        ];
+
+        // Not shared: the other member is refused everything and does not see it listed.
+        for path in &reads {
+            assert_eq!(
+                answer(&ben_token, Method::GET, path.clone(), serde_json::json!({})).await,
+                403,
+                "{path}"
+            );
+            assert_eq!(
+                answer(&lea_token, Method::GET, path.clone(), serde_json::json!({})).await,
+                200,
+                "{path}"
+            );
+        }
+        for (method, path, body) in &writes {
+            assert_eq!(
+                answer(&ben_token, method.clone(), path.clone(), body.clone()).await,
+                403,
+                "{path}"
+            );
+        }
+        // The terminal route needs a WebSocket upgrade, so the shell is checked on the app.
+        let ben_actor = state.app.store.person_by_handle("ben").unwrap().unwrap();
+        let ben_actor = crate::decide::Actor::person(ben_actor.id, "ben");
+        assert!(matches!(
+            state.app.open_shell(&ben_actor, id),
+            Err(crate::app::AppError::Forbidden(_))
+        ));
+        let listed = |token: String, scope: &'static str| {
+            let addr = addr.clone();
+            async move {
+                let response = call(
+                    &addr,
+                    &token,
+                    Method::GET,
+                    &format!("/v1/chats?all=true&scope={scope}"),
+                    serde_json::json!({}),
+                )
+                .await;
+                assert_eq!(response.status(), 200);
+                response.json::<Vec<Chat>>().await.unwrap()
+            }
+        };
+        assert!(listed(ben_token.clone(), "all").await.is_empty());
+        assert_eq!(listed(lea_token.clone(), "mine").await.len(), 1);
+        assert!(listed(lea_token.clone(), "shared").await.is_empty());
+        assert_eq!(
+            answer(
+                &lea_token,
+                Method::GET,
+                "/v1/chats?scope=nobody".into(),
+                serde_json::json!({})
+            )
+            .await,
+            422
+        );
+
+        // Shared: read by the other member, still written by the owner alone.
+        let shared = call(
+            &addr,
+            &lea_token,
+            Method::POST,
+            &format!("/v1/chats/{id}/share"),
+            serde_json::json!({"shared": true}),
+        )
+        .await;
+        assert_eq!(shared.status(), 200);
+        for path in &reads {
+            assert_eq!(
+                answer(&ben_token, Method::GET, path.clone(), serde_json::json!({})).await,
+                200,
+                "{path}"
+            );
+        }
+        for (method, path, body) in &writes {
+            assert_eq!(
+                answer(&ben_token, method.clone(), path.clone(), body.clone()).await,
+                403,
+                "{path}"
+            );
+        }
+        let theirs = listed(ben_token.clone(), "shared").await;
+        assert_eq!(theirs.len(), 1);
+        assert!(theirs[0].shared && !theirs[0].mine);
+        assert_eq!(theirs[0].owner.as_deref(), Some("lea"));
+        assert!(listed(ben_token.clone(), "mine").await.is_empty());
+        assert_eq!(listed(lea_token.clone(), "mine").await.len(), 1);
+        assert!(listed(lea_token.clone(), "shared").await.is_empty());
+
+        // Taken back, it is private again.
+        let back = call(
+            &addr,
+            &lea_token,
+            Method::POST,
+            &format!("/v1/chats/{id}/share"),
+            serde_json::json!({"shared": false}),
+        )
+        .await;
+        assert_eq!(back.status(), 200);
+        assert!(listed(ben_token, "all").await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_servers_token_acts_as_the_first_owner_of_the_chats_it_lists() {
+        let (_dir, state, addr) = crate::server::api::testing::start().await;
+        let (_, ben_token) = person_token(&state, "ben", 23);
+        let run = state
+            .app
+            .store
+            .add_run(None, "Moebius", "fake", "chat")
+            .unwrap();
+        state.app.store.set_chat_owner(run.id, 1).unwrap();
+        let mine: Vec<Chat> = get(&state, &addr, "/v1/chats?all=true&scope=mine").await;
+        assert_eq!(mine.len(), 1, "the server's token acts as the first owner");
+        assert!(mine[0].mine);
+        let theirs = call(
+            &addr,
+            &ben_token,
+            reqwest::Method::GET,
+            "/v1/chats?all=true",
+            serde_json::json!({}),
+        )
+        .await;
+        assert!(theirs.json::<Vec<Chat>>().await.unwrap().is_empty());
     }
 }

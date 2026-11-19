@@ -27,6 +27,12 @@ export interface Chat {
   /** The model the chat was given in place of its agent's; null while it uses its agent's. */
   model: string | null;
   thinking: string | null;
+  /** The handle of the person who started the chat; null for a chat that belongs to everyone. */
+  owner: string | null;
+  /** Whether other people read the chat: its owner shared it, or it has no owner. */
+  shared: boolean;
+  /** Whether the person asking started the chat. */
+  mine: boolean;
 }
 
 /** The body of `POST /v1/chats`; every field is optional. */

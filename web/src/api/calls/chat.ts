@@ -57,6 +57,11 @@ export function nameChat(chat: number, title: string): Promise<Chat> {
   return post<Chat>(`/v1/chats/${chat}/title`, { title });
 }
 
+/** The owner of a chat shares it with every person of the organisation, or takes it back. */
+export function shareChat(chat: number, shared: boolean): Promise<Chat> {
+  return post<Chat>(`/v1/chats/${chat}/share`, { shared });
+}
+
 /** Deletes a chat with its changes, inbox items and branch; the server stops it first when it is going. */
 export async function deleteChat(chat: number): Promise<void> {
   await del<unknown>(`/v1/chats/${chat}`);

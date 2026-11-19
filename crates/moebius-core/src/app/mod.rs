@@ -18,6 +18,7 @@ mod automations;
 mod board;
 mod cards;
 mod changes;
+mod chat_access;
 mod chats;
 mod checks;
 mod deletions;
@@ -62,6 +63,7 @@ pub use automations::{
 };
 pub use board::{BoardFacts, CardFacts};
 pub use cards::HistoryEntry;
+pub use chat_access::{ChatScope, may_use};
 pub use chats::{ASSISTANT_ORIGIN, CHAT_ORIGIN, Chat, ChatSettings};
 pub(crate) use checks::tail;
 pub(crate) use deletions::list;

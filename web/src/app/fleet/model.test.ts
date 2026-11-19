@@ -63,6 +63,9 @@ const chat = (id: number, extra: Partial<Chat>): Chat => ({
   origin: "chat",
   model: null,
   thinking: null,
+  owner: null,
+  shared: false,
+  mine: true,
   ...extra,
 });
 

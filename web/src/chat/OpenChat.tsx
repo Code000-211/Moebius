@@ -28,7 +28,7 @@ import { Composer } from "./Composer";
 import { draftKey, readDraft, saveDraft } from "./drafts";
 import { agentGone, endedHint, isOpen, isWorking, takesMessage } from "./format";
 import { offeredChange, placeName } from "./places";
-import { seqToMark } from "./readMarkers";
+import { seqToMark, writes } from "./readMarkers";
 import { Starters } from "./Starters";
 import { ThreadView } from "./ThreadView";
 import { useThread } from "./useThread";
@@ -283,31 +283,37 @@ export function OpenChat({
         </div>
       </div>
       <OfferedChange chat={chat} snapshot={snapshot} />
-      <Composer
-        value={message}
-        onChange={write}
-        onSend={() => void send()}
-        canSend={message.trim() !== "" && !sending}
-        // A chat that takes no message says on the button what pressing it really does: it starts a chat that carries
-        // this one on. The chip beside Send is where the state itself is said.
-        sendLabel={writesHere ? "Send" : "Continue"}
-        sendTitle={writesHere ? undefined : "Starts a new chat, told what was said in this one"}
-        // The field names who the message goes to, which is what the agent pill used to say and is the one thing
-        // worth reading there. A chat that takes no message has nobody to write to, so the field says why, and what
-        // the button does about it.
-        placeholder={writesHere ? `Write to ${chat.agent}` : endedHint(chat.status, chat.agent)}
-        pills={<Tag>{place ?? "no repository"}</Tag>}
-        actions={
-          <ChatChip
-            chat={chat}
-            openId={id}
-            onNotice={onNotice}
-            beside
-            shown={panel}
-            onShown={setPanel}
-          />
-        }
-      />
+      {writes(chat) ? (
+        <Composer
+          value={message}
+          onChange={write}
+          onSend={() => void send()}
+          canSend={message.trim() !== "" && !sending}
+          // A chat that takes no message says on the button what pressing it really does: it starts a chat that carries
+          // this one on. The chip beside Send is where the state itself is said.
+          sendLabel={writesHere ? "Send" : "Continue"}
+          sendTitle={writesHere ? undefined : "Starts a new chat, told what was said in this one"}
+          // The field names who the message goes to, which is what the agent pill used to say and is the one thing
+          // worth reading there. A chat that takes no message has nobody to write to, so the field says why, and what
+          // the button does about it.
+          placeholder={writesHere ? `Write to ${chat.agent}` : endedHint(chat.status, chat.agent)}
+          pills={<Tag>{place ?? "no repository"}</Tag>}
+          actions={
+            <ChatChip
+              chat={chat}
+              openId={id}
+              onNotice={onNotice}
+              beside
+              shown={panel}
+              onShown={setPanel}
+            />
+          }
+        />
+      ) : (
+        <p className="shrink-0 text-sm leading-relaxed text-secondary" data-testid="chat-read-only">
+          Shared by @{chat.owner}. You read it here; only they write to it.
+        </p>
+      )}
       {hint && (
         <p
           className={cn(

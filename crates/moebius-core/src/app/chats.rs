@@ -9,11 +9,13 @@ use std::sync::{Arc, MutexGuard};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use super::chat_access::{ChatScope, is_owner};
 use super::{App, AppError, Result};
 use crate::blobs::redact;
 use crate::board::Runs;
 use crate::bus::Event;
 use crate::config::{AgentConfig, THINKING_LEVELS};
+use crate::decide::Actor;
 use crate::harness::terminal::tui_key;
 use crate::repos::git;
 use crate::router::Protocol;
@@ -55,6 +57,16 @@ pub struct Chat {
     /// The reasoning level the chat was given in place of its agent's; none while it runs with its agent's.
     #[serde(default)]
     pub thinking: Option<String>,
+    /// The handle of the person who started the chat; none for a chat without an owner (one from before chats had
+    /// owners, or an automation's), which belongs to everyone.
+    #[serde(default)]
+    pub owner: Option<String>,
+    /// Whether other people read the chat: its owner shared it, or it has no owner.
+    #[serde(default)]
+    pub shared: bool,
+    /// Whether the person who asked for the list started the chat.
+    #[serde(default)]
+    pub mine: bool,
 }
 
 /// How many of the latest events of a chat are looked through for a call of the question tool.
@@ -217,6 +229,7 @@ impl App {
         context: Option<&str>,
         continues: Option<i64>,
         origin: Option<&str>,
+        owner: Option<i64>,
         (model, thinking, served): (Option<&str>, Option<&str>, &[Protocol]),
     ) -> Result<Run> {
         let origin = origin.unwrap_or(CHAT_ORIGIN);
@@ -285,16 +298,22 @@ impl App {
             with_context(context, &told)
         });
         let place = (repository.as_ref(), harness);
-        runs.start_chat(
-            self,
-            agent,
-            place,
-            message,
-            prompt.as_deref(),
-            origin,
-            &settings,
-        )
-        .map_err(|e| AppError::Invalid(e.to_string()))
+        let mut run = runs
+            .start_chat(
+                self,
+                agent,
+                place,
+                message,
+                prompt.as_deref(),
+                origin,
+                &settings,
+            )
+            .map_err(|e| AppError::Invalid(e.to_string()))?;
+        if let Some(owner) = owner {
+            self.store.set_chat_owner(run.id, owner)?;
+            run.owner_id = Some(owner);
+        }
+        Ok(run)
     }
 
     /// What the chat `run_id` runs with in place of its agent's: what its latest `settings_changed` event holds.
@@ -605,12 +624,24 @@ impl App {
             .chats()?
             .into_iter()
             .filter(|run| all || run.origin != ASSISTANT_ORIGIN)
-            .map(|run| self.chat_view(&run))
+            .map(|run| self.chat_view(&run, None))
             .collect()
     }
 
-    /// The chat `run` as the list of chats shows it.
-    fn chat_view(&self, run: &Run) -> Result<Chat> {
+    /// The chats `by` may read and `scope` holds, newest first: their own, and those others shared; without
+    /// `all`, not those of the web app's floating window.
+    pub fn chats_for(&self, by: &Actor, all: bool, scope: ChatScope) -> Result<Vec<Chat>> {
+        self.store
+            .chats()?
+            .into_iter()
+            .filter(|run| all || run.origin != ASSISTANT_ORIGIN)
+            .filter(|run| scope.holds(by, run))
+            .map(|run| self.chat_view(&run, Some(by)))
+            .collect()
+    }
+
+    /// The chat `run` as the list of chats shows it to `viewer`, if there is one.
+    pub(super) fn chat_view(&self, run: &Run, viewer: Option<&Actor>) -> Result<Chat> {
         let settings = self.chat_settings(run.id)?;
         Ok(Chat {
             id: run.id,
@@ -630,6 +661,9 @@ impl App {
             origin: run.origin.clone(),
             model: settings.model,
             thinking: settings.thinking,
+            owner: self.chat_owner_handle(run),
+            shared: run.shared || run.owner_id.is_none(),
+            mine: viewer.is_some_and(|by| is_owner(by, run)),
         })
     }
 
@@ -659,12 +693,12 @@ impl App {
 
     /// Names the chat `run_id` `title`, in place of the title taken from its first message, and returns it as the list
     /// of chats shows it. An empty name gives that title back.
-    pub fn rename_chat(&self, run_id: i64, title: &str) -> Result<Chat> {
+    pub fn rename_chat(&self, by: &Actor, run_id: i64, title: &str) -> Result<Chat> {
         let run = self.chat(run_id)?;
         let named: String = title.trim().chars().take(TITLE_LENGTH).collect();
         let title = if named.is_empty() { None } else { Some(named) };
         self.store.set_run_title(run_id, title.as_deref())?;
-        let chat = self.chat_view(&Run { title, ..run })?;
+        let chat = self.chat_view(&Run { title, ..run }, Some(by))?;
         self.bus.publish(Event::ChatRenamed {
             run: run_id,
             title: chat.title.clone(),
@@ -1107,7 +1141,7 @@ mod tests {
         };
         let asks_now = || {
             app.store.set_run_status(run.id, "waiting").unwrap();
-            app.chat_view(&app.run(run.id).unwrap()).unwrap().asks
+            app.chat_view(&app.run(run.id).unwrap(), None).unwrap().asks
         };
 
         record("said", serde_json::json!({ "message": "Plan it" }));
@@ -1128,7 +1162,7 @@ mod tests {
         call("ask_user_question");
         app.store.set_run_status(run.id, "running").unwrap();
         assert!(
-            !app.chat_view(&app.run(run.id).unwrap()).unwrap().asks,
+            !app.chat_view(&app.run(run.id).unwrap(), None).unwrap().asks,
             "a running chat waits for nobody"
         );
     }

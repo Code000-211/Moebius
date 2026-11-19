@@ -156,6 +156,7 @@ any route to any role that is not what its row says.
 | `POST /v1/chats/{id}/seen` | member | yes |
 | `POST /v1/chats/{id}/settings` | member | yes |
 | `POST /v1/chats/{id}/title` | member | yes |
+| `POST /v1/chats/{id}/share` | member | no |
 | `GET /v1/chats/{id}/tui` | member | no |
 | `GET /v1/grillings` | viewer | yes |
 | `GET /v1/grillings/{id}` | viewer | yes |
@@ -318,7 +319,7 @@ works in, or null) and `harness_repository` (true for a chat that works in the [
 repository](harness-configuration.md#changing-it-in-a-chat); `harness` is the name of the harness that runs the agent)
 and `origin` (where a chat was started: `chat`, or `assistant` for the web app's Moebius agent of the right column; `chat` for every
 other run) and `runner` (the name of the [runner](configuration.md#runners) the run's harness goes on, or null for a run on the server) and
-`title` (the name a person gave this chat, or null while it is untitled and its `Chat` title comes from its first
+`owner_id` (the person a chat belongs to, or null) and `shared` (see `Chat`), `title` (the name a person gave this chat, or null while it is untitled and its `Chat` title comes from its first
 message; see `POST /v1/chats/{id}/title`. Only a chat is ever named, so it is null for every other run).
 
 `Grilling`: `id`, `run_id` (the chat), `repository_id`, `issues` (array of `{"title", "body", "blocked_by"}`, where
@@ -340,7 +341,7 @@ it, so it needs an answer) and
 (`chat`, `assistant` for a chat of the web app's Moebius agent of the right column, see `POST /v1/chats`, or `automation` for a chat an
 automation started, see `POST /v1/automations`), `model` and `thinking`
 (the model and reasoning level the chat was given in place of its agent's, see `POST /v1/chats` and
-`POST /v1/chats/{id}/settings`; null while it uses its agent's). A chat is unread while `answered` is greater than `seen`.
+`POST /v1/chats/{id}/settings`; null while it uses its agent's), `owner` (the handle of the person who started the chat, or null for a chat that belongs to everyone), `shared` (true when other people read it: its owner shared it, see `POST /v1/chats/{id}/share`, or it has no owner) and `mine` (true when the person who asked started it). A chat is unread while `answered` is greater than `seen`.
 
 `Automation`: `id`, `name`, `schedule` (a cron expression of five fields in the server's local time), `agent`, `prompt`,
 `repository_id` (the repository its chats work in, or null), `harness_repository` (true when they work in the harness
@@ -1124,7 +1125,8 @@ Response: the `Card`. Errors: `404` no such card; `422` the card has neither an 
 
 ### `GET /v1/runs/{id}`
 
-One run, for the live view. Response: the `Run`. Errors: `404` no such run.
+One run, for the live view. Response: the `Run`. Errors: `403` the run is a chat of another person that is not shared;
+`404` no such run.
 
 ### `GET /v1/runs/{id}/events`
 
@@ -2303,6 +2305,10 @@ Request:
 | `context` | string | Where the person is in the app (the page, the repository, the open card or chat, the text being edited), as the web app describes it. The agent is told it before `message`, under the line `[Where the person is in the Moebius app. Use it to understand what they mean; do not repeat it.]`, with secrets removed and cut to 4 000 characters; the `said` event holds only `message`. Optional; blank is the same as none. |
 | `origin` | string | Where the chat is started: `chat` (the default), on the Chat page or by any client, `automation`, as an automation's chats are (see `POST /v1/automations`), or `assistant`, a conversation in the web app's Moebius agent of the right column, which the person reads there. `GET /v1/chats` leaves out the chats of origin `assistant` unless asked for them with `all=true`; what an app does with them is its own (the web app lists them on its Chat page with every other chat and counts them unread until they are read, the web app keeps them out of its Chat page). The run, its events and every other chat route work as for any chat. |
 
+The chat belongs to the person who started it (`owner_id` of the `Run`, `owner` and `mine` of the `Chat`); another person
+reads it only once its owner shared it (`POST /v1/chats/{id}/share`). A chat an agent's run token or an automation
+starts has no owner and belongs to everyone, as does a chat from before chats had owners.
+
 Response: the `Run` (`purpose` `chat`, `card_id` null). Errors: `404` no such repository or no run `continues`; `422`
 the message is blank or missing with `continues`, `model` is blank, `thinking` is not one of the levels, the agent does not exist, it is a built-in agent and neither its own `[agents.<name>]` nor
 `[agents.Coder]` is configured (the message says so), it is the Grilling partner and there is no `repository`, or
@@ -2311,9 +2317,12 @@ the message is blank or missing with `continues`, `model` is blank, `thinking` i
 
 ### `GET /v1/chats`
 
-The chats, newest first, without those of origin `assistant` (the web app's Moebius agent of the right column). Query: `all=true`
+The chats the person may read, newest first: those they started and those others shared (see `POST
+/v1/chats/{id}/share`), without those of origin `assistant` (the web app's Moebius agent of the right column). Query: `all=true`
 lists those too, each with its `origin`; the web app asks for them so that its Fleet page shows the agents they
-keep working and "Open in Chat" can show one. Response: an array of `Chat`. A chat's history is its run's events, read with
+keep working and "Open in Chat" can show one. `scope=mine` keeps the chats the person started, `scope=shared` those of
+others that are shared with them (and the chats without an owner), `scope=all` (the default) both; any other value is
+`422`. The Retro is no person's list: it reads the chats of every person. Response: an array of `Chat`. A chat's history is its run's events, read with
 `GET /v1/runs/{id}/events` and followed on `GET /v1/events`.
 
 ### `POST /v1/chats/{id}/messages`
@@ -2443,6 +2452,16 @@ time, including after it ended: the name belongs to the chat, not to its run.
 
 Response: the `Chat` as `GET /v1/chats` shows it, with its new `title`. Errors: `404` no such run; `422` the run is not
 a chat.
+
+### `POST /v1/chats/{id}/share`
+
+The person who started a chat shares it with every person of the organisation, or takes it back: `{"shared": boolean}`.
+A shared chat is read by others (`GET /v1/chats`, the run, its events and its diff, the stream, a grilling it made) but
+only its owner writes to it: its messages, steer and stop, settings, title, offer, publish, end, terminal and delete,
+and marking it seen, stay with them. A chat that is not shared is invisible to every other person: its routes answer `403`
+and it is missing from their list and from their event stream. Announced as `chat_shared` to everyone, so that every
+client reads the list again. Response: the `Chat` as the person sees it. Errors: `403` the chat is another person's, or
+an agent's run token; `404` no such run; `422` the run is not a chat, or the chat has no owner and belongs to everyone.
 
 ### `DELETE /v1/chats/{id}`
 
@@ -2956,6 +2975,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `card_moved` | A card moved to another column. | `{"card": id, "from": column, "to": column}` |
 | `card_waiting` | The reason a card waits changed: set, replaced, or cleared because the card moved or its script did not wait. Not sent when it stays the same. | `{"card": id, "reason": string or null}` |
 | `chat_renamed` | A chat was given a name, or its name was cleared, through the API. | `{"run": id, "title": string}` (the title the list of chats shows now) |
+| `chat_shared` | The owner of a chat shared it with the organisation or took it back. Sent to everyone, so that a client reads the list of chats again. | `{"run": id, "shared": boolean}` |
 | `chat_deleted` | A chat was deleted through the API, with its changes and inbox items, or deleted with its grilling. Read the snapshot again. | `{"run": id}` |
 | `change_offered` | A card's change, the work of a chat, a kept lever of a research or a workflow run was offered to a person to merge. | The `Change` (`card_id` is null for a chat's, a lever's or a workflow run's; `run_id` is set for a workflow run's). |
 | `change_updated` | A change was published or published again, its checks started or ended, or the checks or review of its pull request changed. | The `Change`. |

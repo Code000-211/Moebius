@@ -14,6 +14,7 @@ import { usePackageSheet } from "../packages/PackageSheetContext";
 import { ChatTopBar } from "./ChatTopBar";
 import { NewChat } from "./NewChat";
 import { ChatTitle, OpenChat } from "./OpenChat";
+import { ShareChat } from "./ShareChat";
 
 /** Every chat the Chat page has shown since the app started, so a chat that vanishes from the list is known to be gone rather than new. */
 const seenChats = new Set<number>();
@@ -66,6 +67,7 @@ export function ChatPage() {
               </span>
             )
           }
+          actions={open ? <ShareChat chat={open} /> : undefined}
         />
         {openId === null ? (
           <NewChat snapshot={snapshot.data} />

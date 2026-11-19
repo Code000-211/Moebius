@@ -447,6 +447,7 @@ ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
     people::SCHEMA,
     access::SCHEMA,
     favourites::SCHEMA,
+    chats::SCHEMA,
 ];
 
 pub fn now() -> i64 {

@@ -107,6 +107,11 @@ pub enum Event {
     ChatDeleted {
         run: i64,
     },
+    /// The owner of a chat shared it with the organisation, or took it back.
+    ChatShared {
+        run: i64,
+        shared: bool,
+    },
     ChangeUpdated(Change),
     ChangeOffered(Change),
     ChangeMerged {
@@ -538,6 +543,13 @@ mod tests {
             (
                 Event::ChatDeleted { run: 4 },
                 json!({"kind": "chat_deleted", "data": {"run": 4}}),
+            ),
+            (
+                Event::ChatShared {
+                    run: 4,
+                    shared: true,
+                },
+                json!({"kind": "chat_shared", "data": {"run": 4, "shared": true}}),
             ),
             (
                 Event::ResearchDeleted { research: 3 },

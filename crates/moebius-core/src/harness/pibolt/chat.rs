@@ -343,6 +343,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
                 chosen,
             )
             .unwrap();
@@ -442,6 +443,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
                 (None, None, &[]),
             )
             .unwrap();
@@ -470,6 +472,7 @@ mod tests {
                 Some("Coder"),
                 None,
                 false,
+                None,
                 None,
                 None,
                 None,
@@ -603,6 +606,7 @@ mod tests {
                 Some("Coder"),
                 None,
                 false,
+                None,
                 None,
                 None,
                 None,
@@ -870,6 +874,7 @@ mod tests {
                 Some(GRILLING_AGENT),
                 Some(repo),
                 false,
+                None,
                 None,
                 None,
                 None,

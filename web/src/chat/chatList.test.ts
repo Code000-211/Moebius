@@ -26,6 +26,9 @@ const chat = (over: Partial<Chat> = {}): Chat => ({
   origin: "chat",
   model: null,
   thinking: null,
+  owner: null,
+  shared: false,
+  mine: true,
   ...over,
 });
 const runEvent = (kind: string, seq: number, data: Record<string, unknown> = {}, run = 7) => ({
@@ -256,5 +259,22 @@ describe("parseChatFilter", () => {
     expect(parseChatFilter(null)).toBe("all");
     expect(parseChatFilter("")).toBe("all");
     expect(parseChatFilter("yesterday")).toBe("all");
+  });
+});
+
+describe("the Mine and Shared lists", () => {
+  const lea = chat({ id: 1, mine: true, owner: "lea", shared: false });
+  const ben = chat({ id: 2, mine: false, owner: "ben", shared: true });
+  const nobodys = chat({ id: 3, mine: false, owner: null, shared: true });
+  const all = [lea, ben, nobodys];
+
+  it("keeps the chats the person started under Mine and the others under Shared", () => {
+    expect(filterChats(all, undefined, "all", "", "mine").map((c) => c.id)).toEqual([1]);
+    expect(filterChats(all, undefined, "all", "", "shared").map((c) => c.id)).toEqual([2, 3]);
+    expect(filterChats(all, undefined, "all").map((c) => c.id)).toEqual([1, 2, 3]);
+  });
+
+  it("makes the list read again when a chat is shared", () => {
+    expect(listChanged({ kind: "chat_shared", data: { run: 2, shared: true } })).toBe(true);
   });
 });
