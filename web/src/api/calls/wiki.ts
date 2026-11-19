@@ -1,6 +1,6 @@
 /** The calls of the Wiki page: the pages, one page (or an older version of it), its history, and writing, moving and deleting one. */
 import { del, get, post, put } from "../http";
-import type { PageInfo, Version, WikiPageView } from "../types/wiki";
+import type { PageInfo, Version, WikiHit, WikiPageView } from "../types/wiki";
 
 /** A page's path in a URL: each part percent-encoded, the slashes kept. */
 export function pageUrl(path: string): string {
@@ -39,4 +39,12 @@ export async function deleteWikiPage(path: string): Promise<void> {
 /** The commits that changed a page, newest first. */
 export function wikiHistory(path: string): Promise<Version[]> {
   return get<Version[]>(`/v1/wiki/history/${pageUrl(path)}`);
+}
+
+/** The pages found by words of their title and text, the best first; with `project`, only that project's pages. */
+export function searchWiki(query: string, project?: string, limit?: number): Promise<WikiHit[]> {
+  const params = new URLSearchParams({ q: query });
+  if (project) params.set("project", project);
+  if (limit) params.set("limit", String(limit));
+  return get<WikiHit[]>(`/v1/wiki/search?${params}`);
 }

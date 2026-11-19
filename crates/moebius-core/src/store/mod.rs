@@ -14,7 +14,8 @@
 //! its labels), `access` (their access tokens and the sessions of browsers, kept as hashes), `favourites` (the places a
 //! person pinned and opened lately), `kinds` (kinds of issues, their fields and the values cards hold), `projects` (the
 //! projects, their keys and repositories, and the migration that makes one for each repository) and `milestones` (goals
-//! of the organisation that hold cards of any projects).
+//! of the organisation that hold cards of any projects) and `wiki_search` (the wiki's search index, derived from its
+//! pages).
 //! Every public type is re-exported here, as `store::Card` and the like.
 
 mod access;
@@ -49,6 +50,7 @@ mod retros;
 mod runs;
 mod shadows;
 mod usage;
+mod wiki_search;
 mod workflow_schedules;
 mod workflows;
 
@@ -92,6 +94,8 @@ pub use usage::{
     ANSWERING, ActivityUsage, AgentUsage, ClassUsage, ModelUsage, NO_RUN, Scope, ToolWait, UNKNOWN,
     Usage, UsageTotals,
 };
+pub(crate) use wiki_search::match_all;
+pub use wiki_search::{IndexedPage, WikiHit};
 pub use workflows::{WorkflowNodeRun, WorkflowRun};
 
 /// Why the store failed.
@@ -481,6 +485,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
 "#,
     milestones::SCHEMA,
     kinds::SCHEMA,
+    wiki_search::SCHEMA,
 ];
 
 pub fn now() -> i64 {

@@ -109,6 +109,29 @@ export function createWikiFake(send: Send): WikiFake {
         answer(response, 200, listed);
         return true;
       }
+      if (path === "/v1/wiki/search" && method === "GET") {
+        const words = (query.get("q") ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+        const hits = [...pages.keys()]
+          .filter((each) => current(each))
+          .map((each) => ({ each, text: current(each)?.text ?? "" }))
+          .filter(({ each, text }) =>
+            words.every((word) => `${nameOf(each)} ${text}`.toLowerCase().includes(word)),
+          )
+          .sort(
+            (a, b) =>
+              Number(words.every((w) => nameOf(b.each).toLowerCase().includes(w))) -
+                Number(words.every((w) => nameOf(a.each).toLowerCase().includes(w))) ||
+              a.each.localeCompare(b.each),
+          )
+          .map(({ each, text }) => ({
+            path: each,
+            name: nameOf(each),
+            project: each.startsWith("projects/") ? (each.split("/")[1] ?? null) : null,
+            snippet: text.trim().slice(0, 80),
+          }));
+        answer(response, 200, hits);
+        return true;
+      }
       if (path === "/v1/wiki/refresh" && method === "POST") {
         answer(response, 200, null);
         return true;

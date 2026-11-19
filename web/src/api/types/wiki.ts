@@ -28,3 +28,13 @@ export interface WikiPageView {
   text: string;
   version: Version;
 }
+
+/** A page a search found. */
+export interface WikiHit {
+  path: string;
+  name: string;
+  /** The key of the project the page is under; null for the organisation's pages. */
+  project: string | null;
+  /** The words around the match, as plain text. */
+  snippet: string;
+}

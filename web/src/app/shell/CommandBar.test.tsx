@@ -143,6 +143,26 @@ describe("the palette", () => {
     expect(screen.getByText("Nothing matches.")).toBeTruthy();
   });
 
+  it("finds the wiki's pages by the words typed and opens the one chosen", async () => {
+    open();
+    const field = await screen.findByRole("combobox");
+    const asked: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        asked.push(String(url));
+        const body = String(url).includes("/v1/wiki/search")
+          ? [{ path: "projects/PAR/Refunds", name: "Refunds", project: "PAR", snippet: "x" }]
+          : { boards: [BOARD], harness_changes: [], inbox: [] };
+        return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+      }),
+    );
+    fireEvent.change(field, { target: { value: "refund" } });
+    const hit = await screen.findByRole("option", { name: /Refunds/ });
+    expect(hit.textContent).toContain("PAR");
+    expect(asked.some((url) => url.includes("/v1/wiki/search?q=refund"))).toBe(true);
+  });
+
   it("moves with the arrows and runs the chosen command on Enter", async () => {
     const first = vi.fn();
     const second = vi.fn();

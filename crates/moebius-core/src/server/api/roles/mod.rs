@@ -84,6 +84,7 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("DELETE", "/v1/wiki/pages/{*path}", MEMBER_PERSON),
     ("POST", "/v1/wiki/moves", MEMBER_PERSON),
     ("GET", "/v1/wiki/history/{*path}", VIEWER),
+    ("GET", "/v1/wiki/search", VIEWER),
     ("POST", "/v1/wiki/refresh", MEMBER),
     ("POST", "/v1/wiki/proposals", MEMBER),
     ("POST", "/v1/wiki/proposals/{id}/merge", MEMBER_PERSON),

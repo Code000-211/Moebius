@@ -102,6 +102,16 @@ describe("the Wiki page", () => {
       await tree.getByRole("button", { name: "Runbooks" }).click();
       await tree.getByRole("button", { name: "Refunds" }).click();
       await page.getByRole("article", { name: "Refunds" }).getByText("From elsewhere.").waitFor();
+
+      // The palette finds a page by a word of its text and opens it.
+      await page.goto(`${server.url}/wiki`);
+      await page.getByRole("navigation", { name: "Pages" }).waitFor();
+      await page.keyboard.press("Control+k");
+      const palette = page.getByRole("dialog", { name: "Search" });
+      await palette.getByPlaceholder("Search…").fill("elsewhere");
+      await palette.getByRole("option", { name: /Refunds/ }).click();
+      await page.waitForURL(/page=Runbooks%2FRefunds/);
+      await page.getByRole("article", { name: "Refunds" }).getByText("From elsewhere.").waitFor();
     }
     await context.close();
   });

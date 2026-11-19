@@ -111,6 +111,7 @@ any route to any role that is not what its row says.
 | `DELETE /v1/wiki/pages/{*path}` | member | no |
 | `POST /v1/wiki/moves` | member | no |
 | `GET /v1/wiki/history/{*path}` | viewer | yes |
+| `GET /v1/wiki/search` | viewer | yes |
 | `POST /v1/wiki/refresh` | member | yes |
 | `POST /v1/wiki/proposals` | member | yes |
 | `POST /v1/wiki/proposals/{id}/merge` | member | no |
@@ -808,6 +809,23 @@ path that is not a page's or `to` the same as `from`.
 
 The commits that changed the page, newest first, following it through its renames and moves: `[Version]`. A deleted
 page keeps its history, its deletion first. Errors: `404` for a page that never was.
+
+### `GET /v1/wiki/search`
+
+Finds pages by the words of their title and text: `?q=<words>`, optionally `&project=<key>` for only the pages under
+`projects/<key>/` (without it, the organisation's pages and every project's), and `&limit=<n>` (1 to 100; 20 without
+one). Every word of `q` must be in the page, in any order, the last one may be only its beginning (`refu` finds
+`refunds`), and a word matches its other forms (`refund` finds `refunds`). A word of the title counts far more than one
+of the text, so a page called for the words comes before one that mentions them. Response: `[SearchHit]`, the best
+first, `{"path": string, "name": string, "project": string | null, "snippet": string}`: the page's path and name, the
+key of its project (`null` for the organisation's pages) and the words around the match as plain text. An empty `q`
+finds nothing (`[]`).
+
+**Only what the asker may see is returned**: a page under `projects/<key>/` of a project the asker may not see is never
+in the answer, and does not take the place of a page that is. (No project is private yet, so every asker sees every
+project's pages; private projects, ADR 0018, make it so for their members only.) The index is derived from the pages
+and kept in the store; it is made again at the next search after the wiki's head moved (`wiki_changed`), so an edited,
+moved or deleted page, and one pushed from elsewhere, is found as it is now.
 
 ### `POST /v1/wiki/proposals`
 
