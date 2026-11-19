@@ -33,8 +33,9 @@ Keys of a table are written with the table's name, such as `board.tick_ms`. A ke
 - `serve` starts the server.
 - `check-script <file> [--column <name>] [--title <text>] [--author <login>]` runs a column script once (see
   [column scripts](column-scripts.md)).
-- `export --out <dir> [--kind <kind>]...` writes the training-set export of the store in `data_dir` to `<dir>`, all
-  kinds or only the kinds given, and prints one line per file with its counts. It writes only to `<dir>`; it changes
+- `export --out <dir> [--kind <kind>]... [--include-private]` writes the training-set export of the store in `data_dir`
+  to `<dir>`, all kinds or only the kinds given, and prints one line per file with its counts. The judgements of
+  private projects are left out unless `--include-private` is given, which writes those of every private project. It writes only to `<dir>`; it changes
   nothing in the store, and works while the server runs. It fails when `data_dir` has no store, or when a kind has no
   judgements. See [the training export](training-export.md).
 - `api`, `board`, `inbox`, `chat`, `settings` and the other commands that operate a running server through the desktop

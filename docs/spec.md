@@ -306,7 +306,9 @@ Linux (an AppImage and a `.deb`) and Windows (an installer), not for macOS. It s
 access token, asks the server's version first and refuses a server of another minor version, naming the release whose
 app matches. It serves the web app it bundles from its own address on the loopback and forwards `/v1/` to the server
 with the token, so the token stays in the app. The window has no system frame: its controls lie on the textured
-ground. Several servers, a local server, notifications, the tray and the global shortcut of ADR 0021 come later.
+ground. On Linux, and on Windows inside WSL 2, the connect page offers to run a server on this machine: the app downloads
+`moebius` of its own release (checked against `SHA256SUMS`), runs `init` and `serve` in the background and connects with
+the server's token, and finds the same server again after a restart. Several servers, notifications, the tray and the global shortcut of ADR 0021 come later.
 
 ## 9. Security
 

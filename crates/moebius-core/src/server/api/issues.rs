@@ -25,7 +25,7 @@ use axum::routing::{get, post, put};
 use serde::{Deserialize, Serialize};
 
 use super::{ApiError, ApiState, Reason, blocking, scope};
-use crate::app::{IssueQuery, IssueView, Links, Similar};
+use crate::app::{App, IssueQuery, IssueView, Links, Sight, Similar};
 use crate::decide::Actor;
 use crate::store::{Card, Comment};
 
@@ -106,7 +106,13 @@ pub(super) async fn list_issues(
 ) -> Result<axum::Json<Vec<IssueView>>, ApiError> {
     blocking(&state.app, move |app| {
         scope::repository(app, &by, id)?;
-        app.issues(id, &query)
+        let sight = app.sight(&by)?;
+        let mut issues = app.issues(id, &query)?;
+        issues.retain(|issue| sight.card(&issue.card));
+        for issue in &mut issues {
+            seen_children(app, &sight, issue)?;
+        }
+        Ok(issues)
     })
     .await
 }
@@ -118,7 +124,9 @@ pub(super) async fn show_issue(
 ) -> Result<axum::Json<IssueView>, ApiError> {
     blocking(&state.app, move |app| {
         scope::card(app, &by, id, false)?;
-        app.issue(id)
+        let mut issue = app.issue(id)?;
+        seen_children(app, &app.sight(&by)?, &mut issue)?;
+        Ok(issue)
     })
     .await
 }
@@ -132,9 +140,28 @@ pub(super) async fn show_issue_by_key(
     blocking(&state.app, move |app| {
         let card = app.card_named(&key)?;
         scope::card(app, &by, card.id, false)?;
-        app.issue(card.id)
+        // The key is no id the privacy check reads, so the card is checked here (see `privacy`).
+        let sight = app.sight(&by)?;
+        if !sight.card(&card) {
+            return Err(crate::app::AppError::NotFound(format!("card {key}")));
+        }
+        let mut issue = app.issue(card.id)?;
+        seen_children(app, &sight, &mut issue)?;
+        Ok(issue)
     })
     .await
+}
+
+/// Leaves out of `issue` the sub-issues of a private project that `sight` does not see.
+fn seen_children(app: &App, sight: &Sight, issue: &mut IssueView) -> crate::app::Result<()> {
+    let mut children = Vec::new();
+    for child in std::mem::take(&mut issue.children) {
+        if app.sees_card(sight, child.id)? {
+            children.push(child);
+        }
+    }
+    issue.children = children;
+    Ok(())
 }
 
 async fn set_parent(

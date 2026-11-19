@@ -129,11 +129,13 @@ async fn grillings(
     Extension(by): Extension<Actor>,
 ) -> Result<axum::Json<Vec<Grilling>>, ApiError> {
     blocking(&state.app, move |app| {
+        let sight = app.sight(&by)?;
         Ok(app
             .store
             .grillings()?
             .into_iter()
             .filter(|grilling| app.chat_access(&by, grilling.run_id, false).is_ok())
+            .filter(|grilling| sight.repository(grilling.repository_id))
             .collect())
     })
     .await
@@ -242,6 +244,14 @@ async fn start_chat(
     let runs = state.runs.clone();
     let served = served(&state, chat.model.as_deref()).await;
     blocking(&state.app, move |app| {
+        // A chat works only in a repository the person sees (see `app::projects::sight`).
+        if let Some(repository) = chat.repository
+            && !app.sight(&by)?.repository(repository)
+        {
+            return Err(crate::app::AppError::NotFound(format!(
+                "repository {repository}"
+            )));
+        }
         // A chat goes on from one the person may read, which is told to the agent.
         if let Some(earlier) = chat.continues {
             app.chat_access(&by, earlier, false)?;
@@ -314,7 +324,10 @@ async fn chats(
 ) -> Result<axum::Json<Vec<Chat>>, ApiError> {
     blocking(&state.app, move |app| {
         let scope = ChatScope::parse(query.scope.as_deref())?;
-        app.chats_for(&by, query.all, scope)
+        let sight = app.sight(&by)?;
+        let mut chats = app.chats_for(&by, query.all, scope)?;
+        chats.retain(|chat| chat.repository_id.is_none_or(|r| sight.repository(r)));
+        Ok(chats)
     })
     .await
 }

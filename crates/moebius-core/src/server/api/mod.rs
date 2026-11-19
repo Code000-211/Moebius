@@ -10,6 +10,7 @@
 //! - `planning`: a card's priority and due date.
 //! - `notices`: what concerns a person (given, mentioned, a followed card changed), and following cards.
 //! - `kinds`: kinds of issues and their fields, the kinds a project offers, a card's kind and fields, and the cards of every project by them.
+//! - `templates`: templates for issues and wiki pages, and making a page from one.
 //! - `repositories`: adding and editing repositories, and their settings and files.
 //! - `intake`: a project's requests, which a grilling drafts into issues that members accept or decline.
 //! - `milestones`: goals of the organisation with a target date, holding cards of any projects, with their progress.
@@ -72,6 +73,7 @@ mod packages;
 mod people;
 mod planning;
 mod ports;
+mod privacy;
 mod projects;
 mod repositories;
 mod roles;
@@ -80,6 +82,7 @@ mod runs;
 mod scope;
 mod session;
 mod settings;
+mod templates;
 mod terminals;
 mod uploads;
 mod web;
@@ -241,6 +244,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(projects::routes())
         .merge(wiki::routes())
         .merge(intake::routes())
+        .merge(templates::routes())
         .merge(milestones::routes())
         .merge(runs::routes())
         .merge(chats::routes())
@@ -385,6 +389,9 @@ async fn authenticate(State(state): State<ApiState>, mut request: Request, next:
                     roles::check(&who.actor, role, request.method(), route.as_str())
                 {
                     return refused.into_response();
+                }
+                if let Err(hidden) = privacy::check(&state.app, &who.actor, route.as_str(), path) {
+                    return hidden.into_response();
                 }
             }
             request.extensions_mut().insert(who.actor);

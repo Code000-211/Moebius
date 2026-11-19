@@ -6,8 +6,10 @@
 //! minor version, naming the release that matches. Once it passes, [`proxy`] serves the web app built into the app
 //! (`web/dist`) on the loopback and forwards `/v1/` to the server with the token, so the web app talks to its own
 //! address as it does when the server serves it, and the token stays in this process. [`links`] says which addresses
-//! the window shows and which go to the system's browser.
+//! the window shows and which go to the system's browser. [`local`] sets up and starts a server of this machine (Linux, or
+//! WSL 2 on Windows) for the connect page's first-start offer.
 
 pub mod links;
+pub mod local;
 pub mod proxy;
 pub mod server;

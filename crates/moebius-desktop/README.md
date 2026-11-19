@@ -12,12 +12,14 @@ app is in [`docs/architecture.md`](../../docs/architecture.md#the-desktop-app).
 | `src/main.rs` | The `moebius-desktop` program. |
 | `src/lib.rs` | The parts of the app that are tested without a window. |
 | `src/links.rs` | Which addresses the window shows (its own pages) and which open in the system's browser. |
+| `src/local/` | The server of this machine the app sets up and starts: `mod.rs` (state, `start`), `host.rs` (the shell: `sh`, or `wsl.exe` on Windows), `release.rs` (downloading `moebius` and checking it against `SHA256SUMS`). |
 | `src/server.rs` | `Server` (an address and an access token) and `check`, which asks `GET /v1/health` and refuses a server of another minor version, naming the release that matches. |
 | `src/proxy/` | The app's own address on the loopback: `assets.rs` serves the web app embedded from `web/dist`, `forward.rs` forwards `/v1/` to the server with the token (HTTP and WebSockets), `mod.rs` lets only the window use it. |
-| `src/window.rs` | The Tauri side, a module of the program so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, the `connect` command, and links that leave the app opened in the browser. |
+| `src/window.rs` | The Tauri side, a module of the program so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, the commands `connect`, `local_state` and `local_connect`, and links that leave the app opened in the browser. |
 | `connect/` | The connect page, bundled by Tauri: a server's address and a token, drawn with the web app's tokens. |
 | `capabilities/` | What each page may call: `connect.json` for the connect page (`connect` and the window's controls), `web-app.json` for the web app on the loopback (the window's controls only). |
 | `tauri.conf.json`, `build.rs`, `icons/` | Tauri's configuration, the bundles and their icons. `build.rs` declares `connect` as the app's own command and builds the app again when `web/dist` changes. |
+| `tests/local.rs` | The local server against a fake release and a fake `moebius`: a first start makes and connects to a server, a restart finds it again, a stopped one is started without a new `init`, a bad checksum or a missing release installs nothing. |
 | `tests/connect.rs` | The app against a real server on port 0 and against fake servers: signing in with an access token, the web app and the event stream through the proxy, the refusal of another minor version, and who may use the proxy. |
 
 ## Building

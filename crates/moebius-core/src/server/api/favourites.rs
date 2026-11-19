@@ -150,12 +150,33 @@ fn current(state: &ApiState, place: &Place) -> Result<Option<String>, ApiError> 
     })
 }
 
+/// Whether `sight` sees `place`: its repository, and its card for a card.
+fn seen_place(
+    state: &ApiState,
+    sight: &crate::app::Sight,
+    place: &Place,
+) -> Result<bool, ApiError> {
+    if !sight.repository(place.repository_id) {
+        return Ok(false);
+    }
+    match (place.kind.as_str(), place.key.parse::<i64>()) {
+        ("card", Ok(card)) => Ok(state.app.sees_card(sight, card)?),
+        _ => Ok(true),
+    }
+}
+
 /// The lists of `person` as they are, after forgetting what they can no longer see.
 fn lists(state: &ApiState, person: &Person) -> Result<Places, ApiError> {
     let store = &state.app.store;
+    let sight = state.app.sight_of(Some(person.id))?;
     let visible = |places: Vec<Place>, pins: bool| -> Result<Vec<Place>, ApiError> {
         let mut shown = Vec::new();
         for mut place in places {
+            // A place of a private project the person is no longer a member of is left out, and kept for when they are
+            // again.
+            if !seen_place(state, &sight, &place)? {
+                continue;
+            }
             match current(state, &place)? {
                 Some(title) => {
                     place.title = title;

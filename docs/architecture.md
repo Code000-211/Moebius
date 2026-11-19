@@ -74,6 +74,12 @@ on Linux (an AppImage and a `.deb`) and Windows (an installer):
    forge, opens in the system's browser (`links::target`). Every page of the window gets `window.moebiusDesktop` first, which the web app's
    `desktop/WindowControls.tsx` calls to minimize, maximize and close the window from a strip on the textured ground.
 
+The connect page also offers a server on this machine (Linux, and Windows inside WSL 2). `local_state` only looks; the
+button calls `local_connect`, which has `local::Local::start` bring the release of the app's version into `~/.moebius/bin`
+(checked against `SHA256SUMS`), run `init` in `~/.moebius/server`, start `serve` in a process of its own that outlives
+the app, and read the token the server writes there; the token goes to the proxy and never to the page. The next start
+finds the server again by that directory: it answers, or it is started again without a new `init`.
+
 ## The life of a card
 
 1. **An issue arrives.** Without a forge: `POST /v1/repositories/{id}/issues` (`api::create_issue`) calls
@@ -485,8 +491,11 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `main.rs` | The `moebius-desktop` program, without a console window of its own on Windows. |
 | `lib.rs` | The parts tested without a window, and how a window comes to show the web app against one server. |
 | `links.rs` | Where an address goes: the window keeps the connect page and the web app on the proxy's origin, and sends forges, chat links and the rest to the system's browser. |
+| `local/mod.rs` | A server of this machine that the app sets up and starts (D3): what the machine has (`State`: not set up, stopped, running, unavailable), and `start`, which brings `moebius`, runs `init` where there is no configuration, starts `serve` in the background and waits for its token and its answer. It shares `~/.moebius/bin` and `~/.moebius/server` with `moebius connect`. |
+| `local/host.rs` | The system the local server runs on, reached through a POSIX shell: `sh` on Linux, `wsl.exe -e sh` on Windows (WSL 2). |
+| `local/release.rs` | The program the app brings: `moebius` of the app's own version downloaded from its release, checked against that release's `SHA256SUMS` and put in `~/.moebius/bin`. |
 | `server.rs` | A server the app connects to (`Server`: its address and the access token), and `check`: the token and the server's version with `GET /v1/health`, refusing a server of another minor version with the release that matches. |
-| `window.rs` | The Tauri side, in the program rather than the library so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, the `connect` command of the connect page, and the handlers that send a link leaving the app to the browser. |
+| `window.rs` | The Tauri side, in the program rather than the library so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, the commands of the connect page (`connect`, `local_state`, `local_connect`), and the handlers that send a link leaving the app to the browser. |
 | `proxy/mod.rs` | The app's own address on the loopback: the web app at every path, `/v1/` forwarded to the server, and the key, `Host` and `Origin` checks that let only the window use it. |
 | `proxy/assets.rs` | The web app embedded from `web/dist`, served with the policies of `web/csp.json`. |
 | `proxy/forward.rs` | Forwarding to the server with the token: HTTP streamed both ways, and a WebSocket relayed message by message. |
@@ -524,6 +533,7 @@ At the top:
 | `app/automations/cron.rs` | A schedule: a cron expression of five fields in the server's local time, parsed, and the next minute it comes due. |
 | `app/planning.rs` | Setting a card's priority, due date and estimate: all are labels (`priority:high`, `due:2026-12-01`, `estimate:5`), so they are written to the forge and announced as labels are; and proposing an estimate from the like cards that have one. |
 | `app/notices.rs` | What concerns a person: the `@handle`s a text mentions, the notice each assignment, mention and change to a followed card makes, reading one, and following a card. |
+| `app/templates.rs` | Templates for issues and pages: listing and editing them in the harness configuration repository, starting an issue from its kind's template, making a page from a page template. |
 | `app/kinds.rs` | Kinds of issues and their fields: what is written is checked, a project picks the kinds it offers, a card gets a kind and values for its fields, and the cards of every project are filtered and sorted by a field. |
 | `app/assignees.rs` | Giving a card or an inbox item to people: the handles are checked against the people of the organisation, the set is replaced, and a change is announced. |
 | `app/chat_access.rs` | Whose a chat is: its owner reads and writes it, others read it once it is shared, and the lists `mine` and `shared`; the Retro reads the store and so every chat. |
@@ -534,10 +544,11 @@ At the top:
 | `app/checks.rs` | How a change's checks stand, and a repository's own checks (the project's `checks`) run in a throwaway worktree with a time limit and a cleared environment. |
 | `app/board.rs` | What a board shows of a card, worked out once for the snapshot and the scripts: rounds, latest run, and the batched reads of a whole board. |
 | `app/attempts.rs` | Attempts: judging each attempt of a hard card by the repository's checks and its reproduction test on a thread of its own, settling a round (one picked, or none passed), and reading a selection run's pick. |
-| `app/projects/mod.rs` | Projects (ADR 0019): making one with a name and a key no other has (the name is also a folder), renaming it with its key kept and its settings moved, and the `ProjectView` the Projects page shows (repositories, members, open cards). |
+| `app/projects/mod.rs` | Projects (ADR 0019): making one with a name and a key no other has (the name is also a folder), renaming it with its key kept and its settings moved, and the `ProjectView` the Projects page shows (repositories, members, open cards, whether it is private and the person a member). |
 | `app/projects/files.rs` | A project's own store of files (ADR 0019): the git repository at `<data_dir>/projects/<key>` made for a project, kept as a repository without a forge whose `files_of` is the project, where the cards of a project without a repository run, are reviewed and are merged. |
 | `app/milestones.rs` | Milestones (ADR 0019): making and editing them, putting a card in them, and their progress counted and listed only within the projects the asker may see (`App::may_see_project`). |
 | `app/intake.rs` | Intake (ADR 0019): a project's requests, written by anyone who may see it, grilled into a draft issue by a chat of the grilling agent and accepted into a card the requester follows, edited, or declined with a reason the requester is told. |
+| `app/projects/sight.rs` | Who sees what of a private project (ADR 0018): a person's `Sight` (the private projects they are no member of, and the repositories all of whose projects those are), whether it sees a card, run, lesson or judgement, which lessons a run of a project may find, and a Retro's proposal unquoted for someone who does not see a project it names. |
 | `app/projects/settings.rs` | A project's and a repository's settings read from the harness configuration repository (`App::project_file`, `App::repository_file`), the migration of the repositories' column scripts to their home projects (`App::move_scripts_to_projects`), and the notice, once for each repository, that its default branch still has a `.moebius/` folder, which is not read. |
 | `app/localize.rs` | The hint of files a code run is given, whether a repository wants it, and the outcome recorded from the files the card's change touched at the end of a code run and on merge. |
 | `app/plugin_settings.rs` | The settings plugins ask of each repository and of the server in their manifest: what the repository's page and the Settings page show, a person's save checked against the manifest and recorded; a repository's values are files of its project settings, the server's are kept by plugin name. |
@@ -608,7 +619,7 @@ At the top:
 | `store/wiki_search.rs` | The wiki's search index (SQLite FTS5, a title counting far more than the text): derived data, replaced whole when the wiki's head moves. |
 | `store/milestones.rs` | The milestones (name, target date, description) and which cards each holds, of any projects. |
 | `store/intake.rs` | A project's switch for intake and the requests made to it, with their draft issue, status, card and reason. |
-| `store/projects.rs` | The projects (name, key, repositories in order), a repository's home project and a card's project, how a key is made from a name, and the migration that makes one project for each repository and puts every card on it. |
+| `store/projects.rs` | The projects (name, key, repositories in order), a repository's home project and a card's project, how a key is made from a name, the migration that makes one project for each repository and puts every card on it, whether a project is private with its members, and the project a judgement belongs to. |
 | `store/favourites.rs` | The places a person pinned, in their order, and the places they opened lately (the last 20), kept per person so they follow them to every browser. |
 | `store/events.rs` | A run's events, in order, redacted before they are stored. |
 | `store/automations.rs` | Automations, their firings with the status of each chat, and the server's local minute; the workflow file is the definition and the row keeps the id the firings use. |
@@ -657,8 +668,10 @@ At the top:
 | `server/api/issues.rs` | The issue tracker's routes: the issue list and one issue, parent, labels, blockers, claim, close and reopen, comments. |
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
 | `server/api/milestones.rs` | The milestones: listing them with their progress, making, reading, editing and deleting one, and a card's milestones. |
-| `server/api/projects.rs` | The projects: listing them, making one with a free key, reading and renaming one, and the column scripts of a project's board. |
+| `server/api/projects.rs` | The projects: listing them, making one with a free key, reading and renaming one, the column scripts of a project's board, and making one private with its members. |
 | `server/api/intake.rs` | Intake: turning it on for a project, making and reading its requests, editing a draft, accepting and declining. |
+| `server/api/templates.rs` | The routes of templates for issues and wiki pages, and making a wiki page from one. |
+| `server/api/privacy.rs` | The check, after the role, that answers `404` for a route naming by id a card, run, change, repository, project, lesson or other thing of a private project the person is no member of; and whether an inbox item is seen. |
 | `server/api/wiki.rs` | The wiki's routes: its pages listed, read (an older version too), written, moved and deleted, a page's history, and a refresh now. |
 | `server/api/runs.rs` | A run and its events in pages, steering and stopping it. |
 | `server/api/automations/mod.rs` | Automations: list, add, read, replace, delete, run now, and their firings. |
@@ -800,6 +813,7 @@ At the top:
 | `harness/repo/projects.rs` | A project's settings, the files of `projects/<project name>/` (its column scripts): read from the clone, written or removed as commits like any edit, moved when the project is renamed, and the migration that moves a repository's scripts to its home project. |
 | `harness/repo/repositories.rs` | A repository's settings, the files of `repos/<repository name>/` (rules, review notes, checks, test first, the hint of files, plugins' settings): read from the clone, and written or removed as commits like any edit. |
 | `harness/repo/edits.rs` | A person's edits of agents, skills, MCP servers and rules, as commits pushed to its origin. |
+| `harness/repo/templates.rs` | Templates in the clone: `templates/issues/<kind>.toml` and `templates/pages/<name>.md`, read and edited as commits. |
 | `harness/repo/skill_files.rs` | A skill's other files, beside its `SKILL.md`: read, and written or deleted as commits like any edit. |
 | `harness/repo/packages.rs` | The Pi packages in the clone: the lock of the default branch, the agents that name a package, the branch that installs, updates or removes one (made in a throwaway worktree), and its file diff. |
 | `harness/packages/mod.rs` | Pi packages vendored into the harness configuration repository (`packages/<name>/`, `packages.lock`): the folder's parts and `PackagesError`. |

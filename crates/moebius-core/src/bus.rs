@@ -531,6 +531,8 @@ mod tests {
             repositories: vec![2],
             files: None,
             intake: false,
+            private: false,
+            members: vec![],
         };
         let milestone = Milestone {
             id: 3,

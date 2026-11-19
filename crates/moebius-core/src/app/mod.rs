@@ -39,6 +39,7 @@ mod repositories;
 mod reproduce;
 mod runs;
 mod stopping;
+mod templates;
 mod whereabouts;
 pub mod workflows;
 
@@ -147,8 +148,9 @@ pub type Result<T> = std::result::Result<T, AppError>;
 
 pub use kinds::{CardQuery, KindView};
 pub use milestones::{MilestoneDetail, MilestoneFields, MilestoneProject, MilestoneView};
-pub use projects::{Member, ProjectRepository, ProjectView};
+pub use projects::{Member, ProjectRepository, ProjectView, Sight};
 pub use stopping::CardStopWaits;
+pub use templates::{IssueTemplateView, PageTemplateView, Templates};
 
 /// Held by the thread of a research while it goes (see [`App::researching`]).
 pub(crate) struct Researching {

@@ -31,6 +31,24 @@ macOS build. `moebius open` and `moebius connect` stay for everyone without it.
    person the token belongs to. The window has no frame of the system: drag the strip along its top to move it, double
    click it to maximize, and minimize, maximize and close with the buttons at its right end.
 
+### A server on this machine
+
+On Linux, and on Windows inside WSL 2, the connect page also shows **A server on this machine**, and nothing is
+installed until you press its button. **Run a server on this machine** does what `moebius connect` does on a host:
+
+1. downloads `moebius` of the app's own release (`moebius-x86_64-unknown-linux-gnu` from the release page), checks it
+   against the release's `SHA256SUMS` and puts it in `~/.moebius/bin/moebius` (a `moebius` of the same release line that
+   is installed already, in `~/.moebius/bin` or on the `PATH`, is used instead);
+2. runs `moebius init` in `~/.moebius/server`, which makes the configuration and the harness configuration repository;
+3. starts `moebius serve` there in the background (its output is `~/.moebius/server/serve.log`) and waits for its token;
+4. connects to it with that token (the server's own token acts as the first owner); the token never goes to the page.
+
+Leaving the form below as it is declines: the page only looks at the machine, so nothing is downloaded or written. The
+server keeps running when the app is closed (on Windows it runs while the app is open, because WSL stops a distribution
+that has nothing running). The next start of the app finds the same server again: the page offers **Connect to it**, or
+**Start it and connect** when it has stopped (after a reboot, say), without a new `init`. Releases are built for Linux
+x86_64 only, so another system gets no offer. On Windows, WSL 2 has to be installed (`wsl --install`).
+
 A server on another machine is reached as the web app reaches it: on its address if it listens on the network, or
 through the tunnel of `moebius connect <host> --no-window`, then `127.0.0.1:7171` in the app (see
 [Running Moebius](running-moebius.md)).
@@ -68,4 +86,9 @@ The answer's `token` (it starts with `moebius-access-`) goes into the app with t
 - **The AppImage does not start on Linux** with an error about FUSE (`dlopen(): error loading libfuse.so.2`): the system
   cannot mount AppImages. Install FUSE 2 (`libfuse2` on Ubuntu 22.04, `libfuse2t64` on 24.04), or start it with
   `--appimage-extract-and-run`, or use the `.deb`.
+- **"cannot download ..." or "does not match the SHA256SUMS"** when running a server on this machine: the release of the
+  app's version is not published (an app built from a branch has none), or the download is damaged. Nothing was installed;
+  install `moebius` yourself in `~/.moebius/bin` or on the `PATH` and press the button again.
+- **"the server did not answer within 90 seconds"**: read `~/.moebius/server/serve.log`; a port 7171 that is taken by
+  another program is the usual reason (change `listen` in `~/.moebius/server/moebius.toml`).
 - The token is kept in the app's memory only, for now: the app asks for it on every start.

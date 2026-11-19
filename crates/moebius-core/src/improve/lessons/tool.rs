@@ -39,29 +39,31 @@ struct Query {
     query: String,
 }
 
-/// The repository the run belongs to, if any.
-fn repository_of(app: &App, grant: &Grant) -> Option<i64> {
+/// The repository the run belongs to, if any, and the project of its work: its card's, else its repository's home
+/// project.
+fn place_of(app: &App, grant: &Grant) -> Option<(i64, Option<i64>)> {
     let from_card = grant
         .card_id
         .and_then(|card| app.store.card(card).ok().flatten())
-        .map(|card| card.repository_id);
+        .map(|card| (card.repository_id, Some(card.project_id)));
     from_card.or_else(|| {
-        app.store
-            .run(grant.run_id)
+        let repository = app.store.run(grant.run_id).ok()??.repository_id?;
+        let home = app
+            .store
+            .repository(repository)
             .ok()
             .flatten()
-            .and_then(|run| run.repository_id)
+            .map(|r| r.home_project_id);
+        Some((repository, home))
     })
 }
 
 fn find(app: &App, grant: &Grant, query: &str) -> Result<Vec<Lesson>, String> {
-    let Some(repository) = repository_of(app, grant) else {
+    let Some((repository, project)) = place_of(app, grant) else {
         return Ok(Vec::new());
     };
-    let found = app
-        .store
-        .search_lessons(repository, query, TOOL_LESSONS)
-        .map_err(|e| e.to_string())?;
+    let found =
+        super::search(app, repository, project, query, TOOL_LESSONS).map_err(|e| e.to_string())?;
     let ids: Vec<i64> = found.iter().map(|l| l.id).collect();
     if !ids.is_empty() {
         app.store

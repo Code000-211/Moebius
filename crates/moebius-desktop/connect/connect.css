@@ -83,8 +83,13 @@ main {
   display: flex;
   min-height: 100%;
   align-items: center;
+  flex-direction: column;
+  gap: 16px;
   justify-content: center;
   padding: 48px 16px;
+}
+.sheet[hidden] {
+  display: none;
 }
 .sheet {
   width: min(400px, 100%);

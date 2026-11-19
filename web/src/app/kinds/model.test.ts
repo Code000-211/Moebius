@@ -44,6 +44,8 @@ const project = (id: number, key: string): Project => ({
   files: null,
   kinds: [],
   intake: false,
+  private: false,
+  member: true,
 });
 
 describe("the form of a kind", () => {

@@ -1,7 +1,9 @@
 //! The event stream: every [`AppEvent`] the core publishes on its bus, as it happens.
 //!
 //! - `GET /v1/events`: a WebSocket on which every event arrives as one JSON text message; one that a slow client
-//!   missed is answered with a `lagged` event that says how many.
+//!   missed is answered with a `lagged` event that says how many. An event about a private project the person is no
+//!   member of (its record, a repository, card, change, run, inbox item or grilling of it) is not sent to them (see
+//!   `app::projects::sight`).
 
 use axum::Extension;
 use axum::Router;
@@ -11,7 +13,8 @@ use axum::response::Response;
 use axum::routing::get;
 use tokio::sync::broadcast::error::RecvError;
 
-use super::ApiState;
+use super::{ApiState, privacy};
+use crate::app::{App, Sight};
 use crate::bus::{AppEvent, Event};
 use crate::decide::Actor;
 
@@ -37,8 +40,78 @@ const OF_A_RUN: [&str; 4] = ["run_started", "run_event", "run_ended", "chat_rena
 /// The events that tell one person something: only that person (`data.person`, a handle) is sent them.
 const OF_A_PERSON: [&str; 2] = ["notice_added", "notice_read"];
 
+/// The events after which what a person sees of the private projects is read again.
+const OF_SIGHT: [&str; 4] = [
+    "project_changed",
+    "repository_added",
+    "repository_updated",
+    "repository_removed",
+];
+
+/// Whether `sight` sees what `event` is about; an event whose thing cannot be read is not sent.
+pub(super) fn seen(app: &App, sight: &Sight, event: &AppEvent) -> bool {
+    if sight.hides_nothing() {
+        return true;
+    }
+    seen_or_err(app, sight, event).unwrap_or(false)
+}
+
+fn seen_or_err(app: &App, sight: &Sight, event: &AppEvent) -> crate::app::Result<bool> {
+    let kind = event.kind.as_str();
+    let data = &event.data;
+    let field = |name: &str| data[name].as_i64();
+    if kind == "project_changed" {
+        return Ok(field("id").is_none_or(|id| sight.project_record(id)));
+    }
+    if kind.starts_with("repository_") {
+        return Ok(field("id").is_none_or(|id| sight.repository(id)));
+    }
+    if let Some(project) = field("project_id") {
+        return Ok(sight.project(project));
+    }
+    if kind.starts_with("change_")
+        && let Some(card) = field("card_id")
+    {
+        return app.sees_card(sight, card);
+    }
+    if let Some(repository) = field("repository").or(field("repository_id"))
+        && !sight.repository(repository)
+    {
+        return Ok(false);
+    }
+    // `forge_error` and `settings_moved` name their repository by name.
+    if let Some(name) = data["repository"].as_str()
+        && app
+            .store
+            .repositories()?
+            .iter()
+            .any(|r| r.name == name && !sight.repository(r.id))
+    {
+        return Ok(false);
+    }
+    // A workflow's events name a workflow run as `run`, which belongs to a repository and to no card.
+    let workflow = kind.starts_with("workflow_");
+    let things = [
+        ("cards", field("card")),
+        ("cards", field("card_id")),
+        ("runs", field("run").filter(|_| !workflow)),
+        (privacy::WORKFLOW_RUNS, field("run").filter(|_| workflow)),
+        ("changes", field("change")),
+        ("grillings", field("grilling")),
+        ("inbox", field("item")),
+    ];
+    for (what, id) in things {
+        if let Some(id) = id
+            && !privacy::sees(app, sight, what, "", id)?
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 /// Whether `by` may be told of `event`.
-fn visible(app: &crate::app::App, by: &Actor, event: &AppEvent) -> bool {
+fn visible(app: &App, by: &Actor, event: &AppEvent) -> bool {
     if OF_A_PERSON.contains(&event.kind.as_str()) {
         return matches!(by, Actor::Member { handle, .. }
             if event.data["person"].as_str().is_some_and(|p| p.eq_ignore_ascii_case(handle)));
@@ -58,9 +131,12 @@ fn visible(app: &crate::app::App, by: &Actor, event: &AppEvent) -> bool {
 async fn stream(
     mut socket: WebSocket,
     mut rx: tokio::sync::broadcast::Receiver<AppEvent>,
-    app: std::sync::Arc<crate::app::App>,
+    app: std::sync::Arc<App>,
     by: Actor,
 ) {
+    let sight_of = |app: &App| app.sight(&by).ok();
+    // A sight that cannot be read sends nothing private: it hides every private project.
+    let mut sight = sight_of(&app);
     loop {
         tokio::select! {
             event = rx.recv() => {
@@ -69,7 +145,14 @@ async fn stream(
                     Err(RecvError::Lagged(missed)) => AppEvent::from(Event::Lagged { missed }),
                     Err(RecvError::Closed) => return,
                 };
-                if !visible(&app, &by, &event) {
+                if OF_SIGHT.contains(&event.kind.as_str()) {
+                    sight = sight_of(&app);
+                }
+                let shown = match &sight {
+                    Some(sight) => seen(&app, sight, &event),
+                    None => false,
+                };
+                if !shown || !visible(&app, &by, &event) {
                     continue;
                 }
                 let Ok(text) = serde_json::to_string(&event) else { continue };

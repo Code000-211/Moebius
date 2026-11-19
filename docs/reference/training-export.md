@@ -20,8 +20,8 @@ read in pages of 1000 and never all held in memory. A judgement recorded while t
 
 ```json
 {"id": 41, "kind": "merge", "context": {"change": "7", "diff": "..."}, "options": ["merge"], "choice": "merge",
- "reason": "looks good", "decider": "person", "run": null, "card": 12, "outcome": "merged", "at": 1790000000,
- "split": "train"}
+ "reason": "looks good", "decider": "person", "run": null, "card": 12, "project": 2, "outcome": "merged",
+ "at": 1790000000, "split": "train"}
 ```
 
 | Field | Type | Meaning |
@@ -35,6 +35,7 @@ read in pages of 1000 and never all held in memory. A judgement recorded while t
 | `decider` | string | Who decided: `person` for any person (the store's `person:<handle>` is written as `person`, since who decided is not what a decision model should learn from); the Moebius agent as `agent:<name>`; a column script as `script:<column>` (`moebius.merge_change`, see [column scripts](column-scripts.md)); or a plugin as `<plugin>` or `<plugin>/<part>` (such as `guard/patterns`), or `none` when no decider answers the kind. |
 | `run` | number or null | The run the decision was made in. |
 | `card` | number or null | The card it was made for. |
+| `project` | number or null | The id of the project the judgement belongs to: its card's, else that of its run's card, else the home project of its run's repository; null for a judgement about no project's work (an export, a setting). |
 | `outcome` | string or null | What came of it, null until known: a card that is done gives each of its judgements without an outcome the card's outcome (`merged` when a change of the card was merged, `closed` when the card is done without one, closed on the forge or by a person, say), except those of `localize`, whose outcome is the files the change touched (below); a replayed refusal has `replayed: <how it ended>; <what happened to the files>` (see [the replays](harness-configuration.md#the-replays));. |
 | `at` | number | When it was recorded, in seconds since 1970. |
 | `split` | string | `train` or `held_out`, see below. |
@@ -49,6 +50,15 @@ files the change touched with the share of them among the first ten hinted and t
 
 Secrets are removed from a context when it is recorded. Every string of a line is checked for them again when the line
 is written, so a secret in an old blob does not leave the server; they appear as `[redacted:<kind>]`.
+
+## Private projects
+
+The judgements of a private project (see [the desktop API](desktop-api.md#private-projects)) are left out of an export
+unless it is asked to include them: `moebius export --include-private` writes those of every private project, and
+`POST /v1/exports` with `"include_private": true` those of the private projects the person exporting is a member of.
+The counts then count only what was written. An export made through the API names in its record (`private`) the
+private projects whose judgements it holds, and only their members see it and its files. `GET /v1/judgements/kinds`
+counts every judgement.
 
 ## The split
 

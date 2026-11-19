@@ -35,7 +35,8 @@ impl App {
             self.store.set_project_intake(id, enabled)?;
             self.bus.publish(Event::ProjectChanged(self.project(id)?));
         }
-        self.project_view_of(id)
+        // Only a member reaches this (the route of a project's board is guarded), so the view hides nothing.
+        self.project_view_of(id, &super::Sight::everything())
     }
 
     /// The repository the cards of the project's requests are made in: its first repository, else its own files.

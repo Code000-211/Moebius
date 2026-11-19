@@ -55,6 +55,9 @@ enum Command {
         /// Only this kind of judgement; give the option again for more kinds.
         #[arg(long = "kind")]
         kinds: Vec<String>,
+        /// Also write the judgements of private projects, which are left out otherwise.
+        #[arg(long)]
+        include_private: bool,
     },
     /// Run a column script once against a made-up card and print what it did, or the error (exit status 1).
     CheckScript {
@@ -181,15 +184,25 @@ fn run(cli: Cli) -> Result<(), String> {
             }
             Ok(())
         }
-        Some(Command::Export { out, kinds }) => {
+        Some(Command::Export {
+            out,
+            kinds,
+            include_private,
+        }) => {
             let config = Config::load(&cli.config).map_err(|e| e.to_string())?;
             if !config.data_dir.join("moebius.sqlite").is_file() {
                 return Err(format!("no store in {}", config.data_dir.display()));
             }
             let store = Store::open(&config.data_dir).map_err(|e| e.to_string())?;
             let kinds = (!kinds.is_empty()).then_some(kinds);
-            let summary =
-                export::export(&store, &out, kinds.as_deref()).map_err(|e| e.to_string())?;
+            let included = if include_private {
+                export::Included::all(&store)
+            } else {
+                export::Included::public(&store)
+            }
+            .map_err(|e| e.to_string())?;
+            let summary = export::export(&store, &out, kinds.as_deref(), &included)
+                .map_err(|e| e.to_string())?;
             for written in summary.kinds {
                 let c = written.counts;
                 println!(

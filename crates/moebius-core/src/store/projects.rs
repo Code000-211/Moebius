@@ -13,6 +13,9 @@
 //! of the project's repositories (`project_repositories` does not list it), but the project is its home project, so the
 //! cards of a project without a repository are on its board and run, are reviewed and are merged in it like any
 //! repository's without a forge. `app::projects::files` makes it.
+//!
+//! A project can be private (ADR 0018, [`PRIVATE`]): it names its members in `project_members`, and nobody else, owners
+//! included, sees its board, cards, runs or files. Who sees what is decided in `app::projects::sight`.
 
 use std::collections::HashSet;
 
@@ -72,6 +75,17 @@ WHERE EXISTS (SELECT 1 FROM cards e WHERE e.project_id = cards.project_id AND e.
 CREATE UNIQUE INDEX cards_by_key ON cards (project_id, project_number);
 "#;
 
+/// A project is private or not, and a private one names its members. Every project is public at first.
+pub(super) const PRIVATE: &str = r#"
+ALTER TABLE projects ADD COLUMN private INTEGER NOT NULL DEFAULT 0;
+CREATE TABLE project_members (
+    project_id INTEGER NOT NULL REFERENCES projects(id),
+    person_id INTEGER NOT NULL REFERENCES people(id),
+    PRIMARY KEY (project_id, person_id)
+);
+CREATE INDEX project_members_by_person ON project_members (person_id);
+"#;
+
 /// The most characters a project's key has.
 pub const KEY_LIMIT: usize = 10;
 
@@ -92,6 +106,11 @@ pub struct Project {
     /// Whether the project takes requests (see `intake`): a form anyone who may see it fills in.
     #[serde(default)]
     pub intake: bool,
+    /// Whether only its members see it.
+    pub private: bool,
+    /// The ids of the people a private project names as its members, in the order of their ids; a public project
+    /// keeps the list it had, which counts for nothing while it is public.
+    pub members: Vec<i64>,
 }
 
 /// Whether `key` is a project's key: an uppercase letter, then 1 to 9 uppercase letters or digits.
@@ -184,7 +203,17 @@ pub(super) fn insert_home_project(conn: &Connection, name: &str) -> rusqlite::Re
 const COLUMNS: &str = "id, name, key, created_at, \
     (SELECT json_group_array(repository_id) FROM \
         (SELECT repository_id FROM project_repositories WHERE project_id = projects.id ORDER BY position, repository_id)), \
-    (SELECT id FROM repositories WHERE files_of = projects.id), intake";
+    (SELECT id FROM repositories WHERE files_of = projects.id), intake, \
+    private, \
+    (SELECT json_group_array(person_id) FROM \
+        (SELECT person_id FROM project_members WHERE project_id = projects.id ORDER BY person_id))";
+
+/// The JSON list of ids in column `i` of `row`.
+fn ids(row: &Row, i: usize) -> rusqlite::Result<Vec<i64>> {
+    serde_json::from_str(&row.get::<_, String>(i)?).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(i, rusqlite::types::Type::Text, e.into())
+    })
+}
 
 fn project(row: &Row) -> rusqlite::Result<Project> {
     Ok(Project {
@@ -192,11 +221,11 @@ fn project(row: &Row) -> rusqlite::Result<Project> {
         name: row.get(1)?,
         key: row.get(2)?,
         created_at: row.get(3)?,
-        repositories: serde_json::from_str(&row.get::<_, String>(4)?).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, e.into())
-        })?,
+        repositories: ids(row, 4)?,
         files: row.get(5)?,
         intake: row.get(6)?,
+        private: row.get(7)?,
+        members: ids(row, 8)?,
     })
 }
 
@@ -330,6 +359,56 @@ impl Store {
         Ok(tx.commit()?)
     }
 
+    /// Makes the project `id` private or public and names its members: the people with the ids `members`, which the
+    /// caller checks are people. False when there is no such project.
+    pub fn set_project_access(&self, id: i64, private: bool, members: &[i64]) -> Result<bool> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        if tx.execute(
+            "UPDATE projects SET private = ?1 WHERE id = ?2",
+            params![private, id],
+        )? != 1
+        {
+            return Ok(false);
+        }
+        tx.execute("DELETE FROM project_members WHERE project_id = ?1", [id])?;
+        for person in members {
+            tx.execute(
+                "INSERT OR IGNORE INTO project_members (project_id, person_id) VALUES (?1, ?2)",
+                params![id, person],
+            )?;
+        }
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// The ids of the private projects that the person `person` is no member of: every private project when there is
+    /// no person.
+    pub fn hidden_projects(&self, person: Option<i64>) -> Result<HashSet<i64>> {
+        let conn = self.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id FROM projects WHERE private AND NOT EXISTS
+                 (SELECT 1 FROM project_members WHERE project_id = projects.id AND person_id = ?1)",
+        )?;
+        Ok(stmt
+            .query_map([person], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The project a judgement on the card `card`, made in the run `run`, belongs to: the card's, else that of the
+    /// run's card, else the home project of the run's repository; none for a judgement about no project's work.
+    pub fn project_of(&self, card: Option<i64>, run: Option<i64>) -> Result<Option<i64>> {
+        Ok(self.conn().query_row(
+            "SELECT COALESCE(
+                 (SELECT project_id FROM cards WHERE id = ?1),
+                 (SELECT cards.project_id FROM runs JOIN cards ON cards.id = runs.card_id WHERE runs.id = ?2),
+                 (SELECT repositories.home_project_id FROM runs
+                      JOIN repositories ON repositories.id = runs.repository_id WHERE runs.id = ?2))",
+            params![card, run],
+            |r| r.get(0),
+        )?)
+    }
+
     /// How many cards on the project's board are open: not closed and not in `Done`.
     pub fn open_cards(&self, project_id: i64) -> Result<i64> {
         Ok(self.conn().query_row(
@@ -343,7 +422,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::{MIGRATIONS, test_store};
+    use crate::store::{MIGRATIONS, Role, test_store};
 
     #[test]
     fn a_key_is_made_from_the_name_and_never_taken_twice() {
@@ -485,11 +564,44 @@ mod tests {
     }
 
     #[test]
+    fn a_private_project_hides_from_everyone_but_its_members() {
+        let (_dir, s) = test_store();
+        let lea = s.add_person("lea", "Lea", Role::Member).unwrap();
+        let ben = s.add_person("ben", "Ben", Role::Owner).unwrap();
+        let shop = s.add_project("Storefront", "SHOP").unwrap();
+        assert!((!shop.private && shop.members.is_empty()));
+        assert!(s.hidden_projects(Some(lea.id)).unwrap().is_empty());
+
+        assert!(
+            s.set_project_access(shop.id, true, &[lea.id, lea.id])
+                .unwrap()
+        );
+        let private = s.project(shop.id).unwrap().unwrap();
+        assert!(private.private);
+        assert_eq!(private.members, [lea.id]);
+        assert!(s.hidden_projects(Some(lea.id)).unwrap().is_empty());
+        assert_eq!(
+            s.hidden_projects(Some(ben.id)).unwrap(),
+            HashSet::from([shop.id])
+        );
+        assert_eq!(s.hidden_projects(None).unwrap(), HashSet::from([shop.id]));
+
+        assert!(s.set_project_access(shop.id, false, &[lea.id]).unwrap());
+        assert!(s.hidden_projects(Some(ben.id)).unwrap().is_empty());
+        assert!(!s.set_project_access(999, true, &[]).unwrap());
+    }
+
+    #[test]
     fn removing_a_repository_takes_its_home_project_when_nothing_is_left_on_it() {
         let (_dir, s) = test_store();
         let web = s.add_repository("web", "/srv/web", "none", "main").unwrap();
         s.add_card(web.id, "First", "", "lea", "Backlog").unwrap();
         let kept = s.add_project("Storefront", "SHOP").unwrap();
+        let lea = s.add_person("lea", "Lea", Role::Member).unwrap();
+        assert!(
+            s.set_project_access(web.home_project_id, true, &[lea.id])
+                .unwrap()
+        );
         assert!(s.delete_repository(web.id).unwrap());
         assert!(s.project(web.home_project_id).unwrap().is_none());
         assert!(s.project(kept.id).unwrap().is_some());

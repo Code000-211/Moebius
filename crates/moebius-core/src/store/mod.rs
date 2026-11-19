@@ -491,6 +491,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     kinds::SCHEMA,
     wiki_search::SCHEMA,
     intake::SCHEMA,
+    projects::PRIVATE,
 ];
 
 pub fn now() -> i64 {

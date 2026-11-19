@@ -1,7 +1,8 @@
 //! The boards and their cards: what a client reads to draw every board, and what a person does to a card and its
 //! change.
 //!
-//! - `GET /v1/snapshot`: every repository with its cards (and what the board shows of each), and the open inbox.
+//! - `GET /v1/snapshot`: every repository with its cards (and what the board shows of each), and the open inbox; of a
+//!   private project the person is no member of, nothing (see `app::projects::sight`).
 //! - `POST /v1/repositories/{id}/issues` `{title, body, parent, labels, blocked_by}`: creates an issue, which becomes a
 //!   card in the backlog, answered with the card and, when the forge refused a step after the issue was created, its
 //!   `warnings`. The issue tracker's other routes are in `issues`.
@@ -152,6 +153,16 @@ pub struct NewIssue {
     /// The issue numbers that block it.
     #[serde(default)]
     pub blocked_by: Vec<i64>,
+    /// The kind of the issue, one its project offers.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// Values for the fields of the kind.
+    #[serde(default)]
+    pub fields: std::collections::BTreeMap<String, serde_json::Value>,
+    /// Starts from the kind's template: its title and body are used where the issue has none, and its field values
+    /// where `fields` has none.
+    #[serde(default)]
+    pub use_template: bool,
 }
 
 /// The answer to `POST /v1/repositories/{id}/issues`: the new issue's card, and what could not be set on it after it was
@@ -243,14 +254,22 @@ fn card_view(app: &App, facts: &BoardFacts, card: Card) -> crate::app::Result<Ca
     Ok(view)
 }
 
-async fn snapshot(State(state): State<ApiState>) -> Result<axum::Json<Snapshot>, ApiError> {
+async fn snapshot(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+) -> Result<axum::Json<Snapshot>, ApiError> {
     let round_limit = state.config.get().round_limit;
     blocking(&state.app, move |app| {
+        let sight = app.sight(&by)?;
         let mut boards = Vec::new();
         for repository in app.store.repositories()? {
+            if !sight.repository(repository.id) {
+                continue;
+            }
             // An archived card is off the board.
             let mut cards = app.store.cards(repository.id)?;
-            cards.retain(|card| card.archived_at.is_none());
+            cards.retain(|card| card.archived_at.is_none() && sight.card(card));
+            let seen: std::collections::HashSet<i64> = cards.iter().map(|card| card.id).collect();
             let waiting = app.waiting(&cards);
             let facts = app.board_facts(repository.id, &cards)?;
             boards.push(Board {
@@ -260,14 +279,25 @@ async fn snapshot(State(state): State<ApiState>) -> Result<axum::Json<Snapshot>,
                     .map(|card| card_view(app, &facts, card))
                     .collect::<Result<_, _>>()?,
                 round_limit,
-                changes: app.store.changes(repository.id)?,
+                changes: app
+                    .store
+                    .changes(repository.id)?
+                    .into_iter()
+                    .filter(|change| change.card_id.is_none_or(|card| seen.contains(&card)))
+                    .collect(),
                 repository,
             });
+        }
+        let mut inbox = Vec::new();
+        for item in app.store.inbox()? {
+            if super::privacy::sees_inbox_item(app, &sight, &item)? {
+                inbox.push(app.unquoted_item(&sight, item)?);
+            }
         }
         Ok(Snapshot {
             boards,
             harness_changes: app.store.harness_changes()?,
-            inbox: app.store.inbox()?,
+            inbox,
         })
     })
     .await
@@ -285,15 +315,35 @@ async fn create_issue(
         for number in issue.parent.iter().chain(&issue.blocked_by) {
             scope::related(app, &by, id, *number)?;
         }
-        let (card, warnings) = app.create_tracked_issue(
-            &by,
-            id,
+        let (title, body, fields) = app.issue_start(
+            issue.kind.as_deref(),
+            issue.use_template,
             &issue.title,
             &issue.body,
+            &issue.fields,
+        )?;
+        let (mut card, mut warnings) = app.create_tracked_issue(
+            &by,
+            id,
+            &title,
+            &body,
             issue.parent,
             &issue.labels,
             &issue.blocked_by,
         )?;
+        if let Some(kind) = &issue.kind {
+            let set = app.set_card_kind(card.id, Some(kind)).and_then(|card| {
+                if fields.is_empty() {
+                    Ok(card)
+                } else {
+                    app.set_card_fields(card.id, &fields)
+                }
+            });
+            match set {
+                Ok(done) => card = done,
+                Err(e) => warnings.push(format!("kind {kind}: {e}")),
+            }
+        }
         Ok(CreatedIssue { card, warnings })
     })
     .await

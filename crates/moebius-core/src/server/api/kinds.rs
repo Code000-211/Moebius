@@ -6,19 +6,20 @@
 //! - `PUT /v1/projects/{id}/kinds` `{kinds}`: replaces the kinds a project offers, by name; answers the `ProjectView`.
 //! - `PUT /v1/cards/{id}/kind` `{kind}`: gives a card a kind its project offers, or none with `null`; answers the `Card`.
 //! - `PUT /v1/cards/{id}/fields` `{fields}`: sets the values of fields of the card's kind (`null` clears one).
-//! - `GET /v1/issues`: the cards of every project, filtered by `project`, `kind`, `state` and `field.<name>=<value>`
+//! - `GET /v1/issues`: the cards of every project the person sees, filtered by `project`, `kind`, `state` and `field.<name>=<value>`
 //!   and ordered by `sort=<field name>` (`order=desc` reverses it).
 
 use std::collections::BTreeMap;
 
 use axum::extract::{Path as UrlPath, Query, State};
 use axum::routing::{get, put};
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use serde::Deserialize;
 use serde_json::Value;
 
 use super::{ApiError, ApiState, blocking};
 use crate::app::{AppError, CardQuery, KindView, ProjectView};
+use crate::decide::Actor;
 use crate::store::{Card, FieldDef};
 
 /// The routes of kinds and fields.
@@ -95,12 +96,13 @@ async fn delete_kind(
 
 async fn set_project_kinds(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     Json(body): Json<ProjectKinds>,
 ) -> Result<Json<ProjectView>, ApiError> {
     blocking(&state.app, move |app| {
         app.set_project_kinds(id, &body.kinds)?;
-        app.project_view_of(id)
+        app.project_view_of(id, &app.sight(&by)?)
     })
     .await
 }
@@ -161,10 +163,15 @@ fn card_query(pairs: Vec<(String, String)>) -> Result<CardQuery, AppError> {
 
 async fn issues(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     Query(pairs): Query<Vec<(String, String)>>,
 ) -> Result<Json<Vec<Card>>, ApiError> {
     blocking(&state.app, move |app| {
-        app.issues_across(&card_query(pairs)?)
+        // The cards of a private project the person is no member of are left out (see `app::projects::sight`).
+        let sight = app.sight(&by)?;
+        let mut cards = app.issues_across(&card_query(pairs)?)?;
+        cards.retain(|card| sight.card(card));
+        Ok(cards)
     })
     .await
 }

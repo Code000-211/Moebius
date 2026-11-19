@@ -3,7 +3,7 @@
 //! starts an export: `moebius export` on the command line or `POST /v1/exports` from the app. The format is
 //! documented in `docs/reference/training-export.md`.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -35,6 +35,8 @@ pub enum ExportError {
     UnknownKind(String),
     #[error("judgement {0}: its context cannot be read: {1}")]
     Context(i64, String),
+    #[error("cannot tell which projects the person sees: {0}")]
+    Sight(String),
 }
 
 /// Whether the judgement belongs to the tenth that is kept back from training. Shadowing measures a decision model on
@@ -82,10 +84,56 @@ pub struct Written {
     pub counts: KindCounts,
 }
 
-/// What an export wrote, kinds in alphabetical order.
+/// What an export wrote, kinds in alphabetical order, and the private projects it holds judgements of.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Summary {
     pub kinds: Vec<Written>,
+    pub private: BTreeSet<i64>,
+}
+
+/// Which private projects an export holds the judgements of: none unless it is asked to include them.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Included {
+    /// Every private project.
+    private: HashSet<i64>,
+    /// Those of them whose judgements are written.
+    included: HashSet<i64>,
+}
+
+impl Included {
+    /// No private project: what an export holds unless asked.
+    pub fn public(store: &Store) -> Result<Self, ExportError> {
+        Ok(Self {
+            private: store.hidden_projects(None)?,
+            included: HashSet::new(),
+        })
+    }
+
+    /// Every private project, as `moebius export --include-private` asks on the server's own machine.
+    pub fn all(store: &Store) -> Result<Self, ExportError> {
+        let private = store.hidden_projects(None)?;
+        Ok(Self {
+            included: private.clone(),
+            private,
+        })
+    }
+
+    /// The private projects a person who asked to include them is a member of: all but those `hidden` from them.
+    pub fn seen(store: &Store, hidden: &HashSet<i64>) -> Result<Self, ExportError> {
+        let private = store.hidden_projects(None)?;
+        Ok(Self {
+            included: private.difference(hidden).copied().collect(),
+            private,
+        })
+    }
+
+    /// Whether a judgement of `project` is written, and whether that makes the export hold a private project's.
+    fn takes(&self, project: Option<i64>) -> (bool, bool) {
+        match project {
+            Some(p) if self.private.contains(&p) => (self.included.contains(&p), true),
+            _ => (true, false),
+        }
+    }
 }
 
 /// The counts of the judgements stored now that are in `scope`, per kind in alphabetical order.
@@ -109,8 +157,8 @@ fn file_safe(kind: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
 }
 
-/// One line of a kind's file.
-fn line(store: &Store, j: &Judgement) -> Result<String, ExportError> {
+/// One line of a kind's file, for a judgement of the project `project`.
+fn line(store: &Store, j: &Judgement, project: Option<i64>) -> Result<String, ExportError> {
     let mut context = serde_json::Map::new();
     for blob in &j.context {
         let text = store
@@ -139,6 +187,7 @@ fn line(store: &Store, j: &Judgement) -> Result<String, ExportError> {
         "decider": if is_person(&j.decider) { PERSON } else { &j.decider },
         "run": j.run_id,
         "card": j.card_id,
+        "project": project,
         "outcome": j.outcome,
         "at": j.at,
         "split": if held_out(j.id) { "held_out" } else { "train" },
@@ -146,8 +195,15 @@ fn line(store: &Store, j: &Judgement) -> Result<String, ExportError> {
     Ok(redact_json(&row).to_string())
 }
 
-/// Writes the judgements of one kind to `<dir>/<kind>.jsonl`, through a temporary name that is renamed at the end.
-fn write_kind(store: &Store, dir: &Path, kind: &str) -> Result<Written, ExportError> {
+/// Writes the judgements of one kind to `<dir>/<kind>.jsonl`, through a temporary name that is renamed at the end,
+/// leaving out those of the private projects not `included`; adds to `private` those whose judgements it wrote.
+fn write_kind(
+    store: &Store,
+    dir: &Path,
+    kind: &str,
+    included: &Included,
+    private: &mut BTreeSet<i64>,
+) -> Result<Written, ExportError> {
     let file = dir.join(format!("{kind}.jsonl"));
     let temporary = dir.join(format!("{kind}.jsonl.tmp"));
     let mut counts = KindCounts::new(kind);
@@ -158,7 +214,15 @@ fn write_kind(store: &Store, dir: &Path, kind: &str) -> Result<Written, ExportEr
         let Some(last) = page.last() else { break };
         after = last.id;
         for j in &page {
-            writeln!(out, "{}", line(store, j)?)?;
+            let project = store.project_of(j.card_id, j.run_id)?;
+            let (takes, is_private) = included.takes(project);
+            if !takes {
+                continue;
+            }
+            if is_private {
+                private.extend(project);
+            }
+            writeln!(out, "{}", line(store, j, project)?)?;
             counts.add(j.id, j.outcome.is_some(), &j.decider);
         }
     }
@@ -168,9 +232,15 @@ fn write_kind(store: &Store, dir: &Path, kind: &str) -> Result<Written, ExportEr
     Ok(Written { file, counts })
 }
 
-/// Writes one file per kind of judgement to `dir`, or only of the given kinds, oldest judgement first. A file only
-/// appears under its name once it is complete; one that fails leaves no file of its own.
-pub fn export(store: &Store, dir: &Path, kinds: Option<&[String]>) -> Result<Summary, ExportError> {
+/// Writes one file per kind of judgement to `dir`, or only of the given kinds, oldest judgement first, with the
+/// judgements of no private project but the `included` ones. A file only appears under its name once it is complete;
+/// one that fails leaves no file of its own.
+pub fn export(
+    store: &Store,
+    dir: &Path,
+    kinds: Option<&[String]>,
+    included: &Included,
+) -> Result<Summary, ExportError> {
     let stored = counts(store, &Scope::default())?;
     let wanted: Vec<String> = match kinds {
         None => stored.into_iter().map(|c| c.kind).collect(),
@@ -190,8 +260,9 @@ pub fn export(store: &Store, dir: &Path, kinds: Option<&[String]>) -> Result<Sum
     };
     std::fs::create_dir_all(dir)?;
     let mut written = Vec::new();
+    let mut private = BTreeSet::new();
     for kind in wanted.iter().filter(|kind| file_safe(kind)) {
-        match write_kind(store, dir, kind) {
+        match write_kind(store, dir, kind, included, &mut private) {
             Ok(w) => written.push(w),
             Err(e) => {
                 let _ = std::fs::remove_file(dir.join(format!("{kind}.jsonl.tmp")));
@@ -199,7 +270,10 @@ pub fn export(store: &Store, dir: &Path, kinds: Option<&[String]>) -> Result<Sum
             }
         }
     }
-    Ok(Summary { kinds: written })
+    Ok(Summary {
+        kinds: written,
+        private,
+    })
 }
 
 /// An export a person started through the API: kept in `<data_dir>/exports/<id>/`.
@@ -208,6 +282,18 @@ pub struct Export {
     pub id: i64,
     pub at: i64,
     pub kinds: Vec<KindCounts>,
+    /// The private projects whose judgements it holds; only their members see the export. None for an export made
+    /// before projects could be private, which may hold anything and is seen only by someone who sees every project.
+    #[serde(default)]
+    pub private: Option<Vec<i64>>,
+}
+
+/// Whether `sight` sees the export: every private project it holds judgements of (see [`Export::private`]).
+pub fn seen(export: &Export, sight: &crate::app::Sight) -> bool {
+    match &export.private {
+        Some(projects) => projects.iter().all(|p| sight.project(*p)),
+        None => sight.hides_nothing(),
+    }
 }
 
 fn exports_dir(data_dir: &Path) -> PathBuf {
@@ -239,10 +325,24 @@ fn ids(data_dir: &Path) -> Vec<i64> {
 }
 
 /// Exports for a person who asked in the app: writes the files, keeps the record and records the person's decision.
-/// The export does not contain the judgement of its own decision.
-pub fn create(app: &App, by: &Actor, kinds: Option<&[String]>) -> Result<Export, ExportError> {
+/// The export does not contain the judgement of its own decision. With `include_private` it holds the judgements of
+/// the private projects the person is a member of, and only those members see it; without, of no private project.
+pub fn create(
+    app: &App,
+    by: &Actor,
+    kinds: Option<&[String]>,
+    include_private: bool,
+) -> Result<Export, ExportError> {
+    let included = if include_private {
+        let sight = app
+            .sight(by)
+            .map_err(|e| ExportError::Sight(e.to_string()))?;
+        Included::seen(&app.store, sight.hidden())?
+    } else {
+        Included::public(&app.store)?
+    };
     let (id, dir) = new_directory(&app.data_dir)?;
-    let summary = match export(&app.store, &dir, kinds) {
+    let summary = match export(&app.store, &dir, kinds, &included) {
         Ok(summary) => summary,
         Err(e) => {
             let _ = std::fs::remove_dir_all(&dir);
@@ -253,6 +353,7 @@ pub fn create(app: &App, by: &Actor, kinds: Option<&[String]>) -> Result<Export,
         id,
         at: store::now(),
         kinds: summary.kinds.into_iter().map(|w| w.counts).collect(),
+        private: Some(summary.private.into_iter().collect()),
     };
     let temporary = dir.join(format!("{RECORD}.tmp"));
     std::fs::write(
@@ -393,7 +494,7 @@ mod tests {
         store.set_outcome(a.id, "merged").unwrap();
 
         let out = dir.path().join("out");
-        let summary = export(&store, &out, None).unwrap();
+        let summary = export(&store, &out, None, &Included::default()).unwrap();
         let merge = lines(&out.join("merge.jsonl"));
         assert_eq!(merge.len(), 2);
         assert_eq!(
@@ -402,7 +503,7 @@ mod tests {
                 "id": a.id, "kind": "merge",
                 "context": {"change": "7", "title": "Fix it"},
                 "options": ["yes", "no"], "choice": "yes", "reason": "because",
-                "decider": "person", "run": null, "card": null, "outcome": "merged",
+                "decider": "person", "run": null, "card": null, "project": null, "outcome": "merged",
                 "at": a.at, "split": if held_out(a.id) { "held_out" } else { "train" },
             })
         );
@@ -427,6 +528,67 @@ mod tests {
         assert_eq!(summary.kinds.len(), 2);
     }
 
+    /// A judgement carries its project; one of a private project is written only when the export includes it.
+    #[test]
+    fn a_private_project_s_judgements_are_left_out_unless_asked() {
+        let (dir, store) = setup();
+        let web = store
+            .add_repository("web", "/srv/web", "none", "main")
+            .unwrap();
+        let api = store
+            .add_repository("api", "/srv/api", "none", "main")
+            .unwrap();
+        let public = store
+            .add_card(web.id, "Public", "", "lea", "Backlog")
+            .unwrap();
+        let secret = store
+            .add_card(api.id, "Secret", "", "lea", "Backlog")
+            .unwrap();
+        let run = store
+            .add_run(Some(secret.id), "coder", "fake", "code")
+            .unwrap();
+        store
+            .set_project_access(api.home_project_id, true, &[])
+            .unwrap();
+        let on = |card: Option<i64>, run: Option<i64>| {
+            store
+                .add_judgement(&NewJudgement {
+                    kind: "merge".into(),
+                    context: vec![store.blobs().put("{}").unwrap()],
+                    choice: "merge".into(),
+                    decider: "none".into(),
+                    card_id: card,
+                    run_id: run,
+                    ..Default::default()
+                })
+                .unwrap()
+        };
+        let a = on(Some(public.id), None);
+        on(Some(secret.id), None);
+        on(None, Some(run.id));
+        let c = on(None, None);
+
+        let out = dir.path().join("public");
+        let summary = export(&store, &out, None, &Included::public(&store).unwrap()).unwrap();
+        let written = lines(&out.join("merge.jsonl"));
+        let ids: Vec<i64> = written.iter().map(|l| l["id"].as_i64().unwrap()).collect();
+        assert_eq!(ids, [a.id, c.id]);
+        assert_eq!(written[0]["project"], web.home_project_id);
+        assert_eq!(written[1]["project"], Value::Null);
+        assert_eq!(summary.kinds[0].counts.count, 2);
+        assert!(summary.private.is_empty());
+
+        let out = dir.path().join("all");
+        let summary = export(&store, &out, None, &Included::all(&store).unwrap()).unwrap();
+        let written = lines(&out.join("merge.jsonl"));
+        assert_eq!(written.len(), 4);
+        assert_eq!(
+            written[2]["project"], api.home_project_id,
+            "a run's judgement has its card's project"
+        );
+        assert_eq!(summary.private, BTreeSet::from([api.home_project_id]));
+    }
+
     #[test]
     fn a_secret_in_a_blob_does_not_come_out() {
         let (dir, store) = setup();
@@ -449,7 +611,13 @@ mod tests {
             .unwrap();
 
         let out = dir.path().join("out");
-        export(&store, &out, Some(&["tool_call".to_string()])).unwrap();
+        export(
+            &store,
+            &out,
+            Some(&["tool_call".to_string()]),
+            &Included::default(),
+        )
+        .unwrap();
         let text = std::fs::read_to_string(out.join("tool_call.jsonl")).unwrap();
         assert!(!text.contains("sk-ant-"), "{text}");
         assert!(text.contains("[redacted:anthropic-key]"));
@@ -472,7 +640,7 @@ mod tests {
         judge(&store, "merge", "{}", PERSON);
         judge(&store, "merge", "{}", "agent:Moebius");
         let out = dir.path().join("out");
-        let summary = export(&store, &out, None).unwrap();
+        let summary = export(&store, &out, None, &Included::default()).unwrap();
         let deciders: Vec<Value> = lines(&out.join("merge.jsonl"))
             .into_iter()
             .map(|line| line["decider"].clone())
@@ -487,11 +655,18 @@ mod tests {
         judge(&store, "merge", "{}", PERSON);
         judge(&store, "retry", "{}", PERSON);
         let out = dir.path().join("out");
-        let summary = export(&store, &out, Some(&["retry".to_string()])).unwrap();
+        let summary = export(
+            &store,
+            &out,
+            Some(&["retry".to_string()]),
+            &Included::default(),
+        )
+        .unwrap();
         assert_eq!(summary.kinds.len(), 1);
         assert!(out.join("retry.jsonl").is_file() && !out.join("merge.jsonl").exists());
         for bad in ["nothing", "../merge"] {
-            let error = export(&store, &out, Some(&[bad.to_string()])).unwrap_err();
+            let error =
+                export(&store, &out, Some(&[bad.to_string()]), &Included::default()).unwrap_err();
             assert!(matches!(error, ExportError::UnknownKind(_)), "{error}");
         }
     }
@@ -508,7 +683,7 @@ mod tests {
             })
             .unwrap();
         let out = dir.path().join("out");
-        let error = export(&store, &out, None).unwrap_err();
+        let error = export(&store, &out, None, &Included::default()).unwrap_err();
         assert!(
             matches!(error, ExportError::Context(id, _) if id == broken.id),
             "{error}"
@@ -531,7 +706,7 @@ mod tests {
             judge(&store, "merge", "{}", PERSON);
         }
         let out = dir.path().join("out");
-        let summary = export(&store, &out, None).unwrap();
+        let summary = export(&store, &out, None, &Included::default()).unwrap();
         assert_eq!(summary.kinds[0].counts.count, PAGE + 5);
         let ids: Vec<i64> = lines(&out.join("merge.jsonl"))
             .iter()
