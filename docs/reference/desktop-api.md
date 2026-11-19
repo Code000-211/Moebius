@@ -131,6 +131,10 @@ any route to any role that is not what its row says.
 | `PUT /v1/cards/{id}/labels` | member | yes |
 | `PUT /v1/cards/{id}/assignees` | member | no |
 | `PUT /v1/inbox/{id}/assignees` | member | no |
+| `PUT /v1/cards/{id}/assignees/{handle}` | member | no |
+| `DELETE /v1/cards/{id}/assignees/{handle}` | member | no |
+| `PUT /v1/inbox/{id}/assignees/{handle}` | member | no |
+| `DELETE /v1/inbox/{id}/assignees/{handle}` | member | no |
 | `POST /v1/cards/{id}/blockers` | member | yes |
 | `DELETE /v1/cards/{id}/blockers/{number}` | member | yes |
 | `PUT /v1/cards/{id}/duplicate` | member | yes |
@@ -1069,7 +1073,8 @@ assigned stays assigned until someone changes it. A member or an owner assigns, 
 
 ### `PUT /v1/cards/{id}/assignees`
 
-Replaces the people the card is given to. Request: `{"assignees": [handle]}`, each with or without the `@` and in any
+Replaces the people the card is given to. Send it only when the whole set is meant: a client that builds the set from
+a card it loaded earlier loses a change made meanwhile, so to add or take off one person use the routes below. Request: `{"assignees": [handle]}`, each with or without the `@` and in any
 case; repeats are dropped, and `[]` gives the card to no one. The event `card_assignees_changed` is sent; setting what is
 set changes nothing. Response: the `Card`. Errors: `404` no such card; `422` a handle that is nobody's, or a disabled
 person who was not assigned already.
@@ -1078,6 +1083,20 @@ person who was not assigned already.
 
 The same for an item of the inbox, resolved or not; the event is `inbox_assignees_changed`. Response: the `InboxItem`.
 Errors: `404` no such item; `422` as above.
+
+### `PUT /v1/cards/{id}/assignees/{handle}` and `DELETE /v1/cards/{id}/assignees/{handle}`
+
+Give the card to one more person, or take it off one. `{handle}` is a handle with or without the `@`, in any case; there
+is no body. The change is applied to the people the card has when the server handles it, so two made in quick succession
+(from the palette and the sidebar, say) both stay. Adding someone already on the card, or taking off someone who is not,
+changes nothing and sends no event; otherwise `card_assignees_changed` is sent with the whole new set. A disabled person
+can be taken off. Response: the `Card`. Errors: `404` no such card; `422` a handle that is nobody's, or adding a disabled
+person who was not assigned already.
+
+### `PUT /v1/inbox/{id}/assignees/{handle}` and `DELETE /v1/inbox/{id}/assignees/{handle}`
+
+The same for an item of the inbox; the event is `inbox_assignees_changed`. Response: the `InboxItem`. Errors: `404` no
+such item; `422` as above.
 
 ### `POST /v1/cards/{id}/blockers`
 

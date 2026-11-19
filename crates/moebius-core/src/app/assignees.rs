@@ -1,6 +1,7 @@
 //! Giving cards and inbox items to people (ADR 0018). The handles a person names are checked against the people of the
 //! organisation: one that is nobody's is refused, and so is a disabled person who was not assigned before. Assigning
-//! replaces the whole set, is the same on every forge (Moebius keeps assignees itself and never writes the forge's),
+//! replaces the whole set or adds or takes off one person (the change is applied to the people the card has now,
+//! so two made in quick succession both stay), is the same on every forge (Moebius keeps assignees itself and never writes the forge's),
 //! and is announced on the bus as `card_assignees_changed` or `inbox_assignees_changed`.
 
 use std::collections::BTreeSet;
@@ -48,6 +49,95 @@ impl App {
             assignees,
         });
         Ok(self.store.inbox_item(item_id)?.unwrap_or(item))
+    }
+
+    /// Gives the card to one more person, whatever the card was given to meanwhile. Announces
+    /// `card_assignees_changed` when the person was not on it.
+    pub fn add_assignee(&self, card_id: i64, handle: &str) -> Result<crate::store::Card> {
+        self.change_assignee(card_id, handle, true)
+    }
+
+    /// Takes the card off one person (also a disabled one); nothing happens when the card was not given to them.
+    pub fn remove_assignee(&self, card_id: i64, handle: &str) -> Result<crate::store::Card> {
+        self.change_assignee(card_id, handle, false)
+    }
+
+    fn change_assignee(&self, card_id: i64, handle: &str, add: bool) -> Result<crate::store::Card> {
+        let card = self.card(card_id)?;
+        let person = self.person_to_change(handle, &card.assignees, add)?;
+        let changed = if add {
+            self.store.add_card_assignee(card_id, person)?
+        } else {
+            self.store.remove_card_assignee(card_id, person)?
+        };
+        let card = self.card(card_id)?;
+        if changed {
+            self.bus.publish(Event::CardAssigneesChanged {
+                card: card_id,
+                assignees: card.assignees.clone(),
+            });
+        }
+        Ok(card)
+    }
+
+    /// Gives the inbox item to one more person; like [`App::add_assignee`].
+    pub fn add_inbox_assignee(
+        &self,
+        item_id: i64,
+        handle: &str,
+    ) -> Result<crate::store::InboxItem> {
+        self.change_inbox_assignee(item_id, handle, true)
+    }
+
+    /// Takes the inbox item off one person; like [`App::remove_assignee`].
+    pub fn remove_inbox_assignee(
+        &self,
+        item_id: i64,
+        handle: &str,
+    ) -> Result<crate::store::InboxItem> {
+        self.change_inbox_assignee(item_id, handle, false)
+    }
+
+    fn change_inbox_assignee(
+        &self,
+        item_id: i64,
+        handle: &str,
+        add: bool,
+    ) -> Result<crate::store::InboxItem> {
+        let item = self
+            .store
+            .inbox_item(item_id)?
+            .ok_or_else(|| AppError::NotFound(format!("inbox item {item_id}")))?;
+        let person = self.person_to_change(handle, &item.assignees, add)?;
+        let changed = if add {
+            self.store.add_inbox_assignee(item_id, person)?
+        } else {
+            self.store.remove_inbox_assignee(item_id, person)?
+        };
+        let item = self.store.inbox_item(item_id)?.unwrap_or(item);
+        if changed {
+            self.bus.publish(Event::InboxAssigneesChanged {
+                item: item_id,
+                assignees: item.assignees.clone(),
+            });
+        }
+        Ok(item)
+    }
+
+    /// The id of the person `handle` names. Adding a disabled person who was not assigned before is refused.
+    fn person_to_change(&self, handle: &str, current: &[String], add: bool) -> Result<i64> {
+        let handle = handle.trim().trim_start_matches('@');
+        let person = self
+            .store
+            .person_by_handle(handle)?
+            .ok_or_else(|| AppError::Invalid(format!("@{handle} is nobody")))?;
+        let kept = current
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case(&person.handle));
+        if add && person.disabled && !kept {
+            return Err(AppError::Invalid(format!("@{} is disabled", person.handle)));
+        }
+        Ok(person.id)
     }
 
     /// The ids of the people `handles` name; `current` are the handles already assigned, who stay even when disabled.
@@ -140,6 +230,52 @@ mod tests {
     }
 
     #[test]
+    fn adding_and_taking_off_one_person_works_on_the_people_the_card_has_now() {
+        let (_dir, app) = app();
+        let lea = app.store.add_person("lea", "Lea", Role::Member).unwrap();
+        app.store.add_person("tom", "Tom", Role::Member).unwrap();
+        let repo = app.store.add_repository("r", "/r", "none", "main").unwrap();
+        let card = app
+            .store
+            .add_card(repo.id, "t", "b", "person", "Not started")
+            .unwrap();
+        let mut events = app.bus.subscribe();
+
+        app.add_assignee(card.id, "@Lea").unwrap();
+        let card = app.add_assignee(card.id, "tom").unwrap();
+        assert_eq!(
+            card.assignees,
+            ["lea", "tom"],
+            "neither add undoes the other"
+        );
+        assert_eq!(events.try_recv().unwrap().kind, "card_assignees_changed");
+        assert_eq!(
+            events.try_recv().unwrap().data,
+            serde_json::json!({"card": card.id, "assignees": ["lea", "tom"]})
+        );
+
+        app.add_assignee(card.id, "tom").unwrap();
+        assert!(events.try_recv().is_err(), "no change, no event");
+        assert!(app.add_assignee(card.id, "nobody").is_err());
+        assert!(app.remove_assignee(card.id, "nobody").is_err());
+
+        app.store.set_person_disabled(lea.id, true).unwrap();
+        let card = app.remove_assignee(card.id, "lea").unwrap();
+        assert_eq!(
+            card.assignees,
+            ["tom"],
+            "a disabled person can be taken off"
+        );
+        events.try_recv().unwrap();
+        app.remove_assignee(card.id, "lea").unwrap();
+        assert!(events.try_recv().is_err());
+        assert!(
+            app.add_assignee(card.id, "lea").is_err(),
+            "and not put back"
+        );
+    }
+
+    #[test]
     fn an_inbox_item_is_given_to_people_too() {
         let (_dir, app) = app();
         app.store.add_person("lea", "Lea", Role::Member).unwrap();
@@ -152,5 +288,12 @@ mod tests {
         assert_eq!(item.assignees, ["lea"]);
         assert_eq!(events.try_recv().unwrap().kind, "inbox_assignees_changed");
         assert!(app.set_inbox_assignees(999, &[]).is_err());
+
+        app.store.add_person("tom", "Tom", Role::Member).unwrap();
+        let item = app.add_inbox_assignee(item.id, "tom").unwrap();
+        assert_eq!(item.assignees, ["lea", "tom"]);
+        let item = app.remove_inbox_assignee(item.id, "lea").unwrap();
+        assert_eq!(item.assignees, ["tom"]);
+        assert!(app.add_inbox_assignee(999, "tom").is_err());
     }
 }
