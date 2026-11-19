@@ -77,7 +77,7 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("POST", "/v1/projects", OWNER),
     ("GET", "/v1/projects/{id}", VIEWER),
     ("PATCH", "/v1/projects/{id}", OWNER),
-    // The wiki: everyone reads it, a member writes it, and an agent's edit is for later (a branch in the inbox).
+    // The wiki: everyone reads it, a member writes it, and an agent's edit is a proposal, a branch that waits in the inbox for a person.
     ("GET", "/v1/wiki/pages", VIEWER),
     ("GET", "/v1/wiki/pages/{*path}", VIEWER),
     ("PUT", "/v1/wiki/pages/{*path}", MEMBER_PERSON),
@@ -85,6 +85,9 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("POST", "/v1/wiki/moves", MEMBER_PERSON),
     ("GET", "/v1/wiki/history/{*path}", VIEWER),
     ("POST", "/v1/wiki/refresh", MEMBER),
+    ("POST", "/v1/wiki/proposals", MEMBER),
+    ("POST", "/v1/wiki/proposals/{id}/merge", MEMBER_PERSON),
+    ("POST", "/v1/wiki/proposals/{id}/dismiss", MEMBER_PERSON),
     ("GET", "/v1/milestones", VIEWER),
     ("POST", "/v1/milestones", MEMBER_PERSON),
     ("GET", "/v1/milestones/{id}", VIEWER),

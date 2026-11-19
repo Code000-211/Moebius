@@ -9,7 +9,7 @@
 //! This module holds the commands as clap sees them, the dispatch to the command groups and the helpers they share
 //! for reading input and writing answers. `client` finds the server and sends the requests; each other module is one
 //! group of commands, with its requests and how its answers are written: `api` (any route), `board` (the board,
-//! cards, the inbox and issues), `chats` (chats and grillings), `automations`, `agents`, `rules`, `workflow`, `packages`, `plugins` (turning a plugin off or on), `ext` (Pi packages), `repos`
+//! cards, the inbox and issues), `chats` (chats and grillings), `automations`, `agents`, `rules`, `wiki`, `workflow`, `packages`, `plugins` (turning a plugin off or on), `ext` (Pi packages), `repos`
 //! (repositories), `login` (saving a person's access token), `ssh` (a server reached through an SSH tunnel), `window` (the web app as a window of its own), `setup` (`doctor`, settings, API keys, usage and the server itself) and `improve` (Retros,
 //! proposals, research, the decision model and its takeovers).
 
@@ -31,6 +31,7 @@ mod repos;
 mod rules;
 mod setup;
 pub mod ssh;
+mod wiki;
 pub mod window;
 mod workflow;
 
@@ -52,6 +53,7 @@ use plugins::PluginCommand;
 use repos::RepoCommand;
 use rules::RulesCommand;
 use setup::{SecretsCommand, ServerCommand, SettingsCommand};
+use wiki::WikiCommand;
 use workflow::WorkflowCommand;
 
 /// The commands that operate a running server.
@@ -111,6 +113,11 @@ pub enum Operate {
     Rules {
         #[command(subcommand)]
         command: Option<RulesCommand>,
+    },
+    /// The wiki: its pages, and proposals for it that wait in the inbox.
+    Wiki {
+        #[command(subcommand)]
+        command: WikiCommand,
     },
     /// The workflows of the harness configuration repository.
     Workflow {
@@ -238,6 +245,7 @@ impl Operate {
             Agents => agents::agents(),
             Agent { command } => agents::agent(command, get),
             Rules { command } => rules::rules(command.as_ref()),
+            Wiki { command } => wiki::wiki(command),
             Workflow { command } => workflow::workflow(command, get),
             Pkg { command } => packages::pkg(command, get),
             Plugin { command } => plugins::plugin(command),
@@ -278,6 +286,8 @@ pub enum Show {
     /// An object, one line for each field.
     Object,
     Rules,
+    /// A wiki page's text.
+    Wiki,
     /// An answer of the package routes.
     Packages,
     /// The answer of turning a plugin off or on.
@@ -336,6 +346,7 @@ pub fn render(show: &Show, text: &str) -> Result<String, String> {
         Show::Table(columns) => table(&value, columns),
         Show::Object => object(&value),
         Show::Rules => rules::show_rules(&value),
+        Show::Wiki => wiki::show_page(&value),
         Show::Packages => packages::show_packages(&value),
         Show::Plugin => plugins::show_plugin(&value),
         Show::Offered => ext::show_offered(&value),

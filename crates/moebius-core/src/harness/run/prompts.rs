@@ -300,6 +300,10 @@ fn prompt_with(
         prompt.push('\n');
         prompt.push_str(&lessons);
     }
+    if let Some(pages) = crate::wiki::for_card(app, card) {
+        prompt.push('\n');
+        prompt.push_str(&pages);
+    }
     let test_first = || {
         app.store
             .repository(card.repository_id)
@@ -568,5 +572,65 @@ mod tests {
         assert!(prompt.contains("kept on forgejo"), "{prompt}");
         // A review is not told: it reads the change, not the tracker.
         assert!(!prompt_for(&app, &card, "review", None).contains("Do not look for it"));
+    }
+
+    #[test]
+    fn a_run_prompt_holds_the_pages_its_issue_links_to_and_no_others() {
+        use crate::wiki::Wiki;
+        use crate::wiki::testing::{bare_origin, push_from_elsewhere};
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let repo = store
+            .add_repository("demo", "/srv/demo", "none", "main")
+            .unwrap();
+        let app = App::new(
+            store,
+            Arc::new(Host::new(Duration::from_secs(1))),
+            &dir.path().join("data"),
+        );
+        let card = app
+            .store
+            .add_card(
+                repo.id,
+                "Page the right person",
+                "Follow [[Team/On call]] and [[setup|the setup]]. See also [[Missing]].",
+                "person",
+                "Not started",
+            )
+            .unwrap();
+        // Without a wiki, the prompt has no such section.
+        assert!(!prompt_for(&app, &card, "code", None).contains("wiki"));
+
+        let origin = bare_origin(dir.path());
+        push_from_elsewhere(
+            dir.path(),
+            &origin,
+            "Team/On call.md",
+            "Ada answers at night.\n",
+        );
+        push_from_elsewhere(dir.path(), &origin, "Setup.md", "Install it.\n");
+        push_from_elsewhere(dir.path(), &origin, "Unlinked.md", "Not for this card.\n");
+        let wiki = Wiki::open(
+            &app,
+            &origin.to_string_lossy(),
+            &dir.path().join("data/wiki"),
+        )
+        .unwrap();
+        app.set_wiki(Arc::new(wiki));
+
+        let prompt = prompt_for(&app, &card, "code", None);
+        assert!(
+            prompt.contains("### Team/On call\n\nAda answers at night."),
+            "{prompt}"
+        );
+        assert!(prompt.contains("### Setup\n\nInstall it."), "{prompt}");
+        assert!(!prompt.contains("Not for this card"), "{prompt}");
+        assert!(!prompt.contains("### Missing"), "{prompt}");
+        let plain = app
+            .store
+            .add_card(repo.id, "Plain", "No links.", "person", "Not started")
+            .unwrap();
+        assert!(!prompt_for(&app, &plain, "code", None).contains("organisation's wiki"));
     }
 }

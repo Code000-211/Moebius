@@ -8,6 +8,8 @@
 //! - `POST /v1/wiki/moves` `{from, to}`: moves or renames a page.
 //! - `GET /v1/wiki/history/{*path}`: the commits that changed a page, newest first.
 //! - `POST /v1/wiki/refresh`: follows `origin` now, rather than at the server's next refresh.
+//! - `POST /v1/wiki/proposals` `{path, text, message?}`: an agent's edit, a branch that waits in the inbox.
+//! - `POST /v1/wiki/proposals/{id}/merge` and `/dismiss` `{reason?}`: a person's decision about it.
 
 use axum::extract::{Path as UrlPath, Query, State};
 use axum::routing::{get, post};
@@ -29,6 +31,66 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/wiki/moves", post(move_page))
         .route("/v1/wiki/history/{*path}", get(history))
         .route("/v1/wiki/refresh", post(refresh))
+        .route("/v1/wiki/proposals", post(propose))
+        .route("/v1/wiki/proposals/{id}/merge", post(merge_proposal))
+        .route("/v1/wiki/proposals/{id}/dismiss", post(dismiss_proposal))
+}
+
+/// What `POST /v1/wiki/proposals/{id}/merge` and `/dismiss` take.
+#[derive(Debug, Default, Deserialize)]
+pub struct Decision {
+    #[serde(default)]
+    pub reason: String,
+}
+
+/// The open inbox item `id` that carries a proposal for the wiki.
+fn proposal(app: &crate::app::App, id: i64) -> crate::app::Result<crate::store::InboxItem> {
+    app.store
+        .inbox()?
+        .into_iter()
+        .find(|item| item.id == id && item.kind == crate::wiki::WIKI_PROPOSAL)
+        .ok_or_else(|| crate::app::AppError::NotFound(format!("proposal {id} for the wiki")))
+}
+
+async fn propose(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    Json(new): Json<ProposedPage>,
+) -> Result<Json<crate::store::InboxItem>, ApiError> {
+    blocking(&state.app, move |app| {
+        app.wiki()?
+            .propose(app, &by, &new.path, &new.text, new.message.as_deref())
+    })
+    .await
+}
+
+async fn merge_proposal(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    body: Option<Json<Decision>>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let reason = body.map(|Json(d)| d.reason).unwrap_or_default();
+    blocking(&state.app, move |app| {
+        let item = proposal(app, id)?;
+        let commit = app.wiki()?.merge_proposal(app, &by, &item, &reason)?;
+        Ok(serde_json::json!({ "commit": commit }))
+    })
+    .await
+}
+
+async fn dismiss_proposal(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    body: Option<Json<Decision>>,
+) -> Result<Json<()>, ApiError> {
+    let reason = body.map(|Json(d)| d.reason).unwrap_or_default();
+    blocking(&state.app, move |app| {
+        let item = proposal(app, id)?;
+        app.wiki()?.dismiss_proposal(app, &by, &item, &reason)
+    })
+    .await
 }
 
 /// The query of `GET /v1/wiki/pages/{*path}`.
@@ -43,6 +105,15 @@ pub struct At {
 pub struct PageText {
     pub text: String,
     /// The commit message; without one, it says which page was added or updated.
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+/// What `POST /v1/wiki/proposals` takes.
+#[derive(Debug, Deserialize)]
+pub struct ProposedPage {
+    pub path: String,
+    pub text: String,
     #[serde(default)]
     pub message: Option<String>,
 }
@@ -287,5 +358,101 @@ mod tests {
         )
         .await;
         assert_eq!(status, Status::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn an_agents_proposal_waits_in_the_inbox_until_a_member_merges_it() {
+        let (dir, state, addr) = start().await;
+        let origin = bare_origin(dir.path());
+        push_from_elsewhere(dir.path(), &origin, "Setup.md", "# Setup\n");
+        let wiki = Wiki::open(
+            &state.app,
+            &origin.to_string_lossy(),
+            &dir.path().join("data/wiki"),
+        )
+        .unwrap();
+        state.app.set_wiki(Arc::new(wiki));
+        let lea = state
+            .app
+            .store
+            .add_person("lea", "Lea Roth", Role::Member)
+            .unwrap();
+        let member = format!("{}{:064}", super::super::TOKEN_PREFIX, 3);
+        state
+            .app
+            .store
+            .add_access_token(lea.id, "test", &member)
+            .unwrap();
+        let agent = crate::server::api::testing::agent_token(&state);
+
+        // The agent reads, but its direct edit is refused.
+        let (status, _) = call("GET", &addr, &agent, "/v1/wiki/pages/Setup", None).await;
+        assert_eq!(status, Status::OK);
+        let (status, _) = call(
+            "PUT",
+            &addr,
+            &agent,
+            "/v1/wiki/pages/Setup",
+            Some(json!({"text": "x"})),
+        )
+        .await;
+        assert_eq!(status, Status::FORBIDDEN);
+
+        // Its proposal is an inbox item and changes no page.
+        let (status, item) = call(
+            "POST",
+            &addr,
+            &agent,
+            "/v1/wiki/proposals",
+            Some(json!({"path": "Runbook", "text": "# Runbook", "message": "Add the runbook"})),
+        )
+        .await;
+        assert_eq!(status, Status::OK, "{item}");
+        assert_eq!(item["kind"], "wiki_proposal");
+        assert_eq!(item["title"], "Wiki: Add the runbook");
+        let id = item["id"].as_i64().unwrap();
+        let (status, _) = call("GET", &addr, &member, "/v1/wiki/pages/Runbook", None).await;
+        assert_eq!(status, Status::NOT_FOUND);
+
+        // An agent decides nothing; a member merges.
+        let merge = format!("/v1/wiki/proposals/{id}/merge");
+        let (status, _) = call("POST", &addr, &agent, &merge, Some(json!({}))).await;
+        assert_eq!(status, Status::FORBIDDEN);
+        let (status, merged) = call(
+            "POST",
+            &addr,
+            &member,
+            &merge,
+            Some(json!({"reason": "ok"})),
+        )
+        .await;
+        assert_eq!(status, Status::OK, "{merged}");
+        let (_, page) = call("GET", &addr, &member, "/v1/wiki/pages/Runbook", None).await;
+        assert_eq!(page["text"], "# Runbook\n");
+        assert!(state.app.store.inbox().unwrap().is_empty());
+        let (status, _) = call("POST", &addr, &member, &merge, Some(json!({}))).await;
+        assert_eq!(status, Status::NOT_FOUND);
+
+        // A dismissed proposal changes nothing.
+        let (_, second) = call(
+            "POST",
+            &addr,
+            &agent,
+            "/v1/wiki/proposals",
+            Some(json!({"path": "Setup", "text": "Changed"})),
+        )
+        .await;
+        let id = second["id"].as_i64().unwrap();
+        let (status, _) = call(
+            "POST",
+            &addr,
+            &member,
+            &format!("/v1/wiki/proposals/{id}/dismiss"),
+            None,
+        )
+        .await;
+        assert_eq!(status, Status::OK);
+        let (_, page) = call("GET", &addr, &member, "/v1/wiki/pages/Setup", None).await;
+        assert_eq!(page["text"], "# Setup\n");
     }
 }

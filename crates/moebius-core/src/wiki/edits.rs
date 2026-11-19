@@ -124,7 +124,7 @@ impl Wiki {
 }
 
 /// A page under `projects/<key>/` must name a project there is.
-fn check_project(app: &App, path: &str) -> Result<()> {
+pub(super) fn check_project(app: &App, path: &str) -> Result<()> {
     match project_key(path) {
         Some(key) if app.store.project_by_key(key)?.is_none() => Err(AppError::Invalid(format!(
             "no project has the key {key}, so projects/{key}/ holds no pages"
@@ -134,7 +134,7 @@ fn check_project(app: &App, path: &str) -> Result<()> {
 }
 
 /// `message` when it says something, trimmed to its first line, or the one `otherwise` makes.
-fn message_or(message: Option<&str>, otherwise: impl FnOnce() -> String) -> String {
+pub(super) fn message_or(message: Option<&str>, otherwise: impl FnOnce() -> String) -> String {
     message
         .and_then(|m| m.lines().map(str::trim).find(|line| !line.is_empty()))
         .map_or_else(otherwise, str::to_string)

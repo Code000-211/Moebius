@@ -182,6 +182,9 @@ issues (`--parent`, `--blocked-by`, `blocker`) stay the numbers of their issues 
 | `card <id> --runs` | `GET /v1/cards/{id}/runs` | Table `id agent purpose status summary`. |
 | `inbox` | `GET /v1/snapshot` | Table `id kind card title` of the open items. |
 | `inbox act <item> <action> [--reason <text>]` | see below | The answer's fields. |
+| `wiki list` | `GET /v1/wiki/pages` | Table `path`. |
+| `wiki read <path> [--at <commit>]` | `GET /v1/wiki/pages/{path}` | The page's Markdown text. |
+| `wiki propose <path> <file> [--message <text>]` | `POST /v1/wiki/proposals` | The inbox item the proposal is. `-` as the file reads standard input. The wiki changes only once a member merges it. |
 | `chats` | `GET /v1/chats` | Table `id agent status repository title`. |
 | `chat start <message> [--agent <name>] [--repository <id>] [--continues <id>]` | `POST /v1/chats` | The run. `-` as the message reads standard input. |
 | `chat say <id> <message>` | `POST /v1/chats/{id}/messages` | The run. `-` reads standard input. |
@@ -283,6 +286,7 @@ a column script with `moebius.ask`) takes none (use `api`).
 | `stuck`, `change_closed` | `retry` | `POST /v1/cards/{card}/retry` |
 | `ready_to_merge` | `merge`, `reject` | `POST /v1/changes/{data.change}/merge`, `/reject` |
 | `proposal` | `merge`, `dismiss` | `POST /v1/proposals/{data.proposal}/merge`, `/dismiss` |
+| `wiki_proposal` | `merge`, `dismiss` | `POST /v1/wiki/proposals/{item}/merge`, `/dismiss` |
 | `takeover` | `merge`, `dismiss` | `POST /v1/takeovers/{data.takeover}/merge`, `/dismiss` |
 | `grilling_issues` | `confirm` (the proposed issues as they are), `dismiss` | `POST /v1/grillings/{data.grilling}/confirm`, `/dismiss` |
 | `grilling_report` | `dismiss` | `POST /v1/grillings/{data.grilling}/dismiss` |

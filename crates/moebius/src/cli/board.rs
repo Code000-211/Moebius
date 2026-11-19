@@ -583,6 +583,12 @@ fn inbox_request(item: &Value, verb: Verb, reason: &str) -> Result<Request, Stri
         ("proposal", Verb::Dismiss) => {
             because(format!("/v1/proposals/{}/dismiss", id(&data["proposal"])?))
         }
+        ("wiki_proposal", Verb::Merge) => {
+            because(format!("/v1/wiki/proposals/{}/merge", id(&item["id"])?))
+        }
+        ("wiki_proposal", Verb::Dismiss) => {
+            because(format!("/v1/wiki/proposals/{}/dismiss", id(&item["id"])?))
+        }
         ("takeover", Verb::Merge) => {
             because(format!("/v1/takeovers/{}/merge", id(&data["takeover"])?))
         }
@@ -602,7 +608,7 @@ fn inbox_request(item: &Value, verb: Verb, reason: &str) -> Result<Request, Stri
                 "approve_issue" => "approve",
                 "stuck" | "change_closed" => "retry",
                 "ready_to_merge" => "merge or reject",
-                "proposal" | "takeover" => "merge or dismiss",
+                "proposal" | "wiki_proposal" | "takeover" => "merge or dismiss",
                 "grilling_issues" => "confirm or dismiss",
                 "grilling_report" => "dismiss",
                 _ => "nothing here; use `moebius api`",

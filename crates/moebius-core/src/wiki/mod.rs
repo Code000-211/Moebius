@@ -7,11 +7,14 @@
 //! clone never drifts from `origin`. Before an edit, and on the server's refresh, the clone follows `origin`, so a
 //! page someone pushed there is read. Refreshing, reading and editing take turns.
 //!
-//! This module holds the clone and the names of pages; `pages` reads the pages and their history, and `edits` writes,
-//! moves and deletes them.
+//! This module holds the clone and the names of pages; `pages` reads the pages and their history, `edits` writes,
+//! moves and deletes them, `proposals` keeps an agent's edit on a branch that waits in the inbox for a person to merge
+//! it, and `prompt` gives a run the pages its card links to.
 
 mod edits;
 mod pages;
+mod prompt;
+mod proposals;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
@@ -22,6 +25,8 @@ use crate::decide::Actor;
 use crate::repos::{Repos, git, kept};
 
 pub use pages::{PageInfo, PageView, Version};
+pub use prompt::for_card;
+pub use proposals::WIKI_PROPOSAL;
 
 /// The folder that holds the projects' pages, one folder per project key.
 pub const PROJECTS: &str = "projects";
