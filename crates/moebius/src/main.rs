@@ -66,8 +66,8 @@ enum Command {
         /// The card's title.
         #[arg(long, default_value = "A card to check the script with")]
         title: String,
-        /// The card's author; `person` is trusted, as on a repository without a forge.
-        #[arg(long, default_value = "person")]
+        /// The card's author; `person:<handle>` is trusted, as on a repository without a forge.
+        #[arg(long, default_value = "person:owner")]
         author: String,
     },
     /// Open an SSH tunnel to the server of a host and keep it open, for the commands that follow in other terminals,

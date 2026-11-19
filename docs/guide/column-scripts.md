@@ -143,7 +143,7 @@ approves with `POST /v1/cards/{id}/approve`, which resolves all the card's inbox
 but works only on a card in `Backlog`. So an ask that a person answers belongs in the Backlog script. In other columns
 use `moebius.wait`, or `moebius.stuck` when `POST /v1/cards/{id}/retry` is the answer.
 
-On a repository without a forge, every issue made through the API has the author `person`, so this script changes
+On a repository without a forge, every issue made through the API has the author `person:<handle>` of the person who made it, so this script changes
 nothing there. On GitHub the author is the login, and the list compares it as written (case matters here, unlike
 `card.trusted`).
 
