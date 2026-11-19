@@ -29,6 +29,7 @@ import { Field, Select, TextArea } from "../../ui/page/Field";
 import { chosenOrFirst, ListCard, ListDetail } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { PropertyFields } from "../../ui/page/Properties";
 import { SkeletonCard, SkeletonList } from "../../ui/page/Skeleton";
 import { Committed, EditorHead, useDraft, useDrafts } from "../harness/form";
 import { HarnessSetup, WHY_MUTED } from "../harness/HarnessSetup";
@@ -376,11 +377,7 @@ function ServerEditor({
           ))}
       </Box>
 
-      <Box
-        title="How it runs"
-        aside={remote ? "Reached over a URL" : "Started as a command"}
-        className="flex flex-col gap-4"
-      >
+      <PropertyFields label={`Properties of ${form.name || "the new server"}`}>
         <Field label="Kind" className="max-w-xs">
           {(id) => (
             <Select
@@ -433,7 +430,7 @@ function ServerEditor({
             </Field>
           </>
         )}
-      </Box>
+      </PropertyFields>
 
       <Box
         title={remote ? "Headers" : "Environment"}

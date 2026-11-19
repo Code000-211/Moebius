@@ -11,6 +11,7 @@
 import { PencilSimpleIcon, PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { actOnResearch, createResearch, editResearch, researches } from "../../api/calls/improve";
 import { sayError } from "../../api/errorText";
@@ -23,11 +24,13 @@ import { Input } from "../../ui/components/Input";
 import { plural } from "../../ui/lib/format";
 import { Box } from "../../ui/page/Box";
 import { Chip } from "../../ui/page/Chip";
+import { EditableProperty } from "../../ui/page/EditableProperty";
 import { Empty } from "../../ui/page/Empty";
 import { Field } from "../../ui/page/Field";
 import { CELL, ListCard, ListDetail, Table } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
+import { PageProperties, Property } from "../../ui/page/Properties";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import { DeleteBrief } from "./DeleteBrief";
 import {
@@ -52,7 +55,20 @@ export function ExperimentsPage() {
   const queryClient = useQueryClient();
   const list = useQuery({ queryKey: keys.research, queryFn: researches });
   const boards = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
-  const [picked, setPicked] = useState<number | null>(null);
+  // The research is in the address (`?research=`), so a reload and a link keep it; with none the first is read.
+  const [params, setParams] = useSearchParams();
+  const pickedParam = Number(params.get("research"));
+  const picked = Number.isInteger(pickedParam) && pickedParam > 0 ? pickedParam : null;
+  const setPicked = (id: number | null) =>
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (id === null) next.delete("research");
+        else next.set("research", String(id));
+        return next;
+      },
+      { replace: true },
+    );
   const [composing, setComposing] = useState(false);
   /** The brief the form starts from, when the page offered one. */
   const [starting, setStarting] = useState<Form | null>(null);
@@ -448,6 +464,16 @@ function BriefBox({
   const status = statusTag(research.status);
   const direction = research.better === "higher" ? "Higher is better" : "Lower is better";
   const possible = actions(research.status);
+  const queryClient = useQueryClient();
+  // A draft's brief is changed one property at a time, saved alone; the research is read again once it is answered.
+  const saveBrief = async (change: Partial<Pick<Research, "better">>) => {
+    const { goal, measure, better, budget } = { ...research, ...change };
+    try {
+      await editResearch(research.id, { goal, measure, better, budget });
+    } finally {
+      void queryClient.invalidateQueries({ queryKey: keys.research });
+    }
+  };
   return (
     <Box
       title="Brief"
@@ -470,6 +496,31 @@ function BriefBox({
             {repository} · {direction} · {usage(research)}
           </span>
         </div>
+        <PageProperties label={`Properties of ${research.goal}`}>
+          <Property name="Status">
+            <Tag tone={status.tone}>{status.label}</Tag>
+          </Property>
+          <Property name="Repository">{repository}</Property>
+          {research.status === "draft" ? (
+            <EditableProperty
+              name="Direction"
+              editor={{
+                kind: "choice",
+                options: [
+                  ["higher", "Higher is better"],
+                  ["lower", "Lower is better"],
+                ],
+                value: research.better,
+                onSave: (better) => saveBrief({ better: better as Research["better"] }),
+              }}
+            >
+              {direction}
+            </EditableProperty>
+          ) : (
+            <Property name="Direction">{direction}</Property>
+          )}
+          <Property name="Budget">{usage(research)}</Property>
+        </PageProperties>
         <span className="min-w-0 break-words rounded-control bg-sunken px-3 py-2 font-mono text-sm text-text">
           {research.measure}
         </span>

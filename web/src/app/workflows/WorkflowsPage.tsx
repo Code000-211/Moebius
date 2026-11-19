@@ -1,5 +1,5 @@
 /**
- * The Workflows page: every workflow the harness configuration holds, as one card each. A card says what the workflow
+ * The Workflows page: every workflow the harness configuration holds, as one row each. A row says what the workflow
  * is called and what it is for, what starts it, how many nodes its graph has, and how its last run went, which opens
  * that run. The name opens the definition. A workflow that has never run says so rather than showing a blank where a
  * status should be.
@@ -117,16 +117,20 @@ export function WorkflowsPage() {
         />
       ) : (
         <div className="min-h-0 overflow-y-auto">
-          {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely */}
-          <ul role="list" className="m-0 grid list-none grid-cols-1 gap-3 p-0 xl:grid-cols-2">
-            {shown.map((each) => {
-              const last = each.last_run;
-              const status = last ? runStatus(last.status) : null;
-              return (
-                <li key={each.name}>
-                  <article className="flex h-full flex-col gap-3 rounded-card bg-surface p-5 shadow-card">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <h2 className="m-0 min-w-0 text-lg font-semibold tracking-tight text-text">
+          <div className="overflow-hidden rounded-card bg-surface shadow-card">
+            {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely */}
+            <ul role="list" className="m-0 list-none divide-y divide-hairline p-0">
+              {shown.map((each) => {
+                const last = each.last_run;
+                const status = last ? runStatus(last.status) : null;
+                return (
+                  <li
+                    key={each.name}
+                    data-testid="workflow-row"
+                    className="flex min-h-12 flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2"
+                  >
+                    <span className="flex min-w-0 flex-1 basis-60 flex-col">
+                      <h2 className="m-0 truncate text-base font-medium text-text">
                         <Link
                           className="rounded-round underline-offset-4 hover:underline"
                           to={`/workflows/${encodeURIComponent(each.name)}`}
@@ -134,35 +138,37 @@ export function WorkflowsPage() {
                           {each.name}
                         </Link>
                       </h2>
+                      <span className="truncate text-sm text-secondary">{each.description}</span>
+                    </span>
+                    <span className="w-44 shrink-0">
                       <Tag tone="plain">{triggerName(each.trigger)}</Tag>
-                    </div>
-                    <p className="m-0 max-w-prose text-sm leading-relaxed text-secondary">
-                      {each.description}
-                    </p>
-                    <div className="mt-auto flex flex-wrap items-center justify-between gap-3 text-sm text-secondary">
-                      <span>{plural(each.node_count, "node", "nodes")}</span>
-                      {last && status ? (
-                        <Link
-                          className="flex min-w-0 items-center gap-2 rounded-round underline-offset-4 hover:underline"
-                          to={`/workflow-runs/${last.id}`}
-                        >
-                          <Tag tone={needsAttention(last.status) ? status.tone : "plain"}>
-                            {status.label}
-                          </Tag>
-                          <span className="tabular-nums">
-                            {lastRunLine(last)}
-                            {last.started_at === null ? "" : ` · ${ago(now, last.started_at)}`}
-                          </span>
-                        </Link>
-                      ) : (
-                        <span className="text-secondary">{lastRunLine(null)}</span>
-                      )}
-                    </div>
-                  </article>
-                </li>
-              );
-            })}
-          </ul>
+                    </span>
+                    <span className="w-20 shrink-0 text-sm tabular-nums text-secondary">
+                      {plural(each.node_count, "node", "nodes")}
+                    </span>
+                    {last && status ? (
+                      <Link
+                        className="flex w-64 min-w-0 shrink-0 items-center gap-2 rounded-round text-sm text-secondary underline-offset-4 hover:underline"
+                        to={`/workflow-runs/${last.id}`}
+                      >
+                        <Tag tone={needsAttention(last.status) ? status.tone : "plain"}>
+                          {status.label}
+                        </Tag>
+                        <span className="truncate tabular-nums">
+                          {lastRunLine(last)}
+                          {last.started_at === null ? "" : ` · ${ago(now, last.started_at)}`}
+                        </span>
+                      </Link>
+                    ) : (
+                      <span className="w-64 shrink-0 text-sm text-secondary">
+                        {lastRunLine(null)}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         </div>
       )}
       <NewWorkflowDialog open={creating} onOpenChange={setCreating} />

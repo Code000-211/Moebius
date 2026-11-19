@@ -20,10 +20,13 @@ import { Button } from "../../ui/components/Button";
 import { FilterBar } from "../../ui/filters/FilterBar";
 import { readFilters } from "../../ui/filters/model";
 import { useQueryParams } from "../../ui/filters/useQueryParams";
+import { plural } from "../../ui/lib/format";
 import { Box } from "../../ui/page/Box";
 import { Field, TextArea } from "../../ui/page/Field";
+import { ListCard, ListDetail } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
+import { PageProperties, Property } from "../../ui/page/Properties";
 import { Reading, SkeletonCard } from "../../ui/page/Skeleton";
 import { agentRequest, refusalsLabel } from "./file";
 import { FILTER_KEYS, filterFields, visible } from "./filters";
@@ -75,9 +78,45 @@ export function RulesPage() {
   const values = readFilters(params, fields);
   const show = visible(values);
   const shownRepositories = view.repositories.filter((each) => show.project(each.repository_id));
+  // The rules the page lists at the left, one set each; the chosen set is in the address (`?set=`), the first by default.
+  const sets: Array<{ id: string; title: string; line: string; count: string }> = [
+    ...(show.patterns
+      ? [
+          {
+            id: "patterns",
+            title: "Built-in patterns",
+            line: "Always on.",
+            count: plural(view.patterns.length, "pattern", "patterns"),
+          },
+        ]
+      : []),
+    ...(show.server
+      ? [
+          {
+            id: "server",
+            title: "Server rules",
+            line: "In prose, in rules.md.",
+            count: plural(prose.rules.length, "rule", "rules"),
+          },
+        ]
+      : []),
+    ...shownRepositories.map((each) => ({
+      id: String(each.repository_id),
+      title: each.repository,
+      line: "Added to the server's rules.",
+      count: plural(each.rules.length, "rule", "rules"),
+    })),
+  ];
+  const chosen = sets.find((each) => each.id === params.get("set")) ?? sets[0] ?? null;
+  const choose = (id: string) => setQuery({ set: id });
+  const chosenRepository = shownRepositories.find(
+    (each) => String(each.repository_id) === chosen?.id,
+  );
+  const refused = (names: string[]) =>
+    names.reduce((count, name) => count + (view.refusals[name] ?? 0), 0);
 
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col">
       {header}
       <FilterBar
         label="Filter the rules"
@@ -89,129 +128,177 @@ export function RulesPage() {
       {!show.patterns && !show.server && shownRepositories.length === 0 && (
         <Notice>No rule is in that scope. Clear the filters to see them all.</Notice>
       )}
-      <div className="flex flex-col gap-6">
-        {show.patterns && (
-          <Box
-            title="Built-in patterns"
-            aside="Always on. Checked before any model is asked."
-            className="min-w-0"
-          >
-            <div className="flex flex-col gap-4">
-              {view.patterns.map((pattern) => (
-                <PatternRow
-                  key={pattern.name}
-                  name={pattern.name}
-                  description={pattern.description}
-                  refusals={refusalsLabel(view.refusals, pattern.name)}
-                  refused={(view.refusals[pattern.name] ?? 0) > 0}
-                />
-              ))}
-            </div>
-          </Box>
-        )}
-
-        {show.server && (
-          <Box
-            title="Rules in prose"
-            actions={
-              prose.editable && !byAgent ? (
-                <Button size="sm" variant="secondary" onClick={() => setByAgent(true)}>
-                  Write with agent
-                </Button>
-              ) : undefined
-            }
-            className="min-w-0"
-          >
-            <div className="flex flex-col gap-4">
-              {prose.editable && byAgent && (
-                <div className="flex flex-col gap-4 rounded-card bg-sunken p-4">
-                  <Field
-                    label="What should be allowed or forbidden"
-                    hint="The Moebius agent reads the rules, writes the change and saves them."
-                  >
-                    <TextArea
-                      rows={4}
-                      value={wish}
-                      onChange={(event) => setWish(event.target.value)}
-                    />
-                  </Field>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      disabled={ask.isPending || wish.trim() === ""}
-                      onClick={() => ask.mutate()}
-                    >
-                      {ask.isPending ? "Sending" : "Submit"}
-                    </Button>
-                    <Button size="sm" variant="secondary" onClick={() => setByAgent(false)}>
-                      Cancel
-                    </Button>
-                  </div>
-                  {ask.error && (
-                    <Notice tone="error">
-                      {sayError(ask.error, "Could not ask the agent. Try again.")}
-                    </Notice>
-                  )}
-                </div>
-              )}
-              {ask.isSuccess && (
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                  <div className="min-w-0 flex-1">
-                    <Notice>The Moebius agent is writing the rules.</Notice>
-                  </div>
-                  <Button asChild size="sm" variant="secondary">
-                    <Link to={`/chat/${ask.data.id}`}>Open the chat</Link>
-                  </Button>
-                </div>
-              )}
-              {prose.error && <Notice tone="error">{prose.error}</Notice>}
-              <RuleList
-                rules={prose.rules}
-                file={prose.text}
-                refusals={view.refusals}
-                editable={prose.editable}
-                empty="No rule in prose. Only the built-in patterns apply."
-                onSave={async (file) => {
-                  const saved = await saveRules(file);
-                  await refresh();
-                  return saved.commit;
-                }}
-              />
-              {!prose.editable && <Body>Read only: this server has no rules file.</Body>}
-            </div>
-          </Box>
-        )}
-
-        {shownRepositories.map((repository) => (
-          <Box
-            key={repository.repository_id}
-            title={repository.repository}
-            aside="Added to the server's rules; cannot weaken them"
-            className="min-w-0"
-          >
-            <div className="flex flex-col gap-4">
-              {repository.error && <Notice tone="error">{repository.error}</Notice>}
-              <RuleList
-                rules={repository.rules}
-                file={repository.text}
-                refusals={view.refusals}
-                editable
-                empty="No rule of its own."
-                onSave={async (file) => {
-                  await saveRepositoryRules(repository.repository_id, file);
-                  await refresh();
-                  return undefined;
-                }}
-              />
-              <Body>
-                Saved as a commit in the harness configuration repository (repos/
-                {repository.repository}/rules.md).
-              </Body>
-            </div>
-          </Box>
+      {chosen && (
+        <PageProperties label={`Properties of ${chosen.title}`}>
+          <Property name="Scope">
+            {chosen.id === "patterns"
+              ? "Built-in patterns"
+              : chosen.id === "server"
+                ? "Server rules"
+                : "Project rules"}
+          </Property>
+          <Property name="Where">
+            {chosen.id === "patterns"
+              ? "Built into Moebius"
+              : chosen.id === "server"
+                ? "rules.md"
+                : `repos/${chosen.title}/rules.md`}
+          </Property>
+          <Property name="Rules">{chosen.count}</Property>
+          <Property name="Refused this week">
+            {String(
+              chosen.id === "patterns"
+                ? refused(view.patterns.map((each) => each.name))
+                : refused(
+                    (chosen.id === "server" ? prose.rules : (chosenRepository?.rules ?? [])).map(
+                      (each) => each.name,
+                    ),
+                  ),
+            )}
+          </Property>
+          <Property name="Changes">
+            {chosen.id === "patterns"
+              ? "Cannot be changed"
+              : chosen.id === "server" && !prose.editable
+                ? "Read only"
+                : "Saved as a commit"}
+          </Property>
+        </PageProperties>
+      )}
+      <ListDetail
+        list={sets.map((each) => (
+          <ListCard
+            key={each.id}
+            title={each.title}
+            line={each.line}
+            selected={chosen?.id === each.id}
+            onClick={() => choose(each.id)}
+          />
         ))}
-      </div>
-    </>
+        detail={
+          chosen === null ? null : chosen.id === "patterns" ? (
+            <Box
+              title="Built-in patterns"
+              aside="Always on. Checked before any model is asked."
+              className="min-w-0"
+            >
+              <div className="flex flex-col gap-4">
+                {view.patterns.map((pattern) => (
+                  <PatternRow
+                    key={pattern.name}
+                    name={pattern.name}
+                    description={pattern.description}
+                    refusals={refusalsLabel(view.refusals, pattern.name)}
+                    refused={(view.refusals[pattern.name] ?? 0) > 0}
+                  />
+                ))}
+              </div>
+            </Box>
+          ) : chosen.id === "server" ? (
+            <Box
+              title="Rules in prose"
+              actions={
+                prose.editable && !byAgent ? (
+                  <Button size="sm" variant="secondary" onClick={() => setByAgent(true)}>
+                    Write with agent
+                  </Button>
+                ) : undefined
+              }
+              className="min-w-0"
+            >
+              <div className="flex flex-col gap-4">
+                {prose.editable && byAgent && (
+                  <div className="flex flex-col gap-4 rounded-card bg-sunken p-4">
+                    <Field
+                      label="What should be allowed or forbidden"
+                      hint="The Moebius agent reads the rules, writes the change and saves them."
+                    >
+                      <TextArea
+                        rows={4}
+                        value={wish}
+                        onChange={(event) => setWish(event.target.value)}
+                      />
+                    </Field>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        disabled={ask.isPending || wish.trim() === ""}
+                        onClick={() => ask.mutate()}
+                      >
+                        {ask.isPending ? "Sending" : "Submit"}
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => setByAgent(false)}>
+                        Cancel
+                      </Button>
+                    </div>
+                    {ask.error && (
+                      <Notice tone="error">
+                        {sayError(ask.error, "Could not ask the agent. Try again.")}
+                      </Notice>
+                    )}
+                  </div>
+                )}
+                {ask.isSuccess && (
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                    <div className="min-w-0 flex-1">
+                      <Notice>The Moebius agent is writing the rules.</Notice>
+                    </div>
+                    <Button asChild size="sm" variant="secondary">
+                      <Link to={`/chat/${ask.data.id}`}>Open the chat</Link>
+                    </Button>
+                  </div>
+                )}
+                {prose.error && <Notice tone="error">{prose.error}</Notice>}
+                <RuleList
+                  rules={prose.rules}
+                  file={prose.text}
+                  refusals={view.refusals}
+                  editable={prose.editable}
+                  empty="No rule in prose. Only the built-in patterns apply."
+                  onSave={async (file) => {
+                    const saved = await saveRules(file);
+                    await refresh();
+                    return saved.commit;
+                  }}
+                />
+                {!prose.editable && <Body>Read only: this server has no rules file.</Body>}
+              </div>
+            </Box>
+          ) : (
+            shownRepositories
+              .filter((repository) => String(repository.repository_id) === chosen.id)
+              .map((repository) => (
+                <Box
+                  key={repository.repository_id}
+                  title={repository.repository}
+                  aside="Added to the server's rules; cannot weaken them"
+                  className="min-w-0"
+                >
+                  <div className="flex flex-col gap-4">
+                    {repository.error && <Notice tone="error">{repository.error}</Notice>}
+                    <RuleList
+                      rules={repository.rules}
+                      file={repository.text}
+                      refusals={view.refusals}
+                      editable
+                      empty="No rule of its own."
+                      onSave={async (file) => {
+                        await saveRepositoryRules(repository.repository_id, file);
+                        await refresh();
+                        return undefined;
+                      }}
+                    />
+                    <Body>
+                      Saved as a commit in the harness configuration repository (repos/
+                      {repository.repository}/rules.md).
+                    </Body>
+                  </div>
+                </Box>
+              ))
+          )
+        }
+      />
+    </div>
   );
 }
 

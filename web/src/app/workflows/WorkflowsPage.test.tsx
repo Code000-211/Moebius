@@ -1,5 +1,5 @@
 /**
- * The Workflows list: what each card says about a workflow and its last run, the link that opens the definition and the
+ * The Workflows list: what each row says about a workflow and its last run, the link that opens the definition and the
  * link that opens the last run, and the sentence an empty list gives instead of a blank page.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -56,6 +56,8 @@ describe("the workflows list", () => {
   it("says what each workflow is, what starts it, its nodes and its last run", async () => {
     show(LIST);
     expect(await screen.findByRole("heading", { name: "release" })).toBeTruthy();
+    // One row each, in the order the server listed them.
+    expect(screen.getAllByTestId("workflow-row")).toHaveLength(2);
     expect(screen.getByText("Build, test and publish a release.")).toBeTruthy();
     expect(screen.getByText("Schedule · 0 6 * * 1")).toBeTruthy();
     expect(screen.getByText("3 nodes")).toBeTruthy();

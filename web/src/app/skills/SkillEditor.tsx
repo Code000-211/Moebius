@@ -19,6 +19,7 @@ import { Box } from "../../ui/page/Box";
 import { Field } from "../../ui/page/Field";
 import { MarkdownBody, type MarkdownView } from "../../ui/page/MarkdownBody";
 import { Notice } from "../../ui/page/Notice";
+import { PropertyFields } from "../../ui/page/Properties";
 import { StateLabel } from "../../ui/page/StateLabel";
 import { Committed, EditorHead, useDraft } from "../harness/form";
 
@@ -183,16 +184,21 @@ export function SkillEditor({
       {builtIn ? (
         <p className="m-0 max-w-prose text-base text-secondary">{description}</p>
       ) : (
-        <Field label="Description" hint="One line an agent reads to decide when the skill applies.">
-          {(id) => (
-            <Input
-              id={id}
-              value={description}
-              placeholder="One line that says when to use the skill"
-              onChange={(event) => field("description")(event.target.value)}
-            />
-          )}
-        </Field>
+        <PropertyFields label={`Properties of ${name || "the new skill"}`}>
+          <Field
+            label="Description"
+            hint="One line an agent reads to decide when the skill applies."
+          >
+            {(id) => (
+              <Input
+                id={id}
+                value={description}
+                placeholder="One line that says when to use the skill"
+                onChange={(event) => field("description")(event.target.value)}
+              />
+            )}
+          </Field>
+        </PropertyFields>
       )}
       {source && (
         <p className="m-0 max-w-prose break-words text-sm text-secondary">

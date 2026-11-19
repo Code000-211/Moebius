@@ -12,7 +12,7 @@
  */
 import { ArrowClockwiseIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useSearchParams } from "react-router";
 import { retro, retros, retryRetro, startRetro } from "../../api/calls/improve";
 import { sayError } from "../../api/errorText";
@@ -26,6 +26,7 @@ import { Empty } from "../../ui/page/Empty";
 import { ListCard, ListDetail } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
+import { PageProperties, Property } from "../../ui/page/Properties";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonCard, SkeletonList } from "../../ui/page/Skeleton";
 import { Lessons } from "./Lessons";
@@ -45,10 +46,19 @@ import { Diff, Region } from "./parts";
 export function RetroPage() {
   const queryClient = useQueryClient();
   const list = useQuery({ queryKey: keys.retros, queryFn: retros });
-  const [picked, setPicked] = useState<string | null>(null);
-  const [params] = useSearchParams();
-  // The day a link came in with, else the latest; one picked from the list answers neither.
-  const date = picked ?? params.get("day") ?? list.data?.[0]?.date ?? null;
+  const [params, setParams] = useSearchParams();
+  // The day is in the address, so a reload and a link keep it; with none the latest is read.
+  const date = params.get("day") ?? list.data?.[0]?.date ?? null;
+  const setPicked = (day: string) =>
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.set("day", day);
+        next.delete("proposal");
+        return next;
+      },
+      { replace: true },
+    );
   // The proposal a link came in for, which the day is scrolled to rather than read from its top.
   const wanted = params.get("proposal");
   const opened = useQuery({
@@ -163,6 +173,13 @@ function Day({ view, wanted }: { view: RetroView; wanted: string | null }) {
   });
   return (
     <>
+      <PageProperties label={`Properties of the Retro of ${dayName(view.date)}`}>
+        <Property name="Day">{dayName(view.date)}</Property>
+        <Property name="Status">{retroTag(view.status).label}</Property>
+        <Property name="Errors">{String(view.report.errors.length)}</Property>
+        <Property name="Proposals">{String(proposals.length)}</Property>
+        <Property name="Left out">{String(warnings.length)}</Property>
+      </PageProperties>
       {warnings.length > 0 && (
         <Box
           title="Left out"
