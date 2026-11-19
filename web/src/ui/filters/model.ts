@@ -12,8 +12,8 @@ export interface FilterField {
   options: Array<[string, string]>;
 }
 
-/** The two layouts a page of cards can have. */
-export type Layout = "board" | "list";
+/** The layouts a page can have: a board of cards and a list of them, and the timeline of milestones. */
+export type Layout = "board" | "list" | "timeline";
 
 /** What Display holds. An empty `group` or `sort` is the page's own default; `hidden` lists the fields switched off. */
 export interface Display {
@@ -27,6 +27,8 @@ export const DEFAULT_DISPLAY: Display = { layout: "board", group: "", sort: "", 
 
 /** What a page lets Display choose from: the values it accepts for each choice (the rest are read as the default). */
 export interface DisplayChoices {
+  /** The layouts the page offers as `[value, label]`; a page of cards leaves it out and has Board and List. */
+  layouts?: Array<[string, string]>;
   groups: Array<[string, string]>;
   sorts: Array<[string, string]>;
   fields: Array<[string, string]>;
@@ -61,6 +63,14 @@ export function readFilters(
   return Object.fromEntries(fields.map((field) => [field.key, params.get(field.key) ?? ""]));
 }
 
+/** The layout the address names, when the page offers it; Board otherwise, which is no parameter at all. */
+function layoutOf(value: string | null, choices: DisplayChoices): Layout {
+  if (choices.layouts) {
+    return choices.layouts.some(([each]) => each === value) ? (value as Layout) : "board";
+  }
+  return value === "list" ? "list" : "board";
+}
+
 /** Display as the address has it; a value the page does not offer is read as the default. */
 export function readDisplay(params: URLSearchParams, choices: DisplayChoices): Display {
   const pick = (key: string, allowed: Array<[string, string]>) => {
@@ -70,7 +80,7 @@ export function readDisplay(params: URLSearchParams, choices: DisplayChoices): D
   const known = new Set(choices.fields.map(([key]) => key));
   const hidden = (params.get("hide") ?? "").split(",").filter((key) => known.has(key));
   return {
-    layout: params.get("layout") === "list" ? "list" : "board",
+    layout: layoutOf(params.get("layout"), choices),
     group: pick("group", choices.groups),
     sort: pick("sort", choices.sorts),
     hidden: [...new Set(hidden)].sort(),

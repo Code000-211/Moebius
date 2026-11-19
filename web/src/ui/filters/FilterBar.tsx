@@ -115,7 +115,7 @@ function DisplayMenu({ choices, value, onChange }: DisplayProps) {
           value={value.layout}
           onValueChange={(layout) => onChange({ ...value, layout: layout as Layout })}
         >
-          {LAYOUTS.map(([each, name]) => (
+          {(choices.layouts ?? LAYOUTS).map(([each, name]) => (
             <DropdownMenuRadioItem key={each} value={each}>
               {name}
             </DropdownMenuRadioItem>
@@ -147,7 +147,7 @@ function DisplayMenu({ choices, value, onChange }: DisplayProps) {
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
-        <DropdownMenuLabel>Fields shown</DropdownMenuLabel>
+        {choices.fields.length > 0 && <DropdownMenuLabel>Fields shown</DropdownMenuLabel>}
         {choices.fields.map(([key, name]) => (
           <DropdownMenuCheckboxItem
             key={key}
