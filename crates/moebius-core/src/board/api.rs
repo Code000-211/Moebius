@@ -18,18 +18,20 @@
 //! - `moebius.now() -> number`: the time in Unix seconds, to compare with `card.moved_at`.
 //! - `moebius.set_label(label, present)`: gives the card's issue the label (`present` true) or takes it away (false)
 //!   when the script returns, on its forge too.
-//! - `moebius.publish_change() -> change`: publishes the card's latest successful `code` run on the branch of its
-//!   change (once per commit), without a pull request, which `moebius.offer_change` opens, and returns the change, as `card.change` is.
-//! - `moebius.open_pull_request() -> change`: publishes the change as `moebius.publish_change` does and opens its
-//!   pull request at once, so the forge runs its checks while the review of the card still reads the change.
-//! - `moebius.run_checks() -> change`: starts the repository's own checks on the change, if it has any.
+//! - `moebius.publish_change() -> changes`: publishes the card's latest successful `code` run on the branch of its
+//!   change in each of its repositories (once per commit), without a pull request, which `moebius.offer_change`
+//!   opens, and returns the changes, as `card.changes` is.
+//! - `moebius.open_pull_request() -> changes`: publishes the changes as `moebius.publish_change` does and opens their
+//!   pull requests at once, so the forge runs its checks while the review of the card still reads the changes.
+//! - `moebius.run_checks() -> changes`: starts each repository's own checks on its change, if it has any.
 //! - `moebius.reproduction() -> table`: what the card's runs name in their summaries as the reproduction test, for test first.
 //! - `moebius.run_test(command) -> test`, `moebius.run_test_at_base(command, files) -> test`: run the change's
 //!   reproduction test on the change, or on the commit it was made from with the test's files added.
-//! - `moebius.offer_change(judgements)`: publishes the change and offers it to a person; the card moves to "Ready to
+//! - `moebius.offer_change(judgements)`: publishes the changes and offers them to a person; the card moves to "Ready to
 //!   merge". The optional `judgements` (text) is attached to the inbox item for the person to read.
-//! - `moebius.merge_change(reason)`: merges the card's change on the forge and moves the card to "Done"; the
-//!   judgement is recorded as the column's script (`script:<column>`). The optional `reason` says why.
+//! - `moebius.merge_change(reason)`: merges the card's changes on their forges, in the order the card names their
+//!   repositories, and moves the card to "Done"; the judgement is recorded as the column's script (`script:<column>`).
+//!   The optional `reason` says why.
 //! - `moebius.ask(kind, reason)`: puts the card in the inbox for a person (once) and leaves it where it is.
 //! - `moebius.stuck(reason)`: puts the card in the inbox as stuck (once).
 //! - `moebius.record_outcome(outcome) -> count`: sets the outcome of the card's judgements that have none.
@@ -47,7 +49,7 @@ use std::time::Instant;
 use mlua::{Lua, Table};
 
 use super::Engine;
-use super::card::change_table;
+use super::card::changes_table;
 use super::engine::Effects;
 use super::resolve_column;
 use super::sandbox::outside_script;
@@ -178,8 +180,9 @@ impl Engine {
             "publish_change",
             lua.create_function(move |lua, ()| {
                 outside_script(&clock, || {
-                    app.publish_change(card_id).map_err(mlua::Error::external)?;
-                    change_table(&app, lua, card_id)
+                    app.publish_card_changes(card_id, false, None)
+                        .map_err(mlua::Error::external)?;
+                    changes_table(&app, lua, card_id)
                 })
             })?,
         )?;
@@ -189,9 +192,9 @@ impl Engine {
             "open_pull_request",
             lua.create_function(move |lua, ()| {
                 outside_script(&clock, || {
-                    app.open_pull_request(card_id)
+                    app.publish_card_changes(card_id, true, None)
                         .map_err(mlua::Error::external)?;
-                    change_table(&app, lua, card_id)
+                    changes_table(&app, lua, card_id)
                 })
             })?,
         )?;
@@ -202,7 +205,7 @@ impl Engine {
             lua.create_function(move |lua, ()| {
                 outside_script(&clock, || {
                     app.run_checks(card_id).map_err(mlua::Error::external)?;
-                    change_table(&app, lua, card_id)
+                    changes_table(&app, lua, card_id)
                 })
             })?,
         )?;
@@ -261,7 +264,7 @@ impl Engine {
             "offer_change",
             lua.create_function(move |_, judgements: Option<String>| {
                 let judgements = judgements.filter(|j| !j.trim().is_empty());
-                let (change, moved) = outside_script(&clock, || {
+                let (changes, moved) = outside_script(&clock, || {
                     app.offer_change_noted(card_id, judgements.as_deref())
                 })
                 .map_err(mlua::Error::external)?;
@@ -270,7 +273,7 @@ impl Engine {
                     fx.moved = Some(columns::READY_TO_MERGE.into());
                 }
                 fx.move_to = None;
-                Ok(change.id)
+                Ok(changes.first().map(|change| change.id))
             })?,
         )?;
 
@@ -293,10 +296,18 @@ impl Engine {
                     column: column.clone(),
                 };
                 let merged = outside_script(&clock, || {
-                    let change = app.store.open_change(card_id)?.ok_or_else(|| {
-                        AppError::Invalid("the card has no open change to merge".into())
-                    })?;
-                    app.merge_change(&by, change.id, &reason)
+                    let changes = app.open_changes(&app.card(card_id)?)?;
+                    if changes.is_empty() {
+                        return Err(AppError::Invalid(
+                            "the card has no open change to merge".into(),
+                        ));
+                    }
+                    // In the order the card names its repositories; the first that fails stops the rest.
+                    let mut commits = Vec::new();
+                    for change in changes {
+                        commits.push(app.merge_change(&by, change.id, &reason)?);
+                    }
+                    Ok(commits.remove(0))
                 })
                 .map_err(mlua::Error::external)?;
                 let mut fx = fx.borrow_mut();

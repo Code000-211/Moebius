@@ -470,6 +470,7 @@ mod tests {
             archived_at: None,
             kind: None,
             fields: Default::default(),
+            repositories: Vec::new(),
         }
     }
 

@@ -81,14 +81,16 @@ end
 | `card.review.judgements` | string | For a two-axis review, the judgement calls of both axes, each with its evidence; empty for a `review` run and when there are none. |
 | `card.review.standards`, `card.review.spec` | table | Only for a two-axis review: that axis's `verdict` (`approve` or `changes`), `findings` (its blocking findings), `judgements` (its judgement calls) and `dropped` (how many findings were dropped for lacking evidence). |
 | `card.note` | string or nil | Why the card was sent back to coding: the findings of a review, the failing checks or a conflict, as the script that moved the card wrote them (the second argument of `moebius.move`). A `code` run that succeeds clears it; one that fails keeps it, so the retry gets it too. |
-| `card.change` | table or nil | The card's open change. nil until it is published. |
-| `card.change.branch` | string | The branch the change lives on, `moebius/card-<number>`. |
-| `card.change.base` | string | What the change merges into: the default branch, as `main` without a forge and `origin/main` on GitHub. |
-| `card.change.pull_request` | number or nil | The number of the pull request on GitHub. |
-| `card.change.checks` | string | `pending`, `success`, `failure` or `none`, for the change's current commit. See Checks and conflicts. |
-| `card.change.failed_checks` | string or nil | On GitHub, the failing check runs, one per line; nil unless `checks` is `failure`. |
-| `card.change.check_output` | string or nil | Without a forge, the end of the output of the project's `checks`, once they ended for the current commit. |
-| `card.change.conflict` | string or nil | The files that conflict with `card.change.base`, one per line; nil when the change merges cleanly. |
+| `card.repositories` | table (array of strings) | The names of the repositories the card works in, in the order it names them: its own issue's repository first (the forge's for an issue of a forge; the project's files for a card of a project without repositories), then those a person or the Moebius agent named (`PUT /v1/cards/{id}/repositories` in `desktop-api.md`) and those a `code` run asked for (see Cards over several repositories). Never empty. Read-only. |
+| `card.changes` | table (array of tables) | The card's open changes, one per repository of `card.repositories` that has one, in that order; empty (never nil) until the first is published. |
+| `card.changes[i].repository` | string | The name of the repository the change is in. |
+| `card.changes[i].branch` | string | The branch the change lives on: `moebius/card-<number>` in the card's own repository, `moebius/card-<KEY>-<number in the project>` (such as `moebius/card-WEB-24`) in another. |
+| `card.changes[i].base` | string | What the change merges into: the repository's default branch, as `main` without a forge and `origin/main` on GitHub. |
+| `card.changes[i].pull_request` | number or nil | The number of the pull request on GitHub. |
+| `card.changes[i].checks` | string | `pending`, `success`, `failure` or `none`, for the change's current commit. See Checks and conflicts. |
+| `card.changes[i].failed_checks` | string or nil | On GitHub, the failing check runs, one per line; nil unless `checks` is `failure`. |
+| `card.changes[i].check_output` | string or nil | Without a forge, the end of the output of the repository's `checks`, once they ended for the current commit. |
+| `card.changes[i].conflict` | string or nil | The files that conflict with the change's `base`, one per line; nil when the change merges cleanly. |
 | `card.attempts` | table (array) | The card's attempts that have not been settled, oldest first; empty (never nil) when it has none. See Attempts. |
 | `card.attempts[i].run` | number | The attempt's run id; its branch is `moebius/run-<run>`. |
 | `card.attempts[i].agent` | string | The agent of the attempt's run. |
@@ -113,7 +115,7 @@ The verdict of a review is read from the end of the summary of a `review` run. A
 without such a line, or with any other word, is `changes`: work that was not reviewed is not approved. A `changes` verdict
 with no findings before it has the findings `The review asked for changes but gave no findings.`
 
-Only `card.held`, `card.run`, `card.run.summary`, `card.review`, `card.selection`, `card.note`, `card.change` and its `pull_request`, `failed_checks`, `check_output` and `conflict`, and `model` and `result` of an attempt, can be nil. Check them before you read their fields.
+Only `card.held`, `card.run`, `card.run.summary`, `card.review`, `card.selection`, `card.note`, the `pull_request`, `failed_checks`, `check_output` and `conflict` of a change, and `model` and `result` of an attempt, can be nil. Check them before you read their fields.
 
 ## The `moebius` table
 
@@ -233,36 +235,38 @@ the card goes on, because a label is a mark and not a step: the forge is told on
 again for ten minutes. The default `code.luau` and `review.luau` give the label `in-progress` and the other default
 scripts take it away, so an issue carries it exactly while its card is in `In progress` or `In review` and not stuck.
 
-`moebius.publish_change()` returns the card's change as a table like `card.change`.
-: Publishes the work of the card's latest successful `code` run on the change's branch, `moebius/card-<number>`: the
-branch is pointed at that run's last commit and pushed to the forge. The first time this creates the change, without
-a pull request: the pull request opens when the change is offered (`moebius.offer_change`), so not before the review
-approved it. Once the change has a pull request, publishing a later round updates it: a push, and the title and body
-say what the branch does now.
-It does nothing when that commit is already published, so a script may call it on every tick. Publishing records the
-time, which starts the grace period of `card.change.checks`, and publishes `change_updated`. Raises an error `the card has no code
-run to publish` when the card has no successful `code` run, and an error with the forge's message when the push or
-pull request fails. Unlike `card.change`, which is a snapshot from before the script ran, the returned table is current.
-The time this call takes does not count against the time limit.
+`moebius.publish_change()` returns the card's changes as an array like `card.changes`.
+: Publishes the work of the card's latest successful `code` run on the branch of its change in each repository the card
+works in: the branch is pointed at that run's last commit there and pushed to that repository's forge. The card's own
+repository always has a change, on `moebius/card-<number>`; another repository has one, on
+`moebius/card-<KEY>-<number in the project>`, once a `code` run left commits in it beyond its default branch. The first
+time this creates the change, without a pull request: the pull request opens when the change is offered
+(`moebius.offer_change`), so not before the review approved it. Once a change has a pull request, publishing a later
+round updates it: a push, and the title and body say what the branch does now.
+It does nothing to a change whose commit is already published, so a script may call it on every tick. Publishing records
+the time, which starts the grace period of the change's `checks`, and publishes `change_updated`. Raises an error `the
+card has no code run to publish` when the card has no successful `code` run, and an error with the forge's message when
+a push or pull request fails. Unlike `card.changes`, which is a snapshot from before the script ran, the returned array
+is current. The time this call takes does not count against the time limit.
 
-`moebius.open_pull_request()` returns the card's change as a table like `card.change`.
-: Publishes the change as `moebius.publish_change` does and, if the change has no pull request yet, opens it at once
+`moebius.open_pull_request()` returns the card's changes as an array like `card.changes`.
+: Publishes the changes as `moebius.publish_change` does and, for each that has no pull request yet, opens it at once
 (on GitHub, with a body that says `Closes #<number>` and what the change does, without the review's `judgements`,
 which only `moebius.offer_change` attaches). A review script that calls it
-when the latest `code` run ended lets the forge run its checks on the pull request while the review of the card still
-reads the change: the poll reads the checks of the pull request's head commit, and the grace period of
-`card.change.checks` applies, so the script can wait for them and offer the change only when they are green (see
+when the latest `code` run ended lets the forge run its checks on the pull requests while the review of the card still
+reads the changes: the poll reads the checks of each pull request's head commit, and the grace period of
+`checks` applies, so the script can wait for them and offer the changes only when they are green (see
 Checks and conflicts). On a forge without pull requests it does nothing beyond the publish,
 and it does nothing at all when the commit already has one, so a script may call it on every tick. Raises the errors
-of `moebius.publish_change`. The returned table is current. The time this call takes does not count against the time
+of `moebius.publish_change`. The returned array is current. The time this call takes does not count against the time
 limit.
 
-`moebius.run_checks()` returns the card's change as a table like `card.change`.
-: Starts the repository's own checks (see Checks and conflicts) on the change's current commit, unless they already ran
-or are running for it. It returns at once; the returned `checks` is `pending` while they run. It does nothing, and
-`checks` stays as it is, on a repository with a forge, or without a `checks` file in the repository's settings. Raises an
-error `the card has no change to check` before the change is published. The time this call takes does not count
-against the time limit.
+`moebius.run_checks()` returns the card's changes as an array like `card.changes`.
+: Starts the repository's own checks (see Checks and conflicts) on each change's current commit, with the `checks` of
+that change's repository, unless they already ran or are running for it. It returns at once; a returned `checks` is
+`pending` while they run. It does nothing to a change, whose `checks` stays as it is, in a repository with a forge, or
+without a `checks` file in the repository's settings. Raises an error `the card has no change to check` before the
+first change is published. The time this call takes does not count against the time limit.
 
 `moebius.reproduction()` returns a table or nil.
 : What the card's code runs say of the reproduction test of its change (see Test first), read from the `REPRODUCE:`
@@ -319,19 +323,22 @@ it is empty) becomes the card's `note`, which the next round is told. The other 
 the event `attempts_settled` with `{card, picked, runs}`. Raises an error `the card has no open attempts`, `attempt <n>
 did not pass, so it cannot be picked` or `run <n> is not an open attempt of the card`.
 
-`moebius.offer_change(judgements)` returns the change's id (a number). `judgements` is optional text, which is stored in
-the inbox item as `data.judgements` for the person to read.
-: Publishes the change as `moebius.publish_change` does and opens its pull request if it has none (on GitHub, with a
-body that says `Closes #<number>`, what the code run said it did, the files it changed and, when `judgements` is given,
-what the review found), then offers it to a person: it adds an item `ready_to_merge` to
-the inbox with `{change, branch}` as its data, publishes `change_offered`, and moves the card to `Ready to merge` at
-once (not when the script returns). Raises the errors of `moebius.publish_change`. Call it last in a script. A person
-merges the branch `moebius/card-<number>`. The time this call takes does not count against the time limit.
+`moebius.offer_change(judgements)` returns the id (a number) of the change in the card's own repository. `judgements`
+is optional text, which is stored in each inbox item as `data.judgements` for the person to read.
+: Publishes the changes as `moebius.publish_change` does and opens each one's pull request if it has none (on GitHub,
+with a body that says `Closes #<number>`, or `Part of <KEY>-<number in the project> (issue #<number> in <repository>)`
+for a change in another repository than the card's own, what the code run said it did, the files it changed and, when
+`judgements` is given, what the review found), then offers them to a person: it adds an item `ready_to_merge` to the inbox for each
+change, with `{change, branch}` as its data, publishes `change_offered` for each, and moves the card to `Ready to
+merge` at once (not when the script returns). Raises the errors of `moebius.publish_change`. Call it last in a script.
+A person merges the branch `moebius/card-<number>`, and the branch of each other change. The time this call takes does
+not count against the time limit.
 
-`moebius.merge_change(reason)` returns the commit (a string). `reason` is optional text and becomes the reason of the
-merge judgement.
-: Merges the card's change on the forge and moves the card to `Done` at once (not when the script returns), which
-resolves the change's inbox item; the commit of the merge is returned. The judgement is recorded as the column's script
+`moebius.merge_change(reason)` returns the commit (a string) of the merge in the card's own repository. `reason` is
+optional text and becomes the reason of each merge judgement.
+: Merges the card's open changes on their forges, one after another in the order of `card.changes`, and moves the card
+to `Done` at once (not when the script returns), which resolves the changes' inbox items. A merge that fails raises
+its error, and the changes after it are not merged. The judgement is recorded as the column's script
 (`script:<column>`, see [the decision model](decision-model.md)), not as a person. Raises `the card has no open change to
 merge` when the card has no change, and the errors of the merge (a conflict, a forge refusal). A repository that merges
 without a person overrides `merge.luau` with a call to this function as its last statement; the default `merge.luau`
@@ -407,7 +414,7 @@ What is left is the base functions (`assert`, `error`, `pairs`, `ipairs`, `pcall
   spent inside `moebius.decide`, `moebius.start_run`, `moebius.publish_change`, `moebius.open_pull_request`,
   `moebius.run_checks`, `moebius.reproduction`, `moebius.run_test`, `moebius.run_test_at_base`, `moebius.offer_change`
   and `moebius.merge_change` is added back to the deadline, so a slow decider, harness start, push or merge does not fail a
-  script, nor does the time Moebius takes to describe the card (`card.change` needs git).
+  script, nor does the time Moebius takes to describe the card (`card.changes` needs git).
 - Memory: 16 MiB for one run of a script.
 
 Both limits are fixed; the configuration cannot change them.
@@ -491,26 +498,59 @@ like `moebius check-script`, commits it to the harness configuration repository 
 
 A change is **published** on a branch of its own, `moebius/card-<number>`, which the card keeps for all its rounds: each
 round's work builds on the last, so the branch only moves forward. On GitHub publishing pushes the branch and the first
-time opens the pull request; later it updates it with a push. Without a forge there is nothing to push.
+time opens the pull request; later it updates it with a push. Without a forge there is nothing to push. A card over
+several repositories has one change in each (see Cards over several repositories), each checked as this section says
+with what its own repository has.
 
-`card.change.checks` says how the checks of the change's current commit stand:
+The `checks` of a change in `card.changes` say how the checks of the change's current commit stand:
 
 - On GitHub, the poll records the check runs of the pull request's head commit. Checks recorded for another commit do
   not count. Until they are recorded for the published commit, `checks` is `pending` for 2 minutes after the publish
   (the checks have not started yet), and then `none`, so that a repository without CI does not wait for ever.
-  `card.change.failed_checks` lists the failing check runs, one per line: the name, how it ended, what it says and
+  The change's `failed_checks` lists the failing check runs, one per line: the name, how it ended, what it says and
   where to read more, such as `lint: failure, 3 warnings (https://ci.example/runs/1)`.
-- Without a forge, a project may have a file `checks` in its settings: a shell command. It is read from the settings,
+- Without a forge, a repository may have a file `checks` in its settings: a shell command. It is read from the settings,
   never from the change, so that the change cannot decide how it is checked. `moebius.run_checks()`
   runs it with `sh -c` in a throwaway worktree of the change's commit, on a thread of its own, and stops it after
   `checks.timeout_seconds` (see the [configuration](configuration.md)). While it runs `checks` is `pending`, then
-  `success` (exit status 0) or `failure`, and `card.change.check_output` holds the last 4 KB of its output, standard
+  `success` (exit status 0) or `failure`, and the change's `check_output` holds the last 4 KB of its output, standard
   output and error together, with secrets removed. It runs once for each published commit. Without the file `checks` is
   `none`. The command runs with the server's environment cleared but for `PATH`, `HOME`, `USER`, `LANG` and `TMPDIR`,
   so that the change's code, which the checks run, sees no token or key of the server.
 
-`card.change.conflict` lists the files that keep the change from merging cleanly into `card.change.base` (found with
+The change's `conflict` lists the files that keep it from merging cleanly into its `base` (found with
 `git merge-tree`; nothing is checked out), or is nil when it merges cleanly.
+
+## Cards over several repositories
+
+A card works in the repositories of `card.repositories` (ADR 0019): its own issue's, then those a person or the Moebius
+agent named with `PUT /v1/cards/{id}/repositories` (see `desktop-api.md`), from the repositories of the card's project
+and its files. A run of the card, started by `moebius.start_run` or `moebius.start_runs`, gets a worktree of each, on its
+branch `moebius/run-<id>` of each repository, each starting at that repository's branch of the card's latest successful
+`code` run that worked in it, or at its default branch. The harness starts in the worktree of the card's own repository;
+the prompt of a `code` run or an attempt names where the others are and which other repositories of the project it may
+ask for. The tool-call check lets the run write in each of its worktrees and nowhere else (see the context key
+`worktrees` in `plugin-api.md`). A run over several repositories runs on the server: `moebius.start_run` raises an
+error for one that names a runner. When the run ends, what it left in each worktree is committed; a `code` run that
+changed nothing in any of them has failed.
+
+A `code` run that finds it needs another repository says so in its summary, with a line `REPOSITORY: <name>` for each.
+When it succeeds and names a repository of the project that the card does not work in yet, that repository is added to
+the card after the others, and the card's note says so: `card.note` is set although the run succeeded, so the default
+`code.luau` starts the next round, which has a worktree of it. A name that is no repository of the project, alone, sets
+a note that says which the run may ask for. A name the card already works in is passed over. A run that asks succeeds even when it changed nothing,
+since it could not do the work without the repository. The lines are left out of the pull request's body. Only a
+`code` run asks: an attempt is told where its worktrees are, not that it may ask.
+
+The tool-call check reads the `rules.md` of the card's own repository for every call of the run, whichever worktree it
+writes in. A change in another repository than the card's own is merged with the message `Merge <KEY>-<number>:
+<title>`, and its pull request names the card instead of closing an issue. A card is done once its last open change is
+merged: merging one change of several resolves only that change's inbox item.
+
+**If you upgrade:** `card.change` is now `card.changes`, and `moebius.publish_change`, `moebius.open_pull_request` and
+`moebius.run_checks` return an array. A project script written for one change raises an error that says so (reading
+`card.change`, or a field such as `checks` on the array), and the card stays where it is until the script is changed;
+loop over the array, as the default scripts do.
 
 ## Attempts
 
@@ -577,8 +617,8 @@ reason to judge. All of this comes after the checks and conflicts and before the
 | `backlog.luau` | When `card.moved_at` is more than `STALE_AFTER_DAYS` (30) days old, tells the card's people (`moebius.notify("stale", ...)`) and holds the card with `stale: it has not moved for 30 days`; a person releases it, which resolves the `stale` item. Otherwise, if `card.trusted` or `card.confirmed`, moves the card to `Not started`. Otherwise asks a person (`moebius.ask("approve_issue", ...)`) and waits; approving the issue in the desktop API moves the card to `Not started`. |
 | `ready.luau` | For an issue with a label that starts `wayfinder:` (a [wayfinder](../guide/grilling.md#plan-a-big-piece-of-work-with-wayfinder) map or one of its tickets: a question, not a task), starts no work and closes nothing: it waits with `a wayfinder question, not a task: it stays until the wayfinder session closes it`, whatever its sub-issues, blockers and budget say, until the session closes the issue. For a parent (`card.children` is not empty) that has no run and no change of its own, starts no work of its own: it waits with `waiting for sub-issues #3, #4` while a sub-issue is open, and closes the issue (`moebius.close_issue`) once every sub-issue is closed. Otherwise a card whose `card.moved_at` is more than `STALE_AFTER_DAYS` (30) days old is told to its people and held, as in `backlog.luau` (a wayfinder question and a parent waiting for its sub-issues are meant to wait, so they come before this and are never held as stale). Otherwise, for a card given to a person (`card.assignees` is not empty), starts no work: it waits with `given to @lea, @tom` and stays in `Not started` until the assignees are changed. Otherwise waits while `card.blocked_by` is not empty, naming the issues. Waits with `the daily token budget is spent` when `moebius.day_budget` is set and `moebius.tokens_today()` has reached it. Waits while `moebius.runs_active() >= moebius.run_limit`. Otherwise moves the card to `In progress`. |
 | `code.luau` | Waits while the latest run is `starting` or `running`. Moves the card to `In review` when the latest run is a `code` run that `succeeded` and the card has no `card.note`. Otherwise marks the card stuck with `stopped by a person` when `card.stopped`, with `the round limit is reached` when `card.rounds >= moebius.round_limit`, and with `the token budget of N is spent` when `card.tokens` has reached `moebius.agent_budget("Coder")`; waits with `the daily token budget is spent` when the day's budget is spent; and else starts a `Coder` run with purpose `code` and `card.note` as its note: the first round, a retry after a `code` run that `failed` or was `stopped`, or the next round after the card was sent back. |
-| `review.luau` | Waits while the latest run is going, and moves the card back to `In progress` when its latest run is neither a succeeded `code` run nor a review run (`review`, `review-standards` or `review-spec`). Then, in this order: publishes the change (`moebius.publish_change`) and starts its own checks (`moebius.run_checks`); waits while `card.change.checks` is `pending`; sends the card back to `In progress` when they are `failure`, with the note `The checks failed:` and the failing checks or the output; sends it back when `card.change.conflict` is set, with the conflicting files and the instruction to merge `card.change.base` into its branch and resolve them; when `card.test_first`, waits for the reproduction test and sends the card back when it does not hold (see Test first); without an agent `Reviewer` (`moebius.has_agent`, which is true on every server because the Reviewer is built in), offers the change; offers the change with `card.review.judgements` when `card.review.verdict` is `approve`; sends the card back with `card.review.findings` as the note when it is `changes`; otherwise reviews along two axes: starts a run with purpose `review-standards` and, once it succeeded, one with purpose `review-spec` (given the untestable reason of test first as its note). The agent of each axis is the agent `Standards` or `Spec` when the configuration has one, else the `Reviewer`. A review run that `failed` restarts the round with the Standards axis, until `card.reviews >= moebius.round_limit`, when the card is marked stuck with `the round limit is reached`. The card is marked stuck with `stopped by a person` when `card.stopped`, before anything else, and with `the token budget of N is spent` when `card.tokens` has reached `moebius.agent_budget("Reviewer")`; it waits with `the daily token budget is spent` while the day's budget is spent, instead of starting a review. |
-| `merge.luau` | Waits for a person to merge the change. The merge happens through the desktop API or, on GitHub, on the pull request. When the forge's checks of the pull request failed, sends the card back to `In progress` with the note `The checks failed:` and the failing checks; when the change no longer merges cleanly (the default branch moved), sends it back with the conflict as the note; that resolves the change's inbox item. A repository whose changes should merge without a person overrides this script with one that calls `moebius.merge_change(reason)` as its last statement, once it has checked what it wants to hold. |
+| `review.luau` | Waits while the latest run is going, and moves the card back to `In progress` when its latest run is neither a succeeded `code` run nor a review run (`review`, `review-standards` or `review-spec`). Then, in this order: publishes the changes (`moebius.publish_change`) and starts their own checks (`moebius.run_checks`); waits while the `checks` of any change are `pending`; sends the card back to `In progress` when those of a change are `failure`, with the note `The checks failed:` and the failing checks or the output; sends it back when a change's `conflict` is set, with the conflicting files and the instruction to merge its `base` into its branch and resolve them (for a card over several repositories, both notes name the change's repository); when `card.test_first`, waits for the reproduction test and sends the card back when it does not hold (see Test first); without an agent `Reviewer` (`moebius.has_agent`, which is true on every server because the Reviewer is built in), offers the change; offers the change with `card.review.judgements` when `card.review.verdict` is `approve`; sends the card back with `card.review.findings` as the note when it is `changes`; otherwise reviews along two axes: starts a run with purpose `review-standards` and, once it succeeded, one with purpose `review-spec` (given the untestable reason of test first as its note). The agent of each axis is the agent `Standards` or `Spec` when the configuration has one, else the `Reviewer`. A review run that `failed` restarts the round with the Standards axis, until `card.reviews >= moebius.round_limit`, when the card is marked stuck with `the round limit is reached`. The card is marked stuck with `stopped by a person` when `card.stopped`, before anything else, and with `the token budget of N is spent` when `card.tokens` has reached `moebius.agent_budget("Reviewer")`; it waits with `the daily token budget is spent` while the day's budget is spent, instead of starting a review. |
+| `merge.luau` | Waits for a person to merge the changes. The merge happens through the desktop API or, on GitHub, on the pull request. When the forge's checks of a change's pull request failed, sends the card back to `In progress` with the note `The checks failed:` and the failing checks; when a change no longer merges cleanly (its default branch moved), sends it back with the conflict as the note (for a card over several repositories, both notes name the change's repository); that resolves the changes' inbox items. A repository whose changes should merge without a person overrides this script with one that calls `moebius.merge_change(reason)` as its last statement, once it has checked what it wants to hold. |
 | `done.luau` | Calls `moebius.record_outcome("merged")` when `card.merged` (a change of the card was merged) and `moebius.record_outcome("closed")` otherwise, so every judgement made for the card learns how it ended. Archives the card (`moebius.archive`) once `moebius.now() - card.moved_at` is more than `ARCHIVE_AFTER_DAYS` (14) days. The board looks at the cards in `Done` whose outcomes are recorded every ten minutes, not at every tick. A project changes the numbers in its own copy of the script. A server that is upgraded to this version archives every card that has been done for longer than that, and holds every waiting card older than 30 days, at the first tick: `moved_at` of an existing card starts as the time of its last recorded move, or its creation. |
 
 The default Kanban needs an `[agents.Coder]` table in the configuration, because `code.luau` starts the agent

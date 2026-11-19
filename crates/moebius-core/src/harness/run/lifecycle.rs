@@ -82,6 +82,7 @@ pub(in crate::harness) fn detached_run(
         purpose: purpose.into(),
         commit_message: String::new(),
         remote: None,
+        others: Vec::new(),
     })
 }
 
@@ -124,14 +125,19 @@ pub(in crate::harness) fn in_worktree_run(
         purpose: "workflow".into(),
         commit_message: format!("Workflow run {workflow_run}\n\nCommitted by Moebius for its run."),
         remote: None,
+        others: Vec::new(),
     })
 }
 
 /// Records a run of `card` by `agent`, as `config` has it (on the harness it names), for `purpose`, with the worktree
-/// `worktree` makes for the run and its token. The agent leaves its work in the worktree, which is committed when the
-/// run ends. The commit the worktree starts at is recorded with the run (`Store::set_run_base`), which the trials of the
-/// regression set start from. The run fails when that cannot be done. When the agent names a runner, the run holds one
-/// of its runs from here on (see `remote`), and no run is made when the runner is full.
+/// `worktree` makes for the run in the card's own repository and its token. The agent leaves its work in the worktree,
+/// which is committed when the run ends. The commit the worktree starts at is recorded with the run
+/// (`Store::set_run_base`), which the trials of the regression set start from. A card over several repositories
+/// (ADR 0019) also gets a worktree of each of the `others`, each a repository and the commit it starts from, on the
+/// run's branch `moebius/run-<id>` of that repository, beside the first; every worktree of the run is recorded
+/// (`Store::add_run_worktree`), so the tool-call check lets the run write in each and nowhere else. The run fails
+/// when that cannot be done. When the agent names a runner, the run holds one of its runs from here on (see
+/// `remote`), and no run is made when the runner is full; a run over several repositories runs on the server only.
 pub(in crate::harness) fn card_run(
     app: &App,
     (router, runners): (&Router, &Arc<Runners>),
@@ -139,7 +145,15 @@ pub(in crate::harness) fn card_run(
     (agent, config): (&str, &AgentConfig),
     purpose: &str,
     worktree: impl FnOnce(&Repository, &Path, i64) -> crate::repos::Result<Worktree>,
+    others: &[(Repository, String)],
 ) -> Result<RunningRun, StartError> {
+    if let (Some(runner), false) = (&config.runner, others.is_empty()) {
+        return Err(StartError::WorktreeFailed(format!(
+            "the card works in {} repositories, and a run over several repositories runs on the server, not on the \
+             runner {runner}",
+            others.len() + 1
+        )));
+    }
     let slot = config
         .runner
         .as_deref()
@@ -162,6 +176,24 @@ pub(in crate::harness) fn card_run(
     app.store
         .set_run_base(run.id, &start)
         .map_err(|e| StartError::Store(fail(app, run.id, e.to_string())))?;
+    let mut made = Vec::new();
+    let recorded = app
+        .store
+        .add_run_worktree(
+            run.id,
+            repository.id,
+            &worktree.path.to_string_lossy(),
+            &start,
+        )
+        .map_err(|e| e.to_string())
+        .and_then(|()| other_worktrees(app, run.id, others, &mut made));
+    if let Err(why) = recorded {
+        for other in &made {
+            let _ = app.repos.remove_worktree(&other.clone, &other.worktree);
+        }
+        let _ = app.repos.remove_worktree(&clone, &worktree.path);
+        return Err(StartError::WorktreeFailed(fail(app, run.id, why)));
+    }
     let grant = Grant {
         run_id: run.id,
         card_id: Some(card.id),
@@ -179,7 +211,60 @@ pub(in crate::harness) fn card_run(
             card.number, card.title
         ),
         remote: slot.map(|slot| Arc::new(RemoteRun::new(slot, run.id))),
+        others: made,
     })
+}
+
+/// Makes and records the worktree of the run `run_id` in each of `others` (a repository and the commit it starts
+/// from), adding each to `made` as it is made, so that a failure leaves `made` to remove.
+fn other_worktrees(
+    app: &App,
+    run_id: i64,
+    others: &[(Repository, String)],
+    made: &mut Vec<OtherWorktree>,
+) -> Result<(), String> {
+    for (repository, base) in others {
+        let clone = PathBuf::from(&repository.path);
+        let worktree = app
+            .repos
+            .add_worktree(&repository.name, &clone, run_id, base)
+            .map_err(|e| format!("cannot make the worktree of {}: {e}", repository.name))?;
+        let start = match git(&worktree.path, &["rev-parse", "HEAD"]) {
+            Ok(start) => start,
+            Err(e) => {
+                let _ = app.repos.remove_worktree(&clone, &worktree.path);
+                return Err(e.to_string());
+            }
+        };
+        made.push(OtherWorktree {
+            repository: repository.name.clone(),
+            clone,
+            worktree: worktree.path,
+            start,
+        });
+        let other = made.last().expect("just pushed");
+        app.store
+            .add_run_worktree(
+                run_id,
+                repository.id,
+                &other.worktree.to_string_lossy(),
+                &other.start,
+            )
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// A worktree of a run of a card in another of the card's repositories than its own (see [`card_run`]).
+#[derive(Clone)]
+pub(in crate::harness) struct OtherWorktree {
+    /// The name of the repository in Moebius.
+    pub(in crate::harness) repository: String,
+    /// The repository's clone.
+    pub(in crate::harness) clone: PathBuf,
+    pub(in crate::harness) worktree: PathBuf,
+    /// The commit the worktree was made at.
+    pub(in crate::harness) start: String,
 }
 
 /// What a started run holds until it ends, whatever its harness.
@@ -197,20 +282,24 @@ pub(in crate::harness) struct RunningRun {
     pub(in crate::harness) commit_message: String,
     /// The runner the harness goes on, if the run is not on the server.
     pub(in crate::harness) remote: Option<Arc<RemoteRun>>,
+    /// The worktrees of a run of a card over several repositories in the repositories other than the card's own, in
+    /// the order the card names them; empty for every other run.
+    pub(in crate::harness) others: Vec<OtherWorktree>,
 }
 
 impl RunningRun {
-    /// Commits what the agent left in the worktree of a repository; false when it changed nothing, that is, left
-    /// the worktree clean and made no commit of its own. A chat without a repository has nothing to commit.
+    /// Commits what the agent left in the worktree of a repository, and in each of the run's other worktrees; false
+    /// when it changed nothing in any, that is, left each clean and made no commit of its own. A chat without a
+    /// repository has nothing to commit.
     pub(in crate::harness) fn commit(&self, message: &str) -> crate::repos::Result<bool> {
         if self.clone.is_none() {
             return Ok(false);
         }
-        let worktree = &self.worktree;
-        if crate::repos::commit_all(worktree, message)? {
-            return Ok(true);
+        let mut changed = commit_worktree(&self.worktree, &self.start, message)?;
+        for other in &self.others {
+            changed |= commit_worktree(&other.worktree, &other.start, message)?;
         }
-        Ok(git(worktree, &["rev-parse", "HEAD"])? != self.start)
+        Ok(changed)
     }
 
     /// Brings what the agent did on the runner into the worktree: committed there, fetched, and the worktree set to
@@ -222,19 +311,31 @@ impl RunningRun {
         }
     }
 
-    /// Closes the terminals open on the run, then removes the worktree, or the chat's empty directory, the whole
-    /// outputs of its tools that were saved, the scratch directory the run made and what the run left on its runner.
+    /// Closes the terminals open on the run, then removes the worktree and the run's other worktrees, or the chat's
+    /// empty directory, the whole outputs of its tools that were saved, the scratch directory the run made and what
+    /// the run left on its runner.
     pub(in crate::harness) fn remove_worktree(&self, app: &App) {
         app.terminals.close(self.id);
         if let Some(remote) = &self.remote {
             remote.cleanup();
         }
         scratch::remove(&app.data_dir, self.id);
+        for other in &self.others {
+            let _ = app.repos.remove_worktree(&other.clone, &other.worktree);
+        }
         match &self.clone {
             Some(clone) => drop(app.repos.remove_worktree(clone, &self.worktree)),
             None => drop(std::fs::remove_dir_all(&self.worktree)),
         }
     }
+}
+
+/// Commits what was left in `worktree`, made at `start`, with `message`; false when nothing changed there.
+fn commit_worktree(worktree: &Path, start: &str, message: &str) -> crate::repos::Result<bool> {
+    if crate::repos::commit_all(worktree, message)? {
+        return Ok(true);
+    }
+    Ok(git(worktree, &["rev-parse", "HEAD"])? != start)
 }
 
 /// Fails a run that could not be started, with an event saying why; returns the message.
@@ -380,6 +481,7 @@ pub(in crate::harness) fn chat_run(
             run.id
         ),
         remote: None,
+        others: Vec::new(),
     };
     if let Some(message) = message {
         let said = json!({ "message": redact(message) });
@@ -437,6 +539,7 @@ pub(in crate::harness) fn woken_chat(
         purpose: "chat".into(),
         commit_message: format!("Chat {id}\n\nCommitted by Moebius when the chat ended."),
         remote: None,
+        others: Vec::new(),
     })
 }
 

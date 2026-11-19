@@ -22,6 +22,7 @@ mod access;
 mod assignees;
 mod attempts;
 mod automations;
+mod card_repositories;
 mod cards;
 mod changes;
 mod chats;
@@ -68,6 +69,7 @@ use crate::blobs::BlobStore;
 pub use access::{AccessToken, hash_secret};
 pub use attempts::Attempt;
 pub use automations::{Automation, Firing, NewAutomation};
+pub use card_repositories::RunWorktree;
 pub use cards::{Card, CardMove, Held, Repository};
 pub use changes::Change;
 pub use cycles::{Cycle, CycleCard};
@@ -498,6 +500,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     projects::PRIVATE,
     cycles::SCHEMA,
     wiki_links::SCHEMA,
+    card_repositories::SCHEMA,
 ];
 
 pub fn now() -> i64 {

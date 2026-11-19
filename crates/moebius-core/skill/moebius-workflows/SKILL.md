@@ -47,7 +47,9 @@ repository, and your saves through the API are commits there, so they work at on
 ## What a script can use
 
 `card` is read only: `id`, `number`, `title`, `body`, `author`, `column`, `trusted`, `confirmed`, `blocked_by`,
-`rounds`, `reviews`, `tokens`, `stopped`, `note`, and the tables `run`, `review` and `change`, which can be nil. The
+`rounds`, `reviews`, `tokens`, `stopped`, `note`, the tables `run` and `review`, which can be nil, and the arrays
+`repositories` (the names of the repositories the card works in, its own first) and `changes` (one open change per
+repository, each with its `repository`; `publish_change()` and `run_checks()` return them the same way). The
 `moebius` table acts: `move(column, note)`, `wait(reason)`, `ask(kind, reason)`, `stuck(reason)`,
 `start_run(agent, purpose, note, runner)`, `has_agent(name)`, `agent_budget(name)`, `runs_active()`, `tokens_today()`,
 `decide(kind, context, options, fail_closed)`, `publish_change()`, `run_checks()`, `offer_change()`,

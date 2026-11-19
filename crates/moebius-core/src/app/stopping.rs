@@ -11,7 +11,7 @@ use super::{App, AppError, Result};
 use crate::board::CardRuns;
 use crate::bus::Event;
 use crate::decide::Actor;
-use crate::store::Card;
+use crate::store::{Card, Repository};
 
 /// How long blocking and deleting a card wait for its runs.
 #[derive(Debug, Clone, Copy)]
@@ -133,11 +133,26 @@ impl App {
     ) -> Result<Card> {
         let card = self.card(card_id)?;
         let repository = self.repository(card.repository_id)?;
+        // Every repository the card's runs worked in, also one that has left the card since.
+        let mut repositories = self.card_repositories(&card)?;
+        for run in self.store.runs_for_card(card.id)? {
+            for worktree in self.store.run_worktrees(run.id)? {
+                if !repositories.iter().any(|r| r.id == worktree.repository_id)
+                    && let Some(repository) = self.store.repository(worktree.repository_id)?
+                {
+                    repositories.push(repository);
+                }
+            }
+        }
         // Held, so that the board starts nothing meanwhile; given back if the card cannot be deleted.
         let held_here = self.store.hold_card(card_id, &by.decider(), None)?;
         let removed = self
             .end_runs_of(by, runs, card_id)
-            .and_then(|()| self.remove_card_work(&repository.path, &card))
+            .and_then(|()| {
+                repositories
+                    .iter()
+                    .try_for_each(|repository| self.remove_card_work(repository, &card))
+            })
             .and_then(|()| {
                 Ok(self
                     .store
@@ -237,23 +252,42 @@ impl App {
         }
     }
 
-    /// Removes the worktrees and `moebius/` branches the card's runs and changes left in the clone at `path`.
-    fn remove_card_work(&self, path: &str, card: &Card) -> Result<()> {
+    /// Removes the worktrees and `moebius/` branches the card's runs and changes left in the clone of `repository`,
+    /// one of the repositories the card works in.
+    fn remove_card_work(&self, repository: &Repository, card: &Card) -> Result<()> {
+        let own = repository.id == card.repository_id;
         let mut worktrees: Vec<PathBuf> = Vec::new();
         let mut branches: BTreeSet<String> = BTreeSet::new();
         for run in self.store.runs_for_card(card.id)? {
-            worktrees.extend(run.worktree.as_ref().map(PathBuf::from));
+            if own {
+                worktrees.extend(run.worktree.as_ref().map(PathBuf::from));
+            }
+            // The own worktree of a run is in its rows too; the clone removes each once.
+            worktrees.extend(
+                self.store
+                    .run_worktrees(run.id)?
+                    .into_iter()
+                    .filter(|w| w.repository_id == repository.id)
+                    .map(|w| PathBuf::from(w.path)),
+            );
             branches.insert(run.branch());
         }
-        for change in self.store.changes(card.repository_id)? {
+        for change in self.store.changes(repository.id)? {
             if change.card_id == Some(card.id) && change.branch.starts_with("moebius/") {
                 branches.insert(change.branch);
             }
         }
         // The branch of the card's change when it was published, before a change was stored for it.
-        branches.insert(format!("moebius/card-{}", card.number));
-        self.repos
-            .remove_card_work(std::path::Path::new(path), card.id, &worktrees, &branches)?;
+        branches.insert(match own {
+            true => format!("moebius/card-{}", card.number),
+            false => format!("moebius/card-{}-{}", card.project_key, card.project_number),
+        });
+        self.repos.remove_card_work(
+            std::path::Path::new(&repository.path),
+            card.id,
+            &worktrees,
+            &branches,
+        )?;
         Ok(())
     }
 }

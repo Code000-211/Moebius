@@ -180,6 +180,7 @@ any route to any role that is not what its row says.
 | `DELETE /v1/cards/{id}` | member | no |
 | `PUT /v1/cards/{id}/parent` | member | yes |
 | `PUT /v1/cards/{id}/labels` | member | yes |
+| `PUT /v1/cards/{id}/repositories` | member | yes |
 | `PUT /v1/cards/{id}/assignees` | member | no |
 | `PUT /v1/inbox/{id}/assignees` | member | no |
 | `PUT /v1/cards/{id}/priority` | member | no |
@@ -394,8 +395,8 @@ in `Done`), `labels` (array of text, in order), `claimed_by` (who claimed it, or
 the people it is given to, without the `@`, in the order the people were added; empty when it is no one's; see
 [Assignees](#assignees)), `priority` (`urgent`, `high`, `medium`, `low` or `none`) and `due` (a day as
 `YYYY-MM-DD`, or null) and `estimate` (points, or null); see [Priority and due date](#priority-and-due-date) and
-[Estimates](#estimates).
-[Assignees](#assignees)), `moved_at` (when the card last moved, was edited or was released from a hold, Unix seconds;
+[Estimates](#estimates). `repositories` names the repositories the card works in, its own issue's first (see
+[`PUT /v1/cards/{id}/repositories`](#put-v1cardsidrepositories)). It also has `moved_at` (when the card last moved, was edited or was released from a hold, Unix seconds;
 scripts read it as `card.moved_at`) and `archived_at` (null, or when a column script archived the card with
 `moebius.archive`). An archived card is not on the board: the snapshot (`GET /v1/snapshot`) leaves it out, and a
 move (a person's, or the forge reopening its issue) brings it back. It stays in the store, in the issue list and in the
@@ -1608,6 +1609,18 @@ forge refused.
 Replaces the issue's labels, on the forge too. Request: `{"labels": [text]}`; blank labels and repeats are dropped. The
 event `card_labels_changed` is sent. Response: the `Card`. Errors: `404` no such card; `500` the forge refused (a Forgejo
 repository without such a label, for one).
+
+### `PUT /v1/cards/{id}/repositories`
+
+Names the repositories the card works in besides its own issue's (ADR 0019), in the order their changes are to be
+merged. Request: `{"repositories": [name], "reason": text}`, each the name of a repository of the card's project or of
+its files, in any case; `reason` is optional. The card's own repository is always first and cannot be left out: naming
+it, or a name twice, changes nothing, and an empty list leaves the card its own repository only. The next run of the
+card gets a worktree of each (see [Cards over several repositories](column-scripts.md#cards-over-several-repositories));
+a run that is going keeps what it had. A repository in which the card has an open change cannot be left out until that change is merged or closed. A person or
+the Moebius agent does this; it is recorded as a decision of kind `set_repositories` with the card's `title` and the
+`repositories` named, and the event `card_updated` is sent. Response: the `Card`, whose `repositories` lists them all,
+its own first. Errors: `404` no such card; `422` a name that is no repository of the project, or a repository left out in which the card has an open change.
 
 ### Kinds of issues
 

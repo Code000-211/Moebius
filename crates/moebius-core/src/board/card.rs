@@ -23,7 +23,10 @@
 //! - `card.review`: the verdict and findings of the review since the card's latest `code` run, if there is one; for a
 //!   review along two axes also its `judgements` and the `standards` and `spec` axes (see `review`).
 //! - `card.note`: why the card went back to coding, if it did and no `code` run has succeeded since.
-//! - `card.change`: the card's open change: its checks, the failing ones and whether it still merges cleanly.
+//! - `card.repositories`: the names of the repositories the card works in, its own issue's first (see
+//!   `app::card_repositories`).
+//! - `card.changes`: the card's open changes, one per repository that has one, in the order of `card.repositories`:
+//!   each with its repository, its checks, the failing ones and whether it still merges cleanly.
 //! - `card.test_first`: whether the card's repository works test first (see `app::reproduce`).
 //! - `card.held`: set while a person or the Moebius agent holds the card; a script never sees a held card's tick.
 //! - `card.stopped`: whether a person stopped the card's latest run and has not retried the card since.
@@ -115,7 +118,9 @@ impl Engine {
         t.set("author", card.author.as_str())?;
         t.set("column", card.column.as_str())?;
         t.set("note", card.note.as_deref())?;
-        t.set("change", change_table(&self.app, lua, card.id)?)?;
+        t.set("repositories", card.repositories.clone())?;
+        t.set("changes", changes_table(&self.app, lua, card.id)?)?;
+        refuse_the_old_change(lua, &t)?;
         t.set("trusted", self.app.is_trusted(card))?;
         t.set("confirmed", card.confirmed)?;
         t.set("moved_at", card.moved_at)?;
@@ -226,43 +231,85 @@ impl Engine {
     }
 }
 
-/// The card's open change as scripts see it, or nothing when the card has none. How its checks stand is for its current
-/// commit; what failed is left out when that is of an older one.
-pub(super) fn change_table(app: &App, lua: &Lua, card_id: i64) -> mlua::Result<Option<Table>> {
-    let Some(change) = app
-        .store
-        .open_change(card_id)
-        .map_err(mlua::Error::external)?
-    else {
-        return Ok(None);
-    };
-    let repository = change
-        .repository_id
-        .and_then(|id| app.store.repository(id).transpose())
-        .ok_or_else(|| mlua::Error::runtime("the change has no repository"))?
-        .map_err(mlua::Error::external)?;
-    let current = change.checks_head == change.head;
-    let c = lua.create_table()?;
-    c.set("branch", change.branch.as_str())?;
-    c.set("base", repository.base_ref())?;
-    c.set("pull_request", change.pull_request)?;
-    c.set(
-        "checks",
-        app.checks_of(&change).map_err(mlua::Error::external)?,
+/// The card's open changes as scripts see them, in the order the card names their repositories; empty when it has
+/// none. How each one's checks stand is for its current commit; what failed is left out when that is of an older one.
+pub(super) fn changes_table(app: &App, lua: &Lua, card_id: i64) -> mlua::Result<Table> {
+    let card = app.card(card_id).map_err(mlua::Error::external)?;
+    let changes = app.open_changes(&card).map_err(mlua::Error::external)?;
+    let list = lua.create_table()?;
+    for change in changes {
+        let repository = change
+            .repository_id
+            .and_then(|id| app.store.repository(id).transpose())
+            .ok_or_else(|| mlua::Error::runtime("the change has no repository"))?
+            .map_err(mlua::Error::external)?;
+        let current = change.checks_head == change.head;
+        let c = lua.create_table()?;
+        c.set("repository", repository.name.as_str())?;
+        c.set("branch", change.branch.as_str())?;
+        c.set("base", repository.base_ref())?;
+        c.set("pull_request", change.pull_request)?;
+        c.set(
+            "checks",
+            app.checks_of(&change).map_err(mlua::Error::external)?,
+        )?;
+        c.set(
+            "failed_checks",
+            change.failed_checks.as_deref().filter(|_| current),
+        )?;
+        c.set(
+            "check_output",
+            change.check_output.as_deref().filter(|_| current),
+        )?;
+        c.set(
+            "conflict",
+            app.conflict_of(&change).map_err(mlua::Error::external)?,
+        )?;
+        list.push(c)?;
+    }
+    array_of_changes(lua, &list)?;
+    Ok(list)
+}
+
+/// Makes reading `card.change`, which became `card.changes`, raise an error, so that a script written for one change
+/// fails closed and says why instead of reading nil and going on as if there were no change.
+pub(super) fn refuse_the_old_change(lua: &Lua, card: &Table) -> mlua::Result<()> {
+    let meta = lua.create_table()?;
+    meta.set(
+        "__index",
+        lua.create_function(|_, (_, key): (Table, mlua::Value)| {
+            if let mlua::Value::String(key) = &key
+                && key.to_str().is_ok_and(|key| key == "change")
+            {
+                return Err::<mlua::Value, _>(mlua::Error::runtime(
+                    "card.change is now card.changes, an array of the card's changes, one per repository",
+                ));
+            }
+            Ok(mlua::Value::Nil)
+        })?,
     )?;
-    c.set(
-        "failed_checks",
-        change.failed_checks.as_deref().filter(|_| current),
+    card.set_metatable(Some(meta))
+}
+
+/// Makes reading a field of a change (`checks`, `conflict`, ...) on `list`, an array of changes, raise an error: a
+/// script written for one change reads them on what `moebius.run_checks()` returns, and must not read nil and go on
+/// as if the checks had passed.
+pub(super) fn array_of_changes(lua: &Lua, list: &Table) -> mlua::Result<()> {
+    let meta = lua.create_table()?;
+    meta.set(
+        "__index",
+        lua.create_function(|_, (_, key): (Table, mlua::Value)| {
+            if let mlua::Value::String(key) = &key {
+                let key = key.to_string_lossy();
+                return Err::<mlua::Value, _>(mlua::Error::runtime(format!(
+                    "{key} is a field of each change: this is an array of the card's changes, one per repository; \
+                     read changes[i].{key}"
+                )));
+            }
+            Ok(mlua::Value::Nil)
+        })?,
     )?;
-    c.set(
-        "check_output",
-        change.check_output.as_deref().filter(|_| current),
-    )?;
-    c.set(
-        "conflict",
-        app.conflict_of(&change).map_err(mlua::Error::external)?,
-    )?;
-    Ok(Some(c))
+    list.set_metatable(Some(meta))
 }
 
 #[cfg(test)]

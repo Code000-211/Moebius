@@ -17,7 +17,7 @@ function on_card(card)
       return
     end
   end
-  if #card.children > 0 and card.run == nil and card.change == nil then
+  if #card.children > 0 and card.run == nil and #card.changes == 0 then
     local open = {}
     for _, child in ipairs(card.children) do
       if child.state == "open" then

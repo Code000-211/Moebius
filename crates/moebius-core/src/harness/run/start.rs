@@ -9,7 +9,7 @@ use super::lifecycle::{
     RunningRun, card_run, detached_run, in_worktree_run, launch_or_keep, launch_or_undo,
     undo_unlaunched,
 };
-use super::prompts::{prompt_for, run_prompt};
+use super::prompts::{prompt_for, repositories_prompt, run_prompt};
 use crate::app::App;
 use crate::board::{StartError, Variant};
 use crate::config::AgentConfig;
@@ -57,13 +57,28 @@ pub(in crate::harness) fn start_card(
         app.repos
             .add_worktree(&repository.name, clone, run_id, &base)
     };
+    // The card's other repositories start from where its work in each stands, or from their default branch.
+    let mut others = Vec::new();
+    for repository in app
+        .card_repositories(card)
+        .map_err(|e| StartError::Store(e.to_string()))?
+        .into_iter()
+        .skip(1)
+    {
+        let base = app
+            .store
+            .code_branch_in(card.id, repository.id)
+            .map_err(|e| StartError::Store(e.to_string()))?
+            .unwrap_or_else(|| repository.base_ref());
+        others.push((repository, base));
+    }
     run_card(
         app,
         (router, runners),
         card,
         (agent, &config),
         (purpose, &prompt),
-        worktree,
+        (worktree, &others),
         launch,
     )
 }
@@ -84,27 +99,47 @@ pub(in crate::harness) fn start_trial(
         app.repos
             .add_trial_worktree(name, clone, proposal, card.id, base)
     };
+    // A trial replays the card in its own repository only.
     run_card(
         app,
         (router, runners),
         card,
         (agent, definition),
         ("trial", &prompt),
-        worktree,
+        (worktree, &[]),
         launch,
     )
 }
 
+/// Starts the run of `card` in the worktree `worktree` makes in the card's own repository and in one of each of
+/// `others` (see [`card_run`]); a `code` run or an attempt is told where the worktrees are and which repositories it
+/// may ask for (see [`repositories_prompt`]).
 fn run_card(
     app: &Arc<App>,
     routing: (&Router, &Arc<Runners>),
     card: &Card,
     (agent, config): (&str, &AgentConfig),
     (purpose, prompt): (&str, &str),
-    worktree: impl FnOnce(&Repository, &Path, i64) -> crate::repos::Result<Worktree>,
+    (worktree, others): (
+        impl FnOnce(&Repository, &Path, i64) -> crate::repos::Result<Worktree>,
+        &[(Repository, String)],
+    ),
     launch: Launch,
 ) -> Result<Run, StartError> {
-    let running = card_run(app, routing, card, (agent, config), purpose, worktree)?;
+    let running = card_run(
+        app,
+        routing,
+        card,
+        (agent, config),
+        purpose,
+        worktree,
+        others,
+    )?;
+    let prompt = match matches!(purpose, "code" | "attempt") {
+        true => format!("{prompt}{}", repositories_prompt(app, card, &running)),
+        false => prompt.to_string(),
+    };
+    let prompt = prompt.as_str();
     // The run exists now, so a block that comes in from here on finds it; one that came in before is seen here.
     if let Err(e) = crate::board::may_start(app, card) {
         undo_unlaunched(app, routing.0, &running);

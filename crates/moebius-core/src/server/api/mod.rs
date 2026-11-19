@@ -56,6 +56,7 @@
 
 mod assignees;
 mod automations;
+mod card_repositories;
 mod cards;
 mod chats;
 mod cycles;
@@ -239,6 +240,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(cards::routes())
         .merge(issues::routes())
         .merge(assignees::routes())
+        .merge(card_repositories::routes())
         .merge(planning::routes())
         .merge(notices::routes())
         .merge(kinds::routes())
