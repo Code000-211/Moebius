@@ -77,7 +77,7 @@ function Where() {
   return <p data-testid="where">{useLocation().pathname + useLocation().search}</p>;
 }
 
-/** Stands for the floating chat: the other tenant of the slot. */
+/** Stands for the Moebius agent: the other tenant of the place over the right column. */
 function OtherSheet() {
   const slot = useSheetSlot();
   return (
@@ -130,8 +130,8 @@ const inSheet = () => within(sheet());
 const openRegistries = () =>
   fireEvent.click(screen.getByRole("button", { name: "open registries" }));
 
-describe("opening and minimising the sheet", () => {
-  it("is not on the page until it is opened, and a minimised sheet leaves its button", async () => {
+describe("opening and closing the sheet", () => {
+  it("is not on the page until it is opened, leaves no button when closed, and keeps its state", async () => {
     answers["GET /v1/packages/search?q="] = { body: { packages: [summary()], problems: [] } };
     mount();
     expect(screen.queryByRole("dialog", { name: "Package sheet" })).toBeNull();
@@ -142,7 +142,9 @@ describe("opening and minimising the sheet", () => {
 
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Package sheet" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Open the package sheet" }));
+    // No round button floats over the page: the sheet is opened again from where it was opened.
+    expect(screen.queryByRole("button", { name: "Open the package sheet" })).toBeNull();
+    openRegistries();
     // What was found is where it was left.
     expect(await inSheet().findByText("gate")).toBeTruthy();
   });
@@ -155,7 +157,7 @@ describe("opening and minimising the sheet", () => {
     expect(document.activeElement).toBe(field);
   });
 
-  it("shares its slot with the other sheet: opening one minimises the other, which keeps its state", async () => {
+  it("shares its place with the other sheet: opening one hides the other, which keeps its state", async () => {
     answers["GET /v1/packages/search?q="] = { body: { packages: [summary()], problems: [] } };
     mount();
     openRegistries();
@@ -163,10 +165,11 @@ describe("opening and minimising the sheet", () => {
     fireEvent.click(screen.getByRole("button", { name: "open the other sheet" }));
     expect(screen.queryByRole("dialog", { name: "Package sheet" })).toBeNull();
     expect(screen.getByRole("dialog", { name: "Other sheet" })).toBeTruthy();
-    // Escape does not reach the minimised one, and its button is in view for opening it again.
+    // Escape does not reach the hidden one.
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.getByRole("dialog", { name: "Other sheet" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Open the package sheet" }));
+    expect(screen.queryByRole("dialog", { name: "Package sheet" })).toBeNull();
+    openRegistries();
     expect(await inSheet().findByText("gate")).toBeTruthy();
     expect(screen.queryByRole("dialog", { name: "Other sheet" })).toBeNull();
   });

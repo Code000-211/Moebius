@@ -1,12 +1,11 @@
 /**
- * The package sheet: a floating panel like the floating chat, in which a person searches a catalog, reads a package and
+ * The package sheet: a sheet like the Moebius agent's, in which a person searches a catalog, reads a package and
  * installs, updates or removes it. The shell opens it on the Moebius registries (from the Plugins page) or on the
  * pi.dev catalog (from an agent's Extensions); one sheet at a time, so opening it from elsewhere switches its catalog.
- * It takes the slot at the right of the window that the floating chat shares (opening one minimises the other), and keeps
- * its state when minimised. What a request told, or why
- * it was refused, is shown in the sheet, never as a broken page.
+ * It lies in the agent's place, over the page's right column (opening one hides the other), and keeps its state while
+ * hidden, until the page opens it again. What a request told, or why it was refused, is shown in the sheet, never as a
+ * broken page.
  */
-import { PackageIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { snapshot as readSnapshot } from "../api/calls/board";
@@ -14,7 +13,7 @@ import { installedPi } from "../api/calls/packages";
 import { keys } from "../api/keys";
 import type { PiHit } from "../api/types/packages";
 import { ScrollFades } from "../ui/page/ScrollFades";
-import { SheetFrame, SheetOpener, useSheetBehaviour } from "../ui/page/Sheet";
+import { SheetFrame, useSheetBehaviour } from "../ui/page/Sheet";
 import { TabPanel, Tabs } from "../ui/page/Tabs";
 import { Browse, type Browsing } from "./Browse";
 import { Installed } from "./Installed";
@@ -48,7 +47,7 @@ function Body({
   hide,
 }: {
   catalog: Catalog;
-  /** Whether the sheet is showing: it keeps its state while minimised. */
+  /** Whether the sheet is showing: it keeps its state while hidden. */
   shown: boolean;
   agent: string | null;
   hide: () => void;
@@ -144,7 +143,7 @@ function Body({
 
 export function PackageSheet() {
   const sheet = usePackageSheet();
-  const opener = useSheetBehaviour(sheet.shown, sheet.hide);
+  useSheetBehaviour(sheet.shown, sheet.hide);
   if (!sheet.opened) return null;
   const line =
     sheet.catalog === "moebius"
@@ -153,37 +152,22 @@ export function PackageSheet() {
         ? "Pi packages from pi.dev"
         : `Pi packages from pi.dev, for ${sheet.agent}`;
   return (
-    <>
-      {!sheet.shown && (
-        <SheetOpener
-          openerRef={opener}
-          label="Open the package sheet"
-          title="Browse packages"
-          onOpen={() => sheet.open(sheet.catalog, sheet.agent)}
-          icon={<PackageIcon aria-hidden="true" className="size-5" weight="fill" />}
-          className="right-20"
-        />
-      )}
-      <SheetFrame
-        label="Package sheet"
-        title="Packages"
-        line={line}
-        minimiseLabel="Minimise the package sheet"
-        onMinimise={sheet.hide}
-        hidden={!sheet.shown}
-        // The same width as the floating chat, which shares the slot (`Sheet.tsx`): wider from xl, widest from 2xl,
-        // with the page's paddings (`Shell.tsx`, `ChatPage.tsx`) clear of its edge.
-        className="top-6 right-6 bottom-24 w-96 xl:w-[26rem] 2xl:w-[30rem]"
-      >
-        {/* A catalog of its own is a sheet of its own: switching it starts with a clean search and its own tabs. */}
-        <Body
-          key={sheet.catalog}
-          catalog={sheet.catalog}
-          agent={sheet.agent}
-          shown={sheet.shown}
-          hide={sheet.hide}
-        />
-      </SheetFrame>
-    </>
+    <SheetFrame
+      label="Package sheet"
+      title="Packages"
+      line={line}
+      closeLabel="Close the package sheet"
+      onClose={sheet.hide}
+      hidden={!sheet.shown}
+    >
+      {/* A catalog of its own is a sheet of its own: switching it starts with a clean search and its own tabs. */}
+      <Body
+        key={sheet.catalog}
+        catalog={sheet.catalog}
+        agent={sheet.agent}
+        shown={sheet.shown}
+        hide={sheet.hide}
+      />
+    </SheetFrame>
   );
 }

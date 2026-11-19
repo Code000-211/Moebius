@@ -133,7 +133,7 @@ interface ThreadViewProps {
   /** What a person can press to start, while the place is empty: an empty chat that offers nothing asks to be read rather than used. */
   emptyAction?: ReactNode;
   /**
-   * Drawn in the floating chat's dock rather than on a page: one row of turns in less room, so the rhythm tightens and
+   * Drawn in the Moebius agent's sheet rather than on a page: one row of turns in less room, so the rhythm tightens and
    * the empty place sits on the dock's own surface instead of in a card inside it.
    */
   compact?: boolean;

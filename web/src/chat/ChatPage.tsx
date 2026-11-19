@@ -24,15 +24,16 @@ export function ChatPage() {
   const chats = useQuery({ queryKey: keys.chats, queryFn: readChats });
   const snapshot = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
   const [notice, setNotice] = useState<string | null>(null);
-  // The package sheet sits fixed at the right of the window and grows with it (26rem from xl, 30rem from 2xl); below
-  // 2xl, where the shell holds no room for it, the chat gives way itself, so it never lies over the conversation.
+  // The package sheet lies over the right column and a strip of the page beside it; the chat gives way to it, so it
+  // never lies over the conversation (the strip is the sheet's width less the slim column's). From 2xl the shell
+  // leaves the strip itself.
   const packages = usePackageSheet();
 
   // A notice belongs to the chat it was said in.
   // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when another chat is opened
   useEffect(() => setNotice(null), [openId]);
 
-  // Every chat of the server is on this page, including the ones started in the floating window.
+  // Every chat of the server is on this page, including the ones started with the Moebius agent of the right column.
   const all = chats.data ?? [];
   const open = openId === null ? undefined : all.find((chat) => chat.id === openId);
 
@@ -49,7 +50,7 @@ export function ChatPage() {
 
   return (
     <div
-      className={`relative flex h-full w-full min-w-0 flex-col ${packages.shown ? "pr-[27.5rem] xl:pr-[29.5rem] 2xl:pr-0" : ""}`}
+      className={`relative flex h-full w-full min-w-0 flex-col ${packages.shown ? "pr-[calc(var(--sheet-width)-var(--column-rail-width))] 2xl:pr-0" : ""}`}
       data-testid="chat-page"
     >
       {/* 820px is the measure the conversation reads at: wide enough that a line of a diff fits beside its words,

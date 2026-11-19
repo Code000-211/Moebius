@@ -15,7 +15,7 @@
  * editors are left out of the type, radius, spacing and elevation checks, where the standard wants monospace
  * precision, but not out of the overflow and contrast checks.
  *
- * Some routes open a thing before they are measured — the search, the floating chat, a form, a menu — because a sheet
+ * Some routes open a thing before they are measured — the search, the Moebius agent, a form, a menu — because a sheet
  * only shows what it is once it is on the screen. MOEBIUS_DESIGN_ONLY=chat-menu,inbox-search measures those routes
  * alone, which is how one layer is looked at again without the other hundred.
  *
@@ -256,7 +256,7 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
     return;
   }
   if (what === "chat") {
-    await page.getByRole("button", { name: "Open the floating chat" }).click();
+    await page.getByRole("button", { name: "Ask Moebius" }).click();
     await page.waitForTimeout(400);
     return;
   }

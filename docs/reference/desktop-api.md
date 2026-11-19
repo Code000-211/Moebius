@@ -102,7 +102,7 @@ done) and `children` (its sub-issues, oldest first, each `{"id", "number", "titl
 the person's next message), `worktree`, `started_at`, `ended_at`, `summary`, `repository_id` (the repository a chat
 works in, or null) and `harness_repository` (true for a chat that works in the [harness configuration
 repository](harness-configuration.md#changing-it-in-a-chat); `harness` is the name of the harness that runs the agent)
-and `origin` (where a chat was started: `chat`, or `assistant` for the web app's floating window; `chat` for every
+and `origin` (where a chat was started: `chat`, or `assistant` for the web app's Moebius agent of the right column; `chat` for every
 other run) and `runner` (the name of the [runner](configuration.md#runners) the run's harness goes on, or null for a run on the server) and
 `title` (the name a person gave this chat, or null while it is untitled and its `Chat` title comes from its first
 message; see `POST /v1/chats/{id}/title`. Only a chat is ever named, so it is null for every other run).
@@ -123,7 +123,7 @@ included: what `POST /v1/chats/{id}/offer` would offer; 0 for an ended chat and 
 was call its question tool, `ask_user_question` or Claude Code's `AskUserQuestion`, with no message of the person after
 it, so it needs an answer) and
 `origin`
-(`chat`, `assistant` for a chat of the web app's floating window, see `POST /v1/chats`, or `automation` for a chat an
+(`chat`, `assistant` for a chat of the web app's Moebius agent of the right column, see `POST /v1/chats`, or `automation` for a chat an
 automation started, see `POST /v1/automations`), `model` and `thinking`
 (the model and reasoning level the chat was given in place of its agent's, see `POST /v1/chats` and
 `POST /v1/chats/{id}/settings`; null while it uses its agent's). A chat is unread while `answered` is greater than `seen`.
@@ -1990,7 +1990,7 @@ Request:
 | `harness` | boolean | Work in the harness configuration repository instead (default false): in a worktree on the branch `moebius/chat-<run id>` of its default branch, so that the agents, skills, extensions, MCP servers and rules can be built as files and merged (see [changing it in a chat](harness-configuration.md#changing-it-in-a-chat)). The run has `harness_repository` true. Not together with `repository`. |
 | `continues` | number | The id of an ended chat this one goes on from. Its agent, place (repository or harness configuration repository), model and reasoning level are used unless `agent`, `repository`, `model` or `thinking` name others, and the agent is given what was said in it (the person's messages and the agent's answers, at most the last 20 000 characters) before `message`. The new chat's `said` event holds only `message`. |
 | `context` | string | Where the person is in the app (the page, the repository, the open card or chat, the text being edited), as the web app describes it. The agent is told it before `message`, under the line `[Where the person is in the Moebius app. Use it to understand what they mean; do not repeat it.]`, with secrets removed and cut to 4 000 characters; the `said` event holds only `message`. Optional; blank is the same as none. |
-| `origin` | string | Where the chat is started: `chat` (the default), on the Chat page or by any client, `automation`, as an automation's chats are (see `POST /v1/automations`), or `assistant`, a conversation in the web app's floating window, which the person reads there. `GET /v1/chats` leaves out the chats of origin `assistant` unless asked for them with `all=true`; what an app does with them is its own (the web app lists them on its Chat page with every other chat and counts them unread until they are read, the web app keeps them out of its Chat page). The run, its events and every other chat route work as for any chat. |
+| `origin` | string | Where the chat is started: `chat` (the default), on the Chat page or by any client, `automation`, as an automation's chats are (see `POST /v1/automations`), or `assistant`, a conversation in the web app's Moebius agent of the right column, which the person reads there. `GET /v1/chats` leaves out the chats of origin `assistant` unless asked for them with `all=true`; what an app does with them is its own (the web app lists them on its Chat page with every other chat and counts them unread until they are read, the web app keeps them out of its Chat page). The run, its events and every other chat route work as for any chat. |
 
 Response: the `Run` (`purpose` `chat`, `card_id` null). Errors: `404` no such repository or no run `continues`; `422`
 the message is blank or missing with `continues`, `model` is blank, `thinking` is not one of the levels, the agent does not exist, it is a built-in agent and neither its own `[agents.<name>]` nor
@@ -2000,7 +2000,7 @@ the message is blank or missing with `continues`, `model` is blank, `thinking` i
 
 ### `GET /v1/chats`
 
-The chats, newest first, without those of origin `assistant` (the web app's floating window). Query: `all=true`
+The chats, newest first, without those of origin `assistant` (the web app's Moebius agent of the right column). Query: `all=true`
 lists those too, each with its `origin`; the web app asks for them so that its Fleet page shows the agents they
 keep working and "Open in Chat" can show one. Response: an array of `Chat`. A chat's history is its run's events, read with
 `GET /v1/runs/{id}/events` and followed on `GET /v1/events`.
@@ -2135,7 +2135,7 @@ a chat.
 
 ### `DELETE /v1/chats/{id}`
 
-A person deletes a chat, also one of the floating assistant. A chat that has not ended is stopped first, as `POST
+A person deletes a chat, also one of the web app's Moebius agent. A chat that has not ended is stopped first, as `POST
 /v1/runs/{id}/stop` stops a run, and the deletion waits for it to end (`409` if it does not within a minute: try
 again). Then everything that belongs to the chat is deleted, and nothing else:
 

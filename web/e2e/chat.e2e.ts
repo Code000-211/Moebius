@@ -1,11 +1,10 @@
 /**
- * The chat page and the floating chat in a real browser: an answer that streams in is followed unless the person
- * scrolled up, tool calls are pills, a provider's error is an entry of the chat, Copy puts text on the clipboard,
- * a new chat with the Moebius agent starts without a model, a chat is named and keeps the name, and the floating window
-opens over another page. The
- * agent is played by the fake server (e2e/fake/chat.ts), which sends the events exactly as the real one does; against
- * a real server only the page itself is looked at, as it has no model to answer with. Every wait is on something the
- * page shows, never on time.
+ * The chat page and the Moebius agent of the right column in a real browser: an answer that streams in is followed
+ * unless the person scrolled up, tool calls are pills, a provider's error is an entry of the chat, Copy puts text on the
+ * clipboard, a new chat with the Moebius agent starts without a model, a chat is named and keeps the name, and the
+ * Moebius agent opens over another page. The agent is played by the fake server (e2e/fake/chat.ts), which sends the
+ * events exactly as the real one does; against a real server only the page itself is looked at, as it has no model to
+ * answer with. Every wait is on something the page shows, never on time.
  */
 import { type Browser, type BrowserContext, chromium, type Locator, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -784,13 +783,13 @@ describe("an open chat", () => {
   });
 });
 
-describe("the floating chat", () => {
+describe("the Moebius agent", () => {
   it.skipIf(usesRealServer)(
     "opens over another page and tells the agent where the person is",
     async () => {
       await open("/inbox");
-      await page.getByRole("button", { name: "Open the floating chat" }).click();
-      const window = page.getByRole("dialog", { name: "Floating chat" });
+      await page.getByRole("button", { name: "Ask Moebius" }).click();
+      const window = page.getByRole("dialog", { name: "Moebius agent" });
       await window.waitFor();
       // The sheet says which page it is looking at, and offers nothing to leave when this is already a new
       // conversation.
@@ -833,9 +832,9 @@ describe("the floating chat", () => {
         context: "Page: Improve > Retro",
       });
 
-      // Minimised, it is the button again, and the conversation it started is on the Chat page like any other: the
+      // Closed, and the conversation it started is on the Chat page like any other: the
       // count says one, and the list holds it under the first thing said in it.
-      await window.getByRole("button", { name: "Minimise the floating chat" }).click();
+      await window.getByRole("button", { name: "Close the Moebius agent" }).click();
       await window.waitFor({ state: "detached" });
       await page.goto(`${server.url}/chat`);
       await page.getByTestId("chat-entry").filter({ hasText: "What is this page?" }).waitFor();
@@ -843,22 +842,22 @@ describe("the floating chat", () => {
   );
 
   /**
-   * Minimising the sheet is not reading: an answer that arrives while it is a button again is still unread, and
+   * Closing the sheet is not reading: an answer that arrives while it is closed is still unread, and
    * opening the sheet is what reads it.
    */
   it.skipIf(usesRealServer)(
-    "does not mark a chat read for an answer that arrived while it was minimised",
+    "does not mark a chat read for an answer that arrived while it was closed",
     async () => {
       await open("/inbox");
       fake().autoAnswer = false;
-      await page.getByRole("button", { name: "Open the floating chat" }).click();
-      const window = page.getByRole("dialog", { name: "Floating chat" });
+      await page.getByRole("button", { name: "Ask Moebius" }).click();
+      const window = page.getByRole("dialog", { name: "Moebius agent" });
       await window.getByRole("textbox", { name: "Message" }).fill("Look at this");
       await window.getByRole("textbox", { name: "Message" }).press("Enter");
       await window.getByTestId("person-message").filter({ hasText: "Look at this" }).waitFor();
       const run = fake().chats[0]?.id as number;
 
-      await window.getByRole("button", { name: "Minimise the floating chat" }).click();
+      await window.getByRole("button", { name: "Close the Moebius agent" }).click();
       await window.waitFor({ state: "detached" });
       fake().agentStart(run);
       fake().delta(run, "The answer came late.");
@@ -872,7 +871,7 @@ describe("the floating chat", () => {
         .waitFor();
       expect(fake().seen).toHaveLength(0);
 
-      await page.getByRole("button", { name: "Open the floating chat" }).click();
+      await page.getByRole("button", { name: "Ask Moebius" }).click();
       await window.getByText("The answer came late.").waitFor();
       await expect.poll(() => fake().seen.at(-1)?.seq ?? 0).toBeGreaterThan(0);
     },
@@ -882,8 +881,8 @@ describe("the floating chat", () => {
     "says why a conversation could not be read instead of drawing bars for ever",
     async () => {
       await open("/inbox");
-      await page.getByRole("button", { name: "Open the floating chat" }).click();
-      const window = page.getByRole("dialog", { name: "Floating chat" });
+      await page.getByRole("button", { name: "Ask Moebius" }).click();
+      const window = page.getByRole("dialog", { name: "Moebius agent" });
       // Reading the events of the chat fails; starting it and saying things to it does not.
       await page.route(/\/v1\/runs\/\d+\/events/, (route) =>
         route.fulfill({ status: 500, contentType: "text/plain", body: "the store is unavailable" }),
@@ -901,8 +900,8 @@ describe("the floating chat", () => {
 
   it.skipIf(usesRealServer)("starts in the repository of the board it is opened on", async () => {
     await open("/board/1");
-    await page.getByRole("button", { name: "Open the floating chat" }).click();
-    const window = page.getByRole("dialog", { name: "Floating chat" });
+    await page.getByRole("button", { name: "Ask Moebius" }).click();
+    const window = page.getByRole("dialog", { name: "Moebius agent" });
     await window.getByRole("textbox", { name: "Message" }).fill("Look at this board");
     await window.getByRole("textbox", { name: "Message" }).press("Enter");
     await window.getByText("You said: Look at this board").first().waitFor();
@@ -911,15 +910,15 @@ describe("the floating chat", () => {
   });
 
   /**
-   * The agent of the floating chat going away is not the end of the conversation: the sheet says so in the words the
+   * The Moebius agent going away is not the end of the conversation: the sheet says so in the words the
    * Chat page uses, and the next message goes back to that chat instead of opening a second one nobody asked for.
    */
   it.skipIf(usesRealServer)(
     "takes a chat whose agent went away up again instead of starting a new one",
     async () => {
       await open("/inbox");
-      await page.getByRole("button", { name: "Open the floating chat" }).click();
-      const window = page.getByRole("dialog", { name: "Floating chat" });
+      await page.getByRole("button", { name: "Ask Moebius" }).click();
+      const window = page.getByRole("dialog", { name: "Moebius agent" });
       const field = window.getByRole("textbox", { name: "Message" });
       await field.fill("First question");
       await field.press("Enter");
@@ -953,8 +952,8 @@ describe("the floating chat", () => {
     "starts fresh when its chat is deleted elsewhere, and the next message starts a new chat",
     async () => {
       await open("/inbox");
-      await page.getByRole("button", { name: "Open the floating chat" }).click();
-      const window = page.getByRole("dialog", { name: "Floating chat" });
+      await page.getByRole("button", { name: "Ask Moebius" }).click();
+      const window = page.getByRole("dialog", { name: "Moebius agent" });
       const field = window.getByRole("textbox", { name: "Message" });
       await field.fill("First question");
       await field.press("Enter");
@@ -979,8 +978,8 @@ describe("the floating chat", () => {
 
   it("opens in the real server too, with the page's text", async () => {
     await open("/inbox");
-    await page.getByRole("button", { name: "Open the floating chat" }).click();
-    await page.getByRole("dialog", { name: "Floating chat" }).waitFor();
+    await page.getByRole("button", { name: "Ask Moebius" }).click();
+    await page.getByRole("dialog", { name: "Moebius agent" }).waitFor();
     await page.getByText("Ask the agent about this page").waitFor();
   });
 
@@ -990,8 +989,8 @@ describe("the floating chat", () => {
    */
   it("offers a way to begin, and the ask lands in the field", async () => {
     await open("/inbox");
-    await page.getByRole("button", { name: "Open the floating chat" }).click();
-    const window = page.getByRole("dialog", { name: "Floating chat" });
+    await page.getByRole("button", { name: "Ask Moebius" }).click();
+    const window = page.getByRole("dialog", { name: "Moebius agent" });
     const starters = window.getByTestId("chat-starters");
     await starters.getByRole("button", { name: "What is on the board right now?" }).click();
     expect(await window.getByRole("textbox", { name: "Message" }).inputValue()).toBe(
@@ -1099,9 +1098,9 @@ async function openWith(
 
 describe("the chat page on a phone", () => {
   /**
-   * The shell holds room for the sheet only on the widest screens (2xl), so on any narrower one the chat page gives
-   * way of its own accord — the sheet must never lie over the conversation, whatever the window's size. The sheet is
-   * opened on the Plugins page (the chat page has no opener of its own, and the sheet stays shown across pages).
+   * The sheet lies over the page's right column and a strip of the page beside it, so the chat page gives way of its
+   * own accord — the sheet must never lie over the conversation, whatever the window's size. The sheet is opened on
+   * the Plugins page (the chat page has no opener of its own, and the sheet stays shown across pages).
    */
   async function chatWithSheet(width: number) {
     await openWith("/plugins", { viewport: { width, height: 900 } });
@@ -1122,16 +1121,14 @@ describe("the chat page on a phone", () => {
       box?.x ?? 0,
     );
 
-    // Minimised, the chat takes its width back; opened again from the sheet's own button, it gives way once more.
+    // Closed, the chat takes its width back.
+    const before = await contentRight();
     await page.keyboard.press("Escape");
     await sheet().waitFor({ state: "hidden" });
-    const before = await contentRight();
-    await page.getByRole("button", { name: "Open the package sheet" }).click();
-    await sheet().waitFor();
-    await expect.poll(contentRight).toBeLessThan(before);
+    await expect.poll(contentRight).toBeGreaterThan(before);
   });
 
-  it("gives way to the package sheet above 2xl, on the room the shell reserves", async () => {
+  it("gives way to the package sheet on a wide window too", async () => {
     await chatWithSheet(1600);
     const box = await sheet().boundingBox();
     expect(await contentRight()).toBeLessThanOrEqual(box?.x ?? 0);
