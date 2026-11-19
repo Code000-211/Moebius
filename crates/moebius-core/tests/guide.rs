@@ -461,6 +461,10 @@ impl CardRuns for Harness {
     fn stop(&self, _: i64) -> bool {
         false
     }
+
+    fn hold(&self, held: bool) {
+        let _ = held;
+    }
 }
 
 /// Decides `start_card`: a card whose title says `[wip]` is held.

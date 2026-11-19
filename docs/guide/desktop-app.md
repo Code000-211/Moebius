@@ -30,6 +30,16 @@ macOS build. `moebius open` and `moebius connect` stay for everyone without it.
    server listens on; `https://` for a server behind TLS) and the token. Connect opens the web app, signed in as the
    person the token belongs to. The window has no frame of the system: drag the strip along its top to move it, double
    click it to maximize, and minimize, maximize and close with the buttons at its right end.
+4. **Open the quick window from anywhere.** While the app runs, even behind other windows or minimized, press
+   `Ctrl+Shift+Space`: a small window opens over everything. **Ask Moebius** sends what you type to the Moebius agent;
+   **New issue** makes an issue in the project you pick (the first line is the title, the rest the description).
+   Enter sends and the window goes; the chat, or the new card on its board, opens in the app's main window. Shift+Enter
+   is a new line, Escape closes the window without sending, and the shortcut again closes it too. With no server
+   connected the shortcut brings the connect page forward instead.
+5. **Change the shortcut** with **Change** at the foot of the quick window, then press the keys you want (one key with
+   Ctrl, Alt or Super held; Shift alone is not enough, as the shortcut would take over typing). It is kept in
+   `quick.json` in the app's configuration directory (`~/.config/io.github.code000-211.moebius/` on Linux,
+   `%APPDATA%\io.github.code000-211.moebius\` on Windows) and registered again at every start.
 
 ### A server on this machine
 
@@ -48,6 +58,48 @@ server keeps running when the app is closed (on Windows it runs while the app is
 that has nothing running). The next start of the app finds the same server again: the page offers **Connect to it**, or
 **Start it and connect** when it has stopped (after a reboot, say), without a new `init`. Releases are built for Linux
 x86_64 only, so another system gets no offer. On Windows, WSL 2 has to be installed (`wsl --install`).
+
+## Several servers
+
+The rail at the far left of the window holds a square for every server the app knows: the first letter of its address,
+the count of its Inbox in a badge, and a grey dot when it does not answer. The open one is raised. Click a square to
+open that server; it opens on the page you left it on. **+** connects another one:
+
+- **Address**: the server's address and an access token, as for the first one.
+- **Over SSH**: a host you can log in to with keys or the agent (the app asks no question: `ssh` runs in batch mode). The
+  app opens a tunnel to the server on that host and reads its token, as `moebius connect <host>` does. A host with no
+  server there is not changed until you say **Yes, set it up**, which runs `moebius connect --yes` for you; that needs
+  `moebius` on this machine.
+
+A right click on a square offers **Remove server**, which forgets it and deletes its token. That is also how you
+disconnect: signing out in the web app does nothing inside the app, since the app signs every request itself. The app
+opens the server that was open when you closed it, and shows the connect page, with the list of the servers it knows,
+when none answers.
+
+Tokens are kept in the system's keychain (Secret Service on Linux, which GNOME Keyring or KWallet provide; Credential
+Manager on Windows), never in a file. The list of servers, without tokens, is `servers.json` in the app's configuration
+directory (`~/.config/io.github.code000-211.moebius` on Linux).
+
+### Notifications
+
+What reaches the Mentions tab of your Inbox (a card given to you, a mention, a change to a card you
+follow, which includes a change that is ready to merge) is also a notification of your system, once. Choosing it brings
+the window forward and opens the card or item, and reads the notice. The count of unread notices is on the app's icon
+(the launcher's badge on Linux where it shows one, the red number over the taskbar icon on Windows) and in the
+window's title, `(3) Moebius`, for the server that is open; reading a notice, here or in a browser, lowers it. What was unread when the app started
+is counted and not announced.
+
+### The tray icon
+
+Once the app is running, its icon sits in the tray (the notification area of Windows, the
+status area of a Linux desktop that shows tray icons, which GNOME needs an extension for). Its menu shows the
+server's state: **the agents working**, **the Inbox**, and **today's tokens** against the day's budget. These
+figures follow the server's events. Under them: **New issue** and **Ask Moebius** bring the window up and open the
+form of a new issue or a new chat, **Open Moebius** brings the window up, also when it was minimized, and **Pause all
+agents** holds every run of the server and starts none until you choose **Resume all agents**, which the same item
+says while they are paused. Hovering the icon shows the same figures. Closing the window quits the app and its
+icon, so that no invisible app is left behind on a desktop that shows no tray; to keep the shortcut, the notifications
+and the tray going, minimize the window instead.
 
 A server on another machine is reached as the web app reaches it: on its address if it listens on the network, or
 through the tunnel of `moebius connect <host> --no-window`, then `127.0.0.1:7171` in the app (see
@@ -68,10 +120,24 @@ The answer's `token` (it starts with `moebius-access-`) goes into the app with t
 
 - The app shows the Inbox of the server, and the sidebar's connection says **Online**: the event stream reaches the
   server through the app.
-- Revoke the token on the My tokens page and start the app again: Connect answers that the server does not accept the
-  token.
+- Press `Ctrl+Shift+Space` with the app in the back, type a title under **New issue** and press Enter: the window goes
+  and the card is on the project's board. Change the shortcut, close the app and start it again: the new one opens the
+  window.
+- Revoke the token on the My tokens page and start the app again: the server's square has a grey dot, and opening it
+  answers that the server does not accept the token. Remove it and connect again with a new token.
+- Connect a second server: its square appears in the rail; switch between them, and each comes back on its page.
+
+- Have someone give you a card (or mention you in a comment): a notification appears, the count rises by one, and
+  choosing it opens the card.
+
+- Choose **Pause all agents** in the tray: the item says **Resume all agents**, the first line says "(paused)", and
+  `moebius pause` is not needed; the agents stand still until you resume them. From a terminal, `moebius pause` and
+  `moebius resume` do the same (see [the desktop API](../reference/desktop-api.md#post-v1runspause-and-post-v1runsresume)).
 
 ## What can go wrong
+
+- **No tray icon on Linux**: a desktop without a status area (GNOME without its AppIndicator extension) shows none.
+  The app works without it, only its Pause all agents item is out of reach: use `moebius pause` then.
 
 - **"the server runs Moebius 0.12.4, and this app is Moebius 0.13.0, which works with servers of 0.13 only"**: the
   app and the server are of different releases. The message names the release whose app matches the server; install
@@ -91,4 +157,14 @@ The answer's `token` (it starts with `moebius-access-`) goes into the app with t
   install `moebius` yourself in `~/.moebius/bin` or on the `PATH` and press the button again.
 - **"the server did not answer within 90 seconds"**: read `~/.moebius/server/serve.log`; a port 7171 that is taken by
   another program is the usual reason (change `listen` in `~/.moebius/server/moebius.toml`).
-- The token is kept in the app's memory only, for now: the app asks for it on every start.
+- **"the system's keychain does not answer"**: nothing offers a Secret Service on this Linux session (install
+  `gnome-keyring` or KWallet and sign in to it) or the keychain is locked. The app keeps no token anywhere else, so it
+  does not add the server.
+- **"no server is set up on <host>"** over SSH: the login worked and there is no token on the host; say yes to set
+  one up, or run `moebius connect <host>` in a terminal.
+- **The shortcut does nothing, or the quick window says it could not be taken**: another program holds that key
+  combination. Change it to another. On Linux the shortcut is a grab on the X11 server: under a Wayland session it
+  works only where the compositor lets X11 clients grab keys, so choose a shortcut in the system's own keyboard
+  settings that starts `moebius-desktop` if it does not.
+- **No notification appears on Linux**: the desktop needs a notification service (`org.freedesktop.Notifications`,
+  which GNOME, KDE and most others have). Without one the count still shows in the title.

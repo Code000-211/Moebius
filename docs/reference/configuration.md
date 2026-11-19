@@ -687,7 +687,8 @@ its owner can read (mode 0600). `moebius.toml` names it with `api_key_secret`, t
 in a log. A key is stored with `PUT /v1/secrets/{name}` and removed with `DELETE /v1/secrets/{name}`; removing one that
 `api_key_secret`, `gitlab.token_secret` or `forgejo.token_secret` still names makes the next start fail, as an unset `api_key_env` variable does.
 The refresh token of an OAuth login is kept the same way, under `router.upstreams.oauth.secret`, and replaced when the
-provider rotates it.
+provider rotates it. The API token for an import from Jira is a key of this file too, under any name; the import request names it
+(`token_secret`, see the [desktop API](desktop-api.md#importing-from-jira)) and it is read for that request only.
 
 ### Outgoing webhooks
 
@@ -699,12 +700,12 @@ repositories). A post is the JSON `{"id", "kind", "at", "data"}`, redacted, with
 same HMAC and comparing it in constant time.
 
 - A hook that names no project gets the events of public projects and of the whole server; one that names projects gets only
-  theirs. The events of a private project go only to a hook that names it, and an event whose project cannot be found
+  theirs. The events of a private project (a repository with the `private` flag, or a card, run or other thing of a project that is private, ADR 0018) go only to a hook that names its repository, and an event whose project cannot be found
   goes nowhere.
 - A post is answered by any `2xx`. Otherwise it is tried again after 5 seconds, 30 seconds, 5 minutes and 30 minutes (five
   attempts, each with a 10 second limit; redirects are not followed). When the last attempt fails, the hook is given up on for
   that event and an inbox item of kind `webhook_failed` (`data.webhook`, `data.url`, `data.event`, `data.error`,
-  `data.attempts`; no card) tells an owner. A hook whose secret is gone sends nothing and gives up the same way.
+  `data.attempts`; no card) tells the inbox's readers; `data.url` and the title hold only the scheme, host and port of the hook's address, since a path or query may carry a secret. A hook whose secret is gone sends nothing and gives up the same way.
 - A private repository is one with the `private` flag of the store; an owner sets it with `PUT /v1/repositories/{id}/private`. An event that names no project goes to a hook only when it is of the whole server (`package_*`, `plugin_*`, `port_*`, `retro_*`, `harness_error`, `wiki_changed` and the like); the others, such as inbox, chat and proposal events, go nowhere.
 
 ### Webhooks

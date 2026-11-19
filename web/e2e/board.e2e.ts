@@ -1289,16 +1289,16 @@ describe("the filters", () => {
       await openBoard();
       const save = bar().getByRole("button", { name: "Save view" });
       expect(await save.count()).toBe(0);
-      await addFilter(page, bar(), "Status", "Your turn");
+      await addFilter(page, bar(), "Column", "Backlog");
       await save.click();
-      await status(/Saved this view as "View 1"/).waitFor();
-      const kept = await page.evaluate(() => {
-        for (const key of Object.keys(window.localStorage)) {
-          if (key.startsWith("moebius.views.")) return window.localStorage.getItem(key);
-        }
-        return null;
+      await status(/Saved this view as "View 3"/).waitFor();
+      if (!("views" in server)) throw new Error("this test needs the fake server");
+      const fake = server.views;
+      expect(fake.requests.at(-1)).toMatchObject({
+        method: "POST",
+        path: "/v1/views",
+        body: { shared: false, layout: "board", filter: { columns: ["Backlog"] } },
       });
-      expect(JSON.parse(kept ?? "[]")).toEqual([{ name: "View 1", query: "status=needs-you" }]);
     },
   );
 });

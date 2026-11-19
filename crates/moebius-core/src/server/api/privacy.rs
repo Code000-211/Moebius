@@ -877,7 +877,7 @@ mod tests {
     /// a workflow, by name, a kind of issues or a template of the organisation, a person's own notice, a wiki page, its links or the pages that link to a card (a private project's pages and cards are
     /// left out by the wiki's own handlers); or that checks what it names in its own handler (a card by its key, a milestone of the
     /// organisation, whose cards are counted and listed with `App::may_see_project`).
-    const UNGUARDED: [&str; 30] = [
+    const UNGUARDED: [&str; 31] = [
         "/v1/cards/by-key/",
         "/v1/templates/",
         "/v1/kinds/",
@@ -887,6 +887,8 @@ mod tests {
         "/v1/wiki/cards/",
         "/v1/notices/",
         "/v1/milestones/",
+        // A view is a person's own or shared; its cards are filtered by what the asker may see.
+        "/v1/views/",
         // A cycle belongs to a project; `App::cycle` answers not found for one the asker may not see.
         "/v1/cycles/",
         "/v1/people/",

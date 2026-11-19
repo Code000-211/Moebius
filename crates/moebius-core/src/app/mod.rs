@@ -9,12 +9,15 @@
 //! of the harness configuration repository, `localize` gives a code run the files its issue is likely to touch and
 //! records what came of it, `reproduce` runs a change's reproduction test for a repository that works test first,
 //! `projects` reads a project's settings from the harness configuration repository,
+//! `analytics` reads throughput, times, burn-ups and tokens per point from the moves and runs within what a person may see,
 //! `cycles` keeps a project's cycles and carries unfinished cards over when one closes,
+//! `views` keeps saved views and works out the cards each shows a person,
 //! `milestones` makes milestones and counts their cards within what a person may see,
 //! `whereabouts` knows where the server and the app run, `automations` keeps the automations and starts their chats
 //! when their schedules come due, and `plugin_settings` keeps what plugins ask of each repository and of the
 //! server.
 
+mod analytics;
 mod assignees;
 mod attempts;
 mod automations;
@@ -30,11 +33,13 @@ mod deletions;
 mod diffs;
 mod intake;
 mod issues;
+mod jira;
 mod kinds;
 mod localize;
 mod milestones;
 mod notices;
 mod packages;
+mod pausing;
 mod planning;
 pub mod plugin_settings;
 mod projects;
@@ -43,6 +48,7 @@ mod reproduce;
 mod runs;
 mod stopping;
 mod templates;
+mod views;
 mod whereabouts;
 pub mod workflows;
 
@@ -150,12 +156,20 @@ pub enum AppError {
 
 pub type Result<T> = std::result::Result<T, AppError>;
 
+pub use analytics::{
+    ANALYTICS_DEFAULT_DAYS, Analytics, AnalyticsQuery, AnalyticsTotals, BurnUp, ColumnTime,
+    ProjectFigures, Spread, ThroughputDay,
+};
 pub use cycles::{BurnUpDay, Carry, Closed, CycleDetail, CycleFields, CycleFigures, CycleView};
+pub use jira::{
+    Counts, LinkCounts, Options as JiraOptions, Report as JiraReport, Users as JiraUsers,
+};
 pub use kinds::{CardQuery, KindView};
 pub use milestones::{MilestoneDetail, MilestoneFields, MilestoneProject, MilestoneView};
 pub use projects::{Member, ProjectRepository, ProjectView, Sight, UNQUOTED};
 pub use stopping::CardStopWaits;
 pub use templates::{IssueTemplateView, PageTemplateView, Templates};
+pub use views::{ViewCard, ViewCards, ViewEdit, ViewFields};
 
 /// Held by the thread of a research while it goes (see [`App::researching`]).
 pub(crate) struct Researching {

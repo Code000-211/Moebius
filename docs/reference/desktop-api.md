@@ -137,6 +137,7 @@ any route to any role that is not what its row says.
 | `PATCH /v1/cycles/{id}` | member | no |
 | `DELETE /v1/cycles/{id}` | member | no |
 | `POST /v1/cycles/{id}/close` | member | no |
+| `POST /v1/projects/{id}/import/jira` | owner | no |
 | `GET /v1/cards/{id}/cycle` | viewer | yes |
 | `PUT /v1/cards/{id}/cycle` | member | no |
 | `GET /v1/milestones` | viewer | yes |
@@ -146,6 +147,12 @@ any route to any role that is not what its row says.
 | `DELETE /v1/milestones/{id}` | member | no |
 | `GET /v1/cards/{id}/milestones` | viewer | yes |
 | `PUT /v1/cards/{id}/milestones` | member | no |
+| `GET /v1/views` | viewer | no |
+| `POST /v1/views` | member | no |
+| `GET /v1/views/{id}` | viewer | no |
+| `PATCH /v1/views/{id}` | member | no |
+| `DELETE /v1/views/{id}` | member | no |
+| `GET /v1/views/{id}/cards` | viewer | no |
 | `PUT /v1/projects/{id}/kinds` | owner | yes |
 | `GET /v1/kinds` | viewer | yes |
 | `POST /v1/kinds` | owner | no |
@@ -219,6 +226,8 @@ any route to any role that is not what its row says.
 | `POST /v1/changes/{id}/merge` | member | yes |
 | `POST /v1/changes/{id}/reject` | member | yes |
 | `GET /v1/changes/{id}/diff` | viewer | yes |
+| `POST /v1/runs/pause` | member | no |
+| `POST /v1/runs/resume` | member | no |
 | `GET /v1/runs/{id}` | viewer | yes |
 | `GET /v1/runs/{id}/events` | viewer | yes |
 | `GET /v1/runs/{id}/diff` | viewer | yes |
@@ -295,6 +304,7 @@ any route to any role that is not what its row says.
 | `DELETE /v1/packages/{name}` | owner | no |
 | `POST /v1/packages/{name}/update` | owner | no |
 | `GET /v1/usage` | viewer | yes |
+| `GET /v1/analytics` | viewer | yes |
 | `GET /v1/judgements` | viewer | yes |
 | `GET /v1/judgements/kinds` | viewer | yes |
 | `POST /v1/judgements/{id}/replay` | owner | yes |
@@ -483,7 +493,7 @@ instead of `data.trials`), `wiki_proposal` (`data.branch`, `data.page`, `data.me
 project and the draft issue and it has no card; see [Intake](#intake)) and `takeover` (`data.takeover`, `data.kind`, `data.agreement`,
 `data.count`; its `title` is "The decision model can take over <kind>" and it has no card) and `extension_update`
 (`data.package`, `data.from`, `data.to`, `data.source`; its `title` is "<package> <from> -> <to>" and it has no card) and
-`webhook_failed` (`data.webhook`, `data.url`, `data.event`, `data.error`, `data.attempts`; its `title` says which webhook was given up on and it has no card; see [Outgoing webhooks](configuration.md#outgoing-webhooks)) and
+`webhook_failed` (`data.webhook`, `data.url` (the scheme, host and port only), `data.event`, `data.error`, `data.attempts`; its `title` says which webhook was given up on and it has no card; see [Outgoing webhooks](configuration.md#outgoing-webhooks)) and
 `workflow_approval` (`data.run`, `data.node`, `data.prompt`, `data.value` and `data.deadline` in whole seconds since the
 epoch; its `title` is the prompt and it has no card; it carries the decision a workflow run waits for, see
 [the approval node](workflows/approval.md)). The nightly schedule, from `retro_at` on, once a day, puts one
@@ -678,6 +688,9 @@ Everything the app shows. Response:
   "inbox": []
 }
 ```
+
+`paused` is added, as `{"by": "person:ada", "at": 1790000000}`, while all agents are paused (see
+[`POST /v1/runs/pause`](#post-v1runspause-and-post-v1runsresume)), and left out otherwise.
 
 `harness_changes` are the `Change`s of the harness configuration repository, which belongs to no board.
 `boards` has one entry per repository, with all its cards and changes; a change of a card over several repositories is on the board of the repository it is in, which does not list the card. `round_limit` is the most `code` rounds a card
@@ -1055,7 +1068,7 @@ What the page links to and what links to it: `{"links": {"pages": [{"link": stri
 [{"key": string, "title": string | null}]}, "backlinks": {"pages": [{"path", "name"}], "cards": [{"key", "title"}]}}`.
 `links` is what the page's text says, each name with the page it leads to (`null` when there is none) and each card
 with its title (`null` when there is no such card); `backlinks` are the pages, sorted by path, and the cards, whose
-text has a `[[link]]` to the page. What a person may not see is left out: a private project's pages and cards they are not a member of are not listed (a link to such a page has `path` `null`, such a card a `title` `null`), and the page of a private project they may not see is `404`. A page that is not there has backlinks all the same, as a deleted page keeps them.
+text has a `[[link]]` to the page. What a person may not see is left out: a private project's pages and cards they are not a member of are not listed (a link to such a page has `path` `null`, such a card a `title` `null`; the page's own links, the cards' links and the page backlinks lead only among the pages the person sees, so a page they do not see never takes the place of one they do: a page is a backlink when its links, resolved among the pages the person sees, lead to this page), and the page of a private project they may not see is `404`.
 Errors: `422` for a path that is not a page's.
 
 ### `GET /v1/wiki/cards/{key}`
@@ -1171,7 +1184,7 @@ cycles, never agents.
 A `Cycle` is `{"id", "project_id", "name", "starts_on", "ends_on", "closed_at": Unix seconds or null, "created_at"}`. A
 `CycleView` is a `Cycle` with `"cards"` (a count), `"done"`, `"points"` and `"points_done"`. A `CycleDetail` is a
 `CycleView` whose `"cards"` is a list instead of a count, with `"figures": {"by_agents": done cards an agent ran code for, "tokens": tokens the runs of its cards used,
-"tokens_per_point": tokens per done point rounded down, or null while no point is done}`, `"burn_up": [{"day", "scope",
+"tokens_per_point": the tokens of the done cards that have an estimate per done point, rounded down, or null while no point is done}`, `"burn_up": [{"day", "scope",
 "done"}]` and the cards `[{"id", "repository_id", "number", "title", "column", "done", "estimate", "added_at",
 "done_at", "by_agent", "tokens"}]`. The burn-up has a day from the start to the end, or to the day it was closed or
 today if earlier (none before the start): `scope` is the points of the cards added by the end of that day and `done` the
@@ -1219,6 +1232,59 @@ The open cycle the card is in, or `null`. Errors: `404` for no such card.
 Puts the card into an open cycle of its project, or out of its open cycle with `null`. Request: `{"cycle": id or null}`.
 Sends `card_cycle_changed` when it changed. Response: the cycle, or `null`. Errors: `404` for no such card or cycle; `422`
 for a cycle of another project or a closed one.
+
+
+### Importing from Jira
+
+A one-off copy of a Jira project into a Moebius project, which can be run again. Only an owner imports, never an agent,
+since it may make people. The Jira API token is kept like the other keys, in `secrets.toml` (`PUT /v1/secrets/{name}`,
+see [Secrets](configuration.md#secrets)); the request names it and never carries it, and it is not stored, logged or
+answered.
+
+#### `POST /v1/projects/{id}/import/jira`
+
+Reads the Jira project `project` from the site `url` and imports it into the project `id`. Request body:
+`{"url", "project", "token_secret", "email"?, "users"?, "user_map"?}`.
+
+- `url` is the address of the site, `http` or `https`, such as `https://your-site.atlassian.net`; a path is kept.
+- `project` is the key of the Jira project (letters, digits and `_`, starting with a letter).
+- `token_secret` is the name the token is kept under; it starts with `jira-` (`422` otherwise), so that no other key of the server can be sent to a site. With `email` the token is an API token of Jira Cloud (sent as
+  Basic); without it a personal access token of Jira Server or Data Center (sent as Bearer). Redirects are not followed.
+- `users` is `"people"` (the default) or `"names"`; see the table below.
+- `user_map` maps Jira users (by account id, email or display name, in any case) to the handles of people that exist
+  already, in either mode.
+
+What a Jira record becomes:
+
+| Jira | Moebius |
+|---|---|
+| an issue (not an epic) | a card in the backlog of the project's own files, so it lives in Moebius only (ADR 0019). Its title, its description with a last line that names the Jira issue, its time of creation and its author (the reporter). It is not confirmed, so that nothing starts on it before a person approves it. |
+| issue type | a kind of that name, made if the organisation has none and offered by the project; one that exists is completed with the fields it lacks |
+| custom field with a value | a field of that kind: `string` and `user` as text, `number`, `date` and `datetime` as date, a select as choice with the values read as options; Jira's own (sprint, epic, rank, story points) are left out |
+| labels | labels (those that start `priority:`, `due:` or `estimate:` are dropped) |
+| priority | `priority:` (Highest, Blocker and Critical `urgent`; High and Major `high`; Medium `medium`; Low, Lowest, Minor and Trivial `low`; any other `none`) |
+| due date, story points | `due:`, `estimate:` (rounded; none outside 1 to 100) |
+| reporter, assignee, comment authors | with `users: "people"`, a person for each, made disabled with the role `member` until an owner gives them a token, with a handle from their email (else their name; a taken handle gets `-2`, `-3`, ...); with `"names"`, no person: what they wrote has the author `<name> (Jira)` and a card whose assignee is no person has none |
+| comments | comments with their time and author; one that was edited in Jira is changed, one deleted in Jira stays |
+| sub-task or child | the card's parent |
+| links `Blocks`, `Duplicate`, any other | a blocker, a duplicate (the duplicate is closed, as a duplicate is), a related card; a link to an issue that is not imported is counted as skipped |
+| sprint | a cycle of the project named by the sprint's name (told apart by its id when the name is taken); a sprint without a start or an end is left out; a card is in the cycle of its latest sprint, and a closed sprint closes its cycle, which takes the cards that are not done out of it |
+| epic | a milestone (milestones belong to the organisation), no card: named by the epic's summary (with the key when the name is taken), due on the epic's due date, else on the latest due date of its issues, else 90 days after the import; the epic's issues are in it |
+| status category done | a closed card in Done |
+
+Response: the report `{"issues", "comments", "kinds", "people", "cycles", "milestones": {"created", "updated",
+"unchanged"}, "links": {"added", "removed", "unchanged", "skipped"}, "warnings": [text]}`. A record that cannot be made
+is a warning and the import goes on past it.
+
+Running it again makes nothing twice: each record is found by the Jira key or id it was made from (`store::imports`),
+and is written only when what Jira shows of it differs from what it showed last time, so an import of an unchanged
+project writes and announces nothing. What Jira changed is written over the Moebius record (a card's title, description,
+kind, fields, labels, priority, due date, estimate, assignee and state; a link that Jira lost is taken away); what a
+person changed in Moebius on a card Jira did not change stays (its parent, milestone and cycle are set only when the card is new or Jira changed it, and an epic without any date keeps the milestone's date). A card deleted in Moebius is made again with its comments and links. Two imports into one project at once are refused with `409`. A duplicate stays closed although Jira has it open.
+
+Errors: `404` for no such project or one the asker may not see; `422` for an address, a project key or a handle of
+`user_map` that is not valid, or a `token_secret` that names no secret (the answer says so); `502` when Jira cannot be
+reached or refuses (the answer has its status and the start of its body, never the token).
 
 ### Milestones
 
@@ -1278,6 +1344,73 @@ of a project the asker may not see.
 Replaces the milestones the card is in. Request: `{"milestones": [id]}`; repeats count once and `[]` takes the card out of
 all. The event `card_milestones_changed` is sent when the set changed. Response: the milestones the card is in. Errors:
 `404` for no such card or milestone.
+
+
+### Views
+
+A view is a filter of the filter bar with a layout and a sort, kept for the person who made it or shared with every
+member. It is a question, not an answer: the cards of a view are worked out each time it is opened, **for the person who
+opens it**, so a shared view shows every member the same filter within what each may see (a card of a private project
+the person is no member of is never in it, see [private projects](#private-projects)). A personal view is not found for
+anyone but its owner, not even an owner of the organisation. Only a person has views, never an agent.
+
+A `View` is `{"id": number, "name": string, "owner_id": number, "shared": boolean, "filter": ViewFilter, "layout":
+string, "sort": string, "descending": boolean, "created_at": number, "can_change": boolean}`; `can_change` says whether the person who asked
+may change or delete it (its owner and an owner of the organisation may), so a page can leave the buttons out.
+
+- `name`: 1 to 80 characters, no control character, no space around it.
+- `layout`: `list`, `board`, `calendar` (cards by due date) or `timeline` (cards against their cycle). The layout is how
+  the page draws the cards; the server keeps it, and fills `cycle` in each card only for `timeline`.
+- `sort`: `created` (the order the cards were made, the default), `updated` (when the card last moved), `priority`
+  (most urgent first), `due`, `title` or `estimate`; `descending` turns it round. A card without a due date or an
+  estimate comes after those that have one, either way round.
+- `ViewFilter` asks of a card: every part that is set must match, and within a list any value matches (so an empty list
+  asks nothing). `projects` and `repositories` (ids), `labels` (the labels people gave the card: its priority, due date and estimate are kept as `priority:`, `due:` and
+  `estimate:` labels with a value that reads, and have filters of their own, so no label filter matches them), `assignees` (handles), `priorities` (`urgent`, `high`,
+  `medium`, `low`, `none`), `cycles` and `milestones` (ids, a closed cycle included), `columns`, `authors` (all in any
+  case) and `text` (a word or phrase in the title or the body, in any case). At most 100 values for each part and 100
+  characters of text. A key that is not a part is refused.
+
+A view read by someone who may not see a project, repository or cycle its filter names has those ids left out, so a
+shared view does not tell them a private project exists; an edit checks only the ids it adds.
+
+A project, repository or cycle the maker may not see is refused as if it did not exist (`422`), so a view cannot be used
+to find out about a private project. Views send no events: a page reads them again when it opens.
+
+#### `GET /v1/views`
+
+The views of the person asking: their own and the shared ones, in the order they were made: `[View]`.
+
+#### `POST /v1/views`
+
+Makes a view. Request: `{"name": string, "shared": boolean, "filter": ViewFilter, "layout": string, "sort": string,
+"descending": boolean}`; only `name` is needed, the rest is not shared, no filter, `list`, `created`, ascending.
+Response: the `View`. Errors: `422` for a field that is not valid, `403` for a viewer.
+
+```sh
+curl -s -H "Authorization: Bearer $TOKEN" -d '{"name": "Urgent bugs", "shared": true, "layout": "board",
+  "filter": {"labels": ["bug"], "priorities": ["urgent", "high"]}}' http://127.0.0.1:7171/v1/views
+```
+
+#### `GET /v1/views/{id}`
+
+One view. Errors: `404` for no such view or a personal view of someone else.
+
+#### `PATCH /v1/views/{id}`
+
+Changes the view. The body has the fields of `POST`, each optional: a field left out stays as it was (so sharing a
+view does not rename it, and renaming it does not unshare it); its owner stays. Only its owner and an owner of the
+organisation may; anyone else who can see it gets `403`. Errors as for `POST`, and `404` as for `GET`.
+
+#### `DELETE /v1/views/{id}`
+
+Deletes the view and answers it; who may is as for `PATCH`.
+
+#### `GET /v1/views/{id}/cards`
+
+The view with the cards it shows the person asking, in its order: `{"view": View, "cards": [card]}`. Each card is a card
+as in `GET /v1/issues`, with `"cycle": Cycle or null` added: the open cycle the card is in for the `timeline` layout,
+`null` for the others. Errors: `404` as for `GET`.
 
 ### `POST /v1/repositories`
 
@@ -2233,6 +2366,66 @@ Response:
 
 Errors: `422` `days` is not from 1 to 365.
 
+### `GET /v1/analytics`
+
+What the moves and runs the store keeps say about the work: how much is done, how long it takes, where cards wait and
+what a point costs, across the organisation and per project. Query: `days` (a whole number from 1 to 365, default 30)
+is the window, counted in local days of the server, today included; anything else is `422`. Two more parameters narrow
+every figure: `repository` (a repository id) keeps the cards of that repository, and `agent` keeps the cards that agent
+has a run on, counting only that agent's tokens. A `repository` the asker may not see is `404`.
+
+Only cards of projects the asker may see are in any figure, total, cycle or milestone (a private project they are no
+member of adds nothing, not even to the totals); a card that was archived is still in. A card is *done* when its issue
+is closed or it is in `Done`, and was done when it last moved into `Done`.
+
+Response:
+
+```json
+{
+  "today": "2026-11-19",
+  "days": 30,
+  "totals": {"done": 12, "points_done": 31, "tokens": 620000, "tokens_per_point": 20000, "open": 7},
+  "throughput": [{"day": "2026-10-21", "done": 1, "points": 3}],
+  "cycle_time": {"cards": 9, "median_seconds": 82600, "mean_seconds": 90100, "p90_seconds": 250000},
+  "lead_time": {"cards": 12, "median_seconds": 129600, "mean_seconds": 140000, "p90_seconds": 400000},
+  "columns": [{"column": "In progress", "cards": 12, "total_seconds": 990000, "mean_seconds": 82500}],
+  "projects": [{"id": 1, "name": "Web", "key": "WEB", "done": 12, "points_done": 31, "tokens": 620000, "tokens_per_point": 20000}],
+  "cycles": [{"id": 3, "name": "Cycle 3", "project": "Web", "starts_on": "2026-11-16", "ends_on": "2026-11-29",
+              "cards": 8, "done": 3, "points": 21, "points_done": 8,
+              "days": [{"day": "2026-11-16", "scope": 18, "done": 0}]}],
+  "milestones": [{"id": 1, "name": "Launch", "project": null, "starts_on": "2026-10-01", "ends_on": "2027-01-31",
+                  "cards": 20, "done": 6, "points": 50, "points_done": 14, "days": []}]
+}
+```
+
+- `totals` counts the cards done in the window: `done`, their `points_done` (the cards with an `estimate:` label count
+  their points, the others none), the `tokens` their runs used (runs of a trial are left out) and `tokens_per_point`
+  (the tokens of the done cards that have an estimate over their points, rounded down, so that a card with no estimate
+  adds no tokens to the ratio; null while no point is done; the same holds for a project's). `open` counts the cards that are not done and
+  not archived, whenever they were made.
+- `throughput` has one entry for each local day of the window, oldest first, days without a card included: the cards
+  and points done on it.
+- `cycle_time` is the time from a card's start to done, over the cards done in the window that were started; `lead_time`
+  from its making to done, over all cards done in it. A card starts at the earlier of its first `code` run and its
+  first move into the column named `In progress`. A card whose issue was closed outside `Done` is dated by its last
+  move, as the store keeps no close time. Days of the burn-ups are UTC days, those of `throughput` local ones. Each is null for no card, and gives the median (the mean of the two middle ones for
+  an even number), the mean and the nearest-rank 90th percentile, in whole seconds.
+- `columns` is the time cards sat in each column except `Done`, read from their moves: a sitting counts when it ended in
+  the window or is still going (a card that is not done sits in its column until now; one that is done until it
+  was done). `cards` is how many cards spent time in the column, `mean_seconds` the time one card spent there; the
+  column with the longest mean is first.
+- `projects` has each project that has a card in the figures, in the order the projects were made, with what its done
+  cards, points and tokens add up to. `totals` is their sum.
+- `cycles` has the latest 12 cycles of the projects the asker sees (by start), and `milestones` the 12 with the
+  latest target dates; neither is narrowed by the window. Each gives its cards, how many are done (a card counts when
+  it is done now), their points and its burn-up day by day, as `GET /v1/cycles/{id}` does for a cycle. A milestone
+  is not listed when none of its cards is in the figures. The burn-up of a milestone runs from the day it was made to
+  its target date or, once that has passed, today, and counts the cards it holds now for their points from the first
+  day, since the day a card joined a milestone is not recorded; no more than the last 366 days are given. With a
+  `repository` or `agent` set, a cycle without a card in the figures is left out, and the rest count only those cards.
+
+Errors: `422` `days` is not from 1 to 365; `404` a `repository` that is unseen.
+
 ### `GET /v1/runs/{id}/diff`
 
 What a run changed, as a unified diff: while the run has a worktree, everything in it since the run started, uncommitted
@@ -2253,6 +2446,28 @@ works as in `POST /v1/chats`: the agent is told it before the message (secrets r
 the `said` event holds only the message.
 
 Response: the `Run`. Errors: `404` no such run; `422` the message is blank or the run is not running.
+
+### `POST /v1/runs/pause` and `POST /v1/runs/resume`
+
+A person pauses all agents of the server, as the desktop app's tray does with "Pause all agents", and resumes them. The
+pause is kept in the store, so a restart leaves the server paused until a person resumes it. While it is in force:
+
+- the board engine starts no run: a card's column script is not run at all, so no card moves either, and every other
+  starter of a card's run (a column script's `start`, attempts, workflow nodes) is refused;
+- every run that is going is held, with what its agent started: Pi-Bolt and Claude Code get `SIGSTOP` to their process
+  group, so nothing works and nothing is printed, and the runs stay `running`. Resuming sends `SIGCONT` and they go on
+  where they were. Where the system has no such signal (Windows) the runs going are not held, and the pause only starts no
+  further run. A run that a launcher wraps is held as far as the process group of its wrapper reaches.
+
+Runs that belong to no card (the Retro, research, trials, automations' chats) are not stopped from starting: they start and are held at once, so they take a place and a worktree until the agents are resumed. After a crash of the server while paused, what it held stays held until someone ends it. What a person does by hand is not held: a chat started or written to meanwhile starts its agent, which is held at once.
+
+Pausing is recorded as a decision (kind `pause_runs`, decider `person`) and announced as `runs_paused`; resuming as
+`resume_runs` and `runs_resumed`. Pausing what is paused, or resuming what is not, changes nothing, records nothing and
+announces nothing. The snapshot's `paused` says who paused the agents and when while they are paused.
+
+Request: `{"reason": "..."}`; `reason` is optional, and the body may be left out. Response: `{"paused": true, "by":
+"person:ada", "at": 1790000000}` after a pause, whose `by` and `at` are those of the pause in force, and `{"paused":
+false}` after a resume. Errors: `403` for an agent's run token.
 
 ### `POST /v1/runs/{id}/stop`
 
@@ -3954,6 +4169,8 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `card_waiting` | The reason a card waits changed: set, replaced, or cleared because the card moved or its script did not wait. Not sent when it stays the same. | `{"card": id, "reason": string or null}` |
 | `chat_renamed` | A chat was given a name, or its name was cleared, through the API. | `{"run": id, "title": string}` (the title the list of chats shows now) |
 | `chat_shared` | The owner of a chat shared it with the organisation or took it back. Sent to everyone, so that a client reads the list of chats again. | `{"run": id, "shared": boolean}` |
+| `runs_paused` | A person paused all agents. | `{"by": string, "at": number}` |
+| `runs_resumed` | A person resumed all agents. | `{}` |
 | `chat_deleted` | A chat was deleted through the API, with its changes and inbox items, or deleted with its grilling. Read the snapshot again. | `{"run": id}` |
 | `change_offered` | A card's change, the work of a chat, a kept lever of a research or a workflow run was offered to a person to merge. | The `Change` (`card_id` is null for a chat's, a lever's or a workflow run's; `run_id` is set for a workflow run's). |
 | `change_updated` | A change was published or published again, its checks started or ended, or the checks or review of its pull request changed. | The `Change`. |

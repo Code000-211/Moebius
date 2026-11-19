@@ -60,6 +60,26 @@ impl Proxy {
     pub fn origin(&self) -> String {
         format!("http://{}", self.addr)
     }
+
+    /// [`Proxy::entry_url`] that leads to the page `path` of the web app instead of its start (a person's place when
+    /// they come back to this server). A `path` that is not a page of the web app leads to the start.
+    pub fn entry_url_at(&self, path: &str) -> String {
+        let mut url = reqwest::Url::parse(&self.entry_url()).expect("the entry is a URL");
+        url.query_pairs_mut().append_pair("to", path);
+        url.into()
+    }
+}
+
+/// `path` when it is a page of the web app (an absolute path outside `/v1/`, with no host, no control character and no
+/// backslash in it), else `/`.
+fn page_path(path: &str) -> &str {
+    let page = path.starts_with('/')
+        && !path.starts_with("//")
+        && path != "/v1"
+        && !path.starts_with("/v1/")
+        && !path.starts_with(ENTRY)
+        && !path.contains(|c: char| c.is_control() || c == '\\');
+    if page { path } else { "/" }
 }
 
 impl Drop for Proxy {
@@ -137,9 +157,12 @@ fn random_key() -> std::io::Result<String> {
 struct Entry {
     #[serde(default)]
     key: String,
+    /// The page to lead to, as a path with its query.
+    #[serde(default)]
+    to: String,
 }
 
-/// `GET /.moebius-desktop/enter?key=<key>`: with the right key, sets the cookie and leads to `/`.
+/// `GET /.moebius-desktop/enter?key=<key>`: with the right key, sets the cookie and leads to `to`, or `/`.
 async fn enter(
     State(shared): State<Arc<Shared>>,
     headers: HeaderMap,
@@ -155,7 +178,7 @@ async fn enter(
     (
         StatusCode::SEE_OTHER,
         [
-            (header::LOCATION, "/".to_string()),
+            (header::LOCATION, page_path(&entry.to).to_string()),
             (
                 header::SET_COOKIE,
                 format!(
@@ -223,4 +246,26 @@ fn from_window(shared: &Shared, headers: &HeaderMap) -> bool {
 /// Compares two secrets in a time that does not depend on where they differ.
 fn same(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::page_path;
+
+    #[test]
+    fn only_a_page_of_the_web_app_is_led_to() {
+        assert_eq!(page_path("/fleet?tab=2"), "/fleet?tab=2");
+        for other in [
+            "",
+            "fleet",
+            "//evil.example/x",
+            "/v1/snapshot",
+            "/v1",
+            "/.moebius-desktop/enter?key=x",
+            "/a\\b",
+            "/a\nb",
+        ] {
+            assert_eq!(page_path(other), "/", "{other:?}");
+        }
+    }
 }

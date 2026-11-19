@@ -6,7 +6,7 @@
  * stay small: a person who opens the Inbox pays nothing for xterm, the diff viewer, or the editor of a column script.
  * The shell waits for a page with the loader of [`Shell`](./shell/Shell.tsx).
  */
-import { lazy } from "react";
+import { lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate } from "react-router";
 import { App } from "./App";
 import { DEFAULT_PAGE, PAGES } from "./pages";
@@ -73,6 +73,9 @@ const CyclesPage = lazy(() =>
 const MilestonesPage = lazy(() =>
   import("./milestones/MilestonesPage").then((all) => ({ default: all.MilestonesPage })),
 );
+const ViewsPage = lazy(() =>
+  import("./views/ViewsPage").then((all) => ({ default: all.ViewsPage })),
+);
 const IntakePage = lazy(() =>
   import("./intake/IntakePage").then((all) => ({ default: all.IntakePage })),
 );
@@ -95,6 +98,9 @@ const StartPage = lazy(() =>
 const TerminalPage = lazy(() =>
   import("./terminal/TerminalPage").then((all) => ({ default: all.TerminalPage })),
 );
+const AnalyticsPage = lazy(() =>
+  import("./analytics/AnalyticsPage").then((all) => ({ default: all.AnalyticsPage })),
+);
 const UsagePage = lazy(() =>
   import("./usage/UsagePage").then((all) => ({ default: all.UsagePage })),
 );
@@ -112,6 +118,9 @@ const WorkflowCanvasPage = lazy(() =>
 );
 const WorkflowRunPage = lazy(() =>
   import("./workflows/WorkflowRunPage").then((all) => ({ default: all.WorkflowRunPage })),
+);
+const QuickWindow = lazy(() =>
+  import("../desktop/QuickWindow").then((all) => ({ default: all.QuickWindow })),
 );
 const ChatPage = lazy(() => import("../chat/ChatPage").then((all) => ({ default: all.ChatPage })));
 
@@ -131,7 +140,9 @@ const PAGES_BUILT = new Set([
   "fleet",
   "projects",
   "milestones",
+  "views",
   "cycles",
+  "analytics",
   "intake",
   "usage",
   "start",
@@ -150,6 +161,15 @@ const PAGES_BUILT = new Set([
 ]);
 
 export const routes = [
+  // The small window of the desktop app's global shortcut: outside the shell, it is a window of its own.
+  {
+    path: "/quick",
+    element: (
+      <Suspense fallback={null}>
+        <QuickWindow />
+      </Suspense>
+    ),
+  },
   {
     path: "/",
     element: <App />,
@@ -164,6 +184,9 @@ export const routes = [
       { path: "fleet", element: <FleetPage /> },
       { path: "milestones", element: <MilestonesPage /> },
       { path: "cycles", element: <CyclesPage /> },
+      { path: "analytics", element: <AnalyticsPage /> },
+      { path: "views", element: <ViewsPage /> },
+      { path: "views/:id", element: <ViewsPage /> },
       { path: "intake", element: <IntakePage /> },
       { path: "projects", element: <ProjectsPage /> },
       { path: "projects/new", element: <AddRepositoryPage /> },

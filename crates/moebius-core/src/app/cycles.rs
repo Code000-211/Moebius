@@ -126,30 +126,70 @@ fn check(fields: &CycleFields) -> Result<()> {
     Ok(())
 }
 
-fn day_of(seconds: i64) -> Date {
+pub(super) fn day_of(seconds: i64) -> Date {
     OffsetDateTime::from_unix_timestamp(seconds).map_or(Date::MIN, OffsetDateTime::date)
+}
+
+/// A card as the burn-up counts it: when it joined the scope, its points, and when it was done if it is.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Planned {
+    pub added_at: i64,
+    pub points: i64,
+    pub done_at: Option<i64>,
 }
 
 /// The burn-up of a cycle: for each day from its start to its end, or to the day it was closed or `now` if earlier,
 /// the points of the cards added by then and of those done by then. A card counts for the points it has now.
 fn burn_up(cycle: &Cycle, cards: &[CycleCard], now: i64) -> Vec<BurnUpDay> {
+    let planned: Vec<Planned> = cards
+        .iter()
+        .map(|card| Planned {
+            added_at: card.added_at,
+            points: i64::from(card.estimate.unwrap_or(0)),
+            done_at: card.done.then_some(card.done_at).flatten(),
+        })
+        .collect();
+    burn_up_between(
+        &cycle.starts_on,
+        &cycle.ends_on,
+        cycle.closed_at,
+        &planned,
+        now,
+    )
+}
+
+/// The burn-up of `cards` from the day `start` to the day `end`, or to the day `closed_at` or `now` if earlier, and
+/// no more than the last [`DAYS_LIMIT`] of those days; none when a day does not read.
+pub(super) fn burn_up_between(
+    start: &str,
+    end: &str,
+    closed_at: Option<i64>,
+    cards: &[Planned],
+    now: i64,
+) -> Vec<BurnUpDay> {
     let (Ok(start), Ok(end)) = (
-        Date::parse(&cycle.starts_on, &day_format()),
-        Date::parse(&cycle.ends_on, &day_format()),
+        Date::parse(start, &day_format()),
+        Date::parse(end, &day_format()),
     ) else {
         return Vec::new();
     };
-    let last = end.min(day_of(cycle.closed_at.unwrap_or(now)));
+    let last = end.min(day_of(closed_at.unwrap_or(now)));
+    // Each card's days are worked out once, not once for every day of the burn-up.
+    let cards: Vec<(Date, i64, Option<Date>)> = cards
+        .iter()
+        .map(|c| {
+            let added = day_of(c.added_at);
+            (added, c.points, c.done_at.map(|at| day_of(at).max(added)))
+        })
+        .collect();
     let mut days = Vec::new();
-    let mut day = start;
+    let mut day = start.max(last - Duration::days(DAYS_LIMIT - 1));
     while day <= last {
         let (mut scope, mut done) = (0, 0);
-        for card in cards {
-            let points = i64::from(card.estimate.unwrap_or(0));
-            let added = day_of(card.added_at);
-            if added <= day {
+        for (added, points, finished) in &cards {
+            if *added <= day {
                 scope += points;
-                if card.done && card.done_at.map(|at| day_of(at).max(added)) <= Some(day) {
+                if finished.is_some_and(|at| at <= day) {
                     done += points;
                 }
             }
@@ -290,10 +330,17 @@ impl App {
         let burn = burn_up(&cycle, &cards, crate::store::now());
         let view = view(cycle, &cards);
         let tokens: i64 = cards.iter().map(|c| c.tokens).sum();
+        // As in the analytics, the tokens of the done cards that have an estimate, over their points: the tokens of a
+        // card still open or without an estimate would raise the cost of a point no point was done for.
+        let spent: i64 = cards
+            .iter()
+            .filter(|c| c.done && c.estimate.is_some())
+            .map(|c| c.tokens)
+            .sum();
         let figures = CycleFigures {
             by_agents: cards.iter().filter(|c| c.done && c.by_agent).count() as i64,
             tokens,
-            tokens_per_point: (view.points_done > 0).then(|| tokens / view.points_done),
+            tokens_per_point: (view.points_done > 0).then(|| spent / view.points_done),
         };
         Ok(CycleDetail {
             cycle: view.cycle,
@@ -668,6 +715,30 @@ mod tests {
             (3, 1, 3)
         );
         assert_eq!(detail.figures.tokens_per_point, Some(0));
+
+        // Only the tokens of done cards that have an estimate make the cost of a point: those of the open card b and of
+        // the done card c, which has none, are in the total and not in the ratio.
+        for (card, tokens) in [(a.id, 30), (b.id, 500), (c.id, 700)] {
+            let run = app
+                .store
+                .add_run(Some(card), "Coder", "fake", "code")
+                .unwrap();
+            app.store
+                .add_usage(&crate::store::Usage {
+                    run_id: Some(run.id),
+                    model: "m".into(),
+                    input_tokens: tokens,
+                    output_tokens: 0,
+                    cached_tokens: 0,
+                    duration_ms: 1,
+                    tools: vec![],
+                })
+                .unwrap();
+        }
+        app.store.move_card(c.id, "Done").unwrap();
+        let detail = app.cycle_detail(&who, cycle.id).unwrap();
+        assert_eq!(detail.figures.tokens, 1230);
+        assert_eq!(detail.figures.tokens_per_point, Some(10));
 
         // The burn-up as a pure function: scope when added, done when it got done, never past the end or the day.
         let cards = vec![

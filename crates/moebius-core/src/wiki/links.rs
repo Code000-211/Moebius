@@ -351,8 +351,8 @@ impl Wiki {
         Ok(files)
     }
 
-    /// What the page `path` links to and what links to it: the pages, from the index, and the cards, from their
-    /// text. A page that is not there has backlinks all the same, which a deletion leaves.
+    /// What the page `path` links to and what links to it: the pages and the cards, from their text, with every link
+    /// resolved among the pages `who` sees.
     pub fn links(&self, app: &App, who: &Actor, path: &str) -> Result<PageLinks> {
         let _turn = self.turn();
         file_of(path)?;
@@ -360,7 +360,13 @@ impl Wiki {
         if !seen.page(app, path) {
             return Err(AppError::NotFound(format!("page {path}")));
         }
-        let paths = self.page_paths()?;
+        // A link leads only among the pages the asker sees, as in a run's prompt: a page they do not see neither
+        // answers a link of a page they do see, nor changes which page it leads to.
+        let paths: Vec<String> = self
+            .page_paths()?
+            .into_iter()
+            .filter(|page| seen.page(app, page))
+            .collect();
         let refs = self
             .read(path)
             .map(|text| extract(&text, project_key(path)))
@@ -371,7 +377,7 @@ impl Wiki {
                 .iter()
                 .map(|link| PageLink {
                     link: link.target.clone(),
-                    path: resolve(&paths, path, &link.target).filter(|found| seen.page(app, found)),
+                    path: resolve(&paths, path, &link.target),
                 })
                 .collect(),
             cards: refs
@@ -380,13 +386,21 @@ impl Wiki {
                 .map(|key| card_ref(app, who, key))
                 .collect::<Result<_>>()?,
         };
-        let pages = app
-            .store
-            .wiki_links_to(WIKI_PAGE, path)?
-            .into_iter()
-            .filter(|source| seen.page(app, source))
-            .map(info)
-            .collect();
+        // The same for the pages that link here: a link counts when it leads to this page among the pages the asker
+        // sees, whatever the index, which resolves among every page, says.
+        let mut pages: Vec<PageInfo> = Vec::new();
+        for source in paths.iter().filter(|source| source.as_str() != path) {
+            let Some(text) = self.read(source) else {
+                continue;
+            };
+            let leads_here = extract(&text, project_key(source))
+                .pages
+                .iter()
+                .any(|link| resolve(&paths, source, &link.target).as_deref() == Some(path));
+            if leads_here {
+                pages.push(info(source.clone()));
+            }
+        }
         let mut cards = Vec::new();
         for card in app.store.cards_with_wiki_links()? {
             if !app.may_see_project(who, card.project_id) {
@@ -768,6 +782,109 @@ mod tests {
                 wiki.pages_linking_card(&app, &outsider, "WEB-1"),
                 Err(AppError::NotFound(_))
             ));
+        }
+
+        #[test]
+        fn a_link_leads_among_the_pages_the_asker_sees() {
+            let dir = tempfile::tempdir().unwrap();
+            let (app, wiki, _origin) = opened(dir.path());
+            let web = app
+                .store
+                .add_repository("web", "/srv/web", "none", "main")
+                .unwrap();
+            let secret = app
+                .store
+                .add_repository("secret", "/srv/secret", "none", "main")
+                .unwrap();
+            let key = app
+                .store
+                .project(secret.home_project_id)
+                .unwrap()
+                .unwrap()
+                .key;
+            let lea = app
+                .store
+                .add_person("lea", "Lea", crate::store::Role::Member)
+                .unwrap();
+            let olga = app
+                .store
+                .add_person("olga", "Olga", crate::store::Role::Member)
+                .unwrap();
+            app.store
+                .set_project_access(secret.home_project_id, true, &[lea.id])
+                .unwrap();
+            app.store
+                .add_card(web.id, "Plan it", "See [[Plans]]", "lea", "Backlog")
+                .unwrap();
+            // Both pages are called Plans, and for the card of another project the one in the private project comes
+            // first by path.
+            put(&app, &wiki, &format!("projects/{key}/Plans"), "Secret.\n");
+            put(&app, &wiki, "zeta/Plans", "Public.\n");
+            let cards = |who: &Actor, page: &str| {
+                wiki.links(&app, who, page).unwrap().backlinks.cards.len()
+            };
+            let (member, outsider) = (Actor::person(lea.id, "lea"), Actor::person(olga.id, "olga"));
+            assert_eq!(cards(&member, &format!("projects/{key}/Plans")), 1);
+            assert_eq!(cards(&member, "zeta/Plans"), 0);
+            // For a person who does not see the private page, the card's link leads to the page they see.
+            assert_eq!(cards(&outsider, "zeta/Plans"), 1);
+        }
+
+        #[test]
+        fn backlinks_lead_among_the_pages_the_asker_sees() {
+            let dir = tempfile::tempdir().unwrap();
+            let (app, wiki, _origin) = opened(dir.path());
+            let secret = app
+                .store
+                .add_repository("secret", "/srv/secret", "none", "main")
+                .unwrap();
+            let key = app
+                .store
+                .project(secret.home_project_id)
+                .unwrap()
+                .unwrap()
+                .key;
+            let open = app
+                .store
+                .add_repository("zed", "/srv/zed", "none", "main")
+                .unwrap();
+            let open_key = app
+                .store
+                .project(open.home_project_id)
+                .unwrap()
+                .unwrap()
+                .key;
+            let lea = app
+                .store
+                .add_person("lea", "Lea", crate::store::Role::Member)
+                .unwrap();
+            let olga = app
+                .store
+                .add_person("olga", "Olga", crate::store::Role::Member)
+                .unwrap();
+            app.store
+                .set_project_access(secret.home_project_id, true, &[lea.id])
+                .unwrap();
+            // Both Plans are in a project other than the linking page's, so [[Plans]] goes to the first by path
+            // among every page, the private one, in the index; the outsider sees only the other.
+            put(&app, &wiki, &format!("projects/{key}/Plans"), "Secret.\n");
+            let public = format!("projects/{open_key}/Plans");
+            put(&app, &wiki, &public, "Public.\n");
+            put(&app, &wiki, "a/Notes", "See [[Plans]].\n");
+            let backlinks = |who: &Actor, page: &str| {
+                let pages = wiki.links(&app, who, page).unwrap().backlinks.pages;
+                paths(&pages)
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            };
+            let (member, outsider) = (Actor::person(lea.id, "lea"), Actor::person(olga.id, "olga"));
+            assert_eq!(
+                backlinks(&member, &format!("projects/{key}/Plans")),
+                ["a/Notes"]
+            );
+            assert!(backlinks(&member, &public).is_empty());
+            assert_eq!(backlinks(&outsider, &public), ["a/Notes"]);
         }
 
         #[test]

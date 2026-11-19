@@ -23,9 +23,6 @@ import {
 /** The keys of the board's filters in the address, in the order the bar offers them. */
 export const FILTER_KEYS = ["column", "agent", "status", "label", "priority", "due"] as const;
 
-/** The query parameters a saved view of the board holds: its filters and its Display choices. */
-export const VIEW_KEYS = [...FILTER_KEYS, "layout", "group", "sort", "hide"];
-
 /** The fields the board can be filtered by. Label is offered while the issues carry any, or one is set. */
 export function filterFields(board: Board, filters: Filters): FilterField[] {
   const pairs = (names: string[]): Array<[string, string]> => names.map((n) => [n, n]);

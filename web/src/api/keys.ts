@@ -15,6 +15,10 @@ export const keys = {
   usage: ["usage"] as const,
   usageDays: (days: number, repository: number | null, agent: string) =>
     ["usage", days, repository, agent] as const,
+  /** The analytics of a window with its filters; a card's move, a cycle's change and a finished run make them stale. */
+  analytics: ["analytics"] as const,
+  analyticsDays: (days: number, repository: number | null, agent: string) =>
+    ["analytics", days, repository, agent] as const,
   settings: ["settings"] as const,
   webhooks: ["webhooks"] as const,
   /** What a repository's files page has read: directories, one file, the paths for "Go to file", a search. */
@@ -46,6 +50,9 @@ export const keys = {
   milestone: (id: number) => ["milestones", id] as const,
   /** The milestones one card is in. */
   cardMilestones: (card: number) => ["card", card, "milestones"] as const,
+  /** The saved views of the person, and the cards of one. */
+  views: ["views"] as const,
+  viewCards: (id: number) => ["views", id, "cards"] as const,
   /** A project's cycles with their progress, one cycle with its burn-up and cards, and the open cycle of a card. */
   cycles: ["cycles"] as const,
   projectCycles: (project: number) => ["cycles", "project", project] as const,

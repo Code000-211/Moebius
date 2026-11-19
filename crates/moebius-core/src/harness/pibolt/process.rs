@@ -339,6 +339,10 @@ impl PiBolt {
             run: run.clone(),
         };
         lock(&self.live).insert(run.id, live.clone());
+        // A pause that came in while Pi was starting did not reach it.
+        if matches!(app.runs_paused(), Ok(Some(_))) {
+            super::hold_process(&live, true);
+        }
         let begun = self.begin(app, card, &live, prompt, stdout);
         if begun.is_err() {
             // Nothing reads this Pi: end it and what it started, so that it is not orphaned.

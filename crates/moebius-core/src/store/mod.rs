@@ -8,17 +8,18 @@
 //! (Retros, proposals and trials), `lessons` (what the Retro learned from earlier cards), `attempts` (the runs a hard
 //! card gets in one go and which was picked), `research` (research, its runs and experiments), `automations`
 //! (automations, their firings and the local clock), `workflows` (workflow runs and what each node did),
-//! `plugin_settings` (what plugins keep for the server) and `people` (the people of the organisation, and the
+//! `plugin_settings` (what plugins keep for the server), `paused` (whether all agents are paused) and `people` (the people of the organisation, and the
 //! migration that gives earlier records to the first owner), `assignees` (who cards and inbox items are given to),
 //! `notices` (what concerns a person, and the cards they follow), `planning` (a card's priority, due date and estimate, read
 //! from its labels), `access` (their access tokens and the sessions of browsers, kept as hashes), `favourites` (the places a
 //! person pinned and opened lately), `kinds` (kinds of issues, their fields and the values cards hold), `projects` (the
-//! projects, their keys and repositories, and the migration that makes one for each repository) and `cycles` (a project's time boxes) and `milestones` (goals
+//! projects, their keys and repositories, and the migration that makes one for each repository) and `cycles` (a project's time boxes) and `imports` (what an import from another tracker made, so that it can be run again) and `milestones` (goals
 //! of the organisation that hold cards of any projects) and `wiki_search` (the wiki's search index, derived from its
-//! pages).
+//! pages) and `views` (saved filters with a layout, for a person or for everyone).
 //! Every public type is re-exported here, as `store::Card` and the like.
 
 mod access;
+mod analytics;
 mod assignees;
 mod attempts;
 mod automations;
@@ -32,6 +33,7 @@ mod events;
 mod favourites;
 mod found;
 mod grillings;
+mod imports;
 mod inbox;
 mod intake;
 mod issues;
@@ -43,6 +45,7 @@ mod localize;
 mod milestones;
 mod notices;
 mod outgoing;
+mod paused;
 mod people;
 mod planning;
 mod plugin_settings;
@@ -53,6 +56,7 @@ mod retros;
 mod runs;
 mod shadows;
 mod usage;
+mod views;
 mod wiki_links;
 mod wiki_search;
 mod workflow_schedules;
@@ -67,6 +71,7 @@ use rusqlite::{Connection, OptionalExtension, Params, Row};
 use crate::blobs::BlobStore;
 
 pub use access::{AccessToken, hash_secret};
+pub use analytics::{AnalyticsCard, CardFilter, Moved};
 pub use attempts::Attempt;
 pub use automations::{Automation, Firing, NewAutomation};
 pub use card_repositories::RunWorktree;
@@ -78,6 +83,7 @@ pub use events::Event;
 pub use favourites::{PLACE_KINDS, Place, RECENT_LIMIT};
 pub use found::Found;
 pub use grillings::{Grilling, GrillingIssue};
+pub use imports::Imported;
 pub use inbox::{InboxItem, WORKFLOW_APPROVAL};
 pub use intake::IntakeRequest;
 pub use issues::Comment;
@@ -89,9 +95,11 @@ pub use localize::IndexedFile;
 pub use milestones::{Milestone, MilestoneCard};
 pub use notices::{ASSIGNED, CHANGED, MENTIONED, NewNotice, Notice};
 pub use outgoing::OutgoingWebhook;
+pub use paused::Paused;
 pub use people::{FIRST_OWNER, Person, Role};
 pub use planning::{
-    ESTIMATE_LIMIT, Priority, estimate_of, is_date, with_due, with_estimate, with_priority,
+    ESTIMATE_LIMIT, Priority, estimate_of, is_date, is_planning_label, with_due, with_estimate,
+    with_priority,
 };
 pub use projects::{KEY_LIMIT, Project, is_key, parse_card_key};
 pub use replays::Replay;
@@ -103,6 +111,7 @@ pub use usage::{
     ANSWERING, ActivityUsage, AgentUsage, ClassUsage, ModelUsage, NO_RUN, Scope, ToolWait, UNKNOWN,
     Usage, UsageTotals,
 };
+pub use views::{LAYOUTS, NewView, SORTS, View, ViewFilter};
 pub use wiki_links::{CARD as WIKI_CARD, PAGE as WIKI_PAGE, WikiLink};
 pub(crate) use wiki_search::match_all;
 pub use wiki_search::{IndexedPage, WikiHit};
@@ -501,6 +510,9 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     cycles::SCHEMA,
     wiki_links::SCHEMA,
     card_repositories::SCHEMA,
+    views::SCHEMA,
+    paused::SCHEMA,
+    imports::SCHEMA,
 ];
 
 pub fn now() -> i64 {

@@ -81,6 +81,10 @@ impl CardRuns for IdleRuns {
     fn stop(&self, _: i64) -> bool {
         false
     }
+
+    fn hold(&self, held: bool) {
+        let _ = held;
+    }
 }
 
 /// A project whose settings carry `script` as `ready.luau`, and an engine over it.
