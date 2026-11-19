@@ -12,13 +12,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
 import {
   addBlocker,
+  changeAssignees,
   claim,
   closeIssue,
   editCard,
   release,
   removeBlocker,
   reopenIssue,
-  setAssignees,
   setLabels,
   setParent,
 } from "../../api/calls/board";
@@ -149,7 +149,7 @@ export function CardProperties({
       <Property name="Author">{card.author}</Property>
       <AssigneesProperty
         assignees={card.assignees}
-        onSave={(next) => saved(setAssignees(card.id, next))}
+        onSave={(next) => saved(changeAssignees(card.id, card.assignees, next))}
       />
       <EditableProperty
         name="Claim"

@@ -328,7 +328,7 @@ describe("the number of an issue as typed", () => {
 });
 
 describe("the assignees of a card", () => {
-  it("offers the people who are not disabled and saves the whole set when one is added", async () => {
+  it("offers the people who are not disabled and adds the one person chosen", async () => {
     const sent = server();
     properties(card(5, { assignees: ["owner"] }));
     fireEvent.keyDown(screen.getByRole("button", { name: "Assignee @owner" }), { key: "Enter" });
@@ -343,7 +343,7 @@ describe("the assignees of a card", () => {
     expect(screen.queryByRole("menuitemcheckbox", { name: /tom/ })).toBeNull();
     fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Lea (@lea)" }));
     await waitFor(() => expect(sent).toHaveLength(1));
-    expect(sent[0]).toEqual(["PUT", "/v1/cards/5/assignees", { assignees: ["owner", "lea"] }]);
+    expect(sent[0]).toEqual(["PUT", "/v1/cards/5/assignees/lea", undefined]);
   });
 
   it("takes a person off, and keeps showing one who was disabled after being assigned", async () => {
@@ -359,7 +359,7 @@ describe("the assignees of a card", () => {
     ).toBe("true");
     fireEvent.click(lea);
     await waitFor(() => expect(sent).toHaveLength(1));
-    expect(sent[0]).toEqual(["PUT", "/v1/cards/5/assignees", { assignees: ["tom"] }]);
+    expect(sent[0]).toEqual(["DELETE", "/v1/cards/5/assignees/lea", undefined]);
   });
 
   it("says no one while the card is given to nobody", () => {

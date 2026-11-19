@@ -354,6 +354,33 @@ describe("the issue in the dock", () => {
     await value("Assignee No one").waitFor();
   });
 
+  it("keeps both people when two are given the card one right after the other, from the palette and the right column", async () => {
+    await openBoard();
+    const made = await context.request.post(`${server.url}/v1/people`, {
+      headers: { "X-Moebius": "1" },
+      data: { handle: "lea", name: "Lea", role: "member" },
+    });
+    expect(made.ok(), await made.text()).toBe(true);
+    await page.reload();
+    await newIssue("Two gifts");
+    await cardTitled("Two gifts").click();
+    await dock().getByRole("heading", { name: "Two gifts" }).waitFor();
+
+    // The second command is chosen before the page has the card as the first one left it.
+    await page.keyboard.press("Control+k");
+    await page.getByRole("option", { name: /Assign to @owner/ }).click();
+    await page.keyboard.press("Control+k");
+    await page.getByRole("option", { name: /Assign to @lea/ }).click({ force: true });
+    await value(/^Assignee @owner.*@lea/).waitFor();
+    await cardTitled("Two gifts").getByRole("img", { name: "Given to @owner, @lea" }).waitFor();
+
+    // And from the right column: take both off, one right after the other.
+    await value(/^Assignee @owner.*@lea/).click();
+    await page.getByRole("menuitemcheckbox", { name: "Owner (@owner)" }).click();
+    await page.getByRole("menuitemcheckbox", { name: "Lea (@lea)" }).click({ force: true });
+    await value("Assignee No one").waitFor();
+  });
+
   it("filters the board by label, sub-issues included", async () => {
     await openBoard();
     await newIssue("Plan");

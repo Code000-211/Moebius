@@ -36,7 +36,11 @@ export async function dismissGrilling(grilling: number): Promise<void> {
   await post<unknown>(`/v1/grillings/${grilling}/dismiss`, {});
 }
 
-/** Replaces the people an inbox item is given to (handles, with or without the `@`). */
-export function setInboxAssignees(item: number, assignees: string[]): Promise<InboxItem> {
-  return put<InboxItem>(`/v1/inbox/${item}/assignees`, { assignees });
+/** Changes the people an inbox item is given to from `before` to `after`, one person at a time. */
+export async function changeInboxAssignees(item: number, before: string[], after: string[]) {
+  const had = new Set(before);
+  const wants = new Set(after);
+  const path = (handle: string) => `/v1/inbox/${item}/assignees/${encodeURIComponent(handle)}`;
+  for (const handle of before) if (!wants.has(handle)) await del<InboxItem>(path(handle));
+  for (const handle of after) if (!had.has(handle)) await put<InboxItem>(path(handle), undefined);
 }

@@ -5,7 +5,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { claim, closeIssue, release, reopenIssue, setAssignees } from "../../api/calls/board";
+import { assignTo, claim, closeIssue, release, reopenIssue } from "../../api/calls/board";
 import { people as loadPeople } from "../../api/calls/people";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
@@ -61,11 +61,7 @@ export function CardFocus({
       reopen: (c) => mutate({ change: () => reopenIssue(c.id), text: `Reopening ${n(c)}` }),
       assignTo: (c, handle, on) =>
         mutate({
-          change: () =>
-            setAssignees(
-              c.id,
-              on ? [...c.assignees, handle] : c.assignees.filter((h) => h !== handle),
-            ),
+          change: () => assignTo(c.id, handle, on),
           text: `${on ? "Assigning" : "Taking off"} @${handle} on ${n(c)}`,
         }),
       block: onBlock,
