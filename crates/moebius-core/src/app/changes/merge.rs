@@ -121,6 +121,19 @@ impl App {
         Ok(false)
     }
 
+    /// The first change, in the order the card names its repositories, that is the card's latest in its repository
+    /// and was closed without being merged: the card is not done while there is one.
+    pub(super) fn closed_change(&self, card: &Card) -> Result<Option<Change>> {
+        for repository in self.card_repositories(card)? {
+            if let Some(change) = self.latest_change_in(card, repository.id)?
+                && change.state == "closed"
+            {
+                return Ok(Some(change));
+            }
+        }
+        Ok(None)
+    }
+
     /// The card's latest change in the repository, which says how its work there stands; none before the first.
     fn latest_change_in(&self, card: &Card, repository_id: i64) -> Result<Option<Change>> {
         Ok(self

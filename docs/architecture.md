@@ -395,7 +395,7 @@ finds the server again by that directory: it answers, or it is started again wit
     `Forgejo::merge`), and `App::change_merged`
     marks the change merged, resolves the inbox, publishes `change_merged` and moves the card to `Done` once it has no
     other open change. A card's changes merge in the order of its repositories; `moebius.merge_change` calls
-    `App::merge_card`, which stops at the first merge that fails and marks the card with `merge_stopped`.
+    `App::merge_card`, which stops at the first merge that fails and marks the card with `merge_stopped`; a change closed on the forge without being merged marks it the same way and keeps it out of Done.
 15. **Done.** `done.luau` calls `moebius.record_outcome`, with `merged` when a change of the card was merged (`card.merged`)
     and `closed` otherwise, so every judgement made for the card gets an outcome.
 
