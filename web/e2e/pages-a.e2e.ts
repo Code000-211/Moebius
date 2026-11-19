@@ -82,6 +82,14 @@ function lastBody(
 const alert = (text: string | RegExp) => page.getByRole("alert").filter({ hasText: text });
 const items = () => page.getByTestId("inbox-item");
 const item = (title: string | RegExp) => items().filter({ hasText: title });
+/** What to decide about the item chosen, in the right sidebar. */
+const decision = () => page.getByTestId("inbox-decision");
+/** Chooses the row of an item, which shows what to decide about it in the right sidebar. */
+async function choose(title: string | RegExp) {
+  await item(title).click();
+  await decision().waitFor();
+  return decision();
+}
 const path = () => new URL(page.url()).pathname + new URL(page.url()).search;
 
 /** A new folder, which the server makes a repository of. */
@@ -162,17 +170,18 @@ describe("the inbox", () => {
         ["Needs design", "Needs a mockup", "no mockup yet"],
       ] as const;
       for (const [tag, title, words] of kinds) {
-        const one = item(title);
-        await one.getByText(tag, { exact: true }).waitFor();
-        await one.getByText(words).first().waitFor();
+        // The row says the kind and the title; what it is about is read in the sidebar, once it is chosen.
+        await item(title).getByText(tag, { exact: true }).waitFor();
+        const sidebar = await choose(title);
+        await sidebar.getByText(words).first().waitFor();
       }
       // The facts of a change that waits, the diff of a proposal for the configuration and the trials of one for the harness.
-      const merge = item("Speed up the build");
+      const merge = await choose("Speed up the build");
       await merge.getByText("2", { exact: true }).waitFor();
       await merge.getByText("96k tok").waitFor();
       await merge.getByText("moebius/card-5").waitFor();
-      await item("Raise the round limit").getByText("+round_limit = 7").waitFor();
-      await item("Let the Coder read").getByText("It passed in one round.").waitFor();
+      await (await choose("Raise the round limit")).getByText("+round_limit = 7").waitFor();
+      await (await choose("Let the Coder read")).getByText("It passed in one round.").waitFor();
       // Newest first.
       expect(await items().first().getAttribute("data-kind")).toBe("needs_design");
     },
@@ -185,7 +194,7 @@ describe("the inbox", () => {
       await items().first().waitFor();
       // The item a trial ends with names its proposal, so the card reads the proposal for what it offers and stops
       // at three lines of it: the whole of the argument is on the Retro page, which the preview itself opens.
-      const harness = item("Let the Coder read");
+      const harness = await choose("Let the Coder read");
       const reason = harness.getByRole("button", {
         name: /its instructions now say to read the tests/,
       });
@@ -256,7 +265,7 @@ describe("the inbox", () => {
 
   it.skipIf(usesRealServer)("approves an outside issue and the item leaves", async () => {
     await open("/inbox");
-    await item("Fix the login redirect").getByRole("button", { name: "Approve" }).click();
+    await (await choose("Fix the login redirect")).getByRole("button", { name: "Approve" }).click();
     await items().filter({ hasText: "Fix the login redirect" }).waitFor({ state: "detached" });
     expect(board().requests.some((r) => r.path === "/v1/cards/2/approve")).toBe(true);
   });
@@ -266,7 +275,7 @@ describe("the inbox", () => {
     async () => {
       await open("/inbox");
       board().refuseNext("POST", "/v1/changes/1/merge", 422, "the branch does not merge cleanly");
-      const merge = item("Speed up the build");
+      const merge = await choose("Speed up the build");
       await merge.getByRole("button", { name: "Merge" }).click();
       await merge
         .getByRole("alert")
@@ -274,14 +283,15 @@ describe("the inbox", () => {
         .waitFor();
       // The buttons are back and the item stays; the second try goes through.
       await merge.getByRole("button", { name: "Merge" }).click();
-      await merge.waitFor({ state: "detached" });
+      await item("Speed up the build").waitFor({ state: "detached" });
+      await decision().waitFor({ state: "detached" });
       expect(board().requests.filter((r) => r.path === "/v1/changes/1/merge")).toHaveLength(2);
     },
   );
 
   it.skipIf(usesRealServer)("asks for a reason before it sends a change back", async () => {
     await open("/inbox");
-    const merge = item("Speed up the build");
+    const merge = await choose("Speed up the build");
     await merge.getByRole("button", { name: "Reject with a reason" }).click();
     expect(await merge.getByRole("button", { name: "Send back" }).isDisabled()).toBe(true);
     await merge.getByRole("button", { name: "Cancel" }).click();
@@ -289,7 +299,7 @@ describe("the inbox", () => {
     await merge.getByRole("button", { name: "Reject with a reason" }).click();
     await merge.getByLabel("Why? The next round is told").fill("Add a test for the cache.");
     await merge.getByRole("button", { name: "Send back" }).click();
-    await merge.waitFor({ state: "detached" });
+    await item("Speed up the build").waitFor({ state: "detached" });
     expect(lastBody(board().requests, "POST", "/v1/changes/1/reject")).toEqual({
       reason: "Add a test for the cache.",
     });
@@ -297,7 +307,7 @@ describe("the inbox", () => {
 
   it.skipIf(usesRealServer)("retries a stuck card", async () => {
     await open("/inbox");
-    await item("Stop the flaky test").getByRole("button", { name: "Retry" }).click();
+    await (await choose("Stop the flaky test")).getByRole("button", { name: "Retry" }).click();
     await items().filter({ hasText: "Stop the flaky test" }).waitFor({ state: "detached" });
     expect(board().requests.some((r) => r.path === "/v1/cards/6/retry")).toBe(true);
   });
@@ -307,21 +317,23 @@ describe("the inbox", () => {
     async () => {
       await open("/inbox");
       fake().refuseNext("POST", "/v1/proposals/4/merge", 409, "the branch does not merge cleanly");
-      const proposal = item("Let the Coder read the tests first");
+      const proposal = await choose("Let the Coder read the tests first");
       await proposal.getByRole("button", { name: "Merge" }).click();
       await proposal
         .getByRole("alert")
         .filter({ hasText: "the branch does not merge cleanly" })
         .waitFor();
       await proposal.getByRole("button", { name: "Dismiss" }).click();
-      await proposal.waitFor({ state: "detached" });
+      await item("Let the Coder read the tests first").waitFor({ state: "detached" });
       expect(fake().requests.map((r) => r.path)).toContain("/v1/proposals/4/dismiss");
 
-      await item("Raise the round limit").getByRole("button", { name: "Merge" }).click();
+      await (await choose("Raise the round limit")).getByRole("button", { name: "Merge" }).click();
       await item("Raise the round limit").waitFor({ state: "detached" });
       expect(fake().requests.map((r) => r.path)).toContain("/v1/proposals/5/merge");
 
-      await item("The decision model can take over").getByRole("button", { name: "Merge" }).click();
+      await (await choose("The decision model can take over"))
+        .getByRole("button", { name: "Merge" })
+        .click();
       await item("The decision model can take over").waitFor({ state: "detached" });
       expect(fake().requests.map((r) => r.path)).toContain("/v1/takeovers/2/merge");
     },
@@ -331,7 +343,7 @@ describe("the inbox", () => {
     "edits the issues of a grilling, takes one out, and confirms the list",
     async () => {
       await open("/inbox");
-      const grilling = item("3 issues from a grilling");
+      const grilling = await choose("3 issues from a grilling");
       await grilling.getByText("Blocked by issue 1, 2").waitFor();
       await grilling.getByLabel("Title of issue 3").fill("Document the export, renamed");
       // Taking the first out renumbers the others, and nothing waits for it any more.
@@ -347,7 +359,7 @@ describe("the inbox", () => {
       // The list stays while the snapshot is read again.
       await page.evaluate(() => window.dispatchEvent(new Event("focus")));
       await grilling.getByRole("button", { name: "Confirm" }).click();
-      await grilling.waitFor({ state: "detached" });
+      await item("3 issues from a grilling").waitFor({ state: "detached" });
       expect(lastBody(fake().requests, "POST", "/v1/grillings/7/confirm")).toEqual({
         issues: [
           { title: "Write the CSV", body: "Its columns.", blocked_by: [] },
@@ -361,11 +373,13 @@ describe("the inbox", () => {
     "dismisses the report of a grilling, and an item whose issues are all gone",
     async () => {
       await open("/inbox");
-      await item("A report from a grilling").getByRole("button", { name: "Dismiss" }).click();
+      await (await choose("A report from a grilling"))
+        .getByRole("button", { name: "Dismiss" })
+        .click();
       await item("A report from a grilling").waitFor({ state: "detached" });
       expect(fake().requests.map((r) => r.path)).toContain("/v1/grillings/8/dismiss");
 
-      const grilling = item("3 issues from a grilling");
+      const grilling = await choose("3 issues from a grilling");
       for (const number of [3, 2, 1]) {
         await grilling.getByRole("button", { name: `Remove issue ${number}` }).click();
       }
@@ -376,19 +390,49 @@ describe("the inbox", () => {
 
   it.skipIf(usesRealServer)("opens the live view of a card and the chat of a change", async () => {
     await open("/inbox");
-    await item("Speed up the build").getByRole("button", { name: "Open live view" }).click();
+    await (await choose("Speed up the build"))
+      .getByRole("button", { name: "Open live view" })
+      .click();
     await page.waitForURL("**/board/1?card=5");
     await page.goBack();
-    await item("Add a retry helper").getByRole("button", { name: "Open chat" }).click();
+    await (await choose("Add a retry helper")).getByRole("button", { name: "Open chat" }).click();
     await page.waitForURL("**/chat/9");
   });
 
   it.skipIf(usesRealServer)("merges the change of a chat", async () => {
     await open("/inbox");
-    await item("Add a retry helper").getByRole("button", { name: "Merge" }).click();
+    await (await choose("Add a retry helper")).getByRole("button", { name: "Merge" }).click();
     await item("Add a retry helper").waitFor({ state: "detached" });
     expect(fake().requests.map((r) => r.path)).toContain("/v1/changes/9/merge");
   });
+
+  it.skipIf(usesRealServer)(
+    "shows quiet rows with an unread dot that goes once the item is read, and counts the tabs by kind",
+    async () => {
+      await open("/inbox");
+      await items().first().waitFor();
+      // A row has no button of its own, and every item starts unread.
+      const rows = page.getByTestId("inbox-item");
+      expect(await rows.getByRole("button").count()).toBe(0);
+      const dots = page.getByTestId("unread-dot");
+      expect(await dots.count()).toBe(await rows.count());
+      const kinds = page.getByRole("tablist", { name: "Kind" });
+      await kinds.getByRole("tab", { name: "Stuck 1" }).waitFor();
+      await kinds.getByRole("tab", { name: "Proposals 2" }).waitFor();
+
+      await choose("Stop the flaky test");
+      const stuck = item("Stop the flaky test");
+      expect(await stuck.getByTestId("unread-dot").count()).toBe(0);
+      expect(await dots.count()).toBe((await rows.count()) - 1);
+      expect(path()).toMatch(/^\/inbox\?item=\d+$/);
+
+      // The reading is kept for this browser, and the choice by the address.
+      await page.reload();
+      await decision().waitFor();
+      expect(await item("Stop the flaky test").getByTestId("unread-dot").count()).toBe(0);
+      expect(await dots.count()).toBe((await rows.count()) - 1);
+    },
+  );
 
   it.skipIf(usesRealServer)("shows an item that arrives while the page is open", async () => {
     await open("/inbox");
@@ -851,21 +895,22 @@ describe("the fleet", () => {
       server.broadcast?.({ kind: "lagged", data: { missed: 1 } });
 
       await page.getByText("2 agents working").waitFor();
-      const tiles = page.getByTestId("fleet-tile");
+      const tiles = page.getByTestId("fleet-row");
       const card = tiles.filter({ hasText: "#1 Add a feature" });
-      await card.getByText("Coder", { exact: true }).waitFor();
+      // The rows are grouped by their agent, whose name heads the group.
+      await page.getByRole("heading", { name: "Coder 1" }).waitFor();
+      await page.getByRole("heading", { name: "Moebius 1" }).waitFor();
       await card.getByText("code", { exact: true }).waitFor();
       await card.getByText("demo · 12k tokens").waitFor();
       await card.getByText("cargo test").waitFor();
       const talk = tiles.filter({ hasText: "Write a ready.luau" });
-      await talk.getByText("Moebius", { exact: true }).waitFor();
       await talk.getByText("chat", { exact: true }).waitFor();
       await talk.getByText("demo", { exact: false }).waitFor();
       await talk.getByText("ready.luau", { exact: false }).first().waitFor();
       // A card that is done is not there.
       expect(await tiles.filter({ hasText: "Ship the first release" }).count()).toBe(0);
 
-      // A run event adds a step to the tile of its run.
+      // The row says the step its run is at, and a run event moves it on.
       expect(await card.getByText("cargo clippy").count()).toBe(0);
       server.chat?.emit(1, "tool_execution_start", {
         type: "tool_execution_start",
@@ -874,6 +919,7 @@ describe("the fleet", () => {
         args: { command: "cargo clippy" },
       });
       await card.getByText("cargo clippy").waitFor();
+      await card.getByText("cargo test").waitFor({ state: "detached" });
 
       // A click opens the live view of the card or the chat.
       await card.click();
@@ -898,7 +944,7 @@ describe("the fleet", () => {
         title: "Look for the review gate",
       }) as number;
       server.chat?.toolCall(chat, { id: "c1", tool: "bash", args: { command }, output: "" });
-      const tile = page.getByTestId("fleet-tile").filter({ hasText: "Look for the review gate" });
+      const tile = page.getByTestId("fleet-row").filter({ hasText: "Look for the review gate" });
       const line = tile.getByText("bash", { exact: true }).locator("xpath=following-sibling::*[1]");
       await line.getByText(command, { exact: true }).waitFor();
 
@@ -922,7 +968,7 @@ describe("the fleet", () => {
         asks: true,
       }) as number;
       server.broadcast?.({ kind: "lagged", data: { missed: 1 } });
-      const tile = page.getByTestId("fleet-tile").filter({ hasText: "Which branch?" });
+      const tile = page.getByTestId("fleet-row").filter({ hasText: "Which branch?" });
       await tile.getByText("asks you").waitFor();
       const chat = server.chat?.chats.find((each) => each.id === asking);
       if (chat) chat.status = "succeeded";
@@ -942,7 +988,7 @@ describe("the fleet", () => {
       }) as number;
       server.broadcast?.({ kind: "run_started", data: { run: chat } });
       await page.getByText("2 agents working").waitFor();
-      const tiles = page.getByTestId("fleet-tile");
+      const tiles = page.getByTestId("fleet-row");
       const bar = page.getByRole("search", { name: "Filter the runs" });
 
       await addFilter(page, bar, "Agent", "Coder");
@@ -1361,7 +1407,7 @@ describe("settings", () => {
 describe("deleting a grilling from the inbox", () => {
   it.skipIf(usesRealServer)("asks once, then the grilling leaves the inbox", async () => {
     await open("/inbox");
-    const grilling = item("A report from a grilling");
+    const grilling = await choose("A report from a grilling");
     await grilling.getByRole("button", { name: "Delete" }).click();
     const dialog = page.getByRole("dialog", { name: "Delete this grilling?" });
     await dialog.getByText(/Issues it already filed stay/).waitFor();

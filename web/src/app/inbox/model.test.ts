@@ -11,6 +11,7 @@ import {
   facts,
   found,
   issuesSent,
+  keyOf,
   kindsOf,
   kindTag,
   meta,
@@ -334,5 +335,21 @@ describe("the issues of a grilling", () => {
     expect(confirmable(edited)).toBe(false);
     expect(issuesSent(edited)[1]).toEqual({ title: "", body: "x", blocked_by: [0] });
     expect(confirmable([])).toBe(false);
+  });
+});
+
+describe("the key a row leads with", () => {
+  it("is the card's number, else the change, proposal, takeover or grilling, else nothing", () => {
+    const [stuck, merge, chat] = snapshot.inbox as [InboxItem, InboxItem, InboxItem];
+    expect(keyOf(stuck, found(snapshot, stuck))).toBe("#12");
+    expect(keyOf(merge, found(snapshot, merge))).toBe("#45");
+    expect(keyOf(chat, found(snapshot, chat))).toBe("Change 9");
+    const others: Array<[InboxItem, string]> = [
+      [item(6, "proposal", null, { proposal: 4 }), "Proposal 4"],
+      [item(7, "takeover", null, { takeover: 2 }), "Takeover 2"],
+      [item(8, "grilling_report", null, { grilling: 3 }), "Grilling 3"],
+      [item(9, "needs_design", null, {}), ""],
+    ];
+    for (const [each, key] of others) expect(keyOf(each, found(snapshot, each))).toBe(key);
   });
 });

@@ -1,13 +1,14 @@
 /**
- * The Inbox (the former desktop app's `screens/inbox`): everything that needs the person in one list, newest first, each
- * item with the buttons that act on it. The kinds are tabs with the number of items of each, and the shared filter bar
- * (`ui/filters`) filters by repository and by change. The list is the whole page, so an empty list says what belongs
- * here. It reads the snapshot, which the event stream keeps current, so an item arrives and leaves on its own. What is
- * chosen is in the address (`?kind=`, `?repository=`, `?change=`), so a reload keeps it.
+ * The Inbox: everything that needs the person in one quiet list, newest first, a row for each item without buttons
+ * (`InboxRow`). The kinds are tabs with the number of items of each, and the shared filter bar (`ui/filters`) filters
+ * by repository and by change. Choosing a row reads it (it loses its dot) and shows what to decide in the right
+ * sidebar (`Decision`). The list is the whole page, so an empty list says what belongs here. It reads the snapshot,
+ * which the event stream keeps current, so an item arrives and leaves on its own. What is chosen is in the address
+ * (`?kind=`, `?repository=`, `?change=`, `?item=`), so a reload keeps it.
  */
 import { CheckCircleIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useId } from "react";
+import { useEffect, useId } from "react";
 import { snapshot as readSnapshot } from "../../api/calls/board";
 import { keys } from "../../api/keys";
 import type { Snapshot } from "../../api/types/board";
@@ -18,11 +19,14 @@ import { useQueryParams } from "../../ui/filters/useQueryParams";
 import { useNow } from "../../ui/lib/useNow";
 import { Empty } from "../../ui/page/Empty";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { PageProperties } from "../../ui/page/Properties";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
 import { TabPanel, Tabs } from "../../ui/page/Tabs";
-import { ItemCard } from "./ItemCard";
+import { Decision } from "./Decision";
+import { InboxRow } from "./InboxRow";
 import { changeOf, chipName, count, type Filters, kindsOf, shown, summary } from "./model";
+import { useRead } from "./read";
 
 /** The fields of the bar: the repository, while there is more than one, and the change an item is about. */
 function filterFields(snapshot: Snapshot, filters: Filters): FilterField[] {
@@ -60,6 +64,7 @@ export function InboxPage() {
   const [params, setQuery] = useQueryParams();
   const tabs = useId();
   const now = useNow();
+  const { read, markRead } = useRead();
   if (data.isPending)
     return (
       <>
@@ -90,6 +95,8 @@ export function InboxPage() {
   };
   const items = shown(snapshot, filters);
   const total = snapshot.inbox.length;
+  const choice = params.get("item");
+  const chosen = items.find((each) => String(each.id) === choice) ?? null;
 
   return (
     <>
@@ -149,9 +156,37 @@ export function InboxPage() {
             />
           )
         ) : (
-          items.map((item) => <ItemCard key={item.id} item={item} snapshot={snapshot} now={now} />)
+          <div className="overflow-hidden rounded-card bg-surface shadow-card">
+            {/* biome-ignore lint/a11y/noRedundantRoles: list-style: none drops the list in WebKit */}
+            <ul role="list" className="m-0 list-none divide-y divide-hairline p-0">
+              {items.map((item) => (
+                <li key={item.id}>
+                  <InboxRow
+                    item={item}
+                    snapshot={snapshot}
+                    now={now}
+                    chosen={chosen?.id === item.id}
+                    unread={!read.has(item.id)}
+                    onChoose={() => setQuery({ item: String(item.id) })}
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </TabPanel>
+      {chosen && <ReadOnShow id={chosen.id} markRead={markRead} />}
+      {chosen && (
+        <PageProperties label="Decide">
+          <Decision key={chosen.id} item={chosen} snapshot={snapshot} />
+        </PageProperties>
+      )}
     </>
   );
+}
+
+/** What is chosen is read, whether a person chose it or the address did. */
+function ReadOnShow({ id, markRead }: { id: number; markRead: (id: number) => void }) {
+  useEffect(() => markRead(id), [id, markRead]);
+  return null;
 }

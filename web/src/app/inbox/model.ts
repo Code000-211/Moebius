@@ -156,6 +156,23 @@ export function kindTag(item: InboxItem): { label: string; mark: StateMark } {
 }
 
 /**
+ * The key an inbox row leads with: the card's number, or what else the item is about (a change, a proposal, a takeover,
+ * a grilling); nothing for an item that is about none of them.
+ */
+export function keyOf(item: InboxItem, about: Found): string {
+  if (about.card) return `#${about.card.number}`;
+  const change = changeOf(item);
+  if (change !== null) return `Change ${change}`;
+  const proposal = proposalOf(item);
+  if (proposal !== null) return `Proposal ${proposal}`;
+  const takeover = takeoverOf(item);
+  if (takeover !== null) return `Takeover ${takeover}`;
+  const grilling = grillingOf(item);
+  if (grilling !== null) return `Grilling ${grilling}`;
+  return "";
+}
+
+/**
  * The sentence under the title: why the item is here. `changes` is what a proposal changes, for the items that do not
  * say so themselves: the one a trial ends with names its proposal and nothing else.
  */

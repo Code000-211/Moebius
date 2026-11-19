@@ -4,6 +4,7 @@ import type { Chat } from "../../api/types/chat";
 import type { Entry } from "../../chat/conversation";
 import {
   afterSteps,
+  byAgent,
   context,
   elapsed,
   latestSteps,
@@ -195,5 +196,15 @@ describe("how a tile tells its run", () => {
     expect(latestSteps([thought, text, thought, thought, text])).toHaveLength(2);
     expect(latestSteps([thought, thought])).toHaveLength(2);
     expect(latestSteps([])).toEqual([]);
+  });
+});
+
+describe("the runs by agent", () => {
+  it("groups the runs under their agent, the agents by name and the runs in the order given", () => {
+    const list = working(snapshot, [chat(9, { agent: "Moebius", status: "running" })]);
+    const groups = byAgent([...list].reverse());
+    expect(groups.map(([agent]) => agent)).toEqual([...new Set(list.map((w) => w.agent))].sort());
+    expect(groups.flatMap(([, runs]) => runs)).toHaveLength(list.length);
+    for (const [agent, runs] of groups) expect(runs.every((w) => w.agent === agent)).toBe(true);
   });
 });

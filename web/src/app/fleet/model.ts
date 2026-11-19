@@ -119,6 +119,13 @@ export function context(count: number): string {
   return `${plural(count, "agent", "agents")} working`;
 }
 
+/** The runs grouped by their agent, the agents in the order of their names and each agent's runs in the order given. */
+export function byAgent(list: readonly Work[]): Array<[string, Work[]]> {
+  const groups = new Map<string, Work[]>();
+  for (const work of list) groups.set(work.agent, [...(groups.get(work.agent) ?? []), work]);
+  return [...groups].sort(([a], [b]) => a.localeCompare(b));
+}
+
 /** How a working run reads at a glance: the word, and the mark before it. */
 export interface Status {
   word: string;
