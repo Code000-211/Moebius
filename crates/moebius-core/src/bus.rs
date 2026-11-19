@@ -136,6 +136,14 @@ pub enum Event {
     RepositoryRemoved(Repository),
     /// A project was made or renamed.
     ProjectChanged(Project),
+    /// The wiki's pages changed: a person edited one, or a refresh brought what was pushed to `origin`.
+    WikiChanged {
+        commit: String,
+    },
+    /// The wiki could not follow `origin` on the server's refresh.
+    WikiError {
+        message: String,
+    },
     RunStarted {
         run: i64,
         card: Option<i64>,
@@ -637,6 +645,18 @@ mod tests {
             (
                 Event::ProjectChanged(project.clone()),
                 json!({"kind": "project_changed", "data": project.clone()}),
+            ),
+            (
+                Event::WikiChanged {
+                    commit: "abc123".into(),
+                },
+                json!({"kind": "wiki_changed", "data": {"commit": "abc123"}}),
+            ),
+            (
+                Event::WikiError {
+                    message: "boom".into(),
+                },
+                json!({"kind": "wiki_error", "data": {"message": "boom"}}),
             ),
             (
                 Event::RunStarted {

@@ -33,6 +33,11 @@ export const keys = {
   snapshot: ["snapshot"] as const,
   /** The projects as their tiles show them; what changes the snapshot changes their open cards and repositories. */
   projects: ["projects"] as const,
+  /** Everything read from the wiki starts with this, so `wiki_changed` makes all of it stale. */
+  wiki: ["wiki"] as const,
+  wikiPages: ["wiki", "pages"] as const,
+  wikiPage: (path: string, at: string | null) => ["wiki", "page", path, at] as const,
+  wikiHistory: (path: string) => ["wiki", "history", path] as const,
   /** Everything read about one card (its history and its runs) starts with this, so an event can make it all stale. */
   cards: ["card"] as const,
   history: (card: number) => ["card", card, "history"] as const,

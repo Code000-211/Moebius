@@ -5,7 +5,7 @@
 //! The agents are read from the clone's default branch when the server starts and after each refresh that changes it.
 //! An agent whose files are broken is left out with its error, so the others go on. An edit through the API is a commit
 //! on the default branch, pushed to `origin`; a push that fails undoes the commit, so the clone never drifts from
-//! `origin`. Refreshing and editing take turns.
+//! `origin`. Refreshing and editing take turns. The clone is kept as `repos::kept` keeps one, as the wiki's is.
 //!
 //! This module holds the clone itself: opening and refreshing it. `read` reads the agents, skills, MCP servers and
 //! rules from it, `edits` makes a person's edits commits pushed to `origin`, `branches` checks, proposes and merges
@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use crate::app::{App, Result};
 use crate::config::AgentSet;
-use crate::repos::{Repos, git};
+use crate::repos::{Repos, git, kept};
 
 pub use branches::{OwnBranch, Proposed};
 pub use create::{SET_UP_MESSAGE, create};
@@ -74,16 +74,8 @@ impl HarnessRepo {
             agents,
             read_at: Mutex::default(),
         };
-        if !path.join(".git").exists() {
-            let cloned = app
-                .git_auth(url)
-                .map_err(|e| e.to_string())
-                .and_then(|header| {
-                    (repo.repos.clone_into(path, url, header.as_deref())).map_err(|e| e.to_string())
-                });
-            cloned
-                .map_err(|e| format!("cannot clone the harness configuration repository: {e}"))?;
-        }
+        kept::clone_unless_there(app, &repo.repos, url, path)
+            .map_err(|e| format!("cannot clone the harness configuration repository: {e}"))?;
         let head = git(path, &["rev-parse", "--verify", "HEAD"]).unwrap_or_default();
         repo.read(app, &mut repo.lock(), head);
         Ok(repo)
@@ -92,12 +84,7 @@ impl HarnessRepo {
     /// Fetches `origin`, fast-forwards the default branch to it and reads the agents again if that changed anything.
     pub fn refresh(&self, app: &App) -> Result<()> {
         let mut read_at = self.lock();
-        let header = app.git_auth(&self.url)?;
-        self.repos.fetch(&self.path, header.as_deref())?;
-        let upstream = format!("origin/{}", self.repos.default_branch(&self.path)?);
-        if git(&self.path, &["rev-parse", "--verify", "--quiet", &upstream]).is_ok() {
-            git(&self.path, &["merge", "--ff-only", "--quiet", &upstream])?;
-        }
+        kept::follow_origin(app, &self.repos, &self.url, &self.path)?;
         let head = git(&self.path, &["rev-parse", "HEAD"])?;
         if head != *read_at {
             self.read(app, &mut read_at, head);

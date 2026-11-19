@@ -3,7 +3,8 @@
 //! `app` ties the parts together and `server` serves them. The parts, each a folder of modules:
 //! `store`, `blobs` and `bus` keep what happens; `repos` are the repositories and their forges; `board` runs the
 //! column scripts; `decide` checks every tool call; `router` is the model provider; `harness` runs the agents; `improve`
-//! learns from what was recorded; `platform` keeps what differs between Linux and Windows.
+//! learns from what was recorded; `wiki` keeps the organisation's pages; `platform` keeps what differs between Linux
+//! and Windows.
 //! `docs/architecture.md` has the map of every module.
 
 pub mod app;
@@ -19,6 +20,7 @@ pub mod repos;
 pub mod router;
 pub mod server;
 pub mod store;
+pub mod wiki;
 pub mod workflows;
 
 /// The version of this build of Moebius.

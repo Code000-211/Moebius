@@ -130,6 +130,17 @@ impl Server {
             });
         }
     }
+
+    /// Refreshes the wiki, if there is one; a failure is reported on the bus.
+    pub fn refresh_wiki(&self) {
+        if let Ok(wiki) = self.app.wiki()
+            && let Err(e) = wiki.refresh(&self.app)
+        {
+            self.app.bus.publish(Event::WikiError {
+                message: e.to_string(),
+            });
+        }
+    }
 }
 
 /// Runs every card's column script on the board's tick until the future is dropped. The tick is read each time, since
@@ -188,12 +199,13 @@ async fn poll_every(
     }
 }
 
-/// Refreshes the clones of repositories without a forge and of the harness configuration repository every
+/// Refreshes the clones of repositories without a forge, of the harness configuration repository and of the wiki every
 /// [`PLAIN_REFRESH`] until the future is dropped, and tells each repository that still has a `.moebius/` folder, once.
 pub(super) async fn refresh(server: Arc<Server>) {
     every(server, PLAIN_REFRESH, |server| {
         server.refresh_plain_repositories();
         server.refresh_harness_repository();
+        server.refresh_wiki();
         server.app.warn_about_old_settings();
     })
     .await

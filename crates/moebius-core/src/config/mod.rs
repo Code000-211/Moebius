@@ -100,6 +100,8 @@ pub enum ConfigError {
     McpEnv { name: String },
     #[error("harness.url must not be empty")]
     HarnessUrl,
+    #[error("wiki.url must not be empty")]
+    WikiUrl,
     #[error(
         "[github] needs either an access token (token_file or token_secret) or an App (app_id with private_key_file), not both and not neither"
     )]
@@ -217,6 +219,8 @@ pub struct Config {
     pub harness_url: Option<String>,
     /// The environment variables `mcp.toml` may take values from.
     pub mcp_env: Vec<String>,
+    /// The wiki's repository to clone, if the server has a wiki.
+    pub wiki_url: Option<String>,
     pub github: Option<GitHubConfig>,
     /// The GitLab, if repositories on one are polled.
     pub gitlab: Option<GitLabConfig>,
@@ -249,6 +253,11 @@ impl Config {
     /// Where the harness configuration repository is cloned.
     pub fn harness_dir(&self) -> PathBuf {
         self.data_dir.join("harness")
+    }
+
+    /// Where the wiki's repository is cloned.
+    pub fn wiki_dir(&self) -> PathBuf {
+        self.data_dir.join("wiki")
     }
 
     /// The server's rules file: `rules_file`, or the harness configuration repository's `rules.md`.
@@ -300,6 +309,13 @@ impl Config {
         check_model_thinking(&raw.router.model_thinking).map_err(ConfigError::ModelThinking)?;
         if let Some(name) = raw.agents.keys().find(|n| !valid_agent_name(n)) {
             return Err(ConfigError::AgentName { name: name.clone() });
+        }
+        if raw
+            .wiki
+            .as_ref()
+            .is_some_and(|wiki| wiki.url.trim().is_empty())
+        {
+            return Err(ConfigError::WikiUrl);
         }
         if let Some(harness) = &raw.harness {
             if harness.url.trim().is_empty() {
@@ -464,6 +480,7 @@ impl Config {
                 None => Some(base.join(raw.rules_file.unwrap_or_else(|| "rules.md".into()))),
             },
             harness_url: raw.harness.as_ref().map(|harness| harness.url.clone()),
+            wiki_url: raw.wiki.map(|wiki| wiki.url),
             mcp_env: raw
                 .harness
                 .map(|harness| harness.mcp_env)
@@ -854,6 +871,17 @@ mod tests {
     fn the_rules_file_is_relative_to_the_configuration() {
         let c = parse("rules_file = \"rules.md\"").unwrap();
         assert_eq!(c.rules_file, Some(PathBuf::from("/srv/rules.md")));
+    }
+
+    #[test]
+    fn the_wiki_is_a_repository_cloned_into_the_data_directory() {
+        assert_eq!(parse("").unwrap().wiki_url, None);
+        let c = parse("[wiki]\nurl = \"/srv/wiki.git\"\n").unwrap();
+        assert_eq!(c.wiki_url.as_deref(), Some("/srv/wiki.git"));
+        assert_eq!(c.wiki_dir(), PathBuf::from("/srv/.moebius/wiki"));
+        let error = parse("[wiki]\nurl = \" \"\n").unwrap_err();
+        assert!(matches!(error, ConfigError::WikiUrl), "{error}");
+        assert!(parse("[wiki]\nurl = \"/w\"\nbranch = \"x\"\n").is_err());
     }
 
     #[test]

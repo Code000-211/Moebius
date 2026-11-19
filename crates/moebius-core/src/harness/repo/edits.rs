@@ -9,13 +9,12 @@ use super::{
     AgentDefinition, AgentSettings, AgentView, HarnessRepo, McpServerView, SkillText, SkillView,
 };
 use crate::app::{App, AppError, Result};
-use crate::blobs::redact;
 use crate::config::valid_agent_name;
 use crate::decide::Actor;
 use crate::decide::rules;
 use crate::harness::mcp::{self, McpServer};
 use crate::harness::skill;
-use crate::repos::{GitError, git};
+use crate::repos::{git, kept};
 use crate::workflows::definition::{self, WorkflowDefinition};
 
 impl HarnessRepo {
@@ -200,50 +199,27 @@ impl HarnessRepo {
             files,
             message,
         } = *edit;
-        let before = git(&self.path, &["rev-parse", "HEAD"]).map_err(|_| {
-            AppError::Invalid("the harness configuration repository has no commits".into())
-        })?;
-        let undo = |error: AppError| {
-            let _ = git(&self.path, &["reset", "--hard", "--quiet", &before]);
-            let _ = git(&self.path, &["clean", "-fdq", "--", files]);
-            error
-        };
-        write().map_err(undo)?;
-        git(&self.path, &["add", "-A", "--", files]).map_err(|e| undo(e.into()))?;
-        if git(&self.path, &["diff", "--cached", "--quiet"]).is_ok() {
-            return Ok(None);
+        if kept::head(&self.path).is_none() {
+            return Err(AppError::Invalid(
+                "the harness configuration repository has no commits".into(),
+            ));
         }
-        let branch = self
-            .repos
-            .default_branch(&self.path)
-            .map_err(|e| undo(e.into()))?;
-        git(&self.path, &["commit", "--quiet", "-m", message]).map_err(|e| undo(e.into()))?;
-        let header = app.git_auth(&self.url).map_err(undo)?;
-        self.repos
-            .push(&self.path, &branch, header.as_deref(), false)
-            .map_err(|e| undo(redacted(e)))?;
-        let head = git(&self.path, &["rev-parse", "HEAD"])?;
+        let change = kept::Change {
+            files: &[files],
+            message,
+            author: None,
+        };
+        let Some(head) =
+            kept::commit_pushed(app, &self.repos, &self.url, &self.path, &change, write)?
+        else {
+            return Ok(None);
+        };
         let short = git(&self.path, &["rev-parse", "--short", "HEAD"])?;
         self.read(app, read_at, head);
         context.insert("change".into(), message.into());
         let reason = context.get("reason").cloned().unwrap_or_default();
         app.record_action(by, kind, None, None, context, &reason)?;
         Ok(Some(short))
-    }
-}
-
-/// A push that `origin` refused, or any other failure of git while pushing, as a conflict with the keys in its message
-/// redacted, since the forge's refusal may quote one.
-fn redacted(error: GitError) -> AppError {
-    match error {
-        GitError::Failed { args, stderr } => AppError::Conflict(
-            GitError::Failed {
-                args,
-                stderr: redact(&stderr),
-            }
-            .to_string(),
-        ),
-        other => AppError::Git(other),
     }
 }
 

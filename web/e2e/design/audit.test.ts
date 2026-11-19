@@ -106,6 +106,8 @@ const routes: Route[] = [
   { path: "/projects", name: "projects" },
   { path: "/projects/new", name: "projects-new" },
   { path: "/projects/1", name: "project" },
+  { path: "/wiki", name: "wiki" },
+  { path: "/wiki?page=Team%2FOn+call&view=edit", name: "wiki-edit" },
   { path: "/automations", name: "automations" },
   { path: "/workflows", name: "workflows" },
   { path: "/workflows/release", name: "workflow" },
@@ -162,6 +164,10 @@ beforeAll(async () => {
   } else {
     fake = await startFakeServer();
     base = fake.url;
+    fake.wiki.pushFromElsewhere(
+      "Team/On call",
+      "# On call\n\nWho answers at night, and how to reach them.\n\n## Rotation\n\nWeekly, from Monday.\n",
+    );
   }
   mkdirSync(join(out, label), { recursive: true });
 });

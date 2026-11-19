@@ -105,6 +105,13 @@ any route to any role that is not what its row says.
 | `POST /v1/projects` | owner | yes |
 | `GET /v1/projects/{id}` | viewer | yes |
 | `PATCH /v1/projects/{id}` | owner | yes |
+| `GET /v1/wiki/pages` | viewer | yes |
+| `GET /v1/wiki/pages/{*path}` | viewer | yes |
+| `PUT /v1/wiki/pages/{*path}` | member | no |
+| `DELETE /v1/wiki/pages/{*path}` | member | no |
+| `POST /v1/wiki/moves` | member | no |
+| `GET /v1/wiki/history/{*path}` | viewer | yes |
+| `POST /v1/wiki/refresh` | member | yes |
 | `POST /v1/repositories` | owner | yes |
 | `PUT /v1/repositories/{id}` | owner | yes |
 | `DELETE /v1/repositories/{id}` | owner | yes |
@@ -659,6 +666,78 @@ An owner, or the Moebius agent, renames a project. Request body: `{"name": strin
 was, and `key` is accepted only when it is the project's own. Response: the `ProjectView`. Errors: `404` for no such
 project, `409` for a name another project has in any case, `422` for a name that is not one or a `key` that is not the
 project's (`a project keeps its key <key>: the keys of its cards would change`).
+
+### The wiki
+
+The wiki ([ADR 0022](../adr/0022-the-wiki-is-a-git-repository.md)) is a git repository of Markdown pages that the
+server clones from `[wiki] url` (see [configuration](configuration.md#wiki)) and keeps in step with its `origin`. Every
+route here answers `409` (`the server has no wiki: set [wiki] url in moebius.toml`) while the server has none.
+
+A page is named by its **path**, its file's path in the repository without `.md`: `Handbook`, `Team/On call`. The
+organisation's pages are at the top; a project's are in `projects/<key>/`, the folder of its [key](#projects), such as
+`projects/SHOP/Payments`. Each part of a path is 1 to 120 bytes, does not start with a dot or start or end with a space,
+and has no control character and none of `\ : * ? " < > |`; under `projects/` a page is in the folder of a key, and
+writing or moving a page there needs a project with that key. In a URL, the path is the rest of it, with each part
+percent-encoded: `/v1/wiki/pages/Team/On%20call`. Files of the repository that are not `.md`, or whose path is not a page's,
+are left alone and not listed.
+
+An edit is a commit on the clone's checked-out branch with the person as its author (`<name> <<handle>@moebius>`;
+Moebius is the committer), made after the clone has followed `origin` and then pushed to `origin`. When the push fails,
+the commit is undone and the clone is as it was: `409` with git's message, any key in it redacted. Text that changes
+nothing makes no commit. Every commit, and a refresh that brings commits pushed to `origin` from elsewhere, sends
+`wiki_changed`; the server refreshes the wiki every 30 seconds, and a failed refresh sends `wiki_error`. Only a person
+edits the wiki: an agent's run token is refused (`403`).
+
+A `PageView` is `{"path": string, "name": string, "text": string, "version": Version}`: `name` the last part of the
+path, `text` the Markdown, `version` the last commit that changed the page. A `Version` is `{"commit": string, "author":
+string, "handle": string | null, "at": number, "message": string, "path": string}`: the full commit id, the author's
+name, their handle when a person of Moebius made the commit (`null` for one pushed from elsewhere), the time in seconds,
+the first line of the message, and the page's path in that commit, which differs from today's before a rename or move.
+
+### `GET /v1/wiki/pages`
+
+Every page, sorted by path: `[{"path": string, "name": string}]`; `[]` while the repository has no commit.
+
+### `GET /v1/wiki/pages/{*path}`
+
+The page: its `PageView`. With `?at=<commit>` (the full id, or at least its first 7 characters), the page as that
+commit of its history left it, even after it was deleted. Errors: `404` for no such page, or a commit that is not in its
+history; `422` for a path that is not a page's.
+
+### `PUT /v1/wiki/pages/{*path}`
+
+A member writes a page, making it, and its folders, when it is not there. Request body: `{"text": string, "message"?:
+string}`; the text gets a newline at its end, and `message`, its first line, is the commit's (by default `Add <path>` or
+`Update <path>`). Response: the `PageView` as it now is. Errors: `409` when the push fails, `422` for a path that is not
+a page's or under `projects/` a key no project has.
+
+```sh
+curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"text": "# On call\n\nWho answers at night.", "message": "Say who answers"}' \
+  http://127.0.0.1:7171/v1/wiki/pages/Team/On%20call
+```
+
+### `DELETE /v1/wiki/pages/{*path}`
+
+A member deletes a page, a commit `Delete <path>`; folders left empty go with it. Its history stays and its versions can
+still be read with `?at=`. Response: `null`. Errors: `404` for no such page, `409` when the push fails.
+
+### `POST /v1/wiki/moves`
+
+A member moves a page. Request body: `{"from": string, "to": string}`, two paths; a rename is a move within the same
+folder (`Rename <from> to <name>`), any other a `Move <from> to <to>`. The history follows the page. Response: the
+`PageView` at `to`. Errors: `404` for no page at `from`, `409` for a page at `to` already or a failed push, `422` for a
+path that is not a page's or `to` the same as `from`.
+
+### `GET /v1/wiki/history/{*path}`
+
+The commits that changed the page, newest first, following it through its renames and moves: `[Version]`. A deleted
+page keeps its history, its deletion first. Errors: `404` for a page that never was.
+
+### `POST /v1/wiki/refresh`
+
+Fetches `origin` and fast-forwards the clone now, rather than at the next refresh, so that what someone pushed there is
+read. Response: `null`. Errors: the fetch's failure.
 
 ### `POST /v1/repositories`
 
@@ -3069,6 +3148,8 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `repository_updated` | The logins a repository on a forge trusts were changed through the API. | The `Repository`. |
 | `repository_removed` | A repository was removed through the API. | The `Repository`. |
 | `project_changed` | A project was made or renamed through the API. A repository's home project, made with it, comes with `repository_added`. | `{"id", "name", "key", "created_at", "repositories": [id]}` |
+| `wiki_changed` | A person edited the wiki through the API, or a refresh brought commits pushed to its `origin` from elsewhere. | `{"commit": string (the full id the pages are now read at)}` |
+| `wiki_error` | The wiki could not follow its `origin` on the server's refresh (every 30 seconds). | `{"message": string}` |
 | `file_changed` | A file of a repository was saved through the API. | `{"repository": id, "path": string}` |
 | `script_changed` | A column's script was saved or removed for a repository's project, through the API. | `{"repository": id, "column": string, "path": string (from the root of the harness configuration repository)}` |
 | `project_settings_changed` | A file of a project's settings other than a column's script was saved or removed, through the API. | `{"repository": id, "file": string}` |

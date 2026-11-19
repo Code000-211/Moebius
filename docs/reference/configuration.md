@@ -83,6 +83,16 @@ up" of the web app's Get started, Skills, MCP servers and Agents pages, which on
 `[agents.*]` and `rules_file`; its other keys and comments stay. The server uses the repository after it restarts. The
 old skill and extension files and the rules file are left where they were.
 
+## `[wiki]`
+
+The wiki ([ADR 0022](../adr/0022-the-wiki-is-a-git-repository.md)): a git repository of Markdown pages, the
+organisation's at the top and a project's in `projects/<key>/`. The table is optional; without it the Wiki page says the
+server has none and the routes of `/v1/wiki/` answer `409`.
+
+| Key | Type | Default | Meaning and validation |
+|---|---|---|---|
+| `wiki.url` | string | required | The git URL of the repository, cloned to `<data_dir>/wiki` when the server starts (a clone that is there already is used as it is), fetched every 30 seconds and before every edit, and pushed to by edits through the API. Not blank. It may be empty: the first page is its first commit. With `[github]`, an `https://github.com/...` URL uses the App's token, as for `[harness]`. |
+
 ## The clock
 
 Everything that happens by itself goes off one clock: once a minute the server looks at what is due. The Retro is
@@ -694,7 +704,7 @@ same HMAC and comparing it in constant time.
   attempts, each with a 10 second limit; redirects are not followed). When the last attempt fails, the hook is given up on for
   that event and an inbox item of kind `webhook_failed` (`data.webhook`, `data.url`, `data.event`, `data.error`,
   `data.attempts`; no card) tells an owner. A hook whose secret is gone sends nothing and gives up the same way.
-- A private repository is one with the `private` flag of the store; an owner sets it with `PUT /v1/repositories/{id}/private`. An event that names no project goes to a hook only when it is of the whole server (`package_*`, `plugin_*`, `port_*`, `retro_*`, `harness_error` and the like); the others, such as inbox, chat and proposal events, go nowhere.
+- A private repository is one with the `private` flag of the store; an owner sets it with `PUT /v1/repositories/{id}/private`. An event that names no project goes to a hook only when it is of the whole server (`package_*`, `plugin_*`, `port_*`, `retro_*`, `harness_error`, `wiki_changed` and the like); the others, such as inbox, chat and proposal events, go nowhere.
 
 ### Webhooks
 

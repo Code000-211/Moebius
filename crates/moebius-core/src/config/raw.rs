@@ -113,6 +113,12 @@ pub(super) struct RawHarness {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub(super) struct RawWiki {
+    pub(super) url: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct RawGitLab {
     pub(super) url: Option<String>,
     pub(super) token_file: Option<PathBuf>,
@@ -200,6 +206,7 @@ pub(super) struct Raw {
     pub(super) claude_code: RawClaudeCode,
     pub(super) rules_file: Option<PathBuf>,
     pub(super) harness: Option<RawHarness>,
+    pub(super) wiki: Option<RawWiki>,
     pub(super) github: Option<RawGitHub>,
     pub(super) gitlab: Option<RawGitLab>,
     pub(super) forgejo: Option<RawForgejo>,

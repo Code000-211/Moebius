@@ -230,6 +230,11 @@ program = "claude"
 # url = "https://github.com/acme/harness-configuration"
 # mcp_env = ["DOCS_TOKEN"]               # the environment variables mcp.toml may take values from, as ${NAME}
 
+# The wiki: a git repository of Markdown pages, the organisation's at the top and a project's in projects/<key>/,
+# cloned to data_dir/wiki. An edit on the Wiki page is a commit by its person, pushed to it.
+# [wiki]
+# url = "https://github.com/acme/wiki"
+
 # Agents run on Pi-Bolt. The default workflow starts the Coder, and the Reviewer when there is one. An agent whose
 # harness is "claude-code" runs on Claude Code; it speaks the anthropic protocol.
 # [agents.Coder]

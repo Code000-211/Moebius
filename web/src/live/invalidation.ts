@@ -66,6 +66,7 @@ export function invalidates(event: ServerEvent): QueryKey[] {
   const stale: QueryKey[] = [];
   if (SNAPSHOT_KINDS.has(event.kind)) stale.push(keys.snapshot, keys.cards, keys.projects);
   if (event.kind === "project_changed") stale.push(keys.projects);
+  if (event.kind === "wiki_changed") stale.push(keys.wiki);
   if (event.kind === "script_changed") stale.push(keys.scripts, keys.projectSettingsAll);
   if (event.kind === "project_settings_changed") {
     stale.push(keys.projectSettingsAll);

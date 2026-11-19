@@ -600,6 +600,7 @@ At the top:
 | `server/api/issues.rs` | The issue tracker's routes: the issue list and one issue, parent, labels, blockers, claim, close and reopen, comments. |
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
 | `server/api/projects.rs` | The projects: listing them, making one with a free key, reading and renaming one. |
+| `server/api/wiki.rs` | The wiki's routes: its pages listed, read (an older version too), written, moved and deleted, a page's history, and a refresh now. |
 | `server/api/runs.rs` | A run and its events in pages, steering and stopping it. |
 | `server/api/automations/mod.rs` | Automations: list, add, read, replace, delete, run now, and their firings. |
 | `server/api/automations/tests.rs` | For the tests only: the automations routes, and an older row upgraded to a workflow beside a workflow of the same name. |
@@ -646,6 +647,7 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `repos/mod.rs` | Clones, worktrees, branches, pushes, merges and conflict checks through the `git` command line. |
+| `repos/kept.rs` | A clone the server keeps in step with its `origin`, as the harness configuration repository and the wiki are: cloned once, refreshed by a fast-forward, and an edit a commit pushed to `origin` that is undone when the push fails. |
 | `repos/forge.rs` | The `Forge` trait with the forges `none`, `github`, `gitlab` and `forgejo`, and the forge-neutral `Issue` (with its labels, parent, blockers and comments). |
 | `repos/tracker_tests.rs` | Tests (only) of what the forge clients write and read for an issue tracker, against a fake forge that records its requests. |
 | `repos/github.rs` | The GitHub App client: JWT, installation tokens, issues newest-updated first with ETags (paging stops at the last poll's newest), pull requests, checks, reviews, merge. |
@@ -814,6 +816,14 @@ At the top:
 | `workflows/trigger/schedule.rs` | The `schedule` trigger: a cron of five fields in the server's local time, its on/off switch, the minute it next comes due, the minute it last fired at, and the value a firing starts a run with; a cron that cannot be read is refused when the file loads, naming the wrong field. |
 | `workflows/trigger/webhook.rs` | The `webhook` trigger: the path its workflow answers on, the secret a delivery must carry and the repository its runs belong to, and which workflow a path leads to. |
 | `workflows/run.rs` | The executor: following the edges from the trigger with one value, giving each node the trigger's value and the values of the nodes that ran before, taking the edge that leaves by the port a node names, running each node under its timeout, failing the run on a node's error or its node ceiling, stopping where a person cancels the run, and reporting each step to an observer. |
+
+`wiki/`, the organisation's pages:
+
+| Module | What it is for |
+|---|---|
+| `wiki/mod.rs` | The wiki's clone (a kept clone, `repos/kept.rs`): opened, refreshed with `wiki_changed` when that brought commits, the names of pages and the folder of a project's, and the person an edit is by. |
+| `wiki/pages.rs` | Reading the wiki: the list of pages, a page as it is or as a commit of its history left it, and its history through renames and moves. |
+| `wiki/edits.rs` | A person's edits: a page written, moved or deleted, each a commit by the person after following `origin`, pushed or undone. |
 
 Outside `src/`: `kanban/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension
 loaded into every run, `bridge/moebius-ask.ts` the question tool of the agents that operate Moebius, `skill/` the built-in skills.

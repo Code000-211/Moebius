@@ -77,10 +77,15 @@ async function startOnce(binary: string): Promise<RunningServer> {
     "-m",
     "Start",
   );
+  // The wiki is a bare repository the server clones and pushes its edits to; it starts empty.
+  execFileSync("git", ["init", "--quiet", "--bare", "-b", "main", join(directory, "wiki.git")], {
+    stdio: "ignore",
+  });
   writeFileSync(
     join(directory, "moebius.toml"),
     `listen = "127.0.0.1:${port}"\n\n[router]\nlisten = "127.0.0.1:${routerPort}"\n\n` +
-      `[harness]\nurl = ${JSON.stringify(harness)}\n`,
+      `[harness]\nurl = ${JSON.stringify(harness)}\n\n` +
+      `[wiki]\nurl = ${JSON.stringify(join(directory, "wiki.git"))}\n`,
   );
   const child: ChildProcess = spawn(binary, ["serve"], {
     cwd: directory,
