@@ -887,7 +887,7 @@ async fn the_localizer_is_turned_off_and_on_at_once_and_the_file_says_so() {
         .iter()
         .map(|j| j.decider.clone())
         .collect();
-    assert_eq!(kinds, ["person"]);
+    assert_eq!(kinds, ["person:owner"]);
 }
 
 #[tokio::test(flavor = "multi_thread")]

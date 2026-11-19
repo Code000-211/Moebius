@@ -362,7 +362,7 @@ mod tests {
         let read: Vec<Comment> = get(&state, &addr, &comments).await;
         assert_eq!(
             (read.len(), read[0].body.as_str(), read[0].author.as_str()),
-            (1, "Use a queue.", "person")
+            (1, "Use a queue.", "person:owner")
         );
         let closed = post(
             &state,

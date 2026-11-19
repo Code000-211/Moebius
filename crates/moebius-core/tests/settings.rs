@@ -441,7 +441,7 @@ async fn an_upstream_with_a_typed_key_is_used_by_the_router_and_the_key_stays_se
     // The person's edits are decisions, with the changed keys and no secret.
     let judgements = f.server.app.store.judgements("edit_settings").unwrap();
     assert_eq!(judgements.len(), 1);
-    assert_eq!(judgements[0].decider, "person");
+    assert_eq!(judgements[0].decider, "person:owner");
     let context = f
         .server
         .app

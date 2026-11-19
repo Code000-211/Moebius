@@ -588,7 +588,7 @@ mod tests {
                 recorded[0].decider.as_str(),
                 recorded[0].reason.as_str()
             ),
-            ("delete_chat", "person", "tidying up")
+            ("delete_chat", "person:owner", "tidying up")
         );
         assert_eq!(
             published(&mut events, "chat_deleted"),

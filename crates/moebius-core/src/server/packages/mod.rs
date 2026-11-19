@@ -406,7 +406,7 @@ impl Packages<'_> {
             request.registry.as_deref(),
         )?;
         if chosen.package.kind == "plugin" {
-            if !matches!(by, Actor::Person) {
+            if !by.is_person() {
                 return Err(PackageError::PersonOnly);
             }
             return self.install_plugin(by, &chosen);

@@ -684,7 +684,7 @@ mod tests {
         let judgements = app.store.judgements("merge").unwrap();
         assert_eq!(
             (judgements.len(), judgements[0].decider.as_str()),
-            (1, "person")
+            (1, "person:owner")
         );
 
         let again = post(
@@ -744,7 +744,7 @@ mod tests {
             ),
             (
                 1,
-                "person",
+                "person:owner",
                 "retry",
                 "the flaky test is fixed",
                 Some(card.id)
@@ -856,7 +856,7 @@ mod tests {
                 judgements[0].decider.as_str(),
                 judgements[0].reason.as_str()
             ),
-            (1, "person", "Add a test.")
+            (1, "person:owner", "Add a test.")
         );
         // The card no longer waits to be merged.
         assert_eq!(reject(change.id, "again").await.status(), 422);
@@ -1043,7 +1043,7 @@ mod tests {
         let held = blocked.held.clone().unwrap();
         assert_eq!(
             (held.by.as_str(), held.reason.as_deref()),
-            ("person", Some("wait for the design"))
+            ("person:owner", Some("wait for the design"))
         );
         // The snapshot shows it, on the card the board shows.
         let snapshot: Snapshot = get(&state, &addr, "/v1/snapshot").await;
@@ -1059,7 +1059,7 @@ mod tests {
                 judgements[0].card_id,
                 judgements[0].reason.as_str()
             ),
-            ("person", Some(card.id), "wait for the design")
+            ("person:owner", Some(card.id), "wait for the design")
         );
         let context: serde_json::Value =
             serde_json::from_str(&app.store.blobs().get(&judgements[0].context[0]).unwrap())
@@ -1120,7 +1120,7 @@ mod tests {
         assert_eq!(judgements.len(), 1);
         assert_eq!(
             (judgements[0].decider.as_str(), judgements[0].card_id),
-            ("person", None)
+            ("person:owner", None)
         );
         let context: serde_json::Value =
             serde_json::from_str(&app.store.blobs().get(&judgements[0].context[0]).unwrap())

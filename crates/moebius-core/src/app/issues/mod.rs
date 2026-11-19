@@ -408,7 +408,7 @@ impl App {
             )));
         };
         let own = by.decider();
-        if !matches!(by, Actor::Person) && holder != own && claimer.map(str::trim) != Some(holder) {
+        if !by.is_person() && holder != own && claimer.map(str::trim) != Some(holder) {
             return Err(AppError::Forbidden(format!(
                 "#{} is claimed by {holder}: only they or a person can release it",
                 card.number

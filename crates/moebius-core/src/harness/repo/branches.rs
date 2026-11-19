@@ -253,7 +253,7 @@ impl HarnessRepo {
             &self.path,
             &["rev-parse", "--verify", &format!("{branch}^{{commit}}")],
         )?;
-        if !matches!(by, Actor::Person) && self.changes_packages_at(&default, &tip)? {
+        if !by.is_person() && self.changes_packages_at(&default, &tip)? {
             return Err(AppError::Forbidden(PERSON_ONLY.into()));
         }
         self.repos.merge(&self.path, &tip, message)?;

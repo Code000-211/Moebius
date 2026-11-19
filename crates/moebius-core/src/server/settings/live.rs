@@ -200,7 +200,7 @@ impl Live {
                 .map_err(invalid)?;
         }
         crate::server::check_forges(&config, &self.secrets).map_err(invalid)?;
-        if !matches!(by, Actor::Person)
+        if !by.is_person()
             && (!turned(&self.get().plugins, &config.plugins).is_empty()
                 || Switches::of(&self.get()) != Switches::of(&config))
         {
@@ -529,7 +529,7 @@ impl Live {
         unwrap_runs: bool,
         allow_unchecked: bool,
     ) -> Result<PluginEnabled> {
-        if !matches!(by, Actor::Person) {
+        if !by.is_person() {
             return Err(AppError::Forbidden(
                 "only a person turns a plugin off or on".into(),
             ));

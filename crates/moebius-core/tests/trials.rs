@@ -480,7 +480,7 @@ async fn a_proposal_that_fixes_the_error_is_told_apart_from_one_that_does_not() 
             judgements[0].reason.as_str(),
             judgements[0].decider.as_str()
         ),
-        ("merge_proposal", "it works", "person")
+        ("merge_proposal", "it works", "person:owner")
     );
     // Merged is final, and a negative proposal cannot be merged or dismissed.
     for (id, verb) in [(helps, "merge"), (nothing, "merge"), (nothing, "dismiss")] {

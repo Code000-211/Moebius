@@ -315,7 +315,13 @@ async fn every_stored_judgement_is_in_the_export_once_with_its_context_and_outco
         );
         assert_eq!(line["outcome"], json!(j.outcome));
         assert_eq!(line["choice"], j.choice.as_str());
-        assert_eq!(line["decider"], j.decider.as_str());
+        // A person is exported as `person`, whoever it was (ADR 0018).
+        let decider = if moebius_core::app::is_person(&j.decider) {
+            "person"
+        } else {
+            j.decider.as_str()
+        };
+        assert_eq!(line["decider"], decider);
         assert_eq!(line["run"], run.id);
         assert_eq!(line["card"], card);
         assert_eq!(
@@ -329,7 +335,7 @@ async fn every_stored_judgement_is_in_the_export_once_with_its_context_and_outco
     // The person's decision to export was recorded, with the counts.
     let decisions = store.judgements("export").unwrap();
     assert_eq!(decisions.len(), 1);
-    assert_eq!(decisions[0].decider, "person");
+    assert_eq!(decisions[0].decider, "person:owner");
     let context: Value =
         serde_json::from_str(&store.blobs().get(&decisions[0].context[0]).unwrap()).unwrap();
     assert_eq!(context["kinds"], "stop,tool_call");

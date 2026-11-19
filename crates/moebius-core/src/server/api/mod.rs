@@ -261,13 +261,26 @@ fn identify(
         .and_then(|v| v.strip_prefix("Bearer "));
     match given {
         Some(token) if same(token.as_bytes(), state.token.as_bytes()) => {
-            Some((Actor::Person, Via::Bearer))
+            Some((owner_actor(state), Via::Bearer))
         }
         Some(_) => agent_of(state, headers, method, path).map(|actor| (actor, Via::Bearer)),
         None => session::cookie_of(headers)
             .filter(|id| state.sessions.has(id))
-            .map(|_| (Actor::Person, Via::Cookie)),
+            .map(|_| (owner_actor(state), Via::Cookie)),
     }
+}
+
+/// The person the server's token and a signed-in browser stand for: the first owner, so the judgements they make
+/// record `person:owner`. A store without that person (it is never deleted) leaves the bare [`Actor::Person`].
+fn owner_actor(state: &ApiState) -> Actor {
+    let owner = state
+        .app
+        .store
+        .person_by_handle(crate::store::FIRST_OWNER)
+        .ok()
+        .flatten()
+        .filter(|person| !person.disabled);
+    Actor::person(owner.as_ref().map(|p| (p.id, p.handle.as_str())))
 }
 
 /// Lets a request through as the actor it names (see [`identify`]). Anything else under `/v1/` is refused; the web app

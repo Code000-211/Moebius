@@ -107,7 +107,7 @@ async fn an_outside_issue_is_approved_and_leaves_the_inbox_and_a_merged_change_i
             judgements[0].decider.as_str(),
             judgements[0].reason.as_str()
         ),
-        ("person", "Known contributor.")
+        ("person:owner", "Known contributor.")
     );
 
     // A coded change is merged by a person; asking again is refused with a status the apps can show.

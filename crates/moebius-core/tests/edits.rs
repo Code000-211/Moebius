@@ -249,7 +249,7 @@ async fn a_card_is_edited_in_the_store_recorded_and_announced() {
             judgements[0].reason.as_str(),
             judgements[0].card_id
         ),
-        ("person", "typo", Some(card.id))
+        ("person:owner", "typo", Some(card.id))
     );
 
     // The Moebius agent edits as itself; the same text again records nothing.
@@ -266,7 +266,10 @@ async fn a_card_is_edited_in_the_store_recorded_and_announced() {
     assert_eq!(status, 200);
     let (status, _) = setup.put(&route, body).await;
     assert_eq!(status, 200);
-    assert_eq!(setup.deciders("edit_card"), ["agent:Moebius", "person"]);
+    assert_eq!(
+        setup.deciders("edit_card"),
+        ["agent:Moebius", "person:owner"]
+    );
 
     // A blank title and an unknown card are refused.
     let (status, why) = setup.put(&route, json!({ "title": "  " })).await;
@@ -303,7 +306,7 @@ async fn a_card_on_github_changes_its_issue_and_reads_its_blockers_from_the_body
         )]
     );
     assert_eq!(app.store.dependencies(card.id).unwrap(), [3]);
-    assert_eq!(setup.deciders("edit_card"), ["person"]);
+    assert_eq!(setup.deciders("edit_card"), ["person:owner"]);
 
     // GitHub refusing leaves the card as it was and records nothing.
     let lost = app
@@ -318,7 +321,7 @@ async fn a_card_on_github_changes_its_issue_and_reads_its_blockers_from_the_body
         .await;
     assert_eq!(status, 500);
     assert_eq!(app.card(lost.id).unwrap().title, "Gone");
-    assert_eq!(setup.deciders("edit_card"), ["person"]);
+    assert_eq!(setup.deciders("edit_card"), ["person:owner"]);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -352,7 +355,7 @@ async fn the_logins_a_github_repository_trusts_are_edited() {
     let event = events.recv().await.unwrap();
     assert_eq!(event.kind, "repository_updated");
     assert_eq!(event.data["trusted"], json!(["mona", "leon"]));
-    assert_eq!(setup.deciders("edit_repository"), ["person"]);
+    assert_eq!(setup.deciders("edit_repository"), ["person:owner"]);
 
     let (status, why) = setup.put(&route, json!({ "trusted": ["no spaces"] })).await;
     assert_eq!(status, 422, "{why}");
@@ -376,7 +379,7 @@ async fn the_logins_a_github_repository_trusts_are_edited() {
         .put("/v1/repositories/99", json!({ "trusted": [] }))
         .await;
     assert_eq!(status, 404);
-    assert_eq!(setup.deciders("edit_repository"), ["person"]);
+    assert_eq!(setup.deciders("edit_repository"), ["person:owner"]);
 }
 
 #[tokio::test]
@@ -420,7 +423,7 @@ async fn the_brief_of_a_draft_is_written_anew_until_it_is_confirmed() {
             &json!("draft")
         )
     );
-    assert_eq!(setup.deciders("edit_research"), ["person"]);
+    assert_eq!(setup.deciders("edit_research"), ["person:owner"]);
 
     // The budget changes to experiments; the decision records it and the one before. Both ways at once is refused.
     let (status, why) = setup
@@ -497,7 +500,10 @@ async fn the_brief_of_a_draft_is_written_anew_until_it_is_confirmed() {
         )
         .await;
     assert_eq!(status, 404);
-    assert_eq!(setup.deciders("edit_research"), ["person", "person"]);
+    assert_eq!(
+        setup.deciders("edit_research"),
+        ["person:owner", "person:owner"]
+    );
 }
 
 #[tokio::test]
@@ -547,7 +553,7 @@ async fn a_projects_own_rules_are_checked_before_they_are_committed_in_the_harne
         git(&harness, &["rev-parse", "HEAD"]).unwrap(),
         git(clone, &["rev-parse", "HEAD"]).unwrap()
     );
-    assert_eq!(setup.deciders("edit_repository_rules"), ["person"]);
+    assert_eq!(setup.deciders("edit_repository_rules"), ["person:owner"]);
     assert!(setup.deciders("edit_file").is_empty());
 
     // The Rules page names the repository by id, so a rule can be edited where it is shown.

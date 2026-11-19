@@ -184,7 +184,7 @@ async fn a_script_is_read_saved_used_and_given_back() {
 
     let decisions = app.store.judgements("edit_script").unwrap();
     assert_eq!(decisions.len(), 1);
-    assert_eq!(decisions[0].decider, "person");
+    assert_eq!(decisions[0].decider, "person:owner");
     assert_eq!(decisions[0].reason, "hold the cards");
 
     let (status, view) = setup.delete(repo.id, "Not started").await;

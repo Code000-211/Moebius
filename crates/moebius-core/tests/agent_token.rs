@@ -114,7 +114,10 @@ async fn a_moebius_agent_run_acts_as_the_agent_and_its_decisions_say_so() {
     // Newest first.
     assert_eq!(
         deciders,
-        [("person", &Value::Null), ("agent:Moebius", &json!(run))]
+        [
+            ("person:owner", &Value::Null),
+            ("agent:Moebius", &json!(run))
+        ]
     );
 }
 

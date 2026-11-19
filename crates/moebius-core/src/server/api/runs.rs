@@ -216,7 +216,7 @@ mod tests {
                     judgements[0].decider.as_str(),
                     judgements[0].run_id
                 ),
-                (1, "person", Some(run.id))
+                (1, "person:owner", Some(run.id))
             );
         }
         assert_eq!(
