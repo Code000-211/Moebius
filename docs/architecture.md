@@ -83,6 +83,15 @@ on Linux (an AppImage and a `.deb`) and Windows (an installer):
 5. The window opens that address, and keeps only its own pages: a link to anywhere else, such as a pull request on a
    forge, opens in the system's browser (`links::target`). Every page of the window gets `window.moebiusDesktop` first, which the web app's
    `desktop/WindowControls.tsx` calls to minimize, maximize and close the window from a strip on the textured ground.
+5. The global shortcut (`quick`, `quick_window`): `Ctrl+Shift+Space`, or the one a person chose (kept in `quick.json` in
+   the app's configuration directory), opens a small window without a frame that stays over the others, even while the
+   app is in the back. It shows the web app's `/quick` page from the same proxy (`Proxy::entry_url_at` of the open server sets the cookie
+   and leads there), where Enter starts a chat with the Moebius agent or makes an issue in the chosen project through
+   the ordinary API. The page then asks the program to hide the window and to send the main window's page an
+   `moebius:open` event with the path of the chat or the board, which the web app's router opens
+   (`desktop/OpenRequests.tsx`). The small window's page may call only `quick_shortcut`, `set_quick_shortcut` and
+   `quick_finish` (`capabilities/quick.json`); a shortcut another program holds is reported there and a person picks
+   another.
 
 The connect page also offers a server on this machine (Linux, and Windows inside WSL 2). `local_state` only looks; the
 button calls `local_connect`, which has `local::Local::start` bring the release of the app's version into `~/.moebius/bin`
@@ -521,6 +530,8 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `rail/status.rs` | What the rail shows of a server: whether it answers and its Inbox's count (`Entry`). |
 | `servers.rs` | The rail's commands on the Tauri side (`connect`, `connect_ssh`, `servers`, `switch_server`, `remove_server`, and the local server's `local_state` and `local_connect`): showing a server's web app in the window, the connect page when none is left, and opening the server that was open last at the start. |
 | `server.rs` | A server the app connects to (`Server`: its address and the access token), and `check`: the token and the server's version with `GET /v1/health`, refusing a server of another minor version with the release that matches. |
+| `quick.rs` | The global shortcut without a window: which key combinations are accepted and how they are written, the file that keeps the chosen one across restarts, and the script that asks the main window to open a page of the web app. |
+| `quick_window.rs` | The Tauri side of the global shortcut, in the program: registering it, the small window over everything that shows the web app's `/quick` page, and the commands that page calls (`quick_shortcut`, `set_quick_shortcut`, `quick_finish`). |
 | `window.rs` | The Tauri side, in the program rather than the library so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, and the handlers that send a link leaving the app to the browser. |
 | `notices.rs` | A person's notices on a server for the app: `watch` follows `/v1/events` (and reads `GET /v1/notices` after each connection) with the token and says, as `Effect`s, to notify a notice once and what the count of unread ones is; the first read is the baseline and notifies nothing. |
 | `badge.rs` | What the icon says of that count: the title `(3) Moebius`, and the red disc with digits drawn over the taskbar icon on Windows. |

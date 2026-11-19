@@ -16,6 +16,7 @@ pub mod links;
 pub mod local;
 pub mod notices;
 pub mod proxy;
+pub mod quick;
 pub mod rail;
 pub mod server;
 pub mod tray;

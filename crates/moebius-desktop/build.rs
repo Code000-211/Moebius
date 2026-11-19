@@ -12,6 +12,9 @@ fn main() {
         "remove_server",
         "local_state",
         "local_connect",
+        "quick_shortcut",
+        "set_quick_shortcut",
+        "quick_finish",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
         .expect("the Tauri configuration builds");
