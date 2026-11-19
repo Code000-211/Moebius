@@ -130,6 +130,25 @@ fn kept(state: &ApiState, body: &PlaceBody) -> Result<Kept, ApiError> {
     }
 }
 
+/// Refuses, as if it did not exist, a place of a private project that `person` does not see, so that a pin or a visit
+/// cannot tell that it is there.
+fn ensure_seen(state: &ApiState, person: &Person, kept: &Kept) -> Result<(), ApiError> {
+    let (kind, repository, key, title) = kept;
+    let place = Place {
+        id: 0,
+        kind: kind.clone(),
+        repository_id: *repository,
+        key: key.clone(),
+        title: title.clone(),
+    };
+    let sight = state.app.sight_of(Some(person.id))?;
+    if seen_place(state, &sight, &place)? {
+        Ok(())
+    } else {
+        Err(ApiError(StatusCode::NOT_FOUND, format!("{kind} {key}")))
+    }
+}
+
 /// The title a place has now, or none when the person can no longer see it. Every person sees every repository
 /// today, so a place is gone when its repository or its card is.
 fn current(state: &ApiState, place: &Place) -> Result<Option<String>, ApiError> {
@@ -212,7 +231,9 @@ async fn pin(
     Json(body): Json<PlaceBody>,
 ) -> Result<Json<Places>, ApiError> {
     let person = asker(signed_in)?;
-    let (kind, repository, key, title) = kept(&state, &body)?;
+    let kept = kept(&state, &body)?;
+    ensure_seen(&state, &person, &kept)?;
+    let (kind, repository, key, title) = kept;
     state
         .app
         .store
@@ -254,7 +275,9 @@ async fn see(
     Json(body): Json<PlaceBody>,
 ) -> Result<Json<Places>, ApiError> {
     let person = asker(signed_in)?;
-    let (kind, repository, key, title) = kept(&state, &body)?;
+    let kept = kept(&state, &body)?;
+    ensure_seen(&state, &person, &kept)?;
+    let (kind, repository, key, title) = kept;
     state
         .app
         .store
@@ -455,6 +478,27 @@ mod tests {
         // They are forgotten for good, not only hidden.
         assert_eq!(store.favourites(pid).unwrap().len(), 1);
         assert_eq!(store.recent_places(pid).unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_card_of_a_private_project_cannot_be_pinned_or_visited_by_a_non_member() {
+        let (_d, state, addr) = start().await;
+        let (pid, token, _) = person(&state, "lea", 1);
+        let store = &state.app.store;
+        let repo = store.repositories().unwrap()[0].id;
+        let card = store
+            .add_card(repo, "Secret plan", "", "lea", "Backlog")
+            .unwrap();
+        store
+            .set_project_access(card.project_id, true, &[])
+            .unwrap();
+        let body = json!({"kind": "card", "key": card.id.to_string()});
+        for path in ["/v1/favourites", "/v1/recent"] {
+            let (status, _) = call("POST", &addr, &token, path, Some(body.clone())).await;
+            assert_eq!(status, Status::NOT_FOUND, "{path}");
+        }
+        assert!(store.favourites(pid).unwrap().is_empty());
+        assert!(store.recent_places(pid).unwrap().is_empty());
     }
 
     #[tokio::test]

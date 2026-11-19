@@ -65,6 +65,7 @@ mod cards;
 mod chats;
 mod cycles;
 mod events;
+pub(crate) use events::seen as event_is_seen;
 mod extensions;
 mod favourites;
 mod harness;

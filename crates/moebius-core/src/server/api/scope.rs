@@ -60,6 +60,12 @@ pub(super) fn card(app: &App, by: &Actor, id: i64, writes: bool) -> Result<()> {
 
 /// Lets `by` relate a card of repository `repository` to the issue with `number`: it has to be a wayfinder card.
 pub(super) fn related(app: &App, by: &Actor, repository: i64, number: i64) -> Result<()> {
+    // An issue of a private project that `by` does not see is not there for them, not even by its number.
+    if let Some(other) = app.store.card_by_number(repository, number)?
+        && !app.sight(by)?.card(&other)
+    {
+        return Err(AppError::NotFound(format!("issue {number}")));
+    }
     if held_to(app, by)?.is_none() {
         return Ok(());
     }

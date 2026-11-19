@@ -49,7 +49,7 @@ const OF_SIGHT: [&str; 4] = [
 ];
 
 /// Whether `sight` sees what `event` is about; an event whose thing cannot be read is not sent.
-pub(super) fn seen(app: &App, sight: &Sight, event: &AppEvent) -> bool {
+pub(crate) fn seen(app: &App, sight: &Sight, event: &AppEvent) -> bool {
     if sight.hides_nothing() {
         return true;
     }

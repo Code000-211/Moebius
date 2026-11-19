@@ -100,6 +100,8 @@ async fn import(
                 ),
             )
         })?;
+    // Anything Jira echoes of it, in an error or in a text, is redacted from here on.
+    crate::blobs::remember_secret(&token);
     let connection = Connection {
         url: site.clone(),
         email: new.email.clone(),
@@ -169,6 +171,8 @@ mod tests {
         assert_eq!(report["issues"]["created"], 5);
         assert_eq!(report["links"]["added"], 3);
         assert!(!body.contains("jira-token-xyz"));
+        // The token is known to the redaction once an import has read it.
+        assert!(!crate::blobs::redact("echoed jira-token-xyz").contains("jira-token-xyz"));
         // What the import keeps holds no token.
         let kept = state
             .app
