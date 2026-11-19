@@ -11,6 +11,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use moebius_desktop::instance::{self, Start};
 use moebius_desktop::links::{self, Target};
 use tauri::webview::NewWindowResponse;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
@@ -86,6 +87,21 @@ pub fn run() {
             let navigating = connected.clone();
             let opening = connected.clone();
             let handle = app.handle().clone();
+            // The app runs once: a later start has asked the first to show its window, and ends before it makes a
+            // tray icon or takes the shortcut. A lock that cannot be made does not keep the app from starting.
+            let dir = app.path().app_config_dir()?;
+            match instance::acquire(&dir) {
+                Ok(Start::Second) => std::process::exit(0),
+                Ok(Start::First(instance)) => {
+                    let shown = app.handle().clone();
+                    std::thread::spawn(move || {
+                        instance.wait(|| {
+                            crate::tray_icon::bring_up(&shown);
+                        });
+                    });
+                }
+                Err(e) => eprintln!("moebius-desktop: cannot check for a running app: {e}"),
+            }
             crate::tray_icon::create(app)?;
             quick_window::setup(app);
             let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))

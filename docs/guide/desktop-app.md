@@ -80,6 +80,13 @@ Tokens are kept in the system's keychain (Secret Service on Linux, which GNOME K
 Manager on Windows), never in a file. The list of servers, without tokens, is `servers.json` in the app's configuration
 directory (`~/.config/io.github.code000-211.moebius` on Linux).
 
+### The app runs once
+
+Starting the app while it already runs does not make a second one: the second start brings the first one's window
+forward (also when it was minimized, and showing its connect page when no server is connected) and ends. So there is one
+window, one tray icon and one global shortcut. The first app keeps a lock, `instance.lock`, in the app's configuration
+directory; it is released when the app ends, however it ended.
+
 ### Notifications
 
 What reaches the Mentions tab of your Inbox (a card given to you, a mention, a change to a card you
