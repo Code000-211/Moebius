@@ -633,4 +633,56 @@ mod tests {
             .unwrap();
         assert!(!prompt_for(&app, &plain, "code", None).contains("organisation's wiki"));
     }
+
+    #[test]
+    fn a_private_projects_page_reaches_only_the_runs_of_its_own_cards() {
+        use crate::wiki::Wiki;
+        use crate::wiki::testing::{bare_origin, push_from_elsewhere};
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let secret = store
+            .add_repository("secret", "/srv/secret", "none", "main")
+            .unwrap();
+        let other = store
+            .add_repository("other", "/srv/other", "none", "main")
+            .unwrap();
+        let key = store.project(secret.home_project_id).unwrap().unwrap().key;
+        store
+            .set_project_access(secret.home_project_id, true, &[])
+            .unwrap();
+        let app = App::new(
+            store,
+            Arc::new(Host::new(Duration::from_secs(1))),
+            &dir.path().join("data"),
+        );
+        let origin = bare_origin(dir.path());
+        push_from_elsewhere(
+            dir.path(),
+            &origin,
+            &format!("projects/{key}/Plans.md"),
+            "The secret launch.\n",
+        );
+        push_from_elsewhere(dir.path(), &origin, "Plans.md", "Public plans.\n");
+        let wiki = Wiki::open(
+            &app,
+            &origin.to_string_lossy(),
+            &dir.path().join("data/wiki"),
+        )
+        .unwrap();
+        app.set_wiki(Arc::new(wiki));
+        let body = format!("See [[projects/{key}/Plans]] and [[plans]].");
+        let card = |repository: i64| {
+            app.store
+                .add_card(repository, "Plan", &body, "person", "Not started")
+                .unwrap()
+        };
+
+        let own = prompt_for(&app, &card(secret.id), "code", None);
+        assert!(own.contains("The secret launch."), "{own}");
+        let elsewhere = prompt_for(&app, &card(other.id), "code", None);
+        assert!(!elsewhere.contains("The secret launch."), "{elsewhere}");
+        assert!(!elsewhere.contains("### projects"), "{elsewhere}");
+        assert!(elsewhere.contains("Public plans."), "{elsewhere}");
+    }
 }

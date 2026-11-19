@@ -761,6 +761,10 @@ themselves, sees neither its board, its cards, its runs nor its files. For someo
   is shown when the repository is.
 - A lesson learned from a private project's cards is put in the prompt of, and found by the `lessons` tool for, only
   that project's runs.
+- Its wiki pages (`projects/<key>/...`, see [the wiki](#the-wiki)) are left out the same way: the page, its history and
+  every older version of it, a write, delete, move or proposal naming one (as the page, or as the target of a move),
+  `POST /v1/wiki/from-template` into its folder, and the merge or dismissal of an agent's proposal for one all answer
+  `404`; the page list and the search leave them out, and so does the inbox (`wiki_proposal`).
 - An owner who is not a member still sees the project's record in `GET /v1/projects` and `GET /v1/projects/{id}`
   (`member` false, `open_cards` 0), can rename it, and names its members with `PUT /v1/projects/{id}/access`, themselves
   included; nothing of its board.
@@ -888,6 +892,14 @@ nothing makes no commit. Every commit, and a refresh that brings commits pushed 
 edits the wiki directly: an agent's run token is refused (`403`) on the routes above that write, and proposes its edit
 with `POST /v1/wiki/proposals` instead.
 
+**Private projects.** The pages of a private project ([ADR 0018](../adr/0018-more-than-one-person.md)) are seen only by
+its members, owners who are not members included: for anyone else every route that names such a page answers `404`
+(reading it or an older version, its history, writing, deleting, moving from or to it, proposing it, making it from a
+template, and merging or dismissing its proposal), `GET /v1/wiki/pages` and the search leave it out, and so does the
+inbox. The Moebius agent sees what the person of its chat sees; an agent without one sees none but the pages of the project of its run's card. The recorded `merge_proposal` decision about such a page holds none of its title or diff (they read `a private project` and nothing). A page moved out of a private project keeps its history, so older versions stay readable under the new name. Page names spelled `Projects/...` or `PROJECTS/...` are refused. A run's prompt holds
+the pages its issue links to with `[[...]]`, but a private project's page only for a card of that project. The
+organisation's pages, those of a public project and a folder of a key no project has are seen by everyone.
+
 A `PageView` is `{"path": string, "name": string, "text": string, "version": Version}`: `name` the last part of the
 path, `text` the Markdown, `version` the last commit that changed the page. A `Version` is `{"commit": string, "author":
 string, "handle": string | null, "at": number, "message": string, "path": string}`: the full commit id, the author's
@@ -945,9 +957,8 @@ first, `{"path": string, "name": string, "project": string | null, "snippet": st
 key of its project (`null` for the organisation's pages) and the words around the match as plain text. An empty `q`
 finds nothing (`[]`).
 
-**Only what the asker may see is returned**: a page under `projects/<key>/` of a project the asker may not see is never
-in the answer, and does not take the place of a page that is. (No project is private yet, so every asker sees every
-project's pages; private projects, ADR 0018, make it so for their members only.) The index is derived from the pages
+**Only what the asker may see is returned**: a page under `projects/<key>/` of a private project the asker is no member
+of is never in the answer, and does not take the place of a page that is. The index is derived from the pages
 and kept in the store; it is made again at the next search after the wiki's head moved (`wiki_changed`), so an edited,
 moved or deleted page, and one pushed from elsewhere, is found as it is now.
 

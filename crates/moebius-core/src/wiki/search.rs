@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
-use super::{Wiki, project_key};
+use super::{Seen, Wiki, project_key};
 use crate::app::{App, AppError, Result};
 use crate::decide::Actor;
 use crate::store::{IndexedPage, match_all};
@@ -76,19 +76,8 @@ impl Wiki {
         project: Option<&str>,
         limit: Option<usize>,
     ) -> Result<Vec<SearchHit>> {
-        self.search_among(
-            app,
-            |key| match app.store.project_by_key(key) {
-                Ok(Some(found)) => app.may_see_project(who, found.id),
-                // A folder of a key no project has is nobody's private page.
-                Ok(None) => true,
-                // What cannot be checked is not shown.
-                Err(_) => false,
-            },
-            query,
-            project,
-            limit,
-        )
+        let seen = Seen::of(app, who)?;
+        self.search_among(app, |key| seen.project(app, key), query, project, limit)
     }
 
     /// [`Wiki::search`] with the projects whose pages are shown decided by `may_see`, given a project's key.

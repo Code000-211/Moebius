@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 use serde_json::json;
 
 use super::edits::{check_project, message_or};
-use super::{Author, Wiki, file_of, literal};
-use crate::app::{App, AppError, Result};
+use super::{Author, Wiki, file_of, literal, project_key};
+use crate::app::{App, AppError, Result, UNQUOTED};
 use crate::bus::Event;
 use crate::decide::{Actor, Question};
 use crate::repos::{git, kept};
@@ -245,23 +245,44 @@ fn branch_of(item: &InboxItem) -> Result<String> {
         .ok_or_else(|| AppError::Invalid(format!("proposal {} has no branch", item.id)))
 }
 
+/// What the decision about the proposal in `item` records of it. The decisions are read by everyone and exported, so
+/// the title and diff of an edit of a private project's page are left out of them.
+fn recorded(app: &App, item: &InboxItem) -> BTreeMap<String, String> {
+    let private = item.data["page"]
+        .as_str()
+        .and_then(project_key)
+        .is_some_and(|key| {
+            app.store
+                .project_by_key(key)
+                .ok()
+                .flatten()
+                .is_some_and(|project| project.private)
+        });
+    let (title, diff) = if private {
+        (UNQUOTED.to_string(), String::new())
+    } else {
+        (
+            item.title.clone(),
+            item.data["diff"].as_str().unwrap_or_default().to_string(),
+        )
+    };
+    BTreeMap::from([
+        (
+            "branch".to_string(),
+            item.data["branch"].as_str().unwrap_or_default().to_string(),
+        ),
+        ("proposal".to_string(), title),
+        ("kind".to_string(), WIKI_PROPOSAL.to_string()),
+        ("diff".to_string(), diff),
+    ])
+}
+
 fn record(app: &App, by: &Actor, item: &InboxItem, choice: &str, reason: &str) -> Result<()> {
     app.decisions.record_by(
         by,
         &Question {
             kind: "merge_proposal".into(),
-            context: BTreeMap::from([
-                (
-                    "branch".to_string(),
-                    item.data["branch"].as_str().unwrap_or_default().to_string(),
-                ),
-                ("proposal".to_string(), item.title.clone()),
-                ("kind".to_string(), WIKI_PROPOSAL.to_string()),
-                (
-                    "diff".to_string(),
-                    item.data["diff"].as_str().unwrap_or_default().to_string(),
-                ),
-            ]),
+            context: recorded(app, item),
             options: vec!["merge_proposal".into(), "dismiss".into()],
             fail_closed: "dismiss".into(),
             run_id: None,
@@ -352,6 +373,25 @@ mod tests {
         assert!(wiki.page("Other", None).is_err());
         assert_eq!(app.store.inbox().unwrap().len(), 1);
         assert!(git(&wiki.path, &["rev-parse", "--verify", "proposal/run-7-1"]).is_err());
+    }
+
+    #[test]
+    fn the_decision_about_a_private_projects_page_records_none_of_its_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let (app, wiki, _origin) = opened(dir.path());
+        let project = app.store.add_project("Web", "WEB").unwrap();
+        let open = |path: &str| {
+            wiki.propose(&app, &agent(), path, "# Secret\n\nThe launch.", None)
+                .unwrap()
+        };
+        let public = open("projects/WEB/Plans");
+        assert!(recorded(&app, &public)["diff"].contains("+The launch."));
+        app.store.set_project_access(project.id, true, &[]).unwrap();
+        let private = open("projects/WEB/More");
+        let seen = recorded(&app, &private);
+        assert_eq!(seen["diff"], "");
+        assert_eq!(seen["proposal"], UNQUOTED);
+        assert!(!format!("{seen:?}").contains("launch"));
     }
 
     #[test]

@@ -9,7 +9,7 @@ mod files;
 mod settings;
 mod sight;
 
-pub use sight::Sight;
+pub use sight::{Sight, UNQUOTED};
 
 use serde::{Deserialize, Serialize};
 

@@ -2,7 +2,7 @@
 //! `[[Page name]]` in the issue's title or text: the page's path, or the name of one page (the first by path when
 //! several have it, compared without regard to case).
 
-use super::PageInfo;
+use super::{PageInfo, Seen};
 use crate::app::App;
 use crate::store::Card;
 
@@ -15,7 +15,14 @@ const MAX_TEXT: usize = 8_000;
 /// to no page there.
 pub fn for_card(app: &App, card: &Card) -> Option<String> {
     let wiki = app.wiki().ok()?;
-    let pages = wiki.pages().ok()?;
+    // A private project's pages reach only the runs of its own cards.
+    let seen = Seen::of_project(app, card.project_id).ok()?;
+    let pages: Vec<PageInfo> = wiki
+        .pages()
+        .ok()?
+        .into_iter()
+        .filter(|page| seen.page(app, &page.path))
+        .collect();
     let mut found: Vec<&PageInfo> = Vec::new();
     for name in links(&format!("{}\n{}", card.title, card.body)) {
         if let Some(page) = resolve(&pages, &name)

@@ -9,13 +9,15 @@
 //!
 //! This module holds the clone and the names of pages; `pages` reads the pages and their history, `edits` writes,
 //! moves and deletes them, `proposals` keeps an agent's edit on a branch that waits in the inbox for a person to merge
-//! it, `prompt` gives a run the pages its card links to, and `search` finds pages by their words.
+//! it, `prompt` gives a run the pages its card links to, `search` finds pages by their words, and `sight` says which
+//! pages a person or run sees (a private project's pages are its members').
 
 mod edits;
 mod pages;
 mod prompt;
 mod proposals;
 mod search;
+mod sight;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
@@ -29,6 +31,7 @@ pub use pages::{PageInfo, PageView, Version};
 pub use prompt::for_card;
 pub use proposals::WIKI_PROPOSAL;
 pub use search::{SEARCH_LIMIT, SearchHit};
+pub use sight::Seen;
 
 /// The folder that holds the projects' pages, one folder per project key.
 pub const PROJECTS: &str = "projects";
@@ -173,6 +176,10 @@ fn file_of(path: &str) -> Result<String> {
             return Err(invalid(&format!("it has the character {c:?}")));
         }
     }
+    if parts[0] != PROJECTS && parts[0].eq_ignore_ascii_case(PROJECTS) {
+        // On a file system that ignores case this would be the folder of the projects' pages.
+        return Err(invalid("projects is spelled in lower case"));
+    }
     if parts[0] == PROJECTS && parts.len() > 1 {
         if parts.len() < 3 {
             return Err(invalid(
@@ -292,6 +299,8 @@ mod tests {
             "a\nb",
             "projects/WEB",
             "projects/web/Page",
+            "Projects/WEB/Page",
+            "PROJECTS/WEB/Page",
         ] {
             assert!(file_of(bad).is_err(), "{bad:?} was taken");
         }
