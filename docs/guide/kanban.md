@@ -26,7 +26,7 @@ Backlog -> Not started -> In progress -> In review -> Ready to merge -> Done
 | `Done` | `done.luau` | Records how every decision made for the card ended. |
 
 A card is trusted when its issue was made through the desktop API on a repository without a forge (its author is
-`person`), or when its author is one of the repository's `trusted` logins (GitHub logins, GitLab usernames, Forgejo
+`person:<handle>`), or when its author is one of the repository's `trusted` logins (GitHub logins, GitLab usernames, Forgejo
 logins). On GitHub, GitLab and Forgejo the poll creates the cards, and an issue that is closed there moves its card to `Done`. The board's
 header names the trusted logins, and its pencil edits them (`PUT /v1/repositories/{id}`); a card's page has a pencil
 next to its title that edits the title and body in place (`PUT /v1/cards/{id}`), on a forge the issue too, where

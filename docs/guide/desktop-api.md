@@ -32,7 +32,7 @@ The answer is `{"version": "<the server's version>"}`.
 
 `POST /v1/repositories` clones `url`, which is anything `git clone` takes (a path on the server will do), and makes the
 clone's checked-out branch the default branch. `POST /v1/repositories/{id}/issues` creates an issue in a repository
-without a forge, as the author `person`, which is trusted, so it starts at once. A repository on GitHub, GitLab or Forgejo takes
+without a forge, as the author `person:<handle>` of the person who calls, which is trusted, so it starts at once. A repository on GitHub, GitLab or Forgejo takes
 its issues from there instead; see the reference for the `forge`, `github`, `project` and `trusted` fields.
 
 ```sh

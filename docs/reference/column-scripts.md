@@ -393,7 +393,7 @@ configuration and no repository, and it stores and starts nothing.
 | `<file>` | required | The script, such as `ready.luau` (the file name in a project's settings). |
 | `--column` | `Backlog` | The column the card is in: one of the six columns, spelled as in the table at the top (`Ready` for `Not started` too). |
 | `--title` | `A card to check the script with` | The card's `title`. |
-| `--author` | `person` | The card's `author`. `card.trusted` is true only for a person (`person` or `person:<handle>`), as on a repository without a forge. |
+| `--author` | `person:owner` | The card's `author`. `card.trusted` is true only for a person (`person:<handle>`, or `person` on a record from before people), as on a repository without a forge. |
 
 The made-up card has `id` and `number` 1, an empty `body`, `blocked_by`, `children` and `labels` empty, no `parent` or `claimed_by`, `merged` false, `rounds`, `reviews` and `tokens` 0, and
 `stopped` and `test_first` false, and `attempts` empty. It has no `note`, `change`, `run`, `review` or `selection`. The `moebius` table has every constant and function of
