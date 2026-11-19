@@ -48,6 +48,7 @@ mod reproduce;
 mod runs;
 mod stopping;
 mod templates;
+mod view_filters;
 mod views;
 mod whereabouts;
 pub mod workflows;

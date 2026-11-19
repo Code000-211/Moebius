@@ -15,6 +15,12 @@ export interface ViewFilter {
   milestones: number[];
   columns: string[];
   authors: string[];
+  /** Handles of agents that ran on the card, in any run. */
+  agents: string[];
+  /** `held`, `live`, `needs-you`, `stuck`, `blocked`, `waiting` or `idle`. */
+  statuses: string[];
+  /** `overdue`, `today`, `week`, `any` or `none`; empty asks nothing. */
+  due: string;
   text: string;
 }
 

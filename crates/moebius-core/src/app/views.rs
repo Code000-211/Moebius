@@ -9,6 +9,7 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
+use super::view_filters::{DUE_RANGES, STATUSES, due_matches};
 use super::{App, AppError, Result};
 use crate::decide::Actor;
 use crate::store::{
@@ -124,6 +125,8 @@ fn check(fields: &ViewFields) -> Result<()> {
         f.milestones.len(),
         f.columns.len(),
         f.authors.len(),
+        f.agents.len(),
+        f.statuses.len(),
         f.text.chars().count(),
     ];
     if lengths.iter().any(|n| *n > FILTER_LIMIT) {
@@ -137,6 +140,21 @@ fn check(fields: &ViewFields) -> Result<()> {
                 "{priority:?} is not a priority: urgent, high, medium, low or none"
             )));
         }
+    }
+    for status in &f.statuses {
+        if !STATUSES.contains(&status.as_str()) {
+            return Err(AppError::Invalid(format!(
+                "{status:?} is not a status: {}",
+                STATUSES.join(", ")
+            )));
+        }
+    }
+    if !f.due.is_empty() && !DUE_RANGES.contains(&f.due.as_str()) {
+        return Err(AppError::Invalid(format!(
+            "due is one of {}, or empty, not {:?}",
+            DUE_RANGES.join(", "),
+            f.due
+        )));
     }
     Ok(())
 }
@@ -349,12 +367,14 @@ impl App {
             wanted.is_empty() || wanted.iter().any(|w| w.eq_ignore_ascii_case(have))
         };
         let text = filter.text.trim().to_lowercase();
-        let mut cards: Vec<Card> = self
-            .store
-            .all_cards()?
-            .into_iter()
-            .filter(|card| sight.card(card))
-            .filter(|card| {
+        let today = self.store.today()?;
+        let mut cards: Vec<Card> = Vec::new();
+        for card in self.store.all_cards()? {
+            if !sight.card(&card) {
+                continue;
+            }
+            // The parts that read a run, the inbox or today come after the cheap ones, which spare most cards the reads.
+            let passes = |card: &Card| {
                 (filter.projects.is_empty() || filter.projects.contains(&card.project_id))
                     && (filter.repositories.is_empty()
                         || filter.repositories.contains(&card.repository_id))
@@ -374,8 +394,23 @@ impl App {
                     && (text.is_empty()
                         || card.title.to_lowercase().contains(&text)
                         || card.body.to_lowercase().contains(&text))
-            })
-            .collect();
+                    && due_matches(card.due.as_deref(), &filter.due, &today)
+            };
+            if !passes(&card) {
+                continue;
+            }
+            if !filter.agents.is_empty() && !self.ran_on(&card, &filter.agents)? {
+                continue;
+            }
+            if !filter.statuses.is_empty()
+                && !filter
+                    .statuses
+                    .contains(&self.card_status(&card)?.to_string())
+            {
+                continue;
+            }
+            cards.push(card);
+        }
         cards.sort_by(|a, b| compare(&view.sort, view.descending, a, b));
         let cards = cards
             .into_iter()
@@ -613,6 +648,215 @@ mod tests {
             by(with(|f| f.priorities = vec!["urgent".into()])),
             ["Login fails"]
         );
+    }
+
+    /// `today` moved by `days`, as `YYYY-MM-DD`.
+    fn day(app: &App, days: i64) -> String {
+        let format = time::macros::format_description!("[year]-[month]-[day]");
+        time::Date::parse(&app.store.today().unwrap(), format)
+            .unwrap()
+            .checked_add(time::Duration::days(days))
+            .unwrap()
+            .format(format)
+            .unwrap()
+    }
+
+    #[test]
+    fn the_agent_status_and_due_filters_show_the_cards_that_pass_them() {
+        let w = world();
+        let (app, who) = (&w.app, owner());
+        let by = |filter: ViewFields| titles(app, &who, filter);
+        let card = |title: &str| {
+            app.store
+                .all_cards()
+                .unwrap()
+                .into_iter()
+                .find(|c| c.title == title)
+                .unwrap()
+        };
+        let (login, logout, pay, docs) = (
+            card("Login fails"),
+            card("Logout"),
+            card("Pay"),
+            card("Docs"),
+        );
+        // The cards of the world have due dates and runs of their own below: Login fails ran by two agents, the later
+        // one is running; Pay ran by one that finished; Logout is held; Docs is waiting for a person.
+        let relabel = |card: &Card, due: Option<String>| {
+            app.store
+                .set_labels(
+                    card.id,
+                    &with_due(&[], due.as_deref()).into_iter().collect(),
+                )
+                .unwrap();
+        };
+        relabel(&login, Some(day(app, -2)));
+        relabel(&logout, Some(day(app, 0)));
+        relabel(&pay, Some(day(app, 7)));
+        relabel(&docs, None);
+        app.store
+            .add_run(Some(login.id), "coder", "pi-bolt", "code")
+            .unwrap();
+        let running = app
+            .store
+            .add_run(Some(login.id), "reviewer", "pi-bolt", "review")
+            .unwrap();
+        app.store.set_run_status(running.id, "running").unwrap();
+        let done = app
+            .store
+            .add_run(Some(pay.id), "coder", "pi-bolt", "code")
+            .unwrap();
+        app.store.set_run_status(done.id, "succeeded").unwrap();
+        app.store.hold_card(logout.id, "person", None).unwrap();
+        app.store
+            .add_inbox_item(
+                "ready_to_merge",
+                Some(docs.id),
+                "Merge",
+                &serde_json::json!({}),
+            )
+            .unwrap();
+
+        assert_eq!(
+            by(with(|f| f.agents = vec!["CODER".into()])),
+            ["Login fails", "Pay"],
+            "agents that ran on the card, in any case, not only the latest run's"
+        );
+        assert_eq!(
+            by(with(|f| f.agents = vec!["reviewer".into(), "nobody".into()])),
+            ["Login fails"],
+            "agents"
+        );
+        let status = |names: &[&str]| {
+            by(with(|f| {
+                f.statuses = names.iter().map(|s| s.to_string()).collect()
+            }))
+        };
+        assert_eq!(status(&["live"]), ["Login fails"]);
+        assert_eq!(status(&["held"]), ["Logout"]);
+        assert_eq!(status(&["needs-you"]), ["Docs"]);
+        assert_eq!(
+            status(&["idle"]),
+            ["Pay"],
+            "a finished run leaves the card idle"
+        );
+        assert_eq!(status(&["live", "held"]), ["Login fails", "Logout"]);
+        app.set_waiting(pay.id, Some("limit".into()));
+        assert_eq!(status(&["waiting"]), ["Pay"]);
+        app.store
+            .add_inbox_item("stuck", Some(pay.id), "Stuck", &serde_json::json!({}))
+            .unwrap();
+        assert_eq!(status(&["stuck"]), ["Pay"], "stuck comes before waiting");
+        assert!(status(&["blocked"]).is_empty());
+
+        let due = |range: &str| by(with(|f| f.due = range.into()));
+        assert_eq!(due("overdue"), ["Login fails"]);
+        assert_eq!(due("today"), ["Logout"]);
+        assert_eq!(due("week"), ["Logout", "Pay"]);
+        assert_eq!(due("any"), ["Login fails", "Logout", "Pay"]);
+        assert_eq!(due("none"), ["Docs"]);
+        assert_eq!(due("").len(), 4);
+        // The parts together: every one that is set has to match.
+        assert_eq!(
+            by(with(|f| {
+                f.agents = vec!["coder".into()];
+                f.due = "overdue".into();
+                f.statuses = vec!["live".into()];
+            })),
+            ["Login fails"]
+        );
+        assert!(
+            by(with(|f| {
+                f.agents = vec!["coder".into()];
+                f.due = "today".into();
+            }))
+            .is_empty()
+        );
+        // A card that waits for an issue that is not done is blocked; once the issue is done, it is idle.
+        let later = app
+            .store
+            .add_card(logout.repository_id, "Later", "", "ben", "Backlog")
+            .unwrap();
+        app.store
+            .set_dependencies(later.id, &BTreeSet::from([logout.number]))
+            .unwrap();
+        assert_eq!(status(&["blocked"]), ["Later"]);
+        app.store.move_card(logout.id, "Done").unwrap();
+        assert!(status(&["blocked"]).is_empty());
+    }
+
+    #[test]
+    fn a_status_or_a_due_range_that_is_no_choice_is_refused() {
+        let w = world();
+        let who = owner();
+        for filter in [
+            with(|f| f.statuses = vec!["asleep".into()]),
+            with(|f| f.due = "soon".into()),
+        ] {
+            assert!(matches!(
+                w.app.add_view(&who, &filter),
+                Err(AppError::Invalid(_))
+            ));
+        }
+        let kept = w
+            .app
+            .add_view(
+                &who,
+                &with(|f| {
+                    f.agents = vec!["coder".into()];
+                    f.statuses = vec!["live".into(), "needs-you".into()];
+                    f.due = "week".into();
+                }),
+            )
+            .unwrap();
+        let read = w.app.view(&who, kept.id).unwrap().filter;
+        assert_eq!(read.agents, ["coder"]);
+        assert_eq!(read.statuses, ["live", "needs-you"]);
+        assert_eq!(read.due, "week");
+    }
+
+    #[test]
+    fn the_agent_status_and_due_filters_keep_a_private_projects_cards_from_a_non_member() {
+        let w = world();
+        let app = &w.app;
+        let lea = app
+            .store
+            .add_person("lea", "Lea", crate::store::Role::Member)
+            .unwrap();
+        let ben = app
+            .store
+            .add_person("ben2", "Ben", crate::store::Role::Member)
+            .unwrap();
+        app.store
+            .set_project_access(w.api.1, true, &[lea.id])
+            .unwrap();
+        let pay = app
+            .store
+            .all_cards()
+            .unwrap()
+            .into_iter()
+            .find(|c| c.title == "Pay")
+            .unwrap();
+        app.store
+            .add_run(Some(pay.id), "coder", "pi-bolt", "code")
+            .unwrap();
+        let (lea, ben) = (Actor::person(lea.id, "lea"), Actor::person(ben.id, "ben2"));
+        let mut shared = fields("Coded, due");
+        shared.shared = true;
+        shared.filter.agents = vec!["coder".into()];
+        shared.filter.due = "any".into();
+        shared.filter.statuses = vec!["idle".into(), "live".into()];
+        let view = app.add_view(&lea, &shared).unwrap();
+        let shown = |who: &Actor| {
+            app.view_cards(who, view.id)
+                .unwrap()
+                .cards
+                .into_iter()
+                .map(|c| c.card.title)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(shown(&lea), ["Pay"]);
+        assert!(shown(&ben).is_empty());
     }
 
     #[test]
