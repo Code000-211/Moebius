@@ -18,6 +18,8 @@ export interface Project {
   files: number | null;
   /** The ids of the kinds of issues the project offers, in the order the kinds were made. */
   kinds: number[];
+  /** Whether the project takes requests (see `IntakeRequest`): without intake it has no form. */
+  intake: boolean;
 }
 
 /** The body of `POST /v1/projects`. */

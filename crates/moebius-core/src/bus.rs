@@ -168,6 +168,13 @@ pub enum Event {
     WikiError {
         message: String,
     },
+    /// A request to a project was made, drafted, edited, accepted or declined. It carries no text: a viewer reads only
+    /// their own requests, through the API.
+    IntakeChanged {
+        project: i64,
+        request: i64,
+        status: String,
+    },
     /// A milestone was made or edited.
     MilestoneChanged(Milestone),
     /// A milestone was deleted; its cards stay.
@@ -522,6 +529,7 @@ mod tests {
             created_at: 1_700_000_000,
             repositories: vec![2],
             files: None,
+            intake: false,
         };
         let milestone = Milestone {
             id: 3,
@@ -766,6 +774,14 @@ mod tests {
                     message: "boom".into(),
                 },
                 json!({"kind": "wiki_error", "data": {"message": "boom"}}),
+            ),
+            (
+                Event::IntakeChanged {
+                    project: 2,
+                    request: 5,
+                    status: "drafted".into(),
+                },
+                json!({"kind": "intake_changed", "data": {"project": 2, "request": 5, "status": "drafted"}}),
             ),
             (
                 Event::MilestoneChanged(milestone.clone()),

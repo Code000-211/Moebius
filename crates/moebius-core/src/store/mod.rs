@@ -31,6 +31,7 @@ mod favourites;
 mod found;
 mod grillings;
 mod inbox;
+mod intake;
 mod issues;
 mod judgements;
 mod kinds;
@@ -73,6 +74,7 @@ pub use favourites::{PLACE_KINDS, Place, RECENT_LIMIT};
 pub use found::Found;
 pub use grillings::{Grilling, GrillingIssue};
 pub use inbox::{InboxItem, WORKFLOW_APPROVAL};
+pub use intake::IntakeRequest;
 pub use issues::Comment;
 pub use judgements::{Judgement, NewJudgement};
 pub use kinds::{FieldDef, FieldType, Kind, KindField};
@@ -486,6 +488,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     milestones::SCHEMA,
     kinds::SCHEMA,
     wiki_search::SCHEMA,
+    intake::SCHEMA,
 ];
 
 pub fn now() -> i64 {

@@ -11,6 +11,7 @@
 //! - `notices`: what concerns a person (given, mentioned, a followed card changed), and following cards.
 //! - `kinds`: kinds of issues and their fields, the kinds a project offers, a card's kind and fields, and the cards of every project by them.
 //! - `repositories`: adding and editing repositories, and their settings and files.
+//! - `intake`: a project's requests, which a grilling drafts into issues that members accept or decline.
 //! - `milestones`: goals of the organisation with a target date, holding cards of any projects, with their progress.
 //! - `projects`: the projects, each with a key, a board and its repositories; making and renaming one, and the column
 //!   scripts of its board.
@@ -60,6 +61,7 @@ mod extensions;
 mod favourites;
 mod harness;
 mod improve;
+mod intake;
 mod issues;
 mod kinds;
 mod lessons;
@@ -238,6 +240,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(repositories::routes())
         .merge(projects::routes())
         .merge(wiki::routes())
+        .merge(intake::routes())
         .merge(milestones::routes())
         .merge(runs::routes())
         .merge(chats::routes())

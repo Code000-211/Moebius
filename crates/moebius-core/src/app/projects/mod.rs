@@ -53,6 +53,8 @@ pub struct ProjectView {
     pub files: Option<i64>,
     /// The ids of the kinds of issues the project offers (see `kinds`), in the order the kinds were made.
     pub kinds: Vec<i64>,
+    /// Whether the project takes requests (see `app::intake`).
+    pub intake: bool,
 }
 
 /// Refuses a name for a project: empty, longer than [`NAME_LIMIT`], starting with a dot or a space, ending with a dot
@@ -221,6 +223,7 @@ impl App {
             repositories,
             members,
             files: project.files,
+            intake: project.intake,
         })
     }
 }

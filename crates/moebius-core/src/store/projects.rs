@@ -89,6 +89,9 @@ pub struct Project {
     /// The id of the repository that holds the project's own files, once it is made; it is not one of `repositories`.
     #[serde(default)]
     pub files: Option<i64>,
+    /// Whether the project takes requests (see `intake`): a form anyone who may see it fills in.
+    #[serde(default)]
+    pub intake: bool,
 }
 
 /// Whether `key` is a project's key: an uppercase letter, then 1 to 9 uppercase letters or digits.
@@ -181,7 +184,7 @@ pub(super) fn insert_home_project(conn: &Connection, name: &str) -> rusqlite::Re
 const COLUMNS: &str = "id, name, key, created_at, \
     (SELECT json_group_array(repository_id) FROM \
         (SELECT repository_id FROM project_repositories WHERE project_id = projects.id ORDER BY position, repository_id)), \
-    (SELECT id FROM repositories WHERE files_of = projects.id)";
+    (SELECT id FROM repositories WHERE files_of = projects.id), intake";
 
 fn project(row: &Row) -> rusqlite::Result<Project> {
     Ok(Project {
@@ -193,6 +196,7 @@ fn project(row: &Row) -> rusqlite::Result<Project> {
             rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, e.into())
         })?,
         files: row.get(5)?,
+        intake: row.get(6)?,
     })
 }
 

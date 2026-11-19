@@ -48,6 +48,11 @@ pub fn handles_in(text: &str) -> Vec<String> {
     found
 }
 
+/// The handle of the person acting, for a notice's `by`.
+pub(super) fn handle_of(by: &Actor) -> Option<String> {
+    by_handle(Some(by))
+}
+
 /// The handle of the person acting, if it is a person.
 fn by_handle(by: Option<&Actor>) -> Option<String> {
     match by {
@@ -255,7 +260,7 @@ impl App {
         }
     }
 
-    fn tell_person(&self, person: &Person, notice: NewNotice<'_>) {
+    pub(super) fn tell_person(&self, person: &Person, notice: NewNotice<'_>) {
         match self.store.add_notice(person.id, &notice) {
             Ok(notice) => self.bus.publish(Event::NoticeAdded {
                 person: person.handle.clone(),

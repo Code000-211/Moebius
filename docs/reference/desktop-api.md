@@ -116,6 +116,13 @@ any route to any role that is not what its row says.
 | `POST /v1/wiki/proposals` | member | yes |
 | `POST /v1/wiki/proposals/{id}/merge` | member | no |
 | `POST /v1/wiki/proposals/{id}/dismiss` | member | no |
+| `PUT /v1/projects/{id}/intake` | owner | no |
+| `GET /v1/projects/{id}/requests` | viewer | no |
+| `POST /v1/projects/{id}/requests` | viewer | no |
+| `GET /v1/requests/{id}` | viewer | no |
+| `PUT /v1/requests/{id}` | member | no |
+| `POST /v1/requests/{id}/accept` | member | no |
+| `POST /v1/requests/{id}/decline` | member | no |
 | `GET /v1/milestones` | viewer | yes |
 | `POST /v1/milestones` | member | no |
 | `GET /v1/milestones/{id}` | viewer | yes |
@@ -444,7 +451,8 @@ proposal's and it has no card; a proposal for Moebius's own configuration has `d
 `repository`), `data.repository` (the repository's id, or null), `data.reason` (the Retro's reason) and `data.diff`
 instead of `data.trials`), `wiki_proposal` (`data.branch`, `data.page`, `data.message`, `data.by`, `data.commit`, `data.diff`; an agent's edit of a wiki page, no card: see [`POST /v1/wiki/proposals`](#post-v1wikiproposals)), `grilling_issues` (`data.grilling`, `data.repository`, `data.issues`: an array of `{"title",
 "body", "blocked_by"}`; its `title` is "N issues from a grilling" and it has no card) and `grilling_report` (`data.grilling`,
-`data.repository`, `data.report`: the text; no card) and `takeover` (`data.takeover`, `data.kind`, `data.agreement`,
+`data.repository`, `data.report`: the text; no card) and `intake_request` (`data.request`, `data.project`, `data.requester`; its `title` names the
+project and the draft issue and it has no card; see [Intake](#intake)) and `takeover` (`data.takeover`, `data.kind`, `data.agreement`,
 `data.count`; its `title` is "The decision model can take over <kind>" and it has no card) and `extension_update`
 (`data.package`, `data.from`, `data.to`, `data.source`; its `title` is "<package> <from> -> <to>" and it has no card) and
 `webhook_failed` (`data.webhook`, `data.url`, `data.event`, `data.error`, `data.attempts`; its `title` says which webhook was given up on and it has no card; see [Outgoing webhooks](configuration.md#outgoing-webhooks)) and
@@ -683,11 +691,11 @@ server from before projects has one project per repository after its first start
 and every card on it; a repository whose name an earlier one has in another case gets the project name `<name> (<id>)`.
 
 A `ProjectView` is `{"id": number, "name": string, "key": string, "created_at": number, "repositories": [{"id": number,
-"name": string, "home": bool}], "members": [{"id": number, "handle": string, "name": string}], "open_cards": number, "kinds": [number]}`:
+"name": string, "home": bool}], "members": [{"id": number, "handle": string, "name": string}], "open_cards": number, "kinds": [number], "intake": bool}`:
 `repositories` in the order the project names them, `home` true when this project is the repository's home project;
 `members` everyone of the organisation who is not disabled, since no project is private yet; `open_cards` the cards on
 its board that are neither closed nor in `Done`; `files` the id of the repository that holds the project's own files, or
-null until they are made; `kinds` the ids of the [kinds of issues](#kinds-of-issues) the project offers. A project made or renamed sends `project_changed`.
+null until they are made; `kinds` the ids of the [kinds of issues](#kinds-of-issues) the project offers; `intake` whether the project takes requests (see [Intake](#intake)). A project made, renamed or given intake sends `project_changed`.
 
 #### A project's own files
 
@@ -909,6 +917,64 @@ A member dismisses the proposal: its branch is deleted, the item resolved, and t
 
 Fetches `origin` and fast-forwards the clone now, rather than at the next refresh, so that what someone pushed there is
 read. Response: `null`. Errors: the fetch's failure.
+### Intake
+
+A project can take requests (ADR 0019). An owner turns it on with `PUT /v1/projects/{id}/intake`; until then the project
+has no form, and a request to it is refused with `422`. A request is what a person who may see the project, a viewer too,
+writes in their own words; Moebius starts a grilling on it (the grilling of [Grilling](../guide/grilling.md), here a chat of
+the origin `automation`, so that it belongs to no one and the members read and answer it; the requester is never asked
+to wait) in the project's first repository, else its own files. When the chat publishes or ends, the request gets a
+draft issue: the first issue of `issues.json` (the others are listed at the end of its body), or, for a report, an
+empty result or a grilling that could not be started, the person's own words (the first line is the title). A request's
+grilling puts no `grilling_issues` item in the inbox: the draft is an inbox item `intake_request` instead (`data.request`,
+`data.project`, `data.requester`; no card), resolved when the request is decided.
+
+An `IntakeRequest` is `{"id", "project_id", "requester": handle, "text", "title", "body", "status", "run_id": number
+or null, "card_id": number or null, "reason", "created_at", "decided_at": number or null}`. `status` is `grilling` while the
+chat works on it (`title` and `body` are empty), `drafted` once it has a draft a member may edit, `accepted` with its
+`card_id`, or `declined` with the `reason`. A viewer reads only their own requests (another's is `404`); a member or an
+owner reads every request. Every change sends `intake_changed` with `{"project": id, "request": id, "status": string}`
+and no text. Accepting and declining are recorded as `accept_request` and `decline_request` decisions.
+
+#### `PUT /v1/projects/{id}/intake`
+
+An owner turns intake on or off. Request: `{"enabled": bool}`. Requests already made stay. Response: the `ProjectView`.
+Errors: `404` for no such project.
+
+#### `POST /v1/projects/{id}/requests`
+
+A person writes a request. Request: `{"text": string}`, 1 to 8000 characters after trimming, redacted of secrets.
+Response: the `IntakeRequest`, `grilling` while a chat drafts it. Errors: `404` for no such project, `422` for a project
+without intake or a blank or too long text.
+
+#### `GET /v1/projects/{id}/requests`
+
+The requests the asker may read, the newest first: `[IntakeRequest]`. Errors: `404` for no such project.
+
+#### `GET /v1/requests/{id}`
+
+One request: the `IntakeRequest`. Errors: `404` for no such request, or for another person's when the asker is a viewer.
+
+#### `PUT /v1/requests/{id}`
+
+A member edits the draft issue, which also gives a request still being grilled its draft at once. Request: `{"title":
+string, "body"?: string}`. Response: the `IntakeRequest`. Errors: `404`; `422` for a blank title or a request that was
+decided.
+
+#### `POST /v1/requests/{id}/accept`
+
+A member accepts a `drafted` request, as it is or with `{"title"?: string, "body"?: string}` as edited. A confirmed card
+of the project is made in the project's first repository (opened on its forge first, as a person's issue is), written by
+the requester, who follows it and is told in the Inbox's Mentions tab ("Your request was accepted"). The request's chat is
+ended and its proposal dropped. Response: the `IntakeRequest`, `accepted`. Errors: `404`; `422` for a request that is not
+`drafted`, which includes one decided at the same moment by another member (only one card is made).
+
+#### `POST /v1/requests/{id}/decline`
+
+A member declines a request that is `grilling` or `drafted`. Request: `{"reason": string}`; a blank reason is `422`. The
+requester is told the reason in the Inbox's Mentions tab and reads it in the request. Response: the `IntakeRequest`,
+`declined`. Errors: `404`; `422` for a request that was decided already.
+
 ### Milestones
 
 A milestone (ADR 0019) is a goal of the organisation, not of a project: it has a name (unique in any case, 1 to 80
@@ -3555,6 +3621,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `project_changed` | A project was made or renamed through the API. A repository's home project, made with it, comes with `repository_added`. | `{"id", "name", "key", "created_at", "repositories": [id]}` |
 | `wiki_changed` | A person edited the wiki through the API, or a refresh brought commits pushed to its `origin` from elsewhere. | `{"commit": string (the full id the pages are now read at)}` |
 | `wiki_error` | The wiki could not follow its `origin` on the server's refresh (every 30 seconds). | `{"message": string}` |
+| `intake_changed` | A request to a project was made, drafted, edited, accepted or declined. It carries no text. | `{"project": id, "request": id, "status": string}` |
 | `milestone_changed` | A milestone was made or edited through the API. | `{"id", "name", "target_date", "description", "created_at"}` |
 | `milestone_removed` | A milestone was deleted through the API; its cards stay. | `{"milestone": id}` |
 | `file_changed` | A file of a repository was saved through the API. | `{"repository": id, "path": string}` |

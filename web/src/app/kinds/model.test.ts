@@ -43,6 +43,7 @@ const project = (id: number, key: string): Project => ({
   open_cards: 0,
   files: null,
   kinds: [],
+  intake: false,
 });
 
 describe("the form of a kind", () => {
