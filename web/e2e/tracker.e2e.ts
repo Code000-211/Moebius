@@ -279,6 +279,26 @@ describe("the issue in the dock", () => {
     await dock().getByText("FIFO or priority.").waitFor();
   });
 
+  it("assigns the card in the dock from the palette, which lists the commands of the card first", async () => {
+    await openBoard();
+    await newIssue("Palette card");
+    await cardTitled("Palette card").click();
+    await dock().getByRole("heading", { name: "Palette card" }).waitFor();
+
+    await page.keyboard.press("Control+k");
+    const first = page.getByRole("option").first();
+    await first.waitFor();
+    expect(await first.textContent()).toContain("Assign to me");
+    await page.keyboard.press("Enter");
+    await dock().getByText("Claimed by person").waitFor();
+    // The palette closed, and the card is still the one in focus: its key does the next thing.
+    await page.getByRole("dialog").waitFor({ state: "detached" });
+    await page.keyboard.press("Control+k");
+    await page.getByRole("option", { name: /Unassign/ }).waitFor();
+    await page.keyboard.press("Escape");
+    await page.getByRole("dialog").waitFor({ state: "detached" });
+  });
+
   it("filters the board by label, sub-issues included", async () => {
     await openBoard();
     await newIssue("Plan");

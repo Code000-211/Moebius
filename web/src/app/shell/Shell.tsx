@@ -3,7 +3,7 @@
  * a surface of its own, and the page as one surface on it — 6px of air above, below and at the right, all four
  * corners round, a shade lighter than the ground and set apart by its edge alone (ADR 0020). The page holds the banner
  * while the server cannot be reached, what the route draws, and its right column for properties, which is part of the
- * same surface behind a soft line. It owns the command bar and its shortcut and the sidebar's collapsed state (kept per browser), and holds the package
+ * same surface behind a soft line. It owns the command palette and its shortcut, holds what is in focus for it (`palette/focus.tsx`), notes the places seen and the sidebar's collapsed state (kept per browser), and holds the package
  * sheet, which pages open from where a person meets plugins and extensions.
  */
 import { Suspense, useEffect, useState } from "react";
@@ -19,6 +19,8 @@ import { SkeletonCard } from "../../ui/page/Skeleton";
 import { readFlag, writeFlag } from "../storage";
 import { CommandBar } from "./CommandBar";
 import { ConnectionBanner } from "./ConnectionBanner";
+import { PaletteFocusProvider } from "./palette/focus";
+import { noteRecent } from "./palette/model";
 import { Sidebar } from "./Sidebar";
 
 const COLLAPSED_KEY = "moebius.sidebar.collapsed";
@@ -27,7 +29,9 @@ export function Shell(props: { unreachable: boolean; onRetry: () => void }) {
   return (
     <SheetSlotProvider>
       <PackageSheetProvider>
-        <Frame {...props} />
+        <PaletteFocusProvider>
+          <Frame {...props} />
+        </PaletteFocusProvider>
       </PackageSheetProvider>
     </SheetSlotProvider>
   );
@@ -52,6 +56,11 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // The places the palette offers again; the page a person left is the one worth going back to.
+  useEffect(() => {
+    noteRecent(location.pathname);
+  }, [location.pathname]);
 
   const offline = unreachable || connection === "reconnecting";
 

@@ -1,0 +1,137 @@
+/**
+ * The commands of a card in focus: which are offered for a card as it stands, the key of each, and that each does its
+ * own action. The moves are the ones the board allows a person, the same as a drag.
+ */
+import { describe, expect, it, vi } from "vitest";
+import type { Card, InboxItem } from "../../api/types/board";
+import { type CardActions, cardCommands } from "./cardCommands";
+
+function card(extra: Partial<Card> = {}): Card {
+  return {
+    id: 7,
+    repository_id: 1,
+    number: 12,
+    title: "Fix the parser",
+    body: "",
+    author: "person",
+    column: "In progress",
+    created_at: 0,
+    note: null,
+    retried_after: null,
+    rounds: 0,
+    tokens: 0,
+    run: null,
+    blocked_by: [],
+    refusals: 0,
+    change: null,
+    parent: null,
+    counts_as_sub_issue: true,
+    closed: false,
+    labels: [],
+    claimed_by: null,
+    ...extra,
+  };
+}
+
+function actions() {
+  return {
+    claim: vi.fn(),
+    release: vi.fn(),
+    close: vi.fn(),
+    reopen: vi.fn(),
+    block: vi.fn(),
+    unblock: vi.fn(),
+    stop: vi.fn(),
+    addSubIssue: vi.fn(),
+    approve: vi.fn(),
+    retry: vi.fn(),
+    merge: vi.fn(),
+    reject: vi.fn(),
+  } satisfies CardActions;
+}
+
+function item(kind: string): InboxItem {
+  return { id: 1, kind, card_id: 7, title: "", data: { change: 5 }, resolved_at: null, at: 0 };
+}
+
+const ids = (commands: { id: string }[]) => commands.map((c) => c.id);
+
+describe("the commands of a card", () => {
+  it("assigns, blocks, closes and adds a sub-issue, each on its key", () => {
+    const act = actions();
+    const commands = cardCommands(card(), undefined, act);
+    expect(ids(commands)).toEqual(["assign", "block", "close", "sub-issue"]);
+    expect(commands.map((c) => c.key)).toEqual(["a", "b", "c", "s"]);
+    for (const command of commands) command.run();
+    expect(act.claim).toHaveBeenCalledOnce();
+    expect(act.block).toHaveBeenCalledOnce();
+    expect(act.close).toHaveBeenCalledOnce();
+    expect(act.addSubIssue).toHaveBeenCalledOnce();
+    expect(commands.filter((c) => c.opensDialog).map((c) => c.id)).toEqual(["block", "sub-issue"]);
+  });
+
+  it("takes the assignment back, unblocks and reopens", () => {
+    const act = actions();
+    const commands = cardCommands(
+      card({ claimed_by: "person", closed: true, held: { reason: null, by: "person", at: 0 } }),
+      undefined,
+      act,
+    );
+    expect(ids(commands)).toEqual(["unassign", "unblock", "reopen", "sub-issue"]);
+    for (const command of commands) command.run();
+    expect(act.release).toHaveBeenCalledOnce();
+    expect(act.unblock).toHaveBeenCalledOnce();
+    expect(act.reopen).toHaveBeenCalledOnce();
+  });
+
+  it("stops the run only while there is one", () => {
+    const act = actions();
+    const live = card({ run: { id: 3, agent: "coder", purpose: "code", status: "running" } });
+    const stop = cardCommands(live, undefined, act).find((c) => c.id === "stop");
+    expect(stop?.key).toBe("x");
+    stop?.run();
+    expect(act.stop).toHaveBeenCalledWith(live);
+    const done = card({ run: { id: 3, agent: "coder", purpose: "code", status: "succeeded" } });
+    expect(ids(cardCommands(done, undefined, actions()))).not.toContain("stop");
+  });
+
+  it("moves to Not started to approve an issue that waits", () => {
+    const act = actions();
+    const waiting = card({ column: "Backlog" });
+    const move = cardCommands(waiting, item("approve_issue"), act).find(
+      (c) => c.id === "move-Not started",
+    );
+    expect(move?.label).toBe("Move to Not started");
+    move?.run();
+    expect(act.approve).toHaveBeenCalledWith(waiting);
+  });
+
+  it("moves a stuck card to In progress to retry it", () => {
+    const act = actions();
+    const stuck = card();
+    const move = cardCommands(stuck, item("stuck"), act).find((c) => c.id === "move-In progress");
+    move?.run();
+    expect(act.retry).toHaveBeenCalledWith(stuck);
+  });
+
+  it("merges a change that is ready, or sends it back", () => {
+    const act = actions();
+    const ready = card({ column: "Ready to merge" });
+    const commands = cardCommands(ready, item("ready_to_merge"), act);
+    const merge = commands.find((c) => c.id === "move-Done");
+    const back = commands.find((c) => c.id === "move-In progress");
+    expect(merge?.label).toBe("Move to Done");
+    expect(back?.label).toBe("Send back to In progress");
+    merge?.run();
+    back?.run();
+    expect(act.merge).toHaveBeenCalledWith(ready, 5);
+    expect(act.reject).toHaveBeenCalledWith(ready, 5);
+  });
+
+  it("offers no move where the board lets a person none", () => {
+    const moves = cardCommands(card(), undefined, actions()).filter((c) =>
+      c.id.startsWith("move-"),
+    );
+    expect(moves).toEqual([]);
+  });
+});

@@ -41,6 +41,7 @@ import { SkeletonBoard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
 import { readText, writeText } from "../storage";
 import { BlockDialog, DeleteDialog, ParentDialog } from "./CardDialogs";
+import { CardFocus } from "./CardFocus";
 import { CardMenu } from "./CardMenu";
 import { ColumnMark } from "./ColumnMark";
 import { Dock } from "./Dock";
@@ -409,6 +410,17 @@ export function BoardPage() {
           </div>
         )}
       </div>
+      {inspected && (
+        <CardFocus
+          card={inspected}
+          item={inboxOf(inbox, inspected)}
+          decide={decide}
+          onNotice={setNotice}
+          onBlock={setBlocking}
+          onAddSubIssue={(card) => setCreating({ parent: card.number })}
+          onReject={(card) => setRejectFor(card.id)}
+        />
+      )}
       <RepositoryTerminal
         repository={board.repository.id}
         open={terminalOpen}

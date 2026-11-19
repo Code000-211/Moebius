@@ -279,7 +279,7 @@ describe("the command bar", () => {
     const input = page.getByPlaceholder("Search…");
     await input.waitFor();
     await input.fill("zzzz");
-    await page.getByText("No page matches.").waitFor();
+    await page.getByText("Nothing matches.").waitFor();
     await page.keyboard.press("Escape");
     await input.waitFor({ state: "detached" });
   });
