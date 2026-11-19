@@ -27,6 +27,7 @@ import { Notice } from "../../ui/page/Notice";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { CardMenu } from "./CardMenu";
 import { CardProperties, STATUS_MARK } from "./CardProperties";
+import { cardName } from "./cardKey";
 import type { Decision } from "./decisions";
 import { ActivitySection, EditIssueDialog } from "./IssueSections";
 import {
@@ -210,7 +211,7 @@ export function Dock({
 
   return (
     <KanbanIssuePanel
-      displayId={`#${card.number}`}
+      displayId={cardName(card, repository.forge !== "none")}
       issueUrl={issueUrl(repository, card)}
       title={card.title}
       status={<MarkLabel mark={STATUS_MARK[status]} word={STATUS_LABELS[status]} />}

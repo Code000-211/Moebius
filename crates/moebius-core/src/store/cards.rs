@@ -61,7 +61,15 @@ pub struct Card {
     /// The project whose board the card is on.
     #[serde(default)]
     pub project_id: i64,
+    /// The number of the card's issue in its repository: the forge's number for an issue of a forge.
     pub number: i64,
+    /// The number the card has in its project, which names it with the project's key (`WEB-24`); unique in the project.
+    /// A new card takes its issue's number when the project has no card with that number, else the next free one.
+    #[serde(default)]
+    pub project_number: i64,
+    /// The key of the card's project, such as `WEB`; kept when the project is renamed.
+    #[serde(default)]
+    pub project_key: String,
     pub title: String,
     pub body: String,
     pub author: String,
@@ -461,16 +469,30 @@ impl Store {
             [repository_id],
             |r| r.get(0),
         )?;
+        // The number in the project is the issue's number when the project has no card with it, else the next free one.
+        let project_number: i64 = conn.query_row(
+            "SELECT CASE WHEN EXISTS (SELECT 1 FROM cards WHERE project_id = ?1 AND project_number = ?2)
+                         THEN (SELECT MAX(project_number) + 1 FROM cards WHERE project_id = ?1) ELSE ?2 END",
+            params![project_id, number],
+            |r| r.get(0),
+        )?;
+        let project_key: String = conn.query_row(
+            "SELECT key FROM projects WHERE id = ?1",
+            [project_id],
+            |r| r.get(0),
+        )?;
         conn.execute(
-            "INSERT INTO cards (repository_id, number, title, body, author, column_name, created_at, project_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![repository_id, number, title, body, author, column, at, project_id],
+            "INSERT INTO cards (repository_id, number, title, body, author, column_name, created_at, project_id, project_number)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![repository_id, number, title, body, author, column, at, project_id, project_number],
         )?;
         Ok(Card {
             id: conn.last_insert_rowid(),
             repository_id,
             project_id,
             number,
+            project_number,
+            project_key,
             title: title.into(),
             body: body.into(),
             author: author.into(),
@@ -494,7 +516,7 @@ impl Store {
         params: impl rusqlite::Params,
     ) -> Result<Vec<Card>> {
         self.rows(&format!(
-            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {}, project_id FROM cards WHERE {clause} ORDER BY id", super::assignees::CARD_ASSIGNEES
+            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {}, project_id, project_number, COALESCE((SELECT key FROM projects WHERE id = cards.project_id), '') FROM cards WHERE {clause} ORDER BY id", super::assignees::CARD_ASSIGNEES
         ), params, |r| {
             Ok(Card {
                 id: r.get(0)?,
@@ -527,6 +549,8 @@ impl Store {
                 })?,
                 assignees: super::assignees::handles(r, 18)?,
                 project_id: r.get(19)?,
+                project_number: r.get(20)?,
+                project_key: r.get(21)?,
             })
         })
     }
@@ -545,6 +569,16 @@ impl Store {
             .cards_where(
                 "repository_id = ?1 AND number = ?2",
                 [repository_id, number],
+            )?
+            .pop())
+    }
+
+    /// The card named `key` and `project_number` (`WEB-24` is key `WEB`, number 24), whatever its repository.
+    pub fn card_by_key(&self, key: &str, project_number: i64) -> Result<Option<Card>> {
+        Ok(self
+            .cards_where(
+                "project_id = (SELECT id FROM projects WHERE key = ?1) AND project_number = ?2",
+                params![key, project_number],
             )?
             .pop())
     }

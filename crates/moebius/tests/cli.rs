@@ -158,7 +158,14 @@ async fn a_repository_and_an_issue_are_added_and_shown_on_the_board() {
     assert!(board.contains("#1  Fix the parser"), "{board}");
     assert!(out(&s.run(&["board", "demo"]).await).starts_with("demo (repository 1)"));
     let card = out(&s.run(&["card", "1"]).await);
-    assert!(card.starts_with("card 1 #1 Fix the parser"), "{card}");
+    assert!(card.starts_with("card 1 DEMO-1 Fix the parser"), "{card}");
+    // The key names the card too, in any case, and an unknown one is refused.
+    assert!(out(&s.run(&["card", "demo-1"]).await).starts_with("card 1 DEMO-1 Fix the parser"));
+    let issue = json_out(&s.run(&["--json", "issue", "show", "DEMO-1"]).await);
+    assert_eq!(issue["title"], "Fix the parser");
+    assert_eq!(issue["project_key"], "DEMO");
+    assert_eq!(issue["project_number"], 1);
+    assert!(!s.run(&["card", "DEMO-9"]).await.status.success());
     let snapshot = json_out(&s.run(&["--json", "board"]).await);
     assert_eq!(snapshot["boards"][0]["cards"][0]["title"], "Fix the parser");
 }

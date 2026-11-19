@@ -381,6 +381,17 @@ impl App {
             .ok_or_else(|| AppError::NotFound(format!("card {id}")))
     }
 
+    /// The card a name such as `WEB-24` (a project's key and the card's number in it) names; `404` when there is none and
+    /// `422` when the text is not such a name.
+    pub fn card_named(&self, name: &str) -> Result<Card> {
+        let (key, number) = crate::store::parse_card_key(name).ok_or_else(|| {
+            AppError::Invalid(format!("{name:?} is not a card key such as WEB-24"))
+        })?;
+        self.store
+            .card_by_key(&key, number)?
+            .ok_or_else(|| AppError::NotFound(format!("card {key}-{number}")))
+    }
+
     pub fn run(&self, id: i64) -> Result<Run> {
         self.store
             .run(id)?

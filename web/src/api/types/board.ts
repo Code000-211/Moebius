@@ -13,6 +13,8 @@ export interface Repository {
   project?: string | null;
   /** The project whose own files this repository holds; null for every repository a person added. */
   files_of?: number | null;
+  /** The project where the repository's new issues land. */
+  home_project_id?: number;
 }
 
 export type RunStatus = "starting" | "running" | "waiting" | "succeeded" | "failed" | "stopped";
@@ -43,7 +45,14 @@ export interface Held {
 export interface Card {
   id: number;
   repository_id: number;
+  /** The project whose board the card is on. */
+  project_id?: number;
+  /** The number of the card's issue in its repository: the forge's number for an issue of a forge. */
   number: number;
+  /** The number the card has in its project, which names it with the project's key (`WEB-24`). */
+  project_number?: number;
+  /** The key of the card's project, such as `WEB`. */
+  project_key?: string;
   title: string;
   body: string;
   author: string;

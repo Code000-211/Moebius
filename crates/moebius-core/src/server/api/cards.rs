@@ -5,6 +5,7 @@
 //! - `POST /v1/repositories/{id}/issues` `{title, body, parent, labels, blocked_by}`: creates an issue, which becomes a
 //!   card in the backlog, answered with the card and, when the forge refused a step after the issue was created, its
 //!   `warnings`. The issue tracker's other routes are in `issues`.
+//! - `GET /v1/cards/by-key/{key}`: the issue a card key such as `WEB-24` names, as `GET /v1/cards/{id}` answers it.
 //! - `PUT /v1/cards/{id}` `{title, body}`: changes a card's title and body, and its issue on a forge.
 //! - `POST /v1/cards/{id}/approve` `{reason}`: a person approves an outside issue; its card moves to ready.
 //! - `POST /v1/cards/{id}/block` `{reason}` and `POST /v1/cards/{id}/unblock` `{reason}`: a person or the Moebius agent
@@ -44,6 +45,10 @@ pub(super) fn routes() -> Router<ApiState> {
             get(super::issues::show_issue)
                 .put(edit_card)
                 .delete(delete_card),
+        )
+        .route(
+            "/v1/cards/by-key/{key}",
+            get(super::issues::show_issue_by_key),
         )
         .route("/v1/cards/{id}/approve", post(approve_issue))
         .route("/v1/cards/{id}/block", post(block_card))

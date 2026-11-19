@@ -69,9 +69,9 @@ pub enum Operate {
     },
     /// The boards, with the cards of each column; of one repository (its name or id) if given.
     Board { repository: Option<String> },
-    /// A card (its id, as `board` shows it), or with an option its timeline or its runs.
+    /// A card (its id, as `board` shows it, or its key such as `WEB-24`), or with an option its timeline or its runs.
     Card {
-        id: i64,
+        id: board::CardRef,
         /// The card's timeline.
         #[arg(long, conflicts_with = "runs")]
         history: bool,
@@ -226,7 +226,7 @@ impl Operate {
                 body,
             } => api::plan(method, route, body.as_deref()),
             Board { repository } => board::board(repository),
-            Card { id, history, runs } => board::card(*id, *history, *runs),
+            Card { id, history, runs } => board::card(id.resolve(get)?, *history, *runs),
             Inbox { command } => board::inbox(command.as_ref(), get),
             Issue { command } => board::issue(command, get),
             Chats => chats::chats(),

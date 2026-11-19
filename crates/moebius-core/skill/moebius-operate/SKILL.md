@@ -66,7 +66,7 @@ commands take a card's id and name other issues by their number:
 | The person wants | Command |
 |---|---|
 | The issues of a repository, filtered | `"$MOEBIUS" issue list <repository id> --parent <n> --label <label> --state open --unblocked --unclaimed` (every option is optional; the last three give the frontier of a map) |
-| One issue, with its sub-issues | `"$MOEBIUS" issue show <card id>` |
+| One issue, with its sub-issues | `"$MOEBIUS" issue show <card id or key such as WEB-24>` |
 | A sub-issue, or an issue moved to another parent | `"$MOEBIUS" issue create <repository id> "<title>" --parent <n>`, `"$MOEBIUS" issue parent <card id> <n>` (`none` for no parent) |
 | An issue blocked by another, or not any more | `"$MOEBIUS" issue blocker add <card id> <n>`, `"$MOEBIUS" issue blocker remove <card id> <n>` (a cycle is refused) |
 | An issue that is the same as another, closed with a link to the original | `"$MOEBIUS" issue duplicate <card id> <n>` (the issue is closed and says "Duplicate of #n"; `none` instead of `<n>` takes the link off and leaves it closed) |

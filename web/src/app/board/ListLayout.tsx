@@ -9,6 +9,7 @@ import type { MouseEvent, ReactNode } from "react";
 import type { Board, Card, InboxItem } from "../../api/types/board";
 import { Empty } from "../../ui/page/Empty";
 import { MarkLabel } from "../../ui/page/MarkLabel";
+import { cardKey } from "./cardKey";
 import { cardBadges, cardStatus, inboxOf } from "./model";
 import type { ListGroup } from "./view";
 
@@ -46,7 +47,7 @@ function Row({
         aria-current={selected ? "true" : undefined}
         className={`flex min-h-9 min-w-0 flex-1 cursor-pointer appearance-none flex-wrap items-center gap-x-3 gap-y-1 rounded-control px-3 py-1 text-left text-base transition-colors duration-(--motion-routine) ease-out hover:bg-hover ${selected ? "bg-selected" : "bg-transparent"}`}
       >
-        <span className="font-mono text-sm text-secondary tabular-nums">#{card.number}</span>
+        <span className="font-mono text-sm text-secondary tabular-nums">{cardKey(card)}</span>
         <span
           className={`min-w-0 flex-1 font-medium [overflow-wrap:anywhere] ${card.closed ? "text-secondary" : "text-text"}`}
         >
