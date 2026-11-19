@@ -38,6 +38,8 @@ const card = {
   labels: [],
   claimed_by: null,
   assignees: [],
+  priority: "none",
+  due: null,
 } satisfies Card;
 
 const repository = (forge: string): Repository => ({

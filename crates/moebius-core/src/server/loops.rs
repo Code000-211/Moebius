@@ -23,7 +23,7 @@ const PLAIN_REFRESH: Duration = Duration::from_secs(30);
 const DONE_SWEEP: Duration = Duration::from_secs(600);
 
 impl Server {
-    /// Runs every card's column script once; a script that fails is reported on the bus and the card stays put.
+    /// Runs every card's column script once, the most urgent cards first (then those due first, then the oldest); a script that fails is reported on the bus and the card stays put.
     pub fn tick(&self) {
         let Ok(repositories) = self.app.store.repositories() else {
             return;
@@ -37,27 +37,29 @@ impl Server {
             }
             due
         };
+        let mut cards = Vec::new();
         for repository in repositories {
-            let Ok(cards) = self.app.store.cards(repository.id) else {
-                continue;
-            };
-            for card in cards {
-                // An archived card is off the board: no script runs for it.
-                if card.archived_at.is_some() {
-                    continue;
-                }
-                if card.column == columns::DONE
-                    && !sweep_done
-                    && self
-                        .app
-                        .store
-                        .has_pending_outcomes(card.id)
-                        .is_ok_and(|pending| !pending)
-                {
-                    continue;
-                }
-                self.settle_card(card.id);
+            if let Ok(of_repository) = self.app.store.cards(repository.id) {
+                cards.extend(of_repository);
             }
+        }
+        settle_order(&mut cards);
+        for card in cards {
+            // An archived card is off the board: no script runs for it.
+            if card.archived_at.is_some() {
+                continue;
+            }
+            if card.column == columns::DONE
+                && !sweep_done
+                && self
+                    .app
+                    .store
+                    .has_pending_outcomes(card.id)
+                    .is_ok_and(|pending| !pending)
+            {
+                continue;
+            }
+            self.settle_card(card.id);
         }
     }
 
@@ -158,6 +160,15 @@ impl Server {
             });
         }
     }
+}
+
+/// Puts cards in the order the tick settles them: the most urgent first, then the one due first, then the oldest. With
+/// the run limit reached, the cards that come first are the ones that start.
+pub(crate) fn settle_order(cards: &mut [crate::store::Card]) {
+    cards.sort_by(|a, b| {
+        let due = |c: &crate::store::Card| (c.due.is_none(), c.due.clone());
+        (a.priority, due(a), a.id).cmp(&(b.priority, due(b), b.id))
+    });
 }
 
 /// Runs every card's column script on the board's tick until the future is dropped. The tick is read each time, since
@@ -1127,5 +1138,58 @@ mod tests {
         let error = server.app.offer_change(card.id).unwrap_err();
         assert!(error.to_string().contains("forge github"), "{error}");
         assert!(store.changes(repository.id).unwrap().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod order_tests {
+    use super::settle_order;
+    use crate::store::{Card, Priority};
+
+    fn card(id: i64, priority: Priority, due: Option<&str>) -> Card {
+        Card {
+            id,
+            repository_id: 1,
+            project_id: 1,
+            number: id,
+            project_number: id,
+            project_key: "WEB".into(),
+            title: String::new(),
+            body: String::new(),
+            author: "person".into(),
+            column: "Not started".into(),
+            created_at: 0,
+            note: None,
+            retried_after: None,
+            confirmed: false,
+            held: None,
+            parent: None,
+            closed: false,
+            labels: Vec::new(),
+            claimed_by: None,
+            assignees: Vec::new(),
+            priority,
+            due: due.map(String::from),
+            moved_at: 0,
+            archived_at: None,
+        }
+    }
+
+    #[test]
+    fn cards_are_settled_by_priority_then_due_date_then_age() {
+        let mut cards = vec![
+            card(1, Priority::Low, None),
+            card(2, Priority::None, None),
+            card(3, Priority::High, Some("2026-12-05")),
+            card(4, Priority::High, Some("2026-12-01")),
+            card(5, Priority::High, None),
+            card(6, Priority::Urgent, None),
+            card(7, Priority::None, None),
+        ];
+        settle_order(&mut cards);
+        assert_eq!(
+            cards.iter().map(|c| c.id).collect::<Vec<_>>(),
+            [6, 4, 3, 5, 1, 2, 7]
+        );
     }
 }

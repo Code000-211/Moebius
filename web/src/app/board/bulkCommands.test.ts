@@ -10,6 +10,8 @@ function card(id: number, extra: Partial<Card> = {}): Card {
     column: "Backlog",
     claimed_by: null,
     assignees: [],
+    priority: "none",
+    due: null,
     held: null,
     run: null,
     closed: false,

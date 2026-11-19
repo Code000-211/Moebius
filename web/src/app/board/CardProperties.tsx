@@ -19,14 +19,17 @@ import {
   release,
   removeBlocker,
   reopenIssue,
+  setDue,
   setLabels,
   setParent,
+  setPriority,
 } from "../../api/calls/board";
 import { keys } from "../../api/keys";
-import type { Board, Card, InboxItem } from "../../api/types/board";
+import type { Board, Card, InboxItem, Priority } from "../../api/types/board";
 import { EditableProperty, ListProperty } from "../../ui/page/EditableProperty";
 import { MarkLabel, type StateMark } from "../../ui/page/MarkLabel";
 import { PageProperties, Property } from "../../ui/page/Properties";
+import { PriorityBars } from "../../ui/page/StatusIcon";
 import { MilestonesProperty } from "../milestones/MilestonesProperty";
 import { AssigneesProperty } from "../people/AssigneesProperty";
 import { cardKey } from "./cardKey";
@@ -36,6 +39,8 @@ import {
   descendants,
   heldLine,
   isClosed,
+  isPlanningLabel,
+  PRIORITY_WORDS,
   parentOf,
   STATUS_LABELS,
   stackWords,
@@ -160,6 +165,30 @@ export function CardProperties({
         }}
       />
       <EditableProperty
+        name="Priority"
+        editor={{
+          kind: "choice",
+          options: PRIORITY_WORDS,
+          value: card.priority,
+          onSave: (next) => saved(setPriority(card.id, next as Priority)),
+        }}
+      >
+        <span className="inline-flex items-center gap-2">
+          <PriorityBars priority={card.priority} decorative />
+          {PRIORITY_WORDS.find(([name]) => name === card.priority)?.[1] ?? card.priority}
+        </span>
+      </EditableProperty>
+      <EditableProperty
+        name="Due date"
+        editor={{
+          kind: "date",
+          value: card.due,
+          onSave: (next) => saved(setDue(card.id, next)),
+        }}
+      >
+        {card.due ?? <span className="text-secondary">No date</span>}
+      </EditableProperty>
+      <EditableProperty
         name="Claim"
         editor={{
           kind: "person",
@@ -235,11 +264,13 @@ export function CardProperties({
       />
       <ListProperty
         name="Labels"
-        items={card.labels.map((name) => ({
-          key: name,
-          label: name,
-          remove: `Remove label ${name}`,
-        }))}
+        items={card.labels
+          .filter((name) => !isPlanningLabel(name))
+          .map((name) => ({
+            key: name,
+            label: name,
+            remove: `Remove label ${name}`,
+          }))}
         empty="None"
         addLabel="Add a label"
         onAdd={(typed) => saved(setLabels(card.id, [...card.labels, typed]))}

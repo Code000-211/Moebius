@@ -1341,6 +1341,53 @@ mod tests {
     }
 
     #[test]
+    fn a_label_of_the_forge_sets_the_priority_and_the_due_date_after_a_poll() {
+        let s = Setup::new(Some(true));
+        let mut issue = Issue {
+            number: 1,
+            title: "Issue 1".into(),
+            open: true,
+            author: "leon".into(),
+            labels: vec![
+                "bug".into(),
+                "priority:urgent".into(),
+                "due:2026-12-01".into(),
+            ],
+            ..Issue::default()
+        };
+        s.app.sync_issues(&s.repository, &[issue.clone()]).unwrap();
+        let card = s
+            .app
+            .store
+            .card_by_number(s.repository.id, 1)
+            .unwrap()
+            .unwrap();
+        assert_eq!(card.priority, crate::store::Priority::Urgent);
+        assert_eq!(card.due.as_deref(), Some("2026-12-01"));
+
+        issue.labels = vec!["priority:low".into()];
+        s.app.sync_issues(&s.repository, &[issue.clone()]).unwrap();
+        let card = s.app.card(card.id).unwrap();
+        assert_eq!(
+            (card.priority, card.due),
+            (crate::store::Priority::Low, None)
+        );
+
+        // Set in Moebius, it is written to the forge as a label.
+        s.app.set_priority(card.id, "high").unwrap();
+        s.app.set_due(card.id, Some("2027-01-31")).unwrap();
+        let written = s.calls();
+        assert!(
+            written
+                .iter()
+                .any(|c| c.contains("labels=due:2027-01-31,priority:high")),
+            "{written:?}"
+        );
+        assert!(s.app.set_priority(card.id, "asap").is_err());
+        assert!(s.app.set_due(card.id, Some("2027-02-30")).is_err());
+    }
+
+    #[test]
     fn editing_an_issue_keeps_the_blockers_and_the_parent_the_forge_holds() {
         let s = Setup::new(Some(false));
         let (a, b, c) = (s.card("A"), s.card("B"), s.card("C"));
