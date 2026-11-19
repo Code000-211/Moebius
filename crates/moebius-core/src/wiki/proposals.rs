@@ -177,7 +177,7 @@ impl Wiki {
         record(app, by, item, "dismiss", reason)
     }
 
-    /// The first branch `agent/<name>-<n>` the clone does not have. The turn is held.
+    /// The first branch `proposal/<who>-<n>` the clone does not have. The turn is held.
     fn free_branch(&self, by: &Actor) -> Result<String> {
         let who = match by {
             Actor::Agent { run, .. } => format!("run-{run}"),
@@ -391,17 +391,10 @@ mod tests {
         assert!(wiki.page("Runbook", None).is_err());
         let lea = person(&app);
         wiki.merge_proposal(&app, &lea, &item, "").unwrap();
-        let resolved = app
-            .store
-            .inbox_for_card(0)
-            .unwrap()
-            .into_iter()
-            .chain(std::iter::once(InboxItem {
-                resolved_at: Some(1),
-                ..item.clone()
-            }))
-            .last()
-            .unwrap();
+        let resolved = InboxItem {
+            resolved_at: Some(1),
+            ..item.clone()
+        };
         assert!(wiki.merge_proposal(&app, &lea, &resolved, "").is_err());
     }
 
@@ -428,21 +421,55 @@ mod tests {
         assert!(app.store.inbox().unwrap().is_empty());
     }
 
+    // A hook that refuses pushes is a shell script, so this test is for Unix.
+    #[cfg(unix)]
     #[test]
     fn a_merge_refused_by_origin_leaves_the_clone_and_the_item_as_they_were() {
         let dir = tempfile::tempdir().unwrap();
         let (app, wiki, origin) = opened(dir.path());
         let item = wiki.propose(&app, &agent(), "Runbook", "x", None).unwrap();
         let before = wiki.head();
-        #[cfg(unix)]
-        {
-            super::super::testing::refuse_pushes(&origin);
-            let lea = person(&app);
-            assert!(wiki.merge_proposal(&app, &lea, &item, "").is_err());
-            assert_eq!(wiki.head(), before);
-            assert!(wiki.page("Runbook", None).is_err());
-            assert_eq!(app.store.inbox().unwrap().len(), 1);
-        }
-        let _ = (origin, before, item);
+        super::super::testing::refuse_pushes(&origin);
+        let lea = person(&app);
+        assert!(wiki.merge_proposal(&app, &lea, &item, "").is_err());
+        assert_eq!(wiki.head(), before);
+        assert!(wiki.page("Runbook", None).is_err());
+        assert_eq!(app.store.inbox().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_merge_that_conflicts_with_a_later_push_leaves_the_clone_and_the_item_as_they_were() {
+        let dir = tempfile::tempdir().unwrap();
+        let (app, wiki, origin) = opened(dir.path());
+        let item = wiki
+            .propose(&app, &agent(), "Setup", "# Setup\n\nMine.\n", None)
+            .unwrap();
+        push_from_elsewhere(dir.path(), &origin, "Setup.md", "# Setup\n\nTheirs.\n");
+        let lea = person(&app);
+        let error = wiki.merge_proposal(&app, &lea, &item, "").unwrap_err();
+        assert!(
+            matches!(
+                error,
+                AppError::Git(crate::repos::GitError::Conflict { .. })
+            ),
+            "{error:?}"
+        );
+        assert_eq!(
+            wiki.page("Setup", None).unwrap().text,
+            "# Setup\n\nTheirs.\n"
+        );
+        assert_eq!(app.store.inbox().unwrap().len(), 1);
+        assert!(
+            git(&wiki.path, &["status", "--porcelain"])
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            git(
+                &wiki.path,
+                &["rev-parse", "--verify", "refs/heads/proposal/run-7-1"]
+            )
+            .is_ok()
+        );
     }
 }

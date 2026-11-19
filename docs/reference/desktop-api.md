@@ -816,7 +816,7 @@ script.
 
 A member merges the proposal of the inbox item `id`. The clone follows `origin`, the branch is merged into the clone's
 branch with the commit `Merge the proposal: <message>` and pushed to `origin`; the branch is deleted, the item resolved,
-the decision recorded as `merge_proposal` and `wiki_changed` sent. Request body: `{"reason"?: string}`. Response:
+the decision recorded as `merge_proposal` (the kind the Retro's proposals use, with `kind` `wiki_proposal` in its context) and `wiki_changed` sent. Request body: `{"reason"?: string}`. Response:
 `{"commit": string}`, the commit the pages are now read at. Errors: `404` for no open `wiki_proposal` item `id`, `409`
 for a merge that conflicts with what was pushed since (the page changed meanwhile) or a push that fails; both leave the
 clone and the item as they were.

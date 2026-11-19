@@ -626,7 +626,7 @@ mod tests {
         );
         assert!(prompt.contains("### Setup\n\nInstall it."), "{prompt}");
         assert!(!prompt.contains("Not for this card"), "{prompt}");
-        assert!(!prompt.contains("Missing\n"), "{prompt}");
+        assert!(!prompt.contains("### Missing"), "{prompt}");
         let plain = app
             .store
             .add_card(repo.id, "Plain", "No links.", "person", "Not started")
