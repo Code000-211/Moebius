@@ -14,7 +14,15 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { type ReactNode, type Ref, type RefObject, useCallback, useRef, useState } from "react";
+import {
+  type MouseEvent,
+  type ReactNode,
+  type Ref,
+  type RefObject,
+  useCallback,
+  useRef,
+  useState,
+} from "react";
 import { cn } from "../lib/cn";
 
 /** What a drag ends with: the card (its id) and the column it was let go over, none when it was let go elsewhere or cancelled. */
@@ -67,7 +75,7 @@ export type KanbanCardFaceProps = {
 
 const faceClass = ({ isLive, isSelected, isOpen, className }: KanbanCardFaceProps) =>
   cn(
-    "lift rounded-card bg-surface px-3 py-2 outline outline-1 -outline-offset-1",
+    "group lift rounded-card bg-surface px-3 py-2 outline outline-1 -outline-offset-1",
     isSelected
       ? "shadow-glow outline-accent hover:shadow-glow"
       : isOpen
@@ -99,6 +107,8 @@ export type KanbanCardProps = KanbanCardFaceProps & {
    * rest of the card answers a plain click too, which is what a pointer expects of a card.
    */
   onOpen?: () => void;
+  /** A right click on the card. */
+  onContextMenu?: (event: MouseEvent) => void;
   tabIndex?: number;
   forwardedRef?: Ref<HTMLDivElement>;
   dragDisabled?: boolean;
@@ -112,6 +122,7 @@ export const KanbanCard = ({
   children,
   className,
   onOpen,
+  onContextMenu,
   tabIndex,
   forwardedRef,
   isOpen,
@@ -157,6 +168,7 @@ export const KanbanCard = ({
       })}
       ref={setRefs}
       onClick={onOpen}
+      onContextMenu={onContextMenu}
       onKeyDown={(e) => {
         listeners?.onKeyDown?.(e);
         // Enter opens the card where it lands, Space picks it up for a drag; Enter that ended a drag is taken.
