@@ -479,8 +479,11 @@ describe("projects", () => {
     await tile.getByText("FRESH", { exact: true }).waitFor();
     await tile.getByText("0 open").waitFor();
 
-    // Its tile opens the repository's settings, where it is deleted.
+    // Its tile opens the project's settings; the repository's own page, where it is deleted, is one click from its row.
     await tile.getByRole("link").click();
+    await page.getByRole("heading", { name: "fresh", level: 1 }).waitFor();
+    await page.getByRole("tab", { name: "Repositories 1" }).click();
+    await page.getByRole("link", { name: "Settings of fresh" }).click();
     await page.getByRole("heading", { name: "fresh", level: 1 }).waitFor();
     await page.getByRole("button", { name: "Delete repository" }).click();
     const dialog = page.getByRole("dialog");
@@ -520,9 +523,14 @@ describe("projects", () => {
         key: "SHOP",
       });
 
-      // Without a repository the tile opens the project's own files, listed on their Files page; they have no Delete.
+      // The tile opens the project's settings, which say there is no repository; the project's own files are on a
+      // page that has no Delete.
       await shop.getByRole("link").click();
-      await page.waitForURL("**/projects/200");
+      await page.waitForURL("**/projects/100/settings");
+      await page.getByRole("heading", { name: "Storefront", level: 1 }).waitFor();
+      await page.getByRole("tab", { name: "Repositories 0" }).click();
+      await page.getByText("No repository: this project works on its own files").waitFor();
+      await page.goto(`${server.url}/projects/200`);
       await page.getByRole("heading", { name: "Storefront", level: 1 }).waitFor();
       await page.getByText("These are the project's own files").waitFor();
       await page
@@ -554,11 +562,11 @@ describe("projects", () => {
   );
 
   it.skipIf(usesRealServer)(
-    "opens the settings of a repository from its project's tile",
+    "opens the settings of a project from its tile, and its board from there",
     async () => {
       await open("/projects");
       await page.getByTestId("project").filter({ hasText: "demo" }).getByRole("link").click();
-      await page.waitForURL("**/projects/1");
+      await page.waitForURL("**/projects/1/settings");
       await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
       await page.getByRole("link", { name: "Open board" }).click();
       await page.waitForURL("**/board/1");

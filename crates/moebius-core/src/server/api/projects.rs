@@ -12,12 +12,15 @@
 //!   `moebius check-script` checks it) or given up for the built-in one (see `board::scripts`).
 //! - `PUT /v1/projects/{id}/access` `{private, members, reason}`: an owner makes a project private or public and names
 //!   its members by handle.
+//! - `POST /v1/projects/{id}/repositories` `{repository, reason}` and `DELETE
+//!   /v1/projects/{id}/repositories/{repository}`: an owner puts a repository among a project's repositories or takes
+//!   it out (never from its home project).
 //!
 //! A private project that the person asking is no member of is not listed and is answered 404, except to an owner, who
 //! sees its record (with `member` false) so that they can name its members (see `app::projects::sight`).
 
 use axum::extract::{Path as UrlPath, State};
-use axum::routing::{get, put};
+use axum::routing::{delete, get, post, put};
 use axum::{Extension, Json, Router};
 use serde::Deserialize;
 
@@ -37,6 +40,11 @@ pub(super) fn routes() -> Router<ApiState> {
             get(get_script).put(put_script).delete(delete_script),
         )
         .route("/v1/projects/{id}/access", put(set_access))
+        .route("/v1/projects/{id}/repositories", post(add_repository))
+        .route(
+            "/v1/projects/{id}/repositories/{repository}",
+            delete(remove_repository),
+        )
 }
 
 /// What `POST /v1/projects` takes.
@@ -62,6 +70,37 @@ pub struct Access {
     pub members: Vec<String>,
     #[serde(default)]
     pub reason: String,
+}
+
+/// What `POST /v1/projects/{id}/repositories` takes.
+#[derive(Debug, Deserialize)]
+pub struct ProjectRepositoryAdd {
+    pub repository: i64,
+    #[serde(default)]
+    pub reason: String,
+}
+
+async fn add_repository(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    Json(add): Json<ProjectRepositoryAdd>,
+) -> Result<Json<ProjectView>, ApiError> {
+    blocking(&state.app, move |app| {
+        app.add_repository_to_project(&by, id, add.repository, &add.reason)
+    })
+    .await
+}
+
+async fn remove_repository(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath((id, repository)): UrlPath<(i64, i64)>,
+) -> Result<Json<ProjectView>, ApiError> {
+    blocking(&state.app, move |app| {
+        app.remove_repository_from_project(&by, id, repository, "")
+    })
+    .await
 }
 
 async fn projects(
@@ -312,6 +351,53 @@ mod tests {
             (Some("Radiance"), Some("RADIANCE"))
         );
         let (status, _) = call("GET", &addr, &token, "/v1/projects/99", None).await;
+        assert_eq!(status, Status::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn a_repository_is_put_in_a_project_and_taken_out_but_not_from_its_home() {
+        let (_d, state, addr) = start().await;
+        let token = state.token.to_string();
+        let (_, made) = call(
+            "POST",
+            &addr,
+            &token,
+            "/v1/projects",
+            Some(json!({"name": "Storefront", "key": "SHOP"})),
+        )
+        .await;
+        let shop = made["id"].as_i64().unwrap();
+        let path = format!("/v1/projects/{shop}/repositories");
+        let (status, added) =
+            call("POST", &addr, &token, &path, Some(json!({"repository": 1}))).await;
+        assert_eq!(status, Status::OK, "{added}");
+        assert_eq!(
+            added["repositories"],
+            json!([{"id": 1, "name": "radiance", "home": false}])
+        );
+        let (status, missing) = call(
+            "POST",
+            &addr,
+            &token,
+            &path,
+            Some(json!({"repository": 99})),
+        )
+        .await;
+        assert_eq!(status, Status::NOT_FOUND, "{missing}");
+        // The home project keeps its repository.
+        let (status, kept) = call(
+            "DELETE",
+            &addr,
+            &token,
+            "/v1/projects/1/repositories/1",
+            None,
+        )
+        .await;
+        assert_eq!(status, Status::UNPROCESSABLE_ENTITY, "{kept}");
+        let (status, removed) = call("DELETE", &addr, &token, &format!("{path}/1"), None).await;
+        assert_eq!(status, Status::OK, "{removed}");
+        assert_eq!(removed["repositories"], json!([]));
+        let (status, _) = call("DELETE", &addr, &token, &format!("{path}/1"), None).await;
         assert_eq!(status, Status::NOT_FOUND);
     }
 }
