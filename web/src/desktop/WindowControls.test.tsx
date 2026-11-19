@@ -3,6 +3,7 @@
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { fakeBridge } from "./fakeBridge";
 import { WindowControls } from "./WindowControls";
 
 afterEach(cleanup);
@@ -14,7 +15,7 @@ describe("WindowControls", () => {
   });
 
   it("moves the window with the strip and calls the app for each control", () => {
-    const bridge = { minimize: vi.fn(), toggleMaximize: vi.fn(), close: vi.fn() };
+    const bridge = { ...fakeBridge(), minimize: vi.fn(), toggleMaximize: vi.fn(), close: vi.fn() };
     render(<WindowControls bridge={bridge} />);
     expect(screen.getByTestId("window-bar").hasAttribute("data-tauri-drag-region")).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Minimize" }));

@@ -15,10 +15,14 @@ app is in [`docs/architecture.md`](../../docs/architecture.md#the-desktop-app).
 | `src/local/` | The server of this machine the app sets up and starts: `mod.rs` (state, `start`), `host.rs` (the shell: `sh`, or `wsl.exe` on Windows), `release.rs` (downloading `moebius` and checking it against `SHA256SUMS`). |
 | `src/server.rs` | `Server` (an address and an access token) and `check`, which asks `GET /v1/health` and refuses a server of another minor version, naming the release that matches. |
 | `src/proxy/` | The app's own address on the loopback: `assets.rs` serves the web app embedded from `web/dist`, `forward.rs` forwards `/v1/` to the server with the token (HTTP and WebSockets), `mod.rs` lets only the window use it. |
-| `src/window.rs` | The Tauri side, a module of the program so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, the commands `connect`, `local_state` and `local_connect`, and links that leave the app opened in the browser. |
+| `src/rail/` | The rail of servers: `mod.rs` (the remembered servers, a proxy and a page of each, adding, opening, removing, `poll`), `records.rs` (`servers.json`, no token), `secrets.rs` (the system's keychain), `ssh.rs` (a server over an SSH tunnel) and `status.rs` (whether a server answers and its Inbox's count). |
+| `src/servers.rs` | The rail's commands on the Tauri side: `connect`, `connect_ssh`, `servers`, `switch_server` and `remove_server`, and `local_state` and `local_connect` for the server of this machine. |
+| `src/window.rs` | The Tauri side, a module of the program so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, and links that leave the app opened in the browser. |
 | `connect/` | The connect page, bundled by Tauri: a server's address and a token, drawn with the web app's tokens. |
-| `capabilities/` | What each page may call: `connect.json` for the connect page (`connect` and the window's controls), `web-app.json` for the web app on the loopback (the window's controls only). |
-| `tauri.conf.json`, `build.rs`, `icons/` | Tauri's configuration, the bundles and their icons. `build.rs` declares `connect` as the app's own command and builds the app again when `web/dist` changes. |
+| `capabilities/` | What each page may call: `connect.json` for the connect page and `web-app.json` for the web app on the loopback: the window's controls and the rail's commands, nothing else. |
+| `tauri.conf.json`, `build.rs`, `icons/` | Tauri's configuration, the bundles and their icons. `build.rs` declares the rail's commands as the app's own and builds the app again when `web/dist` changes. |
+| `tests/rail.rs` | The rail against fake servers (and a fake `ssh`): two servers switched between with each keeping its page, a grey dot for one that does not answer, a token in the keychain and in no file, and a removed server that takes its token with it. |
+
 | `tests/local.rs` | The local server against a fake release and a fake `moebius`: a first start makes and connects to a server, a restart finds it again, a stopped one is started without a new `init`, a bad checksum or a missing release installs nothing. |
 | `tests/connect.rs` | The app against a real server on port 0 and against fake servers: signing in with an access token, the web app and the event stream through the proxy, the refusal of another minor version, and who may use the proxy. |
 
@@ -48,7 +52,7 @@ They land in `target/release/bundle/`.
 
 The later parts of ADR 0021 build on these names:
 
-- **The bridge** is `window.moebiusDesktop` (`BRIDGE` in `src/window.rs`), read in the web app only through
+- **The bridge** is `window.moebiusDesktop` (`BRIDGE` in `src/window.rs`; it also carries the rail's calls), read in the web app only through
   `web/src/desktop/bridge.ts` (`DesktopBridge`, `desktopBridge()`). A new thing the web app asks of the app is a member of
   both; what the web app draws only in the app goes into `web/src/desktop/`.
 - **What touches Tauri** stays in the program (`src/window.rs`, or a module beside it declared in `src/main.rs`); the

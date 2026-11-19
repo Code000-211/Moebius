@@ -91,6 +91,24 @@ main {
 .sheet[hidden] {
   display: none;
 }
+#saved ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#saved button {
+  font: inherit;
+  width: 100%;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
 .sheet {
   width: min(400px, 100%);
   display: flex;
