@@ -383,3 +383,87 @@ describe("a wiki proposal", () => {
     expect(chipName("wiki_proposal")).toBe("Wiki edits");
   });
 });
+
+describe("a card over several repositories in the Inbox", () => {
+  const two: Snapshot = {
+    boards: [
+      board(1, "demo", [card(45, 45, { repositories: ["demo", "web"] })], [change(2)]),
+      board(2, "web", [], [change(3, { repository_id: 2, pull_request: 7 })]),
+    ],
+    harness_changes: [],
+    inbox: [],
+  };
+  const offer = item(1, "ready_to_merge", 45, { change: 3, branch: "moebius/card-WEB-1" });
+
+  it("finds the card on its own board and the change on the board of its repository", () => {
+    const about = found(two, offer);
+    expect(about.board?.repository.name).toBe("demo");
+    expect(about.card?.id).toBe(45);
+    expect(about.change?.id).toBe(3);
+    expect(about.changeRepository?.name).toBe("web");
+  });
+
+  it("takes the repository of a change from the card when no board lists the change", () => {
+    const own = {
+      id: 2,
+      repository: "demo",
+      state: "open",
+      checks: "success" as const,
+      review_verdict: null,
+    };
+    const web = {
+      id: 3,
+      repository: "web",
+      state: "open",
+      checks: "failure" as const,
+      review_verdict: null,
+    };
+    const unlisted: Snapshot = {
+      ...two,
+      boards: [
+        board(
+          1,
+          "demo",
+          [card(45, 45, { repositories: ["demo", "web"], changes: [own, web] })],
+          [change(2)],
+        ),
+        board(2, "web", [], []),
+      ],
+    };
+    const about = found(unlisted, offer);
+    expect(about.changeRepository?.name).toBe("web");
+    expect(meta(offer, about)).toBe("web · #45");
+  });
+
+  it("names the repository the change is in, in the words above the title and in the facts", () => {
+    const about = found(two, offer);
+    expect(meta(offer, about)).toBe("web · #45");
+    expect(facts(offer, about).find((fact) => fact.label === "Repository")?.value).toBe("web");
+  });
+
+  it("adds no repository fact for a card over one repository", () => {
+    const single = item(2, "ready_to_merge", 45, { change: 2, branch: "moebius/card-45" });
+    const one = found(snapshot, single);
+    expect(facts(single, one).some((fact) => fact.label === "Repository")).toBe(false);
+  });
+
+  it("says what a stopped merge left, as a kind of its own", () => {
+    const stopped = item(2, "merge_stopped", 45, {
+      change: 3,
+      repository: "web",
+      reason: "the change no longer merges",
+      merged: ["demo"],
+      open: ["web", "docs"],
+    });
+    const about = found(two, stopped);
+    expect(kindTag(stopped)).toEqual({ label: "Merge stopped", mark: "blocked" });
+    expect(chipName("merge_stopped")).toBe("Stopped merges");
+    expect(why(stopped, about)).toBe(
+      "The merge in web stopped: the change no longer merges. Merged: demo. Still open: web, docs.",
+    );
+    expect(kindsOf({ ...two, inbox: [offer, stopped] })).toEqual([
+      "ready_to_merge",
+      "merge_stopped",
+    ]);
+  });
+});

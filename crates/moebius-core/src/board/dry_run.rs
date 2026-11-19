@@ -282,7 +282,10 @@ fn recording_api(
                 "merged the change, and the card moved to Done{}",
                 with_note(reason)
             ));
-            Ok(String::from("0000000000000000000000000000000000000000"))
+            Ok((
+                Some(String::from("0000000000000000000000000000000000000000")),
+                None::<String>,
+            ))
         })?,
     )?;
 

@@ -36,7 +36,23 @@ interface FakeCard {
   run: { id: number; agent: string; purpose: string; status: string } | null;
   blocked_by: number[];
   refusals: number;
-  change: { id: number; state: string; checks: string; review_verdict: string | null } | null;
+  change: {
+    id: number;
+    repository: string;
+    state: string;
+    checks: string;
+    review_verdict: string | null;
+  } | null;
+  /** The card's open changes in the repositories besides its own (`seedChange`). */
+  more_changes: Array<{
+    id: number;
+    repository: string;
+    state: string;
+    checks: string;
+    review_verdict: string | null;
+  }>;
+  /** The repositories the card works in, its own first. */
+  repositories: string[];
   /** Set while a person or the Moebius agent holds the card. */
   held: { reason: string | null; by: string; at: number } | null;
   parent: number | null;
@@ -140,6 +156,8 @@ function card(id: number, extra: Partial<FakeCard>): FakeCard {
     blocked_by: [],
     refusals: 0,
     change: null,
+    more_changes: [],
+    repositories: ["demo"],
     held: null,
     parent: null,
     counts_as_sub_issue: true,
@@ -190,6 +208,11 @@ export interface BoardFake {
    * returns their numbers. The page reads the board again on the next event.
    */
   seedApprovals(count: number): number[];
+  /**
+   * Gives card `id` an open change in a second repository `web`, which the card now works in: a failing one, as the
+   * checks of that repository are its own.
+   */
+  seedChange(id: number): void;
   /** Makes the next request with `method` to `path` fail with `status` and `message`. */
   refuseNext(method: string, path: string, status: number, message: string): void;
   /** The non-GET requests the board routes received, in order. */
@@ -220,7 +243,13 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       column: "Ready to merge",
       rounds: 2,
       tokens: 96_000,
-      change: { id: 1, state: "open", checks: "success", review_verdict: "approve" },
+      change: {
+        id: 1,
+        repository: "demo",
+        state: "open",
+        checks: "success",
+        review_verdict: "approve",
+      },
     }),
     card(6, {
       title: "Stop the flaky test",
@@ -334,7 +363,14 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
     note(target.id, { kind: "moved", data: { from, to, note: why } });
     return { kind: "card_moved", data: { card: target.id, from, to } };
   }
-  const view = (c: FakeCard) => ({ ...c, closed: c.closed || c.column === "Done" });
+  const view = (c: FakeCard) => {
+    const { more_changes, ...rest } = c;
+    return {
+      ...rest,
+      closed: c.closed || c.column === "Done",
+      changes: [...(c.change ? [c.change] : []), ...more_changes],
+    };
+  };
   const comments = new Map<number, FakeComment[]>();
   let nextComment = 1;
   const numbered = (n: number) => cards.find((c) => c.number === n);
@@ -711,6 +747,15 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       }
       return made;
     },
+    seedChange(id) {
+      const target = find(id);
+      if (!target) throw new Error(`no card ${id}`);
+      if (!target.repositories.includes("web")) target.repositories.push("web");
+      target.more_changes = [
+        { id: 20, repository: "web", state: "open", checks: "failure", review_verdict: "approve" },
+      ];
+      send({ kind: "card_updated", data: view(target) });
+    },
     refuseNext(method, path, status, message) {
       refusals.set(`${method} ${path}`, { status, message });
     },
@@ -761,6 +806,26 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
         if (!title || title.trim() === "") return fail(422, "an issue needs a title");
         target.title = title.trim();
         target.body = text ?? "";
+        send({ kind: "card_updated", data: view(target) });
+        return ok(view(target));
+      }
+      const named = /^\/v1\/cards\/(\d+)\/repositories$/.exec(path);
+      if (named && method === "PUT") {
+        const target = find(Number(named[1]));
+        if (!target) return fail(404, `card ${named[1]} not found`);
+        const wanted = (((body ?? {}) as { repositories?: string[] }).repositories ?? []).filter(
+          (name) => name !== "demo",
+        );
+        // The project of the card has one repository besides its own: `web`.
+        const unknown = wanted.find((name) => name !== "web");
+        if (unknown) return fail(422, `${unknown} is not a repository of the project demo`);
+        if (!wanted.includes("web") && target.more_changes.some((c) => c.repository === "web")) {
+          return fail(
+            422,
+            "the card has an open change in web: it cannot leave the card while the change is open",
+          );
+        }
+        target.repositories = ["demo", ...wanted];
         send({ kind: "card_updated", data: view(target) });
         return ok(view(target));
       }

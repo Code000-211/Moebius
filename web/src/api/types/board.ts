@@ -32,6 +32,8 @@ export interface CardRun {
 
 export interface CardChange {
   id: number;
+  /** The name of the repository the change is in; absent from a server that has one change per card. */
+  repository?: string;
   state: string;
   checks: "pending" | "success" | "failure" | "none";
   review_verdict: "approve" | "changes" | null;
@@ -68,7 +70,12 @@ export interface Card {
   run: CardRun | null;
   blocked_by: number[];
   refusals: number;
+  /** The card's open change in its own issue's repository. */
   change: CardChange | null;
+  /** Every open change of the card, one per repository, in the order they are merged. */
+  changes?: CardChange[];
+  /** The repositories the card works in, its own issue's first. */
+  repositories?: string[];
   /** True for a card made from a confirmed grilling, which needs no approval. */
   confirmed?: boolean;
   /** The latest group of attempts of a card that was tried several times at once; absent without one. */

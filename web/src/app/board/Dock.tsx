@@ -26,13 +26,14 @@ import { MarkLabel } from "../../ui/page/MarkLabel";
 import { Notice } from "../../ui/page/Notice";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { CardMenu } from "./CardMenu";
-import { CardProperties, STATUS_MARK } from "./CardProperties";
+import { CardProperties, CHECKS, STATUS_MARK } from "./CardProperties";
 import { cardName } from "./cardKey";
 import type { Decision } from "./decisions";
 import { ActivitySection, EditIssueDialog } from "./IssueSections";
 import {
   cardStatus,
   changeOf,
+  changesOfCard,
   changeWorktree,
   issueUrl,
   pullRequestOf,
@@ -168,6 +169,8 @@ export function Dock({
   board,
   card,
   item,
+  stopped,
+  boards,
   busy,
   askFor,
   onAskAnswered,
@@ -179,6 +182,10 @@ export function Dock({
   board: Board;
   card: Card;
   item: InboxItem | undefined;
+  /** The card's open `merge_stopped` item, which says what is merged and what is still open. */
+  stopped?: InboxItem;
+  /** Every board: a change in another repository of the card is on that repository's board. Only this one when not given. */
+  boards?: Board[];
   busy: boolean;
   /** The card a drop asked to send back; the reason form opens for that card alone. */
   askFor: number | null;
@@ -208,7 +215,18 @@ export function Dock({
   });
   // The worktree of the run that made the change.
   const worktree = changeWorktree(card, runs.data ?? []);
-  const pullRequest = pullRequestOf(repository, changeOf(board, card));
+  const changes = changesOfCard(card);
+  // A change of the card's other repositories is read from the board of that repository.
+  const known = boards ?? [board];
+  const pullRequestIn = (id: number, name: string | undefined) => {
+    const where = known.find((b) => b.repository.name === name)?.repository ?? repository;
+    const found = known.flatMap((b) => b.changes).find((c) => c.id === id);
+    // The card's own change is also read from its own board when the boards are not all given.
+    return pullRequestOf(
+      where,
+      found ?? (id === card.change?.id ? changeOf(board, card) : undefined),
+    );
+  };
 
   return (
     <KanbanIssuePanel
@@ -219,7 +237,14 @@ export function Dock({
       menu={<CardMenu card={card} {...menu} />}
       onClose={onClose}
     >
-      <CardProperties board={board} card={card} item={item} onOpenCard={onOpenCard} />
+      <CardProperties
+        board={board}
+        card={card}
+        item={item}
+        stopped={stopped}
+        boards={boards}
+        onOpenCard={onOpenCard}
+      />
 
       {/* The issue is what the card asks for, and the card is only its title: without the body a person decides
           about a sentence they were never given. */}
@@ -240,17 +265,40 @@ export function Dock({
 
       {/* A change is what a person came to the card to weigh, so it follows the issue it answers instead of
           waiting behind the runs that made it. */}
-      {card.change && (
+      {changes.length > 0 && (
         <KanbanIssueSection title="Changes">
-          {pullRequest && (
-            <PrBadge
-              number={pullRequest.number}
-              url={pullRequest.url}
-              status={pullRequest.status}
-              className="mb-3"
-            />
-          )}
-          <ChangesCard of={{ change: card.change.id }} worktree={worktree} />
+          <div className="flex flex-col gap-4">
+            {changes.map((change, index) => {
+              const pullRequest = pullRequestIn(change.id, change.repository);
+              return (
+                <div
+                  key={change.id}
+                  data-testid="card-change"
+                  className="flex min-w-0 flex-col gap-2"
+                >
+                  {changes.length > 1 && (
+                    <p className="m-0 flex flex-wrap items-baseline gap-x-2 text-sm text-text">
+                      <span className="font-medium">{change.repository}</span>
+                      <span className="text-secondary">
+                        {`Checks: ${CHECKS[change.checks] ?? change.checks}`}
+                      </span>
+                    </p>
+                  )}
+                  {pullRequest && (
+                    <PrBadge
+                      number={pullRequest.number}
+                      url={pullRequest.url}
+                      status={pullRequest.status}
+                    />
+                  )}
+                  <ChangesCard
+                    of={{ change: change.id }}
+                    worktree={index === 0 ? worktree : null}
+                  />
+                </div>
+              );
+            })}
+          </div>
         </KanbanIssueSection>
       )}
 

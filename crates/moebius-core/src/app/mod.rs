@@ -75,6 +75,7 @@ pub use automations::{
 };
 pub use board::{BoardFacts, CardFacts};
 pub use cards::HistoryEntry;
+pub use changes::CardMerge;
 pub use chat_access::{ChatScope, may_use};
 pub use chats::{ASSISTANT_ORIGIN, CHAT_ORIGIN, Chat, ChatSettings};
 pub(crate) use checks::tail;

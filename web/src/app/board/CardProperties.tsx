@@ -19,6 +19,7 @@ import {
   release,
   removeBlocker,
   reopenIssue,
+  setCardRepositories,
   setDue,
   setEstimate,
   setLabels,
@@ -41,10 +42,13 @@ import { cardKey } from "./cardKey";
 import {
   type CardStatus,
   cardStatus,
+  changesOfCard,
   descendants,
   heldLine,
+  inRepository,
   isClosed,
   isPlanningLabel,
+  mergeStopped,
   PRIORITY_WORDS,
   parentOf,
   STATUS_LABELS,
@@ -52,6 +56,7 @@ import {
   tokens,
   waitingLine,
 } from "./model";
+import { RepositoriesProperty } from "./RepositoriesProperty";
 
 /** The mark before the word of a card's status: the ring of a run, the icon of what is blocked, nothing otherwise. */
 export const STATUS_MARK: Record<CardStatus, StateMark> = {
@@ -65,10 +70,11 @@ export const STATUS_MARK: Record<CardStatus, StateMark> = {
 };
 
 /** The checks of a change in a word. */
-const CHECKS: Record<string, string> = {
+export const CHECKS: Record<string, string> = {
   pending: "Running",
   success: "Green",
   failure: "Failed",
+  none: "None",
 };
 
 /** The value of the claim that claims the issue for the person looking at it: the server names the caller. */
@@ -96,15 +102,47 @@ function IssueLink({ card, onOpen }: { card: Card; onOpen: (card: Card) => void 
   );
 }
 
+/** What a stopped merge of a card's changes left: the repositories merged, the ones still open and why it stopped. */
+function MergeStopped({ item }: { item: InboxItem }) {
+  const { repository, reason, merged, open } = mergeStopped(item);
+  return (
+    <>
+      <Property name="Merged">
+        {merged.length === 0 ? (
+          <span className="text-secondary">Nothing yet</span>
+        ) : (
+          merged.join(", ")
+        )}
+      </Property>
+      <Property name="Still open">
+        <span className="flex flex-col gap-0.5 py-0.5">
+          <span>{open.join(", ")}</span>
+          {repository !== "" && (
+            <span className="text-sm text-secondary">
+              {`The merge in ${repository} stopped${reason !== "" ? `: ${reason}` : ""}.`}
+            </span>
+          )}
+        </span>
+      </Property>
+    </>
+  );
+}
+
 export function CardProperties({
   board,
   card,
   item,
+  stopped,
+  boards,
   onOpenCard,
 }: {
   board: Board;
   card: Card;
   item: InboxItem | undefined;
+  /** The card's open `merge_stopped` item, which says what is merged and what is still open. */
+  stopped?: InboxItem;
+  /** Every board, which names the repositories a card may be given; the card's own when not given. */
+  boards?: Board[];
   /** Shows another issue, such as the parent or a sub-issue, in the dock. */
   onOpenCard: (card: Card) => void;
 }) {
@@ -157,6 +195,12 @@ export function CardProperties({
       </EditableProperty>
       <Property name="Column">{card.column}</Property>
       <Property name="Repository">{board.repository.name}</Property>
+      <RepositoriesProperty
+        card={card}
+        own={board.repository.name}
+        boards={boards ?? [board]}
+        onSave={(next) => saved(setCardRepositories(card.id, next))}
+      />
       <Property name="Author">{card.author}</Property>
       <KindProperties card={card} saved={saved} />
       <AssigneesProperty
@@ -330,9 +374,12 @@ export function CardProperties({
       <Property name="Why it waits">
         {waitingLine(board.waiting[String(card.id)], card.refusals)}
       </Property>
-      {card.change && (
-        <Property name="Checks">{CHECKS[card.change.checks] ?? card.change.checks}</Property>
-      )}
+      {changesOfCard(card).map((change) => (
+        <Property key={change.id} name={`Checks${inRepository(card, change)}`}>
+          {CHECKS[change.checks] ?? change.checks}
+        </Property>
+      ))}
+      {stopped && <MergeStopped item={stopped} />}
       <Property name="Cost">
         <span className="tabular-nums">{tokens(card.tokens)}</span>
       </Property>

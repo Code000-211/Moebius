@@ -112,7 +112,7 @@ finds the server again by that directory: it answers, or it is started again wit
    there (`Store::code_branch_in`), all recorded with `Store::add_run_worktree` so the tool-call check lets the run write
    in each (the context key `worktrees`); then it issues the run's token (`Router::issue_token`, carrying the agent's budget), writes the run's
    agent directory and the bridge to `<data_dir>/runs/<id>/`, spawns Pi-Bolt (`PiBolt::launch`), sets the run `running`,
-   publishes `run_started` and sends the prompt (`prompt_for`, `harness/run/prompts.rs`: the issue with its comments, the instructions for the run's purpose, and
+   publishes `run_started` and sends the prompt (`prompt_for`, `harness/run/prompts/mod.rs`: the issue with its comments, the instructions for the run's purpose, and
    the note if there is one). The server's `Runs` is `Harnesses` (`harness/pick.rs`), which hands the run to the harness
    the agent's `harness` names: an agent on `claude-code` is started by `ClaudeCode::start` the same way (`card_run`
    makes the run, worktree and token for both), with a checked token (`Router::issue_checked_token`), so that the router
@@ -289,7 +289,7 @@ finds the server again by that directory: it answers, or it is started again wit
     check is not offered and the chat gets a `moebius_error`. `App::merge_change` merges such a change with
     `HarnessRepo::merge_branch`, which `merge_proposal` uses too.
 12c0. **Lessons.** `retro::conclude` stores the `lessons` block of the analyst's answer (`lessons::store_written`). `prompt_with`
-    (`harness/run/prompts.rs`) puts the best matches for the issue's text under "Lessons from earlier cards" in a code or
+    (`harness/run/prompts/mod.rs`) puts the best matches for the issue's text under "Lessons from earlier cards" in a code or
     review prompt (`lessons::for_prompt`, FTS5 BM25 in `store/lessons.rs`); the bridge's tool `lessons` asks
     `/moebius/lessons` (`lessons::tool`). `server/schedule.rs` retires the lessons not retrieved for 60 days, and
     `trial::card::run_trial` those given to a negative trial run.
@@ -383,7 +383,9 @@ finds the server again by that directory: it answers, or it is started again wit
 14. **A person merges.** `POST /v1/changes/{id}/merge` calls `App::merge_change`: it records a judgement by `person`,
     the forge merges (`Repos::merge`, a `--no-ff` merge, `GitHub::merge_pull_request`, `GitLab::merge` or
     `Forgejo::merge`), and `App::change_merged`
-    marks the change merged, resolves the inbox, publishes `change_merged` and moves the card to `Done`.
+    marks the change merged, resolves the inbox, publishes `change_merged` and moves the card to `Done` once it has no
+    other open change. A card's changes merge in the order of its repositories; `moebius.merge_change` calls
+    `App::merge_card`, which stops at the first merge that fails and marks the card with `merge_stopped`.
 15. **Done.** `done.luau` calls `moebius.record_outcome`, with `merged` when a change of the card was merged (`card.merged`)
     and `closed` otherwise, so every judgement made for the card gets an outcome.
 
@@ -548,6 +550,7 @@ At the top:
 | `app/deletions.rs` | Deleting a chat: a chat that is going is stopped, then it is taken out of the store with its changes, inbox items and grillings, and its worktree and branch are removed; also the stop-and-wait that research and grillings share. |
 | `app/diffs.rs` | What a change or a run changed, as a unified diff (secrets removed, cut at 2 MB) for a client to draw. |
 | `app/changes/mod.rs` | Changes: a card's work and a chat's work offered in the inbox, rejected or merged, and what the forge says became of them. |
+| `app/changes/merge.rs` | A card's changes merged together, in the order the card names its repositories; a merge that fails stops there and marks the card with `merge_stopped`. |
 | `app/changes/publish.rs` | A card's work published through the forges of its repositories, one change per repository it works in, and offered in the inbox. |
 | `app/checks.rs` | How a change's checks stand, and a repository's own checks (the project's `checks`) run in a throwaway worktree with a time limit and a cleared environment. |
 | `app/board.rs` | What a board shows of a card, worked out once for the snapshot and the scripts: rounds, latest run, and the batched reads of a whole board. |
@@ -802,8 +805,9 @@ At the top:
 | `harness/pibolt/testing.rs` | For the tests only: the fake Pi, a server set up for it, and reading what Pi was started with. |
 | `harness/run/mod.rs` | The life of a run, the same for every harness: what the folder holds and re-exports. |
 | `harness/run/agents.rs` | The built-in agents (the Moebius agent, the Grilling partner, the Coder, the Reviewer, the Retro analyst, the Autoresearcher) with their instructions and skills, and the agent a run uses, on either harness. |
-| `harness/run/coding_agents.rs` | The built-in instructions of the Coder and the Reviewer, which complement the per-run prompts of `prompts.rs`. |
-| `harness/run/prompts.rs` | What a run of a card is told: the issue and its comments, the instructions of its purpose, the files likely to matter, the lessons of earlier cards and the notes of the last round. |
+| `harness/run/coding_agents.rs` | The built-in instructions of the Coder and the Reviewer, which complement the per-run prompts of `prompts/`. |
+| `harness/run/prompts/mod.rs` | What a run of a card is told: the issue and its comments, the instructions of its purpose, the files likely to matter, the lessons of earlier cards and the notes of the last round. |
+| `harness/run/prompts/repositories.rs` | What a run of a card over several repositories is told of them: a code run where its worktrees are and which it may ask for, a review where the change in each is. |
 | `harness/run/lifecycle.rs` | Making a run, its worktree (one in each repository of a card over several) and its token (`card_run`, `detached_run`, `chat_run`), undoing them when its process cannot be started (`launch_or_undo`), and `RunningRun`, which commits what the agent left and removes the worktree. |
 | `harness/run/start.rs` | Starting a run: the harness is asked only to start its process (`Launching`, `Launch`) in the run `lifecycle` made. |
 | `harness/run/end.rs` | Ending a run: its records kept as its events and summary (`keep`), and its end (`finish`). |

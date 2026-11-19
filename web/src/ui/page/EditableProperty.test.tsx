@@ -73,6 +73,32 @@ describe("a value edited in place", () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(null));
   });
 
+  it("chooses several values, with the fixed ones always among them and never taken off", async () => {
+    const onSave = saving();
+    property(
+      {
+        kind: "choices",
+        options: [
+          ["web", "web"],
+          ["docs", "docs"],
+        ],
+        value: ["web"],
+        fixed: ["demo"],
+        onSave,
+      },
+      "demo, web",
+    );
+    fireEvent.keyDown(screen.getByRole("button", { name: "Field demo, web" }), { key: "Enter" });
+    const fixed = await screen.findByRole("menuitemcheckbox", { name: "demo" });
+    expect(fixed.getAttribute("aria-checked")).toBe("true");
+    expect(fixed.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(fixed);
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "docs" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(["web", "docs"]));
+    expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
   it("saves typed text on Enter, and the focus comes back to the value", async () => {
     const onSave = saving();
     property({ kind: "text", value: "Fix it", onSave }, "Fix it");

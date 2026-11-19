@@ -334,13 +334,18 @@ merge` at once (not when the script returns). Raises the errors of `moebius.publ
 A person merges the branch `moebius/card-<number>`, and the branch of each other change. The time this call takes does
 not count against the time limit.
 
-`moebius.merge_change(reason)` returns the commit (a string) of the merge in the card's own repository. `reason` is
+`moebius.merge_change(reason)` returns two values: the commit (a string) of the first merge it made, which is the
+card's own repository's unless that was merged before, and nil; or nil and why a merge failed (a string). `reason` is
 optional text and becomes the reason of each merge judgement.
 : Merges the card's open changes on their forges, one after another in the order of `card.changes`, and moves the card
-to `Done` at once (not when the script returns), which resolves the changes' inbox items. A merge that fails raises
-its error, and the changes after it are not merged. The judgement is recorded as the column's script
+to `Done` at once (not when the script returns), which resolves the changes' inbox items. There is no merge across
+forges at once, so a merge that fails stops there (ADR 0019): the changes before it stay merged, the changes from it on
+stay open, and the card stays where it is. It waits with the reason `the merge in <repository> failed: <the error>`,
+which the second value is too, and is marked with an inbox item `merge_stopped` (see `InboxItem` in `desktop-api.md`)
+that names the repositories whose changes are merged and those whose changes are still open; the same change failing
+again keeps the item. A later merge of the rest, by this function or by a person, finishes the card. The judgement is recorded as the column's script
 (`script:<column>`, see [the decision model](decision-model.md)), not as a person. Raises `the card has no open change to
-merge` when the card has no change, and the errors of the merge (a conflict, a forge refusal). A repository that merges
+merge` when the card has no change. A repository that merges
 without a person overrides `merge.luau` with a call to this function as its last statement; the default `merge.luau`
 waits for a person instead. The time this call takes does not count against the time limit.
 
@@ -544,8 +549,21 @@ since it could not do the work without the repository. The lines are left out of
 
 The tool-call check reads the `rules.md` of the card's own repository for every call of the run, whichever worktree it
 writes in. A change in another repository than the card's own is merged with the message `Merge <KEY>-<number>:
-<title>`, and its pull request names the card instead of closing an issue. A card is done once its last open change is
-merged: merging one change of several resolves only that change's inbox item.
+<title>`, and its pull request names the card instead of closing an issue. Every pull request of such a card has the
+line `One of the changes of <KEY>-<number> in <repositories>, which Moebius merges together, in that order.`
+
+A review run (`review`, `review-standards`, `review-spec`) of such a card gets a worktree of each repository too, each
+on the branch of the card's change there, and its prompt names each with the command that shows its change (`git -C
+<worktree> diff <base>...HEAD`): the Reviewer sees every diff of the card at once, and its findings send the whole card
+back. The standards axis judges each repository's change by that repository's own standards and its own `review.md`
+(see `harness-configuration.md`); the spec axis judges the issue over all the changes together; a single `review`
+does both.
+
+The changes of a card are merged in the order of `card.repositories`. A change is not merged while one before it is
+open: `POST /v1/changes/{id}/merge` refuses it with `422`, and `moebius.merge_change` merges them in that order. A
+person's merge that fails while another change of the card is merged marks the card the same way. A
+card is done once its last open change is merged: merging one change of several resolves only that change's inbox item.
+A merge that fails stops there and marks the card (see `moebius.merge_change`).
 
 **If you upgrade:** `card.change` is now `card.changes`, and `moebius.publish_change`, `moebius.open_pull_request` and
 `moebius.run_checks` return an array. A project script written for one change raises an error that says so (reading
