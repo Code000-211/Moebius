@@ -299,6 +299,15 @@ A React app (`web/`) served by the server and built to [`docs/design-web.md`](de
 - **Usage**: tokens per day by leading model, tokens by model, where the tokens go, where to save, where the model time goes,
   by agent.
 
+### 8.1 The desktop app
+
+`crates/moebius-desktop` (ADR 0021) is the web app of the same release in a window of its own, built with Tauri 2 for
+Linux (an AppImage and a `.deb`) and Windows (an installer), not for macOS. It signs in to one server with a person's
+access token, asks the server's version first and refuses a server of another minor version, naming the release whose
+app matches. It serves the web app it bundles from its own address on the loopback and forwards `/v1/` to the server
+with the token, so the token stays in the app. The window has no system frame: its controls lie on the textured
+ground. Several servers, a local server, notifications, the tray and the global shortcut of ADR 0021 come later.
+
 ## 9. Security
 
 - Nothing on the server is reachable from the internet; the app authenticates with a token.

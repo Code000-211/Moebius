@@ -266,7 +266,12 @@ fn every_module_is_in_the_architecture_map() {
     let (_, modules) = map
         .split_once("\n## Modules\n")
         .expect("docs/architecture.md has a Modules section");
-    for krate in ["moebius", "moebius-plugin-api", "moebius-core"] {
+    for krate in [
+        "moebius",
+        "moebius-plugin-api",
+        "moebius-desktop",
+        "moebius-core",
+    ] {
         let heading = format!("\n### `crates/{krate}`");
         let (_, section) = modules
             .split_once(&heading)

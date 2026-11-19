@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Moebius",
+  "mainBinaryName": "moebius-desktop",
+  "identifier": "io.github.code000-211.moebius",
+  "build": {
+    "frontendDist": "connect"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["appimage", "deb", "nsis"],
+    "category": "DeveloperTool",
+    "shortDescription": "Moebius in a window of its own",
+    "longDescription": "The desktop app of Moebius: the web app of the same release, connected to a Moebius server with an access token.",
+    "license": "Apache-2.0",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.png", "icons/icon.ico"]
+  }
+}

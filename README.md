@@ -110,7 +110,8 @@ web app (browser) ──(private network, sign-in)──▶ moebius server ─�
 
 One headless server holds the boards, runs the column scripts, starts the agents and keeps everything in SQLite. The
 web app it serves (React, in any browser; `moebius open` shows it in a window of its own, `moebius connect <host>` over SSH) talks to it over a documented API, and so does the `moebius` command line.
-The web app is the only front end ([ADR 0017](docs/adr/0017-the-desktop-app-is-removed.md)).
+The web app is the only front end; the [desktop app](docs/guide/desktop-app.md) for Linux and Windows shows the web app
+of its release in a window of its own ([ADR 0021](docs/adr/0021-a-desktop-app-in-tauri.md)).
 [`docs/architecture.md`](docs/architecture.md) follows a card through the system.
 
 ## Quick start
@@ -164,7 +165,9 @@ moebius serve     # creates .moebius/ next to the file, with the API token in .m
 **4. Open the web app.** `moebius open` shows it in a window of its own (a Chromium-based browser in app mode, signed
 in once with a code; the default browser if there is none). For a server on another machine, `moebius connect <host>`
 sets one up there if none runs (after asking), forwards its port over SSH and opens the window on it. Or open the server's address, `http://127.0.0.1:7171`, in any
-browser and sign in with the content of `.moebius/token`. The **Get started** page lists what is still missing.
+browser and sign in with the content of `.moebius/token`. The desktop app of the release (an AppImage, a `.deb` or a
+Windows installer) does the same with an access token; see [the desktop app](docs/guide/desktop-app.md). The **Get
+started** page lists what is still missing.
 
 **5. Try it.** Give the Coder agent a model (on the Agents page, or below), add a project (a path that does not
 exist yet becomes a new, empty repository) and create an issue:

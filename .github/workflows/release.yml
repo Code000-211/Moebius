@@ -1,7 +1,7 @@
 name: Release
 
 # A tag `vX.Y.Z` builds the `moebius` program for Linux x86_64 and for Windows x86_64, packages it with
-# `dist/package.sh` and publishes a GitHub release with the archives and `SHA256SUMS`. Started by hand, it builds and keeps
+# `dist/package.sh`, builds the desktop app (an AppImage and a `.deb` for Linux, an installer for Windows) and publishes a GitHub release with the archives and `SHA256SUMS`. Started by hand, it builds and keeps
 # the archives as workflow artifacts and publishes nothing, unless `publish` is set: then it releases the version of
 # Cargo.toml and makes its tag `vX.Y.Z` on the commit it built.
 on:
@@ -73,8 +73,73 @@ jobs:
             !dist/out/SHA256SUMS
           if-no-files-found: error
 
+  # The desktop app of this version, with the web app of this version in it (ADR 0021): unsigned, without automatic
+  # updates. The Linux bundles are built on the oldest Ubuntu the runners have, so their libraries are not newer than the
+  # systems they are installed on.
+  desktop:
+    name: desktop ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04, bundles: "appimage,deb", artifact: desktop-linux }
+          - { os: windows-latest, bundles: nsis, artifact: desktop-windows }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-desktop
+      - name: Work out the version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version=${GITHUB_REF_NAME#v}
+          elif [ "${{ inputs.publish }}" != true ]; then
+            version=$version-dev
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - if: runner.os == 'Linux'
+        name: Install what the desktop app builds with
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Build the web app
+        run: pnpm -C web install --frozen-lockfile && pnpm -C web build
+      - name: Build the bundles
+        working-directory: crates/moebius-desktop
+        run: pnpm dlx @tauri-apps/cli@2.12.4 build --bundles ${{ matrix.bundles }} -- --locked
+      # The names the guide gives: moebius-desktop-<version>-x86_64.AppImage, moebius-desktop-<version>-amd64.deb and
+      # moebius-desktop-<version>-x86_64-setup.exe.
+      - name: Name the bundles
+        run: |
+          mkdir -p dist/out
+          bundle=target/release/bundle
+          if [ "$RUNNER_OS" = Linux ]; then
+            cp "$bundle"/appimage/*.AppImage "dist/out/moebius-desktop-$VERSION-x86_64.AppImage"
+            cp "$bundle"/deb/*.deb "dist/out/moebius-desktop-$VERSION-amd64.deb"
+          else
+            cp "$bundle"/nsis/*-setup.exe "dist/out/moebius-desktop-$VERSION-x86_64-setup.exe"
+          fi
+          ls -l dist/out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/out/*
+          if-no-files-found: error
+
   publish:
-    needs: build
+    needs: [build, desktop]
     if: github.ref_type == 'tag' || inputs.publish
     runs-on: ubuntu-latest
     permissions:
@@ -95,7 +160,7 @@ jobs:
           echo "TAG=$tag" >> "$GITHUB_ENV"
       - name: Write SHA256SUMS
         working-directory: release
-        run: sha256sum *.tar.gz *.zip moebius-x86_64-* > SHA256SUMS
+        run: sha256sum *.tar.gz *.zip moebius-x86_64-* *.AppImage *.deb *-setup.exe > SHA256SUMS
       - name: Publish the release
         uses: softprops/action-gh-release@v2.2.2
         with:

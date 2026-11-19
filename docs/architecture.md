@@ -49,9 +49,30 @@ and does not know anything the API does not say.
   not replayed. A socket that cannot connect asks `GET /v1/session` again: 401 sends the person to the sign-in page, no
   answer shows a banner over what is on screen.
 - **Serving.** The server embeds `web/dist` and serves it at `/`, with `index.html` for the paths of the pages. In
-  development `pnpm dev` proxies `/v1` to a running server.
+  development `pnpm dev` proxies `/v1` to a running server. The desktop app embeds the same build and serves it from
+  its own address; see [The desktop app](#the-desktop-app).
 - **Components.** `web/src/ui/` holds components copied from Vibe Kanban's `@vibe/ui` (Apache-2.0), rebuilt on the web
   app's own tokens (`web/src/styles/theme.css`), which are its own: the web app is built to `docs/design-web.md`.
+
+## The desktop app
+
+`crates/moebius-desktop` (Tauri 2, ADR 0021) shows the web app of its own release in a window without a system frame,
+on Linux (an AppImage and a `.deb`) and Windows (an installer):
+
+1. The window opens on the connect page (`connect/`, bundled by Tauri): a server's address and an access token.
+2. `server::check` asks `GET /v1/health` with the token. A 401 is a wrong token; a server whose major and minor version
+   differ from the app's is refused with the address of the release whose app matches it, since the bundled web app was
+   built for the API of its own version.
+3. `proxy::start` listens on a free port of the loopback. It serves the web app embedded from `web/dist` (with the
+   policies of `web/csp.json`, as the server does) and forwards `/v1/` to the server, HTTP and WebSockets, adding
+   `Authorization: Bearer <token>`. The web app talks to its own address as it does when the server serves it, needs no
+   cookie of the server and never holds the token. Dropping the proxy stops it and the WebSockets it relays. The proxy
+   forwards only requests that carry a cookie with a random key (named after its port), set by the first address the
+   window opens, that name the proxy in `Host`, and that have no `Origin` or the
+   proxy's own.
+4. The window opens that address, and keeps only its own pages: a link to anywhere else, such as a pull request on a
+   forge, opens in the system's browser (`links::target`). Every page of the window gets `window.moebiusDesktop` first, which the web app's
+   `desktop/WindowControls.tsx` calls to minimize, maximize and close the window from a strip on the textured ground.
 
 ## The life of a card
 
@@ -456,6 +477,19 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `process/supervise.rs` | The thread that starts a plugin process, reads its manifest and replies, logs its standard error, and starts it again after a pause when it stops. |
 | `process/serve.rs` | `serve`: the plugin's side of the JSON Lines, which runs a Rust `Plugin` as its own program. |
 | `launcher.rs` | The launcher kind: the request a harness process is started with, the answer (unchanged or a wrapped launch with its stop and cleanup commands), the leftovers, and `Host::launch` and `Host::leftovers`. |
+
+### `crates/moebius-desktop` (the desktop app)
+
+| Module | What it is for |
+|---|---|
+| `main.rs` | The `moebius-desktop` program, without a console window of its own on Windows. |
+| `lib.rs` | The parts tested without a window, and how a window comes to show the web app against one server. |
+| `links.rs` | Where an address goes: the window keeps the connect page and the web app on the proxy's origin, and sends forges, chat links and the rest to the system's browser. |
+| `server.rs` | A server the app connects to (`Server`: its address and the access token), and `check`: the token and the server's version with `GET /v1/health`, refusing a server of another minor version with the release that matches. |
+| `window.rs` | The Tauri side, in the program rather than the library so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, the `connect` command of the connect page, and the handlers that send a link leaving the app to the browser. |
+| `proxy/mod.rs` | The app's own address on the loopback: the web app at every path, `/v1/` forwarded to the server, and the key, `Host` and `Origin` checks that let only the window use it. |
+| `proxy/assets.rs` | The web app embedded from `web/dist`, served with the policies of `web/csp.json`. |
+| `proxy/forward.rs` | Forwarding to the server with the token: HTTP streamed both ways, and a WebSocket relayed message by message. |
 
 ### `crates/moebius-core` (the server)
 

@@ -7,9 +7,12 @@
  * sheet, which pages open from where a person meets plugins and extensions, lie over that column in one place. It owns
  * the command palette and its shortcut, the form of a new issue and `C` (`board/NewIssueHost.tsx`), holds what is in
  * focus for it (`palette/focus.tsx`), and notes the places seen and the sidebar's collapsed state (kept per browser).
+ * In the desktop app the ground leaves a strip free at the top for the window's controls.
  */
 import { Suspense, useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
+import { desktopBridge } from "../../desktop/bridge";
+import { WINDOW_BAR_CLASS } from "../../desktop/WindowControls";
 import { useConnection, useReconnect } from "../../live/LiveProvider";
 import { PackageSheet } from "../../packages/PackageSheet";
 import { PackageSheetProvider, usePackageSheet } from "../../packages/PackageSheetContext";
@@ -89,7 +92,7 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
   const offline = unreachable || connection === "reconnecting";
 
   return (
-    <div className="ground flex h-full py-1.5">
+    <div className={cn("ground flex h-full py-1.5", desktopBridge() && WINDOW_BAR_CLASS)}>
       <Sidebar
         connection={connection}
         collapsed={collapsed}

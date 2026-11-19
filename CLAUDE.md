@@ -21,6 +21,10 @@ documentation; `CONTRIBUTING.md` says the same as this file for people.
   organisation's pages: `pages`, `edits`; kept like the harness configuration repository through `repos/kept`). `docs/architecture.md` lists every
   module. Column scripts are in `kanban/*.luau`.
 - `crates/moebius-plugin-api`: the plugin trait and the host that calls plugins with a time limit, failing closed.
+- `crates/moebius-desktop`: the desktop app (Tauri 2): the web app of the same release in a window of its own, the
+  connect page in `connect/`, `server` (the version check), `proxy/` (the web app and `/v1/` on the loopback, with
+  the token) and `window` (the Tauri side). It needs WebKitGTK 4.1 to build on Linux (`libwebkit2gtk-4.1-dev`); see
+  its `README.md`.
 - `crates/moebius`: the `moebius` binary (`init`, `serve`, `check-script`, `export`, and in `cli/` the commands that
   operate a running server through the desktop API: `api` for any route, a command for what is done often; the Moebius
   agent uses them as `"$MOEBIUS"`).
@@ -31,7 +35,7 @@ documentation; `CONTRIBUTING.md` says the same as this file for people.
 - `web/`: the web app, a Vite + React + TypeScript (strict) + Tailwind 4 app built with pnpm into `web/dist`, which the
   server serves at `/`. It talks to the server only through the desktop API: `src/api/` the client
   (one module per part of the API) and the event stream, `src/live/` the events feeding the TanStack Query cache,
-  `src/app/` the shell and the pages, `src/ui/` components copied from Vibe Kanban (Apache-2.0, each file says where from
+  `src/app/` the shell and the pages, `src/desktop/` what it draws inside the desktop app, `src/ui/` components copied from Vibe Kanban (Apache-2.0, each file says where from
   and what changed; `web/NOTICE`), `src/styles/` the tokens of the web app's own design standard (both themes, with a
   test on their values, radii and contrast, and a design audit in `e2e/design/`), `e2e/` the Playwright tests against a
   fake server. See `web/README.md`. The web app follows `docs/design-web.md`.
@@ -60,7 +64,8 @@ documentation; `CONTRIBUTING.md` says the same as this file for people.
 
 ## Checks
 
-Run all three before every commit; CI runs the same:
+Run all three before every commit; CI runs the same. On Linux they build the desktop app too, which needs WebKitGTK
+(on Debian and Ubuntu: `libwebkit2gtk-4.1-dev librsvg2-dev`):
 
 ```sh
 cargo fmt --all
