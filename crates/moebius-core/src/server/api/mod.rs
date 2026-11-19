@@ -308,15 +308,17 @@ fn identify(
     let store = &state.app.store;
     match given {
         Some(token) if same(token.as_bytes(), state.token.as_bytes()) => {
-            Some(match owner_person(state) {
-                Some(owner) => Who::person(owner, None, Via::Bearer),
+            // The server's token is the first owner's: refused while they are disabled, like their own tokens.
+            match store.person_by_handle(crate::store::FIRST_OWNER) {
+                Ok(Some(owner)) if owner.disabled => None,
+                Ok(Some(owner)) => Some(Who::person(owner, None, Via::Bearer)),
                 // A store without its first owner (who is never deleted) leaves the bare person.
-                None => Who {
+                _ => Some(Who {
                     actor: Actor::first_owner(),
                     via: Via::Bearer,
                     signed_in: None,
-                },
-            })
+                }),
+            }
         }
         Some(token) if token.starts_with(TOKEN_PREFIX) => {
             let (person, id) = store.person_of_token(token, crate::store::now()).ok()??;
