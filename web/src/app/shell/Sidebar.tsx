@@ -82,11 +82,12 @@ import {
   pageByPath,
   SETTINGS_PAGES,
   settingsLabel,
+  shownTo,
 } from "../pages";
 import { readFlagOr, readText, writeFlag, writeText } from "../storage";
 import { PlacesSection } from "./PlacesSection";
 import { placeAt } from "./places";
-import { leaveSession } from "./session";
+import { leaveSession, useRole } from "./session";
 
 const STATE: Record<ConnectionState, { label: string; color: string }> = {
   online: { label: "Online", color: "var(--complete)" },
@@ -155,6 +156,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarProps) {
+  const role = useRole();
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
   const chatList = useQuery({ queryKey: keys.chats, queryFn: readChats });
   const steps = useQuery({ queryKey: keys.start, queryFn: () => start() });
@@ -361,7 +363,7 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
       <ScrollFades className={cn("min-h-0 flex-1 px-2 pb-2", collapsed && "scroll-none")}>
         {inSettings && (
           <Section title="Settings" collapsed={collapsed}>
-            {SETTINGS_PAGES.map((page) => (
+            {SETTINGS_PAGES.filter((page) => shownTo(page, role)).map((page) => (
               <Entry
                 key={page.path}
                 to={`/${page.path}`}

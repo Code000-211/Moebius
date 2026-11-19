@@ -85,6 +85,7 @@ any route to any role that is not what its row says.
 | `POST /v1/session/codes` | viewer | no |
 | `GET /v1/people` | viewer | no |
 | `POST /v1/people` | owner | no |
+| `PATCH /v1/people/{id}` | owner | no |
 | `GET /v1/people/{id}/tokens` | viewer | no |
 | `GET /v1/tokens` | viewer | no |
 | `POST /v1/tokens` | viewer | no |
@@ -461,6 +462,13 @@ string, "name": string, "role": "owner" | "member" | "viewer"}`; the handle may 
 is 1 to 39 lowercase letters, digits, `-` and `_`, starting with a letter or a digit. Response: `{"person": Person,
 "token": AccessToken & {"token": string}}`. Errors: `403` with `only an owner can do this`, `409` for a handle that is
 taken in any case, `422` for a handle or an empty or longer than 100 characters name.
+
+### `PATCH /v1/people/{id}`
+
+An owner changes a person's role or disables or enables them. Request body: `{"role"?: "owner" | "member" | "viewer",
+"disabled"?: bool}`; what is absent stays. Disabling signs the person out at once: their tokens and sessions are
+refused. Response: the `Person`. Errors: `403` with `only an owner can do this`, `404` for no such person, `422` for
+changing the last owner who is not disabled to another role or disabling them.
 
 ### `GET /v1/people/{id}/tokens`
 

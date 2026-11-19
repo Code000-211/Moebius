@@ -23,10 +23,11 @@ import {
   CommandList,
 } from "../../ui/components/Command";
 import { useNewIssue } from "../board/NewIssueHost";
-import { boardPath, type Group, PAGES } from "../pages";
+import { boardPath, type Group, PAGES, shownTo } from "../pages";
 import { usePaletteFocus } from "./palette/focus";
 import { matches, type PaletteCommand, readRecent } from "./palette/model";
 import { NEW_ISSUE_KEY, SHORTCUTS_KEY } from "./palette/shortcuts";
+import { useRole } from "./session";
 
 const GROUPS: readonly Group[] = ["", "Projects", "Build", "Improve", "Setup"];
 /** Cards shown for a query: the list is for choosing, and a longer one is a reason to type more. */
@@ -49,6 +50,7 @@ export function CommandBar({
   onOpenChange: (open: boolean) => void;
 }) {
   const navigate = useNavigate();
+  const role = useRole();
   const here = useLocation().pathname;
   const focus = usePaletteFocus();
   const newIssue = useNewIssue();
@@ -93,7 +95,9 @@ export function CommandBar({
   const commands = (focus?.commands ?? []).filter((c) =>
     matches(query, `${c.label} command ${focus?.label ?? ""}`),
   );
-  const pages = PAGES.filter((page) => matches(query, `${page.title} page ${page.group}`));
+  const pages = PAGES.filter((page) => shownTo(page, role)).filter((page) =>
+    matches(query, `${page.title} page ${page.group}`),
+  );
   const places = boards.filter((board) => matches(query, `${board.repository.name} place project`));
   const cards =
     query.trim() === ""

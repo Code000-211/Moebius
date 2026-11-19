@@ -84,6 +84,8 @@ in WSL (see [On Windows](#on-windows)). Every key named here is in the
    of the answer; it is shown once, and only its hash is kept. Lea pastes it on the sign-in page, or saves it with
    `moebius login`, and makes more of her own with `POST /v1/tokens`. Revoking one (`DELETE /v1/tokens/{id}`) refuses
    it and ends the sessions it opened at once (see [the desktop API](../reference/desktop-api.md#people-and-access-tokens)).
+   An owner does the same on the People page of the web app (Settings), which also changes a role, disables a person
+   (who is signed out at once) and shows each token's last use; every person has My tokens.
 
    An upstream can log in to a provider with OAuth instead of a key: write its client id and URLs in a
    `[router.upstreams.oauth]` table (see [configuration](../reference/configuration.md#routerupstreamsoauth)), then press

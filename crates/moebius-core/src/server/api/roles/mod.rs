@@ -56,6 +56,7 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("POST", "/v1/session/codes", VIEWER_PERSON),
     ("GET", "/v1/people", VIEWER_PERSON),
     ("POST", "/v1/people", OWNER_PERSON),
+    ("PATCH", "/v1/people/{id}", OWNER_PERSON),
     ("GET", "/v1/people/{id}/tokens", VIEWER_PERSON),
     ("GET", "/v1/tokens", VIEWER_PERSON),
     ("POST", "/v1/tokens", VIEWER_PERSON),

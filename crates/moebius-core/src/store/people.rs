@@ -157,6 +157,23 @@ impl Store {
         )
     }
 
+    /// Gives the person with `id` the role `role`; false when there is none.
+    pub fn set_person_role(&self, id: i64, role: Role) -> Result<bool> {
+        Ok(self.conn().execute(
+            "UPDATE people SET role = ?1 WHERE id = ?2",
+            params![role.as_str(), id],
+        )? == 1)
+    }
+
+    /// How many owners are not disabled.
+    pub fn active_owners(&self) -> Result<usize> {
+        Ok(self
+            .people()?
+            .iter()
+            .filter(|p| p.role == Role::Owner && !p.disabled)
+            .count())
+    }
+
     /// Disables or enables the person with `id`; false when there is none. Disabling ends the person's sessions.
     pub fn set_person_disabled(&self, id: i64, disabled: bool) -> Result<bool> {
         let mut conn = self.conn();
