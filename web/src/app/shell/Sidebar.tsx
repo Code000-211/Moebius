@@ -1,7 +1,10 @@
 /**
- * The sidebar on every page: the app name with the connection, the search (the command bar), Inbox, Fleet,
- * the folding groups Automation, Projects (one entry per board) and Improve, the list of chats below them in the
- * wide sidebar, then Setup and, at the foot, the gear to Settings — one gear alone, drawn as the rail draws its rows
+ * The sidebar on every page, in the order of the drafts: the organisation (the app name with the connection) as a
+ * slightly raised surface, the search (the command bar), Inbox and Fleet, the project switcher with the chosen
+ * project's places under it (its Board and its Files), Automate (Automations, Workflows and Improve as one row that
+ * folds over Retro, Experiments and Decisions), the list of chats below them in the wide sidebar, then Setup and, at
+ * the foot, the gear to Settings. The chosen row is a slightly raised surface too, and the names of the groups are in
+ * small capitals. Places that come with later issues are added by them. The gear is — one gear alone, drawn as the rail draws its rows
  * and standing under the settings list's view as well, below the row that leaves the session. It collapses
  * to a rail of icons, where the words the rail drops — the connection, a board's work — stay with the icon as text a
  * person can hear or open, at the same heights the wide sidebar uses so that the rail is the same list seen close,
@@ -17,7 +20,9 @@
 
 import {
   ArrowLeftIcon,
+  ArrowsClockwiseIcon,
   CaretDownIcon,
+  FilesIcon,
   FolderIcon,
   GearIcon,
   type Icon,
@@ -29,7 +34,7 @@ import {
 } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { chats as readChats } from "../../api/calls/chat";
 import { start } from "../../api/calls/server";
@@ -52,6 +57,7 @@ import { Button } from "../../ui/components/Button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
@@ -89,22 +95,23 @@ const CHAT_FILTER_KEY = "moebius.sidebar.chatsRepository";
 /** How the words after an entry's name are coloured: a count that waits, work that is running, or the plain state. */
 type TrailingTone = "attention" | "progress" | "secondary";
 
-/**
- * The groups that fold. Automation holds Automations and Workflows; Improve holds Retro, Experiments, Decisions and
- * Usage; Projects is folded by its own section, which keeps the row of every repository the snapshot names rather
- * than one page to fold over. Whether each is open is kept per browser under its own key, like the sidebar's own
- * shape is; a browser that has never chosen anything has every group open. In the rail the groups do not fold —
- * there a label keeps the room it always took and every row under it stays where it was.
- */
-const COLLAPSIBLE: readonly { key: string; title: string; paths: readonly string[] }[] = [
-  { key: "group.automation", title: "Automation", paths: ["automations", "workflows"] },
-  {
-    key: "group.improve",
-    title: "Improve",
-    paths: ["retro", "experiments", "decision-model", "usage"],
-  },
-  { key: "group.projects", title: "Projects", paths: [] },
-];
+/** Where the chosen project of the switcher is kept for this browser. */
+const PROJECT_KEY = "moebius.sidebar.project";
+
+/** Where Improve's open or closed state is kept for this browser; a browser that never chose has it open. */
+const IMPROVE_KEY = "moebius.sidebar.group.improve";
+
+/** The places Improve holds, in the order the sidebar lists them. In the rail it does not fold. */
+const IMPROVE_PATHS: readonly string[] = ["retro", "experiments", "decision-model"];
+
+/** The places of Automate besides Improve. */
+const AUTOMATE_PATHS: readonly string[] = ["automations", "workflows"];
+
+/** The project a page of a project belongs to (`/board/3`, `/projects/3`), when the address names one. */
+function projectOf(at: string): number | null {
+  const match = /^\/(?:board|projects)\/(\d+)(?:\/|$)/.exec(at);
+  return match ? Number(match[1]) : null;
+}
 
 /** The words after an entry's name: the count or state of what it leads to. Colour supports them, never replaces them. */
 interface Trailing {
@@ -165,18 +172,34 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
   const working = boards.reduce((sum, board) => sum + liveRuns(board), 0);
   const state = STATE[connection];
   const modifier = getModifierKey();
-  // Whether a group that folds is open. A browser that has never chosen anything has every group open.
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(
-      COLLAPSIBLE.map((group) => [group.key, readFlagOr(`moebius.sidebar.${group.key}`, true)]),
-    ),
-  );
-  const toggleGroup = (key: string, open: boolean) => {
-    setOpenGroups((openNow) => ({ ...openNow, [key]: open }));
-    writeFlag(`moebius.sidebar.${key}`, open);
+  // Whether Improve is open. A browser that has never chosen anything has it open.
+  const [improveOpen, setImproveOpen] = useState(() => readFlagOr(IMPROVE_KEY, true));
+  const toggleImprove = (open: boolean) => {
+    setImproveOpen(open);
+    writeFlag(IMPROVE_KEY, open);
   };
-  // Whether the group of Projects is open; its rows are the boards the snapshot names, not pages of a list.
-  const projectsOpen = openGroups["group.projects"] ?? true;
+  // The chosen project: the one the address names, else the one this browser kept, else the first. What the address
+  // names is kept, so the project stays chosen on every other page and after a reload.
+  const navigate = useNavigate();
+  const [kept, setKept] = useState<number | null>(() => {
+    const text = readText(PROJECT_KEY);
+    return text === null || text === "" ? null : Number(text);
+  });
+  const known = (id: number | null): id is number =>
+    id !== null && boards.some((board) => board.repository.id === id);
+  const named = projectOf(at);
+  const chosen = known(named) ? named : known(kept) ? kept : (boards[0]?.repository.id ?? null);
+  useEffect(() => {
+    if (known(named) && named !== kept) {
+      setKept(named);
+      writeText(PROJECT_KEY, String(named));
+    }
+  });
+  const choose = (id: number) => {
+    setKept(id);
+    writeText(PROJECT_KEY, String(id));
+    navigate(boardPath(id));
+  };
 
   // "Get started" is listed only while the server says a step is missing.
   const pagesOf = (group: Group) =>
@@ -217,32 +240,13 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
 
   /** One flat section of the everyday list; nothing when its group has no entry to show. */
   const groupSection = (group: Group, title?: string) => {
-    // The pages a folding group holds are the folding group's to show, not the flat section's.
-    const folded = new Set(COLLAPSIBLE.flatMap((each) => each.paths));
-    const pages = pagesOf(group).filter((page) => !folded.has(page.path));
+    // The pages Automate holds are its section's to show, not the flat one's.
+    const held = new Set([...AUTOMATE_PATHS, ...IMPROVE_PATHS]);
+    const pages = pagesOf(group).filter((page) => !held.has(page.path));
     if (pages.length === 0) return null;
     return (
       <Section title={title} collapsed={collapsed}>
         {pages.map(entryOf)}
-      </Section>
-    );
-  };
-
-  /** One folding group: the toggle is the caret beside its name, and its pages stand under it only while it is open. */
-  const collapsibleSection = (title: string) => {
-    const group = COLLAPSIBLE.find((each) => each.title === title);
-    if (!group) return null;
-    const open = openGroups[group.key] ?? true;
-    const pages = group.paths.map(pageByPath).filter((page): page is PageDef => page !== undefined);
-    return (
-      <Section
-        title={title}
-        collapsed={collapsed}
-        collapsible={{ open, onToggle: () => toggleGroup(group.key, !open) }}
-      >
-        {/* The name stays a label that goes nowhere; the caret beside it is the toggle (`docs/design-web.md`). */}
-        {/* In the rail a group never folds, so its rows show whatever the browser left it as. */}
-        {(open || collapsed) && pages.map((page) => entryOf(page))}
       </Section>
     );
   };
@@ -279,7 +283,7 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
             </span>
           </Tooltip>
         ) : (
-          <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3 rounded-control bg-raised px-3 py-2 shadow-card">
             <Mark className="size-7 shrink-0 text-text" />
             <div className="min-w-0">
               <div className="truncate text-lg font-semibold tracking-tight text-text">Moebius</div>
@@ -347,58 +351,32 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
           </Section>
         )}
         {!inSettings && groupSection("")}
-        {!inSettings && collapsibleSection("Automation")}
         {!inSettings && (
-          <Section
-            title="Projects"
+          <ProjectSection
+            boards={boards}
+            chosen={chosen}
             collapsed={collapsed}
-            collapsible={{
-              // The group's own section builds its rows from the snapshot rather than from PAGES, so the folded
-              // state is taken from the group here and the rows under it are the boards.
-              open: projectsOpen,
-              onToggle: () => toggleGroup("group.projects", !projectsOpen),
-            }}
-          >
-            {/* The label above is not a way to get anywhere; the whole list of repositories is a row of its own, at
-                the height of the boards under it. In the rail the group never folds, so the rows keep standing
-                whatever it was left as. */}
-            {(projectsOpen || collapsed) && (
-              <>
-                <Entry
-                  to="/projects"
-                  icon={SquaresFourIcon}
-                  label="All projects"
-                  collapsed={collapsed}
-                  current={here === "projects"}
-                />
-                {boards.map((board) => {
-                  const live = liveRuns(board);
-                  return (
-                    <Entry
-                      key={board.repository.id}
-                      to={boardPath(board.repository.id)}
-                      icon={FolderIcon}
-                      mark={{
-                        color: live > 0 ? "var(--progress)" : "var(--hairline-strong)",
-                        word: live > 0 ? `${live}` : "Idle",
-                        tone: "progress",
-                        printed: live > 0,
-                      }}
-                      label={board.repository.name}
-                      collapsed={collapsed}
-                      // The script of a column is a page of the same project, so it keeps its row marked.
-                      current={
-                        at.startsWith(`${boardPath(board.repository.id)}/`) ||
-                        at === boardPath(board.repository.id)
-                      }
-                    />
-                  );
-                })}
-              </>
-            )}
+            at={at}
+            here={here}
+            onChoose={choose}
+          />
+        )}
+        {!inSettings && (
+          <Section title="Automate" collapsed={collapsed}>
+            {AUTOMATE_PATHS.map(pageByPath)
+              .filter((page): page is PageDef => page !== undefined)
+              .map(entryOf)}
+            <ImproveRow
+              collapsed={collapsed}
+              open={improveOpen}
+              onToggle={() => toggleImprove(!improveOpen)}
+            >
+              {IMPROVE_PATHS.map(pageByPath)
+                .filter((page): page is PageDef => page !== undefined)
+                .map(entryOf)}
+            </ImproveRow>
           </Section>
         )}
-        {!inSettings && collapsibleSection("Improve")}
         {!inSettings && !collapsed && (
           <ChatSection chats={chatList.data ?? []} snapshot={data.data} at={at} />
         )}
@@ -578,6 +556,171 @@ function ChatEntry({
 }
 
 /**
+ * The project switcher and the places of the chosen project under it: its Board and its Files. The switcher is a
+ * raised row that opens the list of the projects of the snapshot, with All projects at the end of it; choosing one
+ * leads to its board. In the rail it is the folder alone, its words in its name and its tooltip.
+ */
+function ProjectSection({
+  boards,
+  chosen,
+  collapsed,
+  at,
+  here,
+  onChoose,
+}: {
+  boards: Snapshot["boards"];
+  chosen: number | null;
+  collapsed: boolean;
+  at: string;
+  here: string;
+  onChoose: (id: number) => void;
+}) {
+  const board = boards.find((each) => each.repository.id === chosen);
+  const live = board ? liveRuns(board) : 0;
+  const name = board ? `Project ${board.repository.name}` : "Projects";
+  const trigger = (
+    <button
+      type="button"
+      aria-label={collapsed ? `${name}. Change project` : "Change project"}
+      title={collapsed ? undefined : board?.repository.name}
+      className={cn(
+        "flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-control bg-raised px-3 text-base text-text shadow-card",
+        "transition-colors duration-(--motion-routine) ease-out hover:bg-hover",
+        collapsed && "justify-center px-0",
+      )}
+    >
+      <FolderIcon className="size-5 shrink-0" weight="regular" />
+      {!collapsed && (
+        <>
+          <span className="min-w-0 flex-1 truncate text-left">
+            {board?.repository.name ?? "Projects"}
+          </span>
+          <CaretDownIcon className="size-4 shrink-0 text-secondary" weight="bold" />
+        </>
+      )}
+    </button>
+  );
+  const standsAt = chosen === null ? "" : boardPath(chosen);
+  return (
+    <Section collapsed={collapsed}>
+      <li>
+        <DropdownMenu modal={false}>
+          {collapsed ? (
+            <Tooltip content={name} side="right">
+              <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+            </Tooltip>
+          ) : (
+            <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
+          )}
+          <DropdownMenuContent align="start">
+            <DropdownMenuRadioGroup
+              value={chosen === null ? "" : String(chosen)}
+              onValueChange={(next) => onChoose(Number(next))}
+            >
+              {boards.map((each) => (
+                <DropdownMenuRadioItem key={each.repository.id} value={String(each.repository.id)}>
+                  {each.repository.name}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuItem asChild>
+              <Link to="/projects">All projects</Link>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </li>
+      {chosen !== null && (
+        <>
+          <Entry
+            to={standsAt}
+            icon={SquaresFourIcon}
+            label="Board"
+            collapsed={collapsed}
+            // The script of a column is a page of the same project, so it keeps its row marked.
+            current={at === standsAt || at.startsWith(`${standsAt}/`)}
+            mark={{
+              color: live > 0 ? "var(--progress)" : "var(--hairline-strong)",
+              word: live > 0 ? `${live}` : "Idle",
+              tone: "progress",
+              printed: live > 0,
+            }}
+          />
+          <Entry
+            to={`/projects/${chosen}`}
+            icon={FilesIcon}
+            label="Files"
+            collapsed={collapsed}
+            current={at === `/projects/${chosen}`}
+          />
+        </>
+      )}
+      {/* The list of every project is a page of its own, reached from the switcher and from here when no project is
+          chosen yet. */}
+      {chosen === null && (
+        <Entry
+          to="/projects"
+          icon={SquaresFourIcon}
+          label="All projects"
+          collapsed={collapsed}
+          current={here === "projects"}
+        />
+      )}
+    </Section>
+  );
+}
+
+/**
+ * Improve as one row whose pages open under it. The caret beside its name is the toggle, and the state is kept for
+ * this browser. The rail has no room for the row, so it draws the pages alone, every one of them standing.
+ */
+function ImproveRow({
+  collapsed,
+  open,
+  onToggle,
+  children,
+}: {
+  collapsed: boolean;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  if (collapsed) return <>{children}</>;
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-label={`${open ? "Collapse" : "Expand"} Improve`}
+        className={cn(
+          "flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-control px-3 text-base text-sidebar-text",
+          "transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text",
+        )}
+      >
+        <ArrowsClockwiseIcon className="size-5 shrink-0" weight="regular" />
+        <span className="min-w-0 flex-1 truncate text-left">Improve</span>
+        <CaretDownIcon
+          className={cn(
+            "size-3 shrink-0 transition-transform duration-(--motion-routine)",
+            !open && "-rotate-90",
+          )}
+          weight="bold"
+        />
+      </button>
+      {open && (
+        <>
+          {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list
+              with no marker from the accessibility tree entirely */}
+          <ul role="list" className="mt-1 flex flex-col gap-1 pl-4">
+            {children}
+          </ul>
+        </>
+      )}
+    </li>
+  );
+}
+
+/**
  * One group of the sidebar's list. Its label and the space around it say where it starts and ends; there is no
  * rule under it, because the rail has no label to draw and a line there would divide nothing. The label names the
  * group and goes nowhere — a way in is a row, at the height of the rows beside it.
@@ -585,13 +728,10 @@ function ChatEntry({
 function Section({
   title,
   collapsed,
-  collapsible,
   children,
 }: {
   title?: string;
   collapsed: boolean;
-  /** Set when the group folds: the caret beside its name is the toggle, and the open state is the browser's. */
-  collapsible?: { open: boolean; onToggle: () => void };
   children: React.ReactNode;
 }) {
   return (
@@ -601,28 +741,8 @@ function Section({
           // The rail has no room for the group's name, but it keeps the room its line takes, so the rows under it do
           // not climb when the sidebar narrows. The rail never folds a group: every row stays where it always was.
           <div className="mb-2 h-4 px-2" aria-hidden="true" />
-        ) : collapsible ? (
-          <div className="mb-2 flex h-4 items-center gap-1 px-2 text-xs font-semibold text-sidebar-group">
-            {/* The label names the group and goes nowhere; the caret alone opens and closes it. */}
-            {title}
-            <button
-              type="button"
-              onClick={collapsible.onToggle}
-              aria-expanded={collapsible.open}
-              aria-label={`${collapsible.open ? "Collapse" : "Expand"} ${title}`}
-              className="-my-1.5 inline-flex size-7 cursor-pointer items-center justify-center rounded-control text-sidebar-group hover:bg-hover"
-            >
-              <CaretDownIcon
-                className={cn(
-                  "size-3 shrink-0 transition-transform duration-(--motion-routine)",
-                  !collapsible.open && "-rotate-90",
-                )}
-                weight="bold"
-              />
-            </button>
-          </div>
         ) : (
-          <div className="mb-2 flex h-4 items-center px-2 text-xs font-semibold text-sidebar-group">
+          <div className="mb-2 flex h-4 items-center px-2 text-sm leading-4 font-semibold tracking-wide text-sidebar-group [font-variant-caps:all-small-caps]">
             {title}
           </div>
         ))}
@@ -798,9 +918,8 @@ function Entry({
     "flex min-h-8 items-center gap-2 rounded-control px-3 text-base",
     collapsed && "justify-center px-0",
   );
-  // The entry that stands wears the same fill as the chosen row of a page's list, so one fill means one thing
-  // wherever a thing is chosen.
-  const standing = "bg-selected font-semibold text-text";
+  // The entry that stands is a slightly raised surface, the texture of the sidebar.
+  const standing = "bg-raised font-semibold text-text shadow-card";
   const waiting = "text-sidebar-text hover:bg-hover hover:text-text";
   // Which entry stands is worked out here rather than asked of the router in a callback, because the rail wraps the
   // row in a tooltip and a tooltip's trigger folds a function `className` into text — the row would keep its link and

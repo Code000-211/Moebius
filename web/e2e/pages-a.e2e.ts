@@ -416,10 +416,12 @@ describe("projects", () => {
     await page.waitForURL(/\/board\/\d+$/);
     await page.getByRole("heading", { name: "fresh", level: 1 }).waitFor();
 
+    // The list of every project is the last item of the switcher.
     await page
       .getByRole("navigation", { name: "Pages" })
-      .getByRole("link", { name: "All projects" })
+      .getByRole("button", { name: "Change project" })
       .click();
+    await page.getByRole("menuitem", { name: "All projects" }).click();
     await page.waitForURL("**/projects");
     const row = page.getByTestId("repository").filter({ hasText: "fresh" });
     await row.getByText("No forge · 0 cards").waitFor();
