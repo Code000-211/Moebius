@@ -94,8 +94,9 @@ pub async fn recorded_upstream(
 }
 
 /// A `review.luau` that offers the change without a review. A project's script is a file of its settings
-/// (`projects/demo/review.luau`) of the harness configuration repository; `harness_for` puts it where a repository's
-/// settings had it before projects (`repos/demo/review.luau`), and the server moves it there as it starts.
+/// (`projects/demo/review.luau`) of the harness configuration repository, and `harness_for` puts it there. It is not
+/// put where a repository's settings had it before projects: the tests add the repository once the server runs, and
+/// the server moves such a script only at its next refresh, which can come after the card's first review.
 const NO_REVIEW: &str = "function on_card(card)\n  local run = card.run\n  if run ~= nil and (run.status == 'starting' or run.status == 'running') then\n    moebius.wait('coding')\n    return\n  end\n  moebius.publish_change()\n  moebius.offer_change()\nend\n";
 
 /// A harness configuration repository for `app`, made in `dir`, so that the settings of its projects can be read.
@@ -184,13 +185,14 @@ pub async fn start_harness(
 
 /// The harness configuration repository `dir/harness` for the agents the `[agents.*]` tables of `agents` name. These
 /// tests are about the run of the Coder, not about its review, which the built-in Reviewer would do: the project
-/// `demo` has a `review.luau` that offers the change at once, from where it was before projects. Returns the configuration that names it.
+/// `demo` (the home project of the repository `demo`) has a `review.luau` that offers the change at once, in
+/// `projects/demo/`, where the board reads it from the first card on. Returns the configuration that names it.
 fn harness_for(dir: &Path, base: &str, agents: &str) -> String {
     let parsed = Config::parse(&format!("{base}{agents}"), dir, &dir.join("moebius.toml")).unwrap();
     let repository = dir.join("harness");
     moebius_core::harness::repo::create(&repository, &parsed.agents, None).unwrap();
-    std::fs::create_dir_all(repository.join("repos/demo")).unwrap();
-    std::fs::write(repository.join("repos/demo/review.luau"), NO_REVIEW).unwrap();
+    std::fs::create_dir_all(repository.join("projects/demo")).unwrap();
+    std::fs::write(repository.join("projects/demo/review.luau"), NO_REVIEW).unwrap();
     git(&repository, &["add", "-A"]).unwrap();
     git(&repository, &["commit", "--quiet", "-m", "A project"]).unwrap();
     format!(
