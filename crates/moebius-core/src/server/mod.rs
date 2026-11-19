@@ -16,7 +16,7 @@ mod fake_github;
 #[cfg(test)]
 mod fake_gitlab;
 mod leftovers;
-mod loops;
+pub(crate) mod loops;
 pub mod outgoing;
 pub mod packages;
 pub mod plugins;

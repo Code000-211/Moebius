@@ -387,6 +387,8 @@ mod tests {
             labels: Vec::new(),
             claimed_by: None,
             assignees: Vec::new(),
+            priority: Default::default(),
+            due: None,
         }
     }
 

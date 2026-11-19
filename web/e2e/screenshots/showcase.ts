@@ -185,6 +185,8 @@ function card(id: number, extra: Record<string, unknown>) {
     labels: [] as string[],
     claimed_by: null,
     assignees: [],
+    priority: "none",
+    due: null,
     ...extra,
   };
 }

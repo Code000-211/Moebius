@@ -7,6 +7,9 @@
 //!   `App::counts_as_sub_issue`), its labels and who claimed it.
 //! - `card.assignees`: the handles of the people the card is given to, without the `@`, in the order the people were
 //!   added; an empty list when it is no one's.
+//! - `card.priority`, `card.due`: how soon the card should be done, as `urgent`, `high`, `medium`, `low` or `none` (a
+//!   string, never nil), and the day it is due as `YYYY-MM-DD` (nil when it has none). Both are the card's `priority:` and
+//!   `due:` labels.
 //! - `card.merged`: whether a change of the card was merged, which is what tells a card that is done because its work
 //!   was merged from one that was closed.
 //! - `card.review`: the verdict and findings of the review since the card's latest `code` run, if there is one; for a
@@ -136,6 +139,8 @@ impl Engine {
         t.set("labels", card.labels.clone())?;
         t.set("claimed_by", card.claimed_by.as_deref())?;
         t.set("assignees", card.assignees.clone())?;
+        t.set("priority", card.priority.name())?;
+        t.set("due", card.due.as_deref())?;
         let children = lua.create_table()?;
         for child in self.app.children_of(card).map_err(mlua::Error::external)? {
             let c = lua.create_table()?;

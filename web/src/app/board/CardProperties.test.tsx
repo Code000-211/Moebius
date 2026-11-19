@@ -39,6 +39,8 @@ const card = (id: number, extra: Partial<Card> = {}): Card => ({
   labels: [],
   claimed_by: null,
   assignees: [],
+  priority: "none",
+  due: null,
   ...extra,
 });
 
@@ -314,6 +316,25 @@ describe("the properties of an issue, edited in place", () => {
       ["PUT", "/v1/cards/5/labels", { labels: ["wayfinder:spike"] }],
       ["PUT", "/v1/cards/5/labels", { labels: ["bug", "wayfinder:spike", "ui"] }],
     ]);
+  });
+});
+
+describe("the priority and the due date of a card", () => {
+  it("sets the priority from its menu and the due date in place, each with a request of its own", async () => {
+    const sent = server();
+    properties(card(5, { priority: "low", due: null, labels: ["bug", "priority:low"] }));
+    // The labels that hold them are not shown as labels of their own.
+    expect(screen.queryByText("priority:low")).toBeNull();
+    await choose("Priority Low", "Urgent");
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual(["PUT", "/v1/cards/5/priority", { priority: "urgent" }]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Due date No date" }));
+    const field = document.querySelector('input[type="date"]') as HTMLInputElement;
+    fireEvent.change(field, { target: { value: "2026-12-01" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    await waitFor(() => expect(sent).toHaveLength(2));
+    expect(sent[1]).toEqual(["PUT", "/v1/cards/5/due", { due: "2026-12-01" }]);
   });
 });
 

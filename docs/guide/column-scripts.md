@@ -227,7 +227,7 @@ Try it on GitHub: open an issue whose body says `blocked by #12` while #12 is op
 An issue can have sub-issues (`card.children`, each with its `state`), labels (`card.labels`) and a claim
 (`card.claimed_by`), set with `moebius issue` or the API. The default `ready.luau` already treats a card with sub-issues as
 a plan (one that has no run or change of its own): it starts no work of its own while one is open, and closes the issue
-with the last. A claim is advisory, and the default Kanban does not look at it. A card given to a person (`card.assignees`, the handles) is not advisory: the default `ready.luau` leaves it in `Not started` for that person. This version leaves a
+with the last. A claim is advisory, and the default Kanban does not look at it. A card has a priority and may have a due date (`card.priority`, one of `urgent`, `high`, `medium`, `low` or `none`, and `card.due`, a `YYYY-MM-DD` text or nil), which are its `priority:` and `due:` labels; the board settles urgent cards first, then those due first. A card given to a person (`card.assignees`, the handles) is not advisory: the default `ready.luau` leaves it in `Not started` for that person. This version leaves a
 claimed card alone, and lets a card labelled `plan` close itself without work once its sub-issues are done.
 
 <!-- script: ready.luau -->

@@ -9,7 +9,7 @@
 //! card gets in one go and which was picked), `research` (research, its runs and experiments), `automations`
 //! (automations, their firings and the local clock), `workflows` (workflow runs and what each node did),
 //! `plugin_settings` (what plugins keep for the server) and `people` (the people of the organisation, and the
-//! migration that gives earlier records to the first owner) and `assignees` (who cards and inbox items are given to) and `access` (their access tokens and the sessions of
+//! migration that gives earlier records to the first owner) and `assignees` (who cards and inbox items are given to), `planning` (a card's priority and due date, read from its labels) and `access` (their access tokens and the sessions of
 //! browsers, kept as hashes) and `favourites` (the places a person pinned and opened lately) and `projects` (the
 //! projects, their keys and repositories, and the migration that makes one for each repository).
 //! Every public type is re-exported here, as `store::Card` and the like.
@@ -33,6 +33,7 @@ mod lessons;
 mod localize;
 mod outgoing;
 mod people;
+mod planning;
 mod plugin_settings;
 mod projects;
 mod replays;
@@ -69,6 +70,7 @@ pub use lessons::{Lesson, NewLesson};
 pub use localize::IndexedFile;
 pub use outgoing::OutgoingWebhook;
 pub use people::{FIRST_OWNER, Person, Role};
+pub use planning::{Priority, is_date, with_due, with_priority};
 pub use projects::{KEY_LIMIT, Project, is_key};
 pub use replays::Replay;
 pub use research::{Budget, BudgetKind, Experiment, Research};

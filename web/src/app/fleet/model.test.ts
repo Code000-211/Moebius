@@ -39,6 +39,8 @@ const card = (id: number, number: number, run: CardRun | null, tokens = 0): Card
   labels: [],
   claimed_by: null,
   assignees: [],
+  priority: "none",
+  due: null,
 });
 
 const run = (id: number, status: CardRun["status"]): CardRun => ({

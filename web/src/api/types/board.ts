@@ -1,5 +1,8 @@
 /** Types of the snapshot and what it holds; they follow docs/reference/desktop-api.md, "Types" and `GET /v1/snapshot`. */
 
+/** How soon a card should be done. */
+export type Priority = "urgent" | "high" | "medium" | "low" | "none";
+
 export type Forge = "none" | "github" | "gitlab" | "forgejo";
 
 export interface Repository {
@@ -75,6 +78,10 @@ export interface Card {
   claimed_by: string | null;
   /** The handles, without the `@`, of the people the card is given to, in the order the people were added. */
   assignees: string[];
+  /** How soon the card should be done: the card's `priority:` label, `none` without one. */
+  priority: Priority;
+  /** The day the card is due as `YYYY-MM-DD`: the card's `due:` label, null without one. */
+  due: string | null;
 }
 
 /** A comment on an issue, written here or read from the forge. */

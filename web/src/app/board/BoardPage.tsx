@@ -70,6 +70,8 @@ import {
   groupByColumn,
   inboxOf,
   inspectedCard,
+  isClosed,
+  isPlanningLabel,
   issueUrl,
   NO_FILTERS,
   nextCard,
@@ -77,6 +79,7 @@ import {
   rootOf,
   type Stack,
   stackWords,
+  todayIso,
 } from "./model";
 import { useNewIssue } from "./NewIssueHost";
 import { RepositoryTerminal } from "./RepositoryTerminal";
@@ -201,6 +204,8 @@ export function BoardPage() {
       agent: params.get("agent") ?? "",
       status: params.get("status") ?? "",
       label: params.get("label") ?? "",
+      priority: params.get("priority") ?? "",
+      due: params.get("due") ?? "",
     }),
     [params],
   );
@@ -793,7 +798,10 @@ function CardContent({
             ? [card.column, detail].filter(Boolean).join(" · ")
             : detail
       }
-      labels={hidden.has("labels") ? [] : card.labels}
+      labels={hidden.has("labels") ? [] : card.labels.filter((l) => !isPlanningLabel(l))}
+      priority={hidden.has("priority") ? "none" : card.priority}
+      due={hidden.has("due") ? null : card.due}
+      overdue={card.due !== null && card.due < todayIso() && !isClosed(card)}
       claimedBy={hidden.has("claim") ? null : card.claimed_by}
       assignees={card.assignees}
       stack={
