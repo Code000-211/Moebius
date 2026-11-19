@@ -72,7 +72,9 @@ describe("a workflow's definition", () => {
     expect(await screen.findByRole("heading", { name: "File" })).toBeTruthy();
     // The file is plain text until the highlighter loads, then split into spans: read it as one text.
     await waitFor(() => {
-      expect(document.querySelector("#workflow-file-title + p + div pre")?.textContent).toContain('name = "release"');
+      expect(document.querySelector("#workflow-file-title + p + div pre")?.textContent).toContain(
+        'name = "release"',
+      );
     });
     expect(screen.getByRole("button", { name: /Copy/ })).toBeTruthy();
   });

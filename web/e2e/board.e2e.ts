@@ -83,6 +83,20 @@ const properties = (number: number) =>
 const alert = (text: string | RegExp) => page.getByRole("alert").filter({ hasText: text });
 const status = (text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
 
+/** Moves the focus down a menu to `target`, one arrow at a time: each waits for the focus to have moved, as a person's keys do, so a key is never pressed twice for one step. */
+async function arrowDownTo(target: Locator) {
+  for (let step = 0; step < 12; step++) {
+    if (await target.evaluate((el) => el === document.activeElement)) return;
+    const before = await page.evaluate(() => document.activeElement?.textContent ?? "");
+    await page.keyboard.press("ArrowDown");
+    await page.waitForFunction(
+      (was) => (document.activeElement?.textContent ?? "") !== was,
+      before,
+    );
+  }
+  throw new Error("the focus did not reach the row");
+}
+
 /** What the screen reader is told last (the live region of the drag library). */
 const spoken = async () => (await page.locator("[id^=DndLiveRegion]").textContent()) ?? "";
 
@@ -436,15 +450,7 @@ describe("live data", () => {
         await page.waitForFunction(
           () => document.activeElement?.getAttribute("role") === "menuitemradio",
         );
-        const wanted = page.getByRole("menuitemradio", { name: row, exact: true });
-        // Each arrow waits for the menu to have taken the one before, as a person's keys do.
-        await expect
-          .poll(async () => {
-            if (await wanted.evaluate((el) => el === document.activeElement)) return true;
-            await page.keyboard.press("ArrowDown");
-            return false;
-          })
-          .toBe(true);
+        await arrowDownTo(page.getByRole("menuitemradio", { name: row, exact: true }));
         await page.keyboard.press("Enter");
       };
       /** Enter opens the value's field, what is typed replaces it, and Enter saves it. */
@@ -1236,10 +1242,7 @@ describe("the filters", () => {
     await page.keyboard.press("Enter");
     await page.getByRole("menuitem", { name: "Column", exact: true }).waitFor();
     const agent = page.getByRole("menuitem", { name: "Agent", exact: true });
-    for (let i = 0; i < 5; i++) {
-      if (await agent.evaluate((el) => el === document.activeElement)) break;
-      await page.keyboard.press("ArrowDown");
-    }
+    await arrowDownTo(agent);
     await page.keyboard.press("ArrowRight");
     await display("Coder").waitFor();
     // The sub-menu takes focus a moment after it shows; arrow keys before that go to the wrong menu.
@@ -1247,10 +1250,7 @@ describe("the filters", () => {
       () => document.activeElement?.getAttribute("role") === "menuitemradio",
     );
     const reviewer = display("Reviewer");
-    for (let i = 0; i < 5; i++) {
-      if (await reviewer.evaluate((el) => el === document.activeElement)) break;
-      await page.keyboard.press("ArrowDown");
-    }
+    await arrowDownTo(reviewer);
     await page.keyboard.press("Enter");
     await chip("Agent is Reviewer").waitFor();
     await shownIs(1);
