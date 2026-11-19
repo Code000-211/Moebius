@@ -40,6 +40,8 @@ pub struct IssueQuery {
     pub claimed: Option<bool>,
     /// Whether an issue that is not done blocks it.
     pub blocked: Option<bool>,
+    /// Whether the issue's card is archived; without it archived issues are listed too.
+    pub archived: Option<bool>,
 }
 
 /// A sub-issue as its parent's view shows it, and an issue as the issues linked to it show it.
@@ -124,6 +126,9 @@ impl App {
                 || query
                     .claimed
                     .is_some_and(|c| c != card.claimed_by.is_some())
+                || query
+                    .archived
+                    .is_some_and(|a| a != card.archived_at.is_some())
             {
                 continue;
             }

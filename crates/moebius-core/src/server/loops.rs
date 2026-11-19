@@ -19,18 +19,35 @@ use crate::repos::poll;
 /// How often the clones of repositories without a forge are brought up to date with where they were cloned from.
 const PLAIN_REFRESH: Duration = Duration::from_secs(30);
 
+/// How often the cards in Done, whose outcomes are recorded, run their script again.
+const DONE_SWEEP: Duration = Duration::from_secs(600);
+
 impl Server {
     /// Runs every card's column script once; a script that fails is reported on the bus and the card stays put.
     pub fn tick(&self) {
         let Ok(repositories) = self.app.store.repositories() else {
             return;
         };
+        // The cards in Done whose outcomes are recorded are only looked at now and then, for their script to archive them.
+        let sweep_done = {
+            let mut last = self.done_sweep.lock().unwrap_or_else(|e| e.into_inner());
+            let due = last.is_none_or(|at| at.elapsed() >= DONE_SWEEP);
+            if due {
+                *last = Some(Instant::now());
+            }
+            due
+        };
         for repository in repositories {
             let Ok(cards) = self.app.store.cards(repository.id) else {
                 continue;
             };
             for card in cards {
+                // An archived card is off the board: no script runs for it.
+                if card.archived_at.is_some() {
+                    continue;
+                }
                 if card.column == columns::DONE
+                    && !sweep_done
                     && self
                         .app
                         .store
@@ -340,6 +357,30 @@ mod tests {
             (outside.title.as_str(), outside.column.as_str()),
             ("Better title", "Backlog")
         );
+    }
+
+    #[tokio::test]
+    async fn the_board_tick_archives_an_old_done_card_and_then_leaves_it_alone() {
+        let f = Fixture::new().await;
+        f.fake
+            .set_issues("\"v1\"", vec![issue(1, "open", "leon", "Do it.")]);
+        f.server.poll_github().await;
+        let app = &f.server.app;
+        let card = f.card(1).unwrap();
+        app.move_card(card.id, columns::DONE).unwrap();
+        // Done a moment ago: the script has nothing to archive yet. Done long ago: the sweep archives it.
+        f.server.tick();
+        assert_eq!(app.card(card.id).unwrap().archived_at, None);
+        app.store
+            .set_card_moved_at(card.id, crate::store::now() - 15 * 86_400)
+            .unwrap();
+        *f.server.done_sweep.lock().unwrap() = None;
+        f.server.tick();
+        let archived = app.card(card.id).unwrap().archived_at;
+        assert!(archived.is_some());
+        // Archived, no script runs for it again, and it is off the board.
+        f.server.tick();
+        assert_eq!(app.card(card.id).unwrap().archived_at, archived);
     }
 
     #[tokio::test]
@@ -755,6 +796,8 @@ mod tests {
                 ..Default::default()
             })
             .unwrap();
+        // The sweep of the cards in Done is not due, so only a pending outcome would settle the card.
+        *f.server.done_sweep.lock().unwrap() = Some(std::time::Instant::now());
         f.server.tick();
         assert!(
             f.server.app.waiting(std::slice::from_ref(&card)).is_empty(),

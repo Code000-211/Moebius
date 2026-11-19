@@ -415,6 +415,16 @@ impl App {
         self.card(card_id)
     }
 
+    /// Archives the card, which leaves the board and stays in the store; `card_updated` is sent. Says whether it did: an
+    /// archived card is left as it is.
+    pub fn archive_card(&self, card_id: i64) -> Result<bool> {
+        if !self.store.archive_card(card_id)? {
+            return Ok(false);
+        }
+        self.bus.publish(Event::CardUpdated(self.card(card_id)?));
+        Ok(true)
+    }
+
     /// Moves the card from `from` to `column` only if it is still in `from`, setting its note to `note` when one is
     /// given; none when something else moved it first, which is left as it is.
     pub fn move_card_from(

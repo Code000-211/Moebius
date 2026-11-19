@@ -89,6 +89,8 @@ impl App {
         if !self.store.release_card(card_id)? {
             return Err(AppError::Conflict(format!("card {card_id} is not held")));
         }
+        // What told its people the card went stale is answered by the release; a later hold tells them again.
+        self.store.resolve_inbox_kind_for_card(card_id, "stale")?;
         // A run the block stopped is not a person's wish to stop the card: it starts afresh, as after a retry, instead
         // of waiting in the inbox as stuck. A run stopped before the block still waits for a retry.
         let blocked_run = self

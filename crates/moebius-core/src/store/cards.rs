@@ -100,6 +100,14 @@ pub struct Card {
     /// The handles of the people the card is given to, in the order the people were added; empty while it is no one's.
     #[serde(default)]
     pub assignees: Vec<String>,
+    /// When the card last moved, was edited or was released from a hold (Unix seconds); scripts see it as
+    /// `card.moved_at`.
+    #[serde(default)]
+    pub moved_at: i64,
+    /// When a script archived the card (Unix seconds); none while it is on the board. An archived card stays in the
+    /// store, in the issue list and in the analytics, and leaves the board; a move brings it back.
+    #[serde(default)]
+    pub archived_at: Option<i64>,
 }
 
 /// Why and by whom a card is held (blocked), and since when.
@@ -482,8 +490,8 @@ impl Store {
             |r| r.get(0),
         )?;
         conn.execute(
-            "INSERT INTO cards (repository_id, number, title, body, author, column_name, created_at, project_id, project_number)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO cards (repository_id, number, title, body, author, column_name, created_at, project_id, project_number, moved_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?7)",
             params![repository_id, number, title, body, author, column, at, project_id, project_number],
         )?;
         Ok(Card {
@@ -507,6 +515,8 @@ impl Store {
             labels: Vec::new(),
             claimed_by: None,
             assignees: Vec::new(),
+            moved_at: at,
+            archived_at: None,
         })
     }
 
@@ -516,7 +526,7 @@ impl Store {
         params: impl rusqlite::Params,
     ) -> Result<Vec<Card>> {
         self.rows(&format!(
-            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {}, project_id, project_number, COALESCE((SELECT key FROM projects WHERE id = cards.project_id), '') FROM cards WHERE {clause} ORDER BY id", super::assignees::CARD_ASSIGNEES
+            "SELECT id, repository_id, number, title, body, author, column_name, created_at, note, retried_after, confirmed, held_by, held_reason, held_at, parent, (closed OR column_name = 'Done'), claimed_by, (SELECT json_group_array(label) FROM (SELECT label FROM card_labels WHERE card_id = cards.id ORDER BY label)), {}, project_id, project_number, COALESCE((SELECT key FROM projects WHERE id = cards.project_id), ''), moved_at, archived_at FROM cards WHERE {clause} ORDER BY id", super::assignees::CARD_ASSIGNEES
         ), params, |r| {
             Ok(Card {
                 id: r.get(0)?,
@@ -551,6 +561,8 @@ impl Store {
                 project_id: r.get(19)?,
                 project_number: r.get(20)?,
                 project_key: r.get(21)?,
+                moved_at: r.get(22)?,
+                archived_at: r.get(23)?,
             })
         })
     }
@@ -585,8 +597,8 @@ impl Store {
 
     pub fn set_card_text(&self, id: i64, title: &str, body: &str) -> Result<()> {
         self.conn().execute(
-            "UPDATE cards SET title = ?1, body = ?2 WHERE id = ?3",
-            params![title, body, id],
+            "UPDATE cards SET title = ?1, body = ?2, moved_at = ?3 WHERE id = ?4",
+            params![title, body, now(), id],
         )?;
         Ok(())
     }
@@ -762,10 +774,29 @@ impl Store {
     /// Releases a held card. Says whether it was held.
     pub fn release_card(&self, id: i64) -> Result<bool> {
         let released = self.conn().execute(
-            "UPDATE cards SET held_by = NULL, held_reason = NULL, held_at = NULL WHERE id = ?1 AND held_by IS NOT NULL",
-            [id],
+            "UPDATE cards SET held_by = NULL, held_reason = NULL, held_at = NULL, moved_at = ?2 WHERE id = ?1 AND held_by IS NOT NULL",
+            params![id, now()],
         )?;
         Ok(released > 0)
+    }
+
+    /// Archives a card: it leaves the board but stays in the store. Says whether it did: an archived card is left as
+    /// it is.
+    pub fn archive_card(&self, id: i64) -> Result<bool> {
+        let archived = self.conn().execute(
+            "UPDATE cards SET archived_at = ?1 WHERE id = ?2 AND archived_at IS NULL",
+            params![now(), id],
+        )?;
+        Ok(archived > 0)
+    }
+
+    /// Sets when the card last moved, for tests that make up a history.
+    pub fn set_card_moved_at(&self, id: i64, at: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE cards SET moved_at = ?1 WHERE id = ?2",
+            params![at, id],
+        )?;
+        Ok(())
     }
 
     /// Moves a card and records the move, with the card's note as it is now.
@@ -777,8 +808,8 @@ impl Store {
             params![column, now(), id],
         )?;
         conn.execute(
-            "UPDATE cards SET column_name = ?1 WHERE id = ?2",
-            params![column, id],
+            "UPDATE cards SET column_name = ?1, moved_at = ?3, archived_at = NULL WHERE id = ?2",
+            params![column, id, now()],
         )?;
         Ok(())
     }
@@ -803,8 +834,8 @@ impl Store {
             return Ok(false);
         }
         conn.execute(
-            "UPDATE cards SET column_name = ?1, note = COALESCE(?2, note) WHERE id = ?3",
-            params![to, note, id],
+            "UPDATE cards SET column_name = ?1, note = COALESCE(?2, note), moved_at = ?4, archived_at = NULL WHERE id = ?3",
+            params![to, note, id, now()],
         )?;
         Ok(true)
     }
