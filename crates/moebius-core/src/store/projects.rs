@@ -302,8 +302,9 @@ impl Store {
     /// Puts the card on the board of the project `project_id`; its column stays. It is named by the new project's key
     /// from then on, with its issue's number when the project has no card with that number, else the next free one.
     pub fn set_card_project(&self, card_id: i64, project_id: i64) -> Result<()> {
-        let conn = self.conn();
-        conn.execute(
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        tx.execute(
             "UPDATE cards SET project_id = ?1,
                  project_number = (SELECT CASE WHEN EXISTS (SELECT 1 FROM cards o WHERE o.project_id = ?1 AND o.project_number = cards.number)
                                                THEN (SELECT MAX(o.project_number) + 1 FROM cards o WHERE o.project_id = ?1)
@@ -311,7 +312,18 @@ impl Store {
              WHERE id = ?2 AND project_id IS NOT ?1",
             [project_id, card_id],
         )?;
-        Ok(())
+        // A project offers only the kinds it picked, so a card that moves to one that did not pick its kind loses it,
+        // with the values of its fields.
+        let unoffered = "kind_id IS NOT NULL AND kind_id NOT IN (SELECT kind_id FROM project_kinds WHERE project_id = ?1)";
+        tx.execute(
+            &format!("DELETE FROM card_fields WHERE card_id = ?2 AND EXISTS (SELECT 1 FROM cards WHERE id = ?2 AND {unoffered})"),
+            [project_id, card_id],
+        )?;
+        tx.execute(
+            &format!("UPDATE cards SET kind_id = NULL WHERE id = ?2 AND {unoffered}"),
+            [project_id, card_id],
+        )?;
+        Ok(tx.commit()?)
     }
 
     /// How many cards on the project's board are open: not closed and not in `Done`.
@@ -605,5 +617,30 @@ mod tests {
             .map(|id| (id, store.card(id).unwrap().unwrap().project_number))
             .collect();
         assert_eq!(numbers, [(1, 1), (2, 2), (3, 3), (4, 4), (5, 1)]);
+    }
+
+    #[test]
+    fn a_home_project_that_picked_a_kind_goes_with_its_repository_and_a_moved_card_loses_a_kind_the_target_did_not_pick()
+     {
+        let (_dir, s) = test_store();
+        let bug = s.add_kind("Bug", &[]).unwrap();
+        let web = s.add_repository("web", "/srv/web", "none", "main").unwrap();
+        s.set_project_kinds(web.home_project_id, &[bug.id]).unwrap();
+        let card = s.add_card(web.id, "a", "", "lea", "Backlog").unwrap();
+        s.set_card_kind(card.id, Some(bug.id)).unwrap();
+        let other = s.add_project("Storefront", "SHOP").unwrap();
+        s.set_card_project(card.id, other.id).unwrap();
+        assert_eq!(s.card(card.id).unwrap().unwrap().kind, None);
+        s.set_project_kinds(other.id, &[bug.id]).unwrap();
+        s.set_card_kind(card.id, Some(bug.id)).unwrap();
+        s.set_card_project(card.id, other.id).unwrap();
+        assert_eq!(
+            s.card(card.id).unwrap().unwrap().kind.as_deref(),
+            Some("Bug"),
+            "a target that picked the kind keeps it"
+        );
+        s.delete_card(card.id, false).unwrap();
+        assert!(s.delete_repository(web.id).unwrap());
+        assert!(s.project(web.home_project_id).unwrap().is_none());
     }
 }

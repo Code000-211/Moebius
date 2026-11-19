@@ -12,7 +12,7 @@
 //! migration that gives earlier records to the first owner), `assignees` (who cards and inbox items are given to),
 //! `notices` (what concerns a person, and the cards they follow), `planning` (a card's priority and due date, read from
 //! its labels), `access` (their access tokens and the sessions of browsers, kept as hashes), `favourites` (the places a
-//! person pinned and opened lately), `projects` (the
+//! person pinned and opened lately), `kinds` (kinds of issues, their fields and the values cards hold), `projects` (the
 //! projects, their keys and repositories, and the migration that makes one for each repository) and `milestones` (goals
 //! of the organisation that hold cards of any projects).
 //! Every public type is re-exported here, as `store::Card` and the like.
@@ -32,6 +32,7 @@ mod grillings;
 mod inbox;
 mod issues;
 mod judgements;
+mod kinds;
 mod lessons;
 mod links;
 mod localize;
@@ -72,6 +73,7 @@ pub use grillings::{Grilling, GrillingIssue};
 pub use inbox::{InboxItem, WORKFLOW_APPROVAL};
 pub use issues::Comment;
 pub use judgements::{Judgement, NewJudgement};
+pub use kinds::{FieldDef, FieldType, Kind, KindField};
 pub use lessons::{Lesson, NewLesson};
 pub use links::{DUPLICATE, Link, RELATED};
 pub use localize::IndexedFile;
@@ -478,6 +480,7 @@ ALTER TABLE cards ADD COLUMN archived_at INTEGER;
 UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_id = cards.id), created_at);
 "#,
     milestones::SCHEMA,
+    kinds::SCHEMA,
 ];
 
 pub fn now() -> i64 {

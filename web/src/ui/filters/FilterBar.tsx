@@ -110,17 +110,21 @@ function DisplayMenu({ choices, value, onChange }: DisplayProps) {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" aria-label="Display">
-        <DropdownMenuLabel>Layout</DropdownMenuLabel>
-        <DropdownMenuRadioGroup
-          value={value.layout}
-          onValueChange={(layout) => onChange({ ...value, layout: layout as Layout })}
-        >
-          {(choices.layouts ?? LAYOUTS).map(([each, name]) => (
-            <DropdownMenuRadioItem key={each} value={each}>
-              {name}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
+        {(choices.layouts ?? LAYOUTS).length > 0 && (
+          <>
+            <DropdownMenuLabel>Layout</DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={value.layout}
+              onValueChange={(layout) => onChange({ ...value, layout: layout as Layout })}
+            >
+              {(choices.layouts ?? LAYOUTS).map(([each, name]) => (
+                <DropdownMenuRadioItem key={each} value={each}>
+                  {name}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </>
+        )}
         {value.layout === "list" && choices.groups.length > 0 && (
           <>
             <DropdownMenuLabel>Grouping</DropdownMenuLabel>

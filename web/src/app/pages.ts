@@ -18,11 +18,13 @@ import {
   type Icon,
   KeyboardIcon,
   KeyIcon,
+  ListChecksIcon,
   PlugIcon,
   PlugsConnectedIcon,
   RobotIcon,
   RocketLaunchIcon,
   ScalesIcon,
+  ShapesIcon,
   SparkleIcon,
   TerminalWindowIcon,
   TrayIcon,
@@ -53,6 +55,7 @@ export const PAGES: readonly PageDef[] = [
   { path: "projects", title: "Projects", group: "Projects", icon: FolderIcon },
   { path: "milestones", title: "Milestones", group: "Plan", icon: FlagIcon },
   { path: "wiki", title: "Wiki", group: "Plan", icon: BookOpenTextIcon },
+  { path: "issues", title: "Issues", group: "Projects", icon: ListChecksIcon },
   // Agents, Skills, MCP servers and Rules are held by Settings, so the everyday list does not name their group;
   // the command bar still lists them under "Build".
   { path: "agents", title: "Agents", group: "Build", icon: RobotIcon },
@@ -73,6 +76,7 @@ export const PAGES: readonly PageDef[] = [
   { path: "ports", title: "Ports", group: "Setup", icon: PlugsConnectedIcon },
   { path: "settings", title: "Settings", group: "Setup", icon: GearIcon },
   { path: "people", title: "People", group: "Setup", icon: UsersIcon, ownerOnly: true },
+  { path: "kinds", title: "Kinds of issues", group: "Setup", icon: ShapesIcon, ownerOnly: true },
   { path: "tokens", title: "My tokens", group: "Setup", icon: KeyIcon },
 ];
 

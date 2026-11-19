@@ -122,6 +122,12 @@ any route to any role that is not what its row says.
 | `DELETE /v1/milestones/{id}` | member | no |
 | `GET /v1/cards/{id}/milestones` | viewer | yes |
 | `PUT /v1/cards/{id}/milestones` | member | no |
+| `PUT /v1/projects/{id}/kinds` | owner | yes |
+| `GET /v1/kinds` | viewer | yes |
+| `POST /v1/kinds` | owner | no |
+| `PUT /v1/kinds/{id}` | owner | no |
+| `DELETE /v1/kinds/{id}` | owner | no |
+| `GET /v1/issues` | viewer | yes |
 | `POST /v1/repositories` | owner | yes |
 | `PUT /v1/repositories/{id}` | owner | yes |
 | `DELETE /v1/repositories/{id}` | owner | yes |
@@ -158,6 +164,8 @@ any route to any role that is not what its row says.
 | `POST /v1/notices/{id}/read` | viewer | no |
 | `GET /v1/cards/{id}/followers` | viewer | yes |
 | `PUT /v1/cards/{id}/follow` | viewer | no |
+| `PUT /v1/cards/{id}/kind` | member | yes |
+| `PUT /v1/cards/{id}/fields` | member | yes |
 | `POST /v1/cards/{id}/blockers` | member | yes |
 | `DELETE /v1/cards/{id}/blockers/{number}` | member | yes |
 | `PUT /v1/cards/{id}/duplicate` | member | yes |
@@ -361,6 +369,7 @@ scripts read it as `card.moved_at`) and `archived_at` (null, or when a column sc
 `moebius.archive`). An archived card is not on the board: the snapshot (`GET /v1/snapshot`) leaves it out, and a
 move (a person's, or the forge reopening its issue) brings it back. It stays in the store, in the issue list and in the
 analytics.
+[Assignees](#assignees)), `kind` (the name of its [kind of issue](#kinds-of-issues), or null) and `fields` (the values set for the fields of its kind, an object by field name: a number for a `number` field, text for the others; `{}` when none is set).
 
 `Comment`: `id`, `card_id`, `author` (a forge login, `person`, `person:<handle>` or `agent:<name>`), `body`, `at`.
 
@@ -672,11 +681,11 @@ server from before projects has one project per repository after its first start
 and every card on it; a repository whose name an earlier one has in another case gets the project name `<name> (<id>)`.
 
 A `ProjectView` is `{"id": number, "name": string, "key": string, "created_at": number, "repositories": [{"id": number,
-"name": string, "home": bool}], "members": [{"id": number, "handle": string, "name": string}], "open_cards": number}`:
+"name": string, "home": bool}], "members": [{"id": number, "handle": string, "name": string}], "open_cards": number, "kinds": [number]}`:
 `repositories` in the order the project names them, `home` true when this project is the repository's home project;
 `members` everyone of the organisation who is not disabled, since no project is private yet; `open_cards` the cards on
 its board that are neither closed nor in `Done`; `files` the id of the repository that holds the project's own files, or
-null until they are made. A project made or renamed sends `project_changed`.
+null until they are made; `kinds` the ids of the [kinds of issues](#kinds-of-issues) the project offers. A project made or renamed sends `project_changed`.
 
 #### A project's own files
 
@@ -1252,6 +1261,82 @@ forge refused.
 Replaces the issue's labels, on the forge too. Request: `{"labels": [text]}`; blank labels and repeats are dropped. The
 event `card_labels_changed` is sent. Response: the `Card`. Errors: `404` no such card; `500` the forge refused (a Forgejo
 repository without such a label, for one).
+
+### Kinds of issues
+
+An owner defines kinds of issues for the organisation, such as a bug, a feature or a task, each with fields of its own; a
+project picks the kinds it offers, and a card of the project has at most one of them, with values for its fields. A
+field belongs to its kind, so one field is set on the cards of every project that picked the kind, and a question across
+projects can filter and sort by it. Column scripts see them as `card.kind` and `card.fields` (see [Column
+scripts](column-scripts.md)). A `KindView` is `{"id": number, "name": string, "fields": [{"id": number, "name": string,
+"type": "text" | "number" | "choice" | "date" | "person", "options": [string]}], "projects": [number]}`: `fields` in the
+order the owner wrote them, `options` the values of a `choice` (empty for the other types), `projects` the ids of the
+projects that offer the kind.
+
+A name of a kind, a field or an option is 1 to 60 characters with no space around it and no control character. The name of a
+kind is unique regardless of case, and so is a field's within its kind; a kind has at most 30 fields; a `choice` has at
+least one option, no two the same regardless of case, and no other type has options. A value is checked against its
+field: `text` is a string of at most 2000 characters, `number` a JSON number, `choice` one of the options (in any case; it is kept as the option is
+written), `date` a date that exists as `YYYY-MM-DD`, and `person` the handle of a person (with or without the `@`; kept
+as the person's handle), who is not disabled unless the card already had them. A card that moves to a project that did
+not pick its kind (a project label on its issue) loses the kind and the values of its fields. Removing a repository also
+removes its home project's picks of kinds.
+
+### `GET /v1/kinds`
+
+Every kind, in the order they were made: `[KindView]`.
+
+### `POST /v1/kinds`
+
+Makes a kind. Request: `{"name": text, "fields": [{"name": text, "type": text, "options": [text]}]}` (`fields` and
+`options` may be left out). Sends `kind_changed`. Response: the `KindView`. Errors: `409` a kind with that name; `422` a
+name, field or option that is refused as above.
+
+### `PUT /v1/kinds/{id}`
+
+Replaces the kind's name and fields with the request's, which is the body of `POST /v1/kinds`. A field is the same field
+while its name is, regardless of case: it keeps the values cards hold, and its type cannot change (remove the field and
+add it again for that, which drops its values). A field the request leaves out is removed with the values cards hold for
+it, and a choice that lost an option loses the values that were that option. Sends `kind_changed`, and
+`card_kind_changed` for each card of the kind. Response: the `KindView`. Errors: `404`; `409` the name is another
+kind's; `422` as above, or a field whose type changed.
+
+### `DELETE /v1/kinds/{id}`
+
+Deletes a kind with its fields and the projects' picks of it, when no card has it. Sends `kind_removed` and
+`project_kinds_changed` for each project that offered it. Response: `{}`. Errors: `404`; `409` a card has the kind.
+
+### `PUT /v1/projects/{id}/kinds`
+
+Replaces the kinds the project offers. Request: `{"kinds": [name]}`, in any case; repeats are dropped and `[]` offers
+none. A project that has picked no kind offers none, and its cards have none. Sends `project_kinds_changed`. Response:
+the `ProjectView`. Errors: `404` no such project; `409` the project drops a kind one of its cards has; `422` no kind has a
+name.
+
+### `PUT /v1/cards/{id}/kind`
+
+Gives the card a kind, or none. Request: `{"kind": name}` in any case, or `{"kind": null}`. The kind has to be one the
+card's project offers. A card that changes kind loses the values of its earlier kind's fields; giving it the kind it has
+changes nothing. Sends `card_kind_changed`. Response: the `Card`. Errors: `404` no such card; `422` no kind has the name, or
+the project does not offer it.
+
+### `PUT /v1/cards/{id}/fields`
+
+Sets values of fields of the card's kind. Request: `{"fields": {name: value}}`, each name a field of the kind (in any
+case) and each value as its type says, or `null` to clear the field; fields not named stay as they are. Nothing is set
+when any entry is refused. Sends `card_kind_changed`. Response: the `Card`. Errors: `404` no such card; `422` the card
+has no kind, a field the kind does not have, or a value its field refuses.
+
+### `GET /v1/issues`
+
+The cards of every project, oldest first, as `Card`s, across the repositories and projects of the server. Every filter
+that is given must match; they are query parameters: `project` (a project id), `kind` (a kind's name, in any case),
+`state` (`open` or `closed`) and `field.<name>` (a field's name, in any case) with the value the card's field must
+have, which may be repeated for several fields. A `number` field is compared as a number, any other as text regardless of case; a card
+that has no value for the field does not match. `sort` names a field to order the cards by (numbers by value,
+anything else by its text), with `order=desc` for the other way round: a card with no value for it comes after those that
+have one, whichever the order. Errors: `404` no such project or kind; `422` a field no kind has, a number that is not
+one, any other parameter, or a `state` or `order` that is neither of its two words.
 
 ### Assignees
 
@@ -3440,6 +3525,10 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `card_updated` | The title or body of a card changed: edited through the API, or changed on GitHub, GitLab or Forgejo; or it was held or released (`held`). | The `Card`. |
 | `card_parent_changed` | An issue got a parent, was moved to another or lost it, through the API or on the forge. | `{"card": id, "parent": issue number or null}` |
 | `card_labels_changed` | The labels of an issue changed, through the API or on the forge. | `{"card": id, "labels": [text]}` |
+| `kind_changed` | A kind of issue was made, or its name or fields changed. | `{"id", "name", "fields": [{"id", "name", "type", "options"}]}` |
+| `kind_removed` | A kind of issue was deleted. | `{"kind": id}` |
+| `project_kinds_changed` | The kinds a project offers changed. | `{"project": id, "kinds": [id]}` |
+| `card_kind_changed` | A card got a kind, lost it or had the values of its fields changed (also when its kind's fields were). | `{"card": id, "kind": text or null, "fields": {name: value}}` |
 | `card_assignees_changed` | The people a card is given to changed. | `{"card": id, "assignees": [handle]}` |
 | `card_milestones_changed` | The milestones a card is in changed. | `{"card": id, "milestones": [id]}` (in the order of their target dates) |
 | `inbox_assignees_changed` | The people an inbox item is given to changed. | `{"item": id, "assignees": [handle]}` |

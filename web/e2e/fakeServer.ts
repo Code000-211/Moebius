@@ -13,6 +13,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { type WebSocket, WebSocketServer } from "ws";
 import { type BoardFake, createBoardFake } from "./fake/board";
 import { createFakeChat, type FakeChat } from "./fake/chat";
+import { createKindsFake, type KindsFake } from "./fake/kinds";
 import { createMilestonesFake, type MilestonesFake } from "./fake/milestones";
 import { createPackagesFake, type PackagesFake } from "./fake/packages";
 import { createPagesAFake, type PagesAFake } from "./fake/pages-a";
@@ -85,6 +86,8 @@ export interface FakeServer {
   workflows: WorkflowsFake;
   /** The wiki's pages and their versions (e2e/fake/wiki.ts). */
   wiki: WikiFake;
+  /** The kinds of issues and the issues across projects (e2e/fake/kinds.ts). */
+  kinds: KindsFake;
 }
 
 function cookieOf(request: IncomingMessage): string | undefined {
@@ -171,6 +174,7 @@ export async function startFakeServer(): Promise<FakeServer> {
   const workflows = createWorkflowsFake();
   const wiki = createWikiFake(broadcast);
   const packages = createPackagesFake(broadcast, pagesA);
+  const kinds = createKindsFake(broadcast);
   let port = 0;
 
   const signedIn = (request: IncomingMessage) => {
@@ -324,6 +328,7 @@ export async function startFakeServer(): Promise<FakeServer> {
     if (await pagesB.handle(request, response, path)) return;
     // Rules, automations, Retro, research, the decision model and the column scripts: one rules file is a file of a repository, which pages A would answer.
     if (await pagesC.handle(request, response, path)) return;
+    if (await kinds.handle(request, response, path)) return;
     if (await pagesA.handle(request, response, path)) return;
     // The workflows' own routes read their path before the board does; none of them changes anything.
     if (await workflows.handle(request, response, path)) return;
@@ -407,6 +412,7 @@ export async function startFakeServer(): Promise<FakeServer> {
     packages,
     workflows,
     wiki,
+    kinds,
     broadcast,
     notify(handle, notice) {
       const person = people.find((p) => p.handle === handle);
