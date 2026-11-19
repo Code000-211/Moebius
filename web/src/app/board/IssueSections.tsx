@@ -23,6 +23,7 @@ import {
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Board, Card } from "../../api/types/board";
+import { CardScope } from "../../ui/chat/CardLinks";
 import { Markdown } from "../../ui/chat/Markdown";
 import { Button } from "../../ui/components/Button";
 import {
@@ -330,7 +331,9 @@ export function CommentsSection({ card }: { card: Card }) {
             <span className="text-sm text-secondary">
               {c.author} · {ago(now, c.at)}
             </span>
-            <Markdown content={c.body} keepNewlines className="max-w-prose" />
+            <CardScope.Provider value={card.repository_id}>
+              <Markdown content={c.body} keepNewlines className="max-w-prose" />
+            </CardScope.Provider>
           </li>
         ))}
       </ol>
