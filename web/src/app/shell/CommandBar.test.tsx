@@ -32,7 +32,14 @@ const BOARD = {
   },
   cards: [
     { id: 41, number: 12, title: "Fix the lexer", repository_id: 3 },
-    { id: 42, number: 13, title: "Write the docs", repository_id: 3 },
+    {
+      id: 42,
+      number: 13,
+      project_number: 21,
+      project_key: "PAR",
+      title: "Write the docs",
+      repository_id: 3,
+    },
   ],
 };
 
@@ -156,7 +163,18 @@ describe("the palette", () => {
     await screen.findByRole("option", { name: "Parser" });
     fireEvent.change(field, { target: { value: "docs" } });
     await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(1));
-    expect(screen.getByRole("option").textContent).toContain("#13 Write the docs");
+    expect(screen.getByRole("option").textContent).toContain("PAR-21 Write the docs");
+  });
+
+  it("finds a card by its key, in any case, and by its issue number", async () => {
+    open();
+    const field = await screen.findByRole("combobox");
+    await screen.findByRole("option", { name: "Parser" });
+    for (const query of ["PAR-21", "par-21", "#13"]) {
+      fireEvent.change(field, { target: { value: query } });
+      await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(1));
+      expect(screen.getByRole("option").textContent).toContain("PAR-21 Write the docs");
+    }
   });
 
   it("closes on Escape and gives the focus back to where it was", async () => {
