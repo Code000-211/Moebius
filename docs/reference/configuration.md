@@ -678,6 +678,24 @@ in a log. A key is stored with `PUT /v1/secrets/{name}` and removed with `DELETE
 The refresh token of an OAuth login is kept the same way, under `router.upstreams.oauth.secret`, and replaced when the
 provider rotates it.
 
+### Outgoing webhooks
+
+An owner can have Moebius post its events to a URL (`POST /v1/outgoing-webhooks`, see the
+[desktop API](desktop-api.md)). Each hook names the event kinds it wants and, optionally, the projects (today the
+repositories). A post is the JSON `{"id", "kind", "at", "data"}`, redacted, with the headers `X-Moebius-Event` (the kind) and
+`X-Moebius-Signature-256: sha256=<hex>`, the HMAC-SHA256 of the exact body under the hook's secret, which is kept in
+`secrets.toml` as `outgoing-webhook-<id>` and is never logged or stored elsewhere. A receiver verifies by computing the
+same HMAC and comparing it in constant time.
+
+- A hook that names no project gets the events of public projects and of the whole server; one that names projects gets only
+  theirs. The events of a private project go only to a hook that names it, and an event whose project cannot be found
+  goes nowhere.
+- A post is answered by any `2xx`. Otherwise it is tried again after 5 seconds, 30 seconds, 5 minutes and 30 minutes (five
+  attempts, each with a 10 second limit; redirects are not followed). When the last attempt fails, the hook is given up on for
+  that event and an inbox item of kind `webhook_failed` (`data.webhook`, `data.url`, `data.event`, `data.error`,
+  `data.attempts`; no card) tells an owner. A hook whose secret is gone sends nothing and gives up the same way.
+- A private repository is one with the `private` flag of the store; an owner sets it with `PUT /v1/repositories/{id}/private`. An event that names no project goes to a hook only when it is of the whole server (`package_*`, `plugin_*`, `port_*`, `retro_*`, `harness_error` and the like); the others, such as inbox, chat and proposal events, go nowhere.
+
 ### Webhooks
 
 A forge that can reach the server may send webhooks, which save the wait for the next poll. There is no key for them in

@@ -548,6 +548,7 @@ At the top:
 | `store/runs.rs` | Runs: an agent's work in a harness, from its start to its end. |
 | `store/workflows.rs` | Workflow runs and the runs of each node of them, with their value, input and output redacted before they are stored. |
 | `store/workflow_schedules.rs` | The minute each workflow on a `schedule` trigger last fired at, so one occurrence of its cron starts one run even when the server restarts in between. |
+| `store/outgoing.rs` | The outgoing webhooks (URL, event kinds, projects named) and the flag that makes a repository private. |
 | `store/favourites.rs` | The places a person pinned, in their order, and the places they opened lately (the last 20), kept per person so they follow them to every browser. |
 | `store/events.rs` | A run's events, in order, redacted before they are stored. |
 | `store/automations.rs` | Automations, their firings with the status of each chat, and the server's local minute; the workflow file is the definition and the row keeps the id the firings use. |
@@ -626,7 +627,9 @@ At the top:
 | `server/settings/keys.rs` | Every key with its default and whether it takes effect at once, and their values without passwords. |
 | `server/settings/live.rs` | The configuration the running server reads: a change saved and its live keys applied, the agents and rules moved into a new harness configuration repository, and the restart. |
 | `server/settings/secrets.rs` | The API keys kept in `secrets.toml`, and the keys the upstreams and the decision model are given. |
+| `server/outgoing.rs` | Outgoing webhooks: listens to the bus, picks the hooks that want an event's kind and may see its project (a private project's events go only to a hook that names it), posts it signed with HMAC-SHA256, retries with backoff, and gives up with a `webhook_failed` item in the inbox. |
 | `server/webhooks.rs` | Webhooks from the forges (ADR 0012): the check of a delivery against the secret of its forge (HMAC-SHA256 or token, in constant time), and the wake-up that makes the poll of a forge run at once. |
+| `server/api/outgoing.rs` | `GET` and `POST /v1/outgoing-webhooks` and `DELETE /v1/outgoing-webhooks/{id}`: the owner's outgoing webhooks, and the secret each is signed with. |
 | `server/api/webhooks.rs` | `POST /v1/webhooks/{forge}` (no token, a signature instead), `GET /v1/webhooks` and `POST /v1/webhooks/{forge}/secret`. |
 | `server/setup.rs` | What the Models, Plugins and Get started pages show: the router's upstreams, the agents, the teacher, the decision model and the plugins, without a secret, and the steps to a first card (`GET /v1/start`). |
 

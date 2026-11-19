@@ -267,6 +267,10 @@ any route to any role that is not what its row says.
 | `PUT /v1/secrets/{name}` | owner | no |
 | `DELETE /v1/secrets/{name}` | owner | yes |
 | `POST /v1/server/restart` | owner | yes |
+| `GET /v1/outgoing-webhooks` | owner | no |
+| `POST /v1/outgoing-webhooks` | owner | no |
+| `DELETE /v1/outgoing-webhooks/{id}` | owner | no |
+| `PUT /v1/repositories/{id}/private` | owner | no |
 | `POST /v1/webhooks/{forge}` | none | — |
 | `GET /v1/webhooks` | owner | no |
 | `POST /v1/webhooks/{forge}/secret` | owner | no |
@@ -377,6 +381,7 @@ instead of `data.trials`), `grilling_issues` (`data.grilling`, `data.repository`
 `data.repository`, `data.report`: the text; no card) and `takeover` (`data.takeover`, `data.kind`, `data.agreement`,
 `data.count`; its `title` is "The decision model can take over <kind>" and it has no card) and `extension_update`
 (`data.package`, `data.from`, `data.to`, `data.source`; its `title` is "<package> <from> -> <to>" and it has no card) and
+`webhook_failed` (`data.webhook`, `data.url`, `data.event`, `data.error`, `data.attempts`; its `title` says which webhook was given up on and it has no card; see [Outgoing webhooks](configuration.md#outgoing-webhooks)) and
 `workflow_approval` (`data.run`, `data.node`, `data.prompt`, `data.value` and `data.deadline` in whole seconds since the
 epoch; its `title` is the prompt and it has no card; it carries the decision a workflow run waits for, see
 [the approval node](workflows/approval.md)). The nightly schedule, from `retro_at` on, once a day, puts one
@@ -2209,6 +2214,29 @@ not allowed.
 
 Removes the key stored under `name`. Response: the names of the keys left. Errors: `404` there is none. A key that
 `api_key_secret` still names is not checked: the next start fails until the name is stored again.
+
+### `GET /v1/outgoing-webhooks`
+
+The outgoing webhooks, oldest first: `[{"id", "url", "kinds", "projects", "created_at"}]`, `projects` being the names of the
+repositories the hook names (empty for none). Never the secret. See [Outgoing webhooks](configuration.md#outgoing-webhooks).
+
+### `POST /v1/outgoing-webhooks`
+
+Adds a hook. Body: `{"url": "https://...", "kinds": ["card_moved"], "projects": ["name"]}`; `url` is an `http` or `https`
+address, `kinds` is at least one event kind of [the events](#events) (lowercase letters, digits and `_`),
+`projects` names repositories and may be left out. Response: the hook as above and its `secret`, a new random `whsec_...`
+shown this once and kept as `outgoing-webhook-<id>` in `secrets.toml`. Errors: `403` to a run token; `422` the url, the
+kinds or a project is not allowed.
+
+### `DELETE /v1/outgoing-webhooks/{id}`
+
+Removes the hook and its secret. Answers `204`. Errors: `403` to a run token; `404` there is no such hook.
+
+### `PUT /v1/repositories/{id}/private`
+
+An owner makes a repository private, or public again. Request: `{"private": bool}`. Response: `{"id", "private"}`. The
+events of a private repository go only to an outgoing webhook that names it (see
+[Outgoing webhooks](configuration.md#outgoing-webhooks)). Errors: `403` to a run token; `404` no such repository.
 
 ### `POST /v1/webhooks/{forge}`
 

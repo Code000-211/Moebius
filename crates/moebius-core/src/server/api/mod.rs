@@ -30,6 +30,7 @@
 //! - `favourites`: what a person pins to the sidebar and what they opened lately, kept for them on the server.
 //! - `roles`: the role of the organisation each route needs, and whether an agent's run token may use it.
 //! - `web`: the web app itself, served at `/` without a token.
+//! - `outgoing`: the owner's outgoing webhooks, which post events to a URL.
 //! - `webhooks`: the deliveries of the forges, which need no token but a signature, and the secrets to set on the forges.
 //! - `workflow_hooks`: the door a workflow's `webhook` trigger answers on, which an outside service opens with the
 //!   trigger's own secret rather than the token.
@@ -53,6 +54,7 @@ mod harness;
 mod improve;
 mod issues;
 mod lessons;
+mod outgoing;
 mod packages;
 mod people;
 mod ports;
@@ -233,6 +235,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(ports::routes())
         .merge(events::routes())
         .merge(webhooks::routes())
+        .merge(outgoing::routes())
         .merge(whereabouts::routes())
         .merge(session::routes())
         .merge(people::routes())

@@ -252,7 +252,11 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("PUT", "/v1/secrets/{name}", OWNER_PERSON),
     ("DELETE", "/v1/secrets/{name}", OWNER),
     ("POST", "/v1/server/restart", OWNER),
-    // The forges' webhooks and a workflow's hooks.
+    // The outgoing webhooks, the forges' webhooks and a workflow's hooks.
+    ("GET", "/v1/outgoing-webhooks", OWNER_PERSON),
+    ("POST", "/v1/outgoing-webhooks", OWNER_PERSON),
+    ("DELETE", "/v1/outgoing-webhooks/{id}", OWNER_PERSON),
+    ("PUT", "/v1/repositories/{id}/private", OWNER_PERSON),
     ("POST", "/v1/webhooks/{forge}", PUBLIC),
     ("GET", "/v1/webhooks", OWNER_PERSON),
     ("POST", "/v1/webhooks/{forge}/secret", OWNER_PERSON),
