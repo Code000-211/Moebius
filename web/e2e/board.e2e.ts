@@ -516,6 +516,8 @@ describe("live data", () => {
       await page.keyboard.press("Escape");
       await renamed.waitFor();
       await dock().waitFor();
+      // The focus comes back to the value a frame later; the next keys wait for it rather than race it.
+      await expect.poll(() => renamed.evaluate((el) => el === document.activeElement)).toBe(true);
 
       // A list: Tab reaches "+", Enter opens the field, Enter adds the label.
       const add = facts.getByRole("button", { name: "Add a label" });
