@@ -1286,7 +1286,7 @@ describe("the filters", () => {
       expect(await save.count()).toBe(0);
       await addFilter(page, bar(), "Column", "Backlog");
       await save.click();
-      await status(/Saved this view as "View 2"/).waitFor();
+      await status(/Saved this view as "View 3"/).waitFor();
       if (!("views" in server)) throw new Error("this test needs the fake server");
       const fake = server.views;
       expect(fake.requests.at(-1)).toMatchObject({
