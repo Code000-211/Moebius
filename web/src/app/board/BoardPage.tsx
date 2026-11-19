@@ -684,7 +684,6 @@ function CardContent({
       rounds={
         coding && !hidden.has("rounds") ? { done: card.rounds, limit: board.round_limit } : null
       }
-      isLoading={status === "live"}
       muted={card.column === "Done" || card.closed}
       onOpen={onOpen}
       menu={menu && <CardMenu card={card} {...menu} />}

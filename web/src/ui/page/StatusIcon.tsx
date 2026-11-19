@@ -3,7 +3,7 @@
  * priority, `RunRing` for a run that is going and `LabelDot` for a label. Each says its state by its shape as well as
  * its hue, carries an accessible name (or, with `decorative`, hides itself because a word stands beside it), and takes
  * its colour from the status tokens of `styles/theme.css`, so both themes work. They sit beside the old pills
- * (`Status.tsx`, `Chip.tsx`); nothing uses them yet.
+ * (`Status.tsx`, `Chip.tsx`); the board, the Inbox and Fleet use them through `MarkLabel.tsx`, the other pages through `StateLabel.tsx`.
  *
  * ```tsx
  * <StatusIcon state="inReview" />        // announced as "In review"

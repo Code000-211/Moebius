@@ -3,16 +3,15 @@
 // the rounds it has left of the most it gets, and the links to its issue and its pull request — in place of priority,
 // assignees, tags, relationships and the description preview; the "more actions" button is a slot (`menu`) the page
 // fills with its own menu, beside the title, and a state word may carry a hint, shown in a tooltip; both links are 32px
-// targets and only the issue number is monospaced; the state words are the shared `Status` pill, and the card is
+// targets and only the issue number is monospaced; the state words are the shared `MarkLabel` (a mark and grey text), and the card is
 // opened by its title being a button, so the card itself stays a group the links sit in; the labels of the issue, who
 // claimed it and a slot for the stack of its sub-issues (`stack`) are added.
 
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
 import { FadedClamp } from "../page/FadedClamp";
-import { Status, type Tone } from "../page/Status";
+import { MarkLabel, type StateMark } from "../page/MarkLabel";
 import { PrBadge, type PrBadgeStatus } from "./PrBadge";
-import { RunningDots } from "./RunningDots";
 import { Tooltip } from "./Tooltip";
 
 export interface KanbanPullRequest {
@@ -21,10 +20,12 @@ export interface KanbanPullRequest {
   status: PrBadgeStatus;
 }
 
-/** A word of a card and the state its colour stands for, in the names of the shared pill (`page/Status`). */
+/** A word of a card and the mark before it (`page/MarkLabel`); the word carries the state, the mark helps find it. */
 type CardLabel = {
   name: string;
-  tone?: Tone;
+  mark?: StateMark;
+  /** Said after the word, such as the agent of a live card. */
+  detail?: string;
   /** More about the state, in a tooltip; it supplements the word and carries nothing the card needs. */
   hint?: string;
 };
@@ -43,8 +44,6 @@ export type KanbanCardContentProps = {
   pullRequest?: KanbanPullRequest | null;
   /** The rounds so far of the most the card gets; shown as a bar when both are above zero. */
   rounds?: { done: number; limit: number } | null;
-  /** The card's run is working: the dots run beside its badges. */
-  isLoading?: boolean;
   /** A card in Done is drawn quiet. */
   muted?: boolean;
   /**
@@ -72,7 +71,6 @@ export function KanbanCardContent({
   badges = [],
   pullRequest,
   rounds,
-  isLoading = false,
   muted = false,
   onOpen,
   menu,
@@ -84,22 +82,24 @@ export function KanbanCardContent({
   return (
     <div className={cn("flex min-w-0 flex-col gap-2", className)}>
       {/* Row 1: the state of the card, in words */}
-      {(isLoading || badges.length > 0) && (
+      {badges.length > 0 && (
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          {isLoading && <RunningDots />}
           {badges.map((badge) =>
             badge.hint ? (
               <Tooltip key={badge.name} content={badge.hint} side="bottom">
                 {/* Focusable, so that the hint is reachable without a pointer. */}
                 {/* biome-ignore lint/a11y/noNoninteractiveTabindex: the pill carries a hint a keyboard should reach */}
-                <span tabIndex={0} className="inline-flex rounded-full">
-                  <Status tone={badge.tone}>{badge.name}</Status>
+                <span tabIndex={0} className="inline-flex rounded-control">
+                  <MarkLabel mark={badge.mark} word={badge.name} detail={badge.detail} />
                 </span>
               </Tooltip>
             ) : (
-              <Status key={badge.name} tone={badge.tone}>
-                {badge.name}
-              </Status>
+              <MarkLabel
+                key={badge.name}
+                mark={badge.mark}
+                word={badge.name}
+                detail={badge.detail}
+              />
             ),
           )}
         </div>

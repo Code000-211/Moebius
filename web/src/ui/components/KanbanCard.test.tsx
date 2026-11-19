@@ -29,7 +29,7 @@ function Card({ onOpen, preview }: { onOpen: () => void; preview?: string | null
             title="Fix the parser"
             preview={preview}
             detail="Coder · round 1 of 5"
-            badges={[{ name: "Your turn", tone: "attention" }]}
+            badges={[{ name: "Your turn" }]}
             onOpen={onOpen}
           />
         </KanbanCard>

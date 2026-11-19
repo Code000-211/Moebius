@@ -6,7 +6,7 @@
  */
 import type { Board, Card, InboxItem } from "../../api/types/board";
 import { Empty } from "../../ui/page/Empty";
-import { Status } from "../../ui/page/Status";
+import { MarkLabel } from "../../ui/page/MarkLabel";
 import { cardBadges, cardStatus, inboxOf } from "./model";
 import type { ListGroup } from "./view";
 
@@ -42,9 +42,7 @@ function Row({
           {card.title}
         </span>
         {badges.map((badge) => (
-          <Status key={badge.name} tone={badge.tone}>
-            {badge.name}
-          </Status>
+          <MarkLabel key={badge.name} mark={badge.mark} word={badge.name} detail={badge.detail} />
         ))}
         {!hidden.has("labels") &&
           card.labels.map((label) => (

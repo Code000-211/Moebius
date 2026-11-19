@@ -141,13 +141,16 @@ describe("what an item is about", () => {
 });
 
 describe("how an item tells itself", () => {
-  it("tags the kinds, red for stuck and amber for what waits for a move", () => {
-    expect(kindTag(item(1, "stuck", 1, {}))).toEqual({ label: "Stuck", tone: "error" });
+  it("tags the kinds, the blocked icon for stuck and the merge icon for a change to merge", () => {
+    expect(kindTag(item(1, "stuck", 1, {}))).toEqual({ label: "Stuck", mark: "blocked" });
     expect(kindTag(item(1, "ready_to_merge", null, {})).label).toBe("Change from a chat");
-    expect(kindTag(item(1, "ready_to_merge", 4, {})).label).toBe("Ready to merge");
+    expect(kindTag(item(1, "ready_to_merge", 4, {}))).toEqual({
+      label: "Ready to merge",
+      mark: "readyToMerge",
+    });
     expect(kindTag(item(1, "needs_design", 4, {}))).toEqual({
       label: "Needs design",
-      tone: "neutral",
+      mark: "none",
     });
     expect(chipName("approve_issue")).toBe("Approvals");
     expect(chipName("needs_design")).toBe("Needs design");

@@ -22,10 +22,10 @@ import { cn } from "../../ui/lib/cn";
 import { useNow } from "../../ui/lib/useNow";
 import { Empty } from "../../ui/page/Empty";
 import { FadedLine } from "../../ui/page/FadedLine";
+import { MarkLabel } from "../../ui/page/MarkLabel";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
-import { Status } from "../../ui/page/Status";
 import {
   afterSteps,
   context,
@@ -138,7 +138,7 @@ function Row({ work, now }: { work: Work; now: number }) {
       className="flex w-full flex-col gap-3 rounded-card bg-surface p-4 text-left shadow-card transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
     >
       <span className="flex flex-wrap items-center gap-3">
-        <Status tone={status.tone}>{status.word}</Status>
+        <MarkLabel mark={status.mark} word={status.word} />
         <span className="text-base font-semibold text-text">{work.agent}</span>
         <span className="text-sm text-secondary">{work.kind}</span>
         {startedAt > 0 && (
