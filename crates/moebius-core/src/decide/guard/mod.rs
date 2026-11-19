@@ -218,6 +218,26 @@ mod tests {
     }
 
     #[test]
+    fn the_other_worktrees_are_read_from_lines_of_any_ending() {
+        let context = |paths: &str| BTreeMap::from([("worktrees".to_string(), paths.to_string())]);
+        // The list of a Windows server: backslashes and `\r\n`, which must not stay on a path.
+        assert_eq!(
+            other_worktrees(&context(
+                "D:\\data\\worktrees\\web\\run-2\r\nD:\\data\\worktrees\\api\\run-2\r\n"
+            )),
+            [
+                PathBuf::from("D:\\data\\worktrees\\web\\run-2"),
+                PathBuf::from("D:\\data\\worktrees\\api\\run-2"),
+            ]
+        );
+        assert_eq!(
+            other_worktrees(&context("/srv/a\n\n/srv/b")),
+            [PathBuf::from("/srv/a"), PathBuf::from("/srv/b")]
+        );
+        assert!(other_worktrees(&BTreeMap::new()).is_empty());
+    }
+
+    #[test]
     fn the_plugin_refuses_with_the_rules_name_and_allows_the_rest() {
         let refused = decide("bash", json!({ "command": "git push --force" }));
         assert_eq!(refused.choice, "refuse");
