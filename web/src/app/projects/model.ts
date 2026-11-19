@@ -1,10 +1,10 @@
 /**
- * The logic of the Projects pages, apart from React: how a repository is told in a list, what the form of a new one
- * sends, the logins a person types, what the editor says of a file it cannot edit, and what the server's answer to a
+ * The logic of the Projects pages, apart from React: how a repository is told in a list, the key a new project is
+ * offered and what its tile says, what the form of a new repository sends, the logins a person types, what the editor says of a file it cannot edit, and what the server's answer to a
  * refused repository means to the person who asked for it.
  */
 import type { Forge, Repository } from "../../api/types/board";
-import type { FileDetail, NewRepository } from "../../api/types/projects";
+import type { FileDetail, NewRepository, Project } from "../../api/types/projects";
 import { plural } from "../../ui/lib/format";
 
 /** The forge and the repository's name there, as a page shows it: `GitHub · acme/radiance`. */
@@ -23,6 +23,32 @@ export function onForge(repository: Repository): boolean {
 
 export function cardsText(count: number): string {
   return plural(count, "card", "cards");
+}
+
+/** The most characters a project's key has. */
+const KEY_LIMIT = 10;
+
+/** Whether `key` is a project's key: an uppercase letter, then 1 to 9 uppercase letters or digits. */
+export function isKey(key: string): boolean {
+  return /^[A-Z][A-Z0-9]{1,9}$/.test(key);
+}
+
+/**
+ * The key a new project is offered for `name`, as the server makes one for a new repository's project: the name's
+ * letters and digits in capitals, after a `P` when it does not start with a letter, at most ten; a name too short for
+ * two characters gets a `2`. Whether another project has it is the server's to say.
+ */
+export function keyFor(name: string): string {
+  const letters = name.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  const base = /^[A-Z]/.test(letters) ? letters : `P${letters}`;
+  const whole = base.slice(0, KEY_LIMIT);
+  return isKey(whole) ? whole : `${base.slice(0, KEY_LIMIT - 1)}2`;
+}
+
+/** What a project's tile says of its repositories: their names, or that it has none yet. */
+export function repositoriesText(project: Project): string {
+  if (project.repositories.length === 0) return "No repository yet";
+  return project.repositories.map((each) => each.name).join(" · ");
 }
 
 /** The field an answer about a new repository belongs to. */

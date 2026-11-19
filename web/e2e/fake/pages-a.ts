@@ -3,7 +3,7 @@
  * real server sends (docs/reference/desktop-api.md). It sits in front of the board's fake: it answers the snapshot
  * itself, adding to the board's what the pages need (more repositories, the repository's edited trusted logins, the
  * inbox items of proposals, takeovers and grillings, a change of the harness repository), and the routes of the
- * repositories' files and plugin settings (one sandbox plugin, with a repository's and the server's settings), the usage, the settings with their restart, the
+ * projects (one per repository, and those made with `POST /v1/projects`), the repositories' files and plugin settings (one sandbox plugin, with a repository's and the server's settings), the usage, the settings with their restart, the
  * webhooks, the first-start steps and the decisions of the inbox. The state changes the way the real server's does, and the events it sends are the real ones.
  * A test can make the next request to a route fail with the server's own sentence (`refuseNext`).
  */
@@ -21,6 +21,17 @@ interface Repository {
   github: string | null;
   trusted: string[];
   project: string | null;
+}
+
+/** A project as `GET /v1/projects` answers it. */
+interface Project {
+  id: number;
+  name: string;
+  key: string;
+  created_at: number;
+  repositories: Array<{ id: number; name: string; home: boolean }>;
+  members: Array<{ id: number; handle: string; name: string }>;
+  open_cards: number;
 }
 
 interface InboxItem {
@@ -525,6 +536,30 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
     trusted: trusted.get(repo.id) ?? repo.trusted,
   });
 
+  /** The projects made with `POST /v1/projects`, which have no repository. */
+  let madeProjects: Project[] = [];
+
+  /** Every project, as `GET /v1/projects` answers: each repository's home project (with its id), then the ones made. */
+  function projects(): Project[] {
+    const { boards } = snapshot() as unknown as {
+      boards: Array<{ repository: Repository; cards: Array<{ column: string; closed?: boolean }> }>;
+    };
+    const members = [{ id: 1, handle: "owner", name: "Owner" }];
+    const homes = boards.map(({ repository, cards }) => ({
+      id: repository.id,
+      name: repository.name,
+      key: repository.name
+        .replace(/[^A-Za-z0-9]/g, "")
+        .toUpperCase()
+        .slice(0, 10),
+      created_at: NOW,
+      repositories: [{ id: repository.id, name: repository.name, home: true }],
+      members,
+      open_cards: cards.filter((card) => !card.closed && card.column !== "Done").length,
+    }));
+    return [...homes, ...madeProjects.map((project) => ({ ...project, members }))];
+  }
+
   function snapshot() {
     const base = board.snapshot() as {
       boards: Array<{ repository: Repository }>;
@@ -757,6 +792,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         path === "/v1/webhooks" ||
         path === "/v1/harness/setup" ||
         path === "/v1/repositories" ||
+        path === "/v1/projects" ||
         /^\/v1\/webhooks\/[a-z]+\/secret$/.test(path) ||
         /^\/v1\/repositories\/\d+(\/(tree|files|search|settings|plugin-settings)(\/.*)?)?$/.test(
           path,
@@ -874,6 +910,31 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         return ok(response, hook);
       }
 
+      if (path === "/v1/projects" && method === "GET") return ok(response, projects());
+      if (path === "/v1/projects" && method === "POST") {
+        const name = typeof body.name === "string" ? body.name : "";
+        const key = typeof body.key === "string" ? body.key : "";
+        if (!/^[A-Z][A-Z0-9]{1,9}$/.test(key))
+          return fail(response, 422, `"${key}" is not a project key`);
+        if (projects().some((each) => each.key === key)) {
+          return fail(response, 409, `a project with the key ${key} exists already`);
+        }
+        if (projects().some((each) => each.name.toLowerCase() === name.toLowerCase())) {
+          return fail(response, 409, `a project named ${name} exists already`);
+        }
+        const made = {
+          id: 100 + madeProjects.length,
+          name,
+          key,
+          created_at: NOW,
+          repositories: [],
+          members: [],
+          open_cards: 0,
+        };
+        madeProjects = [...madeProjects, made];
+        send({ kind: "project_changed", data: { ...made, repositories: [] } });
+        return ok(response, made);
+      }
       if (path === "/v1/repositories" && method === "POST") {
         const made = repositoryRequest(body);
         if ("error" in made) {

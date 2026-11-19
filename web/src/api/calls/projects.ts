@@ -1,21 +1,33 @@
 /**
- * The calls about repositories: adding, the trusted logins, removing, reading and writing their files, their settings, and
+ * The calls about projects (listing and making one) and repositories: adding, the trusted logins, removing, reading and writing their files, their settings, and
  * the settings plugins ask of them.
  */
 import { del, get, post, put } from "../http";
 import type { Repository } from "../types/board";
 import type {
   FileDetail,
+  NewProject,
   NewRepository,
   PluginProjectSettings,
   PluginSettings,
+  Project,
   ProjectSettings,
   Search,
   SettingFile,
   Tree,
 } from "../types/projects";
 
-/** Clones a repository into the server's data directory. */
+/** Every project, in the order they were made. */
+export function listProjects(): Promise<Project[]> {
+  return get<Project[]>("/v1/projects");
+}
+
+/** Makes a project with no repository yet; the server refuses a key another project has. */
+export function addProject(project: NewProject): Promise<Project> {
+  return post<Project>("/v1/projects", project);
+}
+
+/** Clones a repository into the server's data directory; the server makes its home project with it. */
 export function addRepository(repository: NewRepository): Promise<Repository> {
   return post<Repository>("/v1/repositories", repository);
 }

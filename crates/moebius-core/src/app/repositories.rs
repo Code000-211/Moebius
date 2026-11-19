@@ -132,7 +132,7 @@ impl App {
         Ok((clone.to_string_lossy().into_owned(), branch))
     }
 
-    /// Refuses `name` for a new repository when it is not a plain name or is taken.
+    /// Refuses `name` for a new repository when it is not a plain name, or is taken by a repository or a project.
     fn check_new_name(&self, name: &str) -> Result<()> {
         if !is_plain_name(name) || name.starts_with('.') {
             return Err(AppError::Invalid(format!(
@@ -142,6 +142,12 @@ impl App {
         if self.store.repositories()?.iter().any(|r| r.name == name) {
             return Err(AppError::Invalid(format!(
                 "the repository name {name:?} is taken"
+            )));
+        }
+        // The repository's home project gets its name, which no other project may have.
+        if self.store.project_by_name(name)?.is_some() {
+            return Err(AppError::Invalid(format!(
+                "the name {name:?} is taken by a project"
             )));
         }
         Ok(())

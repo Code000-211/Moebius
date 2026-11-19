@@ -35,6 +35,24 @@ before and `person:owner` after. A card or comment read from a forge keeps its a
 Neither a token nor a session id is stored as it is. Revoking a token deletes the sessions it opened; disabling a
 person deletes theirs; a session is refused once it expires, and forgotten when the next one starts.
 
+## Projects
+
+`store/projects.rs` keeps the projects (ADR 0019).
+
+| Table | Holds |
+|---|---|
+| `projects` | Name (unique regardless of case), key (unique: an uppercase letter and 1 to 9 uppercase letters or digits, such as `WEB`) and when it was made. A rename changes only the name. |
+| `project_repositories` | The repositories of each project, with their position in the project's order. |
+
+`repositories.home_project_id` is the project a repository's new issues land in, and `cards.project_id` the project
+whose board a card is on. Adding a repository makes its home project in the same transaction, with the repository's
+name and a key made from it (`store::key_for`: `web` is `WEB`, a second `web-` `WEB2`); a new card takes its
+repository's home project; removing a repository removes its home project when nothing is left on it.
+
+The migration that adds the tables makes one project per repository, with its name and id, as its home project, and
+puts every card on it. It gives each a provisional key, `#<id>`, which no project can choose, because SQL cannot make a
+key from a name; opening the store replaces each with a key made from the name, in the order the projects were made.
+
 ## Workflow runs
 
 `store/workflows.rs` keeps what a workflow run and each of its nodes did; the engine writes them and the web app reads

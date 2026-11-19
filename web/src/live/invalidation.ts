@@ -62,7 +62,8 @@ const DIFF_KINDS = new Set([
 export function invalidates(event: ServerEvent): QueryKey[] {
   if (event.kind === "lagged") return [[]];
   const stale: QueryKey[] = [];
-  if (SNAPSHOT_KINDS.has(event.kind)) stale.push(keys.snapshot, keys.cards);
+  if (SNAPSHOT_KINDS.has(event.kind)) stale.push(keys.snapshot, keys.cards, keys.projects);
+  if (event.kind === "project_changed") stale.push(keys.projects);
   if (event.kind === "script_changed") stale.push(keys.scripts, keys.projectSettingsAll);
   if (event.kind === "project_settings_changed") {
     stale.push(keys.projectSettingsAll);

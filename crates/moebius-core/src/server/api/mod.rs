@@ -7,6 +7,7 @@
 //! - `cards`: the snapshot of every board, issues, cards and their changes, a card's runs and history.
 //! - `issues`: what is done to an issue besides editing it: its parent, blockers, labels, claim, comments, closing.
 //! - `repositories`: adding and editing repositories, and their column scripts and files.
+//! - `projects`: the projects, each with a key, a board and its repositories; making and renaming one.
 //! - `runs`: a run and its events, steering and stopping it.
 //! - `chats`: chats with an agent, and what grilling chats ended in.
 //! - `automations`: chats a schedule starts, and their firings.
@@ -58,6 +59,7 @@ mod outgoing;
 mod packages;
 mod people;
 mod ports;
+mod projects;
 mod repositories;
 mod roles;
 mod rules;
@@ -218,6 +220,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(cards::routes())
         .merge(issues::routes())
         .merge(repositories::routes())
+        .merge(projects::routes())
         .merge(runs::routes())
         .merge(chats::routes())
         .merge(automations::routes())

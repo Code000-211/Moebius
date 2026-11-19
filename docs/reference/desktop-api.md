@@ -101,6 +101,10 @@ any route to any role that is not what its row says.
 | `PUT /v1/client` | viewer | no |
 | `GET /v1/snapshot` | viewer | yes |
 | `GET /v1/events` | viewer | yes |
+| `GET /v1/projects` | viewer | yes |
+| `POST /v1/projects` | owner | yes |
+| `GET /v1/projects/{id}` | viewer | yes |
+| `PATCH /v1/projects/{id}` | owner | yes |
 | `POST /v1/repositories` | owner | yes |
 | `PUT /v1/repositories/{id}` | owner | yes |
 | `DELETE /v1/repositories/{id}` | owner | yes |
@@ -286,7 +290,7 @@ A failed request has a status code and a plain-text message as its body.
 |---|---|
 | `401` | No valid token. |
 | `403` | The person's [role](#roles) may not use the route (`only an owner can do this`, `only a member or an owner can do this`), or a run token of the Moebius agent is on a route that only a person may use (`only a person can do this`). |
-| `404` | The repository, card, change or run in the path does not exist. |
+| `404` | The repository, project, card, change or run in the path does not exist. |
 | `409` | A merge conflicts: the default branch is left as it was. |
 | `422` | The request is understood but not allowed: invalid values, or a card or change in the wrong state. Also what axum answers for a JSON body with a missing or mistyped field. |
 | `400`, `415` | The body is not valid JSON, or the content type is not `application/json` (`application/zip` for `POST /v1/uploads`). |
@@ -302,9 +306,10 @@ These objects appear in the responses. All ids are numbers; times are Unix secon
 
 `Repository`: `id`, `name`, `path` (the clone on the server), `forge` (`none`, `github`, `gitlab` or `forgejo`),
 `default_branch`, `github` (`owner/repo` or null), `trusted` (array of logins on the forge), `project` (the path on
-GitLab, such as `group/project`, or the repository on Forgejo as `owner/repo`, or null).
+GitLab, such as `group/project`, or the repository on Forgejo as `owner/repo`, or null) and `home_project_id` (the
+[project](#projects) its new issues land in, which was made with it).
 
-`Card`: `id`, `repository_id`, `number`, `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
+`Card`: `id`, `repository_id`, `project_id` (the [project](#projects) whose board it is on), `number`, `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
 back to coding, or null), `retried_after` (the id of the card's latest run when a person last retried it, or null) and
 `confirmed` (true for a card made from a confirmed grilling, which needs no approval) and `held` (null, or `{"reason":
 string or null, "by": "person" or "agent:Moebius", "at": number}` while a person or the Moebius agent holds the card; see
@@ -605,6 +610,50 @@ A WebSocket. After the upgrade, every event the core publishes arrives as one JS
 are not replayed: a client sees only what happens after it connected, so read the snapshot after connecting. Messages the
 client sends are ignored; closing the socket ends the stream.
 
+### Projects
+
+A project (ADR 0019) is one board and the work on it, with any number of repositories. Its `key` names its cards
+(`WEB-24`): an uppercase letter and then 1 to 9 uppercase letters or digits, unique on the server, chosen when the
+project is made and kept for good; renaming changes only the `name`, which is unique regardless of case. Every
+repository has a home project, where its new issues land: adding a repository makes one with the repository's name and a
+key made from it (its letters and digits in capitals, after a `P` when it does not start with a letter, at most 10, with
+a number at its end when that key is taken: `web` is `WEB`, a second `web-` `WEB2`, `2fa` `P2FA`), and removing a
+repository removes its home project when no repository and no card is left on it. A server from before projects has one
+project per repository after its first start, with the repository's name and id, and every card on it.
+
+A `ProjectView` is `{"id": number, "name": string, "key": string, "created_at": number, "repositories": [{"id": number,
+"name": string, "home": bool}], "members": [{"id": number, "handle": string, "name": string}], "open_cards": number}`:
+`repositories` in the order the project names them, `home` true when this project is the repository's home project;
+`members` everyone of the organisation who is not disabled, since no project is private yet; `open_cards` the cards on
+its board that are neither closed nor in `Done`. A project made or renamed sends `project_changed`.
+
+### `GET /v1/projects`
+
+Every project, in the order they were made: `[ProjectView]`.
+
+### `POST /v1/projects`
+
+An owner, or the Moebius agent, makes a project with no repository yet. Request body: `{"name": string, "key":
+string}`. The name is 1 to 80 characters, without a slash, a backslash or a control character, and does not start with a
+dot or a space. Response: the `ProjectView`. Errors: `409` for a key another project has, or a name another project has
+in any case; `422` for a key that is not one or a name that is not one.
+
+```sh
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"name": "Storefront", "key": "SHOP"}' http://127.0.0.1:7171/v1/projects
+```
+
+### `GET /v1/projects/{id}`
+
+One project: the `ProjectView`. Errors: `404` for no such project.
+
+### `PATCH /v1/projects/{id}`
+
+An owner, or the Moebius agent, renames a project. Request body: `{"name": string, "key"?: string}`; the key stays as it
+was, and `key` is accepted only when it is the project's own. Response: the `ProjectView`. Errors: `404` for no such
+project, `409` for a name another project has in any case, `422` for a name that is not one or a `key` that is not the
+project's (`a project keeps its key <key>: the keys of its cards would change`).
+
 ### `POST /v1/repositories`
 
 Adds a repository: the server clones `url` into its data directory and reads the clone's checked-out branch as the
@@ -624,7 +673,7 @@ Request:
 Response: the `Repository`. Errors: `422` for an invalid name, an absolute path to a folder with files that is not a git
 repository (nothing is created then), a `github` that is not `owner/repo`, a `project` that is not a path as above, or
 a combination other than "no forge, no `github`, no `project`, no `trusted`", "forge `github` with `github`" , "forge
-`gitlab` with `project`" and "forge `forgejo` with `project`"; `422` also when the name is taken (nothing is cloned or created then); `500` when the clone
+`gitlab` with `project`" and "forge `forgejo` with `project`"; `422` also when the name is taken by a repository or a project (nothing is cloned or created then); `500` when the clone
 fails.
 
 ```sh
@@ -2993,6 +3042,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `repository_added` | A repository was added. | The `Repository`. |
 | `repository_updated` | The logins a repository on a forge trusts were changed through the API. | The `Repository`. |
 | `repository_removed` | A repository was removed through the API. | The `Repository`. |
+| `project_changed` | A project was made or renamed through the API. A repository's home project, made with it, comes with `repository_added`. | `{"id", "name", "key", "created_at", "repositories": [id]}` |
 | `file_changed` | A file of a repository was saved through the API. | `{"repository": id, "path": string}` |
 | `script_changed` | A column's script was saved or removed for a repository's project, through the API. | `{"repository": id, "column": string, "path": string (from the root of the harness configuration repository)}` |
 | `project_settings_changed` | A file of a project's settings other than a column's script was saved or removed, through the API. | `{"repository": id, "file": string}` |
