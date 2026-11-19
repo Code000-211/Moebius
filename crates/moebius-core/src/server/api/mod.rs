@@ -8,6 +8,7 @@
 //! - `issues`: what is done to an issue besides editing it: its parent, blockers, labels, claim, comments, closing.
 //! - `assignees`: giving a card or an inbox item to people.
 //! - `repositories`: adding and editing repositories, and their column scripts and files.
+//! - `projects`: the projects, each with a key, a board and its repositories; making and renaming one.
 //! - `runs`: a run and its events, steering and stopping it.
 //! - `chats`: chats with an agent, and what grilling chats ended in.
 //! - `automations`: chats a schedule starts, and their firings.
@@ -60,6 +61,7 @@ mod outgoing;
 mod packages;
 mod people;
 mod ports;
+mod projects;
 mod repositories;
 mod roles;
 mod rules;
@@ -221,6 +223,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(issues::routes())
         .merge(assignees::routes())
         .merge(repositories::routes())
+        .merge(projects::routes())
         .merge(runs::routes())
         .merge(chats::routes())
         .merge(automations::routes())

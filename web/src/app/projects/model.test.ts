@@ -3,15 +3,17 @@ import type { Repository } from "../../api/types/board";
 import { rank, score } from "./fuzzy";
 import {
   addFailure,
-  cardsText,
   EMPTY_FORM,
   firstLine,
   forgeTag,
+  isKey,
+  keyFor,
   lineStart,
   logins,
   notEditable,
   onForge,
   parents,
+  repositoriesText,
   repositoryRequest,
 } from "./model";
 
@@ -24,6 +26,42 @@ const repository = (extra: Partial<Repository>): Repository => ({
   github: null,
   trusted: [],
   ...extra,
+});
+
+describe("a project's key and tile", () => {
+  it("offers the key the server would make from the name", () => {
+    expect(keyFor("web")).toBe("WEB");
+    expect(keyFor("Storefront web-app")).toBe("STOREFRONT");
+    expect(keyFor("2fa")).toBe("P2FA");
+    expect(keyFor("a")).toBe("A2");
+    expect(keyFor("")).toBe("P2");
+    for (const name of ["web", "a", "", "2fa", "--", "a very long name"]) {
+      expect(isKey(keyFor(name)), name).toBe(true);
+    }
+    expect(isKey("web") || isKey("W") || isKey("2FA") || isKey("ABCDEFGHIJK")).toBe(false);
+  });
+
+  it("names the repositories of a tile, or says there are none", () => {
+    const project = {
+      id: 1,
+      name: "Storefront",
+      key: "SHOP",
+      created_at: 0,
+      repositories: [],
+      members: [],
+      open_cards: 0,
+    };
+    expect(repositoriesText(project)).toBe("No repository yet");
+    expect(
+      repositoriesText({
+        ...project,
+        repositories: [
+          { id: 1, name: "api", home: true },
+          { id: 2, name: "web", home: false },
+        ],
+      }),
+    ).toBe("api · web");
+  });
 });
 
 describe("how a repository is told", () => {
@@ -40,8 +78,6 @@ describe("how a repository is told", () => {
     );
     expect(onForge(repository({}))).toBe(false);
     expect(onForge(repository({ forge: "gitlab", project: "a/b" }))).toBe(true);
-    expect(cardsText(1)).toBe("1 card");
-    expect(cardsText(0)).toBe("0 cards");
   });
 });
 

@@ -10,7 +10,8 @@
 //! (automations, their firings and the local clock), `workflows` (workflow runs and what each node did),
 //! `plugin_settings` (what plugins keep for the server) and `people` (the people of the organisation, and the
 //! migration that gives earlier records to the first owner) and `assignees` (who cards and inbox items are given to) and `access` (their access tokens and the sessions of
-//! browsers, kept as hashes) and `favourites` (the places a person pinned and opened lately).
+//! browsers, kept as hashes) and `favourites` (the places a person pinned and opened lately) and `projects` (the
+//! projects, their keys and repositories, and the migration that makes one for each repository).
 //! Every public type is re-exported here, as `store::Card` and the like.
 
 mod access;
@@ -33,6 +34,7 @@ mod localize;
 mod outgoing;
 mod people;
 mod plugin_settings;
+mod projects;
 mod replays;
 mod research;
 mod retros;
@@ -67,6 +69,7 @@ pub use lessons::{Lesson, NewLesson};
 pub use localize::IndexedFile;
 pub use outgoing::OutgoingWebhook;
 pub use people::{FIRST_OWNER, Person, Role};
+pub use projects::{KEY_LIMIT, Project, is_key};
 pub use replays::Replay;
 pub use research::{Budget, BudgetKind, Experiment, Research};
 pub use retros::{OwnEdits, Proposal, Retro, Trial};
@@ -453,6 +456,7 @@ ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
     chats::SCHEMA,
     outgoing::SCHEMA,
     assignees::SCHEMA,
+    projects::SCHEMA,
 ];
 
 pub fn now() -> i64 {
@@ -490,6 +494,7 @@ impl Store {
             tx.pragma_update(None, "user_version", (i + 1) as i64)?;
             tx.commit()?;
         }
+        projects::give_keys(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
             blobs,

@@ -307,8 +307,9 @@ _Avoid_: test window, maintenance window
 ## People and planning
 
 Planned in [ADR 0018](docs/adr/0018-more-than-one-person.md) and
-[the plan for people, the wiki and planning](docs/plan/issues-people-wiki-planning.md); not built yet. The words for
-people that are built (organisation, person, role) are in the language above.
+[the plan for people, the wiki and planning](docs/plan/issues-people-wiki-planning.md). The words for
+people that are built (organisation, person, role) are in the language above; of the words below, project, project key
+and home project are built (a board still works in one repository), the others not yet.
 
 **Project**:
 One board and the work on it, with any number of repositories, or none; work that needs no repository is done in the
@@ -316,8 +317,8 @@ project's own store of files that Moebius keeps for it.
 _Avoid_: workspace, space
 
 **Project key**:
-A few capital letters that name a project's cards, such as `WEB` in `WEB-24`; chosen when the project is made and kept
-when it is renamed.
+A few capital letters that name a project's cards, such as `WEB` in `WEB-24`: an uppercase letter and up to nine more
+uppercase letters or digits, unique on the server, chosen when the project is made and kept when it is renamed.
 _Avoid_: prefix, slug, project id
 
 **Assignee**:
