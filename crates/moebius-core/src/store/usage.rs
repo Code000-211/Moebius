@@ -98,6 +98,47 @@ pub struct UsageTotals {
 /// The start of the local day that is `?1 - 1` days ago, as Unix seconds: the first moment of a window of `?1` days.
 pub(super) const WINDOW_START: &str = "CAST(strftime('%s', 'now', 'localtime', 'start of day', '-' || (?1 - 1) || ' days', 'utc') AS INTEGER)";
 
+/// What to narrow usage or judgements to: the runs of one repository and the runs of one agent. Both set means the runs
+/// that are both. Whatever belongs to no run (and, for a repository, to no card) is left out once a repository is set,
+/// and the agent [`NO_RUN`] names exactly what belongs to no run.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Scope {
+    pub repository: Option<i64>,
+    pub agent: Option<String>,
+}
+
+impl Scope {
+    /// An SQL condition (starting with ` AND `, empty for no scope) that keeps the rows whose `run` column names a run
+    /// in the scope. With a `card` column, a row of that card also counts for the repository whatever its run was.
+    pub(crate) fn clause(&self, run: &str, card: Option<&str>) -> String {
+        let mut out = String::new();
+        if let Some(agent) = &self.agent {
+            if agent == NO_RUN {
+                out.push_str(&format!(" AND {run} IS NULL"));
+            } else {
+                // A string literal of SQLite has no escape but the doubled quote.
+                let agent = agent.replace('\'', "''");
+                out.push_str(&format!(
+                    " AND {run} IN (SELECT id FROM runs WHERE agent = '{agent}')"
+                ));
+            }
+        }
+        if let Some(repository) = self.repository {
+            let by_run = format!(
+                "{run} IN (SELECT r.id FROM runs r LEFT JOIN cards c ON c.id = r.card_id
+                           WHERE COALESCE(r.repository_id, c.repository_id) = {repository})"
+            );
+            match card {
+                Some(card) => out.push_str(&format!(
+                    " AND ({by_run} OR {card} IN (SELECT id FROM cards WHERE repository_id = {repository}))"
+                )),
+                None => out.push_str(&format!(" AND {by_run}")),
+            }
+        }
+        out
+    }
+}
+
 impl Usage {
     pub fn total(&self) -> i64 {
         self.input_tokens + self.output_tokens
@@ -132,12 +173,13 @@ impl Store {
 
     /// What each model used when asked by each class in the last `days` days, by class and then the model with the
     /// most tokens first. Usage asked for by a model's own name is not here.
-    pub fn usage_by_class(&self, days: i64) -> Result<Vec<ClassUsage>> {
+    pub fn usage_by_class(&self, days: i64, scope: &Scope) -> Result<Vec<ClassUsage>> {
         self.rows(
             &format!(
                 "SELECT class, model, SUM(input_tokens + output_tokens) AS tokens, COUNT(*)
-             FROM usage WHERE at >= {WINDOW_START} AND class IS NOT NULL
-             GROUP BY class, model ORDER BY class, tokens DESC, model"
+             FROM usage WHERE at >= {WINDOW_START} AND class IS NOT NULL{}
+             GROUP BY class, model ORDER BY class, tokens DESC, model",
+                scope.clause("run_id", None)
             ),
             [days],
             |r| {
@@ -178,16 +220,17 @@ impl Store {
 
     /// Tokens used by all runs since the start of the server's local day.
     pub fn tokens_today(&self) -> Result<i64> {
-        Ok(self.usage_totals(1)?.tokens)
+        Ok(self.usage_totals(1, &Scope::default())?.tokens)
     }
 
     /// Everything used in the last `days` local days, today included.
-    pub fn usage_totals(&self, days: i64) -> Result<UsageTotals> {
+    pub fn usage_totals(&self, days: i64, scope: &Scope) -> Result<UsageTotals> {
         Ok(self.conn().query_row(
             &format!(
                 "SELECT COALESCE(SUM(input_tokens + output_tokens), 0), COUNT(*), COALESCE(SUM(input_tokens), 0),
                         COALESCE(SUM(cached_tokens), 0), COALESCE(SUM(duration_ms), 0)
-                 FROM usage WHERE at >= {WINDOW_START}"
+                 FROM usage WHERE at >= {WINDOW_START}{}",
+                scope.clause("run_id", None)
             ),
             [days],
             |r| {
@@ -204,18 +247,20 @@ impl Store {
 
     /// The tokens of each model on each local day of the last `days` days, as `(YYYY-MM-DD, model, tokens)`,
     /// oldest day first.
-    pub fn usage_by_day(&self, days: i64) -> Result<Vec<(String, String, i64)>> {
+    pub fn usage_by_day(&self, days: i64, scope: &Scope) -> Result<Vec<(String, String, i64)>> {
         self.rows(&format!(
             "SELECT strftime('%Y-%m-%d', at, 'unixepoch', 'localtime') AS day, model, SUM(input_tokens + output_tokens)
-             FROM usage WHERE at >= {WINDOW_START} GROUP BY day, model ORDER BY day, model"
+             FROM usage WHERE at >= {WINDOW_START}{} GROUP BY day, model ORDER BY day, model",
+            scope.clause("run_id", None)
         ), [days], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
     }
 
     /// What each model used in the last `days` days, the one with the most tokens first.
-    pub fn usage_by_model(&self, days: i64) -> Result<Vec<ModelUsage>> {
+    pub fn usage_by_model(&self, days: i64, scope: &Scope) -> Result<Vec<ModelUsage>> {
         self.rows(&format!(
             "SELECT model, SUM(input_tokens + output_tokens) AS tokens, COUNT(*), SUM(input_tokens), SUM(cached_tokens)
-             FROM usage WHERE at >= {WINDOW_START} GROUP BY model ORDER BY tokens DESC, model"
+             FROM usage WHERE at >= {WINDOW_START}{} GROUP BY model ORDER BY tokens DESC, model",
+            scope.clause("run_id", None)
         ), [days], |r| {
             Ok(ModelUsage {
                 model: r.get(0)?,
@@ -229,12 +274,13 @@ impl Store {
 
     /// What the runs of each agent used in the last `days` days, the agent with the most tokens first. Usage without
     /// a run is counted under [`NO_RUN`].
-    pub fn usage_by_agent(&self, days: i64) -> Result<Vec<AgentUsage>> {
+    pub fn usage_by_agent(&self, days: i64, scope: &Scope) -> Result<Vec<AgentUsage>> {
         self.rows(&format!(
             "SELECT COALESCE(r.agent, ?2) AS agent, COUNT(*), SUM(u.input_tokens + u.output_tokens) AS tokens,
                     SUM(u.input_tokens), SUM(u.cached_tokens), SUM(u.duration_ms)
              FROM usage u LEFT JOIN runs r ON r.id = u.run_id
-             WHERE u.at >= {WINDOW_START} GROUP BY agent ORDER BY tokens DESC, agent"
+             WHERE u.at >= {WINDOW_START}{} GROUP BY agent ORDER BY tokens DESC, agent",
+            scope.clause("u.run_id", None)
         ), params![days, NO_RUN], |r| {
             Ok(AgentUsage {
                 agent: r.get(0)?,
@@ -252,10 +298,11 @@ impl Store {
     /// tools, so nothing is lost); a call that asked for none is `answering`. A call counts once for each distinct
     /// tool it named. Calls recorded before their tools were are `unknown`, and are listed only when there are no other
     /// calls in the window.
-    pub fn usage_by_activity(&self, days: i64) -> Result<Vec<ActivityUsage>> {
+    pub fn usage_by_activity(&self, days: i64, scope: &Scope) -> Result<Vec<ActivityUsage>> {
         let calls: Vec<(Option<String>, i64, i64)> = self.rows(
             &format!(
-                "SELECT tools, duration_ms, output_tokens FROM usage WHERE at >= {WINDOW_START}"
+                "SELECT tools, duration_ms, output_tokens FROM usage WHERE at >= {WINDOW_START}{}",
+                scope.clause("run_id", None)
             ),
             [days],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
@@ -313,13 +360,14 @@ impl Store {
 
     /// The tools whose calls took longest in the last `days` days, by the time between a call's
     /// `tool_execution_start` and `tool_execution_end` events, at most `limit` of them.
-    pub fn tool_waits(&self, days: i64, limit: i64) -> Result<Vec<ToolWait>> {
+    pub fn tool_waits(&self, days: i64, limit: i64, scope: &Scope) -> Result<Vec<ToolWait>> {
         self.rows(&format!(
             "SELECT json_extract(s.data, '$.toolName') AS tool, COUNT(*), SUM(e.at - s.at) AS seconds
              FROM events s JOIN events e ON e.run_id = s.run_id AND e.kind = 'tool_execution_end'
               AND json_extract(e.data, '$.toolCallId') = json_extract(s.data, '$.toolCallId')
-             WHERE s.kind = 'tool_execution_start' AND s.at >= {WINDOW_START} AND tool IS NOT NULL
-             GROUP BY tool ORDER BY seconds DESC, tool LIMIT ?2"
+             WHERE s.kind = 'tool_execution_start' AND s.at >= {WINDOW_START} AND tool IS NOT NULL{}
+             GROUP BY tool ORDER BY seconds DESC, tool LIMIT ?2",
+            scope.clause("s.run_id", None)
         ), params![days, limit], |r| {
             Ok(ToolWait {
                 tool: r.get(0)?,
@@ -414,7 +462,7 @@ mod tests {
         // The odd millisecond and token of the second call go to its first tool; a call that names a tool twice
         // counts once for it but gives it both shares.
         assert_eq!(
-            s.usage_by_activity(1).unwrap(),
+            s.usage_by_activity(1, &Scope::default()).unwrap(),
             [
                 activity("bash", 2501, 2, 21),
                 activity("read", 1900, 2, 14),
@@ -422,7 +470,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            s.usage_by_activity(3).unwrap()[0],
+            s.usage_by_activity(3, &Scope::default()).unwrap()[0],
             activity("edit", 9000, 1, 5)
         );
 
@@ -430,9 +478,9 @@ mod tests {
         s.conn()
             .execute("UPDATE usage SET tools = NULL WHERE id = 1", [])
             .unwrap();
-        assert_eq!(s.usage_by_activity(1).unwrap().len(), 3);
+        assert_eq!(s.usage_by_activity(1, &Scope::default()).unwrap().len(), 3);
         assert!(
-            !s.usage_by_activity(1)
+            !s.usage_by_activity(1, &Scope::default())
                 .unwrap()
                 .iter()
                 .any(|a| a.activity == UNKNOWN)
@@ -441,7 +489,7 @@ mod tests {
             .execute("UPDATE usage SET tools = NULL", [])
             .unwrap();
         assert_eq!(
-            s.usage_by_activity(1).unwrap(),
+            s.usage_by_activity(1, &Scope::default()).unwrap(),
             [activity(UNKNOWN, 4901, 4, 42)]
         );
     }
@@ -485,7 +533,7 @@ mod tests {
 
         assert_eq!(s.today().unwrap(), day(0));
         assert_eq!(
-            s.usage_totals(1).unwrap(),
+            s.usage_totals(1, &Scope::default()).unwrap(),
             UsageTotals {
                 tokens: 1880,
                 calls: 4,
@@ -495,7 +543,7 @@ mod tests {
             }
         );
         assert_eq!(s.tokens_today().unwrap(), 1880);
-        let three = s.usage_totals(3).unwrap();
+        let three = s.usage_totals(3, &Scope::default()).unwrap();
         assert_eq!(
             (three.tokens, three.calls, three.model_ms),
             (2880, 6, 10600)
@@ -509,14 +557,14 @@ mod tests {
             cached_tokens,
         };
         assert_eq!(
-            s.usage_by_model(1).unwrap(),
+            s.usage_by_model(1, &Scope::default()).unwrap(),
             [
                 model("big", 1660, 3, 1510, 600),
                 model("small", 220, 1, 200, 100)
             ]
         );
         assert_eq!(
-            s.usage_by_model(3).unwrap(),
+            s.usage_by_model(3, &Scope::default()).unwrap(),
             [
                 model("big", 1760, 4, 1610, 600),
                 model("small", 1120, 2, 1100, 100)
@@ -533,7 +581,7 @@ mod tests {
                 model_ms,
             };
         assert_eq!(
-            s.usage_by_agent(1).unwrap(),
+            s.usage_by_agent(1, &Scope::default()).unwrap(),
             [
                 agent("Coder", 2, 1650, 1500, 600, 6000),
                 agent("Reviewer", 1, 220, 200, 100, 1000),
@@ -545,7 +593,7 @@ mod tests {
         let by_day =
             |date: &str, model: &str, tokens| (date.to_string(), model.to_string(), tokens);
         assert_eq!(
-            s.usage_by_day(365).unwrap(),
+            s.usage_by_day(365, &Scope::default()).unwrap(),
             [
                 by_day(&old, "big", 100),
                 by_day(&old, "small", 900),
@@ -553,7 +601,7 @@ mod tests {
                 by_day(&today, "small", 220),
             ]
         );
-        assert_eq!(s.usage_by_day(1).unwrap().len(), 2);
+        assert_eq!(s.usage_by_day(1, &Scope::default()).unwrap().len(), 2);
 
         // A call waits from its start event to its end event; a call that has not ended waits for nothing yet.
         let call = |id: &str, tool: &str, seconds: i64| {
@@ -587,10 +635,10 @@ mod tests {
             seconds,
         };
         assert_eq!(
-            s.tool_waits(1, 10).unwrap(),
+            s.tool_waits(1, 10, &Scope::default()).unwrap(),
             [wait("bash", 2, 90), wait("edit", 1, 5), wait("read", 1, 0)]
         );
-        assert_eq!(s.tool_waits(1, 2).unwrap().len(), 2);
+        assert_eq!(s.tool_waits(1, 2, &Scope::default()).unwrap().len(), 2);
     }
 
     #[test]
@@ -624,7 +672,7 @@ mod tests {
             calls,
         };
         assert_eq!(
-            s.usage_by_class(1).unwrap(),
+            s.usage_by_class(1, &Scope::default()).unwrap(),
             [
                 class("fast", "small", 1, 1),
                 class("strong", "small", 500, 1),
@@ -632,7 +680,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            s.usage_by_class(3).unwrap()[1],
+            s.usage_by_class(3, &Scope::default()).unwrap()[1],
             class("strong", "big", 1150, 3)
         );
         // A model's tokens for today count whatever asked for it.

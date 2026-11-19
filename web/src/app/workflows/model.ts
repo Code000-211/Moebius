@@ -5,8 +5,14 @@
  * the pages need to say when a workflow is one of the Automations page's entries rather than a plain workflow.
  */
 
-import type { WorkflowDefinition, WorkflowRunSummary, WorkflowTrigger } from "../../api/workflows";
+import type {
+  WorkflowDefinition,
+  WorkflowRunSummary,
+  WorkflowSummary,
+  WorkflowTrigger,
+} from "../../api/workflows";
 import type { TagTone } from "../../ui/chat/Tag";
+import type { FilterField } from "../../ui/filters/model";
 
 /** The trigger in a few words: what starts it, and the schedule or event when it has one. */
 export function triggerName(trigger: WorkflowTrigger | null | undefined): string {
@@ -63,5 +69,53 @@ export function looksLikeAutomation(definition: WorkflowDefinition): boolean {
     definition.trigger.kind === "schedule" &&
     definition.nodes.length === 1 &&
     definition.nodes[0]?.kind === "chat"
+  );
+}
+
+/** The value of the "Last run" filter for a workflow that has never run. */
+export const NEVER_RUN = "never";
+
+/** The keys of the list's filters in the address, in the order the bar offers them. */
+export const FILTER_KEYS = ["trigger", "last"] as const;
+
+/** The fields the list is filtered by: what starts a workflow, and how its last run went. */
+export function filterFields(
+  list: readonly WorkflowSummary[],
+  values: Readonly<Record<string, string>>,
+): FilterField[] {
+  const triggers = new Set(list.map((each) => each.trigger.kind));
+  const last = new Set(list.map((each) => each.last_run?.status ?? NEVER_RUN));
+  if (values.trigger) triggers.add(values.trigger);
+  if (values.last) last.add(values.last);
+  return [
+    {
+      key: "trigger",
+      label: "Trigger",
+      options: [...triggers]
+        .sort()
+        .map((kind): [string, string] => [kind, triggerName({ kind, detail: null })]),
+    },
+    {
+      key: "last",
+      label: "Last run",
+      options: [...last]
+        .sort()
+        .map((status): [string, string] => [
+          status,
+          status === NEVER_RUN ? "Never run" : runStatus(status).label,
+        ]),
+    },
+  ];
+}
+
+/** The workflows that pass the filters; a filter that is not set lets everything through. */
+export function filtered(
+  list: readonly WorkflowSummary[],
+  values: Readonly<Record<string, string>>,
+): WorkflowSummary[] {
+  return list.filter(
+    (each) =>
+      (!values.trigger || each.trigger.kind === values.trigger) &&
+      (!values.last || (each.last_run?.status ?? NEVER_RUN) === values.last),
   );
 }

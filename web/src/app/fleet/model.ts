@@ -7,6 +7,7 @@ import type { Snapshot } from "../../api/types/board";
 import type { Chat } from "../../api/types/chat";
 import type { Entry } from "../../chat/conversation";
 import { HARNESS_PLACE } from "../../chat/places";
+import type { FilterField } from "../../ui/filters/model";
 
 /** Where a click on a tile goes. */
 export type OpenTarget =
@@ -80,6 +81,37 @@ export function working(snapshot: Snapshot, chats: readonly Chat[]): Work[] {
 
 import { plural } from "../../ui/lib/format";
 import type { StateMark } from "../../ui/page/MarkLabel";
+
+/** The keys of the Fleet's filters in the address, in the order the bar offers them. */
+export const FILTER_KEYS = ["project", "agent", "kind"] as const;
+
+/** The fields the Fleet can be filtered by, each offering what the working runs have in it, and the value being filtered by. */
+export function filterFields(
+  list: readonly Work[],
+  values: Readonly<Record<string, string>>,
+): FilterField[] {
+  const of = (key: string, pick: (work: Work) => string): FilterField["options"] => {
+    const names = new Set(list.map(pick).filter((name) => name !== ""));
+    if ((values[key] ?? "") !== "") names.add(values[key] as string);
+    return [...names].sort((a, b) => a.localeCompare(b)).map((name) => [name, name]);
+  };
+  return [
+    { key: "project", label: "Project", options: of("project", (work) => work.repository) },
+    { key: "agent", label: "Agent", options: of("agent", (work) => work.agent) },
+    { key: "kind", label: "Kind", options: of("kind", (work) => work.kind) },
+  ];
+}
+
+/** The runs that pass the filters; a filter that is not set lets everything through. */
+export function filtered(list: readonly Work[], values: Readonly<Record<string, string>>): Work[] {
+  const is = (value: string | undefined, of: string) => !value || value === of;
+  return list.filter(
+    (work) =>
+      is(values.project, work.repository) &&
+      is(values.agent, work.agent) &&
+      is(values.kind, work.kind),
+  );
+}
 
 /** What the page says under its title. */
 export function context(count: number): string {

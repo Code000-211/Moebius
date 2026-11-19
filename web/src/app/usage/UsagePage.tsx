@@ -3,7 +3,8 @@
  * with what today cost against the day's budget, because that is the question the page is opened to answer. A window
  * (today, 7 or 30 days) sets the figures under it, the models, what the model did with its time, the agents and the
  * tool waits; the heatmap always shows the last year. The tokens used today also feed the meter at the foot of the
- * sidebar.
+ * sidebar. The shared filter bar narrows every figure to the runs of one project and one agent (`../scope.ts`), which
+ * the server does (`GET /v1/usage?repository=&agent=`); the filters are in the address.
  */
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -12,6 +13,7 @@ import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { UsageReport } from "../../api/types/usage";
 import { Button } from "../../ui/components/Button";
+import { FilterBar } from "../../ui/filters/FilterBar";
 import { cn } from "../../ui/lib/cn";
 import { Box } from "../../ui/page/Box";
 import { Chip } from "../../ui/page/Chip";
@@ -19,6 +21,7 @@ import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { Reading, SkeletonCard } from "../../ui/page/Skeleton";
 import { StateLabel } from "../../ui/page/StateLabel";
+import { useScopeFilters } from "../scope";
 import { AgentsBox, ModelsBox, TimeBox, WaitsBox } from "./Boxes";
 import { short } from "./figures";
 import { Heatmap } from "./Heatmap";
@@ -76,9 +79,11 @@ function WindowBox({ report }: { report: UsageReport }) {
 
 export function UsagePage() {
   const [days, setDays] = useState(1);
+  const filters = useScopeFilters();
+  const { repository = null, agent = "" } = filters.scope;
   const report = useQuery({
-    queryKey: keys.usageDays(days),
-    queryFn: () => usage(days),
+    queryKey: keys.usageDays(days, repository, agent),
+    queryFn: () => usage(days, filters.scope),
     // Keeps the figures of the window before while the chosen one is read.
     placeholderData: (previous) => previous,
   });
@@ -86,18 +91,27 @@ export function UsagePage() {
   return (
     <>
       <PageHeader title="Usage" />
-      <fieldset className="m-0 mb-4 flex flex-wrap gap-2 border-0 p-0">
-        <legend className="sr-only">Window</legend>
-        {WINDOWS.map((window) => (
-          <Chip
-            key={window.days}
-            selected={window.days === days}
-            onClick={() => setDays(window.days)}
-          >
-            {window.label}
-          </Chip>
-        ))}
-      </fieldset>
+      <FilterBar
+        label="Filter the usage"
+        leading={
+          <fieldset className="m-0 flex flex-wrap gap-2 border-0 p-0">
+            <legend className="sr-only">Window</legend>
+            {WINDOWS.map((window) => (
+              <Chip
+                key={window.days}
+                selected={window.days === days}
+                onClick={() => setDays(window.days)}
+              >
+                {window.label}
+              </Chip>
+            ))}
+          </fieldset>
+        }
+        fields={filters.fields}
+        values={filters.values}
+        onFilter={filters.set}
+        onClear={filters.clear}
+      />
       {report.isError && !data ? (
         <Notice
           tone="error"

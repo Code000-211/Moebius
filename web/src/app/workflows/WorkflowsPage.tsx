@@ -17,13 +17,24 @@ import { keys } from "../../api/keys";
 import { workflows } from "../../api/workflows";
 import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
+import { FilterBar } from "../../ui/filters/FilterBar";
+import { readFilters } from "../../ui/filters/model";
+import { useQueryParams } from "../../ui/filters/useQueryParams";
 import { ago, plural } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import { Empty } from "../../ui/page/Empty";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
-import { lastRunLine, needsAttention, runStatus, triggerName } from "./model";
+import {
+  FILTER_KEYS,
+  filtered,
+  filterFields,
+  lastRunLine,
+  needsAttention,
+  runStatus,
+  triggerName,
+} from "./model";
 import { NewWorkflowDialog } from "./NewWorkflowDialog";
 
 const CTX = "Graphs of nodes that run on their own, what starts them, and how their last run went.";
@@ -32,6 +43,7 @@ export function WorkflowsPage() {
   const now = useNow();
   const list = useQuery({ queryKey: keys.workflows, queryFn: workflows });
   const [creating, setCreating] = useState(false);
+  const [params, setQuery] = useQueryParams();
   // One way to begin, offered wherever the page has room for it: the header's right, and the empty state.
   const newButton = (
     <Button variant="secondary" size="sm" onClick={() => setCreating(true)}>
@@ -64,20 +76,50 @@ export function WorkflowsPage() {
     );
   }
 
+  const everything = list.data;
+  const fields = filterFields(
+    everything,
+    readFilters(
+      params,
+      FILTER_KEYS.map((key) => ({ key, label: key, options: [] })),
+    ),
+  );
+  const values = readFilters(params, fields);
+  const clear = () => setQuery(Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])));
+  const shown = filtered(everything, values);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader title="Workflows" context={CTX} actions={newButton} />
-      {list.data.length === 0 ? (
+      {everything.length > 0 && (
+        <FilterBar
+          label="Filter the workflows"
+          fields={fields}
+          values={values}
+          onFilter={(key, value) => setQuery({ [key]: value })}
+          onClear={clear}
+        />
+      )}
+      {everything.length === 0 ? (
         <Empty
           title="No workflow yet"
           body="A workflow is a graph of nodes saved in the harness configuration. When one is added, it appears here with what starts it and how its last run went."
           action={newButton}
         />
+      ) : shown.length === 0 ? (
+        <Empty
+          title="No workflow matches"
+          body="No workflow passes these filters. Clear them to see every workflow."
+          action={
+            <Button variant="secondary" onClick={clear}>
+              Clear filters
+            </Button>
+          }
+        />
       ) : (
         <div className="min-h-0 overflow-y-auto">
           {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely */}
           <ul role="list" className="m-0 grid list-none grid-cols-1 gap-3 p-0 xl:grid-cols-2">
-            {list.data.map((each) => {
+            {shown.map((each) => {
               const last = each.last_run;
               const status = last ? runStatus(last.status) : null;
               return (

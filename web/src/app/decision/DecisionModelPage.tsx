@@ -4,7 +4,9 @@
  * started, and the shadowing of a trained model: how often it chooses what was recorded, per kind, against the share a
  * takeover needs, and the kinds it has taken over, which a person can release. "Export training set" is
  * `POST /v1/exports`; the files stay on the server, so each kind shows the route that downloads its file and the
- * command that writes them elsewhere. A takeover proposal itself is an item of the inbox.
+ * command that writes them elsewhere. A takeover proposal itself is an item of the inbox. The shared filter bar narrows
+ * the counts of the decision types to the judgements of one project and one agent (`../scope.ts`); the exports and the
+ * shadowing are of the whole server and do not follow it.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -18,12 +20,14 @@ import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { ShadowedKind } from "../../api/types/improve";
 import { Button } from "../../ui/components/Button";
+import { FilterBar } from "../../ui/filters/FilterBar";
 import { plural } from "../../ui/lib/format";
 import { Box } from "../../ui/page/Box";
 import { CELL, Table } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
 import { StateLabel } from "../../ui/page/StateLabel";
+import { useScopeFilters } from "../scope";
 import { DeleteExport } from "./DeleteExport";
 
 import {
@@ -41,7 +45,13 @@ const NUMBER = `${CELL} tabular-nums`;
 
 export function DecisionModelPage() {
   const queryClient = useQueryClient();
-  const kinds = useQuery({ queryKey: keys.kinds, queryFn: judgementKinds });
+  const filters = useScopeFilters();
+  const { repository = null, agent = "" } = filters.scope;
+  const kinds = useQuery({
+    queryKey: keys.kindsOf(repository, agent),
+    queryFn: () => judgementKinds(filters.scope),
+    placeholderData: (previous) => previous,
+  });
   const exports = useQuery({ queryKey: keys.exports, queryFn: trainingExports });
   const shadows = useQuery({ queryKey: keys.shadowing, queryFn: shadowing });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["decision-model"] });
@@ -72,6 +82,13 @@ export function DecisionModelPage() {
           </Button>
         }
       />
+      <FilterBar
+        label="Filter the decisions"
+        fields={filters.fields}
+        values={filters.values}
+        onFilter={filters.set}
+        onClear={filters.clear}
+      />
       <div className="flex flex-col gap-8">
         {exporting.error && (
           <Box title="The export was refused">
@@ -99,7 +116,11 @@ export function DecisionModelPage() {
               {`Could not read the decision types. ${kinds.error.message}`}
             </Notice>
           ) : kindList.length === 0 ? (
-            <Body>Nothing has been decided yet.</Body>
+            <Body>
+              {repository !== null || agent !== ""
+                ? "No decision was made for these filters."
+                : "Nothing has been decided yet."}
+            </Body>
           ) : (
             <div className="flex flex-col gap-4">
               <Table

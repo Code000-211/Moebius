@@ -911,6 +911,10 @@ What the store holds now, per kind of judgement, kinds in alphabetical order. Re
 judgements of the kind, `with_outcome` those with an outcome, `by_person` those whose decider is a person (`person` or `person:<handle>`), `held_out`
 those in the held-out tenth (see [the training export](training-export.md#the-split)).
 
+Query: `repository` (a repository id) and `agent` narrow the counts to the judgements made for a card of that repository
+or in a run of it (`repository`), and to those made in a run of that agent (`agent`); both together keep the ones that are
+both. Without them every judgement counts. A judgement made with no card and no run is left out once either is set.
+
 ### `POST /v1/exports`
 
 Writes the training-set export now (see [the training export](training-export.md)) to `<data_dir>/exports/<id>/` and
@@ -947,6 +951,12 @@ export wrote it. Errors: `404` no such export or no such file in it.
 What the model calls used: tokens, calls, how long they took, and where they went. Query: `days` (a whole number from 1
 to 365, default 1) is the window, counted in local days of the server, today included: `1` is since local midnight (the
 same "today" the day budget counts), `7` the last seven days. Anything else is `422`. Tokens are input plus output tokens.
+
+Two more parameters narrow every figure of the answer (the totals, `days`, `models`, `agents`, `activities`,
+`tool_waits` and `classes`) to the usage of some runs: `repository` (a repository id) keeps the runs of that repository,
+a card's or a chat's, and `agent` keeps the runs of that agent; both together keep the runs that are both. Usage that
+belongs to no run is left out once `repository` is set, and `agent=No run` keeps exactly that usage. The budget of the
+day in `totals.day_budget` is not narrowed. Without them every run counts.
 
 Response:
 

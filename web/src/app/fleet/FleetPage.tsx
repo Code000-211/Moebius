@@ -18,6 +18,9 @@ import { thinkingLabel } from "../../ui/chat/ChatCollapsedThinking";
 import { ToolStatusDot } from "../../ui/chat/ToolStatusDot";
 import { toolStatus } from "../../ui/chat/Turn";
 import { Button } from "../../ui/components/Button";
+import { FilterBar } from "../../ui/filters/FilterBar";
+import { readFilters } from "../../ui/filters/model";
+import { useQueryParams } from "../../ui/filters/useQueryParams";
 import { cn } from "../../ui/lib/cn";
 import { useNow } from "../../ui/lib/useNow";
 import { Empty } from "../../ui/page/Empty";
@@ -30,6 +33,9 @@ import {
   afterSteps,
   context,
   elapsed,
+  FILTER_KEYS,
+  filtered,
+  filterFields,
   latestSteps,
   statusWord,
   thinkingNow,
@@ -45,6 +51,7 @@ export function FleetPage() {
   const chats = useQuery({ queryKey: keys.chats, queryFn: readChats });
   // How long a run has been going is said in seconds, so this page's clock ticks faster than the rest.
   const now = useNow(5_000);
+  const [params, setQuery] = useQueryParams();
   if (data.isPending || chats.isPending) {
     return (
       <>
@@ -71,11 +78,48 @@ export function FleetPage() {
       </>
     );
   }
-  const list = data.data ? working(data.data, chats.data ?? []) : [];
+  const everything = data.data ? working(data.data, chats.data ?? []) : [];
+  const fields = filterFields(
+    everything,
+    readFilters(
+      params,
+      FILTER_KEYS.map((key) => ({ key, label: key, options: [] })),
+    ),
+  );
+  const values = readFilters(params, fields);
+  const list = filtered(everything, values);
+  const set = Object.values(values).some((value) => value !== "");
   return (
     <>
-      <PageHeader title="Fleet" context={context(list.length)} />
-      {list.length === 0 ? (
+      <PageHeader
+        title="Fleet"
+        context={
+          set && everything.length > 0
+            ? `${context(list.length)} · ${everything.length} in all`
+            : context(list.length)
+        }
+      />
+      <FilterBar
+        label="Filter the runs"
+        fields={fields}
+        values={values}
+        onFilter={(key, value) => setQuery({ [key]: value })}
+        onClear={() => setQuery(Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])))}
+      />
+      {list.length === 0 && everything.length > 0 ? (
+        <Empty
+          title="No run matches"
+          body="No agent at work passes these filters. Clear them to see every run."
+          action={
+            <Button
+              variant="secondary"
+              onClick={() => setQuery(Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])))}
+            >
+              Clear filters
+            </Button>
+          }
+        />
+      ) : list.length === 0 ? (
         <Empty
           title="No agent is working"
           body="A row appears here while a card's run or a chat has its agent at work, with what each is doing and how long it has been."

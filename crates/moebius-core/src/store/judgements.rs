@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
-use super::{Result, Store, now};
+use super::{Result, Scope, Store, now};
 use crate::blobs::BlobId;
 
 /// One recorded choice at a decision point (ADR 0010).
@@ -167,12 +167,18 @@ impl Store {
         )
     }
 
-    /// Calls `each` with the kind, the id, whether there is an outcome and the decider of every judgement, oldest
-    /// first, without reading them all into memory.
-    pub fn each_judgement(&self, mut each: impl FnMut(&str, i64, bool, &str)) -> Result<()> {
+    /// Calls `each` with the kind, the id, whether there is an outcome and the decider of every judgement in `scope`,
+    /// oldest first, without reading them all into memory.
+    pub fn each_judgement(
+        &self,
+        scope: &Scope,
+        mut each: impl FnMut(&str, i64, bool, &str),
+    ) -> Result<()> {
         let conn = self.conn();
-        let mut stmt = conn
-            .prepare("SELECT kind, id, outcome IS NOT NULL, decider FROM judgements ORDER BY id")?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT kind, id, outcome IS NOT NULL, decider FROM judgements WHERE 1 = 1{} ORDER BY id",
+            scope.clause("run_id", Some("card_id"))
+        ))?;
         let mut rows = stmt.query([])?;
         while let Some(row) = rows.next()? {
             each(

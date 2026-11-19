@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { pickOption, showing } from "./controls";
+import { addFilter, pickOption, showing } from "./controls";
 import type { PagesAFake } from "./fake/pages-a";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
@@ -31,13 +31,6 @@ async function editorHolds(frame: ReturnType<Page["locator"]>, text: string) {
     text,
   );
 }
-
-/**
- * The chips that pick a repository. Both filter rows have a chip called All, so the test asks the
- * fieldset the legend names, and wants the chip whose name is nothing but the word.
- */
-const repositories = (page: Page) =>
-  page.locator("fieldset").filter({ has: page.locator("legend", { hasText: "Repository" }) });
 
 beforeAll(async () => {
   browser = await chromium.launch({
@@ -215,7 +208,7 @@ describe("the inbox", () => {
   );
 
   it.skipIf(usesRealServer)(
-    "filters by kind and by repository, with the counts of the other filter",
+    "filters by kind with its tabs and by repository with the bar, and keeps both across a reload",
     async () => {
       await open("/inbox");
       await items().first().waitFor();
@@ -224,27 +217,38 @@ describe("the inbox", () => {
         data: { name: "second", url: "/srv/git/second" },
       });
       expect(made.ok()).toBe(true);
-      await repositories(page).getByRole("button", { name: "All", exact: true }).waitFor();
-      await page.getByRole("button", { name: "All 9" }).waitFor();
+      const kinds = page.getByRole("tablist", { name: "Kind" });
+      const bar = page.getByRole("search", { name: "Filter the inbox" });
+      await kinds.getByRole("tab", { name: "All 9" }).waitFor();
 
-      await page.getByRole("button", { name: "Stuck 1" }).click();
+      await kinds.getByRole("tab", { name: "Stuck 1" }).click();
       // Counted only once the page says it filtered, so the count is not of the list before the click.
       await page.getByText("9 things need you; 1 shown.").waitFor();
       expect(await items().count()).toBe(1);
-      expect(await page.getByRole("button", { name: "Stuck 1" }).getAttribute("aria-pressed")).toBe(
+      expect(await kinds.getByRole("tab", { name: "Stuck 1" }).getAttribute("aria-selected")).toBe(
         "true",
       );
       expect(path()).toBe("/inbox?kind=stuck");
 
-      // A repository's count is of the kind chosen.
-      await page.getByRole("button", { name: "second 0" }).click();
+      await addFilter(page, bar, "Repository", "second");
       await page.getByText("No item matches the filter.").waitFor();
-      await page.getByRole("button", { name: "demo 1" }).click();
+      expect(path()).toMatch(/^\/inbox\?kind=stuck&repository=\d+$/);
+      await bar.getByRole("button", { name: "Repository is second", exact: true }).click();
+      await page.getByRole("menuitemradio", { name: "demo", exact: true }).click();
       await page.getByText("No item matches the filter.").waitFor({ state: "detached" });
       await page.getByText("9 things need you; 1 shown.").waitFor();
       expect(await items().count()).toBe(1);
-      await repositories(page).getByRole("button", { name: "All", exact: true }).click();
-      await page.getByRole("button", { name: /^All \d+$/ }).click();
+
+      // The address holds both, so a reload shows the same page.
+      await page.reload();
+      await bar.getByRole("button", { name: "Repository is demo", exact: true }).waitFor();
+      await page.getByText("9 things need you; 1 shown.").waitFor();
+      expect(await kinds.getByRole("tab", { name: "Stuck 1" }).getAttribute("aria-selected")).toBe(
+        "true",
+      );
+
+      await bar.getByRole("button", { name: "Clear filters" }).click();
+      await kinds.getByRole("tab", { name: /^All \d+$/ }).click();
       await page.getByText("9 things need you.").waitFor();
       expect(await items().count()).toBe(9);
     },
@@ -397,7 +401,7 @@ describe("the inbox", () => {
     });
     server.broadcast?.({ kind: "card_updated", data: {} });
     await item("A new stuck card").waitFor();
-    await page.getByRole("button", { name: "Stuck 2" }).waitFor();
+    await page.getByRole("tab", { name: "Stuck 2" }).waitFor();
   });
 });
 
@@ -927,6 +931,41 @@ describe("the fleet", () => {
     },
   );
 
+  it.skipIf(usesRealServer)(
+    "filters the runs with the bar and keeps the filter across a reload",
+    async () => {
+      await open("/fleet");
+      const chat = server.chat?.seed({
+        status: "running",
+        title: "Write a ready.luau that starts a card only when nothing blocks it.",
+        repository_id: 1,
+      }) as number;
+      server.broadcast?.({ kind: "run_started", data: { run: chat } });
+      await page.getByText("2 agents working").waitFor();
+      const tiles = page.getByTestId("fleet-tile");
+      const bar = page.getByRole("search", { name: "Filter the runs" });
+
+      await addFilter(page, bar, "Agent", "Coder");
+      await page.getByText("1 agent working · 2 in all").waitFor();
+      expect(await tiles.count()).toBe(1);
+      await tiles.filter({ hasText: "#1 Add a feature" }).waitFor();
+      expect(path()).toBe("/fleet?agent=Coder");
+
+      await page.reload();
+      await bar.getByRole("button", { name: "Agent is Coder", exact: true }).waitFor();
+      await tiles.filter({ hasText: "#1 Add a feature" }).waitFor();
+      expect(await tiles.count()).toBe(1);
+
+      // A second filter narrows further: no run of the Coder is a chat.
+      await addFilter(page, bar, "Kind", "chat");
+      await page.getByText("No run matches").waitFor();
+      await bar.getByRole("button", { name: "Clear filters" }).click();
+      await page.getByText("2 agents working").waitFor();
+      expect(await tiles.count()).toBe(2);
+      expect(path()).toBe("/fleet");
+    },
+  );
+
   it.skipIf(usesRealServer)("is listed in the sidebar with the number working", async () => {
     await open("/fleet");
     await page
@@ -969,6 +1008,31 @@ describe("usage", () => {
       await page.getByText("Answering · 40 calls").waitFor();
       await page.getByText("Longest tool waits").waitFor();
       await page.getByRole("cell", { name: "Coder" }).waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "narrows every figure to an agent chosen in the bar and keeps it across a reload",
+    async () => {
+      await open("/usage");
+      await page.getByText("of the 8M token budget, 23% used").waitFor();
+      const bar = page.getByRole("search", { name: "Filter the usage" });
+      await addFilter(page, bar, "Agent", "Coder");
+      // The tokens, the calls and the agents' table are the Coder's alone.
+      await page.getByText("1.12M", { exact: true }).first().waitFor();
+      await page.getByText("702", { exact: true }).first().waitFor();
+      expect(await page.getByText("1,284", { exact: true }).count()).toBe(0);
+      expect(await page.getByRole("cell", { name: "Reviewer" }).count()).toBe(0);
+      await page.getByRole("cell", { name: "Coder" }).waitFor();
+      expect(path()).toBe("/usage?agent=Coder");
+
+      await page.reload();
+      await bar.getByRole("button", { name: "Agent is Coder", exact: true }).waitFor();
+      await page.getByText("1.12M", { exact: true }).first().waitFor();
+
+      await bar.getByRole("button", { name: "Clear filters" }).click();
+      await page.getByText("1.84M", { exact: true }).first().waitFor();
+      await page.getByRole("cell", { name: "Reviewer" }).waitFor();
     },
   );
 
