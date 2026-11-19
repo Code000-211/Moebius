@@ -9,7 +9,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Board, Card } from "../../api/types/board";
-import { CommentsSection } from "../../app/board/IssueSections";
+import { ActivitySection } from "../../app/board/IssueSections";
 import { RunPage } from "../../app/runs/RunPage";
 import { ThreadView } from "../../chat/ThreadView";
 import { PREVIEW_DELAY_MS } from "./CardLinks";
@@ -100,13 +100,15 @@ function serve(comments: unknown[] = []) {
     "fetch",
     vi.fn(async (path: string) => {
       const route = (path.split("?")[0] ?? path).replace(/\/diff$/, "");
-      const body = route.endsWith("/comments")
-        ? comments
-        : route === "/v1/snapshot"
-          ? { boards: [BOARD], harness_changes: [], inbox: [] }
-          : route === "/v1/runs/1000"
-            ? RUN
-            : { diff: "", truncated: false };
+      const body = route.endsWith("/history")
+        ? []
+        : route.endsWith("/comments")
+          ? comments
+          : route === "/v1/snapshot"
+            ? { boards: [BOARD], harness_changes: [], inbox: [] }
+            : route === "/v1/runs/1000"
+              ? RUN
+              : { diff: "", truncated: false };
       return { ok: true, status: 200, text: async () => JSON.stringify(body) };
     }),
   );
@@ -201,7 +203,7 @@ describe("where the preview is drawn", () => {
 
   it("works in the comments of an issue", async () => {
     serve([{ id: 1, card_id: 118, author: "person", body: "Blocked by #19", at: 1 }]);
-    inApp(<CommentsSection card={BOARD.cards[0] as Card} />);
+    inApp(<ActivitySection card={BOARD.cards[0] as Card} />);
     fireEvent.focus(await screen.findByRole("link", { name: "#19" }));
     expect(screen.getByTestId("card-preview").textContent).toContain("Issue 19");
   });

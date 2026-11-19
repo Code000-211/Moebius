@@ -656,7 +656,15 @@ describe("the decisions", () => {
       path: "/v1/changes/1/reject",
       body: { reason: "The tests are missing" },
     });
-    await dock().getByText("The tests are missing").first().waitFor();
+    // The move that carries the reason is a small change, folded with the one beside it.
+    await dock()
+      .getByRole("button", { name: /\d+ changes/ })
+      .last()
+      .click();
+    await dock()
+      .getByText(/The tests are missing/)
+      .first()
+      .waitFor();
   });
 
   it.skipIf(usesRealServer)("retries a stuck card", async () => {
@@ -1060,15 +1068,19 @@ describe("dragging cards", () => {
 
 describe("the dock", () => {
   it.skipIf(usesRealServer)(
-    "shows the history, the runs and the script of the column of the card",
+    "shows the timeline, the runs and the script of the column of the card",
     async () => {
       await fresh();
       await openBoard();
       // Without a choice the dock shows the first live card.
       await dock().getByRole("heading", { name: "Add a feature" }).waitFor();
+      // The two moves are folded into one line, which opens to them.
+      await dock()
+        .getByRole("button", { name: /2 changes/ })
+        .click();
       await dock().getByText("Moved from Backlog to Not started", { exact: true }).waitFor();
       await dock().getByText("Run 1 started: Coder, code").waitFor();
-      const run = dock().getByRole("link", { name: "Run 1", exact: true });
+      const run = dock().getByRole("link", { name: "View run 1", exact: true });
       expect(await run.getAttribute("href")).toBe("/runs/1");
       await dock().getByText("repos/demo/code.luau · built in").waitFor();
       await dock().getByText('moebius.wait("nothing to do in In progress")').waitFor();
@@ -1090,7 +1102,7 @@ describe("the dock", () => {
   it.skipIf(usesRealServer)("links a run to its page", async () => {
     await fresh();
     await openBoard();
-    await dock().getByRole("link", { name: "Run 1", exact: true }).click();
+    await dock().getByRole("link", { name: "View run 1", exact: true }).click();
     await page.waitForURL("**/runs/1");
     await page.getByRole("heading", { name: "Run 1" }).waitFor();
   });

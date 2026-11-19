@@ -1,7 +1,7 @@
 /**
  * The inspector dock of the board: the card chosen, with the issue it came from and the change it offered — the
  * headline of its diff, which opens the whole diff in a sheet — then what a person can do about it (approve, merge,
- * send back, retry, open or stop its run), its comments, its runs, its history and the script of its column,
+ * send back, retry, open or stop its run), its activity (comments, runs, moves and refusals as one timeline) and the script of its column,
  * read-only. Its facts and the properties of its issue are in the page's right column (`CardProperties.tsx`), which
  * the dock puts there while it is open.
  * It is a drawer beside the board, so the board stays readable behind it: no border, the
@@ -11,7 +11,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { cardRuns, history, script } from "../../api/calls/board";
+import { cardRuns, script } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Board, Card, InboxItem } from "../../api/types/board";
@@ -21,8 +21,6 @@ import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { KanbanIssuePanel, KanbanIssueSection } from "../../ui/components/KanbanIssuePanel";
 import { PrBadge } from "../../ui/components/PrBadge";
-import { ago } from "../../ui/lib/format";
-import { useNow } from "../../ui/lib/useNow";
 import { Field } from "../../ui/page/Field";
 import { MarkLabel } from "../../ui/page/MarkLabel";
 import { Notice } from "../../ui/page/Notice";
@@ -30,12 +28,11 @@ import { SkeletonLines } from "../../ui/page/Skeleton";
 import { CardMenu } from "./CardMenu";
 import { CardProperties, STATUS_MARK } from "./CardProperties";
 import type { Decision } from "./decisions";
-import { CommentsSection, EditIssueDialog } from "./IssueSections";
+import { ActivitySection, EditIssueDialog } from "./IssueSections";
 import {
   cardStatus,
   changeOf,
   changeWorktree,
-  describeHistory,
   issueUrl,
   pullRequestOf,
   STATUS_LABELS,
@@ -203,15 +200,11 @@ export function Dock({
   const repository = board.repository;
   const status = cardStatus(card, item, board);
   const runs = useQuery({ queryKey: keys.cardRuns(card.id), queryFn: () => cardRuns(card.id) });
-  const entries = useQuery({ queryKey: keys.history(card.id), queryFn: () => history(card.id) });
   const source = useQuery({
     queryKey: keys.script(repository.id, card.column),
     queryFn: () => script(repository.id, card.column),
   });
-  // The history of a card is read once and stays open, so the age of the last thing it did only moves with a clock of
-  // its own.
-  const now = useNow();
-  // The worktree of the run that made the change, from the runs read for the list below anyway.
+  // The worktree of the run that made the change.
   const worktree = changeWorktree(card, runs.data ?? []);
   const pullRequest = pullRequestOf(repository, changeOf(board, card));
 
@@ -294,51 +287,7 @@ export function Dock({
         </KanbanIssueSection>
       )}
 
-      <CommentsSection card={card} />
-
-      <KanbanIssueSection title="Runs">
-        <QueryText query={runs} empty={runs.data?.length === 0 ? "No runs yet" : undefined} />
-        {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with
-            no marker from the accessibility tree entirely */}
-        <ul role="list" className="m-0 flex list-none flex-col gap-2 p-0">
-          {(runs.data ?? []).map((run) => (
-            <li key={run.id} className="flex min-w-0 flex-wrap items-center gap-3">
-              <Link
-                to={`/runs/${run.id}`}
-                className="-ml-2 inline-flex min-h-8 items-center rounded-control px-2 text-base font-semibold text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
-              >
-                {`Run ${run.id}`}
-              </Link>
-              <span className="min-w-0 break-words text-sm text-secondary tabular-nums">
-                {run.agent} · {run.purpose} · {run.status}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </KanbanIssueSection>
-
-      <KanbanIssueSection title="History">
-        <QueryText
-          query={entries}
-          empty={entries.data?.length === 0 ? "No history yet" : undefined}
-        />
-        {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with
-            no marker from the accessibility tree entirely */}
-        <ol role="list" className="m-0 flex list-none flex-col gap-2 p-0">
-          {(entries.data ?? []).map((entry, index) => (
-            // The entries have no id; they are shown in the order the server sends them.
-            // biome-ignore lint/suspicious/noArrayIndexKey: the history is a fixed, ordered list
-            <li key={index} className="flex min-w-0 gap-4">
-              <span className="w-16 shrink-0 text-sm text-secondary tabular-nums">
-                {ago(now, entry.at)}
-              </span>
-              <span className="min-w-0 flex-1 text-base text-text [overflow-wrap:anywhere]">
-                {describeHistory(entry)}
-              </span>
-            </li>
-          ))}
-        </ol>
-      </KanbanIssueSection>
+      <ActivitySection card={card} />
 
       <KanbanIssueSection title={`Script of ${card.column}`}>
         <QueryText query={source} />
