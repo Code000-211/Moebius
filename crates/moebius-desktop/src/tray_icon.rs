@@ -139,7 +139,7 @@ fn connected(app: &AppHandle) -> bool {
 }
 
 /// Shows the main window in front, also when it was minimized.
-fn bring_up(app: &AppHandle) -> Option<tauri::WebviewWindow> {
+pub fn bring_up(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     let window = app.get_webview_window(MAIN)?;
     let _ = window.unminimize();
     let _ = window.show();

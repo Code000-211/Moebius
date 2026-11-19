@@ -9,9 +9,11 @@
 //! the window shows and which go to the system's browser. [`local`] sets up and starts a server of this machine (Linux, or
 //! WSL 2 on Windows) for the connect page's first-start offer. [`rail`] keeps the servers the app remembers (their tokens
 //! in the system's keychain) and the page of each, for the rail at the window's left. [`tray`] reads the figures the tray icon shows and pauses and
-//! resumes all agents.
+//! resumes all agents. [`instance`] decides which start of the app is the first: a later start shows the first one's window
+//! and ends.
 
 pub mod badge;
+pub mod instance;
 pub mod links;
 pub mod local;
 pub mod notices;
