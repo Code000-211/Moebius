@@ -122,18 +122,42 @@ describe("the shell", () => {
     await fresh();
     await page.goto(server.loginUrl);
     await pages().waitFor();
-    for (const name of ["Inbox", "Fleet", "Automations", "Workflows", "Retro", "Settings"]) {
+    for (const name of [
+      "Inbox",
+      "Fleet",
+      "Board",
+      "Files",
+      "Automations",
+      "Workflows",
+      "Retro",
+      "Experiments",
+      "Decisions",
+      "Settings",
+    ]) {
       // An entry may carry a count after its name ("Inbox 1", "Fleet 2").
       await pages()
         .getByRole("link", { name: new RegExp(`^${name}\\b`) })
         .waitFor();
     }
-    for (const group of ["Projects", "Improve"]) {
-      await pages().getByText(group, { exact: true }).first().waitFor();
-    }
-    // A group's label is not a link; the whole of the group is a row of the group.
-    expect(await pages().getByRole("link", { name: "Projects", exact: true }).count()).toBe(0);
-    await pages().getByRole("link", { name: "All projects" }).waitFor();
+    await pages().getByText("Automate", { exact: true }).first().waitFor();
+    // Improve is one row that folds over its pages, and keeps its state over a reload.
+    await pages().getByRole("button", { name: "Collapse Improve" }).click();
+    await pages().getByRole("button", { name: "Expand Improve" }).waitFor();
+    expect(
+      await pages()
+        .getByRole("link", { name: /^Retro/ })
+        .count(),
+    ).toBe(0);
+    await page.reload();
+    await pages().getByRole("button", { name: "Expand Improve" }).waitFor();
+    await pages().getByRole("button", { name: "Expand Improve" }).click();
+    await pages()
+      .getByRole("link", { name: /^Retro/ })
+      .waitFor();
+    // The list of every project is reached from the switcher.
+    await pages().getByRole("button", { name: "Change project" }).click();
+    await page.getByRole("menuitem", { name: "All projects" }).waitFor();
+    await page.keyboard.press("Escape");
     // The pages that set the server up are not listed beside the everyday ones: Settings opens them.
     expect(await pages().getByRole("link", { name: "Models" }).count()).toBe(0);
     await pages().getByRole("link", { name: "Settings" }).click();
@@ -159,9 +183,19 @@ describe("the shell", () => {
     await pages().getByRole("link", { name: "Back" }).click();
     await page.waitForURL("**/inbox");
     if (!usesRealServer) {
-      await pages().getByRole("link", { name: /demo/ }).click();
+      await pages()
+        .getByRole("link", { name: /^Board/ })
+        .click();
       await page.waitForURL("**/board/1");
       await page.getByRole("heading", { name: "demo" }).waitFor();
+      // The chosen project stays chosen on other pages and after a reload.
+      await pages()
+        .getByRole("link", { name: /^Fleet/ })
+        .click();
+      await page.reload();
+      await pages()
+        .getByRole("link", { name: /^Board/ })
+        .waitFor();
     }
   });
 
