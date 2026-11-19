@@ -4,9 +4,10 @@
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Card } from "../../api/types/board";
-import { CommentsSection } from "./IssueSections";
+import { ActivitySection } from "./IssueSections";
 
 afterEach(() => {
   cleanup();
@@ -60,10 +61,14 @@ function server(answers: Record<string, { status: number; body: unknown }> = {})
 
 function inClient(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter>{ui}</MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
-describe("the comments of an issue", () => {
+describe("the activity of an issue", () => {
   it("lists them oldest first and writes a new one", async () => {
     const sent = server({
       "GET /v1/cards/5/comments": {
@@ -74,7 +79,7 @@ describe("the comments of an issue", () => {
         ],
       },
     });
-    inClient(<CommentsSection card={card(5)} />);
+    inClient(<ActivitySection card={card(5)} />);
     expect(await screen.findByText("Why a queue?")).toBeTruthy();
     expect(screen.getByText("Because it is ordered.")).toBeTruthy();
     expect(screen.getByText(/agent:Moebius/)).toBeTruthy();
@@ -91,11 +96,75 @@ describe("the comments of an issue", () => {
 
   it("says there are none, and does not send an empty comment", async () => {
     const sent = server({ "GET /v1/cards/5/comments": { status: 200, body: [] } });
-    inClient(<CommentsSection card={card(5)} />);
-    expect(await screen.findByText("No comments yet.")).toBeTruthy();
+    inClient(<ActivitySection card={card(5)} />);
+    expect(await screen.findByText("Nothing has happened yet.")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Comment" }) as HTMLButtonElement).disabled).toBe(
       true,
     );
     expect(sent.every(([method]) => method === "GET")).toBe(true);
+  });
+});
+
+describe("the timeline of an issue", () => {
+  const entry = (at: number, kind: string, data: Record<string, unknown>) => ({ at, kind, data });
+  const made = {
+    "GET /v1/cards/5/history": {
+      status: 200,
+      body: [
+        entry(1, "moved", { from: "Not started", to: "In progress", note: null }),
+        entry(2, "inbox_added", { item: 1, kind: "approve_issue", title: "Approve the issue" }),
+        entry(3, "inbox_resolved", { item: 1, kind: "approve_issue", title: "Approve the issue" }),
+        entry(4, "run_started", { run: 9, agent: "Coder", purpose: "code" }),
+        entry(6, "decided", {
+          judgement: 1,
+          kind: "tool_call",
+          choice: "deny",
+          decider: "no-force-push",
+          reason: "git push --force",
+          outcome: null,
+        }),
+      ],
+    },
+    "GET /v1/cards/5/comments": {
+      status: 200,
+      body: [{ id: 1, card_id: 5, author: "tom", body: "Happens on iOS too.", at: 5 }],
+    },
+  };
+
+  it("shows comments, runs and refusals in order, with the small changes folded", async () => {
+    server(made);
+    inClient(<ActivitySection card={card(5)} />);
+    const fold = await screen.findByRole("button", { name: /3 changes/ });
+    const order = [
+      fold,
+      screen.getByText(/Run 9 started/),
+      screen.getByText("Happens on iOS too."),
+      screen.getByText(/no-force-push refused a tool call/),
+    ];
+    for (let i = 1; i < order.length; i++) {
+      const before = order[i - 1] as HTMLElement;
+      const after = order[i] as HTMLElement;
+      expect(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+  });
+
+  it("opens a fold to the changes it holds", async () => {
+    server(made);
+    inClient(<ActivitySection card={card(5)} />);
+    const fold = await screen.findByRole("button", { name: /3 changes/ });
+    expect(fold.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Moved from Not started to In progress")).toBeNull();
+    fireEvent.click(fold);
+    expect(fold.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("Moved from Not started to In progress")).toBeTruthy();
+    expect(screen.getByText("Asked you: Approve the issue")).toBeTruthy();
+    expect(screen.getByText("Answered: Approve the issue")).toBeTruthy();
+  });
+
+  it("links a run to its page", async () => {
+    server(made);
+    inClient(<ActivitySection card={card(5)} />);
+    const link = await screen.findByRole("link", { name: "View run 9" });
+    expect(link.getAttribute("href")).toBe("/runs/9");
   });
 });
