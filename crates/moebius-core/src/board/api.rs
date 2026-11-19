@@ -29,9 +29,10 @@
 //!   reproduction test on the change, or on the commit it was made from with the test's files added.
 //! - `moebius.offer_change(judgements)`: publishes the changes and offers them to a person; the card moves to "Ready to
 //!   merge". The optional `judgements` (text) is attached to the inbox item for the person to read.
-//! - `moebius.merge_change(reason)`: merges the card's changes on their forges, in the order the card names their
-//!   repositories, and moves the card to "Done"; the judgement is recorded as the column's script (`script:<column>`).
-//!   The optional `reason` says why.
+//! - `moebius.merge_change(reason) -> commit, failure`: merges the card's changes on their forges, in the order the card
+//!   names their repositories, and moves the card to "Done"; the judgement is recorded as the column's script
+//!   (`script:<column>`). The optional `reason` says why. A merge that fails stops the rest: the card waits where it is,
+//!   marked with an inbox item `merge_stopped`, and the call returns nil and why (see `App::merge_card`).
 //! - `moebius.ask(kind, reason)`: puts the card in the inbox for a person (once) and leaves it where it is.
 //! - `moebius.stuck(reason)`: puts the card in the inbox as stuck (once).
 //! - `moebius.record_outcome(outcome) -> count`: sets the outcome of the card's judgements that have none.
@@ -53,7 +54,7 @@ use super::card::changes_table;
 use super::engine::Effects;
 use super::resolve_column;
 use super::sandbox::outside_script;
-use crate::app::{App, AppError, Reproduction, TestRun, columns};
+use crate::app::{App, Reproduction, TestRun, columns};
 use crate::decide::{Actor, Question};
 use crate::store::Card;
 
@@ -295,26 +296,26 @@ impl Engine {
                 let by = Actor::Script {
                     column: column.clone(),
                 };
-                let merged = outside_script(&clock, || {
-                    let changes = app.open_changes(&app.card(card_id)?)?;
-                    if changes.is_empty() {
-                        return Err(AppError::Invalid(
-                            "the card has no open change to merge".into(),
-                        ));
-                    }
-                    // In the order the card names its repositories; the first that fails stops the rest.
-                    let mut commits = Vec::new();
-                    for change in changes {
-                        commits.push(app.merge_change(&by, change.id, &reason)?);
-                    }
-                    Ok(commits.remove(0))
-                })
-                .map_err(mlua::Error::external)?;
+                let merge = outside_script(&clock, || app.merge_card(&by, card_id, &reason))
+                    .map_err(mlua::Error::external)?;
                 let mut fx = fx.borrow_mut();
-                fx.moved = Some(columns::DONE.into());
                 fx.move_to = None;
+                if let Some((change, why)) = merge.stopped {
+                    // The card stays where it is with what is merged marked (ADR 0019).
+                    let repository = app
+                        .store
+                        .repository(change.repository_id.unwrap_or_default())
+                        .ok()
+                        .flatten()
+                        .map_or_else(String::new, |r| r.name);
+                    let why = format!("the merge in {repository} failed: {why}");
+                    fx.waiting = Some(why.clone());
+                    return Ok((None, Some(why)));
+                }
+                fx.moved = Some(columns::DONE.into());
                 fx.waiting = None;
-                Ok(merged)
+                let own = merge.merged.into_iter().next().map(|(_, commit)| commit);
+                Ok((own, None))
             })?,
         )?;
 

@@ -3,7 +3,10 @@
 //! that works test first, the notes of the last round and, for a card over several repositories, where each of its
 //! worktrees is. The same for every harness.
 
-use super::lifecycle::RunningRun;
+mod repositories;
+
+pub(super) use repositories::{repositories_prompt, review_repositories_prompt};
+
 use crate::app::{App, is_person};
 use crate::blobs::redact;
 use crate::store::{Card, Comment, Repository};
@@ -87,58 +90,9 @@ pub(crate) fn prompt_for(app: &App, card: &Card, purpose: &str, note: Option<&st
     prompt_with(app, card, purpose, note, None)
 }
 
-/// What a `code` run or an attempt of `card` is told of its repositories (ADR 0019): where the worktree of each is,
-/// when the card works in several, and, for a `code` run, which of the project's repositories it may ask for, with a
-/// line `REPOSITORY: <name>` of its summary, when there are any. Nothing for a card in one repository of a project that has
-/// no other.
-pub(super) fn repositories_prompt(app: &App, card: &Card, run: &RunningRun) -> String {
-    // An attempt is told where its worktrees are, but only a `code` run's ask for a repository is acted on.
-    let may_ask = run.purpose == "code";
-    let mut text = String::new();
-    if !run.others.is_empty() {
-        let own = card.repositories.first().cloned().unwrap_or_default();
-        let mut places = vec![format!(
-            "`{own}` at {} (your working directory)",
-            run.worktree.display()
-        )];
-        places.extend(
-            run.others
-                .iter()
-                .map(|other| format!("`{}` at {}", other.repository, other.worktree.display())),
-        );
-        text.push_str(&format!(
-            "\n\n## Repositories\n\nThe card works in these repositories, each in a git worktree of its own: {}. \
-             Make the change in each one the issue needs, and write nowhere else. Moebius commits what you leave in \
-             each worktree, and each repository gets a change of its own.",
-            places.join(", ")
-        ));
-    }
-    let more: Vec<String> = may_ask
-        .then(|| app.repositories_to_add(card).ok())
-        .flatten()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|r| format!("`{}`", r.name))
-        .collect();
-    if !more.is_empty() {
-        if text.is_empty() {
-            text.push_str("\n\n## Repositories\n\n");
-        } else {
-            text.push(' ');
-        }
-        text.push_str(&format!(
-            "If the work needs another repository of the project ({}), end your summary with a line \
-             `REPOSITORY: <name>` for each: the card then comes back to you with a worktree of it.",
-            more.join(", ")
-        ));
-    }
-    text
-}
-
-/// The text of the project's `review.md`, the repository's own notes for its reviews, when it has any.
-fn review_notes(app: &App, card: &Card) -> Option<String> {
-    let repository = app.store.repository(card.repository_id).ok().flatten()?;
-    app.repository_file(&repository, "review.md")
+/// The text of the `review.md` of `repository`, its own notes for its reviews, when it has any.
+fn review_notes(app: &App, repository: &Repository) -> Option<String> {
+    app.repository_file(repository, "review.md")
         .filter(|notes| !notes.trim().is_empty())
 }
 
@@ -325,7 +279,8 @@ fn prompt_with(
         "review-standards" => {
             prompt.push_str(&STANDARDS_PROMPT.replace("{base}", &base()));
             prompt.push_str(FINDINGS_FORMAT);
-            if let Some(notes) = review_notes(app, card) {
+            let own = app.store.repository(card.repository_id).ok().flatten();
+            if let Some(notes) = own.and_then(|own| review_notes(app, &own)) {
                 prompt.push_str("\n\nThe review notes of this repository's project:\n\n");
                 prompt.push_str(notes.trim());
             }

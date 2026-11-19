@@ -370,6 +370,57 @@ end
     }
 
     #[test]
+    fn a_script_whose_merge_fails_gets_nil_and_why_and_the_card_waits_marked() {
+        let (_dir, app, engine, repo) = setup();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
+        for _ in 0..6 {
+            if app.card(card.id).unwrap().column == columns::READY_TO_MERGE {
+                break;
+            }
+            engine.settle(card.id).unwrap();
+        }
+        assert_eq!(app.card(card.id).unwrap().column, columns::READY_TO_MERGE);
+        // Meanwhile the default branch got a commit that conflicts with the change.
+        let clone = std::path::PathBuf::from(app.store.repository(repo).unwrap().unwrap().path);
+        let run = app.store.runs_for_card(card.id).unwrap()[0].id;
+        std::fs::write(clone.join(format!("run-{run}.txt")), "someone else").unwrap();
+        crate::repos::git(&clone, &["add", "."]).unwrap();
+        crate::repos::git(&clone, &["commit", "--quiet", "-m", "conflict"]).unwrap();
+        let project = app.harness_repo().unwrap().project_dir("demo");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(
+            project.join("merge.luau"),
+            r#"
+function on_card(card)
+  local commit, failure = moebius.merge_change("approved")
+  assert(commit == nil and string.find(failure, "the merge in demo failed", 1, true), failure)
+end
+"#,
+        )
+        .unwrap();
+        let step = engine.settle(card.id).unwrap();
+        assert_eq!(app.card(card.id).unwrap().column, columns::READY_TO_MERGE);
+        assert!(
+            step.waiting
+                .as_deref()
+                .is_some_and(|why| why.contains("does not merge cleanly")),
+            "{:?}",
+            step.waiting
+        );
+        let marked = app
+            .store
+            .inbox_for_card(card.id)
+            .unwrap()
+            .into_iter()
+            .find(|item| item.kind == "merge_stopped" && item.resolved_at.is_none())
+            .expect("the card is marked");
+        assert_eq!(marked.data["merged"], serde_json::json!([]));
+        assert_eq!(marked.data["open"], serde_json::json!(["demo"]));
+    }
+
+    #[test]
     fn a_script_that_reads_the_old_single_change_fails_and_leaves_the_card() {
         let (_dir, app, engine, repo) = setup();
         let project = app.harness_repo().unwrap().project_dir("demo");
