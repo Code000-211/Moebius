@@ -93,8 +93,9 @@ pub async fn recorded_upstream(
     format!("http://{addr}")
 }
 
-/// A `review.luau` that offers the change without a review. A project's script is a file of the settings
-/// (`repos/demo/review.luau`) of the harness configuration repository.
+/// A `review.luau` that offers the change without a review. A project's script is a file of its settings
+/// (`projects/demo/review.luau`) of the harness configuration repository; `harness_for` puts it where a repository's
+/// settings had it before projects (`repos/demo/review.luau`), and the server moves it there as it starts.
 const NO_REVIEW: &str = "function on_card(card)\n  local run = card.run\n  if run ~= nil and (run.status == 'starting' or run.status == 'running') then\n    moebius.wait('coding')\n    return\n  end\n  moebius.publish_change()\n  moebius.offer_change()\nend\n";
 
 /// A harness configuration repository for `app`, made in `dir`, so that the settings of its projects can be read.
@@ -114,9 +115,15 @@ pub fn use_harness(app: &App, dir: &Path) -> Arc<HarnessRepo> {
     repo
 }
 
-/// Puts `text` in the clone of the harness configuration repository as the project's `file`, where it is read at once.
-pub fn put_project(repo: &HarnessRepo, project: &str, file: &str, text: &str) {
-    let dir = repo.project_dir(project);
+/// Puts `text` in the clone of the harness configuration repository as `file` of the settings named `name`, where it
+/// is read at once: a column's script in the project's (`projects/<name>/`), any other file in the repository's
+/// (`repos/<name>/`). A repository's home project has its name in these tests.
+pub fn put_project(repo: &HarnessRepo, name: &str, file: &str, text: &str) {
+    let dir = if moebius_core::harness::repo::is_project_file(file) {
+        repo.project_dir(name)
+    } else {
+        repo.repository_dir(name)
+    };
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join(file), text).unwrap();
 }
@@ -177,7 +184,7 @@ pub async fn start_harness(
 
 /// The harness configuration repository `dir/harness` for the agents the `[agents.*]` tables of `agents` name. These
 /// tests are about the run of the Coder, not about its review, which the built-in Reviewer would do: the project
-/// `demo` has a `review.luau` that offers the change at once. Returns the configuration that names it.
+/// `demo` has a `review.luau` that offers the change at once, from where it was before projects. Returns the configuration that names it.
 fn harness_for(dir: &Path, base: &str, agents: &str) -> String {
     let parsed = Config::parse(&format!("{base}{agents}"), dir, &dir.join("moebius.toml")).unwrap();
     let repository = dir.join("harness");

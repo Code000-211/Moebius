@@ -1,12 +1,14 @@
 /**
  * The settings Moebius keeps for one repository, the files of `repos/<name>/` in the harness configuration
- * repository: the notes for its reviews, the checks of a repository without a forge, the hint of likely files, and the switch of test first. Each is saved as a commit there, which the server checks first.
- * Its rules are edited on the Rules page and its column scripts on the board; this panel says which scripts it has. A
- * `.moebius/` folder that the repository still has is said to be no longer read.
+ * repository: the notes for its reviews, the checks of a repository without a forge, the hint of likely files, and the
+ * switch of test first. Each is saved as a commit there, which the server checks first. Its rules are edited on the
+ * Rules page. The column scripts are its home project's (`projects/<name>/`), edited on the board; this panel says
+ * which the project has of its own. A `.moebius/` folder that the repository still has is said to be no longer read.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router";
+import { projectScripts } from "../../api/calls/board";
 import { readSettings, removeSetting, saveSetting } from "../../api/calls/projects";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
@@ -20,11 +22,18 @@ import { SkeletonCard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
 import { firstLine, SETTING_FILES } from "./model";
 
-export function SettingsPanel({ repository }: { repository: number }) {
+export function SettingsPanel({ repository, project }: { repository: number; project: number }) {
   const settings = useQuery({
     queryKey: keys.projectSettings(repository),
     queryFn: () => readSettings(repository),
   });
+  const scripts = useQuery({
+    queryKey: keys.projectScripts(project),
+    queryFn: () => projectScripts(project),
+  });
+  const own = (scripts.data ?? [])
+    .filter((each) => each.source === "project")
+    .map((each) => each.path.split("/").at(-1) ?? each.path);
   if (settings.isPending)
     return (
       <Box title="Project settings">
@@ -42,7 +51,7 @@ export function SettingsPanel({ repository }: { repository: number }) {
         />
       </Box>
     );
-  const { path, editable, files, scripts, leftover } = settings.data;
+  const { path, editable, files, leftover } = settings.data;
   const file = (name: string): SettingFile =>
     files.find((each) => each.file === name) ?? { file: name, exists: false, text: "" };
   return (
@@ -54,11 +63,11 @@ export function SettingsPanel({ repository }: { repository: number }) {
           <Link className="underline" to="/rules">
             Rules
           </Link>{" "}
-          are edited on the Rules page and the column scripts on the{" "}
+          are edited on the Rules page. The column scripts are the project's, edited on the{" "}
           <Link className="underline" to={boardPath(repository)}>
             board
           </Link>
-          {scripts.length > 0 ? ` (this project has ${scripts.join(", ")})` : ""}.
+          {own.length > 0 ? ` (this project has ${own.join(", ")})` : ""}.
         </p>
         {leftover.length > 0 && (
           <Notice tone="error">

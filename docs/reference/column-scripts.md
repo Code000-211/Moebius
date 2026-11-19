@@ -258,7 +258,7 @@ limit.
 `moebius.run_checks()` returns the card's change as a table like `card.change`.
 : Starts the repository's own checks (see Checks and conflicts) on the change's current commit, unless they already ran
 or are running for it. It returns at once; the returned `checks` is `pending` while they run. It does nothing, and
-`checks` stays as it is, on a repository with a forge, or without a `checks` file in the project's settings. Raises an
+`checks` stays as it is, on a repository with a forge, or without a `checks` file in the repository's settings. Raises an
 error `the card has no change to check` before the change is published. The time this call takes does not count
 against the time limit.
 
@@ -463,11 +463,15 @@ error, starting with `moebius: `, and exit with status 1. The check shows one pa
 card takes: change `--title`, `--author` and `--column` to try the others. What the real card holds (its runs, its change,
 its blockers, its tokens) is not made up, so a script that reads them must also be tried on a real card.
 
-## Repository overrides
+## Project overrides
 
 A project replaces the script of a column by having a file `<script>` (for example `ready.luau`) in its settings, the
-files of `repos/<repository name>/` in the [harness configuration repository](harness-configuration.md#project-settings).
-Nothing is read from a repository's own `.moebius/` any more. The server reads the file on every run of the script:
+files of `projects/<project name>/` in the [harness configuration repository](harness-configuration.md#project-settings).
+The script that runs for a card is the one of the project whose board the card is on, so two projects that share a
+repository can work differently; what is about the code (the checks, test first, the rules) is the repository's, the
+same in every project. Nothing is read from a repository's own `.moebius/` any more, nor from a column script in
+`repos/<repository name>/`, where scripts were kept before projects and from where the server moves them to the
+repository's home project. The server reads the file on every run of the script:
 
 - It is read from the default branch of the harness configuration repository's clone, which the server fetches every 30
   seconds and fast-forwards. A change in another branch is not read.
@@ -478,7 +482,7 @@ Nothing is read from a repository's own `.moebius/` any more. The server reads t
 A script from a project runs with the same sandbox and limits as a built-in one.
 
 The desktop API reads, saves and removes an override: `GET`, `PUT` and `DELETE` of
-[`/v1/repositories/{id}/scripts/{column}`](desktop-api.md#get-v1repositoriesidscriptscolumn). A save checks the script
+[`/v1/projects/{id}/scripts/{column}`](desktop-api.md#get-v1projectsidscriptscolumn). A save checks the script
 like `moebius check-script`, commits it to the harness configuration repository and pushes it to its `origin`.
 
 ## Checks and conflicts

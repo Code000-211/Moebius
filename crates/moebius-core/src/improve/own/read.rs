@@ -11,7 +11,7 @@ use crate::board::{Kanban, check_script};
 use crate::bus::Event;
 use crate::harness::repo::OwnBranch;
 use crate::server::settings::{Changes, Live};
-use crate::store::OwnEdits;
+use crate::store::{OwnEdits, Project, Repository};
 
 /// The file of a branch that changes `moebius.toml`.
 const SETTINGS_FILE: &str = "settings.json";
@@ -109,7 +109,7 @@ fn strip_url_credentials(text: &str) -> String {
     CREDENTIALS.replace_all(text, "$1").into_owned()
 }
 
-/// A change to the settings files of one project: each file one of [`files`], rules that can be saved and
+/// A change to the settings files of one repository and its home project: each file one of [`files`], rules that can be saved and
 /// scripts that pass the check of `moebius check-script`.
 fn repository(
     app: &App,
@@ -147,11 +147,19 @@ fn repository(
         .into_iter()
         .find(|r| r.name == name)
         .ok_or_else(|| format!("there is no repository {name}"))?;
+    let home = app
+        .store
+        .project(repository.home_project_id)
+        .map_err(|e| e.to_string())?;
     let mut diff = String::new();
     let mut edits = serde_json::Map::new();
     for (file, text) in texts {
-        let before = app.project_file(&repository, file).unwrap_or_default();
-        let path = format!("repos/{}/{file}", repository.name);
+        let before = current(app, &repository, home.as_ref(), file).unwrap_or_default();
+        let path = match (file, &home) {
+            ("rules.md", _) => format!("repos/{}/{file}", repository.name),
+            (_, Some(home)) => format!("projects/{}/{file}", home.name),
+            (_, None) => return Err(format!("{name} has no home project for {file}")),
+        };
         diff += &unified(&path, &before, text);
         edits.insert(path, Value::String(text.clone()));
     }
@@ -164,6 +172,21 @@ fn repository(
         edits: json!({ "files": edits }),
         repository: Some(repository.id),
     })
+}
+
+/// The text `file` of [`files`] has now for `repository`: its rules are the repository's, a column's script is its
+/// home project's.
+pub(super) fn current(
+    app: &App,
+    repository: &Repository,
+    home: Option<&Project>,
+    file: &str,
+) -> Option<String> {
+    if file == "rules.md" {
+        app.repository_file(repository, file)
+    } else {
+        app.project_file(home?, file)
+    }
 }
 
 /// Whether the text of the project's `<file>` could be saved: rules as `PUT /v1/rules` takes them, a column's script as

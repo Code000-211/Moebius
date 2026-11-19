@@ -142,8 +142,8 @@ in WSL (see [On Windows](#on-windows)). Every key named here is in the
    ```
 
    A repository's own `.moebius/` folder is not read any more (since the release that moved a repository's rules, review
-   notes, checks, test-first switch and column scripts to `repos/<repository name>/` of the harness
-   configuration repository). Move its files there, with the same names; the server tells you once, in its log, which
+   notes, checks and test-first switch to `repos/<repository name>/` of the harness configuration repository, and
+   the column scripts, since projects, to `projects/<project name>/`). Move its files there, with the same names; the server tells you once, in its log, which
    repository still has one. See "Moving from `.moebius/`" in [column scripts](column-scripts.md#where-the-file-goes).
 
 6. Back up. Everything Moebius keeps is in the data directory (`.moebius/` next to `moebius.toml`, unless `data_dir`

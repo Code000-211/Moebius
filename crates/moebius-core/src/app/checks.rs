@@ -101,7 +101,7 @@ impl App {
         if repository.forge != "none" {
             return None;
         }
-        self.project_file(repository, "checks")
+        self.repository_file(repository, "checks")
     }
 
     /// Runs `script` on the commit `rev` in a throwaway worktree named `name` and returns whether it succeeded and the

@@ -26,8 +26,9 @@ learns the state of a server from the server itself:
   brief, an item of the inbox). Its runs get the server's address and their own run token, which the desktop API accepts
   for the Moebius agent, so every decision it makes is recorded as `agent:Moebius` with the chat's run. It cannot store
   an API key or open a shell in a worktree or on the server.
-- It builds files: what belongs to a repository (its rules, scripts, checks) goes through the API into its
-  settings, `repos/<repository name>/` of the harness configuration repository; in a chat in the harness configuration
+- It builds files: what belongs to a repository (its rules, checks) goes through the API into its
+  settings, `repos/<repository name>/` of the harness configuration repository, and a project's column scripts into
+  `projects/<project name>/`; in a chat in the harness configuration
   repository (see [Build an extension or skill in a chat](#build-an-extension-or-skill-in-a-chat)), agents, skills,
   extensions, MCP servers and the server's rules. It tries a column script with `moebius check-script` and a plugin with
   `cargo test`. The person offers the files as a change between its answers ("Offer changes" in the web app,

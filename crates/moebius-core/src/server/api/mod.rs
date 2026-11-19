@@ -10,9 +10,10 @@
 //! - `planning`: a card's priority and due date.
 //! - `notices`: what concerns a person (given, mentioned, a followed card changed), and following cards.
 //! - `kinds`: kinds of issues and their fields, the kinds a project offers, a card's kind and fields, and the cards of every project by them.
-//! - `repositories`: adding and editing repositories, and their column scripts and files.
+//! - `repositories`: adding and editing repositories, and their settings and files.
 //! - `milestones`: goals of the organisation with a target date, holding cards of any projects, with their progress.
-//! - `projects`: the projects, each with a key, a board and its repositories; making and renaming one.
+//! - `projects`: the projects, each with a key, a board and its repositories; making and renaming one, and the column
+//!   scripts of its board.
 //! - `runs`: a run and its events, steering and stopping it.
 //! - `chats`: chats with an agent, and what grilling chats ended in.
 //! - `automations`: chats a schedule starts, and their firings.

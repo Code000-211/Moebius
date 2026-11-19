@@ -1,6 +1,6 @@
-//! A project's settings for the desktop API: the files of `repos/<repository name>/` in the harness configuration
-//! repository other than the column scripts (those are [`crate::board::scripts`]): `rules.md`, `review.md`,
-//! `checks`, `test-first` and `localize`. Reading lists them with the text each has; writing or removing
+//! A repository's settings for the desktop API: the files of `repos/<repository name>/` in the harness configuration
+//! repository, what is about its code: `rules.md`, `review.md`, `checks`, `test-first` and `localize`. The column
+//! scripts are its projects' (see [`crate::board::scripts`]). Reading lists them with the text each has; writing or removing
 //! one is a commit there, as an edit of an agent is, and is refused when the text is not fit to be saved. Every
 //! change is recorded as a decision of the person or agent who made it.
 
@@ -11,19 +11,19 @@ use serde::{Deserialize, Serialize};
 use crate::app::{App, AppError, Result};
 use crate::bus::Event;
 use crate::decide::Actor;
-use crate::harness::repo::PROJECT_FILES;
+use crate::harness::repo::REPOSITORY_FILES;
 use crate::store::Repository;
 
-/// The kind of the decision recorded for a change to a project's rules.
+/// The kind of the decision recorded for a change to a repository's rules.
 const RULES_KIND: &str = "edit_repository_rules";
 /// The kind of the decision recorded for a change to any other of the files.
 const FILE_KIND: &str = "edit_project_file";
 
-/// One file of a project's settings.
+/// One file of a repository's settings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SettingFile {
     pub file: String,
-    /// Whether the project has the file; an empty `test-first` that exists turns test first on.
+    /// Whether the repository has the file; an empty `test-first` that exists turns test first on.
     pub exists: bool,
     pub text: String,
     /// The short id of the commit a `PUT` or `DELETE` made; left out by `GET` and when nothing changed.
@@ -31,7 +31,7 @@ pub struct SettingFile {
     pub commit: Option<String>,
 }
 
-/// A project's settings as `GET /v1/repositories/{id}/settings` answers.
+/// A repository's settings as `GET /v1/repositories/{id}/settings` answers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Settings {
     /// Where the settings are, from the root of the harness configuration repository.
@@ -39,8 +39,6 @@ pub struct Settings {
     /// Whether they can be changed: the server has a harness configuration repository.
     pub editable: bool,
     pub files: Vec<SettingFile>,
-    /// The column scripts the project has of its own, such as `ready.luau`.
-    pub scripts: Vec<String>,
     /// The files of a `.moebius/` folder the repository's default branch still has, which are not read.
     pub leftover: Vec<String>,
 }
@@ -55,7 +53,7 @@ pub struct NewSetting {
 }
 
 fn view(app: &App, repository: &Repository, file: &str) -> SettingFile {
-    let text = app.project_file(repository, file);
+    let text = app.repository_file(repository, file);
     SettingFile {
         file: file.into(),
         exists: text.is_some(),
@@ -64,43 +62,36 @@ fn view(app: &App, repository: &Repository, file: &str) -> SettingFile {
     }
 }
 
-/// The settings of repository `id`'s project.
+/// The settings of repository `id`.
 pub fn settings(app: &App, id: i64) -> Result<Settings> {
     let repository = app.repository(id)?;
-    let scripts = crate::board::Kanban::default()
-        .columns
-        .into_iter()
-        .map(|column| column.script)
-        .filter(|script| app.project_file(&repository, script).is_some())
-        .collect();
     Ok(Settings {
         path: format!("repos/{}", repository.name),
         editable: app.harness_repo().is_ok(),
-        files: PROJECT_FILES
+        files: REPOSITORY_FILES
             .iter()
             .map(|file| view(app, &repository, file))
             .collect(),
-        scripts,
         leftover: app.leftover_settings(&repository),
     })
 }
 
-/// `file` as a name of one of [`PROJECT_FILES`], else `Invalid`.
+/// `file` as a name of one of [`REPOSITORY_FILES`], else `Invalid`.
 fn known(file: &str) -> Result<&'static str> {
-    PROJECT_FILES
+    REPOSITORY_FILES
         .iter()
         .find(|known| **known == file)
         .copied()
         .ok_or_else(|| {
             AppError::Invalid(format!(
-                "{file} is not a file of a project's settings; they are {} and the column scripts (see the scripts \
-                 routes)",
-                PROJECT_FILES.join(", ")
+                "{file} is not a file of a repository's settings; they are {}, and the column scripts are a \
+                 project's (see the routes /v1/projects/{{id}}/scripts)",
+                REPOSITORY_FILES.join(", ")
             ))
         })
 }
 
-/// Why `text` is not fit to be saved as the project's `file`.
+/// Why `text` is not fit to be saved as the repository's `file`.
 fn check(file: &str, text: &str) -> Result<()> {
     let checked = match file {
         "rules.md" => crate::decide::rules::check(text),
@@ -109,7 +100,7 @@ fn check(file: &str, text: &str) -> Result<()> {
     checked.map_err(|why| AppError::Invalid(format!("{file}: {why}")))
 }
 
-/// Replaces the project's `file` of repository `id` with `new.text`, committed in the harness configuration
+/// Replaces the `file` of repository `id` with `new.text`, committed in the harness configuration
 /// repository: refused with `Invalid` when the text is not fit (rules) or the server has no such
 /// repository. Text that changes nothing makes no commit.
 pub fn save(app: &App, by: &Actor, id: i64, file: &str, new: &NewSetting) -> Result<SettingFile> {
@@ -134,7 +125,7 @@ pub fn save(app: &App, by: &Actor, id: i64, file: &str, new: &NewSetting) -> Res
     )
 }
 
-/// Removes the project's `file` of repository `id`: `NotFound` when it has none.
+/// Removes the `file` of repository `id`: `NotFound` when it has none.
 pub fn remove(app: &App, by: &Actor, id: i64, file: &str, reason: &str) -> Result<SettingFile> {
     let repository = app.repository(id)?;
     let file = known(file)?;
@@ -170,7 +161,7 @@ fn write(
     } else {
         FILE_KIND
     };
-    let commit = app.project_harness_repo()?.save_project_file(
+    let commit = app.project_harness_repo()?.save_repository_file(
         app,
         by,
         (&repository.name, file),

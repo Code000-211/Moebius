@@ -100,6 +100,15 @@ pub fn scope(store: &Store, event: &AppEvent) -> Scope {
     if let Some(id) = int("repository") {
         return Scope::Project(id);
     }
+    // A project of ADR 0019 (`script_changed`), by its first repository until hooks name projects of their own.
+    if let Some(id) = int("project") {
+        let first = store
+            .project(id)
+            .ok()
+            .flatten()
+            .and_then(|project| project.repositories.first().copied());
+        return first.map_or(Scope::Unknown, Scope::Project);
+    }
     if let Some(id) = int("card") {
         return found(
             store

@@ -6,8 +6,8 @@ A package is one of:
 | Kind | What it is | Where it goes |
 |---|---|---|
 | `plugin` | A program speaking the [process plugin protocol](plugin-api.md#plugins-in-their-own-process): a decider, or a [launcher](plugin-api.md#launchers). | `<data_dir>/packages/<name>/<version>/`, with a `[[plugins]]` entry written for it. |
-| `workflow` | Kanban column scripts (`.luau`). | Proposed as a change to the [harness configuration repository](harness-configuration.md), under `repos/<repository name>/`. |
-| `rules` | A fragment of a `rules.md`. | Its rules are proposed to be added to a project's `repos/<repository name>/rules.md` of the harness configuration repository. |
+| `workflow` | Kanban column scripts (`.luau`). | Proposed as a change to the [harness configuration repository](harness-configuration.md), under `projects/<project name>/`, the settings of the named repository's home project. |
+| `rules` | A fragment of a `rules.md`. | Its rules are proposed to be added to a repository's `repos/<repository name>/rules.md` of the harness configuration repository. |
 | `skills` | Skills. | Proposed as a change to the [harness configuration repository](harness-configuration.md), under `skills/`. |
 
 Packages come from **registries**: git repositories with an `index.toml` at their root. Moebius's own, `moebius-plugins`
@@ -49,7 +49,8 @@ fields plus the downloads. Keys not listed are ignored.
 | `[[plugin.settings]]` | array of tables | The settings it takes, for a form: `name`, `flag`, `type`, `choices`, `repeatable`, `default`, `description`. Informative. |
 
 `[[files]]`: `to` is a plain relative path (no `..`, no empty parts, nothing in `.git`). For a `workflow` package (a Kanban) it ends in
-`.luau` and lands at `repos/<repository name>/<to>` of the harness configuration repository. For `skills` it lands at `skills/<to>` of the harness
+`.luau` and lands at `projects/<project name>/<to>` of the harness configuration repository, the settings of the named
+repository's home project. For `skills` it lands at `skills/<to>` of the harness
 configuration repository, so `to = "tdd/SKILL.md"` is the skill `tdd`. A `rules` package has exactly one file, a
 `rules.md` fragment; its `to` is not used.
 
@@ -146,10 +147,11 @@ that are flags go in the entry's `args` (the Settings page, or `moebius settings
 
 **A Kanban (`workflow`), rules or skills package** is proposed: the files are committed on the branch `moebius/package-<name>`
 from the default branch of the harness configuration repository, and offered as a change with a `ready_to_merge` item
-in the inbox. A Kanban (`workflow`) or rules package names the project it is for (`--repository`; the only repository when there
-is one): its files go to `repos/<repository name>/` there. Nothing is installed until a person merges it. The change has
+in the inbox. A Kanban (`workflow`) or rules package names the repository it is for (`--repository`; the only repository when there
+is one): a rules package's file goes to `repos/<repository name>/` there, a Kanban's files to
+`projects/<project name>/` of the repository's home project. Nothing is installed until a person merges it. The change has
 no repository (`repository_id` null). A rules package adds its rules, the `## name` sections of the fragment (text
-before the first is not added), at the end of the project's `rules.md`; a rule named like one that is there is refused,
+before the first is not added), at the end of the repository's `rules.md`; a rule named like one that is there is refused,
 and the result must pass the rules check. Every kind needs a harness configuration repository, else it is refused.
 
 The Moebius agent may propose a Kanban (`workflow`), rules or skills package. Installing a plugin is for a person only.

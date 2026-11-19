@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 
 use super::sandbox::run_sandboxed;
-use super::{CardRuns, Column, Kanban, Limits, built_in_script, repository_script};
+use super::{CardRuns, Column, Kanban, Limits, built_in_script, project_script};
 use crate::app::{App, AppError, columns};
 use crate::decide::Actor;
 use crate::store::Card;
@@ -86,15 +86,10 @@ impl Engine {
         limits.day_budget = day_budget;
     }
 
-    /// The script for `column`: the project's override, or the built-in one.
+    /// The script for `column`: the override of the card's project, or the built-in one.
     fn script(&self, card: &Card, column: &Column) -> Result<String, BoardError> {
-        let repository = self
-            .app
-            .store
-            .repository(card.repository_id)
-            .map_err(AppError::from)?
-            .ok_or_else(|| AppError::NotFound(format!("repository {}", card.repository_id)))?;
-        if let Some(source) = repository_script(&self.app, &repository, &column.script) {
+        let project = self.app.project(card.project_id)?;
+        if let Some(source) = project_script(&self.app, &project, &column.script) {
             return Ok(source);
         }
         built_in_script(&column.script)
@@ -527,7 +522,7 @@ end
     }
 
     #[test]
-    fn a_repository_script_that_moves_a_card_to_ready_moves_it_to_not_started() {
+    fn a_project_script_that_moves_a_card_to_ready_moves_it_to_not_started() {
         let (_dir, app, engine, repo) = setup();
         let put =
             |file: &str, text: &str| crate::harness::repo::testing::put(&app, "demo", file, text);

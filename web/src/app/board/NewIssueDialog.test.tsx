@@ -18,6 +18,7 @@ const board: Board = {
     path: "/srv/travel-timeline",
     forge: "github",
     default_branch: "main",
+    home_project_id: 1,
     github: "acme/travel-timeline",
     trusted: [],
   },

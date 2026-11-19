@@ -18,6 +18,7 @@ afterEach(() => {
 const card = {
   id: 7,
   repository_id: 1,
+  project_id: 1,
   number: 12,
   title: "Fix the parser",
   body: "",
@@ -48,6 +49,7 @@ const repository = (forge: string): Repository => ({
   path: "/r",
   forge: forge as Repository["forge"],
   default_branch: "main",
+  home_project_id: 1,
   github: forge === "github" ? "acme/demo" : null,
   trusted: [],
 });

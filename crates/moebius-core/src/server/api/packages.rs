@@ -993,7 +993,7 @@ mod tests {
         assert_eq!(
             git(
                 clone,
-                &["show", &format!("{branch}:repos/demo/Review.luau")]
+                &["show", &format!("{branch}:projects/demo/Review.luau")]
             )
             .unwrap(),
             "-- the review column"
@@ -1001,7 +1001,7 @@ mod tests {
         assert!(
             git(
                 clone,
-                &["show", &format!("{default}:repos/demo/Review.luau")]
+                &["show", &format!("{default}:projects/demo/Review.luau")]
             )
             .is_err()
         );
@@ -1057,20 +1057,24 @@ mod tests {
         assert_eq!(status, 200, "{updated}");
         assert_eq!(updated["version"], "1.1.0");
         assert_eq!(
-            git(clone, &["show", &format!("{branch}:repos/demo/Check.luau")]).unwrap(),
+            git(
+                clone,
+                &["show", &format!("{branch}:projects/demo/Check.luau")]
+            )
+            .unwrap(),
             "-- the check column"
         );
         assert!(
             git(
                 clone,
-                &["show", &format!("{branch}:repos/demo/Review.luau")]
+                &["show", &format!("{branch}:projects/demo/Review.luau")]
             )
             .is_err()
         );
         assert!(
             git(
                 clone,
-                &["show", &format!("{default}:repos/demo/Review.luau")]
+                &["show", &format!("{default}:projects/demo/Review.luau")]
             )
             .is_ok()
         );
@@ -1096,11 +1100,17 @@ mod tests {
             .await;
         assert_eq!(status, 200, "{removed}");
         assert!(removed["change"].as_i64().is_some());
-        assert!(git(clone, &["show", &format!("{branch}:repos/demo/Check.luau")]).is_err());
         assert!(
             git(
                 clone,
-                &["show", &format!("{default}:repos/demo/Check.luau")]
+                &["show", &format!("{branch}:projects/demo/Check.luau")]
+            )
+            .is_err()
+        );
+        assert!(
+            git(
+                clone,
+                &["show", &format!("{default}:projects/demo/Check.luau")]
             )
             .is_ok()
         );

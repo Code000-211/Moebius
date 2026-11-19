@@ -67,7 +67,7 @@ fn touched_since(dir: &Path, base: &str) -> Option<Vec<String>> {
 impl App {
     /// How the hint is asked for in `repository`: the server's settings with the repository's own over them.
     pub fn localize_for(&self, repository: &Repository) -> LocalizeConfig {
-        match self.project_file(repository, SETTINGS) {
+        match self.repository_file(repository, SETTINGS) {
             Some(text) => read_settings(&text, self.localize),
             None => self.localize,
         }

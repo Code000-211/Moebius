@@ -128,14 +128,15 @@ any route to any role that is not what its row says.
 | `PUT /v1/kinds/{id}` | owner | no |
 | `DELETE /v1/kinds/{id}` | owner | no |
 | `GET /v1/issues` | viewer | yes |
+| `GET /v1/projects/{id}/scripts` | viewer | yes |
+| `GET /v1/projects/{id}/scripts/{column}` | viewer | yes |
+| `PUT /v1/projects/{id}/scripts/{column}` | owner | yes |
+| `DELETE /v1/projects/{id}/scripts/{column}` | owner | yes |
 | `POST /v1/repositories` | owner | yes |
 | `PUT /v1/repositories/{id}` | owner | yes |
 | `DELETE /v1/repositories/{id}` | owner | yes |
 | `POST /v1/repositories/{id}/issues` | viewer | yes |
 | `GET /v1/repositories/{id}/issues` | viewer | yes |
-| `GET /v1/repositories/{id}/scripts/{column}` | viewer | yes |
-| `PUT /v1/repositories/{id}/scripts/{column}` | owner | yes |
-| `DELETE /v1/repositories/{id}/scripts/{column}` | owner | yes |
 | `GET /v1/repositories/{id}/settings` | viewer | yes |
 | `PUT /v1/repositories/{id}/settings/{file}` | owner | yes |
 | `DELETE /v1/repositories/{id}/settings/{file}` | owner | yes |
@@ -719,9 +720,12 @@ Every project, in the order they were made: `[ProjectView]`.
 ### `POST /v1/projects`
 
 An owner, or the Moebius agent, makes a project with no repository yet. Request body: `{"name": string, "key":
-string}`. The name is 1 to 80 characters, without a slash, a backslash or a control character, and does not start with a
-dot or a space. The project gets [its own files](#a-projects-own-files) at once. Response: the `ProjectView`. Errors:
-`409` for a key another project has or a repository has as its name, or a name another project has in any case; `422` for a key that is not one or a name that is not one.
+string}`. The name is 1 to 80 characters, without a control character or one of `/\<>:"|?*`, does not start with a dot
+or a space, does not end with a dot or a space, and is not a device name of Windows (`nul`, `com1`, ...), since it is
+also the folder of the project's settings, `projects/<name>/` of the harness configuration repository. The project gets
+[its own files](#a-projects-own-files) at once. Response: the `ProjectView`. Errors: `409` for a key another project has
+or a repository has as its name, or a name another project has in any case; `422` for a key that is not one or a name
+that is not one.
 
 ```sh
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
@@ -735,9 +739,57 @@ One project: the `ProjectView`. Errors: `404` for no such project.
 ### `PATCH /v1/projects/{id}`
 
 An owner, or the Moebius agent, renames a project. Request body: `{"name": string, "key"?: string}`; the key stays as it
-was, and `key` is accepted only when it is the project's own. Response: the `ProjectView`. Errors: `404` for no such
-project, `409` for a name another project has in any case, `422` for a name that is not one or a `key` that is not the
-project's (`a project keeps its key <key>: the keys of its cards would change`).
+was, and `key` is accepted only when it is the project's own. The project's settings move with it: `projects/<old
+name>/` becomes `projects/<new name>/` in one commit of the harness configuration repository, pushed to `origin` before
+the name changes (decision kind `rename_project`; see [harness
+configuration](harness-configuration.md#project-settings)). Response: the `ProjectView`. Errors: `404` for no such
+project, `409` for a name another project has in any case, for `projects/<new name>/` being there already, or a push
+that is refused; `422` for a name that is not one or a `key` that is not the project's (`a project keeps its key <key>:
+the keys of its cards would change`).
+
+### `GET /v1/projects/{id}/scripts`
+
+The script of every column of the project's board, left to right, each as `GET /v1/projects/{id}/scripts/{column}`
+answers it: `[{"column", "path", "source", "text"}]`. Errors: `404` no such project.
+
+### `GET /v1/projects/{id}/scripts/{column}`
+
+The script a column runs for the cards on a project's board: the project's own `<file>.luau`, a file of
+`projects/<project name>/` in the harness configuration repository (see [column
+scripts](column-scripts.md#project-overrides)), or the built-in one. `{column}` is the column's name as the board
+shows it, in any case and URL-encoded (`In%20progress`); `Ready`, the old name of `Not started`, finds that column too.
+Response: `{"column": string, "path": string, "source": "project" or "built-in", "text": string}`. `path` is where the
+project keeps its own script for the column, from the root of the harness configuration repository
+(`projects/demo/ready.luau` for `Not started` of the project `demo`; the files are `backlog`, `ready`, `code` for `In
+progress`, `review`, `merge` and `done`), whichever `source` is. Errors: `404` no such project or column.
+
+### `PUT /v1/projects/{id}/scripts/{column}`
+
+A person, or the Moebius agent, replaces the column's script for the project. Request: `{"text": string, "reason":
+string}`; `reason` is optional and is kept with the decision. The script is checked as `moebius check-script` checks it,
+in the column, against a made-up card, and refused when the check fails. Then `projects/<project name>/<file>.luau` is
+committed (`Change the <Column> column's script of <project>`) on the default branch of the harness configuration
+repository's clone and pushed to its `origin`, as an edit of an agent is. The decision is recorded (kind `edit_script`,
+decider `person` or `agent:Moebius`; its context has `project`, `column`, `path`, `text`, `change` and, when given,
+`reason`) and the event `script_changed` is sent. Text that changes nothing makes no commit and no decision. Response:
+the script as `GET` answers it, now with `source` `project`. Errors: `404` no such project or column; `409` the server
+has no `[harness]`, or its push is refused or its clone cannot be brought up to date: the commit is undone and the
+message is git's, with keys redacted; `422` the check failed, and the message is the check's (it starts with the
+script's file name), or the project's name cannot be a folder (a project from before such names were refused); `500` any
+other failure of git or the store.
+
+```sh
+curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"text": "function on_card(card) moebius.wait(\"held\") end", "reason": "hold the cards"}' \
+  "http://127.0.0.1:7171/v1/projects/1/scripts/Not%20started"
+```
+
+### `DELETE /v1/projects/{id}/scripts/{column}`
+
+Removes the project's own script for the column, committed and pushed the same way (`Use the built-in script for the
+<Column> column of <project>`, kind `edit_script`), so the column runs the built-in script again. Response: the script
+as `GET` answers it, now the built-in one. Errors: `404` no such project or column, or the project has no script of its
+own for the column; `409` and `500` as for `PUT`.
 
 ### The wiki
 
@@ -1006,52 +1058,22 @@ issues are listed too without it) and `blocked` (`true` for the issues an issue 
 others). The frontier of a map of tickets, the open sub-issues that nothing blocks and nobody claimed, is
 `?parent=<map>&state=open&blocked=false&claimed=false`. Errors: `404` no such repository.
 
-### `GET /v1/repositories/{id}/scripts/{column}`
-
-The script a column runs for a repository: the project's own `<file>.luau`, a file of `repos/<repository name>/` in the
-harness configuration repository (see [column scripts](column-scripts.md#repository-overrides)), or the built-in one. `{column}` is the column's name as the
-board shows it, in any case and URL-encoded (`In%20progress`); `Ready`, the old name of `Not started`, finds that column too. Response: `{"column": string, "path": string, "source":
-"repository" or "built-in", "text": string}`. `path` is where the project keeps its own script for the column, from the root of the harness configuration repository
-(`repos/demo/ready.luau` for `Not started` of the repository `demo`; the files are `backlog`, `ready`, `code` for `In progress`, `review`, `merge` and
-`done`), whichever `source` is. Errors: `404` no such repository or column.
-
-### `PUT /v1/repositories/{id}/scripts/{column}`
-
-A person, or the Moebius agent, replaces the column's script for the repository. Request: `{"text": string, "reason":
-string}`; `reason` is optional and is kept with the decision. The script is checked as `moebius check-script` checks it,
-in the column, against a made-up card, and refused when the check fails. Then `repos/<repository name>/<file>.luau` is
-committed (`Change the <Column> column's script of <repository>`) on the default branch of the harness configuration
-repository's clone and pushed to its `origin`, as an edit of an agent is. The decision is recorded (kind `edit_script`,
-decider `person` or `agent:Moebius`; its context has `repository`, `column`, `path`, `text`, `change` and, when given,
-`reason`) and the event `script_changed` is sent. Text that changes nothing makes no commit and no decision. Response:
-the script as `GET` answers it, now with `source` `repository`. Errors: `404` no such repository or column; `409` the server has
-no `[harness]`, or its push is refused or its clone cannot be brought up to date: the commit is undone and the message is
-git's, with keys redacted; `422` the check failed, and the message is the check's (it starts with the script's file
-name); `500` any other failure of git or the store.
-
-### `DELETE /v1/repositories/{id}/scripts/{column}`
-
-Removes the project's own script for the column, committed and pushed the same way (`Use the built-in script for the
-<Column> column of <repository>`, kind `edit_script`), so the column runs the built-in script again. Response: the script as `GET`
-answers it, now the built-in one. Errors: `404` no such repository or column, or the repository has no script of its own
-for the column; `409` and `500` as for `PUT`.
-
 ### `GET /v1/repositories/{id}/settings`
 
-The settings of the repository's project: the files of `repos/<repository name>/` in the harness configuration
-repository other than the column scripts (see [harness configuration](harness-configuration.md#project-settings)).
-Response: `{"path": string, "editable": bool, "files": [{"file": string, "exists": bool, "text": string}], "scripts":
-[string], "leftover": [string]}`. `path` is where they are (`repos/demo`). `editable` is false when the server has no
-`[harness]`, where nothing can be saved and no project has any file. `files` has an entry for each of `rules.md`,
+The settings of the repository, what is about its code: the files of `repos/<repository name>/` in the harness
+configuration repository (see [harness configuration](harness-configuration.md#repository-settings)); the column scripts
+are its projects' (`GET /v1/projects/{id}/scripts`).
+Response: `{"path": string, "editable": bool, "files": [{"file": string, "exists": bool, "text": string}],
+"leftover": [string]}`. `path` is where they are (`repos/demo`). `editable` is false when the server has no
+`[harness]`, where nothing can be saved and no repository has any file. `files` has an entry for each of `rules.md`,
 `review.md`, `checks`, `test-first` and `localize`, in that order, with the file's text (empty when it does
-not exist; a `test-first` that exists is empty and turns test first on). `scripts` lists the column scripts the project
-has, such as `ready.luau`. `leftover` lists the files of a `.moebius/` folder that the repository's default branch still
-has, which are not read: move them to the settings. Errors: `404` no such repository.
+not exist; a `test-first` that exists is empty and turns test first on). `leftover` lists the files of a `.moebius/`
+folder that the repository's default branch still has, which are not read: move them to the settings. Errors: `404` no such repository.
 
 ### `PUT /v1/repositories/{id}/settings/{file}`
 
 A person, or the Moebius agent, writes one of the files `rules.md`, `review.md`, `checks`, `test-first`
-and `localize` of the project. Request: `{"text": string, "reason": string}`; `reason` is optional and is kept with the
+and `localize` of the repository. Request: `{"text": string, "reason": string}`; `reason` is optional and is kept with the
 decision. A final new line is added to a text without one. `rules.md` is checked as `PUT /v1/rules` checks the server's
 (a `## ` line needs a name and no name may be given twice); text that
 fails is refused with `422` and a message that starts with the file's name, and nothing is committed. Otherwise the file
@@ -1060,14 +1082,14 @@ pushed to its `origin`. The decision is recorded (kind `edit_repository_rules` f
 decider `person` or `agent:Moebius`; its context has `repository`, `path`, `text`, `change` and, when given, `reason`)
 and the event `project_settings_changed` is sent. Text that changes nothing makes no commit and no decision. Response: `{"file",
 "exists", "text", "commit"}`, where `commit` is the short id of the commit, left out when nothing changed. Errors: `404`
-no such repository; `409` and `500` as for `PUT /v1/repositories/{id}/scripts/{column}` (`409` also when the server has
-no `[harness]`); `422` the file is not one of the six (column scripts have their own route), the text fails its check,
+no such repository; `409` and `500` as for `PUT /v1/projects/{id}/scripts/{column}` (`409` also when the server has
+no `[harness]`); `422` the file is not one of the five (column scripts are a project's, with their own route), the text fails its check,
 or the repository's name is a device name of Windows (`con`, `nul`, `aux`, `prn`, `com1` to `com9`, `lpt1` to `lpt9`, in
 any case and with any extension), for which no `repos/<name>/` directory can be made.
 
 ### `DELETE /v1/repositories/{id}/settings/{file}`
 
-Removes the file from the project, committed and pushed the same way (`Remove <file> of <repository>`, same kinds); with
+Removes the file from the repository's settings, committed and pushed the same way (`Remove <file> of <repository>`, same kinds); with
 `test-first` it turns test first off. Optional body `{"reason": string}`. Response: the file as `PUT` answers it, now with
 `exists` false. Errors: `404` no such repository or the project has no such file; otherwise as for `PUT`.
 
@@ -1094,7 +1116,7 @@ string}, "reason": string}`; `values` holds every setting by key, a key left out
 `reason`, optional, is kept with the decision. A key the plugin does not declare is refused, as is a value over 256 KiB
 and a line break in a setting whose `input` is `line`. The decision is recorded (kind `edit_project_settings`, decider
 `person`; its context has `repository`, `plugin` and `keys`, the keys that now have a value, joined with `, `; not the
-values). Values that change nothing record nothing. The values are the files `plugins/<plugin>/<key>` of the repository's [project settings](harness-configuration.md#project-settings), saved as one commit pushed to `origin` (the decision's context also has `change` and `path`), and the event `project_settings_changed` is sent with `file` `plugins/<plugin>`. A launcher gets the new values at the next launch. Response: the
+values). Values that change nothing record nothing. The values are the files `plugins/<plugin>/<key>` of the repository's [settings](harness-configuration.md#repository-settings), saved as one commit pushed to `origin` (the decision's context also has `change` and `path`), and the event `project_settings_changed` is sent with `file` `plugins/<plugin>`. A launcher gets the new values at the next launch. Response: the
 plugin's entry as `GET` answers it. Errors: `403` the Moebius agent asked: a launcher's settings say what a run may do,
 so only a person changes them; `404` no such repository, or no plugin of that name with project settings is running; `409` the server has no `[harness]` (the values are files of its repository), or `origin` refused the push;
 `422` a key, a value too long or a line break, as above.
@@ -1142,7 +1164,7 @@ are false. Errors: `404` no such repository or file (a directory is not one); `4
 A person, or the Moebius agent, writes the file, creating it and its directories when they are new. Request: `{"text":
 string, "message": string, "reason": string}`; `message` is the commit's message, `Update <path>` when it is left out or
 blank, and `reason`, optional, is kept with the decision. The file is committed on the default branch of Moebius's
-clone, the same way `PUT /v1/repositories/{id}/scripts/{column}` commits a script: for a repository on GitHub the clone
+clone, the same way `PUT /v1/projects/{id}/scripts/{column}` commits a script: for a repository on GitHub the clone
 is first brought up to date with `origin` and the branch is pushed with the installation's token (or the access token). The decision is
 recorded (kind `edit_file`, decider `person` or `agent:Moebius`; its context has `repository`, `path` and `change`, the
 commit's message) and the event `file_changed` is sent. Text that changes nothing makes no commit and no decision.
@@ -2062,7 +2084,7 @@ The rules page: what the guard refuses and why. Response:
   when it does not exist), `rules` the rules as the parser reads them. `error` is `null` unless the file cannot be used:
   it cannot be read, a `## ` line has no name, or a name is repeated (the repeat is dropped by the parser).
 - `repositories`: every repository, in the order of their ids, with the `rules.md` of its project (see [harness
-  configuration](harness-configuration.md#project-settings)), each with `repository` (its name), `repository_id` (to save
+  configuration](harness-configuration.md#repository-settings)), each with `repository` (its name), `repository_id` (to save
   the file with `PUT /v1/repositories/{id}/settings/rules.md`), its text (without the final new line), its rules and
   `error` as for `prose`. A repository without the file, or a server without `[harness]`, has an empty `text` and no
   rules, so that a client can add its first rule.
@@ -3194,10 +3216,10 @@ errors it addresses, from the `Cards: 48, 50` line that ends its commit message;
 (array of `Trial`, oldest first), `diff`, `edits`, `repository`, `change` and `at`.
 
 `kind` of a proposal: `harness` (a change to the harness configuration, on its branch), `settings` (a change to
-`moebius.toml`) or `repository` (a change to a project's own rules or column scripts, the files of `repos/<repository name>/` in the harness configuration repository); see
+`moebius.toml`) or `repository` (a change to a repository's own rules or the column scripts of its home project, the files of `repos/<repository name>/` and `projects/<project name>/` in the harness configuration repository); see
 [the Retro](harness-configuration.md#the-retro). For `settings` and `repository`, `diff` is a unified diff of what it
 changes, `edits` is what it sets and removes (`{"set", "remove"}`, as `PUT /v1/settings` takes it) or the new text of
-each file (`{"files": {"repos/<repository name>/<file>": text}}`), `repository` is the repository's id for `repository` (else null),
+each file (`{"files": {"repos/<repository name>/rules.md": text, "projects/<project name>/<file>.luau": text}}`), `repository` is the repository's id for `repository` (else null),
 and `change` is the id of the change of the harness configuration repository a merged `repository` proposal was offered as (else null). A `harness` proposal has
 an empty `diff`, `edits` `{}` and both null.
 
@@ -3518,8 +3540,8 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `milestone_changed` | A milestone was made or edited through the API. | `{"id", "name", "target_date", "description", "created_at"}` |
 | `milestone_removed` | A milestone was deleted through the API; its cards stay. | `{"milestone": id}` |
 | `file_changed` | A file of a repository was saved through the API. | `{"repository": id, "path": string}` |
-| `script_changed` | A column's script was saved or removed for a repository's project, through the API. | `{"repository": id, "column": string, "path": string (from the root of the harness configuration repository)}` |
-| `project_settings_changed` | A file of a project's settings other than a column's script was saved or removed, through the API. | `{"repository": id, "file": string}` |
+| `script_changed` | A column's script of a project's settings was saved or removed, through the API. | `{"project": id, "column": string, "path": string (from the root of the harness configuration repository)}` |
+| `project_settings_changed` | A file of a repository's settings was saved or removed, through the API. | `{"repository": id, "file": string}` |
 | `settings_moved` | The default branch of a repository still has a `.moebius/` folder, which is not read any more; said once for each repository while the server runs. | `{"repository": the repository's name, "message": string}` |
 | `card_added` | An issue became a card: created through the API or found on GitHub, GitLab or Forgejo. | The `Card`. |
 | `card_updated` | The title or body of a card changed: edited through the API, or changed on GitHub, GitLab or Forgejo; or it was held or released (`held`). | The `Card`. |

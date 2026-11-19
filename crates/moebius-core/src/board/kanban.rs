@@ -1,9 +1,9 @@
 //! The columns of a board and the default Kanban (spec 6): its scripts, built into the server from `kanban/`, and
-//! the scripts a project has in its settings (`repos/<repository name>/` of the harness configuration repository) in
+//! the scripts a project has in its settings (`projects/<project name>/` of the harness configuration repository) in
 //! their place.
 
 use crate::app::{App, columns};
-use crate::store::Repository;
+use crate::store::Project;
 
 /// A column and the script behind it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,9 +55,9 @@ pub fn built_in_script(file: &str) -> Option<&'static str> {
         .map(|(_, source)| *source)
 }
 
-/// The script file the project of `repository` has for `file`, if it overrides the built-in one.
-pub fn repository_script(app: &App, repository: &Repository, file: &str) -> Option<String> {
-    app.project_file(repository, file)
+/// The script file `project` has for `file`, if it overrides the built-in one.
+pub fn project_script(app: &App, project: &Project, file: &str) -> Option<String> {
+    app.project_file(project, file)
 }
 
 impl Default for Kanban {
@@ -94,7 +94,7 @@ mod tests {
 
     use crate::app::{App, OWNER_AUTHOR};
     use crate::board::Limits;
-    use crate::board::testing::{FakeHarness, column, setup_unreviewed, setup_with_harness};
+    use crate::board::testing::{FakeHarness, column, setup, setup_unreviewed, setup_with_harness};
     use crate::repos::git;
     use crate::store::Card;
 
@@ -384,7 +384,7 @@ mod tests {
         git(&clone, &["commit", "--quiet", "-m", path]).unwrap();
     }
 
-    /// Writes `text` as `file` of the settings of the project `demo`.
+    /// Writes `text` as `file` of the settings of the repository `demo`, or of its home project `demo` for a script.
     fn setting(app: &App, file: &str, text: &str) {
         crate::harness::repo::testing::put(app, "demo", file, text);
     }
@@ -514,6 +514,76 @@ mod tests {
         assert_eq!(column(&app, &card), "Ready to merge");
         let change = app.store.changes(repo).unwrap().pop().unwrap();
         assert_eq!(app.checks_of(&change).unwrap(), "success");
+    }
+
+    /// Makes the project `Ops`, which shares the repository `repo` with its home project `demo`, and puts `cards` on
+    /// its board.
+    fn on_a_second_project(app: &App, repo: i64, cards: &[&Card]) -> i64 {
+        let ops = app.add_project("Ops", "OPS").unwrap().id;
+        app.store.link_repository(ops, repo).unwrap();
+        for card in cards {
+            app.store.set_card_project(card.id, ops).unwrap();
+        }
+        ops
+    }
+
+    #[test]
+    fn two_projects_that_share_a_repository_run_their_own_scripts() {
+        let (_dir, app, engine, repo) = setup();
+        let home = app.create_issue(repo, "At home", "", OWNER_AUTHOR).unwrap();
+        let other = app
+            .create_issue(repo, "Elsewhere", "", OWNER_AUTHOR)
+            .unwrap();
+        let late = app.create_issue(repo, "Later", "", OWNER_AUTHOR).unwrap();
+        let ops = on_a_second_project(&app, repo, &[&other, &late]);
+        assert_eq!(app.card(other.id).unwrap().project_id, ops);
+        setting(
+            &app,
+            "ready.luau",
+            "function on_card(card) moebius.wait('the way of demo') end",
+        );
+        crate::harness::repo::testing::put(
+            &app,
+            "Ops",
+            "ready.luau",
+            "function on_card(card) moebius.wait('the way of Ops') end",
+        );
+        let step = engine.settle(home.id).unwrap();
+        assert_eq!(step.waiting.as_deref(), Some("the way of demo"));
+        let step = engine.settle(other.id).unwrap();
+        assert_eq!(step.waiting.as_deref(), Some("the way of Ops"));
+        // A column the project has no script for runs the built-in one, whatever the other project has.
+        setting(
+            &app,
+            "backlog.luau",
+            "function on_card(card) moebius.wait('only demo') end",
+        );
+        engine.settle(late.id).unwrap();
+        assert_eq!(column(&app, &late), "Not started");
+    }
+
+    // Unix only: the repository's checks run with `sh`.
+    #[cfg(unix)]
+    #[test]
+    fn a_card_of_another_project_is_checked_with_its_repositorys_checks() {
+        let harness = Arc::new(FakeHarness::without_review());
+        let (_dir, app, engine, repo) = setup_with_harness(None, harness);
+        setting(&app, "checks", "echo 'the checks of demo'\nexit 1\n");
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
+        on_a_second_project(&app, repo, &[&card]);
+        engine.settle(card.id).unwrap();
+        engine.tick(card.id).unwrap();
+        engine.tick(card.id).unwrap();
+        wait_for_checks(&app, &card);
+        engine.tick(card.id).unwrap();
+        assert_eq!(column(&app, &card), "In progress");
+        assert!(
+            note(&app, &card)
+                .unwrap()
+                .starts_with("The checks failed:\nthe checks of demo")
+        );
     }
 
     #[test]

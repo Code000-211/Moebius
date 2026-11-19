@@ -169,7 +169,7 @@ The hint a `code` run is given: the files of the repository that its issue is li
 | `localize.files` | integer | `10` | How many files the hint names at most, from 1 to 10. |
 
 A project decides for itself in the file `localize` of its settings (as `test-first` there turns test first on; see
-[harness configuration](harness-configuration.md#project-settings)), over these keys: lines that are empty or start with `#` are skipped, `on` and `off` turn the hint on and off,
+[harness configuration](harness-configuration.md#repository-settings)), over these keys: lines that are empty or start with `#` are skipped, `on` and `off` turn the hint on and off,
 and `files <n>` (1 to 10) says how many files it names. A line that says anything else is ignored. A project that wants no hint for its
 coding writes `off` there.
 
@@ -216,7 +216,7 @@ Token budgets that are not an agent's own (see `agents.<name>.token_budget`). Th
 
 ## `[checks]`
 
-A repository without a forge may name its own checks in the file `checks` of its project's settings, see
+A repository without a forge may name its own checks in the file `checks` of its settings (`repos/<repository name>/`), see
 [column scripts](column-scripts.md). The same limit holds for the reproduction test of a repository that works test
 first, on any forge. Both run with the server's environment cleared but for `PATH`, `HOME`, `USER`, `LANG` and
 `TMPDIR`.

@@ -1,5 +1,5 @@
-//! A project's settings from the desktop API: the files of `repos/<repository name>/` in the harness configuration
-//! repository other than the column scripts, listed, saved as commits pushed to its origin, checked first, removed, and
+//! A repository's settings from the desktop API: the files of `repos/<repository name>/` in the harness configuration
+//! repository (the column scripts are a project's, see `scripts.rs`), listed, saved as commits pushed to its origin, checked first, removed, and
 //! the `.moebius/` folder a repository still has listed as left over and never read.
 
 use std::path::{Path, PathBuf};
@@ -182,7 +182,11 @@ async fn the_files_of_a_project_are_listed_saved_as_commits_and_removed() {
             .iter()
             .all(|f| f["exists"] == false && f["text"] == "")
     );
-    assert_eq!(view["scripts"], json!([]));
+    assert_eq!(
+        view.get("scripts"),
+        None,
+        "the column scripts are a project's"
+    );
     assert_eq!(view["leftover"], json!([]));
 
     // A save is a commit in the harness configuration repository, pushed to its origin, and it is read back.
@@ -206,7 +210,7 @@ async fn the_files_of_a_project_are_listed_saved_as_commits_and_removed() {
         git(&clone, &["rev-parse", "--short", "HEAD"]).unwrap()
     );
     assert_eq!(
-        app.project_file(&repo, "review.md").unwrap(),
+        app.repository_file(&repo, "review.md").unwrap(),
         "Prefer small functions.\n"
     );
     let event = events.try_recv().unwrap();
@@ -259,7 +263,7 @@ async fn a_rules_file_that_fails_its_check_is_refused_and_nothing_is_committed()
         why.as_str().unwrap().starts_with("rules.md: line 3"),
         "{why}"
     );
-    // A column's script has its own route, and no other file is a file of the settings, the lint plan of the removed
+    // A column's script is a project's, with its own route, and no other file is a file of the settings, the lint plan of the removed
     // lens included.
     for file in ["ready.luau", "notes.md", "agents", "lint.toml"] {
         let (status, why) = setup.put(repo.id, file, "x").await;

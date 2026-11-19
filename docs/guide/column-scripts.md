@@ -20,34 +20,46 @@ The exact contract is in [`docs/reference/column-scripts.md`](../reference/colum
    table: `moebius.move`, `moebius.wait`, `moebius.ask`, `moebius.stuck`, `moebius.start_run` and the rest. Each run of
    a script starts from nothing, so keep no state in globals.
 4. Check it with `moebius check-script` (see [How to try a script](#how-to-try-a-script)) until it does what you want.
-5. Save it as `<script>` in the repository's settings, `repos/<repository name>/` of the harness configuration repository
+5. Save it as `<script>` in the project's settings, `projects/<project name>/` of the harness configuration repository
    (see below). Only what is committed to that repository's default branch counts.
 6. The script is read again on every run, so the next tick (`board.tick_ms`, two seconds by default) uses it. There is
    nothing to restart.
 
 ### Where the file goes
 
-A script is a file of the repository's settings: `repos/<repository name>/<script>` in the harness configuration
-repository. Two folders are called `harness`: the one next to `moebius.toml` that `moebius init` made is the
+A script is a file of the project's settings: `projects/<project name>/<script>` in the harness configuration
+repository. It is the project's, not a repository's, so two projects that share a repository can run different
+scripts; a card runs the scripts of the project whose board it is on. What is about the code stays with each repository,
+in `repos/<repository name>/`: its checks, test first, review notes and rules, the same in every project.
+
+Two folders are called `harness`: the one next to `moebius.toml` that `moebius init` made is the
 repository's *origin* (see [Running Moebius](running-moebius.md)), the one you commit to by hand; the server keeps its
 own clone of it in `<data_dir>/harness` and never has you edit that. Nothing is read from a `.moebius/` folder of the repository itself any more.
-The easiest way is the board, below, or the API: `PUT /v1/repositories/{id}/scripts/{column}` checks the script and
+The easiest way is the board, below, or the API: `PUT /v1/projects/{id}/scripts/{column}` checks the script and
 commits it there. By hand, commit the file to that repository on its default branch; the server fetches it every 30
-seconds and reads it fresh at every run of the script. The repository's name is in the snapshot
-(`repository.name`).
+seconds and reads it fresh at every run of the script. The project's name is in `GET /v1/projects`; a repository's
+home project, made with it, has the repository's name at first.
 
 ```sh
-cp ready.luau harness/repos/demo/ready.luau   # "demo" is the repository's name
-git -C harness add repos/demo/ready.luau
+mkdir -p harness/projects/demo
+cp ready.luau harness/projects/demo/ready.luau   # "demo" is the project's name
+git -C harness add projects/demo/ready.luau
 git -C harness commit -m "Start large cards alone"
 ```
+
+**Moving from `repos/`.** Before projects, the scripts were a repository's settings, `repos/<repository name>/<script>`.
+The server moves each to the settings of the repository's home project when it starts and after every refresh, in one
+commit pushed to `origin` ("Move the column scripts of each repository to its project"), so a board works as it did. A
+script that lands in `repos/` later, from a proposal or package offered before and merged since, moves the same way and
+replaces the project's. Renaming a project moves its folder with it.
 
 A server without `[harness]` has no place for settings, so every column runs the built-in script. A fetch that fails is
 reported as a `harness_error` event.
 
 **Moving from `.moebius/`.** Earlier versions read these files from the repository's own `.moebius/` folder. Move them:
 the files of `.moebius/` become the files of `repos/<repository name>/` in the harness configuration repository, with the
-same names (`rules.md`, `review.md`, `checks`, `test-first`, `localize` and the `.luau` scripts), and
+same names (`rules.md`, `review.md`, `checks`, `test-first` and `localize`; the `.luau` scripts go to
+`projects/<project name>/`), and
 `.moebius/reproduce` goes away (the Coder names the test in its summary now). Nothing is imported. A repository whose
 default branch still has a `.moebius/` folder is told so once in the log and with the event `settings_moved`, and
 `GET /v1/repositories/{id}/settings` lists its files as `leftover`, and the board and the project page of the
@@ -61,9 +73,9 @@ settings.
 
 In the web app each column header has a pencil that opens the column's script in an editor. Save checks the script
 the way `moebius check-script` does and refuses it with the check's message when it fails; otherwise it commits
-`repos/<repository name>/<script>` to the harness configuration repository and pushes it (a refused push is shown and
+`projects/<project name>/<script>` to the harness configuration repository and pushes it (a refused push is shown and
 undone). "Use the built-in script" removes the file again. The speech bubble opens a chat with the Moebius agent about
-the script. The same is `PUT /v1/repositories/{id}/scripts/{column}` in the [desktop API](desktop-api.md),
+the script. The same is `PUT /v1/projects/{id}/scripts/{column}` in the [desktop API](desktop-api.md),
 which the Moebius agent may call too (`"$MOEBIUS" api PUT ...`).
 
 ## Examples
@@ -333,7 +345,7 @@ tick. Follow `GET /v1/events` (see the [desktop API](desktop-api.md)) to see `bo
 | What happens | How you see it |
 |---|---|
 | The script does not compile, has no `on_card`, raises an error or runs longer than 2 seconds. | The event `board_error` with `{card, message}` at every tick; the message starts with the script's file name. The card stays where it is, and its `waiting` in the snapshot says `script error: <message>` until the script runs cleanly again. The server does not fall back to the default script. The event is not stored: you see it only on a connected `GET /v1/events`. |
-| The override has no effect. | It is not committed to the default branch of the harness configuration repository, is in the wrong place (it must be `repos/<repository name>/<script>`, the repository's name as the snapshot shows it), the server has no `[harness]`, or the harness repository was changed less than 30 seconds ago elsewhere. The built-in script runs and nothing complains. Check with `git -C <data_dir>/harness show HEAD:repos/<repository name>/<script>`. |
+| The override has no effect. | It is not committed to the default branch of the harness configuration repository, is in the wrong place (it must be `projects/<project name>/<script>`, the project's name as `GET /v1/projects` shows it), the server has no `[harness]`, or the harness repository was changed less than 30 seconds ago elsewhere. The built-in script runs and nothing complains. Check with `git -C <data_dir>/harness show HEAD:projects/<project name>/<script>`. |
 | `no column "<name>"` | `moebius.move` got a name that is not exactly one of the six columns, such as `In Progress`. |
 | `no agent named <name>` | `moebius.start_run` named an agent that is not in `moebius.toml`. Test with `moebius.has_agent(name)` first. |
 | Runs pile up. | `moebius.start_run` does not look at `run_limit` and starts a run every time it is called. A script that calls it on every tick must wait while the card's latest run is going, as `code.luau` does. |

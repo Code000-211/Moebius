@@ -144,7 +144,7 @@ fn tool_call_question(
     }
     let project = repository
         .as_ref()
-        .and_then(|repository| app.project_file(repository, "rules.md"));
+        .and_then(|repository| app.repository_file(repository, "rules.md"));
     match rules::applicable(rules_file, project.as_deref()) {
         Ok(rules) => context.insert("rules".into(), rules::to_markdown(&rules)),
         Err(error) => context.insert("rules_error".into(), error.to_string()),

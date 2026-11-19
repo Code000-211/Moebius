@@ -357,7 +357,7 @@ mod tests {
         assert_eq!(saved.settings[1].value, "");
         assert_eq!(stored(&app, repo), values);
         // It is a file of the project's settings, a commit of the harness configuration repository.
-        let file = app.harness_repo().unwrap().project_dir("demo");
+        let file = app.harness_repo().unwrap().repository_dir("demo");
         assert_eq!(
             std::fs::read_to_string(file.join("plugins/box/dockerfile")).unwrap(),
             "FROM debian\n"

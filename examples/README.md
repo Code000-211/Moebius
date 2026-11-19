@@ -5,7 +5,7 @@ Each example is small, runs in CI and is meant to be copied. The contracts they 
 
 - [`scripts/ready-large-cards-alone.luau`](scripts/ready-large-cards-alone.luau): a column script. A Not started script that
   starts a card whose title contains `[large]` only when no run is going. Save it as the project's `ready.luau`
-  (`repos/<repository name>/ready.luau` of the harness configuration repository). Tested as a project's override by `crates/moebius-core/tests/examples.rs`. See
+  (`projects/<project name>/ready.luau` of the harness configuration repository). Tested as a project's override by `crates/moebius-core/tests/examples.rs`. See
   [column scripts](../docs/reference/column-scripts.md).
 - [`rules.md`](rules.md): three rules in prose. Point `rules_file` at it, or copy it to the project's `rules.md`
   (`repos/<repository name>/rules.md` of the harness configuration repository). Parsed by the same test. See [rules](../docs/reference/rules.md).

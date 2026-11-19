@@ -15,6 +15,7 @@ function card(extra: Partial<Card> = {}): Card {
   return {
     id: 7,
     repository_id: 1,
+    project_id: 1,
     number: 12,
     title: "Fix the parser",
     body: "",

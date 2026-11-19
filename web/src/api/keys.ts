@@ -57,9 +57,10 @@ export const keys = {
   followers: (card: number) => ["card", card, "followers"] as const,
   /** The notices of the person signed in, which `notice_added` and `notice_read` make stale. */
   notices: ["notices"] as const,
-  /** The script of a column; `script_changed` makes all of them stale. */
+  /** The scripts of a project's columns; `script_changed` makes all of them stale. */
   scripts: ["script"] as const,
-  script: (repository: number, column: string) => ["script", repository, column] as const,
+  projectScripts: (project: number) => ["script", project] as const,
+  script: (project: number, column: string) => ["script", project, column] as const,
   chats: ["chats"] as const,
   /** The person's pins and recent places. */
   places: ["places"] as const,

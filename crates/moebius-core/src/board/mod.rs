@@ -30,9 +30,7 @@ mod testing;
 pub use card::{Review, latest_review};
 pub use dry_run::check_script;
 pub use engine::{BoardError, Engine, Step};
-pub use kanban::{
-    Column, Kanban, built_in_script, column_named, repository_script, resolve_column,
-};
+pub use kanban::{Column, Kanban, built_in_script, column_named, project_script, resolve_column};
 pub use limits::Limits;
 pub use runs::{
     AgentInfo, CardRuns, ChatRuns, ImproveRuns, Runs, StartError, Tui, Variant, may_start,

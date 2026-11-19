@@ -154,28 +154,33 @@ export function deleteCard(card: number): Promise<Card> {
   return del<Card>(`/v1/cards/${card}`);
 }
 
-/** The script a column runs for a repository. The column's name may have spaces. */
-export function script(repository: number, column: string): Promise<ScriptDetail> {
-  return get<ScriptDetail>(`/v1/repositories/${repository}/scripts/${encodeURIComponent(column)}`);
+/** The script a column runs for the cards of a project. The column's name may have spaces. */
+export function script(project: number, column: string): Promise<ScriptDetail> {
+  return get<ScriptDetail>(`/v1/projects/${project}/scripts/${encodeURIComponent(column)}`);
+}
+
+/** The script of every column of a project's board, left to right: its own or the built-in one. */
+export function projectScripts(project: number): Promise<ScriptDetail[]> {
+  return get<ScriptDetail[]>(`/v1/projects/${project}/scripts`);
 }
 
 /**
- * Replaces the column's script for the repository. The server checks it as `moebius check-script` does and answers
+ * Replaces the column's script for the project. The server checks it as `moebius check-script` does and answers
  * 422 with the check's message when it fails.
  */
 export function saveScript(
-  repository: number,
+  project: number,
   column: string,
   text: string,
   reason = "",
 ): Promise<ScriptDetail> {
-  return put<ScriptDetail>(`/v1/repositories/${repository}/scripts/${encodeURIComponent(column)}`, {
+  return put<ScriptDetail>(`/v1/projects/${project}/scripts/${encodeURIComponent(column)}`, {
     text,
     reason,
   });
 }
 
-/** Removes the repository's own script for the column, so the column runs the built-in one again. */
-export function deleteScript(repository: number, column: string): Promise<ScriptDetail> {
-  return del<ScriptDetail>(`/v1/repositories/${repository}/scripts/${encodeURIComponent(column)}`);
+/** Removes the project's own script for the column, so the column runs the built-in one again. */
+export function deleteScript(project: number, column: string): Promise<ScriptDetail> {
+  return del<ScriptDetail>(`/v1/projects/${project}/scripts/${encodeURIComponent(column)}`);
 }

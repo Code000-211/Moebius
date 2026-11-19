@@ -1,20 +1,21 @@
 ---
 name: moebius-workflows
-description: Write or change Moebius column scripts (Luau) and the Kanban in a repository's settings (repos/<repository name>/ of the harness configuration repository). Use it when the person wants cards of a repository treated differently - held back, approved first, started with another agent, given up sooner, checked or reviewed another way - or asks for a column script, a Kanban, the checks or the rules of a repository.
+description: Write or change Moebius column scripts (Luau) and the Kanban in a project's settings (projects/<project name>/ of the harness configuration repository), and a repository's checks and rules (repos/<repository name>/). Use it when the person wants cards of a project or a repository treated differently - held back, approved first, started with another agent, given up sooner, checked or reviewed another way - or asks for a column script, a Kanban, the checks or the rules of a repository.
 ---
 
 # Column scripts and the Kanban
 
-Goal: a repository's cards do what the person wants, with the smallest change to the default Kanban, checked before
+Goal: a project's cards do what the person wants, with the smallest change to the default Kanban, checked before
 it is offered.
 
 ## What the Kanban is
 
-Every board has six columns, each run by one Luau script; a repository replaces a column's script with a file of its
-settings, `repos/<repository name>/` of the harness configuration repository (never a `.moebius/` folder in the
-repository: Moebius reads none):
+Every board has six columns, each run by one Luau script; a project replaces a column's script with a file of its
+settings, `projects/<project name>/` of the harness configuration repository (never a `.moebius/` folder in a
+repository: Moebius reads none). The script of a card's column is the one of the project whose board it is on, so two
+projects that share a repository can work differently:
 
-| Column | File in the repository's settings |
+| Column | File in the project's settings |
 |---|---|
 | `Backlog` | `backlog.luau` |
 | `Not started` | `ready.luau` |
@@ -23,22 +24,23 @@ repository: Moebius reads none):
 | `Ready to merge` | `merge.luau` |
 | `Done` | `done.luau` |
 
-The whole Kanban is a set of these files, plus `checks` (the command that checks a change, without a forge) and
-`rules.md` (rules for this repository's runs). Moebius reads them from the default branch of the harness configuration
+The whole Kanban is a set of these files. What is about the code stays with each repository, the same in every project,
+in `repos/<repository name>/`: `checks` (the command that checks a change, without a forge) and `rules.md` (rules for
+the repository's runs). Moebius reads them from the default branch of the harness configuration
 repository, and your saves through the API are commits there, so they work at once.
 
 ## Steps
 
 1. Get the script the column runs now; an override replaces the whole script, so start from it:
-   `"$MOEBIUS" api GET /v1/repositories/<id>/scripts/Not%20started --json` gives its `text` (the repository id is in
-   `"$MOEBIUS" repos`).
+   `"$MOEBIUS" api GET /v1/projects/<id>/scripts/Not%20started --json` gives its `text` (the project id is in
+   `"$MOEBIUS" api GET /v1/projects`).
 2. Write the script to a scratch file in your worktree (such as `ready.luau`) with the one change. Keep `function on_card(card)`; keep what the
    default does that the person did not ask to change (blockers, budgets, the run limit, the round limit).
 3. Check every path:
    `"$MOEBIUS" check-script ready.luau --column "Not started"`, again with `--title "[large] ..."` or
    `--author someone` for the other branches. It prints what the script did (`moved the card to In progress`,
    `waited: ...`) or the error, with exit status 1.
-4. Save it: `jq -Rs '{text: .}' < ready.luau > body.json` and `"$MOEBIUS" api PUT /v1/repositories/<id>/scripts/Not%20started
+4. Save it: `jq -Rs '{text: .}' < ready.luau > body.json` and `"$MOEBIUS" api PUT /v1/projects/<id>/scripts/Not%20started
    --body body.json` (see the `moebius-configure` skill). The server checks it again, commits it to the harness
    configuration repository and uses it from the next tick. Do not leave the file in the worktree: nothing reads it there.
 

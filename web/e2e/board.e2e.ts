@@ -1103,7 +1103,7 @@ describe("the dock", () => {
       await dock().getByText("Run 1 started: Coder, code").waitFor();
       const run = dock().getByRole("link", { name: "View run 1", exact: true });
       expect(await run.getAttribute("href")).toBe("/runs/1");
-      await dock().getByText("repos/demo/code.luau · built in").waitFor();
+      await dock().getByText("projects/demo/code.luau · built in").waitFor();
       await dock().getByText('moebius.wait("nothing to do in In progress")').waitFor();
       await page
         .getByRole("region", { name: /^Properties of #/ })
@@ -1113,7 +1113,7 @@ describe("the dock", () => {
       await dock().getByText("Live", { exact: true }).waitFor();
 
       await dock().getByRole("link", { name: "Open the script" }).click();
-      await page.waitForURL("**/board/1/scripts/In%20progress");
+      await page.waitForURL("**/board/1/scripts/In%20progress?project=1");
       await page.getByRole("heading", { name: "Script of In progress" }).waitFor();
       await page.getByText("built in").waitFor();
       await page.getByText("-- The In progress column").waitFor();

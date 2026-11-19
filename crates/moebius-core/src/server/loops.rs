@@ -228,12 +228,14 @@ async fn poll_every(
 }
 
 /// Refreshes the clones of repositories without a forge, of the harness configuration repository and of the wiki every
-/// [`PLAIN_REFRESH`] until the future is dropped, and tells each repository that still has a `.moebius/` folder, once.
+/// [`PLAIN_REFRESH`] until the future is dropped, moves the column scripts a repository's settings still have to its
+/// project, and tells each repository that still has a `.moebius/` folder, once.
 pub(super) async fn refresh(server: Arc<Server>) {
     every(server, PLAIN_REFRESH, |server| {
         server.refresh_plain_repositories();
         server.refresh_harness_repository();
         server.refresh_wiki();
+        server.app.move_scripts_to_projects();
         server.app.warn_about_old_settings();
     })
     .await

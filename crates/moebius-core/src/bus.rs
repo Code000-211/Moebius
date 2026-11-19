@@ -205,8 +205,9 @@ pub enum Event {
         run: i64,
         status: String,
     },
+    /// A column's script of a project's settings was written or removed.
     ScriptChanged {
-        repository: i64,
+        project: i64,
         column: String,
         path: String,
     },
@@ -214,7 +215,7 @@ pub enum Event {
         repository: i64,
         path: String,
     },
-    /// A file of a project's settings other than a column's script was written or removed.
+    /// A file of a repository's settings was written or removed.
     ProjectSettingsChanged {
         repository: i64,
         file: String,
@@ -830,11 +831,11 @@ mod tests {
             ),
             (
                 Event::ScriptChanged {
-                    repository: 2,
+                    project: 2,
                     column: "Not started".into(),
-                    path: "repos/demo/ready.luau".into(),
+                    path: "projects/demo/ready.luau".into(),
                 },
-                json!({"kind": "script_changed", "data": {"repository": 2, "column": "Not started", "path": "repos/demo/ready.luau"}}),
+                json!({"kind": "script_changed", "data": {"project": 2, "column": "Not started", "path": "projects/demo/ready.luau"}}),
             ),
             (
                 Event::ProjectSettingsChanged {

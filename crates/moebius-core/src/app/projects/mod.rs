@@ -1,7 +1,8 @@
 //! Projects (ADR 0019): making one with a name and a key, renaming it (its key stays), and what the Projects page shows
 //! of each: its repositories, its members and its open cards. The records are in `store::projects`; the settings of a
-//! project, the files the harness configuration repository keeps for it, are in `settings`; the project's own store of
-//! files, where the cards of a project without a repository are worked on, is in `files`.
+//! project and of a repository, the files the harness configuration repository keeps for them, are in `settings`
+//! (renaming a project moves its settings with it); the project's own store of files, where the cards of a project
+//! without a repository are worked on, is in `files`.
 
 mod files;
 mod settings;
@@ -10,6 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{App, AppError, Result};
 use crate::bus::Event;
+use crate::decide::Actor;
+use crate::harness::repo::valid_project_folder;
 use crate::store::{KEY_LIMIT, Project, StoreError, is_key};
 
 /// The most characters a project's name has.
@@ -52,21 +55,18 @@ pub struct ProjectView {
     pub kinds: Vec<i64>,
 }
 
-/// Refuses a name for a project: empty, longer than [`NAME_LIMIT`], starting with a dot, or with a slash, a backslash
-/// or a control character, since the name is also a folder of the harness configuration repository.
+/// Refuses a name for a project: empty, longer than [`NAME_LIMIT`], starting with a dot or a space, ending with a dot
+/// or a space, with a slash, a backslash, a control character or one of `<>:"|?*`, or a device name of Windows, since
+/// the name is also the folder `projects/<name>/` of the harness configuration repository on every system.
 fn check_name(name: &str) -> Result<()> {
-    let plain = !name.is_empty()
-        && name.chars().count() <= NAME_LIMIT
-        && !name.starts_with('.')
-        && !name
-            .chars()
-            .any(|c| c == '/' || c == '\\' || c.is_control());
+    let plain = name.chars().count() <= NAME_LIMIT && valid_project_folder(name);
     if plain && name.trim() == name {
         Ok(())
     } else {
         Err(AppError::Invalid(format!(
-            "{name:?} is not a project name: 1 to {NAME_LIMIT} characters, no slash, backslash or control character, \
-             not starting with a dot or a space"
+            "{name:?} is not a project name: 1 to {NAME_LIMIT} characters, none of / \\ < > : \" | ? * or a control \
+             character, not starting with a dot or a space, not ending with a dot or a space, and not a device name of \
+             Windows such as nul"
         )))
     }
 }
@@ -120,9 +120,17 @@ impl App {
         self.project_view_of(project.id)
     }
 
-    /// Renames the project `id`; its key stays as it was, and a `key` that is not the project's own is refused. A name
-    /// another project has, in any case, is refused.
-    pub fn rename_project(&self, id: i64, name: &str, key: Option<&str>) -> Result<ProjectView> {
+    /// `by` renames the project `id`; its key stays as it was, and a `key` that is not the project's own is refused. A
+    /// name another project has, in any case, is refused. The project's settings move to `projects/<name>/` in a commit
+    /// of the harness configuration repository, and the record changes while that repository is still locked; if the
+    /// record cannot change, the folder is moved back.
+    pub fn rename_project(
+        &self,
+        by: &Actor,
+        id: i64,
+        name: &str,
+        key: Option<&str>,
+    ) -> Result<ProjectView> {
         let project = self.project(id)?;
         if key.is_some_and(|key| key != project.key) {
             return Err(AppError::Invalid(format!(
@@ -141,9 +149,19 @@ impl App {
         {
             return Err(AppError::Exists(format!("a project named {name}")));
         }
-        self.store
-            .rename_project(id, name)
-            .map_err(|e| taken(e, &format!("a project named {name}")))?;
+        let rename = || {
+            self.store
+                .rename_project(id, name)
+                .map(drop)
+                .map_err(|e| taken(e, &format!("a project named {name}")))
+        };
+        match self.harness_repo.get() {
+            Some(harness) => harness.move_project(self, by, (&project.name, name), rename)?,
+            None => {
+                rename()?;
+                None
+            }
+        };
         let renamed = self.project(id)?;
         self.bus.publish(Event::ProjectChanged(renamed.clone()));
         self.project_view(renamed)
@@ -253,6 +271,11 @@ mod tests {
             "a/b",
             "a\\b",
             "tab\there",
+            "a:b",
+            "Shop?",
+            "Shop.",
+            "nul",
+            "COM1.txt",
             &"x".repeat(81),
         ] {
             let refused = app.add_project(name, "OTHER").unwrap_err();
@@ -269,7 +292,9 @@ mod tests {
         let (_dir, app) = app();
         let shop = app.add_project("Storefront", "SHOP").unwrap();
         app.add_project("Marketing", "MKT").unwrap();
-        let renamed = app.rename_project(shop.id, "Shop", None).unwrap();
+        let renamed = app
+            .rename_project(&Actor::first_owner(), shop.id, "Shop", None)
+            .unwrap();
         assert_eq!(
             (renamed.name.as_str(), renamed.key.as_str()),
             ("Shop", "SHOP")
@@ -277,17 +302,17 @@ mod tests {
         assert_eq!(app.project_view_of(shop.id).unwrap().key, "SHOP");
         // Its own name in another case is no clash; another project's is.
         assert_eq!(
-            app.rename_project(shop.id, "SHOP", Some("SHOP"))
+            app.rename_project(&Actor::first_owner(), shop.id, "SHOP", Some("SHOP"))
                 .unwrap()
                 .name,
             "SHOP"
         );
         assert!(matches!(
-            app.rename_project(shop.id, "marketing", None),
+            app.rename_project(&Actor::first_owner(), shop.id, "marketing", None),
             Err(AppError::Exists(_))
         ));
         assert!(matches!(
-            app.rename_project(shop.id, "Shop", Some("SHOPS")),
+            app.rename_project(&Actor::first_owner(), shop.id, "Shop", Some("SHOPS")),
             Err(AppError::Invalid(_))
         ));
         // A name taken between the check and the write is still a taken name, not a failure of the server.
@@ -299,7 +324,7 @@ mod tests {
             AppError::Exists(_)
         ));
         assert!(matches!(
-            app.rename_project(99, "Gone", None),
+            app.rename_project(&Actor::first_owner(), 99, "Gone", None),
             Err(AppError::NotFound(_))
         ));
     }

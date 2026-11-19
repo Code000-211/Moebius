@@ -33,8 +33,8 @@ allowed and, where it is not obvious, why. [`examples/rules.md`](../../examples/
 Two files, read afresh for every tool call:
 
 1. The server's file, named by `rules_file` in the configuration (by default `rules.md` next to `moebius.toml`), or the `rules.md` of the [harness configuration](harness-configuration.md) when `[harness]` is set. A missing file means no server rules.
-2. The project's `rules.md`, the file `repos/<repository name>/rules.md` of the harness configuration repository (see
-   [harness configuration](harness-configuration.md#project-settings)), read from the default branch of its clone. A file
+2. The repository's `rules.md`, the file `repos/<repository name>/rules.md` of the harness configuration repository (see
+   [harness configuration](harness-configuration.md#repository-settings)), read from the default branch of its clone. A file
    that is not committed to that branch is not read, and a server without `[harness]` has no project rules. A repository's
    own `.moebius/rules.md` is not read. The repository is the one of the run's card or, for a run without a card (a chat or a research run), the one the run
    works in. A run with neither has no project rules.
