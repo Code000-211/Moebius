@@ -13,7 +13,7 @@
 //! the branches of the Retro, chats and trials, `repositories` reads and edits the settings of a repository
 //! (`repos/<name>/`), `projects` those of a project (`projects/<name>/`) and moves them,
 //! `create` makes a new repository, `skill_files` reads and edits a
-//! skill's files beside its `SKILL.md`, `offer` offers files written on a branch as a change, and `packages` makes the
+//! skill's files beside its `SKILL.md`, `templates` reads and edits the templates for issues and pages, `offer` offers files written on a branch as a change, and `packages` makes the
 //! branches that install, update and remove Pi packages.
 
 mod branches;
@@ -25,6 +25,7 @@ mod projects;
 mod read;
 mod repositories;
 mod skill_files;
+mod templates;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
@@ -46,6 +47,7 @@ pub use read::{
 pub(crate) use repositories::testing;
 pub use repositories::{FILES as REPOSITORY_FILES, is_repository_file};
 pub use skill_files::SkillFileText;
+pub use templates::IssueTemplate;
 
 /// The harness configuration repository's clone.
 pub struct HarnessRepo {

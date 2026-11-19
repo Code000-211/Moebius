@@ -123,6 +123,12 @@ any route to any role that is not what its row says.
 | `PUT /v1/requests/{id}` | member | no |
 | `POST /v1/requests/{id}/accept` | member | no |
 | `POST /v1/requests/{id}/decline` | member | no |
+| `POST /v1/wiki/from-template` | member | no |
+| `GET /v1/templates` | viewer | yes |
+| `PUT /v1/templates/issues/{kind}` | member | no |
+| `DELETE /v1/templates/issues/{kind}` | member | no |
+| `PUT /v1/templates/pages/{name}` | member | no |
+| `DELETE /v1/templates/pages/{name}` | member | no |
 | `GET /v1/milestones` | viewer | yes |
 | `POST /v1/milestones` | member | no |
 | `GET /v1/milestones/{id}` | viewer | yes |
@@ -978,6 +984,39 @@ A member declines a request that is `grilling` or `drafted`. Request: `{"reason"
 requester is told the reason in the Inbox's Mentions tab and reads it in the request. Response: the `IntakeRequest`,
 `declined`. Errors: `404`; `422` for a request that was decided already.
 
+
+### `POST /v1/wiki/from-template`
+
+A member makes a page from a page [template](#templates). Request body: `{"template": string, "path": string}`. The page
+at `path` has the template's text and is a commit in the wiki like any write. Response: the `PageView`. Errors: `404` for
+no such template, `409` for a page at `path` already or a server without a wiki, `422` for a path that is not a page's.
+
+### Templates
+
+Templates are kept in the harness configuration repository (see [harness configuration](harness-configuration.md#templates)):
+an issue template for each kind of issue, and page templates for the wiki. Everyone reads them; a person who is a member
+edits them, and an edit is a commit pushed to `origin` and recorded as a decision (kind `edit_template`, decider
+`person`). A server without a harness configuration repository lists none (`editable` false) and refuses an edit with `422`.
+
+### `GET /v1/templates`
+
+`{"editable": bool, "issues": [{"kind": text, "title": text, "body": text, "fields": {name: value}}], "pages": [{"name":
+text, "text": text}]}`.
+
+### `PUT /v1/templates/issues/{kind}`
+
+Sets the template of a kind (matched in any case). Request body: `{"title": text, "body": text, "fields": {name: value}}`,
+each optional. Every field named has to be one of the kind's. Response: the template as listed, with `commit` (the short id;
+left out when nothing changed). Errors: `404` for no such kind, `422` for a field the kind lacks.
+
+### `DELETE /v1/templates/issues/{kind}`
+
+Deletes it; response `{"commit": text}`. `404` when the kind has no template.
+
+### `PUT /v1/templates/pages/{name}` and `DELETE`
+
+Sets or deletes a page template. A name is letters, digits, `-` and `_`, up to 64 (`422` otherwise). Request body:
+`{"text": text}`. Response: `{"name", "text", "commit"}`; a delete answers `{"commit"}` and `404` for no such template.
 ### Milestones
 
 A milestone (ADR 0019) is a goal of the organisation, not of a project: it has a name (unique in any case, 1 to 80
@@ -1123,8 +1162,12 @@ way a confirmed grilling opens its issues, and the card gets the issue's number 
 existing. The card is `confirmed`, since a person wrote it, and so moves on from `Backlog` without approval, whatever the
 repository's `trusted` list says.
 
-Request: `{"title": "...", "body": "...", "parent": number, "labels": [text], "blocked_by": [number]}`. `title` is
-required and must not be empty or blank; the others are optional. `parent` and `blocked_by` are issue numbers of the same
+Request: `{"title": "...", "body": "...", "parent": number, "labels": [text], "blocked_by": [number], "kind": text,
+"fields": {name: value}, "use_template": bool}`. `title` is required and must not be empty or blank (unless `use_template`
+supplies one); the others are optional. `kind` and `fields` are set as `PUT /v1/cards/{id}/kind` and `/fields` do, after
+the issue is made, so a kind the project does not offer or a value a field refuses is a `warnings` entry. With
+`use_template` (which needs `kind`), the [template](#templates) of the kind fills an empty `title` or `body` and the fields
+`fields` does not give; `404` when the kind has no template. `fields` without `kind` is `422`. `parent` and `blocked_by` are issue numbers of the same
 repository and are set as `PUT /v1/cards/{id}/parent` and `POST /v1/cards/{id}/blockers` do, `labels` as `PUT
 /v1/cards/{id}/labels` does.
 
