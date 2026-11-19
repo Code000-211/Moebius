@@ -43,6 +43,15 @@ export function applyChatEvent(chats: Chat[], event: ServerEvent): Chat[] {
   return chats;
 }
 
+/** Which chats the sidebar's list holds: those the person started, those others shared with them, or both. */
+export type ChatScope = "mine" | "shared" | "all";
+
+/** Whether `chat` is in `scope`; a chat nobody owns is shared with everyone. */
+export function inScope(chat: Chat, scope: ChatScope): boolean {
+  if (scope === "all") return true;
+  return scope === "mine" ? chat.mine : !chat.mine;
+}
+
 /** The project the sidebar's list of chats is narrowed to: every chat, a repository's, or those with none. */
 export type ChatFilter = "all" | "none" | number;
 
@@ -73,6 +82,7 @@ export function filterChats(
   snapshot: Snapshot | undefined,
   filter: ChatFilter,
   query = "",
+  scope: ChatScope = "all",
 ): Chat[] {
   const words = query.trim().toLowerCase();
   const byProject = (chat: Chat): boolean => {
@@ -84,7 +94,9 @@ export function filterChats(
   };
   return chats.filter(
     (chat) =>
-      byProject(chat) && (words === "" || (chat.title || "New chat").toLowerCase().includes(words)),
+      inScope(chat, scope) &&
+      byProject(chat) &&
+      (words === "" || (chat.title || "New chat").toLowerCase().includes(words)),
   );
 }
 
@@ -160,6 +172,7 @@ export function listChanged(event: ServerEvent): boolean {
     event.kind === "change_offered" ||
     event.kind === "change_updated" ||
     event.kind === "chat_renamed" ||
+    event.kind === "chat_shared" ||
     event.kind === "chat_deleted"
   );
 }

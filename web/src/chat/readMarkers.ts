@@ -12,9 +12,14 @@ import type { Chat } from "../api/types/chat";
  * not the answer).
  */
 export function seqToMark(chat: Chat | undefined, lastSeq: number): number | null {
-  if (!chat) return null;
+  if (!chat || !writes(chat)) return null;
   if (chat.answered <= chat.seen || lastSeq <= chat.seen || lastSeq < chat.answered) return null;
   return lastSeq;
+}
+
+/** Whether the person writes to the chat: they started it, or it belongs to everyone. Others only read a shared one. */
+export function writes(chat: Chat): boolean {
+  return chat.mine || chat.owner === null;
 }
 
 /**
@@ -22,7 +27,7 @@ export function seqToMark(chat: Chat | undefined, lastSeq: number): number | nul
  * any other: it is the same chat, listed on the Chat page, and reading it in either place marks it read.
  */
 export function unreadCount(chats: Chat[]): number {
-  return chats.filter((chat) => chat.answered > chat.seen).length;
+  return chats.filter((chat) => writes(chat) && chat.answered > chat.seen).length;
 }
 
 /** How many of the listed chats wait for an answer to a question their agent asked. */

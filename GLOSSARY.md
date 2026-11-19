@@ -204,6 +204,8 @@ _Avoid_: spec, plan, config
 
 **Chat**:
 An interactive run without a card: a person writes to an agent and it answers; it can be continued, steered and stopped.
+It belongs to the person who started it; another person reads it only once its owner has shared it. The Retro reads every
+chat.
 _Avoid_: conversation, session, thread
 
 **Moebius agent**:

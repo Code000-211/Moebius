@@ -33,6 +33,9 @@ export interface FakeChatRecord {
   origin: "chat" | "assistant" | "automation";
   model: string | null;
   thinking: string | null;
+  owner: string | null;
+  shared: boolean;
+  mine: boolean;
 }
 
 export interface Agent {
@@ -272,6 +275,9 @@ export function createFakeChat(
         origin: "chat",
         model: null,
         thinking: null,
+        owner: null,
+        shared: false,
+        mine: true,
         ...fields,
       });
       for (const [kind, data] of history ?? []) fake.emit(id, kind, data);

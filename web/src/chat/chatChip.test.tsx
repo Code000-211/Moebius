@@ -23,6 +23,9 @@ const calls = vi.hoisted(() => ({
   chatModelChoices: {
     model: null,
     thinking: null,
+    owner: null,
+    shared: false,
+    mine: true,
     modelOptions: [],
     levelOptions: [{ value: "low", label: "low" }],
   },

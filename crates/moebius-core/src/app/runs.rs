@@ -70,6 +70,7 @@ impl App {
     /// waiting, and at most [`MAX_PER_RUN`] shells at a time. Returns the worktree and the shell's place among the
     /// run's. Only the opening is recorded, as a `shell_opened` event: never what is typed or printed.
     pub fn open_shell(&self, by: &Actor, run_id: i64) -> Result<(PathBuf, Slot)> {
+        self.chat_access(by, run_id, true)?;
         let run = self.run(run_id)?;
         let worktree = match (run.status.as_str(), run.worktree) {
             ("starting" | "running" | "waiting", Some(worktree))
@@ -108,6 +109,7 @@ impl App {
         runs: Arc<dyn Runs>,
         run_id: i64,
     ) -> Result<(Tui, Slot)> {
+        self.chat_access(by, run_id, true)?;
         let run = self.running_chat(run_id)?;
         if run.status != "waiting" {
             return Err(AppError::Conflict(format!(

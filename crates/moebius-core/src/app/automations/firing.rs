@@ -151,6 +151,7 @@ fn fire(
             None,
             None,
             Some(AUTOMATION_ORIGIN),
+            None,
             (None, None, &[]),
         );
         match started {

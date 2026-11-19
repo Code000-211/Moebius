@@ -47,6 +47,7 @@ import { liveRuns } from "../../api/types/board";
 import type { Chat } from "../../api/types/chat";
 import {
   type ChatFilter,
+  type ChatScope,
   filterChats,
   formatChatFilter,
   groupChats,
@@ -444,13 +445,14 @@ function ChatSection({
     parseChatFilter(readText(CHAT_FILTER_KEY)),
   );
   const [query, setQuery] = useState("");
+  const [scope, setScope] = useState<ChatScope>("mine");
   const choose = (next: ChatFilter) => {
     setFilter(next);
     writeText(CHAT_FILTER_KEY, formatChatFilter(next));
   };
   const shown = useMemo(
-    () => filterChats(chats, snapshot, filter, query),
-    [chats, snapshot, filter, query],
+    () => filterChats(chats, snapshot, filter, query, scope),
+    [chats, snapshot, filter, query, scope],
   );
   const groups = groupChats(shown, Math.floor(Date.now() / 1000));
   const named =
@@ -508,6 +510,19 @@ function ChatSection({
             </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
+      </li>
+      <li className="flex gap-1">
+        {(["mine", "shared"] as const).map((each) => (
+          <Button
+            key={each}
+            variant={scope === each ? "secondary" : "ghost"}
+            size="sm"
+            aria-pressed={scope === each}
+            onClick={() => setScope(each)}
+          >
+            {each === "mine" ? "Mine" : "Shared"}
+          </Button>
+        ))}
       </li>
       {shown.length === 0 && chats.length > 0 && (
         <li>

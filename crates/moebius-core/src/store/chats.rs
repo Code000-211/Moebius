@@ -4,7 +4,31 @@ use rusqlite::params;
 
 use super::{Result, Run, Store};
 
+/// A chat belongs to the person who started it and is read by others once shared (ADR 0018).
+pub(super) const SCHEMA: &str = r#"
+ALTER TABLE runs ADD COLUMN owner_id INTEGER REFERENCES people(id);
+ALTER TABLE runs ADD COLUMN shared INTEGER NOT NULL DEFAULT 0;
+"#;
+
 impl Store {
+    /// Records the person a chat belongs to.
+    pub fn set_chat_owner(&self, id: i64, owner_id: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE runs SET owner_id = ?2 WHERE id = ?1",
+            params![id, owner_id],
+        )?;
+        Ok(())
+    }
+
+    /// Shares a chat with every person of the organisation, or takes it back.
+    pub fn set_chat_shared(&self, id: i64, shared: bool) -> Result<()> {
+        self.conn().execute(
+            "UPDATE runs SET shared = ?2 WHERE id = ?1",
+            params![id, shared],
+        )?;
+        Ok(())
+    }
+
     /// The chats, newest first.
     pub fn chats(&self) -> Result<Vec<Run>> {
         let mut chats = self.runs_where("purpose = ?1", "chat".to_string().into())?;

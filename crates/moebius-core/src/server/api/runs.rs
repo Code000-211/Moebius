@@ -51,9 +51,14 @@ struct EventsQuery {
 
 async fn run_diff(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
 ) -> Result<axum::Json<crate::app::Diff>, ApiError> {
-    blocking(&state.app, move |app| app.run_diff(id)).await
+    blocking(&state.app, move |app| {
+        app.chat_access(&by, id, false)?;
+        app.run_diff(id)
+    })
+    .await
 }
 
 async fn steer_run(
@@ -64,6 +69,7 @@ async fn steer_run(
 ) -> Result<axum::Json<Run>, ApiError> {
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {
+        app.chat_access(&by, id, true)?;
         app.steer_run(&by, &*runs, id, &steer.message)
     })
     .await
@@ -77,6 +83,7 @@ async fn stop_run(
 ) -> Result<axum::Json<Run>, ApiError> {
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {
+        app.chat_access(&by, id, true)?;
         app.stop_run(&by, &*runs, id, &stop.reason)
     })
     .await
@@ -84,20 +91,26 @@ async fn stop_run(
 
 async fn get_run(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
 ) -> Result<axum::Json<Run>, ApiError> {
-    blocking(&state.app, move |app| app.run(id)).await
+    blocking(&state.app, move |app| {
+        app.chat_access(&by, id, false)?;
+        app.run(id)
+    })
+    .await
 }
 
 async fn run_events(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     Query(query): Query<EventsQuery>,
 ) -> Result<axum::Json<Vec<Event>>, ApiError> {
     let limit = query.limit.unwrap_or(DEFAULT_EVENTS).clamp(1, MAX_EVENTS);
     let (after, before, tail) = (query.after, query.before, query.tail);
     blocking(&state.app, move |app| {
-        app.run(id)?;
+        app.chat_access(&by, id, false)?;
         if usize::from(after > 0) + usize::from(before.is_some()) + usize::from(tail) > 1 {
             return Err(AppError::Invalid(
                 "give only one of after, before and tail".into(),

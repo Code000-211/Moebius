@@ -133,6 +133,7 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("POST", "/v1/chats/{id}/seen", MEMBER),
     ("POST", "/v1/chats/{id}/settings", MEMBER),
     ("POST", "/v1/chats/{id}/title", MEMBER),
+    ("POST", "/v1/chats/{id}/share", MEMBER_PERSON),
     ("GET", "/v1/chats/{id}/tui", MEMBER_PERSON),
     ("GET", "/v1/grillings", VIEWER),
     ("GET", "/v1/grillings/{id}", VIEWER),
