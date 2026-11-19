@@ -447,6 +447,39 @@ async fn disabling_a_person_refuses_their_token_and_their_sessions() {
 }
 
 #[tokio::test]
+async fn the_servers_token_is_refused_while_the_first_owner_is_disabled() {
+    let (_dir, state, addr) = start().await;
+    let first = state
+        .app
+        .store
+        .person_by_handle(crate::store::FIRST_OWNER)
+        .unwrap()
+        .unwrap();
+    let url = format!("http://{addr}/v1/health");
+    let with_server_token = || http().get(&url).bearer_auth(&*state.token).send();
+    assert_eq!(with_server_token().await.unwrap().status(), Status::OK);
+    state.app.store.set_person_disabled(first.id, true).unwrap();
+    assert_eq!(
+        with_server_token().await.unwrap().status(),
+        Status::UNAUTHORIZED
+    );
+    // Signing a browser in with it is refused as well.
+    let sign_in = http()
+        .post(format!("http://{addr}/v1/session"))
+        .json(&serde_json::json!({"token": &*state.token}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(sign_in.status(), Status::UNAUTHORIZED);
+    state
+        .app
+        .store
+        .set_person_disabled(first.id, false)
+        .unwrap();
+    assert_eq!(with_server_token().await.unwrap().status(), Status::OK);
+}
+
+#[tokio::test]
 async fn a_session_survives_a_restart_and_nothing_secret_is_stored_as_it_is() {
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path().join("store");

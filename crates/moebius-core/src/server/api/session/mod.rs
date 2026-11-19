@@ -24,7 +24,8 @@ use axum::routing::post;
 use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
 
-use super::{ApiError, ApiState, identify, internal, owner_person, same};
+use super::{ApiError, ApiState, identify, internal, same};
+use super::{ServerOwner, server_owner};
 use crate::store::{Person, now};
 
 /// The name of the cookie that holds a session id.
@@ -143,9 +144,10 @@ fn unauthorized() -> ApiError {
 fn who_signs_in(state: &ApiState, request: &SignIn) -> Result<(i64, Option<i64>), ApiError> {
     if let Some(token) = &request.token {
         if same(token.as_bytes(), state.token.as_bytes()) {
-            return owner_person(state)
-                .map(|owner| (owner.id, None))
-                .ok_or_else(unauthorized);
+            return match server_owner(state) {
+                ServerOwner::Person(owner) => Ok((owner.id, None)),
+                _ => Err(unauthorized()),
+            };
         }
         if is_run_token(state, token) {
             return Err(ApiError(

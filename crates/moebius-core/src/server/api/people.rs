@@ -37,6 +37,9 @@ const HANDLE_LIMIT: usize = 39;
 /// The most characters a display name or a token's name may have.
 const NAME_LIMIT: usize = 100;
 
+/// Held while a person's role or disabled mark is changed, so that the last owner cannot be demoted by two requests.
+static CHANGING: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// The routes of the people and their tokens.
 pub(super) fn routes() -> Router<ApiState> {
     Router::new()
@@ -190,6 +193,9 @@ async fn change_person(
     // Only an owner gets here (see `roles`).
     asker(signed_in)?;
     let store = &state.app.store;
+    // The check of the last owner and the change are one step: two owners demoting each other at once must not
+    // leave none. Nothing below waits, so the lock is never held across an await.
+    let _one_at_a_time = CHANGING.lock().unwrap_or_else(|p| p.into_inner());
     let not_found = || ApiError(StatusCode::NOT_FOUND, format!("person {id}"));
     let current = store.person(id).map_err(internal)?.ok_or_else(not_found)?;
     let role = change.role.unwrap_or(current.role);
