@@ -270,6 +270,36 @@
   }
 }
 
+/*
+ * The textured ground of the shell: the ground's colour, a light from above that fades out by the middle of the
+ * window, and a fine grain over all of it. It lies under the whole window, so the sidebar, the air around the page and
+ * what shows past the page's rounded corners are one surface. The grain is drawn under the content (`isolate` keeps
+ * its layer inside the ground) and catches no pointer; `--grain`, `--grain-blend` and `--grain-filter` say how it is
+ * laid on in each theme.
+ */
+@utility ground {
+  position: relative;
+  isolation: isolate;
+  background-color: var(--ground);
+  background-image: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--text) 5%, transparent),
+    transparent 45%
+  );
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: var(--grain);
+    mix-blend-mode: var(--grain-blend);
+    filter: var(--grain-filter);
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  }
+}
+
 /* The faint wash of the accent at the top of the content. */
 @utility wash {
   background-image: radial-gradient(900px 220px at 30% -80px, var(--wash), transparent);

@@ -384,10 +384,11 @@ export function BoardPage() {
         </div>
         {inspected && (
           // The column holds the drawer's width so the board keeps the room it has; the drawer itself runs the whole
-          // height of the window and is flush to its top, right and bottom edges — it is the page's own card inspector
-          // rather than a sheet laid over it — and scrolls its sections rather than the page scrolling them.
+          // height of the page's surface and is flush to its top, right and bottom edges, inside its rounded corners —
+          // it is the page's own card inspector rather than a sheet laid over it — and scrolls its sections rather
+          // than the page scrolling them.
           <div className="w-full shrink-0 lg:w-96">
-            <div className="lg:fixed lg:inset-y-0 lg:right-0 lg:w-96">
+            <div className="lg:fixed lg:inset-y-1.5 lg:right-1.5 lg:w-96 lg:overflow-hidden lg:rounded-r-sheet">
               <Dock
                 key={inspected.id}
                 board={board}

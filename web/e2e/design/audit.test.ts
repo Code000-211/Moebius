@@ -586,7 +586,8 @@ function measure(input: {
   }
 
   // One elevation per stack: a surface with a shadow inside another surface with a shadow reads as two sheets of
-  // plastic rather than one layer above the page. A menu, a sheet and a tooltip may be raised — that is what they
+  // plastic rather than one layer above the page. The page's own surface, set apart from the ground by its edge, is
+  // where the stack starts. A menu, a sheet and a tooltip may be raised — that is what they
   // are — but nothing inside them is.
   const raised = (el: Element) => {
     const shadow = getComputedStyle(el).boxShadow;
@@ -606,6 +607,8 @@ function measure(input: {
   for (const el of every) {
     if (!visible(el) || skipped(el) || !raised(el) || floats(el)) continue;
     for (let node = el.parentElement; node && node !== document.body; node = node.parentElement) {
+      // The page's surface is the ground of everything on it: a card on the page is one elevation, not two.
+      if ((node as HTMLElement).dataset.surface === "page") break;
       if (!raised(node)) continue;
       const holder = getComputedStyle(node);
       const corner = Math.max(...holder.borderRadius.split(" ").map(px));
