@@ -17,7 +17,7 @@ import { Box } from "../../ui/page/Box";
 import { Field, TextArea } from "../../ui/page/Field";
 import { MarkdownBody, type MarkdownView } from "../../ui/page/MarkdownBody";
 import { Notice } from "../../ui/page/Notice";
-import { Status } from "../../ui/page/Status";
+import { StateLabel } from "../../ui/page/StateLabel";
 import { Committed } from "../harness/form";
 
 import { fileRequest, size } from "./model";
@@ -187,7 +187,7 @@ function Body({
           </h3>
         )}
         {builtIn ? (
-          <Status>Read only</Status>
+          <StateLabel>Read only</StateLabel>
         ) : asking ? (
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-base text-text">Delete {path}?</span>

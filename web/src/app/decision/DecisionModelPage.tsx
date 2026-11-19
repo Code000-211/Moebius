@@ -23,7 +23,7 @@ import { Box } from "../../ui/page/Box";
 import { CELL, Table } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
-import { Status } from "../../ui/page/Status";
+import { StateLabel } from "../../ui/page/StateLabel";
 import { DeleteExport } from "./DeleteExport";
 
 import {
@@ -265,9 +265,9 @@ function ShadowRow({ kind, needed }: { kind: ShadowedKind; needed: number }) {
               <span className="tabular-nums text-text">
                 {agreementLine(kind.agreement, needed)}
               </span>
-              <Status tone={ready ? "complete" : "attention"}>
+              <StateLabel tone={ready ? "complete" : "attention"}>
                 {ready ? "Enough" : "Not enough"}
-              </Status>
+              </StateLabel>
             </span>
             <Bar share={kind.agreement} needed={needed} />
           </div>

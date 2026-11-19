@@ -20,7 +20,8 @@ import { Empty } from "../../ui/page/Empty";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard } from "../../ui/page/Skeleton";
-import { Status, type Tone } from "../../ui/page/Status";
+import { StateLabel } from "../../ui/page/StateLabel";
+import type { Tone } from "../../ui/page/Status";
 import { InstalledPackages } from "./InstalledPackages";
 import { PluginSwitch, SWITCHED_BUILT_INS } from "./PluginSwitch";
 
@@ -91,7 +92,7 @@ function PluginRow({
           {name}
         </h3>
         <div className="flex flex-wrap items-center gap-4">
-          <Status tone={state.tone}>{state.label}</Status>
+          <StateLabel tone={state.tone}>{state.label}</StateLabel>
           {control}
         </div>
       </div>

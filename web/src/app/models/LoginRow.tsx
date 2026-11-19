@@ -19,7 +19,7 @@ import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { Field } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
-import { Status } from "../../ui/page/Status";
+import { StateLabel } from "../../ui/page/StateLabel";
 
 /** Where the login of an upstream is on the page. */
 export type LoginStep =
@@ -119,9 +119,9 @@ export function LoginRow({
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <Status tone={oauth.logged_in ? "complete" : "attention"}>
+          <StateLabel tone={oauth.logged_in ? "complete" : "attention"}>
             {oauth.logged_in ? "A login is kept." : "Not logged in."}
-          </Status>
+          </StateLabel>
           <span className="min-w-0 break-words text-sm text-secondary">
             Logs in with OAuth:{" "}
             {oauth.flow === "device"
@@ -262,7 +262,7 @@ function Answer({
         </div>
       )}
       <div className="flex flex-wrap items-center gap-3">
-        <Status tone="progress">Waiting for the login</Status>
+        <StateLabel tone="progress">Waiting for the login</StateLabel>
         <Button variant="secondary" size="sm" onClick={onCancel}>
           Cancel
         </Button>
