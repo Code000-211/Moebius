@@ -5,6 +5,7 @@
  * answers and errors for it.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { PagesAFake } from "./pages-a";
 
 type Send = (event: { kind: string; data: unknown }) => void;
 
@@ -27,6 +28,12 @@ export interface WikiFake {
     path: string,
     author: { name: string; handle: string },
   ): Promise<boolean>;
+  /**
+   * An agent's edit of a page, as `POST /v1/wiki/proposals` makes it: nothing changes, and the inbox gets an item of
+   * the kind `wiki_proposal` whose `diff` is the change. Merging it (`POST /v1/wiki/proposals/{item}/merge`) writes the
+   * page and dismissing it leaves the wiki as it is; either resolves the item.
+   */
+  propose(path: string, text: string, message: string): number;
   /** A page as someone else pushed it to the wiki's repository, which the next read shows. */
   pushFromElsewhere(path: string, text: string): void;
 }
@@ -56,7 +63,7 @@ function refuse(response: ServerResponse, status: number, message: string): true
 
 const nameOf = (path: string) => path.split("/").at(-1) ?? path;
 
-export function createWikiFake(send: Send): WikiFake {
+export function createWikiFake(send: Send, pagesA: PagesAFake): WikiFake {
   /** Every page that ever was, by its path now, with its versions oldest first. */
   const pages = new Map<string, Version[]>();
   let commits = 0;
@@ -85,7 +92,42 @@ export function createWikiFake(send: Send): WikiFake {
   const history = (path: string) =>
     [...(pages.get(path) ?? [])].reverse().map((version) => ({ ...version, text: undefined }));
 
+  /** The proposals that wait, by the id of their inbox item. */
+  const proposals = new Map<
+    number,
+    { path: string; text: string; message: string; item: { resolved_at: number | null } }
+  >();
+  const diffOf = (path: string, before: string, after: string) => {
+    const lines = (text: string) => (text === "" ? [] : text.replace(/\n$/, "").split("\n"));
+    return [
+      `diff --git a/${path}.md b/${path}.md`,
+      `--- a/${path}.md`,
+      `+++ b/${path}.md`,
+      "@@",
+      ...lines(before).map((line) => `-${line}`),
+      ...lines(after).map((line) => `+${line}`),
+      "",
+    ].join("\n");
+  };
+
   return {
+    propose(path, text, message) {
+      const before = current(path)?.text ?? "";
+      const item = pagesA.addInboxItem({
+        kind: "wiki_proposal",
+        title: `Wiki: ${message}`,
+        data: {
+          branch: `proposal/run-1-${proposals.size + 1}`,
+          page: path,
+          message,
+          by: "Coder",
+          commit: "b".repeat(40),
+          diff: diffOf(path, before, text),
+        },
+      });
+      proposals.set(item.id, { path, text, message, item });
+      return item.id;
+    },
     pushFromElsewhere(path, text) {
       record(path, {
         commit: commit(),
@@ -130,6 +172,30 @@ export function createWikiFake(send: Send): WikiFake {
             snippet: text.trim().slice(0, 80),
           }));
         answer(response, 200, hits);
+        return true;
+      }
+      const decision = /^\/v1\/wiki\/proposals\/(\d+)\/(merge|dismiss)$/.exec(path);
+      if (decision && method === "POST") {
+        const id = Number(decision[1]);
+        const proposal = proposals.get(id);
+        if (!proposal || proposal.item.resolved_at !== null)
+          return refuse(response, 404, `no open wiki proposal ${id}`);
+        proposal.item.resolved_at = ++clock;
+        if (decision[2] === "dismiss") {
+          answer(response, 200, null);
+          return true;
+        }
+        const made: Version = {
+          commit: commit(),
+          author: author.name,
+          handle: author.handle,
+          at: clock,
+          message: `Merge the proposal: ${proposal.message}`,
+          path: proposal.path,
+          text: proposal.text.endsWith("\n") ? proposal.text : `${proposal.text}\n`,
+        };
+        record(proposal.path, made);
+        answer(response, 200, { commit: made.commit });
         return true;
       }
       if (path === "/v1/wiki/refresh" && method === "POST") {

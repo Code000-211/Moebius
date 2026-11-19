@@ -41,6 +41,16 @@ export function wikiHistory(path: string): Promise<Version[]> {
   return get<Version[]>(`/v1/wiki/history/${pageUrl(path)}`);
 }
 
+/** Merges the wiki proposal of inbox item `item`: the page changes and the item resolves. */
+export async function mergeWikiProposal(item: number): Promise<void> {
+  await post<unknown>(`/v1/wiki/proposals/${item}/merge`, {});
+}
+
+/** Dismisses the wiki proposal of inbox item `item`; the wiki stays as it is. */
+export async function dismissWikiProposal(item: number): Promise<void> {
+  await post<unknown>(`/v1/wiki/proposals/${item}/dismiss`, {});
+}
+
 /** The pages found by words of their title and text, the best first; with `project`, only that project's pages. */
 export function searchWiki(query: string, project?: string, limit?: number): Promise<WikiHit[]> {
   const params = new URLSearchParams({ q: query });

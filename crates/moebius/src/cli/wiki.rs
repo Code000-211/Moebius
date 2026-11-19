@@ -1,5 +1,6 @@
-//! The wiki from a terminal: `wiki` lists its pages, `wiki read` writes one, and `wiki propose` offers a new text of
-//! a page as a branch that waits in the inbox for a member to merge (the Moebius agent edits the wiki no other way).
+//! The wiki from a terminal: `wiki` lists its pages, `wiki search` finds them by words, `wiki read` writes one, and
+//! `wiki propose` offers a new text of a page as a branch that waits in the inbox for a member to merge (the Moebius
+//! agent edits the wiki no other way).
 
 use clap::Subcommand;
 use serde_json::{Value, json};
@@ -10,6 +11,17 @@ use super::{Plan, Request, Show, read_input};
 pub enum WikiCommand {
     /// List the pages, one path each.
     List,
+    /// Find pages by the words of their title and text, the best first.
+    Search {
+        /// The words to find; every one must be in the page.
+        query: String,
+        /// Only the pages under `projects/<key>/`.
+        #[arg(long)]
+        project: Option<String>,
+        /// How many pages at most (1 to 100; 20 without one).
+        #[arg(long)]
+        limit: Option<u32>,
+    },
     /// Write a page's text; `--at` reads an older version.
     Read {
         /// The page's path without `.md`, such as `Team/On call`.
@@ -33,6 +45,23 @@ pub enum WikiCommand {
 pub fn wiki(command: &WikiCommand) -> Plan {
     Ok(match command {
         WikiCommand::List => (Request::get("/v1/wiki/pages"), Show::Table(&["path"])),
+        WikiCommand::Search {
+            query,
+            project,
+            limit,
+        } => {
+            let mut route = format!("/v1/wiki/search?q={}", encoded_part(query));
+            if let Some(project) = project {
+                route.push_str(&format!("&project={}", encoded_part(project)));
+            }
+            if let Some(limit) = limit {
+                route.push_str(&format!("&limit={limit}"));
+            }
+            (
+                Request::get(route),
+                Show::Table(&["path", "project", "snippet"]),
+            )
+        }
         WikiCommand::Read { path, at } => {
             let mut route = format!("/v1/wiki/pages/{}", encoded_path(path));
             if let Some(at) = at {
@@ -81,6 +110,27 @@ fn encoded_part(part: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_search_carries_its_words_project_and_limit() {
+        let (request, _) = wiki(&WikiCommand::Search {
+            query: "on call".into(),
+            project: Some("web".into()),
+            limit: Some(5),
+        })
+        .unwrap();
+        assert_eq!(
+            request.path,
+            "/v1/wiki/search?q=on%20call&project=web&limit=5"
+        );
+        let (bare, _) = wiki(&WikiCommand::Search {
+            query: "refunds".into(),
+            project: None,
+            limit: None,
+        })
+        .unwrap();
+        assert_eq!(bare.path, "/v1/wiki/search?q=refunds");
+    }
 
     #[test]
     fn a_page_is_read_by_its_encoded_path() {

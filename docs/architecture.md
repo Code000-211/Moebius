@@ -465,7 +465,7 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `cli/automations.rs` | `automation` (list, save, run, delete). |
 | `cli/agents.rs` | `agents` and `agent` (show, save, delete). |
 | `cli/rules.rs` | `rules` and `rules save`. |
-| `cli/wiki.rs` | `wiki list`, `wiki read` and `wiki propose`: the pages of the wiki, and an edit that waits in the inbox. |
+| `cli/wiki.rs` | `wiki list`, `wiki search`, `wiki read` and `wiki propose`: the pages of the wiki, and an edit that waits in the inbox. |
 | `cli/workflow.rs` | `workflow list`, `show`, `save` and `delete`. |
 | `cli/packages.rs` | `pkg search`, `info`, `install`, `update`, `remove` and `list`, and how their answers are written. |
 | `cli/plugins.rs` | `plugin enable` and `plugin disable [--unwrap-runs] [--allow-unchecked]`: turning a plugin off or on, and how the answer is written. |

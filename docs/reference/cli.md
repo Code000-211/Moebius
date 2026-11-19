@@ -183,6 +183,7 @@ issues (`--parent`, `--blocked-by`, `blocker`) stay the numbers of their issues 
 | `inbox` | `GET /v1/snapshot` | Table `id kind card title` of the open items. |
 | `inbox act <item> <action> [--reason <text>]` | see below | The answer's fields. |
 | `wiki list` | `GET /v1/wiki/pages` | Table `path`. |
+| `wiki search <query> [--project <key>] [--limit <n>]` | `GET /v1/wiki/search` | Table `path`, `project`, `snippet`, the best match first; every word of the query must be in the page. `--project` keeps the pages under `projects/<key>/`, `--limit` is 1 to 100 (20 without one). |
 | `wiki read <path> [--at <commit>]` | `GET /v1/wiki/pages/{path}` | The page's Markdown text. |
 | `wiki propose <path> <file> [--message <text>]` | `POST /v1/wiki/proposals` | The inbox item the proposal is. `-` as the file reads standard input. The wiki changes only once a member merges it. |
 | `chats` | `GET /v1/chats` | Table `id agent status repository title`. |

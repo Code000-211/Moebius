@@ -23,6 +23,7 @@ import { Field, TextArea } from "../../ui/page/Field";
 import { MarkLabel } from "../../ui/page/MarkLabel";
 import { Notice } from "../../ui/page/Notice";
 import { pullRequestOf } from "../board/model";
+import { useRole } from "../shell/session";
 import { type Action, perform, working } from "./actions";
 import { DeleteGrilling } from "./DeleteGrilling";
 import {
@@ -51,7 +52,9 @@ import {
   TAKEOVER,
   takeoverOf,
   trialsOf,
+  WIKI_PROPOSAL,
   why,
+  wikiProposalOf,
 } from "./model";
 
 export function Decision({ item, snapshot }: { item: InboxItem; snapshot: Snapshot }) {
@@ -83,6 +86,8 @@ export function Decision({ item, snapshot }: { item: InboxItem; snapshot: Snapsh
     mutation.mutate(action);
   };
 
+  // A viewer reads the proposed change; a member decides it.
+  const role = useRole();
   const change = changeOf(item);
   const grilling = grillingOf(item);
   const proposal = proposalOf(item);
@@ -178,6 +183,9 @@ export function Decision({ item, snapshot }: { item: InboxItem; snapshot: Snapsh
     } else if (item.kind === TAKEOVER && takeover !== null) {
       buttons.push(primary("Merge", { kind: "mergeTakeover", takeover }));
       buttons.push(plain("Dismiss", () => act({ kind: "dismissTakeover", takeover })));
+    } else if (item.kind === WIKI_PROPOSAL && role !== "viewer") {
+      buttons.push(primary("Merge", { kind: "mergeWikiProposal", item: item.id }));
+      buttons.push(plain("Dismiss", () => act({ kind: "dismissWikiProposal", item: item.id })));
     } else if (item.kind === GRILLING_ISSUES && grilling !== null) {
       buttons.push(
         primary(
@@ -227,6 +235,9 @@ export function Decision({ item, snapshot }: { item: InboxItem; snapshot: Snapsh
       {item.kind === READY_TO_MERGE && <Facts item={item} snapshot={snapshot} />}
       {item.kind === PROPOSAL && <OwnChange item={item} proposed={proposed} />}
       {item.kind === PROPOSAL && <Trials item={item} />}
+      {item.kind === WIKI_PROPOSAL && wikiProposalOf(item).diff !== "" && (
+        <CodeBlock language="diff" code={wikiProposalOf(item).diff} />
+      )}
       {item.kind === GRILLING_ISSUES && <Issues drafts={drafts} onChange={setDrafts} />}
       {item.kind === GRILLING_REPORT && (
         <div className="whitespace-pre-wrap break-words rounded-control bg-sunken p-4 text-base text-text">
