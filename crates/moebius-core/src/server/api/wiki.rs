@@ -18,8 +18,18 @@ use axum::{Extension, Json, Router};
 use serde::Deserialize;
 
 use super::{ApiError, ApiState, blocking};
+use crate::app::{App, AppError};
 use crate::decide::Actor;
-use crate::wiki::{Author, PageInfo, PageView, SearchHit, Version};
+use crate::wiki::{Author, PageInfo, PageView, SearchHit, Seen, Version};
+
+/// Refuses with `404` the page `path` of a private project that `by` does not see, as if there were no such page.
+fn visible(app: &App, by: &Actor, path: &str) -> crate::app::Result<()> {
+    if Seen::of(app, by)?.page(app, path) {
+        Ok(())
+    } else {
+        Err(AppError::NotFound(format!("page {path}")))
+    }
+}
 
 /// The routes of the wiki.
 pub(super) fn routes() -> Router<ApiState> {
@@ -60,8 +70,9 @@ async fn propose(
     Json(new): Json<ProposedPage>,
 ) -> Result<Json<crate::store::InboxItem>, ApiError> {
     blocking(&state.app, move |app| {
-        app.wiki()?
-            .propose(app, &by, &new.path, &new.text, new.message.as_deref())
+        let wiki = app.wiki()?;
+        visible(app, &by, &new.path)?;
+        wiki.propose(app, &by, &new.path, &new.text, new.message.as_deref())
     })
     .await
 }
@@ -127,17 +138,31 @@ pub struct Move {
     pub to: String,
 }
 
-async fn pages(State(state): State<ApiState>) -> Result<Json<Vec<PageInfo>>, ApiError> {
-    blocking(&state.app, |app| app.wiki()?.pages()).await
+async fn pages(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+) -> Result<Json<Vec<PageInfo>>, ApiError> {
+    blocking(&state.app, move |app| {
+        let pages = app.wiki()?.pages()?;
+        let seen = Seen::of(app, &by)?;
+        Ok(pages
+            .into_iter()
+            .filter(|page| seen.page(app, &page.path))
+            .collect())
+    })
+    .await
 }
 
 async fn page(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(path): UrlPath<String>,
     Query(at): Query<At>,
 ) -> Result<Json<PageView>, ApiError> {
     blocking(&state.app, move |app| {
-        app.wiki()?.page(&path, at.at.as_deref())
+        let wiki = app.wiki()?;
+        visible(app, &by, &path)?;
+        wiki.page(&path, at.at.as_deref())
     })
     .await
 }
@@ -150,6 +175,7 @@ async fn write_page(
 ) -> Result<Json<PageView>, ApiError> {
     blocking(&state.app, move |app| {
         let wiki = app.wiki()?;
+        visible(app, &by, &path)?;
         let author = Author::of(app, &by)?;
         wiki.write_page(app, &author, &path, &new.text, new.message.as_deref())
     })
@@ -163,6 +189,7 @@ async fn delete_page(
 ) -> Result<Json<()>, ApiError> {
     blocking(&state.app, move |app| {
         let wiki = app.wiki()?;
+        visible(app, &by, &path)?;
         wiki.delete_page(app, &Author::of(app, &by)?, &path)
     })
     .await
@@ -175,6 +202,8 @@ async fn move_page(
 ) -> Result<Json<PageView>, ApiError> {
     blocking(&state.app, move |app| {
         let wiki = app.wiki()?;
+        visible(app, &by, &moved.from)?;
+        visible(app, &by, &moved.to)?;
         wiki.move_page(app, &Author::of(app, &by)?, &moved.from, &moved.to)
     })
     .await
@@ -182,9 +211,15 @@ async fn move_page(
 
 async fn history(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(path): UrlPath<String>,
 ) -> Result<Json<Vec<Version>>, ApiError> {
-    blocking(&state.app, move |app| app.wiki()?.history(&path)).await
+    blocking(&state.app, move |app| {
+        let wiki = app.wiki()?;
+        visible(app, &by, &path)?;
+        wiki.history(&path)
+    })
+    .await
 }
 
 /// The query of `GET /v1/wiki/search`.
@@ -533,5 +568,191 @@ mod tests {
         let (status, none) = call("GET", &addr, &token, "/v1/wiki/search", None).await;
         assert_eq!(status, Status::OK);
         assert_eq!(none, json!([]));
+    }
+
+    #[tokio::test]
+    async fn the_pages_of_a_private_project_are_its_members_and_nobody_elses() {
+        let (dir, state, addr) = start().await;
+        let origin = bare_origin(dir.path());
+        let wiki = Wiki::open(
+            &state.app,
+            &origin.to_string_lossy(),
+            &dir.path().join("data/wiki"),
+        )
+        .unwrap();
+        state.app.set_wiki(Arc::new(wiki));
+        let store = &state.app.store;
+        let repository = store.repositories().unwrap()[0].clone();
+        let project = store.project(repository.home_project_id).unwrap().unwrap();
+        let key = project.key.clone();
+        let mut tokens = Vec::new();
+        for (n, (handle, role)) in [
+            ("mia", Role::Member),
+            ("lea", Role::Member),
+            ("olga", Role::Owner),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let person = store.add_person(handle, handle, role).unwrap();
+            let token = format!("{}{:064}", super::super::TOKEN_PREFIX, n + 3);
+            store.add_access_token(person.id, "test", &token).unwrap();
+            tokens.push((person.id, token));
+        }
+        let (mia, lea, olga) = (&tokens[0].1, &tokens[1].1, &tokens[2].1);
+        let secret = format!("projects/{key}/Plans");
+        let url = format!("/v1/wiki/pages/{}", secret.replace(' ', "%20"));
+        for (path, text) in [
+            (secret.as_str(), "the secret launch plan"),
+            ("Home", "hello"),
+        ] {
+            let (status, made) = call(
+                "PUT",
+                &addr,
+                mia,
+                &format!("/v1/wiki/pages/{path}"),
+                Some(json!({"text": text})),
+            )
+            .await;
+            assert_eq!(status, Status::OK, "{made}");
+        }
+        let (_, history) = call(
+            "GET",
+            &addr,
+            mia,
+            &format!("/v1/wiki/history/{secret}"),
+            None,
+        )
+        .await;
+        let commit = history[0]["commit"].as_str().unwrap().to_string();
+        let (status, proposed) = call(
+            "POST",
+            &addr,
+            mia,
+            "/v1/wiki/proposals",
+            Some(json!({"path": secret, "text": "a secret edit"})),
+        )
+        .await;
+        assert_eq!(status, Status::OK, "{proposed}");
+        let proposal = proposed["id"].as_i64().unwrap();
+        store
+            .set_project_access(project.id, true, &[tokens[0].0])
+            .unwrap();
+
+        // A member sees everything of the project.
+        for token in [mia] {
+            let (status, page) = call("GET", &addr, token, &url, None).await;
+            assert_eq!(status, Status::OK, "{page}");
+            let (_, listed) = call("GET", &addr, token, "/v1/wiki/pages", None).await;
+            assert_eq!(listed.as_array().unwrap().len(), 2, "{listed}");
+            let (_, found) = call("GET", &addr, token, "/v1/wiki/search?q=secret", None).await;
+            assert_eq!(found.as_array().unwrap().len(), 1, "{found}");
+        }
+
+        // Neither another member nor an owner who is no member sees it, whichever route they ask.
+        for token in [lea, olga] {
+            let (status, _) = call("GET", &addr, token, &url, None).await;
+            assert_eq!(status, Status::NOT_FOUND);
+            let (status, _) = call("GET", &addr, token, &format!("{url}?at={commit}"), None).await;
+            assert_eq!(status, Status::NOT_FOUND);
+            let (status, _) = call(
+                "GET",
+                &addr,
+                token,
+                &format!("/v1/wiki/history/{secret}"),
+                None,
+            )
+            .await;
+            assert_eq!(status, Status::NOT_FOUND);
+            let (status, _) = call("PUT", &addr, token, &url, Some(json!({"text": "x"}))).await;
+            assert_eq!(status, Status::NOT_FOUND);
+            let (status, _) = call(
+                "PUT",
+                &addr,
+                token,
+                &format!("/v1/wiki/pages/projects/{key}/New"),
+                Some(json!({"text": "x"})),
+            )
+            .await;
+            assert_eq!(status, Status::NOT_FOUND);
+            let (status, _) = call("DELETE", &addr, token, &url, None).await;
+            assert_eq!(status, Status::NOT_FOUND);
+            let moves = [
+                json!({"from": secret, "to": "Stolen"}),
+                json!({"from": "Home", "to": format!("projects/{key}/Home")}),
+            ];
+            for moved in moves {
+                let (status, _) = call("POST", &addr, token, "/v1/wiki/moves", Some(moved)).await;
+                assert_eq!(status, Status::NOT_FOUND);
+            }
+            let (status, _) = call(
+                "POST",
+                &addr,
+                token,
+                "/v1/wiki/proposals",
+                Some(json!({"path": secret, "text": "x"})),
+            )
+            .await;
+            assert_eq!(status, Status::NOT_FOUND);
+            for action in ["merge", "dismiss"] {
+                let (status, _) = call(
+                    "POST",
+                    &addr,
+                    token,
+                    &format!("/v1/wiki/proposals/{proposal}/{action}"),
+                    Some(json!({})),
+                )
+                .await;
+                assert_eq!(status, Status::NOT_FOUND, "{action}");
+            }
+            let (status, _) = call(
+                "POST",
+                &addr,
+                token,
+                "/v1/wiki/from-template",
+                Some(json!({"template": "any", "path": secret})),
+            )
+            .await;
+            assert_eq!(status, Status::NOT_FOUND);
+            let (_, listed) = call("GET", &addr, token, "/v1/wiki/pages", None).await;
+            assert_eq!(listed, json!([{"path": "Home", "name": "Home"}]));
+            for query in ["q=secret", "q=secret&project=".to_string().as_str()] {
+                let (status, found) = call(
+                    "GET",
+                    &addr,
+                    token,
+                    &format!(
+                        "/v1/wiki/search?{query}{}",
+                        if query.ends_with('=') {
+                            key.as_str()
+                        } else {
+                            ""
+                        }
+                    ),
+                    None,
+                )
+                .await;
+                assert_eq!(status, Status::OK);
+                assert_eq!(found, json!([]));
+            }
+            let (_, snapshot) = call("GET", &addr, token, "/v1/snapshot", None).await;
+            assert!(
+                !snapshot["inbox"].to_string().contains("secret"),
+                "{}",
+                snapshot["inbox"]
+            );
+        }
+        // The proposal waits for a member, and the page is as it was.
+        let (_, snapshot) = call("GET", &addr, mia, "/v1/snapshot", None).await;
+        assert_eq!(snapshot["inbox"].as_array().unwrap().len(), 1);
+        let (_, page) = call("GET", &addr, mia, &url, None).await;
+        assert_eq!(page["text"], "the secret launch plan\n");
+
+        // An agent without a person reads none of it.
+        let agent = crate::server::api::testing::agent_token(&state);
+        let (status, _) = call("GET", &addr, &agent, &url, None).await;
+        assert_eq!(status, Status::NOT_FOUND);
+        let (_, listed) = call("GET", &addr, &agent, "/v1/wiki/pages", None).await;
+        assert_eq!(listed, json!([{"path": "Home", "name": "Home"}]));
     }
 }

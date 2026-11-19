@@ -35,6 +35,9 @@ pub(super) const GUARDED: [&str; 15] = [
     "requests",
 ];
 
+/// The kind of an agent's proposal for the wiki, which a route names after `/v1/wiki/proposals/`.
+pub(super) const WIKI_PROPOSALS: &str = "wiki_proposals";
+
 /// The kind of a workflow run, which a route names after `/v1/workflows/runs/`.
 pub(super) const WORKFLOW_RUNS: &str = "workflow_runs";
 
@@ -46,6 +49,9 @@ const RECORD_ROUTES: [&str; 2] = ["/v1/projects/{id}", "/v1/projects/{id}/access
 pub(super) fn guarded(route: &str) -> Option<(&str, usize)> {
     let parts: Vec<&str> = route.split('/').collect();
     match parts.as_slice() {
+        ["", "v1", "wiki", "proposals", param, ..] if param.starts_with('{') => {
+            Some((WIKI_PROPOSALS, 4))
+        }
         ["", "v1", "workflows", "runs", param, ..] if param.starts_with('{') => {
             Some((WORKFLOW_RUNS, 4))
         }
@@ -94,6 +100,7 @@ fn noun(kind: &str) -> &str {
         "chats" => "chat",
         "repositories" => "repository",
         WORKFLOW_RUNS => "workflow run",
+        WIKI_PROPOSALS => "proposal for the wiki",
         other => other.strip_suffix('s').unwrap_or(other),
     }
 }
@@ -144,6 +151,10 @@ pub(super) fn sees(app: &App, sight: &Sight, kind: &str, route: &str, id: i64) -
             Some(request) => Ok(sight.project(request.project_id)),
             None => Ok(true),
         },
+        WIKI_PROPOSALS => match store.inbox()?.into_iter().find(|item| item.id == id) {
+            Some(item) => sees_inbox_item(app, sight, &item),
+            None => Ok(true),
+        },
         WORKFLOW_RUNS => match store.workflow_run(id)? {
             Some(run) => Ok(sight.repository(run.repository_id)),
             None => Ok(true),
@@ -169,6 +180,12 @@ pub(super) fn sees_inbox_item(app: &App, sight: &Sight, item: &InboxItem) -> Res
         return app.sees_card(sight, card);
     }
     let about = |field: &str| item.data[field].as_i64();
+    // An agent's edit of a page of the wiki is seen with the page.
+    if item.kind == crate::wiki::WIKI_PROPOSAL
+        && let Some(page) = item.data["page"].as_str()
+    {
+        return Ok(crate::wiki::Seen::from_sight(sight.clone()).page(app, page));
+    }
     // A workflow's item names a workflow run as `run`, not a run of an agent.
     if item.kind.starts_with("workflow")
         && let Some(run) = about("run")
@@ -351,6 +368,15 @@ mod tests {
             })
             .unwrap();
         let project = repository.home_project_id;
+        let key = store.project(project).unwrap().unwrap().key;
+        let wiki_proposal = store
+            .add_inbox_item(
+                crate::wiki::WIKI_PROPOSAL,
+                None,
+                "Wiki: a secret page",
+                &json!({"page": format!("projects/{key}/Plans")}),
+            )
+            .unwrap();
         let request = store.add_request(project, 1, "A secret request").unwrap();
         let export = state.app.data_dir.join("exports/7");
         std::fs::create_dir_all(&export).unwrap();
@@ -391,6 +417,7 @@ mod tests {
                 ("automations", automation.id),
                 ("research", research.id),
                 (WORKFLOW_RUNS, workflow_run.id),
+                (WIKI_PROPOSALS, wiki_proposal.id),
                 ("requests", request.id),
             ],
             card: card.id,
@@ -586,7 +613,7 @@ mod tests {
         let snapshot = "/v1/snapshot";
         let (_, seen) = call(&addr, &private.lea, "GET", snapshot).await;
         assert_eq!(seen["boards"].as_array().unwrap().len(), 1);
-        assert_eq!(seen["inbox"].as_array().unwrap().len(), 3, "{seen}");
+        assert_eq!(seen["inbox"].as_array().unwrap().len(), 4, "{seen}");
         let (_, hidden) = call(&addr, &private.ben, "GET", snapshot).await;
         assert!(hidden["boards"].as_array().unwrap().is_empty(), "{hidden}");
         // Only the item of the shared proposal is left, without quoting the project.
@@ -837,11 +864,12 @@ mod tests {
     /// a workflow, by name, a kind of issues or a template of the organisation, a person's own notice, a wiki page (a private project's pages are hidden by the wiki's
     /// own routes, issue #374); or that checks what it names in its own handler (a card by its key, a milestone of the
     /// organisation, whose cards are counted and listed with `App::may_see_project`).
-    const UNGUARDED: [&str; 26] = [
+    const UNGUARDED: [&str; 27] = [
         "/v1/cards/by-key/",
         "/v1/templates/",
         "/v1/kinds/",
-        "/v1/wiki/",
+        "/v1/wiki/pages/",
+        "/v1/wiki/history/",
         "/v1/notices/",
         "/v1/milestones/",
         "/v1/people/",

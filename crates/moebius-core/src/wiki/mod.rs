@@ -9,13 +9,15 @@
 //!
 //! This module holds the clone and the names of pages; `pages` reads the pages and their history, `edits` writes,
 //! moves and deletes them, `proposals` keeps an agent's edit on a branch that waits in the inbox for a person to merge
-//! it, `prompt` gives a run the pages its card links to, and `search` finds pages by their words.
+//! it, `prompt` gives a run the pages its card links to, `search` finds pages by their words, and `sight` says which
+//! pages a person or run sees (a private project's pages are its members').
 
 mod edits;
 mod pages;
 mod prompt;
 mod proposals;
 mod search;
+mod sight;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
@@ -29,6 +31,7 @@ pub use pages::{PageInfo, PageView, Version};
 pub use prompt::for_card;
 pub use proposals::WIKI_PROPOSAL;
 pub use search::{SEARCH_LIMIT, SearchHit};
+pub use sight::Seen;
 
 /// The folder that holds the projects' pages, one folder per project key.
 pub const PROJECTS: &str = "projects";

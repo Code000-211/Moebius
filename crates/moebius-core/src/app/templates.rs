@@ -197,6 +197,9 @@ impl App {
     /// Makes the wiki page `path` from the page template `template` (a commit in the wiki). Refused with `Exists` when
     /// the page is there.
     pub fn page_from_template(&self, by: &Actor, template: &str, path: &str) -> Result<PageView> {
+        if !crate::wiki::Seen::of(self, by)?.page(self, path) {
+            return Err(AppError::NotFound(format!("page {path}")));
+        }
         let text = self
             .harness_repo()?
             .page_template(template)
