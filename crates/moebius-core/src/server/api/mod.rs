@@ -13,6 +13,7 @@
 //! - `templates`: templates for issues and wiki pages, and making a page from one.
 //! - `repositories`: adding and editing repositories, and their settings and files.
 //! - `intake`: a project's requests, which a grilling drafts into issues that members accept or decline.
+//! - `cycles`: the time boxes of a project, with burn-up and figures, and closing them.
 //! - `milestones`: goals of the organisation with a target date, holding cards of any projects, with their progress.
 //! - `projects`: the projects, each with a key, a board and its repositories; making and renaming one, and the column
 //!   scripts of its board.
@@ -57,6 +58,7 @@ mod assignees;
 mod automations;
 mod cards;
 mod chats;
+mod cycles;
 mod events;
 mod extensions;
 mod favourites;
@@ -245,6 +247,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(wiki::routes())
         .merge(intake::routes())
         .merge(templates::routes())
+        .merge(cycles::routes())
         .merge(milestones::routes())
         .merge(runs::routes())
         .merge(chats::routes())

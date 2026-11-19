@@ -688,6 +688,19 @@ mod tests {
         let (_, hidden) = call(&addr, &private.ben, "GET", &path).await;
         assert_eq!(count(&hidden["cards"]), 0, "{hidden}");
 
+        // A cycle of the private project is not found for a non-member, and its list is not either.
+        let cycle = store
+            .add_cycle(
+                store.card(private.card).unwrap().unwrap().project_id,
+                "Cycle 1",
+                "2026-11-02",
+                "2026-11-15",
+            )
+            .unwrap();
+        let path = format!("/v1/cycles/{}", cycle.id);
+        assert_eq!(call(&addr, &private.lea, "GET", &path).await.0, 200);
+        assert_eq!(call(&addr, &private.ben, "GET", &path).await.0, 404);
+
         // The issues across projects leave its cards out.
         assert!(count(&call(&addr, &private.lea, "GET", "/v1/issues").await.1) > 0);
         assert_eq!(
@@ -872,6 +885,8 @@ mod tests {
         "/v1/wiki/history/",
         "/v1/notices/",
         "/v1/milestones/",
+        // A cycle belongs to a project; `App::cycle` answers not found for one the asker may not see.
+        "/v1/cycles/",
         "/v1/people/",
         "/v1/tokens/",
         "/v1/favourites/",

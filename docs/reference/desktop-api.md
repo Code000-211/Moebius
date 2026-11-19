@@ -129,6 +129,14 @@ any route to any role that is not what its row says.
 | `DELETE /v1/templates/issues/{kind}` | member | no |
 | `PUT /v1/templates/pages/{name}` | member | no |
 | `DELETE /v1/templates/pages/{name}` | member | no |
+| `GET /v1/projects/{id}/cycles` | viewer | yes |
+| `POST /v1/projects/{id}/cycles` | member | no |
+| `GET /v1/cycles/{id}` | viewer | yes |
+| `PATCH /v1/cycles/{id}` | member | no |
+| `DELETE /v1/cycles/{id}` | member | no |
+| `POST /v1/cycles/{id}/close` | member | no |
+| `GET /v1/cards/{id}/cycle` | viewer | yes |
+| `PUT /v1/cards/{id}/cycle` | member | no |
 | `GET /v1/milestones` | viewer | yes |
 | `POST /v1/milestones` | member | no |
 | `GET /v1/milestones/{id}` | viewer | yes |
@@ -1083,6 +1091,68 @@ Deletes it; response `{"commit": text}`. `404` when the kind has no template.
 
 Sets or deletes a page template. A name is letters, digits, `-` and `_`, up to 64 (`422` otherwise). Request body:
 `{"text": text}`. Response: `{"name", "text", "commit"}`; a delete answers `{"commit"}` and `404` for no such template.
+### Cycles
+
+A cycle (ADR 0019) is a time box of one project: a name (unique in its project in any case, 1 to 80 characters), a first
+and a last day (`YYYY-MM-DD`, the last not before the first, at most 366 days in all) and the cards of that project it
+holds. A project need not use cycles. A card is in at most one open cycle, and only in one of its own project's: putting
+it into another takes it out of the first, and a cycle of another project is refused with `422`. A cycle's progress
+follows its cards: a card is done when its issue is closed or it is in `Done`, and points are the cards' estimates (a
+card without one counts no points). A project the asker may not see has no cycles for them: `404`. People change
+cycles, never agents.
+
+A `Cycle` is `{"id", "project_id", "name", "starts_on", "ends_on", "closed_at": Unix seconds or null, "created_at"}`. A
+`CycleView` is a `Cycle` with `"cards"` (a count), `"done"`, `"points"` and `"points_done"`. A `CycleDetail` is a
+`CycleView` whose `"cards"` is a list instead of a count, with `"figures": {"by_agents": done cards an agent ran code for, "tokens": tokens the runs of its cards used,
+"tokens_per_point": tokens per done point rounded down, or null while no point is done}`, `"burn_up": [{"day", "scope",
+"done"}]` and the cards `[{"id", "repository_id", "number", "title", "column", "done", "estimate", "added_at",
+"done_at", "by_agent", "tokens"}]`. The burn-up has a day from the start to the end, or to the day it was closed or
+today if earlier (none before the start): `scope` is the points of the cards added by the end of that day and `done` the
+points done by then, each at the card's estimate now. Making or editing a cycle, or closing it, sends `cycle_changed`;
+deleting one `cycle_removed`; a card's open cycle changing `card_cycle_changed`. Scripts see `card.cycle`.
+
+#### `GET /v1/projects/{id}/cycles`
+
+The project's cycles with their progress, the latest start first: `[CycleView]`. Errors: `404` for no such project.
+
+#### `POST /v1/projects/{id}/cycles`
+
+A member or an owner makes an open cycle. Request: `{"name", "starts_on", "ends_on"}`. Response: the `Cycle`. Errors:
+`409` for a name the project has in any case; `422` for a name or date that is not valid, an end before the start or
+more than 366 days; `404` for no such project.
+
+#### `GET /v1/cycles/{id}`
+
+The `CycleDetail`. Errors: `404`.
+
+#### `PATCH /v1/cycles/{id}`
+
+Replaces the name and dates of an open cycle; the request is the one of `POST`. Setting what is set sends no event.
+Errors: as `POST`; `422` for a closed cycle; `404`.
+
+#### `DELETE /v1/cycles/{id}`
+
+Deletes a cycle, open or closed, and answers it; its cards stay. Errors: `404`.
+
+#### `POST /v1/cycles/{id}/close`
+
+Closes an open cycle; the person closing it chooses what becomes of the cards that are not done. Request:
+`{"carry": "next", "to"?: id}` moves them to the open cycle `to` of the same project, or with none given to the open
+cycle that starts next; `{"carry": "out"}` leaves them in no open cycle. The closed cycle keeps every card it held, so
+its page still shows what was planned and what was done. Response: `{"cycle": the closed Cycle, "carried_to": Cycle or
+null, "carried": [card id]}`. Errors: `422` for a cycle that is closed already, a `to` that is not another open cycle of
+the project, or no cycle that starts next (nothing changes); `404`.
+
+#### `GET /v1/cards/{id}/cycle`
+
+The open cycle the card is in, or `null`. Errors: `404` for no such card.
+
+#### `PUT /v1/cards/{id}/cycle`
+
+Puts the card into an open cycle of its project, or out of its open cycle with `null`. Request: `{"cycle": id or null}`.
+Sends `card_cycle_changed` when it changed. Response: the cycle, or `null`. Errors: `404` for no such card or cycle; `422`
+for a cycle of another project or a closed one.
+
 ### Milestones
 
 A milestone (ADR 0019) is a goal of the organisation, not of a project: it has a name (unique in any case, 1 to 80
@@ -3768,6 +3838,8 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `wiki_changed` | A person edited the wiki through the API, or a refresh brought commits pushed to its `origin` from elsewhere. | `{"commit": string (the full id the pages are now read at)}` |
 | `wiki_error` | The wiki could not follow its `origin` on the server's refresh (every 30 seconds). | `{"message": string}` |
 | `intake_changed` | A request to a project was made, drafted, edited, accepted or declined. It carries no text. | `{"project": id, "request": id, "status": string}` |
+| `cycle_changed` | A cycle was made, edited or closed through the API. | `{"id", "project_id", "name", "starts_on", "ends_on", "closed_at", "created_at"}` |
+| `cycle_removed` | A cycle was deleted through the API; its cards stay. | `{"cycle": id}` |
 | `milestone_changed` | A milestone was made or edited through the API. | `{"id", "name", "target_date", "description", "created_at"}` |
 | `milestone_removed` | A milestone was deleted through the API; its cards stay. | `{"milestone": id}` |
 | `file_changed` | A file of a repository was saved through the API. | `{"repository": id, "path": string}` |
@@ -3783,6 +3855,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `project_kinds_changed` | The kinds a project offers changed. | `{"project": id, "kinds": [id]}` |
 | `card_kind_changed` | A card got a kind, lost it or had the values of its fields changed (also when its kind's fields were). | `{"card": id, "kind": text or null, "fields": {name: value}}` |
 | `card_assignees_changed` | The people a card is given to changed. | `{"card": id, "assignees": [handle]}` |
+| `card_cycle_changed` | The open cycle a card is in changed, also when a cycle was closed and carried it on. | `{"card": id, "cycle": id or null}` |
 | `card_milestones_changed` | The milestones a card is in changed. | `{"card": id, "milestones": [id]}` (in the order of their target dates) |
 | `inbox_assignees_changed` | The people an inbox item is given to changed. | `{"item": id, "assignees": [handle]}` |
 | `notice_added` | A person was told something (assigned, mentioned, a followed card changed). Sent only to that person. | `{"person": handle, "notice": the Notice}` |

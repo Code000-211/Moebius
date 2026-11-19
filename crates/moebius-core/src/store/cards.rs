@@ -160,6 +160,7 @@ fn card_statements(cards: &str, runs: &str, judgements: &str) -> Vec<String> {
         ),
         format!("DELETE FROM card_assignees WHERE card_id IN ({cards})"),
         format!("DELETE FROM milestone_cards WHERE card_id IN ({cards})"),
+        format!("DELETE FROM cycle_cards WHERE card_id IN ({cards})"),
         format!("DELETE FROM card_follows WHERE card_id IN ({cards})"),
         format!("DELETE FROM notices WHERE card_id IN ({cards})"),
         format!("DELETE FROM card_fields WHERE card_id IN ({cards})"),
@@ -382,6 +383,15 @@ impl Store {
                 [home],
             )?;
         }
+        // So do its cycles, which hold no cards any more: those were deleted above.
+        tx.execute(
+            &format!("DELETE FROM cycle_cards WHERE cycle_id IN (SELECT id FROM cycles WHERE project_id = ?1) AND {unused}"),
+            [home],
+        )?;
+        tx.execute(
+            &format!("DELETE FROM cycles WHERE project_id = ?1 AND {unused}"),
+            [home],
+        )?;
         tx.execute(
             &format!("DELETE FROM projects WHERE id = ?1 AND {unused}"),
             [home],

@@ -64,6 +64,9 @@ const AddRepositoryPage = lazy(() =>
 const ProjectPage = lazy(() =>
   import("./projects/ProjectPage").then((all) => ({ default: all.ProjectPage })),
 );
+const CyclesPage = lazy(() =>
+  import("./cycles/CyclesPage").then((all) => ({ default: all.CyclesPage })),
+);
 const MilestonesPage = lazy(() =>
   import("./milestones/MilestonesPage").then((all) => ({ default: all.MilestonesPage })),
 );
@@ -125,6 +128,7 @@ const PAGES_BUILT = new Set([
   "fleet",
   "projects",
   "milestones",
+  "cycles",
   "intake",
   "usage",
   "start",
@@ -156,6 +160,7 @@ export const routes = [
       { path: "inbox", element: <InboxPage /> },
       { path: "fleet", element: <FleetPage /> },
       { path: "milestones", element: <MilestonesPage /> },
+      { path: "cycles", element: <CyclesPage /> },
       { path: "intake", element: <IntakePage /> },
       { path: "projects", element: <ProjectsPage /> },
       { path: "projects/new", element: <AddRepositoryPage /> },
