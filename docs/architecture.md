@@ -70,7 +70,17 @@ on Linux (an AppImage and a `.deb`) and Windows (an installer):
    forwards only requests that carry a cookie with a random key (named after its port), set by the first address the
    window opens, that name the proxy in `Host`, and that have no `Origin` or the
    proxy's own.
-4. The window opens that address, and keeps only its own pages: a link to anywhere else, such as a pull request on a
+4. The rail (`rail::Rail`) remembers the servers: `servers.json` in the app's configuration directory holds each one's
+   id, name and address, and the access token is in the system's keychain (Secret Service on Linux, Credential Manager
+   on Windows; `rail::secrets`), never in a file. Each server that has been opened has a proxy of its own (its own port,
+   cookie and origin) that stays up while another is shown, and the page the window was on when another was opened
+   (`Rail::note_page`), which `Proxy::entry_url_at` leads back to. A server over SSH keeps its tunnel
+   (`rail::ssh`, the same `ssh -L` as `moebius connect`, in batch mode) beside its proxy; a host with no server is set up
+   by `moebius connect --yes` after a yes. `rail::poll` asks each server for its Inbox (`/v1/snapshot` and
+   `/v1/notices`), and one that does not answer is drawn with a grey dot. The web app draws the rail (`desktop/Rail.tsx`)
+   and calls the commands of `servers.rs` through the bridge; removing a server there is also how a person disconnects,
+   since sign-out in the web app does nothing in the app. At its start the app opens the server that was open last.
+5. The window opens that address, and keeps only its own pages: a link to anywhere else, such as a pull request on a
    forge, opens in the system's browser (`links::target`). Every page of the window gets `window.moebiusDesktop` first, which the web app's
    `desktop/WindowControls.tsx` calls to minimize, maximize and close the window from a strip on the textured ground.
 
@@ -502,8 +512,15 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `local/mod.rs` | A server of this machine that the app sets up and starts (D3): what the machine has (`State`: not set up, stopped, running, unavailable), and `start`, which brings `moebius`, runs `init` where there is no configuration, starts `serve` in the background and waits for its token and its answer. It shares `~/.moebius/bin` and `~/.moebius/server` with `moebius connect`. |
 | `local/host.rs` | The system the local server runs on, reached through a POSIX shell: `sh` on Linux, `wsl.exe -e sh` on Windows (WSL 2). |
 | `local/release.rs` | The program the app brings: `moebius` of the app's own version downloaded from its release, checked against that release's `SHA256SUMS` and put in `~/.moebius/bin`. |
+| `rail/mod.rs` | The rail of servers: the servers the app remembers, a proxy and the page of each that has been opened, adding (by address or over SSH), opening, removing, and `poll`, which says for each whether it answers and the count of its Inbox. |
+| `rail/records.rs` | `servers.json`: the remembered servers (id, name, address) and the one open last; no token. |
+| `rail/secrets.rs` | Where the tokens are kept: the system's keychain (`Keychain`), or `Memory` in tests. |
+| `rail/ssh.rs` | A server over SSH: the `ssh` tunnel that forwards a port and prints the host's token, and setting a host up with `moebius connect --yes`. |
+| `rail/status.rs` | What the rail shows of a server: whether it answers and its Inbox's count (`Entry`). |
+| `servers.rs` | The rail's commands on the Tauri side (`connect`, `connect_ssh`, `servers`, `switch_server`, `remove_server`, and the local server's `local_state` and `local_connect`): showing a server's web app in the window, the connect page when none is left, and opening the server that was open last at the start. |
 | `server.rs` | A server the app connects to (`Server`: its address and the access token), and `check`: the token and the server's version with `GET /v1/health`, refusing a server of another minor version with the release that matches. |
-| `window.rs` | The Tauri side, in the program rather than the library so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, the commands of the connect page (`connect`, `local_state`, `local_connect`), and the handlers that send a link leaving the app to the browser. |
+
+| `window.rs` | The Tauri side, in the program rather than the library so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, and the handlers that send a link leaving the app to the browser. |
 | `proxy/mod.rs` | The app's own address on the loopback: the web app at every path, `/v1/` forwarded to the server, and the key, `Host` and `Origin` checks that let only the window use it. |
 | `proxy/assets.rs` | The web app embedded from `web/dist`, served with the policies of `web/csp.json`. |
 | `proxy/forward.rs` | Forwarding to the server with the token: HTTP streamed both ways, and a WebSocket relayed message by message. |

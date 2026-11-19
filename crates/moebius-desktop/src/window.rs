@@ -1,22 +1,21 @@
 //! The Tauri side of the app: the one window, without a system frame, that shows the connect page and then the web app
-//! through the proxy, and the commands the connect page calls (`connect`, and `local_state` and `local_connect` for the server of this machine). It is part of the program rather than of the
+//! through a server's proxy (the rail of servers is in `servers`). It is part of the program rather than of the
 //! library, so that the library's tests do not link Tauri (on Windows a test executable without the program's
 //! manifest cannot load what Tauri needs from the system).
 //!
 //! Every page of the window gets [`BRIDGE`] before its own scripts: `window.moebiusDesktop`, what the web app calls to
 //! move the window, since it draws the window's controls on its own ground. The bridge calls Tauri's window commands,
-//! which `capabilities/web-app.json` allows the web app on the loopback; `connect` is allowed to the connect page only
-//! (`capabilities/connect.json`). An address the window does not keep (`links::target`) opens in the system's
+//! which `capabilities/web-app.json` allows the web app on the loopback, and the rail's commands (`servers`), which both
+//! capabilities allow. An address the window does not keep (`links::target`) opens in the system's
 //! browser.
 
 use std::sync::{Arc, Mutex};
 
 use moebius_desktop::links::{self, Target};
-use moebius_desktop::local::{self, Local};
-use moebius_desktop::proxy::{self, Proxy};
-use moebius_desktop::server::{self, Server};
 use tauri::webview::NewWindowResponse;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+use crate::servers::{self, Servers};
 
 /// The label of the main window, which the capabilities name.
 pub const MAIN: &str = "main";
@@ -30,18 +29,31 @@ pub const BRIDGE: &str = r#"
       minimize: () => invoke("plugin:window|minimize"),
       toggleMaximize: () => invoke("plugin:window|toggle_maximize"),
       close: () => invoke("plugin:window|close"),
+      // The rail of servers (no command returns a token).
+      servers: () => window.__TAURI_INTERNALS__.invoke("servers"),
+      switchServer: (id) => window.__TAURI_INTERNALS__.invoke("switch_server", { id }),
+      removeServer: (id) => window.__TAURI_INTERNALS__.invoke("remove_server", { id }),
+      connect: (address, token) => window.__TAURI_INTERNALS__.invoke("connect", { address, token }),
+      connectSsh: (host, setUp) => window.__TAURI_INTERNALS__.invoke("connect_ssh", { host, setUp }),
     }),
   });
 })();
 "#;
 
-/// The proxy of the server the window shows, once one is connected; the window's handlers read its origin.
+/// The origin of the web app the window shows, once a server is connected; the window's handlers read it.
 #[derive(Clone, Default)]
-struct Connected(Arc<Mutex<Option<Proxy>>>);
+pub struct Connected(Arc<Mutex<Option<String>>>);
 
 impl Connected {
     fn origin(&self) -> Option<String> {
-        self.0.lock().ok()?.as_ref().map(Proxy::origin)
+        self.0.lock().ok()?.clone()
+    }
+
+    /// Sets the origin of the server now shown, or none when the window shows the connect page.
+    pub fn set(&self, origin: Option<String>) {
+        if let Ok(mut current) = self.0.lock() {
+            *current = origin;
+        }
     }
 }
 
@@ -56,15 +68,19 @@ pub fn run() {
     tauri::Builder::default()
         .manage(connected.clone())
         .invoke_handler(tauri::generate_handler![
-            connect,
-            local_state,
-            local_connect
+            servers::connect,
+            servers::connect_ssh,
+            servers::servers,
+            servers::switch_server,
+            servers::remove_server,
+            servers::local_state,
+            servers::local_connect
         ])
         .setup(move |app| {
             let navigating = connected.clone();
             let opening = connected.clone();
             let handle = app.handle().clone();
-            WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
+            let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
                 .title("Moebius")
                 .inner_size(1280.0, 800.0)
                 .min_inner_size(720.0, 480.0)
@@ -94,57 +110,13 @@ pub fn run() {
                     NewWindowResponse::Deny
                 })
                 .build()?;
+            // The rail of servers: the window's first page is the connect page, until a remembered server opens.
+            let servers = Servers::new(app.handle());
+            servers.note_connect_page(window.url()?);
+            app.manage(servers);
+            tauri::async_runtime::spawn(servers::open_remembered(app.handle().clone()));
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("the desktop app runs");
-}
-
-/// Connects to the server at `address` with the access token `token`: checks it, starts the proxy and shows the web app
-/// in the window. A server it refuses leaves the window on the connect page with the reason.
-#[tauri::command]
-async fn connect(app: tauri::AppHandle, address: String, token: String) -> Result<(), String> {
-    open(&app, Server::new(&address, &token)).await
-}
-
-/// What this machine has of a server of its own, for the connect page's offer: `not-set-up`, `stopped`, `running`, or
-/// `unavailable: <why>`. It only looks.
-#[tauri::command]
-async fn local_state() -> String {
-    let local = match Local::of_this_machine() {
-        Ok(local) => local,
-        Err(reason) => return format!("unavailable: {reason}"),
-    };
-    match local.state().await {
-        local::State::Unavailable(reason) => format!("unavailable: {reason}"),
-        local::State::NotSetUp => "not-set-up".to_string(),
-        local::State::Stopped => "stopped".to_string(),
-        local::State::Running => "running".to_string(),
-    }
-}
-
-/// Sets up the server of this machine where it is not, starts it where it does not run, and connects to it. The token
-/// is read by the app and never goes to the page.
-#[tauri::command]
-async fn local_connect(app: tauri::AppHandle) -> Result<(), String> {
-    let local = Local::of_this_machine()?;
-    let server = local.start().await.map_err(|e| e.to_string())?;
-    open(&app, server).await
-}
-
-/// Checks `server`, starts its proxy and shows the web app of it in the window.
-async fn open(app: &tauri::AppHandle, server: Server) -> Result<(), String> {
-    server::check(&server).await.map_err(|e| e.to_string())?;
-    let proxy = proxy::start(server, proxy::embedded)
-        .await
-        .map_err(|e| format!("cannot start the app's own address: {e}"))?;
-    let url = proxy.entry_url().parse().map_err(|e| format!("{e}"))?;
-    let window = app.get_webview_window(MAIN).ok_or("the window is gone")?;
-    // The proxy of an earlier server is dropped, which stops it and everything it relays.
-    let connected = app.state::<Connected>();
-    *connected
-        .0
-        .lock()
-        .map_err(|_| "the app's state is broken")? = Some(proxy);
-    window.navigate(url).map_err(|e| e.to_string())
 }

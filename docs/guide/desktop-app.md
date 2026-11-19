@@ -49,6 +49,27 @@ that has nothing running). The next start of the app finds the same server again
 **Start it and connect** when it has stopped (after a reboot, say), without a new `init`. Releases are built for Linux
 x86_64 only, so another system gets no offer. On Windows, WSL 2 has to be installed (`wsl --install`).
 
+## Several servers
+
+The rail at the far left of the window holds a square for every server the app knows: the first letter of its address,
+the count of its Inbox in a badge, and a grey dot when it does not answer. The open one is raised. Click a square to
+open that server; it opens on the page you left it on. **+** connects another one:
+
+- **Address**: the server's address and an access token, as for the first one.
+- **Over SSH**: a host you can log in to with keys or the agent (the app asks no question: `ssh` runs in batch mode). The
+  app opens a tunnel to the server on that host and reads its token, as `moebius connect <host>` does. A host with no
+  server there is not changed until you say **Yes, set it up**, which runs `moebius connect --yes` for you; that needs
+  `moebius` on this machine.
+
+A right click on a square offers **Remove server**, which forgets it and deletes its token. That is also how you
+disconnect: signing out in the web app does nothing inside the app, since the app signs every request itself. The app
+opens the server that was open when you closed it, and shows the connect page, with the list of the servers it knows,
+when none answers.
+
+Tokens are kept in the system's keychain (Secret Service on Linux, which GNOME Keyring or KWallet provide; Credential
+Manager on Windows), never in a file. The list of servers, without tokens, is `servers.json` in the app's configuration
+directory (`~/.config/io.github.code000-211.moebius` on Linux).
+
 A server on another machine is reached as the web app reaches it: on its address if it listens on the network, or
 through the tunnel of `moebius connect <host> --no-window`, then `127.0.0.1:7171` in the app (see
 [Running Moebius](running-moebius.md)).
@@ -68,8 +89,9 @@ The answer's `token` (it starts with `moebius-access-`) goes into the app with t
 
 - The app shows the Inbox of the server, and the sidebar's connection says **Online**: the event stream reaches the
   server through the app.
-- Revoke the token on the My tokens page and start the app again: Connect answers that the server does not accept the
-  token.
+- Revoke the token on the My tokens page and start the app again: the server's square has a grey dot, and opening it
+  answers that the server does not accept the token. Remove it and connect again with a new token.
+- Connect a second server: its square appears in the rail; switch between them, and each comes back on its page.
 
 ## What can go wrong
 
@@ -91,4 +113,8 @@ The answer's `token` (it starts with `moebius-access-`) goes into the app with t
   install `moebius` yourself in `~/.moebius/bin` or on the `PATH` and press the button again.
 - **"the server did not answer within 90 seconds"**: read `~/.moebius/server/serve.log`; a port 7171 that is taken by
   another program is the usual reason (change `listen` in `~/.moebius/server/moebius.toml`).
-- The token is kept in the app's memory only, for now: the app asks for it on every start.
+- **"the system's keychain does not answer"**: nothing offers a Secret Service on this Linux session (install
+  `gnome-keyring` or KWallet and sign in to it) or the keychain is locked. The app keeps no token anywhere else, so it
+  does not add the server.
+- **"no server is set up on <host>"** over SSH: the login worked and there is no token on the host; say yes to set
+  one up, or run `moebius connect <host>` in a terminal.
