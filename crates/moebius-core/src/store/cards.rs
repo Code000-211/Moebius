@@ -28,6 +28,11 @@ pub struct Repository {
     /// The project the repository's new issues land in (see `projects`).
     #[serde(default)]
     pub home_project_id: i64,
+    /// The project whose own files this repository is (ADR 0019): a git repository Moebius keeps for a project without
+    /// a forge, which is no repository of the project's but holds the work of its cards that touch no other. None for
+    /// every repository a person added.
+    #[serde(default)]
+    pub files_of: Option<i64>,
 }
 
 impl Repository {
@@ -235,11 +240,12 @@ impl Store {
             trusted: trusted.to_vec(),
             project: project.map(Into::into),
             home_project_id: home,
+            files_of: None,
         })
     }
 
     pub fn repositories(&self) -> Result<Vec<Repository>> {
-        self.rows("SELECT id, name, path, forge, default_branch, github, trusted, project, home_project_id FROM repositories ORDER BY id", [], |r| {
+        self.rows("SELECT id, name, path, forge, default_branch, github, trusted, project, home_project_id, files_of FROM repositories ORDER BY id", [], |r| {
             let trusted: String = r.get(6)?;
             Ok(Repository {
                 id: r.get(0)?,
@@ -257,6 +263,7 @@ impl Store {
                 })?,
                 project: r.get(7)?,
                 home_project_id: r.get(8)?,
+                files_of: r.get(9)?,
             })
         })
     }

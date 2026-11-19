@@ -14,6 +14,8 @@ export interface Repository {
   github: string | null;
   trusted: string[];
   project?: string | null;
+  /** The project whose own files this repository holds; null for every repository a person added. */
+  files_of?: number | null;
 }
 
 export type RunStatus = "starting" | "running" | "waiting" | "succeeded" | "failed" | "stopped";

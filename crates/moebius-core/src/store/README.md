@@ -56,6 +56,11 @@ whose board a card is on. Adding a repository makes its home project in the same
 name and a key made from it (`key_for` in `store/projects.rs`: `web` is `WEB`, a second `web-` `WEB2`); a new card takes its
 repository's home project; removing a repository removes its home project when nothing is left on it, and its key can then be taken again.
 
+`repositories.files_of` marks the repository that holds a project's own files (at most one per project): it has the
+project as its home project but is not in `project_repositories`, so the cards of a project without a repository are on
+the project's board and are worked on in it like in any repository without a forge (`Store::add_project_files`,
+`Project::files`; `app/projects/files.rs` makes the git repository).
+
 The migration that adds the tables makes one project per repository, with its name and id, as its home project, and
 puts every card on it; a repository whose name an earlier one has in another case gets the project name `<name>
 (<id>)`, since project names are unique in any case. It gives each a provisional key, `#<id>`, which no project can choose, because SQL cannot make a

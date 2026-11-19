@@ -4,14 +4,16 @@
  * ask of it, and its files on the default branch, which can be read, edited and saved as a commit. The parts are
  * borderless cards grouped by space. The board of the repository is its own page. Delete, in the header, removes the
  * repository and asks first, because it takes the repository's cards, changes and chats with it and deletes its clone;
- * the server refuses while one of its runs is still going, and its sentence is shown in the dialog.
+ * the server refuses while one of its runs is still going, and its sentence is shown in the dialog. The repository that
+ * holds a project's own files (`files_of`) is shown with the project's name and has no Delete: it goes only with its
+ * project.
  */
 import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { snapshot as readSnapshot } from "../../api/calls/board";
-import { editTrusted, removeRepository } from "../../api/calls/projects";
+import { editTrusted, listProjects, removeRepository } from "../../api/calls/projects";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Repository } from "../../api/types/board";
@@ -75,10 +77,22 @@ export function ProjectPage() {
     );
   }
   const { repository } = board;
+  return <RepositoryView repository={repository} />;
+}
+
+/** The page of `repository`, once the snapshot has it. */
+function RepositoryView({ repository }: { repository: Repository }) {
+  const filesOf = repository.files_of ?? null;
+  const projects = useQuery({
+    queryKey: keys.projects,
+    queryFn: listProjects,
+    enabled: filesOf !== null,
+  });
+  const project = projects.data?.find((each) => each.id === filesOf);
   return (
     <>
       <PageHeader
-        title={repository.name}
+        title={project?.name ?? repository.name}
         back={
           <Tooltip content="All projects" side="bottom">
             <Button asChild variant="icon" aria-label="All projects">
@@ -93,7 +107,7 @@ export function ProjectPage() {
             <Button asChild size="sm" variant="secondary">
               <Link to={boardPath(repository.id)}>Open board</Link>
             </Button>
-            <Remove repository={repository} />
+            {filesOf === null && <Remove repository={repository} />}
           </>
         }
       />
@@ -104,7 +118,12 @@ export function ProjectPage() {
             <Fact label="Default branch" value={repository.default_branch} mono />
             <Fact label="Clone on the server" value={repository.path} mono />
           </dl>
-          {onForge(repository) ? (
+          {filesOf !== null ? (
+            <p className="m-0 max-w-prose text-base text-secondary">
+              These are the project's own files, kept on the server without a forge. Its cards are
+              worked on, reviewed and merged here until it has a repository.
+            </p>
+          ) : onForge(repository) ? (
             <Trusted key={repository.trusted.join(",")} repository={repository} />
           ) : (
             <p className="m-0 max-w-prose text-base text-secondary">

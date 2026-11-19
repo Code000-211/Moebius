@@ -309,8 +309,11 @@ impl Forge for NoForge {
 
     /// Fetches `origin` and fast-forwards the clone's default branch to it, so that work committed in the repository
     /// the clone came from arrives. A default branch that cannot fast-forward, because Moebius merged changes into it,
-    /// is left as it is.
+    /// is left as it is. A project's own files came from nowhere, so there is nothing to refresh them from.
     fn refresh(&self, repository: &Repository) -> Result<(), ForgeError> {
+        if repository.files_of.is_some() {
+            return Ok(());
+        }
         let clone = Path::new(&repository.path);
         let lock = self.repos.clone_lock(clone);
         let _refreshing = lock.lock().unwrap_or_else(|e| e.into_inner());

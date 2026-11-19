@@ -423,6 +423,7 @@ mod tests {
             trusted: vec!["ada".into()],
             project: None,
             home_project_id: 2,
+            files_of: None,
         }
     }
 
@@ -447,6 +448,7 @@ mod tests {
             key: "MOEBIUS".into(),
             created_at: 1_700_000_000,
             repositories: vec![2],
+            files: None,
         };
         let port = port();
         vec![
