@@ -591,7 +591,6 @@ export function AgentEditor(props: EditorProps) {
                         <div>
                           <Chip
                             selected={form.mcp.includes(name)}
-                            tone={broken ? "error" : "neutral"}
                             onClick={() => change({ mcp: toggle(form.mcp, name) })}
                           >
                             {name}

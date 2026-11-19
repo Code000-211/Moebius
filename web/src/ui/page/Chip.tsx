@@ -1,29 +1,19 @@
-/** A filter: a chip that is pressed or not, 28px tall at the control radius, with the status colour only where it means something. */
+/** A filter: a chip that is pressed or not, 28px tall at the control radius. It is never tinted with the colour of a state: a state is a status icon and a word (`StateLabel`). */
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
 
 export function Chip({
   selected,
-  tone = "neutral",
   onClick,
   children,
   className,
 }: {
   /** Whether this chip is the one that is on. */
   selected: boolean;
-  /** The state the chip filters to, when that is one of the four the palette carries. */
-  tone?: "neutral" | "progress" | "attention" | "complete" | "error";
   onClick: () => void;
   children: ReactNode;
   className?: string;
 }) {
-  const on = {
-    neutral: "bg-selected text-text",
-    progress: "bg-progress-fill text-progress-text",
-    attention: "bg-attention-fill text-attention-text",
-    complete: "bg-complete-fill text-complete-text",
-    error: "bg-error-fill text-error-text",
-  }[tone];
   return (
     <button
       type="button"
@@ -31,7 +21,9 @@ export function Chip({
       onClick={onClick}
       className={cn(
         "inline-flex min-h-7 cursor-pointer items-center gap-2 rounded-control px-2 text-sm font-medium transition-colors duration-(--motion-routine) ease-out",
-        selected ? on : "bg-sunken text-secondary hover:bg-hover hover:text-text",
+        selected
+          ? "bg-selected text-text"
+          : "bg-sunken text-secondary hover:bg-hover hover:text-text",
         className,
       )}
     >

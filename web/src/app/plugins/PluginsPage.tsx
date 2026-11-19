@@ -20,8 +20,8 @@ import { Empty } from "../../ui/page/Empty";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard } from "../../ui/page/Skeleton";
+import type { Tone } from "../../ui/page/StateLabel";
 import { StateLabel } from "../../ui/page/StateLabel";
-import type { Tone } from "../../ui/page/Status";
 import { InstalledPackages } from "./InstalledPackages";
 import { PluginSwitch, SWITCHED_BUILT_INS } from "./PluginSwitch";
 

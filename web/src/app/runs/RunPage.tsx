@@ -26,8 +26,8 @@ import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard } from "../../ui/page/Skeleton";
+import type { Tone } from "../../ui/page/StateLabel";
 import { StateLabel } from "../../ui/page/StateLabel";
-import type { Tone } from "../../ui/page/Status";
 import { TabPanel, Tabs } from "../../ui/page/Tabs";
 
 type Tab = "conversation" | "terminal" | "changes";
