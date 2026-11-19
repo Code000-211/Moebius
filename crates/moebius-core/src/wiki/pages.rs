@@ -48,6 +48,11 @@ impl Wiki {
     /// Every page, sorted by path; empty while the wiki has no commit.
     pub fn pages(&self) -> Result<Vec<PageInfo>> {
         let _turn = self.turn();
+        self.list()
+    }
+
+    /// Every page, the turn held.
+    pub(super) fn list(&self) -> Result<Vec<PageInfo>> {
         if kept::head(&self.path).is_none() {
             return Ok(Vec::new());
         }
@@ -164,7 +169,7 @@ fn git_text(path: &std::path::Path, blob: &str) -> crate::repos::Result<String> 
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
-fn info(path: String) -> PageInfo {
+pub(super) fn info(path: String) -> PageInfo {
     PageInfo {
         name: name_of(&path).to_string(),
         path,

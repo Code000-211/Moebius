@@ -1,6 +1,6 @@
 /** The calls of the Wiki page: the pages, one page (or an older version of it), its history, and writing, moving and deleting one. */
 import { del, get, post, put } from "../http";
-import type { PageInfo, Version, WikiHit, WikiPageView } from "../types/wiki";
+import type { PageInfo, PageLinks, Version, WikiHit, WikiPageView } from "../types/wiki";
 
 /** A page's path in a URL: each part percent-encoded, the slashes kept. */
 export function pageUrl(path: string): string {
@@ -57,4 +57,14 @@ export function searchWiki(query: string, project?: string, limit?: number): Pro
   if (project) params.set("project", project);
   if (limit) params.set("limit", String(limit));
   return get<WikiHit[]>(`/v1/wiki/search?${params}`);
+}
+
+/** What the page links to and what links to it, pages and cards. */
+export function wikiLinks(path: string): Promise<PageLinks> {
+  return get<PageLinks>(`/v1/wiki/links/${pageUrl(path)}`);
+}
+
+/** The pages that link to the card named `key`, such as `WEB-12`. */
+export function wikiCardPages(key: string): Promise<PageInfo[]> {
+  return get<PageInfo[]>(`/v1/wiki/cards/${encodeURIComponent(key)}`);
 }

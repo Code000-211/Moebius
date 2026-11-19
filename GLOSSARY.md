@@ -351,7 +351,7 @@ _Avoid_: docs, knowledge base, notes
 
 **Page**:
 One Markdown file of the wiki, named by its path without `.md`, such as `Team/On call`; renamed or moved, it keeps its
-history.
+history, and the links to it, `[[Team/On call]]` or `[[On call]]`, are rewritten to follow it.
 _Avoid_: document, article, note
 
 **Assignee**:

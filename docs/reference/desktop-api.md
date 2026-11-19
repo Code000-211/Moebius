@@ -112,6 +112,8 @@ any route to any role that is not what its row says.
 | `POST /v1/wiki/moves` | member | no |
 | `GET /v1/wiki/history/{*path}` | viewer | yes |
 | `GET /v1/wiki/search` | viewer | yes |
+| `GET /v1/wiki/links/{*path}` | viewer | yes |
+| `GET /v1/wiki/cards/{key}` | viewer | yes |
 | `POST /v1/wiki/refresh` | member | yes |
 | `POST /v1/wiki/proposals` | member | yes |
 | `POST /v1/wiki/proposals/{id}/merge` | member | no |
@@ -1019,6 +1021,40 @@ clone and the item as they were.
 
 A member dismisses the proposal: its branch is deleted, the item resolved, and the wiki is as it was. Request body
 `{"reason"?: string}`. Response: `null`. Errors: `404` as for merging.
+
+### Links, backlinks and renames
+
+`[[Page name]]` in a page, or in a card's text, leads to a page, and `WEB-12` to a card (a card's [name](#projects):
+its project's key and its number in the project); in a project's page `#12` is the card `<key>-12` of that project.
+Code, inline or fenced, holds no links. `[[Page name|label]]` gives the link a label, which only readers of the
+Markdown see. A link names a page by its path (`[[Team/On call]]`) or by its name (`[[On call]]`), in any case; a name
+that several pages have leads to the one in the folder of the linking page, then the one of its project, then the first
+by path. A link to no page leads nowhere, and a card's text leads to pages as if it were in its project's folder.
+
+A page lists the pages and cards that link to it. The links between pages are kept in the store and made again from the
+files after every change of the wiki (`wiki_changed`), so a page edited with any git tool counts; the cards' links to
+pages are read from the cards' text when asked.
+
+A move or rename of a page rewrites the links to it in the other pages, in the commit of the move (`Rename` or `Move`
+shows the files in its diff): a link by path gets the new path, a link by name the new name, or the new path when
+another page has that name; the page's own links are written to lead where they led from its new place. So the links between pages keep
+leading to the page in the files too, and in a clone anyone reads. A card's text is an issue of a forge and is not
+rewritten: a `[[link]]` in it to a moved page, by its path or by a name no page has now, leads nowhere until the card's
+text is edited.
+
+### `GET /v1/wiki/links/{*path}`
+
+What the page links to and what links to it: `{"links": {"pages": [{"link": string, "path": string | null}], "cards":
+[{"key": string, "title": string | null}]}, "backlinks": {"pages": [{"path", "name"}], "cards": [{"key", "title"}]}}`.
+`links` is what the page's text says, each name with the page it leads to (`null` when there is none) and each card
+with its title (`null` when there is no such card); `backlinks` are the pages, sorted by path, and the cards, whose
+text has a `[[link]]` to the page. What a person may not see is left out: a private project's pages and cards they are not a member of are not listed (a link to such a page has `path` `null`, such a card a `title` `null`), and the page of a private project they may not see is `404`. A page that is not there has backlinks all the same, as a deleted page keeps them.
+Errors: `422` for a path that is not a page's.
+
+### `GET /v1/wiki/cards/{key}`
+
+The pages that link to the card `key`, such as `WEB-12`, sorted by path, without the pages of private projects the person is not a member of: `[{"path", "name"}]`. Errors: `404` for no
+such card (or one of a private project they may not see), `422` for a key that is not a card's name.
 
 ### `POST /v1/wiki/refresh`
 

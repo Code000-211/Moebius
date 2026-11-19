@@ -337,11 +337,12 @@ impl Server {
             None => None,
         };
         if let Some(url) = &config.wiki_url {
-            app.set_wiki(Arc::new(crate::wiki::Wiki::open(
-                &app,
-                url,
-                &config.wiki_dir(),
-            )?));
+            let wiki = Arc::new(crate::wiki::Wiki::open(&app, url, &config.wiki_dir())?);
+            // The links between pages are made from the files the clone holds now.
+            if let Err(error) = wiki.index(&app) {
+                eprintln!("Moebius cannot index the wiki's links: {error}");
+            }
+            app.set_wiki(wiki);
         }
         if let Some(harness_repo) = &harness_repo {
             // This also gives older automations the workflow files that hold them from now on.

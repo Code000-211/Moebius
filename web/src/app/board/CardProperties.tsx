@@ -36,6 +36,7 @@ import { KindProperties } from "../kinds/KindProperties";
 import { MilestonesProperty } from "../milestones/MilestonesProperty";
 import { AssigneesProperty } from "../people/AssigneesProperty";
 import { FollowProperty } from "../people/FollowProperty";
+import { WikiPagesProperty } from "../wiki/WikiBacklinks";
 import { cardKey } from "./cardKey";
 import {
   type CardStatus,
@@ -178,6 +179,7 @@ export function CardProperties({
         }}
       />
       <FollowProperty card={card.id} />
+      {card.project_key !== "" && <WikiPagesProperty cardName={cardKey(card)} />}
       <EditableProperty
         name="Priority"
         editor={{

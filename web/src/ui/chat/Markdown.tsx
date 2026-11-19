@@ -5,12 +5,13 @@
  * the Markdown that asks for it, so a page keeps its one `<h1>` and an agent's `#` lands as an `<h2>`. Code blocks
  * are highlighted by the grammars of `ui/code/highlight.ts` (see `CodeBlock`) and have a Copy button. What an agent
  * writes line by line is drawn line by line (`keepNewlines`); a Markdown file's own wrapping stays soft. Links open
- * in a new tab; a `#18` that names a card is a link with a preview card (`CardLinks`). Raw HTML in the text is not rendered, as `react-markdown` does by default.
+ * in a new tab, but a link that starts with `/` opens that page of the app; a `#18` that names a card is a link with a preview card (`CardLinks`). Raw HTML in the text is not rendered, as `react-markdown` does by default.
  */
 import { CheckSquareIcon, SquareIcon } from "@phosphor-icons/react";
 import type { Element, ElementContent } from "hast";
 import { memo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
+import { Link, useInRouterContext } from "react-router";
 import remarkGfm from "remark-gfm";
 import { cn } from "../lib/cn";
 import { linkCards } from "./CardLinks";
@@ -31,6 +32,26 @@ export function languageOf(node: Element | undefined): string | undefined {
   return typeof found === "string" ? found.slice("language-".length) : undefined;
 }
 
+const LINK_CLASS =
+  "text-text underline underline-offset-4 transition-colors duration-(--motion-routine) ease-out hover:text-secondary";
+
+/** A link of the text: one that starts with a single `/` is a page of the app, opened in place; any other opens in a new tab. */
+function TextLink({ href, children }: { href: string | undefined; children: ReactNode }) {
+  const inRouter = useInRouterContext();
+  if (href?.startsWith("/") && !href.startsWith("//") && inRouter) {
+    return (
+      <Link to={href} className={LINK_CLASS}>
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
+      {children}
+    </a>
+  );
+}
+
 const components: Components = {
   pre({ node }) {
     const code = node?.children.find(
@@ -45,18 +66,7 @@ const components: Components = {
     if (typeof className === "string" && className.includes("language-")) return null;
     return <code className="rounded-small bg-code px-2 font-mono text-sm">{children}</code>;
   },
-  a({ href, children }) {
-    return (
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-text underline underline-offset-4 transition-colors duration-(--motion-routine) ease-out hover:text-secondary"
-      >
-        {children}
-      </a>
-    );
-  },
+  a: ({ href, children }) => <TextLink href={href}>{children}</TextLink>,
   p: ({ children }) => <p className="my-4 first:mt-0 last:mb-0">{linkCards(children)}</p>,
   ul: ({ children, className }) => (
     <ul

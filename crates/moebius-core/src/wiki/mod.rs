@@ -9,10 +9,12 @@
 //!
 //! This module holds the clone and the names of pages; `pages` reads the pages and their history, `edits` writes,
 //! moves and deletes them, `proposals` keeps an agent's edit on a branch that waits in the inbox for a person to merge
-//! it, `prompt` gives a run the pages its card links to, `search` finds pages by their words, and `sight` says which
-//! pages a person or run sees (a private project's pages are its members').
+//! it, `prompt` gives a run the pages its card links to, `search` finds pages by their words, `sight` says which
+//! pages a person or run sees (a private project's pages are its members'), and `links` holds the links between pages
+//! and cards, which are made again from the files whenever the clone changes.
 
 mod edits;
+mod links;
 mod pages;
 mod prompt;
 mod proposals;
@@ -27,6 +29,7 @@ use crate::bus::Event;
 use crate::decide::Actor;
 use crate::repos::{Repos, git, kept};
 
+pub use links::{Backlinks, CardRef, Links, PageLink, PageLinks};
 pub use pages::{PageInfo, PageView, Version};
 pub use prompt::for_card;
 pub use proposals::WIKI_PROPOSAL;
@@ -125,9 +128,25 @@ impl Wiki {
         let before = kept::head(&self.path);
         kept::follow_origin(app, &self.repos, &self.url, &self.path)?;
         if let Some(commit) = kept::head(&self.path).filter(|now| Some(now) != before.as_ref()) {
-            app.bus.publish(Event::WikiChanged { commit });
+            self.changed(app, commit);
         }
         Ok(())
+    }
+
+    /// Makes the links again from the files, then tells the bus that the pages changed. The caller holds the turn.
+    fn changed(&self, app: &App, commit: String) {
+        if let Err(e) = self.reindex(app) {
+            app.bus.publish(Event::WikiError {
+                message: format!("cannot index the wiki's links: {e}"),
+            });
+        }
+        app.bus.publish(Event::WikiChanged { commit });
+    }
+
+    /// Makes the links again from the files, as the server does once when it starts.
+    pub fn index(&self, app: &App) -> Result<()> {
+        let _turn = self.turn();
+        self.reindex(app)
     }
 
     /// The page file `file` in the clone, refused when it or a folder above it is a link, which could lead out of the

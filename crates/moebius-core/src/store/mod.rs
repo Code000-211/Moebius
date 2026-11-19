@@ -52,6 +52,7 @@ mod retros;
 mod runs;
 mod shadows;
 mod usage;
+mod wiki_links;
 mod wiki_search;
 mod workflow_schedules;
 mod workflows;
@@ -100,6 +101,7 @@ pub use usage::{
     ANSWERING, ActivityUsage, AgentUsage, ClassUsage, ModelUsage, NO_RUN, Scope, ToolWait, UNKNOWN,
     Usage, UsageTotals,
 };
+pub use wiki_links::{CARD as WIKI_CARD, PAGE as WIKI_PAGE, WikiLink};
 pub(crate) use wiki_search::match_all;
 pub use wiki_search::{IndexedPage, WikiHit};
 pub use workflows::{WorkflowNodeRun, WorkflowRun};
@@ -495,6 +497,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     intake::SCHEMA,
     projects::PRIVATE,
     cycles::SCHEMA,
+    wiki_links::SCHEMA,
 ];
 
 pub fn now() -> i64 {
