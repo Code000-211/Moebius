@@ -101,6 +101,18 @@ pub enum Operate {
     },
     /// The runners agents can name, with how many runs go on each.
     Runners,
+    /// Pause all agents: the runs going are held and no run starts until `resume`.
+    Pause {
+        /// Why; recorded with the decision.
+        #[arg(long, default_value = "")]
+        reason: String,
+    },
+    /// Resume all agents after `pause`.
+    Resume {
+        /// Why; recorded with the decision.
+        #[arg(long, default_value = "")]
+        reason: String,
+    },
     /// The agents the server can run.
     Agents,
     /// Show, save and delete an agent of the harness configuration repository.
@@ -242,6 +254,8 @@ impl Operate {
             Grilling { command } => chats::grilling(command, get),
             Automation { command } => automations::automation(command),
             Runners => agents::runners(),
+            Pause { reason } => agents::pause("pause", reason),
+            Resume { reason } => agents::pause("resume", reason),
             Agents => agents::agents(),
             Agent { command } => agents::agent(command, get),
             Rules { command } => rules::rules(command.as_ref()),
@@ -563,6 +577,22 @@ pub(crate) mod tests {
                 "POST".into(),
                 "/v1/takeovers/3/release".into(),
                 Some(json!({"reason": "back"}))
+            )
+        );
+        assert_eq!(
+            route(&["pause", "--reason", "lunch"]),
+            (
+                "POST".into(),
+                "/v1/runs/pause".into(),
+                Some(json!({"reason": "lunch"}))
+            )
+        );
+        assert_eq!(
+            route(&["resume"]),
+            (
+                "POST".into(),
+                "/v1/runs/resume".into(),
+                Some(json!({"reason": ""}))
             )
         );
         assert_eq!(route(&["retro"]).1, "/v1/retros");

@@ -38,6 +38,30 @@ pub fn own_group(command: &mut Command) -> &mut Command {
     }
 }
 
+/// Holds the process `pid`, which leads its own process group (see [`own_group`]), and every process it started, until
+/// [`resume_tree`]; they stay in memory and use no processor time. On Windows nothing is held.
+pub fn suspend_tree(pid: u32) {
+    signal_group(pid, "-STOP");
+}
+
+/// Lets what [`suspend_tree`] held go on where it was.
+pub fn resume_tree(pid: u32) {
+    signal_group(pid, "-CONT");
+}
+
+#[cfg(unix)]
+fn signal_group(pid: u32, signal: &str) {
+    let _ = Command::new("kill")
+        .args([signal, "--", &format!("-{pid}")])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
+#[cfg(windows)]
+fn signal_group(_pid: u32, _signal: &str) {}
+
 /// Kills the process `pid` alone.
 pub fn kill_process(pid: u32) {
     #[cfg(unix)]

@@ -118,6 +118,10 @@ impl CardRuns for Waiting {
         });
         true
     }
+
+    fn hold(&self, held: bool) {
+        let _ = held;
+    }
 }
 
 struct Setup {

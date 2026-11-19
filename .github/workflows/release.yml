@@ -105,7 +105,7 @@ jobs:
           echo "VERSION=$version" >> "$GITHUB_ENV"
       - if: runner.os == 'Linux'
         name: Install what the desktop app builds with
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev
       - uses: pnpm/action-setup@v4
         with:
           version: 10

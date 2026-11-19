@@ -113,7 +113,7 @@ pub use issues::{Claim, NewBlocker, NewComment, NewLabels, NewParent};
 use people::TOKEN_PREFIX;
 pub use people::{AddedPerson, IssuedToken};
 pub use repositories::{EditedRepository, NewRepository};
-pub use runs::Steer;
+pub use runs::{PauseState, Steer};
 pub use session::{CODE_LIFETIME, Codes, LoginCode, SessionStatus, login_url};
 pub use uploads::{UPLOAD_LIMIT, Upload};
 

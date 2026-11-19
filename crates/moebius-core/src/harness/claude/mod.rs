@@ -251,6 +251,13 @@ impl CardRuns for ClaudeCode {
         send(&live.stdin, &user_message(&live.session, message))
     }
 
+    /// Holds every Claude Code that is going, and what it started (see `platform::suspend_tree`), or lets them go on.
+    fn hold(&self, held: bool) {
+        for live in lock(&self.live).values() {
+            hold_process(live, held);
+        }
+    }
+
     /// Kills the run's Claude Code; the run ends as `stopped`.
     fn stop(&self, run_id: i64) -> bool {
         let Some(live) = lock(&self.live).get(&run_id).cloned() else {
@@ -446,6 +453,16 @@ impl ChatRuns for ClaudeCode {
             *closing = Some(Closing::Ended);
         }
         lock(&live.stdin).take().is_some()
+    }
+}
+
+/// Holds Claude Code and everything it started, or lets them go on (see `platform::own_group`).
+fn hold_process(live: &Live, held: bool) {
+    let pid = lock(&live.child).id();
+    if held {
+        crate::platform::suspend_tree(pid);
+    } else {
+        crate::platform::resume_tree(pid);
     }
 }
 

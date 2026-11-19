@@ -72,6 +72,7 @@ fn show(app: &tauri::AppHandle, rail: &Rail, url: &str) -> Result<(), String> {
         Some(server) => crate::notifications::start(app, server),
         None => crate::notifications::stop(app),
     }
+    crate::tray_icon::follow(app, rail.open_server());
     window
         .navigate(url.parse().map_err(|e| format!("{e}"))?)
         .map_err(|e| e.to_string())
@@ -82,6 +83,7 @@ fn show_connect_page(app: &tauri::AppHandle) -> Result<(), String> {
     let window = app.get_webview_window(MAIN).ok_or("the window is gone")?;
     app.state::<Connected>().set(None);
     crate::notifications::stop(app);
+    crate::tray_icon::follow(app, None);
     let page = app
         .state::<Servers>()
         .connect_page

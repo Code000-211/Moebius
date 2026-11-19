@@ -38,6 +38,7 @@ mod localize;
 mod milestones;
 mod notices;
 mod packages;
+mod pausing;
 mod planning;
 pub mod plugin_settings;
 mod projects;

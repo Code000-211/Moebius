@@ -856,6 +856,10 @@ mod tests {
         fn stop(&self, _: i64) -> bool {
             false
         }
+
+        fn hold(&self, held: bool) {
+            let _ = held;
+        }
     }
 
     impl ChatRuns for SlowWake {

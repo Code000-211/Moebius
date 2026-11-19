@@ -79,6 +79,16 @@ the window forward and opens the card or item, and reads the notice. The count o
 window's title, `(3) Moebius`, for the server that is open; reading a notice, here or in a browser, lowers it. What was unread when the app started
 is counted and not announced.
 
+### The tray icon
+
+Once the app is running, its icon sits in the tray (the notification area of Windows, the
+status area of a Linux desktop that shows tray icons, which GNOME needs an extension for). Its menu shows the
+server's state: **the agents working**, **the Inbox**, and **today's tokens** against the day's budget. These
+figures follow the server's events. Under them: **New issue** and **Ask Moebius** bring the window up and open the
+form of a new issue or a new chat, **Open Moebius** brings the window up, also when it was minimized, and **Pause all
+agents** holds every run of the server and starts none until you choose **Resume all agents**, which the same item
+says while they are paused. Hovering the icon shows the same figures. Closing the window quits the app and its icon.
+
 A server on another machine is reached as the web app reaches it: on its address if it listens on the network, or
 through the tunnel of `moebius connect <host> --no-window`, then `127.0.0.1:7171` in the app (see
 [Running Moebius](running-moebius.md)).
@@ -105,7 +115,14 @@ The answer's `token` (it starts with `moebius-access-`) goes into the app with t
 - Have someone give you a card (or mention you in a comment): a notification appears, the count rises by one, and
   choosing it opens the card.
 
+- Choose **Pause all agents** in the tray: the item says **Resume all agents**, the first line says "(paused)", and
+  `moebius pause` is not needed; the agents stand still until you resume them. From a terminal, `moebius pause` and
+  `moebius resume` do the same (see [the desktop API](../reference/desktop-api.md#post-v1runspause-and-post-v1runsresume)).
+
 ## What can go wrong
+
+- **No tray icon on Linux**: a desktop without a status area (GNOME without its AppIndicator extension) shows none.
+  The app works without it, only its Pause all agents item is out of reach: use `moebius pause` then.
 
 - **"the server runs Moebius 0.12.4, and this app is Moebius 0.13.0, which works with servers of 0.13 only"**: the
   app and the server are of different releases. The message names the release whose app matches the server; install

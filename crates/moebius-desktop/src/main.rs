@@ -5,6 +5,7 @@
 
 mod notifications;
 mod servers;
+mod tray_icon;
 mod window;
 
 fn main() {

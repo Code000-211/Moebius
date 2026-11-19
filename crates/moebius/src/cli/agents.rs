@@ -80,6 +80,14 @@ pub fn runners() -> Plan {
     ))
 }
 
+/// `pause` and `resume`: all agents.
+pub fn pause(action: &str, reason: &str) -> Plan {
+    Ok((
+        Request::post(format!("/v1/runs/{action}"), json!({ "reason": reason })),
+        Show::Object,
+    ))
+}
+
 /// `agent show`, `save` and `delete`.
 pub fn agent(command: &AgentCommand, get: &mut dyn FnMut(&str) -> Result<Value, String>) -> Plan {
     Ok(match command {

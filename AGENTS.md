@@ -24,7 +24,8 @@ documentation; `CONTRIBUTING.md` says the same as this file for people.
 - `crates/moebius-plugin-api`: the plugin trait and the host that calls plugins with a time limit, failing closed.
 - `crates/moebius-desktop`: the desktop app (Tauri 2): the web app of the same release in a window of its own, the
   connect page in `connect/`, `server` (the version check), `proxy/` (the web app and `/v1/` on the loopback, with
-  the token) and `window` (the Tauri side). It needs WebKitGTK 4.1 to build on Linux (`libwebkit2gtk-4.1-dev`); see
+  the token), `tray` (the figures of the tray icon) and `window` (the Tauri side, with `tray_icon`). It needs WebKitGTK 4.1
+  and the AppIndicator library to build on Linux (`libwebkit2gtk-4.1-dev`, `libayatana-appindicator3-dev`); see
   its `README.md`.
 - `crates/moebius`: the `moebius` binary (`init`, `serve`, `check-script`, `export`, and in `cli/` the commands that
   operate a running server through the desktop API: `api` for any route, a command for what is done often; the Moebius
@@ -66,7 +67,7 @@ documentation; `CONTRIBUTING.md` says the same as this file for people.
 ## Checks
 
 Run all three before every commit; CI runs the same. On Linux they build the desktop app too, which needs WebKitGTK
-(on Debian and Ubuntu: `libwebkit2gtk-4.1-dev librsvg2-dev`):
+(on Debian and Ubuntu: `libwebkit2gtk-4.1-dev librsvg2-dev libayatana-appindicator3-dev`):
 
 ```sh
 cargo fmt --all

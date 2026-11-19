@@ -101,10 +101,11 @@ impl Engine {
     }
 
     /// Runs the script of the card's column once and applies what it did. A held card has no script run: it stays
-    /// where it is, and nothing starts for it, until a person or the Moebius agent releases it.
+    /// where it is, and nothing starts for it, until a person or the Moebius agent releases it. While all agents are
+    /// paused no card has a script run, so the board starts no run and moves no card.
     pub fn tick(&self, card_id: i64) -> Result<Step, BoardError> {
         let card = self.app.card(card_id)?;
-        if card.held.is_some() {
+        if card.held.is_some() || self.app.runs_paused()?.is_some() {
             return Ok(Step::default());
         }
         let column = self
@@ -654,6 +655,26 @@ end
         let step = engine.settle(card.id).unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Not started");
         assert_eq!(step.waiting.as_deref(), Some("waiting for #99"));
+    }
+
+    #[test]
+    fn while_all_agents_are_paused_no_script_runs_and_no_run_may_start() {
+        let (_dir, app, engine, repo) = setup();
+        crate::harness::repo::testing::put(
+            &app,
+            "demo",
+            "backlog.luau",
+            "function on_card(card) moebius.move('Done') error('the script was called') end",
+        );
+        let card = app.create_issue(repo, "Paused", "", OWNER_AUTHOR).unwrap();
+        assert!(app.store.pause_runs(OWNER_AUTHOR).unwrap());
+        assert_eq!(engine.tick(card.id).unwrap(), super::Step::default());
+        assert!(matches!(
+            crate::board::may_start(&app, &card),
+            Err(crate::board::StartError::Paused)
+        ));
+        assert!(app.store.resume_runs().unwrap());
+        assert!(crate::board::may_start(&app, &card).is_ok());
     }
 
     #[test]
