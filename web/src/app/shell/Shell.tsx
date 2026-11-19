@@ -9,22 +9,23 @@
  * focus for it (`palette/focus.tsx`), and notes the places seen and the sidebar's collapsed state (kept per browser).
  */
 import { Suspense, useEffect, useState } from "react";
-import { Outlet, useLocation } from "react-router";
+import { Outlet, useLocation, useNavigate } from "react-router";
 import { useConnection, useReconnect } from "../../live/LiveProvider";
 import { PackageSheet } from "../../packages/PackageSheet";
 import { PackageSheetProvider, usePackageSheet } from "../../packages/PackageSheetContext";
 import { cn } from "../../ui/lib/cn";
-import { isShortcut } from "../../ui/lib/shortcuts";
+import { isShortcut, modalIsOpen } from "../../ui/lib/shortcuts";
 import { PageBoundary } from "../../ui/page/PageBoundary";
 import { PropertiesProvider } from "../../ui/page/Properties";
 import { SheetSlotProvider } from "../../ui/page/SheetSlot";
 import { SkeletonCard } from "../../ui/page/Skeleton";
-import { NewIssueProvider } from "../board/NewIssueHost";
+import { isTyping, NewIssueProvider } from "../board/NewIssueHost";
 import { readFlag, writeFlag } from "../storage";
 import { CommandBar } from "./CommandBar";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { PaletteFocusProvider } from "./palette/focus";
 import { noteRecent } from "./palette/model";
+import { SHORTCUTS_KEY } from "./palette/shortcuts";
 import { RightColumn } from "./RightColumn";
 import { Sidebar } from "./Sidebar";
 
@@ -53,6 +54,20 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
   const reconnect = useReconnect();
   const [collapsed, setCollapsed] = useState(() => readFlag(COLLAPSED_KEY));
   const [commandOpen, setCommandOpen] = useState(false);
+
+  const navigate = useNavigate();
+  useEffect(() => {
+    // `?` opens the page that lists the shortcuts, where a key belongs to the page: not in a field, not in a dialog.
+    function onQuestion(event: KeyboardEvent) {
+      if (event.key !== SHORTCUTS_KEY || event.defaultPrevented) return;
+      if (event.ctrlKey || event.metaKey || event.altKey || event.repeat) return;
+      if (isTyping(event.target) || modalIsOpen()) return;
+      event.preventDefault();
+      void navigate("/shortcuts");
+    }
+    window.addEventListener("keydown", onQuestion);
+    return () => window.removeEventListener("keydown", onQuestion);
+  }, [navigate]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {

@@ -4,6 +4,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import type { Card, InboxItem } from "../../api/types/board";
+import { NEW_ISSUE_KEY, SHORTCUT_GROUPS, SHORTCUTS_KEY } from "../shell/palette/shortcuts";
 import { type CardActions, cardCommands } from "./cardCommands";
 
 function card(extra: Partial<Card> = {}): Card {
@@ -61,7 +62,7 @@ describe("the commands of a card", () => {
     const act = actions();
     const commands = cardCommands(card(), undefined, act);
     expect(ids(commands)).toEqual(["assign", "block", "close", "sub-issue"]);
-    expect(commands.map((c) => c.key)).toEqual(["a", "b", "c", "s"]);
+    expect(commands.map((c) => c.key)).toEqual(["a", "b", "d", "s"]);
     for (const command of commands) command.run();
     expect(act.claim).toHaveBeenCalledOnce();
     expect(act.block).toHaveBeenCalledOnce();
@@ -128,10 +129,71 @@ describe("the commands of a card", () => {
     expect(act.reject).toHaveBeenCalledWith(ready, 5);
   });
 
+  it("gives every command of every state a key that is on the shortcuts page, none twice at once", () => {
+    const shown = new Set(
+      SHORTCUT_GROUPS.flatMap((g) =>
+        g.shortcuts.flatMap((s) => s.keys.map((k) => k.toLowerCase())),
+      ),
+    );
+    const states: [Card, InboxItem | undefined][] = [
+      [card(), undefined],
+      [
+        card({ claimed_by: "person", closed: true, held: { reason: null, by: "p", at: 0 } }),
+        undefined,
+      ],
+      [card({ run: { id: 3, agent: "coder", purpose: "code", status: "running" } }), undefined],
+      [card({ column: "Backlog" }), item("approve_issue")],
+      [card(), item("stuck")],
+      [card({ column: "Ready to merge" }), item("ready_to_merge")],
+    ];
+    for (const [c, i] of states) {
+      const commands = cardCommands(c, i, actions());
+      for (const command of commands) {
+        expect(command.key, command.id).toBeDefined();
+        expect(shown.has(command.key ?? ""), command.id).toBe(true);
+      }
+      const keys = commands.map((command) => command.key);
+      expect(new Set(keys).size).toBe(keys.length);
+      // `C` and `?` belong to the whole app.
+      expect(keys).not.toContain(NEW_ISSUE_KEY);
+      expect(keys).not.toContain(SHORTCUTS_KEY);
+    }
+  });
+
   it("offers no move where the board lets a person none", () => {
     const moves = cardCommands(card(), undefined, actions()).filter((c) =>
       c.id.startsWith("move-"),
     );
     expect(moves).toEqual([]);
+  });
+  it("gives every command of every state a key, each on the shortcuts page and none twice at once", () => {
+    const shown = new Set(
+      SHORTCUT_GROUPS.flatMap((g) =>
+        g.shortcuts.flatMap((s) => s.keys.map((k) => k.toLowerCase())),
+      ),
+    );
+    const states: [Card, InboxItem | undefined][] = [
+      [card(), undefined],
+      [
+        card({ claimed_by: "person", closed: true, held: { reason: null, by: "p", at: 0 } }),
+        undefined,
+      ],
+      [card({ run: { id: 3, agent: "coder", purpose: "code", status: "running" } }), undefined],
+      [card({ column: "Backlog" }), item("approve_issue")],
+      [card(), item("stuck")],
+      [card({ column: "Ready to merge" }), item("ready_to_merge")],
+    ];
+    for (const [c, i] of states) {
+      const commands = cardCommands(c, i, actions());
+      for (const command of commands) {
+        expect(command.key, command.id).toBeDefined();
+        expect(shown.has(command.key ?? ""), command.id).toBe(true);
+      }
+      const keys = commands.map((command) => command.key);
+      expect(new Set(keys).size).toBe(keys.length);
+      // `C` and `?` belong to the whole app.
+      expect(keys).not.toContain(NEW_ISSUE_KEY);
+      expect(keys).not.toContain(SHORTCUTS_KEY);
+    }
   });
 });
