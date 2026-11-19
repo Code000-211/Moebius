@@ -1,0 +1,40 @@
+[package]
+name = "moebius-desktop"
+description = "The desktop app: the web app of the same release in a window of its own"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+
+# The program holds the Tauri side and has no tests of its own; a test executable that links Tauri cannot start on
+# Windows without the program's manifest.
+[[bin]]
+name = "moebius-desktop"
+path = "src/main.rs"
+test = false
+
+[dependencies]
+axum = { version = "0.8.9", features = ["ws"] }
+futures-util = "0.3.34"
+getrandom = "0.3"
+hex = "0.4.3"
+reqwest = { version = "0.13.5", features = ["json", "stream"] }
+rust-embed = { version = "8.13.0", default-features = false }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tauri = "2.12.7"
+tauri-plugin-opener = "2.7.3"
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "sync"] }
+tokio-tungstenite = { version = "0.30.0", features = ["rustls-tls-native-roots"] }
+
+[build-dependencies]
+tauri-build = "2.7.6"
+
+[dev-dependencies]
+moebius-core = { path = "../moebius-core" }
+tempfile = "3.27.0"
+
+[lints]
+workspace = true

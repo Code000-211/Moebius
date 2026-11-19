@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Moebius</title>
+    <link rel="stylesheet" href="connect.css" />
+    <script src="connect.js" defer></script>
+  </head>
+  <body class="ground">
+    <!-- The window has no system frame: its controls lie on the ground, and the strip moves the window. -->
+    <div class="window-bar" data-tauri-drag-region>
+      <button type="button" data-window="minimize" aria-label="Minimize">&#x2013;</button>
+      <button type="button" data-window="toggleMaximize" aria-label="Maximize">&#x25a1;</button>
+      <button type="button" data-window="close" aria-label="Close">&#x2715;</button>
+    </div>
+    <main>
+      <form class="sheet" id="connect">
+        <h1>Connect to a server</h1>
+        <p class="hint">
+          The address of a Moebius server, and an access token of yours from its My tokens page or
+          <code>moebius login</code>. The token stays in this app.
+        </p>
+        <label>Address <input name="address" placeholder="127.0.0.1:7171" autocomplete="url" required /></label>
+        <label>Access token <input name="token" type="password" autocomplete="off" required /></label>
+        <p class="error" id="error" role="alert" hidden></p>
+        <button type="submit" class="primary">Connect</button>
+      </form>
+    </main>
+  </body>
+</html>

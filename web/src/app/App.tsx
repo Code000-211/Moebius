@@ -1,13 +1,15 @@
 /**
  * The root of the app, a route that wraps every page: it asks the server whether the browser is signed in and shows
  * the sign-in page (401), a screen for a server that does not answer, or the shell with the page inside it. Once in the
- * shell, a server that stops answering shows a banner and keeps what was on screen.
+ * shell, a server that stops answering shows a banner and keeps what was on screen. In the desktop app the window's
+ * controls lie over every one of them (`desktop/WindowControls.tsx`).
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getSession } from "../api/calls/session";
 import { isApiError } from "../api/http";
 import { keys } from "../api/keys";
 import { loginOutcome } from "../auth/login";
+import { WindowControls } from "../desktop/WindowControls";
 import { LiveProvider } from "../live/LiveProvider";
 import { Loader } from "../ui/components/Loader";
 import { SignIn } from "./SignIn";
@@ -18,6 +20,16 @@ import { Unreachable } from "./shell/Unreachable";
 const RETRY_MS = 3000;
 
 export function App() {
+  return (
+    <>
+      <Screen />
+      <WindowControls />
+    </>
+  );
+}
+
+/** What the session's state shows. */
+function Screen() {
   const queryClient = useQueryClient();
   const session = useQuery({
     queryKey: keys.session,

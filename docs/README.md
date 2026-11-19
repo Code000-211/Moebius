@@ -7,6 +7,7 @@ links to the other.
 
 - [`README.md`](../README.md): what Moebius is, and a quick start.
 - [Running Moebius](guide/running-moebius.md): installing, configuring and running the server and the app.
+- [The desktop app](guide/desktop-app.md): installing the app for Linux or Windows and connecting it to a server.
 - [`GLOSSARY.md`](../GLOSSARY.md): the words Moebius uses, such as card, run, change and decision point.
 - [The release notes](releases/): what each release holds, such as [0.1.0](releases/v0.1.0.md), [0.1.1](releases/v0.1.1.md), [0.1.2](releases/v0.1.2.md), [0.1.3](releases/v0.1.3.md), [0.1.4](releases/v0.1.4.md), [0.1.5](releases/v0.1.5.md), [0.1.6](releases/v0.1.6.md), [0.1.7](releases/v0.1.7.md), [0.1.8](releases/v0.1.8.md), [0.1.9](releases/v0.1.9.md), [0.2.0](releases/v0.2.0.md), [0.2.1](releases/v0.2.1.md), [0.3.0](releases/v0.3.0.md), [0.4.0](releases/v0.4.0.md), [0.5.0](releases/v0.5.0.md), [0.6.0](releases/v0.6.0.md), [0.7.0](releases/v0.7.0.md), [0.8.0](releases/v0.8.0.md), [0.9.0](releases/v0.9.0.md), [0.9.1](releases/v0.9.1.md) and [0.9.2](releases/v0.9.2.md), [0.9.3](releases/v0.9.3.md), [0.9.4](releases/v0.9.4.md), [0.10.0](releases/v0.10.0.md) and
 [0.10.1](releases/v0.10.1.md), [0.11.0](releases/v0.11.0.md) and [0.12.0](releases/v0.12.0.md)
@@ -37,7 +38,8 @@ reads them too: they are its `moebius` skill.
 - [`architecture.md`](architecture.md): how a card moves through the code, the store, the threads, and the map of
   every module. A test checks that the map lists every module.
 - The README of each crate: [`moebius-core`](../crates/moebius-core/README.md) (the server),
-  [`moebius`](../crates/moebius/README.md) (the binary and command line) and [`moebius-plugin-api`](../crates/moebius-plugin-api/README.md).
+  [`moebius`](../crates/moebius/README.md) (the binary and command line), [`moebius-desktop`](../crates/moebius-desktop/README.md)
+  (the desktop app) and [`moebius-plugin-api`](../crates/moebius-plugin-api/README.md).
 - [`design-web.md`](design-web.md): the standard the web app is built to — voice, type, colour, components, interaction.
 - [`web/README.md`](../web/README.md): the web app, its layout, scripts and licenses.
 

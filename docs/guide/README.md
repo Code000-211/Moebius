@@ -28,8 +28,8 @@ Built and described here:
 - Plugins compiled into the `moebius` binary or running as their own process (`[[plugins]]` in `moebius.toml`), and the
   plugin API.
 - The bridge and Pi extensions.
-- The desktop API (HTTP and one WebSocket), the web app built on it, and the [command line](command-line.md),
-  which reaches every route of it.
+- The desktop API (HTTP and one WebSocket), the web app built on it, the [desktop app](desktop-app.md) around the web
+  app, and the [command line](command-line.md), which reaches every route of it.
 - Chats with any agent, in a repository, in the harness configuration repository or in an empty directory. The Moebius
   agent, the default agent of a chat, operates Moebius through the command line and builds scripts, rules, agents,
   skills and extensions from this guide; see [Agents](agents.md#the-moebius-agent).
@@ -42,6 +42,7 @@ Built and described here:
 | You want to | Page |
 |---|---|
 | Install a release, run the server as a service, reach it from another machine, upgrade and back up | [Running Moebius](running-moebius.md) |
+| Keep Moebius open as an app of its own on Linux or Windows, connected with an access token | [The desktop app](desktop-app.md) |
 | Change what a column does for one repository, and try the change | [Column scripts](column-scripts.md) |
 | Know how a card moves from Backlog to Done and what a person can do on the way | [Kanban](kanban.md) |
 | Forbid something to every run, or to the runs of one repository, and see a refusal | [Rules](rules.md) |

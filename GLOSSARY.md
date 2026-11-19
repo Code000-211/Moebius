@@ -397,7 +397,7 @@ _Avoid_: triage, request queue, service desk
 
 **Desktop app**:
 The web app in a native window of its own, with several servers, notifications, a tray icon and a global shortcut;
-built with Tauri, it refuses a server of another minor version.
+built with Tauri (`crates/moebius-desktop`), it refuses a server of another minor version.
 _Avoid_: client, native app, Electron app
 
 **Kind of issue**:

@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "connect",
+  "description": "The connect page bundled in the app: connecting to a server, and the window's controls.",
+  "windows": ["main"],
+  "permissions": [
+    "allow-connect",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-start-dragging"
+  ]
+}
