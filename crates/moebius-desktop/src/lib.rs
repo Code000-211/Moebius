@@ -8,12 +8,15 @@
 //! address as it does when the server serves it, and the token stays in this process. [`links`] says which addresses
 //! the window shows and which go to the system's browser. [`local`] sets up and starts a server of this machine (Linux, or
 //! WSL 2 on Windows) for the connect page's first-start offer. [`rail`] keeps the servers the app remembers (their tokens
-//! in the system's keychain) and the page of each, for the rail at the window's left.
+//! in the system's keychain) and the page of each, for the rail at the window's left. [`tray`] reads the figures the tray icon shows and pauses and
+//! resumes all agents.
 
 pub mod badge;
 pub mod links;
 pub mod local;
 pub mod notices;
 pub mod proxy;
+pub mod quick;
 pub mod rail;
 pub mod server;
+pub mod tray;

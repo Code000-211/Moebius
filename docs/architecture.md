@@ -83,6 +83,15 @@ on Linux (an AppImage and a `.deb`) and Windows (an installer):
 5. The window opens that address, and keeps only its own pages: a link to anywhere else, such as a pull request on a
    forge, opens in the system's browser (`links::target`). Every page of the window gets `window.moebiusDesktop` first, which the web app's
    `desktop/WindowControls.tsx` calls to minimize, maximize and close the window from a strip on the textured ground.
+5. The global shortcut (`quick`, `quick_window`): `Ctrl+Shift+Space`, or the one a person chose (kept in `quick.json` in
+   the app's configuration directory), opens a small window without a frame that stays over the others, even while the
+   app is in the back. It shows the web app's `/quick` page from the same proxy (`Proxy::entry_url_at` of the open server sets the cookie
+   and leads there), where Enter starts a chat with the Moebius agent or makes an issue in the chosen project through
+   the ordinary API. The page then asks the program to hide the window and to send the main window's page an
+   `moebius:open` event with the path of the chat or the board, which the web app's router opens
+   (`desktop/OpenRequests.tsx`). The small window's page may call only `quick_shortcut`, `set_quick_shortcut` and
+   `quick_finish` (`capabilities/quick.json`); a shortcut another program holds is reported there and a person picks
+   another.
 
 The connect page also offers a server on this machine (Linux, and Windows inside WSL 2). `local_state` only looks; the
 button calls `local_connect`, which has `local::Local::start` bring the release of the app's version into `~/.moebius/bin`
@@ -225,7 +234,9 @@ finds the server again by that directory: it answers, or it is started again wit
     `In progress` with the reason as its note, the change staying open; `POST /v1/runs/{id}/steer` and
     `POST /v1/runs/{id}/stop` (`App::steer_run`, `App::stop_run`) go through the harness (`CardRuns::steer`, `CardRuns::stop`,
     which `ApiState` holds), a steer also leaving a `steered` run event. A stopped run ends `stopped` and
-    `card.stopped` makes the scripts mark the card stuck instead of starting another run.
+    `card.stopped` makes the scripts mark the card stuck instead of starting another run. `POST /v1/runs/pause` and `/resume`
+    (`App::pause_runs`, `App::resume_runs`) keep a pause in `runs_paused`: `Engine::tick` returns at once while it holds,
+    `board::may_start` refuses every starter, and `CardRuns::hold` signals the process groups of the runs going.
 12aa. **A person, or the agent, holds a card, and a person deletes one.** `POST /v1/cards/{id}/block` (`App::block_card`)
     sets `cards.held_by`, `held_reason` and `held_at` (`Card::held`) and stops the card's runs that have not ended with
     `App::stop_run` (a run still starting is tried again for a few seconds; `board::may_start` makes every starter,
@@ -519,10 +530,14 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `rail/status.rs` | What the rail shows of a server: whether it answers and its Inbox's count (`Entry`). |
 | `servers.rs` | The rail's commands on the Tauri side (`connect`, `connect_ssh`, `servers`, `switch_server`, `remove_server`, and the local server's `local_state` and `local_connect`): showing a server's web app in the window, the connect page when none is left, and opening the server that was open last at the start. |
 | `server.rs` | A server the app connects to (`Server`: its address and the access token), and `check`: the token and the server's version with `GET /v1/health`, refusing a server of another minor version with the release that matches. |
+| `quick.rs` | The global shortcut without a window: which key combinations are accepted and how they are written, the file that keeps the chosen one across restarts, and the script that asks the main window to open a page of the web app. |
+| `quick_window.rs` | The Tauri side of the global shortcut, in the program: registering it, the small window over everything that shows the web app's `/quick` page, and the commands that page calls (`quick_shortcut`, `set_quick_shortcut`, `quick_finish`). |
 | `window.rs` | The Tauri side, in the program rather than the library so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, and the handlers that send a link leaving the app to the browser. |
 | `notices.rs` | A person's notices on a server for the app: `watch` follows `/v1/events` (and reads `GET /v1/notices` after each connection) with the token and says, as `Effect`s, to notify a notice once and what the count of unread ones is; the first read is the baseline and notifies nothing. |
 | `badge.rs` | What the icon says of that count: the title `(3) Moebius`, and the red disc with digits drawn over the taskbar icon on Windows. |
 | `notifications.rs` | The Tauri side of notices, in the program: the system's notification (a click shows the window and opens the notice in the web app), the badge count of the icon, the overlay and the title. |
+| `tray.rs` | What the tray shows of a server and asks of it: the figures read from the snapshot and the usage (agents working, the Inbox, today's tokens against the budget, whether all agents are paused), their lines, `follow`, which reads them again after every burst of events, and the pause and resume routes. |
+| `tray_icon.rs` | The Tauri side of the tray, in the program: the icon and its menu (the figures as lines, New issue, Ask Moebius, Open Moebius, Pause all agents), following the server the window is connected to. |
 | `proxy/mod.rs` | The app's own address on the loopback: the web app at every path, `/v1/` forwarded to the server, and the key, `Host` and `Origin` checks that let only the window use it. |
 | `proxy/assets.rs` | The web app embedded from `web/dist`, served with the policies of `web/csp.json`. |
 | `proxy/forward.rs` | Forwarding to the server with the token: HTTP streamed both ways, and a WebSocket relayed message by message. |
@@ -551,6 +566,7 @@ At the top:
 | `app/issues/sync.rs` | What the poll copies besides an issue's text, acting only on what the forge changed; which sub-issues count; the graph of what waits for what. |
 | `app/issues/text.rs` | The lines of a description that hold a parent ("Part of #n") or a blocker ("Blocked by #n") where the forge has none. |
 | `app/stopping.rs` | Holding (blocking), releasing and deleting a card, which stops its runs and, for a delete, removes what it left in the clone. |
+| `app/pausing.rs` | Pausing all agents: the pause kept in the store, which the board engine and every starter of a run read, and the harness holding the runs going. |
 | `app/runs.rs` | A person's hand in a run: steering, stopping, a shell in its worktree, a chat's terminal interface, and a shell on the server. |
 | `app/automations/mod.rs` | Automations: the automation origin, and the parts that make an automation a workflow, migrate a row to one, fire it and show it. |
 | `app/automations/definition.rs` | What makes a workflow an automation, and how an automation's row is read from its file and written to one. |
@@ -578,6 +594,13 @@ At the top:
 | `app/projects/files.rs` | A project's own store of files (ADR 0019): the git repository at `<data_dir>/projects/<key>` made for a project, kept as a repository without a forge whose `files_of` is the project, where the cards of a project without a repository run, are reviewed and are merged. |
 | `app/analytics.rs` | Analytics (#389): throughput, the time from start to done and in each column, tokens per point and the burn-up of cycles and milestones, read from the cards the asker may see and narrowed by window, repository and agent. |
 | `app/cycles.rs` | Cycles (ADR 0019): a project's time boxes, a card in at most one open cycle of its own project, the figures and burn-up of a cycle's page, and closing, which carries unfinished cards to the next cycle or out. |
+| `app/jira/mod.rs` | The import from Jira (issue #390): what a Jira record becomes in Moebius, the options and the report, and the order the parts run in; `App::import_jira` never talks to Jira. |
+| `app/jira/read.rs` | Reads what the client fetched into issues, sprints, links, comments and custom fields, with Jira's timestamps. |
+| `app/jira/kinds.rs` | Issue types as kinds and custom fields as their fields; an existing kind is completed. |
+| `app/jira/people.rs` | Jira's users as disabled people, mapped people or names. |
+| `app/jira/planning.rs` | Epics as milestones and sprints as cycles, and closing a closed sprint's cycle. |
+| `app/jira/cards.rs` | Issues as cards, then their parent, milestone, cycle, comments and links; written only when what Jira shows differs from the note kept. |
+| `app/jira/tests.rs` | The import against a fake Jira: every record, a second import, names and mapped people. |
 | `app/milestones.rs` | Milestones (ADR 0019): making and editing them, putting a card in them, and their progress counted and listed only within the projects the asker may see (`App::may_see_project`). |
 | `app/views.rs` | Saved views: making and changing them for a person or for everyone, and the cards each shows the person who opens it, within what they may see (`App::sight`). |
 | `app/intake.rs` | Intake (ADR 0019): a project's requests, written by anyone who may see it, grilled into a draft issue by a chat of the grilling agent and accepted into a card the requester follows, edited, or declined with a reason the requester is told. |
@@ -654,10 +677,12 @@ At the top:
 | `store/analytics.rs` | What the analytics need of every card (moves, start, done, estimate, tokens) read in a few passes, and the members of every cycle and milestone. |
 | `store/cycles.rs` | The cycles (project, name, start, end, closed) and which cards each holds, with the sums a cycle's page needs. |
 | `store/wiki_links.rs` | The links between the wiki's pages and to cards, derived from the files and replaced as a whole when the wiki changes, and the cards whose text may link to a page. |
+| `store/imports.rs` | What an import made (by source, kind and the source's id) with a note of how the source showed it, so that an import can be run again. |
 | `store/milestones.rs` | The milestones (name, target date, description) and which cards each holds, of any projects. |
 | `store/views.rs` | The saved views (name, owner, shared, filter, layout, sort). |
 | `store/intake.rs` | A project's switch for intake and the requests made to it, with their draft issue, status, card and reason. |
 | `store/projects.rs` | The projects (name, key, repositories in order), a repository's home project and a card's project, how a key is made from a name, the migration that makes one project for each repository and puts every card on it, whether a project is private with its members, and the project a judgement belongs to. |
+| `store/paused.rs` | Whether all agents are paused, who paused them and when: the table `runs_paused`, one row at most. |
 | `store/favourites.rs` | The places a person pinned, in their order, and the places they opened lately (the last 20), kept per person so they follow them to every browser. |
 | `store/events.rs` | A run's events, in order, redacted before they are stored. |
 | `store/automations.rs` | Automations, their firings with the status of each chat, and the server's local minute; the workflow file is the definition and the row keeps the id the firings use. |
@@ -708,6 +733,7 @@ At the top:
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
 | `server/api/analytics.rs` | The analytics of a window of days, narrowed by repository and agent. |
 | `server/api/cycles.rs` | The cycles: a project's list, making, reading, editing, deleting and closing one, and a card's cycle. |
+| `server/api/jira.rs` | `POST /v1/projects/{id}/import/jira`: reads a Jira project with a token kept in `secrets.toml` and imports it. |
 | `server/api/milestones.rs` | The milestones: listing them with their progress, making, reading, editing and deleting one, and a card's milestones. |
 | `server/api/views.rs` | The saved views: listing, making, reading, editing and deleting one, and the cards it shows. |
 | `server/api/projects.rs` | The projects: listing them, making one with a free key, reading and renaming one, the column scripts of a project's board, and making one private with its members. |
@@ -766,6 +792,8 @@ At the top:
 | `repos/tracker_tests.rs` | Tests (only) of what the forge clients write and read for an issue tracker, against a fake forge that records its requests. |
 | `repos/github.rs` | The GitHub App client: JWT, installation tokens, issues newest-updated first with ETags (paging stops at the last poll's newest), pull requests, checks, reviews, merge. |
 | `repos/gitlab.rs` | The GitLab client: the access token, issues newest-updated first with ETags (paging stops at the last poll's newest), merge requests, pipelines and their failed jobs, approvals, merge. |
+| `repos/jira.rs` | The Jira client: the field catalogue, a project's issues over pages (by token, or by position where the site has no such search) and the comments they left out; the token never in an error. |
+| `repos/jira_fake.rs` | A fake Jira on a port of its own for the tests: a project with an epic, a story, a sub-task, duplicate bugs and sprints. |
 | `repos/forgejo.rs` | The Forgejo client (Codeberg, Forgejo, Gitea): the access token, issues with ETags where given, pull requests, commit statuses, reviews, merge. |
 | `repos/poll/mod.rs` | The poll of the forges: the loop over their repositories, issues into cards, and what became of each change (`Polled`, `Request`). |
 | `repos/poll/github.rs` | What GitHub answers, read for the poll: issues, a pull request with its check runs and latest review. |

@@ -397,6 +397,10 @@ impl Store {
             [home],
         )?;
         tx.execute(
+            &format!("DELETE FROM imports WHERE project_id = ?1 AND {unused}"),
+            [home],
+        )?;
+        tx.execute(
             &format!("DELETE FROM projects WHERE id = ?1 AND {unused}"),
             [home],
         )?;

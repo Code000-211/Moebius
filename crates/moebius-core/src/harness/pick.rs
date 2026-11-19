@@ -173,6 +173,11 @@ impl CardRuns for Harnesses {
     fn stop(&self, run_id: i64) -> bool {
         self.claude_code.stop(run_id) || self.pi_bolt.stop(run_id)
     }
+
+    fn hold(&self, held: bool) {
+        self.claude_code.hold(held);
+        self.pi_bolt.hold(held);
+    }
 }
 
 impl ChatRuns for Harnesses {

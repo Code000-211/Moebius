@@ -23,6 +23,8 @@ pub(super) struct FakeHarness {
     pub(super) answers: Mutex<VecDeque<String>>,
     /// The note of each run started, in order.
     pub(super) notes: Mutex<Vec<Option<String>>>,
+    /// Each `hold` the harness was told, in order.
+    pub(super) held: Mutex<Vec<bool>>,
     /// Files, as path and text, that each `code` run also commits.
     pub(super) files: Vec<(&'static str, &'static str)>,
     /// The summary each `code` run ends with; `Done.` when it is left empty.
@@ -127,6 +129,10 @@ impl CardRuns for FakeHarness {
 
     fn stop(&self, _: i64) -> bool {
         false
+    }
+
+    fn hold(&self, held: bool) {
+        self.held.lock().unwrap().push(held);
     }
 }
 

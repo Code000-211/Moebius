@@ -33,11 +33,13 @@ mod deletions;
 mod diffs;
 mod intake;
 mod issues;
+mod jira;
 mod kinds;
 mod localize;
 mod milestones;
 mod notices;
 mod packages;
+mod pausing;
 mod planning;
 pub mod plugin_settings;
 mod projects;
@@ -159,6 +161,9 @@ pub use analytics::{
     ProjectFigures, Spread, ThroughputDay,
 };
 pub use cycles::{BurnUpDay, Carry, Closed, CycleDetail, CycleFields, CycleFigures, CycleView};
+pub use jira::{
+    Counts, LinkCounts, Options as JiraOptions, Report as JiraReport, Users as JiraUsers,
+};
 pub use kinds::{CardQuery, KindView};
 pub use milestones::{MilestoneDetail, MilestoneFields, MilestoneProject, MilestoneView};
 pub use projects::{Member, ProjectRepository, ProjectView, Sight, UNQUOTED};

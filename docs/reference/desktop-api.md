@@ -137,6 +137,7 @@ any route to any role that is not what its row says.
 | `PATCH /v1/cycles/{id}` | member | no |
 | `DELETE /v1/cycles/{id}` | member | no |
 | `POST /v1/cycles/{id}/close` | member | no |
+| `POST /v1/projects/{id}/import/jira` | owner | no |
 | `GET /v1/cards/{id}/cycle` | viewer | yes |
 | `PUT /v1/cards/{id}/cycle` | member | no |
 | `GET /v1/milestones` | viewer | yes |
@@ -225,6 +226,8 @@ any route to any role that is not what its row says.
 | `POST /v1/changes/{id}/merge` | member | yes |
 | `POST /v1/changes/{id}/reject` | member | yes |
 | `GET /v1/changes/{id}/diff` | viewer | yes |
+| `POST /v1/runs/pause` | member | no |
+| `POST /v1/runs/resume` | member | no |
 | `GET /v1/runs/{id}` | viewer | yes |
 | `GET /v1/runs/{id}/events` | viewer | yes |
 | `GET /v1/runs/{id}/diff` | viewer | yes |
@@ -686,6 +689,9 @@ Everything the app shows. Response:
 }
 ```
 
+`paused` is added, as `{"by": "person:ada", "at": 1790000000}`, while all agents are paused (see
+[`POST /v1/runs/pause`](#post-v1runspause-and-post-v1runsresume)), and left out otherwise.
+
 `harness_changes` are the `Change`s of the harness configuration repository, which belongs to no board.
 `boards` has one entry per repository, with all its cards and changes; a change of a card over several repositories is on the board of the repository it is in, which does not list the card. `round_limit` is the most `code` rounds a card
 gets. Each entry of `cards` is a `Card` with what a board shows of it, so that a client needs no other read:
@@ -1062,7 +1068,7 @@ What the page links to and what links to it: `{"links": {"pages": [{"link": stri
 [{"key": string, "title": string | null}]}, "backlinks": {"pages": [{"path", "name"}], "cards": [{"key", "title"}]}}`.
 `links` is what the page's text says, each name with the page it leads to (`null` when there is none) and each card
 with its title (`null` when there is no such card); `backlinks` are the pages, sorted by path, and the cards, whose
-text has a `[[link]]` to the page. What a person may not see is left out: a private project's pages and cards they are not a member of are not listed (a link to such a page has `path` `null`, such a card a `title` `null`; the page's own links and the cards' links lead only among the pages the person sees, so a page they do not see never takes the place of one they do, but the page backlinks are still those of the index, which resolves among every page), and the page of a private project they may not see is `404`. A page that is not there has backlinks all the same, as a deleted page keeps them.
+text has a `[[link]]` to the page. What a person may not see is left out: a private project's pages and cards they are not a member of are not listed (a link to such a page has `path` `null`, such a card a `title` `null`; the page's own links, the cards' links and the page backlinks lead only among the pages the person sees, so a page they do not see never takes the place of one they do: a page is a backlink when its links, resolved among the pages the person sees, lead to this page), and the page of a private project they may not see is `404`.
 Errors: `422` for a path that is not a page's.
 
 ### `GET /v1/wiki/cards/{key}`
@@ -1226,6 +1232,59 @@ The open cycle the card is in, or `null`. Errors: `404` for no such card.
 Puts the card into an open cycle of its project, or out of its open cycle with `null`. Request: `{"cycle": id or null}`.
 Sends `card_cycle_changed` when it changed. Response: the cycle, or `null`. Errors: `404` for no such card or cycle; `422`
 for a cycle of another project or a closed one.
+
+
+### Importing from Jira
+
+A one-off copy of a Jira project into a Moebius project, which can be run again. Only an owner imports, never an agent,
+since it may make people. The Jira API token is kept like the other keys, in `secrets.toml` (`PUT /v1/secrets/{name}`,
+see [Secrets](configuration.md#secrets)); the request names it and never carries it, and it is not stored, logged or
+answered.
+
+#### `POST /v1/projects/{id}/import/jira`
+
+Reads the Jira project `project` from the site `url` and imports it into the project `id`. Request body:
+`{"url", "project", "token_secret", "email"?, "users"?, "user_map"?}`.
+
+- `url` is the address of the site, `http` or `https`, such as `https://your-site.atlassian.net`; a path is kept.
+- `project` is the key of the Jira project (letters, digits and `_`, starting with a letter).
+- `token_secret` is the name the token is kept under; it starts with `jira-` (`422` otherwise), so that no other key of the server can be sent to a site. With `email` the token is an API token of Jira Cloud (sent as
+  Basic); without it a personal access token of Jira Server or Data Center (sent as Bearer). Redirects are not followed.
+- `users` is `"people"` (the default) or `"names"`; see the table below.
+- `user_map` maps Jira users (by account id, email or display name, in any case) to the handles of people that exist
+  already, in either mode.
+
+What a Jira record becomes:
+
+| Jira | Moebius |
+|---|---|
+| an issue (not an epic) | a card in the backlog of the project's own files, so it lives in Moebius only (ADR 0019). Its title, its description with a last line that names the Jira issue, its time of creation and its author (the reporter). It is not confirmed, so that nothing starts on it before a person approves it. |
+| issue type | a kind of that name, made if the organisation has none and offered by the project; one that exists is completed with the fields it lacks |
+| custom field with a value | a field of that kind: `string` and `user` as text, `number`, `date` and `datetime` as date, a select as choice with the values read as options; Jira's own (sprint, epic, rank, story points) are left out |
+| labels | labels (those that start `priority:`, `due:` or `estimate:` are dropped) |
+| priority | `priority:` (Highest, Blocker and Critical `urgent`; High and Major `high`; Medium `medium`; Low, Lowest, Minor and Trivial `low`; any other `none`) |
+| due date, story points | `due:`, `estimate:` (rounded; none outside 1 to 100) |
+| reporter, assignee, comment authors | with `users: "people"`, a person for each, made disabled with the role `member` until an owner gives them a token, with a handle from their email (else their name; a taken handle gets `-2`, `-3`, ...); with `"names"`, no person: what they wrote has the author `<name> (Jira)` and a card whose assignee is no person has none |
+| comments | comments with their time and author; one that was edited in Jira is changed, one deleted in Jira stays |
+| sub-task or child | the card's parent |
+| links `Blocks`, `Duplicate`, any other | a blocker, a duplicate (the duplicate is closed, as a duplicate is), a related card; a link to an issue that is not imported is counted as skipped |
+| sprint | a cycle of the project named by the sprint's name (told apart by its id when the name is taken); a sprint without a start or an end is left out; a card is in the cycle of its latest sprint, and a closed sprint closes its cycle, which takes the cards that are not done out of it |
+| epic | a milestone (milestones belong to the organisation), no card: named by the epic's summary (with the key when the name is taken), due on the epic's due date, else on the latest due date of its issues, else 90 days after the import; the epic's issues are in it |
+| status category done | a closed card in Done |
+
+Response: the report `{"issues", "comments", "kinds", "people", "cycles", "milestones": {"created", "updated",
+"unchanged"}, "links": {"added", "removed", "unchanged", "skipped"}, "warnings": [text]}`. A record that cannot be made
+is a warning and the import goes on past it.
+
+Running it again makes nothing twice: each record is found by the Jira key or id it was made from (`store::imports`),
+and is written only when what Jira shows of it differs from what it showed last time, so an import of an unchanged
+project writes and announces nothing. What Jira changed is written over the Moebius record (a card's title, description,
+kind, fields, labels, priority, due date, estimate, assignee and state; a link that Jira lost is taken away); what a
+person changed in Moebius on a card Jira did not change stays (its parent, milestone and cycle are set only when the card is new or Jira changed it, and an epic without any date keeps the milestone's date). A card deleted in Moebius is made again with its comments and links. Two imports into one project at once are refused with `409`. A duplicate stays closed although Jira has it open.
+
+Errors: `404` for no such project or one the asker may not see; `422` for an address, a project key or a handle of
+`user_map` that is not valid, or a `token_secret` that names no secret (the answer says so); `502` when Jira cannot be
+reached or refuses (the answer has its status and the start of its body, never the token).
 
 ### Milestones
 
@@ -2387,6 +2446,28 @@ works as in `POST /v1/chats`: the agent is told it before the message (secrets r
 the `said` event holds only the message.
 
 Response: the `Run`. Errors: `404` no such run; `422` the message is blank or the run is not running.
+
+### `POST /v1/runs/pause` and `POST /v1/runs/resume`
+
+A person pauses all agents of the server, as the desktop app's tray does with "Pause all agents", and resumes them. The
+pause is kept in the store, so a restart leaves the server paused until a person resumes it. While it is in force:
+
+- the board engine starts no run: a card's column script is not run at all, so no card moves either, and every other
+  starter of a card's run (a column script's `start`, attempts, workflow nodes) is refused;
+- every run that is going is held, with what its agent started: Pi-Bolt and Claude Code get `SIGSTOP` to their process
+  group, so nothing works and nothing is printed, and the runs stay `running`. Resuming sends `SIGCONT` and they go on
+  where they were. Where the system has no such signal (Windows) the runs going are not held, and the pause only starts no
+  further run. A run that a launcher wraps is held as far as the process group of its wrapper reaches.
+
+Runs that belong to no card (the Retro, research, trials, automations' chats) are not stopped from starting: they start and are held at once, so they take a place and a worktree until the agents are resumed. After a crash of the server while paused, what it held stays held until someone ends it. What a person does by hand is not held: a chat started or written to meanwhile starts its agent, which is held at once.
+
+Pausing is recorded as a decision (kind `pause_runs`, decider `person`) and announced as `runs_paused`; resuming as
+`resume_runs` and `runs_resumed`. Pausing what is paused, or resuming what is not, changes nothing, records nothing and
+announces nothing. The snapshot's `paused` says who paused the agents and when while they are paused.
+
+Request: `{"reason": "..."}`; `reason` is optional, and the body may be left out. Response: `{"paused": true, "by":
+"person:ada", "at": 1790000000}` after a pause, whose `by` and `at` are those of the pause in force, and `{"paused":
+false}` after a resume. Errors: `403` for an agent's run token.
 
 ### `POST /v1/runs/{id}/stop`
 
@@ -4088,6 +4169,8 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `card_waiting` | The reason a card waits changed: set, replaced, or cleared because the card moved or its script did not wait. Not sent when it stays the same. | `{"card": id, "reason": string or null}` |
 | `chat_renamed` | A chat was given a name, or its name was cleared, through the API. | `{"run": id, "title": string}` (the title the list of chats shows now) |
 | `chat_shared` | The owner of a chat shared it with the organisation or took it back. Sent to everyone, so that a client reads the list of chats again. | `{"run": id, "shared": boolean}` |
+| `runs_paused` | A person paused all agents. | `{"by": string, "at": number}` |
+| `runs_resumed` | A person resumed all agents. | `{}` |
 | `chat_deleted` | A chat was deleted through the API, with its changes and inbox items, or deleted with its grilling. Read the snapshot again. | `{"run": id}` |
 | `change_offered` | A card's change, the work of a chat, a kept lever of a research or a workflow run was offered to a person to merge. | The `Change` (`card_id` is null for a chat's, a lever's or a workflow run's; `run_id` is set for a workflow run's). |
 | `change_updated` | A change was published or published again, its checks started or ended, or the checks or review of its pull request changed. | The `Change`. |

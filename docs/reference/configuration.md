@@ -687,7 +687,8 @@ its owner can read (mode 0600). `moebius.toml` names it with `api_key_secret`, t
 in a log. A key is stored with `PUT /v1/secrets/{name}` and removed with `DELETE /v1/secrets/{name}`; removing one that
 `api_key_secret`, `gitlab.token_secret` or `forgejo.token_secret` still names makes the next start fail, as an unset `api_key_env` variable does.
 The refresh token of an OAuth login is kept the same way, under `router.upstreams.oauth.secret`, and replaced when the
-provider rotates it.
+provider rotates it. The API token for an import from Jira is a key of this file too, under any name; the import request names it
+(`token_secret`, see the [desktop API](desktop-api.md#importing-from-jira)) and it is read for that request only.
 
 ### Outgoing webhooks
 

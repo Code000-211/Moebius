@@ -433,7 +433,7 @@ mod tests {
             let inside = worktree.join("page.md");
             let reply = f.call("write", json!({ "path": inside, "content": "10 EUR" }));
             assert_eq!(reply.decision, "allow", "{inside:?}: {}", reply.reason);
-            // A shell command names a Windows path with slashes: a backslash in it is an escape.
+            // A shell reads `\` as an escape, so a command names a Windows path with `/`, as bash on Windows does.
             let note = worktree
                 .join("note.txt")
                 .to_string_lossy()

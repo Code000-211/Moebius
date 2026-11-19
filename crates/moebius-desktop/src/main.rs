@@ -4,7 +4,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod notifications;
+mod quick_window;
 mod servers;
+mod tray_icon;
 mod window;
 
 fn main() {

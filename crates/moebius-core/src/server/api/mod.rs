@@ -16,6 +16,7 @@
 //! - `analytics`: throughput, times to done and in columns, burn-ups and tokens per point of what a person may see.
 //! - `cycles`: the time boxes of a project, with burn-up and figures, and closing them.
 //! - `views`: saved filters with a layout and a sort, for a person or for everyone, and the cards each shows.
+//! - `jira`: importing a Jira project into a project, again and again.
 //! - `milestones`: goals of the organisation with a target date, holding cards of any projects, with their progress.
 //! - `projects`: the projects, each with a key, a board and its repositories; making and renaming one, and the column
 //!   scripts of its board.
@@ -70,6 +71,7 @@ mod harness;
 mod improve;
 mod intake;
 mod issues;
+mod jira;
 mod kinds;
 mod lessons;
 mod milestones;
@@ -113,7 +115,7 @@ pub use issues::{Claim, NewBlocker, NewComment, NewLabels, NewParent};
 use people::TOKEN_PREFIX;
 pub use people::{AddedPerson, IssuedToken};
 pub use repositories::{EditedRepository, NewRepository};
-pub use runs::Steer;
+pub use runs::{PauseState, Steer};
 pub use session::{CODE_LIFETIME, Codes, LoginCode, SessionStatus, login_url};
 pub use uploads::{UPLOAD_LIMIT, Upload};
 
@@ -255,6 +257,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(templates::routes())
         .merge(analytics::routes())
         .merge(cycles::routes())
+        .merge(jira::routes())
         .merge(milestones::routes())
         .merge(views::routes())
         .merge(runs::routes())

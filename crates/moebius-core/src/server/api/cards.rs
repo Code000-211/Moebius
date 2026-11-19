@@ -143,6 +143,9 @@ pub struct Snapshot {
     /// The changes of the harness configuration repository, which belongs to no board.
     pub harness_changes: Vec<Change>,
     pub inbox: Vec<InboxItem>,
+    /// Who paused all agents and when, while they are paused; left out otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paused: Option<crate::store::Paused>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -325,6 +328,7 @@ async fn snapshot(
             boards,
             harness_changes: app.store.harness_changes()?,
             inbox,
+            paused: app.store.runs_paused()?,
         })
     })
     .await

@@ -142,6 +142,13 @@ pub enum Event {
         run: i64,
         title: String,
     },
+    /// A person paused all agents: no run starts and the ones going are held.
+    RunsPaused {
+        by: String,
+        at: i64,
+    },
+    /// A person resumed all agents.
+    RunsResumed {},
     /// A person deleted a chat; its changes and inbox items went with it.
     ChatDeleted {
         run: i64,
@@ -739,6 +746,17 @@ mod tests {
                     title: "Plan".into(),
                 },
                 json!({"kind": "chat_renamed", "data": {"run": 4, "title": "Plan"}}),
+            ),
+            (
+                Event::RunsPaused {
+                    by: "person:ada".into(),
+                    at: 1790000000,
+                },
+                json!({"kind": "runs_paused", "data": {"by": "person:ada", "at": 1790000000}}),
+            ),
+            (
+                Event::RunsResumed {},
+                json!({"kind": "runs_resumed", "data": {}}),
             ),
             (
                 Event::ChatDeleted { run: 4 },

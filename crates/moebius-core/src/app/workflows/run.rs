@@ -490,6 +490,10 @@ mod tests {
         fn stop(&self, _: i64) -> bool {
             false
         }
+
+        fn hold(&self, held: bool) {
+            let _ = held;
+        }
     }
 
     /// A server with a harness configuration repository and one repository a workflow run can belong to.

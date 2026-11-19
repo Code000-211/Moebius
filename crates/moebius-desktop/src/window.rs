@@ -7,7 +7,7 @@
 //! move the window, since it draws the window's controls on its own ground. The bridge calls Tauri's window commands,
 //! which `capabilities/web-app.json` allows the web app on the loopback, and the rail's commands (`servers`), which both
 //! capabilities allow. An address the window does not keep (`links::target`) opens in the system's
-//! browser.
+//! browser. The tray icon (`tray_icon`) is made with the window and follows the server that is open.
 
 use std::sync::{Arc, Mutex};
 
@@ -15,6 +15,7 @@ use moebius_desktop::links::{self, Target};
 use tauri::webview::NewWindowResponse;
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
+use crate::quick_window;
 use crate::servers::{self, Servers};
 
 /// The label of the main window, which the capabilities name.
@@ -45,7 +46,7 @@ pub const BRIDGE: &str = r#"
 pub struct Connected(Arc<Mutex<Option<String>>>);
 
 impl Connected {
-    fn origin(&self) -> Option<String> {
+    pub(crate) fn origin(&self) -> Option<String> {
         self.0.lock().ok()?.clone()
     }
 
@@ -58,7 +59,7 @@ impl Connected {
 }
 
 /// Opens `url` in the system's browser; a browser that does not start leaves the window as it is.
-fn open_in_browser(url: &str) {
+pub(crate) fn open_in_browser(url: &str) {
     let _ = tauri_plugin_opener::open_url(url, None::<&str>);
 }
 
@@ -68,6 +69,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(connected.clone())
         .manage(crate::notifications::Watching::default())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             servers::connect,
             servers::connect_ssh,
@@ -75,12 +77,17 @@ pub fn run() {
             servers::switch_server,
             servers::remove_server,
             servers::local_state,
-            servers::local_connect
+            servers::local_connect,
+            quick_window::quick_shortcut,
+            quick_window::set_quick_shortcut,
+            quick_window::quick_finish
         ])
         .setup(move |app| {
             let navigating = connected.clone();
             let opening = connected.clone();
             let handle = app.handle().clone();
+            crate::tray_icon::create(app)?;
+            quick_window::setup(app);
             let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
                 .title("Moebius")
                 .inner_size(1280.0, 800.0)
@@ -115,6 +122,13 @@ pub fn run() {
             let servers = Servers::new(app.handle());
             servers.note_connect_page(window.url()?);
             app.manage(servers);
+            // The app ends with its main window, though the small window of the shortcut is only ever hidden.
+            let exiting = app.handle().clone();
+            window.on_window_event(move |event| {
+                if matches!(event, tauri::WindowEvent::Destroyed) {
+                    exiting.exit(0);
+                }
+            });
             tauri::async_runtime::spawn(servers::open_remembered(app.handle().clone()));
             Ok(())
         })

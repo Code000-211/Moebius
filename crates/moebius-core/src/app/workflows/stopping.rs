@@ -231,6 +231,10 @@ mod tests {
             self.stopped.lock().unwrap().push(run_id);
             true
         }
+
+        fn hold(&self, held: bool) {
+            let _ = held;
+        }
     }
 
     /// One node behind one that waits for a gate a person would never open.

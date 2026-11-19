@@ -299,7 +299,7 @@ impl Rail {
         }
     }
 
-    /// The server that is open, with its token, which the notifications follow.
+    /// The server that is open, with its token, which the notifications and the tray follow.
     pub fn open_server(&self) -> Option<Server> {
         self.live.get(self.open.as_ref()?).map(|l| l.server.clone())
     }
@@ -307,6 +307,14 @@ impl Rail {
     /// The origin of the web app of the server that is open, which the window's handlers compare addresses with.
     pub fn open_origin(&self) -> Option<String> {
         self.live.get(self.open.as_ref()?).map(|l| l.proxy.origin())
+    }
+
+    /// The address that opens the page `path` of the open server's web app in a second window (the small window of the
+    /// global shortcut), with the cookie of its proxy set on the way.
+    pub fn open_entry_at(&self, path: &str) -> Option<String> {
+        self.live
+            .get(self.open.as_ref()?)
+            .map(|l| l.proxy.entry_url_at(path))
     }
 
     /// Removes the server `id`: its proxy and tunnel stop, its token leaves the keychain and it leaves the file. Says

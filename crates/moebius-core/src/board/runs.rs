@@ -100,13 +100,23 @@ pub enum StartError {
     /// The card was held (blocked) or deleted while the run was being started; nothing was started.
     #[error("the card is held")]
     Held,
+    /// All agents are paused (see `App::pause_runs`); nothing was started.
+    #[error("all agents are paused")]
+    Paused,
 }
 
-/// Whether `card` may still get a run: false once it is held, or gone. The card is read again, since the one a script
-/// or a starting run holds is as it was when the board's tick began. Every starter asks this right before it starts a
+/// Whether `card` may still get a run: false once it is held, or gone, and while all agents are paused. The card is
+/// read again, since the one a script or a starting run holds is as it was when the board's tick began. Every starter asks this right before it starts a
 /// run, and the harness again once the run is recorded, so a hold that comes in between is seen by either that or the
 /// block, which looks for runs after it holds.
 pub fn may_start(app: &App, card: &Card) -> Result<(), StartError> {
+    if app
+        .runs_paused()
+        .map_err(|e| StartError::Store(e.to_string()))?
+        .is_some()
+    {
+        return Err(StartError::Paused);
+    }
     match app.card(card.id) {
         Ok(now) if now.held.is_none() => Ok(()),
         Ok(_) | Err(crate::app::AppError::NotFound(_)) => Err(StartError::Held),
@@ -146,6 +156,11 @@ pub trait CardRuns: Send + Sync {
 
     /// Asks a running run to stop; it ends as `stopped`. False when the run is not running.
     fn stop(&self, run_id: i64) -> bool;
+
+    /// Holds every run that is going, with what its agent started, so that nothing works until `hold(false)` lets them
+    /// go on where they were; the runs stay `running`. Where the system cannot hold a process (Windows) it does
+    /// nothing, and the pause only starts no further run.
+    fn hold(&self, held: bool);
 }
 
 /// What the chats need of a harness. A harness without a terminal interface refuses `tui`.
