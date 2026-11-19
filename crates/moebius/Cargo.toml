@@ -23,4 +23,5 @@ workspace = true
 
 [dev-dependencies]
 axum = "0.8.9"
+socket2 = "0.6"
 tokio = { version = "1.54.1", features = ["macros", "time"] }
