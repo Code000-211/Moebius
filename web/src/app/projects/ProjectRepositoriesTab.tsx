@@ -62,9 +62,16 @@ export function ProjectRepositoriesTab({
     <Box title="Repositories" padded={false}>
       {project.repositories.length === 0 ? (
         <p className="m-0 p-4 text-base text-secondary">
-          {project.files != null
-            ? "No repository: this project works on its own files until it has one."
-            : "No repository yet."}
+          {project.files != null ? (
+            <>
+              No repository: this project works on its own files until it has one.{" "}
+              <Link className="underline" to={`/projects/${project.files}`}>
+                Project files
+              </Link>
+            </>
+          ) : (
+            "No repository yet."
+          )}
         </p>
       ) : (
         <ul className="m-0 list-none p-0" aria-label="Repositories">

@@ -281,6 +281,7 @@ impl App {
             .ok_or_else(|| AppError::NotFound(format!("repository {id}")))
     }
 
+    /// Records an `edit_project_repositories` decision: `change` is `add` or `remove`.
     fn record_repositories(
         &self,
         by: &Actor,

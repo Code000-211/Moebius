@@ -876,7 +876,8 @@ An owner, or the Moebius agent, puts a repository among the repositories of a pr
 project and in this one, and its issues are read into the home project as before. Request body: `{"repository":
 number, "reason"?: string}`. Nothing changes when the repository is one of the project's already. The decision is
 recorded (kind `edit_project_repositories`; its context has `project` the key, `change` `add` and `repository` the
-name) and `project_changed` is sent. Response: the `ProjectView`. Errors: `404` for no such project or repository, or
+name) and `project_changed` is sent. Everyone who sees the project sees its repositories from then on, also when
+the repository's home project is private. Response: the `ProjectView`. Errors: `404` for no such project or repository, or
 one the person does not see.
 
 ```sh
