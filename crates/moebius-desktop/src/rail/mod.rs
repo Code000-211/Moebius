@@ -299,6 +299,11 @@ impl Rail {
         }
     }
 
+    /// The server that is open, with its token, which the notifications follow.
+    pub fn open_server(&self) -> Option<Server> {
+        self.live.get(self.open.as_ref()?).map(|l| l.server.clone())
+    }
+
     /// The origin of the web app of the server that is open, which the window's handlers compare addresses with.
     pub fn open_origin(&self) -> Option<String> {
         self.live.get(self.open.as_ref()?).map(|l| l.proxy.origin())

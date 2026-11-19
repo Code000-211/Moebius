@@ -70,6 +70,15 @@ Tokens are kept in the system's keychain (Secret Service on Linux, which GNOME K
 Manager on Windows), never in a file. The list of servers, without tokens, is `servers.json` in the app's configuration
 directory (`~/.config/io.github.code000-211.moebius` on Linux).
 
+### Notifications
+
+What reaches the Mentions tab of your Inbox (a card given to you, a mention, a change to a card you
+follow, which includes a change that is ready to merge) is also a notification of your system, once. Choosing it brings
+the window forward and opens the card or item, and reads the notice. The count of unread notices is on the app's icon
+(the launcher's badge on Linux where it shows one, the red number over the taskbar icon on Windows) and in the
+window's title, `(3) Moebius`, for the server that is open; reading a notice, here or in a browser, lowers it. What was unread when the app started
+is counted and not announced.
+
 A server on another machine is reached as the web app reaches it: on its address if it listens on the network, or
 through the tunnel of `moebius connect <host> --no-window`, then `127.0.0.1:7171` in the app (see
 [Running Moebius](running-moebius.md)).
@@ -92,6 +101,9 @@ The answer's `token` (it starts with `moebius-access-`) goes into the app with t
 - Revoke the token on the My tokens page and start the app again: the server's square has a grey dot, and opening it
   answers that the server does not accept the token. Remove it and connect again with a new token.
 - Connect a second server: its square appears in the rail; switch between them, and each comes back on its page.
+
+- Have someone give you a card (or mention you in a comment): a notification appears, the count rises by one, and
+  choosing it opens the card.
 
 ## What can go wrong
 
@@ -118,3 +130,6 @@ The answer's `token` (it starts with `moebius-access-`) goes into the app with t
   does not add the server.
 - **"no server is set up on <host>"** over SSH: the login worked and there is no token on the host; say yes to set
   one up, or run `moebius connect <host>` in a terminal.
+- **No notification appears on Linux**: the desktop needs a notification service (`org.freedesktop.Notifications`,
+  which GNOME, KDE and most others have). Without one the count still shows in the title.
+- The token is kept in the app's memory only, for now: the app asks for it on every start.

@@ -18,6 +18,10 @@ app is in [`docs/architecture.md`](../../docs/architecture.md#the-desktop-app).
 | `src/rail/` | The rail of servers: `mod.rs` (the remembered servers, a proxy and a page of each, adding, opening, removing, `poll`), `records.rs` (`servers.json`, no token), `secrets.rs` (the system's keychain), `ssh.rs` (a server over an SSH tunnel) and `status.rs` (whether a server answers and its Inbox's count). |
 | `src/servers.rs` | The rail's commands on the Tauri side: `connect`, `connect_ssh`, `servers`, `switch_server` and `remove_server`, and `local_state` and `local_connect` for the server of this machine. |
 | `src/window.rs` | The Tauri side, a module of the program so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, and links that leave the app opened in the browser. |
+| `src/notices.rs` | `watch`: the notices of the person on a server, from `/v1/events` and `GET /v1/notices`, as `Effect`s (notify once, the count of unread). |
+| `src/badge.rs` | The count as a title and as the overlay image Windows draws over the taskbar icon. |
+| `src/notifications.rs` | The Tauri side of notices, a module of the program: native notifications that open their notice, the icon's count. |
+| `tests/notices.rs` | The notices on a fake server: one event, one notification; reading lowers the count; a refused token gives nothing. |
 | `connect/` | The connect page, bundled by Tauri: a server's address and a token, drawn with the web app's tokens. |
 | `capabilities/` | What each page may call: `connect.json` for the connect page and `web-app.json` for the web app on the loopback: the window's controls and the rail's commands, nothing else. |
 | `tauri.conf.json`, `build.rs`, `icons/` | Tauri's configuration, the bundles and their icons. `build.rs` declares the rail's commands as the app's own and builds the app again when `web/dist` changes. |

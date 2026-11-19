@@ -1,11 +1,13 @@
 /**
  * The Mentions tab: the person's notices, newest first, as one list. Choosing a notice marks it read on the server
  * (for this person alone) and opens the card or the item it is about. It reads the notices, which `notice_added` and
- * `notice_read` keep current.
+ * `notice_read` keep current. `?notice=<id>` opens that notice as choosing it does (the desktop app's notification
+ * goes there), and then leaves the address as the tab's own.
  */
 import { AtIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router";
+import { useEffect, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 import { readNotice, notices as readNotices } from "../../api/calls/notices";
 import { keys } from "../../api/keys";
 import type { Snapshot } from "../../api/types/board";
@@ -14,7 +16,7 @@ import { Empty } from "../../ui/page/Empty";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
 import { NoticeRow } from "./NoticeRow";
-import { pathOf } from "./notices";
+import { MENTIONS, pathOf } from "./notices";
 
 export function MentionsList({ snapshot, now }: { snapshot: Snapshot; now: number }) {
   const data = useQuery({ queryKey: keys.notices, queryFn: readNotices });
@@ -24,6 +26,34 @@ export function MentionsList({ snapshot, now }: { snapshot: Snapshot; now: numbe
     mutationFn: (notice: Notice) => readNotice(notice.id),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: keys.notices }),
   });
+  const wanted = useSearchParams()[0].get("notice");
+  const opened = useRef<string | null>(null);
+  const notices = data.data;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a read that ends with the same list must run it again
+  useEffect(() => {
+    if (wanted === null || notices === undefined || opened.current === wanted || data.isFetching)
+      return;
+    const notice = notices.find((each) => String(each.id) === wanted);
+    // A notice the list does not hold yet is looked for again once the list is read again.
+    if (notice === undefined && opened.current !== `${wanted}?`) {
+      opened.current = `${wanted}?`;
+      void data.refetch();
+      return;
+    }
+    opened.current = wanted;
+    if (notice?.read === false) read.mutate(notice);
+    const path = notice === undefined ? null : pathOf(snapshot, notice);
+    void navigate(path ?? `/inbox?kind=${MENTIONS}`, { replace: true });
+  }, [
+    wanted,
+    notices,
+    snapshot,
+    navigate,
+    read.mutate,
+    data.isFetching,
+    data.refetch,
+    data.dataUpdatedAt,
+  ]);
   if (data.isPending) return <SkeletonList rows={3} message="Reading your mentions" />;
   if (data.isError) {
     return (

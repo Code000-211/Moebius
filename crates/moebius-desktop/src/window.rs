@@ -67,6 +67,7 @@ pub fn run() {
     let connected = Connected::default();
     tauri::Builder::default()
         .manage(connected.clone())
+        .manage(crate::notifications::Watching::default())
         .invoke_handler(tauri::generate_handler![
             servers::connect,
             servers::connect_ssh,

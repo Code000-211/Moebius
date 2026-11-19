@@ -519,8 +519,10 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `rail/status.rs` | What the rail shows of a server: whether it answers and its Inbox's count (`Entry`). |
 | `servers.rs` | The rail's commands on the Tauri side (`connect`, `connect_ssh`, `servers`, `switch_server`, `remove_server`, and the local server's `local_state` and `local_connect`): showing a server's web app in the window, the connect page when none is left, and opening the server that was open last at the start. |
 | `server.rs` | A server the app connects to (`Server`: its address and the access token), and `check`: the token and the server's version with `GET /v1/health`, refusing a server of another minor version with the release that matches. |
-
 | `window.rs` | The Tauri side, in the program rather than the library so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, and the handlers that send a link leaving the app to the browser. |
+| `notices.rs` | A person's notices on a server for the app: `watch` follows `/v1/events` (and reads `GET /v1/notices` after each connection) with the token and says, as `Effect`s, to notify a notice once and what the count of unread ones is; the first read is the baseline and notifies nothing. |
+| `badge.rs` | What the icon says of that count: the title `(3) Moebius`, and the red disc with digits drawn over the taskbar icon on Windows. |
+| `notifications.rs` | The Tauri side of notices, in the program: the system's notification (a click shows the window and opens the notice in the web app), the badge count of the icon, the overlay and the title. |
 | `proxy/mod.rs` | The app's own address on the loopback: the web app at every path, `/v1/` forwarded to the server, and the key, `Host` and `Origin` checks that let only the window use it. |
 | `proxy/assets.rs` | The web app embedded from `web/dist`, served with the policies of `web/csp.json`. |
 | `proxy/forward.rs` | Forwarding to the server with the token: HTTP streamed both ways, and a WebSocket relayed message by message. |
