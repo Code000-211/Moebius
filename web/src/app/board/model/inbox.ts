@@ -1,0 +1,65 @@
+/**
+ * The inbox items that stop a card, as the board reads them: which kinds there are, the open item of a card (found
+ * once per read of the inbox) and what a stopped merge says.
+ */
+import type { Card, InboxItem } from "../../../api/types/board";
+
+/** The kinds of inbox item that stop a card for a person. */
+export const STUCK = "stuck";
+export const CHANGE_CLOSED = "change_closed";
+export const READY_TO_MERGE = "ready_to_merge";
+export const APPROVE_ISSUE = "approve_issue";
+/** A merge of a card's changes stopped after another change of the card was merged; it informs, and is no turn. */
+export const MERGE_STOPPED = "merge_stopped";
+
+/**
+ * The open item of every card of one read of the inbox, kept so that a board asks for a hundred cards without walking
+ * the inbox a hundred times. It is held against the array itself, which the query hands out unchanged until the inbox
+ * is read again.
+ */
+const openItems = new WeakMap<readonly InboxItem[], Map<number, InboxItem>>();
+
+/** The open inbox item of a card, if it has one. */
+export function inboxOf(inbox: readonly InboxItem[], card: Card): InboxItem | undefined {
+  let byCard = openItems.get(inbox);
+  if (byCard === undefined) {
+    byCard = new Map();
+    for (const item of inbox) {
+      if (item.resolved_at !== null || item.card_id === null) continue;
+      const held = byCard.get(item.card_id);
+      // A stopped merge only says what is merged; the item that asks for a person's turn stays the card's item. Of
+      // several changes to merge, the first in the order they are merged comes first, since a later one is refused.
+      if (item.kind === MERGE_STOPPED && held !== undefined) continue;
+      if (item.kind === READY_TO_MERGE && held?.kind === READY_TO_MERGE && held.id < item.id)
+        continue;
+      byCard.set(item.card_id, item);
+    }
+    openItems.set(inbox, byCard);
+  }
+  return byCard.get(card.id);
+}
+
+/** The open `merge_stopped` item of a card, if a merge of its changes stopped after some were merged. */
+export function mergeStoppedOf(inbox: readonly InboxItem[], card: Card): InboxItem | undefined {
+  return inbox.find(
+    (item) => item.kind === MERGE_STOPPED && item.card_id === card.id && item.resolved_at === null,
+  );
+}
+
+/** What a `merge_stopped` item says: the repositories whose changes are merged and those still open, and why it stopped. */
+export function mergeStopped(item: InboxItem): {
+  repository: string;
+  reason: string;
+  merged: string[];
+  open: string[];
+} {
+  const names = (value: unknown): string[] =>
+    Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+  const word = (value: unknown): string => (typeof value === "string" ? value : "");
+  return {
+    repository: word(item.data.repository),
+    reason: word(item.data.reason),
+    merged: names(item.data.merged),
+    open: names(item.data.open),
+  };
+}

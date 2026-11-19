@@ -10,37 +10,21 @@
  * (`live/invalidation.ts`), so a card moves on this page when the server moves it. The chosen card and the filters are
  * in the address (`?card=`, `?column=`, `?agent=`, `?status=`, `?label=`), and so are Display's choices (`?layout=`,
  * `?group=`, `?sort=`, `?hide=`), so a reload and a link keep them. The filters are the chips of the shared bar
- * (`ui/filters`); `view.ts` says what the board offers it and `ListLayout.tsx` draws the list layout.
+ * (`ui/filters`); `view.ts` says what the board offers it and `ListLayout.tsx` draws the list layout. The page itself decides what a drop does and holds the dialogs; `BoardHead.tsx`
+ * has the layout switch and the notice for a leftover `.moebius` folder, `BoardColumn.tsx` a column and its cards, and
+ * `BoardCardContent.tsx` what a card shows.
  */
-import {
-  BookmarkSimpleIcon,
-  CaretDownIcon,
-  CaretRightIcon,
-  KanbanIcon,
-  ListBulletsIcon,
-  PlusIcon,
-  TerminalWindowIcon,
-} from "@phosphor-icons/react";
+import { BookmarkSimpleIcon, PlusIcon, TerminalWindowIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, type SyntheticEvent, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { snapshot } from "../../api/calls/board";
-import { readSettings } from "../../api/calls/projects";
 import { addView, listViews } from "../../api/calls/views";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
-import type { Board, Card, InboxItem } from "../../api/types/board";
+import type { Card } from "../../api/types/board";
 import { Button } from "../../ui/components/Button";
-import {
-  type DropResult,
-  KanbanBoard,
-  KanbanCard,
-  KanbanCardFace,
-  KanbanCards,
-  KanbanHeader,
-  KanbanProvider,
-} from "../../ui/components/KanbanBoard";
-import { KanbanCardContent } from "../../ui/components/KanbanCardContent";
+import { type DropResult, KanbanCardFace, KanbanProvider } from "../../ui/components/KanbanBoard";
 import { FilterBar } from "../../ui/filters/FilterBar";
 import { displayQuery, readDisplay } from "../../ui/filters/model";
 import { cn } from "../../ui/lib/cn";
@@ -54,128 +38,30 @@ import { ScrollFades } from "../../ui/page/ScrollFades";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
 import { boardFiltersOf, viewOfBoard } from "../views/model";
+import { CardContent } from "./BoardCardContent";
+import { BoardColumn } from "./BoardColumn";
+import { LayoutSwitch, LeftoverNotice } from "./BoardHead";
 import { useBulk } from "./bulk";
 import { BlockDialog, DeleteDialog, ParentDialog } from "./CardDialogs";
 import { CardFocus } from "./CardFocus";
-import { CardMenu } from "./CardMenu";
-import { ColumnAdd, ColumnAddButton } from "./ColumnAdd";
-import { ColumnMark } from "./ColumnMark";
-import { cardKey, cardName } from "./cardKey";
+import { cardKey } from "./cardKey";
 import { Dock } from "./Dock";
 import { type Decision, useDecisions } from "./decisions";
 import { ListLayout } from "./ListLayout";
 import {
-  cardBadges,
-  cardDetail,
   cardStatus,
-  changeOf,
   dropRule,
   type Filters,
   groupByColumn,
   inboxOf,
   inspectedCard,
-  isClosed,
-  isPlanningLabel,
-  issueUrl,
   mergeStoppedOf,
   NO_FILTERS,
-  nextCard,
-  pullRequestOf,
   rootOf,
-  type Stack,
-  stackWords,
-  todayIso,
 } from "./model";
 import { useNewIssue } from "./NewIssueHost";
 import { RepositoryTerminal } from "./RepositoryTerminal";
 import { DISPLAY_CHOICES, filterFields, listGroups } from "./view";
-
-/**
- * What a column holds when it is empty: one sentence for how a card comes to it. There is no title, because the
- * column's header is already the name of the place, and a heading repeating it is a second label on the same thing.
- */
-const COLUMN_EMPTY: Record<string, string> = {
-  Backlog: "Issues you create wait here until they are approved.",
-  "Not started": "Approved issues wait here until an agent takes one.",
-  "In progress": "A card arrives here when an agent starts a run on it.",
-  "In review": "A card arrives here when an agent has a change to review.",
-  "Ready to merge": "A card arrives here when its change passes its checks.",
-  Done: "A card arrives here once its change is merged.",
-};
-
-/** What the menus of the cards of a board do. */
-/** What chooses cards (`useBulk`): the box of a card and the menu of a right click. */
-type Bulk = Pick<ReturnType<typeof useBulk>, "boxFor" | "onContextMenu">;
-
-type CardMenuActions = {
-  onBlock: (card: Card) => void;
-  onUnblock: (card: Card) => void;
-  onStop: (card: Card) => void;
-  onDelete: (card: Card) => void;
-  onAddSubIssue: (card: Card) => void;
-  onMoveParent: (card: Card) => void;
-};
-
-const ANY_COLUMN = "A card arrives when the column's script moves one in.";
-
-/**
- * Said on the board of a repository whose default branch still has a `.moebius/` folder: nothing in it is read any
- * more, so its rules, checks and scripts do not apply until they are moved into the project's settings.
- */
-function LeftoverNotice({ repository }: { repository: number }) {
-  const settings = useQuery({
-    queryKey: keys.projectSettings(repository),
-    queryFn: () => readSettings(repository),
-  });
-  const leftover = settings.data?.leftover ?? [];
-  if (leftover.length === 0) return null;
-  return (
-    <Notice
-      tone="error"
-      className="mb-4"
-      action={
-        <Link className="underline" to={`/projects/${repository}`}>
-          Project settings
-        </Link>
-      }
-    >
-      <span className="font-semibold">This repository still has a .moebius folder. </span>
-      Nothing in it is read any more, so its rules, checks and scripts do not apply (
-      {leftover.join(", ")}). Move them into the project's settings.
-    </Notice>
-  );
-}
-
-/** The two layouts as two buttons in the head of the page; Display holds the same choice among the rest. */
-function LayoutSwitch({
-  layout,
-  onChange,
-}: {
-  layout: "board" | "list";
-  onChange: (layout: "board" | "list") => void;
-}) {
-  const choices = [
-    ["board", "Board", KanbanIcon],
-    ["list", "List", ListBulletsIcon],
-  ] as const;
-  return (
-    <fieldset aria-label="Layout" className="m-0 flex min-w-0 items-center gap-0.5 border-0 p-0">
-      {choices.map(([value, label, Icon]) => (
-        <Button
-          key={value}
-          variant={layout === value ? "secondary" : "ghost"}
-          size="sm"
-          aria-pressed={layout === value}
-          aria-label={`${label} layout`}
-          title={`${label} layout`}
-          onClick={() => onChange(value)}
-        >
-          <Icon className="size-4" aria-hidden="true" />
-        </Button>
-      ))}
-    </fieldset>
-  );
-}
 
 export function BoardPage() {
   const { id } = useParams();
@@ -616,301 +502,5 @@ export function BoardPage() {
         onDone={(text) => setNotice({ tone: "ok", text })}
       />
     </>
-  );
-}
-
-function BoardColumn({
-  board,
-  inbox,
-  name,
-  cards,
-  total,
-  stacks,
-  stackOpen,
-  onToggleStack,
-  busy,
-  inspectedId,
-  onSelect,
-  menu,
-  bulk,
-  hidden,
-  adding,
-  onAdding,
-  onCreated,
-}: {
-  board: Board;
-  inbox: InboxItem[];
-  name: string;
-  cards: Card[];
-  total: number;
-  /** The stack of each card of the board that has sub-issues, by card id. */
-  stacks: Map<number, Stack>;
-  stackOpen: (card: Card) => boolean;
-  onToggleStack: (card: Card) => void;
-  /** While a decision is on its way, when no card can be moved. */
-  busy: boolean;
-  inspectedId: number | undefined;
-  onSelect: (card: Card) => void;
-  menu: CardMenuActions;
-  bulk: Bulk;
-  /** The fields of a card Display switched off. */
-  hidden: ReadonlySet<string>;
-  /** The line for a new card is open in this column. */
-  adding: boolean;
-  onAdding: (open: boolean) => void;
-  onCreated: (card: Card, column: string) => void;
-}) {
-  return (
-    <KanbanBoard name={name}>
-      <KanbanHeader
-        name={name}
-        count={cards.length}
-        total={total}
-        mark={<ColumnMark name={name} />}
-        actions={<ColumnAddButton column={name} onClick={() => onAdding(true)} />}
-      />
-      <KanbanCards className="min-h-9">
-        {cards.map((card) => {
-          const stack = stacks.get(card.id);
-          const open = stack !== undefined && stackOpen(card);
-          return (
-            <div
-              key={card.id}
-              data-testid={stack ? `stack-${card.number}` : undefined}
-              className="flex min-w-0 flex-col gap-3"
-            >
-              <BoardCard
-                board={board}
-                inbox={inbox}
-                card={card}
-                column={name}
-                cards={cards}
-                busy={busy}
-                inspectedId={inspectedId}
-                onSelect={onSelect}
-                menu={menu}
-                bulk={bulk}
-                stack={stack}
-                open={open}
-                onToggleStack={() => onToggleStack(card)}
-                hidden={hidden}
-              />
-              {open && stack.shown.length > 0 && (
-                // The sub-issues lie under their parent, in a stack of their own: each is a card that moves, blocks and
-                // deletes like any other, and says which column it is in, since it is not in this one.
-                <div className="ml-3 flex min-w-0 flex-col gap-3 border-l-2 border-hairline-strong pl-3">
-                  {stack.shown.map((child) => (
-                    <BoardCard
-                      key={child.id}
-                      board={board}
-                      inbox={inbox}
-                      card={child}
-                      column={child.column}
-                      cards={board.cards}
-                      busy={busy}
-                      inspectedId={inspectedId}
-                      onSelect={onSelect}
-                      menu={menu}
-                      inStack
-                      hidden={hidden}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-        {/* The column is already the surface under these words; a card of its own inside it is a second one, and one
-            that reads as a card which has lost its words. */}
-        {cards.length === 0 && <Empty plain centered body={COLUMN_EMPTY[name] ?? ANY_COLUMN} />}
-      </KanbanCards>
-      <ColumnAdd
-        repository={board.repository.id}
-        column={name}
-        open={adding}
-        onOpen={() => onAdding(true)}
-        onClose={() => onAdding(false)}
-        onCreated={onCreated}
-      />
-    </KanbanBoard>
-  );
-}
-
-/** One card of a column, or of the stack under its parent. */
-function BoardCard({
-  board,
-  inbox,
-  card,
-  column,
-  cards,
-  busy,
-  inspectedId,
-  onSelect,
-  menu,
-  bulk,
-  stack,
-  open = false,
-  onToggleStack,
-  inStack = false,
-  hidden,
-}: {
-  board: Board;
-  inbox: InboxItem[];
-  card: Card;
-  hidden: ReadonlySet<string>;
-  /** What chooses the card: left out for a sub-issue in a stack, which is not chosen with the cards of the column. */
-  bulk?: Bulk;
-  /** The column the card is in: the one it is drawn in, or its own when it lies in the stack of its parent. */
-  column: string;
-  cards: Card[];
-  busy: boolean;
-  inspectedId: number | undefined;
-  onSelect: (card: Card) => void;
-  menu: CardMenuActions;
-  stack?: Stack;
-  open?: boolean;
-  onToggleStack?: () => void;
-  inStack?: boolean;
-}) {
-  const status = cardStatus(card, inboxOf(inbox, card), board);
-  return (
-    <KanbanCard
-      id={String(card.id)}
-      name={`${cardKey(card)} ${card.title}`}
-      testId={`card-${card.number}`}
-      column={column}
-      dragDisabled={busy}
-      isSelected={inspectedId === card.id}
-      isLive={status === "live"}
-      onOpen={() => onSelect(card)}
-      onContextMenu={bulk?.onContextMenu(card)}
-    >
-      <CardContent
-        board={board}
-        inbox={inbox}
-        card={card}
-        cards={cards}
-        onOpen={() => onSelect(card)}
-        menu={menu}
-        select={bulk?.boxFor(card)}
-        stack={stack}
-        open={open}
-        onToggleStack={onToggleStack}
-        inStack={inStack}
-        hidden={hidden}
-      />
-    </KanbanCard>
-  );
-}
-
-/** What a card shows, on the board and on the drag overlay. */
-function CardContent({
-  board,
-  inbox,
-  card,
-  cards,
-  onOpen,
-  menu,
-  stack,
-  open = false,
-  onToggleStack,
-  inStack = false,
-  select,
-  hidden,
-}: {
-  board: Board;
-  inbox: InboxItem[];
-  card: Card;
-  cards: Card[];
-  /** The box that chooses the card, in its corner; left out on the drag overlay. */
-  select?: ReactNode;
-  /** The fields Display switched off. */
-  hidden: ReadonlySet<string>;
-  /** Opens the card; left out on the drag overlay, where the card is only a picture of itself. */
-  onOpen?: () => void;
-  /** What the card's menu does; left out on the drag overlay, with the menu itself. */
-  menu?: CardMenuActions;
-  /** The sub-issues of the card, when it has any: how many are done, and the control that opens them. */
-  stack?: Stack;
-  open?: boolean;
-  onToggleStack?: () => void;
-  /** The card lies in the stack of its parent, in a column that is not the one it is drawn in: it says which. */
-  inStack?: boolean;
-}) {
-  const status = cardStatus(card, inboxOf(inbox, card), board);
-  const change = changeOf(board, card);
-  const coding = card.column === "In progress" || card.column === "In review";
-  const next = card.column === "Not started" ? nextCard(cards, board.cards) : undefined;
-  const detail = cardDetail(card, board.round_limit);
-  return (
-    <KanbanCardContent
-      displayId={cardName(card, board.repository.forge !== "none")}
-      issueUrl={issueUrl(board.repository, card)}
-      title={card.title}
-      preview={hidden.has("description") ? null : card.body}
-      detail={
-        hidden.has("detail")
-          ? null
-          : inStack
-            ? [card.column, detail].filter(Boolean).join(" · ")
-            : detail
-      }
-      labels={hidden.has("labels") ? [] : card.labels.filter((l) => !isPlanningLabel(l))}
-      priority={hidden.has("priority") ? "none" : card.priority}
-      due={hidden.has("due") ? null : card.due}
-      overdue={card.due !== null && card.due < todayIso() && !isClosed(card)}
-      claimedBy={hidden.has("claim") ? null : card.claimed_by}
-      assignees={card.assignees}
-      stack={
-        stack && onToggleStack ? (
-          <StackToggle card={card} stack={stack} open={open} onToggle={onToggleStack} />
-        ) : stack ? (
-          <p className="m-0 text-sm text-secondary">{stackWords(stack)}</p>
-        ) : undefined
-      }
-      badges={cardBadges(card, status, next === card.id)}
-      pullRequest={hidden.has("pullRequest") ? null : pullRequestOf(board.repository, change)}
-      rounds={
-        coding && !hidden.has("rounds") ? { done: card.rounds, limit: board.round_limit } : null
-      }
-      muted={card.column === "Done" || card.closed}
-      onOpen={onOpen}
-      menu={menu && <CardMenu card={card} {...menu} />}
-      select={select}
-    />
-  );
-}
-
-/** How many sub-issues of a card are done, and the control that opens the stack under it or shuts it. */
-function StackToggle({
-  card,
-  stack,
-  open,
-  onToggle,
-}: {
-  card: Card;
-  stack: Stack;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  const Caret = open ? CaretDownIcon : CaretRightIcon;
-  // The card is dragged by its whole body and opened by a click on it; this control is neither.
-  const keep = (event: SyntheticEvent) => event.stopPropagation();
-  return (
-    <button
-      type="button"
-      aria-expanded={open}
-      aria-label={`Sub-issues of #${card.number}`}
-      onPointerDown={keep}
-      onKeyDown={keep}
-      onClick={(event) => {
-        event.stopPropagation();
-        onToggle();
-      }}
-      className="-mx-2 flex min-h-8 cursor-pointer appearance-none items-center gap-2 rounded-control bg-transparent px-2 text-left text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
-    >
-      <Caret className="size-4 shrink-0" weight="bold" aria-hidden="true" />
-      {stackWords(stack)}
-    </button>
   );
 }

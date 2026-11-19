@@ -5,30 +5,30 @@
  * agent). A save is `PUT /v1/agents/{name}`, a commit in the harness configuration
  * repository; a server without one keeps its agents in `moebius.toml`, where the same editor saves
  * `agents.<name>` with `PUT /v1/settings` and has paths in place of the repository's skills and MCP servers.
+ *
+ * The instructions box is `AgentInstructions.tsx`, the right column of skills, servers and extensions `AgentFiles.tsx`,
+ * and `AgentParts.tsx` the rows and path lists they share.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { Link } from "react-router";
-import { startChat } from "../../api/calls/chat";
 import { deleteAgent, saveAgent } from "../../api/calls/harness";
 import { availableModels, saveSettings } from "../../api/calls/models";
 import { keys } from "../../api/keys";
 import { type Agent, type AvailableModels, listedModel, offeredLevels } from "../../api/types/chat";
 import type { AgentDetail, McpServer, Runner, SkillListed } from "../../api/types/harness";
-import { usePackageSheet } from "../../packages/PackageSheetContext";
-import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { Box } from "../../ui/page/Box";
 import { Chip } from "../../ui/page/Chip";
-import { Field, Select, TextArea } from "../../ui/page/Field";
+import { Field, Select } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { PropertyFields } from "../../ui/page/Properties";
 import { ActionRow, Committed, EditorHead, useDraft } from "../harness/form";
-import { instructionsRequest } from "../harness/importRequest";
 import { ModelField, ModelNote } from "../harness/ModelField";
+import { AgentFiles } from "./AgentFiles";
+import { AgentInstructions } from "./AgentInstructions";
+import { Item } from "./AgentParts";
 import {
   type AgentForm,
-  addPath,
   agentRequest,
   ENGINEERING_SKILLS,
   engineeringOf,
@@ -39,7 +39,6 @@ import {
   PROTOCOLS,
   THIS_SERVER,
   toggle,
-  withChosen,
 } from "./model";
 
 /** What the page says of the last save: the commit it made (none when nothing changed), or that moebius.toml was written. */
@@ -68,102 +67,13 @@ export interface EditorProps {
   onDeleted: () => void;
 }
 
-/** A row of a list: what names it, and a line under it that is red when something is wrong. */
-function Item({ name, line, red }: { name: React.ReactNode; line?: string; red?: boolean }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1">
-      {name}
-      {line && (
-        <span
-          className={`min-w-0 break-words text-sm ${red ? "text-error-text" : "text-secondary"}`}
-        >
-          {line}
-        </span>
-      )}
-    </div>
-  );
-}
-
-function Paths({
-  heading,
-  aside,
-  empty,
-  placeholder,
-  addLabel,
-  paths,
-  onChange,
-  browse,
-}: {
-  heading: string;
-  aside: string;
-  empty: string;
-  placeholder: string;
-  addLabel: string;
-  paths: string[];
-  onChange: (paths: string[]) => void;
-  /** A way to find the files in a catalog instead of typing their path. */
-  browse?: { label: string; onClick: () => void };
-}) {
-  const [typed, setTyped] = useState("");
-  const add = () => {
-    onChange(addPath(paths, typed));
-    setTyped("");
-  };
-  return (
-    <Box title={heading} aside={aside} className="flex flex-col gap-4">
-      {paths.length === 0 && <p className="m-0 text-base text-secondary">{empty}</p>}
-      {paths.map((path) => (
-        <div key={path} className="flex min-h-8 flex-wrap items-center justify-between gap-3">
-          <span className="min-w-0 flex-1 break-all font-mono text-sm text-text">{path}</span>
-          <Button
-            variant="danger"
-            size="sm"
-            aria-label={`Remove ${path}`}
-            onClick={() => onChange(paths.filter((held) => held !== path))}
-          >
-            Remove
-          </Button>
-        </div>
-      ))}
-      <div className="flex flex-wrap items-end gap-3">
-        <Input
-          mono
-          className="min-w-60 flex-1"
-          aria-label={`${addLabel.replace("Add ", "")} path`}
-          value={typed}
-          placeholder={placeholder}
-          onChange={(event) => setTyped(event.target.value)}
-          onCommandEnter={add}
-        />
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={typed.trim() === ""}
-          title={typed.trim() === "" ? "Type the path first" : undefined}
-          onClick={add}
-        >
-          {addLabel}
-        </Button>
-        {browse && (
-          <Button variant="secondary" size="sm" onClick={browse.onClick}>
-            {browse.label}
-          </Button>
-        )}
-      </div>
-    </Box>
-  );
-}
-
 export function AgentEditor(props: EditorProps) {
   const { inFile, skills, mcp, runners, available, saved, onSaved } = props;
   const queryClient = useQueryClient();
-  const packages = usePackageSheet();
   const [form, setForm] = useState<AgentForm>(props.initial);
   // What the server has, so that Save says whether it has anything to send even when the editor reopened on a draft.
   const [baseline, setBaseline] = useState<AgentForm>(props.stored);
   const [problem, setProblem] = useState<string | null>(null);
-  const [byAgent, setByAgent] = useState(false);
-  const [wish, setWish] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   // Whether the last ask of the upstreams answered with nothing wrong; it says nothing before the button is pressed.
   const [answered, setAnswered] = useState(false);
@@ -240,16 +150,9 @@ export function AgentEditor(props: EditorProps) {
     },
     onError: (error) => setProblem(error.message),
   });
-  const ask = useMutation({
-    mutationFn: () =>
-      startChat({ agent: "Moebius", message: instructionsRequest(form.name, wish.trim()) }),
-    onError: (error) => setProblem(error.message),
-  });
-
   const choices = modelChoices(available);
   const builtIn = form.builtIn;
   const engineering = engineeringOf(form);
-  const skillsOffered = (skills ?? []).filter((skill) => !skill.built_in);
   const levels = [NOT_SET, ...offeredLevels(listedModel(available, form.model))];
   if (form.thinking !== null && !levels.includes(form.thinking)) levels.push(form.thinking);
   const places = [THIS_SERVER, ...runners.map((runner) => runner.name)];
@@ -389,63 +292,7 @@ export function AgentEditor(props: EditorProps) {
   );
   if (props.broken !== undefined) return <div className="flex flex-col gap-8">{head}</div>;
 
-  const instructions = (
-    <Box title="Instructions" className="flex flex-col gap-4">
-      {!form.naming && (
-        <div className="flex flex-wrap gap-3">
-          <Chip selected={!byAgent} onClick={() => setByAgent(false)}>
-            Write manually
-          </Chip>
-          <Chip selected={byAgent} onClick={() => setByAgent(true)}>
-            Write with agent
-          </Chip>
-        </div>
-      )}
-      {byAgent && !form.naming ? (
-        <>
-          <TextArea
-            mono={false}
-            rows={5}
-            aria-label="What this agent should do"
-            value={wish}
-            placeholder="What this agent should do and how. The Moebius agent writes and saves the instructions."
-            onChange={(event) => setWish(event.target.value)}
-          />
-          {ask.isSuccess ? (
-            <div className="flex flex-wrap items-center gap-3">
-              <Notice tone="ok">The Moebius agent has the request.</Notice>
-              <Button asChild variant="secondary" size="sm">
-                <Link to={`/chat/${ask.data.id}`}>Open the chat</Link>
-              </Button>
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-center gap-3">
-              {wish.trim() === "" && !ask.isPending && (
-                <span className="text-sm text-secondary">
-                  Say what the agent should do, then ask
-                </span>
-              )}
-              <Button
-                size="sm"
-                disabled={wish.trim() === "" || ask.isPending}
-                onClick={() => ask.mutate()}
-              >
-                {ask.isPending ? "Sending" : "Submit"}
-              </Button>
-            </div>
-          )}
-        </>
-      ) : (
-        <TextArea
-          rows={14}
-          aria-label="Instructions"
-          value={form.instructions}
-          placeholder="What the agent is told before it starts, in Markdown."
-          onChange={(event) => change({ instructions: event.target.value })}
-        />
-      )}
-    </Box>
-  );
+  const instructions = <AgentInstructions form={form} onChange={change} onProblem={setProblem} />;
 
   return (
     <div className="flex flex-col gap-8">
@@ -500,123 +347,7 @@ export function AgentEditor(props: EditorProps) {
           </Box>
           {instructions}
         </div>
-        <div className="flex min-w-0 flex-col gap-8">
-          {inFile ? (
-            <Paths
-              heading="Skills"
-              aside="Directories, from moebius.toml"
-              empty="No skill."
-              placeholder="skills/house-style"
-              addLabel="Add skill"
-              paths={form.skills}
-              onChange={(skills) => change({ skills })}
-            />
-          ) : (
-            <>
-              <Box
-                title="Skills"
-                aside={
-                  skills === null
-                    ? `${form.skills.length} chosen`
-                    : `${form.skills.length} of ${skillsOffered.length}`
-                }
-                className="flex flex-col gap-3"
-              >
-                {/* A read that failed is not a repository with nothing in it, and the two say opposite things. */}
-                {skills === null && (
-                  <p className="m-0 text-base text-secondary">
-                    The skills of skills/ could not be read.
-                  </p>
-                )}
-                {skills !== null && skillsOffered.length === 0 && form.skills.length === 0 && (
-                  <p className="m-0 text-base text-secondary">
-                    No skill in skills/ of the repository.
-                  </p>
-                )}
-                {withChosen(
-                  skillsOffered.map((skill) => skill.name),
-                  form.skills,
-                ).map((name) => (
-                  <Item
-                    key={name}
-                    name={
-                      <div>
-                        <Chip
-                          selected={form.skills.includes(name)}
-                          onClick={() => change({ skills: toggle(form.skills, name) })}
-                        >
-                          {name}
-                        </Chip>
-                      </div>
-                    }
-                    line={skillsOffered.find((skill) => skill.name === name)?.description}
-                  />
-                ))}
-              </Box>
-              <Box
-                title="MCP servers"
-                aside={
-                  mcp === null ? `${form.mcp.length} chosen` : `${form.mcp.length} of ${mcp.length}`
-                }
-                className="flex flex-col gap-3"
-              >
-                {mcp === null && (
-                  <p className="m-0 text-base text-secondary">
-                    The servers of mcp.toml could not be read.
-                  </p>
-                )}
-                {mcp !== null && mcp.length === 0 && form.mcp.length === 0 && (
-                  <p className="m-0 text-base text-secondary">
-                    No server in mcp.toml of the repository.
-                  </p>
-                )}
-                {withChosen(
-                  (mcp ?? []).map((server) => server.name),
-                  form.mcp,
-                ).map((name) => {
-                  const server = mcp?.find((each) => each.name === name);
-                  // A name the page cannot check against the file is not a name missing from it.
-                  const broken =
-                    mcp !== null && (server === undefined || server.error !== undefined);
-                  let line: string | undefined;
-                  if (server === undefined) line = mcp === null ? undefined : "Not in mcp.toml";
-                  else line = server.error ?? server.kind;
-                  return (
-                    <Item
-                      key={name}
-                      name={
-                        <div>
-                          <Chip
-                            selected={form.mcp.includes(name)}
-                            onClick={() => change({ mcp: toggle(form.mcp, name) })}
-                          >
-                            {name}
-                          </Chip>
-                        </div>
-                      }
-                      line={line}
-                      red={broken}
-                    />
-                  );
-                })}
-              </Box>
-            </>
-          )}
-          <Paths
-            heading="Extensions"
-            aside="Files in the repository"
-            empty="No extension."
-            placeholder="extensions/log.ts"
-            addLabel="Add extension"
-            paths={form.extensions}
-            onChange={(extensions) => change({ extensions })}
-            browse={{
-              label: "Browse Pi packages",
-              // A package is named for an agent that exists; a new one has no files to name it in yet.
-              onClick: () => packages.open("pi", form.exists ? form.name : null),
-            }}
-          />
-        </div>
+        <AgentFiles form={form} change={change} inFile={inFile} skills={skills} mcp={mcp} />
       </div>
     </div>
   );
