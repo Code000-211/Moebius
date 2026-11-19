@@ -15,6 +15,7 @@
 //! - `intake`: a project's requests, which a grilling drafts into issues that members accept or decline.
 //! - `analytics`: throughput, times to done and in columns, burn-ups and tokens per point of what a person may see.
 //! - `cycles`: the time boxes of a project, with burn-up and figures, and closing them.
+//! - `views`: saved filters with a layout and a sort, for a person or for everyone, and the cards each shows.
 //! - `milestones`: goals of the organisation with a target date, holding cards of any projects, with their progress.
 //! - `projects`: the projects, each with a key, a board and its repositories; making and renaming one, and the column
 //!   scripts of its board.
@@ -90,6 +91,7 @@ mod settings;
 mod templates;
 mod terminals;
 mod uploads;
+mod views;
 mod web;
 mod webhooks;
 mod whereabouts;
@@ -254,6 +256,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(analytics::routes())
         .merge(cycles::routes())
         .merge(milestones::routes())
+        .merge(views::routes())
         .merge(runs::routes())
         .merge(chats::routes())
         .merge(automations::routes())

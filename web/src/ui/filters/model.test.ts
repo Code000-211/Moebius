@@ -4,12 +4,9 @@ import {
   displayQuery,
   type FilterField,
   hasDisplay,
-  parseViews,
   readDisplay,
   readFilters,
   toggled,
-  viewQuery,
-  withView,
 } from "./model";
 
 const fields: FilterField[] = [
@@ -110,29 +107,5 @@ describe("display in the address", () => {
     expect(toggled([], "labels", false)).toEqual(["labels"]);
     expect(toggled(["labels"], "labels", true)).toEqual([]);
     expect(toggled(["labels"], "description", false)).toEqual(["description", "labels"]);
-  });
-});
-
-describe("the views kept in a browser", () => {
-  it("reads a list of views and nothing else", () => {
-    expect(parseViews(null)).toEqual([]);
-    expect(parseViews("not json")).toEqual([]);
-    expect(parseViews('{"name":"a"}')).toEqual([]);
-    expect(parseViews('[{"name":"A","query":"x=1"},{"name":3}]')).toEqual([
-      { name: "A", query: "x=1" },
-    ]);
-  });
-
-  it("names a new view after how many there are", () => {
-    const one = withView([], "status=held");
-    expect(one).toEqual([{ name: "View 1", query: "status=held" }]);
-    expect(withView(one, "layout=list")[1]).toEqual({ name: "View 2", query: "layout=list" });
-  });
-});
-
-describe("a saved view", () => {
-  it("holds only the parameters of the bar that are set", () => {
-    const params = new URLSearchParams("card=4&status=held&layout=list&column=");
-    expect(viewQuery(params, ["column", "status", "layout"])).toBe("status=held&layout=list");
   });
 });

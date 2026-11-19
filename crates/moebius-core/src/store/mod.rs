@@ -15,7 +15,7 @@
 //! person pinned and opened lately), `kinds` (kinds of issues, their fields and the values cards hold), `projects` (the
 //! projects, their keys and repositories, and the migration that makes one for each repository) and `cycles` (a project's time boxes) and `milestones` (goals
 //! of the organisation that hold cards of any projects) and `wiki_search` (the wiki's search index, derived from its
-//! pages).
+//! pages) and `views` (saved filters with a layout, for a person or for everyone).
 //! Every public type is re-exported here, as `store::Card` and the like.
 
 mod access;
@@ -54,6 +54,7 @@ mod retros;
 mod runs;
 mod shadows;
 mod usage;
+mod views;
 mod wiki_links;
 mod wiki_search;
 mod workflow_schedules;
@@ -105,6 +106,7 @@ pub use usage::{
     ANSWERING, ActivityUsage, AgentUsage, ClassUsage, ModelUsage, NO_RUN, Scope, ToolWait, UNKNOWN,
     Usage, UsageTotals,
 };
+pub use views::{LAYOUTS, NewView, SORTS, View, ViewFilter};
 pub use wiki_links::{CARD as WIKI_CARD, PAGE as WIKI_PAGE, WikiLink};
 pub(crate) use wiki_search::match_all;
 pub use wiki_search::{IndexedPage, WikiHit};
@@ -503,6 +505,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     cycles::SCHEMA,
     wiki_links::SCHEMA,
     card_repositories::SCHEMA,
+    views::SCHEMA,
 ];
 
 pub fn now() -> i64 {

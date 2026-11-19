@@ -50,6 +50,9 @@ export const keys = {
   milestone: (id: number) => ["milestones", id] as const,
   /** The milestones one card is in. */
   cardMilestones: (card: number) => ["card", card, "milestones"] as const,
+  /** The saved views of the person, and the cards of one. */
+  views: ["views"] as const,
+  viewCards: (id: number) => ["views", id, "cards"] as const,
   /** A project's cycles with their progress, one cycle with its burn-up and cards, and the open cycle of a card. */
   cycles: ["cycles"] as const,
   projectCycles: (project: number) => ["cycles", "project", project] as const,

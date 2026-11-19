@@ -102,6 +102,17 @@ a card may be added from is decided in `app/cycles.rs`.
 A milestone belongs to no project, so the store hands out every card of one with its project (`milestone_cards`); what a
 person may see of it is decided in `app/milestones.rs`. Deleting a card or a milestone deletes the membership.
 
+## Views
+
+`store/views.rs` keeps the saved views.
+
+| Table | Holds |
+|---|---|
+| `views` | Name, the person who made it, whether it is shared, its filter (JSON), layout, sort and direction. |
+
+A view is a question; the store keeps it and lists a person's own and the shared ones, and `app/views.rs` works out the
+cards it shows each person.
+
 ## Kinds of issues
 
 `store/kinds.rs` keeps the kinds of issues of the organisation, their fields and the values cards hold (see the glossary).
