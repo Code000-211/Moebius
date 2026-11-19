@@ -68,6 +68,7 @@ end
 | `card.due` | string or nil | The day the card is due as `YYYY-MM-DD` (it sorts as text), from its `due:` label; nil when it has none. Read-only. |
 | `card.kind` | string or nil | The name of the card's kind of issue (see [Kinds of issues](desktop-api.md#kinds-of-issues)), or nil while it has none. Read-only. |
 | `card.fields` | table | The values set for the fields of the card's kind, by field name: a number for a `number` field, a string for the others (a `person` field is a handle without the `@`, a `date` field `YYYY-MM-DD`); a field with no value is nil. An empty table (never nil) when none is set or the card has no kind. Read-only. |
+| `card.cycle` | text or nil | The name of the open cycle of its project the card is in (see [Cycles](desktop-api.md#cycles)); nil when it is in none. Read-only. |
 | `card.estimate` | number or nil | The card's estimate in points, a whole number from 1 to 1000, from its `estimate:` label; nil when it has none. A person sets it, or takes the Moebius agent's proposal (see [Estimates](desktop-api.md#estimates)). Read-only. |
 | `card.rounds` | number | How many runs with purpose `code` the card has had since it was last retried, whatever their status (a running one counts), and how many rounds of attempts of which none passed (see Attempts). |
 | `card.reviews` | number | How many review rounds the card has had since it was last retried, whatever their status: the runs with purpose `review` and those with purpose `review-standards` (one per round of the two-axis review). |

@@ -9,6 +9,7 @@
 //! of the harness configuration repository, `localize` gives a code run the files its issue is likely to touch and
 //! records what came of it, `reproduce` runs a change's reproduction test for a repository that works test first,
 //! `projects` reads a project's settings from the harness configuration repository,
+//! `cycles` keeps a project's cycles and carries unfinished cards over when one closes,
 //! `milestones` makes milestones and counts their cards within what a person may see,
 //! `whereabouts` knows where the server and the app run, `automations` keeps the automations and starts their chats
 //! when their schedules come due, and `plugin_settings` keeps what plugins ask of each repository and of the
@@ -23,6 +24,7 @@ mod changes;
 mod chat_access;
 mod chats;
 mod checks;
+mod cycles;
 mod deletions;
 mod diffs;
 mod intake;
@@ -146,6 +148,7 @@ pub enum AppError {
 
 pub type Result<T> = std::result::Result<T, AppError>;
 
+pub use cycles::{BurnUpDay, Carry, Closed, CycleDetail, CycleFields, CycleFigures, CycleView};
 pub use kinds::{CardQuery, KindView};
 pub use milestones::{MilestoneDetail, MilestoneFields, MilestoneProject, MilestoneView};
 pub use projects::{Member, ProjectRepository, ProjectView, Sight};

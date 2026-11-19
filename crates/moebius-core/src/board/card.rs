@@ -12,6 +12,7 @@
 //!   `due:` labels.
 //! - `card.estimate`: the card's estimate in points, a whole number (nil when it has none); the card's `estimate:`
 //!   label.
+//! - `card.cycle`: the name of the open cycle of its project the card is in (nil when it is in none).
 //! - `card.moved_at`: when the card last moved, was edited or was released from a hold, in Unix seconds, to compare
 //!   with `moebius.now()`.
 //! - `card.kind`, `card.fields`: the name of the card's kind of issue (nil while it has none) and the values of its
@@ -160,6 +161,14 @@ impl Engine {
         }
         t.set("fields", fields)?;
         t.set("estimate", card.estimate)?;
+        t.set(
+            "cycle",
+            self.app
+                .store
+                .card_cycle(card.id)
+                .map_err(mlua::Error::external)?
+                .map(|c| c.name),
+        )?;
         let children = lua.create_table()?;
         for child in self.app.children_of(card).map_err(mlua::Error::external)? {
             let c = lua.create_table()?;

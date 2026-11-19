@@ -904,6 +904,38 @@ end
     }
 
     #[test]
+    fn a_script_sees_the_name_of_the_open_cycle_or_nil() {
+        let (_dir, app, engine, repo) = setup();
+        let card = app.create_issue(repo, "Planned", "", OWNER_AUTHOR).unwrap();
+        let lua = mlua::Lua::new();
+        let cycle_of = || {
+            engine
+                .card_table(&lua, &app.card(card.id).unwrap())
+                .unwrap()
+                .get::<Option<String>>("cycle")
+                .unwrap()
+        };
+        assert_eq!(cycle_of(), None);
+        let who = crate::decide::Actor::first_owner();
+        let cycle = app
+            .add_cycle(
+                &who,
+                card.project_id,
+                &crate::app::CycleFields {
+                    name: "Cycle 1".into(),
+                    starts_on: "2026-11-02".into(),
+                    ends_on: "2026-11-15".into(),
+                },
+            )
+            .unwrap();
+        app.set_card_cycle(&who, card.id, Some(cycle.id)).unwrap();
+        assert_eq!(cycle_of().as_deref(), Some("Cycle 1"));
+        app.close_cycle(&who, cycle.id, &crate::app::Carry::Out)
+            .unwrap();
+        assert_eq!(cycle_of(), None);
+    }
+
+    #[test]
     fn an_outside_issue_that_names_a_parent_does_not_hold_or_close_it() {
         let (_dir, app, engine, repo) = setup();
         let map = app.create_issue(repo, "Map", "", OWNER_AUTHOR).unwrap();

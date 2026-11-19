@@ -44,6 +44,11 @@ export const keys = {
   milestone: (id: number) => ["milestones", id] as const,
   /** The milestones one card is in. */
   cardMilestones: (card: number) => ["card", card, "milestones"] as const,
+  /** A project's cycles with their progress, one cycle with its burn-up and cards, and the open cycle of a card. */
+  cycles: ["cycles"] as const,
+  projectCycles: (project: number) => ["cycles", "project", project] as const,
+  cycle: (id: number) => ["cycles", id] as const,
+  cardCycle: (card: number) => ["card", card, "cycle"] as const,
   /** The kinds of issues with their fields. */
   issueKinds: ["issue-kinds"] as const,
   /** The cards of every project, as the Issues page asks for them: all of them, or the ones a query picks. */

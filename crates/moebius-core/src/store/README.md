@@ -78,6 +78,18 @@ A later migration adds `projects.private` (0 for every project) and `project_mem
 private projects a person is not a member of, which `app::projects::sight` hides from them; `project_of` the project a
 judgement belongs to, for the training export.
 
+## Cycles
+
+`store/cycles.rs` keeps the cycles of projects (ADR 0019).
+
+| Table | Holds |
+|---|---|
+| `cycles` | A project's cycle: name (unique in the project regardless of case), first and last day, when it was closed. |
+| `cycle_cards` | Which cards a cycle holds and when each was added. A card is in at most one open cycle; a closed cycle keeps its cards. |
+
+`set_card_cycle` keeps the one-open-cycle rule; `close_cycle` closes and carries cards in one transaction; which project
+a card may be added from is decided in `app/cycles.rs`.
+
 ## Milestones
 
 `store/milestones.rs` keeps the milestones (ADR 0019).

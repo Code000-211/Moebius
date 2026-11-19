@@ -252,7 +252,7 @@ impl App {
     }
 
     /// The card, unless `who` may not see its project: then it is not found, as if there were none.
-    fn visible_card(&self, who: &Actor, card_id: i64) -> Result<crate::store::Card> {
+    pub(super) fn visible_card(&self, who: &Actor, card_id: i64) -> Result<crate::store::Card> {
         let card = self.card(card_id)?;
         if self.may_see_project(who, card.project_id) {
             Ok(card)

@@ -85,6 +85,14 @@ function server(answers: Record<string, { status: number; body: unknown }> = {})
         const answer = answers[`GET ${url}`] ?? { status: 200, body: [] };
         return { ok: true, status: answer.status, text: async () => JSON.stringify(answer.body) };
       }
+      // The cycles on offer and the card's own are reads too; the card is in none unless an answer says so.
+      if (method === "GET" && /^\/v1\/(projects\/\d+\/cycles|cards\/\d+\/cycle)$/.test(url)) {
+        const answer = answers[`GET ${url}`] ?? {
+          status: 200,
+          body: url.endsWith("/cycle") ? null : [],
+        };
+        return { ok: true, status: answer.status, text: async () => JSON.stringify(answer.body) };
+      }
       // No kind of issue is defined here; the Kind property is tested with `KindProperties`.
       if (method === "GET" && url === "/v1/kinds") {
         return { ok: true, status: 200, text: async () => "[]" };
@@ -468,5 +476,46 @@ describe("the milestones of a card", () => {
     fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Report" }));
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toEqual(["PUT", "/v1/cards/5/milestones", { milestones: [1, 2] }]);
+  });
+});
+
+describe("the cycle of a card", () => {
+  const cycle = (id: number, name: string, closed_at: number | null = null) => ({
+    id,
+    project_id: 1,
+    name,
+    starts_on: "2026-11-02",
+    ends_on: "2026-11-15",
+    closed_at,
+    created_at: 0,
+    cards: 0,
+    done: 0,
+    points: 0,
+    points_done: 0,
+  });
+
+  it("says none while the card is in no cycle", async () => {
+    server();
+    properties(card(5));
+    expect(await screen.findByRole("button", { name: "Cycle None" })).toBeTruthy();
+  });
+
+  it("offers the open cycles of the card's project and saves the one chosen", async () => {
+    const sent = server({
+      "GET /v1/cards/5/cycle": { status: 200, body: cycle(1, "Cycle 1") },
+      "GET /v1/projects/1/cycles": {
+        status: 200,
+        body: [cycle(2, "Cycle 2"), cycle(1, "Cycle 1"), cycle(3, "Old", 9)],
+      },
+    });
+    properties(card(5));
+    fireEvent.keyDown(await screen.findByRole("button", { name: "Cycle Cycle 1" }), {
+      key: "Enter",
+    });
+    expect(await screen.findByRole("menuitemradio", { name: "Cycle 2" })).toBeTruthy();
+    expect(screen.queryByRole("menuitemradio", { name: "Old" })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Cycle 2" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual(["PUT", "/v1/cards/5/cycle", { cycle: 2 }]);
   });
 });
