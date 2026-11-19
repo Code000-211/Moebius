@@ -1,5 +1,5 @@
 //! The Tauri side of the app: the one window, without a system frame, that shows the connect page and then the web app
-//! through the proxy, and the `connect` command the connect page calls. It is part of the program rather than of the
+//! through the proxy, and the commands the connect page calls (`connect`, and `local_state` and `local_connect` for the server of this machine). It is part of the program rather than of the
 //! library, so that the library's tests do not link Tauri (on Windows a test executable without the program's
 //! manifest cannot load what Tauri needs from the system).
 //!
@@ -12,6 +12,7 @@
 use std::sync::{Arc, Mutex};
 
 use moebius_desktop::links::{self, Target};
+use moebius_desktop::local::{self, Local};
 use moebius_desktop::proxy::{self, Proxy};
 use moebius_desktop::server::{self, Server};
 use tauri::webview::NewWindowResponse;
@@ -54,7 +55,11 @@ pub fn run() {
     let connected = Connected::default();
     tauri::Builder::default()
         .manage(connected.clone())
-        .invoke_handler(tauri::generate_handler![connect])
+        .invoke_handler(tauri::generate_handler![
+            connect,
+            local_state,
+            local_connect
+        ])
         .setup(move |app| {
             let navigating = connected.clone();
             let opening = connected.clone();
@@ -99,7 +104,36 @@ pub fn run() {
 /// in the window. A server it refuses leaves the window on the connect page with the reason.
 #[tauri::command]
 async fn connect(app: tauri::AppHandle, address: String, token: String) -> Result<(), String> {
-    let server = Server::new(&address, &token);
+    open(&app, Server::new(&address, &token)).await
+}
+
+/// What this machine has of a server of its own, for the connect page's offer: `not-set-up`, `stopped`, `running`, or
+/// `unavailable: <why>`. It only looks.
+#[tauri::command]
+async fn local_state() -> String {
+    let local = match Local::of_this_machine() {
+        Ok(local) => local,
+        Err(reason) => return format!("unavailable: {reason}"),
+    };
+    match local.state().await {
+        local::State::Unavailable(reason) => format!("unavailable: {reason}"),
+        local::State::NotSetUp => "not-set-up".to_string(),
+        local::State::Stopped => "stopped".to_string(),
+        local::State::Running => "running".to_string(),
+    }
+}
+
+/// Sets up the server of this machine where it is not, starts it where it does not run, and connects to it. The token
+/// is read by the app and never goes to the page.
+#[tauri::command]
+async fn local_connect(app: tauri::AppHandle) -> Result<(), String> {
+    let local = Local::of_this_machine()?;
+    let server = local.start().await.map_err(|e| e.to_string())?;
+    open(&app, server).await
+}
+
+/// Checks `server`, starts its proxy and shows the web app of it in the window.
+async fn open(app: &tauri::AppHandle, server: Server) -> Result<(), String> {
     server::check(&server).await.map_err(|e| e.to_string())?;
     let proxy = proxy::start(server, proxy::embedded)
         .await

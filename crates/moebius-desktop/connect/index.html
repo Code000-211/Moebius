@@ -15,6 +15,13 @@
       <button type="button" data-window="close" aria-label="Close">&#x2715;</button>
     </div>
     <main>
+      <section class="sheet" id="local" hidden>
+        <h1>A server on this machine</h1>
+        <p class="hint" id="local-hint"></p>
+        <p class="hint" id="local-working" hidden>Working: the first start downloads the program, which can take a minute.</p>
+        <p class="error" id="local-error" role="alert" hidden></p>
+        <button type="button" class="primary" id="local-start"></button>
+      </section>
       <form class="sheet" id="connect">
         <h1>Connect to a server</h1>
         <p class="hint">
