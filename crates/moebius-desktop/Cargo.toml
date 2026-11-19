@@ -19,6 +19,7 @@ axum = { version = "0.8.9", features = ["ws"] }
 futures-util = "0.3.34"
 getrandom = "0.3"
 hex = "0.4.3"
+keyring = "4.2.0"
 reqwest = { version = "0.13.5", features = ["json", "stream"] }
 rust-embed = { version = "8.13.0", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }

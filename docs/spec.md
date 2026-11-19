@@ -306,7 +306,8 @@ Linux (an AppImage and a `.deb`) and Windows (an installer), not for macOS. It s
 access token, asks the server's version first and refuses a server of another minor version, naming the release whose
 app matches. It serves the web app it bundles from its own address on the loopback and forwards `/v1/` to the server
 with the token, so the token stays in the app. The window has no system frame: its controls lie on the textured
-ground. Several servers, a local server, notifications, the tray and the global shortcut of ADR 0021 come later.
+ground. A rail at the window's far left holds several servers, each with the count of its Inbox and a grey dot when it does
+not answer, connected by address or over SSH; their tokens are in the system's keychain. A local server, notifications, the tray and the global shortcut of ADR 0021 come later.
 
 ## 9. Security
 

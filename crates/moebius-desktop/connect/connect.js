@@ -24,6 +24,35 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
+// The servers the app remembers (their tokens are in the system's keychain): a click opens one, or says why not.
+(async () => {
+  try {
+    const servers = await window.__TAURI_INTERNALS__.invoke("servers");
+    if (servers.length === 0) return;
+    const list = document.getElementById("saved-list");
+    for (const server of servers) {
+      const item = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = server.reachable ? server.name : `${server.name} (cannot be reached)`;
+      button.addEventListener("click", async () => {
+        error.hidden = true;
+        try {
+          await window.__TAURI_INTERNALS__.invoke("switch_server", { id: server.id });
+        } catch (reason) {
+          error.textContent = String(reason);
+          error.hidden = false;
+        }
+      });
+      item.append(button);
+      list.append(item);
+    }
+    document.getElementById("saved").hidden = false;
+  } catch {
+    // Without the list the page is still the form.
+  }
+})();
+
 try {
   const saved = localStorage.getItem("moebius.theme");
   const light =

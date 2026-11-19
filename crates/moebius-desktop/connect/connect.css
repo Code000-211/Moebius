@@ -83,8 +83,28 @@ main {
   display: flex;
   min-height: 100%;
   align-items: center;
+  flex-direction: column;
+  gap: 16px;
   justify-content: center;
   padding: 48px 16px;
+}
+#saved ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#saved button {
+  font: inherit;
+  width: 100%;
+  text-align: left;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  padding: 6px 8px;
 }
 .sheet {
   width: min(400px, 100%);

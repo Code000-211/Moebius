@@ -26,6 +26,11 @@
         <p class="error" id="error" role="alert" hidden></p>
         <button type="submit" class="primary">Connect</button>
       </form>
+      <!-- The servers the app remembers, when it could not open one at its start (they may be down). -->
+      <section class="sheet" id="saved" hidden>
+        <h1>Your servers</h1>
+        <ul id="saved-list"></ul>
+      </section>
     </main>
   </body>
 </html>
