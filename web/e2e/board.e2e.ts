@@ -77,6 +77,9 @@ const broadcast = (event: { kind: string; data: unknown }) => {
 const column = (name: string) => page.getByRole("region", { name, exact: true });
 const card = (number: number) => page.getByTestId(`card-${number}`);
 const dock = () => page.getByRole("region", { name: "Card inspector" });
+/** The properties of the card numbered `number`, which the dock puts in the right column. */
+const properties = (number: number) =>
+  page.getByRole("region", { name: `Properties of #${number}`, exact: true });
 const alert = (text: string | RegExp) => page.getByRole("alert").filter({ hasText: text });
 const status = (text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
 
@@ -360,9 +363,9 @@ describe("live data", () => {
     await fresh();
     await openBoard();
     await page.goto(`${server.url}/board/1?card=3`);
-    await dock().getByText("demo · Not started · by person").waitFor();
+    await properties(3).getByText("Not started", { exact: true }).waitFor();
     broadcast(fake().moveCard(3, "In review"));
-    await dock().getByText("demo · In review · by person").waitFor();
+    await properties(3).getByText("In review", { exact: true }).waitFor();
   });
 
   it.skipIf(usesRealServer)("links the pull request of a card from the dock", async () => {
@@ -373,14 +376,161 @@ describe("live data", () => {
     expect(await pull.getAttribute("href")).toBe("https://github.com/acme/demo/pull/11");
   });
 
-  it.skipIf(usesRealServer)("names the dock's two waiting rows by what each one is", async () => {
-    await fresh();
-    await openBoard();
-    await page.goto(`${server.url}/board/1?card=4`);
-    await dock().getByText("Why it waits", { exact: true }).waitFor();
-    await dock().getByText("Waiting on", { exact: true }).waitFor();
-    expect(await dock().getByText("Waiting", { exact: true }).count()).toBe(0);
-  });
+  it.skipIf(usesRealServer)(
+    "names the two waiting properties of a card by what each one is",
+    async () => {
+      await fresh();
+      await openBoard();
+      await page.goto(`${server.url}/board/1?card=4`);
+      await properties(4).getByText("Why it waits", { exact: true }).waitFor();
+      await properties(4).getByText("Waiting on", { exact: true }).waitFor();
+      expect(await properties(4).getByText("Waiting", { exact: true }).count()).toBe(0);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "puts the facts of the dock's card in the right column, beside the dock",
+    async () => {
+      await fresh();
+      await openBoard();
+      await card(3).click();
+      const facts = properties(3);
+      await facts.getByText("Not started", { exact: true }).waitFor();
+      for (const name of [
+        "Status",
+        "Column",
+        "Repository",
+        "Author",
+        "Run",
+        "Why it waits",
+        "Cost",
+      ]) {
+        await facts.getByText(name, { exact: true }).waitFor();
+      }
+      // The column holds them, and the dock stands beside it rather than over it.
+      const column = page.locator('[data-surface="right-column"]');
+      expect(await column.getAttribute("data-folded")).toBeNull();
+      const right = (await column.boundingBox()) as { x: number };
+      const drawer = (await dock().boundingBox()) as { x: number; width: number };
+      expect(drawer.x + drawer.width).toBeLessThanOrEqual(right.x + 1);
+      // The dock does not say them again.
+      expect(await dock().getByText("demo · Not started · by person").count()).toBe(0);
+      // Closing the dock takes them away, and the column folds to its slim width.
+      await dock().getByRole("button", { name: "Close the inspector" }).click();
+      await facts.waitFor({ state: "detached" });
+      await expect.poll(() => column.getAttribute("data-folded")).toBe("");
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "edits every property of the issue with the keyboard alone",
+    async () => {
+      await fresh();
+      await openBoard();
+      await card(3).click();
+      const facts = properties(3);
+      /** Enter opens the value's menu, the arrows move to the row and Enter saves it. */
+      const choose = async (value: string, row: string) => {
+        await facts.getByRole("button", { name: value }).focus();
+        await page.keyboard.press("Enter");
+        await page.waitForFunction(
+          () => document.activeElement?.getAttribute("role") === "menuitemradio",
+        );
+        const wanted = page.getByRole("menuitemradio", { name: row, exact: true });
+        // Each arrow waits for the menu to have taken the one before, as a person's keys do.
+        await expect
+          .poll(async () => {
+            if (await wanted.evaluate((el) => el === document.activeElement)) return true;
+            await page.keyboard.press("ArrowDown");
+            return false;
+          })
+          .toBe(true);
+        await page.keyboard.press("Enter");
+      };
+      /** Enter opens the value's field, what is typed replaces it, and Enter saves it. */
+      const type = async (value: string, field: string, typed: string) => {
+        await facts.getByRole("button", { name: value }).focus();
+        await page.keyboard.press("Enter");
+        await facts.getByRole("textbox", { name: field }).waitFor();
+        await page.keyboard.press("Control+a");
+        await page.keyboard.type(typed);
+        await page.keyboard.press("Enter");
+      };
+
+      // A choice.
+      await choose("State Open", "Closed");
+      await facts.getByRole("button", { name: "State Closed" }).waitFor();
+      await column("Done").getByTestId("card-3").waitFor();
+
+      // A person.
+      await choose("Claim No one", "Me");
+      await facts.getByRole("button", { name: /^Claim person/ }).waitFor();
+
+      // A number.
+      await type("Parent None", "Parent", "#2");
+      await facts.getByRole("button", { name: "Parent #2 Fix the login redirect" }).waitFor();
+
+      // Text: Enter opens the field in the value's place, Enter saves, the focus comes back to the value.
+      const title = facts.getByRole("button", { name: "Title Document the API" });
+      await title.focus();
+      await page.keyboard.press("Enter");
+      const field = facts.getByRole("textbox", { name: "Title" });
+      await field.waitFor();
+      await page.keyboard.press("Control+a");
+      await page.keyboard.type("Document the whole API");
+      await page.keyboard.press("Enter");
+      const renamed = facts.getByRole("button", { name: "Title Document the whole API" });
+      await renamed.waitFor();
+      await expect.poll(() => renamed.evaluate((el) => el === document.activeElement)).toBe(true);
+
+      // Escape leaves the field unsaved, and does not close the dock behind it.
+      await page.keyboard.press("Enter");
+      await field.waitFor();
+      await page.keyboard.type(" again");
+      await page.keyboard.press("Escape");
+      await renamed.waitFor();
+      await dock().waitFor();
+
+      // A list: Tab reaches "+", Enter opens the field, Enter adds the label.
+      const add = facts.getByRole("button", { name: "Add a label" });
+      await add.focus();
+      await page.keyboard.press("Enter");
+      await page.keyboard.type("docs");
+      await page.keyboard.press("Enter");
+      const remove = facts.getByRole("button", { name: "Remove label docs" });
+      await remove.waitFor();
+      await remove.focus();
+      await page.keyboard.press("Enter");
+      await remove.waitFor({ state: "detached" });
+
+      // And the blockers, by number.
+      await facts.getByRole("button", { name: "Add a blocker by its number" }).focus();
+      await page.keyboard.press("Enter");
+      await page.keyboard.type("1");
+      await page.keyboard.press("Enter");
+      await facts.getByRole("button", { name: "Remove blocker #1" }).waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "says a refusal under the property that asked, and keeps the server's value",
+    async () => {
+      await fresh();
+      await openBoard();
+      await card(3).click();
+      const facts = properties(3);
+      await facts.getByRole("button", { name: "Title Document the API" }).click();
+      const field = facts.getByRole("textbox", { name: "Title" });
+      await field.fill(" ");
+      await field.press("Enter");
+      const refusal = facts.getByRole("alert");
+      await refusal.waitFor();
+      const value = facts.getByRole("button", { name: "Title Document the API" });
+      // A person hearing the page is told it with the value it is about.
+      const described = await value.getAttribute("aria-describedby");
+      expect(described).toBe(await refusal.locator("..").getAttribute("id"));
+    },
+  );
 });
 
 describe("the keyboard", () => {
@@ -623,18 +773,20 @@ describe("blocking, unblocking and deleting a card", () => {
     await fresh();
     await openBoard();
     await card(3).click();
-    await dock().getByText("demo · Not started · by person").waitFor();
+    await properties(3).getByText("Not started", { exact: true }).waitFor();
     await menuOf(dock(), 3).click();
     await item("Block…").click();
     await asking("Block #3").getByLabel("Reason").fill("needs a design");
     await asking("Block #3").getByRole("button", { name: "Block", exact: true }).click();
     await status("Blocked #3").waitFor();
-    await dock().getByText("needs a design (blocked by a person)").waitFor();
+    await properties(3).getByText("needs a design (blocked by a person)").waitFor();
     await dock().getByText("Blocked", { exact: true }).first().waitFor();
     await menuOf(dock(), 3).click();
     await item("Unblock").click();
     await status("Unblocked #3.").waitFor();
-    await dock().getByText("needs a design (blocked by a person)").waitFor({ state: "detached" });
+    await properties(3)
+      .getByText("needs a design (blocked by a person)")
+      .waitFor({ state: "detached" });
   });
 
   it.skipIf(usesRealServer)("keeps the dialog open with what the server refused", async () => {
@@ -701,7 +853,7 @@ describe("blocking, unblocking and deleting a card", () => {
     await fresh();
     await openBoard();
     await card(3).click();
-    await dock().getByText("demo · Not started · by person").waitFor();
+    await properties(3).getByText("Not started", { exact: true }).waitFor();
     await menuOf(dock(), 3).click();
     await item("Delete…").click();
     await asking("Delete #3").getByRole("button", { name: "Delete card" }).click();
@@ -728,7 +880,7 @@ describe("blocking, unblocking and deleting a card", () => {
       await fresh();
       await openBoard();
       await card(3).click();
-      await dock().getByText("demo · Not started · by person").waitFor();
+      await properties(3).getByText("Not started", { exact: true }).waitFor();
       const removed = await context.request.delete(`${server.url}/v1/cards/3`, {
         headers: { "X-Moebius": "1" },
       });
@@ -795,6 +947,15 @@ describe("dragging cards", () => {
     async () => {
       await fresh();
       await openBoard();
+      // The dock opens on the first live card and the right column slides open for its properties, which narrows the
+      // lanes: they are measured once it stands at its width.
+      await expect
+        .poll(() =>
+          page
+            .locator('[data-surface="right-column"]')
+            .evaluate((node) => node.getBoundingClientRect().width),
+        )
+        .toBe(272);
       const last = column("Done");
       const inView = () =>
         last.evaluate((node) => {
@@ -805,7 +966,8 @@ describe("dragging cards", () => {
       expect(await inView()).toBe(false);
       await drag(card(5), 1);
       await status("Merged #5").waitFor();
-      expect(await inView()).toBe(true);
+      // The lane scrolls smoothly, so it is in view once the scroll has run, not at the moment of the drop.
+      await expect.poll(inView).toBe(true);
     },
   );
 
@@ -910,7 +1072,10 @@ describe("the dock", () => {
       expect(await run.getAttribute("href")).toBe("/runs/1");
       await dock().getByText("repos/demo/code.luau · built in").waitFor();
       await dock().getByText('moebius.wait("nothing to do in In progress")').waitFor();
-      await dock().getByText("Coder · code", { exact: true }).waitFor();
+      await page
+        .getByRole("region", { name: /^Properties of #/ })
+        .getByRole("link", { name: "Coder · code", exact: true })
+        .waitFor();
       // The state is said once, by the pill beside the title — the run line does not repeat it.
       await dock().getByText("Live", { exact: true }).waitFor();
 
@@ -963,9 +1128,9 @@ describe("the dock", () => {
     await dock().getByRole("heading", { name: "Document the API" }).waitFor();
     const box = await dock().boundingBox();
     expect(box, "the drawer is drawn").not.toBeNull();
-    // Beside the board, against the right edge of the page's surface (6px of air from the window's), rather than
-    // stacked under the whole board.
-    expect(box?.x).toBeGreaterThanOrEqual(1024 - 6 - 384 - 1);
+    // Beside the board, against the right column that holds the card's properties (272px, then 6px of air from the
+    // window's edge), rather than stacked under the whole board.
+    expect(box?.x).toBeGreaterThanOrEqual(1024 - 6 - 272 - 384 - 1);
     expect(box?.y).toBeLessThan(100);
     // Below 1024px it stacks again.
     await page.setViewportSize({ width: 900, height: 800 });

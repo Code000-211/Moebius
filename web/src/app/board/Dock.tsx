@@ -1,8 +1,9 @@
 /**
  * The inspector dock of the board: the card chosen, with the issue it came from and the change it offered — the
  * headline of its diff, which opens the whole diff in a sheet — then what a person can do about it (approve, merge,
- * send back, retry), where it stands (run, waiting, checks, cost), its runs, its history and the script of its
- * column, read-only.
+ * send back, retry, open or stop its run), its comments, its runs, its history and the script of its column,
+ * read-only. Its facts and the properties of its issue are in the page's right column (`CardProperties.tsx`), which
+ * the dock puts there while it is open.
  * It is a drawer beside the board, so the board stays readable behind it: no border, the
  * groups apart by space, and every control labelled. It is the web counterpart of the desktop board's dock plus the
  * history screen; the script's editor comes with its page.
@@ -23,45 +24,22 @@ import { PrBadge } from "../../ui/components/PrBadge";
 import { ago } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import { Field } from "../../ui/page/Field";
-import { MarkLabel, type StateMark } from "../../ui/page/MarkLabel";
+import { MarkLabel } from "../../ui/page/MarkLabel";
 import { Notice } from "../../ui/page/Notice";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { CardMenu } from "./CardMenu";
+import { CardProperties, STATUS_MARK } from "./CardProperties";
 import type { Decision } from "./decisions";
-import { CommentsSection, EditIssueDialog, TrackerSection } from "./IssueSections";
+import { CommentsSection, EditIssueDialog } from "./IssueSections";
 import {
-  type CardStatus,
   cardStatus,
   changeOf,
   changeWorktree,
   describeHistory,
-  heldLine,
   issueUrl,
-  parentOf,
   pullRequestOf,
   STATUS_LABELS,
-  tokens,
-  waitingLine,
 } from "./model";
-import { Row } from "./Row";
-
-/** The mark before the word of a card's status: the ring of a run, the icon of what is blocked, nothing otherwise. */
-const STATUS_MARK: Record<CardStatus, StateMark> = {
-  held: "blocked",
-  live: "live",
-  "needs-you": "none",
-  stuck: "blocked",
-  blocked: "none",
-  waiting: "none",
-  idle: "none",
-};
-
-/** The checks of a change in a word. */
-const CHECKS: Record<string, string> = {
-  pending: "Running",
-  success: "Green",
-  failure: "Failed",
-};
 
 /** What the card waits for from a person, as buttons; sending a change back asks why first. */
 function Actions({
@@ -233,8 +211,6 @@ export function Dock({
   // The history of a card is read once and stays open, so the age of the last thing it did only moves with a clock of
   // its own.
   const now = useNow();
-  const wait = board.waiting[String(card.id)];
-  const parent = parentOf(board, card);
   // The worktree of the run that made the change, from the runs read for the list below anyway.
   const worktree = changeWorktree(card, runs.data ?? []);
   const pullRequest = pullRequestOf(repository, changeOf(board, card));
@@ -248,21 +224,7 @@ export function Dock({
       menu={<CardMenu card={card} {...menu} />}
       onClose={onClose}
     >
-      <p className="m-0 -mt-2 px-4 pb-6 text-sm text-secondary">
-        {repository.name} · {card.column} · by {card.author}
-        {parent && (
-          <>
-            {" · sub-issue of "}
-            <button
-              type="button"
-              onClick={() => onOpenCard(parent)}
-              className="cursor-pointer appearance-none bg-transparent p-0 text-sm text-secondary underline underline-offset-4 hover:text-text"
-            >
-              {`#${parent.number} ${parent.title}`}
-            </button>
-          </>
-        )}
-      </p>
+      <CardProperties board={board} card={card} item={item} onOpenCard={onOpenCard} />
 
       {/* The issue is what the card asks for, and the card is only its title: without the body a person decides
           about a sentence they were never given. */}
@@ -280,8 +242,6 @@ export function Dock({
         </Button>
         <EditIssueDialog key={card.id} card={card} open={editing} onOpenChange={setEditing} />
       </KanbanIssueSection>
-
-      <TrackerSection board={board} card={card} onOpen={onOpenCard} />
 
       {/* A change is what a person came to the card to weigh, so it follows the issue it answers instead of
           waiting behind the runs that made it. */}
@@ -313,32 +273,9 @@ export function Dock({
         </KanbanIssueSection>
       )}
 
-      <KanbanIssueSection title="Where it stands">
-        <dl className="m-0 flex flex-col gap-3">
-          <Row label="Run">
-            {card.run ? (
-              <span className="inline-flex flex-wrap items-center gap-2">
-                {card.run.agent} · {card.run.purpose}
-              </span>
-            ) : (
-              "No run has started"
-            )}
-          </Row>
-          {card.held && <Row label="Blocked">{heldLine(card.held)}</Row>}
-          <Row label="Why it waits">{waitingLine(wait, card.refusals)}</Row>
-          {card.change && (
-            <Row label="Checks">{CHECKS[card.change.checks] ?? card.change.checks}</Row>
-          )}
-          {card.blocked_by.length > 0 && (
-            <Row label="Waiting on">{card.blocked_by.map((n) => `#${n}`).join(", ")}</Row>
-          )}
-          <Row label="Cost">
-            <span className="tabular-nums">{tokens(card.tokens)}</span>
-          </Row>
-          {card.note && <Row label="Note">{card.note}</Row>}
-        </dl>
-        {card.run && (
-          <div className="mt-4 flex flex-wrap gap-2">
+      {card.run && (
+        <KanbanIssueSection title="Its run">
+          <div className="flex flex-wrap gap-2">
             <Button asChild variant="secondary" size="sm" className="w-fit">
               <Link to={`/runs/${card.run.id}`}>Open live view</Link>
             </Button>
@@ -354,8 +291,8 @@ export function Dock({
               </Button>
             )}
           </div>
-        )}
-      </KanbanIssueSection>
+        </KanbanIssueSection>
+      )}
 
       <CommentsSection card={card} />
 
