@@ -10,6 +10,12 @@
 //! - `moebius.wait(reason)`: leaves the card where it is.
 //! - `moebius.close_issue(reason)`: closes the card's issue (on its forge too) and moves the card to Done when the script
 //!   returns.
+//! - `moebius.archive(card)`: archives the card when the script returns: it leaves the board and stays in the store, in
+//!   the issue list and in the analytics. `card` is the script's own card.
+//! - `moebius.hold(reason)`: holds the card when the script returns, as a person does, with the script as the holder.
+//! - `moebius.notify(kind, text)`: puts the card in the inbox (once while an item of that kind is open), given to the
+//!   card's people; unlike `moebius.ask`, the card does not wait.
+//! - `moebius.now() -> number`: the time in Unix seconds, to compare with `card.moved_at`.
 //! - `moebius.set_label(label, present)`: gives the card's issue the label (`present` true) or takes it away (false)
 //!   when the script returns, on its forge too.
 //! - `moebius.publish_change() -> change`: publishes the card's latest successful `code` run on the branch of its
@@ -322,6 +328,39 @@ impl Engine {
 
         let fx = effects.clone();
         m.set(
+            "archive",
+            lua.create_function(move |_, card: Table| {
+                if card.get::<i64>("id")? != card_id {
+                    return Err(mlua::Error::runtime(
+                        "a script archives its own card, the one it is given",
+                    ));
+                }
+                fx.borrow_mut().archive = true;
+                Ok(())
+            })?,
+        )?;
+
+        let fx = effects.clone();
+        m.set(
+            "hold",
+            lua.create_function(move |_, reason: String| {
+                fx.borrow_mut().hold = Some(reason);
+                Ok(())
+            })?,
+        )?;
+
+        let (app, title, people) = (self.app.clone(), card.title.clone(), card.assignees.clone());
+        m.set(
+            "notify",
+            lua.create_function(move |_, (kind, text): (String, String)| {
+                notify(&app, card_id, &title, &people, &kind, &text)
+            })?,
+        )?;
+
+        m.set("now", lua.create_function(|_, ()| Ok(crate::store::now()))?)?;
+
+        let fx = effects.clone();
+        m.set(
             "set_label",
             lua.create_function(move |_, (label, present): (String, bool)| {
                 if label.trim().is_empty() {
@@ -394,6 +433,49 @@ fn test_table(lua: &Lua, run: TestRun) -> mlua::Result<Table> {
     table.set("status", run.status)?;
     table.set("output", run.output)?;
     Ok(table)
+}
+
+/// Puts the card in the inbox as `kind` for the people it is given to, unless an item of that kind is open for it.
+fn notify(
+    app: &App,
+    card_id: i64,
+    title: &str,
+    people: &[String],
+    kind: &str,
+    text: &str,
+) -> mlua::Result<()> {
+    if app
+        .store
+        .has_open_inbox_item(card_id, kind)
+        .map_err(mlua::Error::external)?
+    {
+        return Ok(());
+    }
+    let item = app
+        .store
+        .add_inbox_item(
+            kind,
+            Some(card_id),
+            title,
+            &serde_json::json!({ "reason": text }),
+        )
+        .map_err(mlua::Error::external)?;
+    let mut ids = std::collections::BTreeSet::new();
+    for handle in people {
+        if let Some(person) = app
+            .store
+            .person_by_handle(handle)
+            .map_err(mlua::Error::external)?
+        {
+            ids.insert(person.id);
+        }
+    }
+    if !ids.is_empty() {
+        app.store
+            .set_inbox_assignees(item.id, &ids)
+            .map_err(mlua::Error::external)?;
+    }
+    Ok(())
 }
 
 /// Puts the card in the inbox as `kind`, unless an item of that kind is already open for it.

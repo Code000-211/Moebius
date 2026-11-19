@@ -7,6 +7,8 @@
 //!   `App::counts_as_sub_issue`), its labels and who claimed it.
 //! - `card.assignees`: the handles of the people the card is given to, without the `@`, in the order the people were
 //!   added; an empty list when it is no one's.
+//! - `card.moved_at`: when the card last moved, was edited or was released from a hold, in Unix seconds, to compare
+//!   with `moebius.now()`.
 //! - `card.merged`: whether a change of the card was merged, which is what tells a card that is done because its work
 //!   was merged from one that was closed.
 //! - `card.review`: the verdict and findings of the review since the card's latest `code` run, if there is one; for a
@@ -107,6 +109,7 @@ impl Engine {
         t.set("change", change_table(&self.app, lua, card.id)?)?;
         t.set("trusted", self.app.is_trusted(card))?;
         t.set("confirmed", card.confirmed)?;
+        t.set("moved_at", card.moved_at)?;
         if let Some(held) = &card.held {
             let h = lua.create_table()?;
             h.set("reason", held.reason.as_deref())?;

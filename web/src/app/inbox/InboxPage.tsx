@@ -10,7 +10,7 @@ import { CheckCircleIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId } from "react";
 import { snapshot as readSnapshot } from "../../api/calls/board";
-import { setInboxAssignees } from "../../api/calls/inbox";
+import { changeInboxAssignees } from "../../api/calls/inbox";
 import { keys } from "../../api/keys";
 import type { Snapshot } from "../../api/types/board";
 import { Button } from "../../ui/components/Button";
@@ -186,7 +186,7 @@ export function InboxPage() {
             assignees={chosen.assignees}
             onSave={async (next) => {
               try {
-                await setInboxAssignees(chosen.id, next);
+                await changeInboxAssignees(chosen.id, chosen.assignees, next);
               } finally {
                 void queryClient.invalidateQueries({ queryKey: keys.snapshot });
               }

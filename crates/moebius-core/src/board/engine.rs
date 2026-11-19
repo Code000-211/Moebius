@@ -9,6 +9,7 @@ use std::sync::{Arc, RwLock};
 use super::sandbox::run_sandboxed;
 use super::{CardRuns, Column, Kanban, Limits, built_in_script, repository_script};
 use crate::app::{App, AppError, columns};
+use crate::decide::Actor;
 use crate::store::Card;
 
 /// What one script call did to its card.
@@ -52,6 +53,10 @@ pub(super) struct Effects {
     pub(super) close: bool,
     /// The labels the script asked to give (`true`) or take away (`false`), in order.
     pub(super) labels: Vec<(String, bool)>,
+    /// Whether the script archived the card.
+    pub(super) archive: bool,
+    /// Why the script holds the card, if it does.
+    pub(super) hold: Option<String>,
 }
 
 impl Engine {
@@ -144,6 +149,26 @@ impl Engine {
             return Ok(Step {
                 moved: (card.column != columns::DONE).then(|| columns::DONE.into()),
                 waiting: None,
+                started_run: effects.started_run,
+            });
+        }
+        if effects.archive && self.app.archive_card(card_id)? {
+            return Ok(Step {
+                moved: None,
+                waiting: None,
+                started_run: effects.started_run,
+            });
+        }
+        if let Some(reason) = effects.hold.take() {
+            // Held as a person holds a card: the board then leaves it alone until a person releases it.
+            let by = Actor::Script {
+                column: card.column.clone(),
+            };
+            self.app
+                .block_card(&by, &*self.runs, card_id, Some(&reason))?;
+            return Ok(Step {
+                moved: None,
+                waiting: Some(reason),
                 started_run: effects.started_run,
             });
         }

@@ -220,6 +220,8 @@ describe("a chat longer than the page opens with", () => {
     await expect.poll(() => page.getByTestId("older").count()).toBe(0);
 
     // The person scrolls up. Reaching the top of the conversation reads what is above it, with nothing to press.
+    // It starts once the chat has settled at its end: a turn of the wheel made before is undone by the move there.
+    await expect.poll(() => distanceFromEnd(thread())).toBeLessThan(40);
     await thread().hover();
     await page.mouse.wheel(0, -2_000);
     await page.mouse.wheel(0, -100_000);

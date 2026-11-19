@@ -405,6 +405,8 @@ mod tests {
             labels: Vec::new(),
             claimed_by: None,
             assignees: Vec::new(),
+            moved_at: 1_700_000_000,
+            archived_at: None,
         }
     }
 

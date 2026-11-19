@@ -358,7 +358,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
   /** The routes of the issue tracker; undefined when `path` is none of them. */
   function tracker(method: string, path: string, body: unknown) {
     const parts =
-      /^\/v1\/cards\/(\d+)\/(parent|labels|assignees|blockers|claim|close|reopen|comments)(?:\/(\d+))?$/.exec(
+      /^\/v1\/cards\/(\d+)\/(parent|labels|assignees|blockers|claim|close|reopen|comments)(?:\/([^/]+))?$/.exec(
         path,
       );
     if (!parts) return undefined;
@@ -424,6 +424,22 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
         return undefined;
       }
       case "assignees": {
+        if (parts[3] !== undefined) {
+          // One person added or taken off, applied to the people the card has now.
+          if (method !== "PUT" && method !== "DELETE") return undefined;
+          const handle = decodeURIComponent(parts[3]).replace(/^@/, "").toLowerCase();
+          const has = target.assignees.includes(handle);
+          if (method === "PUT" && !has) target.assignees = [...target.assignees, handle];
+          if (method === "DELETE" && has)
+            target.assignees = target.assignees.filter((h) => h !== handle);
+          if (has !== (method === "PUT")) {
+            updated({
+              kind: "card_assignees_changed",
+              data: { card: target.id, assignees: target.assignees },
+            });
+          }
+          return ok(view(target));
+        }
         if (method !== "PUT") return undefined;
         const handles = (body as { assignees?: unknown }).assignees;
         if (!Array.isArray(handles) || !handles.every((h) => typeof h === "string")) {
