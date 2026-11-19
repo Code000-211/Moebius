@@ -1097,6 +1097,8 @@ mod order_tests {
             repository_id: 1,
             project_id: 1,
             number: id,
+            project_number: id,
+            project_key: "WEB".into(),
             title: String::new(),
             body: String::new(),
             author: "person".into(),
