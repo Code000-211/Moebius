@@ -53,6 +53,15 @@ fn say(error: RailError) -> String {
     }
 }
 
+impl Servers {
+    /// The origin of the open server's web app and the address that opens its page `path` in a second window, or none
+    /// when no server is open. It waits while the rail is busy opening a server, which is what the person waits for.
+    pub async fn entry_at(&self, path: &str) -> Option<(String, String)> {
+        let rail = self.rail.lock().await;
+        Some((rail.open_origin()?, rail.open_entry_at(path)?))
+    }
+}
+
 /// Notes the page the window is on, if it is a page of the server that is open.
 fn note_page(window: &tauri::WebviewWindow, rail: &mut Rail) {
     let (Some(origin), Ok(url)) = (rail.open_origin(), window.url()) else {

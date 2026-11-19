@@ -6,7 +6,7 @@
  * stay small: a person who opens the Inbox pays nothing for xterm, the diff viewer, or the editor of a column script.
  * The shell waits for a page with the loader of [`Shell`](./shell/Shell.tsx).
  */
-import { lazy } from "react";
+import { lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate } from "react-router";
 import { App } from "./App";
 import { DEFAULT_PAGE, PAGES } from "./pages";
@@ -119,6 +119,9 @@ const WorkflowCanvasPage = lazy(() =>
 const WorkflowRunPage = lazy(() =>
   import("./workflows/WorkflowRunPage").then((all) => ({ default: all.WorkflowRunPage })),
 );
+const QuickWindow = lazy(() =>
+  import("../desktop/QuickWindow").then((all) => ({ default: all.QuickWindow })),
+);
 const ChatPage = lazy(() => import("../chat/ChatPage").then((all) => ({ default: all.ChatPage })));
 
 /** The pages that have their own route below; the others show a placeholder. */
@@ -158,6 +161,15 @@ const PAGES_BUILT = new Set([
 ]);
 
 export const routes = [
+  // The small window of the desktop app's global shortcut: outside the shell, it is a window of its own.
+  {
+    path: "/quick",
+    element: (
+      <Suspense fallback={null}>
+        <QuickWindow />
+      </Suspense>
+    ),
+  },
   {
     path: "/",
     element: <App />,

@@ -9,6 +9,7 @@ import { getSession } from "../api/calls/session";
 import { isApiError } from "../api/http";
 import { keys } from "../api/keys";
 import { loginOutcome } from "../auth/login";
+import { OpenRequests } from "../desktop/OpenRequests";
 import { WindowControls } from "../desktop/WindowControls";
 import { LiveProvider } from "../live/LiveProvider";
 import { Loader } from "../ui/components/Loader";
@@ -24,6 +25,7 @@ export function App() {
     <>
       <Screen />
       <WindowControls />
+      <OpenRequests />
     </>
   );
 }

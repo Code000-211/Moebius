@@ -309,6 +309,14 @@ impl Rail {
         self.live.get(self.open.as_ref()?).map(|l| l.proxy.origin())
     }
 
+    /// The address that opens the page `path` of the open server's web app in a second window (the small window of the
+    /// global shortcut), with the cookie of its proxy set on the way.
+    pub fn open_entry_at(&self, path: &str) -> Option<String> {
+        self.live
+            .get(self.open.as_ref()?)
+            .map(|l| l.proxy.entry_url_at(path))
+    }
+
     /// Removes the server `id`: its proxy and tunnel stop, its token leaves the keychain and it leaves the file. Says
     /// whether it was the one open.
     pub fn remove(&mut self, id: &str) -> Result<bool, RailError> {

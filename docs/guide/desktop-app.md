@@ -30,6 +30,16 @@ macOS build. `moebius open` and `moebius connect` stay for everyone without it.
    server listens on; `https://` for a server behind TLS) and the token. Connect opens the web app, signed in as the
    person the token belongs to. The window has no frame of the system: drag the strip along its top to move it, double
    click it to maximize, and minimize, maximize and close with the buttons at its right end.
+4. **Open the quick window from anywhere.** While the app runs, even behind other windows or minimized, press
+   `Ctrl+Shift+Space`: a small window opens over everything. **Ask Moebius** sends what you type to the Moebius agent;
+   **New issue** makes an issue in the project you pick (the first line is the title, the rest the description).
+   Enter sends and the window goes; the chat, or the new card on its board, opens in the app's main window. Shift+Enter
+   is a new line, Escape closes the window without sending, and the shortcut again closes it too. With no server
+   connected the shortcut brings the connect page forward instead.
+5. **Change the shortcut** with **Change** at the foot of the quick window, then press the keys you want (one key with
+   Ctrl, Alt or Super held; Shift alone is not enough, as the shortcut would take over typing). It is kept in
+   `quick.json` in the app's configuration directory (`~/.config/io.github.code000-211.moebius/` on Linux,
+   `%APPDATA%\io.github.code000-211.moebius\` on Windows) and registered again at every start.
 
 ### A server on this machine
 
@@ -108,6 +118,9 @@ The answer's `token` (it starts with `moebius-access-`) goes into the app with t
 
 - The app shows the Inbox of the server, and the sidebar's connection says **Online**: the event stream reaches the
   server through the app.
+- Press `Ctrl+Shift+Space` with the app in the back, type a title under **New issue** and press Enter: the window goes
+  and the card is on the project's board. Change the shortcut, close the app and start it again: the new one opens the
+  window.
 - Revoke the token on the My tokens page and start the app again: the server's square has a grey dot, and opening it
   answers that the server does not accept the token. Remove it and connect again with a new token.
 - Connect a second server: its square appears in the rail; switch between them, and each comes back on its page.
@@ -147,6 +160,10 @@ The answer's `token` (it starts with `moebius-access-`) goes into the app with t
   does not add the server.
 - **"no server is set up on <host>"** over SSH: the login worked and there is no token on the host; say yes to set
   one up, or run `moebius connect <host>` in a terminal.
+- **The shortcut does nothing, or the quick window says it could not be taken**: another program holds that key
+  combination. Change it to another. On Linux the shortcut is a grab on the X11 server: under a Wayland session it
+  works only where the compositor lets X11 clients grab keys, so choose a shortcut in the system's own keyboard
+  settings that starts `moebius-desktop` if it does not.
 - **No notification appears on Linux**: the desktop needs a notification service (`org.freedesktop.Notifications`,
   which GNOME, KDE and most others have). Without one the count still shows in the title.
 - The token is kept in the app's memory only, for now: the app asks for it on every start.

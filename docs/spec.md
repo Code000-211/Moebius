@@ -312,7 +312,7 @@ with the token, so the token stays in the app. The window has no system frame: i
 ground. On Linux, and on Windows inside WSL 2, the connect page offers to run a server on this machine: the app downloads
 `moebius` of its own release (checked against `SHA256SUMS`), runs `init` and `serve` in the background and connects with
 the server's token, and finds the same server again after a restart. A rail at the window's far left holds several servers, each with the count of its Inbox and a grey dot when it does not answer, connected by address or over SSH; their tokens are in the system's keychain. The tray icon shows the open server's state (agents working, the Inbox, today's
-tokens) and pauses and resumes all agents (`POST /v1/runs/pause` and `/resume`, kept in the store). Notifications and the global shortcut of ADR 0021 come later.
+tokens) and pauses and resumes all agents (`POST /v1/runs/pause` and `/resume`, kept in the store). A global shortcut (`Ctrl+Shift+Space` until a person changes it, kept in the app's configuration directory) opens a small window over everything, the web app's `/quick` page: ask the Moebius agent, or make an issue in a project; Enter sends, the window goes and the chat or the new card opens in the main window. Notifications of ADR 0021 come later.
 
 ## 9. Security
 

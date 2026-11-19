@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "quick",
+  "description": "The small window of the global shortcut, which shows the web app's /quick page: what the shortcut is, changing it, and finishing. Nothing of the main window's controls.",
+  "windows": ["quick"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*/*"]
+  },
+  "permissions": [
+    "allow-quick-shortcut",
+    "allow-set-quick-shortcut",
+    "allow-quick-finish"
+  ]
+}
