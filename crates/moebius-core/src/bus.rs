@@ -454,6 +454,7 @@ mod tests {
             assignees: Vec::new(),
             priority: Default::default(),
             due: None,
+            estimate: None,
             moved_at: 1_700_000_000,
             archived_at: None,
             kind: None,

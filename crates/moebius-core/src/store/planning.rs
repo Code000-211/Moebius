@@ -1,5 +1,5 @@
-//! A card's priority and due date. They are kept as labels of the card, `priority:urgent`, `priority:high`,
-//! `priority:medium` or `priority:low`, and `due:YYYY-MM-DD`, so the forge shows and sets them too and a poll that
+//! A card's priority, due date and estimate. They are kept as labels of the card, `priority:urgent`, `priority:high`,
+//! `priority:medium` or `priority:low`, and `due:YYYY-MM-DD` and `estimate:<points>`, so the forge shows and sets them too and a poll that
 //! brings its labels brings them. This module reads them out of a list of labels and writes them back into one; it
 //! keeps nothing of its own.
 
@@ -9,6 +9,11 @@ use serde::{Deserialize, Serialize};
 const PRIORITY_PREFIX: &str = "priority:";
 /// The prefix of the label that holds a card's due date.
 const DUE_PREFIX: &str = "due:";
+/// The prefix of the label that holds a card's estimate.
+const ESTIMATE_PREFIX: &str = "estimate:";
+
+/// The most points an estimate can be; more is a typo, and keeps the arithmetic on estimates far from overflow.
+pub const ESTIMATE_LIMIT: u32 = 1000;
 
 /// How soon a card should be done. The order is the order of urgency: `Urgent` first, `None` last.
 #[derive(
@@ -108,6 +113,24 @@ pub fn due_of(labels: &[String]) -> Option<String> {
         .map(String::from)
 }
 
+/// The estimate the labels say, in points: the smallest of the `estimate:` labels that hold a whole number from 1 to
+/// [`ESTIMATE_LIMIT`], else none.
+pub fn estimate_of(labels: &[String]) -> Option<u32> {
+    values(labels, ESTIMATE_PREFIX)
+        .filter_map(|v| v.parse::<u32>().ok())
+        .filter(|p| (1..=ESTIMATE_LIMIT).contains(p))
+        .min()
+}
+
+/// `labels` with every `estimate:` label replaced by the one for `estimate` (none for `None`).
+pub fn with_estimate(labels: &[String], estimate: Option<u32>) -> Vec<String> {
+    let mut labels = without(labels, ESTIMATE_PREFIX);
+    if let Some(points) = estimate {
+        labels.push(format!("{ESTIMATE_PREFIX}{points}"));
+    }
+    labels
+}
+
 /// `labels` with every `priority:` label replaced by the one for `priority` (none for [`Priority::None`]).
 pub fn with_priority(labels: &[String], priority: Priority) -> Vec<String> {
     let mut labels = without(labels, PRIORITY_PREFIX);
@@ -174,6 +197,32 @@ mod tests {
         );
         assert_eq!(
             with_due(&labels(&["due:2026-01-01"]), None),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn the_estimate_is_a_whole_number_of_points_and_writing_replaces_it() {
+        assert_eq!(estimate_of(&labels(&["bug"])), None);
+        assert_eq!(
+            estimate_of(&labels(&[
+                "estimate:x",
+                "estimate:0",
+                "ESTIMATE:8",
+                "estimate:5"
+            ])),
+            Some(5)
+        );
+        assert_eq!(
+            estimate_of(&labels(&["estimate:1001", "estimate:-2"])),
+            None
+        );
+        assert_eq!(
+            with_estimate(&labels(&["bug", "estimate:3"]), Some(8)),
+            ["bug", "estimate:8"]
+        );
+        assert_eq!(
+            with_estimate(&labels(&["estimate:3"]), None),
             Vec::<String>::new()
         );
     }

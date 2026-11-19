@@ -56,12 +56,24 @@ export interface Proposal {
   diff?: string;
 }
 
+/** A card of the day whose estimate was far off from the tokens and minutes it took. */
+export interface EstimateMiss {
+  card: number;
+  title: string;
+  estimate: number;
+  tokens: number;
+  minutes: number;
+  /** The tokens it took over what its points are worth: 3 is three times as many. */
+  tokens_ratio: number;
+  time_ratio: number;
+}
+
 /** A Retro with its report and proposals (`GET /v1/retros/{date}`). */
 export interface RetroView {
   date: string;
   status: RetroStatus;
   warnings?: string[];
-  report: { errors: ReportError[] };
+  report: { errors: ReportError[]; estimates?: EstimateMiss[] };
   proposals?: Proposal[];
 }
 

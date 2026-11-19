@@ -8,7 +8,10 @@
 //! This module holds the report, the analyst's run and what becomes of it; `traces` has the raw traces of the
 //! report's runs that the analyst reads besides the report.
 
+mod estimates;
 mod traces;
+
+pub use estimates::{EstimateMiss, furthest_off};
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -53,13 +56,17 @@ pub struct MergedCard {
 }
 
 /// The errors of one local day, and the cards that merged at once.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Report {
     pub date: String,
     pub errors: Vec<ReportError>,
     /// The cards that merged at once; the Retro writes lessons from them too.
     #[serde(default)]
     pub merged: Vec<MergedCard>,
+    /// The cards that reached Done that day whose estimate was furthest off from the tokens and time they took, the
+    /// furthest first (see `estimates`).
+    #[serde(default)]
+    pub estimates: Vec<EstimateMiss>,
 }
 
 /// A Retro as the list shows it: without its report.
@@ -76,7 +83,7 @@ pub struct RetroSummary {
 }
 
 /// A Retro with its report and its proposals.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RetroView {
     pub date: String,
     pub status: String,
@@ -155,6 +162,7 @@ pub fn report(store: &Store, day: &str) -> Result<Report> {
                 text: shorten(&text),
             })
             .collect(),
+        estimates: estimates::furthest_off(store, (from, to))?,
     })
 }
 
@@ -216,6 +224,8 @@ fn prompt(report: &Report, own: &str, traces: &str) -> String {
          message is the proposal and ends with a line like `Cards: 48, 50` naming the `card` of each error of the \
          report that it addresses, and change only harness configuration files, but see below. Commit with `git -c \
          user.name=Retro -c user.email=retro@localhost commit`. Propose nothing the errors do not call for.\n\n\
+         The report's `estimates` are the cards whose estimate was furthest off from the tokens and time they took; \
+         where one shows how the harness could make estimates better or cards more even, say so.\n\n\
          {own}\n\
          {lessons}\n\
          {traces}\n\

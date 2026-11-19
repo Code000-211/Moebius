@@ -1174,6 +1174,7 @@ mod order_tests {
             fields: Default::default(),
             priority,
             due: due.map(String::from),
+            estimate: None,
             moved_at: 0,
             archived_at: None,
         }

@@ -79,6 +79,11 @@ export function setDue(card: number, due: string | null): Promise<Card> {
   return put<Card>(`/v1/cards/${card}/due`, { due });
 }
 
+/** Sets the card's estimate in points (1 to 1000), or none. */
+export function setEstimate(card: number, estimate: number | null): Promise<Card> {
+  return put<Card>(`/v1/cards/${card}/estimate`, { estimate });
+}
+
 /** Makes the issue with number `blocker` block the card's issue; refused when that makes a cycle. */
 export function addBlocker(card: number, blocker: number): Promise<number[]> {
   return post<number[]>(`/v1/cards/${card}/blockers`, { blocker });

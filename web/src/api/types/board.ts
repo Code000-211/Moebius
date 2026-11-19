@@ -97,6 +97,8 @@ export interface Card {
   kind?: string | null;
   /** The values set for the fields of its kind, by field name. Always sent by the server. */
   fields?: Record<string, string | number>;
+  /** The card's size in points: its `estimate:` label, null without one. */
+  estimate: number | null;
 }
 
 /** A comment on an issue, written here or read from the forge. */

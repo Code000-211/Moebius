@@ -216,7 +216,7 @@ and does not know anything the API does not say.
     script sees `card.parent`, `card.children`, `card.labels` and `card.claimed_by`, and `moebius.close_issue` closes the
     issue when the script returns (`Effects::close`); the default `ready.luau` uses both for a parent. A card or an inbox item can also be given to people (`App::set_assignees`, `App::set_inbox_assignees`, routes in
     `server/api/assignees.rs`, events `card_assignees_changed` and `inbox_assignees_changed`); a script sees the handles as
-    `card.assignees`, and the default `ready.luau` leaves a card that has any in `Not started`. A card's priority and due date are its `priority:` and `due:` labels (`App::set_priority`, `App::set_due`, routes in `server/api/planning.rs`; a poll that brings the labels brings them), scripts see `card.priority` and `card.due`, and the tick settles urgent cards first (`server::loops::settle_order`). What concerns a person (a
+    `card.assignees`, and the default `ready.luau` leaves a card that has any in `Not started`. A card's priority and due date are its `priority:` and `due:` labels (`App::set_priority`, `App::set_due`, routes in `server/api/planning.rs`; a poll that brings the labels brings them), scripts see `card.priority` and `card.due`, and the tick settles urgent cards first (`server::loops::settle_order`). A card's estimate in points is its `estimate:` label the same way (`App::set_estimate`, `card.estimate`); `App::propose_estimate` proposes one from the like cards that have one and names them, and the Retro's report lists the cards whose estimate was furthest off from the tokens and time they took (`improve/retro/estimates.rs`). What concerns a person (a
     card given to them, a comment that mentions them with `@handle`, a move or a comment on a card they follow) is a
     notice of theirs, made in `app/notices.rs`, listed under the Inbox's Mentions tab and sent on the stream to them alone. An owner defines kinds of issues with fields of their own, a project picks the ones it offers and a card has one (`App::set_card_kind`, `App::set_card_fields`, routes in `server/api/kinds.rs`, event `card_kind_changed`); a script sees them as `card.kind` and `card.fields`, and `GET /v1/issues` filters and sorts the cards of every project by them.
 12b. **A person chats.** A chat is a run without a card and with purpose `chat`. `POST /v1/chats` (`App::start_chat`)
@@ -488,7 +488,7 @@ At the top:
 | `app/automations/migration.rs` | The upgrade that writes an older automation's row to a workflow file in the harness configuration repository. |
 | `app/automations/view.rs` | The automations as the page and the API read them, with their next firing and latest one; and the old routes' save and delete of the workflow file behind a row. |
 | `app/automations/cron.rs` | A schedule: a cron expression of five fields in the server's local time, parsed, and the next minute it comes due. |
-| `app/planning.rs` | Setting a card's priority and due date: both are labels (`priority:high`, `due:2026-12-01`), so they are written to the forge and announced as labels are. |
+| `app/planning.rs` | Setting a card's priority, due date and estimate: all are labels (`priority:high`, `due:2026-12-01`, `estimate:5`), so they are written to the forge and announced as labels are; and proposing an estimate from the like cards that have one. |
 | `app/notices.rs` | What concerns a person: the `@handle`s a text mentions, the notice each assignment, mention and change to a followed card makes, reading one, and following a card. |
 | `app/kinds.rs` | Kinds of issues and their fields: what is written is checked, a project picks the kinds it offers, a card gets a kind and values for its fields, and the cards of every project are filtered and sorted by a field. |
 | `app/assignees.rs` | Giving a card or an inbox item to people: the handles are checked against the people of the organisation, the set is replaced, and a change is announced. |
@@ -792,6 +792,7 @@ At the top:
 | `improve/retro/mod.rs` | The Retro: the day's errors collected into a report without a model, the Retro analyst's run, and its proposal branches. |
 | `improve/lessons/mod.rs` | Lessons: read from the analyst's answer and stored, the prompt section of a code or review run (`for_prompt`), retirement of unused and harmful ones. |
 | `improve/lessons/tool.rs` | `POST /moebius/lessons` on the router's listener, the route of the Pi tool `lessons(query)`, authenticated by the run's token. |
+| `improve/retro/estimates.rs` | The cards of the Retro's day whose estimate was furthest off from the tokens and time they took, for the report. |
 | `improve/retro/traces.rs` | The raw traces the Retro analyst reads besides the report: the events and diffs of the report's runs, redacted and bounded, as files under `.retro/` of its worktree. |
 | `improve/trial/mod.rs` | Trials: the trial window, and what the parts share. |
 | `improve/trial/verdict.rs` | What a trial run and the card's first code run measured, whether a trial is positive, and the status a proposal gets from its trials. |

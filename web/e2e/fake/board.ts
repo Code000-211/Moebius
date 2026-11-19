@@ -48,6 +48,7 @@ interface FakeCard {
   assignees: string[];
   priority: string;
   due: string | null;
+  estimate: number | null;
 }
 
 interface FakeComment {
@@ -148,6 +149,7 @@ function card(id: number, extra: Partial<FakeCard>): FakeCard {
     assignees: [],
     priority: "none",
     due: null,
+    estimate: null,
     ...extra,
   };
 }
@@ -365,7 +367,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
   /** The routes of the issue tracker; undefined when `path` is none of them. */
   function tracker(method: string, path: string, body: unknown) {
     const parts =
-      /^\/v1\/cards\/(\d+)\/(parent|labels|assignees|priority|due|blockers|claim|close|reopen|comments)(?:\/([^/]+))?$/.exec(
+      /^\/v1\/cards\/(\d+)\/(parent|labels|assignees|priority|due|estimate|blockers|claim|close|reopen|comments)(?:\/([^/]+))?$/.exec(
         path,
       );
     if (!parts) return undefined;
@@ -418,6 +420,23 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
           ...target.labels.filter((l) => !l.startsWith("priority:") && !l.startsWith("due:")),
           ...(target.priority === "none" ? [] : [`priority:${target.priority}`]),
           ...(target.due === null ? [] : [`due:${target.due}`]),
+        ].sort();
+        updated({ kind: "card_labels_changed", data: { card: target.id, labels: target.labels } });
+        return ok(view(target));
+      }
+      case "estimate": {
+        if (method !== "PUT") return undefined;
+        const value = given.estimate;
+        if (
+          value !== null &&
+          !(Number.isInteger(value) && Number(value) >= 1 && Number(value) <= 1000)
+        ) {
+          return fail(422, `${JSON.stringify(value)} is not an estimate (1 to 1000 points)`);
+        }
+        target.estimate = value as number | null;
+        target.labels = [
+          ...target.labels.filter((l) => !l.startsWith("estimate:")),
+          ...(target.estimate === null ? [] : [`estimate:${target.estimate}`]),
         ].sort();
         updated({ kind: "card_labels_changed", data: { card: target.id, labels: target.labels } });
         return ok(view(target));

@@ -20,6 +20,7 @@ import {
   removeBlocker,
   reopenIssue,
   setDue,
+  setEstimate,
   setLabels,
   setParent,
   setPriority,
@@ -191,6 +192,20 @@ export function CardProperties({
         }}
       >
         {card.due ?? <span className="text-secondary">No date</span>}
+      </EditableProperty>
+      <EditableProperty
+        name="Estimate"
+        editor={{
+          kind: "number",
+          value: card.estimate,
+          onSave: (next) => saved(setEstimate(card.id, next)),
+        }}
+      >
+        {card.estimate === null ? (
+          <span className="text-secondary">No estimate</span>
+        ) : (
+          `${card.estimate} ${card.estimate === 1 ? "point" : "points"}`
+        )}
       </EditableProperty>
       <EditableProperty
         name="Claim"
