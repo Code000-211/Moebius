@@ -19,6 +19,7 @@ import {
 const card = (id: number, number: number, run: CardRun | null, tokens = 0): Card => ({
   id,
   repository_id: 1,
+  project_id: 1,
   number,
   title: `Card ${number}`,
   body: "",
@@ -81,6 +82,7 @@ const snapshot: Snapshot = {
         path: "/r",
         forge: "none",
         default_branch: "main",
+        home_project_id: 1,
         github: null,
         trusted: [],
       },

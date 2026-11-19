@@ -19,6 +19,7 @@ afterEach(() => {
 const card = (id: number, extra: Partial<Card> = {}): Card => ({
   id,
   repository_id: 1,
+  project_id: 1,
   number: id,
   title: `Issue ${id}`,
   body: "The body",
@@ -51,6 +52,7 @@ const board = (cards: Card[], waiting: Record<string, string> = {}): Board => ({
     path: "/r",
     forge: "none",
     default_branch: "main",
+    home_project_id: 1,
     github: null,
     trusted: [],
   },

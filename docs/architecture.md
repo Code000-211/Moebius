@@ -71,8 +71,8 @@ and does not know anything the API does not say.
    `forge_error`.
 2. **The board ticks.** The loop in `Server::serve` calls `Server::tick` on a blocking thread every `board.tick_ms`.
    For each card it calls `Engine::settle`, which calls `Engine::tick` until a script stops moving the card.
-   `Engine::tick` finds the script for the card's column: the project's `<script>` file, read by
-   `App::project_file` from `repos/<repository name>/` of the harness configuration repository's clone, else the built-in one from `kanban/` (`Engine::script`). `Engine::run_script`
+   `Engine::tick` finds the script for the card's column: the `<script>` file of the card's project, read by
+   `App::project_file` from `projects/<project name>/` of the harness configuration repository's clone, else the built-in one from `kanban/` (`Engine::script`). `Engine::run_script`
    runs it in a fresh sandboxed Luau state with `card_table` and the `moebius` table, and applies the effects.
 3. **Backlog to Not started.** `backlog.luau` moves a trusted card on (`App::is_trusted`), and one made from a confirmed grilling (`card.confirmed`). Others get an `approve_issue` inbox
    item (`moebius.ask`) until a person calls `POST /v1/cards/{id}/approve` (`App::approve_issue`), which records a
@@ -500,10 +500,10 @@ At the top:
 | `app/checks.rs` | How a change's checks stand, and a repository's own checks (the project's `checks`) run in a throwaway worktree with a time limit and a cleared environment. |
 | `app/board.rs` | What a board shows of a card, worked out once for the snapshot and the scripts: rounds, latest run, and the batched reads of a whole board. |
 | `app/attempts.rs` | Attempts: judging each attempt of a hard card by the repository's checks and its reproduction test on a thread of its own, settling a round (one picked, or none passed), and reading a selection run's pick. |
-| `app/projects/mod.rs` | Projects (ADR 0019): making one with a name and a key no other has, renaming it with its key kept, and the `ProjectView` the Projects page shows (repositories, members, open cards). |
+| `app/projects/mod.rs` | Projects (ADR 0019): making one with a name and a key no other has (the name is also a folder), renaming it with its key kept and its settings moved, and the `ProjectView` the Projects page shows (repositories, members, open cards). |
 | `app/projects/files.rs` | A project's own store of files (ADR 0019): the git repository at `<data_dir>/projects/<key>` made for a project, kept as a repository without a forge whose `files_of` is the project, where the cards of a project without a repository run, are reviewed and are merged. |
 | `app/milestones.rs` | Milestones (ADR 0019): making and editing them, putting a card in them, and their progress counted and listed only within the projects the asker may see (`App::may_see_project`). |
-| `app/projects/settings.rs` | A project's settings read from the harness configuration repository (`App::project_file`), and the notice, once for each repository, that its default branch still has a `.moebius/` folder, which is not read. |
+| `app/projects/settings.rs` | A project's and a repository's settings read from the harness configuration repository (`App::project_file`, `App::repository_file`), the migration of the repositories' column scripts to their home projects (`App::move_scripts_to_projects`), and the notice, once for each repository, that its default branch still has a `.moebius/` folder, which is not read. |
 | `app/localize.rs` | The hint of files a code run is given, whether a repository wants it, and the outcome recorded from the files the card's change touched at the end of a code run and on merge. |
 | `app/plugin_settings.rs` | The settings plugins ask of each repository and of the server in their manifest: what the repository's page and the Settings page show, a person's save checked against the manifest and recorded; a repository's values are files of its project settings, the server's are kept by plugin name. |
 | `app/packages/mod.rs` | Pi packages as the API offers them: the catalog search, a package's info, the installed packages, and the branches that install, update and remove one offered as changes. |
@@ -621,7 +621,7 @@ At the top:
 | `server/api/issues.rs` | The issue tracker's routes: the issue list and one issue, parent, labels, blockers, claim, close and reopen, comments. |
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
 | `server/api/milestones.rs` | The milestones: listing them with their progress, making, reading, editing and deleting one, and a card's milestones. |
-| `server/api/projects.rs` | The projects: listing them, making one with a free key, reading and renaming one. |
+| `server/api/projects.rs` | The projects: listing them, making one with a free key, reading and renaming one, and the column scripts of a project's board. |
 | `server/api/wiki.rs` | The wiki's routes: its pages listed, read (an older version too), written, moved and deleted, a page's history, and a refresh now. |
 | `server/api/runs.rs` | A run and its events in pages, steering and stopping it. |
 | `server/api/automations/mod.rs` | Automations: list, add, read, replace, delete, run now, and their firings. |
@@ -679,7 +679,7 @@ At the top:
 | `repos/poll/github.rs` | What GitHub answers, read for the poll: issues, a pull request with its check runs and latest review. |
 | `repos/poll/gitlab.rs` | What GitLab answers, read for the poll: issues, a merge request with its latest pipeline, failed jobs and approvals. |
 | `repos/poll/forgejo.rs` | What Forgejo answers, read for the poll: issues, a pull request with the statuses of its head commit and its latest review. |
-| `repos/settings.rs` | A project's settings other than the column scripts, for `GET /v1/repositories/{id}/settings` and its `PUT` and `DELETE` per file: listed, checked and committed to the harness configuration repository, with the `.moebius/` files still on the default branch. |
+| `repos/settings.rs` | A repository's settings (what is about its code; the column scripts are a project's), for `GET /v1/repositories/{id}/settings` and its `PUT` and `DELETE` per file: listed, checked and committed to the harness configuration repository, with the `.moebius/` files still on the default branch. |
 | `repos/files.rs` | A repository's files on its default branch, read and committed (the Files sidebar and editor tabs of a project). |
 | `repos/search.rs` | A repository's default branch searched for the project page: the list of its paths for "Go to file", and a full-text search with `git grep`. |
 
@@ -695,11 +695,11 @@ At the top:
 | `board/card.rs` | The `card` table a script reads, with the card's change and the verdict of its review. |
 | `board/sandbox.rs` | The Luau sandbox every script runs in, with its memory and time limits. |
 | `board/limits.rs` | The run, round and token limits scripts see, and a script call's memory and time. |
-| `board/kanban.rs` | The columns, the default Kanban's scripts built into the server, and a repository's overrides. |
+| `board/kanban.rs` | The columns, the default Kanban's scripts built into the server, and a project's overrides. |
 | `board/runs.rs` | What the engine needs of a harness (`Runs`), and the agents it lists. |
 | `board/testing.rs` | For the tests only: a fake harness and a store with a repository and a card. |
 | `board/dry_run.rs` | `check_script`: a script run once against a made-up card, for `moebius check-script`. |
-| `board/scripts.rs` | Editing a column's script: the script in force, saved as a commit in the harness configuration repository. |
+| `board/scripts.rs` | Editing a column's script of a project: the script in force, saved as a commit in the harness configuration repository. |
 
 `decide/`, every decision on the way:
 
@@ -760,7 +760,8 @@ At the top:
 | `harness/repo/mod.rs` | The harness configuration repository's clone: opened, refreshed, and its agents read again when it changes. |
 | `harness/repo/read.rs` | Reading the agents, skills and MCP servers from it, each agent checked as a run uses it. |
 | `harness/repo/offer.rs` | Files written on a branch of the default branch and offered as a change in the inbox; the package manager proposes skills with it. |
-| `harness/repo/projects.rs` | A project's settings, the files of `repos/<repository name>/`: read from the clone, and written or removed as commits like any edit. |
+| `harness/repo/projects.rs` | A project's settings, the files of `projects/<project name>/` (its column scripts): read from the clone, written or removed as commits like any edit, moved when the project is renamed, and the migration that moves a repository's scripts to its home project. |
+| `harness/repo/repositories.rs` | A repository's settings, the files of `repos/<repository name>/` (rules, review notes, checks, test first, the hint of files, plugins' settings): read from the clone, and written or removed as commits like any edit. |
 | `harness/repo/edits.rs` | A person's edits of agents, skills, MCP servers and rules, as commits pushed to its origin. |
 | `harness/repo/skill_files.rs` | A skill's other files, beside its `SKILL.md`: read, and written or deleted as commits like any edit. |
 | `harness/repo/packages.rs` | The Pi packages in the clone: the lock of the default branch, the agents that name a package, the branch that installs, updates or removes one (made in a throwaway worktree), and its file diff. |
@@ -795,7 +796,7 @@ At the top:
 | `improve/trial/regression.rs` | The regression set of a repository (its latest merged cards, those with a reproduction test first) and the trials of a proposal on it. |
 | `improve/trial/schedule.rs` | Trying a proposal on a thread of its own, card after card, each trial stored and published, its status and inbox item; and the schedule's start inside the trial window. |
 | `improve/trial/decision.rs` | A person's merge or dismissal of a positive, mixed or untried proposal. |
-| `improve/own/mod.rs` | The Retro's proposals for Moebius's own configuration (`moebius.toml` and a project's settings): the keys and files it may change, and what the analyst is told about them. |
+| `improve/own/mod.rs` | The Retro's proposals for Moebius's own configuration (`moebius.toml`, a repository's rules and its home project's scripts): the keys and files it may change, and what the analyst is told about them. |
 | `improve/own/read.rs` | The analyst's branches for Moebius's own configuration checked, stored with their diff and put in the inbox. |
 | `improve/own/apply.rs` | A person's merge of such a proposal, saved through the settings code or offered as a change on the repository, or its dismissal. |
 | `improve/own/diff.rs` | A unified diff of a file's text before and after, as a person reads such a proposal. |

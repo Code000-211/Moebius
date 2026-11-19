@@ -201,9 +201,10 @@ export function Dock({
   const repository = board.repository;
   const status = cardStatus(card, item, board);
   const runs = useQuery({ queryKey: keys.cardRuns(card.id), queryFn: () => cardRuns(card.id) });
+  // The card runs the scripts of the project whose board it is on.
   const source = useQuery({
-    queryKey: keys.script(repository.id, card.column),
-    queryFn: () => script(repository.id, card.column),
+    queryKey: keys.script(card.project_id, card.column),
+    queryFn: () => script(card.project_id, card.column),
   });
   // The worktree of the run that made the change.
   const worktree = changeWorktree(card, runs.data ?? []);
@@ -296,7 +297,7 @@ export function Dock({
           <>
             <p className="m-0 mb-3 text-sm text-secondary">
               {source.data.path} ·{" "}
-              {source.data.source === "repository" ? "this repository's own" : "built in"}
+              {source.data.source === "project" ? "this project's own" : "built in"}
             </p>
             <pre
               data-testid="script"
@@ -305,7 +306,9 @@ export function Dock({
               {source.data.text}
             </pre>
             <Button asChild variant="secondary" size="sm" className="mt-4 w-fit">
-              <Link to={`/board/${repository.id}/scripts/${encodeURIComponent(card.column)}`}>
+              <Link
+                to={`/board/${repository.id}/scripts/${encodeURIComponent(card.column)}?project=${card.project_id}`}
+              >
                 Open the script
               </Link>
             </Button>

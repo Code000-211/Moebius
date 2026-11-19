@@ -36,6 +36,7 @@ function card(id: number, extra: Partial<Card> = {}): Card {
   return {
     id,
     repository_id: 1,
+    project_id: 1,
     number: id,
     title: `Card ${id}`,
     body: "",
@@ -73,6 +74,7 @@ function board(cards: Card[], extra: Partial<Board> = {}): Board {
       path: "/r",
       forge: "github",
       default_branch: "main",
+      home_project_id: 1,
       github: "acme/demo",
       trusted: [],
     },

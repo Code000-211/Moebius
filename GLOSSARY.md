@@ -45,9 +45,14 @@ and settings they draw on, and the settings of each project), kept in a git repo
 _Avoid_: harness config, setup, profile
 
 **Project settings**:
-What Moebius keeps for one repository: its rules, review notes, checks, test-first switch, hint settings and
-column scripts, the files of `repos/<repository name>/` in the harness configuration. The repository itself holds none of
-it: there is no `.moebius/` folder in a repository.
+How one project's board works: the scripts of its columns, the files of `projects/<project name>/` in the harness
+configuration. Two projects that share a repository can work differently.
+_Avoid_: workflow (that is a graph of nodes), board config
+
+**Repository settings**:
+What Moebius keeps for one repository's code, the same in every project it is in: its rules, review notes, checks,
+test-first switch, hint settings and the settings plugins ask of it, the files of `repos/<repository name>/` in the harness
+configuration. The repository itself holds none of it: there is no `.moebius/` folder in a repository.
 _Avoid_: repository config, `.moebius`
 
 **Pi package**:

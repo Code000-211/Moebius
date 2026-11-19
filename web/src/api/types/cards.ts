@@ -28,11 +28,11 @@ export interface Run {
   title: string | null;
 }
 
-/** `GET /v1/repositories/{id}/scripts/{column}`. */
+/** `GET /v1/projects/{id}/scripts/{column}`. */
 export interface ScriptDetail {
   column: string;
-  /** Where the repository keeps its own script for the column. */
+  /** Where the project keeps its own script for the column, `projects/<project name>/<file>.luau`. */
   path: string;
-  source: "repository" | "built-in";
+  source: "project" | "built-in";
   text: string;
 }

@@ -88,7 +88,7 @@ pub(crate) fn prompt_for(app: &App, card: &Card, purpose: &str, note: Option<&st
 /// The text of the project's `review.md`, the repository's own notes for its reviews, when it has any.
 fn review_notes(app: &App, card: &Card) -> Option<String> {
     let repository = app.store.repository(card.repository_id).ok().flatten()?;
-    app.project_file(&repository, "review.md")
+    app.repository_file(&repository, "review.md")
         .filter(|notes| !notes.trim().is_empty())
 }
 

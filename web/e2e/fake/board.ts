@@ -18,6 +18,7 @@ export interface ServerEvent {
 interface FakeCard {
   id: number;
   repository_id: number;
+  project_id: number;
   number: number;
   /** Set on the cards that are named by a key; the others are named by their number, as by an older server. */
   project_number?: number;
@@ -114,6 +115,7 @@ function repository() {
     default_branch: "main",
     github: "acme/demo",
     trusted: [],
+    home_project_id: 1,
   };
 }
 
@@ -121,6 +123,7 @@ function card(id: number, extra: Partial<FakeCard>): FakeCard {
   return {
     id,
     repository_id: 1,
+    project_id: 1,
     number: id,
     title: `Card ${id}`,
     body: "",
@@ -698,7 +701,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
         /^\/v1\/(cards|changes)\/\d+\//.test(path) ||
         /^\/v1\/cards\/\d+$/.test(path) ||
         /^\/v1\/runs\/\d+\/stop$/.test(path) ||
-        /^\/v1\/repositories\/1\/scripts\//.test(path);
+        /^\/v1\/projects\/1\/scripts\//.test(path);
       if (!known) return undefined;
       if (method !== "GET") requests.push({ method, path, body });
       const refusal = refusals.get(`${method} ${path}`);
@@ -770,14 +773,14 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
         const id = Number(runs$[1]);
         return find(id) ? ok(runs.get(id) ?? []) : fail(404, "no such card");
       }
-      const script = /^\/v1\/repositories\/1\/scripts\/(.+)$/.exec(path);
+      const script = /^\/v1\/projects\/1\/scripts\/(.+)$/.exec(path);
       if (script && method === "GET") {
         const column = decodeURIComponent(script[1] as string);
         const file = SCRIPTS[column.toLowerCase()];
         if (!file) return fail(404, "no such column");
         return ok({
           column,
-          path: `repos/demo/${file}.luau`,
+          path: `projects/demo/${file}.luau`,
           source: "built-in",
           text: `-- The ${column} column\nmoebius.wait("nothing to do in ${column}")\n`,
         });

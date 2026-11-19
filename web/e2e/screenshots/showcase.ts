@@ -72,6 +72,7 @@ export const repository = {
   default_branch: "main",
   github: "acme/storefront",
   trusted: ["maya"],
+  home_project_id: 1,
 };
 
 /** The steps of the runs the Fleet and the board show. */
@@ -163,6 +164,7 @@ function card(id: number, extra: Record<string, unknown>) {
   return {
     id,
     repository_id: 1,
+    project_id: 1,
     number: id,
     title: "",
     body: "",

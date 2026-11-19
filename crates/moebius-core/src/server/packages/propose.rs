@@ -1,6 +1,7 @@
 //! Workflow, rules and skills packages: nothing is installed at once, the files are proposed as a change that a person
-//! merges, always as a change of the harness configuration repository. Workflows go to a project's settings,
-//! `repos/<repository name>/` (and rules are added to its `rules.md`), skills to `skills/`. An update proposes the new
+//! merges, always as a change of the harness configuration repository. Workflows go to the settings of the named
+//! repository's home project, `projects/<project name>/`, rules are added to the repository's
+//! `repos/<repository name>/rules.md`, and skills go to `skills/`. An update proposes the new
 //! files and the deletion of those the new version no longer has; a removal proposes deleting what the lock says was
 //! proposed.
 
@@ -14,19 +15,18 @@ use crate::bus::Event;
 use crate::decide::{Actor, rules};
 use crate::store::{Change, Repository};
 
-/// Where the files of a package go in the harness configuration repository: skills at its root, the others in the
-/// settings of a project.
+/// Where the files of a package go in the harness configuration repository: skills at its root, rules in the settings
+/// of a repository, a Kanban in the settings of that repository's home project.
 struct Target {
     project: Option<Repository>,
+    /// The folder of the settings the files go to, from the root of the harness configuration repository.
+    folder: String,
 }
 
 impl Target {
     /// Where `to` of a package file lands, from the root of the harness configuration repository.
     fn path(&self, to: &str) -> String {
-        match &self.project {
-            Some(project) => format!("repos/{}/{to}", project.name),
-            None => format!("skills/{to}"),
-        }
+        format!("{}/{to}", self.folder)
     }
 }
 
@@ -53,11 +53,30 @@ impl Packages<'_> {
                     .into(),
             ));
         }
-        let project = match kind {
-            "skills" => None,
-            _ => Some(self.repository_for(repository)?),
+        if kind == "skills" {
+            return Ok(Target {
+                project: None,
+                folder: "skills".into(),
+            });
+        }
+        let repository = self.repository_for(repository)?;
+        let folder = if kind == "rules" {
+            format!("repos/{}", repository.name)
+        } else {
+            let home = self
+                .app
+                .store
+                .project(repository.home_project_id)
+                .map_err(AppError::from)?
+                .ok_or_else(|| {
+                    PackageError::Refused(format!("{} has no home project", repository.name))
+                })?;
+            format!("projects/{}", home.name)
         };
-        Ok(Target { project })
+        Ok(Target {
+            project: Some(repository),
+            folder,
+        })
     }
 
     /// Offers `write`, a change to a worktree of the harness configuration repository's default branch, as the change

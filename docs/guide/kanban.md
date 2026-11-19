@@ -388,8 +388,8 @@ is resolved.
 
 ### Merging without a person
 
-A repository whose changes should not wait for a person overrides `merge.luau` in its settings
-(`repos/<repository name>/merge.luau`): the script calls `moebius.merge_change(reason)` once it has checked what it wants
+A project whose changes should not wait for a person overrides `merge.luau` in its settings
+(`projects/<project name>/merge.luau`): the script calls `moebius.merge_change(reason)` once it has checked what it wants
 to hold. The change is merged on the forge, its inbox item is resolved and the card moves to `Done`. The judgement is
 recorded as the column's script, `script:Ready to merge`, so a Retro and the training export can tell it from a person's
 merge; nothing a person did is recorded on its behalf. What the reviews and the checks catch still holds: keep the

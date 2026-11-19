@@ -137,7 +137,7 @@ async fn other_agents_and_revoked_tokens_are_refused() {
         (Method::DELETE, "/v1/repositories/1/settings/checks", None),
         (
             Method::PUT,
-            "/v1/repositories/1/scripts/Backlog",
+            "/v1/projects/1/scripts/Backlog",
             Some(json!({ "text": "" })),
         ),
     ] {

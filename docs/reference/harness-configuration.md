@@ -1,7 +1,7 @@
 # Harness configuration
 
-The harness configuration is a git repository that holds the agents, their skills, the server's rules, the MCP servers
-and the settings of each project (a repository the server works on).
+The harness configuration is a git repository that holds the agents, their skills, the server's rules, the MCP servers,
+the settings of each project (how its board works) and the settings of each repository (what is about its code).
 This page is for whoever sets it up or edits it, by hand or through the desktop API: it lists every file and key. The code
 is in `crates/moebius-core/src/harness/repo/`.
 
@@ -66,7 +66,8 @@ mcp.toml               the MCP servers
 extensions/...         any files an agent's extensions name
 packages/<name>/       a vendored Pi package with its production dependencies (see Packages)
 packages.lock          what each vendored package was fetched as
-repos/<repository>/... the settings of one project (see Project settings)
+repos/<repository>/... the settings of one repository (see Repository settings)
+projects/<project>/... the settings of one project, its column scripts (see Project settings)
 ```
 
 Nothing else is read. The Moebius agent stays built in: `agents/Moebius.toml` configures it as `[agents.Moebius]` does, and
@@ -92,7 +93,7 @@ the router can serve.
 
 The `Reviewer` is the review agent of the default Kanban: it exists always, like the Coder (`moebius.has_agent("Reviewer")`
 is true on every server), so a card goes to review out of the box, on the Coder's model unless the Reviewer has its own.
-A person who wants no review changes the column's script (`review.luau` of the project's settings, see the
+A person who wants no review changes the column's script (`review.luau` of the [project's settings](#project-settings), see the
 [Kanban guide](../guide/kanban.md)), for example to `moebius.offer_change()` at once.
 The instructions complement what each run's prompt says (the issue, the checks, the `FINDING` format) and do not repeat
 it. The parts that fit only a card (the issue as the spec, the summary, the `FINDING` format) start with "When you work
@@ -293,8 +294,8 @@ package with a newer version (see [the desktop API](desktop-api.md#get-v1extensi
 ## `rules.md`
 
 The server's rules, in the format of [rules](rules.md): one `## name` section per rule. It replaces `rules_file`, and has
-the same precedence over a project's `repos/<repository>/rules.md`: the server's rules come first and a project cannot
-weaken them. Like `rules_file` it is read afresh for every tool call, from the clone's working tree, which is the
+the same precedence over a repository's `repos/<repository>/rules.md`: the server's rules come first and a repository
+cannot weaken them. Like `rules_file` it is read afresh for every tool call, from the clone's working tree, which is the
 default branch. Without the file there are no server rules.
 
 ## `mcp.toml`
@@ -360,15 +361,16 @@ model class, has none, and the harness sends the level's name.
 A stdio server runs with the Moebius server's environment and its own `env`, and works in the run's worktree, so it can
 read and change what the agent works on: give a run only servers you trust.
 
-## Project settings
+## Repository settings
 
-A project is a repository the server works on, and its settings are the files of `repos/<repository name>/`, the
-repository's name as `GET /v1/snapshot` shows it. They replaced the `.moebius/` folder that a repository used to keep on
-its default branch: nothing is read from a repository's `.moebius/` any more. A repository whose default branch still
+What is about a repository's code (ADR 0019) is kept with the repository: its settings are the files of
+`repos/<repository name>/`, the repository's name as `GET /v1/snapshot` shows it, and they are the same in every project
+the repository is in. They replaced the `.moebius/` folder that a repository used to keep on its default branch: nothing is read from a repository's `.moebius/` any more. A repository whose default branch still
 has one is told so once while the server runs, in the log and as the event `settings_moved`, and
 `GET /v1/repositories/{id}/settings` lists its files as `leftover`; Moebius imports nothing, so move the files by hand
-(`git mv .moebius/<file>` becomes a commit of `repos/<name>/<file>` here). Every file is optional, and a server without
-`[harness]` has no project settings at all. They are read afresh when they are used, from the clone's default branch, and
+(`git mv .moebius/<file>` becomes a commit of `repos/<name>/<file>` here, and a column script one of
+`projects/<project name>/<file>`). Every file is optional, and a server without
+`[harness]` has no repository or project settings at all. They are read afresh when they are used, from the clone's default branch, and
 an edit through the API is a commit pushed to `origin`, like any other edit of this repository. A file that is a symbolic
 link in the clone is not read, and not written. A repository whose name is a device name of Windows (`con`, `prn`, `aux`,
 `nul`, `com1` to `com9`, `lpt1` to `lpt9`, in any case, with or without an extension) has no settings: a directory of
@@ -376,17 +378,46 @@ that name cannot be made there, so saving a file is refused with `422` on every 
 
 | File | Meaning |
 |---|---|
-| `rules.md` | The project's own rules, in the format of [rules](rules.md). They are added after the server's rules, which a project cannot weaken. |
-| `review.md` | Notes for the reviews of the project's changes, given to the Standards review run in its prompt (the files the repository itself keeps, such as `CONTRIBUTING.md`, are read by the reviewer from the worktree). |
-| `checks` | The command that checks a change of a repository without a forge (see [column scripts](column-scripts.md#checks-and-conflicts)). |
+| `rules.md` | The repository's own rules, in the format of [rules](rules.md). They are added after the server's rules, which a repository cannot weaken. |
+| `review.md` | Notes for the reviews of the repository's changes, given to the Standards review run in its prompt (the files the repository itself keeps, such as `CONTRIBUTING.md`, are read by the reviewer from the worktree). |
+| `checks` | The command that checks a change of a repository without a forge (see [column scripts](column-scripts.md#checks-and-conflicts)). A card is checked with the checks of its repository, whichever project's board it is on. |
 | `test-first` | Its presence turns test first on (content ignored; see [column scripts](column-scripts.md#test-first)). |
-| `localize` | Turns the hint of likely files for code runs on or off for the project, and says how many files (see [configuration](configuration.md#localize)). |
-| `<file>.luau` | The script of a column in place of the built-in one: `backlog`, `ready` (for `Not started`), `code`, `review`, `merge` and `done` (see [column scripts](column-scripts.md#repository-overrides)). |
+| `localize` | Turns the hint of likely files for code runs on or off for the repository, and says how many files (see [configuration](configuration.md#localize)). |
 | `plugins/<plugin>/<key>` | The value of one setting that a plugin asks of every repository in its manifest ([`project_settings`](plugin-api.md#plugin-settings)), such as the Dockerfile of a sandbox: the file's text is the value, and an empty or missing file is no value. A person saves them with the repository's page or [`PUT /v1/repositories/{id}/plugin-settings/{plugin}`](desktop-api.md#put-v1repositoriesidplugin-settingsplugin), one commit for all of a plugin's keys. The Retro and packages do not propose them. Plugin and key are letters, digits, `-`, `_` and `.`. |
 
-A change to these files that a package or the Retro proposes is a branch of this repository like any other, merged by a
-person (see [Packages](#packages) and [Proposals for Moebius itself](#proposals-for-moebius-itself)). The Retro's proposals
-may change only `rules.md` and the column scripts of a project, never `checks`, which the server runs as a command.
+A column's script in `repos/<repository name>/` is not read: column scripts are a project's.
+
+## Project settings
+
+How a project's board works is the project's (ADR 0019): its settings are the files of `projects/<project name>/`, the
+project's name as `GET /v1/projects` shows it, so two projects that share a repository can work differently. Every file is
+optional; a column without its own script runs the built-in one. They are read afresh when a card's script runs, for the
+project whose board the card is on, from the clone's default branch, and a symbolic link is neither read nor written.
+
+| File | Meaning |
+|---|---|
+| `<file>.luau` | The script of a column in place of the built-in one: `backlog`, `ready` (for `Not started`), `code`, `review`, `merge` and `done` (see [column scripts](column-scripts.md#project-overrides)). A person saves one with [`PUT /v1/projects/{id}/scripts/{column}`](desktop-api.md#put-v1projectsidscriptscolumn) or the board. |
+
+- **A project's name is its folder** on every system, so a name is refused (`422`) when it ends with a dot or a space or
+  holds one of `<>:"|?*`, besides what the [desktop API](desktop-api.md#post-v1projects) refuses anyway.
+- **Renaming a project** (`PATCH /v1/projects/{id}`) moves `projects/<old name>/` to `projects/<new name>/` in one commit,
+  `Rename the project <old> to <new>`, pushed to `origin` and recorded as a decision of the kind `rename_project`, before
+  the name changes. A project without settings makes no commit. A rename is refused with `409` when
+  `projects/<new name>/` is there already, or when the push fails; the name then stays as it was.
+- **The migration.** The column scripts were a repository's settings before projects (`repos/<repository name>/<file>.luau`).
+  When the server starts and after every refresh of the clone, each such script moves to the settings of the repository's
+  home project, `projects/<home project name>/<file>.luau`: one commit for all of them, `Move the column scripts of each
+  repository to its project`, pushed to `origin` and recorded as a decision of the first owner of the kind
+  `move_scripts` (the moved paths in its context). Every card of a repository is on its home project after the migration
+  of the store, so the board works as it did. A script that reaches `repos/<repository name>/` later (a proposal or a
+  package offered before projects and merged since, or a commit by hand in the old place) moves too, replacing the
+  project's: it is the newer. A migration that fails (a push that is refused) is said in the log and as
+  `harness_error`, and tried again with the next refresh; until then the scripts in `repos/` are not read.
+
+A change to these files, or to a repository's settings, that a package or the Retro proposes is a branch of this
+repository like any other, merged by a person (see [Packages](#packages) and [Proposals for Moebius
+itself](#proposals-for-moebius-itself)). The Retro's proposals may change only a repository's `rules.md` and the column
+scripts of a project, never `checks`, which the server runs as a command.
 
 ## A broken agent
 
@@ -501,7 +532,8 @@ configured, the built-in agent `Retro-analyst` turns the report into proposals. 
 - Each proposal is a branch `proposal/<date>-<short-name>` made from the default branch, with one commit whose message is
   the proposal: the subject is its title, the body says what changes and which errors it addresses, and the last line is
   `Cards: 48, 50`, the `card` of each error of the report that it addresses (numbers that are not ids are ignored). It
-  changes only harness configuration files (`agents/`, `skills/`, `extensions/`, `packages/`, `packages.lock`, `rules.md`, `mcp.toml`, and the files of a project's settings, `repos/<repository>/<file>`).
+  changes only harness configuration files (`agents/`, `skills/`, `extensions/`, `packages/`, `packages.lock`, `rules.md`, `mcp.toml`, a repository's rules, `repos/<repository>/rules.md`, and a project's column scripts,
+  `projects/<project>/<file>.luau`).
 - When the run has succeeded, Moebius lists the `proposal/<date>-*` branches of the clone. A branch that changes
   nothing, changes another file, or breaks an agent that could be used on the default branch is left out, with a warning
   in the Retro. The others are pushed to `origin` and stored as proposals (`GET /v1/proposals`), with the agents whose files
@@ -510,7 +542,7 @@ configured, the built-in agent `Retro-analyst` turns the report into proposals. 
 ### Proposals for Moebius itself
 
 Some errors are better avoided by Moebius's own configuration than by the harness configuration. The analyst may also
-propose a change to `moebius.toml` or to a project's own rules and column scripts. It states one the same way, as a
+propose a change to `moebius.toml`, or to a repository's own rules and the column scripts of its home project. It states one the same way, as a
 branch `proposal/<date>-<short-name>` with one commit whose message is the proposal, but the commit adds only files under
 `moebius/`, which is not harness configuration:
 
@@ -519,11 +551,11 @@ branch `proposal/<date>-<short-name>` with one commit whose message is the propo
   `run_limit`, `retro_at`, `trial_window.start`, `trial_window.end`, `board.round_limit`, `budgets.day_tokens`,
   `checks.timeout_seconds`, `teacher.model`, `teacher.protocol` and `teacher.timeout_seconds`; the analyst is told
   their values now. The file must still be a valid [configuration](configuration.md) with the change.
-- **A change to a project's settings** adds only files `moebius/repositories/<repository>/<file>`, each
+- **A change to a repository's settings** adds only files `moebius/repositories/<repository>/<file>`, each
   the whole new text of that file, all for one repository. The files are `rules.md` and the column scripts
-  (`backlog.luau`, `ready.luau`, `code.luau`, `review.luau`, `merge.luau`, `done.luau`); rules must be fit to save (see
-  [rules](rules.md)) and a script must pass `moebius check-script`. The analyst is told the files that the projects
-  of the report's cards have now.
+  (`backlog.luau`, `ready.luau`, `code.luau`, `review.luau`, `merge.luau`, `done.luau`) of the repository's home
+  project; rules must be fit to save (see [rules](rules.md)) and a script must pass `moebius check-script`. The analyst
+  is told the files that the repositories of the report's cards, and their home projects, have now.
 
 When the run has succeeded, these branches are read first and then deleted from the clone; they are never pushed. A
 branch that breaks these conditions, or changes nothing, is left out with a warning in the Retro; a branch that mixes
@@ -534,7 +566,8 @@ Nothing is applied without a person:
 
 - Merging a `settings` proposal saves the change to `moebius.toml` through the same code as `PUT /v1/settings`; the
   live keys take effect at once, and when a key needs a restart the server restarts.
-- Merging a `repository` proposal commits its files, as `repos/<repository>/<file>`, on the branch
+- Merging a `repository` proposal commits its files, the rules as `repos/<repository>/rules.md` and the scripts as
+  `projects/<home project>/<file>`, on the branch
   `moebius/proposal-<id>` of the harness configuration repository, from its default branch, and offers it as a change of
   that repository. The change is in the inbox, ready to merge, and a person merges it as any change of this repository
   (the files are on its default branch, and in use, only then).

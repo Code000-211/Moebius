@@ -6,20 +6,31 @@
 //! - `POST /v1/projects` `{name, key}`: makes a project with no repository yet; the key is one no other project has.
 //! - `GET /v1/projects/{id}`: one project.
 //! - `PATCH /v1/projects/{id}` `{name}`: renames a project. Its key stays: a body that names another key is refused.
+//!   Its settings move to `projects/<new name>/` of the harness configuration repository.
+//! - `GET /v1/projects/{id}/scripts`: the script of every column of the project's board, its own or the built-in one.
+//! - `GET`, `PUT` and `DELETE /v1/projects/{id}/scripts/{column}`: one column's script, read, replaced (checked as
+//!   `moebius check-script` checks it) or given up for the built-in one (see `board::scripts`).
 
 use axum::extract::{Path as UrlPath, State};
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::{Extension, Json, Router};
 use serde::Deserialize;
 
 use super::{ApiError, ApiState, blocking};
 use crate::app::ProjectView;
+use crate::board::scripts::{self, NewScript, ScriptView};
+use crate::decide::Actor;
 
 /// The routes of the projects.
 pub(super) fn routes() -> Router<ApiState> {
     Router::new()
         .route("/v1/projects", get(projects).post(add_project))
         .route("/v1/projects/{id}", get(project).patch(rename_project))
+        .route("/v1/projects/{id}/scripts", get(get_scripts))
+        .route(
+            "/v1/projects/{id}/scripts/{column}",
+            get(get_script).put(put_script).delete(delete_script),
+        )
 }
 
 /// What `POST /v1/projects` takes.
@@ -57,11 +68,49 @@ async fn add_project(
 
 async fn rename_project(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     Json(edited): Json<EditedProject>,
 ) -> Result<Json<ProjectView>, ApiError> {
     blocking(&state.app, move |app| {
-        app.rename_project(id, &edited.name, edited.key.as_deref())
+        app.rename_project(&by, id, &edited.name, edited.key.as_deref())
+    })
+    .await
+}
+
+async fn get_scripts(
+    State(state): State<ApiState>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<Json<Vec<ScriptView>>, ApiError> {
+    blocking(&state.app, move |app| scripts::scripts(app, id)).await
+}
+
+async fn get_script(
+    State(state): State<ApiState>,
+    UrlPath((id, column)): UrlPath<(i64, String)>,
+) -> Result<Json<ScriptView>, ApiError> {
+    blocking(&state.app, move |app| scripts::script(app, id, &column)).await
+}
+
+async fn put_script(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath((id, column)): UrlPath<(i64, String)>,
+    Json(new): Json<NewScript>,
+) -> Result<Json<ScriptView>, ApiError> {
+    blocking(&state.app, move |app| {
+        scripts::save_script(app, &by, id, &column, &new)
+    })
+    .await
+}
+
+async fn delete_script(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath((id, column)): UrlPath<(i64, String)>,
+) -> Result<Json<ScriptView>, ApiError> {
+    blocking(&state.app, move |app| {
+        scripts::delete_script(app, &by, id, &column)
     })
     .await
 }

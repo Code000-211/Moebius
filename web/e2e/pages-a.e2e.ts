@@ -642,6 +642,8 @@ describe("projects", () => {
     async () => {
       await open("/projects/1");
       await page.getByText("This repository still has a .moebius folder.").waitFor();
+      // The column scripts are the home project's, and the panel says which it has of its own.
+      await page.getByText("(this project has ready.luau)", { exact: false }).waitFor();
       await page.getByTestId("setting-review.md").getByText("Prefer small functions.").waitFor();
       await page.getByRole("button", { name: "Edit review notes" }).click();
       await page.getByLabel("Review notes").fill("Prefer small functions.\nName things well.\n");

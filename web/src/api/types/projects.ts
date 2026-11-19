@@ -84,14 +84,15 @@ export interface SettingFile {
   commit?: string;
 }
 
-/** `GET /v1/repositories/{id}/settings`: the files of `repos/<name>/` in the harness configuration repository. */
+/**
+ * `GET /v1/repositories/{id}/settings`: the files of `repos/<name>/` in the harness configuration repository, what is
+ * about the repository's code. The column scripts are a project's (`GET /v1/projects/{id}/scripts`).
+ */
 export interface ProjectSettings {
   path: string;
   /** False when the server has no harness configuration repository: nothing can be saved. */
   editable: boolean;
   files: SettingFile[];
-  /** The column scripts the project has of its own, such as `ready.luau`. */
-  scripts: string[];
   /** The files of a `.moebius/` folder the default branch still has, which are not read. */
   leftover: string[];
 }

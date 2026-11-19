@@ -21,7 +21,7 @@ Every `luau` example in the guide is a complete column script, and a test runs i
 
 Built and described here:
 
-- Column scripts, the default Kanban, and a repository's overrides in its settings in the harness configuration repository (`repos/<repository name>/`).
+- Column scripts, the default Kanban, and a project's overrides in its settings in the harness configuration repository (`projects/<project name>/`); a repository's checks, rules and review notes in its own (`repos/<repository name>/`).
 - Rules: the built-in rules, rules in prose in a server file and in a repository's settings, and the teacher model.
 - Agents, skills and MCP servers, set up in `moebius.toml` or in a harness configuration repository. In the repository,
   every edit through the API is a commit, and it holds the server's `rules.md` too.

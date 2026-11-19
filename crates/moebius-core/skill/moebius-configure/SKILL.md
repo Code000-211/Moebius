@@ -74,13 +74,17 @@ A workflow is a file `workflows/<name>.toml` of the harness configuration reposi
 an invalid definition is refused with the message and the file stays as it was. `delete` is refused while a run of the
 workflow is queued or running. The `moebius` skill has `reference/workflows.md`.
 
-## A column's script in one repository
+## A column's script in one project
+
+Column scripts are a project's (its board's), not a repository's: two projects that share a repository can work
+differently. A project's id is in `"$MOEBIUS" api GET /v1/projects`.
 
 ```sh
-"$MOEBIUS" api GET /v1/repositories/1/scripts/Not%20started               # the script that runs now, built in or its own
+"$MOEBIUS" api GET /v1/projects/1/scripts                                # every column's script, built in or its own
+"$MOEBIUS" api GET /v1/projects/1/scripts/Not%20started                  # the script that runs now, built in or its own
 "$MOEBIUS" check-script ready.luau --column "Not started"                  # check before saving
-"$MOEBIUS" api PUT /v1/repositories/1/scripts/Not%20started --body '{"text": "...", "reason": "..."}'
-"$MOEBIUS" api DELETE /v1/repositories/1/scripts/In%20progress     # back to the built-in script
+"$MOEBIUS" api PUT /v1/projects/1/scripts/Not%20started --body '{"text": "...", "reason": "..."}'
+"$MOEBIUS" api DELETE /v1/projects/1/scripts/In%20progress     # back to the built-in script
 ```
 
 Build the body with `jq -n --rawfile text ready.luau '{text: $text}' > body.json` and pass `--body body.json`. The server
@@ -88,11 +92,11 @@ checks the script again and refuses it with the check's message. How to write th
 
 ## A file of a repository
 
-A project's own settings (`rules.md`, `review.md`, `checks`, `test-first`, `localize` and the column
-scripts) are not files of the repository: change them with the settings and scripts routes above, never with
+A repository's own settings (`rules.md`, `review.md`, `checks`, `test-first` and `localize`) and its projects' column
+scripts are not files of the repository: change them with the settings and scripts routes above, never with
 `/files/`, and never in a `.moebius/` folder, which is not read.
 
-The settings that plugins ask of each repository are project settings too (`plugins/<plugin>/<key>`). Read them with
+The settings that plugins ask of each repository are repository settings too (`plugins/<plugin>/<key>`). Read them with
 `"$MOEBIUS" api GET /v1/repositories/1/plugin-settings`, and the server's with `GET /v1/plugins/settings`. Only a person
 saves them (the `PUT` routes refuse you with `403`), so give the person the text and say which page and field it goes
 in. Never put such a value in a file of the repository.

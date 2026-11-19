@@ -1,5 +1,5 @@
 //! The repositories: adding one, with or without a forge, editing whom a repository on a forge trusts, removing
-//! one, and the column scripts and files on a repository's default branch.
+//! one, its settings, and the files on its default branch. The column scripts are a project's (see `projects`).
 //!
 //! - `POST /v1/repositories` `{name, url}`: clones a repository without a forge. With `forge: "github"`, `github:
 //!   "owner/repo"` and optionally `trusted: [logins]` it is a repository whose issues are polled from GitHub; with
@@ -8,10 +8,8 @@
 //! - `PUT /v1/repositories/{id}` `{trusted}`: replaces the logins a repository on a forge trusts.
 //! - `DELETE /v1/repositories/{id}`: removes the repository with its cards, changes, chats and the rest, and deletes
 //!   its clone. Refused with `409` while one of its runs is still going.
-//! - `GET`, `PUT` and `DELETE /v1/repositories/{id}/scripts/{column}`: the script in force for a column, written or
-//!   removed as a commit in the harness configuration repository (see [`crate::board::scripts`]).
-//! - `GET /v1/repositories/{id}/settings` and `PUT` and `DELETE /v1/repositories/{id}/settings/{file}`: the other
-//!   files of the project's settings there (see [`crate::repos::settings`]).
+//! - `GET /v1/repositories/{id}/settings` and `PUT` and `DELETE /v1/repositories/{id}/settings/{file}`: the files of
+//!   the repository's settings in the harness configuration repository (see [`crate::repos::settings`]).
 //! - `GET /v1/repositories/{id}/tree?path=` and `GET` and `PUT /v1/repositories/{id}/files/{path}`: the files on the
 //!   default branch, read and committed (see [`crate::repos::files`]).
 //! - `GET /v1/repositories/{id}/plugin-settings` and `PUT /v1/repositories/{id}/plugin-settings/{plugin}` `{values, reason}`: the
@@ -29,24 +27,19 @@ use serde::{Deserialize, Serialize};
 use super::{ApiError, ApiState, Reason, blocking};
 use crate::app::AppError;
 use crate::app::plugin_settings::{PluginProjectSettings, PluginSettings, Scope};
-use crate::board::scripts::{self, NewScript, ScriptView};
 use crate::decide::Actor;
 use crate::repos::files::{self, FileView, NewFile, Tree};
 use crate::repos::search::{self, Found, Paths, Search};
 use crate::repos::settings::{self, NewSetting, SettingFile, Settings};
 use crate::store::Repository;
 
-/// The routes of the repositories, their scripts and their files.
+/// The routes of the repositories, their settings and their files.
 pub(super) fn routes() -> Router<ApiState> {
     Router::new()
         .route("/v1/repositories", post(add_repository))
         .route(
             "/v1/repositories/{id}",
             put(edit_repository).delete(delete_repository),
-        )
-        .route(
-            "/v1/repositories/{id}/scripts/{column}",
-            get(get_script).put(put_script).delete(delete_script),
         )
         .route("/v1/repositories/{id}/settings", get(get_settings))
         .route(
@@ -175,36 +168,6 @@ async fn put_plugin_settings(
 ) -> Result<axum::Json<PluginSettings>, ApiError> {
     blocking(&state.app, move |app| {
         app.save_plugin_settings(&by, Scope::Project(id), &plugin, &new.values, &new.reason)
-    })
-    .await
-}
-
-async fn get_script(
-    State(state): State<ApiState>,
-    UrlPath((id, column)): UrlPath<(i64, String)>,
-) -> Result<axum::Json<ScriptView>, ApiError> {
-    blocking(&state.app, move |app| scripts::script(app, id, &column)).await
-}
-
-async fn put_script(
-    State(state): State<ApiState>,
-    Extension(by): Extension<Actor>,
-    UrlPath((id, column)): UrlPath<(i64, String)>,
-    axum::Json(new): axum::Json<NewScript>,
-) -> Result<axum::Json<ScriptView>, ApiError> {
-    blocking(&state.app, move |app| {
-        scripts::save_script(app, &by, id, &column, &new)
-    })
-    .await
-}
-
-async fn delete_script(
-    State(state): State<ApiState>,
-    Extension(by): Extension<Actor>,
-    UrlPath((id, column)): UrlPath<(i64, String)>,
-) -> Result<axum::Json<ScriptView>, ApiError> {
-    blocking(&state.app, move |app| {
-        scripts::delete_script(app, &by, id, &column)
     })
     .await
 }

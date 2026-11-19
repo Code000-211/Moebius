@@ -1,14 +1,15 @@
 /**
- * The script a column runs for a repository, in an editor (CodeMirror with Lua highlighting, loaded when this page
- * opens): where the repository keeps it, whether it is the repository's own or the built-in one, and its text. Save
- * is `PUT /v1/repositories/{id}/scripts/{column}`, which the server checks as `moebius check-script` does and commits;
- * a script it refuses is answered with the check's message, shown under the editor and marked at its line. "Use the
- * built-in script" (`DELETE`) gives up the repository's own, after asking. The board's dock links here.
+ * The script a column runs for the cards of a project, in an editor (CodeMirror with Lua highlighting, loaded when this
+ * page opens): where the project keeps it, whether it is the project's own or the built-in one, and its text. The
+ * project is `?project=` (the dock links with the card's project), else the home project of the board's repository.
+ * Save is `PUT /v1/projects/{id}/scripts/{column}`, which the server checks as `moebius check-script` does and
+ * commits; a script it refuses is answered with the check's message, shown under the editor and marked at its line.
+ * "Use the built-in script" (`DELETE`) gives up the project's own, after asking. The board's dock links here.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { lazy, Suspense, useState } from "react";
-import { Link, useParams } from "react-router";
-import { deleteScript, saveScript, script } from "../../api/calls/board";
+import { Link, useParams, useSearchParams } from "react-router";
+import { deleteScript, saveScript, script, snapshot } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
@@ -22,11 +23,23 @@ const CodeEditor = lazy(() => import("../../ui/CodeEditor"));
 
 export function ScriptPage() {
   const { id, column } = useParams();
+  const [search] = useSearchParams();
   const repository = Number(id);
   const name = column ?? "";
+  const named = search.get("project");
+  const board = useQuery({
+    queryKey: keys.snapshot,
+    queryFn: () => snapshot(),
+    enabled: named === null,
+  });
+  const home = board.data?.boards.find((each) => each.repository.id === repository)?.repository
+    .home_project_id;
+  const project = named === null ? home : Number(named);
+  const missing = named === null && board.isSuccess && home === undefined;
   const source = useQuery({
-    queryKey: keys.script(repository, name),
-    queryFn: () => script(repository, name),
+    queryKey: keys.script(project ?? 0, name),
+    queryFn: () => script(project ?? 0, name),
+    enabled: project !== undefined,
   });
   // What came of the last save lives here: the editor below starts again when the script it shows changes.
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -41,22 +54,27 @@ export function ScriptPage() {
           </Button>
         }
       />
-      {source.isPending && <SkeletonLines lines={8} message="Reading the script" />}
-      {source.error && (
+      {source.isPending && !board.isError && !missing && (
+        <SkeletonLines lines={8} message="Reading the script" />
+      )}
+      {missing && (
+        <NoticeLine tone="error">This server has no repository with that address.</NoticeLine>
+      )}
+      {(source.error ?? board.error) && (
         <NoticeLine tone="error">
-          {isApiError(source.error)
-            ? source.error.message
+          {isApiError(source.error ?? board.error)
+            ? (source.error ?? board.error)?.message
             : "Could not read the script. Try again."}
         </NoticeLine>
       )}
-      {source.data && (
+      {source.data && project !== undefined && (
         // The editor starts again from the script the server has whenever that changes under it.
         <Editor
           key={`${source.data.source}\n${source.data.text}`}
-          repository={repository}
+          project={project}
           column={name}
           path={source.data.path}
-          own={source.data.source === "repository"}
+          own={source.data.source === "project"}
           saved={source.data.text}
           notice={notice}
           setNotice={setNotice}
@@ -69,7 +87,7 @@ export function ScriptPage() {
 type Notice = { tone: "ok" | "error"; text: string };
 
 function Editor({
-  repository,
+  project,
   column,
   path,
   own,
@@ -77,7 +95,7 @@ function Editor({
   notice,
   setNotice,
 }: {
-  repository: number;
+  project: number;
   column: string;
   path: string;
   own: boolean;
@@ -92,7 +110,7 @@ function Editor({
   const changed = text !== saved;
 
   const done = (detail: { text: string; source: string }, message: string) => {
-    queryClient.setQueryData(keys.script(repository, column), { ...detail, column, path });
+    queryClient.setQueryData(keys.script(project, column), { ...detail, column, path });
     void queryClient.invalidateQueries({ queryKey: keys.scripts });
     setProblem(null);
     setNotice({ tone: "ok", text: message });
@@ -109,7 +127,7 @@ function Editor({
   };
 
   const save = useMutation({
-    mutationFn: () => saveScript(repository, column, text),
+    mutationFn: () => saveScript(project, column, text),
     onSuccess: (detail) =>
       done(
         detail,
@@ -120,7 +138,7 @@ function Editor({
     onError: (error) => failed(error, "save the script"),
   });
   const useBuiltIn = useMutation({
-    mutationFn: () => deleteScript(repository, column),
+    mutationFn: () => deleteScript(project, column),
     onSuccess: (detail) => {
       setAsking(false);
       done(detail, "The column runs the built-in script again.");
@@ -134,7 +152,7 @@ function Editor({
   return (
     <div className="flex flex-col gap-4">
       <p className="m-0 text-sm text-secondary">
-        <span className="font-mono">{path}</span> · {own ? "this repository's own" : "built in"}
+        <span className="font-mono">{path}</span> · {own ? "this project's own" : "built in"}
       </p>
       <Suspense fallback={<SkeletonLines lines={10} message="Opening the editor" />}>
         <CodeEditor

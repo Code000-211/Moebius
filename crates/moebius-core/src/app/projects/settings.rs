@@ -1,7 +1,9 @@
-//! A project's settings as the core reads them: the files of `repos/<repository name>/` in the harness configuration
-//! repository (see `harness::repo`), which replaced the `.moebius/` folder a repository kept on its default branch.
-//! A server without that repository has no settings for any project. A repository whose default branch still has a
-//! `.moebius/` folder is told about once: nothing in it is read.
+//! A project's and a repository's settings as the core reads them (ADR 0019), files of the harness configuration
+//! repository (see `harness::repo`): a project's are `projects/<project name>/`, the scripts of its board's columns; a
+//! repository's are `repos/<repository name>/`, what is about its code, which replaced the `.moebius/` folder a
+//! repository kept on its default branch. A server without that repository has no settings for any project or
+//! repository. The column scripts a repository's settings had before projects are moved to its home project; a
+//! repository whose default branch still has a `.moebius/` folder is told about once: nothing in it is read.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -9,7 +11,7 @@ use std::path::Path;
 use crate::app::App;
 use crate::bus::Event;
 use crate::repos::git;
-use crate::store::Repository;
+use crate::store::{Project, Repository};
 
 impl App {
     /// The harness configuration repository, where a project's settings are written; refused with a conflict (`409`)
@@ -25,16 +27,62 @@ impl App {
         })
     }
 
-    /// The text of `file` in the project `repository`'s settings (`rules.md`, `review.md`, `checks`,
-    /// `test-first`, `localize` or a column's script such as `ready.luau`); none when the project has no such file or
-    /// the server has no harness configuration repository.
-    pub fn project_file(&self, repository: &Repository, file: &str) -> Option<String> {
-        self.harness_repo
-            .get()?
-            .project_file(&repository.name, file)
+    /// The text of `file` in the settings of `project`, a column's script such as `ready.luau`; none when the project has
+    /// no such file or the server has no harness configuration repository.
+    pub fn project_file(&self, project: &Project, file: &str) -> Option<String> {
+        self.harness_repo.get()?.project_file(&project.name, file)
     }
 
-    /// The values plugin `plugin` has for the project `repository`, by key, from the files of its settings; none when
+    /// Moves the column scripts that the settings of each repository still have, from before projects, to its home
+    /// project (see `HarnessRepo::move_scripts_to_projects`). What fails is said in the log and as `harness_error`, and
+    /// is tried again with the next refresh.
+    pub fn move_scripts_to_projects(&self) {
+        let Some(harness) = self.harness_repo.get() else {
+            return;
+        };
+        let homes = self.store.repositories().and_then(|repositories| {
+            repositories
+                .into_iter()
+                .map(|repository| {
+                    let project = self.store.project(repository.home_project_id)?;
+                    Ok(project.map(|project| (repository.name, project.name)))
+                })
+                .filter_map(Result::transpose)
+                .collect::<crate::store::Result<Vec<_>>>()
+        });
+        let moved = homes
+            .map_err(crate::app::AppError::from)
+            .and_then(|homes| harness.move_scripts_to_projects(self, &homes));
+        match moved {
+            Ok(moved) if !moved.is_empty() => {
+                eprintln!(
+                    "moebius: moved the column scripts to the projects: {}",
+                    moved.join(", ")
+                );
+            }
+            Ok(_) => {}
+            Err(error) => {
+                let message = format!(
+                    "cannot move the column scripts of the repositories to their projects: {error}"
+                );
+                eprintln!("moebius: {message}");
+                self.bus.publish(Event::HarnessError {
+                    agent: None,
+                    message,
+                });
+            }
+        }
+    }
+
+    /// The text of `file` in the settings of `repository` (`rules.md`, `review.md`, `checks`, `test-first` or
+    /// `localize`); none when the repository has no such file or the server has no harness configuration repository.
+    pub fn repository_file(&self, repository: &Repository, file: &str) -> Option<String> {
+        self.harness_repo
+            .get()?
+            .repository_file(&repository.name, file)
+    }
+
+    /// The values plugin `plugin` has for `repository`, by key, from the files of its settings; none when
     /// the server has no harness configuration repository.
     pub fn project_plugin_settings(
         &self,
@@ -47,16 +95,16 @@ impl App {
             .unwrap_or_default()
     }
 
-    /// The text of `file` in the settings of the project the run works in: its card's repository, or else the one the
-    /// run names (a chat in a repository).
-    pub fn run_project_file(&self, run_id: i64, file: &str) -> Option<String> {
+    /// The text of `file` in the settings of the repository the run works in: its card's, or else the one the run names
+    /// (a chat in a repository).
+    pub fn run_repository_file(&self, run_id: i64, file: &str) -> Option<String> {
         let run = self.store.run(run_id).ok()??;
         let repository = match run.card_id {
             Some(card) => self.store.card(card).ok()??.repository_id,
             None => run.repository_id?,
         };
         let repository = self.store.repository(repository).ok()??;
-        self.project_file(&repository, file)
+        self.repository_file(&repository, file)
     }
 
     /// The files of the `.moebius/` folder the default branch of `repository` still has, which are no longer read.
@@ -98,14 +146,15 @@ impl App {
             }
             let next = if self.harness_repo.get().is_some() {
                 format!(
-                    "the settings of a project are the files of repos/{name}/ in the harness configuration \
-                     repository, so move them there",
+                    "the settings of a repository are the files of repos/{name}/ in the harness configuration \
+                     repository, and the column scripts of its board are its project's, in projects/<project name>/, \
+                     so move them there",
                     name = repository.name,
                 )
             } else {
                 "the server has no [harness] section, so no project has settings; add one (a server with \
                  rules_file moves its rules there too) and then move the files to repos/<repository name>/ of the \
-                 harness configuration repository"
+                 harness configuration repository, and the column scripts to projects/<project name>/"
                     .to_string()
             };
             let message = format!(
@@ -178,7 +227,7 @@ mod tests {
             (".moebius/ready.luau", "error('read')"),
         ]);
         for file in ["rules.md", "checks", "test-first", "ready.luau"] {
-            assert_eq!(app.project_file(&repository, file), None, "{file}");
+            assert_eq!(app.repository_file(&repository, file), None, "{file}");
         }
         assert!(!app.test_first(&repository));
         assert_eq!(app.checks_script(&repository), None);
@@ -242,7 +291,7 @@ mod tests {
             .store
             .add_repository("demo", "/nowhere", "none", "main")
             .unwrap();
-        assert_eq!(app.project_file(&repository, "rules.md"), None);
+        assert_eq!(app.repository_file(&repository, "rules.md"), None);
         assert!(!app.test_first(&repository));
     }
 }

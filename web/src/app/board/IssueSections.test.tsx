@@ -17,6 +17,7 @@ afterEach(() => {
 const card = (id: number, extra: Partial<Card> = {}): Card => ({
   id,
   repository_id: 1,
+  project_id: 1,
   number: id,
   title: `Issue ${id}`,
   body: "",

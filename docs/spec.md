@@ -34,7 +34,7 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
   to a provider" on the Models page adds the upstream and logs in; a code login can be finished by pasting the code or
   the address the browser ended on.
 - The **MCP gateway**, skills and agents managed in the web app and kept in the harness configuration repository.
-- The **default Kanban** (section 6), with Luau scripts behind the columns and project overrides in the settings of the harness configuration repository (`repos/<repository name>/`).
+- The **default Kanban** (section 6), with Luau scripts behind the columns and project overrides in the settings of the harness configuration repository (`projects/<project name>/`).
 - **Rules** checked on every tool call: fixed patterns and the teacher model; nothing waits for a person.
 - **Judgements** recorded at every decision point, in full, with export of a training set.
 - **Localizing** the files of a card before its code run, as a decision point the decision model can learn (section 6).
@@ -174,9 +174,11 @@ steer, stop) go through the same record.
 - The **harness configuration** is a git repository the server clones. It holds `agents/<name>.toml` (harness, model, thinking
   level, token budget, skills, MCP servers, extensions), `agents/<name>.md` (instructions), `skills/`, `rules.md` and
   `mcp.toml`. Changes made in the web app are commits to it; proposals are branches on it.
-- A project (a repository the server works on) has settings in the harness configuration repository, `repos/<repository
-  name>/`: it can add rules in `rules.md` and override columns with `<column>.luau`, and it has `review.md`,
-  `checks`, `test-first` and `localize`. A repository no longer keeps a `.moebius/` folder on its default branch: nothing
+- Settings are split by what they are about (ADR 0019). A project has settings in the harness configuration repository,
+  `projects/<project name>/`: its board's columns can be overridden with `<column>.luau`, so two projects that share a
+  repository can work differently. A repository has settings there too, `repos/<repository name>/`, the same in every
+  project: it can add rules in `rules.md`, and it has `review.md`, `checks`, `test-first` and `localize`. The column
+  scripts that a repository's settings had before projects are moved to its home project. A repository no longer keeps a `.moebius/` folder on its default branch: nothing
   is read from there, and the server says once that a default branch still has one.
 - Default agents: Coder, Reviewer, Moebius, Grilling partner, Autoresearcher, Retro analyst.
 - A **chat** is an interactive run without a card: the person writes, the agent answers, and the chat can be continued,
@@ -204,7 +206,7 @@ unfounded findings (CR-Bench). Only blocking findings send the card back; judgem
 offered change. It is the default review because the two axes keep one from masking the other, and findings that must
 cite evidence cost the Coder fewer wasted rounds.
 
-A repository can work **test first** (a file `test-first` in its project's settings). The Coder then writes a test
+A repository can work **test first** (a file `test-first` in its settings). The Coder then writes a test
 that reproduces the issue and names it in the `REPRODUCE:` lines at the end of its summary, stored with the run, and `review.luau` lets the
 change on only when that test fails on the commit the change starts from (with the test's files added) and passes on
 the change, both run like the repository's checks; a change that cannot be tested says why there, and the Reviewer
@@ -250,9 +252,9 @@ failure anywhere starts the run without a hint (Agentless, AutoCodeRover).
   negative trial shows to be harmful, or that is not retrieved for 60 days, is retired. A person sees, edits and deletes
   lessons on the Retro page.
 - **Proposals for Moebius itself**: the Retro may also propose a change to `moebius.toml` (limits, budgets, windows, the
-  teacher) or to a repository's own rules and column scripts. These are not tried: each goes to the inbox at once as a
+  teacher) or to a repository's own rules and the column scripts of its home project. These are not tried: each goes to the inbox at once as a
   diff with the Retro's reason. Merging saves a `moebius.toml` change through the settings code, restarting the server
-  when a key needs it, and offers a change to a project's settings as a change of the harness configuration repository; dismissing changes nothing.
+  when a key needs it, and offers a change to a repository's or a project's settings as a change of the harness configuration repository; dismissing changes nothing.
 - **Autoresearch**: starts from a brief a person confirms; measures a baseline, then the Autoresearcher finds levers (code and
   profiles, its own history, papers and the web) and runs an experiment for each; every lever kept becomes its own change.
   Ends when the brief's budget (experiments or tokens) is spent or a person stops it.

@@ -13,6 +13,7 @@ const snapshot: Snapshot = {
         path: "/r",
         forge: "none",
         default_branch: "main",
+        home_project_id: 1,
         github: null,
         trusted: [],
       },
@@ -20,6 +21,7 @@ const snapshot: Snapshot = {
         {
           id: 7,
           repository_id: 1,
+          project_id: 1,
           number: 1,
           title: "t",
           body: "",

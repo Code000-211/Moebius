@@ -763,7 +763,7 @@ pub(crate) mod tests {
         assert!(documented(
             &reference,
             "PUT",
-            "/v1/repositories/1/scripts/Not started"
+            "/v1/projects/1/scripts/Not started"
         ));
         assert!(!documented(&reference, "PUT", "/v1/runs/1"));
         assert!(documented(

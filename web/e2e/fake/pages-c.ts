@@ -526,7 +526,7 @@ export function createPagesCFake(
   async function handle(request: IncomingMessage, response: ServerResponse, path: string) {
     const method = request.method ?? "GET";
     const rules = path === "/v1/rules" || path === "/v1/repositories/1/settings/rules.md";
-    const script = /^\/v1\/repositories\/1\/scripts\/(.+)$/.exec(path);
+    const script = /^\/v1\/projects\/1\/scripts\/(.+)$/.exec(path);
     const one =
       /^\/v1\/(automations|lessons|research|takeovers(?=\/\d+\/release$))\/(\d+)(?:\/(\w+))?$/.exec(
         path,
@@ -590,8 +590,8 @@ export function createPagesCFake(
         const own = scripts.get(column.toLowerCase());
         return {
           column,
-          path: `repos/demo/${file}.luau`,
-          source: own === undefined ? "built-in" : "repository",
+          path: `projects/demo/${file}.luau`,
+          source: own === undefined ? "built-in" : "project",
           text: own ?? `-- The ${column} column\nmoebius.wait("nothing to do in ${column}")\n`,
         };
       };
@@ -622,14 +622,14 @@ export function createPagesCFake(
           );
         }
         scripts.set(column.toLowerCase(), text.endsWith("\n") ? text : `${text}\n`);
-        broadcast({ kind: "script_changed", data: { repository: 1, column } });
+        broadcast({ kind: "script_changed", data: { project: 1, column } });
         return reply(response, 200, view());
       }
       if (method === "DELETE") {
         if (!scripts.delete(column.toLowerCase())) {
           return reply(response, 404, `a script of its own for the ${column} column in demo`);
         }
-        broadcast({ kind: "script_changed", data: { repository: 1, column } });
+        broadcast({ kind: "script_changed", data: { project: 1, column } });
         return reply(response, 200, view());
       }
     }

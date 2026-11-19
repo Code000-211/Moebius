@@ -89,7 +89,7 @@ pub(super) type TestKey = (i64, String, String, Option<Vec<String>>);
 impl App {
     /// Whether the repository works test first: its project has a `test-first` file.
     pub fn test_first(&self, repository: &Repository) -> bool {
-        self.project_file(repository, TEST_FIRST).is_some()
+        self.repository_file(repository, TEST_FIRST).is_some()
     }
 
     /// What the card's open change says of its reproduction test: what the latest succeeded `code` run of the card

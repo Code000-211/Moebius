@@ -12,7 +12,7 @@ use crate::store::Proposal;
 
 /// A person merges the proposal: a `settings` one is saved to `moebius.toml` as `PUT /v1/settings` saves a change, a
 /// `repository` one is committed on the branch `moebius/proposal-<id>` of the harness configuration repository's
-/// clone, in the files of `repos/<name>/`, and offered there as a change for a person to merge. What fails changes nothing and records nothing.
+/// clone, in the files of `repos/<name>/` and `projects/<home project>/`, and offered there as a change for a person to merge. What fails changes nothing and records nothing.
 pub fn merge(app: &App, by: &Actor, live: &Live, proposal: &Proposal, reason: &str) -> Result<()> {
     match proposal.kind.as_str() {
         SETTINGS => {
@@ -36,8 +36,8 @@ pub fn dismiss(app: &App, by: &Actor, proposal: &Proposal, reason: &str) -> Resu
     record(app, by, proposal, "dismiss", reason)
 }
 
-/// Commits the proposal's files, the project's files of `repos/<name>/`, on a new branch of the harness configuration
-/// repository and offers the branch as a change there (see `HarnessRepo::offer_files`).
+/// Commits the proposal's files, of `repos/<name>/` and `projects/<home project>/`, on a new branch of the harness
+/// configuration repository and offers the branch as a change there (see `HarnessRepo::offer_files`).
 fn offer(app: &App, proposal: &Proposal) -> Result<()> {
     let id = proposal
         .repository

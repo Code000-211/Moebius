@@ -23,6 +23,7 @@ interface Repository {
   project: string | null;
   /** The project whose own files this repository holds. */
   files_of?: number | null;
+  home_project_id: number;
 }
 
 /** A project as `GET /v1/projects` answers it. */
@@ -698,7 +699,6 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
       exists: own.has(file),
       text: own.get(file) ?? "",
     })),
-    scripts: [],
     leftover: id === 1 ? [".moebius/old.luau"] : [],
   });
 
@@ -764,6 +764,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         github,
         trusted: list,
         project,
+        home_project_id: nextRepository - 1,
       },
     };
   };
@@ -803,6 +804,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         path === "/v1/harness/setup" ||
         path === "/v1/repositories" ||
         path === "/v1/projects" ||
+        /^\/v1\/projects\/\d+\/scripts$/.test(path) ||
         /^\/v1\/webhooks\/[a-z]+\/secret$/.test(path) ||
         /^\/v1\/repositories\/\d+(\/(tree|files|search|settings|plugin-settings)(\/.*)?)?$/.test(
           path,
@@ -921,6 +923,28 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
       }
 
       if (path === "/v1/projects" && method === "GET") return ok(response, projects());
+      const scripts = /^\/v1\/projects\/(\d+)\/scripts$/.exec(path);
+      if (scripts && method === "GET") {
+        // The home project of the first repository has a Not started script of its own; the others have none.
+        const own = scripts[1] === "1";
+        const columns: Array<[string, string]> = [
+          ["Backlog", "backlog"],
+          ["Not started", "ready"],
+          ["In progress", "code"],
+          ["In review", "review"],
+          ["Ready to merge", "merge"],
+          ["Done", "done"],
+        ];
+        return ok(
+          response,
+          columns.map(([column, file]) => ({
+            column,
+            path: `projects/demo/${file}.luau`,
+            source: own && file === "ready" ? "project" : "built-in",
+            text: `-- The ${column} column\n`,
+          })),
+        );
+      }
       if (path === "/v1/projects" && method === "POST") {
         const name = typeof body.name === "string" ? body.name : "";
         const key = typeof body.key === "string" ? body.key : "";
@@ -940,6 +964,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
           path: `/srv/moebius/projects/${key}`,
           forge: "none",
           default_branch: "main",
+          home_project_id: id,
           github: null,
           trusted: [],
           project: null,

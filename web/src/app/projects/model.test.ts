@@ -23,6 +23,7 @@ const repository = (extra: Partial<Repository>): Repository => ({
   path: "/r",
   forge: "none",
   default_branch: "main",
+  home_project_id: 1,
   github: null,
   trusted: [],
   ...extra,

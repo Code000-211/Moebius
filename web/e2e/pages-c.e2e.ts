@@ -873,11 +873,11 @@ describe("the script editor", () => {
     await page.getByRole("button", { name: "Revert changes" }).waitFor();
     await save.click();
     await status("Saved as a commit on the default branch.").waitFor();
-    await page.getByText("this repository's own").waitFor();
+    await page.getByText("this project's own").waitFor();
     // It stays after a reload.
     await page.reload();
     await page.getByText("-- my own").waitFor();
-    await page.getByText("this repository's own").waitFor();
+    await page.getByText("this project's own").waitFor();
 
     await page.getByRole("button", { name: "Use the built-in script" }).click();
     await page.getByText("Use the built-in script instead?").waitFor();
@@ -933,7 +933,7 @@ describe("the script editor", () => {
     await type(editor, "local a = 1\n");
     fake().refuseNext(
       "PUT",
-      "/v1/repositories/1/scripts/Not started",
+      "/v1/projects/1/scripts/Not started",
       409,
       "the push was refused: not a fast-forward",
     );

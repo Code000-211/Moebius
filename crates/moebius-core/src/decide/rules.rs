@@ -227,7 +227,7 @@ pub fn view(app: &App, file: Option<&Path>, harness: bool) -> crate::app::Result
         .iter()
         .map(|repository| {
             let text = app
-                .project_file(repository, "rules.md")
+                .repository_file(repository, "rules.md")
                 .unwrap_or_default()
                 .trim_end()
                 .to_string();

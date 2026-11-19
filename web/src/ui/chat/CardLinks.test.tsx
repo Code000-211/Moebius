@@ -99,6 +99,7 @@ const RUN = {
   ended_at: null,
   summary: null,
   repository_id: null,
+  project_id: 1,
   harness_repository: false,
   origin: "card",
   runner: null,

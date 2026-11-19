@@ -134,7 +134,7 @@ function RepositoryView({ repository }: { repository: Repository }) {
         </Box>
         <PluginSettings repository={repository.id} />
         <FilesPanel repository={repository.id} />
-        <SettingsPanel repository={repository.id} />
+        <SettingsPanel repository={repository.id} project={repository.home_project_id} />
       </div>
     </>
   );

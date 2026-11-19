@@ -27,6 +27,7 @@ import {
 const card = (id: number, number: number, extra: Partial<Card> = {}): Card => ({
   id,
   repository_id: 1,
+  project_id: 1,
   number,
   title: `Card ${number}`,
   body: "",
@@ -74,6 +75,7 @@ const board = (id: number, name: string, cards: Card[], changes: Change[]): Boar
     path: "/r",
     forge: "none",
     default_branch: "main",
+    home_project_id: 1,
     github: null,
     trusted: [],
   },

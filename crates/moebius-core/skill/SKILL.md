@@ -38,7 +38,7 @@ back here for the exact page it names:
 | The person wants | Read | Where it goes | Try it |
 |---|---|---|---|
 | To know what is going on, what is stuck, what is missing, what it costs | `reference/cli.md`, `reference/desktop-api.md` | Nothing: you answer | Read it from the server, and say where each figure comes from |
-| A column to behave differently in one repository | `guide/column-scripts.md`, `reference/column-scripts.md` | `"$MOEBIUS" api PUT /v1/repositories/<id>/scripts/<Column>` (the repository's settings) | `"$MOEBIUS" check-script <column>.luau --column <Column>` on a scratch file first |
+| A column to behave differently in one project | `guide/column-scripts.md`, `reference/column-scripts.md` | `"$MOEBIUS" api PUT /v1/projects/<id>/scripts/<Column>` (the project's settings) | `"$MOEBIUS" check-script <column>.luau --column <Column>` on a scratch file first |
 | A Kanban of their own | `guide/kanban.md` | The repository's settings, one `PUT` for each script | `check-script` for every script |
 | Something forbidden to every run, or to one repository's runs | `guide/rules.md`, `reference/rules.md` | The server's rules: `"$MOEBIUS" rules save <file>`, or `rules.md` in a harness chat. One repository's: `"$MOEBIUS" api PUT /v1/repositories/<id>/settings/rules.md` | Read them back with `"$MOEBIUS" rules`; the rules parser's refusal names what is wrong |
 | An agent set up or changed | `guide/agents.md`, `reference/harness-configuration.md` | `"$MOEBIUS" agent save <name> ...`, or `agents/<name>.toml` and `.md` in a harness chat | `"$MOEBIUS" agent show <name>` |
