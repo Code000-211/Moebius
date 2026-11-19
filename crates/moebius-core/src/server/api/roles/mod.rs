@@ -111,6 +111,7 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("PATCH", "/v1/cycles/{id}", MEMBER_PERSON),
     ("DELETE", "/v1/cycles/{id}", MEMBER_PERSON),
     ("POST", "/v1/cycles/{id}/close", MEMBER_PERSON),
+    ("POST", "/v1/projects/{id}/import/jira", OWNER_PERSON),
     ("GET", "/v1/cards/{id}/cycle", VIEWER),
     ("PUT", "/v1/cards/{id}/cycle", MEMBER_PERSON),
     ("GET", "/v1/milestones", VIEWER),

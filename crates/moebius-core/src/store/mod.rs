@@ -13,7 +13,7 @@
 //! `notices` (what concerns a person, and the cards they follow), `planning` (a card's priority, due date and estimate, read
 //! from its labels), `access` (their access tokens and the sessions of browsers, kept as hashes), `favourites` (the places a
 //! person pinned and opened lately), `kinds` (kinds of issues, their fields and the values cards hold), `projects` (the
-//! projects, their keys and repositories, and the migration that makes one for each repository) and `cycles` (a project's time boxes) and `milestones` (goals
+//! projects, their keys and repositories, and the migration that makes one for each repository) and `cycles` (a project's time boxes) and `imports` (what an import from another tracker made, so that it can be run again) and `milestones` (goals
 //! of the organisation that hold cards of any projects) and `wiki_search` (the wiki's search index, derived from its
 //! pages) and `views` (saved filters with a layout, for a person or for everyone).
 //! Every public type is re-exported here, as `store::Card` and the like.
@@ -33,6 +33,7 @@ mod events;
 mod favourites;
 mod found;
 mod grillings;
+mod imports;
 mod inbox;
 mod intake;
 mod issues;
@@ -82,6 +83,7 @@ pub use events::Event;
 pub use favourites::{PLACE_KINDS, Place, RECENT_LIMIT};
 pub use found::Found;
 pub use grillings::{Grilling, GrillingIssue};
+pub use imports::Imported;
 pub use inbox::{InboxItem, WORKFLOW_APPROVAL};
 pub use intake::IntakeRequest;
 pub use issues::Comment;
@@ -509,6 +511,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     card_repositories::SCHEMA,
     views::SCHEMA,
     paused::SCHEMA,
+    imports::SCHEMA,
 ];
 
 pub fn now() -> i64 {
