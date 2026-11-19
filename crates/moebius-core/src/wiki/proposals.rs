@@ -144,6 +144,12 @@ impl Wiki {
                 )));
             }
             let _ = git(&self.path, &["branch", "-D", "--quiet", &branch]);
+            // The pages changed, so the links between them are made again before anyone is told.
+            if let Err(e) = self.reindex(app) {
+                app.bus.publish(Event::WikiError {
+                    message: format!("cannot index the wiki's links: {e}"),
+                });
+            }
             kept::head(&self.path)
         };
         app.store.resolve_inbox_item(item.id)?;
@@ -392,6 +398,27 @@ mod tests {
         assert_eq!(seen["diff"], "");
         assert_eq!(seen["proposal"], UNQUOTED);
         assert!(!format!("{seen:?}").contains("launch"));
+    }
+
+    #[test]
+    fn a_merged_proposal_makes_its_links_count() {
+        let dir = tempfile::tempdir().unwrap();
+        let (app, wiki, _origin) = opened(dir.path());
+        let lea = person(&app);
+        let item = wiki
+            .propose(&app, &agent(), "Runbook", "See [[Setup]].", None)
+            .unwrap();
+        assert!(
+            wiki.links(&app, &lea, "Setup")
+                .unwrap()
+                .backlinks
+                .pages
+                .is_empty()
+        );
+        wiki.merge_proposal(&app, &lea, &item, "good").unwrap();
+        let backlinks = wiki.links(&app, &lea, "Setup").unwrap().backlinks.pages;
+        assert_eq!(backlinks.len(), 1);
+        assert_eq!(backlinks[0].path, "Runbook");
     }
 
     #[test]

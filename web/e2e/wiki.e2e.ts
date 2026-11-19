@@ -181,4 +181,64 @@ describe("the Wiki page", () => {
     await context.close();
     await ownerContext.close();
   });
+  it("links pages, lists backlinks, completes while typing and keeps a link through a rename", async () => {
+    server = await startServer();
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    page.setDefaultTimeout(8000);
+    await page.goto(server.loginUrl);
+    await page.getByRole("navigation", { name: "Pages" }).waitFor();
+    await page.goto(`${server.url}/wiki`);
+    await page.getByText("No page yet", { exact: true }).first().waitFor();
+
+    const make = async (name: string, text: string) => {
+      await page.getByRole("button", { name: "New page", exact: true }).first().click();
+      const form = page.getByRole("form", { name: "New page" });
+      await form.getByLabel("Name").fill(name);
+      await form.getByLabel("Text").fill(text);
+      await form.getByRole("button", { name: "Save" }).click();
+      await form.waitFor({ state: "detached" });
+    };
+    await make("Team/On call", "# On call\n\nWho answers.");
+
+    // Typing [[ offers the pages; Enter writes the link.
+    await page.getByRole("button", { name: "New page", exact: true }).first().click();
+    const form = page.getByRole("form", { name: "New page" });
+    await form.getByLabel("Name").fill("Handbook");
+    await form.getByLabel("Text").fill("Start with [[On");
+    const choices = form.getByRole("listbox", { name: "Pages" });
+    await choices.getByRole("option", { name: /On call/ }).waitFor();
+    await form.getByLabel("Text").press("Enter");
+    await form.getByRole("region", { name: "Preview" }).getByText("Start with").waitFor();
+    expect(await form.getByLabel("Text").inputValue()).toBe("Start with [[On call]]");
+    await form.getByRole("button", { name: "Save" }).click();
+    await form.waitFor({ state: "detached" });
+
+    // The link leads to the page, which lists the page that links to it.
+    const handbook = page.getByRole("article", { name: "Handbook" });
+    await handbook.getByRole("link", { name: "On call" }).click();
+    const onCall = page.getByRole("article", { name: "On call" });
+    await onCall.getByText("Who answers.").waitFor();
+    await page
+      .getByRole("list", { name: "Linked from" })
+      .getByRole("link", { name: "Handbook" })
+      .waitFor();
+
+    // A rename keeps the link working.
+    await onCall.getByRole("button", { name: "Move" }).click();
+    const dialog = page.getByRole("dialog", { name: "Move the page" });
+    await dialog.getByLabel("Path").fill("Team/Rota");
+    await dialog.getByRole("button", { name: "Move" }).click();
+    await page.waitForURL(/page=Team%2FRota/);
+    await page
+      .getByRole("list", { name: "Linked from" })
+      .getByRole("link", { name: "Handbook" })
+      .click();
+    await page
+      .getByRole("article", { name: "Handbook" })
+      .getByRole("link", { name: "Rota" })
+      .click();
+    await page.getByRole("article", { name: "Rota" }).getByText("Who answers.").waitFor();
+    await context.close();
+  });
 });

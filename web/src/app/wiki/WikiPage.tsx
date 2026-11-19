@@ -14,7 +14,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { listProjects } from "../../api/calls/projects";
-import { deleteWikiPage, moveWikiPage, wikiPage, wikiPages } from "../../api/calls/wiki";
+import { deleteWikiPage, moveWikiPage, wikiLinks, wikiPage, wikiPages } from "../../api/calls/wiki";
 import { sayError } from "../../api/errorText";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
@@ -41,9 +41,11 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { PageProperties, Property } from "../../ui/page/Properties";
 import { SkeletonCard, SkeletonList } from "../../ui/page/Skeleton";
 import { useRole } from "../shell/session";
+import { linkPages } from "./links";
 import { buildTree, folderOf, headings, PROJECTS, pathProblem } from "./model";
 import { PageEditor } from "./PageEditor";
 import { PageHistory } from "./PageHistory";
+import { Backlinks } from "./WikiBacklinks";
 import { WikiTree } from "./WikiTree";
 
 export function WikiPage() {
@@ -221,6 +223,8 @@ function ChosenPage({
     queryFn: () => wikiPage(path, at ?? undefined),
     retry: false,
   });
+  // What leads to and from the page is as it is now; an older version is drawn as it was written.
+  const links = useQuery({ queryKey: keys.wikiLinks(path), queryFn: () => wikiLinks(path) });
   if (page.isPending) return <SkeletonCard lines={6} />;
   if (page.isError) {
     return (
@@ -265,6 +269,7 @@ function ChosenPage({
         <Property name="Path">
           <span className="font-mono text-sm">{shown.path}.md</span>
         </Property>
+        <Backlinks links={links.data} />
       </PageProperties>
 
       <header className="flex flex-wrap items-start justify-between gap-3">
@@ -336,7 +341,12 @@ function ChosenPage({
             {shown.text.trim() === "" ? (
               <p className="m-0 text-base text-secondary">This page is empty.</p>
             ) : (
-              <Markdown content={shown.text} className="max-w-prose" />
+              <Markdown
+                content={
+                  at === null ? linkPages(shown.text, links.data?.links.pages ?? []) : shown.text
+                }
+                className="max-w-prose"
+              />
             )}
           </div>
         </div>

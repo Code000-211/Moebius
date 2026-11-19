@@ -63,6 +63,19 @@ function refuse(response: ServerResponse, status: number, message: string): true
 
 const nameOf = (path: string) => path.split("/").at(-1) ?? path;
 
+/** The pages a text links to by `[[name]]` or `[[path|label]]`, as the server resolves them: by path, else by name. */
+function pageLinks(text: string, all: string[]): Array<{ link: string; path: string | null }> {
+  return [...text.matchAll(/\[\[([^[\]|\n]+)(?:\|[^[\]\n]*)?\]\]/g)].map((found) => {
+    const link = (found[1] ?? "").trim();
+    const wanted = link.toLowerCase();
+    const path =
+      all.find((each) => each.toLowerCase() === wanted) ??
+      all.find((each) => nameOf(each).toLowerCase() === wanted) ??
+      null;
+    return { link, path };
+  });
+}
+
 export function createWikiFake(send: Send, pagesA: PagesAFake): WikiFake {
   /** Every page that ever was, by its path now, with its versions oldest first. */
   const pages = new Map<string, Version[]>();
@@ -198,6 +211,23 @@ export function createWikiFake(send: Send, pagesA: PagesAFake): WikiFake {
         answer(response, 200, { commit: made.commit });
         return true;
       }
+      const linksRoute = /^\/v1\/wiki\/links\/(.+)$/.exec(path);
+      if (linksRoute && method === "GET") {
+        const page = decoded(linksRoute[1] ?? "");
+        const all = [...pages.keys()].filter((each) => current(each)).sort();
+        const links = pageLinks(current(page)?.text ?? "", all);
+        const from = all.filter((each) =>
+          pageLinks(current(each)?.text ?? "", all).some((link) => link.path === page),
+        );
+        answer(response, 200, {
+          links: { pages: links, cards: [] },
+          backlinks: {
+            pages: from.map((each) => ({ path: each, name: nameOf(each) })),
+            cards: [],
+          },
+        });
+        return true;
+      }
       if (path === "/v1/wiki/refresh" && method === "POST") {
         answer(response, 200, null);
         return true;
@@ -224,6 +254,32 @@ export function createWikiFake(send: Send, pagesA: PagesAFake): WikiFake {
           text: moved.text,
         };
         record(body.to, made);
+        // The links to the page in the other pages follow it, by path or by name.
+        const all = [...pages.keys()].filter((each) => current(each)).sort();
+        for (const other of all.filter((each) => each !== body.to)) {
+          const before = current(other);
+          if (!before?.text) continue;
+          const text = before.text.replace(
+            /\[\[([^[\]|\n]+)(\|[^[\]\n]*)?\]\]/g,
+            (whole: string, link: string, label?: string) => {
+              const wanted = link.trim().toLowerCase();
+              const leads =
+                wanted === body.from.toLowerCase() || wanted === nameOf(body.from).toLowerCase();
+              if (!leads) return whole;
+              return `[[${link.includes("/") ? body.to : nameOf(body.to)}${label ?? ""}]]`;
+            },
+          );
+          if (text === before.text) continue;
+          record(other, {
+            commit: before.commit,
+            author: author.name,
+            handle: author.handle,
+            at: clock,
+            message: `Relink ${other}`,
+            path: other,
+            text,
+          });
+        }
         answer(response, 200, view(body.to, made));
         return true;
       }

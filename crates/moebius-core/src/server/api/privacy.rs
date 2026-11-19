@@ -874,15 +874,17 @@ mod tests {
     /// The routes with a parameter that the check does not guard, each because what it names belongs to no project:
     /// a person, a token, a pin, the harness configuration, a package, a plugin, a setting, a port (filtered by its
     /// run), a Retro's day (whose view is filtered), a takeover of the decision model, a replay (listed by its run) or
-    /// a workflow, by name, a kind of issues or a template of the organisation, a person's own notice, a wiki page (a private project's pages are hidden by the wiki's
-    /// own routes, issue #374); or that checks what it names in its own handler (a card by its key, a milestone of the
+    /// a workflow, by name, a kind of issues or a template of the organisation, a person's own notice, a wiki page, its links or the pages that link to a card (a private project's pages and cards are
+    /// left out by the wiki's own handlers); or that checks what it names in its own handler (a card by its key, a milestone of the
     /// organisation, whose cards are counted and listed with `App::may_see_project`).
-    const UNGUARDED: [&str; 27] = [
+    const UNGUARDED: [&str; 30] = [
         "/v1/cards/by-key/",
         "/v1/templates/",
         "/v1/kinds/",
         "/v1/wiki/pages/",
         "/v1/wiki/history/",
+        "/v1/wiki/links/",
+        "/v1/wiki/cards/",
         "/v1/notices/",
         "/v1/milestones/",
         // A cycle belongs to a project; `App::cycle` answers not found for one the asker may not see.

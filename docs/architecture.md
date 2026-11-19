@@ -619,6 +619,7 @@ At the top:
 | `store/outgoing.rs` | The outgoing webhooks (URL, event kinds, projects named) and the flag that makes a repository private. |
 | `store/wiki_search.rs` | The wiki's search index (SQLite FTS5, a title counting far more than the text): derived data, replaced whole when the wiki's head moves. |
 | `store/cycles.rs` | The cycles (project, name, start, end, closed) and which cards each holds, with the sums a cycle's page needs. |
+| `store/wiki_links.rs` | The links between the wiki's pages and to cards, derived from the files and replaced as a whole when the wiki changes, and the cards whose text may link to a page. |
 | `store/milestones.rs` | The milestones (name, target date, description) and which cards each holds, of any projects. |
 | `store/intake.rs` | A project's switch for intake and the requests made to it, with their draft issue, status, card and reason. |
 | `store/projects.rs` | The projects (name, key, repositories in order), a repository's home project and a card's project, how a key is made from a name, the migration that makes one project for each repository and puts every card on it, whether a project is private with its members, and the project a judgement belongs to. |
@@ -905,6 +906,7 @@ At the top:
 | `wiki/prompt.rs` | The pages a card's issue links to with `[[Page name]]`, as the section of a run's prompt that holds them. |
 | `wiki/search.rs` | Searching the wiki: the index made again from the pages when the head moved, matches ranked with the title first, and the pages of a project the asker may not see left out. |
 | `wiki/sight.rs` | Which pages a person or a run sees: a private project's pages are its members', and a run's prompt holds them only for a card of that project. |
+| `wiki/links.rs` | The links of the wiki: `[[Page name]]`, card names and `#12` found in a text, resolved to pages, the links between pages made again from the files on every change, backlinks, and the links of a moved page rewritten. |
 | `wiki/edits.rs` | A person's edits: a page written, moved or deleted, each a commit by the person after following `origin`, pushed or undone. |
 
 Outside `src/`: `kanban/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension

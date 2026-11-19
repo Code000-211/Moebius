@@ -105,6 +105,10 @@ function server(answers: Record<string, { status: number; body: unknown }> = {})
           text: async () => JSON.stringify({ signed_in: true, person: PEOPLE[0] }),
         };
       }
+      // The wiki pages that link to the card are read too: none do here.
+      if (method === "GET" && url.startsWith("/v1/wiki/cards/")) {
+        return { ok: true, status: 200, text: async () => "[]" };
+      }
       if (method === "GET" && url.endsWith("/followers")) {
         return { ok: true, status: 200, text: async () => "[]" };
       }

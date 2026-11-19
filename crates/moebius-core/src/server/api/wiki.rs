@@ -8,6 +8,8 @@
 //! - `POST /v1/wiki/moves` `{from, to}`: moves or renames a page.
 //! - `GET /v1/wiki/history/{*path}`: the commits that changed a page, newest first.
 //! - `GET /v1/wiki/search?q=&project=&limit=`: the pages found by words of their title and text.
+//! - `GET /v1/wiki/links/{*path}`: what a page links to and what links to it, pages and cards.
+//! - `GET /v1/wiki/cards/{key}`: the pages that link to a card.
 //! - `POST /v1/wiki/refresh`: follows `origin` now, rather than at the server's next refresh.
 //! - `POST /v1/wiki/proposals` `{path, text, message?}`: an agent's edit, a branch that waits in the inbox.
 //! - `POST /v1/wiki/proposals/{id}/merge` and `/dismiss` `{reason?}`: a person's decision about it.
@@ -20,7 +22,7 @@ use serde::Deserialize;
 use super::{ApiError, ApiState, blocking};
 use crate::app::{App, AppError};
 use crate::decide::Actor;
-use crate::wiki::{Author, PageInfo, PageView, SearchHit, Seen, Version};
+use crate::wiki::{Author, PageInfo, PageLinks, PageView, SearchHit, Seen, Version};
 
 /// Refuses with `404` the page `path` of a private project that `by` does not see, as if there were no such page.
 fn visible(app: &App, by: &Actor, path: &str) -> crate::app::Result<()> {
@@ -42,6 +44,8 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/wiki/moves", post(move_page))
         .route("/v1/wiki/history/{*path}", get(history))
         .route("/v1/wiki/search", get(search))
+        .route("/v1/wiki/links/{*path}", get(links))
+        .route("/v1/wiki/cards/{key}", get(card_pages))
         .route("/v1/wiki/refresh", post(refresh))
         .route("/v1/wiki/proposals", post(propose))
         .route("/v1/wiki/proposals/{id}/merge", post(merge_proposal))
@@ -245,6 +249,25 @@ async fn search(
     .await
 }
 
+async fn links(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(path): UrlPath<String>,
+) -> Result<Json<PageLinks>, ApiError> {
+    blocking(&state.app, move |app| app.wiki()?.links(app, &by, &path)).await
+}
+
+async fn card_pages(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(key): UrlPath<String>,
+) -> Result<Json<Vec<PageInfo>>, ApiError> {
+    blocking(&state.app, move |app| {
+        app.wiki()?.pages_linking_card(app, &by, &key)
+    })
+    .await
+}
+
 async fn refresh(State(state): State<ApiState>) -> Result<Json<()>, ApiError> {
     blocking(&state.app, |app| app.wiki()?.refresh(app)).await
 }
@@ -290,6 +313,96 @@ mod tests {
         let (status, body) = call("GET", &addr, &token, "/v1/wiki/pages", None).await;
         assert_eq!(status, Status::CONFLICT);
         assert!(body.to_string().contains("[wiki]"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn links_and_backlinks_are_read_and_a_rename_keeps_them() {
+        let (dir, state, addr) = start().await;
+        let origin = bare_origin(dir.path());
+        let wiki = Wiki::open(
+            &state.app,
+            &origin.to_string_lossy(),
+            &dir.path().join("data/wiki"),
+        )
+        .unwrap();
+        state.app.set_wiki(Arc::new(wiki));
+        let lea = state
+            .app
+            .store
+            .add_person("lea", "Lea Roth", Role::Member)
+            .unwrap();
+        let token = format!("{}{:064}", super::super::TOKEN_PREFIX, 4);
+        state
+            .app
+            .store
+            .add_access_token(lea.id, "test", &token)
+            .unwrap();
+        let repository = state
+            .app
+            .store
+            .add_repository("web", "/srv/web", "none", "main")
+            .unwrap();
+        state
+            .app
+            .store
+            .add_card(repository.id, "Fix it", "See [[Runbook]]", "lea", "Backlog")
+            .unwrap();
+
+        for (path, text) in [
+            ("Runbook", "Steps\n"),
+            ("Index", "Read [[Runbook]] for WEB-1\n"),
+        ] {
+            let (status, _) = call(
+                "PUT",
+                &addr,
+                &token,
+                &format!("/v1/wiki/pages/{path}"),
+                Some(json!({ "text": text })),
+            )
+            .await;
+            assert_eq!(status, Status::OK);
+        }
+        let (status, links) = call("GET", &addr, &token, "/v1/wiki/links/Runbook", None).await;
+        assert_eq!(status, Status::OK, "{links}");
+        assert_eq!(
+            links["backlinks"],
+            json!({
+                "pages": [{"path": "Index", "name": "Index"}],
+                "cards": [{"key": "WEB-1", "title": "Fix it"}]
+            })
+        );
+        let (_, index) = call("GET", &addr, &token, "/v1/wiki/links/Index", None).await;
+        assert_eq!(
+            index["links"],
+            json!({
+                "pages": [{"link": "Runbook", "path": "Runbook"}],
+                "cards": [{"key": "WEB-1", "title": "Fix it"}]
+            })
+        );
+        let (status, pages) = call("GET", &addr, &token, "/v1/wiki/cards/WEB-1", None).await;
+        assert_eq!(status, Status::OK);
+        assert_eq!(pages, json!([{"path": "Index", "name": "Index"}]));
+        let (status, _) = call("GET", &addr, &token, "/v1/wiki/cards/WEB-9", None).await;
+        assert_eq!(status, Status::NOT_FOUND);
+        let (status, _) = call("GET", &addr, &token, "/v1/wiki/cards/web", None).await;
+        assert_eq!(status, Status::UNPROCESSABLE_ENTITY);
+
+        let (status, _) = call(
+            "POST",
+            &addr,
+            &token,
+            "/v1/wiki/moves",
+            Some(json!({"from": "Runbook", "to": "Ops/Handbook"})),
+        )
+        .await;
+        assert_eq!(status, Status::OK);
+        let (_, index) = call("GET", &addr, &token, "/v1/wiki/pages/Index", None).await;
+        assert_eq!(index["text"], "Read [[Handbook]] for WEB-1\n");
+        let (_, links) = call("GET", &addr, &token, "/v1/wiki/links/Ops/Handbook", None).await;
+        assert_eq!(
+            links["backlinks"]["pages"],
+            json!([{"path": "Index", "name": "Index"}])
+        );
     }
 
     #[tokio::test]
