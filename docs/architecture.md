@@ -570,6 +570,7 @@ At the top:
 | `store/workflows.rs` | Workflow runs and the runs of each node of them, with their value, input and output redacted before they are stored. |
 | `store/workflow_schedules.rs` | The minute each workflow on a `schedule` trigger last fired at, so one occurrence of its cron starts one run even when the server restarts in between. |
 | `store/outgoing.rs` | The outgoing webhooks (URL, event kinds, projects named) and the flag that makes a repository private. |
+| `store/wiki_search.rs` | The wiki's search index (SQLite FTS5, a title counting far more than the text): derived data, replaced whole when the wiki's head moves. |
 | `store/milestones.rs` | The milestones (name, target date, description) and which cards each holds, of any projects. |
 | `store/projects.rs` | The projects (name, key, repositories in order), a repository's home project and a card's project, how a key is made from a name, and the migration that makes one project for each repository and puts every card on it. |
 | `store/favourites.rs` | The places a person pinned, in their order, and the places they opened lately (the last 20), kept per person so they follow them to every browser. |
@@ -846,6 +847,7 @@ At the top:
 | `wiki/pages.rs` | Reading the wiki: the list of pages, a page as it is or as a commit of its history left it, and its history through renames and moves. |
 | `wiki/proposals.rs` | An agent's edit of a page: a branch of the clone with one commit that waits in the inbox as a `wiki_proposal` and reaches the pages, and `origin`, only when a person merges it. |
 | `wiki/prompt.rs` | The pages a card's issue links to with `[[Page name]]`, as the section of a run's prompt that holds them. |
+| `wiki/search.rs` | Searching the wiki: the index made again from the pages when the head moved, matches ranked with the title first, and the pages of a project the asker may not see left out. |
 | `wiki/edits.rs` | A person's edits: a page written, moved or deleted, each a commit by the person after following `origin`, pushed or undone. |
 
 Outside `src/`: `kanban/*.luau` holds the six built-in column scripts, `bridge/moebius-bridge.ts` the Pi extension

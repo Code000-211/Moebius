@@ -1,17 +1,18 @@
 /**
  * The command palette, opened with Ctrl+K (Cmd+K on a Mac) or the sidebar's Search entry. It lists, in this order: the
  * commands of what is in focus (a card open in the dock) with their keys, the places seen lately, and then what a
- * query searches by kind — cards, pages and places (the projects). A query keeps the commands of the focus while they
+ * query searches by kind — cards, the wiki's pages, pages and places (the projects). A query keeps the commands of the focus while they
  * match and finds the rest by name or by kind (`card`, `page`, `place`). Arrows, Enter and Escape are the primitives'
  * (`ui/components/Command.tsx`, from cmdk); closing hands the focus back to where it was, unless the command opened a
  * dialog that takes it. The three places the feature is named — the button, the dialog, the field — say Search.
  */
 
-import { FolderIcon, KanbanIcon } from "@phosphor-icons/react";
+import { BookOpenTextIcon, FolderIcon, KanbanIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { snapshot } from "../../api/calls/board";
+import { searchWiki } from "../../api/calls/wiki";
 import { keys } from "../../api/keys";
 import {
   Command,
@@ -33,6 +34,19 @@ import { useRole } from "./session";
 const GROUPS: readonly Group[] = ["", "Projects", "Plan", "Build", "Improve", "Setup"];
 /** Cards shown for a query: the list is for choosing, and a longer one is a reason to type more. */
 const CARDS_SHOWN = 8;
+/** Wiki pages shown for a query, and how long typing pauses before the wiki is searched. */
+const WIKI_SHOWN = 6;
+const WIKI_PAUSE_MS = 200;
+
+/** `value` as it was `ms` milliseconds ago, so a search waits for a person to pause. */
+function useDebounced<T>(value: T, ms: number): T {
+  const [later, setLater] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setLater(value), ms);
+    return () => clearTimeout(timer);
+  }, [value, ms]);
+  return later;
+}
 
 /** A key of a command, drawn as the small chip beside it. */
 function KeyHint({ children }: { children: string }) {
@@ -59,6 +73,16 @@ export function CommandBar({
   const [query, setQuery] = useState("");
   // Set by a command that opens a dialog: that dialog takes the focus, and handing it back here would steal it.
   const keepFocus = useRef(false);
+
+  // The wiki's pages found by the words typed, once typing pauses; a server with no wiki finds none.
+  const typed = useDebounced(query.trim(), WIKI_PAUSE_MS);
+  const found = useQuery({
+    queryKey: keys.wikiSearch(typed),
+    queryFn: () => searchWiki(typed, undefined, WIKI_SHOWN),
+    enabled: open && typed !== "",
+    retry: false,
+  });
+  const wikiHits = typed !== "" && Array.isArray(found.data) ? found.data : [];
 
   const boards = data.data?.boards ?? [];
   const recent = useMemo(() => (open ? readRecent() : []), [open]);
@@ -200,6 +224,23 @@ export function CommandBar({
                   <span className="truncate">{`${cardKey(card)} ${card.title}`}</span>
                   <span className="ml-auto shrink-0 text-xs text-muted">
                     {board.repository.name}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+          {wikiHits.length > 0 && (
+            <CommandGroup heading="Wiki">
+              {wikiHits.map((hit) => (
+                <CommandItem
+                  key={hit.path}
+                  value={`wiki ${hit.path}`}
+                  onSelect={() => go(`/wiki?page=${encodeURIComponent(hit.path)}`)}
+                >
+                  <BookOpenTextIcon className="size-5" weight="regular" />
+                  <span className="truncate">{hit.name}</span>
+                  <span className="ml-auto shrink-0 truncate text-xs text-muted">
+                    {hit.project ?? "Organisation"}
                   </span>
                 </CommandItem>
               ))}

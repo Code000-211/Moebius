@@ -7,6 +7,7 @@
 //! - `DELETE /v1/wiki/pages/{*path}`: deletes a page; its history stays.
 //! - `POST /v1/wiki/moves` `{from, to}`: moves or renames a page.
 //! - `GET /v1/wiki/history/{*path}`: the commits that changed a page, newest first.
+//! - `GET /v1/wiki/search?q=&project=&limit=`: the pages found by words of their title and text.
 //! - `POST /v1/wiki/refresh`: follows `origin` now, rather than at the server's next refresh.
 //! - `POST /v1/wiki/proposals` `{path, text, message?}`: an agent's edit, a branch that waits in the inbox.
 //! - `POST /v1/wiki/proposals/{id}/merge` and `/dismiss` `{reason?}`: a person's decision about it.
@@ -18,7 +19,7 @@ use serde::Deserialize;
 
 use super::{ApiError, ApiState, blocking};
 use crate::decide::Actor;
-use crate::wiki::{Author, PageInfo, PageView, Version};
+use crate::wiki::{Author, PageInfo, PageView, SearchHit, Version};
 
 /// The routes of the wiki.
 pub(super) fn routes() -> Router<ApiState> {
@@ -30,6 +31,7 @@ pub(super) fn routes() -> Router<ApiState> {
         )
         .route("/v1/wiki/moves", post(move_page))
         .route("/v1/wiki/history/{*path}", get(history))
+        .route("/v1/wiki/search", get(search))
         .route("/v1/wiki/refresh", post(refresh))
         .route("/v1/wiki/proposals", post(propose))
         .route("/v1/wiki/proposals/{id}/merge", post(merge_proposal))
@@ -183,6 +185,29 @@ async fn history(
     UrlPath(path): UrlPath<String>,
 ) -> Result<Json<Vec<Version>>, ApiError> {
     blocking(&state.app, move |app| app.wiki()?.history(&path)).await
+}
+
+/// The query of `GET /v1/wiki/search`.
+#[derive(Debug, Deserialize)]
+pub struct Search {
+    /// The words to find; every one must be in the page, the last may be a beginning.
+    #[serde(default)]
+    pub q: String,
+    /// A project's key, to search only its pages.
+    pub project: Option<String>,
+    pub limit: Option<usize>,
+}
+
+async fn search(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    Query(search): Query<Search>,
+) -> Result<Json<Vec<SearchHit>>, ApiError> {
+    blocking(&state.app, move |app| {
+        app.wiki()?
+            .search(app, &by, &search.q, search.project.as_deref(), search.limit)
+    })
+    .await
 }
 
 async fn refresh(State(state): State<ApiState>) -> Result<Json<()>, ApiError> {
@@ -454,5 +479,59 @@ mod tests {
         assert_eq!(status, Status::OK);
         let (_, page) = call("GET", &addr, &member, "/v1/wiki/pages/Setup", None).await;
         assert_eq!(page["text"], "# Setup\n");
+    }
+
+    #[tokio::test]
+    async fn the_wiki_is_searched_by_words_of_a_title_or_text() {
+        let (dir, state, addr) = start().await;
+        let origin = bare_origin(dir.path());
+        let wiki = Wiki::open(
+            &state.app,
+            &origin.to_string_lossy(),
+            &dir.path().join("data/wiki"),
+        )
+        .unwrap();
+        state.app.set_wiki(Arc::new(wiki));
+        let token = state.token.to_string();
+        state.app.store.add_project("Web", "WEB").unwrap();
+        for (path, text) in [
+            ("Runbook", "refunds refunds refunds refunds"),
+            ("Refunds", "money back"),
+            ("projects/WEB/Plans", "refunds for the shop"),
+        ] {
+            let (status, made) = call(
+                "PUT",
+                &addr,
+                &token,
+                &format!("/v1/wiki/pages/{}", path.replace(' ', "%20")),
+                Some(json!({"text": text})),
+            )
+            .await;
+            assert_eq!(status, Status::OK, "{made}");
+        }
+        let (status, found) = call("GET", &addr, &token, "/v1/wiki/search?q=refunds", None).await;
+        assert_eq!(status, Status::OK, "{found}");
+        let paths: Vec<&str> = found
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| h["path"].as_str().unwrap())
+            .collect();
+        assert_eq!(paths[0], "Refunds");
+        assert_eq!(paths.len(), 3);
+        assert_eq!(found[0]["name"], "Refunds");
+        let (_, web) = call(
+            "GET",
+            &addr,
+            &token,
+            "/v1/wiki/search?q=refunds&project=WEB",
+            None,
+        )
+        .await;
+        assert_eq!(web.as_array().unwrap().len(), 1);
+        assert_eq!(web[0]["project"], "WEB");
+        let (status, none) = call("GET", &addr, &token, "/v1/wiki/search", None).await;
+        assert_eq!(status, Status::OK);
+        assert_eq!(none, json!([]));
     }
 }

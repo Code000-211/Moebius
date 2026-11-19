@@ -38,6 +38,7 @@ export const keys = {
   wikiPages: ["wiki", "pages"] as const,
   wikiPage: (path: string, at: string | null) => ["wiki", "page", path, at] as const,
   wikiHistory: (path: string) => ["wiki", "history", path] as const,
+  wikiSearch: (query: string) => ["wiki", "search", query] as const,
   /** The milestones with their progress, and one with its cards; what changes a card or a milestone makes them stale. */
   milestones: ["milestones"] as const,
   milestone: (id: number) => ["milestones", id] as const,
