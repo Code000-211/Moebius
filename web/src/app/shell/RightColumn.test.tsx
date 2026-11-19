@@ -9,7 +9,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { PageProperties, PropertiesProvider } from "../../ui/page/Properties";
+import { PageProperties, PropertiesProvider, usePropertiesShown } from "../../ui/page/Properties";
 import { SheetSlotProvider } from "../../ui/page/SheetSlot";
 import { RightColumn } from "./RightColumn";
 
@@ -48,6 +48,11 @@ function Counter() {
   );
 }
 
+/** What a page that lays something beside the column reads: whether the column stands unfolded. */
+function Beside() {
+  return <output aria-label="Beside">{usePropertiesShown() ? "shown" : "slim"}</output>;
+}
+
 function mount(withProperties: boolean) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -61,6 +66,7 @@ function mount(withProperties: boolean) {
               </PageProperties>
             )}
             <RightColumn />
+            <Beside />
           </PropertiesProvider>
         </SheetSlotProvider>
       </MemoryRouter>
@@ -121,6 +127,18 @@ describe("the right column", () => {
     expect(agent()).toBeNull();
     expect(screen.getByRole("button", { name: "Pressed 1" })).toBeTruthy();
     expect(document.activeElement).toBe(ask());
+  });
+
+  it("tells the page whether it stands unfolded with the properties", () => {
+    mount(true);
+    const beside = () => screen.getByRole("status", { name: "Beside" }).textContent;
+    expect(beside()).toBe("shown");
+    fireEvent.click(screen.getByRole("button", { name: "Fold the properties" }));
+    expect(beside()).toBe("slim");
+    cleanup();
+    localStorage.clear();
+    mount(false);
+    expect(beside()).toBe("slim");
   });
 
   it("toggles the agent with Ctrl+J and closes it on Escape", () => {

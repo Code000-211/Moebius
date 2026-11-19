@@ -1,13 +1,12 @@
 // @vitest-environment jsdom
 /**
- * The issue tracker of the dock: each control sends its own request, the labels and blockers are changed one at a time,
- * a refusal is said under the control that asked, and the comments of the issue are read and written.
+ * The comments of the issue in the dock, read and written. Its properties are tested in `CardProperties.test.tsx`.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Board, Card } from "../../api/types/board";
-import { CommentsSection, TrackerSection } from "./IssueSections";
+import type { Card } from "../../api/types/board";
+import { CommentsSection } from "./IssueSections";
 
 afterEach(() => {
   cleanup();
@@ -39,22 +38,6 @@ const card = (id: number, extra: Partial<Card> = {}): Card => ({
   ...extra,
 });
 
-const board = (cards: Card[]): Board => ({
-  repository: {
-    id: 1,
-    name: "demo",
-    path: "/r",
-    forge: "none",
-    default_branch: "main",
-    github: null,
-    trusted: [],
-  },
-  cards,
-  round_limit: 5,
-  waiting: {},
-  changes: [],
-});
-
 /** The requests a server was sent, as method, path and body; it answers with `answer` for each path it has one for. */
 function server(answers: Record<string, { status: number; body: unknown }> = {}) {
   const sent: Array<[string, string, unknown]> = [];
@@ -79,115 +62,6 @@ function inClient(ui: React.ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
 }
-
-describe("where the issue stands", () => {
-  const tracker = (of: Card, others: Card[] = []) => {
-    const onOpen = vi.fn();
-    inClient(<TrackerSection board={board([of, ...others])} card={of} onOpen={onOpen} />);
-    return onOpen;
-  };
-
-  it("names the parent and the sub-issues, and opens them in the dock", () => {
-    const plan = card(1);
-    const step = card(2, { parent: 1 });
-    const done = card(3, { parent: 1, column: "Done", closed: true });
-    server();
-    const onOpen = tracker(step, [plan, done]);
-    fireEvent.click(screen.getByRole("button", { name: "#1 Issue 1" }));
-    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
-    cleanup();
-
-    const opened = tracker(plan, [step, done]);
-    expect(screen.getByText("1 of 2 sub-issues done")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "#2 Issue 2" }));
-    expect(opened).toHaveBeenCalledWith(expect.objectContaining({ id: 2 }));
-    expect(screen.getByText("Closed")).toBeTruthy();
-  });
-
-  it("claims, releases, closes and reopens", async () => {
-    const sent = server();
-    tracker(card(5));
-    fireEvent.click(screen.getByRole("button", { name: "Claim" }));
-    fireEvent.click(screen.getByRole("button", { name: "Close issue" }));
-    await waitFor(() => expect(sent).toHaveLength(2));
-    expect(sent.map(([method, url]) => `${method} ${url}`)).toEqual([
-      "POST /v1/cards/5/claim",
-      "POST /v1/cards/5/close",
-    ]);
-    cleanup();
-
-    const again = server();
-    tracker(card(5, { claimed_by: "session 1", closed: true, column: "Done" }));
-    expect(screen.getByText("Claimed by session 1")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Release" }));
-    fireEvent.click(screen.getByRole("button", { name: "Reopen issue" }));
-    await waitFor(() => expect(again).toHaveLength(2));
-    expect(again.map(([method, url]) => `${method} ${url}`)).toEqual([
-      "DELETE /v1/cards/5/claim",
-      "POST /v1/cards/5/reopen",
-    ]);
-  });
-
-  it("says what the server refused under the control that asked", async () => {
-    server({
-      "POST /v1/cards/5/claim": { status: 409, body: "#5 is claimed by session 2 already" },
-    });
-    tracker(card(5));
-    fireEvent.click(screen.getByRole("button", { name: "Claim" }));
-    expect((await screen.findByRole("alert")).textContent).toContain("claimed by session 2");
-  });
-
-  it("adds and removes a blocker by its number, and a cycle is the server's to refuse", async () => {
-    const sent = server();
-    tracker(card(5, { blocked_by: [3] }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove blocker #3" }));
-    // One request at a time: the controls wait for the answer.
-    await waitFor(() => expect(sent).toHaveLength(1));
-    await waitFor(() =>
-      expect(
-        (screen.getByRole("button", { name: "Remove blocker #3" }) as HTMLButtonElement).disabled,
-      ).toBe(false),
-    );
-    fireEvent.change(screen.getByLabelText("Blocked by issue number"), { target: { value: "#7" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add blocker" }));
-    await waitFor(() => expect(sent).toHaveLength(2));
-    expect(sent).toEqual([
-      ["DELETE", "/v1/cards/5/blockers/3", undefined],
-      ["POST", "/v1/cards/5/blockers", { blocker: 7 }],
-    ]);
-    cleanup();
-
-    server({
-      "POST /v1/cards/5/blockers": {
-        status: 422,
-        body: "#7 already waits for #5, so it cannot block it",
-      },
-    });
-    tracker(card(5));
-    fireEvent.change(screen.getByLabelText("Blocked by issue number"), { target: { value: "7" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add blocker" }));
-    expect((await screen.findByRole("alert")).textContent).toContain("cannot block it");
-  });
-
-  it("sets the whole list of labels with one added or one taken away", async () => {
-    const sent = server();
-    tracker(card(5, { labels: ["bug", "wayfinder:spike"] }));
-    fireEvent.click(screen.getByRole("button", { name: "Remove label bug" }));
-    await waitFor(() => expect(sent).toHaveLength(1));
-    await waitFor(() =>
-      expect(
-        (screen.getByRole("button", { name: "Remove label bug" }) as HTMLButtonElement).disabled,
-      ).toBe(false),
-    );
-    fireEvent.change(screen.getByLabelText("New label"), { target: { value: " ui " } });
-    fireEvent.click(screen.getByRole("button", { name: "Add label" }));
-    await waitFor(() => expect(sent).toHaveLength(2));
-    expect(sent).toEqual([
-      ["PUT", "/v1/cards/5/labels", { labels: ["wayfinder:spike"] }],
-      ["PUT", "/v1/cards/5/labels", { labels: ["bug", "wayfinder:spike", "ui"] }],
-    ]);
-  });
-});
 
 describe("the comments of an issue", () => {
   it("lists them oldest first and writes a new one", async () => {

@@ -7,7 +7,7 @@
  * the column is folded or a sheet lies over it, so what a person did in them is still there when they come back.
  */
 import { ChatCircleDotsIcon, SidebarSimpleIcon } from "@phosphor-icons/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AgentChat } from "../../chat/AgentChat";
 import { cn } from "../../ui/lib/cn";
 import { getModifierKey } from "../../ui/lib/platform";
@@ -22,9 +22,11 @@ const ICON_BUTTON =
   "inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-control text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent";
 
 export function RightColumn() {
-  const { present, setTarget } = useProperties();
+  const { present, setTarget, setShown } = useProperties();
   const [folded, setFolded] = useState(() => readFlag(FOLDED_KEY));
   const open = present && !folded;
+  // Before paint, so what a page lays beside the column moves in the same frame the column does.
+  useLayoutEffect(() => setShown(open), [open, setShown]);
   const slot = useSheetSlot();
   const ask = useRef<HTMLButtonElement>(null);
   const modifier = getModifierKey();

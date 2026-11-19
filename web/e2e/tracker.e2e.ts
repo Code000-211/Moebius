@@ -1,7 +1,7 @@
 /**
  * The issue tracker on the board in a real browser: sub-issues as stacks in their parent's column (added from a card's
- * menu, opened in place, counted, moved to another parent), the dock of an issue (its parent, blockers, labels, claim,
- * state and comments), the filter by label, and what the server refuses (a cycle, a second claim) said beside the
+ * menu, opened in place, counted, moved to another parent), the issue's properties in the right column, each edited in
+ * place (its parent, blockers, labels, claim and state), its comments in the dock, the filter by label, and what the server refuses (a cycle, a second claim) said beside the
  * control that asked. The tests make their issues through the page, so they run against the fake server and a real one;
  * only what needs the fake's data or its way of answering is skipped for a real server. Every wait is on something the
  * page shows, never on time.
@@ -61,6 +61,24 @@ async function openBoard(): Promise<void> {
 }
 
 const dock = () => page.getByRole("region", { name: "Card inspector" });
+/** The properties of the card in the dock, in the right column. */
+const properties = () => page.getByRole("region", { name: /^Properties of #/ });
+/** The value of a property, a button named by the property and what it says. */
+const value = (name: string | RegExp) => properties().getByRole("button", { name });
+
+/** Sets the issue's state from its property. */
+async function setState(to: "Open" | "Closed") {
+  await pickOption(page, value(to === "Open" ? "State Closed" : "State Open"), to);
+  await value(`State ${to}`).waitFor();
+}
+
+/** Adds a value to a property of several, through the field its "+" opens. */
+async function addTo(button: string, typed: string) {
+  await properties().getByRole("button", { name: button }).click();
+  const field = properties().getByRole("textbox", { name: button });
+  await field.fill(typed);
+  await field.press("Enter");
+}
 const alert = (text: string | RegExp) => page.getByRole("alert").filter({ hasText: text });
 const status = (text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
 /** The card of the issue with this title: its name is its number and its title. */
@@ -148,16 +166,12 @@ describe("sub-issues on the board", () => {
     await cardTitled("Pick the format").click();
     const parent = await numberOf("Plan the export");
     await dock().getByRole("heading", { name: "Pick the format" }).waitFor();
-    await dock()
-      .getByRole("button", { name: `#${parent} Plan the export` })
-      .first()
-      .waitFor();
+    await value(`Parent #${parent} Plan the export`).waitFor();
 
     // Closing it counts it done, and the card goes to Done.
-    await dock().getByRole("button", { name: "Close issue" }).click();
+    await setState("Closed");
     await expect.poll(async () => await toggle.textContent()).toBe("1 of 2 sub-issues done");
-    await dock().getByRole("button", { name: "Reopen issue" }).waitFor();
-    await dock().getByRole("button", { name: "Reopen issue" }).click();
+    await setState("Open");
     await expect.poll(async () => await toggle.textContent()).toBe("0 of 2 sub-issues done");
 
     // Shutting the stack hides them again, unless the dock is showing one of them.
@@ -252,18 +266,24 @@ describe("the issue in the dock", () => {
     await cardTitled("Decide the queue").click();
     await dock().getByRole("heading", { name: "Decide the queue" }).waitFor();
 
-    await dock().getByRole("button", { name: "Claim" }).click();
+    await pickOption(page, value("Claim No one"), "Me");
     await cardTitled("Decide the queue").getByText("Claimed by person").waitFor();
-    await dock().getByText("Claimed by person").waitFor();
-    await dock().getByRole("button", { name: "Release" }).click();
+    await value(/^Claim person/).waitFor();
+    await pickOption(page, value(/^Claim person/), "No one");
     await cardTitled("Decide the queue")
       .getByText("Claimed by person")
       .waitFor({ state: "detached" });
 
-    await dock().getByLabel("New label").fill("wayfinder:decision");
-    await dock().getByRole("button", { name: "Add label" }).click();
+    await addTo("Add a label", "wayfinder:decision");
     await cardTitled("Decide the queue").getByText("wayfinder:decision").waitFor();
-    await dock().getByRole("button", { name: "Remove label wayfinder:decision" }).waitFor();
+    await properties().getByRole("button", { name: "Remove label wayfinder:decision" }).waitFor();
+
+    // The title is a property too, saved alone.
+    await value("Title Decide the queue").click();
+    const title = properties().getByRole("textbox", { name: "Title" });
+    await title.fill("Decide the queue now");
+    await title.press("Enter");
+    await dock().getByRole("heading", { name: "Decide the queue now" }).waitFor();
 
     await dock().getByLabel("Write a comment").fill("A queue keeps the order.");
     await dock().getByRole("button", { name: "Comment", exact: true }).click();
@@ -272,6 +292,7 @@ describe("the issue in the dock", () => {
 
     await dock().getByRole("button", { name: "Edit issue" }).click();
     const form = page.getByRole("dialog", { name: /^Edit #\d+$/ });
+    expect(await form.getByLabel("Title").inputValue()).toBe("Decide the queue now");
     await form.getByLabel("Title").fill("Decide the queue type");
     await form.getByLabel("Description").fill("FIFO or priority.");
     await form.getByRole("button", { name: "Save", exact: true }).click();
@@ -290,7 +311,7 @@ describe("the issue in the dock", () => {
     await first.waitFor();
     expect(await first.textContent()).toContain("Assign to me");
     await page.keyboard.press("Enter");
-    await dock().getByText("Claimed by person").waitFor();
+    await value(/^Claim person/).waitFor();
     // The palette closed, and the card is still the one in focus: its key does the next thing.
     await page.getByRole("dialog").waitFor({ state: "detached" });
     await page.keyboard.press("Control+k");
@@ -308,8 +329,7 @@ describe("the issue in the dock", () => {
     await toggleOf("Plan").click();
     await cardTitled("Spike it").click();
     await dock().getByRole("heading", { name: "Spike it" }).waitFor();
-    await dock().getByLabel("New label").fill("spike");
-    await dock().getByRole("button", { name: "Add label" }).click();
+    await addTo("Add a label", "spike");
     await cardTitled("Spike it").getByText("spike", { exact: true }).waitFor();
 
     const filters = page.getByRole("search", { name: "Filter the cards" });
@@ -334,9 +354,8 @@ describe("the issue in the dock", () => {
     // The address names the card before the dock shows it: typed into the dock of the card it showed before, the number
     // would go with that dock.
     await dock().getByRole("heading", { name: "Build" }).waitFor();
-    await dock().getByLabel("Blocked by issue number").fill(String(ship));
-    await dock().getByRole("button", { name: "Add blocker" }).click();
-    await dock()
+    await addTo("Add a blocker by its number", String(ship));
+    await properties()
       .getByRole("button", { name: `Remove blocker #${ship}` })
       .waitFor();
     // The card says it waits, as it does for an issue that blocks it any other way.
@@ -344,15 +363,14 @@ describe("the issue in the dock", () => {
 
     await cardTitled("Ship").click();
     await dock().getByRole("heading", { name: "Ship" }).waitFor();
-    await dock().getByLabel("Blocked by issue number").fill(String(build));
-    await dock().getByRole("button", { name: "Add blocker" }).click();
-    await alert("cannot block it").waitFor();
-    await dock().getByLabel("Blocked by issue number").fill("9999");
-    await dock().getByRole("button", { name: "Add blocker" }).click();
+    await addTo("Add a blocker by its number", String(build));
+    // The refusal is said under the property that asked.
+    await properties().getByRole("alert").filter({ hasText: "cannot block it" }).waitFor();
+    await addTo("Add a blocker by its number", "9999");
     await alert("not found").waitFor();
 
     // Closing the blocker frees the card.
-    await dock().getByRole("button", { name: "Close issue" }).click();
+    await setState("Closed");
     await cardTitled("Build").getByText(`Waiting on #${ship}`).waitFor({ state: "detached" });
   });
 });

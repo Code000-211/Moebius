@@ -40,10 +40,12 @@ import {
 import { KanbanCardContent } from "../../ui/components/KanbanCardContent";
 import { FilterBar } from "../../ui/filters/FilterBar";
 import { displayQuery, parseViews, readDisplay, viewQuery, withView } from "../../ui/filters/model";
+import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
 import { Select } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { usePropertiesShown } from "../../ui/page/Properties";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { ScrollFades } from "../../ui/page/ScrollFades";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
@@ -177,6 +179,7 @@ export function BoardPage() {
   // The stacks a person opened, by the id of the card at the top.
   const [opened, setOpened] = useState<ReadonlySet<number>>(new Set());
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const propertiesShown = usePropertiesShown();
   // The card a send-back needs a reason for, not a count: a count stays raised once it is raised, so every card
   // opened afterwards found the reason form waiting for it.
   const [rejectFor, setRejectFor] = useState<number | null>(null);
@@ -449,9 +452,17 @@ export function BoardPage() {
           // The column holds the drawer's width so the board keeps the room it has; the drawer itself runs the whole
           // height of the page's surface and is flush to its top, right and bottom edges, inside its rounded corners —
           // it is the page's own card inspector rather than a sheet laid over it — and scrolls its sections rather
-          // than the page scrolling them. It lies above the slim right column it covers, under the sheets over it.
+          // than the page scrolling them. It lies above the slim right column it covers, under the sheets over it;
+          // while the column stands unfolded with the card's properties, the drawer stands beside it instead.
           <div className="w-full shrink-0 lg:w-96">
-            <div className="lg:fixed lg:inset-y-1.5 lg:right-1.5 lg:z-10 lg:w-96 lg:overflow-hidden lg:rounded-r-sheet">
+            <div
+              className={cn(
+                "lg:fixed lg:inset-y-1.5 lg:z-10 lg:w-96 lg:overflow-hidden",
+                propertiesShown
+                  ? "lg:right-[calc(var(--column-width)+0.375rem)]"
+                  : "lg:right-1.5 lg:rounded-r-sheet",
+              )}
+            >
               <Dock
                 key={inspected.id}
                 board={board}
