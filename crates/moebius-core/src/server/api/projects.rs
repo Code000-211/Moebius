@@ -10,9 +10,14 @@
 //! - `GET /v1/projects/{id}/scripts`: the script of every column of the project's board, its own or the built-in one.
 //! - `GET`, `PUT` and `DELETE /v1/projects/{id}/scripts/{column}`: one column's script, read, replaced (checked as
 //!   `moebius check-script` checks it) or given up for the built-in one (see `board::scripts`).
+//! - `PUT /v1/projects/{id}/access` `{private, members, reason}`: an owner makes a project private or public and names
+//!   its members by handle.
+//!
+//! A private project that the person asking is no member of is not listed and is answered 404, except to an owner, who
+//! sees its record (with `member` false) so that they can name its members (see `app::projects::sight`).
 
 use axum::extract::{Path as UrlPath, State};
-use axum::routing::get;
+use axum::routing::{get, put};
 use axum::{Extension, Json, Router};
 use serde::Deserialize;
 
@@ -31,6 +36,7 @@ pub(super) fn routes() -> Router<ApiState> {
             "/v1/projects/{id}/scripts/{column}",
             get(get_script).put(put_script).delete(delete_script),
         )
+        .route("/v1/projects/{id}/access", put(set_access))
 }
 
 /// What `POST /v1/projects` takes.
@@ -48,15 +54,44 @@ pub struct EditedProject {
     pub key: Option<String>,
 }
 
-async fn projects(State(state): State<ApiState>) -> Result<Json<Vec<ProjectView>>, ApiError> {
-    blocking(&state.app, |app| app.project_views()).await
+/// What `PUT /v1/projects/{id}/access` takes: whether the project is private, and its members by handle.
+#[derive(Debug, Deserialize)]
+pub struct Access {
+    pub private: bool,
+    #[serde(default)]
+    pub members: Vec<String>,
+    #[serde(default)]
+    pub reason: String,
+}
+
+async fn projects(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+) -> Result<Json<Vec<ProjectView>>, ApiError> {
+    blocking(&state.app, move |app| app.project_views(&app.sight(&by)?)).await
 }
 
 async fn project(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
 ) -> Result<Json<ProjectView>, ApiError> {
-    blocking(&state.app, move |app| app.project_view_of(id)).await
+    blocking(&state.app, move |app| {
+        app.project_view_of(id, &app.sight(&by)?)
+    })
+    .await
+}
+
+async fn set_access(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+    Json(access): Json<Access>,
+) -> Result<Json<ProjectView>, ApiError> {
+    blocking(&state.app, move |app| {
+        app.set_project_access(&by, id, access.private, &access.members, &access.reason)
+    })
+    .await
 }
 
 async fn add_project(

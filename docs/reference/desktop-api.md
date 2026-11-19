@@ -146,6 +146,7 @@ any route to any role that is not what its row says.
 | `GET /v1/projects/{id}/scripts/{column}` | viewer | yes |
 | `PUT /v1/projects/{id}/scripts/{column}` | owner | yes |
 | `DELETE /v1/projects/{id}/scripts/{column}` | owner | yes |
+| `PUT /v1/projects/{id}/access` | owner | no |
 | `POST /v1/repositories` | owner | yes |
 | `PUT /v1/repositories/{id}` | owner | yes |
 | `DELETE /v1/repositories/{id}` | owner | yes |
@@ -700,11 +701,13 @@ server from before projects has one project per repository after its first start
 and every card on it; a repository whose name an earlier one has in another case gets the project name `<name> (<id>)`.
 
 A `ProjectView` is `{"id": number, "name": string, "key": string, "created_at": number, "repositories": [{"id": number,
-"name": string, "home": bool}], "members": [{"id": number, "handle": string, "name": string}], "open_cards": number, "kinds": [number], "intake": bool}`:
-`repositories` in the order the project names them, `home` true when this project is the repository's home project;
-`members` everyone of the organisation who is not disabled, since no project is private yet; `open_cards` the cards on
-its board that are neither closed nor in `Done`; `files` the id of the repository that holds the project's own files, or
-null until they are made; `kinds` the ids of the [kinds of issues](#kinds-of-issues) the project offers; `intake` whether the project takes requests (see [Intake](#intake)). A project made, renamed or given intake sends `project_changed`.
+"name": string, "home": bool}], "members": [{"id": number, "handle": string, "name": string}], "open_cards": number, "files": number or null,
+"kinds": [number], "intake": bool, "private": bool, "member": bool}`: `repositories` in the order the project names them, `home` true when this project is
+the repository's home project; `members` the people a private project names, and everyone of the organisation in a
+public one, without the disabled; `open_cards` the cards on its board that are neither closed nor in `Done` (0 when
+`member` is false); `private` whether only its members see it; `member` whether the person asking sees its board (always
+true for a public project); `files` the id of the repository that holds the project's own files, or null until they
+are made; `kinds` the ids of the [kinds of issues](#kinds-of-issues) the project offers; `intake` whether the project takes requests (see [Intake](#intake)). A project made, renamed, given intake or made private or public sends `project_changed`.
 
 #### A project's own files
 
@@ -731,6 +734,41 @@ the home project. This is done when the issue's labels change on the forge, so a
 elsewhere while its labels stay as they are. A label naming a project the repository is not one of the repositories of
 (or none) leaves the card where it is and adds an inbox item of kind `project_label` for it, once for that set of labels.
 
+#### Private projects
+
+A project can be private (ADR 0018): it names its members, and everyone else, owners included unless they name
+themselves, sees neither its board, its cards, its runs nor its files. For someone who is not a member:
+
+- Every route that names one of its things by id answers `404`, as if it did not exist, whatever the method: a card
+  (`/v1/cards/{id}/...` and `/v1/cards/by-key/{key}`), an inbox item, a change, a run or chat, a repository each of whose projects is hidden, the
+  project itself (beyond its record, below), a lesson learned from one of its cards, a judgement on one of its cards or
+  runs, a grilling, a Retro's proposal, an automation, a research or a workflow run (`/v1/workflows/runs/{id}/...`) of
+  such a repository, a request made to the project (`/v1/requests/{id}/...`), and an export holding its judgements. On these routes an id that is not written as a plain number
+  (such as `%31`) is answered `404` too, for anyone.
+- Nothing is started in it: `POST /v1/chats` with such a `repository`, and `POST /v1/workflows/{name}/runs` naming such
+  a repository (as `repository` or as the input `repository`), answer `404`, and a tunnel to a port a run of it opened
+  (`GET /v1/ports/{port}/tunnel`) is `404`.
+- The lists leave them out: `GET /v1/snapshot` (its boards, cards, changes and inbox items), `GET /v1/events` (no event
+  about them is sent), `GET /v1/repositories/{id}/issues` and a card's sub-issues, `GET /v1/issues`, `GET /v1/projects`, `GET
+  /v1/lessons`, `GET /v1/judgements`, `GET /v1/replays`, `GET /v1/exports`, `GET /v1/chats`, `GET /v1/grillings`,
+  `GET /v1/places`, `GET /v1/notices`, `GET /v1/automations`, `GET /v1/research`, `GET /v1/ports`, and the report of `GET
+  /v1/retros/{date}` (its errors and merged cards; the analyst's `run_id` is null when its day touched one, and the
+  Retro's `warnings` are left out when anything was). `GET /v1/usage` and `GET /v1/judgements/kinds` answer `404` for such a `repository`.
+- A Retro's proposal to the shared configuration (`harness` or `settings`) is shown to everyone without quoting the
+  project: its `cards` leave out the project's cards, and in its `title`, `body` and `diff` the project's name and key
+  and the titles of its cards read `a private project`, in `GET /v1/proposals`, a Retro's view, the answers of the
+  routes that try, merge or dismiss it, and the title and data of its inbox item (`proposal`). A `repository` proposal
+  is shown when the repository is.
+- A lesson learned from a private project's cards is put in the prompt of, and found by the `lessons` tool for, only
+  that project's runs.
+- An owner who is not a member still sees the project's record in `GET /v1/projects` and `GET /v1/projects/{id}`
+  (`member` false, `open_cards` 0), can rename it, and names its members with `PUT /v1/projects/{id}/access`, themselves
+  included; nothing of its board.
+
+The run token of the Moebius agent and of a Grilling partner sees what the person whose chat it runs in sees; a run
+without such a person sees no private project. The training export leaves private projects out unless asked (see
+[the training export](training-export.md)).
+
 ### `GET /v1/projects`
 
 Every project, in the order they were made: `[ProjectView]`.
@@ -752,7 +790,8 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/
 
 ### `GET /v1/projects/{id}`
 
-One project: the `ProjectView`. Errors: `404` for no such project.
+One project: the `ProjectView`. Errors: `404` for no such project, or a private one the person is no member of and,
+being no owner, does not see.
 
 ### `PATCH /v1/projects/{id}`
 
@@ -808,6 +847,22 @@ Removes the project's own script for the column, committed and pushed the same w
 <Column> column of <project>`, kind `edit_script`), so the column runs the built-in script again. Response: the script
 as `GET` answers it, now the built-in one. Errors: `404` no such project or column, or the project has no script of its
 own for the column; `409` and `500` as for `PUT`.
+
+### `PUT /v1/projects/{id}/access`
+
+An owner, never an agent, makes a project private or public and names its members. Request body: `{"private": bool,
+"members": [string], "reason"?: string}`; `members` are handles, with or without the `@`, each kept once, and replace
+the project's list. A private project is seen only by the people it names: an owner who does not name themselves keeps
+its record and loses its board. A public project is everyone's, and keeps its list for when it is made private again.
+The decision is recorded (kind `edit_project_access`, decider `person`; its context has `project` the key, `private`,
+`previous_private` and `members`, the handles joined with `, `) and `project_changed` is sent. Response: the
+`ProjectView` as the owner now sees it. Errors: `403` for anyone but an owner; `404` for no such project; `422` for a
+handle no person has.
+
+```sh
+curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"private": true, "members": ["lea", "owner"]}' http://127.0.0.1:7171/v1/projects/2/access
+```
 
 ### The wiki
 
@@ -1026,9 +1081,8 @@ a card being done when its issue is closed or it is in `Done`.
 
 **A person counts and sees only the cards of projects they may see.** Every card and every number below is worked out
 for the asker: a card of a project they may not see is not listed, not counted in `cards`, `done` or `projects`, and
-its `GET /v1/cards/{id}/milestones` and `PUT` answer `404`, as if there were no card. No project is private yet, so
-everyone sees every project; the check is `App::may_see_project`, which private projects make true only for a
-project's members.
+its `GET /v1/cards/{id}/milestones` and `PUT` answer `404`, as if there were no card. A private project is
+seen only by its members (see [private projects](#private-projects)); the check is `App::may_see_project`.
 
 A `MilestoneView` is `{"id": number, "name": string, "target_date": string, "description": string, "created_at":
 number, "cards": number, "done": number, "projects": [{"id": number, "name": string, "key": string, "cards": number,
@@ -1929,13 +1983,18 @@ both. Without them every judgement counts. A judgement made with no card and no 
 
 Writes the training-set export now (see [the training export](training-export.md)) to `<data_dir>/exports/<id>/` and
 records the person's decision to do so as a judgement of kind `export` (decider `person`, context: `export` the id,
-`kinds` the kinds written, joined by commas, and `counts` the `KindCounts` as JSON text). Request: `{"kinds": [string]}`,
-the kinds to export; without `kinds`, or with `null`, every kind. The body is required, `{}` is the smallest. Response:
-the `Export`:
+`kinds` the kinds written, joined by commas, and `counts` the `KindCounts` as JSON text). Request: `{"kinds": [string],
+"include_private": bool}`, the kinds to export, without `kinds`, or with `null`, every kind; and whether the judgements
+of the private projects the person is a member of are written too (`false` when left out: no private project's
+judgement is). The body is required, `{}` is the smallest. Response: the `Export`:
 
 ```json
-{"id": 1, "at": 1790000000, "kinds": [{"kind": "merge", "count": 12, "with_outcome": 12, "by_person": 12, "held_out": 1}]}
+{"id": 1, "at": 1790000000, "kinds": [{"kind": "merge", "count": 12, "with_outcome": 12, "by_person": 12, "held_out": 1}], "private": []}
 ```
+
+`private` holds the ids of the private projects whose judgements the export holds; only their members see the export
+(in the list, and its files). An export made before projects could be private has `private` null and is seen only by
+someone who sees every project. Making a project private later does not take back an export already made.
 
 `id` counts up from 1. The export holds the judgements there were when it read them, not the judgement of its own
 decision. Errors: `422` a kind has no judgements (no file is written for any kind).
@@ -3694,7 +3753,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `repository_added` | A repository was added. | The `Repository`. |
 | `repository_updated` | The logins a repository on a forge trusts were changed through the API. | The `Repository`. |
 | `repository_removed` | A repository was removed through the API. | The `Repository`. |
-| `project_changed` | A project was made or renamed through the API. A repository's home project, made with it, comes with `repository_added`. | `{"id", "name", "key", "created_at", "repositories": [id]}` |
+| `project_changed` | A project was made, renamed or made private or public through the API; sent only to those who see its record (see [private projects](#private-projects)). A repository's home project, made with it, comes with `repository_added`. | `{"id", "name", "key", "created_at", "repositories": [id], "files": id or null, "private": bool, "members": [person id]}` |
 | `wiki_changed` | A person edited the wiki through the API, or a refresh brought commits pushed to its `origin` from elsewhere. | `{"commit": string (the full id the pages are now read at)}` |
 | `wiki_error` | The wiki could not follow its `origin` on the server's refresh (every 30 seconds). | `{"message": string}` |
 | `intake_changed` | A request to a project was made, drafted, edited, accepted or declined. It carries no text. | `{"project": id, "request": id, "status": string}` |

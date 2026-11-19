@@ -535,10 +535,11 @@ At the top:
 | `app/checks.rs` | How a change's checks stand, and a repository's own checks (the project's `checks`) run in a throwaway worktree with a time limit and a cleared environment. |
 | `app/board.rs` | What a board shows of a card, worked out once for the snapshot and the scripts: rounds, latest run, and the batched reads of a whole board. |
 | `app/attempts.rs` | Attempts: judging each attempt of a hard card by the repository's checks and its reproduction test on a thread of its own, settling a round (one picked, or none passed), and reading a selection run's pick. |
-| `app/projects/mod.rs` | Projects (ADR 0019): making one with a name and a key no other has (the name is also a folder), renaming it with its key kept and its settings moved, and the `ProjectView` the Projects page shows (repositories, members, open cards). |
+| `app/projects/mod.rs` | Projects (ADR 0019): making one with a name and a key no other has (the name is also a folder), renaming it with its key kept and its settings moved, and the `ProjectView` the Projects page shows (repositories, members, open cards, whether it is private and the person a member). |
 | `app/projects/files.rs` | A project's own store of files (ADR 0019): the git repository at `<data_dir>/projects/<key>` made for a project, kept as a repository without a forge whose `files_of` is the project, where the cards of a project without a repository run, are reviewed and are merged. |
 | `app/milestones.rs` | Milestones (ADR 0019): making and editing them, putting a card in them, and their progress counted and listed only within the projects the asker may see (`App::may_see_project`). |
 | `app/intake.rs` | Intake (ADR 0019): a project's requests, written by anyone who may see it, grilled into a draft issue by a chat of the grilling agent and accepted into a card the requester follows, edited, or declined with a reason the requester is told. |
+| `app/projects/sight.rs` | Who sees what of a private project (ADR 0018): a person's `Sight` (the private projects they are no member of, and the repositories all of whose projects those are), whether it sees a card, run, lesson or judgement, which lessons a run of a project may find, and a Retro's proposal unquoted for someone who does not see a project it names. |
 | `app/projects/settings.rs` | A project's and a repository's settings read from the harness configuration repository (`App::project_file`, `App::repository_file`), the migration of the repositories' column scripts to their home projects (`App::move_scripts_to_projects`), and the notice, once for each repository, that its default branch still has a `.moebius/` folder, which is not read. |
 | `app/localize.rs` | The hint of files a code run is given, whether a repository wants it, and the outcome recorded from the files the card's change touched at the end of a code run and on merge. |
 | `app/plugin_settings.rs` | The settings plugins ask of each repository and of the server in their manifest: what the repository's page and the Settings page show, a person's save checked against the manifest and recorded; a repository's values are files of its project settings, the server's are kept by plugin name. |
@@ -609,7 +610,7 @@ At the top:
 | `store/wiki_search.rs` | The wiki's search index (SQLite FTS5, a title counting far more than the text): derived data, replaced whole when the wiki's head moves. |
 | `store/milestones.rs` | The milestones (name, target date, description) and which cards each holds, of any projects. |
 | `store/intake.rs` | A project's switch for intake and the requests made to it, with their draft issue, status, card and reason. |
-| `store/projects.rs` | The projects (name, key, repositories in order), a repository's home project and a card's project, how a key is made from a name, and the migration that makes one project for each repository and puts every card on it. |
+| `store/projects.rs` | The projects (name, key, repositories in order), a repository's home project and a card's project, how a key is made from a name, the migration that makes one project for each repository and puts every card on it, whether a project is private with its members, and the project a judgement belongs to. |
 | `store/favourites.rs` | The places a person pinned, in their order, and the places they opened lately (the last 20), kept per person so they follow them to every browser. |
 | `store/events.rs` | A run's events, in order, redacted before they are stored. |
 | `store/automations.rs` | Automations, their firings with the status of each chat, and the server's local minute; the workflow file is the definition and the row keeps the id the firings use. |
@@ -658,9 +659,10 @@ At the top:
 | `server/api/issues.rs` | The issue tracker's routes: the issue list and one issue, parent, labels, blockers, claim, close and reopen, comments. |
 | `server/api/repositories.rs` | Adding and editing repositories, and their column scripts and files. |
 | `server/api/milestones.rs` | The milestones: listing them with their progress, making, reading, editing and deleting one, and a card's milestones. |
-| `server/api/projects.rs` | The projects: listing them, making one with a free key, reading and renaming one, and the column scripts of a project's board. |
+| `server/api/projects.rs` | The projects: listing them, making one with a free key, reading and renaming one, the column scripts of a project's board, and making one private with its members. |
 | `server/api/intake.rs` | Intake: turning it on for a project, making and reading its requests, editing a draft, accepting and declining. |
 | `server/api/templates.rs` | The routes of templates for issues and wiki pages, and making a wiki page from one. |
+| `server/api/privacy.rs` | The check, after the role, that answers `404` for a route naming by id a card, run, change, repository, project, lesson or other thing of a private project the person is no member of; and whether an inbox item is seen. |
 | `server/api/wiki.rs` | The wiki's routes: its pages listed, read (an older version too), written, moved and deleted, a page's history, and a refresh now. |
 | `server/api/runs.rs` | A run and its events in pages, steering and stopping it. |
 | `server/api/automations/mod.rs` | Automations: list, add, read, replace, delete, run now, and their firings. |

@@ -57,6 +57,7 @@ person deletes theirs; a session is refused once it expires, and forgotten when 
 |---|---|
 | `projects` | Name (unique regardless of case), key (unique: an uppercase letter and 1 to 9 uppercase letters or digits, such as `WEB`) and when it was made. A rename changes only the name. |
 | `project_repositories` | The repositories of each project, with their position in the project's order. |
+| `project_members` | The people a private project names as its members (`projects.private`); nobody else sees it. |
 
 `repositories.home_project_id` is the project a repository's new issues land in, and `cards.project_id` the project
 whose board a card is on. Adding a repository makes its home project in the same transaction, with the repository's
@@ -72,6 +73,10 @@ The migration that adds the tables makes one project per repository, with its na
 puts every card on it; a repository whose name an earlier one has in another case gets the project name `<name>
 (<id>)`, since project names are unique in any case. It gives each a provisional key, `#<id>`, which no project can choose, because SQL cannot make a
 key from a name; opening the store replaces each with a key made from the name, in the order the projects were made.
+
+A later migration adds `projects.private` (0 for every project) and `project_members`. `hidden_projects` answers the
+private projects a person is not a member of, which `app::projects::sight` hides from them; `project_of` the project a
+judgement belongs to, for the training export.
 
 ## Milestones
 

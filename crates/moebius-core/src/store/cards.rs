@@ -371,20 +371,19 @@ impl Store {
         for statement in &statements {
             tx.execute(statement, [id])?;
         }
-        // The home project goes with its last repository, unless cards or another repository are still on it.
-        // What the project picked goes with it.
-        tx.execute(
-            "DELETE FROM project_kinds WHERE project_id = ?1
-               AND NOT EXISTS (SELECT 1 FROM project_repositories WHERE project_id = ?1)
+        // The home project goes with its last repository, unless cards or another repository are still on it; what
+        // the project picked and its members go with it.
+        let unused = "NOT EXISTS (SELECT 1 FROM project_repositories WHERE project_id = ?1)
                AND NOT EXISTS (SELECT 1 FROM cards WHERE project_id = ?1)
-               AND NOT EXISTS (SELECT 1 FROM repositories WHERE home_project_id = ?1)",
-            [home],
-        )?;
+               AND NOT EXISTS (SELECT 1 FROM repositories WHERE home_project_id = ?1)";
+        for table in ["project_kinds", "project_members"] {
+            tx.execute(
+                &format!("DELETE FROM {table} WHERE project_id = ?1 AND {unused}"),
+                [home],
+            )?;
+        }
         tx.execute(
-            "DELETE FROM projects WHERE id = ?1
-               AND NOT EXISTS (SELECT 1 FROM project_repositories WHERE project_id = ?1)
-               AND NOT EXISTS (SELECT 1 FROM cards WHERE project_id = ?1)
-               AND NOT EXISTS (SELECT 1 FROM repositories WHERE home_project_id = ?1)",
+            &format!("DELETE FROM projects WHERE id = ?1 AND {unused}"),
             [home],
         )?;
         tx.execute(

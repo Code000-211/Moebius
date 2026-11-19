@@ -93,10 +93,13 @@ struct JudgementsQuery {
     limit: Option<i64>,
 }
 
-/// The kinds to export; all of them when not given.
+/// The kinds to export, all of them when not given, and whether the judgements of the private projects the person is
+/// a member of are in it.
 #[derive(Debug, Default, Deserialize)]
 struct NewExport {
     kinds: Option<Vec<String>>,
+    #[serde(default)]
+    include_private: bool,
 }
 
 /// Which replays to return: those of the judgement and of the run, if given.
@@ -234,17 +237,40 @@ async fn retros(State(state): State<ApiState>) -> Result<axum::Json<Vec<RetroSum
 
 async fn get_retro(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(date): UrlPath<String>,
 ) -> Result<axum::Json<RetroView>, ApiError> {
-    blocking(&state.app, move |app| retro::view(&app.store, &date)).await
+    blocking(&state.app, move |app| {
+        retro::seen_by(app, &app.sight(&by)?, retro::view(&app.store, &date)?)
+    })
+    .await
 }
 
-async fn proposals(State(state): State<ApiState>) -> Result<axum::Json<Vec<Proposal>>, ApiError> {
-    blocking(&state.app, |app| Ok(app.store.proposals(None)?)).await
+async fn proposals(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+) -> Result<axum::Json<Vec<Proposal>>, ApiError> {
+    blocking(&state.app, move |app| {
+        let sight = app.sight(&by)?;
+        let mut seen = Vec::new();
+        for proposal in app.store.proposals(None)? {
+            seen.extend(app.unquoted(&sight, proposal)?);
+        }
+        Ok(seen)
+    })
+    .await
+}
+
+/// `proposal` as `by` sees it (see `App::unquoted`); the routes that change a proposal answer with it.
+fn shown(app: &crate::app::App, by: &Actor, proposal: Proposal) -> crate::app::Result<Proposal> {
+    let id = proposal.id;
+    app.unquoted(&app.sight(by)?, proposal)?
+        .ok_or_else(|| AppError::NotFound(format!("proposal {id}")))
 }
 
 async fn try_proposal(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
 ) -> Result<axum::Json<Proposal>, ApiError> {
     let (runs, repo) = (state.runs.clone(), harness_repo(&state)?);
@@ -253,7 +279,8 @@ async fn try_proposal(
         (config.regression(), config.trial_token_factor)
     };
     blocking(&state.app, move |app| {
-        trial::start(app, &runs, &repo, id, regression, token_factor)
+        let proposal = trial::start(app, &runs, &repo, id, regression, token_factor)?;
+        shown(app, &by, proposal)
     })
     .await
 }
@@ -274,7 +301,7 @@ async fn merge_proposal(
     let (proposal, needed) = blocking(&state.app, move |app| {
         let proposal = trial::merge(app, &by, (repo.as_deref(), &live), id, &reason)?;
         let needed = proposal.kind == own::SETTINGS && live.view()?.restart_needed;
-        Ok((proposal, needed))
+        Ok((shown(app, &by, proposal)?, needed))
     })
     .await?
     .0;
@@ -295,7 +322,8 @@ async fn dismiss_proposal(
 ) -> Result<axum::Json<Proposal>, ApiError> {
     let (repo, reason) = (state.harness_repo.clone(), decision.reason);
     blocking(&state.app, move |app| {
-        trial::dismiss(app, &by, repo.as_deref(), id, &reason)
+        let proposal = trial::dismiss(app, &by, repo.as_deref(), id, &reason)?;
+        shown(app, &by, proposal)
     })
     .await
 }
@@ -348,8 +376,15 @@ async fn release_takeover(
 
 async fn researches(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
 ) -> Result<axum::Json<Vec<ResearchView>>, ApiError> {
-    blocking(&state.app, |app| research::views(app)).await
+    blocking(&state.app, move |app| {
+        let sight = app.sight(&by)?;
+        let mut views = research::views(app)?;
+        views.retain(|view| sight.repository(view.research.repository_id));
+        Ok(views)
+    })
+    .await
 }
 
 async fn create_research(
@@ -448,18 +483,28 @@ async fn replay_judgement(
 
 async fn replays(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     Query(query): Query<ReplaysQuery>,
 ) -> Result<axum::Json<Vec<Replay>>, ApiError> {
     blocking(&state.app, move |app| {
-        Ok(app
+        let sight = app.sight(&by)?;
+        let mut seen = Vec::new();
+        for replay in app
             .store
-            .replays(query.judgement, query.run, replay::MAX_LISTED)?)
+            .replays(query.judgement, query.run, replay::MAX_LISTED)?
+        {
+            if app.sees_run_id(&sight, replay.run)? {
+                seen.push(replay);
+            }
+        }
+        Ok(seen)
     })
     .await
 }
 
 async fn judgements(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     Query(query): Query<JudgementsQuery>,
 ) -> Result<axum::Json<Vec<JudgementEntry>>, ApiError> {
     let limit = query
@@ -467,10 +512,17 @@ async fn judgements(
         .unwrap_or(DEFAULT_JUDGEMENTS)
         .clamp(1, MAX_JUDGEMENTS);
     blocking(&state.app, move |app| {
+        let sight = app.sight(&by)?;
         let found =
             app.store
                 .judgements_page(query.card, query.run, query.kind.as_deref(), limit)?;
-        Ok(found
+        let mut seen = Vec::new();
+        for j in found {
+            if app.sees_judgement(&sight, j.card_id, j.run_id)? {
+                seen.push(j);
+            }
+        }
+        Ok(seen
             .into_iter()
             .map(|j| JudgementEntry {
                 id: j.id,
@@ -493,23 +545,51 @@ fn export_failed(e: ExportError) -> AppError {
         ExportError::UnknownKind(_) => AppError::Invalid(e.to_string()),
         ExportError::Store(e) => AppError::Store(e),
         ExportError::Io(e) => AppError::Io(e),
-        e @ ExportError::Context(..) => AppError::Io(std::io::Error::other(e.to_string())),
+        e @ (ExportError::Context(..) | ExportError::Sight(_)) => {
+            AppError::Io(std::io::Error::other(e.to_string()))
+        }
     }
 }
 
 async fn judgement_kinds(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     Query(query): Query<ScopeQuery>,
 ) -> Result<axum::Json<Vec<KindCounts>>, ApiError> {
     let scope = query.scope();
     blocking(&state.app, move |app| {
+        seen_repository(app, &by, scope.repository)?;
         export::counts(&app.store, &scope).map_err(export_failed)
     })
     .await
 }
 
-async fn exports(State(state): State<ApiState>) -> Result<axum::Json<Vec<Export>>, ApiError> {
-    blocking(&state.app, |app| Ok(export::list(&app.data_dir))).await
+/// Refuses with `NotFound` a `repository` that `by` does not see, as if it did not exist.
+fn seen_repository(
+    app: &crate::app::App,
+    by: &Actor,
+    repository: Option<i64>,
+) -> crate::app::Result<()> {
+    match repository {
+        Some(id) if !app.sight(by)?.repository(id) => {
+            Err(AppError::NotFound(format!("repository {id}")))
+        }
+        _ => Ok(()),
+    }
+}
+
+async fn exports(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+) -> Result<axum::Json<Vec<Export>>, ApiError> {
+    blocking(&state.app, move |app| {
+        let sight = app.sight(&by)?;
+        Ok(export::list(&app.data_dir)
+            .into_iter()
+            .filter(|e| export::seen(e, &sight))
+            .collect())
+    })
+    .await
 }
 
 async fn start_export(
@@ -518,7 +598,8 @@ async fn start_export(
     axum::Json(request): axum::Json<NewExport>,
 ) -> Result<axum::Json<Export>, ApiError> {
     blocking(&state.app, move |app| {
-        export::create(app, &by, request.kinds.as_deref()).map_err(export_failed)
+        export::create(app, &by, request.kinds.as_deref(), request.include_private)
+            .map_err(export_failed)
     })
     .await
 }
@@ -551,6 +632,7 @@ async fn download_export(
 
 async fn usage(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     Query(query): Query<UsageQuery>,
 ) -> Result<axum::Json<UsageAnswer>, ApiError> {
     let days = query.days.unwrap_or(1);
@@ -564,6 +646,7 @@ async fn usage(
     }
     .scope();
     blocking(&state.app, move |app| {
+        seen_repository(app, &by, scope.repository)?;
         let store = &app.store;
         let totals = store.usage_totals(days, &scope)?;
         let mut by_day: Vec<DayUsage> = vec![];

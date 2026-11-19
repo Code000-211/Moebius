@@ -10,14 +10,15 @@
 
 use std::sync::Arc;
 
-use axum::Router;
 use axum::extract::{Path as UrlPath, State};
 use axum::routing::{get, post};
+use axum::{Extension, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use super::{ApiError, ApiState, blocking};
 use crate::app::AppError;
+use crate::decide::Actor;
 use crate::workflows::trigger::manual;
 
 /// The routes that start runs of workflows by hand.
@@ -172,22 +173,41 @@ async fn run_inputs(
 
 async fn start(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(name): UrlPath<String>,
     axum::Json(request): axum::Json<StartRequest>,
 ) -> Result<axum::Json<Started>, ApiError> {
-    let repo = harness(&state)?;
+    let repo = harness(&state);
     blocking(&state.app, move |app| {
+        // A run works only in a repository the person sees (see `app::projects::sight`), whether the request or an
+        // input names it.
+        let sight = app.sight(&by)?;
+        let named = [
+            request.repository.as_deref(),
+            request.inputs.get("repository").and_then(Value::as_str),
+        ];
+        for name in named.into_iter().flatten() {
+            if app
+                .store
+                .repositories()?
+                .iter()
+                .any(|r| r.name == name && !sight.repository(r.id))
+            {
+                return Err(AppError::NotFound(format!("repository {name}")));
+            }
+        }
+        let repo = repo?;
         start_manual(app, &repo, &name, &request)
     })
     .await
 }
 
-fn harness(state: &ApiState) -> Result<Arc<crate::harness::repo::HarnessRepo>, ApiError> {
+fn harness(state: &ApiState) -> Result<Arc<crate::harness::repo::HarnessRepo>, AppError> {
     if let Some(repo) = state.harness_repo.clone() {
         return Ok(repo);
     }
     state.app.harness_repo().cloned().map_err(|_| {
-        AppError::Conflict("the server has no harness configuration repository".into()).into()
+        AppError::Conflict("the server has no harness configuration repository".into())
     })
 }
 

@@ -163,10 +163,17 @@ impl App {
         self.links_of(&card)
     }
 
-    /// The open issues of the card's repository that are likely the same as the card's issue, the most alike first.
+    /// The open issues of the card's repository that are likely the same as the card's issue, the most alike first,
+    /// leaving out those of another project that is private.
     pub fn similar_issues(&self, card_id: i64) -> Result<Vec<Similar>> {
         let card = self.card(card_id)?;
-        Ok(likely(&card, self.store.cards(card.repository_id)?))
+        // A card of another project that is private is never offered: its title would show on this card's board.
+        let private: std::collections::HashSet<i64> = self.store.hidden_projects(None)?;
+        let mut cards = self.store.cards(card.repository_id)?;
+        cards.retain(|other| {
+            other.project_id == card.project_id || !private.contains(&other.project_id)
+        });
+        Ok(likely(&card, cards))
     }
 
     /// Offers the likely duplicates of the new issue `card` in a comment of the Moebius agent, which closes nothing and

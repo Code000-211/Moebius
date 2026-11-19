@@ -2,10 +2,14 @@
 //! of each: its repositories, its members and its open cards. The records are in `store::projects`; the settings of a
 //! project and of a repository, the files the harness configuration repository keeps for them, are in `settings`
 //! (renaming a project moves its settings with it); the project's own store of files, where the cards of a project
-//! without a repository are worked on, is in `files`.
+//! without a repository are worked on, is in `files`; who sees a private
+//! project and what of it is in `sight`.
 
 mod files;
 mod settings;
+mod sight;
+
+pub use sight::Sight;
 
 use serde::{Deserialize, Serialize};
 
@@ -44,9 +48,10 @@ pub struct ProjectView {
     pub created_at: i64,
     /// In the order the project names them.
     pub repositories: Vec<ProjectRepository>,
-    /// Everyone of the organisation who is not disabled, while no project is private.
+    /// Who works in it: the people a private project names, everyone of the organisation in a public one; disabled
+    /// people are left out.
     pub members: Vec<Member>,
-    /// The cards on the project's board that are neither closed nor in `Done`.
+    /// The cards on the project's board that are neither closed nor in `Done`; 0 for someone who does not see them.
     pub open_cards: i64,
     /// The id of the repository that holds the project's own files (see `files`), once it is made; the board of a
     /// project without a repository is that repository's.
@@ -55,6 +60,11 @@ pub struct ProjectView {
     pub kinds: Vec<i64>,
     /// Whether the project takes requests (see `app::intake`).
     pub intake: bool,
+    /// Whether only its members see it.
+    pub private: bool,
+    /// Whether the person asking sees its board: true for a public project, and for a private one when they are one of
+    /// its members. An owner who is not sees the project's record only, to add its members.
+    pub member: bool,
 }
 
 /// Refuses a name for a project: empty, longer than [`NAME_LIMIT`], starting with a dot or a space, ending with a dot
@@ -119,7 +129,7 @@ impl App {
             .add_project(name, key)
             .map_err(|e| taken(e, &format!("a project named {name} or with the key {key}")))?;
         self.record_project_files(&project, &path, &branch)?;
-        self.project_view_of(project.id)
+        self.project_view_of(project.id, &Sight::everything())
     }
 
     /// `by` renames the project `id`; its key stays as it was, and a `key` that is not the project's own is refused. A
@@ -133,7 +143,8 @@ impl App {
         name: &str,
         key: Option<&str>,
     ) -> Result<ProjectView> {
-        let project = self.project(id)?;
+        let sight = self.sight(by)?;
+        let project = self.project_seen(id, &sight)?;
         if key.is_some_and(|key| key != project.key) {
             return Err(AppError::Invalid(format!(
                 "a project keeps its key {}: the keys of its cards would change",
@@ -142,7 +153,7 @@ impl App {
         }
         check_name(name)?;
         if project.name == name {
-            return self.project_view(project);
+            return self.project_view(project, &sight);
         }
         if self
             .store
@@ -166,7 +177,46 @@ impl App {
         };
         let renamed = self.project(id)?;
         self.bus.publish(Event::ProjectChanged(renamed.clone()));
-        self.project_view(renamed)
+        self.project_view(renamed, &sight)
+    }
+
+    /// An owner makes the project `id` private or public and names its members, by their handles (with or without the
+    /// `@`), each once. A private project is seen only by its members, the owner who sets it included only when they
+    /// name themselves. Recorded as an `edit_project_access` decision and announced as `project_changed`.
+    pub fn set_project_access(
+        &self,
+        by: &Actor,
+        id: i64,
+        private: bool,
+        members: &[String],
+        reason: &str,
+    ) -> Result<ProjectView> {
+        let sight = self.sight(by)?;
+        let project = self.project_seen(id, &sight)?;
+        let mut ids = Vec::new();
+        let mut handles = Vec::new();
+        for handle in members {
+            let handle = handle.trim().trim_start_matches('@');
+            let person = self
+                .store
+                .person_by_handle(handle)?
+                .ok_or_else(|| AppError::Invalid(format!("no person has the handle @{handle}")))?;
+            if !ids.contains(&person.id) {
+                ids.push(person.id);
+                handles.push(person.handle);
+            }
+        }
+        self.store.set_project_access(id, private, &ids)?;
+        let context = std::collections::BTreeMap::from([
+            ("project".to_string(), project.key.clone()),
+            ("private".to_string(), private.to_string()),
+            ("members".to_string(), handles.join(", ")),
+            ("previous_private".to_string(), project.private.to_string()),
+        ]);
+        self.record_action(by, "edit_project_access", None, None, context, reason)?;
+        let changed = self.project(id)?;
+        self.bus.publish(Event::ProjectChanged(changed.clone()));
+        self.project_view(changed, &self.sight(by)?)
     }
 
     /// The project `id`, or `NotFound`.
@@ -176,21 +226,30 @@ impl App {
             .ok_or_else(|| AppError::NotFound(format!("project {id}")))
     }
 
-    /// Every project as the Projects page shows it, in the order they were made.
-    pub fn project_views(&self) -> Result<Vec<ProjectView>> {
+    /// The project `id` when `sight` sees at least its record, or `NotFound`.
+    fn project_seen(&self, id: i64, sight: &Sight) -> Result<Project> {
+        if !sight.project_record(id) {
+            return Err(AppError::NotFound(format!("project {id}")));
+        }
+        self.project(id)
+    }
+
+    /// Every project `sight` sees, as the Projects page shows it, in the order they were made.
+    pub fn project_views(&self, sight: &Sight) -> Result<Vec<ProjectView>> {
         self.store
             .projects()?
             .into_iter()
-            .map(|project| self.project_view(project))
+            .filter(|project| sight.project_record(project.id))
+            .map(|project| self.project_view(project, sight))
             .collect()
     }
 
-    /// The project `id` as the Projects page shows it.
-    pub fn project_view_of(&self, id: i64) -> Result<ProjectView> {
-        self.project_view(self.project(id)?)
+    /// The project `id` as the Projects page shows it, or `NotFound` when `sight` does not see it.
+    pub fn project_view_of(&self, id: i64, sight: &Sight) -> Result<ProjectView> {
+        self.project_view(self.project_seen(id, sight)?, sight)
     }
 
-    fn project_view(&self, project: Project) -> Result<ProjectView> {
+    fn project_view(&self, project: Project, sight: &Sight) -> Result<ProjectView> {
         let all = self.store.repositories()?;
         let repositories = project
             .repositories
@@ -207,15 +266,23 @@ impl App {
             .people()?
             .into_iter()
             .filter(|person| !person.disabled)
+            .filter(|person| !project.private || project.members.contains(&person.id))
             .map(|person| Member {
                 id: person.id,
                 handle: person.handle,
                 name: person.name,
             })
             .collect();
+        let member = sight.project(project.id);
         Ok(ProjectView {
-            open_cards: self.store.open_cards(project.id)?,
             kinds: self.store.project_kinds(project.id)?,
+            open_cards: if member {
+                self.store.open_cards(project.id)?
+            } else {
+                0
+            },
+            private: project.private,
+            member,
             id: project.id,
             name: project.name,
             key: project.key,
@@ -237,7 +304,7 @@ mod tests {
     use super::*;
     use crate::store::{Role, Store};
 
-    fn app() -> (tempfile::TempDir, App) {
+    pub(super) fn app() -> (tempfile::TempDir, App) {
         let dir = tempfile::tempdir().unwrap();
         let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
         let app = App::new(
@@ -287,7 +354,7 @@ mod tests {
                 "{name:?}: {refused}"
             );
         }
-        assert_eq!(app.project_views().unwrap().len(), 1);
+        assert_eq!(app.project_views(&Sight::everything()).unwrap().len(), 1);
     }
 
     #[test]
@@ -302,7 +369,12 @@ mod tests {
             (renamed.name.as_str(), renamed.key.as_str()),
             ("Shop", "SHOP")
         );
-        assert_eq!(app.project_view_of(shop.id).unwrap().key, "SHOP");
+        assert_eq!(
+            app.project_view_of(shop.id, &Sight::everything())
+                .unwrap()
+                .key,
+            "SHOP"
+        );
         // Its own name in another case is no clash; another project's is.
         assert_eq!(
             app.rename_project(&Actor::first_owner(), shop.id, "SHOP", Some("SHOP"))
@@ -333,6 +405,61 @@ mod tests {
     }
 
     #[test]
+    fn an_owner_makes_a_project_private_and_names_its_members() {
+        let (dir, app) = app();
+        let path = dir.path().join("web").to_string_lossy().into_owned();
+        let web = app.add_repository("web", &path).unwrap();
+        app.store
+            .add_card(web.id, "Open", "", "lea", "Backlog")
+            .unwrap();
+        let lea = app.store.add_person("lea", "Lea", Role::Member).unwrap();
+        let ben = app.store.add_person("ben", "Ben", Role::Member).unwrap();
+        let owner = Actor::first_owner();
+        let project = web.home_project_id;
+        let mut events = app.bus.subscribe();
+
+        // The owner names only Lea: the owner still sees the record, not the board.
+        let view = app
+            .set_project_access(&owner, project, true, &["@lea".into(), "lea".into()], "")
+            .unwrap();
+        assert!(view.private && !view.member);
+        assert_eq!(view.open_cards, 0);
+        let handles: Vec<&str> = view.members.iter().map(|m| m.handle.as_str()).collect();
+        assert_eq!(handles, ["lea"]);
+        assert_eq!(events.try_recv().unwrap().kind, "project_changed");
+        let decided = app
+            .store
+            .judgements_page(None, None, Some("edit_project_access"), 5)
+            .unwrap();
+        assert_eq!(decided.len(), 1);
+
+        let lea_sees = app.sight(&Actor::person(lea.id, "lea")).unwrap();
+        assert_eq!(
+            app.project_view_of(project, &lea_sees).unwrap().open_cards,
+            1
+        );
+        let ben_sees = app.sight(&Actor::person(ben.id, "ben")).unwrap();
+        assert!(matches!(
+            app.project_view_of(project, &ben_sees),
+            Err(AppError::NotFound(_))
+        ));
+        assert!(app.project_views(&ben_sees).unwrap().is_empty());
+        assert!(matches!(
+            app.rename_project(&Actor::person(ben.id, "ben"), project, "Hidden", None),
+            Err(AppError::NotFound(_))
+        ));
+        assert!(matches!(
+            app.set_project_access(&owner, project, true, &["nobody".into()], ""),
+            Err(AppError::Invalid(_))
+        ));
+        // Public again, it is everyone's.
+        let open = app
+            .set_project_access(&owner, project, false, &[], "")
+            .unwrap();
+        assert!(!open.private && open.member && open.members.len() == 3);
+    }
+
+    #[test]
     fn a_project_shows_its_repositories_members_and_open_cards() {
         let (dir, app) = app();
         let path = dir.path().join("web").to_string_lossy().into_owned();
@@ -347,7 +474,9 @@ mod tests {
         let gone = app.store.add_person("tom", "Tom", Role::Member).unwrap();
         app.store.set_person_disabled(gone.id, true).unwrap();
 
-        let view = app.project_view_of(web.home_project_id).unwrap();
+        let view = app
+            .project_view_of(web.home_project_id, &Sight::everything())
+            .unwrap();
         assert_eq!((view.name.as_str(), view.key.as_str()), ("web", "WEB"));
         assert_eq!(
             view.repositories,
@@ -360,6 +489,7 @@ mod tests {
         let handles: Vec<&str> = view.members.iter().map(|m| m.handle.as_str()).collect();
         assert_eq!(handles, ["owner", "lea"], "a disabled person is no member");
         assert_eq!(view.open_cards, 1);
+        assert!(!view.private && view.member);
 
         // The name of a project cannot be a new repository's, whose home project would have it.
         app.add_project("Docs", "DOCS").unwrap();

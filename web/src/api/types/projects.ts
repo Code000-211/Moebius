@@ -10,9 +10,9 @@ export interface Project {
   created_at: number;
   /** In the order the project names them; `home` when this project is where the repository's new issues land. */
   repositories: Array<{ id: number; name: string; home: boolean }>;
-  /** Everyone who is not disabled, while no project is private. */
+  /** The people a private project names; everyone who is not disabled in a public one. */
   members: Array<{ id: number; handle: string; name: string }>;
-  /** The cards on its board that are neither closed nor in Done. */
+  /** The cards on its board that are neither closed nor in Done; 0 when `member` is false. */
   open_cards: number;
   /** The repository that holds the project's own files, whose board is the project's when it has no repository. */
   files: number | null;
@@ -20,6 +20,10 @@ export interface Project {
   kinds: number[];
   /** Whether the project takes requests (see `IntakeRequest`): without intake it has no form. */
   intake: boolean;
+  /** Whether only its members see it. */
+  private: boolean;
+  /** Whether the person signed in sees its board: false only for an owner who is not a member of a private project. */
+  member: boolean;
 }
 
 /** The body of `POST /v1/projects`. */

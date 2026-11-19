@@ -54,6 +54,8 @@ describe("a project's key and tile", () => {
       files: 7,
       kinds: [],
       intake: false,
+      private: false,
+      member: true,
     };
     expect(repositoriesText(project)).toBe("No repository: its own files");
     expect(
