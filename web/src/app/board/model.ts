@@ -7,7 +7,7 @@
 import type { Board, Card, Change, Held, InboxItem, Repository } from "../../api/types/board";
 import type { HistoryEntry, Run } from "../../api/types/cards";
 import { plural } from "../../ui/lib/format";
-import type { Tone } from "../../ui/page/Status";
+import type { StateMark } from "../../ui/page/MarkLabel";
 
 /** The columns of the default workflow, left to right. */
 export const COLUMNS = [
@@ -531,8 +531,10 @@ export function describeHistory(entry: HistoryEntry): string {
 
 export interface CardBadge {
   name: string;
-  /** The state the pill's colour stands for, in the names of the shared pill (`ui/page/Status`). */
-  tone: Tone;
+  /** The mark before the word (`ui/page/MarkLabel`); none says the state as grey text alone. */
+  mark: StateMark;
+  /** Said after the word: the agent of a live card. */
+  detail?: string;
   /** More about the state, for a tooltip; the word is the state and carries it without. */
   hint?: string;
 }
@@ -540,36 +542,36 @@ export interface CardBadge {
 /** The badges of a card: whether it is blocked, what runs, what stops it, how its change stands, who it waits for. What it cost is the dock's, not the card's. */
 export function cardBadges(card: Card, status: CardStatus, next: boolean): CardBadge[] {
   const badges: CardBadge[] = [];
-  if (card.held) badges.push({ name: "Blocked", tone: "error", hint: heldLine(card.held) });
-  if (status === "live") badges.push({ name: "Live", tone: "progress" });
+  if (card.held) badges.push({ name: "Blocked", mark: "blocked", hint: heldLine(card.held) });
+  if (status === "live") badges.push({ name: "Live", mark: "live", detail: card.run?.agent });
   if (card.blocked_by.length > 0) {
     const numbers = card.blocked_by.map((n) => `#${n}`);
     const name =
       numbers.length <= 2
         ? `Waiting on ${numbers.join(", ")}`
         : `Waiting on ${numbers[0]} and ${numbers.length - 1} more`;
-    badges.push({ name, tone: "attention" });
+    badges.push({ name, mark: "none" });
   }
   if (card.refusals > 0) {
     badges.push({
       name: plural(card.refusals, "rule broken", "rules broken"),
-      tone: "error",
+      mark: "none",
     });
   }
   switch (card.change?.checks) {
     case "pending":
-      badges.push({ name: "CI running", tone: "progress" });
+      badges.push({ name: "CI running", mark: "none" });
       break;
     case "success":
-      badges.push({ name: "Green", tone: "complete" });
+      badges.push({ name: "Green", mark: "none" });
       break;
     case "failure":
-      badges.push({ name: "CI failed", tone: "error" });
+      badges.push({ name: "CI failed", mark: "none" });
       break;
   }
-  if (status === "stuck") badges.push({ name: "Stuck", tone: "error" });
-  if (status === "needs-you") badges.push({ name: "Your turn", tone: "attention" });
-  if (next) badges.push({ name: "Next", tone: "neutral" });
+  if (status === "stuck") badges.push({ name: "Stuck", mark: "blocked" });
+  if (status === "needs-you") badges.push({ name: "Your turn", mark: "none" });
+  if (next) badges.push({ name: "Next", mark: "none" });
   return badges;
 }
 

@@ -79,6 +79,7 @@ export function working(snapshot: Snapshot, chats: readonly Chat[]): Work[] {
 }
 
 import { plural } from "../../ui/lib/format";
+import type { StateMark } from "../../ui/page/MarkLabel";
 
 /** What the page says under its title. */
 export function context(count: number): string {
@@ -86,21 +87,21 @@ export function context(count: number): string {
   return `${plural(count, "agent", "agents")} working`;
 }
 
-/** How a working run reads at a glance: the word, and the hue that goes with it. */
+/** How a working run reads at a glance: the word, and the mark before it. */
 export interface Status {
   word: string;
-  /** Work under way, or something that waits for the person. */
-  tone: "progress" | "attention";
+  /** The turning ring for work under way; none for a run that waits for the person, said as grey text. */
+  mark: StateMark;
 }
 
 /**
- * The word for a working run, with the hue that belongs to it. `waiting` is a run that waits for the person, which is
- * why it takes the attention hue rather than the one for work under way.
+ * The word for a working run, with the mark that belongs to it. `waiting` is a run that waits for the person, which is
+ * why it has no ring: nothing is turning.
  */
 export function statusWord(status: string, asks: boolean): Status {
-  if (status === "waiting") return { word: asks ? "Asks you" : "Your turn", tone: "attention" };
-  if (status === "starting") return { word: "Starting", tone: "progress" };
-  return { word: "Running", tone: "progress" };
+  if (status === "waiting") return { word: asks ? "Asks you" : "Your turn", mark: "none" };
+  if (status === "starting") return { word: "Starting", mark: "live" };
+  return { word: "Running", mark: "live" };
 }
 
 /** A number of tokens: `412k tokens`, `1.5M tokens`. */

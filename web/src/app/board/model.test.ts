@@ -439,17 +439,17 @@ describe("the words and links of a card", () => {
       refusals: 1,
       change: { id: 1, state: "open", checks: "failure", review_verdict: null },
     });
-    // The word and the state that colours it, in the order the desktop board draws them; the tones are the shared
-    // pill's (`ui/page/Status`), where a fact that is not a state is `neutral`.
+    // The word and the mark before it, in the order the desktop board draws them; only a blocked card, a stuck one and
+    // a live run have a mark (`ui/page/MarkLabel`), the rest is grey text.
     expect(cardBadges(c, "needs-you", true)).toEqual([
-      { name: "Waiting on #2 and 2 more", tone: "attention" },
-      { name: "1 rule broken", tone: "error" },
-      { name: "CI failed", tone: "error" },
-      { name: "Your turn", tone: "attention" },
-      { name: "Next", tone: "neutral" },
+      { name: "Waiting on #2 and 2 more", mark: "none" },
+      { name: "1 rule broken", mark: "none" },
+      { name: "CI failed", mark: "none" },
+      { name: "Your turn", mark: "none" },
+      { name: "Next", mark: "none" },
     ]);
     expect(cardBadges(card(1, { run }), "live", false)).toEqual([
-      { name: "Live", tone: "progress" },
+      { name: "Live", mark: "live", detail: run.agent },
     ]);
   });
 
@@ -463,11 +463,11 @@ describe("the words and links of a card", () => {
   it("says a held card is Blocked first, apart from the card that waits on issues", () => {
     const c = card(1, { column: "Not started", held, blocked_by: [4] });
     expect(cardBadges(c, "held", false)).toEqual([
-      { name: "Blocked", tone: "error", hint: "wait for the design (blocked by a person)" },
-      { name: "Waiting on #4", tone: "attention" },
+      { name: "Blocked", mark: "blocked", hint: "wait for the design (blocked by a person)" },
+      { name: "Waiting on #4", mark: "none" },
     ]);
     expect(cardBadges(card(2, { blocked_by: [4] }), "blocked", false)).toEqual([
-      { name: "Waiting on #4", tone: "attention" },
+      { name: "Waiting on #4", mark: "none" },
     ]);
   });
 

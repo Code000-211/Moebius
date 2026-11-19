@@ -20,13 +20,12 @@ import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { KanbanIssuePanel, KanbanIssueSection } from "../../ui/components/KanbanIssuePanel";
 import { PrBadge } from "../../ui/components/PrBadge";
-import { RunningDots } from "../../ui/components/RunningDots";
 import { ago } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import { Field } from "../../ui/page/Field";
+import { MarkLabel, type StateMark } from "../../ui/page/MarkLabel";
 import { Notice } from "../../ui/page/Notice";
 import { SkeletonLines } from "../../ui/page/Skeleton";
-import { Status, type Tone } from "../../ui/page/Status";
 import { CardMenu } from "./CardMenu";
 import type { Decision } from "./decisions";
 import { CommentsSection, EditIssueDialog, TrackerSection } from "./IssueSections";
@@ -46,14 +45,15 @@ import {
 } from "./model";
 import { Row } from "./Row";
 
-const STATUS_TONE: Record<CardStatus, Tone> = {
-  held: "error",
-  live: "progress",
-  "needs-you": "attention",
-  stuck: "error",
-  blocked: "attention",
-  waiting: "attention",
-  idle: "neutral",
+/** The mark before the word of a card's status: the ring of a run, the icon of what is blocked, nothing otherwise. */
+const STATUS_MARK: Record<CardStatus, StateMark> = {
+  held: "blocked",
+  live: "live",
+  "needs-you": "none",
+  stuck: "blocked",
+  blocked: "none",
+  waiting: "none",
+  idle: "none",
 };
 
 /** The checks of a change in a word. */
@@ -244,7 +244,7 @@ export function Dock({
       displayId={`#${card.number}`}
       issueUrl={issueUrl(repository, card)}
       title={card.title}
-      status={<Status tone={STATUS_TONE[status]}>{STATUS_LABELS[status]}</Status>}
+      status={<MarkLabel mark={STATUS_MARK[status]} word={STATUS_LABELS[status]} />}
       menu={<CardMenu card={card} {...menu} />}
       onClose={onClose}
     >
@@ -319,7 +319,6 @@ export function Dock({
             {card.run ? (
               <span className="inline-flex flex-wrap items-center gap-2">
                 {card.run.agent} · {card.run.purpose}
-                {status === "live" && <RunningDots />}
               </span>
             ) : (
               "No run has started"

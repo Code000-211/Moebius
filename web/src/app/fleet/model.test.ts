@@ -128,10 +128,10 @@ describe("which runs are working", () => {
 
 describe("the word a row leads with", () => {
   it("says what the run is doing and whether it waits for the person", () => {
-    expect(statusWord("running", false)).toEqual({ word: "Running", tone: "progress" });
-    expect(statusWord("starting", false)).toEqual({ word: "Starting", tone: "progress" });
-    expect(statusWord("waiting", true)).toEqual({ word: "Asks you", tone: "attention" });
-    expect(statusWord("waiting", false)).toEqual({ word: "Your turn", tone: "attention" });
+    expect(statusWord("running", false)).toEqual({ word: "Running", mark: "live" });
+    expect(statusWord("starting", false)).toEqual({ word: "Starting", mark: "live" });
+    expect(statusWord("waiting", true)).toEqual({ word: "Asks you", mark: "none" });
+    expect(statusWord("waiting", false)).toEqual({ word: "Your turn", mark: "none" });
   });
 });
 

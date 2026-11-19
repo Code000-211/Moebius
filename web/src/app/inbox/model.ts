@@ -6,7 +6,7 @@
 import type { Board, Card, Change, InboxItem, Snapshot } from "../../api/types/board";
 import type { Proposal } from "../../api/types/improve";
 import type { GrillingIssue } from "../../api/types/inbox";
-import type { Tone } from "../../ui/page/Status";
+import type { StateMark } from "../../ui/page/MarkLabel";
 import { tokens } from "../board/model";
 
 export const READY_TO_MERGE = "ready_to_merge";
@@ -127,32 +127,31 @@ export function chipName(kind: string): string {
 }
 
 /**
- * What the item is, and how loud: the colour of an error for what is blocked, of attention for what waits for the
- * person's move. The tones are the shared pill's (`ui/page/Status`), so the word and its hue mean the same thing here
- * as they do on a card and on a run.
+ * What the item is, said in a word, with the blocked icon before what is stuck and the ready-to-merge icon before a
+ * change that waits for the person's merge; every other kind is the word alone, as grey text.
  */
-export function kindTag(item: InboxItem): { label: string; tone: Tone } {
+export function kindTag(item: InboxItem): { label: string; mark: StateMark } {
   switch (item.kind) {
     case STUCK:
-      return { label: "Stuck", tone: "error" };
+      return { label: "Stuck", mark: "blocked" };
     case READY_TO_MERGE:
       return item.card_id === null
-        ? { label: "Change from a chat", tone: "attention" }
-        : { label: "Ready to merge", tone: "attention" };
+        ? { label: "Change from a chat", mark: "none" }
+        : { label: "Ready to merge", mark: "readyToMerge" };
     case APPROVE_ISSUE:
-      return { label: "Outside issue", tone: "attention" };
+      return { label: "Outside issue", mark: "none" };
     case CHANGE_CLOSED:
-      return { label: "Closed without a merge", tone: "attention" };
+      return { label: "Closed without a merge", mark: "none" };
     case PROPOSAL:
-      return { label: "Retro proposal", tone: "attention" };
+      return { label: "Retro proposal", mark: "none" };
     case TAKEOVER:
-      return { label: "Decision model", tone: "attention" };
+      return { label: "Decision model", mark: "none" };
     case GRILLING_ISSUES:
-      return { label: "Issues from a grilling", tone: "attention" };
+      return { label: "Issues from a grilling", mark: "none" };
     case GRILLING_REPORT:
-      return { label: "Report from a grilling", tone: "attention" };
+      return { label: "Report from a grilling", mark: "none" };
     default:
-      return { label: sentence(item.kind), tone: "neutral" };
+      return { label: sentence(item.kind), mark: "none" };
   }
 }
 

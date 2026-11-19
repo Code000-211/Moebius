@@ -22,8 +22,8 @@ import { cn } from "../../ui/lib/cn";
 import { ago } from "../../ui/lib/format";
 import { FadedClamp } from "../../ui/page/FadedClamp";
 import { Field, TextArea } from "../../ui/page/Field";
+import { MarkLabel } from "../../ui/page/MarkLabel";
 import { Notice } from "../../ui/page/Notice";
-import { Status } from "../../ui/page/Status";
 import { pullRequestOf } from "../board/model";
 import { type Action, perform, working } from "./actions";
 import { DeleteGrilling } from "./DeleteGrilling";
@@ -68,7 +68,7 @@ export function ItemCard({
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const about = found(snapshot, item);
-  const { label, tone } = kindTag(item);
+  const { label, mark } = kindTag(item);
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Draft[]>(() =>
     item.kind === GRILLING_ISSUES ? draftsOf(item) : [],
@@ -212,7 +212,7 @@ export function ItemCard({
       className="flex flex-col gap-4 rounded-card bg-surface p-4 shadow-card"
     >
       <div className="flex flex-wrap items-center gap-3">
-        <Status tone={tone}>{label}</Status>
+        <MarkLabel mark={mark} word={label} />
         {meta(item, about) !== "" && (
           <span className="min-w-0 break-words text-sm text-secondary">{meta(item, about)}</span>
         )}
