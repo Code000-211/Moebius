@@ -218,7 +218,7 @@ async fn every_route_answers_403_exactly_where_the_reference_says() {
             let request = client
                 .request(method.parse().unwrap(), &url)
                 .bearer_auth(token);
-            let request = if matches!(method, "POST" | "PUT") {
+            let request = if matches!(method, "POST" | "PUT" | "PATCH") {
                 request.json(&serde_json::json!({}))
             } else {
                 request

@@ -15,6 +15,7 @@ import {
   GraphIcon,
   type Icon,
   KeyboardIcon,
+  KeyIcon,
   PlugIcon,
   PlugsConnectedIcon,
   RobotIcon,
@@ -24,6 +25,7 @@ import {
   TerminalWindowIcon,
   TrayIcon,
   TreeStructureIcon,
+  UsersIcon,
   UsersThreeIcon,
 } from "@phosphor-icons/react";
 
@@ -36,6 +38,8 @@ export interface PageDef {
   title: string;
   group: Group;
   icon: Icon;
+  /** Only an owner is shown the page: the sidebar and the command bar leave it out for anyone else. */
+  ownerOnly?: boolean;
 }
 
 export const PAGES: readonly PageDef[] = [
@@ -64,6 +68,8 @@ export const PAGES: readonly PageDef[] = [
   { path: "terminal", title: "Terminal", group: "Setup", icon: TerminalWindowIcon },
   { path: "ports", title: "Ports", group: "Setup", icon: PlugsConnectedIcon },
   { path: "settings", title: "Settings", group: "Setup", icon: GearIcon },
+  { path: "people", title: "People", group: "Setup", icon: UsersIcon, ownerOnly: true },
+  { path: "tokens", title: "My tokens", group: "Setup", icon: KeyIcon },
 ];
 
 export const DEFAULT_PAGE = "inbox";
@@ -80,12 +86,14 @@ export const SETTINGS_PAGES: readonly PageDef[] = [
   "mcp-servers",
   "models",
   "plugin-settings",
+  "people",
   "plugins",
   "ports",
   "shortcuts",
   "rules",
   "skills",
   "terminal",
+  "tokens",
   "usage",
 ]
   .map((path) => PAGES.find((page) => page.path === path))
@@ -99,6 +107,11 @@ export function isSettingsPage(path: string): boolean {
 /** The name the entry of `/settings` carries inside Settings, where "Settings" would name the whole set. */
 export function settingsLabel(page: PageDef): string {
   return page.path === "settings" ? "General" : page.title;
+}
+
+/** Whether a person of `role` is shown `page`; a page nobody has a role for yet is shown. */
+export function shownTo(page: PageDef, role: string | undefined): boolean {
+  return !page.ownerOnly || role === "owner";
 }
 
 export function pageByPath(path: string): PageDef | undefined {

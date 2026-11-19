@@ -30,6 +30,25 @@ export interface Person {
   created_at: number;
 }
 
+/** An access token (`GET /v1/tokens`); the token itself is shown once, in the answer that made it. */
+export interface AccessToken {
+  id: number;
+  person_id: number;
+  name: string;
+  created_at: number;
+  last_used_at: number | null;
+  revoked_at: number | null;
+}
+
+/** A token as it is made: the record and the token itself. */
+export type IssuedToken = AccessToken & { token: string };
+
+/** `POST /v1/people`: the person and their first token. */
+export interface AddedPerson {
+  person: Person;
+  token: IssuedToken;
+}
+
 /**
  * `GET /v1/session`: the answer of a signed-in browser, with the person it is signed in as. `person` is null for an
  * agent's run token, and absent for the moment between signing in and reading the session again.

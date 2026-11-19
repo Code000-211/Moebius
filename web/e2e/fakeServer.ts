@@ -100,11 +100,40 @@ export async function startFakeServer(): Promise<FakeServer> {
   const people = [
     { id: 1, handle: "owner", name: "Owner", role: "owner", disabled: false, created_at: 0 },
   ];
-  /** Each access token's person, by id. */
-  const accessTokens = new Map<string, number>();
-  /** The person a token stands for: the first owner for the server's token. */
-  const personOf = (token: string | undefined) =>
-    token === TOKEN ? 1 : token === undefined ? undefined : accessTokens.get(token);
+  /** Each access token's record, by the token itself. */
+  const accessTokens = new Map<
+    string,
+    {
+      id: number;
+      person_id: number;
+      name: string;
+      created_at: number;
+      last_used_at: number | null;
+      revoked_at: number | null;
+    }
+  >();
+  /** The person a token stands for: the first owner for the server's token; none for a revoked token or a disabled person. */
+  const personOf = (token: string | undefined) => {
+    if (token === TOKEN) return 1;
+    const record = token === undefined ? undefined : accessTokens.get(token);
+    if (!record || record.revoked_at !== null) return undefined;
+    if (people.find((p) => p.id === record.person_id)?.disabled) return undefined;
+    record.last_used_at = Math.floor(Date.now() / 1000);
+    return record.person_id;
+  };
+  const issue = (person: number, name: string) => {
+    const token = `moebius-access-${randomBytes(32).toString("hex")}`;
+    const record = {
+      id: accessTokens.size + 1,
+      person_id: person,
+      name,
+      created_at: 0,
+      last_used_at: null,
+      revoked_at: null,
+    };
+    accessTokens.set(token, record);
+    return { ...record, token };
+  };
   const codes = new Set<string>([LOGIN_CODE]);
   const sockets = new Set<WebSocket>();
   const guardLog: Array<string | undefined> = [];
@@ -124,7 +153,9 @@ export async function startFakeServer(): Promise<FakeServer> {
 
   const signedIn = (request: IncomingMessage) => {
     const cookie = cookieOf(request);
-    return cookie !== undefined && sessions.has(cookie);
+    if (cookie === undefined || !sessions.has(cookie)) return false;
+    // A person who was disabled since is signed out at once.
+    return !people.find((p) => p.id === sessions.get(cookie))?.disabled;
   };
 
   async function api(request: IncomingMessage, response: ServerResponse, path: string) {
@@ -161,11 +192,62 @@ export async function startFakeServer(): Promise<FakeServer> {
       };
       const person = { id: people.length + 1, ...body, disabled: false, created_at: 0 };
       people.push(person);
-      const token = `moebius-access-${randomBytes(32).toString("hex")}`;
-      accessTokens.set(token, person.id);
-      return json(response, { person, token: { id: person.id, person_id: person.id, token } });
+      return json(response, { person, token: issue(person.id, "first token") });
     }
     if (!signedIn(request)) return text(response, 401, "a valid token is needed");
+    const asker = sessions.get(cookieOf(request) as string) as number;
+    const askerRole = people.find((p) => p.id === asker)?.role;
+    const mine = (id: number) => [...accessTokens.entries()].filter(([, t]) => t.person_id === id);
+    if (path === "/v1/people" && method === "GET") return json(response, people);
+    if (path === "/v1/people" && method === "POST") {
+      if (askerRole !== "owner") return text(response, 403, "only an owner can do this");
+      const body = JSON.parse(await readBody(request)) as {
+        handle: string;
+        name: string;
+        role: string;
+      };
+      if (people.some((p) => p.handle === body.handle))
+        return text(response, 409, `@${body.handle} is taken`);
+      const person = { id: people.length + 1, ...body, disabled: false, created_at: 0 };
+      people.push(person);
+      return json(response, { person, token: issue(person.id, "first token") });
+    }
+    const personRoute = /^\/v1\/people\/(\d+)(\/tokens)?$/.exec(path);
+    if (personRoute) {
+      const id = Number(personRoute[1]);
+      const person = people.find((p) => p.id === id);
+      if (askerRole !== "owner" && !(personRoute[2] && id === asker))
+        return text(response, 403, "only an owner can do this");
+      if (!person) return text(response, 404, `person ${id}`);
+      if (personRoute[2] && method === "GET")
+        return json(
+          response,
+          mine(id).map(([, t]) => t),
+        );
+      if (!personRoute[2] && method === "PATCH") {
+        const body = JSON.parse(await readBody(request)) as { role?: string; disabled?: boolean };
+        if (body.role !== undefined) person.role = body.role;
+        if (body.disabled !== undefined) person.disabled = body.disabled;
+        return json(response, person);
+      }
+    }
+    if (path === "/v1/tokens" && method === "GET")
+      return json(
+        response,
+        mine(asker).map(([, t]) => t),
+      );
+    if (path === "/v1/tokens" && method === "POST") {
+      const body = JSON.parse(await readBody(request)) as { name: string };
+      return json(response, issue(asker, body.name));
+    }
+    const tokenRoute = /^\/v1\/tokens\/(\d+)$/.exec(path);
+    if (tokenRoute && method === "DELETE") {
+      const found = [...accessTokens.values()].find((t) => t.id === Number(tokenRoute[1]));
+      if (!found || (found.person_id !== asker && askerRole !== "owner"))
+        return text(response, 404, `token ${tokenRoute[1]}`);
+      found.revoked_at = 1;
+      return json(response, found);
+    }
     if (path === "/v1/session" && method === "GET") {
       const id = sessions.get(cookieOf(request) as string);
       return json(response, { signed_in: true, person: people.find((p) => p.id === id) ?? null });

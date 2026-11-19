@@ -3,9 +3,15 @@
  * the old session goes with it, and the session is read again, which is what brings the sign-in page back. The Shell
  * holds that page, so the rule lives here rather than in the screen that happens to be asked.
  */
-import type { QueryClient } from "@tanstack/react-query";
-import { signOut } from "../../api/calls/session";
+import { type QueryClient, useQuery } from "@tanstack/react-query";
+import { getSession, signOut } from "../../api/calls/session";
 import { keys } from "../../api/keys";
+
+/** The role of the person this browser is signed in as, once the session is read; it never asks for it itself. */
+export function useRole(): string | undefined {
+  const session = useQuery({ queryKey: keys.session, queryFn: getSession, enabled: false });
+  return session.data?.person?.role;
+}
 
 export async function leaveSession(queryClient: QueryClient): Promise<void> {
   try {

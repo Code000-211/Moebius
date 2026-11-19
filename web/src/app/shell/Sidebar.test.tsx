@@ -211,7 +211,7 @@ describe("the pages and the settings", () => {
     show({ at: "/models" });
     await screen.findByRole("navigation", { name: "Pages" });
     // The collapsed rail is nothing but these marks, so a row without one is a row nobody can find.
-    for (const page of SETTINGS_PAGES) {
+    for (const page of SETTINGS_PAGES.filter((each) => !each.ownerOnly)) {
       const row = screen.getByRole("link", { name: settingsLabel(page) });
       expect(row.querySelector("svg"), page.path).not.toBeNull();
     }

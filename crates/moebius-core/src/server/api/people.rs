@@ -3,6 +3,8 @@
 //! - `GET /v1/people`: every person, disabled ones included.
 //! - `POST /v1/people` `{handle, name, role}`: an owner adds a person, and gets their first access token, named
 //!   `first token`, to hand over.
+//! - `PATCH /v1/people/{id}` `{role?, disabled?}`: an owner changes a person's role or disables or enables them; a
+//!   disabled person is signed out at once, and the last owner who is not disabled cannot be demoted or disabled.
 //! - `GET /v1/people/{id}/tokens`: a person's access tokens with when each was last used; an owner's or the person's
 //!   own.
 //! - `GET /v1/tokens`, `POST /v1/tokens` `{name}`: the tokens of the person asking, and a new one for them.
@@ -15,7 +17,7 @@
 
 use axum::extract::{Path as UrlPath, State};
 use axum::http::StatusCode;
-use axum::routing::{delete, get};
+use axum::routing::{delete, get, patch};
 use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
 
@@ -39,6 +41,7 @@ const NAME_LIMIT: usize = 100;
 pub(super) fn routes() -> Router<ApiState> {
     Router::new()
         .route("/v1/people", get(people).post(add_person))
+        .route("/v1/people/{id}", patch(change_person))
         .route("/v1/people/{id}/tokens", get(tokens_of))
         .route("/v1/tokens", get(own_tokens).post(new_own_token))
         .route("/v1/tokens/{id}", delete(revoke))
@@ -88,6 +91,13 @@ pub struct NewPerson {
 pub struct AddedPerson {
     pub person: Person,
     pub token: IssuedToken,
+}
+
+/// What `PATCH /v1/people/{id}` takes: what is absent stays as it is.
+#[derive(Debug, Deserialize)]
+pub struct PersonChange {
+    pub role: Option<Role>,
+    pub disabled: Option<bool>,
 }
 
 /// What `POST /v1/tokens` takes.
@@ -169,6 +179,35 @@ async fn add_person(
         .map_err(internal)?;
     let token = issue(&state, person.id, FIRST_TOKEN)?;
     Ok(Json(AddedPerson { person, token }))
+}
+
+async fn change_person(
+    State(state): State<ApiState>,
+    signed_in: Option<Extension<SignedIn>>,
+    UrlPath(id): UrlPath<i64>,
+    Json(change): Json<PersonChange>,
+) -> Result<Json<Person>, ApiError> {
+    // Only an owner gets here (see `roles`).
+    asker(signed_in)?;
+    let store = &state.app.store;
+    let not_found = || ApiError(StatusCode::NOT_FOUND, format!("person {id}"));
+    let current = store.person(id).map_err(internal)?.ok_or_else(not_found)?;
+    let role = change.role.unwrap_or(current.role);
+    let disabled = change.disabled.unwrap_or(current.disabled);
+    let owner_now = current.role == Role::Owner && !current.disabled;
+    let owner_after = role == Role::Owner && !disabled;
+    if owner_now && !owner_after && store.active_owners().map_err(internal)? <= 1 {
+        return Err(invalid("the last owner cannot be demoted or disabled"));
+    }
+    if role != current.role {
+        store.set_person_role(id, role).map_err(internal)?;
+    }
+    if disabled != current.disabled {
+        store.set_person_disabled(id, disabled).map_err(internal)?;
+    }
+    Ok(Json(
+        store.person(id).map_err(internal)?.ok_or_else(not_found)?,
+    ))
 }
 
 async fn tokens_of(
@@ -324,6 +363,83 @@ mod tests {
             .unwrap();
         let handles: Vec<&str> = people.iter().map(|p| p.handle.as_str()).collect();
         assert_eq!(handles, ["owner", "lea"]);
+    }
+
+    #[tokio::test]
+    async fn an_owner_changes_a_role_and_disables_a_person_who_is_signed_out_at_once() {
+        let (_dir, state, addr) = start().await;
+        let added: AddedPerson = add(&addr, &state.token, "lea", "member")
+            .await
+            .json()
+            .await
+            .unwrap();
+        let lea = added.token.token.clone();
+        let url = format!("http://{addr}/v1/people/{}", added.person.id);
+        let patch = |token: String, body: serde_json::Value| {
+            let url = url.clone();
+            async move {
+                http()
+                    .patch(url)
+                    .bearer_auth(token)
+                    .json(&body)
+                    .send()
+                    .await
+                    .unwrap()
+            }
+        };
+        let refused = patch(lea.clone(), serde_json::json!({"role": "owner"})).await;
+        assert_eq!(refused.status(), Status::FORBIDDEN);
+        let changed: Person = patch(
+            state.token.to_string(),
+            serde_json::json!({"role": "viewer"}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+        assert_eq!(changed.role, Role::Viewer);
+        let tokens_url = format!("http://{addr}/v1/tokens");
+        let me = |token: String| {
+            let tokens_url = tokens_url.clone();
+            async move {
+                http()
+                    .get(tokens_url)
+                    .bearer_auth(token)
+                    .send()
+                    .await
+                    .unwrap()
+                    .status()
+            }
+        };
+        assert_eq!(me(lea.clone()).await, Status::OK);
+        let off: Person = patch(
+            state.token.to_string(),
+            serde_json::json!({"disabled": true}),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+        assert!(off.disabled);
+        assert_eq!(me(lea.clone()).await, Status::UNAUTHORIZED);
+        // The last owner stays.
+        let owner = state.app.store.people().unwrap()[0].id;
+        let last = http()
+            .patch(format!("http://{addr}/v1/people/{owner}"))
+            .bearer_auth(&*state.token)
+            .json(&serde_json::json!({"disabled": true}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(last.status(), Status::UNPROCESSABLE_ENTITY);
+        let missing = http()
+            .patch(format!("http://{addr}/v1/people/9999"))
+            .bearer_auth(&*state.token)
+            .json(&serde_json::json!({}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), Status::NOT_FOUND);
     }
 
     #[tokio::test]
