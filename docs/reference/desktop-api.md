@@ -89,6 +89,12 @@ any route to any role that is not what its row says.
 | `GET /v1/tokens` | viewer | no |
 | `POST /v1/tokens` | viewer | no |
 | `DELETE /v1/tokens/{id}` | viewer | no |
+| `GET /v1/places` | viewer | no |
+| `POST /v1/favourites` | viewer | no |
+| `PUT /v1/favourites/order` | viewer | no |
+| `DELETE /v1/favourites/{id}` | viewer | no |
+| `POST /v1/recent` | viewer | no |
+| `DELETE /v1/recent/{id}` | viewer | no |
 | `GET /v1/server` | viewer | yes |
 | `GET /v1/client` | viewer | yes |
 | `PUT /v1/client` | viewer | no |
@@ -469,6 +475,46 @@ string}` (1 to 100 characters). Response: `AccessToken & {"token": string}`. Err
 Revokes an access token, the asker's own or, for an owner, anyone's; the sessions it opened end with it, and every
 request with it is refused at once. Revoking one that is revoked already changes nothing. Response: the `AccessToken`,
 with `revoked_at`. Errors: `404` for no such token, and for another person's token when the asker is not an owner.
+
+### Favourites and recent places
+
+What a person pins to the sidebar and what they opened lately, kept for them on the server, so both follow them to
+every browser they sign in on. These routes are a person's own: a run token gets `403`. A `Place` is `{"id": number,
+"kind": "project" | "view" | "card" | "page", "repository_id": number, "key": string, "title": string}`: `key` is a
+card's id, a view's or a page's slug, and empty for a project. Every answer but a refused one is `{"favourites":
+[Place], "recent": [Place]}`: the pins in the order the person put them, and the places they opened, newest first,
+at most 20. A place whose repository or card is gone, so that the person can no longer see it, is left out of both
+lists and forgotten the first time they are read; a project's and a card's `title` is its name or title now.
+
+### `GET /v1/places`
+
+The two lists of the person asking.
+
+### `POST /v1/favourites`
+
+Pins a place at the end of the list; a place that is pinned already keeps its position. Request body: `{"kind":
+string, "repository_id": number, "key": string, "title": string}`. A project needs its `repository_id`; a card its
+`key`, which is its id, and the server fills in its repository and title; a view or a page needs `repository_id`, `key`
+and `title` (at most 200 characters). Errors: `422` for another kind or a missing field, `404` for a repository or card
+that does not exist.
+
+### `PUT /v1/favourites/order`
+
+Puts the pins in the order of `ids`, a list of pin ids. A pin the list leaves out follows the ones it names; an id that
+is not the asker's pin is ignored.
+
+### `DELETE /v1/favourites/{id}`
+
+Removes a pin. Errors: `404` for no such pin, and for another person's.
+
+### `POST /v1/recent`
+
+Notes that the person opened a place: it goes to the top of the recent list, once. The body is that of
+`POST /v1/favourites`.
+
+### `DELETE /v1/recent/{id}`
+
+Forgets a recent place. Errors: `404` for no such place, and for another person's.
 
 ### `GET /v1/server`
 

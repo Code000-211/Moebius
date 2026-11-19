@@ -36,6 +36,8 @@ export const keys = {
   scripts: ["script"] as const,
   script: (repository: number, column: string) => ["script", repository, column] as const,
   chats: ["chats"] as const,
+  /** The person's pins and recent places. */
+  places: ["places"] as const,
   agents: ["agents"] as const,
   models: ["models"] as const,
   skills: ["skills"] as const,
