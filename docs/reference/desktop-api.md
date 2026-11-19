@@ -147,8 +147,8 @@ any route to any role that is not what its row says.
 | `PUT /v1/projects/{id}/scripts/{column}` | owner | yes |
 | `DELETE /v1/projects/{id}/scripts/{column}` | owner | yes |
 | `PUT /v1/projects/{id}/access` | owner | no |
-| `POST /v1/projects/{id}/repositories` | owner | no |
-| `DELETE /v1/projects/{id}/repositories/{repository}` | owner | no |
+| `POST /v1/projects/{id}/repositories` | owner | yes |
+| `DELETE /v1/projects/{id}/repositories/{repository}` | owner | yes |
 | `POST /v1/repositories` | owner | yes |
 | `PUT /v1/repositories/{id}` | owner | yes |
 | `DELETE /v1/repositories/{id}` | owner | yes |
