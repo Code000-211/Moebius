@@ -390,6 +390,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_issue_of_a_private_project_cannot_be_related_to_by_its_number_by_a_non_member() {
+        let (_dir, state, addr) = start().await;
+        let store = &state.app.store;
+        let repo = store.repositories().unwrap()[0].id;
+        let open = store.add_card(repo, "Open", "", "lea", "Backlog").unwrap();
+        let secret = store
+            .add_card(repo, "Secret plan", "", "lea", "Backlog")
+            .unwrap();
+        let shop = store.add_project("Hidden", "HID").unwrap();
+        store.set_card_project(secret.id, shop.id).unwrap();
+        store.set_project_access(shop.id, true, &[]).unwrap();
+        let lea = store
+            .add_person("lea", "Lea", crate::store::Role::Member)
+            .unwrap();
+        let token = format!("{}{:064}", crate::server::api::TOKEN_PREFIX, 7);
+        store.add_access_token(lea.id, "one", &token).unwrap();
+        for (method, path, body) in [
+            (
+                "PUT",
+                format!("/v1/cards/{}/duplicate", open.id),
+                json!({"original": secret.number}),
+            ),
+            (
+                "POST",
+                format!("/v1/cards/{}/related", open.id),
+                json!({"related": secret.number}),
+            ),
+        ] {
+            let response = reqwest::Client::new()
+                .request(method.parse().unwrap(), format!("http://{addr}{path}"))
+                .bearer_auth(&token)
+                .json(&body)
+                .send()
+                .await
+                .unwrap();
+            let status = response.status();
+            let text = response.text().await.unwrap();
+            assert_eq!(status, 404, "{path}: {text}");
+            assert!(!text.contains("Secret plan"), "{text}");
+        }
+    }
+
+    #[tokio::test]
     async fn a_card_key_names_the_issue_in_any_case_and_an_unknown_one_is_refused() {
         let (_dir, state, addr) = start().await;
         let card = state.app.store.card(1).unwrap().unwrap();

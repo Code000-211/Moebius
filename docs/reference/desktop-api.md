@@ -493,7 +493,7 @@ instead of `data.trials`), `wiki_proposal` (`data.branch`, `data.page`, `data.me
 project and the draft issue and it has no card; see [Intake](#intake)) and `takeover` (`data.takeover`, `data.kind`, `data.agreement`,
 `data.count`; its `title` is "The decision model can take over <kind>" and it has no card) and `extension_update`
 (`data.package`, `data.from`, `data.to`, `data.source`; its `title` is "<package> <from> -> <to>" and it has no card) and
-`webhook_failed` (`data.webhook`, `data.url`, `data.event`, `data.error`, `data.attempts`; its `title` says which webhook was given up on and it has no card; see [Outgoing webhooks](configuration.md#outgoing-webhooks)) and
+`webhook_failed` (`data.webhook`, `data.url` (the scheme, host and port only), `data.event`, `data.error`, `data.attempts`; its `title` says which webhook was given up on and it has no card; see [Outgoing webhooks](configuration.md#outgoing-webhooks)) and
 `workflow_approval` (`data.run`, `data.node`, `data.prompt`, `data.value` and `data.deadline` in whole seconds since the
 epoch; its `title` is the prompt and it has no card; it carries the decision a workflow run waits for, see
 [the approval node](workflows/approval.md)). The nightly schedule, from `retro_at` on, once a day, puts one

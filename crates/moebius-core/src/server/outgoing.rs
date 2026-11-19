@@ -4,7 +4,7 @@
 //! ([`Scope`]), and posts `{id, kind, at, data}` to each, signed: the header [`SIGNATURE_HEADER`] holds
 //! `sha256=<hex HMAC-SHA256 of the body under the hook's secret>`. A post that fails is tried again after each wait of
 //! the [`Policy`]; when the last one fails too the hook is given up on for that event and a `webhook_failed` item is
-//! put in the inbox. The secret of a hook is kept in `secrets.toml` as `outgoing-webhook-<id>`, never in the store,
+//! put in the inbox (naming only the site of the hook, never its path). The secret of a hook is kept in `secrets.toml` as `outgoing-webhook-<id>`, never in the store,
 //! and the event is redacted before it leaves. An event of a private project goes only to a hook that names the
 //! project; an event of no project goes only to a hook that names none. The hooks are edited through
 //! `api::outgoing`.
@@ -67,6 +67,9 @@ impl Default for Policy {
 pub enum Scope {
     /// An event of the repository with this id.
     Project(i64),
+    /// An event of a private project of the repository with this id (a private repository, or a card or other thing
+    /// of a private project): only a hook that names the repository has it.
+    Private(i64),
     /// An event of the whole server, such as an installed package.
     Server,
     /// An event whose project cannot be found, or that is not known to be of the whole server, which goes nowhere.
@@ -185,6 +188,7 @@ pub fn wants(store: &Store, hook: &OutgoingWebhook, kind: &str, scope: Scope) ->
     match scope {
         Scope::Unknown => false,
         Scope::Server => hook.projects.is_empty(),
+        Scope::Private(id) => hook.projects.contains(&id),
         Scope::Project(id) => {
             hook.projects.contains(&id)
                 || (hook.projects.is_empty() && !store.repository_is_private(id).unwrap_or(true))
@@ -243,6 +247,13 @@ impl Outgoing {
         }
     }
 
+    /// Whether a person who is a member of no private project sees what `event` is about.
+    fn sees_publicly(&self, event: &AppEvent) -> bool {
+        self.app
+            .sight_of(None)
+            .is_ok_and(|sight| crate::server::api::event_is_seen(&self.app, &sight, event))
+    }
+
     /// Starts the delivery of `event` to every hook that wants it; each handle ends when its delivery has arrived or
     /// been given up on.
     pub fn dispatch(&self, event: &AppEvent) -> Vec<JoinHandle<()>> {
@@ -257,7 +268,12 @@ impl Outgoing {
         if hooks.is_empty() {
             return Vec::new();
         }
-        let scope = scope(store, event);
+        let scope = match scope(store, event) {
+            // What a person who is no member of any private project would not see is private (ADR 0018), whatever
+            // the repository it is in.
+            Scope::Project(id) if !self.sees_publicly(event) => Scope::Private(id),
+            scope => scope,
+        };
         let mut id = [0u8; 16];
         let _ = getrandom::fill(&mut id);
         let body = json!({
@@ -281,13 +297,16 @@ impl Outgoing {
                 tokio::spawn(async move {
                     let outcome = deliver(&client, &secrets, &policy, &hook, &kind, &body).await;
                     if let Err(error) = outcome {
+                        // Every member reads the inbox, and a hook's address may carry a secret in its path or query
+                        // (a chat service's), so only where it is, not how to reach it, is told.
+                        let site = site_of(&hook.url);
                         let _ = app.store.add_inbox_item(
                             WEBHOOK_FAILED,
                             None,
-                            &format!("The webhook to {} was given up on", hook.url),
+                            &format!("The webhook to {site} was given up on"),
                             &json!({
                                 "webhook": hook.id,
-                                "url": hook.url,
+                                "url": site,
                                 "event": kind,
                                 "error": error.to_string(),
                                 "attempts": policy.backoff.len() + 1,
@@ -297,6 +316,19 @@ impl Outgoing {
                 })
             })
             .collect()
+    }
+}
+
+/// The scheme, host and port of `url`, without a user, a path or a query.
+fn site_of(url: &str) -> String {
+    match reqwest::Url::parse(url) {
+        Ok(url) => format!(
+            "{}://{}{}",
+            url.scheme(),
+            url.host_str().unwrap_or_default(),
+            url.port().map(|p| format!(":{p}")).unwrap_or_default()
+        ),
+        Err(_) => "an address".into(),
     }
 }
 
@@ -535,6 +567,9 @@ mod tests {
         assert_eq!(inbox[0].data["event"], "card_moved");
         assert_eq!(inbox[0].data["error"], "the receiver answered 500");
         assert!(!inbox[0].data.to_string().contains("whsec_"));
+        // An address that holds a secret in its path is not told to every member of the inbox.
+        assert!(!inbox[0].data.to_string().contains("/hook"));
+        assert!(!inbox[0].title.contains("/hook"));
     }
 
     #[tokio::test]
@@ -611,6 +646,33 @@ mod tests {
         assert_eq!(all.posts.load(Ordering::SeqCst), 1);
         assert_eq!(named.posts.load(Ordering::SeqCst), 1);
         assert_eq!(other_r.posts.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn a_card_of_a_private_project_in_a_public_repository_reaches_only_a_hook_that_names_it()
+    {
+        let f = fixture(0);
+        let repo = f
+            .app
+            .store
+            .add_repository("demo", "/d", "none", "main")
+            .unwrap();
+        let card = f
+            .app
+            .store
+            .add_card(repo.id, "A card", "", "leon", "Backlog")
+            .unwrap();
+        f.app
+            .store
+            .set_project_access(card.project_id, true, &[])
+            .unwrap();
+        let (all_url, all) = receiver(0).await;
+        let (named_url, named) = receiver(0).await;
+        f.hook(&all_url, &["card_moved"], &[]);
+        f.hook(&named_url, &["card_moved"], &[repo.id]);
+        f.send(moved(card.id)).await;
+        assert_eq!(all.posts.load(Ordering::SeqCst), 0);
+        assert_eq!(named.posts.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
