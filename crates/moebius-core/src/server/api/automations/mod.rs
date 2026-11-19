@@ -7,12 +7,13 @@
 //! - `POST /v1/automations/{id}/run`: fires it now. `GET /v1/automations/{id}/firings`: its firings, newest first, each
 //!   with its chat.
 
-use axum::Router;
 use axum::extract::{Path as UrlPath, State};
 use axum::routing::{get, post};
+use axum::{Extension, Router};
 
 use super::{ApiError, ApiState, blocking};
 use crate::app::AutomationView;
+use crate::decide::Actor;
 use crate::store::{Firing, NewAutomation};
 
 /// The routes of the automations.
@@ -31,8 +32,19 @@ pub(super) fn routes() -> Router<ApiState> {
 
 async fn automations(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
 ) -> Result<axum::Json<Vec<AutomationView>>, ApiError> {
-    blocking(&state.app, |app| app.automations()).await
+    blocking(&state.app, move |app| {
+        let sight = app.sight(&by)?;
+        let mut views = app.automations()?;
+        views.retain(|view| {
+            view.automation
+                .repository_id
+                .is_none_or(|r| sight.repository(r))
+        });
+        Ok(views)
+    })
+    .await
 }
 
 async fn add_automation(

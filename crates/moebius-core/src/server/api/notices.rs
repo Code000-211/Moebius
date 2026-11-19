@@ -37,7 +37,21 @@ async fn notices(
     State(state): State<ApiState>,
     Extension(by): Extension<Actor>,
 ) -> Result<Json<Vec<Notice>>, ApiError> {
-    blocking(&state.app, move |app| app.notices(&by)).await
+    blocking(&state.app, move |app| {
+        // A notice of a card of a private project the person is no member of (any more) is left out.
+        let sight = app.sight(&by)?;
+        let mut seen = Vec::new();
+        for notice in app.notices(&by)? {
+            if notice
+                .card_id
+                .is_none_or(|card| app.sees_card(&sight, card).unwrap_or(false))
+            {
+                seen.push(notice);
+            }
+        }
+        Ok(seen)
+    })
+    .await
 }
 
 async fn read(

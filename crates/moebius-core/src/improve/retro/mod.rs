@@ -192,6 +192,53 @@ pub fn view(store: &Store, date: &str) -> Result<RetroView> {
     view_of(store, retro)
 }
 
+/// `view` as `sight` sees it (see `app::projects::sight`): without the errors and merged cards of the private projects
+/// it does not see, and with their proposals unquoted or left out.
+pub fn seen_by(
+    app: &crate::app::App,
+    sight: &crate::app::Sight,
+    mut view: RetroView,
+) -> Result<RetroView> {
+    if sight.hides_nothing() {
+        return Ok(view);
+    }
+    let (errors_before, merged_before) = (view.report.errors.len(), view.report.merged.len());
+    let mut errors = Vec::new();
+    for error in view.report.errors {
+        let seen = match (error.card, error.run) {
+            (Some(card), _) => app.sees_card(sight, card)?,
+            (None, Some(run)) => app.sees_run_id(sight, run)?,
+            (None, None) => true,
+        };
+        if seen {
+            errors.push(error);
+        }
+    }
+    view.report.errors = errors;
+    let mut merged = Vec::new();
+    for card in view.report.merged {
+        if app.sees_card(sight, card.card)? {
+            merged.push(card);
+        }
+    }
+    // The warnings may name what the Retro wrote of the cards left out; they go with them.
+    if errors_before + merged_before != view.report.errors.len() + merged.len() {
+        view.warnings.clear();
+    }
+    view.report.merged = merged;
+    let mut proposals = Vec::new();
+    for proposal in view.proposals {
+        proposals.extend(app.unquoted(sight, proposal)?);
+    }
+    view.proposals = proposals;
+    if let Some(run) = view.run_id
+        && !app.sees_run_id(sight, run)?
+    {
+        view.run_id = None;
+    }
+    Ok(view)
+}
+
 /// All Retros, the latest day first, without their reports.
 pub fn summaries(store: &Store) -> Result<Vec<RetroSummary>> {
     let proposals = store.proposals(None)?;

@@ -7,17 +7,18 @@
 
 use std::time::Duration;
 
-use axum::Router;
 use axum::extract::ws::{CloseFrame, Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path as UrlPath, State};
 use axum::http::StatusCode;
 use axum::response::Response;
 use axum::routing::get;
+use axum::{Extension, Router};
 use futures_util::{SinkExt, StreamExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use super::{ApiError, ApiState, internal};
+use crate::decide::Actor;
 use crate::server::ports::{self, Port};
 
 /// How long the server waits for the port to take a connection.
@@ -30,15 +31,36 @@ pub(super) fn routes() -> Router<ApiState> {
         .route("/v1/ports/{port}/tunnel", get(tunnel))
 }
 
-async fn list(State(state): State<ApiState>) -> Result<axum::Json<Vec<Port>>, ApiError> {
+/// The ports listening now that `by` sees: none of a run of a private project they are no member of (see
+/// `app::projects::sight`).
+async fn seen_ports(state: &ApiState, by: Actor) -> Result<(Vec<Port>, Vec<u16>), ApiError> {
     let app = state.app.clone();
-    let found = tokio::task::spawn_blocking(move || ports::detect(&app))
-        .await
-        .map_err(internal)?;
-    Ok(axum::Json(found))
+    tokio::task::spawn_blocking(move || {
+        let sight = app.sight(&by)?;
+        let (mut seen, mut hidden) = (Vec::new(), Vec::new());
+        for port in ports::detect(&app) {
+            match port.run {
+                Some(run) if !app.sees_run_id(&sight, run)? => hidden.push(port.port),
+                _ => seen.push(port),
+            }
+        }
+        Ok::<_, crate::app::AppError>((seen, hidden))
+    })
+    .await
+    .map_err(internal)?
+    .map_err(ApiError::from)
+}
+
+async fn list(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+) -> Result<axum::Json<Vec<Port>>, ApiError> {
+    Ok(axum::Json(seen_ports(&state, by).await?.0))
 }
 
 async fn tunnel(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(port): UrlPath<u16>,
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
@@ -47,6 +69,9 @@ async fn tunnel(
             StatusCode::UNPROCESSABLE_ENTITY,
             "port 0 is no port".into(),
         ));
+    }
+    if seen_ports(&state, by).await?.1.contains(&port) {
+        return Err(ApiError(StatusCode::NOT_FOUND, format!("no port {port}")));
     }
     let stream = connect(port).await?;
     Ok(upgrade.on_upgrade(move |socket| carry(socket, stream)))

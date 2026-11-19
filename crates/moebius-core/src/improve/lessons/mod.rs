@@ -14,7 +14,7 @@ use serde::Deserialize;
 
 use crate::app::App;
 use crate::blobs::redact;
-use crate::store::{Card, Lesson, NewLesson, Store, now};
+use crate::store::{Card, Lesson, NewLesson, now};
 
 /// How many lessons a run's prompt holds at most.
 pub const PROMPT_LESSONS: usize = 5;
@@ -142,12 +142,42 @@ pub fn section(lessons: &[Lesson]) -> String {
     text
 }
 
+/// How many more lessons than it keeps a search reads, since those of another private project are left out after it.
+const SEARCHED: usize = 4;
+
+/// The best lessons of `repository` for `text`, at most `limit`, that a run of the project `project` may find (see
+/// [`App::lesson_fits`]): a lesson learned from a private project is found only in that project's runs.
+pub fn search(
+    app: &App,
+    repository: i64,
+    project: Option<i64>,
+    text: &str,
+    limit: usize,
+) -> crate::store::Result<Vec<Lesson>> {
+    let mut fitting = Vec::new();
+    for lesson in app
+        .store
+        .search_lessons(repository, text, limit * SEARCHED)?
+    {
+        if fitting.len() < limit && app.lesson_fits(&lesson, project).unwrap_or(false) {
+            fitting.push(lesson);
+        }
+    }
+    Ok(fitting)
+}
+
 /// The best lessons of the card's repository for its issue, at most [`PROMPT_LESSONS`], noted as used.
-fn best(store: &Store, card: &Card) -> Vec<Lesson> {
+fn best(app: &App, card: &Card) -> Vec<Lesson> {
+    let store = &app.store;
     let text = format!("{} {}", card.title, card.body);
-    let lessons = store
-        .search_lessons(card.repository_id, &text, PROMPT_LESSONS)
-        .unwrap_or_default();
+    let lessons = search(
+        app,
+        card.repository_id,
+        Some(card.project_id),
+        &text,
+        PROMPT_LESSONS,
+    )
+    .unwrap_or_default();
     let ids: Vec<i64> = lessons.iter().map(|l| l.id).collect();
     if !ids.is_empty() {
         let _ = store.note_lessons_used(&ids, Some(card.id));
@@ -161,7 +191,7 @@ pub fn for_prompt(app: &App, card: &Card, purpose: &str) -> Option<String> {
     if !matches!(purpose, "code" | "attempt") && !purpose.starts_with("review") {
         return None;
     }
-    let lessons = best(&app.store, card);
+    let lessons = best(app, card);
     (!lessons.is_empty()).then(|| section(&lessons))
 }
 
@@ -253,6 +283,49 @@ mod tests {
         let broken = store_written(&app, "d", "```lessons\n[not json\n```");
         assert!(store_written(&app, "d", "```lessons\nnot an array\n```").is_empty());
         assert!(broken[0].contains("not readable"), "{broken:?}");
+    }
+
+    /// A lesson learned from a private project's card is found by that project's runs only, never by another's.
+    #[test]
+    fn a_private_project_s_lesson_is_found_only_in_its_own_runs() {
+        let (_dir, app) = app();
+        let store = &app.store;
+        let web = store
+            .add_repository("web", "/srv/web", "none", "main")
+            .unwrap();
+        let secret = store
+            .add_repository("secret", "/srv/secret", "none", "main")
+            .unwrap();
+        let taught = store
+            .add_card(secret.id, "Parser work", "", "leon", "Done")
+            .unwrap();
+        let card = store
+            .add_card(web.id, "Fix the parser", "", "leon", "In progress")
+            .unwrap();
+        // A lesson of `web` that was learned from a card of the project of `secret`.
+        store
+            .add_lesson(&NewLesson {
+                repository_id: web.id,
+                kind: "failure".into(),
+                situation: "Parser changes".into(),
+                lesson: "it went wrong".into(),
+                advice: "Run the tokenizer tests".into(),
+                cards: vec![taught.id],
+                retro_date: None,
+            })
+            .unwrap();
+        assert!(
+            for_prompt(&app, &card, "code").is_some(),
+            "found while public"
+        );
+        store
+            .set_project_access(secret.home_project_id, true, &[])
+            .unwrap();
+        assert!(for_prompt(&app, &card, "code").is_none());
+        let found = |project| search(&app, web.id, project, "parser", 5).unwrap().len();
+        assert_eq!(found(Some(web.home_project_id)), 0);
+        assert_eq!(found(None), 0);
+        assert_eq!(found(Some(secret.home_project_id)), 1);
     }
 
     #[test]

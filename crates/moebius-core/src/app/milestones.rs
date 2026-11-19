@@ -84,11 +84,10 @@ fn check(fields: &MilestoneFields) -> Result<()> {
 
 impl App {
     /// Whether `who` may see the cards of the project `project_id`. This is the one place that decides it: every card
-    /// a milestone lists or counts goes through it. No project is private yet, so every actor may see every project;
-    /// private projects (ADR 0019) make it true only for their members.
+    /// a milestone lists or counts goes through it. A private project is seen only by its members (see
+    /// `projects::sight`); when that cannot be read, nothing is seen.
     pub fn may_see_project(&self, who: &Actor, project_id: i64) -> bool {
-        let _ = (who, project_id);
-        true
+        self.sight(who).is_ok_and(|sight| sight.project(project_id))
     }
 
     /// Makes a milestone. The name is free in any case.

@@ -2,18 +2,19 @@
 //! deletes on the Retro page.
 //!
 //! - `GET /v1/lessons?repository=&retired=`: the lessons, newest first; those of one repository when it is given, and
-//!   the retired ones only with `retired=true`.
+//!   the retired ones only with `retired=true`. A lesson learned from a private project is listed only to its members.
 //! - `PUT /v1/lessons/{id}` `{situation, lesson, advice}`: rewrites a lesson's text. `DELETE /v1/lessons/{id}`: deletes
 //!   it.
 
-use axum::Router;
 use axum::extract::{Path as UrlPath, Query, State};
 use axum::routing::get;
+use axum::{Extension, Router};
 use serde::Deserialize;
 
 use super::{ApiError, ApiState, blocking};
 use crate::app::AppError;
 use crate::blobs::redact;
+use crate::decide::Actor;
 use crate::store::Lesson;
 
 /// The routes of the lessons.
@@ -43,10 +44,18 @@ struct Text {
 
 async fn lessons(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     Query(filter): Query<Filter>,
 ) -> Result<axum::Json<Vec<Lesson>>, ApiError> {
     blocking(&state.app, move |app| {
-        Ok(app.store.lessons(filter.repository, filter.retired)?)
+        let sight = app.sight(&by)?;
+        let mut seen = Vec::new();
+        for lesson in app.store.lessons(filter.repository, filter.retired)? {
+            if app.sees_lesson(&sight, &lesson)? {
+                seen.push(lesson);
+            }
+        }
+        Ok(seen)
     })
     .await
 }

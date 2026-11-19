@@ -1,7 +1,8 @@
 //! The boards and their cards: what a client reads to draw every board, and what a person does to a card and its
 //! change.
 //!
-//! - `GET /v1/snapshot`: every repository with its cards (and what the board shows of each), and the open inbox.
+//! - `GET /v1/snapshot`: every repository with its cards (and what the board shows of each), and the open inbox; of a
+//!   private project the person is no member of, nothing (see `app::projects::sight`).
 //! - `POST /v1/repositories/{id}/issues` `{title, body, parent, labels, blocked_by}`: creates an issue, which becomes a
 //!   card in the backlog, answered with the card and, when the forge refused a step after the issue was created, its
 //!   `warnings`. The issue tracker's other routes are in `issues`.
@@ -253,14 +254,22 @@ fn card_view(app: &App, facts: &BoardFacts, card: Card) -> crate::app::Result<Ca
     Ok(view)
 }
 
-async fn snapshot(State(state): State<ApiState>) -> Result<axum::Json<Snapshot>, ApiError> {
+async fn snapshot(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+) -> Result<axum::Json<Snapshot>, ApiError> {
     let round_limit = state.config.get().round_limit;
     blocking(&state.app, move |app| {
+        let sight = app.sight(&by)?;
         let mut boards = Vec::new();
         for repository in app.store.repositories()? {
+            if !sight.repository(repository.id) {
+                continue;
+            }
             // An archived card is off the board.
             let mut cards = app.store.cards(repository.id)?;
-            cards.retain(|card| card.archived_at.is_none());
+            cards.retain(|card| card.archived_at.is_none() && sight.card(card));
+            let seen: std::collections::HashSet<i64> = cards.iter().map(|card| card.id).collect();
             let waiting = app.waiting(&cards);
             let facts = app.board_facts(repository.id, &cards)?;
             boards.push(Board {
@@ -270,14 +279,25 @@ async fn snapshot(State(state): State<ApiState>) -> Result<axum::Json<Snapshot>,
                     .map(|card| card_view(app, &facts, card))
                     .collect::<Result<_, _>>()?,
                 round_limit,
-                changes: app.store.changes(repository.id)?,
+                changes: app
+                    .store
+                    .changes(repository.id)?
+                    .into_iter()
+                    .filter(|change| change.card_id.is_none_or(|card| seen.contains(&card)))
+                    .collect(),
                 repository,
             });
+        }
+        let mut inbox = Vec::new();
+        for item in app.store.inbox()? {
+            if super::privacy::sees_inbox_item(app, &sight, &item)? {
+                inbox.push(app.unquoted_item(&sight, item)?);
+            }
         }
         Ok(Snapshot {
             boards,
             harness_changes: app.store.harness_changes()?,
-            inbox: app.store.inbox()?,
+            inbox,
         })
     })
     .await

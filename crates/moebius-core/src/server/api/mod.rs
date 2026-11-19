@@ -73,6 +73,7 @@ mod packages;
 mod people;
 mod planning;
 mod ports;
+mod privacy;
 mod projects;
 mod repositories;
 mod roles;
@@ -388,6 +389,9 @@ async fn authenticate(State(state): State<ApiState>, mut request: Request, next:
                     roles::check(&who.actor, role, request.method(), route.as_str())
                 {
                     return refused.into_response();
+                }
+                if let Err(hidden) = privacy::check(&state.app, &who.actor, route.as_str(), path) {
+                    return hidden.into_response();
                 }
             }
             request.extensions_mut().insert(who.actor);

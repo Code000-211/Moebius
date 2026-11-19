@@ -136,7 +136,12 @@ mod tests {
             .create_issue(files.id, "Write the prices", "", crate::app::OWNER_AUTHOR)
             .unwrap();
         assert_eq!(card.project_id, project.id);
-        assert_eq!(app.project_view_of(project.id).unwrap().open_cards, 1);
+        assert_eq!(
+            app.project_view_of(project.id, &crate::app::Sight::everything())
+                .unwrap()
+                .open_cards,
+            1
+        );
 
         // Nothing refreshes it, and it goes only with its project.
         app.refresh(&files).unwrap();
