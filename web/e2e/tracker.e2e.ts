@@ -81,17 +81,20 @@ async function addTo(button: string, typed: string) {
 }
 const alert = (text: string | RegExp) => page.getByRole("alert").filter({ hasText: text });
 const status = (text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
-/** The card of the issue with this title: its name is its number and its title. */
+/**
+ * The card of the issue with this title: its name is its key and its title (`WEB-24 Plan`), or `#n` and its title on
+ * a server that sends no project key (the fake).
+ */
 const cardTitled = (title: string) =>
-  page.getByRole("group", { name: new RegExp(`^#\\d+ ${title}$`) });
+  page.getByRole("group", { name: new RegExp(`^(?:#\\d+|[A-Z][A-Z0-9]{1,9}-\\d+) ${title}$`) });
 const stackOf = (title: string) => page.getByTestId(/^stack-/).filter({ has: cardTitled(title) });
 const menuOf = (where: Locator) => where.getByRole("button", { name: /^More actions for #/ });
 const item = (name: string) => page.getByRole("menuitem", { name, exact: true });
 
-/** The number of the issue of a card, read from its name. */
+/** The number of the issue of a card, read from the name of its menu ("More actions for #17"), as its key may not say it. */
 async function numberOf(title: string): Promise<number> {
-  const name = (await cardTitled(title).first().getAttribute("aria-label")) ?? "";
-  return Number(/^#(\d+)/.exec(name)?.[1]);
+  const name = (await menuOf(cardTitled(title).first()).first().getAttribute("aria-label")) ?? "";
+  return Number(/#(\d+)$/.exec(name)?.[1]);
 }
 
 /** Makes an issue with the "New issue" button, and waits for the page to say it did. */
@@ -405,7 +408,27 @@ describe("the issue in the dock", () => {
     // And from the right column: take both off, one right after the other.
     await value(/^Assignee @owner.*@lea/).click();
     await page.getByRole("menuitemcheckbox", { name: "Owner (@owner)" }).click();
-    await page.getByRole("menuitemcheckbox", { name: "Lea (@lea)" }).click({ force: true });
+    // The menu closes on a choice and opens again once the first is saved, which may be before the page has the card as
+    // it left it: it is opened again as soon as it will, and the second person taken off from the open menu, not from
+    // the one still fading out.
+    const lea = page
+      .locator('[role="menu"][data-state="open"]')
+      .getByRole("menuitemcheckbox", { name: "Lea (@lea)" });
+    await expect
+      .poll(
+        async () => {
+          try {
+            await value(/^Assignee /).click({ timeout: 2000 });
+            await lea.waitFor({ timeout: 2000 });
+            return true;
+          } catch {
+            return false;
+          }
+        },
+        { timeout: 30_000 },
+      )
+      .toBe(true);
+    await lea.click();
     await value("Assignee No one").waitFor();
   });
 

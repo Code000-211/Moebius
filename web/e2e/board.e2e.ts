@@ -20,6 +20,8 @@ let server: TestServer;
 let context: BrowserContext;
 let page: Page;
 const directories: string[] = [];
+/** The board a real server was given in this test, opened again rather than made twice (its name is taken). */
+let demo: number | null = null;
 
 beforeAll(async () => {
   browser = await chromium.launch({
@@ -33,6 +35,7 @@ afterAll(async () => {
 
 /** A new server and a normal browser (the columns are wider than it, so some start out of view), signed in. */
 async function fresh() {
+  demo = null;
   server = await startServer();
   context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   page = await context.newPage();
@@ -52,15 +55,17 @@ async function openBoard(): Promise<void> {
   if (!usesRealServer) {
     await page.goto(`${server.url}/board/1`);
   } else {
-    const directory = mkdtempSync(join(tmpdir(), "moebius-e2e-repo-"));
-    directories.push(directory);
-    const response = await context.request.post(`${server.url}/v1/repositories`, {
-      headers: { "X-Moebius": "1" },
-      data: { name: "demo", url: directory },
-    });
-    expect(response.ok(), await response.text()).toBe(true);
-    const made = (await response.json()) as { id: number };
-    await page.goto(`${server.url}/board/${made.id}`);
+    if (demo === null) {
+      const directory = mkdtempSync(join(tmpdir(), "moebius-e2e-repo-"));
+      directories.push(directory);
+      const response = await context.request.post(`${server.url}/v1/repositories`, {
+        headers: { "X-Moebius": "1" },
+        data: { name: "demo", url: directory },
+      });
+      expect(response.ok(), await response.text()).toBe(true);
+      demo = ((await response.json()) as { id: number }).id;
+    }
+    await page.goto(`${server.url}/board/${demo}`);
   }
   await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
 }
