@@ -123,12 +123,8 @@ async fn pausing_from_the_tray_pauses_the_server_and_resuming_goes_on() {
 
 #[tokio::test]
 async fn a_server_that_cannot_be_reached_shows_no_figures_and_is_no_error_of_the_tray() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let gone = Server::new(
-        &format!("http://{}", listener.local_addr().unwrap()),
-        "token",
-    );
-    drop(listener);
+    // Nothing listens on port 0; the port of a listener that was dropped may be given to another test that answers.
+    let gone = Server::new("http://127.0.0.1:0", "token");
     let mut shown = following(&gone);
     assert_eq!(shown.recv().await, Some(None));
     assert!(matches!(

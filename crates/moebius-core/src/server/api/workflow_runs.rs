@@ -70,6 +70,7 @@ fn start_manual(
     repo: &crate::harness::repo::HarnessRepo,
     name: &str,
     request: &StartRequest,
+    sight: &crate::app::Sight,
 ) -> Result<Started, AppError> {
     let definition = repo.workflow(name)?;
     let trigger = definition
@@ -86,6 +87,24 @@ fn start_manual(
     let manual = manual::ManualTrigger::parse(&trigger.params)
         .map_err(|message| AppError::Invalid(format!("trigger: {message}")))?;
     let value = manual.resolve(&request.inputs).map_err(AppError::Invalid)?;
+    // A run works only in repositories the person sees (see `app::projects::sight`): neither the one it belongs to nor
+    // one any other input names, with its default, may be of a private project they are no member of. Such a
+    // repository is answered as if it did not exist.
+    let repositories = app.store.repositories()?;
+    let named = manual
+        .inputs
+        .iter()
+        .filter(|input| input.ty == manual::InputType::Repository)
+        .filter_map(|input| value.get(&input.name).and_then(Value::as_str))
+        .chain(request.repository.as_deref());
+    for named in named {
+        if repositories
+            .iter()
+            .any(|r| r.name == named && !sight.repository(r.id))
+        {
+            return Err(AppError::NotFound(format!("repository {named}")));
+        }
+    }
 
     // The run belongs to the repository the person named, or to the one the trigger's `repository` input named.
     let (repository_name, via_input) = match manual
@@ -121,7 +140,6 @@ fn start_manual(
             None,
         ),
     };
-    let repositories = app.store.repositories()?;
     let repository = repositories
         .iter()
         .find(|repository| repository.name == repository_name)
@@ -179,8 +197,8 @@ async fn start(
 ) -> Result<axum::Json<Started>, ApiError> {
     let repo = harness(&state);
     blocking(&state.app, move |app| {
-        // A run works only in a repository the person sees (see `app::projects::sight`), whether the request or an
-        // input names it.
+        // A run works only in a repository the person sees (see `app::projects::sight`): the one the request names
+        // is checked first, and every one the workflow's inputs name once they are read (`start_manual`).
         let sight = app.sight(&by)?;
         let named = [
             request.repository.as_deref(),
@@ -197,7 +215,7 @@ async fn start(
             }
         }
         let repo = repo?;
-        start_manual(app, &repo, &name, &request)
+        start_manual(app, &repo, &name, &request, &sight)
     })
     .await
 }

@@ -745,3 +745,122 @@ fn a_card_is_not_done_while_an_earlier_change_was_closed_without_being_merged() 
     assert_eq!(marked.data["repository"], "demo");
     assert_eq!(marked.data["merged"], serde_json::json!(["web"]));
 }
+
+#[test]
+fn a_card_moved_to_another_project_keeps_publishing_on_the_branch_of_its_open_change() {
+    let setup = setup();
+    let (card, web, changes) = offered_over_two(&setup);
+    // The card moves to another project with both repositories, and so gets another key.
+    let ops = setup.app.store.add_project("Ops", "OPS").unwrap();
+    for repository in [setup.repo, web.id] {
+        setup.app.store.link_repository(ops.id, repository).unwrap();
+    }
+    setup.app.store.set_card_project(card.id, ops.id).unwrap();
+    assert_eq!(setup.app.card(card.id).unwrap().project_key, "OPS");
+    // More work of the card in web, on its code branch there.
+    let code_branch = setup
+        .app
+        .store
+        .code_branch_in(card.id, web.id)
+        .unwrap()
+        .unwrap();
+    let clone = Path::new(&web.path);
+    let more = setup.app.data_dir.parent().unwrap().join("more");
+    git(
+        clone,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            more.to_str().unwrap(),
+            &code_branch,
+        ],
+    )
+    .unwrap();
+    std::fs::write(more.join("more.txt"), "more\n").unwrap();
+    git(&more, &["add", "."]).unwrap();
+    git(
+        &more,
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.com",
+            "commit",
+            "--quiet",
+            "-m",
+            "more",
+        ],
+    )
+    .unwrap();
+    git(
+        clone,
+        &["worktree", "remove", "--force", more.to_str().unwrap()],
+    )
+    .unwrap();
+
+    setup.app.offer_change_noted(card.id, None).unwrap();
+    let change = setup
+        .app
+        .store
+        .open_change_in(card.id, web.id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(change.id, changes[1].id);
+    assert_eq!(change.branch, changes[1].branch);
+    // The branch the change is on, which its merge takes, has the new work.
+    assert_eq!(
+        git(clone, &["rev-parse", &change.branch]).unwrap(),
+        git(clone, &["rev-parse", &code_branch]).unwrap()
+    );
+    assert_eq!(
+        change.head.as_deref(),
+        Some(git(clone, &["rev-parse", &code_branch]).unwrap().as_str())
+    );
+}
+
+#[test]
+fn a_card_whose_merge_stopped_halfway_is_not_done_when_the_forge_closes_its_issue() {
+    let setup = setup();
+    let (card, web, changes) = offered_over_two(&setup);
+    // web's default branch got a commit that conflicts, so the merge stops after demo.
+    let clone = Path::new(&web.path);
+    std::fs::write(clone.join("done.txt"), "someone else\n").unwrap();
+    git(clone, &["add", "."]).unwrap();
+    git(clone, &["commit", "--quiet", "-m", "conflict"]).unwrap();
+    let by = Actor::first_owner();
+    assert!(
+        setup
+            .app
+            .merge_card(&by, card.id, "")
+            .unwrap()
+            .stopped
+            .is_some()
+    );
+
+    // The forge closed the issue, as the merged pull request of demo said it would.
+    let demo = setup.app.store.repository(setup.repo).unwrap().unwrap();
+    let card = setup.app.card(card.id).unwrap();
+    let closed = crate::repos::forge::Issue {
+        number: card.number,
+        title: card.title.clone(),
+        body: card.body.clone(),
+        open: false,
+        author: card.author.clone(),
+        ..Default::default()
+    };
+    setup
+        .app
+        .sync_issues(&demo, std::slice::from_ref(&closed))
+        .unwrap();
+    let marked = setup.app.card(card.id).unwrap();
+    assert_eq!(marked.column, "Ready to merge");
+    assert!(marked.closed, "the forge's closed issue is kept");
+
+    // Once the last change is merged the card is done, without the forge saying anything more.
+    git(clone, &["reset", "--quiet", "--hard", "HEAD~1"]).unwrap();
+    setup.app.merge_change(&by, changes[1].id, "").unwrap();
+    let card = setup.app.card(card.id).unwrap();
+    assert_eq!(card.column, "Done");
+    assert!(card.closed);
+}

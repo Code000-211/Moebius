@@ -78,14 +78,19 @@ impl App {
 
     /// Proposes an estimate for the card from the cards of its repository that look like it and have an estimate: the
     /// median of up to five of them, the most alike first (a middle pair gives the higher of the two, as a
-    /// proposal should not undershoot).
+    /// proposal should not undershoot). A card of another project that is private is left out, as for
+    /// [`App::similar_issues`]: the proposal names the cards it compared, and shows on this card's board.
     pub fn propose_estimate(&self, card_id: i64) -> Result<EstimateProposal> {
         let card = self.card(card_id)?;
+        let private = self.store.hidden_projects(None)?;
         let mut compared: Vec<Compared> = self
             .store
             .cards(card.repository_id)?
             .into_iter()
             .filter(|other| other.id != card.id)
+            .filter(|other| {
+                other.project_id == card.project_id || !private.contains(&other.project_id)
+            })
             .filter_map(|other| {
                 let estimate = other.estimate?;
                 let score = likeness((&card.title, &card.body), (&other.title, &other.body))?;

@@ -163,7 +163,11 @@ in the order their changes are to be merged; scripts see them all as `card.repos
    merged. There is no atomic merge across forges: a merge that fails stops there. The changes before it stay merged,
    the card stays in `Ready to merge` with an inbox item `merge_stopped` that names what is merged and what is not, and
    the card is done once its last change is merged. A change whose pull request was closed on the forge without being
-   merged is not merged: the card stays, marked `merge_stopped` with that reason, however the other changes end.
+   merged is not merged: the card stays, marked `merge_stopped` with that reason, however the other changes end. The
+   forge closing the card's issue once the change in its own repository is merged does not make the card done either
+   while another of its changes is open.
+6. Each change keeps its branch while it is open, so a card that moves to another project, and so gets another key,
+   goes on publishing its work in the pull request it has.
 
 A run over several repositories runs on the server, never on a runner.
 

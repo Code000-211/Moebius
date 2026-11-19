@@ -66,7 +66,8 @@ fn seen_or_err(app: &App, sight: &Sight, event: &AppEvent) -> crate::app::Result
     if kind.starts_with("repository_") {
         return Ok(field("id").is_none_or(|id| sight.repository(id)));
     }
-    if let Some(project) = field("project_id") {
+    // A script's, a project's kinds' and an intake request's events name their project as `project`.
+    if let Some(project) = field("project_id").or(field("project")) {
         return Ok(sight.project(project));
     }
     if kind.starts_with("change_")
@@ -99,6 +100,12 @@ fn seen_or_err(app: &App, sight: &Sight, event: &AppEvent) -> crate::app::Result
         ("changes", field("change")),
         ("grillings", field("grilling")),
         ("inbox", field("item")),
+        ("automations", field("automation")),
+        (privacy::WORKFLOW_RUNS, field("workflow_run")),
+        ("research", field("research")),
+        // A notice names what it is about inside it.
+        ("cards", data["notice"]["card_id"].as_i64()),
+        ("inbox", data["notice"]["inbox_item_id"].as_i64()),
     ];
     for (what, id) in things {
         if let Some(id) = id

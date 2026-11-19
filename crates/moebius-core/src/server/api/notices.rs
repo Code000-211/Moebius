@@ -3,7 +3,7 @@
 //! - `GET /v1/notices`: the notices of the person asking, newest first: what they were given, where they were
 //!   mentioned and what changed on a card they follow. The Inbox shows them under Mentions.
 //! - `POST /v1/notices/{id}/read`: marks one of their notices read, for them alone; answers the `Notice`. Another
-//!   person's notice is a `404`.
+//!   person's notice is a `404`, and so is one of a card or inbox item of a private project they do not see.
 //! - `GET /v1/cards/{id}/followers`: the handles of the people who follow a card.
 //! - `PUT /v1/cards/{id}/follow` `{following}`: the person asking follows the card or stops; answers the followers.
 //!
@@ -14,7 +14,8 @@ use axum::routing::{get, post, put};
 use axum::{Extension, Json, Router};
 use serde::{Deserialize, Serialize};
 
-use super::{ApiError, ApiState, blocking};
+use super::{ApiError, ApiState, blocking, privacy};
+use crate::app::{App, AppError, Sight};
 use crate::decide::Actor;
 use crate::store::Notice;
 
@@ -38,14 +39,10 @@ async fn notices(
     Extension(by): Extension<Actor>,
 ) -> Result<Json<Vec<Notice>>, ApiError> {
     blocking(&state.app, move |app| {
-        // A notice of a card of a private project the person is no member of (any more) is left out.
         let sight = app.sight(&by)?;
         let mut seen = Vec::new();
         for notice in app.notices(&by)? {
-            if notice
-                .card_id
-                .is_none_or(|card| app.sees_card(&sight, card).unwrap_or(false))
-            {
+            if sees_notice(app, &sight, &notice)? {
                 seen.push(notice);
             }
         }
@@ -54,12 +51,40 @@ async fn notices(
     .await
 }
 
+/// Whether `sight` sees what `notice` is about: a notice of a card or inbox item of a private project the person is no
+/// member of (any more) is left out, and answered `404`.
+fn sees_notice(app: &App, sight: &Sight, notice: &Notice) -> crate::app::Result<bool> {
+    if let Some(card) = notice.card_id
+        && !app.sees_card(sight, card)?
+    {
+        return Ok(false);
+    }
+    match notice.inbox_item_id {
+        Some(item) => privacy::sees(app, sight, "inbox", "", item),
+        None => Ok(true),
+    }
+}
+
 async fn read(
     State(state): State<ApiState>,
     Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
 ) -> Result<Json<Notice>, ApiError> {
-    blocking(&state.app, move |app| app.read_notice(&by, id)).await
+    blocking(&state.app, move |app| {
+        let sight = app.sight(&by)?;
+        let hidden = app
+            .notices(&by)?
+            .iter()
+            .find(|notice| notice.id == id)
+            .map(|notice| sees_notice(app, &sight, notice))
+            .transpose()?
+            == Some(false);
+        if hidden {
+            return Err(AppError::NotFound(format!("notice {id}")));
+        }
+        app.read_notice(&by, id)
+    })
+    .await
 }
 
 async fn followers(

@@ -47,12 +47,25 @@ async fn automations(
     .await
 }
 
+/// Refuses an automation that would work in a repository `by` does not see, as if it did not exist, so that no one
+/// starts an agent in the files of a private project they are no member of.
+fn check_place(app: &crate::app::App, by: &Actor, new: &NewAutomation) -> crate::app::Result<()> {
+    match new.repository {
+        Some(id) if !app.sight(by)?.repository(id) => {
+            Err(crate::app::AppError::NotFound(format!("repository {id}")))
+        }
+        _ => Ok(()),
+    }
+}
+
 async fn add_automation(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     axum::Json(new): axum::Json<NewAutomation>,
 ) -> Result<axum::Json<AutomationView>, ApiError> {
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {
+        check_place(app, &by, &new)?;
         app.save_automation(&*runs, None, &new)
     })
     .await
@@ -67,11 +80,13 @@ async fn automation(
 
 async fn save_automation(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     axum::Json(new): axum::Json<NewAutomation>,
 ) -> Result<axum::Json<AutomationView>, ApiError> {
     let runs = state.runs.clone();
     blocking(&state.app, move |app| {
+        check_place(app, &by, &new)?;
         app.save_automation(&*runs, Some(id), &new)
     })
     .await
