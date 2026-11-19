@@ -132,6 +132,20 @@ pub enum IssueCommand {
         #[command(subcommand)]
         command: BlockerCommand,
     },
+    /// Close an issue as a duplicate of the issue number `original` (with a comment that says so), or take that link
+    /// off with `none`.
+    Duplicate {
+        card: i64,
+        /// An issue number, or `none`.
+        original: String,
+    },
+    /// Relate issues, so that each shows the other.
+    Related {
+        #[command(subcommand)]
+        command: RelatedCommand,
+    },
+    /// The open issues that look like this one, by their words; nothing is closed.
+    Similar { card: i64 },
     /// Write a comment on an issue.
     Comment { card: i64, body: String },
     /// The comments on an issue.
@@ -144,6 +158,14 @@ pub enum BlockerCommand {
     Add { card: i64, blocker: i64 },
     /// Stop the issue number `blocker` from blocking the issue.
     Remove { card: i64, blocker: i64 },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RelatedCommand {
+    /// Relate the issue to the issue number `related`.
+    Add { card: i64, related: i64 },
+    /// Stop the issue number `related` from being related to the issue.
+    Remove { card: i64, related: i64 },
 }
 
 /// The state an issue is filtered by.
@@ -373,6 +395,32 @@ pub fn issue(command: &IssueCommand, get: &mut dyn FnMut(&str) -> Result<Value, 
             Request::delete(card_path(card, &format!("/blockers/{blocker}"))),
             Show::Raw,
         ),
+        IssueCommand::Duplicate { card, original } => match issue_number(original)? {
+            Some(original) => (
+                Request::put(
+                    card_path(card, "/duplicate"),
+                    json!({ "original": original }),
+                ),
+                Show::Object,
+            ),
+            None => (Request::delete(card_path(card, "/duplicate")), Show::Object),
+        },
+        IssueCommand::Related {
+            command: RelatedCommand::Add { card, related },
+        } => (
+            Request::post(card_path(card, "/related"), json!({ "related": related })),
+            Show::Raw,
+        ),
+        IssueCommand::Related {
+            command: RelatedCommand::Remove { card, related },
+        } => (
+            Request::delete(card_path(card, &format!("/related/{related}"))),
+            Show::Raw,
+        ),
+        IssueCommand::Similar { card } => (
+            Request::get(card_path(card, "/similar")),
+            Show::Table(&["number", "score", "title"]),
+        ),
         IssueCommand::Comment { card, body } => (
             Request::post(card_path(card, "/comments"), json!({ "body": body })),
             Show::Object,
@@ -390,7 +438,36 @@ pub fn show_issue(issue: &Value) -> String {
     let children = shown
         .as_object_mut()
         .and_then(|fields| fields.remove("children"));
+    let mut links = Vec::new();
+    for (field, title) in [
+        ("duplicate_of", "duplicate of"),
+        ("duplicates", "duplicates"),
+        ("related", "related"),
+    ] {
+        let found = shown
+            .as_object_mut()
+            .and_then(|fields| fields.remove(field));
+        // The original is one issue, the others are lists.
+        let found = match found {
+            Some(Value::Array(list)) => list,
+            Some(Value::Null) | None => Vec::new(),
+            Some(one) => vec![one],
+        };
+        if !found.is_empty() {
+            links.push((title, Value::Array(found)));
+        }
+    }
     let mut text = super::object(&shown);
+    for (title, found) in links {
+        text += &format!(
+            "\n{title}:\n{}",
+            super::table(&found, &["number", "state", "title"])
+                .lines()
+                .map(|line| format!("  {line}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    }
     if let Some(children) = children.filter(|c| c.as_array().is_some_and(|c| !c.is_empty())) {
         text += &format!(
             "\nsub-issues:\n{}",
@@ -622,6 +699,23 @@ mod tests {
     use crate::cli::render;
     use crate::cli::tests::Probe;
     use clap::Parser;
+
+    #[test]
+    fn an_issue_shows_what_it_is_a_duplicate_of_and_what_is_related_to_it() {
+        let issue = json!({
+            "id": 7, "number": 3, "title": "Cache model downloads", "state": "closed",
+            "children": [],
+            "duplicate_of": {"id": 2, "number": 2, "title": "Cache the model downloads", "state": "open", "column": "Backlog"},
+            "duplicates": [],
+            "related": [{"id": 5, "number": 5, "title": "Mirror the models", "state": "open", "column": "Backlog"}],
+        });
+        let text = show_issue(&issue);
+        assert!(text.contains("duplicate of:\n"), "{text}");
+        assert!(text.contains("Cache the model downloads"), "{text}");
+        assert!(text.contains("related:\n"), "{text}");
+        assert!(text.contains("Mirror the models"), "{text}");
+        assert!(!text.contains("duplicates:"), "{text}");
+    }
 
     #[test]
     fn an_inbox_item_is_acted_on_as_its_kind_allows() {
@@ -864,6 +958,31 @@ mod tests {
             route(&["blocker", "remove", "7", "3"]),
             ("DELETE".into(), "/v1/cards/7/blockers/3".into(), None)
         );
+        assert_eq!(
+            route(&["duplicate", "7", "#3"]),
+            (
+                "PUT".into(),
+                "/v1/cards/7/duplicate".into(),
+                Some(json!({"original": 3}))
+            )
+        );
+        assert_eq!(
+            route(&["duplicate", "7", "none"]),
+            ("DELETE".into(), "/v1/cards/7/duplicate".into(), None)
+        );
+        assert_eq!(
+            route(&["related", "add", "7", "3"]),
+            (
+                "POST".into(),
+                "/v1/cards/7/related".into(),
+                Some(json!({"related": 3}))
+            )
+        );
+        assert_eq!(
+            route(&["related", "remove", "7", "3"]),
+            ("DELETE".into(), "/v1/cards/7/related/3".into(), None)
+        );
+        assert_eq!(route(&["similar", "7"]).1, "/v1/cards/7/similar");
         assert_eq!(
             route(&["comment", "7", "Use a queue."]),
             (

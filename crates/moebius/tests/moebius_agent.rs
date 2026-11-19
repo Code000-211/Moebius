@@ -223,3 +223,106 @@ async fn the_moebius_agent_reads_the_board_and_creates_an_issue_through_the_comm
         "{cards:#?}"
     );
 }
+
+/// The recorded answers of a chat that makes an issue and looks for its duplicates: create it, ask for the issues that
+/// look like it, say what it found.
+fn duplicate_search_answer(body: &Value) -> String {
+    let results = body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["role"] == "tool")
+        .count();
+    match results {
+        0 => {
+            let command = "\"$MOEBIUS\" issue create 1 \"Cache model downloads\"";
+            tool_call_answer("call_issue", "bash", &json!({ "command": command }), 300)
+        }
+        1 => {
+            // The issue made before it is card 2: card 1 is the first of the repository.
+            let command = "\"$MOEBIUS\" issue similar 2";
+            tool_call_answer("call_similar", "bash", &json!({ "command": command }), 350)
+        }
+        _ => text_answer("It looks like #1. I closed nothing.", 400),
+    }
+}
+
+/// The Moebius agent makes an issue whose words an open one has: the issue is offered the open one in a comment, and the
+/// agent finds it with `"$MOEBIUS" issue similar` and closes nothing.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_moebius_agent_finds_the_open_issue_a_new_one_duplicates_and_closes_nothing() {
+    let Some(pi_bolt) = std::env::var_os("MOEBIUS_PI_BOLT") else {
+        eprintln!("skipped: set MOEBIUS_PI_BOLT to the pi-bolt executable to run this test");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let origin = origin(dir.path());
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let upstream = recorded_upstream(requests.clone(), duplicate_search_answer).await;
+    let moebius = Path::new(env!("CARGO_BIN_EXE_moebius"));
+    let started = start_as(dir.path(), &pi_bolt, &upstream, Some(moebius)).await;
+    let app = &started.server.app;
+    let repo: Value = started
+        .post(
+            "/v1/repositories",
+            json!({ "name": "demo", "url": origin.to_str().unwrap() }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let existing: Value = started
+        .post(
+            &format!("/v1/repositories/{}/issues", repo["id"]),
+            json!({ "title": "Cache the model downloads" }),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(existing["number"], 1, "{existing}");
+
+    let message = "File an issue to cache model downloads, and tell me if it duplicates one.";
+    let run: Value = started
+        .post("/v1/chats", json!({ "message": message }))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let run_id = run["id"].as_i64().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(120);
+    while app.run(run_id).unwrap().status != "waiting" {
+        let events = app.store.events(run_id).unwrap();
+        assert!(
+            Instant::now() < deadline && app.run(run_id).unwrap().status != "failed",
+            "the chat is not waiting: {events:#?}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    // What `issue similar` answered the agent names the open issue, and the new issue was offered it as a comment.
+    let requests: Vec<Value> = requests
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|request| request.to_string().contains(message))
+        .cloned()
+        .collect();
+    assert_eq!(requests.len(), 3);
+    let third = requests[2].to_string();
+    assert!(third.contains("Cache the model downloads"), "{third}");
+    let cards = app.store.cards(1).unwrap();
+    let new = cards
+        .iter()
+        .find(|card| card.title == "Cache model downloads")
+        .unwrap();
+    let comments = app.comments(new.id).unwrap();
+    assert!(
+        comments.iter().any(
+            |c| c.author == "agent:Moebius" && c.body.contains("#1: Cache the model downloads")
+        ),
+        "{comments:#?}"
+    );
+    // Nothing was closed.
+    assert!(cards.iter().all(|card| !card.closed), "{cards:#?}");
+}

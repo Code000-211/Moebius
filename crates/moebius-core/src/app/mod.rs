@@ -70,7 +70,7 @@ pub(crate) use checks::tail;
 pub(crate) use deletions::list;
 pub use diffs::Diff;
 pub(crate) use issues::now_millis;
-pub use issues::{Child, IssueQuery, IssueView, state_of};
+pub use issues::{Child, IssueQuery, IssueView, Links, Similar, state_of};
 pub use reproduce::{Reproduction, TestRun, parse as parse_reproduction};
 pub use whereabouts::{ClientInfo, OFFICIAL_REPOSITORY, ServerInfo};
 

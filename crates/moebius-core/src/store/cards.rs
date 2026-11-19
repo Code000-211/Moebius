@@ -129,6 +129,7 @@ fn card_statements(cards: &str, runs: &str, judgements: &str) -> Vec<String> {
         format!("DELETE FROM card_assignees WHERE card_id IN ({cards})"),
         format!("DELETE FROM inbox_items WHERE card_id IN ({cards})"),
         format!("DELETE FROM dependencies WHERE card_id IN ({cards})"),
+        format!("DELETE FROM card_links WHERE card_id IN ({cards}) OR other_id IN ({cards})"),
         format!("DELETE FROM card_labels WHERE card_id IN ({cards})"),
         format!("DELETE FROM card_comments WHERE card_id IN ({cards})"),
         format!("DELETE FROM card_moves WHERE card_id IN ({cards})"),
@@ -966,6 +967,8 @@ mod tests {
             .add_numbered_card(repo, number, "Work", "body", "leon", "In progress")
             .unwrap();
         s.set_dependencies(card.id, &BTreeSet::from([9])).unwrap();
+        // Any link will do for the table; a card linked to itself keeps the two cards' records apart.
+        s.add_link(card.id, card.id, crate::store::RELATED).unwrap();
         s.move_card(card.id, "In review").unwrap();
         let run = s
             .add_run(Some(card.id), "Coder", "pi-bolt", "code")
@@ -1034,7 +1037,7 @@ mod tests {
         (card, run.id)
     }
 
-    const CARD_TABLES: [&str; 12] = [
+    const CARD_TABLES: [&str; 13] = [
         "cards",
         "runs",
         "events",
@@ -1045,6 +1048,7 @@ mod tests {
         "judgements",
         "lesson_uses",
         "dependencies",
+        "card_links",
         "card_moves",
         "trials",
     ];

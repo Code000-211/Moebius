@@ -132,6 +132,11 @@ any route to any role that is not what its row says.
 | `PUT /v1/inbox/{id}/assignees` | member | no |
 | `POST /v1/cards/{id}/blockers` | member | yes |
 | `DELETE /v1/cards/{id}/blockers/{number}` | member | yes |
+| `PUT /v1/cards/{id}/duplicate` | member | yes |
+| `DELETE /v1/cards/{id}/duplicate` | member | yes |
+| `POST /v1/cards/{id}/related` | member | yes |
+| `DELETE /v1/cards/{id}/related/{number}` | member | yes |
+| `GET /v1/cards/{id}/similar` | viewer | yes |
 | `POST /v1/cards/{id}/claim` | member | yes |
 | `DELETE /v1/cards/{id}/claim` | member | yes |
 | `POST /v1/cards/{id}/close` | member | yes |
@@ -326,7 +331,9 @@ the people it is given to, without the `@`, in the order the people were added; 
 `Comment`: `id`, `card_id`, `author` (a forge login, `person`, `person:<handle>` or `agent:<name>`), `body`, `at`.
 
 `Issue`: a `Card` with `state` (`open` or `closed`), `blocked_by` (the numbers of the issues that block it and are not
-done) and `children` (its sub-issues, oldest first, each `{"id", "number", "title", "state", "column"}`).
+done), `children` (its sub-issues, oldest first, each `{"id", "number", "title", "state", "column"}`), `duplicate_of` (the
+original it was closed as a duplicate of, in the same shape, or null), `duplicates` (the issues closed as duplicates of it)
+and `related` (the issues related to it, each shown with the other).
 `Run`: `id`, `card_id` (null for a chat or an agent of a workflow run), `agent`, `harness`, `purpose` (`code`, `review`, other purposes of column scripts,
 `chat`, `retro`, the Retro analyst's run, `trial`, the trial of a proposal on a card, `research`, a round of the Autoresearcher, or
 `workflow`, an agent of a workflow run), `status` (`starting`, `running`, `waiting`, `succeeded`, `failed` or `stopped`; `waiting` is a chat waiting for
@@ -957,7 +964,7 @@ title is blank; `500` the forge refused the change, and then the card is as it w
 
 ### The issue tracker
 
-An issue has more than a title and a body: a parent, blockers, labels, a claim, comments and a state. All of it is read
+An issue has more than a title and a body: a parent, blockers, duplicates and related issues, labels, a claim, comments and a state. All of it is read
 and written here, the same on every forge and without one, so that a planning session or a person works on issues through
 the API, `"$MOEBIUS" issue` and the web app alike. Issues are addressed by their card's id in the routes; the relations
 (`parent`, a blocker) name issue numbers of the same repository, as `Card.number` is. Every change is announced as its own
@@ -1076,6 +1083,50 @@ others (a cycle: it is blocked by this issue, or it is an ancestor of it); `500`
 Stops the issue `number` from blocking this one, on the forge too; a line of the description that says it is blocked by it is
 taken out of the description. Response: the blockers that are left, as numbers. Errors: `404` no such card, or that issue
 is not a blocker; `500` the forge refused.
+
+### Duplicates and related issues
+
+Besides a parent and blockers, an issue can be a duplicate of another, the original, or be related to others. Moebius
+keeps these links itself (a forge has none that all of them share); closing the duplicate and the comment that points to
+the original reach the forge as for any issue. The links name issue numbers of the same repository, as `parent` does, and
+show in the `Issue` as `duplicate_of`, `duplicates` and `related`. Every change is announced as `card_links_changed` for
+each issue whose links changed.
+
+### `PUT /v1/cards/{id}/duplicate`
+
+Marks the issue a duplicate of another: closes it (the decision is recorded as for `close`, with the reason `Duplicate of
+#n: <title of the original>`), writes the comment `Duplicate of #n.` and keeps the link. Request: `{"original": number}`.
+Marking it a duplicate of another issue moves the link; marking what is marked changes nothing. Nothing is reopened or
+closed besides this issue. Response: the `Card`. Errors: `404` no such card or original; `409` a run of the card is going
+(block the card to stop it first); `422` the issue as its own original, an original that is a duplicate itself (mark the
+issue as a duplicate of that one), or an issue that has duplicates of its own (move them first); `500` the forge refused.
+
+### `DELETE /v1/cards/{id}/duplicate`
+
+Takes the duplicate link off the issue. The issue stays closed; reopening it is a step of its own (`reopen`). Response:
+the `Card`. Errors: `404` no such card, or it is no duplicate.
+
+### `POST /v1/cards/{id}/related`
+
+Relates the issue to another, in both directions, so that each shows the other in `related`. Request: `{"related":
+number}`. Relating what is related changes nothing. Response: the `links` of the issue, `{"duplicate_of", "duplicates",
+"related"}`. Errors: `404` no such card or issue; `422` the issue as related to itself.
+
+### `DELETE /v1/cards/{id}/related/{number}`
+
+Stops the issue `number` from being related to this one, in both directions. Response: the links as above. Errors: `404`
+no such card, or that issue is not related to it.
+
+### `GET /v1/cards/{id}/similar`
+
+The open issues of the card's repository that are likely the same as this issue, the most alike first, at most five, each
+`{"id", "number", "title", "state", "score"}`. The issue is compared with each by the words of their titles and of their
+titles and bodies together (lower case, without words of under three letters and common ones, a plural as its singular):
+two issues are alike when at least half of the words of either are the words of both, and at least two words are shared
+(one when both titles are that one word). `score` is that share, from 0.5 to 1. When an issue is made through
+`POST /v1/repositories/{id}/issues`, the Moebius agent writes the result as a comment (author `agent:Moebius`) that lists
+them, and says nothing when there are none. Nothing is ever closed for it: only a person, or the agent told to by one,
+marks a duplicate. Errors: `404` no such card.
 
 ### `POST /v1/cards/{id}/claim`
 
@@ -3110,6 +3161,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `card_assignees_changed` | The people a card is given to changed. | `{"card": id, "assignees": [handle]}` |
 | `inbox_assignees_changed` | The people an inbox item is given to changed. | `{"item": id, "assignees": [handle]}` |
 | `card_blocking_changed` | A blocker was added or removed through the API, or the blockers the forge and the body name changed. | `{"card": id, "blocked_by": [number]}` (every blocker, done or not) |
+| `card_links_changed` | The duplicate or related links of an issue changed (sent for each issue they touch). | `{"card": id, "duplicate_of": number or null, "duplicates": [number], "related": [number]}` |
 | `card_claimed` | An issue was claimed. Not sent for a claim by the claimer again. | `{"card": id, "by": text}` |
 | `card_released` | A claim was released. | `{"card": id}` |
 | `card_commented` | A comment was written through the API or read from the forge. | `{"card": id, "comment": the Comment}` |
