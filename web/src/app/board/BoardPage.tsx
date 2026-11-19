@@ -3,10 +3,12 @@
  * move them), the filters, the inspector dock, the form of a new issue and a shell in the repository's clone, in a sheet over the
  * board. The
  * column of work in progress is the point of the page, so everything else is quiet: the header counts in one sentence,
- * the filters are a row of labelled fields, a column says what its cards are doing in a word, and an empty column says
+ * the filters are chips, a column says what its cards are doing in a word, and an empty column says
  * what will arrive there. Everything comes from the snapshot, which the event stream keeps current
  * (`live/invalidation.ts`), so a card moves on this page when the server moves it. The chosen card and the filters are
- * in the address (`?card=`, `?column=`, `?agent=`, `?status=`), so a reload and a link keep them.
+ * in the address (`?card=`, `?column=`, `?agent=`, `?status=`, `?label=`), and so are Display's choices (`?layout=`,
+ * `?group=`, `?sort=`, `?hide=`), so a reload and a link keep them. The filters are the chips of the shared bar
+ * (`ui/filters`); `view.ts` says what the board offers it and `ListLayout.tsx` draws the list layout.
  */
 import { CaretDownIcon, CaretRightIcon, PlusIcon, TerminalWindowIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
@@ -27,22 +29,24 @@ import {
   KanbanProvider,
 } from "../../ui/components/KanbanBoard";
 import { KanbanCardContent } from "../../ui/components/KanbanCardContent";
+import { FilterBar } from "../../ui/filters/FilterBar";
+import { displayQuery, parseViews, readDisplay, viewQuery, withView } from "../../ui/filters/model";
 import { Empty } from "../../ui/page/Empty";
+import { Select } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { ScrollFades } from "../../ui/page/ScrollFades";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
+import { readText, writeText } from "../storage";
 import { BlockDialog, DeleteDialog, ParentDialog } from "./CardDialogs";
 import { CardMenu } from "./CardMenu";
 import { ColumnMark } from "./ColumnMark";
 import { Dock } from "./Dock";
 import { type Decision, useDecisions } from "./decisions";
-import { FilterBar } from "./FilterBar";
+import { ListLayout } from "./ListLayout";
 import {
-  agentsOf,
-  boardColumns,
   cardBadges,
   cardDetail,
   cardStatus,
@@ -53,7 +57,7 @@ import {
   inboxOf,
   inspectedCard,
   issueUrl,
-  labelsOf,
+  NO_FILTERS,
   nextCard,
   pullRequestOf,
   rootOf,
@@ -62,6 +66,7 @@ import {
 } from "./model";
 import { NewIssueDialog } from "./NewIssueDialog";
 import { RepositoryTerminal } from "./RepositoryTerminal";
+import { DISPLAY_CHOICES, filterFields, listGroups, VIEW_KEYS } from "./view";
 
 /**
  * What a column holds when it is empty: one sentence for how a card comes to it. There is no title, because the
@@ -148,11 +153,21 @@ export function BoardPage() {
     }),
     [params],
   );
+  const display = useMemo(() => readDisplay(params, DISPLAY_CHOICES), [params]);
+  const hidden = useMemo(() => new Set(display.hidden), [display]);
   // The cards are grouped once per read of the board and once per change of the filter, not once per render of the
   // dock or of a decision coming back.
   const groups = useMemo(
-    () => (board ? groupByColumn(board, inbox, filters) : []),
-    [board, inbox, filters],
+    () =>
+      board && display.layout === "board" ? groupByColumn(board, inbox, filters, display.sort) : [],
+    [board, inbox, filters, display.layout, display.sort],
+  );
+  const rows = useMemo(
+    () =>
+      board && display.layout === "list"
+        ? listGroups(board, inbox, filters, display.group, display.sort)
+        : [],
+    [board, inbox, filters, display.layout, display.group, display.sort],
   );
 
   if (data.isPending)
@@ -200,6 +215,12 @@ export function BoardPage() {
       },
       { replace: true },
     );
+  const saveView = () => {
+    const key = `moebius.views.${board.repository.id}`;
+    const views = withView(parseViews(readText(key)), viewQuery(params, VIEW_KEYS));
+    writeText(key, JSON.stringify(views));
+    setNotice({ tone: "ok", text: `Saved this view as "${views[views.length - 1]?.name}"` });
+  };
   const inspected = inspectedCard(board, inbox, params.get("card"));
   const menu = {
     onBlock: setBlocking,
@@ -258,7 +279,7 @@ export function BoardPage() {
         isLive={status === "live"}
         className="cursor-grabbing"
       >
-        <CardContent board={board} inbox={inbox} card={card} cards={board.cards} />
+        <CardContent board={board} inbox={inbox} card={card} cards={board.cards} hidden={hidden} />
       </KanbanCardFace>
     );
   }
@@ -289,14 +310,29 @@ export function BoardPage() {
       <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start">
         <div className="flex min-w-0 flex-1 flex-col">
           <FilterBar
-            repositories={data.data.boards.map((b) => b.repository)}
-            repository={board.repository.id}
-            onRepository={(repository) => navigate(boardPath(repository))}
-            columns={boardColumns(board)}
-            agents={agentsOf(board)}
-            labels={labelsOf(board)}
-            filters={filters}
-            onChange={(next) => setQuery({ ...next })}
+            label="Filter the cards"
+            leading={
+              <Select
+                aria-label="Repository"
+                value={String(board.repository.id)}
+                options={data.data.boards.map((b): [string, string] => [
+                  String(b.repository.id),
+                  b.repository.name,
+                ])}
+                onChange={(value) => navigate(boardPath(Number(value)))}
+                className="w-auto min-w-36"
+              />
+            }
+            fields={filterFields(board, filters)}
+            values={{ ...filters }}
+            onFilter={(key, value) => setQuery({ [key]: value })}
+            onClear={() => setQuery({ ...NO_FILTERS })}
+            display={{
+              choices: DISPLAY_CHOICES,
+              value: display,
+              onChange: (next) => setQuery(displayQuery(next)),
+            }}
+            onSaveView={saveView}
           />
           <LeftoverNotice repository={board.repository.id} />
           {notice && (
@@ -312,27 +348,39 @@ export function BoardPage() {
               {notice.text}
             </Notice>
           )}
-          <ScrollFades className="flex-1 pb-3">
-            <KanbanProvider onDragEnd={onDragEnd} renderOverlay={renderOverlay}>
-              {groups.map(({ column, cards, total, stacks }) => (
-                <BoardColumn
-                  key={column}
-                  board={board}
-                  inbox={inbox}
-                  name={column}
-                  cards={cards}
-                  total={total}
-                  stacks={stacks}
-                  stackOpen={stackOpen}
-                  onToggleStack={toggleStack}
-                  busy={pending}
-                  inspectedId={inspected?.id}
-                  onSelect={(card) => setQuery({ card: String(card.id) })}
-                  menu={menu}
-                />
-              ))}
-            </KanbanProvider>
-          </ScrollFades>
+          {display.layout === "list" ? (
+            <ListLayout
+              board={board}
+              inbox={inbox}
+              groups={rows}
+              hidden={hidden}
+              inspectedId={inspected?.id}
+              onSelect={(card) => setQuery({ card: String(card.id) })}
+            />
+          ) : (
+            <ScrollFades className="flex-1 pb-3">
+              <KanbanProvider onDragEnd={onDragEnd} renderOverlay={renderOverlay}>
+                {groups.map(({ column, cards, total, stacks }) => (
+                  <BoardColumn
+                    key={column}
+                    board={board}
+                    inbox={inbox}
+                    name={column}
+                    cards={cards}
+                    total={total}
+                    stacks={stacks}
+                    stackOpen={stackOpen}
+                    onToggleStack={toggleStack}
+                    busy={pending}
+                    inspectedId={inspected?.id}
+                    onSelect={(card) => setQuery({ card: String(card.id) })}
+                    menu={menu}
+                    hidden={hidden}
+                  />
+                ))}
+              </KanbanProvider>
+            </ScrollFades>
+          )}
         </div>
         {inspected && (
           // The column holds the drawer's width so the board keeps the room it has; the drawer itself runs the whole
@@ -413,6 +461,7 @@ function BoardColumn({
   inspectedId,
   onSelect,
   menu,
+  hidden,
 }: {
   board: Board;
   inbox: InboxItem[];
@@ -428,6 +477,8 @@ function BoardColumn({
   inspectedId: number | undefined;
   onSelect: (card: Card) => void;
   menu: CardMenuActions;
+  /** The fields of a card Display switched off. */
+  hidden: ReadonlySet<string>;
 }) {
   return (
     <KanbanBoard name={name}>
@@ -460,6 +511,7 @@ function BoardColumn({
                 stack={stack}
                 open={open}
                 onToggleStack={() => onToggleStack(card)}
+                hidden={hidden}
               />
               {open && stack.shown.length > 0 && (
                 // The sub-issues lie under their parent, in a stack of their own: each is a card that moves, blocks and
@@ -478,6 +530,7 @@ function BoardColumn({
                       onSelect={onSelect}
                       menu={menu}
                       inStack
+                      hidden={hidden}
                     />
                   ))}
                 </div>
@@ -508,10 +561,12 @@ function BoardCard({
   open = false,
   onToggleStack,
   inStack = false,
+  hidden,
 }: {
   board: Board;
   inbox: InboxItem[];
   card: Card;
+  hidden: ReadonlySet<string>;
   /** The column the card is in: the one it is drawn in, or its own when it lies in the stack of its parent. */
   column: string;
   cards: Card[];
@@ -547,6 +602,7 @@ function BoardCard({
         open={open}
         onToggleStack={onToggleStack}
         inStack={inStack}
+        hidden={hidden}
       />
     </KanbanCard>
   );
@@ -564,11 +620,14 @@ function CardContent({
   open = false,
   onToggleStack,
   inStack = false,
+  hidden,
 }: {
   board: Board;
   inbox: InboxItem[];
   card: Card;
   cards: Card[];
+  /** The fields Display switched off. */
+  hidden: ReadonlySet<string>;
   /** Opens the card; left out on the drag overlay, where the card is only a picture of itself. */
   onOpen?: () => void;
   /** What the card's menu does; left out on the drag overlay, with the menu itself. */
@@ -590,10 +649,16 @@ function CardContent({
       displayId={`#${card.number}`}
       issueUrl={issueUrl(board.repository, card)}
       title={card.title}
-      preview={card.body}
-      detail={inStack ? [card.column, detail].filter(Boolean).join(" · ") : detail}
-      labels={card.labels}
-      claimedBy={card.claimed_by}
+      preview={hidden.has("description") ? null : card.body}
+      detail={
+        hidden.has("detail")
+          ? null
+          : inStack
+            ? [card.column, detail].filter(Boolean).join(" · ")
+            : detail
+      }
+      labels={hidden.has("labels") ? [] : card.labels}
+      claimedBy={hidden.has("claim") ? null : card.claimed_by}
       stack={
         stack && onToggleStack ? (
           <StackToggle card={card} stack={stack} open={open} onToggle={onToggleStack} />
@@ -602,8 +667,10 @@ function CardContent({
         ) : undefined
       }
       badges={cardBadges(card, status, next === card.id)}
-      pullRequest={pullRequestOf(board.repository, change)}
-      rounds={coding ? { done: card.rounds, limit: board.round_limit } : null}
+      pullRequest={hidden.has("pullRequest") ? null : pullRequestOf(board.repository, change)}
+      rounds={
+        coding && !hidden.has("rounds") ? { done: card.rounds, limit: board.round_limit } : null
+      }
       isLoading={status === "live"}
       muted={card.column === "Done" || card.closed}
       onOpen={onOpen}

@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Browser, type BrowserContext, chromium, type Locator, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { offers, pickOption, showing } from "./controls";
+import { addFilter, offers, showing } from "./controls";
 import { LONG_TITLE } from "./fake/board";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
@@ -589,7 +589,7 @@ describe("blocking, unblocking and deleting a card", () => {
     await card(3).getByText("Next").waitFor({ state: "detached" });
     // The status filter tells a blocked card from one that waits on issues.
     const filters = page.getByRole("search", { name: "Filter the cards" });
-    await pickOption(page, filters.getByLabel("Status"), "Blocked");
+    await addFilter(page, filters, "Status", "Blocked");
     await page.waitForURL("**status=held");
     await card(3).waitFor();
     // The address changes before the board is drawn again with the filter.
@@ -826,10 +826,6 @@ describe("the dock", () => {
   });
 });
 
-/** One of the page's own choices: open it and take the row that shows `option`. */
-const pick = (scope: Page | Locator, label: string, option: string) =>
-  pickOption(page, scope.getByLabel(label), option);
-
 /** The tiles on the board, counted once the page has redrawn. The filters live in the address, so a choice is taken
  * by a route before the columns follow it; counting at once can read the board as it was. */
 const shownIs = (count: number) =>
@@ -837,47 +833,213 @@ const shownIs = (count: number) =>
     .poll(() => page.getByTestId(/^card-/).count(), { timeout: 10_000, message: `${count} cards` })
     .toBe(count);
 
+const bar = () => page.getByRole("search", { name: "Filter the cards" });
+/** The chip of a filter that is set, as its words say it. */
+const chip = (words: string) => bar().getByRole("button", { name: words, exact: true });
+const display = (choice: string, kind: "menuitemradio" | "menuitemcheckbox" = "menuitemradio") =>
+  page.getByRole(kind, { name: choice, exact: true });
+
 describe("the filters", () => {
-  it.skipIf(usesRealServer)("filters by column, agent and status, and clears", async () => {
+  it.skipIf(usesRealServer)(
+    "filters by column, agent and status with chips, and clears",
+    async () => {
+      await fresh();
+      await openBoard();
+      expect(await page.getByTestId(/^card-/).count()).toBe(7);
+
+      await addFilter(page, bar(), "Column", "Done");
+      await shownIs(1);
+      await card(7).waitFor();
+      expect(await column("Not started").count()).toBe(0);
+      await page.waitForURL("**column=Done");
+      await chip("Column is Done").waitFor();
+
+      await bar().getByRole("button", { name: "Clear filters" }).click();
+      await shownIs(7);
+      await card(3).waitFor();
+      expect(await chip("Column is Done").count()).toBe(0);
+
+      await addFilter(page, bar(), "Agent", "Reviewer");
+      await shownIs(1);
+      await card(6).waitFor();
+      // A chip is removed by its own button.
+      await bar().getByRole("button", { name: "Remove filter Agent is Reviewer" }).click();
+      await shownIs(7);
+
+      await addFilter(page, bar(), "Status", "Your turn");
+      await shownIs(2);
+      await card(2).waitFor();
+      await card(5).waitFor();
+
+      // A chip opens its values: the filter changes without being removed first.
+      await chip("Status is Your turn").click();
+      await display("Waiting on issues").click();
+      await shownIs(1);
+      await card(4).waitFor();
+
+      // Two filters together, and a reload keeps them.
+      await chip("Status is Waiting on issues").click();
+      await display("Stuck").click();
+      await addFilter(page, bar(), "Agent", "Coder");
+      await shownIs(0);
+      await page.reload();
+      await shownIs(0);
+      await chip("Agent is Coder").waitFor();
+      await chip("Status is Stuck").waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)("sets and removes a filter with the keyboard alone", async () => {
     await fresh();
     await openBoard();
-    const filters = page.getByRole("search", { name: "Filter the cards" });
-    expect(await page.getByTestId(/^card-/).count()).toBe(7);
-
-    await pick(filters, "Column", "Done");
-    await shownIs(1);
-    await card(7).waitFor();
-    expect(await column("Not started").count()).toBe(0);
-    await page.waitForURL("**column=Done");
-
-    await filters.getByRole("button", { name: "Clear" }).click();
-    await shownIs(7);
-    await card(3).waitFor();
-
-    await pick(filters, "Agent", "Reviewer");
+    await bar().getByRole("button", { name: "Filter", exact: true }).focus();
+    // Enter opens the fields, the arrow down moves to Agent, the arrow right opens its values and Enter chooses one.
+    await page.keyboard.press("Enter");
+    await page.getByRole("menuitem", { name: "Column", exact: true }).waitFor();
+    const agent = page.getByRole("menuitem", { name: "Agent", exact: true });
+    for (let i = 0; i < 5; i++) {
+      if (await agent.evaluate((el) => el === document.activeElement)) break;
+      await page.keyboard.press("ArrowDown");
+    }
+    await page.keyboard.press("ArrowRight");
+    await display("Coder").waitFor();
+    // The sub-menu takes focus a moment after it shows; arrow keys before that go to the wrong menu.
+    await page.waitForFunction(
+      () => document.activeElement?.getAttribute("role") === "menuitemradio",
+    );
+    const reviewer = display("Reviewer");
+    for (let i = 0; i < 5; i++) {
+      if (await reviewer.evaluate((el) => el === document.activeElement)) break;
+      await page.keyboard.press("ArrowDown");
+    }
+    await page.keyboard.press("Enter");
+    await chip("Agent is Reviewer").waitFor();
     await shownIs(1);
     await card(6).waitFor();
-    await pick(filters, "Agent", "All agents");
+    // The chip's own button is reached with the keyboard too.
+    await bar().getByRole("button", { name: "Remove filter Agent is Reviewer" }).focus();
+    await page.keyboard.press("Enter");
     await shownIs(7);
-
-    await pick(filters, "Status", "Your turn");
-    await shownIs(2);
-    await card(2).waitFor();
-    await card(5).waitFor();
-
-    await pick(filters, "Status", "Waiting on issues");
-    await shownIs(1);
-    await card(4).waitFor();
-
-    // Two filters together, and a reload keeps them.
-    await pick(filters, "Status", "Stuck");
-    await pick(filters, "Agent", "Coder");
-    await shownIs(0);
-    await page.reload();
-    await shownIs(0);
-    expect(await showing(filters.getByLabel("Agent"))).toBe("Coder");
+    expect(await chip("Agent is Reviewer").count()).toBe(0);
   });
 
+  it.skipIf(usesRealServer)(
+    "offers Save view only once something is set, and saves it",
+    async () => {
+      await fresh();
+      await openBoard();
+      const save = bar().getByRole("button", { name: "Save view" });
+      expect(await save.count()).toBe(0);
+      await addFilter(page, bar(), "Status", "Your turn");
+      await save.click();
+      await status(/Saved this view as "View 1"/).waitFor();
+      const kept = await page.evaluate(() => {
+        for (const key of Object.keys(window.localStorage)) {
+          if (key.startsWith("moebius.views.")) return window.localStorage.getItem(key);
+        }
+        return null;
+      });
+      expect(JSON.parse(kept ?? "[]")).toEqual([{ name: "View 1", query: "status=needs-you" }]);
+    },
+  );
+});
+
+describe("Display", () => {
+  it.skipIf(usesRealServer)(
+    "switches between the board and the list, and a reload keeps it",
+    async () => {
+      await fresh();
+      await openBoard();
+      await column("Not started").waitFor();
+      await bar().getByRole("button", { name: "Display" }).click();
+      await display("List").click();
+      await page.waitForURL("**layout=list");
+      // The lanes are gone and every card is a row under the heading of its column.
+      await column("Done").waitFor();
+      expect(
+        await page
+          .getByRole("list")
+          .getByTestId(/^card-/)
+          .count(),
+      ).toBe(7);
+      await shownIs(7);
+      await page.reload();
+      await shownIs(7);
+      expect(
+        await page
+          .getByRole("list")
+          .getByTestId(/^card-/)
+          .count(),
+      ).toBe(7);
+
+      // A row opens the card, and a filter still applies.
+      await addFilter(page, bar(), "Agent", "Reviewer");
+      await shownIs(1);
+      await card(6).getByRole("button").click();
+      await dock().waitFor();
+
+      await bar().getByRole("button", { name: "Display" }).click();
+      await display("Board").click();
+      await page.waitForURL((url) => !url.search.includes("layout="));
+      expect(
+        await page
+          .getByRole("list")
+          .getByTestId(/^card-/)
+          .count(),
+      ).toBe(0);
+      await card(6).waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)("groups the list, and sorts it", async () => {
+    await fresh();
+    await openBoard();
+    await page.goto(`${server.url}${new URL(page.url()).pathname}?layout=list`);
+    await shownIs(7);
+    await bar().getByRole("button", { name: "Display" }).click();
+    await display("Status").click();
+    await page.waitForURL("**group=status");
+    await page.getByRole("region", { name: "Your turn", exact: true }).waitFor();
+    expect(await page.getByRole("region", { name: "Not started" }).count()).toBe(0);
+
+    await bar().getByRole("button", { name: "Display" }).click();
+    await display("None").click();
+    await page.waitForURL("**group=none");
+    await bar().getByRole("button", { name: "Display" }).click();
+    await display("Title").click();
+    await page.waitForURL("**sort=title");
+    await page.reload();
+    await shownIs(7);
+    const titles = await page
+      .getByTestId(/^card-/)
+      .evaluateAll((rows) => rows.map((row) => row.querySelectorAll("span")[1]?.textContent ?? ""));
+    expect(titles).toHaveLength(7);
+    expect(titles).toEqual([...titles].sort((x, y) => x.localeCompare(y)));
+  });
+
+  it.skipIf(usesRealServer)("switches off the fields a card shows", async () => {
+    await fresh();
+    await openBoard();
+    const detail = card(2).getByText(/round/);
+    const had = await detail.count();
+    await bar().getByRole("button", { name: "Display" }).click();
+    await display("Agent and round", "menuitemcheckbox").click();
+    // The menu stays open for the next field.
+    await display("Labels", "menuitemcheckbox").click();
+    await page.keyboard.press("Escape");
+    await page.waitForURL("**hide=detail%2Clabels");
+    await expect.poll(() => card(2).getByText(/round/).count()).toBeLessThanOrEqual(had);
+    expect(await card(2).getByText("Coder · round").count()).toBe(0);
+    await page.reload();
+    await bar().getByRole("button", { name: "Display" }).click();
+    expect(await display("Labels", "menuitemcheckbox").getAttribute("aria-checked")).toBe("false");
+    expect(await display("Description", "menuitemcheckbox").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+  });
+});
+
+describe("the repositories", () => {
   it.skipIf(usesRealServer)(
     "lists the repositories and opens the board of the one chosen",
     async () => {

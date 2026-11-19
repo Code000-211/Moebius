@@ -14,6 +14,18 @@ export async function pickOption(page: Page, trigger: Locator, option: string): 
   await page.getByRole("menuitemradio", { name: option, exact: true }).click();
 }
 
+/** Set a filter of the shared bar by mouse: "+ Filter", the field, then its value, as the menus show them. */
+export async function addFilter(
+  page: Page,
+  bar: Locator,
+  field: string,
+  value: string,
+): Promise<void> {
+  await bar.getByRole("button", { name: "Filter", exact: true }).click();
+  await page.getByRole("menuitem", { name: field, exact: true }).click();
+  await page.getByRole("menuitemradio", { name: value, exact: true }).click();
+}
+
 /** The words a choice shows on its own trigger, which are what stands now. */
 export async function showing(trigger: Locator): Promise<string> {
   const text = await trigger.textContent();

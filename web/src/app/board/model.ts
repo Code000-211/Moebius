@@ -138,7 +138,7 @@ export function agentsOf(board: Board): string[] {
 }
 
 /** Whether a card passes the filters that look at the card itself: its agent, its status and its label. */
-function matchesCard(
+export function matchesCard(
   card: Card,
   filters: Filters,
   inbox: readonly InboxItem[],
@@ -205,6 +205,22 @@ export function isClosed(card: Card): boolean {
   return card.closed || card.column === "Done";
 }
 
+/**
+ * Cards in the order Display's sorting asks for: by number (the default; Done newest first), newest first, or by
+ * title. The cards given are not changed.
+ */
+export function orderCards(cards: readonly Card[], sort: string, column?: string): Card[] {
+  const ordered = [...cards];
+  if (sort === "newest") {
+    return ordered.sort((a, b) => b.created_at - a.created_at || b.number - a.number);
+  }
+  if (sort === "title") {
+    return ordered.sort((a, b) => a.title.localeCompare(b.title) || a.number - b.number);
+  }
+  ordered.sort((a, b) => a.number - b.number);
+  return column === "Done" ? ordered.reverse() : ordered;
+}
+
 /** A card with sub-issues, and how its stack stands. */
 export interface Stack {
   /** The sub-issues the filters keep, in order. */
@@ -242,6 +258,7 @@ export function groupByColumn(
   board: Board,
   inbox: readonly InboxItem[],
   filters: Filters,
+  sort = "",
 ): ColumnCards[] {
   const inColumn = (card: Card) => filters.column === "" || card.column === filters.column;
   const tops = board.cards.filter((card) => rootOf(board, card).id === card.id);
@@ -263,10 +280,11 @@ export function groupByColumn(
   return boardColumns(board)
     .filter((column) => filters.column === "" || column === filters.column)
     .map((column) => {
-      const cards = kept
-        .filter((card) => card.column === column)
-        .sort((a, b) => a.number - b.number);
-      if (column === "Done") cards.reverse();
+      const cards = orderCards(
+        kept.filter((card) => card.column === column),
+        sort,
+        column,
+      );
       return {
         column,
         cards: column === "Done" ? cards.slice(0, DONE_SHOWN) : cards,
