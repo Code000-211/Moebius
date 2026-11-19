@@ -377,11 +377,16 @@ describe("the inbox", () => {
         .getByRole("button", { name: "Dismiss" })
         .click();
       await item("A report from a grilling").waitFor({ state: "detached" });
-      expect(fake().requests.map((r) => r.path)).toContain("/v1/grillings/8/dismiss");
+      await expect
+        .poll(() => fake().requests.map((r) => r.path))
+        .toContain("/v1/grillings/8/dismiss");
 
       const grilling = await choose("3 issues from a grilling");
       for (const number of [3, 2, 1]) {
-        await grilling.getByRole("button", { name: `Remove issue ${number}` }).click();
+        const remove = grilling.getByRole("button", { name: `Remove issue ${number}` });
+        await remove.click();
+        // The next one is clicked once this one has gone, as a person does: the list is drawn again in between.
+        await remove.waitFor({ state: "detached" });
       }
       await grilling.getByText("No issue is left.").waitFor();
       expect(await grilling.getByRole("button", { name: "Confirm" }).isDisabled()).toBe(true);
