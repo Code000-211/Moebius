@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use serde_json::{Value, json};
 
 use super::{KEYS, REPOSITORY, SETTINGS, files, unified};
-use crate::app::{App, PERSON, Result};
+use crate::app::{App, OWNER_AUTHOR, Result};
 use crate::board::{Kanban, check_script};
 use crate::bus::Event;
 use crate::harness::repo::OwnBranch;
@@ -182,7 +182,7 @@ fn check(file: &str, text: &str) -> std::result::Result<(), String> {
         text,
         &column.name,
         "A card to check the script with",
-        PERSON,
+        OWNER_AUTHOR,
     )
     .map(drop)
 }

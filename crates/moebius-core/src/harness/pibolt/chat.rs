@@ -454,7 +454,8 @@ mod tests {
         // A chat started without settings runs on its agent's.
         let (argv, _) = argv_and_stdin(&app, run.id);
         assert_eq!(flag(&argv, "--model"), Some("qwen-local"));
-        app.stop_run(&Actor::Person, &pi, run.id, "").unwrap();
+        app.stop_run(&Actor::first_owner(), &pi, run.id, "")
+            .unwrap();
         wait_until_ended(&app, run.id);
     }
 

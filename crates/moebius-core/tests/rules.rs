@@ -115,7 +115,7 @@ impl Setup {
                 let card = server
                     .app
                     .store
-                    .add_card(repo.id, "Fix it", "", "person", "In progress")
+                    .add_card(repo.id, "Fix it", "", "person:owner", "In progress")
                     .unwrap();
                 let run = server
                     .app

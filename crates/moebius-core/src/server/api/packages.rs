@@ -510,7 +510,14 @@ mod tests {
         assert_ne!(fx.install(json!({"name": "gate"})).await.0, 200);
         fx.state
             .config
-            .set_plugin_enabled(&fx.state.app, &Actor::Person, "box", false, true, false)
+            .set_plugin_enabled(
+                &fx.state.app,
+                &Actor::first_owner(),
+                "box",
+                false,
+                true,
+                false,
+            )
             .unwrap();
         let (status, done) = fx.install(json!({"name": "gate"})).await;
         assert_eq!(status, 200, "{done}");
@@ -735,7 +742,14 @@ mod tests {
         let saved = fx
             .state
             .config
-            .set_plugin_enabled(&fx.state.app, &Actor::Person, "gate", false, false, false)
+            .set_plugin_enabled(
+                &fx.state.app,
+                &Actor::first_owner(),
+                "gate",
+                false,
+                false,
+                false,
+            )
             .unwrap();
         assert!(saved.changed && !saved.enabled);
         assert!(fx.state.app.decisions.host().is_off("gate"));
@@ -772,7 +786,14 @@ mod tests {
         // Turned on, the new version runs and decides again.
         fx.state
             .config
-            .set_plugin_enabled(&fx.state.app, &Actor::Person, "gate", true, false, false)
+            .set_plugin_enabled(
+                &fx.state.app,
+                &Actor::first_owner(),
+                "gate",
+                true,
+                false,
+                false,
+            )
             .unwrap();
         assert_eq!(fx.gate_says().1, "gate 1.1.0");
         assert!(fx.state.app.decisions.decides("start_card"));
@@ -1018,7 +1039,7 @@ mod tests {
         // An update proposes the new files and deleting those the new version no longer has.
         fx.state
             .app
-            .merge_change(&crate::decide::Actor::Person, change, "")
+            .merge_change(&crate::decide::Actor::first_owner(), change, "")
             .unwrap();
         let newer = fx.files_package_at(
             "review-flow",
@@ -1058,7 +1079,7 @@ mod tests {
         fx.state
             .app
             .merge_change(
-                &crate::decide::Actor::Person,
+                &crate::decide::Actor::first_owner(),
                 updated["change"].as_i64().unwrap(),
                 "",
             )

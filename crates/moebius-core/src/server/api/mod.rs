@@ -262,7 +262,7 @@ struct Who {
 impl Who {
     fn person(person: crate::store::Person, token: Option<i64>, via: Via) -> Self {
         Self {
-            actor: Actor::person(Some((person.id, &person.handle))),
+            actor: Actor::person(person.id, &person.handle),
             via,
             signed_in: Some(session::SignedIn { person, token }),
         }
@@ -289,7 +289,7 @@ fn identify(
                 Some(owner) => Who::person(owner, None, Via::Bearer),
                 // A store without its first owner (who is never deleted) leaves the bare person.
                 None => Who {
-                    actor: Actor::Person,
+                    actor: Actor::first_owner(),
                     via: Via::Bearer,
                     signed_in: None,
                 },
@@ -418,7 +418,7 @@ fn issue_tracker_route(method: &axum::http::Method, path: &str) -> bool {
 /// Refuses an agent what only a person may do.
 fn person_only(by: &Actor) -> Result<(), ApiError> {
     match by {
-        Actor::Person | Actor::Member { .. } => Ok(()),
+        Actor::Member { .. } => Ok(()),
         Actor::Agent { .. } | Actor::Script { .. } => Err(ApiError(
             StatusCode::FORBIDDEN,
             "only a person can do this".into(),

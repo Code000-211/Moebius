@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use moebius_core::app::{App, PERSON};
+use moebius_core::app::{App, OWNER_AUTHOR};
 use moebius_core::board::{CardRuns, Engine, Kanban, Limits, StartError, Step, Variant};
 use moebius_core::config::Config;
 use moebius_core::decide::rules;
@@ -606,16 +606,16 @@ fn scenarios() -> Vec<(&'static str, Scenario)> {
 
 fn large_cards_alone(f: &Fixture) {
     // One run is going, and the limit is 3.
-    let busy = f.card("Backlog", "Busy", PERSON);
+    let busy = f.card("Backlog", "Busy", OWNER_AUTHOR);
     f.app
         .store
         .add_run(Some(busy.id), "Coder", "idle", "code")
         .unwrap();
 
-    let ordinary = f.card("Not started", "A small fix", PERSON);
+    let ordinary = f.card("Not started", "A small fix", OWNER_AUTHOR);
     assert_eq!(f.tick(&ordinary).moved.as_deref(), Some("In progress"));
 
-    let large = f.card("Not started", "[large] Rewrite the parser", PERSON);
+    let large = f.card("Not started", "[large] Rewrite the parser", OWNER_AUTHOR);
     let step = f.tick(&large);
     assert_eq!(f.column(&large), "Not started");
     assert_eq!(
@@ -632,7 +632,7 @@ fn large_cards_alone(f: &Fixture) {
 
 fn ask_about_authors(f: &Fixture) {
     // A person's issue is trusted and goes on.
-    let own = f.card("Backlog", "Mine", PERSON);
+    let own = f.card("Backlog", "Mine", OWNER_AUTHOR);
     assert_eq!(f.tick(&own).moved.as_deref(), Some("Not started"));
 
     // An author on the list waits for a person, with the reason in the inbox and as the card's waiting reason.
@@ -655,7 +655,7 @@ fn ask_about_authors(f: &Fixture) {
     assert_eq!(f.inbox(&other).len(), 1);
     f.app
         .approve_issue(
-            &moebius_core::decide::Actor::Person,
+            &moebius_core::decide::Actor::first_owner(),
             listed.id,
             "looks fine",
         )
@@ -665,9 +665,9 @@ fn ask_about_authors(f: &Fixture) {
 }
 
 fn urgent_skips_blockers(f: &Fixture) {
-    let blocker = f.card("Backlog", "First", PERSON);
+    let blocker = f.card("Backlog", "First", OWNER_AUTHOR);
     let blocked = |title: &str| {
-        let card = f.card("Not started", title, PERSON);
+        let card = f.card("Not started", title, OWNER_AUTHOR);
         f.app
             .store
             .set_dependencies(card.id, &[blocker.number].into())
@@ -688,7 +688,7 @@ fn urgent_skips_blockers(f: &Fixture) {
 }
 
 fn two_rounds(f: &Fixture) {
-    let card = f.card("In progress", "Hard one", PERSON);
+    let card = f.card("In progress", "Hard one", OWNER_AUTHOR);
     f.ended_run(&card, "code", "failed");
     // One failed round: another is started, with the card's note.
     let step = f.tick(&card);
@@ -711,8 +711,8 @@ fn two_rounds(f: &Fixture) {
 }
 
 fn agent_by_title(f: &Fixture) {
-    let large = f.card("In progress", "[large] Rewrite the parser", PERSON);
-    let small = f.card("In progress", "Fix a typo", PERSON);
+    let large = f.card("In progress", "[large] Rewrite the parser", OWNER_AUTHOR);
+    let small = f.card("In progress", "Fix a typo", OWNER_AUTHOR);
     f.tick(&large);
     f.tick(&small);
     let started = f.harness.started.lock().unwrap().clone();
@@ -724,10 +724,10 @@ fn agent_by_title(f: &Fixture) {
 }
 
 fn decide_with_a_plugin(f: &Fixture) {
-    let fine = f.card("Backlog", "Add a button", PERSON);
+    let fine = f.card("Backlog", "Add a button", OWNER_AUTHOR);
     assert_eq!(f.tick(&fine).moved.as_deref(), Some("Not started"));
 
-    let held = f.card("Backlog", "[wip] Add a menu", PERSON);
+    let held = f.card("Backlog", "[wip] Add a menu", OWNER_AUTHOR);
     let step = f.tick(&held);
     assert_eq!(f.column(&held), "Backlog");
     assert_eq!(step.waiting.as_deref(), Some("the title says [wip]"));
@@ -794,7 +794,7 @@ fn every_luau_block_is_a_script_that_runs_and_the_marked_ones_do_what_the_page_s
 
         // It loads, defines on_card and runs without an error against a card in its column.
         let smoke = Fixture::new(&script, &block.text, agents);
-        let card = smoke.card(column_of(&script), "A card", PERSON);
+        let card = smoke.card(column_of(&script), "A card", OWNER_AUTHOR);
         smoke
             .engine
             .tick(card.id)
@@ -848,12 +848,12 @@ fn attempts_that(f: &Fixture, card: &Card, passed: [bool; 3]) -> Vec<i64> {
 
 fn hard_attempts(f: &Fixture) {
     // A card that is not hard gets one run, as before.
-    let plain = f.card("In progress", "A small fix", PERSON);
+    let plain = f.card("In progress", "A small fix", OWNER_AUTHOR);
     f.tick(&plain);
     assert!(f.app.store.attempts_for_card(plain.id).unwrap().is_empty());
 
     // A hard one gets three attempts, in turn with the models, and waits while they go.
-    let hard = f.card("In progress", "[hard] Rewrite the parser", PERSON);
+    let hard = f.card("In progress", "[hard] Rewrite the parser", OWNER_AUTHOR);
     let step = f.tick(&hard);
     assert_eq!(step.waiting.as_deref(), Some("trying 3 attempts"));
     let started = f.harness.started.lock().unwrap().clone();
@@ -905,7 +905,7 @@ fn hard_attempts(f: &Fixture) {
     assert_eq!(purposes, ["attempt", "code", "attempt"]);
 
     // Two pass: the Reviewer is asked to choose, with the passing branches listed, and its pick is kept.
-    let two = f.card("In progress", "[hard] Fix the lexer", PERSON);
+    let two = f.card("In progress", "[hard] Fix the lexer", OWNER_AUTHOR);
     let runs = attempts_that(f, &two, [true, false, true]);
     let step = f.tick(&two);
     assert_eq!(step.waiting.as_deref(), Some("choosing between 2 attempts"));
@@ -959,7 +959,7 @@ fn hard_attempts(f: &Fixture) {
     assert_eq!(kept[2].reason.as_deref(), Some("The second is smaller."));
 
     // None passes: the round counts as a failed one and the next is told what failed.
-    let none = f.card("In progress", "[hard] Port the cache", PERSON);
+    let none = f.card("In progress", "[hard] Port the cache", OWNER_AUTHOR);
     attempts_that(f, &none, [false, false, false]);
     let step = f.tick(&none);
     assert_eq!(step.waiting.as_deref(), Some("no attempt passed"));
@@ -976,7 +976,7 @@ fn hard_attempts(f: &Fixture) {
 
     // The agent's token budget is for all attempts together: three that used 400 each spend 1000.
     *f.harness.budget.lock().unwrap() = Some(1000);
-    let spent = f.card("In progress", "[hard] Replace the allocator", PERSON);
+    let spent = f.card("In progress", "[hard] Replace the allocator", OWNER_AUTHOR);
     let runs = attempts_that(f, &spent, [false, false, false]);
     for run in runs {
         f.app

@@ -125,7 +125,7 @@ mod tests {
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
     use super::*;
-    use crate::app::PERSON;
+    use crate::app::OWNER_AUTHOR;
     use crate::board::{Engine, Kanban, Limits};
     use crate::bus::AppEvent;
     use crate::server::api::testing::{get, origin, post, start, until};
@@ -140,7 +140,7 @@ mod tests {
             .add_repository("demo", origin(dir.path()).to_str().unwrap())
             .unwrap();
         let card = app
-            .create_issue(repo.id, "Please [hang]", "", PERSON)
+            .create_issue(repo.id, "Please [hang]", "", OWNER_AUTHOR)
             .unwrap();
         let engine = Arc::new(Engine::new(
             app.clone(),
@@ -345,7 +345,7 @@ mod tests {
             .add_repository("demo", origin(dir.path()).to_str().unwrap())
             .unwrap();
         let card = app
-            .create_issue(repo.id, "Please [hang]", "", PERSON)
+            .create_issue(repo.id, "Please [hang]", "", OWNER_AUTHOR)
             .unwrap();
         let engine = Arc::new(Engine::new(
             app.clone(),

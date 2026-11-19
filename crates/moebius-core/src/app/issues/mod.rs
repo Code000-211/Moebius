@@ -996,16 +996,20 @@ mod tests {
             Some("agent:Moebius")
         );
         s.app.claim_issue(&agent, a.id, None).unwrap();
-        let taken = s.app.claim_issue(&Actor::Person, a.id, Some("session 2"));
+        let taken = s
+            .app
+            .claim_issue(&Actor::first_owner(), a.id, Some("session 2"));
         assert!(matches!(taken, Err(AppError::Conflict(_))), "{taken:?}");
-        s.app.release_issue(&Actor::Person, a.id, None).unwrap();
+        s.app
+            .release_issue(&Actor::first_owner(), a.id, None)
+            .unwrap();
         assert!(matches!(
-            s.app.release_issue(&Actor::Person, a.id, None),
+            s.app.release_issue(&Actor::first_owner(), a.id, None),
             Err(AppError::Conflict(_))
         ));
         let card = s
             .app
-            .claim_issue(&Actor::Person, a.id, Some(" session 2 "))
+            .claim_issue(&Actor::first_owner(), a.id, Some(" session 2 "))
             .unwrap();
         assert_eq!(card.claimed_by.as_deref(), Some("session 2"));
 
@@ -1055,30 +1059,32 @@ mod tests {
             .add_run(Some(a.id), "Coder", "test", "code")
             .unwrap();
         assert!(matches!(
-            s.app.close_issue(&Actor::Person, a.id, ""),
+            s.app.close_issue(&Actor::first_owner(), a.id, ""),
             Err(AppError::Conflict(_))
         ));
         s.app.store.set_run_status(run.id, "succeeded").unwrap();
 
         let closed = s
             .app
-            .close_issue(&Actor::Person, a.id, "not needed")
+            .close_issue(&Actor::first_owner(), a.id, "not needed")
             .unwrap();
         assert_eq!((closed.column.as_str(), closed.closed), ("Done", true));
-        s.app.close_issue(&Actor::Person, a.id, "again").unwrap();
+        s.app
+            .close_issue(&Actor::first_owner(), a.id, "again")
+            .unwrap();
         assert_eq!(s.kinds(), ["card_moved", "card_closed"]);
         assert_eq!(s.app.store.judgements("close_issue").unwrap().len(), 2);
 
         let reopened = s
             .app
-            .reopen_issue(&Actor::Person, a.id, "it is needed")
+            .reopen_issue(&Actor::first_owner(), a.id, "it is needed")
             .unwrap();
         assert_eq!(
             (reopened.column.as_str(), reopened.closed),
             ("Backlog", false)
         );
         assert!(matches!(
-            s.app.reopen_issue(&Actor::Person, a.id, ""),
+            s.app.reopen_issue(&Actor::first_owner(), a.id, ""),
             Err(AppError::Conflict(_))
         ));
         assert_eq!(s.kinds(), ["card_moved", "card_reopened"]);
@@ -1093,7 +1099,9 @@ mod tests {
         }
         s.app.set_labels(a.id, &["wayfinder:spike".into()]).unwrap();
         s.app.add_blocker(b.id, a.number).unwrap();
-        s.app.claim_issue(&Actor::Person, c.id, None).unwrap();
+        s.app
+            .claim_issue(&Actor::first_owner(), c.id, None)
+            .unwrap();
         let numbers = |query: IssueQuery| -> Vec<i64> {
             s.app
                 .issues(s.repository.id, &query)
@@ -1152,10 +1160,12 @@ mod tests {
         s.app.set_labels(a.id, &["bug".into()]).unwrap();
         s.app.add_blocker(b.id, a.number).unwrap();
         s.app.close_card(a.id).unwrap();
-        s.app.comment_issue(&Actor::Person, a.id, "Done.").unwrap();
+        s.app
+            .comment_issue(&Actor::first_owner(), a.id, "Done.")
+            .unwrap();
         // GitLab and Forgejo have no parent: the body says it.
         s.app.set_parent(b.id, Some(p.number)).unwrap();
-        s.app.reopen_issue(&Actor::Person, a.id, "").unwrap();
+        s.app.reopen_issue(&Actor::first_owner(), a.id, "").unwrap();
         assert_eq!(
             s.calls(),
             [
@@ -1185,7 +1195,7 @@ mod tests {
         ));
         assert!(matches!(s.app.close_card(b.id), Err(AppError::Forge(_))));
         assert!(matches!(
-            s.app.comment_issue(&Actor::Person, a.id, "x"),
+            s.app.comment_issue(&Actor::first_owner(), a.id, "x"),
             Err(AppError::Forge(_))
         ));
         assert_eq!(s.app.card(a.id).unwrap().labels, ["bug"]);
@@ -1318,13 +1328,19 @@ mod tests {
         s.app.set_parent(b.id, Some(a.number)).unwrap();
         s.app.add_blocker(b.id, c.number).unwrap();
         s.app
-            .edit_card(&Actor::Person, b.id, "B", "New text.\n\nPart of #1", "")
+            .edit_card(
+                &Actor::first_owner(),
+                b.id,
+                "B",
+                "New text.\n\nPart of #1",
+                "",
+            )
             .unwrap();
         let card = s.app.card(b.id).unwrap();
         assert_eq!(card.parent, Some(1));
         assert_eq!(s.app.store.dependencies(b.id).unwrap(), [3]);
         s.app
-            .edit_card(&Actor::Person, b.id, "B", "Plain.", "")
+            .edit_card(&Actor::first_owner(), b.id, "B", "Plain.", "")
             .unwrap();
         assert_eq!(s.app.card(b.id).unwrap().parent, None);
         assert_eq!(s.app.store.dependencies(b.id).unwrap(), [3]);
@@ -1389,9 +1405,11 @@ mod tests {
         assert!(s.app.issue(parent.id).unwrap().children.is_empty());
 
         // A person approving it makes it one; so does the issue of a trusted author.
-        s.app.reopen_issue(&Actor::Person, child.id, "").unwrap();
         s.app
-            .approve_issue(&Actor::Person, child.id, "fine")
+            .reopen_issue(&Actor::first_owner(), child.id, "")
+            .unwrap();
+        s.app
+            .approve_issue(&Actor::first_owner(), child.id, "fine")
             .unwrap();
         assert_eq!(s.app.issue(parent.id).unwrap().children.len(), 1);
         let mut trusted = open_issue(3, "Trusted");
@@ -1444,7 +1462,7 @@ mod tests {
         s.app.add_blocker(b.id, c.number).unwrap();
         s.app.close_card(c.id).unwrap();
         s.app.close_card(a.id).unwrap();
-        s.app.reopen_issue(&Actor::Person, a.id, "").unwrap();
+        s.app.reopen_issue(&Actor::first_owner(), a.id, "").unwrap();
         s.kinds();
         // The poll began before the writes ended (at the epoch, say).
         s.app
@@ -1638,7 +1656,7 @@ mod tests {
         // It does not hold #1 back, so blocking it with #1 is no cycle; a person approving it makes it one.
         s.app.add_blocker(outside.id, parent.number).unwrap();
         s.app
-            .approve_issue(&Actor::Person, outside.id, "fine")
+            .approve_issue(&Actor::first_owner(), outside.id, "fine")
             .unwrap();
         let refused = s.app.add_blocker(parent.id, outside.number).unwrap_err();
         assert!(matches!(refused, AppError::Invalid(_)), "{refused}");
@@ -1716,7 +1734,9 @@ mod tests {
         assert!(!s.app.card(a.id).unwrap().closed);
 
         // A person closing it is no business of the wait.
-        s.app.close_issue(&Actor::Person, a.id, "by hand").unwrap();
+        s.app
+            .close_issue(&Actor::first_owner(), a.id, "by hand")
+            .unwrap();
         assert_eq!(s.app.close_for_script(a.id).unwrap(), None);
     }
 
@@ -1753,7 +1773,7 @@ mod tests {
         assert!(s.app.card(parent.id).unwrap().closed);
 
         s.app
-            .reopen_issue(&Actor::Person, parent.id, "not done yet")
+            .reopen_issue(&Actor::first_owner(), parent.id, "not done yet")
             .unwrap();
         s.kinds();
         s.calls();
@@ -1805,7 +1825,7 @@ mod tests {
     #[test]
     fn an_issue_a_known_person_creates_is_theirs_and_trusted() {
         let s = Setup::new(Some(true));
-        let ada = Actor::person(Some((7, "ada")));
+        let ada = Actor::person(7, "ada");
         let (card, _) = s
             .app
             .create_tracked_issue(&ada, s.repository.id, "Mine", "", None, &[], &[])
@@ -1821,7 +1841,7 @@ mod tests {
         let create = |parent: Option<i64>, labels: &[&str], blocked_by: &[i64]| {
             let labels: Vec<String> = labels.iter().map(|l| l.to_string()).collect();
             s.app.create_tracked_issue(
-                &Actor::Person,
+                &Actor::first_owner(),
                 s.repository.id,
                 "New",
                 "",
@@ -1878,7 +1898,7 @@ mod tests {
         let (card, warnings) = s
             .app
             .create_tracked_issue(
-                &Actor::Person,
+                &Actor::first_owner(),
                 s.repository.id,
                 "New",
                 "",
@@ -1904,9 +1924,9 @@ mod tests {
         s.kinds();
         let comment = s
             .app
-            .comment_issue(&Actor::Person, a.id, "Decided.")
+            .comment_issue(&Actor::first_owner(), a.id, "Decided.")
             .unwrap();
-        assert_eq!(comment.author, "person");
+        assert_eq!(comment.author, "person:owner");
         assert!(s.kinds().is_empty());
         assert_eq!(s.app.comments(a.id).unwrap().len(), 1);
 
@@ -1931,6 +1951,8 @@ mod tests {
         s.app.claim_issue(&agent("Moebius"), a.id, None).unwrap();
         s.app.release_issue(&agent("Moebius"), a.id, None).unwrap();
         s.app.claim_issue(&agent("Moebius"), a.id, None).unwrap();
-        s.app.release_issue(&Actor::Person, a.id, None).unwrap();
+        s.app
+            .release_issue(&Actor::first_owner(), a.id, None)
+            .unwrap();
     }
 }

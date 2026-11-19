@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use moebius_core::app::PERSON;
+use moebius_core::app::OWNER_AUTHOR;
 use moebius_core::board::{CardRuns, Variant};
 use moebius_core::config::Config;
 use moebius_core::repos::git;
@@ -187,7 +187,7 @@ pub fn new_card(server: &Server, dir: &Path) -> Card {
         .unwrap();
     server
         .app
-        .create_issue(repo.id, "Write done.txt", "", PERSON)
+        .create_issue(repo.id, "Write done.txt", "", OWNER_AUTHOR)
         .unwrap()
 }
 

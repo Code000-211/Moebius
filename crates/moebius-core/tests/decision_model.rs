@@ -301,7 +301,7 @@ fn merged(app: &Arc<App>) -> i64 {
     let takeover = app.store.takeovers().unwrap().remove(0);
     model::merge(
         app,
-        &moebius_core::decide::Actor::Person,
+        &moebius_core::decide::Actor::first_owner(),
         takeover.id,
         "it agrees",
     )
@@ -323,7 +323,7 @@ fn a_takeover_is_proposed_in_the_inbox_and_merging_it_routes_the_kind() {
         assert!(n < 5000);
         app.decisions
             .record_by(
-                &moebius_core::decide::Actor::Person,
+                &moebius_core::decide::Actor::first_owner(),
                 &question("approve", "allow", n),
                 "allow",
                 "ok",
@@ -378,7 +378,7 @@ fn a_takeover_is_proposed_in_the_inbox_and_merging_it_routes_the_kind() {
     // The person merges: the decision is recorded, the item is resolved, and the model decides from now on.
     let merged = model::merge(
         &app,
-        &moebius_core::decide::Actor::Person,
+        &moebius_core::decide::Actor::first_owner(),
         takeover.id,
         "it agrees often enough",
     )
@@ -396,7 +396,7 @@ fn a_takeover_is_proposed_in_the_inbox_and_merging_it_routes_the_kind() {
             recorded[0].choice.as_str(),
             recorded[0].reason.as_str()
         ),
-        ("person", "merge", "it agrees often enough")
+        ("person:owner", "merge", "it agrees often enough")
     );
     let after = app
         .decisions
@@ -411,7 +411,13 @@ fn a_takeover_is_proposed_in_the_inbox_and_merging_it_routes_the_kind() {
         app.store.judgements("triage").unwrap().last().unwrap().id
     );
     assert!(
-        model::merge(&app, &moebius_core::decide::Actor::Person, takeover.id, "").is_err(),
+        model::merge(
+            &app,
+            &moebius_core::decide::Actor::first_owner(),
+            takeover.id,
+            ""
+        )
+        .is_err(),
         "a takeover is merged once"
     );
     let view = model::view(&app).unwrap();
@@ -472,7 +478,7 @@ fn the_route_survives_a_restart_and_a_release_hands_the_kind_back() {
 
     let released = model::release(
         &app,
-        &moebius_core::decide::Actor::Person,
+        &moebius_core::decide::Actor::first_owner(),
         id,
         "back to the rule",
     )
@@ -490,7 +496,7 @@ fn the_route_survives_a_restart_and_a_release_hands_the_kind_back() {
         (decision.choice.as_str(), decision.decider.as_str()),
         ("allow", "fixed")
     );
-    assert!(model::release(&app, &moebius_core::decide::Actor::Person, id, "").is_err());
+    assert!(model::release(&app, &moebius_core::decide::Actor::first_owner(), id, "").is_err());
     // Released, it is not routed after a restart either.
     drop(app);
     let app = start_app(dir.path(), &fake, 3);
@@ -511,8 +517,13 @@ fn a_dismissed_takeover_leaves_the_kind_with_its_decider() {
         !app.store.inbox().unwrap().is_empty()
     });
     let id = app.store.takeovers().unwrap()[0].id;
-    let dismissed =
-        model::dismiss(&app, &moebius_core::decide::Actor::Person, id, "not yet").unwrap();
+    let dismissed = model::dismiss(
+        &app,
+        &moebius_core::decide::Actor::first_owner(),
+        id,
+        "not yet",
+    )
+    .unwrap();
     assert_eq!(dismissed.status, "dismissed");
     assert!(app.store.inbox().unwrap().is_empty());
     let decision = app
@@ -627,7 +638,7 @@ fn the_model_takes_localize_over_when_its_files_beat_the_baselines_recall() {
     // Merged, the model answers with its list; a list that cannot be recorded fails closed to no hint.
     model::merge(
         &app,
-        &moebius_core::decide::Actor::Person,
+        &moebius_core::decide::Actor::first_owner(),
         takeovers[0].id,
         "",
     )

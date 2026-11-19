@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use moebius_core::app::PERSON;
+use moebius_core::app::OWNER_AUTHOR;
 use moebius_core::board::{CardRuns, Variant};
 use moebius_core::config::Config;
 use moebius_core::decide::Question;
@@ -82,7 +82,7 @@ fn waiting_run(server: &Server, dir: &Path) -> Run {
         .unwrap();
     let card = server
         .app
-        .create_issue(repo.id, "Tidy up [hang]", "", PERSON)
+        .create_issue(repo.id, "Tidy up [hang]", "", OWNER_AUTHOR)
         .unwrap();
     let run = server
         .harness

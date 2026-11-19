@@ -513,11 +513,12 @@ mod tests {
         // Merging it.
         let app = f.server.app.clone();
         let id = change.id;
-        let commit =
-            tokio::task::spawn_blocking(move || app.merge_change(&Actor::Person, id, "looks good"))
-                .await
-                .unwrap()
-                .unwrap();
+        let commit = tokio::task::spawn_blocking(move || {
+            app.merge_change(&Actor::first_owner(), id, "looks good")
+        })
+        .await
+        .unwrap()
+        .unwrap();
         assert_eq!(commit, "c0ffee");
         assert_eq!(f.fake.pulls.lock().unwrap().merged.len(), 1);
 
@@ -638,12 +639,13 @@ mod tests {
         let card = f.card(1).unwrap();
         let app = f.server.app.clone();
         let id = card.id;
-        let written =
-            tokio::task::spawn_blocking(move || app.comment_issue(&Actor::Person, id, "Hello."))
-                .await
-                .unwrap()
-                .unwrap();
-        assert_eq!(written.author, "person");
+        let written = tokio::task::spawn_blocking(move || {
+            app.comment_issue(&Actor::first_owner(), id, "Hello.")
+        })
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(written.author, "person:owner");
         assert_eq!(credentials(&f).last().unwrap(), &format!("Bearer {TOKEN}"));
 
         // The forge lists it under the token's user.
@@ -658,7 +660,7 @@ mod tests {
         let comments = f.server.app.comments(card.id).unwrap();
         assert_eq!(comments.len(), 1, "{comments:?}");
         assert_eq!(
-            comments[0].author, "person",
+            comments[0].author, "person:owner",
             "known as Moebius's own by the store, not by the login"
         );
     }

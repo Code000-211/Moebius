@@ -343,7 +343,7 @@ mod a_run {
         let change = value["id"].as_i64().unwrap();
         world
             .app
-            .merge_change(&crate::decide::Actor::Person, change, "fine")
+            .merge_change(&crate::decide::Actor::first_owner(), change, "fine")
             .unwrap();
         let changes = world.app.store.changes_for_run(run_id).unwrap();
         assert_eq!(changes.len(), 1);
@@ -363,7 +363,7 @@ mod a_run {
         let change = value["id"].as_i64().unwrap();
         let card = world
             .app
-            .reject_change(&crate::decide::Actor::Person, change, "not this")
+            .reject_change(&crate::decide::Actor::first_owner(), change, "not this")
             .unwrap();
         assert!(card.is_none(), "a run's change has no card");
         let changes = world.app.store.changes_for_run(run_id).unwrap();

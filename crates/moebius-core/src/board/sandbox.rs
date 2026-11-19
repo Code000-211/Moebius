@@ -70,7 +70,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
-    use crate::app::{App, PERSON};
+    use crate::app::{App, OWNER_AUTHOR};
     use crate::board::engine::Effects;
     use crate::board::testing::{FakeHarness, engine_with, setup, setup_with_harness};
     use crate::board::{CardRuns, Engine, Kanban, Limits, StartError, Step, Variant};
@@ -129,7 +129,7 @@ mod tests {
                 ..Limits::default()
             },
         );
-        let card = app.create_issue(repo, "Slow", "", PERSON).unwrap();
+        let card = app.create_issue(repo, "Slow", "", OWNER_AUTHOR).unwrap();
         let step = engine.settle(card.id).unwrap();
         assert!(step.started_run.is_some());
     }
@@ -177,7 +177,7 @@ mod tests {
             Some(Box::new(SlowForge)),
             Arc::new(FakeHarness::without_review()),
         );
-        let card = app.create_issue(repo, "Slow", "", PERSON).unwrap();
+        let card = app.create_issue(repo, "Slow", "", OWNER_AUTHOR).unwrap();
         engine.settle(card.id).unwrap();
         engine.settle(card.id).unwrap();
         assert_eq!(app.card(card.id).unwrap().column, "Ready to merge");
@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn a_script_cannot_reach_files_network_or_processes() {
         let (_dir, app, engine, repo) = setup();
-        let card = app.create_issue(repo, "Escape", "", PERSON).unwrap();
+        let card = app.create_issue(repo, "Escape", "", OWNER_AUTHOR).unwrap();
         let probe = r#"
             function on_card(card)
               local reached = {}
@@ -231,7 +231,7 @@ mod tests {
                 ..Limits::default()
             },
         );
-        let card = app.create_issue(repo, "Loop", "", PERSON).unwrap();
+        let card = app.create_issue(repo, "Loop", "", OWNER_AUTHOR).unwrap();
         let started = Instant::now();
         let e = run(&engine, &card, "function on_card(c) while true do end end").unwrap_err();
         assert!(e.contains("ran out of time"), "{e}");

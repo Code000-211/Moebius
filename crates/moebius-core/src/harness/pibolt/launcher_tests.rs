@@ -172,7 +172,7 @@ fn an_unchanged_answer_starts_pi_as_without_a_launcher() {
         harness
             .save_project_plugin_settings(
                 &app,
-                &crate::decide::Actor::Person,
+                &crate::decide::Actor::first_owner(),
                 ("demo", plugin),
                 &values,
                 ("edit_project_settings", "Put settings"),

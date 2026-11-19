@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use moebius_core::app::{App, AppError, CardStopWaits, PERSON};
+use moebius_core::app::{App, AppError, CardStopWaits, OWNER_AUTHOR};
 use moebius_core::board::{AgentInfo, CardRuns, Engine, Kanban, Limits, StartError, Variant};
 use moebius_core::decide::Actor;
 use moebius_core::harness::remote::RunnerInfo;
@@ -193,7 +193,9 @@ fn kinds_published(
 fn blocking_stops_the_run_and_the_board_leaves_a_held_card_alone_until_it_is_released() {
     let s = setup();
     let app = &s.app;
-    let card = app.create_issue(s.repository, "Work", "", PERSON).unwrap();
+    let card = app
+        .create_issue(s.repository, "Work", "", OWNER_AUTHOR)
+        .unwrap();
     s.engine.settle(card.id).unwrap();
     let run = app.store.runs_for_card(card.id).unwrap().pop().unwrap();
     assert_eq!(run.status, "running");
@@ -203,7 +205,7 @@ fn blocking_stops_the_run_and_the_board_leaves_a_held_card_alone_until_it_is_rel
 
     let blocked = app
         .block_card(
-            &Actor::Person,
+            &Actor::first_owner(),
             &*s.runs,
             card.id,
             Some("wait for the design"),
@@ -212,18 +214,18 @@ fn blocking_stops_the_run_and_the_board_leaves_a_held_card_alone_until_it_is_rel
     let held = blocked.held.unwrap();
     assert_eq!(
         (held.by.as_str(), held.reason.as_deref()),
-        ("person", Some("wait for the design"))
+        ("person:owner", Some("wait for the design"))
     );
     // The run was stopped with the stop runs have, and it stays in its column.
     assert_eq!(*s.runs.stopped.lock().unwrap(), [run.id]);
     assert_eq!(app.card(card.id).unwrap().column, column);
     assert_eq!(
         judgement_kinds(app, "stop"),
-        [("person".to_string(), Some(card.id))]
+        [("person:owner".to_string(), Some(card.id))]
     );
     assert_eq!(
         judgement_kinds(app, "block_card"),
-        [("person".to_string(), Some(card.id))]
+        [("person:owner".to_string(), Some(card.id))]
     );
     assert_eq!(context(app, "block_card")["reason"], "wait for the design");
     assert!(kinds_published(&mut events).contains(&"card_updated".to_string()));
@@ -244,7 +246,7 @@ fn blocking_stops_the_run_and_the_board_leaves_a_held_card_alone_until_it_is_rel
     assert!(app.store.inbox().unwrap().is_empty());
 
     // Held already; and the Moebius agent may release what a person held, like editing a card.
-    let again = app.block_card(&Actor::Person, &*s.runs, card.id, None);
+    let again = app.block_card(&Actor::first_owner(), &*s.runs, card.id, None);
     assert!(matches!(again, Err(AppError::Conflict(_))));
     let chat = app.store.add_run(None, "Moebius", "fake", "chat").unwrap();
     let agent = Actor::Agent {
@@ -262,9 +264,9 @@ fn blocking_stops_the_run_and_the_board_leaves_a_held_card_alone_until_it_is_rel
     let unblocked = context(app, "unblock_card");
     assert_eq!(
         (unblocked["reason"].as_str(), unblocked["held_by"].as_str()),
-        (Some("the design is in"), Some("person"))
+        (Some("the design is in"), Some("person:owner"))
     );
-    let again = app.unblock_card(&Actor::Person, card.id, "");
+    let again = app.unblock_card(&Actor::first_owner(), card.id, "");
     assert!(matches!(again, Err(AppError::Conflict(_))));
     assert!(kinds_published(&mut events).contains(&"card_updated".to_string()));
 
@@ -281,10 +283,13 @@ fn blocking_stops_the_run_and_the_board_leaves_a_held_card_alone_until_it_is_rel
 fn a_run_stopped_before_the_block_still_waits_for_a_retry_after_an_unblock() {
     let s = setup();
     let app = &s.app;
-    let card = app.create_issue(s.repository, "Work", "", PERSON).unwrap();
+    let card = app
+        .create_issue(s.repository, "Work", "", OWNER_AUTHOR)
+        .unwrap();
     s.engine.settle(card.id).unwrap();
     let run = app.store.runs_for_card(card.id).unwrap().pop().unwrap();
-    app.stop_run(&Actor::Person, &*s.runs, run.id, "").unwrap();
+    app.stop_run(&Actor::first_owner(), &*s.runs, run.id, "")
+        .unwrap();
     while app.store.run(run.id).unwrap().unwrap().ended_at.is_none() {
         std::thread::yield_now();
     }
@@ -293,9 +298,10 @@ fn a_run_stopped_before_the_block_still_waits_for_a_retry_after_an_unblock() {
     while moebius_core::store::now() <= ended {
         std::thread::sleep(Duration::from_millis(20));
     }
-    app.block_card(&Actor::Person, &*s.runs, card.id, None)
+    app.block_card(&Actor::first_owner(), &*s.runs, card.id, None)
         .unwrap();
-    app.unblock_card(&Actor::Person, card.id, "").unwrap();
+    app.unblock_card(&Actor::first_owner(), card.id, "")
+        .unwrap();
     let step = s.engine.settle(card.id).unwrap();
     assert_eq!(step.waiting.as_deref(), Some("stopped by a person"));
 }
@@ -304,12 +310,14 @@ fn a_run_stopped_before_the_block_still_waits_for_a_retry_after_an_unblock() {
 fn blocking_keeps_trying_to_stop_a_run_its_harness_has_not_registered_yet() {
     let s = setup();
     let app = &s.app;
-    let card = app.create_issue(s.repository, "Work", "", PERSON).unwrap();
+    let card = app
+        .create_issue(s.repository, "Work", "", OWNER_AUTHOR)
+        .unwrap();
     s.engine.settle(card.id).unwrap();
     let run = app.store.runs_for_card(card.id).unwrap().pop().unwrap();
     *s.runs.refusals.lock().unwrap() = 3;
 
-    app.block_card(&Actor::Person, &*s.runs, card.id, None)
+    app.block_card(&Actor::first_owner(), &*s.runs, card.id, None)
         .unwrap();
     // Stopped once, after the refusals; the stop was recorded once.
     assert_eq!(*s.runs.stopped.lock().unwrap(), [run.id]);
@@ -325,12 +333,14 @@ fn a_block_that_cannot_stop_a_run_in_time_releases_the_card_and_records_nothing(
         ..CardStopWaits::default()
     });
     let app = &s.app;
-    let card = app.create_issue(s.repository, "Work", "", PERSON).unwrap();
+    let card = app
+        .create_issue(s.repository, "Work", "", OWNER_AUTHOR)
+        .unwrap();
     s.engine.settle(card.id).unwrap();
     *s.runs.refusals.lock().unwrap() = usize::MAX;
 
     let error = app
-        .block_card(&Actor::Person, &*s.runs, card.id, None)
+        .block_card(&Actor::first_owner(), &*s.runs, card.id, None)
         .unwrap_err();
     assert!(matches!(error, AppError::Conflict(_)), "{error}");
     assert_eq!(app.card(card.id).unwrap().held, None);
@@ -338,7 +348,7 @@ fn a_block_that_cannot_stop_a_run_in_time_releases_the_card_and_records_nothing(
 
     // Once the run can be stopped the block goes through.
     *s.runs.refusals.lock().unwrap() = 0;
-    app.block_card(&Actor::Person, &*s.runs, card.id, None)
+    app.block_card(&Actor::first_owner(), &*s.runs, card.id, None)
         .unwrap();
     assert!(app.card(card.id).unwrap().held.is_some());
 }
@@ -347,12 +357,14 @@ fn a_block_that_cannot_stop_a_run_in_time_releases_the_card_and_records_nothing(
 fn deleting_stops_a_run_that_was_still_starting_when_the_first_stop_came() {
     let s = setup();
     let app = &s.app;
-    let card = app.create_issue(s.repository, "Work", "", PERSON).unwrap();
+    let card = app
+        .create_issue(s.repository, "Work", "", OWNER_AUTHOR)
+        .unwrap();
     s.engine.settle(card.id).unwrap();
     let run = app.store.runs_for_card(card.id).unwrap().pop().unwrap();
     *s.runs.refusals.lock().unwrap() = 2;
 
-    app.delete_card(&Actor::Person, &*s.runs, card.id, "")
+    app.delete_card(&Actor::first_owner(), &*s.runs, card.id, "")
         .unwrap();
     assert_eq!(*s.runs.stopped.lock().unwrap(), [run.id]);
     assert_eq!(app.store.card(card.id).unwrap(), None);
@@ -365,13 +377,15 @@ fn a_delete_whose_runs_do_not_end_in_time_is_a_conflict_and_the_card_is_released
         ..CardStopWaits::default()
     });
     let app = &s.app;
-    let card = app.create_issue(s.repository, "Work", "", PERSON).unwrap();
+    let card = app
+        .create_issue(s.repository, "Work", "", OWNER_AUTHOR)
+        .unwrap();
     s.engine.settle(card.id).unwrap();
     let run = app.store.runs_for_card(card.id).unwrap().pop().unwrap();
     s.runs.ignores_stop.store(true, Ordering::SeqCst);
 
     let error = app
-        .delete_card(&Actor::Person, &*s.runs, card.id, "")
+        .delete_card(&Actor::first_owner(), &*s.runs, card.id, "")
         .unwrap_err();
     assert!(matches!(error, AppError::Conflict(_)), "{error}");
     // The run was asked to stop once, not again at every look; the card is still there and works again.
@@ -384,9 +398,11 @@ fn a_delete_whose_runs_do_not_end_in_time_is_a_conflict_and_the_card_is_released
 fn a_card_held_after_the_board_looked_gets_no_run_from_the_harness_that_starts_it() {
     let s = setup();
     let app = &s.app;
-    let card = app.create_issue(s.repository, "Work", "", PERSON).unwrap();
+    let card = app
+        .create_issue(s.repository, "Work", "", OWNER_AUTHOR)
+        .unwrap();
     // The card the board holds is as it was before the hold.
-    assert!(app.store.hold_card(card.id, PERSON, None).unwrap());
+    assert!(app.store.hold_card(card.id, OWNER_AUTHOR, None).unwrap());
     let error = moebius_core::board::may_start(app, &card).unwrap_err();
     assert!(matches!(error, StartError::Held));
     app.store.release_card(card.id).unwrap();
@@ -397,14 +413,17 @@ fn a_card_held_after_the_board_looked_gets_no_run_from_the_harness_that_starts_i
 fn a_card_blocked_before_any_work_starts_none_until_it_is_released() {
     let s = setup();
     let app = &s.app;
-    let card = app.create_issue(s.repository, "Work", "", PERSON).unwrap();
-    app.block_card(&Actor::Person, &*s.runs, card.id, None)
+    let card = app
+        .create_issue(s.repository, "Work", "", OWNER_AUTHOR)
+        .unwrap();
+    app.block_card(&Actor::first_owner(), &*s.runs, card.id, None)
         .unwrap();
     s.engine.settle(card.id).unwrap();
     assert_eq!(app.card(card.id).unwrap().column, "Backlog");
     assert!(app.store.runs_for_card(card.id).unwrap().is_empty());
 
-    app.unblock_card(&Actor::Person, card.id, "").unwrap();
+    app.unblock_card(&Actor::first_owner(), card.id, "")
+        .unwrap();
     s.engine.settle(card.id).unwrap();
     assert_eq!(app.card(card.id).unwrap().column, "In progress");
     assert_eq!(app.store.runs_for_card(card.id).unwrap().len(), 1);
@@ -418,9 +437,11 @@ fn deleting_a_card_stops_its_run_and_takes_its_records_worktrees_and_branches() 
     let branch_exists =
         |name: &str| git(&clone, &["rev-parse", "--verify", "--quiet", name]).is_ok();
     let doomed = app
-        .create_issue(s.repository, "Doomed", "", PERSON)
+        .create_issue(s.repository, "Doomed", "", OWNER_AUTHOR)
         .unwrap();
-    let kept = app.create_issue(s.repository, "Kept", "", PERSON).unwrap();
+    let kept = app
+        .create_issue(s.repository, "Kept", "", OWNER_AUTHOR)
+        .unwrap();
     s.engine.settle(doomed.id).unwrap();
     s.engine.settle(kept.id).unwrap();
     let running = app.store.runs_for_card(doomed.id).unwrap().pop().unwrap();
@@ -471,7 +492,7 @@ fn deleting_a_card_stops_its_run_and_takes_its_records_worktrees_and_branches() 
     let mut events = app.bus.subscribe();
 
     let deleted = app
-        .delete_card(&Actor::Person, &*s.runs, doomed.id, "not wanted")
+        .delete_card(&Actor::first_owner(), &*s.runs, doomed.id, "not wanted")
         .unwrap();
     assert_eq!(deleted.id, doomed.id);
 
@@ -511,7 +532,7 @@ fn deleting_a_card_stops_its_run_and_takes_its_records_worktrees_and_branches() 
     // Recorded as a decision that belongs to no card any more, and announced.
     assert_eq!(
         judgement_kinds(app, "delete_card"),
-        [("person".to_string(), None)]
+        [("person:owner".to_string(), None)]
     );
     let context = context(app, "delete_card");
     assert_eq!(
@@ -529,6 +550,6 @@ fn deleting_a_card_stops_its_run_and_takes_its_records_worktrees_and_branches() 
             .card_was_deleted(s.repository, doomed.number)
             .unwrap()
     );
-    let again = app.delete_card(&Actor::Person, &*s.runs, doomed.id, "");
+    let again = app.delete_card(&Actor::first_owner(), &*s.runs, doomed.id, "");
     assert!(matches!(again, Err(AppError::NotFound(_))));
 }

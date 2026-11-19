@@ -422,7 +422,7 @@ async fn card_history(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::PERSON;
+    use crate::app::OWNER_AUTHOR;
     use crate::repos::git;
     use crate::server::api::testing::{code_and_offer, get, origin, post, start, until};
     use crate::store::Usage;
@@ -764,7 +764,7 @@ mod tests {
             .add_repository("demo", origin(dir.path()).to_str().unwrap())
             .unwrap();
         let card = app
-            .create_issue(repo.id, "Add a feature", "", PERSON)
+            .create_issue(repo.id, "Add a feature", "", OWNER_AUTHOR)
             .unwrap();
         let change = code_and_offer(app, &repo, &card);
 
@@ -833,7 +833,7 @@ mod tests {
             .add_repository("demo", origin(dir.path()).to_str().unwrap())
             .unwrap();
         let card = app
-            .create_issue(repo.id, "Add a feature", "", PERSON)
+            .create_issue(repo.id, "Add a feature", "", OWNER_AUTHOR)
             .unwrap();
         let reject = |id: i64, reason: &str| {
             post(
@@ -864,7 +864,7 @@ mod tests {
         assert_eq!(reject(change.id, "again").await.status(), 422);
 
         // A change that was merged cannot be rejected either.
-        app.merge_change(&crate::decide::Actor::Person, change.id, "fine")
+        app.merge_change(&crate::decide::Actor::first_owner(), change.id, "fine")
             .unwrap();
         assert_eq!(reject(change.id, "too late").await.status(), 422);
     }
@@ -1166,7 +1166,7 @@ mod tests {
                     .unwrap()
             }
         };
-        let work = |title: &str| app.create_issue(repo.id, title, "", PERSON).unwrap();
+        let work = |title: &str| app.create_issue(repo.id, title, "", OWNER_AUTHOR).unwrap();
         let post_to = |id: i64, action: &str| {
             request(
                 &state,

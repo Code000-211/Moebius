@@ -23,7 +23,7 @@ use std::path::Path;
 
 use serde_json::json;
 
-use crate::app::{App, AppError, PERSON, Result};
+use crate::app::{App, AppError, Result};
 use crate::blobs::redact;
 use crate::bus::Event;
 use crate::decide::{Actor, Question};
@@ -321,7 +321,7 @@ pub fn confirm(app: &App, by: &Actor, id: i64, issues: Vec<GrillingIssue>) -> Re
                 &repository,
                 &issue.title,
                 &issue.body,
-                PERSON,
+                &app.owner_author(),
                 &blocked_by,
             )?;
             numbers[index] = card.number;
@@ -350,7 +350,7 @@ pub fn confirm(app: &App, by: &Actor, id: i64, issues: Vec<GrillingIssue>) -> Re
             card_id: None,
         },
         "confirm_grilling",
-        &format!("{PERSON} confirmed {} issues", issues.len()),
+        &format!("{} confirmed {} issues", app.owner_author(), issues.len()),
     )?;
     app.store.resolve_inbox_for_grilling(id)?;
     view(app, id)

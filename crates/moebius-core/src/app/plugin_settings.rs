@@ -346,7 +346,7 @@ mod tests {
         let values = BTreeMap::from([("dockerfile".to_string(), "FROM debian\n".to_string())]);
         let saved = app
             .save_plugin_settings(
-                &Actor::Person,
+                &Actor::first_owner(),
                 Scope::Project(repo),
                 "box",
                 &values,
@@ -369,15 +369,21 @@ mod tests {
             .into_iter()
             .map(|j| j.decider)
             .collect();
-        assert_eq!(kinds, ["person"]);
+        assert_eq!(kinds, ["person:owner"]);
 
         // Saving the same values again records nothing more, an empty one being no value.
         let same = BTreeMap::from([
             ("dockerfile".to_string(), "FROM debian\n".to_string()),
             ("network".to_string(), String::new()),
         ]);
-        app.save_plugin_settings(&Actor::Person, Scope::Project(repo), "box", &same, "")
-            .unwrap();
+        app.save_plugin_settings(
+            &Actor::first_owner(),
+            Scope::Project(repo),
+            "box",
+            &same,
+            "",
+        )
+        .unwrap();
         assert_eq!(
             app.store.judgements("edit_project_settings").unwrap().len(),
             1
@@ -402,12 +408,18 @@ mod tests {
         );
         let values = BTreeMap::from([("dockerfile".to_string(), "FROM debian\n".to_string())]);
         assert!(matches!(
-            app.save_plugin_settings(&Actor::Person, Scope::Project(repo.id), "box", &values, ""),
+            app.save_plugin_settings(
+                &Actor::first_owner(),
+                Scope::Project(repo.id),
+                "box",
+                &values,
+                ""
+            ),
             Err(AppError::Conflict(_))
         ));
         // The server's own settings do not need it.
         let registry = BTreeMap::from([("registry".to_string(), "quay.io".to_string())]);
-        app.save_plugin_settings(&Actor::Person, Scope::App, "box", &registry, "")
+        app.save_plugin_settings(&Actor::first_owner(), Scope::App, "box", &registry, "")
             .unwrap();
     }
 
@@ -424,16 +436,16 @@ mod tests {
             )
         };
         assert!(matches!(
-            save(&Actor::Person, "box", "volume", "x"),
+            save(&Actor::first_owner(), "box", "volume", "x"),
             Err(AppError::Invalid(_))
         ));
         assert!(matches!(
-            save(&Actor::Person, "box", "network", "a\nb"),
+            save(&Actor::first_owner(), "box", "network", "a\nb"),
             Err(AppError::Invalid(_))
         ));
         assert!(matches!(
             save(
-                &Actor::Person,
+                &Actor::first_owner(),
                 "box",
                 "dockerfile",
                 &"x".repeat(MAX_VALUE + 1)
@@ -441,7 +453,7 @@ mod tests {
             Err(AppError::Invalid(_))
         ));
         assert!(matches!(
-            save(&Actor::Person, "nobody", "dockerfile", "x"),
+            save(&Actor::first_owner(), "nobody", "dockerfile", "x"),
             Err(AppError::NotFound(_))
         ));
         let agent = Actor::Agent {
@@ -469,7 +481,7 @@ mod tests {
 
         let values = BTreeMap::from([("registry".to_string(), "quay.io".to_string())]);
         let saved = app
-            .save_plugin_settings(&Actor::Person, Scope::App, "box", &values, "")
+            .save_plugin_settings(&Actor::first_owner(), Scope::App, "box", &values, "")
             .unwrap();
         assert_eq!(saved.settings[0].value, "quay.io");
         assert_eq!(app.store.app_settings("box").unwrap(), values);
@@ -485,7 +497,7 @@ mod tests {
         // A key of the other scope is not one of this scope's.
         let dockerfile = BTreeMap::from([("dockerfile".to_string(), "FROM x".to_string())]);
         assert!(matches!(
-            app.save_plugin_settings(&Actor::Person, Scope::App, "box", &dockerfile, ""),
+            app.save_plugin_settings(&Actor::first_owner(), Scope::App, "box", &dockerfile, ""),
             Err(AppError::Invalid(_))
         ));
         let agent = Actor::Agent {
@@ -517,12 +529,12 @@ mod tests {
 
         // Its values are kept and checked as any plugin's are.
         let values = BTreeMap::from([("base".to_string(), "FROM debian\n".to_string())]);
-        app.save_plugin_settings(&Actor::Person, Scope::App, "drawn", &values, "")
+        app.save_plugin_settings(&Actor::first_owner(), Scope::App, "drawn", &values, "")
             .unwrap();
         assert_eq!(app.store.app_settings("drawn").unwrap(), values);
         let stray = BTreeMap::from([("other".to_string(), "x".to_string())]);
         assert!(matches!(
-            app.save_plugin_settings(&Actor::Person, Scope::App, "drawn", &stray, ""),
+            app.save_plugin_settings(&Actor::first_owner(), Scope::App, "drawn", &stray, ""),
             Err(AppError::Invalid(_))
         ));
         // It has no project settings, so it is not among a repository's.

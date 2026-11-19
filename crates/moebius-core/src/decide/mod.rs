@@ -33,9 +33,7 @@ pub struct Question {
 /// Who acts through the desktop API: a person, or a run of the Moebius agent operating Moebius with its own token.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Actor {
-    /// A person who is not named: the one person of a server that knows no people yet.
-    Person,
-    /// A person known by id and handle (ADR 0018); the API names the first owner with it; other call sites still use [`Actor::Person`] until they move.
+    /// A person, known by id and handle (ADR 0018).
     Member {
         id: i64,
         handle: String,
@@ -51,28 +49,30 @@ pub enum Actor {
 }
 
 impl Actor {
-    /// The actor of a person that may or may not be known: [`Actor::Member`] for a known one, else [`Actor::Person`].
-    pub fn person(known: Option<(i64, &str)>) -> Self {
-        match known {
-            Some((id, handle)) => Actor::Member {
-                id,
-                handle: handle.to_string(),
-            },
-            None => Actor::Person,
+    /// The actor of the person with `id` and `handle`.
+    pub fn person(id: i64, handle: &str) -> Self {
+        Actor::Member {
+            id,
+            handle: handle.to_string(),
         }
     }
 
-    /// Whether this is a person, named or not: what may be asked of a person only (agents and scripts are refused).
+    /// The first owner (id 1, the one the migration of the people table makes), for the work the server does for the
+    /// organisation's person itself, such as a repository's settings it keeps or a card it makes up to check a script.
+    pub fn first_owner() -> Self {
+        Actor::person(1, crate::store::FIRST_OWNER)
+    }
+
+    /// Whether this is a person: what may be asked of a person only (agents and scripts are refused).
     pub fn is_person(&self) -> bool {
-        matches!(self, Actor::Person | Actor::Member { .. })
+        matches!(self, Actor::Member { .. })
     }
 
     /// The decider a judgement records for this actor: `person`, `person:<handle>`, `agent:<name>` or
     /// `script:<column>`.
     pub fn decider(&self) -> String {
         match self {
-            Actor::Person => crate::app::PERSON.to_string(),
-            Actor::Member { handle, .. } => crate::app::person_author(Some(handle)),
+            Actor::Member { handle, .. } => crate::app::person_author(handle),
             Actor::Agent { name, .. } => format!("agent:{name}"),
             Actor::Script { column } => format!("script:{column}"),
         }
@@ -360,8 +360,8 @@ mod tests {
     use std::time::Duration;
 
     #[test]
-    fn a_known_person_decides_as_person_colon_handle_and_an_unknown_one_as_person() {
-        let known = Actor::person(Some((7, "ada")));
+    fn a_person_decides_as_person_colon_handle() {
+        let known = Actor::person(7, "ada");
         assert_eq!(
             known,
             Actor::Member {
@@ -370,9 +370,8 @@ mod tests {
             }
         );
         assert_eq!(known.decider(), "person:ada");
-        assert_eq!(Actor::person(None), Actor::Person);
-        assert_eq!(Actor::Person.decider(), "person");
-        assert!(Actor::Person.is_person() && known.is_person());
+        assert_eq!(Actor::first_owner().decider(), "person:owner");
+        assert!(known.is_person());
         assert!(
             !Actor::Script {
                 column: "Ready".into()
@@ -386,8 +385,7 @@ mod tests {
             }
             .is_person()
         );
-        assert_eq!(crate::app::person_author(Some("ada")), "person:ada");
-        assert_eq!(crate::app::person_author(None), "person");
+        assert_eq!(crate::app::person_author("ada"), "person:ada");
     }
 
     struct Refuser;
@@ -468,8 +466,13 @@ mod tests {
     fn the_reason_a_person_gives_is_redacted_before_it_is_stored() {
         let (_dir, store, d) = setup();
         let reason = format!("it printed sk-ant-api03-{}", "x".repeat(40));
-        d.record_by(&Actor::Person, &question("tool_call"), "allow", &reason)
-            .unwrap();
+        d.record_by(
+            &Actor::first_owner(),
+            &question("tool_call"),
+            "allow",
+            &reason,
+        )
+        .unwrap();
         let all = store.judgements("tool_call").unwrap();
         assert_eq!(all[0].reason, "it printed [redacted:anthropic-key]");
     }
@@ -496,9 +499,14 @@ mod tests {
     fn a_persons_decision_takes_the_same_path() {
         let (_dir, store, d) = setup();
         let decision = d
-            .record_by(&Actor::Person, &question("merge"), "allow", "looks good")
+            .record_by(
+                &Actor::first_owner(),
+                &question("merge"),
+                "allow",
+                "looks good",
+            )
             .unwrap();
-        assert_eq!(decision.decider, "person");
+        assert_eq!(decision.decider, "person:owner");
         assert_eq!(store.judgements("merge").unwrap().len(), 1);
     }
 }

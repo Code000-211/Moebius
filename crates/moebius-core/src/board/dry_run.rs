@@ -355,7 +355,7 @@ mod tests {
     use mlua::Value;
 
     use super::*;
-    use crate::app::PERSON;
+    use crate::app::OWNER_AUTHOR;
     use crate::board::engine::Effects;
     use crate::board::kanban::DEFAULT_SCRIPTS;
     use crate::board::testing::setup;
@@ -416,7 +416,7 @@ mod tests {
                 .1
         };
         assert_eq!(
-            dry(script("backlog.luau"), "Backlog", PERSON).unwrap(),
+            dry(script("backlog.luau"), "Backlog", OWNER_AUTHOR).unwrap(),
             [
                 "took the label \"in-progress\" from the issue",
                 "moved the card to Not started"
@@ -430,13 +430,13 @@ mod tests {
             ]
         );
         assert_eq!(
-            dry(script("ready.luau"), "Not started", PERSON).unwrap(),
+            dry(script("ready.luau"), "Not started", OWNER_AUTHOR).unwrap(),
             [
                 "took the label \"in-progress\" from the issue",
                 "moved the card to In progress"
             ]
         );
-        let coding = dry(script("code.luau"), "In progress", PERSON).unwrap();
+        let coding = dry(script("code.luau"), "In progress", OWNER_AUTHOR).unwrap();
         assert_eq!(coding[0], "gave the issue the label \"in-progress\"");
         assert_eq!(coding[1], "started a run of Coder for code");
     }
@@ -461,10 +461,10 @@ mod tests {
             ),
             ("function on_card(card) local f = io.open end", "index nil"),
         ] {
-            let error = dry(source, "Not started", PERSON).unwrap_err();
+            let error = dry(source, "Not started", OWNER_AUTHOR).unwrap_err();
             assert!(error.contains(expected), "{source}: {error}");
         }
-        let error = dry("function on_card(card) end", "In Progress", PERSON).unwrap_err();
+        let error = dry("function on_card(card) end", "In Progress", OWNER_AUTHOR).unwrap_err();
         assert!(error.contains("no column \"In Progress\""), "{error}");
         assert!(error.contains("In progress"), "{error}");
     }
@@ -481,7 +481,7 @@ mod tests {
     fn the_dry_run_has_everything_the_engine_gives_a_script() {
         let (_dir, app, engine, repo) = setup();
         let card = app
-            .create_issue(repo, "Fix the parser", "", PERSON)
+            .create_issue(repo, "Fix the parser", "", OWNER_AUTHOR)
             .unwrap();
         let lua = Lua::new();
         let effects = Rc::new(RefCell::new(Effects::default()));
@@ -496,7 +496,7 @@ mod tests {
         let dry = recording_api(&lua, &engine.limits(), &columns, Rc::default()).unwrap();
         assert_eq!(names(&dry), names(&real));
         let real = engine.card_table(&lua, &card).unwrap();
-        let dry = made_up_card(&lua, "Backlog", "Fix the parser", PERSON).unwrap();
+        let dry = made_up_card(&lua, "Backlog", "Fix the parser", OWNER_AUTHOR).unwrap();
         assert_eq!(names(&dry), names(&real));
     }
 }

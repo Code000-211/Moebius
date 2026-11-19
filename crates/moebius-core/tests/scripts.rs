@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use moebius_core::app::PERSON;
+use moebius_core::app::OWNER_AUTHOR;
 use moebius_core::config::Config;
 use moebius_core::repos::git;
 use moebius_core::router::Grant;
@@ -173,7 +173,7 @@ async fn a_script_is_read_saved_used_and_given_back() {
     assert_eq!(view["text"], HOLD);
 
     // The board runs the saved script.
-    let card = app.create_issue(repo.id, "Held", "", PERSON).unwrap();
+    let card = app.create_issue(repo.id, "Held", "", OWNER_AUTHOR).unwrap();
     let step = setup.server.engine.settle(card.id).unwrap();
     assert_eq!(step.waiting.as_deref(), Some("held from the board"));
 

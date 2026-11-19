@@ -87,15 +87,16 @@ pub fn runs_since_retry<'a>(runs: &'a [Run], card: &Card) -> impl Iterator<Item 
     runs.iter().filter(move |r| Some(r.id) > retried_after)
 }
 
-/// The author of issues a person created in the web app; their cards are trusted.
+/// The bare author of records from before people had identities. The migration gave them to the first owner, and no new
+/// record is made with it; it is only recognised ([`is_person`]).
 pub const PERSON: &str = "person";
 
-/// The author or decider of a person's work: `person:<handle>` for a known person, `person` ([`PERSON`]) for none.
-pub fn person_author(handle: Option<&str>) -> String {
-    match handle {
-        Some(handle) => format!("{PERSON}:{handle}"),
-        None => PERSON.to_string(),
-    }
+/// The author of what the first owner makes: `person:owner`. Tests and made-up cards use it.
+pub const OWNER_AUTHOR: &str = "person:owner";
+
+/// The author or decider of a person's work: `person:<handle>`.
+pub fn person_author(handle: &str) -> String {
+    format!("{PERSON}:{handle}")
 }
 
 /// Whether `author` (or a decider) is a person of the organisation: `person`, or `person:<handle>` for a known one. A
@@ -219,15 +220,20 @@ pub struct App {
 
 impl App {
     /// The author of what `by` makes on a person's behalf: the person's own `person:<handle>`, and for an agent or a
-    /// script the first owner's, since they act for the organisation's person. Without a first owner (a store nobody
-    /// migrated) it is [`PERSON`].
+    /// script the first owner's, since they act for the organisation's person.
     pub fn author_of(&self, by: &crate::decide::Actor) -> String {
-        if by.is_person() && !matches!(by, crate::decide::Actor::Person) {
+        if by.is_person() {
             return by.decider();
         }
+        self.owner_author()
+    }
+
+    /// The author of what the first owner makes: `person:owner`, the migration's first owner being the person the
+    /// records from before belong to.
+    pub fn owner_author(&self) -> String {
         match self.store.person_by_handle(crate::store::FIRST_OWNER) {
             Ok(Some(owner)) => owner.author(),
-            _ => PERSON.to_string(),
+            _ => OWNER_AUTHOR.to_string(),
         }
     }
 

@@ -110,7 +110,7 @@ mod tests {
             .unwrap();
         let card = first
             .app
-            .create_issue(repo.id, "Card", "", crate::app::PERSON)
+            .create_issue(repo.id, "Card", "", crate::app::OWNER_AUTHOR)
             .unwrap();
         let run = first
             .app
@@ -193,7 +193,7 @@ mod tests {
             .unwrap();
         let card = first
             .app
-            .create_issue(repo.id, "Card", "", crate::app::PERSON)
+            .create_issue(repo.id, "Card", "", crate::app::OWNER_AUTHOR)
             .unwrap();
         let run = first
             .app

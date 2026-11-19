@@ -112,7 +112,7 @@ async fn an_outside_issue_is_approved_and_leaves_the_inbox_and_a_merged_change_i
 
     // A coded change is merged by a person; asking again is refused with a status the apps can show.
     let card = app
-        .create_issue(repository, "Add a feature", "", "person")
+        .create_issue(repository, "Add a feature", "", "person:owner")
         .unwrap();
     let clone = PathBuf::from(&repo.path);
     let run = app

@@ -348,7 +348,12 @@ async fn a_repository_automation_fires_as_a_workflow_run() {
     let mut definition = crate::workflows::definition::read(harness.path(), "Triage").unwrap();
     definition.nodes[0].params["prompt"] = json!("Triage the next issues.");
     harness
-        .save_workflow(app, &crate::decide::Actor::Person, "Triage", &definition)
+        .save_workflow(
+            app,
+            &crate::decide::Actor::first_owner(),
+            "Triage",
+            &definition,
+        )
         .unwrap();
     let more_due = due + time::Duration::minutes(5);
     crate::server::schedule::on_workflow_schedules(
@@ -405,7 +410,12 @@ async fn a_repository_automation_whose_chat_cannot_start_is_a_failed_firing() {
     let mut definition = crate::workflows::definition::read(harness.path(), "Triage").unwrap();
     definition.nodes[0].params["harness"] = json!(true);
     harness
-        .save_workflow(app, &crate::decide::Actor::Person, "Triage", &definition)
+        .save_workflow(
+            app,
+            &crate::decide::Actor::first_owner(),
+            "Triage",
+            &definition,
+        )
         .unwrap();
 
     let due = a_minute_from_now(app) + time::Duration::minutes(5);
@@ -450,7 +460,7 @@ async fn a_repository_automation_whose_repository_is_gone_is_a_failed_firing() {
 
     // The file still names the repository, but the server no longer has it: the firing fails rather than
     // starting a chat in a directory that belongs to no repository.
-    app.remove_repository(&crate::decide::Actor::Person, repo.id, "not wanted")
+    app.remove_repository(&crate::decide::Actor::first_owner(), repo.id, "not wanted")
         .unwrap();
     let due = a_minute_from_now(app) + time::Duration::minutes(5);
     crate::server::schedule::on_workflow_schedules(app, Some(&harness), Some(&*state.runs), due)
@@ -726,7 +736,12 @@ port = "out"
     )
     .unwrap();
     harness
-        .save_workflow(app, &crate::decide::Actor::Person, "Nightly", &ordinary)
+        .save_workflow(
+            app,
+            &crate::decide::Actor::first_owner(),
+            "Nightly",
+            &ordinary,
+        )
         .unwrap();
 
     // A row saved before the upgrade, with no workflow file of its own.

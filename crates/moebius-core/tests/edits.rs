@@ -220,7 +220,7 @@ async fn a_card_is_edited_in_the_store_recorded_and_announced() {
     let card = setup
         .server
         .app
-        .create_issue(repo.id, "Add a buton", "Somewhere.", "person")
+        .create_issue(repo.id, "Add a buton", "Somewhere.", "person:owner")
         .unwrap();
     let mut events = setup.server.app.bus.subscribe();
 

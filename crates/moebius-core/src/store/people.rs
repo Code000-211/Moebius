@@ -90,7 +90,7 @@ pub struct Person {
 impl Person {
     /// The person as an author or decider: `person:<handle>`.
     pub fn author(&self) -> String {
-        crate::app::person_author(Some(&self.handle))
+        crate::app::person_author(&self.handle)
     }
 }
 

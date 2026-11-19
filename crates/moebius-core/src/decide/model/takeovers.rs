@@ -146,7 +146,7 @@ mod tests {
     fn a_decision_that_lost_the_race_leaves_no_judgement() {
         let (_dir, app) = app();
         let takeover = app.store.add_takeover("merge", 0.99, 20).unwrap();
-        let person = Actor::Person;
+        let person = Actor::first_owner();
         // Another call read the takeover as open too, and then dismissed it first.
         let stale = app.store.takeover(takeover.id).unwrap().unwrap();
         dismiss(&app, &person, takeover.id, "no").unwrap();

@@ -275,7 +275,7 @@ pub(crate) mod testing {
             .unwrap()
             .save_project_file(
                 app,
-                &Actor::Person,
+                &Actor::first_owner(),
                 (project, file),
                 Some(text),
                 ("edit_project_file", "Put a file"),
@@ -318,7 +318,7 @@ mod tests {
             let error = repo
                 .save_project_file(
                     &app,
-                    &Actor::Person,
+                    &Actor::first_owner(),
                     ("demo", "rules.md"),
                     text,
                     ("edit_project_file", "Change"),
@@ -367,7 +367,7 @@ mod tests {
             let error = repo
                 .save_project_file(
                     &app,
-                    &Actor::Person,
+                    &Actor::first_owner(),
                     (name, "rules.md"),
                     Some("## x\ny\n"),
                     ("edit_project_file", "Change"),
@@ -391,7 +391,7 @@ mod tests {
         let save = |project: &str, file: &str, text| {
             repo.save_project_file(
                 &app,
-                &Actor::Person,
+                &Actor::first_owner(),
                 (project, file),
                 text,
                 ("edit_project_file", "Change"),

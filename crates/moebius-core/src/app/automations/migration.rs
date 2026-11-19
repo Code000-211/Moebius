@@ -63,7 +63,7 @@ impl App {
     ) -> Result<()> {
         let harness = self.harness_repo()?;
         let definition = self.automation_definition(new)?;
-        harness.save_workflow(self, &crate::decide::Actor::Person, key, &definition)?;
+        harness.save_workflow(self, &crate::decide::Actor::first_owner(), key, &definition)?;
         self.store.set_automation_workflow_key(automation.id, key)?;
         self.store.record_schedule_firing(key, checked)?;
         Ok(())
