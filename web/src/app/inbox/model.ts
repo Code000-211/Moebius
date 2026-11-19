@@ -15,6 +15,7 @@ export const STUCK = "stuck";
 export const CHANGE_CLOSED = "change_closed";
 export const PROPOSAL = "proposal";
 export const TAKEOVER = "takeover";
+export const WIKI_PROPOSAL = "wiki_proposal";
 export const GRILLING_ISSUES = "grilling_issues";
 export const GRILLING_REPORT = "grilling_report";
 
@@ -26,6 +27,7 @@ export const KINDS = [
   CHANGE_CLOSED,
   PROPOSAL,
   TAKEOVER,
+  WIKI_PROPOSAL,
   GRILLING_ISSUES,
   GRILLING_REPORT,
 ] as const;
@@ -39,6 +41,12 @@ const text = (value: unknown): string => (typeof value === "string" ? value : ""
 /** The id of the change a `ready_to_merge` or `change_closed` item is about. */
 export const changeOf = (item: InboxItem) => number(item.data.change);
 export const proposalOf = (item: InboxItem) => number(item.data.proposal);
+/** What a `wiki_proposal` item offers: the page it changes and the diff of the change (the server cuts it at 40 000 bytes). */
+export const wikiProposalOf = (item: InboxItem) => ({
+  page: text(item.data.page),
+  by: text(item.data.by),
+  diff: text(item.data.diff),
+});
 export const takeoverOf = (item: InboxItem) => number(item.data.takeover);
 export const grillingOf = (item: InboxItem) => number(item.data.grilling);
 /** The id of the repository a grilling's or a proposal's item is about. */
@@ -117,6 +125,8 @@ export function chipName(kind: string): string {
       return "Proposals";
     case TAKEOVER:
       return "Takeovers";
+    case WIKI_PROPOSAL:
+      return "Wiki edits";
     case GRILLING_ISSUES:
       return "Grilled issues";
     case GRILLING_REPORT:
@@ -146,6 +156,8 @@ export function kindTag(item: InboxItem): { label: string; mark: StateMark } {
       return { label: "Retro proposal", mark: "none" };
     case TAKEOVER:
       return { label: "Decision model", mark: "none" };
+    case WIKI_PROPOSAL:
+      return { label: "Wiki edit", mark: "none" };
     case GRILLING_ISSUES:
       return { label: "Issues from a grilling", mark: "none" };
     case GRILLING_REPORT:
@@ -199,6 +211,11 @@ export function why(item: InboxItem, about: Found, changes?: string): string | n
       );
       const count = number(item.data.count) ?? 0;
       return `It chose what was recorded on ${agreement}% of ${count} judgements held back from training. Merging lets it decide this kind from now on.`;
+    }
+    case WIKI_PROPOSAL: {
+      const { page, by } = wikiProposalOf(item);
+      const who = by !== "" ? `${by} proposes` : "A change is proposed for";
+      return `${who} this edit of ${page !== "" ? `the page ${page}` : "a page"}. Merging changes the wiki; dismissing leaves it as it is.`;
     }
     case PROPOSAL: {
       const own = text(item.data.kind) || (changes ?? "");

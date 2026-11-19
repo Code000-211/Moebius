@@ -172,7 +172,7 @@ export async function startFakeServer(): Promise<FakeServer> {
   const pagesB = createPagesBFake();
   const pagesC = createPagesCFake(broadcast);
   const workflows = createWorkflowsFake();
-  const wiki = createWikiFake(broadcast);
+  const wiki = createWikiFake(broadcast, pagesA);
   const packages = createPackagesFake(broadcast, pagesA);
   const kinds = createKindsFake(broadcast);
   let port = 0;
