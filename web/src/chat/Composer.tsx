@@ -38,7 +38,7 @@ interface ComposerProps {
   error?: string | null;
   autoFocus?: boolean;
   /**
-   * One row, with Send as an icon beside the field, for the narrow floating chat. The field is the thing being read
+   * One row, with Send as an icon beside the field, for the narrow sheet of the Moebius agent. The field is the thing being read
    * and written; the word on the button repeats the placeholder above it.
    */
   compact?: boolean;

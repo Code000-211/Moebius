@@ -1,17 +1,17 @@
 /**
- * The floating chat (the former desktop app's `float_chat`): a round button at the bottom right of every page that opens a
- * sheet with the Moebius agent over the page. The sheet is a borderless card down the right that leaves the page
- * recognisable behind it; Escape, or the control that minimises it, closes it and the focus goes back to the button
- * that opened it. Minimising turns it back into the button and the chat stays across pages. Every message carries
+ * The Moebius agent on every page: "Ask Moebius", the last row of the page's right column (`Ctrl+J`), opens it as a
+ * sheet over that column, wider than it, the page recognisable beside it (`app/shell/RightColumn.tsx`). Escape, or the
+ * control that closes it, gives the column back and the focus goes back to "Ask Moebius"; "Properties" does the same on
+ * a page that has some. The conversation stays while it is closed and across pages. Every message carries
  * where the person is, which only the agent is told; the first one starts a chat of origin `assistant`, in the
  * repository of the page when it has one, and the later ones go to the same chat. That chat is a chat of the Chat page
  * like any other — listed there, unread until it is read in one place or the other.
  * A chat whose agent went away is taken up again with what was said in it, as on the Chat page; one the agent ended
  * is left behind, and the next message starts a new conversation.
  */
-import { ArrowSquareOutIcon, ChatCircleDotsIcon, PlusIcon } from "@phosphor-icons/react";
+import { ArrowSquareOutIcon, PlusIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { snapshot as readSnapshot } from "../api/calls/board";
 import { markSeen, chats as readChats, say, startChat } from "../api/calls/chat";
@@ -20,7 +20,7 @@ import type { Chat } from "../api/types/chat";
 import { Tag } from "../ui/chat/Tag";
 import { Button } from "../ui/components/Button";
 import { Notice } from "../ui/page/Notice";
-import { SheetFrame, SheetOpener, useSheetBehaviour } from "../ui/page/Sheet";
+import { SheetFrame, useSheetBehaviour } from "../ui/page/Sheet";
 import { useSheetSlot } from "../ui/page/SheetSlot";
 import { Composer } from "./Composer";
 import { isOpen, isWorking, statusTag, takesMessage } from "./format";
@@ -30,14 +30,22 @@ import { Starters } from "./Starters";
 import { ThreadView } from "./ThreadView";
 import { useThread } from "./useThread";
 
-export const FLOATING_AGENT = "Moebius";
+export const ASSISTANT_AGENT = "Moebius";
 
-export function FloatingChat() {
+export function AgentChat({
+  opener,
+  onProperties,
+}: {
+  /** "Ask Moebius", which the focus goes back to when the sheet closes. */
+  opener: RefObject<HTMLButtonElement | null>;
+  /** On a page with properties: closes the sheet and shows them, unfolded. */
+  onProperties?: () => void;
+}) {
   const queryClient = useQueryClient();
   const location = useLocation();
   const snapshot = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
   const chats = useQuery({ queryKey: keys.chats, queryFn: readChats });
-  // The chat and the package sheet share one slot, so showing this one minimises the other (which keeps its state).
+  // The chat and the package sheet share one place, so showing this one hides the other (which keeps its state).
   const slot = useSheetSlot();
   const shown = slot.active === "chat";
   const [chatId, setChatId] = useState<number | null>(null);
@@ -46,7 +54,7 @@ export function FloatingChat() {
   const [sent, setSent] = useState(0);
   const [error, setError] = useState<string | null>(null);
   // The thread is read for as long as the chat it belongs to is remembered, not only while the sheet is shown:
-  // minimising it and opening it again finds the conversation where it was, not an empty box refilled from the server.
+  // closing it and opening it again finds the conversation where it was, not an empty box refilled from the server.
   const thread = useThread(chatId);
   // What the composer holds right now, which the closure of a send cannot see: what is typed while an answer is on its
   // way is the next question, not something to clear away with the one that was sent.
@@ -83,13 +91,13 @@ export function FloatingChat() {
   // gone: the next message takes the chat up again rather than starting a new one.
   const tag = chat ? statusTag(chat.status, chat.asks) : null;
 
-  // Escape and the minimise control hide the sheet, and the focus goes back to the button that opened it.
-  const { hide: release, show: take } = slot;
+  // Escape and the close control hide the sheet, and the focus goes back to "Ask Moebius".
+  const { hide: release } = slot;
   const hide = useCallback(() => release("chat"), [release]);
-  const opener = useSheetBehaviour(shown, hide);
+  useSheetBehaviour(shown, hide, opener);
 
   // Marks the conversation read once an answer is held, not at every streamed piece of it, and only while the sheet is
-  // open. An answer that arrived after it was minimised is still unread, which is what the Chat page's count is for.
+  // open. An answer that arrived after it was closed is still unread, which is what the Chat page's count is for.
   // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when the answer, the marker or the events move
   useEffect(() => {
     if (!shown || chatId === null) return;
@@ -123,7 +131,7 @@ export function FloatingChat() {
         if (!up) await queryClient.invalidateQueries({ queryKey: keys.chats });
       } else {
         const run = await startChat({
-          agent: FLOATING_AGENT,
+          agent: ASSISTANT_AGENT,
           message: text,
           context: where.text,
           origin: "assistant",
@@ -139,58 +147,60 @@ export function FloatingChat() {
     setSending(false);
   }
 
-  if (!shown) {
-    return (
-      <SheetOpener
-        openerRef={opener}
-        label="Open the floating chat"
-        title="Ask the agent about this page"
-        onOpen={() => take("chat")}
-        icon={<ChatCircleDotsIcon aria-hidden="true" className="size-5" weight="fill" />}
-        className="right-6"
-      />
-    );
-  }
+  if (!shown) return null;
 
   return (
     <SheetFrame
-      label="Floating chat"
-      title="Moebius agent"
+      label="Moebius agent"
+      title="Moebius"
       tag={tag && <Tag tone={tag.tone}>{tag.label}</Tag>}
       line={`viewing ${where.name}`}
-      minimiseLabel="Minimise the floating chat"
-      onMinimise={hide}
-      // The sheet grows with the window and only ever meets a cap (24rem, from xl 26rem, from 2xl 30rem): the paddings
-      // that hold a page its room (`Shell.tsx` above 2xl, `ChatPage.tsx` below it) clear the edge the wider sheet has.
-      className="top-6 right-6 bottom-24 w-96 xl:w-[26rem] 2xl:w-[30rem]"
-      // Both belong to a conversation that exists: nothing is left behind, and nowhere else to open, when this is
-      // one nobody has spoken in yet.
+      closeLabel="Close the Moebius agent"
+      onClose={hide}
+      // New conversation and Open in Chat belong to a conversation that exists: nothing is left behind, and nowhere
+      // else to open, when this is one nobody has spoken in yet.
       actions={
-        chatId !== null && (
-          <>
+        <>
+          {onProperties && (
             <Button
               type="button"
               variant="ghost"
-              size="icon"
-              aria-label="New conversation"
-              title="New conversation"
+              size="sm"
+              title="Back to the properties"
               onClick={() => {
-                setChatId(null);
-                setError(null);
+                hide();
+                onProperties();
               }}
             >
-              <PlusIcon aria-hidden="true" className="size-5" weight="bold" />
+              Properties
             </Button>
-            <Button asChild variant="ghost" size="icon" title="Open in Chat">
-              <Link to={`/chat/${chatId}`} aria-label="Open in Chat" onClick={hide}>
-                <ArrowSquareOutIcon aria-hidden="true" className="size-5" weight="bold" />
-              </Link>
-            </Button>
-          </>
-        )
+          )}
+          {chatId !== null && (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="New conversation"
+                title="New conversation"
+                onClick={() => {
+                  setChatId(null);
+                  setError(null);
+                }}
+              >
+                <PlusIcon aria-hidden="true" className="size-5" weight="bold" />
+              </Button>
+              <Button asChild variant="ghost" size="icon" title="Open in Chat">
+                <Link to={`/chat/${chatId}`} aria-label="Open in Chat" onClick={hide}>
+                  <ArrowSquareOutIcon aria-hidden="true" className="size-5" weight="bold" />
+                </Link>
+              </Button>
+            </>
+          )}
+        </>
       }
     >
-      <div className="min-h-0 flex-1" data-testid="floating-conversation">
+      <div className="min-h-0 flex-1" data-testid="agent-conversation">
         {/* A conversation already read stays on screen: a failed read shows its reason above it, not instead of it,
             and a read that never succeeded shows the reason where the bars would have been. */}
         {chatId !== null && thread.error ? <Notice tone="error">{thread.error}</Notice> : null}

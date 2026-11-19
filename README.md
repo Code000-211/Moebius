@@ -49,7 +49,7 @@ Moebius lets it decide alongside the teacher model until it agrees often enough 
 | | |
 |---|---|
 | 🗂 **Projects** | A Kanban board per repository, plus a file browser and a code editor. A column's behaviour is a Luau script you can open and edit from the board. A menu on every card blocks it, unblocks it or deletes it. |
-| 💬 **The Moebius agent, everywhere** | A floating chat on every page that knows what you are looking at: the file and line in the editor, the script or rule you are editing. Ask it to write an issue, a rule, an agent's instructions or a whole workflow. |
+| 💬 **The Moebius agent, everywhere** | "Ask Moebius" (`Ctrl+J`) in the right column of every page opens a chat that knows what you are looking at: the file and line in the editor, the script or rule you are editing. Ask it to write an issue, a rule, an agent's instructions or a whole workflow. |
 | 🛰 **Fleet** | Every working agent at a glance, live. |
 | 🤖 **Coder and Reviewer** | Two built-in agents, each with its own instructions. Make a new agent blank or as a copy of any existing one, settings, skills and extensions included. |
 | ⌨️ **Chat or terminal** | Chat with any agent, or switch the same conversation into Pi-Bolt's own terminal interface. |

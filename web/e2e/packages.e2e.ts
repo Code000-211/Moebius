@@ -6,7 +6,7 @@
  * the sheet leaves the page it was opened from uncovered; and the events refresh what the page lists. Every wait is on
  * something the page shows, never on time.
  */
-import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
+import { type Browser, type BrowserContext, chromium, type Locator, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { FakeServer } from "./fakeServer";
 import { startServer, type TestServer, usesRealServer } from "./server";
@@ -170,9 +170,9 @@ describe.skipIf(usesRealServer)("the Plugins page and the Moebius registries", (
     await item.waitFor();
     expect(await item.count()).toBe(1);
     expect(await item.textContent()).toContain("Install review-flow");
-    // The sheet gave way to the Inbox and leaves its button.
-    await page.getByRole("button", { name: "Open the package sheet" }).waitFor();
-    expect(await sheet().count()).toBe(0);
+    // The sheet gave way to the Inbox, and leaves no button floating over it.
+    await sheet().waitFor({ state: "hidden" });
+    expect(await page.getByRole("button", { name: "Open the package sheet" }).count()).toBe(0);
   });
 
   it("says a registry that cannot be read beside the results of the others", async () => {
@@ -203,6 +203,22 @@ describe.skipIf(usesRealServer)("the Plugins page and the Moebius registries", (
       .waitFor();
   });
 
+  /**
+   * Where a sheet lies in the page's surface, from its layout rather than its drawn box, which moves while it slides
+   * in: the gaps to the surface's top, right and bottom, and its width.
+   */
+  const place = (sheet: Locator) =>
+    sheet.evaluate((element) => {
+      const box = element as HTMLElement;
+      const surface = box.offsetParent as HTMLElement;
+      return {
+        top: box.offsetTop,
+        right: surface.clientWidth - box.offsetLeft - box.offsetWidth,
+        bottom: surface.clientHeight - box.offsetTop - box.offsetHeight,
+        width: box.offsetWidth,
+      };
+    });
+
   const measure = () =>
     page.locator("main").evaluate((main) => {
       const rect = main.getBoundingClientRect();
@@ -221,22 +237,32 @@ describe.skipIf(usesRealServer)("the Plugins page and the Moebius registries", (
     return right;
   };
 
-  it("lies over the page on a window under 1536px, which keeps its width, and minimises to a button", async () => {
+  it("lies over the right column and the page on a window under 1536px, which keeps its width", async () => {
     await open("/plugins", 1280);
     const before = await contentRight();
     await openRegistries();
     const box = await sheet().boundingBox();
     expect(await contentRight()).toBe(before);
     expect(before).toBeGreaterThan(box?.x ?? 0);
+    // It lies in the right column's place: flush with the page's top, right and bottom, wider than the column.
+    const column = await page.locator('[data-surface="right-column"]').boundingBox();
+    expect(await place(sheet())).toEqual({
+      top: 0,
+      right: 0,
+      bottom: 0,
+      width: expect.any(Number),
+    });
+    expect((await place(sheet())).width).toBeGreaterThan(column?.width ?? 0);
+    // No round button floats over the page.
+    expect(await page.getByRole("button", { name: "Open the package sheet" }).count()).toBe(0);
 
     await page.keyboard.press("Escape");
     await sheet().waitFor({ state: "hidden" });
-    // Focus returns to the button that opens it again, and the search is where it was left.
-    await page.getByRole("button", { name: "Open the package sheet" }).click();
-    await sheet().waitFor();
+    // Opened again from the page, the search is where it was left.
+    await openRegistries();
     await sheet().getByTestId("list-card").first().waitFor();
-    // Minimise with its own control as well.
-    await sheet().getByRole("button", { name: "Minimise the package sheet" }).click();
+    // Close with its own control as well.
+    await sheet().getByRole("button", { name: "Close the package sheet" }).click();
     await sheet().waitFor({ state: "hidden" });
   });
 
@@ -249,22 +275,20 @@ describe.skipIf(usesRealServer)("the Plugins page and the Moebius registries", (
     expect(await contentRight()).toBeLessThan(before);
   });
 
-  it("shares its slot with the floating chat: opening one minimises the other, and both buttons stay in view", async () => {
+  it("takes the Moebius agent's place: opening one hides the other, which keeps its state", async () => {
     await open("/plugins");
     await openRegistries();
-    const chat = page.getByRole("dialog", { name: "Floating chat" });
-    // The chat's button is not under the open sheet.
-    const opener = page.getByRole("button", { name: "Open the floating chat" });
-    const sheetBox = await sheet().boundingBox();
-    const openerBox = await opener.boundingBox();
-    expect(openerBox?.y ?? 0).toBeGreaterThanOrEqual((sheetBox?.y ?? 0) + (sheetBox?.height ?? 0));
-    await opener.click();
+    const where = await place(sheet());
+    const chat = page.getByRole("dialog", { name: "Moebius agent" });
+    await page.keyboard.press("Control+j");
     await chat.waitFor();
     await sheet().waitFor({ state: "hidden" });
-    const back = page.getByRole("button", { name: "Open the package sheet" });
-    await back.click();
-    await sheet().waitFor();
+    expect(await place(chat)).toEqual(where);
+    // The agent lies over the page's button, so it is closed first; the sheet waits hidden until it is opened again.
+    await page.keyboard.press("Control+j");
     await chat.waitFor({ state: "hidden" });
+    expect(await sheet().isVisible()).toBe(false);
+    await openRegistries();
     // The search it had is where it was left.
     await sheet().getByTestId("list-card").first().waitFor();
   });
@@ -364,7 +388,8 @@ describe.skipIf(usesRealServer)("an agent's Extensions and the pi.dev catalog", 
   });
 
   it("switches the sheet's catalog when it is opened from the other place", async () => {
-    await open("/agents?agent=Reviewer");
+    // A wide window, where the page leaves the sheet its strip, so the Plugins page's button is not under it.
+    await open("/agents?agent=Reviewer", 1600);
     await page.getByRole("button", { name: "Browse Pi packages" }).click();
     await sheet().getByText("pi-web-access").waitFor();
     // Moving by the sidebar keeps the page, and so the sheet, where it is.

@@ -1,7 +1,7 @@
 /**
- * The one place the floating sheets share: the shell holds which of them is showing, so the floating chat and the
- * package sheet never lie over each other. Opening one minimises the other, which keeps its state; Escape and the
- * minimise control only reach the one that is showing.
+ * The one place the two sheets share, over the page's right column: the shell holds which of them is showing, so the
+ * Moebius agent and the package sheet never lie over each other. Opening one hides the other, which keeps its state; Escape and the
+ * close control only reach the one that is showing.
  */
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
 
@@ -9,11 +9,11 @@ import { createContext, type ReactNode, useCallback, useContext, useMemo, useSta
 export type SheetId = "chat" | "packages";
 
 interface Slot {
-  /** The sheet that is showing; none when both are minimised. */
+  /** The sheet that is showing; none when both are hidden. */
   active: SheetId | null;
-  /** Shows the sheet, minimising the one that was showing. */
+  /** Shows the sheet, hiding the one that was showing. */
   show: (id: SheetId) => void;
-  /** Minimises the sheet if it is the one showing. */
+  /** Hides the sheet if it is the one showing. */
   hide: (id: SheetId) => void;
 }
 

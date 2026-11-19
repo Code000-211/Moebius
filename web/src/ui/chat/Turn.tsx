@@ -367,7 +367,7 @@ interface TurnProps {
   /** The keys of the steps that are unfolded. */
   unfolded: ReadonlySet<string>;
   onToggle: (key: string) => void;
-  /** A tighter rhythm between the blocks and the rows, for the floating chat's dock. */
+  /** A tighter rhythm between the blocks and the rows, for the Moebius agent's sheet. */
   compact?: boolean;
   /** Offered on the last block of the turn that went wrong: what to press to have it answered again. */
   retry?: ReactNode;

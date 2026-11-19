@@ -4,11 +4,13 @@
  * rounded at all four corners (ADR 0020). In dark the page is set apart by its lightness and a faint light edge alone,
  * because a wide shadow on the near-black ground shows as bands; so the ground in the air beside the page is the same
  * as the ground far from it. The grain stays on while the pixels are read: every reading is the mean of a strip, which
- * evens the grain out, and is compared with a strip of the same rows, which evens out the light from above.
+ * evens the grain out, and is compared with a strip of the same rows, which evens out the light from above. Then the
+ * right column at work: a page's properties in it, folded and kept folded, and the Moebius agent opened over it and
+ * closed again.
  */
 import { type Browser, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { startServer, type TestServer } from "./server";
+import { startServer, type TestServer, usesRealServer } from "./server";
 
 let browser: Browser;
 let server: TestServer;
@@ -179,8 +181,7 @@ describe("the shell", () => {
 
     // The right air, column by column past the 1px edge, against the ground at the far left of the same rows, in
     // the sidebar's own padding. A wide shadow would darken the air near the page and lighten it step by step away
-    // from it; the ground beside the page is the ground far from it. The rows and columns stop well short of the
-    // round buttons in the bottom right corner, whose own small shadow is not the page's.
+    // from it; the ground beside the page is the ground far from it.
     const rows = [top + 40, top + 600] as const;
     const far = mean(0, 3, ...rows);
     for (let x = right + 2; x < VIEW.width; x += 1) {
@@ -196,7 +197,7 @@ describe("the shell", () => {
       expect(Math.abs(under - beside), `the air ${y - bottom}px under the page`).toBeLessThan(1.5);
     }
     // Past each rounded corner the ground shows, not a square of the page's colour: a few pixels in the cut of the
-    // corner are the ground of the air beside them. The bottom right corner is left to the round buttons near it.
+    // corner are the ground of the air beside them.
     const corner = (x0: number, x1: number, y0: number, y1: number) => mean(x0, x1, y0, y1);
     const airTop = mean(right + 2, VIEW.width - 1, top, top + 2);
     expect(Math.abs(corner(right - 3, right - 1, top, top + 2) - airTop)).toBeLessThan(4);
@@ -206,6 +207,113 @@ describe("the shell", () => {
     expect(
       Math.abs(corner(outer.x, outer.x + 2, bottom - 3, bottom - 1) - sideBottom),
     ).toBeLessThan(4);
+    await page.context().close();
+  });
+});
+
+/** A page of a server of its own, signed in, with the shell drawn. */
+async function signedIn(path: string): Promise<Page> {
+  server = await startServer();
+  const context = await browser.newContext({ viewport: VIEW, reducedMotion: "reduce" });
+  const page = await context.newPage();
+  await page.goto(server.loginUrl);
+  await page.getByRole("navigation", { name: "Pages" }).waitFor();
+  await page.goto(`${server.url}${path}`);
+  await page.locator('[data-surface="page"] h1').first().waitFor();
+  return page;
+}
+
+const COLUMN = '[data-surface="right-column"]';
+
+/**
+ * The right column with a page's properties in it, and the Moebius agent lying over it: a workflow's definition has
+ * properties (what starts it, its nodes, its last run), the Inbox has none. The properties are marked before the agent
+ * opens, so a column drawn again from nothing would be told by the mark being gone.
+ */
+describe.skipIf(usesRealServer)("the right column and the Moebius agent", () => {
+  it("opens and closes the agent over a page with properties, which keep their state", async () => {
+    const page = await signedIn("/workflows/release");
+    const properties = page.locator(COLUMN).getByRole("region", { name: "Definition" });
+    await properties.getByText("3 nodes").waitFor();
+    expect((await box(page, COLUMN)).width).toBe(272);
+    await page.locator(COLUMN).getByRole("heading", { name: "Properties" }).waitFor();
+    await properties.evaluate((element) => {
+      element.dataset.kept = "yes";
+    });
+    const main = await box(page, "main");
+
+    await page.getByRole("button", { name: "Ask Moebius" }).click();
+    const agent = page.getByRole("dialog", { name: "Moebius agent" });
+    await agent.waitFor();
+    // It lies over the column, wider than it, flush with the page's top, right and bottom; the page keeps its width.
+    const surface = await box(page, '[data-surface="page"]');
+    const over = await box(page, '[role="dialog"][aria-label="Moebius agent"]');
+    const column = await box(page, COLUMN);
+    expect(over.x).toBeLessThan(column.x);
+    expect(over.x + over.width).toBe(surface.x + surface.width);
+    expect(over.y).toBe(surface.y);
+    expect(over.height).toBe(surface.height);
+    expect(await box(page, "main")).toEqual(main);
+
+    // "Properties" gives the place back, and they are as they were.
+    await agent.getByRole("button", { name: "Properties" }).click();
+    await agent.waitFor({ state: "hidden" });
+    expect(await properties.getAttribute("data-kept")).toBe("yes");
+    await properties.getByText("3 nodes").waitFor();
+
+    // The shortcut opens it too, and Escape closes it.
+    await page.keyboard.press("Control+j");
+    await agent.waitFor();
+    await page.keyboard.press("Escape");
+    await agent.waitFor({ state: "hidden" });
+    expect(await properties.getAttribute("data-kept")).toBe("yes");
+    expect(
+      await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? null),
+    ).toBe("Ask Moebius");
+    await page.context().close();
+  });
+
+  it("opens and closes the agent over a page without properties, whose column stays slim", async () => {
+    const page = await signedIn("/inbox");
+    const column = page.locator(COLUMN);
+    expect((await box(page, COLUMN)).width).toBe(44);
+    expect(await column.getByRole("button", { name: "Show the properties" }).isDisabled()).toBe(
+      true,
+    );
+    await column.getByRole("button", { name: "Ask Moebius" }).click();
+    const agent = page.getByRole("dialog", { name: "Moebius agent" });
+    await agent.waitFor();
+    expect((await box(page, '[role="dialog"][aria-label="Moebius agent"]')).width).toBe(400);
+    // Nothing to go back to here.
+    expect(await agent.getByRole("button", { name: "Properties" }).count()).toBe(0);
+    await agent.getByRole("button", { name: "Close the Moebius agent" }).click();
+    await agent.waitFor({ state: "hidden" });
+    expect((await box(page, COLUMN)).width).toBe(44);
+    // No round button floats at the bottom right any more.
+    expect(await page.getByRole("button", { name: "Open the floating chat" }).count()).toBe(0);
+    await page.context().close();
+  });
+
+  it("folds to a slim column with both buttons, and stays folded from page to page", async () => {
+    const page = await signedIn("/workflows/release");
+    const column = page.locator(COLUMN);
+    const properties = column.getByRole("region", { name: "Definition" });
+    await properties.getByText("3 nodes").waitFor();
+    await column.getByRole("button", { name: "Fold the properties" }).click();
+    expect((await box(page, COLUMN)).width).toBe(44);
+    await properties.waitFor({ state: "hidden" });
+    await column.getByRole("button", { name: "Show the properties" }).waitFor();
+    await column.getByRole("button", { name: "Ask Moebius" }).waitFor();
+
+    // Away to the list and back to the workflow: it is still folded.
+    await page.locator("main").getByRole("link", { name: "Workflows" }).click();
+    await page.getByRole("heading", { name: "Workflows", level: 1 }).waitFor();
+    await page.getByRole("link", { name: "release" }).click();
+    await page.getByRole("heading", { name: "release", level: 1 }).waitFor();
+    expect((await box(page, COLUMN)).width).toBe(44);
+    await column.getByRole("button", { name: "Show the properties" }).click();
+    expect((await box(page, COLUMN)).width).toBe(272);
+    await properties.getByText("3 nodes").waitFor();
     await page.context().close();
   });
 });

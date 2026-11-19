@@ -257,7 +257,7 @@ async function visit(page: Page, path: string) {
   await page.waitForTimeout(900);
 }
 
-/** Asks the floating chat something and plays the Moebius agent's answer, with the calls it makes, by hand. */
+/** Asks the Moebius agent something and plays the Moebius agent's answer, with the calls it makes, by hand. */
 async function askAssistant(page: Page) {
   const before = fake.chat.chats.length;
   fake.chat.autoAnswer = false;
@@ -295,16 +295,12 @@ for (const theme of THEMES) {
   it(`takes the pictures in the ${theme} theme`, async () => {
     const hero = await open(theme, 1.44, 1132, 2012);
     await visit(hero, "/board/1");
-    // The sidebar is a rail, so that the board and the floating chat both fit.
+    // The sidebar is a rail, so that the board and the Moebius agent both fit.
     await hero.getByRole("button", { name: "Collapse the sidebar" }).click();
-    await hero.getByRole("button", { name: "Open the floating chat" }).click();
+    await hero.getByRole("button", { name: "Ask Moebius" }).click();
     await askAssistant(hero);
-    // The chat has a gutter of 24 pixels to the right of it, where the board's last column shows through: cut it off.
-    await hero.screenshot({
-      path: join(OUT, `hero-${theme}.png`),
-      clip: { x: 0, y: 0, width: 2012 - 24, height: 1132 },
-    });
-    // The floating chat's conversation is the hero's alone: the lists of the other pages do not hold it.
+    await hero.screenshot({ path: join(OUT, `hero-${theme}.png`) });
+    // The Moebius agent's conversation is the hero's alone: the lists of the other pages do not hold it.
     for (const [index, chat] of fake.chat.chats.entries())
       if (chat.origin === "assistant") fake.chat.chats.splice(index, 1);
     await hero.context().close();

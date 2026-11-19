@@ -199,8 +199,11 @@
   /* Widths. */
   --sidebar-width: 280px;
   --rail-width: 56px;
-  /* The page's right column while it holds no properties, or holds them folded. */
+  /* The page's right column with a page's properties in it, and while it holds none, or holds them folded. */
+  --column-width: 272px;
   --column-rail-width: 44px;
+  /* A sheet over the right column (the Moebius agent, the package sheet): wider than the column, over the page. */
+  --sheet-width: 400px;
   --connect-width: 448px;
   --scrollbar-width: 8px;
 

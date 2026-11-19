@@ -148,7 +148,7 @@ describe("Composer", () => {
 
   /**
    * The app draws one focus ring, the global `:focus-visible` outline in `styles/tailwind.css`. A field that writes its
-   * own `outline-none` cancels it and leaves the field a person uses most — on Chat, on Run, in the floating chat — with
+   * own `outline-none` cancels it and leaves the field a person uses most — on Chat, on Run, in the Moebius agent — with
    * no sign of where they are. The shared `TextArea` carries the control's classes and nothing over the ring.
    */
   it("is the shared control, and keeps the focus ring", () => {

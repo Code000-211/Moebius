@@ -2,18 +2,21 @@
  * The frame of a signed-in person's page: the textured ground under the whole window, the sidebar lying on it without
  * a surface of its own, and the page as one surface on it — 6px of air above, below and at the right, all four
  * corners round, a shade lighter than the ground and set apart by its edge alone (ADR 0020). The page holds the banner
- * while the server cannot be reached, what the route draws, and its right column for properties, which is part of the
- * same surface behind a soft line. It owns the command palette and its shortcut, holds what is in focus for it (`palette/focus.tsx`), notes the places seen and the sidebar's collapsed state (kept per browser), and holds the package
- * sheet, which pages open from where a person meets plugins and extensions.
+ * while the server cannot be reached, what the route draws, and its right column (`RightColumn.tsx`) for the page's
+ * properties and the Moebius agent, which is part of the same surface behind a soft line. The agent and the package
+ * sheet, which pages open from where a person meets plugins and extensions, lie over that column in one place. It owns
+ * the command palette and its shortcut, holds what is in focus for it (`palette/focus.tsx`), and notes the places seen
+ * and the sidebar's collapsed state (kept per browser).
  */
 import { Suspense, useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router";
-import { FloatingChat } from "../../chat/FloatingChat";
 import { useConnection, useReconnect } from "../../live/LiveProvider";
 import { PackageSheet } from "../../packages/PackageSheet";
 import { PackageSheetProvider, usePackageSheet } from "../../packages/PackageSheetContext";
+import { cn } from "../../ui/lib/cn";
 import { isShortcut } from "../../ui/lib/shortcuts";
 import { PageBoundary } from "../../ui/page/PageBoundary";
+import { PropertiesProvider } from "../../ui/page/Properties";
 import { SheetSlotProvider } from "../../ui/page/SheetSlot";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import { readFlag, writeFlag } from "../storage";
@@ -21,6 +24,7 @@ import { CommandBar } from "./CommandBar";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { PaletteFocusProvider } from "./palette/focus";
 import { noteRecent } from "./palette/model";
+import { RightColumn } from "./RightColumn";
 import { Sidebar } from "./Sidebar";
 
 const COLLAPSED_KEY = "moebius.sidebar.collapsed";
@@ -29,9 +33,11 @@ export function Shell(props: { unreachable: boolean; onRetry: () => void }) {
   return (
     <SheetSlotProvider>
       <PackageSheetProvider>
-        <PaletteFocusProvider>
-          <Frame {...props} />
-        </PaletteFocusProvider>
+        <PropertiesProvider>
+          <PaletteFocusProvider>
+            <Frame {...props} />
+          </PaletteFocusProvider>
+        </PropertiesProvider>
       </PackageSheetProvider>
     </SheetSlotProvider>
   );
@@ -75,10 +81,12 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
         }}
         onSearch={() => setCommandOpen(true)}
       />
-      {/* The page: one surface, rounded at all four corners, that clips what scrolls inside it to those corners. */}
+      {/* The page: one surface, rounded at all four corners, that clips what scrolls inside it to those corners. The
+          sheets lie in it, over its right column, so they share its corners and its height. It clips rather than
+          hides, so a sheet that takes the focus while it slides in cannot scroll the whole page sideways. */}
       <div
         data-surface="page"
-        className="mr-1.5 flex min-w-0 flex-1 overflow-hidden rounded-sheet bg-page shadow-edge"
+        className="relative mr-1.5 flex min-w-0 flex-1 overflow-clip rounded-sheet bg-page shadow-edge"
       >
         <div className="flex min-w-0 flex-1 flex-col">
           {offline && (
@@ -89,12 +97,15 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
               }}
             />
           )}
-          {/* The package sheet floats over the right of the window; only on a very wide one (2xl) does the page leave
-              it its room, so what it was opened from is not covered. Below that the page keeps its width and the sheet
-              lies over it: an editor squeezed beside it is worse than one that is covered until the sheet is
-              minimised. */}
+          {/* The package sheet lies over the right column and a strip of the page beside it. Only on a very wide
+              window (2xl) does the page leave it that strip, so what it was opened from is not covered; below that the
+              page keeps its width and the sheet lies over it, since an editor squeezed beside it is worse than one
+              covered until the sheet is closed. */}
           <main
-            className={`min-h-0 flex-1 overflow-y-auto p-6 ${packages.shown ? "2xl:pr-[33.5rem]" : ""}`}
+            className={cn(
+              "min-h-0 flex-1 overflow-y-auto p-6",
+              packages.shown && "2xl:pr-[calc(var(--sheet-width)-var(--column-rail-width)+1.5rem)]",
+            )}
           >
             {/* A page is fetched when it opens, so the shell holds the space it needs while it arrives, and says so
                 when it does not: the page is the thing that is missing, not the app around it. */}
@@ -106,26 +117,9 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
           </main>
         </div>
         <RightColumn />
+        <PackageSheet />
       </div>
       <CommandBar open={commandOpen} onOpenChange={setCommandOpen} />
-      <PackageSheet />
-      <FloatingChat />
-    </div>
-  );
-}
-
-/**
- * The page's right column, for properties: the same surface as the page, set apart from it by a soft line, with a
- * head at the height of the page's head bar. While no page puts properties in it, it stays the slim column it is
- * folded to.
- */
-function RightColumn() {
-  return (
-    <div
-      data-surface="right-column"
-      className="flex w-(--column-rail-width) shrink-0 flex-col border-l border-hairline"
-    >
-      <div data-part="head" className="h-head-bar shrink-0" />
     </div>
   );
 }
