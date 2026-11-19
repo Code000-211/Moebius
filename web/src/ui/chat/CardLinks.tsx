@@ -1,13 +1,14 @@
 /**
- * A link to a card in a text, such as `#18` in a comment, a chat or the log of a run. It is drawn as a link to the
+ * A link to a card in a text, such as `#18` or `WEB-24` in a comment, a chat or the log of a run. It is drawn as a link to the
  * card on its board and shows a preview card of the card: its project, column, people, labels and the run in progress,
  * if there is one. The preview opens after a short wait with the pointer over the link and at once when the link takes
  * the keyboard focus, and closes with Escape, when the pointer or the focus leaves, or on a click, which opens the card.
  *
  * A number that names no card of the snapshot stays the plain text it was; so does every number where there is no
  * snapshot to look in (a text drawn outside the app's shell). Several repositories have an issue with the same
- * number: `CardScope` names the repository a text belongs to, and a text with none takes the first board that has the
- * number.
+ * number: `CardScope` names the repository a text belongs to, and `#18` is its issue of that number, else the card of
+ * that number in the project of that repository; a text with no scope takes the first board that has the number. A key such
+ * as `WEB-24` names its card on any board.
  */
 import { QueryClientContext, useQuery } from "@tanstack/react-query";
 import {
@@ -27,6 +28,7 @@ import { snapshot } from "../../api/calls/board";
 import { keys } from "../../api/keys";
 import type { Board, Card } from "../../api/types/board";
 import { ColumnMark } from "../../app/board/ColumnMark";
+import { cardName } from "../../app/board/cardKey";
 import { boardPath } from "../../app/pages";
 import { RunningDots } from "../components/RunningDots";
 
@@ -36,14 +38,42 @@ export const PREVIEW_DELAY_MS = 400;
 /** The repository the text being drawn belongs to, as its id; `null` when it belongs to none. */
 export const CardScope = createContext<number | null>(null);
 
-const REFERENCE = /(?<![\w&#/])#(\d+)\b/g;
+/** A `#18` or a card key such as `WEB-24`; a key is a few capitals and digits, a hyphen and digits. */
+const REFERENCE = /(?<![\w&#/-])(?:#(\d+)|([A-Z][A-Z0-9]{1,9})-(\d+))\b(?!-\d)/g;
 
-/** The card an issue number names: in the scope's repository when it has the number, else the first board that does. */
+/** The card a key and a number in its project name, on any board. */
+export function findKeyed(
+  boards: readonly Board[],
+  key: string,
+  number: number,
+): { board: Board; card: Card } | undefined {
+  for (const board of boards) {
+    const card = board.cards.find((c) => c.project_key === key && c.project_number === number);
+    if (card) return { board, card };
+  }
+  return undefined;
+}
+
+/**
+ * The card `#18` names: the issue with that number in the scope's repository, else the card with that number in the
+ * scope's project, else the first board that has either.
+ */
 export function findCard(
   boards: readonly Board[],
   number: number,
   scope: number | null,
 ): { board: Board; card: Card } | undefined {
+  const own = boards.find((b) => b.repository.id === scope);
+  const issue = own?.cards.find((c) => c.number === number);
+  if (own && issue) return { board: own, card: issue };
+  const home = own?.repository.home_project_id;
+  for (const board of boards) {
+    // Without a scope, no project is the text's: the first card with the number in its project is meant.
+    const card = board.cards.find(
+      (c) => c.project_number === number && (scope === null || c.project_id === home),
+    );
+    if (card) return { board, card };
+  }
   const ordered =
     scope === null
       ? boards
@@ -66,13 +96,19 @@ export function linkCards(children: ReactNode): ReactNode {
       <Fragment key={index}>{linkCards(child)}</Fragment>
     ));
   }
-  if (typeof children !== "string" || !children.includes("#")) return children;
+  if (typeof children !== "string") return children;
   const pieces: ReactNode[] = [];
   let from = 0;
   for (const found of children.matchAll(REFERENCE)) {
     const at = found.index ?? 0;
     if (at > from) pieces.push(children.slice(from, at));
-    pieces.push(<CardRef key={at} number={Number(found[1])} />);
+    pieces.push(
+      found[1] ? (
+        <CardRef key={at} number={Number(found[1])} />
+      ) : (
+        <CardRef key={at} number={Number(found[3])} projectKey={found[2]} />
+      ),
+    );
     from = at + found[0].length;
   }
   if (from === 0) return children;
@@ -81,17 +117,29 @@ export function linkCards(children: ReactNode): ReactNode {
 }
 
 /** One `#18`: a link with a preview when the snapshot has the card, the plain text when not. */
-export function CardRef({ number }: { number: number }) {
+export function CardRef({ number, projectKey }: { number: number; projectKey?: string }) {
   const client = useContext(QueryClientContext);
-  const text = `#${number}`;
+  const text = projectKey ? `${projectKey}-${number}` : `#${number}`;
   if (!client) return <>{text}</>;
-  return <CardRefLink number={number} text={text} />;
+  return <CardRefLink number={number} projectKey={projectKey} text={text} />;
 }
 
-function CardRefLink({ number, text }: { number: number; text: string }) {
+function CardRefLink({
+  number,
+  projectKey,
+  text,
+}: {
+  number: number;
+  projectKey?: string;
+  text: string;
+}) {
   const scope = useContext(CardScope);
   const { data } = useQuery({ queryKey: keys.snapshot, queryFn: snapshot });
-  const found = data ? findCard(data.boards, number, scope) : undefined;
+  const found = !data
+    ? undefined
+    : projectKey
+      ? findKeyed(data.boards, projectKey, number)
+      : findCard(data.boards, number, scope);
   if (!found) return <>{text}</>;
   return <PreviewLink text={text} board={found.board} card={found.card} />;
 }
@@ -191,7 +239,8 @@ export function CardPreview({
       className="glass fixed z-tip flex w-72 flex-col gap-2 rounded-card p-3 text-xs text-text shadow-raised"
     >
       <span className="text-secondary">
-        {board.repository.project ?? board.repository.name} · #{card.number}
+        {board.repository.project ?? board.repository.name} ·{" "}
+        {cardName(card, board.repository.forge !== "none")}
       </span>
       <span className="text-sm font-medium text-text">{card.title}</span>
       <span className="flex items-center gap-2 text-secondary">

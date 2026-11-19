@@ -19,6 +19,9 @@ interface FakeCard {
   id: number;
   repository_id: number;
   number: number;
+  /** Set on the cards that are named by a key; the others are named by their number, as by an older server. */
+  project_number?: number;
+  project_key?: string;
   title: string;
   body: string;
   author: string;
@@ -221,7 +224,12 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       tokens: 480_000,
       run: { id: 2, agent: "Reviewer", purpose: "review", status: "failed" },
     }),
-    card(7, { title: "Ship the first release", column: "Done" }),
+    card(7, {
+      title: "Ship the first release",
+      column: "Done",
+      project_key: "DEMO",
+      project_number: 31,
+    }),
   ];
   const changes: FakeChange[] = [
     change(1, 5, {}),

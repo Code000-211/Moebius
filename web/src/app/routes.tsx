@@ -19,6 +19,9 @@ const AutomationsPage = lazy(() =>
 const BoardPage = lazy(() =>
   import("./board/BoardPage").then((all) => ({ default: all.BoardPage })),
 );
+const CardKeyPage = lazy(() =>
+  import("./board/CardKeyPage").then((all) => ({ default: all.CardKeyPage })),
+);
 const ScriptPage = lazy(() =>
   import("./board/ScriptPage").then((all) => ({ default: all.ScriptPage })),
 );
@@ -159,6 +162,7 @@ export const routes = [
       { path: "chat/:id", element: <ChatPage /> },
       { path: "board/:id", element: <BoardPage /> },
       { path: "board/:id/scripts/:column", element: <ScriptPage /> },
+      { path: "card/:key", element: <CardKeyPage /> },
       { path: "runs/:id", element: <RunPage /> },
       { path: "*", element: <NotFoundPage /> },
     ],

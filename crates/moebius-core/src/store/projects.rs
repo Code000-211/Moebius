@@ -57,6 +57,21 @@ ALTER TABLE repositories ADD COLUMN files_of INTEGER REFERENCES projects(id);
 CREATE UNIQUE INDEX repositories_by_files_of ON repositories (files_of) WHERE files_of IS NOT NULL;
 "#;
 
+/// A card's number in its project, which names it with the project's key (`WEB-24`). A card keeps its number; of the
+/// cards of a project that share one (a project with several repositories), the earliest keeps it and each later one
+/// takes the next numbers after the project's highest, in the order of their ids.
+pub(super) const NUMBERS_SCHEMA: &str = r#"
+ALTER TABLE cards ADD COLUMN project_number INTEGER NOT NULL DEFAULT 0;
+UPDATE cards SET project_number = number;
+UPDATE cards SET project_number =
+    (SELECT MAX(o.number) FROM cards o WHERE o.project_id = cards.project_id)
+    + (SELECT COUNT(*) FROM cards d
+       WHERE d.project_id = cards.project_id AND d.id <= cards.id
+         AND EXISTS (SELECT 1 FROM cards e WHERE e.project_id = d.project_id AND e.number = d.number AND e.id < d.id))
+WHERE EXISTS (SELECT 1 FROM cards e WHERE e.project_id = cards.project_id AND e.number = cards.number AND e.id < cards.id);
+CREATE UNIQUE INDEX cards_by_key ON cards (project_id, project_number);
+"#;
+
 /// The most characters a project's key has.
 pub const KEY_LIMIT: usize = 10;
 
@@ -82,6 +97,17 @@ pub fn is_key(key: &str) -> bool {
     chars.next().is_some_and(|c| c.is_ascii_uppercase())
         && (2..=KEY_LIMIT).contains(&key.len())
         && chars.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+}
+
+/// The project key and number a card's name holds: `WEB-24` is `("WEB", 24)`; the key may be in any case. None for
+/// anything else, such as `#24`, `web-0x` or a key that is not one.
+pub fn parse_card_key(text: &str) -> Option<(String, i64)> {
+    let (key, number) = text.split_once('-')?;
+    let key = key.to_ascii_uppercase();
+    if !is_key(&key) || number.is_empty() || !number.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    number.parse().ok().map(|n| (key, n))
 }
 
 /// A key made from `name` that `taken` does not refuse: the name's letters and digits in capitals, after a `P` when it
@@ -273,10 +299,16 @@ impl Store {
         Ok(())
     }
 
-    /// Puts the card on the board of the project `project_id`; its column stays.
+    /// Puts the card on the board of the project `project_id`; its column stays. It is named by the new project's key
+    /// from then on, with its issue's number when the project has no card with that number, else the next free one.
     pub fn set_card_project(&self, card_id: i64, project_id: i64) -> Result<()> {
-        self.conn().execute(
-            "UPDATE cards SET project_id = ?1 WHERE id = ?2",
+        let conn = self.conn();
+        conn.execute(
+            "UPDATE cards SET project_id = ?1,
+                 project_number = (SELECT CASE WHEN EXISTS (SELECT 1 FROM cards o WHERE o.project_id = ?1 AND o.project_number = cards.number)
+                                               THEN (SELECT MAX(o.project_number) + 1 FROM cards o WHERE o.project_id = ?1)
+                                               ELSE cards.number END)
+             WHERE id = ?2 AND project_id IS NOT ?1",
             [project_id, card_id],
         )?;
         Ok(())
@@ -377,6 +409,12 @@ mod tests {
                     "{}",
                     card.title
                 );
+                // Each card keeps its number, which now names it with its project's key.
+                assert_eq!(card.project_number, card.number, "{}", card.title);
+                assert_eq!(
+                    card.project_key,
+                    store.project(repository.id).unwrap().unwrap().key
+                );
             }
         }
         assert_eq!(
@@ -445,5 +483,127 @@ mod tests {
             s.project(again.home_project_id).unwrap().unwrap().key,
             "WEB"
         );
+    }
+
+    #[test]
+    fn parsing_a_card_key_takes_a_key_and_digits_in_any_case() {
+        assert_eq!(parse_card_key("WEB-24"), Some(("WEB".into(), 24)));
+        assert_eq!(parse_card_key("web-1"), Some(("WEB".into(), 1)));
+        for not in [
+            "#24",
+            "24",
+            "WEB",
+            "WEB-",
+            "WEB-x",
+            "W-1",
+            "WEB--1",
+            "WEB-1-2",
+            "1WEB-1",
+            "WEB-+1",
+            "TOOLONGKEY1-1",
+        ] {
+            assert_eq!(parse_card_key(not), None, "{not}");
+        }
+    }
+
+    #[test]
+    fn a_card_is_named_by_its_project_key_and_a_number_unique_in_the_project() {
+        let (_dir, s) = test_store();
+        let web = s.add_repository("web", "/srv/web", "none", "main").unwrap();
+        let api = s.add_repository("api", "/srv/api", "none", "main").unwrap();
+        // The number of a card is the number of its issue while that is free in its project.
+        let seven = s
+            .add_numbered_card(web.id, 7, "Seven", "", "lea", "Backlog")
+            .unwrap();
+        assert_eq!(
+            (seven.project_key.as_str(), seven.project_number),
+            ("WEB", 7)
+        );
+        // Another repository of the same project may have an issue with the same number: the card takes the next free.
+        s.conn()
+            .execute(
+                "UPDATE repositories SET home_project_id = ?1 WHERE id = ?2",
+                [web.home_project_id, api.id],
+            )
+            .unwrap();
+        let clash = s
+            .add_numbered_card(api.id, 7, "Clash", "", "lea", "Backlog")
+            .unwrap();
+        assert_eq!((clash.number, clash.project_number), (7, 8));
+        let local = s.add_card(api.id, "Local", "", "lea", "Backlog").unwrap();
+        assert_eq!(local.project_number, 9);
+        // Keys find them whatever the repository, and numbers of other projects do not count.
+        assert_eq!(s.card_by_key("WEB", 8).unwrap().unwrap().id, clash.id);
+        assert_eq!(s.card_by_key("WEB", 7).unwrap().unwrap().id, seven.id);
+        assert_eq!(s.card_by_key("WEB", 99).unwrap(), None);
+        assert_eq!(s.card_by_key("NOPE", 7).unwrap(), None);
+        assert_eq!(s.card(clash.id).unwrap().unwrap().project_key, "WEB");
+        // A project's rename keeps the key, so the name of its cards.
+        assert!(s.rename_project(web.home_project_id, "Storefront").unwrap());
+        assert_eq!(s.card_by_key("WEB", 7).unwrap().unwrap().id, seven.id);
+    }
+
+    #[test]
+    fn a_card_moved_to_a_project_is_renumbered_when_the_number_is_taken_there() {
+        let (_dir, s) = test_store();
+        let web = s.add_repository("web", "/srv/web", "none", "main").unwrap();
+        let api = s.add_repository("api", "/srv/api", "none", "main").unwrap();
+        let taken = s
+            .add_numbered_card(web.id, 7, "Web", "", "lea", "Backlog")
+            .unwrap();
+        let moved = s
+            .add_numbered_card(api.id, 7, "Api", "", "lea", "Backlog")
+            .unwrap();
+        assert_eq!(
+            (moved.project_key.as_str(), moved.project_number),
+            ("API", 7)
+        );
+        s.set_card_project(moved.id, web.home_project_id).unwrap();
+        let moved = s.card(moved.id).unwrap().unwrap();
+        assert_eq!(
+            (moved.project_key.as_str(), moved.project_number),
+            ("WEB", 8)
+        );
+        assert_eq!(s.card_by_key("WEB", 7).unwrap().unwrap().id, taken.id);
+        // A move that changes nothing changes nothing; a free number is kept.
+        s.set_card_project(moved.id, web.home_project_id).unwrap();
+        assert_eq!(s.card(moved.id).unwrap().unwrap().project_number, 8);
+        let free = s
+            .add_numbered_card(api.id, 30, "Free", "", "lea", "Backlog")
+            .unwrap();
+        s.set_card_project(free.id, web.home_project_id).unwrap();
+        assert_eq!(s.card(free.id).unwrap().unwrap().project_number, 30);
+    }
+
+    #[test]
+    fn a_store_whose_project_has_cards_with_the_same_number_numbers_them_apart() {
+        let dir = tempfile::tempdir().unwrap();
+        {
+            let conn = rusqlite::Connection::open(dir.path().join("moebius.sqlite")).unwrap();
+            let numbers = MIGRATIONS
+                .iter()
+                .position(|sql| *sql == NUMBERS_SCHEMA)
+                .expect("a migration numbers the cards");
+            for sql in &MIGRATIONS[..numbers] {
+                conn.execute_batch(sql).unwrap();
+            }
+            conn.pragma_update(None, "user_version", numbers as i64)
+                .unwrap();
+            // Two repositories in one project, each with an issue 1 and 2, and a third repository's card 1.
+            conn.execute_batch(
+                "INSERT INTO projects (id, name, key, created_at) VALUES (1, 'web', 'WEB', 0), (3, 'ops', 'OPS', 0);
+                 INSERT INTO repositories (id, name, path, forge, default_branch, home_project_id) VALUES (1, 'web', '/w', 'none', 'main', 1), (2, 'api', '/a', 'none', 'main', 1), (3, 'ops', '/o', 'none', 'main', 3);
+                 INSERT INTO cards (id, repository_id, number, title, body, author, column_name, created_at, project_id) VALUES
+                    (1, 1, 1, 'a', '', 'x', 'Backlog', 0, 1), (2, 1, 2, 'b', '', 'x', 'Backlog', 0, 1),
+                    (3, 2, 1, 'c', '', 'x', 'Backlog', 0, 1), (4, 2, 2, 'd', '', 'x', 'Backlog', 0, 1),
+                    (5, 3, 1, 'e', '', 'x', 'Backlog', 0, 3);",
+            )
+            .unwrap();
+        }
+        let store = Store::open(dir.path()).unwrap();
+        let numbers: Vec<(i64, i64)> = (1..=5)
+            .map(|id| (id, store.card(id).unwrap().unwrap().project_number))
+            .collect();
+        assert_eq!(numbers, [(1, 1), (2, 2), (3, 3), (4, 4), (5, 1)]);
     }
 }

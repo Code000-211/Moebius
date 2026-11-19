@@ -59,20 +59,27 @@ Add `--json` to any command to read fields (`"$MOEBIUS" board --json`). For anyt
 
 ### Issues as a tracker
 
-Issues have a parent (sub-issues), blockers, labels, a claim, comments and a state, the same on every forge and without
+Issues have a parent (sub-issues), blockers, duplicates and related issues, labels, a claim, comments and a state, the same on every forge and without
 one (`reference/desktop-api.md`, "The issue tracker", says which part lives on the forge and which Moebius keeps). The
 commands take a card's id and name other issues by their number:
 
 | The person wants | Command |
 |---|---|
 | The issues of a repository, filtered | `"$MOEBIUS" issue list <repository id> --parent <n> --label <label> --state open --unblocked --unclaimed` (every option is optional; the last three give the frontier of a map) |
-| One issue, with its sub-issues | `"$MOEBIUS" issue show <card id>` |
+| One issue, with its sub-issues | `"$MOEBIUS" issue show <card id or key such as WEB-24>` |
 | A sub-issue, or an issue moved to another parent | `"$MOEBIUS" issue create <repository id> "<title>" --parent <n>`, `"$MOEBIUS" issue parent <card id> <n>` (`none` for no parent) |
 | An issue blocked by another, or not any more | `"$MOEBIUS" issue blocker add <card id> <n>`, `"$MOEBIUS" issue blocker remove <card id> <n>` (a cycle is refused) |
+| An issue that is the same as another, closed with a link to the original | `"$MOEBIUS" issue duplicate <card id> <n>` (the issue is closed and says "Duplicate of #n"; `none` instead of `<n>` takes the link off and leaves it closed) |
+| Issues that belong together | `"$MOEBIUS" issue related add <card id> <n>`, `"$MOEBIUS" issue related remove <card id> <n>` (each shows the other in `issue show`) |
+| The open issues that look like a new one | `"$MOEBIUS" issue similar <card id>` |
 | Labels changed | `"$MOEBIUS" issue labels <card id> --add <label> --remove <label>` |
 | An issue claimed so that no other session takes it, or let go | `"$MOEBIUS" issue claim <card id> --as "<name>"`, `"$MOEBIUS" issue release <card id> --as "<name>"` (a claim of somebody else is refused with status 409; releasing one means giving the name it was claimed under, and is refused with status 403 for any other) |
 | A comment written, or read | `"$MOEBIUS" issue comment <card id> "<text>"`, `"$MOEBIUS" issue comments <card id>` |
 | An issue closed (its card goes to Done and what it blocks is free), or opened again | `"$MOEBIUS" issue close <card id> --reason "..."`, `"$MOEBIUS" issue reopen <card id>` |
+
+When you make an issue, run `"$MOEBIUS" issue similar <card id>` on it: the server offers the likely duplicates in a
+comment already, and you look at them and tell the person which one is the same, if any. Never close an issue as a
+duplicate on your own: mark it with `issue duplicate` only when the person says so.
 
 Claim an issue before you work on it, comment what you found or decided, then close it. A claim is Moebius's own and
 advisory: it is not a forge assignee, and it keeps nobody out.

@@ -76,12 +76,12 @@ pub enum IssueCommand {
     },
     /// One issue: its state, labels, claim, blockers and sub-issues.
     Show {
-        /// The id of the card.
-        card: i64,
+        /// The card: its id, or its key such as `WEB-24`.
+        card: CardRef,
     },
     /// Change an issue's title or body.
     Edit {
-        card: i64,
+        card: CardRef,
         #[arg(long)]
         title: Option<String>,
         #[arg(long)]
@@ -89,33 +89,33 @@ pub enum IssueCommand {
     },
     /// Close an issue: its card goes to Done and its blockers count as resolved.
     Close {
-        card: i64,
+        card: CardRef,
         #[arg(long, default_value = "")]
         reason: String,
     },
     /// Reopen a closed issue: its card goes back to the backlog.
     Reopen {
-        card: i64,
+        card: CardRef,
         #[arg(long, default_value = "")]
         reason: String,
     },
     /// Claim an issue so that no other session takes it; fails when somebody else claimed it.
     Claim {
-        card: i64,
+        card: CardRef,
         /// Who claims; the caller when left out.
         #[arg(long = "as")]
         by: Option<String>,
     },
     /// Release the claim on an issue; a claim made under a name is released with that name.
     Release {
-        card: i64,
+        card: CardRef,
         /// The name the issue was claimed under.
         #[arg(long = "as")]
         by: Option<String>,
     },
     /// Add and remove labels.
     Labels {
-        card: i64,
+        card: CardRef,
         #[arg(long)]
         add: Vec<String>,
         #[arg(long)]
@@ -123,7 +123,7 @@ pub enum IssueCommand {
     },
     /// Make an issue a sub-issue of the issue number `parent`, or of `none`.
     Parent {
-        card: i64,
+        card: CardRef,
         /// An issue number, or `none`.
         parent: String,
     },
@@ -132,18 +132,102 @@ pub enum IssueCommand {
         #[command(subcommand)]
         command: BlockerCommand,
     },
+    /// Close an issue as a duplicate of the issue number `original` (with a comment that says so), or take that link
+    /// off with `none`.
+    Duplicate {
+        card: CardRef,
+        /// An issue number, or `none`.
+        original: String,
+    },
+    /// Relate issues, so that each shows the other.
+    Related {
+        #[command(subcommand)]
+        command: RelatedCommand,
+    },
+    /// The open issues that look like this one, by their words; nothing is closed.
+    Similar { card: CardRef },
     /// Write a comment on an issue.
-    Comment { card: i64, body: String },
+    Comment { card: CardRef, body: String },
     /// The comments on an issue.
-    Comments { card: i64 },
+    Comments { card: CardRef },
+}
+
+/// A card as a command names it: its id, or its project's key and its number in the project (`WEB-24`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CardRef {
+    Id(i64),
+    Key(String, i64),
+}
+
+impl std::str::FromStr for CardRef {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, String> {
+        if let Ok(id) = text.parse() {
+            return Ok(Self::Id(id));
+        }
+        moebius_core::store::parse_card_key(text)
+            .map(|(key, number)| Self::Key(key, number))
+            .ok_or_else(|| format!("{text:?} is neither a card id nor a card key such as WEB-24"))
+    }
+}
+
+impl CardRef {
+    /// The card's id; a key is looked up on the server with `get`.
+    pub fn resolve(
+        &self,
+        get: &mut dyn FnMut(&str) -> Result<Value, String>,
+    ) -> Result<i64, String> {
+        match self {
+            Self::Id(id) => Ok(*id),
+            Self::Key(key, number) => get(&format!("/v1/cards/by-key/{key}-{number}"))?["id"]
+                .as_i64()
+                .ok_or_else(|| format!("the server named no card {key}-{number}")),
+        }
+    }
+}
+
+impl IssueCommand {
+    /// The card the command is about; none for the commands about a repository.
+    fn card(&self) -> Option<&CardRef> {
+        match self {
+            Self::Create { .. } | Self::List { .. } => None,
+            Self::Show { card }
+            | Self::Edit { card, .. }
+            | Self::Close { card, .. }
+            | Self::Reopen { card, .. }
+            | Self::Claim { card, .. }
+            | Self::Release { card, .. }
+            | Self::Labels { card, .. }
+            | Self::Parent { card, .. }
+            | Self::Comment { card, .. }
+            | Self::Comments { card }
+            | Self::Duplicate { card, .. }
+            | Self::Similar { card }
+            | Self::Related {
+                command: RelatedCommand::Add { card, .. } | RelatedCommand::Remove { card, .. },
+            }
+            | Self::Blocker {
+                command: BlockerCommand::Add { card, .. } | BlockerCommand::Remove { card, .. },
+            } => Some(card),
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
 pub enum BlockerCommand {
     /// Make the issue number `blocker` block the issue; refused when that makes a cycle.
-    Add { card: i64, blocker: i64 },
+    Add { card: CardRef, blocker: i64 },
     /// Stop the issue number `blocker` from blocking the issue.
-    Remove { card: i64, blocker: i64 },
+    Remove { card: CardRef, blocker: i64 },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum RelatedCommand {
+    /// Relate the issue to the issue number `related`.
+    Add { card: CardRef, related: i64 },
+    /// Stop the issue number `related` from being related to the issue.
+    Remove { card: CardRef, related: i64 },
 }
 
 /// The state an issue is filtered by.
@@ -237,7 +321,9 @@ const ISSUES: &[&str] = &[
 /// `issue ...`: creating, listing, showing and changing issues. `get` reads a route, for the commands that change
 /// part of what an issue has.
 pub fn issue(command: &IssueCommand, get: &mut dyn FnMut(&str) -> Result<Value, String>) -> Plan {
-    let card_path = |card: &i64, rest: &str| format!("/v1/cards/{card}{rest}");
+    // The card a command is about, found once: a key such as `WEB-24` is looked up on the server.
+    let card = command.card().map(|card| card.resolve(get)).transpose()?;
+    let card_path = |rest: &str| format!("/v1/cards/{}{rest}", card.unwrap_or_default());
     let reason = |reason: &String| json!({ "reason": reason });
     Ok(match command {
         IssueCommand::Create {
@@ -301,13 +387,17 @@ pub fn issue(command: &IssueCommand, get: &mut dyn FnMut(&str) -> Result<Value, 
                 Show::Table(ISSUES),
             )
         }
-        IssueCommand::Show { card } => (Request::get(card_path(card, "")), Show::Issue),
-        IssueCommand::Edit { card, title, body } => {
-            let current = get(&card_path(card, ""))?;
+        IssueCommand::Show { card: _ } => (Request::get(card_path("")), Show::Issue),
+        IssueCommand::Edit {
+            card: _,
+            title,
+            body,
+        } => {
+            let current = get(&card_path(""))?;
             let text = |field: &str| current[field].as_str().unwrap_or_default().to_string();
             (
                 Request::put(
-                    card_path(card, ""),
+                    card_path(""),
                     json!({
                         "title": title.clone().unwrap_or_else(|| text("title")),
                         "body": body.clone().unwrap_or_else(|| text("body")),
@@ -316,27 +406,37 @@ pub fn issue(command: &IssueCommand, get: &mut dyn FnMut(&str) -> Result<Value, 
                 Show::Object,
             )
         }
-        IssueCommand::Close { card, reason: why } => (
-            Request::post(card_path(card, "/close"), reason(why)),
+        IssueCommand::Close {
+            card: _,
+            reason: why,
+        } => (
+            Request::post(card_path("/close"), reason(why)),
             Show::Object,
         ),
-        IssueCommand::Reopen { card, reason: why } => (
-            Request::post(card_path(card, "/reopen"), reason(why)),
+        IssueCommand::Reopen {
+            card: _,
+            reason: why,
+        } => (
+            Request::post(card_path("/reopen"), reason(why)),
             Show::Object,
         ),
-        IssueCommand::Claim { card, by } => (
-            Request::post(card_path(card, "/claim"), json!({ "by": by })),
+        IssueCommand::Claim { card: _, by } => (
+            Request::post(card_path("/claim"), json!({ "by": by })),
             Show::Object,
         ),
-        IssueCommand::Release { card, by } => (
+        IssueCommand::Release { card: _, by } => (
             Request::delete_with(
-                card_path(card, "/claim"),
+                card_path("/claim"),
                 by.as_ref().map(|by| json!({ "by": by })),
             ),
             Show::Object,
         ),
-        IssueCommand::Labels { card, add, remove } => {
-            let current = get(&card_path(card, ""))?;
+        IssueCommand::Labels {
+            card: _,
+            add,
+            remove,
+        } => {
+            let current = get(&card_path(""))?;
             let mut labels: Vec<String> = current["labels"]
                 .as_array()
                 .into_iter()
@@ -350,35 +450,58 @@ pub fn issue(command: &IssueCommand, get: &mut dyn FnMut(&str) -> Result<Value, 
                 }
             }
             (
-                Request::put(card_path(card, "/labels"), json!({ "labels": labels })),
+                Request::put(card_path("/labels"), json!({ "labels": labels })),
                 Show::Object,
             )
         }
-        IssueCommand::Parent { card, parent } => (
+        IssueCommand::Parent { card: _, parent } => (
             Request::put(
-                card_path(card, "/parent"),
+                card_path("/parent"),
                 json!({ "parent": issue_number(parent)? }),
             ),
             Show::Object,
         ),
         IssueCommand::Blocker {
-            command: BlockerCommand::Add { card, blocker },
+            command: BlockerCommand::Add { card: _, blocker },
         } => (
-            Request::post(card_path(card, "/blockers"), json!({ "blocker": blocker })),
+            Request::post(card_path("/blockers"), json!({ "blocker": blocker })),
             Show::Raw,
         ),
         IssueCommand::Blocker {
-            command: BlockerCommand::Remove { card, blocker },
+            command: BlockerCommand::Remove { card: _, blocker },
         } => (
-            Request::delete(card_path(card, &format!("/blockers/{blocker}"))),
+            Request::delete(card_path(&format!("/blockers/{blocker}"))),
             Show::Raw,
         ),
-        IssueCommand::Comment { card, body } => (
-            Request::post(card_path(card, "/comments"), json!({ "body": body })),
+        IssueCommand::Duplicate { card: _, original } => match issue_number(original)? {
+            Some(original) => (
+                Request::put(card_path("/duplicate"), json!({ "original": original })),
+                Show::Object,
+            ),
+            None => (Request::delete(card_path("/duplicate")), Show::Object),
+        },
+        IssueCommand::Related {
+            command: RelatedCommand::Add { card: _, related },
+        } => (
+            Request::post(card_path("/related"), json!({ "related": related })),
+            Show::Raw,
+        ),
+        IssueCommand::Related {
+            command: RelatedCommand::Remove { card: _, related },
+        } => (
+            Request::delete(card_path(&format!("/related/{related}"))),
+            Show::Raw,
+        ),
+        IssueCommand::Similar { card: _ } => (
+            Request::get(card_path("/similar")),
+            Show::Table(&["number", "score", "title"]),
+        ),
+        IssueCommand::Comment { card: _, body } => (
+            Request::post(card_path("/comments"), json!({ "body": body })),
             Show::Object,
         ),
-        IssueCommand::Comments { card } => (
-            Request::get(card_path(card, "/comments")),
+        IssueCommand::Comments { card: _ } => (
+            Request::get(card_path("/comments")),
             Show::Table(&["at", "author", "body"]),
         ),
     })
@@ -390,7 +513,36 @@ pub fn show_issue(issue: &Value) -> String {
     let children = shown
         .as_object_mut()
         .and_then(|fields| fields.remove("children"));
+    let mut links = Vec::new();
+    for (field, title) in [
+        ("duplicate_of", "duplicate of"),
+        ("duplicates", "duplicates"),
+        ("related", "related"),
+    ] {
+        let found = shown
+            .as_object_mut()
+            .and_then(|fields| fields.remove(field));
+        // The original is one issue, the others are lists.
+        let found = match found {
+            Some(Value::Array(list)) => list,
+            Some(Value::Null) | None => Vec::new(),
+            Some(one) => vec![one],
+        };
+        if !found.is_empty() {
+            links.push((title, Value::Array(found)));
+        }
+    }
     let mut text = super::object(&shown);
+    for (title, found) in links {
+        text += &format!(
+            "\n{title}:\n{}",
+            super::table(&found, &["number", "state", "title"])
+                .lines()
+                .map(|line| format!("  {line}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    }
     if let Some(children) = children.filter(|c| c.as_array().is_some_and(|c| !c.is_empty())) {
         text += &format!(
             "\nsub-issues:\n{}",
@@ -535,6 +687,17 @@ pub fn show_board(snapshot: &Value, filter: Option<&str>) -> Result<String, Stri
 }
 
 /// The card `id` of the snapshot: where it is, its run and change, why it waits, and its body.
+/// How a card is named: its key and number in the project, and the number of its issue when it is on a forge or
+/// another number.
+fn names(card: &Value, forge: bool) -> String {
+    let (number, key) = (cell(&card["number"]), cell(&card["project_number"]));
+    match card["project_key"].as_str().filter(|k| !k.is_empty()) {
+        Some(project) if forge || number != key => format!("{project}-{key} (#{number})"),
+        Some(project) => format!("{project}-{key}"),
+        None => format!("#{number}"),
+    }
+}
+
 pub fn show_card(snapshot: &Value, id: i64) -> Result<String, String> {
     for board in snapshot["boards"].as_array().into_iter().flatten() {
         let Some(card) = board["cards"]
@@ -545,8 +708,13 @@ pub fn show_card(snapshot: &Value, id: i64) -> Result<String, String> {
         };
         let mut lines = vec![
             format!(
-                "card {id} #{} {}",
-                cell(&card["number"]),
+                "card {id} {} {}",
+                names(
+                    card,
+                    board["repository"]["forge"]
+                        .as_str()
+                        .is_some_and(|f| f != "none")
+                ),
                 cell(&card["title"])
             ),
             format!(
@@ -622,6 +790,23 @@ mod tests {
     use crate::cli::render;
     use crate::cli::tests::Probe;
     use clap::Parser;
+
+    #[test]
+    fn an_issue_shows_what_it_is_a_duplicate_of_and_what_is_related_to_it() {
+        let issue = json!({
+            "id": 7, "number": 3, "title": "Cache model downloads", "state": "closed",
+            "children": [],
+            "duplicate_of": {"id": 2, "number": 2, "title": "Cache the model downloads", "state": "open", "column": "Backlog"},
+            "duplicates": [],
+            "related": [{"id": 5, "number": 5, "title": "Mirror the models", "state": "open", "column": "Backlog"}],
+        });
+        let text = show_issue(&issue);
+        assert!(text.contains("duplicate of:\n"), "{text}");
+        assert!(text.contains("Cache the model downloads"), "{text}");
+        assert!(text.contains("related:\n"), "{text}");
+        assert!(text.contains("Mirror the models"), "{text}");
+        assert!(!text.contains("duplicates:"), "{text}");
+    }
 
     #[test]
     fn an_inbox_item_is_acted_on_as_its_kind_allows() {
@@ -810,6 +995,23 @@ mod tests {
             route(&["show", "7"]),
             ("GET".into(), "/v1/cards/7".into(), None)
         );
+        // A card key is looked up on the server, in any case, and the id found is the one the route has.
+        let found = json!({"id": 31});
+        assert_eq!(
+            issue_request(&["show", "web-24"], found.clone()),
+            ("GET".into(), "/v1/cards/31".into(), None)
+        );
+        assert_eq!(
+            issue_request(&["comment", "WEB-24", "Hi"], found.clone()).1,
+            "/v1/cards/31/comments"
+        );
+        assert_eq!(
+            issue_request(&["blocker", "add", "WEB-24", "3"], found).1,
+            "/v1/cards/31/blockers"
+        );
+        assert!("web24".parse::<CardRef>().is_err());
+        assert!("WEB-".parse::<CardRef>().is_err());
+        assert_eq!("12".parse(), Ok(CardRef::Id(12)));
         assert_eq!(
             route(&["close", "7", "--reason", "decided"]),
             (
@@ -864,6 +1066,31 @@ mod tests {
             route(&["blocker", "remove", "7", "3"]),
             ("DELETE".into(), "/v1/cards/7/blockers/3".into(), None)
         );
+        assert_eq!(
+            route(&["duplicate", "7", "#3"]),
+            (
+                "PUT".into(),
+                "/v1/cards/7/duplicate".into(),
+                Some(json!({"original": 3}))
+            )
+        );
+        assert_eq!(
+            route(&["duplicate", "7", "none"]),
+            ("DELETE".into(), "/v1/cards/7/duplicate".into(), None)
+        );
+        assert_eq!(
+            route(&["related", "add", "7", "3"]),
+            (
+                "POST".into(),
+                "/v1/cards/7/related".into(),
+                Some(json!({"related": 3}))
+            )
+        );
+        assert_eq!(
+            route(&["related", "remove", "7", "3"]),
+            ("DELETE".into(), "/v1/cards/7/related/3".into(), None)
+        );
+        assert_eq!(route(&["similar", "7"]).1, "/v1/cards/7/similar");
         assert_eq!(
             route(&["comment", "7", "Use a queue."]),
             (

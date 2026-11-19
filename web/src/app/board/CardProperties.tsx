@@ -31,6 +31,7 @@ import { MarkLabel, type StateMark } from "../../ui/page/MarkLabel";
 import { PageProperties, Property } from "../../ui/page/Properties";
 import { PriorityBars } from "../../ui/page/StatusIcon";
 import { AssigneesProperty } from "../people/AssigneesProperty";
+import { cardKey } from "./cardKey";
 import {
   type CardStatus,
   cardStatus,
@@ -84,7 +85,7 @@ function IssueLink({ card, onOpen }: { card: Card; onOpen: (card: Card) => void 
       onClick={() => onOpen(card)}
       className="min-h-7 cursor-pointer appearance-none rounded-control bg-transparent px-0 text-left text-sm text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
     >
-      {`#${card.number} ${card.title}`}
+      {`${cardKey(card)} ${card.title}`}
     </button>
   );
 }

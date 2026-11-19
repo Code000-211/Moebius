@@ -57,6 +57,7 @@ import { CardFocus } from "./CardFocus";
 import { CardMenu } from "./CardMenu";
 import { ColumnAdd, ColumnAddButton } from "./ColumnAdd";
 import { ColumnMark } from "./ColumnMark";
+import { cardKey, cardName } from "./cardKey";
 import { Dock } from "./Dock";
 import { type Decision, useDecisions } from "./decisions";
 import { ListLayout } from "./ListLayout";
@@ -353,7 +354,7 @@ export function BoardPage() {
     const status = cardStatus(card, inboxOf(inbox, card), board);
     return (
       <KanbanCardFace
-        name={`#${card.number} ${card.title}`}
+        name={`${cardKey(card)} ${card.title}`}
         isLive={status === "live"}
         className="cursor-grabbing"
       >
@@ -719,7 +720,7 @@ function BoardCard({
   return (
     <KanbanCard
       id={String(card.id)}
-      name={`#${card.number} ${card.title}`}
+      name={`${cardKey(card)} ${card.title}`}
       testId={`card-${card.number}`}
       column={column}
       dragDisabled={busy}
@@ -787,7 +788,7 @@ function CardContent({
   const detail = cardDetail(card, board.round_limit);
   return (
     <KanbanCardContent
-      displayId={`#${card.number}`}
+      displayId={cardName(card, board.repository.forge !== "none")}
       issueUrl={issueUrl(board.repository, card)}
       title={card.title}
       preview={hidden.has("description") ? null : card.body}
