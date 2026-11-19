@@ -34,7 +34,8 @@ async fn run_terminal(
     upgrade: WebSocketUpgrade,
 ) -> Result<Response, ApiError> {
     person_only(&by)?;
-    let axum::Json((worktree, slot)) = blocking(&state.app, move |app| app.open_shell(id)).await?;
+    let axum::Json((worktree, slot)) =
+        blocking(&state.app, move |app| app.open_shell(&by, id)).await?;
     Ok(upgrade.on_upgrade(move |socket| async move {
         crate::harness::terminal::serve(socket, &worktree, slot).await
     }))
@@ -49,7 +50,7 @@ async fn chat_tui(
     person_only(&by)?;
     let runs = state.runs.clone();
     let axum::Json((tui, mut slot)) =
-        blocking(&state.app, move |app| app.open_tui(runs, id)).await?;
+        blocking(&state.app, move |app| app.open_tui(&by, runs, id)).await?;
     Ok(upgrade.on_upgrade(move |socket| async move {
         let command = crate::harness::terminal::on_terminal(&tui.command);
         crate::harness::terminal::serve_command(socket, command, &mut slot).await;
@@ -71,7 +72,8 @@ async fn server_terminal(
         _ => PathBuf::from("."),
     };
     let work = dir.clone();
-    let axum::Json(slot) = blocking(&state.app, move |app| app.open_server_shell(&work)).await?;
+    let axum::Json(slot) =
+        blocking(&state.app, move |app| app.open_server_shell(&by, &work)).await?;
     Ok(upgrade.on_upgrade(move |socket| async move {
         crate::harness::terminal::serve(socket, &dir, slot).await
     }))
@@ -85,7 +87,7 @@ async fn repository_terminal(
 ) -> Result<Response, ApiError> {
     person_only(&by)?;
     let axum::Json((dir, slot)) =
-        blocking(&state.app, move |app| app.open_repository_shell(id)).await?;
+        blocking(&state.app, move |app| app.open_repository_shell(&by, id)).await?;
     Ok(upgrade.on_upgrade(move |socket| async move {
         crate::harness::terminal::serve(socket, &dir, slot).await
     }))
@@ -206,7 +208,7 @@ mod tests {
         let events = app.store.events(chat.id).unwrap();
         let opened: Vec<_> = events.iter().filter(|e| e.kind == "shell_opened").collect();
         assert_eq!(opened.len(), 1);
-        assert_eq!(opened[0].data, serde_json::json!({ "who": "person" }));
+        assert_eq!(opened[0].data, serde_json::json!({ "who": "person:owner" }));
         assert!(opened[0].at > 0);
         assert!(!format!("{events:?}").contains("moebius-42"));
 
@@ -349,7 +351,7 @@ mod tests {
         // That a shell was opened is a decision; what was typed is not stored.
         let opened = state.app.store.judgements("open_terminal").unwrap();
         assert_eq!(opened.len(), 1);
-        assert_eq!(opened[0].decider, "person");
+        assert_eq!(opened[0].decider, "person:owner");
         assert_eq!(opened[0].choice, "open_terminal");
 
         // Closing the socket kills the shell.
@@ -427,7 +429,7 @@ mod tests {
         let delta = |kind: &str, index: usize, text: &str| serde_json::json!({ "assistantMessageEvent": { "type": kind, "contentIndex": index, "delta": text } });
         assert_eq!(
             added[0],
-            ("tui_opened", serde_json::json!({ "who": "person" }))
+            ("tui_opened", serde_json::json!({ "who": "person:owner" }))
         );
         assert_eq!(
             added[1..8],

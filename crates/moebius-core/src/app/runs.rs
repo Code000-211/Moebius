@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use serde_json::json;
 
-use super::{App, AppError, PERSON, Result};
+use super::{App, AppError, Result};
 use crate::blobs::redact;
 use crate::board::{CardRuns, Runs, Tui};
 use crate::decide::Actor;
@@ -69,7 +69,7 @@ impl App {
     /// A person opens a shell in the worktree of `run_id`, which has one while the run is starting, running or
     /// waiting, and at most [`MAX_PER_RUN`] shells at a time. Returns the worktree and the shell's place among the
     /// run's. Only the opening is recorded, as a `shell_opened` event: never what is typed or printed.
-    pub fn open_shell(&self, run_id: i64) -> Result<(PathBuf, Slot)> {
+    pub fn open_shell(&self, by: &Actor, run_id: i64) -> Result<(PathBuf, Slot)> {
         let run = self.run(run_id)?;
         let worktree = match (run.status.as_str(), run.worktree) {
             ("starting" | "running" | "waiting", Some(worktree))
@@ -88,7 +88,11 @@ impl App {
                 "run {run_id} has {MAX_PER_RUN} terminals open already"
             ))
         })?;
-        self.record_run_event(run_id, "shell_opened", &json!({ "who": PERSON }))?;
+        self.record_run_event(
+            run_id,
+            "shell_opened",
+            &json!({ "who": self.author_of(by) }),
+        )?;
         Ok((worktree, slot))
     }
 
@@ -98,7 +102,12 @@ impl App {
     /// takes no message (see `say_in_chat`): the conversation goes on in the interface. Returns the program and the
     /// interface's place, to be dropped in that order once the program has ended; the opening is recorded as a
     /// `tui_opened` event.
-    pub fn open_tui(self: &Arc<Self>, runs: Arc<dyn Runs>, run_id: i64) -> Result<(Tui, Slot)> {
+    pub fn open_tui(
+        self: &Arc<Self>,
+        by: &Actor,
+        runs: Arc<dyn Runs>,
+        run_id: i64,
+    ) -> Result<(Tui, Slot)> {
         let run = self.running_chat(run_id)?;
         if run.status != "waiting" {
             return Err(AppError::Conflict(format!(
@@ -112,14 +121,14 @@ impl App {
             .ok_or_else(|| AppError::Conflict(format!("chat {run_id} has its terminal open")))?;
         let command = runs.tui(self, run_id).map_err(AppError::Invalid)?;
         let tui = Tui::new(command, runs, self.clone(), run_id);
-        self.record_run_event(run_id, "tui_opened", &json!({ "who": PERSON }))?;
+        self.record_run_event(run_id, "tui_opened", &json!({ "who": self.author_of(by) }))?;
         Ok((tui, slot))
     }
 
     /// A person opens a shell on the server, in `dir` (the directory of `moebius.toml`), at most [`MAX_PER_RUN`] at a
     /// time. There is no run to hold an event, so the opening is recorded as a decision of kind `open_terminal`: never
     /// what is typed or printed.
-    pub fn open_server_shell(&self, dir: &Path) -> Result<Slot> {
+    pub fn open_server_shell(&self, by: &Actor, dir: &Path) -> Result<Slot> {
         if !dir.is_dir() {
             return Err(AppError::Invalid(format!(
                 "{} is not a directory to open a shell in",
@@ -132,14 +141,14 @@ impl App {
             ))
         })?;
         let context = BTreeMap::from([("directory".to_string(), dir.display().to_string())]);
-        self.record_action(&Actor::Person, "open_terminal", None, None, context, "")?;
+        self.record_action(by, "open_terminal", None, None, context, "")?;
         Ok(slot)
     }
 
     /// A person opens a shell in the clone of repository `id`, at most [`MAX_PER_RUN`] at a time per repository.
     /// Returns the clone's directory and the shell's place. Like the server's shell it is recorded as an
     /// `open_terminal` decision, with the repository in its context.
-    pub fn open_repository_shell(&self, id: i64) -> Result<(PathBuf, Slot)> {
+    pub fn open_repository_shell(&self, by: &Actor, id: i64) -> Result<(PathBuf, Slot)> {
         let repository = self.repository(id)?;
         let dir = PathBuf::from(&repository.path);
         if !dir.is_dir() {
@@ -162,7 +171,7 @@ impl App {
             ("directory".to_string(), dir.display().to_string()),
             ("repository".to_string(), repository.name.clone()),
         ]);
-        self.record_action(&Actor::Person, "open_terminal", None, None, context, "")?;
+        self.record_action(by, "open_terminal", None, None, context, "")?;
         Ok((dir, slot))
     }
 }

@@ -218,6 +218,19 @@ pub struct App {
 }
 
 impl App {
+    /// The author of what `by` makes on a person's behalf: the person's own `person:<handle>`, and for an agent or a
+    /// script the first owner's, since they act for the organisation's person. Without a first owner (a store nobody
+    /// migrated) it is [`PERSON`].
+    pub fn author_of(&self, by: &crate::decide::Actor) -> String {
+        if by.is_person() && !matches!(by, crate::decide::Actor::Person) {
+            return by.decider();
+        }
+        match self.store.person_by_handle(crate::store::FIRST_OWNER) {
+            Ok(Some(owner)) => owner.author(),
+            _ => PERSON.to_string(),
+        }
+    }
+
     /// The core over `store`, with its repositories under `data_dir` and the bundled forges.
     pub fn new(store: Arc<Store>, host: Arc<Host>, data_dir: &Path) -> Self {
         let repos = Repos::new(data_dir);
