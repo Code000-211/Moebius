@@ -221,9 +221,13 @@ describe("a chat longer than the page opens with", () => {
 
     // The person scrolls up. Reaching the top of the conversation reads what is above it, with nothing to press.
     await thread().hover();
-    await page.mouse.wheel(0, -2_000);
-    await page.mouse.wheel(0, -100_000);
-    await expect.poll(() => history().length).toBe(2);
+    // The wheel is turned again until the read happens: a turn made before the chat settled at its end is lost.
+    await expect
+      .poll(async () => {
+        await page.mouse.wheel(0, -100_000);
+        return history().length;
+      })
+      .toBe(2);
     // The page above stops below the oldest message held, and the conversation does not move down to make room
     // for what arrives there: the turn being read stays where it was, although the turn at the top of the list
     // took in the beginning of its answer from this page and changed its name.
