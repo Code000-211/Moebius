@@ -2,7 +2,7 @@
 
 The web app is the front end of Moebius ([ADR 0017](../docs/adr/0017-the-desktop-app-is-removed.md)): React, TypeScript and Tailwind, built into `dist/` and served
 by the Moebius server at `/`. It talks to the server only through the [desktop API](../docs/reference/desktop-api.md),
-and signs in with a cookie (`POST /v1/session`). The shell is sign-in, sidebar, command bar,
+and signs in with a cookie (`POST /v1/session`). The shell is sign-in, sidebar, command palette,
 connection banner and live data; every page the sidebar lists has one, and `app/shell/Placeholder.tsx` is left for an
 entry of `app/pages.ts` that has no route of its own yet.
 
@@ -11,7 +11,7 @@ entry of `app/pages.ts` that has no route of its own yet.
 | Path | What it holds |
 |---|---|
 | `src/main.tsx` | The entry: takes `?login=` out of the address, sets the colour theme, then starts the router and the query cache. |
-| `src/app/` | `App.tsx` (the gate: sign-in, unreachable, shell), `routes.tsx`, `pages.ts` (the sidebar's entries, and `SETTINGS_PAGES`, the pages the sidebar shows once Settings is chosen), `SignIn.tsx` and `shell/` (sidebar, command bar, banner, page frame). |
+| `src/app/` | `App.tsx` (the gate: sign-in, unreachable, shell), `routes.tsx`, `pages.ts` (the sidebar's entries, and `SETTINGS_PAGES`, the pages the sidebar shows once Settings is chosen), `SignIn.tsx` and `shell/` (sidebar, command palette, banner, page frame). |
 | `src/app/board/` | The board page: `BoardPage.tsx` (columns, drag and drop, notices), `model.ts` (the logic: columns, filters, the stacks of sub-issues under their parent, status, what a drop means, card words; tested in `model.test.ts`), `Dock.tsx` (the inspector), `decisions.ts` (approve, merge, send back, retry, unblock), `CardMenu.tsx` (the ⋯ menu of a card, on the board and in the dock: Add a sub-issue…, Move to another parent…, Block… or Unblock, and Delete…), `CardDialogs.tsx` (the questions that block, delete and move below another parent ask; tested in `CardMenu.test.tsx` and `CardDialogs.test.tsx`), `IssueSections.tsx` and `Row.tsx` (the issue tracker of the dock: parent and sub-issues, blockers, labels, claim, state, comments and the edit of the issue; tested in `IssueSections.test.tsx`), `view.ts` (what the board offers the shared filter bar: its fields and their values, the groups, sorts and card fields of Display, and `listGroups`, the rows of the list layout; tested in `view.test.ts`), `ListLayout.tsx` (the list layout: the cards that pass the filters as rows under a heading for each group), `NewIssueDialog.tsx` (with its parent) and `ScriptPage.tsx`, which edits a column's script and saves it as a commit; `ColumnMark.tsx` gives each column its status mark; the dock shows the diff of a card's change, and a Terminal button opens a shell in the repository's clone. |
 | `src/app/runs/` | The run view (`/runs/:id`): status, agent, the card it links back to, the run's events drawn with the chat's entries and steering (`POST /v1/runs/{id}/steer`), a terminal in its worktree, and its changes. |
 | `src/app/terminal/`, `src/app/ports/` | The Terminal page (a shell on the server) and the Ports page (`ports.ts` is the logic, tested in `ports.test.ts`). |
@@ -112,7 +112,7 @@ copied component was rebuilt on the tokens of `theme.css`, borderless at the rad
 of its layer instead of an outline; `react-i18next`, Tauri helpers and `lucide-react` are
 gone (the icons are Phosphor's, the text plain English); `cn` merges Tailwind classes itself. Nothing that reports to
 a service (PostHog, Sentry) is copied. Vibe Kanban's `CommandBar` is not copied: it is made of issues, branches and priorities
-that Moebius does not have, so `app/shell/CommandBar.tsx` builds the page switcher from its `Command` primitives. The
+that Moebius does not have, so `app/shell/CommandBar.tsx` builds the palette (the commands of the card in focus, recent places, search by kind) from its `Command` primitives. The
 board copies `KanbanBoard`, `KanbanCardContent`, `KanbanIssuePanel`, `PrBadge` and `RunningDots`; its `KanbanBadge` is
 gone, because a state in a word is the shared `ui/page/Status` pill on every page. `KanbanBoard` drags with
 `@dnd-kit/core` instead of `@hello-pangea/dnd` (pointer and keyboard; the keyboard moves to the next column even when it is scrolled out of view, a drag overlay shows the card, announcements name card and column); it loses its

@@ -37,11 +37,13 @@ const DialogContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
     hideCloseButton?: boolean;
+    /** Classes of the scrim behind the sheet, for one that blurs the page. */
+    overlayClassName?: string;
   }
->(({ className, children, hideCloseButton = false, ...props }, ref) => {
+>(({ className, children, hideCloseButton = false, overlayClassName, ...props }, ref) => {
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         ref={ref}
         // Radix hides the page behind the sheet but does not say so in the dialog's own role; `modalIsOpen` looks for it.
