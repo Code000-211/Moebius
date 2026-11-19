@@ -383,6 +383,83 @@ describe("live data", () => {
   });
 });
 
+describe("the keyboard", () => {
+  it.skipIf(usesRealServer)(
+    "makes, assigns and moves a card with the keyboard alone, and shows each key in the palette",
+    async () => {
+      await fresh();
+      await openBoard();
+      // Make: C opens the form, the title is typed and Enter creates the card.
+      await page.keyboard.press("c");
+      const form = page.getByRole("dialog", { name: "New issue" });
+      await form.getByLabel("Title").waitFor();
+      await page.keyboard.type("Typed from the keys");
+      await page.keyboard.press("Enter");
+      await status('Created "Typed from the keys"').waitFor();
+      await page.keyboard.press("Escape");
+      await form.waitFor({ state: "detached" });
+
+      // Open the card that waits for approval, assign it and move it to Not started, all with keys.
+      await card(2).focus();
+      await page.keyboard.press("Enter");
+      await dock().getByText("Approve: Fix the login redirect").waitFor();
+      // The focus is on the card in the dock, not in a field, so its keys are the page's.
+      await page.locator("body").press("a");
+      await status("Assigning #2").or(status("Unassigning #2")).first().waitFor();
+      await expect
+        .poll(() => fake().requests.some((r) => r.path === "/v1/cards/2/claim"))
+        .toBe(true);
+      await page.keyboard.press("Control+k");
+      const options = page.getByRole("option");
+      expect(await options.filter({ hasText: "Unassign" }).locator("kbd").textContent()).toBe("a");
+      expect(
+        await options.filter({ hasText: "Move to Not started" }).locator("kbd").textContent(),
+      ).toBe("n");
+      expect(await options.filter({ hasText: "New issue" }).locator("kbd").textContent()).toBe("c");
+      await page.keyboard.press("Escape");
+      await page.getByRole("dialog").waitFor({ state: "detached" });
+      await page.locator("body").press("n");
+      await status("Approved #2").waitFor();
+      await column("Not started").getByTestId("card-2").waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)("does not act on a key typed in a field", async () => {
+    await fresh();
+    await openBoard();
+    await page.goto(`${server.url}/board/1?card=2`);
+    await dock().getByText("Approve: Fix the login redirect").waitFor();
+    const before = fake().requests.length;
+    await dock().getByLabel("Write a comment").fill("");
+    await dock().getByLabel("Write a comment").press("a");
+    await dock().getByLabel("Write a comment").press("n");
+    await dock().getByLabel("Write a comment").press("?");
+    expect(await dock().getByLabel("Write a comment").inputValue()).toBe("an?");
+    expect(
+      fake()
+        .requests.slice(before)
+        .filter((r) => r.method === "POST"),
+    ).toEqual([]);
+    expect(page.url()).not.toContain("/shortcuts");
+  });
+
+  it("lists every shortcut on a page that ? opens", async () => {
+    await fresh();
+    await openBoard();
+    await page.locator("body").press("?");
+    await page.getByRole("heading", { name: "Keyboard shortcuts", level: 1 }).waitFor();
+    expect(page.url()).toContain("/shortcuts");
+    for (const label of [
+      "New issue",
+      "Assign to me, or unassign",
+      "Move to Not started: approve the issue",
+      "Move to Done: merge the change",
+    ]) {
+      await page.getByText(label, { exact: true }).waitFor();
+    }
+  });
+});
+
 describe("the decisions", () => {
   it.skipIf(usesRealServer)(
     "approves an issue from the dock and moves the card to Not started",

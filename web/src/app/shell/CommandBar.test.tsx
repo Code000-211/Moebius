@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CommandBar } from "./CommandBar";
 import { PaletteFocusFor, PaletteFocusProvider } from "./palette/focus";
 import type { PaletteCommand } from "./palette/model";
+import { NEW_ISSUE_KEY, SHORTCUTS_KEY } from "./palette/shortcuts";
 
 afterEach(() => {
   cleanup();
@@ -98,6 +99,16 @@ describe("the palette", () => {
     expect(screen.getByText("#7 Focus card")).toBeTruthy();
     fireEvent.click(options[0] as HTMLElement);
     expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the key of the commands it always offers, the same as the shortcuts page lists", async () => {
+    open();
+    await screen.findByRole("combobox");
+    const keyOf = (name: string) =>
+      screen.getAllByRole("option", { name: new RegExp(name) })[0]?.querySelector("kbd")
+        ?.textContent;
+    expect(keyOf("New issue")).toBe(NEW_ISSUE_KEY);
+    expect(keyOf("Keyboard shortcuts")).toBe(SHORTCUTS_KEY);
   });
 
   it("keeps the commands of the focus while they match and finds the rest by kind", async () => {

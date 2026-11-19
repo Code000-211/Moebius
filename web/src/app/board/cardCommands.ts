@@ -6,6 +6,7 @@
  */
 import type { Card, InboxItem } from "../../api/types/board";
 import type { PaletteCommand } from "../shell/palette/model";
+import { cardKey } from "../shell/palette/shortcuts";
 import { COLUMNS, dropRule, isHeld, isLive } from "./model";
 
 /** What the page does for a card; each is its own way of asking, answering and reading the board again. */
@@ -32,23 +33,39 @@ export function cardCommands(
 ): PaletteCommand[] {
   const commands: PaletteCommand[] = [
     card.claimed_by
-      ? { id: "unassign", label: "Unassign", key: "a", run: () => act.release(card) }
-      : { id: "assign", label: "Assign to me", key: "a", run: () => act.claim(card) },
+      ? {
+          id: "unassign",
+          label: "Unassign",
+          key: cardKey("unassign"),
+          run: () => act.release(card),
+        }
+      : { id: "assign", label: "Assign to me", key: cardKey("assign"), run: () => act.claim(card) },
     isHeld(card)
-      ? { id: "unblock", label: "Unblock", key: "b", run: () => act.unblock(card) }
-      : { id: "block", label: "Block…", key: "b", opensDialog: true, run: () => act.block(card) },
+      ? { id: "unblock", label: "Unblock", key: cardKey("unblock"), run: () => act.unblock(card) }
+      : {
+          id: "block",
+          label: "Block…",
+          key: cardKey("block"),
+          opensDialog: true,
+          run: () => act.block(card),
+        },
   ];
   if (isLive(card)) {
-    commands.push({ id: "stop", label: "Stop run", key: "x", run: () => act.stop(card) });
+    commands.push({
+      id: "stop",
+      label: "Stop run",
+      key: cardKey("stop"),
+      run: () => act.stop(card),
+    });
   }
   commands.push(
     card.closed
-      ? { id: "reopen", label: "Reopen issue", key: "c", run: () => act.reopen(card) }
-      : { id: "close", label: "Close issue", key: "c", run: () => act.close(card) },
+      ? { id: "reopen", label: "Reopen issue", key: cardKey("reopen"), run: () => act.reopen(card) }
+      : { id: "close", label: "Close issue", key: cardKey("close"), run: () => act.close(card) },
     {
       id: "sub-issue",
       label: "Add a sub-issue…",
-      key: "s",
+      key: cardKey("sub-issue"),
       opensDialog: true,
       run: () => act.addSubIssue(card),
     },
@@ -58,14 +75,17 @@ export function cardCommands(
     const drop = dropRule(card, column, item);
     const label = `Move to ${column}`;
     const id = `move-${column}`;
-    if (drop.kind === "approve") commands.push({ id, label, run: () => act.approve(card) });
-    else if (drop.kind === "retry") commands.push({ id, label, run: () => act.retry(card) });
+    if (drop.kind === "approve")
+      commands.push({ id, label, key: cardKey(id), run: () => act.approve(card) });
+    else if (drop.kind === "retry")
+      commands.push({ id, label, key: cardKey(id), run: () => act.retry(card) });
     else if (drop.kind === "merge")
-      commands.push({ id, label, run: () => act.merge(card, drop.change) });
+      commands.push({ id, label, key: cardKey(id), run: () => act.merge(card, drop.change) });
     else if (drop.kind === "reject")
       commands.push({
         id,
         label: `Send back to ${column}`,
+        key: cardKey(id),
         run: () => act.reject(card, drop.change),
       });
   }

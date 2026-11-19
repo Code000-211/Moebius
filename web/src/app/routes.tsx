@@ -37,6 +37,9 @@ const InboxPage = lazy(() =>
 const PluginSettingsPage = lazy(() =>
   import("./plugins/PluginSettingsPage").then((all) => ({ default: all.PluginSettingsPage })),
 );
+const ShortcutsPage = lazy(() =>
+  import("./shortcuts/ShortcutsPage").then((all) => ({ default: all.ShortcutsPage })),
+);
 const PortsPage = lazy(() =>
   import("./ports/PortsPage").then((all) => ({ default: all.PortsPage })),
 );
@@ -95,6 +98,7 @@ const PAGES_BUILT = new Set([
   "plugin-settings",
   "terminal",
   "ports",
+  "shortcuts",
   "inbox",
   "fleet",
   "projects",
@@ -132,6 +136,7 @@ export const routes = [
       { path: "chat", element: <ChatPage /> },
       { path: "terminal", element: <TerminalPage /> },
       { path: "ports", element: <PortsPage /> },
+      { path: "shortcuts", element: <ShortcutsPage /> },
       { path: "automations", element: <AutomationsPage /> },
       { path: "rules", element: <RulesPage /> },
       { path: "retro", element: <RetroPage /> },

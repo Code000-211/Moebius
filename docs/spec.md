@@ -263,6 +263,10 @@ A React app (`web/`) served by the server and built to [`docs/design-web.md`](de
 - **Ports** (Setup): the ports that runs, chats and terminals on the server listen on (read from `/proc`, Linux only,
   announced as `port_opened` and `port_closed`), with the `ssh -L` command that forwards one to this machine; a client
   that carries connections itself uses `GET /v1/ports/{port}/tunnel`.
+- **Keyboard shortcuts** (Setup, opened with `?`): every shortcut of the web app, from the list the palette shows its keys
+  from. Single keys do the common things on the card open in the dock (assign `A`, block `B`, stop `X`, close `D`,
+  sub-issue `S`, and the moves `N`, `I`, `M`), `C` makes an issue, `Ctrl K` opens the palette; none acts while a field,
+  a menu or a dialog has the keys.
 - **Inbox**: everything that needs the person, one column, filterable.
 - **Chat**: a conversation with an agent, the Moebius agent by default, with code highlighted, tool calls with their
   checks, and the changes the agent offers.

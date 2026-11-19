@@ -22,9 +22,11 @@ import {
   CommandItem,
   CommandList,
 } from "../../ui/components/Command";
+import { useNewIssue } from "../board/NewIssueHost";
 import { boardPath, type Group, PAGES } from "../pages";
 import { usePaletteFocus } from "./palette/focus";
 import { matches, type PaletteCommand, readRecent } from "./palette/model";
+import { NEW_ISSUE_KEY, SHORTCUTS_KEY } from "./palette/shortcuts";
 
 const GROUPS: readonly Group[] = ["", "Projects", "Build", "Improve", "Setup"];
 /** Cards shown for a query: the list is for choosing, and a longer one is a reason to type more. */
@@ -49,6 +51,7 @@ export function CommandBar({
   const navigate = useNavigate();
   const here = useLocation().pathname;
   const focus = usePaletteFocus();
+  const newIssue = useNewIssue();
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot(), enabled: open });
   const [query, setQuery] = useState("");
   // Set by a command that opens a dialog: that dialog takes the focus, and handing it back here would steal it.
@@ -71,6 +74,22 @@ export function CommandBar({
     command.run();
   }
 
+  // The commands that work wherever a person is, with their keys: the same keys the shortcuts page lists.
+  const everywhere: PaletteCommand[] = [
+    {
+      id: "new-issue",
+      label: "New issue",
+      key: NEW_ISSUE_KEY,
+      opensDialog: true,
+      run: () => newIssue(),
+    },
+    {
+      id: "shortcuts",
+      label: "Keyboard shortcuts",
+      key: SHORTCUTS_KEY,
+      run: () => void navigate("/shortcuts"),
+    },
+  ].filter((c) => matches(query, `${c.label} command`));
   const commands = (focus?.commands ?? []).filter((c) =>
     matches(query, `${c.label} command ${focus?.label ?? ""}`),
   );
@@ -123,6 +142,20 @@ export function CommandBar({
           {commands.length > 0 && focus && (
             <CommandGroup heading={focus.label}>
               {commands.map((command) => (
+                <CommandItem
+                  key={command.id}
+                  value={`command ${command.id}`}
+                  onSelect={() => run(command)}
+                >
+                  <span>{command.label}</span>
+                  {command.key && <KeyHint>{command.key}</KeyHint>}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+          {everywhere.length > 0 && (
+            <CommandGroup heading="Commands">
+              {everywhere.map((command) => (
                 <CommandItem
                   key={command.id}
                   value={`command ${command.id}`}
