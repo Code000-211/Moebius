@@ -19,7 +19,7 @@ use std::sync::{Mutex, MutexGuard};
 use crate::app::{App, AppError, Result};
 use crate::bus::Event;
 use crate::decide::Actor;
-use crate::repos::{Repos, kept};
+use crate::repos::{Repos, git, kept};
 
 pub use pages::{PageInfo, PageView, Version};
 
@@ -87,6 +87,9 @@ impl Wiki {
         let repos = app.repos.clone();
         kept::clone_unless_there(app, &repos, url, path)
             .map_err(|e| format!("cannot clone the wiki: {e}"))?;
+        // A link committed to the wiki is checked out as a plain file from now on, so it never leads out of the clone.
+        git(path, &["config", "core.symlinks", "false"])
+            .map_err(|e| format!("cannot set up the wiki's clone: {e}"))?;
         Ok(Self {
             path: path.to_path_buf(),
             url: url.to_string(),
@@ -115,6 +118,21 @@ impl Wiki {
             app.bus.publish(Event::WikiChanged { commit });
         }
         Ok(())
+    }
+
+    /// The page file `file` in the clone, refused when it or a folder above it is a link, which could lead out of the
+    /// clone (a clone checked out before links were turned off may still hold one).
+    fn inside(&self, file: &str) -> Result<PathBuf> {
+        let mut at = self.path.clone();
+        for part in file.split('/') {
+            at.push(part);
+            if std::fs::symlink_metadata(&at).is_ok_and(|meta| meta.file_type().is_symlink()) {
+                return Err(AppError::Invalid(format!(
+                    "{file} goes through a link, which the wiki does not follow"
+                )));
+            }
+        }
+        Ok(at)
     }
 
     fn turn(&self) -> MutexGuard<'_, ()> {
@@ -159,6 +177,11 @@ fn file_of(path: &str) -> Result<String> {
         }
     }
     Ok(format!("{path}.md"))
+}
+
+/// `file` as a pathspec git takes literally, so that a name with `[` in it names that file alone.
+fn literal(file: &str) -> String {
+    format!(":(literal){file}")
 }
 
 /// The page a file of the clone is, if it is one: a Markdown file whose name is a page name.

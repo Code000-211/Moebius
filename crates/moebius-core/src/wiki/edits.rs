@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use super::pages::name_of;
-use super::{Author, PageView, Wiki, file_of, project_key};
+use super::{Author, PageView, Wiki, file_of, literal, project_key};
 use crate::app::{App, AppError, Result};
 use crate::bus::Event;
 use crate::repos::kept;
@@ -30,7 +30,7 @@ impl Wiki {
         {
             let _turn = self.turn();
             self.follow(app)?;
-            let target = self.path.join(&file);
+            let target = self.inside(&file)?;
             let verb = if target.is_file() { "Update" } else { "Add" };
             let message = message_or(message, || format!("{verb} {path}"));
             let write = || {
@@ -39,7 +39,7 @@ impl Wiki {
                 }
                 Ok(std::fs::write(&target, &text)?)
             };
-            self.commit(app, by, &[&file], &message, write)?;
+            self.commit(app, by, &[&literal(&file)], &message, write)?;
         }
         self.page(path, None)
     }
@@ -55,7 +55,7 @@ impl Wiki {
         {
             let _turn = self.turn();
             self.follow(app)?;
-            let (source, target) = (self.path.join(&old), self.path.join(&new));
+            let (source, target) = (self.inside(&old)?, self.inside(&new)?);
             if !source.is_file() {
                 return Err(AppError::NotFound(format!("page {from}")));
             }
@@ -76,7 +76,7 @@ impl Wiki {
                 remove_empty_folders(&self.path, &source);
                 Ok(())
             };
-            self.commit(app, by, &[&old, &new], &message, write)?;
+            self.commit(app, by, &[&literal(&old), &literal(&new)], &message, write)?;
         }
         self.page(to, None)
     }
@@ -86,7 +86,7 @@ impl Wiki {
         let file = file_of(path)?;
         let _turn = self.turn();
         self.follow(app)?;
-        let target = self.path.join(&file);
+        let target = self.inside(&file)?;
         if !target.is_file() {
             return Err(AppError::NotFound(format!("page {path}")));
         }
@@ -96,7 +96,7 @@ impl Wiki {
             remove_empty_folders(&self.path, &target);
             Ok(())
         };
-        self.commit(app, by, &[&file], &message, write)
+        self.commit(app, by, &[&literal(&file)], &message, write)
     }
 
     /// Commits what `write` does to `files` as `by` and pushes it, telling the bus. The caller holds the turn.
@@ -373,6 +373,71 @@ mod tests {
             wiki.history("Never").unwrap_err(),
             AppError::NotFound(_)
         ));
+    }
+
+    #[test]
+    fn a_name_with_brackets_is_that_page_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let (app, wiki, _origin) = opened(dir.path());
+        wiki.write_page(&app, &ada(), "ab", "Plain\n", None)
+            .unwrap();
+        wiki.write_page(&app, &ada(), "a[b]", "Bracketed\n", None)
+            .unwrap();
+        wiki.write_page(&app, &ada(), "ab", "Plain again\n", None)
+            .unwrap();
+        let history = wiki.history("a[b]").unwrap();
+        assert_eq!(history.len(), 1, "{history:?}");
+        let page = wiki.page("a[b]", None).unwrap();
+        assert_eq!(page.version.message, "Add a[b]");
+        assert!(
+            wiki.page("a[b]", Some(&wiki.history("ab").unwrap()[0].commit))
+                .is_err()
+        );
+        assert!(matches!(
+            wiki.history("x[y]").unwrap_err(),
+            AppError::NotFound(_)
+        ));
+        wiki.write_page(&app, &ada(), "xy", "x\n", None).unwrap();
+        assert!(wiki.history("x[y]").is_err());
+        wiki.delete_page(&app, &ada(), "a[b]").unwrap();
+        assert_eq!(wiki.page("ab", None).unwrap().text, "Plain again\n");
+    }
+
+    #[cfg(unix)] // Links are made with the Unix call; Windows checks links out as files anyway.
+    #[test]
+    fn a_link_never_leads_out_of_the_wiki() {
+        let dir = tempfile::tempdir().unwrap();
+        let (app, wiki, origin) = opened(dir.path());
+        let secret = dir.path().join("secret.toml");
+        std::fs::write(&secret, "token = \"hush\"\n").unwrap();
+        let outside = dir.path().join("outside");
+        std::fs::create_dir(&outside).unwrap();
+
+        // A link pushed to origin is checked out as a plain file holding where it pointed.
+        push_from_elsewhere(dir.path(), &origin, "Start.md", "Start\n");
+        let other = dir.path().join("elsewhere");
+        std::os::unix::fs::symlink(&secret, other.join("leak.md")).unwrap();
+        git(&other, &["add", "-A"]).unwrap();
+        git(&other, &["commit", "--quiet", "-m", "Link"]).unwrap();
+        git(&other, &["push", "--quiet", "origin", "HEAD:main"]).unwrap();
+        wiki.refresh(&app).unwrap();
+        let leak = wiki.page("leak", None).unwrap();
+        assert!(!leak.text.contains("hush"), "{}", leak.text);
+
+        // A link in a clone made before links were turned off is neither listed, read nor written through.
+        std::os::unix::fs::symlink(&secret, wiki.path.join("old.md")).unwrap();
+        std::os::unix::fs::symlink(&outside, wiki.path.join("dir")).unwrap();
+        assert!(wiki.pages().unwrap().iter().all(|p| p.path != "old"));
+        assert!(wiki.page("old", None).is_err());
+        assert!(wiki.write_page(&app, &ada(), "old", "x\n", None).is_err());
+        assert!(wiki.write_page(&app, &ada(), "dir/x", "x\n", None).is_err());
+        assert!(wiki.move_page(&app, &ada(), "Start", "dir/Start").is_err());
+        assert!(wiki.delete_page(&app, &ada(), "old").is_err());
+        assert_eq!(
+            std::fs::read_to_string(&secret).unwrap(),
+            "token = \"hush\"\n"
+        );
+        assert!(std::fs::read_dir(&outside).unwrap().next().is_none());
     }
 
     #[test]

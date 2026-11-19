@@ -3,7 +3,7 @@
 
 use serde::Serialize;
 
-use super::{EMAIL_DOMAIN, Wiki, file_of, page_of};
+use super::{EMAIL_DOMAIN, Wiki, file_of, literal, page_of};
 use crate::app::{AppError, Result};
 use crate::repos::{git, kept};
 
@@ -55,7 +55,12 @@ impl Wiki {
             &self.path,
             &["-c", "core.quotePath=false", "ls-files", "--", "*.md"],
         )?;
-        let mut pages: Vec<PageInfo> = files.lines().filter_map(page_of).map(info).collect();
+        let mut pages: Vec<PageInfo> = files
+            .lines()
+            .filter(|file| self.inside(file).is_ok())
+            .filter_map(page_of)
+            .map(info)
+            .collect();
         pages.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(pages)
     }
@@ -67,7 +72,7 @@ impl Wiki {
         let history = self.history_of(&file)?;
         let version = match at {
             None => {
-                if !self.path.join(&file).is_file() {
+                if !self.inside(&file)?.is_file() {
                     return Err(AppError::NotFound(format!("page {path}")));
                 }
                 history
@@ -83,7 +88,7 @@ impl Wiki {
                 .ok_or_else(|| AppError::NotFound(format!("version {at} of page {path}")))?,
         };
         let text = match at {
-            None => std::fs::read_to_string(self.path.join(&file))?,
+            None => std::fs::read_to_string(self.inside(&file)?)?,
             Some(_) => {
                 let blob = format!("{}:{}.md", version.commit, version.path);
                 git_text(&self.path, &blob).map_err(|_| {
@@ -126,7 +131,7 @@ impl Wiki {
                 "--name-only",
                 "--format=%x1e%H%x1f%an%x1f%ae%x1f%at%x1f%s",
                 "--",
-                file,
+                &literal(file),
             ],
         )?;
         Ok(log.split('\x1e').filter_map(version).collect())

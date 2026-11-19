@@ -679,7 +679,9 @@ organisation's pages are at the top; a project's are in `projects/<key>/`, the f
 and has no control character and none of `\ : * ? " < > |`; under `projects/` a page is in the folder of a key, and
 writing or moving a page there needs a project with that key. In a URL, the path is the rest of it, with each part
 percent-encoded: `/v1/wiki/pages/Team/On%20call`. Files of the repository that are not `.md`, or whose path is not a page's,
-are left alone and not listed.
+are left alone and not listed. The clone checks a link committed to the repository out as a plain file
+(`core.symlinks` is false), and a page whose path goes through a link is not listed and is refused (`422`), so no route
+reads or writes outside the clone.
 
 An edit is a commit on the clone's checked-out branch with the person as its author (`<name> <<handle>@moebius>`;
 Moebius is the committer), made after the clone has followed `origin` and then pushed to `origin`. When the push fails,
