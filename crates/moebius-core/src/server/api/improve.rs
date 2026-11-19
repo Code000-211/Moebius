@@ -235,8 +235,14 @@ async fn retry_retro(
     .await
 }
 
-async fn retros(State(state): State<ApiState>) -> Result<axum::Json<Vec<RetroSummary>>, ApiError> {
-    blocking(&state.app, |app| retro::summaries(&app.store)).await
+async fn retros(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+) -> Result<axum::Json<Vec<RetroSummary>>, ApiError> {
+    blocking(&state.app, move |app| {
+        retro::summaries(app, &app.sight(&by)?)
+    })
+    .await
 }
 
 async fn get_retro(

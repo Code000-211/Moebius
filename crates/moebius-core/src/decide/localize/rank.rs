@@ -43,9 +43,16 @@ pub struct Past {
 }
 
 /// The earlier cards of the repository `repository` that have a known outcome, newest first, without the card
-/// `except`.
+/// `except`. A card of a private project is used only for a card of the same project (`except` names it), so that a
+/// hint never names the id or the files of a card its reader may not see; as with a lesson, what a private project
+/// taught is not shown on another board.
 pub fn past(store: &Store, repository: &str, except: Option<i64>) -> Result<Vec<Past>> {
     let mut past = Vec::new();
+    let asking = match except {
+        Some(id) => store.card(id)?.map(|card| card.project_id),
+        None => None,
+    };
+    let mut private = BTreeMap::new();
     for judgement in store.judgements_with_outcome(KIND, 300)? {
         if judgement.card_id.is_none() || judgement.card_id == except {
             continue;
@@ -68,6 +75,26 @@ pub fn past(store: &Store, repository: &str, except: Option<i64>) -> Result<Vec<
         };
         if context.get("repository").map(String::as_str) != Some(repository) {
             continue;
+        }
+        if let Some(card) = judgement
+            .card_id
+            .map(|id| store.card(id))
+            .transpose()?
+            .flatten()
+        {
+            let hidden = match private.get(&card.project_id) {
+                Some(hidden) => *hidden,
+                None => {
+                    let hidden = store
+                        .project(card.project_id)?
+                        .is_some_and(|project| project.private);
+                    private.insert(card.project_id, hidden);
+                    hidden
+                }
+            };
+            if hidden && asking != Some(card.project_id) {
+                continue;
+            }
         }
         let text = format!(
             "{}\n{}",

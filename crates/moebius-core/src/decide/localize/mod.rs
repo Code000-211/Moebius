@@ -426,6 +426,63 @@ mod tests {
     }
 
     #[test]
+    fn a_hint_never_names_what_a_private_project_changed_to_a_card_of_another_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let repository = repository(dir.path(), &store, FILES);
+        refresh(&store, &repository).unwrap();
+        let localizer = Localizer::new(store.clone());
+        let secret = store
+            .add_card(repository.id, "Secret", "", "person", "Not started")
+            .unwrap();
+        let same = store
+            .add_card(repository.id, "Same project", "", "person", "Not started")
+            .unwrap();
+        let other = store
+            .add_card(repository.id, "Other project", "", "person", "Not started")
+            .unwrap();
+        let open = store.add_project("Open", "OPEN").unwrap();
+        store.link_repository(open.id, repository.id).unwrap();
+        store.set_card_project(other.id, open.id).unwrap();
+        store
+            .set_project_access(secret.project_id, true, &[])
+            .unwrap();
+        let title = "Reading the settings is slow";
+        let body = "Opening the settings takes seconds on a large machine.";
+        let context = store
+            .blobs()
+            .put(
+                &serde_json::to_string(&BTreeMap::from([
+                    ("repository", "demo"),
+                    ("title", title),
+                    ("body", body),
+                ]))
+                .unwrap(),
+            )
+            .unwrap();
+        let earlier = store
+            .add_judgement(&NewJudgement {
+                kind: KIND.into(),
+                context: vec![context],
+                choice: EMPTY.into(),
+                decider: KIND.into(),
+                card_id: Some(secret.id),
+                ..Default::default()
+            })
+            .unwrap();
+        let outcome = Outcome::of(&[], &["src/server/routes.rs".to_string()]);
+        store.set_outcome(earlier.id, &outcome.json()).unwrap();
+
+        // A card of the private project itself is helped by it, a card of another project is not, nor is a run of no card.
+        assert_eq!(
+            paths(&ask(&localizer, title, body, Some(same.id))),
+            ["src/server/routes.rs"]
+        );
+        assert!(ask(&localizer, title, body, Some(other.id)).is_empty());
+        assert!(ask(&localizer, title, body, None).is_empty());
+    }
+
+    #[test]
     fn the_outcome_has_the_files_touched_the_recall_at_ten_and_the_precision() {
         let list = |paths: &[&str]| paths.iter().map(|p| p.to_string()).collect::<Vec<_>>();
         let outcome = Outcome::of(&list(&["a", "b", "c", "d"]), &list(&["c", "a", "z"]));

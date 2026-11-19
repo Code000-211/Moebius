@@ -621,7 +621,7 @@ Pins a place at the end of the list; a place that is pinned already keeps its po
 string, "repository_id": number, "key": string, "title": string}`. A project needs its `repository_id`; a card its
 `key`, which is its id, and the server fills in its repository and title; a view or a page needs `repository_id`, `key`
 and `title` (at most 200 characters). Errors: `422` for another kind or a missing field, `404` for a repository or card
-that does not exist.
+that does not exist, or that the person does not see (a card or repository of a private project, answered in the same words, see [private projects](#private-projects)).
 
 ### `PUT /v1/favourites/order`
 
@@ -700,7 +700,7 @@ gets. Each entry of `cards` is a `Card` with what a board shows of it, so that a
 |---|---|
 | `rounds`, `tokens` | The card's `code` runs (and rounds of attempts of which none passed) and the tokens of all its runs since it was last retried, as `card.rounds` and `card.tokens` in [column scripts](column-scripts.md). |
 | `run` | The card's latest run that is not an attempt, `{"id", "agent", "purpose", "status"}`, or null when it has none: an attempt that was not picked is shown by `attempts`, not here. A board counts the runs working on it from the cards whose `run.status` is `starting` or `running`. |
-| `blocked_by` | The numbers of the issues that block the card and are not done yet, as `card.blocked_by`. |
+| `blocked_by` | The numbers of the issues that block the card and are not done yet, as `card.blocked_by`, without those of cards of private projects the person does not see. |
 | `counts_as_sub_issue` | Whether the card counts as a sub-issue of its `parent` (see [only issues a person can have vouched for](#the-issue-tracker)). A client that builds stacks, counts "done of total" or decides what is next from `parent` uses only the cards where this is true; one that is false is an ordinary top-level card, whatever parent it names. |
 | `refusals` | How many tool calls of that latest run were refused (its `tool_check` and `mcp_call` run events with the decision `refuse`). |
 | `attempts` | The latest group of attempts of a card that was tried several times at once (see [column scripts](column-scripts.md#attempts)), oldest first, each `{"run", "model", "status", "result", "output", "picked", "reason"}`: `model` the model or class the attempt was started with, or null; `status` its run's status; `result` `passed`, `failed` or null before it was judged; `output` why it failed; `picked` whether it was the one kept, and `reason` why. Absent when the card has no attempts. |
@@ -785,7 +785,8 @@ themselves, sees neither its board, its cards, its runs nor its files. For someo
   /v1/lessons`, `GET /v1/judgements`, `GET /v1/replays`, `GET /v1/exports`, `GET /v1/chats`, `GET /v1/grillings`,
   `GET /v1/places`, `GET /v1/notices`, `GET /v1/automations`, `GET /v1/research`, `GET /v1/ports`, and the report of `GET
   /v1/retros/{date}` (its errors and merged cards; the analyst's `run_id` is null when its day touched one, and the
-  Retro's `warnings` are left out when anything was). `GET /v1/usage` and `GET /v1/judgements/kinds` answer `404` for such a `repository`.
+  Retro's `warnings` are left out when anything was; the `errors` and `proposals` that `GET /v1/retros` counts and its
+  `run_id` are those of that view). `GET /v1/usage` and `GET /v1/judgements/kinds` answer `404` for such a `repository`.
   `POST /v1/retros` and `POST /v1/retros/{date}/retry` answer with the Retro's view filtered the same way.
 - Nothing is started or saved in its repositories by a non-member, who is answered `404` as if the repository did not
   exist: `POST /v1/automations` and `PUT /v1/automations/{id}` naming it as `repository`, `POST /v1/research` naming it,
@@ -810,6 +811,16 @@ themselves, sees neither its board, its cards, its runs nor its files. For someo
   every older version of it, a write, delete, move or proposal naming one (as the page, or as the target of a move),
   `POST /v1/wiki/from-template` into its folder, and the merge or dismissal of an agent's proposal for one all answer
   `404`; the page list and the search leave them out, and so does the inbox (`wiki_proposal`).
+- No count or id shows that one of its things exists: `GET /v1/kinds` (and the answers of `POST /v1/kinds` and
+  `PUT /v1/kinds/{id}`) list in a kind's `projects` only the projects whose records the person sees; the `409` of
+  `DELETE /v1/kinds/{id}` counts only the cards the person sees, and says "cards of projects you do not see" without a
+  number when all are hidden; the `blocked_by` of a card in `GET /v1/snapshot` leaves out the numbers of hidden cards
+  that block it; `POST /v1/favourites` and `POST /v1/recent` answer a hidden card or repository with the same `404`, in
+  the same words, as one that does not exist; and the files that the hint of a code run names (the decision point
+  `localize`) come from the past cards of the same repository that are not of another private project than the card's
+  own. What is left: a `409` on `DELETE /v1/kinds/{id}` still says that the kind is in use by some card, because the
+  kind is not deleted, and the `blocked_by` of a card that a hidden card blocks leaves the card looking unblocked to a
+  non-member, though it waits.
 - An owner who is not a member still sees the project's record in `GET /v1/projects` and `GET /v1/projects/{id}`
   (`member` false, `open_cards` 0), can rename it, and names its members with `PUT /v1/projects/{id}/access`, themselves
   included; nothing of its board.
@@ -1803,7 +1814,7 @@ removes its home project's picks of kinds.
 
 ### `GET /v1/kinds`
 
-Every kind, in the order they were made: `[KindView]`.
+Every kind, in the order they were made: `[KindView]`, whose `projects` leave out the private projects whose records the person does not see.
 
 ### `POST /v1/kinds`
 
@@ -1822,7 +1833,7 @@ kind's; `422` as above, or a field whose type changed.
 
 ### `DELETE /v1/kinds/{id}`
 
-Deletes a kind with its fields and the projects' picks of it, when no card has it. Sends `kind_removed` and
+Deletes a kind with its fields and the projects' picks of it, when no card has it. The `409` counts the cards the person sees. Sends `kind_removed` and
 `project_kinds_changed` for each project that offered it. Response: `{}`. Errors: `404`; `409` a card has the kind.
 
 ### `PUT /v1/projects/{id}/kinds`
@@ -3863,7 +3874,7 @@ checks failed), `rounds` (the card's code runs) and `tokens`. See [the trials](h
 ### `GET /v1/retros`
 
 The Retros, the latest day first. Response: an array of `{"date", "status", "run_id", "errors" (how many the report
-holds), "proposals" (how many), "at"}`.
+holds), "proposals" (how many), "at"}`, counting what [the view of the Retro](#get-v1retrosdate) shows the person asking.
 
 ### `GET /v1/retros/{date}`
 

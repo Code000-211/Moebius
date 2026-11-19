@@ -488,6 +488,23 @@ impl App {
         Ok(blocked_by)
     }
 
+    /// `blocked_by` without the issues of cards `sight` does not see, which a private project's card in the same
+    /// repository may be: even their numbers are not shown (see `app::projects::sight`).
+    pub fn blocked_by_seen(&self, card: &Card, sight: &super::Sight) -> Result<Vec<i64>> {
+        let mut shown = Vec::new();
+        for number in self.blocked_by(card)? {
+            let hidden = !sight.hides_nothing()
+                && self
+                    .store
+                    .card_by_number(card.repository_id, number)?
+                    .is_some_and(|blocker| !sight.card(&blocker));
+            if !hidden {
+                shown.push(number);
+            }
+        }
+        Ok(shown)
+    }
+
     /// Why each waiting card among `cards` waits.
     pub fn waiting(&self, cards: &[Card]) -> BTreeMap<i64, String> {
         let waiting = self.waiting.lock().unwrap_or_else(|e| e.into_inner());

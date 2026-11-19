@@ -59,37 +59,57 @@ pub struct CardFields {
     pub fields: BTreeMap<String, Value>,
 }
 
-async fn kinds(State(state): State<ApiState>) -> Result<Json<Vec<KindView>>, ApiError> {
-    blocking(&state.app, |app| app.kind_views()).await
+async fn kinds(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+) -> Result<Json<Vec<KindView>>, ApiError> {
+    // A kind lists only the projects whose records the person sees (see `app::projects::sight`).
+    blocking(&state.app, move |app| {
+        let sight = app.sight(&by)?;
+        Ok(app
+            .kind_views()?
+            .into_iter()
+            .map(|kind| kind.seen_by(&sight))
+            .collect::<Vec<_>>())
+    })
+    .await
 }
 
 async fn add_kind(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     Json(body): Json<KindBody>,
 ) -> Result<Json<KindView>, ApiError> {
     blocking(&state.app, move |app| {
-        app.add_kind(&body.name, &body.fields)
+        let sight = app.sight(&by)?;
+        Ok(app.add_kind(&body.name, &body.fields)?.seen_by(&sight))
     })
     .await
 }
 
 async fn update_kind(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     Json(body): Json<KindBody>,
 ) -> Result<Json<KindView>, ApiError> {
     blocking(&state.app, move |app| {
-        app.update_kind(id, &body.name, &body.fields)
+        let sight = app.sight(&by)?;
+        Ok(app
+            .update_kind(id, &body.name, &body.fields)?
+            .seen_by(&sight))
     })
     .await
 }
 
 async fn delete_kind(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
 ) -> Result<Json<Value>, ApiError> {
     blocking(&state.app, move |app| {
-        app.delete_kind(id).map(|()| serde_json::json!({}))
+        app.delete_kind(id, &app.sight(&by)?)
+            .map(|()| serde_json::json!({}))
     })
     .await
 }

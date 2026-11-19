@@ -274,7 +274,13 @@ impl Engine {
                     fx.moved = Some(columns::READY_TO_MERGE.into());
                 }
                 fx.move_to = None;
-                Ok(changes.first().map(|change| change.id))
+                // The own repository's change, or the first when that was merged and nothing new is in it.
+                let own = app.card(card_id).map_or(0, |card| card.repository_id);
+                Ok(changes
+                    .iter()
+                    .find(|change| change.repository_id == Some(own))
+                    .or(changes.first())
+                    .map(|change| change.id))
             })?,
         )?;
 

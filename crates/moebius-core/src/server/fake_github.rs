@@ -588,6 +588,44 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn a_merged_change_with_nothing_new_is_not_published_again() {
+        let f = Fixture::new().await;
+        let change = f.offered_change().await;
+        let card = f.card(1).unwrap();
+        // The change is merged: the base of the repository has its commit, as after the merge and the next fetch.
+        f.server
+            .app
+            .store
+            .set_change_state(change.id, "merged")
+            .unwrap();
+        git(
+            Path::new(&f.repository.path),
+            &[
+                "update-ref",
+                "refs/remotes/origin/main",
+                change.head.as_deref().unwrap(),
+            ],
+        )
+        .unwrap();
+        // A later round, which reworked another repository of the card, left nothing new here (its code run is the
+        // one that was merged): publishing must not open a pull request with no commits, which GitHub refuses with 422.
+        let (app, id) = (f.server.app.clone(), card.id);
+        let changes = tokio::task::spawn_blocking(move || app.publish_card_changes(id, true, None))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(changes.is_empty(), "{changes:?}");
+        assert_eq!(f.fake.pulls.lock().unwrap().opened.len(), 1);
+        // Offering says so instead of moving the card to Ready to merge with nothing to merge.
+        let app = f.server.app.clone();
+        let offered = tokio::task::spawn_blocking(move || app.offer_change(id))
+            .await
+            .unwrap();
+        assert!(offered.is_err());
+        assert_eq!(f.fake.pulls.lock().unwrap().opened.len(), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn a_pull_request_is_updated_when_the_branch_moves_on() {
         let f = Fixture::new().await;
         let change = f.offered_change().await;

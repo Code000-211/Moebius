@@ -77,8 +77,10 @@ pub struct Order {
 /// A place as the server will keep it: `(kind, repository id, key, title)`.
 type Kept = (String, i64, String, String);
 
-/// Checks a request and fills in what the server knows: a project's name, a card's repository and title.
-fn kept(state: &ApiState, body: &PlaceBody) -> Result<Kept, ApiError> {
+/// Checks a request and fills in what the server knows: a project's name, a card's repository and title. A card or a
+/// repository `sight` does not see answers exactly as one that does not exist, in the same words, so that a pin or a
+/// visit cannot tell that it is there.
+fn kept(state: &ApiState, sight: &crate::app::Sight, body: &PlaceBody) -> Result<Kept, ApiError> {
     if !PLACE_KINDS.contains(&body.kind.as_str()) {
         return Err(invalid(format!(
             "the kind is one of {}",
@@ -102,6 +104,7 @@ fn kept(state: &ApiState, body: &PlaceBody) -> Result<Kept, ApiError> {
             let card = store
                 .card(id)
                 .map_err(internal)?
+                .filter(|card| sight.card(card) && sight.repository(card.repository_id))
                 .ok_or_else(|| not_found(format!("card {id}")))?;
             Ok((
                 "card".into(),
@@ -117,6 +120,7 @@ fn kept(state: &ApiState, body: &PlaceBody) -> Result<Kept, ApiError> {
             let repository = store
                 .repository(id)
                 .map_err(internal)?
+                .filter(|repository| sight.repository(repository.id))
                 .ok_or_else(|| not_found(format!("repository {id}")))?;
             if kind == "project" {
                 return Ok(("project".into(), id, String::new(), repository.name));
@@ -127,25 +131,6 @@ fn kept(state: &ApiState, body: &PlaceBody) -> Result<Kept, ApiError> {
             }
             Ok((kind.into(), id, key.into(), title.into()))
         }
-    }
-}
-
-/// Refuses, as if it did not exist, a place of a private project that `person` does not see, so that a pin or a visit
-/// cannot tell that it is there.
-fn ensure_seen(state: &ApiState, person: &Person, kept: &Kept) -> Result<(), ApiError> {
-    let (kind, repository, key, title) = kept;
-    let place = Place {
-        id: 0,
-        kind: kind.clone(),
-        repository_id: *repository,
-        key: key.clone(),
-        title: title.clone(),
-    };
-    let sight = state.app.sight_of(Some(person.id))?;
-    if seen_place(state, &sight, &place)? {
-        Ok(())
-    } else {
-        Err(ApiError(StatusCode::NOT_FOUND, format!("{kind} {key}")))
     }
 }
 
@@ -231,8 +216,7 @@ async fn pin(
     Json(body): Json<PlaceBody>,
 ) -> Result<Json<Places>, ApiError> {
     let person = asker(signed_in)?;
-    let kept = kept(&state, &body)?;
-    ensure_seen(&state, &person, &kept)?;
+    let kept = kept(&state, &state.app.sight_of(Some(person.id))?, &body)?;
     let (kind, repository, key, title) = kept;
     state
         .app
@@ -275,8 +259,7 @@ async fn see(
     Json(body): Json<PlaceBody>,
 ) -> Result<Json<Places>, ApiError> {
     let person = asker(signed_in)?;
-    let kept = kept(&state, &body)?;
-    ensure_seen(&state, &person, &kept)?;
+    let kept = kept(&state, &state.app.sight_of(Some(person.id))?, &body)?;
     let (kind, repository, key, title) = kept;
     state
         .app
@@ -499,6 +482,62 @@ mod tests {
         }
         assert!(store.favourites(pid).unwrap().is_empty());
         assert!(store.recent_places(pid).unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_hidden_card_or_repository_answers_as_one_that_does_not_exist() {
+        let (_d, state, addr) = start().await;
+        let (_, token, _) = person(&state, "lea", 1);
+        let store = &state.app.store;
+        let secret = store
+            .add_repository("secret", "/srv/secret", "none", "main")
+            .unwrap();
+        let card = store
+            .add_card(secret.id, "Secret plan", "", "lea", "Backlog")
+            .unwrap();
+        store
+            .set_project_access(card.project_id, true, &[])
+            .unwrap();
+        let missing = card.id + 1000;
+        // The status and the words are the same for what is hidden and what is not there.
+        for path in ["/v1/favourites", "/v1/recent"] {
+            for (hidden, gone) in [
+                (
+                    json!({"kind": "card", "key": card.id.to_string()}),
+                    json!({"kind": "card", "key": missing.to_string()}),
+                ),
+                (
+                    json!({"kind": "project", "repository_id": secret.id}),
+                    json!({"kind": "project", "repository_id": missing}),
+                ),
+                (
+                    json!({"kind": "page", "repository_id": secret.id}),
+                    json!({"kind": "page", "repository_id": missing}),
+                ),
+            ] {
+                let (a, said_hidden) =
+                    call("POST", &addr, &token, path, Some(hidden.clone())).await;
+                let (b, said_gone) = call("POST", &addr, &token, path, Some(gone)).await;
+                assert_eq!(
+                    (a, b),
+                    (Status::NOT_FOUND, Status::NOT_FOUND),
+                    "{path} {hidden}"
+                );
+                let words = |v: &Value, id: i64| v.to_string().replace(&id.to_string(), "N");
+                assert_eq!(
+                    words(
+                        &said_hidden,
+                        if hidden["kind"] == "card" {
+                            card.id
+                        } else {
+                            secret.id
+                        }
+                    ),
+                    words(&said_gone, missing),
+                    "{path} {hidden}"
+                );
+            }
+        }
     }
 
     #[tokio::test]

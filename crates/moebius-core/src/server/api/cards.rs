@@ -200,7 +200,12 @@ pub struct Merged {
 
 /// What a board shows of a card, from the facts read for its whole board (`App::board_facts`). A card in Done carries
 /// none of it, which keeps the snapshot cheap to read on every event.
-fn card_view(app: &App, facts: &BoardFacts, card: Card) -> crate::app::Result<CardView> {
+fn card_view(
+    app: &App,
+    sight: &crate::app::Sight,
+    facts: &BoardFacts,
+    card: Card,
+) -> crate::app::Result<CardView> {
     let counts_as_sub_issue = app.counts_as_sub_issue(&card);
     let mut view = CardView {
         card,
@@ -242,7 +247,7 @@ fn card_view(app: &App, facts: &BoardFacts, card: Card) -> crate::app::Result<Ca
             reason: a.reason,
         })
         .collect();
-    view.blocked_by = app.blocked_by(&view.card)?;
+    view.blocked_by = app.blocked_by_seen(&view.card, sight)?;
     if let Some(run) = &card_facts.run {
         view.refusals = facts.refusals.get(&run.id).copied().unwrap_or(0);
         view.run = Some(RunView {
@@ -306,7 +311,7 @@ async fn snapshot(
                 waiting,
                 cards: cards
                     .into_iter()
-                    .map(|card| card_view(app, &facts, card))
+                    .map(|card| card_view(app, &sight, &facts, card))
                     .collect::<Result<_, _>>()?,
                 round_limit,
                 changes: app
@@ -545,7 +550,7 @@ mod tests {
         .unwrap();
         let cards = store.cards(repo.id).unwrap();
         let facts = app.board_facts(repo.id, &cards).unwrap();
-        let view = card_view(app, &facts, card.clone()).unwrap();
+        let view = card_view(app, &crate::app::Sight::everything(), &facts, card.clone()).unwrap();
         assert_eq!(view.run.unwrap().id, code.id);
         assert_eq!(view.refusals, 1);
         assert_eq!(view.attempts.len(), 1);
