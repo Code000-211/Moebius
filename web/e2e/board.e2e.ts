@@ -521,6 +521,8 @@ describe("live data", () => {
       const add = facts.getByRole("button", { name: "Add a label" });
       await add.focus();
       await page.keyboard.press("Enter");
+      // The keys go to the field once it is there, not to the button it takes the place of.
+      await facts.getByRole("textbox", { name: "Add a label" }).waitFor();
       await page.keyboard.type("docs");
       await page.keyboard.press("Enter");
       const remove = facts.getByRole("button", { name: "Remove label docs" });
@@ -532,6 +534,7 @@ describe("live data", () => {
       // And the blockers, by number.
       await facts.getByRole("button", { name: "Add a blocker by its number" }).focus();
       await page.keyboard.press("Enter");
+      await facts.getByRole("textbox", { name: "Add a blocker by its number" }).waitFor();
       await page.keyboard.type("1");
       await page.keyboard.press("Enter");
       await facts.getByRole("button", { name: "Remove blocker #1" }).waitFor();
