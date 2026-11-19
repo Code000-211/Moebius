@@ -9,9 +9,11 @@
 //! card gets in one go and which was picked), `research` (research, its runs and experiments), `automations`
 //! (automations, their firings and the local clock), `workflows` (workflow runs and what each node did),
 //! `plugin_settings` (what plugins keep for the server) and `people` (the people of the organisation, and the
-//! migration that gives earlier records to the first owner).
+//! migration that gives earlier records to the first owner) and `access` (their access tokens and the sessions of
+//! browsers, kept as hashes).
 //! Every public type is re-exported here, as `store::Card` and the like.
 
+mod access;
 mod attempts;
 mod automations;
 mod cards;
@@ -45,6 +47,7 @@ use rusqlite::{Connection, OptionalExtension, Params, Row};
 
 use crate::blobs::BlobStore;
 
+pub use access::{AccessToken, hash_secret};
 pub use attempts::Attempt;
 pub use automations::{Automation, Firing, NewAutomation};
 pub use cards::{Card, CardMove, Held, Repository};
@@ -440,6 +443,7 @@ ALTER TABLE research ADD COLUMN budget_kind TEXT NOT NULL DEFAULT 'tokens';
     "ALTER TABLE automations ADD COLUMN workflow TEXT;",
     "ALTER TABLE changes ADD COLUMN run_id INTEGER REFERENCES workflow_runs(id);",
     people::SCHEMA,
+    access::SCHEMA,
 ];
 
 pub fn now() -> i64 {

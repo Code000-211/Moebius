@@ -2,7 +2,10 @@
 import { del, get, post } from "../http";
 import type { Session, SignIn } from "../types/server";
 
-/** Signs in with the server's token or a one-time login code; the server answers with the session cookie. */
+/**
+ * Signs in with a person's access token, the server's token or a one-time login code; the server answers with the
+ * session cookie.
+ */
 export function signIn(credentials: SignIn): Promise<void> {
   return post<void>("/v1/session", credentials);
 }

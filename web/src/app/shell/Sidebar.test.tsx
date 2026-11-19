@@ -10,6 +10,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { keys } from "../../api/keys";
 import type { Chat } from "../../api/types/chat";
 import { SETTINGS_PAGES, settingsLabel } from "../pages";
 import { Sidebar } from "./Sidebar";
@@ -87,8 +88,11 @@ function show({
   collapsed = false,
   at = "/inbox",
   chats = [],
+  session,
 }: {
   collapsed?: boolean;
+  /** The session the app holds, as App.tsx keeps it. */
+  session?: unknown;
   /** The page the sidebar is opened on, which decides the list it shows. */
   at?: string;
   /** The conversations the server lists, newest first as it sends them. */
@@ -104,6 +108,7 @@ function show({
     })),
   );
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  if (session !== undefined) client.setQueryData(keys.session, session);
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[at]}>
@@ -215,6 +220,26 @@ describe("the pages and the settings", () => {
     expect(pages.textContent).toContain("General");
     // Signing out does something rather than going somewhere, so it is a row of the list and not a page.
     expect(screen.getByRole("button", { name: /Sign out/ })).not.toBeNull();
+  });
+
+  it("says whom the browser is signed in as above the way out", async () => {
+    const lea = {
+      id: 2,
+      handle: "lea",
+      name: "Lea",
+      role: "member",
+      disabled: false,
+      created_at: 1,
+    };
+    show({ at: "/models", session: { signed_in: true, person: lea } });
+    await screen.findByRole("button", { name: /Sign out/ });
+    expect(screen.getByText(/Signed in as Lea/).textContent).toBe("Signed in as Lea @lea");
+  });
+
+  it("says nothing of a person the session does not name", async () => {
+    show({ at: "/models", session: { signed_in: true } });
+    await screen.findByRole("button", { name: /Sign out/ });
+    expect(screen.queryByText(/Signed in as/)).toBeNull();
   });
 
   it("keeps the way out with the settings, off the everyday list", async () => {

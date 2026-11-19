@@ -39,9 +39,10 @@ for the words and [`spec.md`](spec.md) for what the first version includes. The 
 not a crate, so it has no rows in the module map below; `web/README.md` has its layout. It is a client of the desktop API
 and does not know anything the API does not say.
 
-- **Sign-in.** The browser signs in with `POST /v1/session` (the server's token, or the one-time code of the
-  `?login=<code>` link the server prints) and then carries an HttpOnly cookie. Every request is same origin and sends
-  `X-Moebius: 1`. `GET /v1/session` tells the app whether it is signed in (a 401 shows the sign-in page).
+- **Sign-in.** The browser signs in with `POST /v1/session` (a person's access token, the server's token, or the
+  one-time code of the `?login=<code>` link the server prints) and then carries an HttpOnly cookie, whose session the
+  store keeps as a hash for 30 days. Every request is same origin and sends
+  `X-Moebius: 1`. `GET /v1/session` tells the app whether it is signed in and as whom (a 401 shows the sign-in page).
 - **Live data.** One WebSocket to `/v1/events` feeds the query cache: an event that changes what the snapshot shows
   invalidates it (the reference says the snapshot is read on every event), `card_waiting` is patched in place, and a
   socket that connects again, after a wait that grows from 1 to 30 seconds, makes every read stale, because events are
@@ -419,6 +420,7 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 |---|---|
 | `main.rs` | The `moebius` binary: `init` writes the example configuration (with the `pi-bolt` found on `PATH`) and the harness configuration repository next to it (`harness::repo::create`), `serve` starts the server, `check-script` runs a column script once against a made-up card (`board::check_script`), `export` writes the training set (`improve::export`). |
 | `cli/mod.rs` | The commands that operate a running server through the desktop API (`api` for any route, and `doctor`, `board`, `issue`, `agent`, `repo` and the others for what is done often): the commands as clap sees them, the dispatch to their groups, and writing answers as plain text. |
+| `cli/login.rs` | `login`: checks a person's access token with the server and saves it, with the address, in `cli.toml`. |
 | `cli/client.rs` | Where the server is (`--server` and `--token`, the saved `cli.toml`, `moebius.toml`), the one request a command makes, and sending it with the token. |
 | `cli/remote.rs` | Setting a server up on a host over SSH from the terminal, for `connect <host>`: the system, `moebius` found or installed (or replaced when older) from the release of the same version and checked against its `SHA256SUMS`, `moebius init`, the server started (a systemd user service of its own, else detached), its token awaited, each step one `ssh` call over one shared connection and nothing changed before a yes; a server that runs already is never set up over. |
 | `cli/remote_tests.rs` | The tests of that setup, against a fake `ssh` that runs the script on this machine with a home directory of its own. |
@@ -537,6 +539,7 @@ At the top:
 |---|---|
 | `store/mod.rs` | The store: opening the SQLite database, its migrations, the connection and the server's local clock, the helpers that read rows, and every record type re-exported as `store::<Type>`. |
 | `store/cards.rs` | Repositories, their cards, whether a card is held, the issues that block a card, the moves of a card between columns, deleting a card or a repository with all it has, and the numbers of deleted cards. |
+| `store/access.rs` | Access tokens and the sessions of browsers, each kept as the SHA-256 of its secret: making, finding a person by one, the last use, revoking, and ending sessions. |
 | `store/people.rs` | The people of the organisation (id, handle, display name, role, disabled), never deleted, and the migration that makes the first owner and gives them the records from before that say `person`. |
 | `store/issues.rs` | What an issue has besides its text: its parent, labels, claim, whether it was closed, and its comments. |
 | `store/changes.rs` | Changes: a branch offered for merging, with its pull request, checks and review. |
@@ -607,7 +610,9 @@ At the top:
 | `server/api/ports.rs` | `GET /v1/ports` and the WebSocket tunnel to a port of the server's loopback address. |
 | `server/api/terminals.rs` | The terminal WebSockets: a shell in a run's worktree or on the server, and Pi's terminal interface of a chat. |
 | `server/api/scope.rs` | What a Grilling partner's run token reaches in the issue tracker: its chat's repository and the cards with a `wayfinder:` label. |
-| `server/api/session.rs` | Signing in from a browser: the sessions in memory, the one-time login codes, and `/v1/session` and `/v1/session/codes`. |
+| `server/api/session/mod.rs` | Signing in from a browser: with an access token, the server's token or a one-time login code, sessions kept in the store, the codes in memory, and `/v1/session` and `/v1/session/codes`. |
+| `server/api/session/tests.rs` | For the tests only: signing in with each kind of token and code, a session that survives a restart, and what ends one. |
+| `server/api/people.rs` | The people and their access tokens: listing people, an owner adding one with their first token, making, listing and revoking tokens. |
 | `server/api/web.rs` | The web app embedded from `web/dist` and served at `/` without a token, with `index.html` for any path that is no file, or a page that says it was not built. |
 | `server/api/events.rs` | The event WebSocket `GET /v1/events`. |
 | `server/api/testing.rs` | For the tests only: a server on port 0 with a fake Pi, and the requests the tests of the API share. |

@@ -1046,3 +1046,58 @@ async fn a_workflow_run_starts_by_hand_with_the_inputs_it_is_given() {
         "{error}"
     );
 }
+
+// Unix only: on Windows the config directory is not taken from the environment, so the test cannot move it.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread")]
+async fn login_saves_a_persons_token_for_the_commands_that_follow() {
+    use std::os::unix::fs::PermissionsExt;
+    let s = start().await;
+    let added = json_out(
+        &s.run(&[
+            "api",
+            "POST",
+            "/v1/people",
+            "--body",
+            r#"{"handle": "lea", "name": "Lea", "role": "member"}"#,
+        ])
+        .await,
+    );
+    let token = added["token"]["token"].as_str().unwrap().to_string();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let home = elsewhere.path().join("home");
+    let saved = home.join("moebius/cli.toml");
+    std::fs::create_dir_all(saved.parent().unwrap()).unwrap();
+    std::fs::write(&saved, "ssh_program = \"my-ssh\"\n").unwrap();
+    let login = |token: String| {
+        let (cwd, home, url) = (elsewhere.path().to_path_buf(), home.clone(), s.url.clone());
+        tokio::task::spawn_blocking(move || {
+            moebius_in(
+                &cwd,
+                &home,
+                vec!["--server".into(), url, "login".into()],
+                &format!("{token}\n"),
+            )
+        })
+    };
+
+    let wrong = login("moebius-access-nope".into()).await.unwrap();
+    assert!(!wrong.status.success());
+    assert!(String::from_utf8_lossy(&wrong.stderr).contains("401"));
+    assert!(!std::fs::read_to_string(&saved).unwrap().contains("token"));
+
+    let said = out(&login(token.clone()).await.unwrap());
+    assert!(said.contains("as Lea (@lea)"), "{said}");
+    let text = std::fs::read_to_string(&saved).unwrap();
+    assert!(text.contains(&token) && text.contains(&s.url), "{text}");
+    assert!(text.contains("ssh_program = \"my-ssh\""), "{text}");
+    assert_eq!(
+        std::fs::metadata(&saved).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+
+    // The commands that follow are Lea's, with no flags.
+    let session = in_dir(elsewhere.path(), &home, &["api", "GET", "/v1/session"]).await;
+    let session: Value = serde_json::from_str(&out(&session)).unwrap();
+    assert_eq!(session["person"]["handle"], "lea");
+}

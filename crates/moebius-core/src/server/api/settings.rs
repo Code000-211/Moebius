@@ -508,7 +508,7 @@ mod tests {
         )
         .unwrap();
         let state = ApiState {
-            sessions: Default::default(),
+            codes: Default::default(),
             config: Arc::new(crate::server::settings::Live::new(config)),
             ..state
         };

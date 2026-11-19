@@ -90,8 +90,8 @@ pub struct Server {
     /// The client for the Forgejo (such as Codeberg), if one is configured.
     pub forgejo: Option<Arc<Forgejo>>,
     pub token: Arc<str>,
-    /// The browsers signed in to the web app, and the codes that sign one in.
-    pub sessions: api::Sessions,
+    /// The one-time codes that sign a browser in to the web app.
+    pub codes: api::Codes,
 }
 
 /// The access token of `forge` from where the configuration keeps it: a file, or a secret. An empty token is an error.
@@ -369,15 +369,23 @@ impl Server {
             gitlab,
             forgejo,
             token: token.into(),
-            sessions: api::Sessions::default(),
+            codes: api::Codes::default(),
         })
     }
 
-    /// The address that opens the web app on the API at `address`, signed in with a new one-time code.
+    /// The address that opens the web app on the API at `address`, signed in as the first owner with a new one-time
+    /// code.
     pub fn web_login_url(&self, address: SocketAddr) -> Result<String, String> {
+        let owner = self
+            .app
+            .store
+            .person_by_handle(crate::store::FIRST_OWNER)
+            .map_err(|e| e.to_string())?
+            .filter(|owner| !owner.disabled)
+            .ok_or("the first owner is disabled, so no link signs them in")?;
         let (code, _) = self
-            .sessions
-            .new_code()
+            .codes
+            .new_code(owner.id, None)
             .map_err(|e| format!("cannot make a login code: {e}"))?;
         Ok(api::login_url(&api_url(address), &code))
     }
@@ -391,7 +399,7 @@ impl Server {
             token: self.token.clone(),
             router: self.router.clone(),
             config: self.live.clone(),
-            sessions: self.sessions.clone(),
+            codes: self.codes.clone(),
         }
     }
 

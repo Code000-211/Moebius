@@ -5,7 +5,7 @@
 //! The migration that adds the table makes the first owner (id 1, handle [`FIRST_OWNER`]) and gives them every record
 //! from before that a person made: an issue or a comment written through Moebius by `person`, a judgement decided by
 //! `person`, and a hold or a claim by `person`, which now say `person:owner`. A card or a comment read from a forge
-//! keeps its author even when that login is `person`. The actor's form of a person is in `decide`; the author and
+//! keeps its author even when that login is `person`. A person's access tokens and sessions are in `access`. The actor's form of a person is in `decide`; the author and
 //! decider text is `app::person_author`.
 
 use rusqlite::{OptionalExtension, Row, params};
@@ -94,9 +94,9 @@ impl Person {
     }
 }
 
-const COLUMNS: &str = "id, handle, name, role, disabled, created_at";
+pub(super) const COLUMNS: &str = "id, handle, name, role, disabled, created_at";
 
-fn person(row: &Row) -> rusqlite::Result<Person> {
+pub(super) fn person(row: &Row) -> rusqlite::Result<Person> {
     let role: String = row.get(3)?;
     Ok(Person {
         id: row.get(0)?,
@@ -157,12 +157,19 @@ impl Store {
         )
     }
 
-    /// Disables or enables the person with `id`; false when there is none.
+    /// Disables or enables the person with `id`; false when there is none. Disabling ends the person's sessions.
     pub fn set_person_disabled(&self, id: i64, disabled: bool) -> Result<bool> {
-        Ok(self.conn().execute(
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        let changed = tx.execute(
             "UPDATE people SET disabled = ?1 WHERE id = ?2",
             params![disabled, id],
-        )? == 1)
+        )? == 1;
+        if disabled {
+            tx.execute("DELETE FROM sessions WHERE person_id = ?1", [id])?;
+        }
+        tx.commit()?;
+        Ok(changed)
     }
 }
 

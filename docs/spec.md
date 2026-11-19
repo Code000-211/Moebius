@@ -79,7 +79,9 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 - Harnesses other than Pi-Bolt and Claude Code.
 - Forges other than GitHub, GitLab and Forgejo (with Gitea).
 - Training the decision model; the first version records judgements and exports them.
-- More than one person; planned in [ADR 0018](adr/0018-more-than-one-person.md).
+- More than one person is being built ([ADR 0018](adr/0018-more-than-one-person.md)): people with a role sign in with
+  access tokens of their own, and their sessions are kept in the store; roles on every route, assignees and
+  notifications are planned.
 
 ## 2. Processes and how they talk
 

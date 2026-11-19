@@ -12,8 +12,10 @@ network.
 ## Authentication
 
 Every request to `/v1/`, the WebSocket upgrade included, carries `Authorization: Bearer <token>` (or, in a browser, the
-cookie of a [session](#post-v1session)). The token is the content of
-`token_file` (by default `<data_dir>/token`, created when the server first starts). A missing or wrong token is answered
+cookie of a [session](#post-v1session)). The token is a person's [access token](#people-and-access-tokens), which acts
+as that person with their role, or the server's token, the content of `token_file` (by default `<data_dir>/token`,
+created when the server first starts), which acts as the first owner, `person:owner`. A missing or wrong token, a
+revoked access token and one of a disabled person are answered
 with `401` and the plain text `a valid token is needed`. The exceptions are `POST /v1/webhooks/{forge}`, which a forge
 sends and which carries the forge's signature instead, and `/v1/session`, which signs a browser in. The paths outside
 `/v1/` need no token: they are the [web app](#the-web-app) and the [hooks a workflow's `webhook` trigger answers
@@ -40,13 +42,15 @@ Moebius agent and a person are not held to any of this. Every
 other route answers it `401`, as it does the run token of any other agent, and a revoked one. Two routes stay with a person and answer
 `403` with `only a person can do this` to a run token: `PUT /v1/secrets/{name}` (an agent must not set keys),
 `GET /v1/webhooks` and `POST /v1/webhooks/{forge}/secret` (they hold the webhook secrets),
-`POST /v1/session` and `POST /v1/session/codes` (a run token never signs in or makes a login code), `POST /v1/harness/setup` (moving the agents is a person's choice) and `GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui`, `GET /v1/terminal` and `GET /v1/repositories/{id}/terminal` (the shells) and `GET /v1/ports/{port}/tunnel`, and `PUT /v1/client` (what the app says of itself). Where a route below says "a person" and "decider
-`person`" (it is `person:owner` for the server's token and a signed-in browser, until people have tokens of their own), an agent that uses its token is the decider instead.
+`POST /v1/session` and `POST /v1/session/codes` (a run token never signs in or makes a login code), the routes of
+[people and access tokens](#people-and-access-tokens), `POST /v1/harness/setup` (moving the agents is a person's choice) and `GET /v1/runs/{id}/terminal`, `GET /v1/chats/{id}/tui`, `GET /v1/terminal` and `GET /v1/repositories/{id}/terminal` (the shells) and `GET /v1/ports/{port}/tunnel`, and `PUT /v1/client` (what the app says of itself). Where a route below says "a person" and "decider
+`person`" (it is `person:<handle>` of the person whose access token or session it is, and `person:owner` for the
+server's token), an agent that uses its token is the decider instead.
 
 A browser signs in once and then carries the cookie `moebius_session` (`HttpOnly; SameSite=Strict; Path=/`, and `Secure` when
 a proxy in front of the server says with `X-Forwarded-Proto: https` that the browser used TLS). Every route, the
-WebSocket upgrades included, accepts a valid cookie as the person's token, as a person: a person's route is open to it
-and the decider of a decision is the first owner, `person:owner`. A bearer token that is not valid is refused even when the request also has a
+WebSocket upgrades included, accepts a valid cookie as the token of the person who signed in: a person's route is open
+to it and the decider of a decision is that person. A bearer token that is not valid is refused even when the request also has a
 valid cookie. Because a browser sends a cookie by itself, a request that only a cookie vouches for has to prove that
 it comes from the web app: a method other than `GET`, `HEAD` and `OPTIONS` needs the header `X-Moebius: 1`, and an
 `Origin` header, which browsers send on changes and on WebSocket upgrades, must name the host of the `Host` header
@@ -194,26 +198,73 @@ At start, `moebius serve` prints the line `Open the web app: http://<listen addr
 
 ### `POST /v1/session`
 
-Signs a browser in. No `Authorization` is needed. Request body: `{"token": string}` with the person's token, or
-`{"code": string}` with a one-time code of `POST /v1/session/codes`. Response: `204` and the cookie `moebius_session=<id>`
-(see Authentication). The sessions live in memory, so a restart of the server signs everybody out. Errors: `401` with
-`a valid token is needed` for a wrong token, a wrong, used or expired code, or a body with neither; `403` with `only a
-person can do this` for a run token.
+Signs a browser in. No `Authorization` is needed. Request body: `{"token": string}` with a person's access token or the
+server's token (which signs in the first owner), or `{"code": string}` with a one-time code of `POST
+/v1/session/codes`. Response: `204` and the cookie `moebius_session=<id>; Max-Age=2592000` (see Authentication). The
+session is kept in the store, as the SHA-256 of its id and never the id itself, for 30 days, so it survives a restart of
+the server. It ends sooner when the browser signs out, when the access token it was opened with (or the token that
+made its code) is revoked, and when its person is disabled; from then on the cookie is answered `401`. Errors: `401`
+with `a valid token is needed` for a wrong or revoked token, a wrong, used or expired code, or a body with neither;
+`403` with `only a person can do this` for a run token.
 
 ### `GET /v1/session`
 
-`200` with `{"signed_in": true}` for a request with a valid cookie or bearer token, else `401`.
+`200` with `{"signed_in": true, "person": Person | null}` for a request with a valid cookie or bearer token, else
+`401`. `person` is who the request acts as (see [people](#get-v1people)); it is `null` for an agent's run token.
 
 ### `DELETE /v1/session`
 
-Signs out: forgets the session of the cookie and clears the cookie. Response: `204`.
+Signs out: deletes the session of the cookie from the store and clears the cookie. Response: `204`.
 
 ### `POST /v1/session/codes`
 
-A new one-time code that signs a browser in without the token: it works once and for 10 minutes. Request body: `{}`.
+A new one-time code that signs a browser in, as the person who asked, without the token: it works once and for 10
+minutes. Request body: `{}`.
 Response: `{"url": string, "expires_at": number}`, where `url` is `http://<Host of the request>/?login=<code>` (`https` when
 the request says with `X-Forwarded-Proto` that it came over TLS) and `expires_at` is Unix seconds. The code is only in
 memory, never stored or logged. [`moebius web`](cli.md) prints the address. Errors: `403` to a run token.
+
+### People and access tokens
+
+A person signs in with an access token (ADR 0018): `moebius-access-` and 64 hexadecimal digits. It belongs to one
+person, has a name, and lasts until it is revoked. The store keeps only its SHA-256 and when it was last used (written
+at most once a minute); the token itself is in the answer that made it and nowhere else, and `blobs::redact` replaces
+one wherever it would be logged. These routes are a person's: a run token gets `403` with `only a person can do this`.
+A `Person` is `{"id": number, "handle": string, "name": string, "role": "owner" | "member" | "viewer", "disabled":
+bool, "created_at": number}`; an `AccessToken` is `{"id": number, "person_id": number, "name": string, "created_at":
+number, "last_used_at": number | null, "revoked_at": number | null}`, times in Unix seconds.
+
+### `GET /v1/people`
+
+Every person, disabled ones included, in the order they were added: `[Person]`.
+
+### `POST /v1/people`
+
+An owner adds a person and gets their first access token, named `first token`, to hand over. Request body: `{"handle":
+string, "name": string, "role": "owner" | "member" | "viewer"}`; the handle may start with `@`, which is not kept, and
+is 1 to 39 lowercase letters, digits, `-` and `_`, starting with a letter or a digit. Response: `{"person": Person,
+"token": AccessToken & {"token": string}}`. Errors: `403` with `only an owner can do this`, `409` for a handle that is
+taken in any case, `422` for a handle or an empty or longer than 100 characters name.
+
+### `GET /v1/people/{id}/tokens`
+
+The access tokens of a person, revoked ones included, with when each was last used: `[AccessToken]`. An owner may ask
+for anyone's, another person only for their own (else `403`). Errors: `404` for no such person.
+
+### `GET /v1/tokens`
+
+The access tokens of the person asking: `[AccessToken]`.
+
+### `POST /v1/tokens`
+
+A new access token for the person asking, such as for the command line on a second machine. Request body: `{"name":
+string}` (1 to 100 characters). Response: `AccessToken & {"token": string}`. Errors: `422` for an empty or long name.
+
+### `DELETE /v1/tokens/{id}`
+
+Revokes an access token, the asker's own or, for an owner, anyone's; the sessions it opened end with it, and every
+request with it is refused at once. Revoking one that is revoked already changes nothing. Response: the `AccessToken`,
+with `revoked_at`. Errors: `404` for no such token, and for another person's token when the asker is not an owner.
 
 ### `GET /v1/server`
 

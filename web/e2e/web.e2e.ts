@@ -59,6 +59,23 @@ describe("signing in", () => {
     expect(path()).toBe("/inbox");
   });
 
+  it("signs a person in with the access token an owner made for them", async () => {
+    await fresh();
+    const added = await fetch(`${server.url}/v1/people`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${server.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ handle: "lea", name: "Lea", role: "member" }),
+    });
+    expect(added.status).toBe(200);
+    const { token } = (await added.json()) as { token: { token: string } };
+    await page.goto(server.url);
+    await page.getByLabel("Token").fill(token.token);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await pages().waitFor();
+    await pages().getByRole("link", { name: "Settings" }).click();
+    await page.getByText("Signed in as Lea").waitFor();
+  });
+
   // The real server's run tokens exist only while a run does.
   it.skipIf(usesRealServer)("refuses the run token of an agent with its own sentence", async () => {
     await fresh();

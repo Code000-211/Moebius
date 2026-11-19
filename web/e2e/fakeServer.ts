@@ -1,6 +1,7 @@
 /**
  * A small stand-in for the Moebius server, for the end-to-end tests: it keeps to the session contract of the web
- * sign-in (docs/reference/desktop-api.md, "Authentication"), answers the few routes the shell reads, accepts the event
+ * sign-in (docs/reference/desktop-api.md, "Authentication"), with the server's token for the first owner and the
+ * access tokens of the people an owner adds with `POST /v1/people`, answers the few routes the shell reads, accepts the event
  * WebSocket with the session cookie and serves `dist/` the way the real server serves the embedded app. It listens
  * on port 0. Swap it for a real `moebius serve` with MOEBIUS_E2E_SERVER (see e2e/server.ts).
  */
@@ -94,7 +95,16 @@ function json(response: ServerResponse, value: unknown): void {
 }
 
 export async function startFakeServer(): Promise<FakeServer> {
-  const sessions = new Set<string>();
+  /** Each session's person, by id. */
+  const sessions = new Map<string, number>();
+  const people = [
+    { id: 1, handle: "owner", name: "Owner", role: "owner", disabled: false, created_at: 0 },
+  ];
+  /** Each access token's person, by id. */
+  const accessTokens = new Map<string, number>();
+  /** The person a token stands for: the first owner for the server's token. */
+  const personOf = (token: string | undefined) =>
+    token === TOKEN ? 1 : token === undefined ? undefined : accessTokens.get(token);
   const codes = new Set<string>([LOGIN_CODE]);
   const sockets = new Set<WebSocket>();
   const guardLog: Array<string | undefined> = [];
@@ -130,17 +140,36 @@ export async function startFakeServer(): Promise<FakeServer> {
         code?: string;
       };
       if (body.token === AGENT_TOKEN) return text(response, 403, "only a person can do this");
-      const ok = body.token === TOKEN || (body.code !== undefined && codes.delete(body.code));
-      if (!ok) return text(response, 401, "a valid token is needed");
+      const person =
+        personOf(body.token) ??
+        (body.code !== undefined && codes.delete(body.code) ? 1 : undefined);
+      if (person === undefined) return text(response, 401, "a valid token is needed");
       const session = randomBytes(16).toString("hex");
-      sessions.add(session);
+      sessions.set(session, person);
       response.writeHead(204, {
         "set-cookie": `moebius_session=${session}; HttpOnly; Path=/; SameSite=Strict`,
       });
       return response.end();
     }
+    // An owner adds a person with the server's token, as a script would, and gets their first access token.
+    const bearer = /^Bearer (.+)$/.exec(request.headers.authorization ?? "")?.[1];
+    if (path === "/v1/people" && method === "POST" && personOf(bearer) === 1) {
+      const body = JSON.parse(await readBody(request)) as {
+        handle: string;
+        name: string;
+        role: string;
+      };
+      const person = { id: people.length + 1, ...body, disabled: false, created_at: 0 };
+      people.push(person);
+      const token = `moebius-access-${randomBytes(32).toString("hex")}`;
+      accessTokens.set(token, person.id);
+      return json(response, { person, token: { id: person.id, person_id: person.id, token } });
+    }
     if (!signedIn(request)) return text(response, 401, "a valid token is needed");
-    if (path === "/v1/session" && method === "GET") return json(response, { signed_in: true });
+    if (path === "/v1/session" && method === "GET") {
+      const id = sessions.get(cookieOf(request) as string);
+      return json(response, { signed_in: true, person: people.find((p) => p.id === id) ?? null });
+    }
     if (path === "/v1/session" && method === "DELETE") {
       sessions.delete(cookieOf(request) as string);
       response.writeHead(204, { "set-cookie": "moebius_session=; HttpOnly; Path=/; Max-Age=0" });

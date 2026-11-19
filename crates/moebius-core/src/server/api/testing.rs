@@ -49,14 +49,35 @@ pub(super) async fn start_with(
     store
         .add_card(repo.id, "First", "", "leon", "Backlog")
         .unwrap();
-    let token = load_or_create_token(&dir.path().join("token")).unwrap();
+    let (state, addr) = serve_in(dir.path(), store, agents).await;
+    (dir, state, addr)
+}
+
+/// A server over `store` with its token and settings in `dir`, as [`start`] makes one: a second over the same `dir`
+/// and data is the first after a restart.
+pub(super) async fn start_in(dir: &std::path::Path, store: Arc<Store>) -> (ApiState, String) {
+    serve_in(
+        dir,
+        store,
+        BTreeMap::from([("Coder".to_string(), agent("fake"))]),
+    )
+    .await
+}
+
+async fn serve_in(
+    dir: &std::path::Path,
+    store: Arc<Store>,
+    agents: BTreeMap<String, AgentConfig>,
+) -> (ApiState, String) {
+    let token = load_or_create_token(&dir.join("token")).unwrap();
     let host = Arc::new(moebius_plugin_api::Host::new(
         std::time::Duration::from_secs(1),
     ));
     // The harness is the real one over a Pi that is a script.
-    let router = Arc::new(Router::new(store.clone(), vec![]).with_secrets(
-        crate::server::settings::Secrets::new(&dir.path().join(".moebius")),
-    ));
+    let router = Arc::new(
+        Router::new(store.clone(), vec![])
+            .with_secrets(crate::server::settings::Secrets::new(&dir.join(".moebius"))),
+    );
     let mut pi = PiBolt::new(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/fake-pi"),
         "/usr/local/bin/moebius".into(),
@@ -78,8 +99,8 @@ pub(super) async fn start_with(
         },
     ]));
     let state = ApiState {
-        sessions: Default::default(),
-        app: Arc::new(App::new(store, host, &dir.path().join("data"))),
+        codes: Default::default(),
+        app: Arc::new(App::new(store, host, &dir.join("data"))),
         runs: Arc::new(pi),
         harness_repo: None,
         token: token.into(),
@@ -87,8 +108,8 @@ pub(super) async fn start_with(
         config: Arc::new(Live::new(
             Config::parse(
                 "[budgets]\nday_tokens = 10000\n",
-                dir.path(),
-                &dir.path().join("moebius.toml"),
+                dir,
+                &dir.join("moebius.toml"),
             )
             .unwrap(),
         )),
@@ -97,7 +118,7 @@ pub(super) async fn start_with(
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(serve(listener, state.clone()));
-    (dir, state, format!("127.0.0.1:{}", addr.port()))
+    (state, format!("127.0.0.1:{}", addr.port()))
 }
 
 /// A git repository with one commit.
