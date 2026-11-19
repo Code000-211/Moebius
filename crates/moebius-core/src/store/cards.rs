@@ -143,6 +143,7 @@ fn card_statements(cards: &str, runs: &str, judgements: &str) -> Vec<String> {
             "DELETE FROM inbox_assignees WHERE item_id IN (SELECT id FROM inbox_items WHERE card_id IN ({cards}))"
         ),
         format!("DELETE FROM card_assignees WHERE card_id IN ({cards})"),
+        format!("DELETE FROM milestone_cards WHERE card_id IN ({cards})"),
         format!("DELETE FROM inbox_items WHERE card_id IN ({cards})"),
         format!("DELETE FROM dependencies WHERE card_id IN ({cards})"),
         format!("DELETE FROM card_links WHERE card_id IN ({cards}) OR other_id IN ({cards})"),

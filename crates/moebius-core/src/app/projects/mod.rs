@@ -70,7 +70,7 @@ fn check_name(name: &str) -> Result<()> {
 }
 
 /// A store error, as `Exists` with `what` when it is a unique column refusing a value another project took meanwhile.
-fn taken(error: StoreError, what: &str) -> AppError {
+pub(super) fn taken(error: StoreError, what: &str) -> AppError {
     match error {
         StoreError::Sql(rusqlite::Error::SqliteFailure(e, _))
             if e.code == rusqlite::ErrorCode::ConstraintViolation =>

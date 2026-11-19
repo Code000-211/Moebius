@@ -66,6 +66,18 @@ puts every card on it; a repository whose name an earlier one has in another cas
 (<id>)`, since project names are unique in any case. It gives each a provisional key, `#<id>`, which no project can choose, because SQL cannot make a
 key from a name; opening the store replaces each with a key made from the name, in the order the projects were made.
 
+## Milestones
+
+`store/milestones.rs` keeps the milestones (ADR 0019).
+
+| Table | Holds |
+|---|---|
+| `milestones` | Name (unique regardless of case), target date (`YYYY-MM-DD`), description and when it was made. |
+| `milestone_cards` | Which cards a milestone holds; a card is in any number of milestones, of any projects. |
+
+A milestone belongs to no project, so the store hands out every card of one with its project (`milestone_cards`); what a
+person may see of it is decided in `app/milestones.rs`. Deleting a card or a milestone deletes the membership.
+
 ## Workflow runs
 
 `store/workflows.rs` keeps what a workflow run and each of its nodes did; the engine writes them and the web app reads

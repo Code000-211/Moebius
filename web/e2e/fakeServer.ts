@@ -13,6 +13,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { type WebSocket, WebSocketServer } from "ws";
 import { type BoardFake, createBoardFake } from "./fake/board";
 import { createFakeChat, type FakeChat } from "./fake/chat";
+import { createMilestonesFake, type MilestonesFake } from "./fake/milestones";
 import { createPackagesFake, type PackagesFake } from "./fake/packages";
 import { createPagesAFake, type PagesAFake } from "./fake/pages-a";
 import { createPagesBFake, type PagesBFake } from "./fake/pages-b";
@@ -58,6 +59,8 @@ export interface FakeServer {
   chat: FakeChat;
   /** The runs, their terminals, diffs and the ports (e2e/fake/runs.ts). */
   runs: FakeRuns;
+  /** The milestones and a card's milestones (e2e/fake/milestones.ts). */
+  milestones: MilestonesFake;
   /** The Inbox, Projects, Fleet, Usage, Get started and Settings routes (e2e/fake/pages-a.ts). */
   pagesA: PagesAFake;
   /** The harness configuration, models and plugins routes (e2e/fake/pages-b.ts). */
@@ -145,6 +148,7 @@ export async function startFakeServer(): Promise<FakeServer> {
   const chat = createFakeChat(broadcast);
   const runs = createFakeRuns(broadcast);
   const pagesA = createPagesAFake(broadcast, board);
+  const milestones = createMilestonesFake(broadcast);
   const pagesB = createPagesBFake();
   const pagesC = createPagesCFake(broadcast);
   const workflows = createWorkflowsFake();
@@ -258,6 +262,7 @@ export async function startFakeServer(): Promise<FakeServer> {
       return response.end();
     }
     // Answers only once a test of its pages has called use(), so the Settings page's fake keeps /v1/settings otherwise.
+    if (await milestones.handle(request, response, path)) return;
     if (await packages.handle(request, response, path)) return;
     if (await pagesB.handle(request, response, path)) return;
     // Rules, automations, Retro, research, the decision model and the column scripts: one rules file is a file of a repository, which pages A would answer.
@@ -338,6 +343,7 @@ export async function startFakeServer(): Promise<FakeServer> {
     board,
     chat,
     runs,
+    milestones,
     pagesA,
     pagesB,
     pagesC,

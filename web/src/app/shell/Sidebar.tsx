@@ -386,6 +386,7 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
             onChoose={choose}
           />
         )}
+        {!inSettings && groupSection("Plan", "Plan")}
         {!inSettings && !collapsed && <PlacesSection at={at} />}
         {!inSettings && (
           <Section title="Automate" collapsed={collapsed}>
