@@ -25,6 +25,7 @@ const SNAPSHOT_KINDS = new Set([
   "card_parent_changed",
   "card_labels_changed",
   "card_assignees_changed",
+  "card_kind_changed",
   "inbox_assignees_changed",
   "card_blocking_changed",
   "card_links_changed",
@@ -52,6 +53,14 @@ const SNAPSHOT_KINDS = new Set([
   "retro_done",
 ]);
 
+/** The events about kinds of issues, their fields and the values cards hold, which the Kinds and Issues pages read. */
+const KIND_KINDS = new Set([
+  "kind_changed",
+  "kind_removed",
+  "project_kinds_changed",
+  "card_kind_changed",
+]);
+
 /** The kinds after which what a change or a run changed may have moved. */
 const DIFF_KINDS = new Set([
   "change_offered",
@@ -75,6 +84,7 @@ export function invalidates(event: ServerEvent): QueryKey[] {
   if (event.kind === "card_milestones_changed") stale.push(keys.milestones, keys.cards);
   if (event.kind === "project_changed") stale.push(keys.projects);
   if (event.kind === "wiki_changed") stale.push(keys.wiki);
+  if (KIND_KINDS.has(event.kind)) stale.push(keys.issueKinds, keys.issues, keys.projects);
   if (event.kind === "script_changed") stale.push(keys.scripts, keys.projectSettingsAll);
   if (event.kind === "project_settings_changed") {
     stale.push(keys.projectSettingsAll);

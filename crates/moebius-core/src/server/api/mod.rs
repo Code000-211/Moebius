@@ -9,6 +9,7 @@
 //! - `assignees`: giving a card or an inbox item to people.
 //! - `planning`: a card's priority and due date.
 //! - `notices`: what concerns a person (given, mentioned, a followed card changed), and following cards.
+//! - `kinds`: kinds of issues and their fields, the kinds a project offers, a card's kind and fields, and the cards of every project by them.
 //! - `repositories`: adding and editing repositories, and their column scripts and files.
 //! - `milestones`: goals of the organisation with a target date, holding cards of any projects, with their progress.
 //! - `projects`: the projects, each with a key, a board and its repositories; making and renaming one.
@@ -59,6 +60,7 @@ mod favourites;
 mod harness;
 mod improve;
 mod issues;
+mod kinds;
 mod lessons;
 mod milestones;
 mod notices;
@@ -231,6 +233,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(assignees::routes())
         .merge(planning::routes())
         .merge(notices::routes())
+        .merge(kinds::routes())
         .merge(repositories::routes())
         .merge(projects::routes())
         .merge(wiki::routes())

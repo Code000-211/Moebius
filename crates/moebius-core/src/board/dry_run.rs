@@ -72,6 +72,8 @@ fn made_up_card(lua: &Lua, column: &str, title: &str, author: &str) -> mlua::Res
     t.set("assignees", lua.create_table()?)?;
     t.set("priority", "none")?;
     t.set("due", mlua::Value::Nil)?;
+    t.set("kind", mlua::Value::Nil)?;
+    t.set("fields", lua.create_table()?)?;
     t.set("rounds", 0)?;
     t.set("reviews", 0)?;
     t.set("tokens", 0)?;

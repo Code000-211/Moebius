@@ -848,6 +848,51 @@ end
     }
 
     #[test]
+    fn a_script_reads_the_kind_and_the_fields_of_a_card() {
+        use crate::store::{FieldDef, FieldType};
+        let (_dir, app, engine, repo) = setup();
+        app.add_kind(
+            "Bug",
+            &[
+                FieldDef {
+                    name: "Severity".into(),
+                    field_type: FieldType::Choice,
+                    options: vec!["low".into(), "high".into()],
+                },
+                FieldDef {
+                    name: "Estimate".into(),
+                    field_type: FieldType::Number,
+                    options: Vec::new(),
+                },
+            ],
+        )
+        .unwrap();
+        let home = app.store.repository(repo).unwrap().unwrap().home_project_id;
+        app.set_project_kinds(home, &["Bug".into()]).unwrap();
+        let card = app.create_issue(repo, "Broken", "", OWNER_AUTHOR).unwrap();
+        let lua = mlua::Lua::new();
+        let table = |card: &crate::store::Card| engine.card_table(&lua, card).unwrap();
+        let plain = table(&app.card(card.id).unwrap());
+        assert!(plain.get::<mlua::Value>("kind").unwrap().is_nil());
+        assert_eq!(plain.get::<mlua::Table>("fields").unwrap().raw_len(), 0);
+
+        app.set_card_kind(card.id, Some("bug")).unwrap();
+        let changes =
+            serde_json::from_value(serde_json::json!({"Severity": "high", "Estimate": 3})).unwrap();
+        app.set_card_fields(card.id, &changes).unwrap();
+        let t = table(&app.card(card.id).unwrap());
+        assert_eq!(t.get::<String>("kind").unwrap(), "Bug");
+        let fields = t.get::<mlua::Table>("fields").unwrap();
+        assert_eq!(fields.get::<String>("Severity").unwrap(), "high");
+        assert_eq!(fields.get::<f64>("Estimate").unwrap(), 3.0);
+        // The way a script reads them.
+        lua.globals().set("card", t).unwrap();
+        lua.load("assert(card.kind == 'Bug' and card.fields.Estimate * 2 == 6 and card.fields.Due == nil)")
+            .exec()
+            .unwrap();
+    }
+
+    #[test]
     fn an_outside_issue_that_names_a_parent_does_not_hold_or_close_it() {
         let (_dir, app, engine, repo) = setup();
         let map = app.create_issue(repo, "Map", "", OWNER_AUTHOR).unwrap();

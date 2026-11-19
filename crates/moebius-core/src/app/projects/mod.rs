@@ -48,6 +48,8 @@ pub struct ProjectView {
     /// The id of the repository that holds the project's own files (see `files`), once it is made; the board of a
     /// project without a repository is that repository's.
     pub files: Option<i64>,
+    /// The ids of the kinds of issues the project offers (see `kinds`), in the order the kinds were made.
+    pub kinds: Vec<i64>,
 }
 
 /// Refuses a name for a project: empty, longer than [`NAME_LIMIT`], starting with a dot, or with a slash, a backslash
@@ -193,6 +195,7 @@ impl App {
             .collect();
         Ok(ProjectView {
             open_cards: self.store.open_cards(project.id)?,
+            kinds: self.store.project_kinds(project.id)?,
             id: project.id,
             name: project.name,
             key: project.key,

@@ -87,7 +87,9 @@ what went wrong and tries out fixes, and the ones that worked wait in the inbox.
 - Training the decision model; the first version records judgements and exports them.
 - More than one person is being built ([ADR 0018](adr/0018-more-than-one-person.md)): people with a role sign in with
   access tokens of their own, and their sessions are kept in the store, every route needs a role, and cards and inbox
-  items can be assigned to people, `@handle` in a comment tells that person, and what concerns a person is a notice in their Inbox under Mentions.
+  items can be assigned to people, `@handle` in a comment tells that person, what concerns a person is a notice in their Inbox
+  under Mentions, and owners define kinds of issues with fields of their own that projects pick and column scripts read
+  (`card.kind`, `card.fields`).
 
 ## 2. Processes and how they talk
 

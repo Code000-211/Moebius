@@ -38,6 +38,7 @@ export type RunningServer = Pick<FakeServer, "url" | "loginUrl" | "token"> & {
   pagesC?: undefined;
   packages?: undefined;
   workflows?: undefined;
+  kinds?: undefined;
 };
 
 /**

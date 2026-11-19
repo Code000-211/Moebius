@@ -12,6 +12,9 @@
 //!   `due:` labels.
 //! - `card.moved_at`: when the card last moved, was edited or was released from a hold, in Unix seconds, to compare
 //!   with `moebius.now()`.
+//! - `card.kind`, `card.fields`: the name of the card's kind of issue (nil while it has none) and the values of its
+//!   fields that are set, by field name: a number for a `number` field, text for the others (a `person` field holds a
+//!   handle, a `date` field `YYYY-MM-DD`); an empty table when none is set.
 //! - `card.merged`: whether a change of the card was merged, which is what tells a card that is done because its work
 //!   was merged from one that was closed.
 //! - `card.review`: the verdict and findings of the review since the card's latest `code` run, if there is one; for a
@@ -144,6 +147,16 @@ impl Engine {
         t.set("assignees", card.assignees.clone())?;
         t.set("priority", card.priority.name())?;
         t.set("due", card.due.as_deref())?;
+        t.set("kind", card.kind.as_deref())?;
+        let fields = lua.create_table()?;
+        for (name, value) in &card.fields {
+            match value {
+                serde_json::Value::Number(n) => fields.set(name.as_str(), n.as_f64())?,
+                serde_json::Value::String(text) => fields.set(name.as_str(), text.as_str())?,
+                _ => {}
+            }
+        }
+        t.set("fields", fields)?;
         let children = lua.create_table()?;
         for child in self.app.children_of(card).map_err(mlua::Error::external)? {
             let c = lua.create_table()?;

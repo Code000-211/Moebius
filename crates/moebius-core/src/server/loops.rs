@@ -1168,6 +1168,8 @@ mod order_tests {
             labels: Vec::new(),
             claimed_by: None,
             assignees: Vec::new(),
+            kind: None,
+            fields: Default::default(),
             priority,
             due: due.map(String::from),
             moved_at: 0,

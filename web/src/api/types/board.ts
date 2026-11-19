@@ -93,6 +93,10 @@ export interface Card {
   priority: Priority;
   /** The day the card is due as `YYYY-MM-DD`: the card's `due:` label, null without one. */
   due: string | null;
+  /** The name of the card's kind of issue, none while it has none. Always sent by the server. */
+  kind?: string | null;
+  /** The values set for the fields of its kind, by field name. Always sent by the server. */
+  fields?: Record<string, string | number>;
 }
 
 /** A comment on an issue, written here or read from the forge. */

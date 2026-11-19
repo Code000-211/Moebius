@@ -35,6 +35,7 @@ interface Project {
   members: Array<{ id: number; handle: string; name: string }>;
   open_cards: number;
   files: number | null;
+  kinds: number[];
 }
 
 interface InboxItem {
@@ -564,6 +565,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         members,
         open_cards: cards.filter((card) => !card.closed && card.column !== "Done").length,
         files: null,
+        kinds: [],
       }));
     return [...homes, ...madeProjects.map((project) => ({ ...project, members }))];
   }
@@ -954,6 +956,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
           members: [],
           open_cards: 0,
           files: files.id,
+          kinds: [],
         };
         madeProjects = [...madeProjects, made];
         send({ kind: "project_changed", data: { ...made, repositories: [] } });

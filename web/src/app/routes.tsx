@@ -37,6 +37,12 @@ const FleetPage = lazy(() =>
 const InboxPage = lazy(() =>
   import("./inbox/InboxPage").then((all) => ({ default: all.InboxPage })),
 );
+const IssuesPage = lazy(() =>
+  import("./issues/IssuesPage").then((all) => ({ default: all.IssuesPage })),
+);
+const KindsPage = lazy(() =>
+  import("./kinds/KindsPage").then((all) => ({ default: all.KindsPage })),
+);
 const PeoplePage = lazy(() =>
   import("./people/PeoplePage").then((all) => ({ default: all.PeoplePage })),
 );
@@ -126,6 +132,8 @@ const PAGES_BUILT = new Set([
   "decision-model",
   "workflows",
   "people",
+  "issues",
+  "kinds",
   "tokens",
   "wiki",
 ]);
@@ -151,6 +159,8 @@ export const routes = [
       { path: "start", element: <StartPage /> },
       { path: "settings", element: <SettingsPage /> },
       { path: "people", element: <PeoplePage /> },
+      { path: "issues", element: <IssuesPage /> },
+      { path: "kinds", element: <KindsPage /> },
       { path: "tokens", element: <TokensPage /> },
       { path: "plugin-settings", element: <PluginSettingsPage /> },
       { path: "chat", element: <ChatPage /> },

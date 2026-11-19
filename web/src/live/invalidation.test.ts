@@ -74,6 +74,7 @@ describe("invalidates", () => {
       "card_parent_changed",
       "card_labels_changed",
       "card_assignees_changed",
+      "card_kind_changed",
       "inbox_assignees_changed",
       "card_blocking_changed",
       "card_links_changed",
@@ -143,6 +144,13 @@ describe("invalidates", () => {
 
   it("reads the projects again when one is made or renamed, and when a card or a repository changes", () => {
     expect(invalidates({ kind: "project_changed", data: {} })).toEqual([keys.projects]);
+    for (const kind of ["kind_changed", "kind_removed", "project_kinds_changed"]) {
+      expect(invalidates({ kind, data: {} })).toEqual([
+        keys.issueKinds,
+        keys.issues,
+        keys.projects,
+      ]);
+    }
     expect(invalidates({ kind: "repository_removed", data: {} })).toContainEqual(keys.projects);
     expect(invalidates({ kind: "card_moved", data: {} })).toContainEqual(keys.projects);
     expect(invalidates({ kind: "run_event", data: {} })).not.toContainEqual(keys.projects);

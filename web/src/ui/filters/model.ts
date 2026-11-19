@@ -27,7 +27,7 @@ export const DEFAULT_DISPLAY: Display = { layout: "board", group: "", sort: "", 
 
 /** What a page lets Display choose from: the values it accepts for each choice (the rest are read as the default). */
 export interface DisplayChoices {
-  /** The layouts the page offers as `[value, label]`; a page of cards leaves it out and has Board and List. */
+  /** The layouts the page offers as `[value, label]`; a page of cards leaves it out and has Board and List, and a page with one layout gives none. */
   layouts?: Array<[string, string]>;
   groups: Array<[string, string]>;
   sorts: Array<[string, string]>;
