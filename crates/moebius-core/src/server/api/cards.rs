@@ -90,8 +90,11 @@ pub struct CardView {
     pub counts_as_sub_issue: bool,
     /// How many tool calls of the latest run were refused.
     pub refusals: i64,
-    /// The card's open change.
+    /// The card's open change in its own issue's repository.
     pub change: Option<ChangeView>,
+    /// Every open change of the card, one per repository, in the order they are merged; `change` is among them.
+    #[serde(default)]
+    pub changes: Vec<ChangeView>,
     /// The attempts of the card's latest group, if it was ever tried several times at once.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attempts: Vec<AttemptView>,
@@ -125,6 +128,8 @@ pub struct RunView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChangeView {
     pub id: i64,
+    /// The name of the repository the change is in.
+    pub repository: String,
     pub state: String,
     /// `pending`, `success`, `failure` or `none`, as column scripts see it.
     pub checks: String,
@@ -203,6 +208,7 @@ fn card_view(app: &App, facts: &BoardFacts, card: Card) -> crate::app::Result<Ca
         blocked_by: Vec::new(),
         refusals: 0,
         change: None,
+        changes: Vec::new(),
         attempts: Vec::new(),
     };
     let Some(card_facts) = facts.cards.get(&view.card.id) else {
@@ -243,13 +249,22 @@ fn card_view(app: &App, facts: &BoardFacts, card: Card) -> crate::app::Result<Ca
             status: run.status.clone(),
         });
     }
-    if let Some(change) = app.store.open_change(view.card.id)? {
-        view.change = Some(ChangeView {
+    let verdict = latest_review(runs).map(|r| r.verdict.to_string());
+    for change in app.open_changes(&view.card)? {
+        let shown = ChangeView {
             id: change.id,
+            repository: match change.repository_id {
+                Some(id) => app.repository(id)?.name,
+                None => String::new(),
+            },
             state: change.state.clone(),
             checks: app.checks_of(&change)?.to_string(),
-            review_verdict: latest_review(runs).map(|r| r.verdict.to_string()),
-        });
+            review_verdict: verdict.clone(),
+        };
+        if change.repository_id == Some(view.card.repository_id) {
+            view.change = Some(shown.clone());
+        }
+        view.changes.push(shown);
     }
     Ok(view)
 }
@@ -703,6 +718,8 @@ mod tests {
             ("open", "failure")
         );
         assert_eq!(change.review_verdict.as_deref(), Some("approve"));
+        assert_eq!(change.repository, repo.name);
+        assert_eq!(shown.changes, [change.clone()]);
         assert_eq!(snap.inbox[0].card_id, Some(card.id));
 
         let blocked = view(blocker.number);
@@ -720,6 +737,60 @@ mod tests {
             (finished.rounds, finished.tokens, finished.blocked_by.len()),
             (0, 0, 0)
         );
+    }
+
+    #[tokio::test]
+    async fn the_snapshot_shows_each_open_change_of_a_card_over_two_repositories() {
+        let (dir, state, addr) = start().await;
+        let app = &state.app;
+        let demo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let second = dir.path().join("second");
+        let web = app
+            .add_repository("web", origin(&second).to_str().unwrap())
+            .unwrap();
+        let store = &app.store;
+        let card = store
+            .add_card(demo.id, "Both", "", "person", "In progress")
+            .unwrap();
+        store.set_card_repositories(card.id, &[web.id]).unwrap();
+        let first = store
+            .add_change(demo.id, Some(card.id), "moebius/card-1", None, "abc")
+            .unwrap();
+        let other = store
+            .add_change(web.id, Some(card.id), "moebius/card-WEB-1", None, "def")
+            .unwrap();
+        store
+            .set_local_checks(other.id, "failure", "def", None)
+            .unwrap();
+
+        let snap: Snapshot = reqwest::Client::new()
+            .get(format!("http://{addr}/v1/snapshot"))
+            .bearer_auth(&*state.token)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let board = snap
+            .boards
+            .iter()
+            .find(|b| b.repository.id == demo.id)
+            .unwrap();
+        let shown = &board.cards[0];
+        let seen: Vec<_> = shown
+            .changes
+            .iter()
+            .map(|c| (c.id, c.repository.as_str(), c.checks.as_str()))
+            .collect();
+        assert_eq!(
+            seen,
+            [(first.id, "demo", "none"), (other.id, "web", "failure")]
+        );
+        // `change` stays the change in the card's own repository.
+        assert_eq!(shown.change.as_ref().map(|c| c.id), Some(first.id));
     }
 
     #[tokio::test]

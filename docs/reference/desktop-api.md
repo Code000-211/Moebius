@@ -669,7 +669,7 @@ Everything the app shows. Response:
                 "column": "Backlog", "created_at": 1790000000, "note": null, "retried_after": null,
                 "parent": null, "closed": false, "labels": [], "claimed_by": null,
                 "counts_as_sub_issue": true,
-                "rounds": 0, "tokens": 0, "run": null, "blocked_by": [], "refusals": 0, "change": null}],
+                "rounds": 0, "tokens": 0, "run": null, "blocked_by": [], "refusals": 0, "change": null, "changes": []}],
      "round_limit": 5,
      "waiting": {},
      "changes": []}
@@ -691,7 +691,8 @@ gets. Each entry of `cards` is a `Card` with what a board shows of it, so that a
 | `counts_as_sub_issue` | Whether the card counts as a sub-issue of its `parent` (see [only issues a person can have vouched for](#the-issue-tracker)). A client that builds stacks, counts "done of total" or decides what is next from `parent` uses only the cards where this is true; one that is false is an ordinary top-level card, whatever parent it names. |
 | `refusals` | How many tool calls of that latest run were refused (its `tool_check` and `mcp_call` run events with the decision `refuse`). |
 | `attempts` | The latest group of attempts of a card that was tried several times at once (see [column scripts](column-scripts.md#attempts)), oldest first, each `{"run", "model", "status", "result", "output", "picked", "reason"}`: `model` the model or class the attempt was started with, or null; `status` its run's status; `result` `passed`, `failed` or null before it was judged; `output` why it failed; `picked` whether it was the one kept, and `reason` why. Absent when the card has no attempts. |
-| `change` | The card's open change, `{"id", "state", "checks", "review_verdict"}`, or null. `checks` is `pending`, `success`, `failure` or `none`, as `card.change.checks`; `review_verdict` is `approve` or `changes` once a review ended since the latest `code` run, else null. Whether the change conflicts is not in the snapshot. |
+| `change` | The card's open change in its own issue's repository, `{"id", "repository", "state", "checks", "review_verdict"}`, or null. `repository` is the name of the repository the change is in. `checks` is `pending`, `success`, `failure` or `none`, as `card.change.checks`; `review_verdict` is `approve` or `changes` once a review ended since the latest `code` run, else null. Whether the change conflicts is not in the snapshot. |
+| `changes` | Every open change of the card, one per repository it works in that has one, in the order the changes are merged (the order of `repositories`), each as `change` above. A card over one repository has this one change or none; `change` is the entry of its own repository. Empty for a card in Done. |
 
 A card in `Done` has `rounds` and `tokens` 0, no `run`, no `change`, no blockers and no refusals: the snapshot is read on
 every event, and a finished card shows none of it. `waiting` maps the id of each card whose column

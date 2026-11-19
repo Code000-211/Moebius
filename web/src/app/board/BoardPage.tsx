@@ -74,6 +74,7 @@ import {
   isClosed,
   isPlanningLabel,
   issueUrl,
+  mergeStoppedOf,
   NO_FILTERS,
   nextCard,
   pullRequestOf,
@@ -499,6 +500,8 @@ export function BoardPage() {
                 board={board}
                 card={inspected}
                 item={inboxOf(inbox, inspected)}
+                stopped={mergeStoppedOf(inbox, inspected)}
+                boards={data.data?.boards}
                 busy={pending}
                 askFor={rejectFor}
                 onAskAnswered={() => setRejectFor(null)}

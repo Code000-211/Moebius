@@ -7,6 +7,7 @@
 import type {
   Board,
   Card,
+  CardChange,
   Change,
   Held,
   InboxItem,
@@ -44,6 +45,8 @@ const STUCK = "stuck";
 const CHANGE_CLOSED = "change_closed";
 const READY_TO_MERGE = "ready_to_merge";
 const APPROVE_ISSUE = "approve_issue";
+/** A merge of a card's changes stopped after another change of the card was merged; it informs, and is no turn. */
+export const MERGE_STOPPED = "merge_stopped";
 
 /**
  * The open item of every card of one read of the inbox, kept so that a board asks for a hundred cards without walking
@@ -57,11 +60,55 @@ export function inboxOf(inbox: readonly InboxItem[], card: Card): InboxItem | un
   let byCard = openItems.get(inbox);
   if (byCard === undefined) {
     byCard = new Map();
-    for (const item of inbox)
-      if (item.resolved_at === null && item.card_id !== null) byCard.set(item.card_id, item);
+    for (const item of inbox) {
+      if (item.resolved_at !== null || item.card_id === null) continue;
+      const held = byCard.get(item.card_id);
+      // A stopped merge only says what is merged; the item that asks for a person's turn stays the card's item. Of
+      // several changes to merge, the first in the order they are merged comes first, since a later one is refused.
+      if (item.kind === MERGE_STOPPED && held !== undefined) continue;
+      if (item.kind === READY_TO_MERGE && held?.kind === READY_TO_MERGE && held.id < item.id)
+        continue;
+      byCard.set(item.card_id, item);
+    }
     openItems.set(inbox, byCard);
   }
   return byCard.get(card.id);
+}
+
+/** The open `merge_stopped` item of a card, if a merge of its changes stopped after some were merged. */
+export function mergeStoppedOf(inbox: readonly InboxItem[], card: Card): InboxItem | undefined {
+  return inbox.find(
+    (item) => item.kind === MERGE_STOPPED && item.card_id === card.id && item.resolved_at === null,
+  );
+}
+
+/** What a `merge_stopped` item says: the repositories whose changes are merged and those still open, and why it stopped. */
+export function mergeStopped(item: InboxItem): {
+  repository: string;
+  reason: string;
+  merged: string[];
+  open: string[];
+} {
+  const names = (value: unknown): string[] =>
+    Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+  const word = (value: unknown): string => (typeof value === "string" ? value : "");
+  return {
+    repository: word(item.data.repository),
+    reason: word(item.data.reason),
+    merged: names(item.data.merged),
+    open: names(item.data.open),
+  };
+}
+
+/** Every open change of a card, one per repository in the order they are merged; a server that sends one has its own. */
+export function changesOfCard(card: Card): CardChange[] {
+  return card.changes ?? (card.change ? [card.change] : []);
+}
+
+/** A change's repository, said when a card has changes in several, so that they can be told apart. */
+export function inRepository(card: Card, change: CardChange): string {
+  const several = changesOfCard(card).length > 1;
+  return several && change.repository ? ` in ${change.repository}` : "";
 }
 
 /** Whether a card is being worked on: its latest run starts or runs. */
@@ -656,16 +703,19 @@ export function cardBadges(card: Card, status: CardStatus, next: boolean): CardB
       mark: "none",
     });
   }
-  switch (card.change?.checks) {
-    case "pending":
-      badges.push({ name: "CI running", mark: "none" });
-      break;
-    case "success":
-      badges.push({ name: "Green", mark: "none" });
-      break;
-    case "failure":
-      badges.push({ name: "CI failed", mark: "none" });
-      break;
+  for (const change of changesOfCard(card)) {
+    const where = inRepository(card, change);
+    switch (change.checks) {
+      case "pending":
+        badges.push({ name: `CI running${where}`, mark: "none" });
+        break;
+      case "success":
+        badges.push({ name: `Green${where}`, mark: "none" });
+        break;
+      case "failure":
+        badges.push({ name: `CI failed${where}`, mark: "none" });
+        break;
+    }
   }
   if (status === "stuck") badges.push({ name: "Stuck", mark: "blocked" });
   if (status === "needs-you") badges.push({ name: "Your turn", mark: "none" });
