@@ -309,12 +309,18 @@ _Avoid_: test window, maintenance window
 Planned in [ADR 0018](docs/adr/0018-more-than-one-person.md) and
 [the plan for people, the wiki and planning](docs/plan/issues-people-wiki-planning.md). The words for
 people that are built (organisation, person, role) are in the language above; of the words below, project, project key,
-home project, wiki and page are built (a board still works in one repository), the others not yet.
+home project, project files, wiki and page are built (a board still works in one repository, or in its project's
+files), the others not yet.
 
 **Project**:
 One board and the work on it, with any number of repositories, or none; work that needs no repository is done in the
 project's own store of files that Moebius keeps for it.
 _Avoid_: workspace, space
+
+**Project files**:
+A project's own store of files: a git repository Moebius keeps for it without a forge, named by the project's key,
+where the cards of a project without a repository are worked on, reviewed and merged.
+_Avoid_: project repository, scratch repository
 
 **Project key**:
 A few capital letters that name a project's cards, such as `WEB` in `WEB-24`: an uppercase letter and up to nine more

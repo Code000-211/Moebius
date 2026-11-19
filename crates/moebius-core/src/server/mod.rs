@@ -302,6 +302,8 @@ impl Server {
         router.set_checker(check::Checker::new(app.clone(), config.rules_path()));
         let runners = Arc::new(Runners::new(config.runners.clone()));
         leftovers::end_runs_of_a_previous_server(&app, &runners)?;
+        // A project made before projects had files of their own gets them now (ADR 0019).
+        app.make_missing_project_files();
         if let Some(launcher) = &launcher {
             // The runs of the last start are ended: nothing exists that the launcher must keep.
             launcher.clean_leftovers(&[])?;

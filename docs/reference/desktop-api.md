@@ -316,7 +316,9 @@ These objects appear in the responses. All ids are numbers; times are Unix secon
 `Repository`: `id`, `name`, `path` (the clone on the server), `forge` (`none`, `github`, `gitlab` or `forgejo`),
 `default_branch`, `github` (`owner/repo` or null), `trusted` (array of logins on the forge), `project` (the path on
 GitLab, such as `group/project`, or the repository on Forgejo as `owner/repo`, or null) and `home_project_id` (the
-[project](#projects) its new issues land in, which was made with it).
+[project](#projects) its new issues land in, which was made with it) and `files_of` (the id of the project whose own
+files the repository holds, see [a project's own files](#a-projects-own-files), or null for every repository a person
+added).
 
 `Card`: `id`, `repository_id`, `project_id` (the [project](#projects) whose board it is on), `number`, `title`, `body`, `author`, `column`, `created_at`, `note` (why the card was sent
 back to coding, or null), `retried_after` (the id of the card's latest run when a person last retried it, or null) and
@@ -390,6 +392,7 @@ end of the output of the repository's own checks, or null). A change's `branch` 
 in the snapshot, which holds only open items), `at` and `assignees` (the handles of the people it is given to, like a
 `Card`'s). Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
 (`data.reason`), `package_update` (`data.name`, `data.installed`, `data.version`; no card), `ready_to_merge` (`data.change`, `data.branch`, `data.run` when the change is a workflow run's, and `data.judgements`, the review's judgement calls, when it had any), `change_closed` (`data.change`, `data.pull_request`) and
+`project_label` (`data.label`, `data.repository`; its `title` says the label names no project of the repository, and the card it is about stays where it is: see [the project label](#the-project-label)) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
 addresses, and `data.regression`: the same for the cards of the regression set, empty when none was tried; its `title` is the
 proposal's and it has no card; a proposal for Moebius's own configuration has `data.kind` (`settings` or
@@ -638,7 +641,33 @@ A `ProjectView` is `{"id": number, "name": string, "key": string, "created_at": 
 "name": string, "home": bool}], "members": [{"id": number, "handle": string, "name": string}], "open_cards": number}`:
 `repositories` in the order the project names them, `home` true when this project is the repository's home project;
 `members` everyone of the organisation who is not disabled, since no project is private yet; `open_cards` the cards on
-its board that are neither closed nor in `Done`. A project made or renamed sends `project_changed`.
+its board that are neither closed nor in `Done`; `files` the id of the repository that holds the project's own files, or
+null until they are made. A project made or renamed sends `project_changed`.
+
+#### A project's own files
+
+Every project made with `POST /v1/projects` has a store of files of its own: a git repository the server keeps for it
+without a forge, at `<data_dir>/projects/<key>`, started with one empty commit on `main`. It is a `Repository` like any
+other without a forge, named by the project's key, with `files_of` and `home_project_id` the project, and it is not one
+of the project's `repositories`. So a project without a repository is a full board: its cards are made with `POST
+/v1/repositories/{files}/issues` and live in Moebius, their runs work in worktrees of the files under the same tool-call
+check, their changes are reviewed and merged into them as for any repository without a forge, and the files are read
+and written through `GET /v1/repositories/{files}/tree` and `/files/{path}`. Nothing refreshes them, since they came
+from nowhere, and `DELETE /v1/repositories/{files}` is refused with `422`: they go only with their project. A project
+made before projects had files gets them at the server's next start, if it has no repository. Because the key names the
+files, a repository cannot be added with a name that is a project's key, and a project cannot take a key that is a
+repository's name (`409`), in any case, since a repository's clone and worktrees are folders of its name. A project whose
+files cannot be made is not made. Making the files announces `repository_added`, then `project_changed` with `files`.
+
+#### The project label
+
+An issue read from a forge (GitHub, GitLab or Forgejo) makes a card on the board of its repository's home project. A
+label `project:<name>` (the prefix in any case, the name in any case) sends the card to the board of the project of that
+name, when the repository is one of its repositories, with its column kept; the card is on exactly one board, and
+`card_updated` is sent when it moves. Changing the label moves the card again, and taking it off sends the card back to
+the home project. This is done when the issue's labels change on the forge, so a card is not moved back after it was put
+elsewhere while its labels stay as they are. A label naming a project the repository is not one of the repositories of
+(or none) leaves the card where it is and adds an inbox item of kind `project_label` for it, once for that set of labels.
 
 ### `GET /v1/projects`
 
@@ -648,8 +677,8 @@ Every project, in the order they were made: `[ProjectView]`.
 
 An owner, or the Moebius agent, makes a project with no repository yet. Request body: `{"name": string, "key":
 string}`. The name is 1 to 80 characters, without a slash, a backslash or a control character, and does not start with a
-dot or a space. Response: the `ProjectView`. Errors: `409` for a key another project has, or a name another project has
-in any case; `422` for a key that is not one or a name that is not one.
+dot or a space. The project gets [its own files](#a-projects-own-files) at once. Response: the `ProjectView`. Errors:
+`409` for a key another project has or a repository has as its name, or a name another project has in any case; `422` for a key that is not one or a name that is not one.
 
 ```sh
 curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
@@ -750,7 +779,7 @@ Request:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `name` | string | Required. Letters, digits, `-`, `_` and `.`, and not starting with a dot. Must be unique. |
+| `name` | string | Required. Letters, digits, `-`, `_` and `.`, and not starting with a dot. Must be unique regardless of case, and no project's key. |
 | `url` | string | Required. Anything `git clone` takes: a URL or a path on the server. Without a forge, an absolute path that does not exist, or an empty folder, is first made a new repository: branch `main` with one empty commit, "Start the repository". |
 | `forge` | string | `none` (the default), `github`, `gitlab` or `forgejo`. |
 | `github` | string | `owner/repo` on GitHub. Required with the forge `github`, not allowed otherwise. Both parts are made of letters, digits, `-`, `_` and `.`. |
@@ -810,7 +839,8 @@ worktrees under the server's data directory. The decision is recorded (kind `del
 Request: `{"reason": string}`; `reason` is optional and is kept with the decision. A body is not required.
 
 Response: the `Repository`, as it last was. Errors: `404` no such repository; `409` one of its runs is still going —
-stop that run first, nothing is removed then.
+stop that run first, nothing is removed then; `422` for the repository that holds a project's own files, which goes only
+with its project.
 
 ```sh
 curl -s -X DELETE -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7171/v1/repositories/2

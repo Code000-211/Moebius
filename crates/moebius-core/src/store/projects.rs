@@ -8,13 +8,18 @@
 //! repository name can be, since those have no spaces. SQL cannot make a key from a name, so the migration leaves a provisional key,
 //! `#<id>`, which no project can choose; [`give_keys`] replaces every such key with one made from the name as soon as
 //! the store is open. A repository added later makes its home project the same way (see `cards`).
+//!
+//! A project also has a store of files of its own: a repository row whose `files_of` names the project. It is not one
+//! of the project's repositories (`project_repositories` does not list it), but the project is its home project, so the
+//! cards of a project without a repository are on its board and run, are reviewed and are merged in it like any
+//! repository's without a forge. `app::projects::files` makes it.
 
 use std::collections::HashSet;
 
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use serde::{Deserialize, Serialize};
 
-use super::{Result, Store, StoreError, now};
+use super::{Repository, Result, Store, StoreError, now};
 
 /// The tables of this part, one project for each repository, and every card on its repository's project.
 pub(super) const SCHEMA: &str = r#"
@@ -46,6 +51,12 @@ UPDATE repositories SET home_project_id = id;
 UPDATE cards SET project_id = repository_id;
 "#;
 
+/// The repository that holds a project's own files names the project; a project has at most one.
+pub(super) const FILES: &str = r#"
+ALTER TABLE repositories ADD COLUMN files_of INTEGER REFERENCES projects(id);
+CREATE UNIQUE INDEX repositories_by_files_of ON repositories (files_of) WHERE files_of IS NOT NULL;
+"#;
+
 /// The most characters a project's key has.
 pub const KEY_LIMIT: usize = 10;
 
@@ -60,6 +71,9 @@ pub struct Project {
     pub created_at: i64,
     /// The ids of the project's repositories, in the order the project names them.
     pub repositories: Vec<i64>,
+    /// The id of the repository that holds the project's own files, once it is made; it is not one of `repositories`.
+    #[serde(default)]
+    pub files: Option<i64>,
 }
 
 /// Whether `key` is a project's key: an uppercase letter, then 1 to 9 uppercase letters or digits.
@@ -140,7 +154,8 @@ pub(super) fn insert_home_project(conn: &Connection, name: &str) -> rusqlite::Re
 
 const COLUMNS: &str = "id, name, key, created_at, \
     (SELECT json_group_array(repository_id) FROM \
-        (SELECT repository_id FROM project_repositories WHERE project_id = projects.id ORDER BY position, repository_id))";
+        (SELECT repository_id FROM project_repositories WHERE project_id = projects.id ORDER BY position, repository_id)), \
+    (SELECT id FROM repositories WHERE files_of = projects.id)";
 
 fn project(row: &Row) -> rusqlite::Result<Project> {
     Ok(Project {
@@ -151,6 +166,7 @@ fn project(row: &Row) -> rusqlite::Result<Project> {
         repositories: serde_json::from_str(&row.get::<_, String>(4)?).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, e.into())
         })?,
+        files: row.get(5)?,
     })
 }
 
@@ -167,6 +183,29 @@ impl Store {
             conn.last_insert_rowid()
         };
         self.project(id)?
+            .ok_or(StoreError::Sql(rusqlite::Error::QueryReturnedNoRows))
+    }
+
+    /// Adds the repository `name` at `path`, on `default_branch`, that holds the own files of the project
+    /// `project_id`: without a forge, with the project as its home project and not one of its repositories. A project
+    /// that has its files already, or a name a repository has, is an error.
+    pub fn add_project_files(
+        &self,
+        project_id: i64,
+        name: &str,
+        path: &str,
+        default_branch: &str,
+    ) -> Result<Repository> {
+        let id = {
+            let conn = self.conn();
+            conn.execute(
+                "INSERT INTO repositories (name, path, forge, default_branch, trusted, home_project_id, files_of)
+                 VALUES (?1, ?2, 'none', ?3, '[]', ?4, ?4)",
+                params![name, path, default_branch, project_id],
+            )?;
+            conn.last_insert_rowid()
+        };
+        self.repository(id)?
             .ok_or(StoreError::Sql(rusqlite::Error::QueryReturnedNoRows))
     }
 
@@ -221,6 +260,26 @@ impl Store {
             "UPDATE projects SET name = ?1 WHERE id = ?2",
             params![name, id],
         )? == 1)
+    }
+
+    /// Makes `repository_id` one of the repositories of the project `project_id`, after the ones it has; nothing
+    /// happens when it is one already. The repository's home project does not change.
+    pub fn link_repository(&self, project_id: i64, repository_id: i64) -> Result<()> {
+        self.conn().execute(
+            "INSERT OR IGNORE INTO project_repositories (project_id, repository_id, position)
+             VALUES (?1, ?2, COALESCE((SELECT MAX(position) + 1 FROM project_repositories WHERE project_id = ?1), 0))",
+            [project_id, repository_id],
+        )?;
+        Ok(())
+    }
+
+    /// Puts the card on the board of the project `project_id`; its column stays.
+    pub fn set_card_project(&self, card_id: i64, project_id: i64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE cards SET project_id = ?1 WHERE id = ?2",
+            [project_id, card_id],
+        )?;
+        Ok(())
     }
 
     /// How many cards on the project's board are open: not closed and not in `Done`.

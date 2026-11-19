@@ -42,7 +42,7 @@ export function keyFor(name: string): string {
 
 /** What a project's tile says of its repositories: their names, or that it has none yet. */
 export function repositoriesText(project: Project): string {
-  if (project.repositories.length === 0) return "No repository yet";
+  if (project.repositories.length === 0) return "No repository: its own files";
   return project.repositories.map((each) => each.name).join(" · ");
 }
 

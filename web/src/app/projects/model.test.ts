@@ -50,8 +50,9 @@ describe("a project's key and tile", () => {
       repositories: [],
       members: [],
       open_cards: 0,
+      files: 7,
     };
-    expect(repositoriesText(project)).toBe("No repository yet");
+    expect(repositoriesText(project)).toBe("No repository: its own files");
     expect(
       repositoriesText({
         ...project,

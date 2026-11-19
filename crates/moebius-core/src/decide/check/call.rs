@@ -305,6 +305,54 @@ mod tests {
         }
     }
 
+    /// A run of a card of a project without a repository works in a worktree of the project's own files, and the
+    /// tool-call check keeps its writes there: not even the files themselves are written past the review.
+    #[test]
+    fn a_run_in_a_project_s_own_files_writes_only_in_its_worktree() {
+        let mut f = fixture(None, false, None);
+        let project = f.app.add_project("Pricing page", "PRICE").unwrap();
+        let files = f.app.repository(project.files.unwrap()).unwrap();
+        let card = f
+            .app
+            .create_issue(files.id, "Write the prices", "", "person:owner")
+            .unwrap();
+        let run = f
+            .app
+            .store
+            .add_run(Some(card.id), "Coder", "pi-bolt", "code")
+            .unwrap();
+        let clone = Path::new(&files.path);
+        let worktree = f
+            .app
+            .repos
+            .add_worktree(&files.name, clone, run.id, &files.base_ref())
+            .unwrap();
+        f.app
+            .store
+            .set_run_worktree(run.id, &worktree.path.to_string_lossy())
+            .unwrap();
+        f.grant = Grant {
+            run_id: run.id,
+            card_id: Some(card.id),
+            budget: None,
+        };
+        let inside = worktree.path.join("prices.md");
+        let reply = f.call("write", json!({ "path": inside, "content": "10 EUR" }));
+        assert_eq!(reply.decision, "allow", "{}", reply.reason);
+        for outside in [
+            clone.join("prices.md"),
+            clone.parent().unwrap().join("x.md"),
+        ] {
+            let reply = f.call("write", json!({ "path": outside, "content": "10 EUR" }));
+            assert_eq!(reply.decision, "refuse", "{outside:?}");
+            assert!(
+                reply.reason.starts_with("stay-in-the-worktree: "),
+                "{}",
+                reply.reason
+            );
+        }
+    }
+
     #[test]
     fn the_fixed_rules_decide_before_the_rules_in_prose() {
         let f = fixture(Some(PROSE_RULES), true, None);
