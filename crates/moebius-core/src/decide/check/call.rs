@@ -434,7 +434,10 @@ mod tests {
             let reply = f.call("write", json!({ "path": inside, "content": "10 EUR" }));
             assert_eq!(reply.decision, "allow", "{inside:?}: {}", reply.reason);
             // A shell command names a Windows path with slashes: a backslash in it is an escape.
-            let note = worktree.join("note.txt").to_string_lossy().replace('\\', "/");
+            let note = worktree
+                .join("note.txt")
+                .to_string_lossy()
+                .replace('\\', "/");
             let reply = f.bash(&format!("echo hi > {note}"));
             assert_eq!(reply.decision, "allow", "{}", reply.reason);
         }
