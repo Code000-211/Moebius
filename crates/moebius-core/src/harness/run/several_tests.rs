@@ -725,3 +725,23 @@ fn a_person_s_failing_merge_of_the_second_change_marks_the_card_too() {
     assert_eq!(marked.data["open"], serde_json::json!(["web"]));
     assert_eq!(setup.app.card(card.id).unwrap().column, "Ready to merge");
 }
+
+#[test]
+fn a_card_is_not_done_while_an_earlier_change_was_closed_without_being_merged() {
+    let setup = setup();
+    let (card, _web, changes) = offered_over_two(&setup);
+    // The pull request of the first repository is closed on the forge; the second is reported merged by the poll.
+    setup.app.change_closed(&changes[0]).unwrap();
+    setup.app.change_merged(&changes[1], None, None).unwrap();
+    assert_ne!(setup.app.card(card.id).unwrap().column, "Done");
+    let marked = setup
+        .app
+        .store
+        .inbox_for_card(card.id)
+        .unwrap()
+        .into_iter()
+        .find(|item| item.kind == "merge_stopped" && item.resolved_at.is_none())
+        .expect("the card is marked");
+    assert_eq!(marked.data["repository"], "demo");
+    assert_eq!(marked.data["merged"], serde_json::json!(["web"]));
+}

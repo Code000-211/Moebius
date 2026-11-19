@@ -516,8 +516,20 @@ impl App {
                 self.store.resolve_inbox_for_change(change.id)?;
             }
             Some(card_id) => {
-                self.store.resolve_inbox_for_card(card_id)?;
-                self.move_card(card_id, columns::DONE, by)?;
+                let card = self.card(card_id)?;
+                // A change closed on the forge without being merged is not merged: the card is not done.
+                if let Some(closed) = self.closed_change(&card)? {
+                    self.store.resolve_inbox_for_change(change.id)?;
+                    let name = self.repository_of(&closed)?.name;
+                    self.merge_stopped(
+                        &card,
+                        &closed,
+                        &format!("the change in {name} was closed without being merged"),
+                    )?;
+                } else {
+                    self.store.resolve_inbox_for_card(card_id)?;
+                    self.move_card(card_id, columns::DONE, by)?;
+                }
             }
             None => self.store.resolve_inbox_for_change(change.id)?,
         }
