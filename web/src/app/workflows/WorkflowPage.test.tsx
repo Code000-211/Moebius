@@ -3,7 +3,7 @@
  * file with its copy button. The nodes are found by the words a person reads, not by a test-only handle on the canvas.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkflowPage } from "./WorkflowPage";
@@ -70,7 +70,10 @@ describe("a workflow's definition", () => {
   it("shows the file as it is saved, with the way to copy it", async () => {
     show(DEFINITION);
     expect(await screen.findByRole("heading", { name: "File" })).toBeTruthy();
-    expect(screen.getByText(/name = "release"/)).toBeTruthy();
+    // The file is plain text until the highlighter loads, then split into spans: read it as one text.
+    await waitFor(() => {
+      expect(document.querySelector("#workflow-file-title + p + div pre")?.textContent).toContain('name = "release"');
+    });
     expect(screen.getByRole("button", { name: /Copy/ })).toBeTruthy();
   });
 
