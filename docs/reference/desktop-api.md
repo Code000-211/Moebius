@@ -383,6 +383,7 @@ end of the output of the repository's own checks, or null). A change's `branch` 
 in the snapshot, which holds only open items), `at` and `assignees` (the handles of the people it is given to, like a
 `Card`'s). Kinds the core adds: `approve_issue` (`data.reason`), `stuck`
 (`data.reason`), `package_update` (`data.name`, `data.installed`, `data.version`; no card), `ready_to_merge` (`data.change`, `data.branch`, `data.run` when the change is a workflow run's, and `data.judgements`, the review's judgement calls, when it had any), `change_closed` (`data.change`, `data.pull_request`) and
+`project_label` (`data.label`, `data.repository`; its `title` says the label names no project of the repository, and the card it is about stays where it is: see [the project label](#the-project-label)) and
 `proposal` (`data.proposal`, `data.branch`, `data.trials`: an array of `{"card", "outcome", "reason"}` for the cards it
 addresses, and `data.regression`: the same for the cards of the regression set, empty when none was tried; its `title` is the
 proposal's and it has no card; a proposal for Moebius's own configuration has `data.kind` (`settings` or
@@ -632,6 +633,16 @@ A `ProjectView` is `{"id": number, "name": string, "key": string, "created_at": 
 `repositories` in the order the project names them, `home` true when this project is the repository's home project;
 `members` everyone of the organisation who is not disabled, since no project is private yet; `open_cards` the cards on
 its board that are neither closed nor in `Done`. A project made or renamed sends `project_changed`.
+
+#### The project label
+
+An issue read from a forge (GitHub, GitLab or Forgejo) makes a card on the board of its repository's home project. A
+label `project:<name>` (the prefix in any case, the name in any case) sends the card to the board of the project of that
+name, when the repository is one of its repositories, with its column kept; the card is on exactly one board, and
+`card_updated` is sent when it moves. Changing the label moves the card again, and taking it off sends the card back to
+the home project. This is done when the issue's labels change on the forge, so a card is not moved back after it was put
+elsewhere while its labels stay as they are. A label naming a project the repository is not one of the repositories of
+(or none) leaves the card where it is and adds an inbox item of kind `project_label` for it, once for that set of labels.
 
 ### `GET /v1/projects`
 

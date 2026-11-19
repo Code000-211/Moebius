@@ -16,6 +16,9 @@ use crate::bus::Event;
 use crate::repos::forge::{Comment as ForgeComment, Issue};
 use crate::store::Card;
 
+/// The start of a label that sends an issue to another project of its repository, as in `project:web`.
+const PROJECT_LABEL: &str = "project:";
+
 /// What each issue of a repository waits for, by issue number: the issues that block it, and its sub-issues, because an
 /// issue with sub-issues is not done before they are.
 pub(super) type Waits = BTreeMap<i64, Vec<i64>>;
@@ -163,6 +166,45 @@ impl App {
         Ok(())
     }
 
+    /// Puts the card on the board a `project:<name>` label names, or on its repository's home project when it has none
+    /// (so that taking the label off sends it back). A label naming a project the repository is not in, or none at all,
+    /// leaves the card where it is and puts a note in the inbox. Called when the issue's labels changed, so a person who
+    /// moved the card by hand is not undone by a poll.
+    fn place_by_label(&self, card: &Card, labels: &BTreeSet<String>) -> Result<()> {
+        let repository = self.repository(card.repository_id)?;
+        let named = labels.iter().find_map(|label| {
+            let (prefix, name) = label.split_at_checked(PROJECT_LABEL.len())?;
+            prefix
+                .eq_ignore_ascii_case(PROJECT_LABEL)
+                .then_some(name.trim())
+        });
+        let target = match named {
+            None => self.store.project(repository.home_project_id)?,
+            Some(name) => self
+                .store
+                .project_by_name(name)?
+                .filter(|p| p.repositories.contains(&repository.id)),
+        };
+        match (target, named) {
+            (Some(project), _) => {
+                if project.id != card.project_id {
+                    self.store.set_card_project(card.id, project.id)?;
+                    self.bus.publish(Event::CardUpdated(self.card(card.id)?));
+                }
+            }
+            (None, Some(name)) => {
+                self.store.add_inbox_item(
+                    "project_label",
+                    Some(card.id),
+                    &format!("{PROJECT_LABEL}{name} names no project of {}", repository.name),
+                    &serde_json::json!({ "label": format!("{PROJECT_LABEL}{name}"), "repository": repository.id }),
+                )?;
+            }
+            (None, None) => {}
+        }
+        Ok(())
+    }
+
     /// Brings what an issue has besides its text in line with the forge's copy of it (see `sync_issues`): its state,
     /// parent, labels, blockers and comments. Each change is announced as the API's own changes are, and only what the
     /// forge changed is taken (see the module).
@@ -230,6 +272,7 @@ impl App {
                     labels: labels.iter().cloned().collect(),
                 });
             }
+            self.place_by_label(card, &labels)?;
             self.forge_saw(card, "labels", &text(&labels))?;
         }
 
