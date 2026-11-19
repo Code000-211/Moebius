@@ -1,38 +1,64 @@
 /**
- * The Inbox (the former desktop app's `screens/inbox`): everything that needs the person in one list, newest first, filtered
- * by kind and by repository, each item with the buttons that act on it. The list is the whole page, so the filters sit
- * above it under a word each and an empty list says what belongs here. It reads the snapshot, which the event stream
- * keeps current, so an item arrives and leaves on its own. The filters are in the address (`?kind=`, `?repository=`).
+ * The Inbox (the former desktop app's `screens/inbox`): everything that needs the person in one list, newest first, each
+ * item with the buttons that act on it. The kinds are tabs with the number of items of each, and the shared filter bar
+ * (`ui/filters`) filters by repository and by change. The list is the whole page, so an empty list says what belongs
+ * here. It reads the snapshot, which the event stream keeps current, so an item arrives and leaves on its own. What is
+ * chosen is in the address (`?kind=`, `?repository=`, `?change=`), so a reload keeps it.
  */
 import { CheckCircleIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import type { ReactNode } from "react";
-import { useSearchParams } from "react-router";
+import { useId } from "react";
 import { snapshot as readSnapshot } from "../../api/calls/board";
 import { keys } from "../../api/keys";
+import type { Snapshot } from "../../api/types/board";
 import { Button } from "../../ui/components/Button";
+import { FilterBar } from "../../ui/filters/FilterBar";
+import type { FilterField } from "../../ui/filters/model";
+import { useQueryParams } from "../../ui/filters/useQueryParams";
 import { useNow } from "../../ui/lib/useNow";
-import { Chip } from "../../ui/page/Chip";
 import { Empty } from "../../ui/page/Empty";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
+import { TabPanel, Tabs } from "../../ui/page/Tabs";
 import { ItemCard } from "./ItemCard";
-import { chipName, count, type Filters, kindsOf, STUCK, shown, summary } from "./model";
+import { changeOf, chipName, count, type Filters, kindsOf, shown, summary } from "./model";
 
-/** A row of filter chips, with the word for what they filter by. */
-function FilterRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
-      <legend className="mb-2 p-0 text-sm font-semibold text-secondary">{label}</legend>
-      <div className="flex flex-wrap gap-2">{children}</div>
-    </fieldset>
-  );
+/** The fields of the bar: the repository, while there is more than one, and the change an item is about. */
+function filterFields(snapshot: Snapshot, filters: Filters): FilterField[] {
+  const changes = [
+    ...new Set(
+      snapshot.inbox.flatMap((item) => {
+        const change = changeOf(item);
+        return change === null ? [] : [change];
+      }),
+    ),
+  ];
+  if (filters.change != null && !changes.includes(filters.change)) changes.push(filters.change);
+  return [
+    {
+      key: "repository",
+      label: "Repository",
+      options:
+        snapshot.boards.length > 1
+          ? snapshot.boards.map((board): [string, string] => [
+              String(board.repository.id),
+              board.repository.name,
+            ])
+          : [],
+    },
+    {
+      key: "change",
+      label: "Change",
+      options: changes.map((change): [string, string] => [String(change), `Change ${change}`]),
+    },
+  ];
 }
 
 export function InboxPage() {
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
-  const [params, setParams] = useSearchParams();
+  const [params, setQuery] = useQueryParams();
+  const tabs = useId();
   const now = useNow();
   if (data.isPending)
     return (
@@ -62,18 +88,6 @@ export function InboxPage() {
     kind: params.get("kind"),
     repository: repository !== null && /^\d+$/.test(repository) ? Number(repository) : null,
   };
-  const setFilter = (changes: Record<string, string | null>) =>
-    setParams(
-      (current) => {
-        const next = new URLSearchParams(current);
-        for (const [key, value] of Object.entries(changes)) {
-          if (value === null) next.delete(key);
-          else next.set(key, value);
-        }
-        return next;
-      },
-      { replace: true },
-    );
   const items = shown(snapshot, filters);
   const total = snapshot.inbox.length;
 
@@ -87,82 +101,57 @@ export function InboxPage() {
           )
         }
       />
-      <search aria-label="Filter the inbox" className="mb-6 flex flex-col gap-4">
-        {filters.change != null && (
-          <FilterRow label="Change">
-            <Chip selected onClick={() => setFilter({ change: null })}>
-              {`Only change ${filters.change}`}
-            </Chip>
-          </FilterRow>
-        )}
-        <FilterRow label="Kind">
-          <Chip selected={filters.kind === null} onClick={() => setFilter({ kind: null })}>
-            All <span className="tabular-nums">{count(snapshot, null, filters.repository)}</span>
-          </Chip>
-          {kindsOf(snapshot).map((kind) => (
-            <Chip
-              key={kind}
-              selected={filters.kind === kind}
-              tone={kind === STUCK ? "error" : "neutral"}
-              onClick={() => setFilter({ kind })}
-            >
-              {chipName(kind)}{" "}
-              <span className="tabular-nums">{count(snapshot, kind, filters.repository)}</span>
-            </Chip>
-          ))}
-        </FilterRow>
-        {snapshot.boards.length > 1 && (
-          <FilterRow label="Repository">
-            <Chip
-              selected={filters.repository === null}
-              onClick={() => setFilter({ repository: null })}
-            >
-              All
-            </Chip>
-            {snapshot.boards.map((board) => (
-              <Chip
-                key={board.repository.id}
-                selected={filters.repository === board.repository.id}
-                onClick={() => setFilter({ repository: String(board.repository.id) })}
-              >
-                {board.repository.name}{" "}
-                <span className="tabular-nums">
-                  {count(snapshot, filters.kind, board.repository.id)}
-                </span>
-              </Chip>
-            ))}
-          </FilterRow>
-        )}
-      </search>
-      {items.length === 0 ? (
-        total === 0 ? (
-          <Empty
-            title="All caught up"
-            icon={<CheckCircleIcon className="size-6 text-complete-text" weight="fill" />}
-            body="Nothing is waiting on you. A stuck run, a change ready to merge or a proposal from the Retro will turn up here."
-          />
+      <Tabs
+        label="Kind"
+        idBase={tabs}
+        value={filters.kind ?? ""}
+        onChange={(kind) => setQuery({ kind })}
+        tabs={[
+          { value: "", label: `All ${count(snapshot, null, filters.repository)}` },
+          ...kindsOf(snapshot).map((kind) => ({
+            value: kind,
+            label: `${chipName(kind)} ${count(snapshot, kind, filters.repository)}`,
+          })),
+        ]}
+        className="mb-4"
+      />
+      <FilterBar
+        label="Filter the inbox"
+        fields={filterFields(snapshot, filters)}
+        values={{
+          repository: filters.repository === null ? "" : String(filters.repository),
+          change: filters.change == null ? "" : String(filters.change),
+        }}
+        onFilter={(key, value) => setQuery({ [key]: value })}
+        onClear={() => setQuery({ repository: "", change: "" })}
+      />
+      <TabPanel idBase={tabs} value={filters.kind ?? ""} className="flex flex-col gap-4">
+        {items.length === 0 ? (
+          total === 0 ? (
+            <Empty
+              title="All caught up"
+              icon={<CheckCircleIcon className="size-6 text-complete-text" weight="fill" />}
+              body="Nothing is waiting on you. A stuck run, a change ready to merge or a proposal from the Retro will turn up here."
+            />
+          ) : (
+            <Empty
+              title="Nothing here with those filters"
+              body="No item matches the filter. Show everything to see the rest."
+              action={
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setQuery({ kind: "", repository: "", change: "" })}
+                >
+                  Show everything
+                </Button>
+              }
+            />
+          )
         ) : (
-          <Empty
-            title="Nothing here with those filters"
-            body="No item matches the filter. Show everything to see the rest."
-            action={
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setFilter({ kind: null, repository: null, change: null })}
-              >
-                Show everything
-              </Button>
-            }
-          />
-        )
-      ) : (
-        <div className="flex flex-col gap-4">
-          {items.map((item) => (
-            <ItemCard key={item.id} item={item} snapshot={snapshot} now={now} />
-          ))}
-        </div>
-      )}
+          items.map((item) => <ItemCard key={item.id} item={item} snapshot={snapshot} now={now} />)
+        )}
+      </TabPanel>
     </>
   );
 }

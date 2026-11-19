@@ -130,7 +130,45 @@ function readBody(request: IncomingMessage): Promise<string> {
   });
 }
 
-function usageReport(days: number) {
+/**
+ * The usage of `days`. Narrowed to an agent (`GET /v1/usage?agent=`), every figure is the agent's share of the whole:
+ * the totals, the models, the agents' table and the day by day tokens, as the server narrows them.
+ */
+function usageReport(days: number, agent = "") {
+  const whole = fullUsageReport(days);
+  const mine = whole.agents.find((each) => each.agent === agent);
+  if (agent === "") return whole;
+  if (!mine) {
+    return {
+      ...whole,
+      totals: { ...whole.totals, tokens: 0, calls: 0, model_ms: 0 },
+      days: [],
+      models: [],
+      agents: [],
+      activities: [],
+      tool_waits: [],
+    };
+  }
+  const share = mine.tokens / whole.totals.tokens;
+  return {
+    ...whole,
+    totals: {
+      ...whole.totals,
+      tokens: mine.tokens,
+      calls: mine.calls,
+      model_ms: mine.model_ms,
+    },
+    days: whole.days.map((day) => ({ ...day, tokens: Math.round(day.tokens * share) })),
+    models: whole.models.map((model) => ({
+      ...model,
+      tokens: Math.round(model.tokens * share),
+      calls: Math.round(model.calls * share),
+    })),
+    agents: [mine],
+  };
+}
+
+function fullUsageReport(days: number) {
   const scale = days;
   return {
     today: TODAY,
@@ -752,7 +790,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         if (!Number.isInteger(days) || days < 1 || days > 365) {
           return fail(response, 422, "days must be a whole number from 1 to 365");
         }
-        return ok(response, usageReport(days));
+        return ok(response, usageReport(days, url.searchParams.get("agent") ?? ""));
       }
       if (path === "/v1/proposals" && method === "GET") return ok(response, proposals);
       if (path === "/v1/retros" && method === "GET") return ok(response, retros);

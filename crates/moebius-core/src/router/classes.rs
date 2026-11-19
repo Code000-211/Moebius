@@ -448,7 +448,10 @@ mod tests {
 
         /// The model and tokens of each usage row of the run, and the class it was asked by, if any.
         fn usage(&self) -> Vec<(String, Option<String>, i64)> {
-            let classes = self.store.usage_by_class(1).unwrap();
+            let classes = self
+                .store
+                .usage_by_class(1, &crate::store::Scope::default())
+                .unwrap();
             self.store
                 .usage_for_run(self.run)
                 .unwrap()

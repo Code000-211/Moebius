@@ -42,7 +42,7 @@ use crate::improve::research::{self, NewResearch, ResearchView};
 use crate::improve::retro::{self, RetroSummary, RetroView};
 use crate::improve::trial;
 use crate::store::{
-    ActivityUsage, AgentUsage, ClassUsage, ModelUsage, Proposal, Replay, Takeover, ToolWait,
+    ActivityUsage, AgentUsage, ClassUsage, ModelUsage, Proposal, Replay, Scope, Takeover, ToolWait,
 };
 
 /// The routes of usage, judgements, the Retro, the decision model, research and exports.
@@ -115,6 +115,24 @@ const TOOL_WAITS: i64 = 10;
 #[derive(Debug, Deserialize)]
 struct UsageQuery {
     days: Option<i64>,
+    repository: Option<i64>,
+    agent: Option<String>,
+}
+
+/// The repository and the agent a read of usage or of the judgement kinds is narrowed to, if given.
+#[derive(Debug, Default, Deserialize)]
+struct ScopeQuery {
+    repository: Option<i64>,
+    agent: Option<String>,
+}
+
+impl ScopeQuery {
+    fn scope(self) -> Scope {
+        Scope {
+            repository: self.repository,
+            agent: self.agent.filter(|agent| !agent.is_empty()),
+        }
+    }
 }
 
 /// The usage of a window of days (`docs/reference/desktop-api.md`).
@@ -484,9 +502,11 @@ fn export_failed(e: ExportError) -> AppError {
 
 async fn judgement_kinds(
     State(state): State<ApiState>,
+    Query(query): Query<ScopeQuery>,
 ) -> Result<axum::Json<Vec<KindCounts>>, ApiError> {
-    blocking(&state.app, |app| {
-        export::counts(&app.store).map_err(export_failed)
+    let scope = query.scope();
+    blocking(&state.app, move |app| {
+        export::counts(&app.store, &scope).map_err(export_failed)
     })
     .await
 }
@@ -541,12 +561,17 @@ async fn usage(
         return Err(AppError::Invalid(format!("days is from 1 to {HEATMAP_DAYS}")).into());
     }
     let day_budget = state.config.get().day_tokens;
+    let scope = ScopeQuery {
+        repository: query.repository,
+        agent: query.agent,
+    }
+    .scope();
     blocking(&state.app, move |app| {
         let store = &app.store;
-        let totals = store.usage_totals(days)?;
+        let totals = store.usage_totals(days, &scope)?;
         let mut by_day: Vec<DayUsage> = vec![];
         let mut leading_tokens = 0;
-        for (date, model, tokens) in store.usage_by_day(HEATMAP_DAYS)? {
+        for (date, model, tokens) in store.usage_by_day(HEATMAP_DAYS, &scope)? {
             match by_day.last_mut().filter(|day| day.date == date) {
                 Some(day) => {
                     day.tokens += tokens;
@@ -580,11 +605,11 @@ async fn usage(
                 day_budget,
             },
             days: by_day,
-            models: store.usage_by_model(days)?,
-            agents: store.usage_by_agent(days)?,
-            activities: store.usage_by_activity(days)?,
-            tool_waits: store.tool_waits(days, TOOL_WAITS)?,
-            classes: store.usage_by_class(days)?,
+            models: store.usage_by_model(days, &scope)?,
+            agents: store.usage_by_agent(days, &scope)?,
+            activities: store.usage_by_activity(days, &scope)?,
+            tool_waits: store.tool_waits(days, TOOL_WAITS, &scope)?,
+            classes: store.usage_by_class(days, &scope)?,
         })
     })
     .await
@@ -856,6 +881,90 @@ mod tests {
                 .unwrap();
             assert!(response.status().is_client_error(), "{days}");
         }
+    }
+
+    #[tokio::test]
+    async fn usage_and_the_judgement_kinds_are_narrowed_by_repository_and_agent() {
+        let (_dir, state, addr) = start().await;
+        let store = &state.app.store;
+        let one = store.add_repository("one", "/one", "none", "main").unwrap();
+        let two = store.add_repository("two", "/two", "none", "main").unwrap();
+        let card_one = store.add_card(one.id, "A", "", "leon", "Backlog").unwrap();
+        let card_two = store.add_card(two.id, "B", "", "leon", "Backlog").unwrap();
+        let coder = store
+            .add_run(Some(card_one.id), "Coder", "test", "code")
+            .unwrap();
+        let reviewer = store
+            .add_run(Some(card_two.id), "Reviewer", "test", "review")
+            .unwrap();
+        for (run, tokens) in [(Some(coder.id), 100), (Some(reviewer.id), 20), (None, 3)] {
+            store
+                .add_usage(&crate::store::Usage {
+                    run_id: run,
+                    model: "m".into(),
+                    input_tokens: tokens,
+                    output_tokens: 0,
+                    cached_tokens: 0,
+                    duration_ms: 10,
+                    tools: vec![],
+                })
+                .unwrap();
+        }
+        for (kind, run, card) in [
+            ("merge", None, Some(card_one.id)),
+            ("merge", Some(reviewer.id), None),
+            ("retry", None, None),
+        ] {
+            store
+                .add_judgement(&crate::store::NewJudgement {
+                    kind: kind.into(),
+                    choice: "c".into(),
+                    reason: "r".into(),
+                    decider: "person".into(),
+                    run_id: run,
+                    card_id: card,
+                    context: vec![],
+                    options: vec![],
+                })
+                .unwrap();
+        }
+        let tokens = |answer: &UsageAnswer| (answer.totals.tokens, answer.totals.calls);
+        let all: UsageAnswer = get(&state, &addr, "/v1/usage").await;
+        assert_eq!(tokens(&all), (123, 3));
+        let by_repository: UsageAnswer =
+            get(&state, &addr, &format!("/v1/usage?repository={}", one.id)).await;
+        assert_eq!(tokens(&by_repository), (100, 1));
+        assert_eq!(by_repository.agents.len(), 1);
+        assert_eq!(by_repository.models[0].tokens, 100);
+        assert_eq!(by_repository.days[0].tokens, 100);
+        let by_agent: UsageAnswer = get(&state, &addr, "/v1/usage?agent=Reviewer").await;
+        assert_eq!(tokens(&by_agent), (20, 1));
+        let both: UsageAnswer = get(
+            &state,
+            &addr,
+            &format!("/v1/usage?agent=Reviewer&repository={}", one.id),
+        )
+        .await;
+        assert_eq!(tokens(&both), (0, 0));
+        let without_run: UsageAnswer = get(&state, &addr, "/v1/usage?agent=No%20run").await;
+        assert_eq!(tokens(&without_run), (3, 1));
+
+        let kinds = |list: Vec<KindCounts>| -> Vec<(String, i64)> {
+            list.into_iter().map(|k| (k.kind, k.count)).collect()
+        };
+        let all = kinds(get(&state, &addr, "/v1/judgements/kinds").await);
+        assert_eq!(all, [("merge".to_string(), 2), ("retry".to_string(), 1)]);
+        let of_one = kinds(
+            get(
+                &state,
+                &addr,
+                &format!("/v1/judgements/kinds?repository={}", one.id),
+            )
+            .await,
+        );
+        assert_eq!(of_one, [("merge".to_string(), 1)]);
+        let of_reviewer = kinds(get(&state, &addr, "/v1/judgements/kinds?agent=Reviewer").await);
+        assert_eq!(of_reviewer, [("merge".to_string(), 1)]);
     }
 
     #[tokio::test]

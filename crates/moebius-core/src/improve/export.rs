@@ -14,7 +14,7 @@ use crate::app::{App, AppError, PERSON, is_person};
 use crate::blobs::redact_json;
 use crate::bus::Event;
 use crate::decide::{Actor, Question};
-use crate::store::{self, Judgement, Store, StoreError};
+use crate::store::{self, Judgement, Scope, Store, StoreError};
 
 /// How many judgements are read from the store at a time.
 const PAGE: i64 = 1000;
@@ -88,10 +88,10 @@ pub struct Summary {
     pub kinds: Vec<Written>,
 }
 
-/// The counts of the judgements stored now, per kind in alphabetical order.
-pub fn counts(store: &Store) -> Result<Vec<KindCounts>, ExportError> {
+/// The counts of the judgements stored now that are in `scope`, per kind in alphabetical order.
+pub fn counts(store: &Store, scope: &Scope) -> Result<Vec<KindCounts>, ExportError> {
     let mut by_kind: BTreeMap<String, KindCounts> = BTreeMap::new();
-    store.each_judgement(|kind, id, has_outcome, decider| {
+    store.each_judgement(scope, |kind, id, has_outcome, decider| {
         by_kind
             .entry(kind.to_string())
             .or_insert_with(|| KindCounts::new(kind))
@@ -171,7 +171,7 @@ fn write_kind(store: &Store, dir: &Path, kind: &str) -> Result<Written, ExportEr
 /// Writes one file per kind of judgement to `dir`, or only of the given kinds, oldest judgement first. A file only
 /// appears under its name once it is complete; one that fails leaves no file of its own.
 pub fn export(store: &Store, dir: &Path, kinds: Option<&[String]>) -> Result<Summary, ExportError> {
-    let stored = counts(store)?;
+    let stored = counts(store, &Scope::default())?;
     let wanted: Vec<String> = match kinds {
         None => stored.into_iter().map(|c| c.kind).collect(),
         Some(kinds) => {
@@ -539,7 +539,7 @@ mod tests {
             .collect();
         assert_eq!(ids, (1..=PAGE + 5).collect::<Vec<_>>());
         assert_eq!(
-            counts(&store).unwrap(),
+            counts(&store, &Scope::default()).unwrap(),
             vec![summary.kinds[0].counts.clone()]
         );
     }

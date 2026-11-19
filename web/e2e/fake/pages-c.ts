@@ -734,7 +734,15 @@ export function createPagesCFake(
     }
     if (path === "/v1/decision-model" && method === "GET")
       return reply(response, 200, decisionModel());
-    if (path === "/v1/judgements/kinds" && method === "GET") return reply(response, 200, kinds);
+    if (path === "/v1/judgements/kinds" && method === "GET") {
+      // Narrowed to an agent, only what the Coder decided: the merges, as the server counts the judgements of its runs.
+      const agent = new URL(request.url ?? "/", "http://x").searchParams.get("agent");
+      return reply(
+        response,
+        200,
+        agent ? kinds.filter((each) => (agent === "Coder" ? each.kind === "merge" : false)) : kinds,
+      );
+    }
     if (path === "/v1/exports" && method === "GET")
       return reply(response, 200, [...exports].reverse());
     if (path === "/v1/exports" && method === "POST") {

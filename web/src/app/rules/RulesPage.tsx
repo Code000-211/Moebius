@@ -5,7 +5,8 @@
  * `PUT /v1/repositories/{id}/settings/rules.md`; the server checks both and says which line is wrong.
  *
  * The page reads from what cannot be changed to what a person can: the patterns first, then the server's own rules,
- * then one box per repository.
+ * then one box per repository. The shared filter bar narrows it to one scope or one project (`filters.ts`), and keeps
+ * that in the address.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -16,18 +17,23 @@ import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import { Tag, type TagTone } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
+import { FilterBar } from "../../ui/filters/FilterBar";
+import { readFilters } from "../../ui/filters/model";
+import { useQueryParams } from "../../ui/filters/useQueryParams";
 import { Box } from "../../ui/page/Box";
 import { Field, TextArea } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
 import { Reading, SkeletonCard } from "../../ui/page/Skeleton";
 import { agentRequest, refusalsLabel } from "./file";
+import { FILTER_KEYS, filterFields, visible } from "./filters";
 import { RuleList } from "./RuleList";
 
 export function RulesPage() {
   const queryClient = useQueryClient();
   const data = useQuery({ queryKey: keys.rules, queryFn: rules });
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.rules });
+  const [params, setQuery] = useQueryParams();
   const [byAgent, setByAgent] = useState(false);
   const [wish, setWish] = useState("");
   const ask = useMutation({
@@ -65,100 +71,118 @@ export function RulesPage() {
   }
   const view = data.data;
   const prose = view.prose;
+  const fields = filterFields(view);
+  const values = readFilters(params, fields);
+  const show = visible(values);
+  const shownRepositories = view.repositories.filter((each) => show.project(each.repository_id));
 
   return (
     <>
       {header}
+      <FilterBar
+        label="Filter the rules"
+        fields={fields}
+        values={values}
+        onFilter={(key, value) => setQuery({ [key]: value })}
+        onClear={() => setQuery(Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])))}
+      />
+      {!show.patterns && !show.server && shownRepositories.length === 0 && (
+        <Notice>No rule is in that scope. Clear the filters to see them all.</Notice>
+      )}
       <div className="flex flex-col gap-6">
-        <Box
-          title="Built-in patterns"
-          aside="Always on. Checked before any model is asked."
-          className="min-w-0"
-        >
-          <div className="flex flex-col gap-4">
-            {view.patterns.map((pattern) => (
-              <PatternRow
-                key={pattern.name}
-                name={pattern.name}
-                description={pattern.description}
-                refusals={refusalsLabel(view.refusals, pattern.name)}
-                refused={(view.refusals[pattern.name] ?? 0) > 0}
-              />
-            ))}
-          </div>
-        </Box>
+        {show.patterns && (
+          <Box
+            title="Built-in patterns"
+            aside="Always on. Checked before any model is asked."
+            className="min-w-0"
+          >
+            <div className="flex flex-col gap-4">
+              {view.patterns.map((pattern) => (
+                <PatternRow
+                  key={pattern.name}
+                  name={pattern.name}
+                  description={pattern.description}
+                  refusals={refusalsLabel(view.refusals, pattern.name)}
+                  refused={(view.refusals[pattern.name] ?? 0) > 0}
+                />
+              ))}
+            </div>
+          </Box>
+        )}
 
-        <Box
-          title="Rules in prose"
-          actions={
-            prose.editable && !byAgent ? (
-              <Button size="sm" variant="secondary" onClick={() => setByAgent(true)}>
-                Write with agent
-              </Button>
-            ) : undefined
-          }
-          className="min-w-0"
-        >
-          <div className="flex flex-col gap-4">
-            {prose.editable && byAgent && (
-              <div className="flex flex-col gap-4 rounded-card bg-sunken p-4">
-                <Field
-                  label="What should be allowed or forbidden"
-                  hint="The Moebius agent reads the rules, writes the change and saves them."
-                >
-                  <TextArea
-                    rows={4}
-                    value={wish}
-                    onChange={(event) => setWish(event.target.value)}
-                  />
-                </Field>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    disabled={ask.isPending || wish.trim() === ""}
-                    onClick={() => ask.mutate()}
-                  >
-                    {ask.isPending ? "Sending" : "Submit"}
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={() => setByAgent(false)}>
-                    Cancel
-                  </Button>
-                </div>
-                {ask.error && (
-                  <Notice tone="error">
-                    {sayError(ask.error, "Could not ask the agent. Try again.")}
-                  </Notice>
-                )}
-              </div>
-            )}
-            {ask.isSuccess && (
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                <div className="min-w-0 flex-1">
-                  <Notice>The Moebius agent is writing the rules.</Notice>
-                </div>
-                <Button asChild size="sm" variant="secondary">
-                  <Link to={`/chat/${ask.data.id}`}>Open the chat</Link>
+        {show.server && (
+          <Box
+            title="Rules in prose"
+            actions={
+              prose.editable && !byAgent ? (
+                <Button size="sm" variant="secondary" onClick={() => setByAgent(true)}>
+                  Write with agent
                 </Button>
-              </div>
-            )}
-            {prose.error && <Notice tone="error">{prose.error}</Notice>}
-            <RuleList
-              rules={prose.rules}
-              file={prose.text}
-              refusals={view.refusals}
-              editable={prose.editable}
-              empty="No rule in prose. Only the built-in patterns apply."
-              onSave={async (file) => {
-                const saved = await saveRules(file);
-                await refresh();
-                return saved.commit;
-              }}
-            />
-            {!prose.editable && <Body>Read only: this server has no rules file.</Body>}
-          </div>
-        </Box>
+              ) : undefined
+            }
+            className="min-w-0"
+          >
+            <div className="flex flex-col gap-4">
+              {prose.editable && byAgent && (
+                <div className="flex flex-col gap-4 rounded-card bg-sunken p-4">
+                  <Field
+                    label="What should be allowed or forbidden"
+                    hint="The Moebius agent reads the rules, writes the change and saves them."
+                  >
+                    <TextArea
+                      rows={4}
+                      value={wish}
+                      onChange={(event) => setWish(event.target.value)}
+                    />
+                  </Field>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      disabled={ask.isPending || wish.trim() === ""}
+                      onClick={() => ask.mutate()}
+                    >
+                      {ask.isPending ? "Sending" : "Submit"}
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => setByAgent(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                  {ask.error && (
+                    <Notice tone="error">
+                      {sayError(ask.error, "Could not ask the agent. Try again.")}
+                    </Notice>
+                  )}
+                </div>
+              )}
+              {ask.isSuccess && (
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                  <div className="min-w-0 flex-1">
+                    <Notice>The Moebius agent is writing the rules.</Notice>
+                  </div>
+                  <Button asChild size="sm" variant="secondary">
+                    <Link to={`/chat/${ask.data.id}`}>Open the chat</Link>
+                  </Button>
+                </div>
+              )}
+              {prose.error && <Notice tone="error">{prose.error}</Notice>}
+              <RuleList
+                rules={prose.rules}
+                file={prose.text}
+                refusals={view.refusals}
+                editable={prose.editable}
+                empty="No rule in prose. Only the built-in patterns apply."
+                onSave={async (file) => {
+                  const saved = await saveRules(file);
+                  await refresh();
+                  return saved.commit;
+                }}
+              />
+              {!prose.editable && <Body>Read only: this server has no rules file.</Body>}
+            </div>
+          </Box>
+        )}
 
-        {view.repositories.map((repository) => (
+        {shownRepositories.map((repository) => (
           <Box
             key={repository.repository_id}
             title={repository.repository}

@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { dayName } from "../src/ui/lib/format";
-import { columnsScrollEach, pickOption, scrollbarsAreQuiet, showing } from "./controls";
+import { addFilter, columnsScrollEach, pickOption, scrollbarsAreQuiet, showing } from "./controls";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
 let browser: Browser;
@@ -90,6 +90,30 @@ describe("the Rules page", () => {
     await region("Built-in patterns").waitFor();
     await region("Built-in patterns").getByText("no-force-push").waitFor();
     await region("Rules in prose").waitFor();
+  });
+
+  it.skipIf(usesRealServer)("filters by scope and by project with the bar", async () => {
+    await fresh();
+    await open("/rules", "Rules");
+    const bar = page.getByRole("search", { name: "Filter the rules" });
+    await region("Built-in patterns").waitFor();
+
+    await addFilter(page, bar, "Scope", "Server rules");
+    await region("Rules in prose").waitFor();
+    await region("Built-in patterns").waitFor({ state: "detached" });
+    expect(await region("demo").count()).toBe(0);
+    expect(new URL(page.url()).search).toBe("?scope=server");
+
+    await page.reload();
+    await bar.getByRole("button", { name: "Scope is Server rules", exact: true }).waitFor();
+    await region("Rules in prose").waitFor();
+    expect(await region("Built-in patterns").count()).toBe(0);
+
+    await bar.getByRole("button", { name: "Clear filters" }).click();
+    await addFilter(page, bar, "Project", "demo");
+    await region("demo").waitFor();
+    await region("Rules in prose").waitFor({ state: "detached" });
+    expect(await region("Built-in patterns").count()).toBe(0);
   });
 
   it.skipIf(usesRealServer)("lists the patterns, the rules and what each refused", async () => {
@@ -523,7 +547,7 @@ describe("the Experiments page", () => {
     expect(await store.isDisabled()).toBe(true);
     await page.getByLabel("What should get better").fill("Make the tests faster");
     await page.getByLabel("Measurement").fill("echo 12");
-    await page.getByRole("button", { name: "Higher is better" }).click();
+    await page.getByRole("button", { name: "Higher is better", exact: true }).click();
     expect(await page.getByLabel("Tokens", { exact: true }).inputValue()).toBe("200000");
     await store.click();
     const card = page.getByRole("button", { name: /Make the tests faster/ });
@@ -732,6 +756,29 @@ describe("the Decisions page", () => {
       .getByText("The decision model decides tool_call: it agreed on 97% of 100 judgements.")
       .waitFor();
   });
+
+  it.skipIf(usesRealServer)(
+    "narrows the decision types to an agent chosen in the bar",
+    async () => {
+      await fresh();
+      await open("/decision-model", "Decisions");
+      await page.getByText("1227 judgements in 3 types").waitFor();
+      const bar = page.getByRole("search", { name: "Filter the decisions" });
+      await addFilter(page, bar, "Agent", "Coder");
+      await page.getByText("9 judgements in 1 type").waitFor();
+      const kinds = region("Decision types");
+      await kinds.getByRole("row").filter({ hasText: "merge" }).waitFor();
+      expect(await kinds.getByRole("row").filter({ hasText: "tool_call" }).count()).toBe(0);
+      expect(new URL(page.url()).search).toBe("?agent=Coder");
+
+      await page.reload();
+      await bar.getByRole("button", { name: "Agent is Coder", exact: true }).waitFor();
+      await page.getByText("9 judgements in 1 type").waitFor();
+
+      await bar.getByRole("button", { name: "Clear filters" }).click();
+      await page.getByText("1227 judgements in 3 types").waitFor();
+    },
+  );
 
   it.skipIf(usesRealServer)("exports the training set and lists the new export", async () => {
     await fresh();

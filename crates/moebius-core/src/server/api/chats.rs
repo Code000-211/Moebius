@@ -533,7 +533,11 @@ mod tests {
         assert_eq!(app.store.changes(repo.id).unwrap().len(), 2);
         assert_eq!(app.store.inbox().unwrap().len(), 2);
         assert!(app.repos.chat_branch_exists(&clone, doomed.id));
-        let tokens = app.store.usage_totals(1).unwrap().tokens;
+        let tokens = app
+            .store
+            .usage_totals(1, &crate::store::Scope::default())
+            .unwrap()
+            .tokens;
         let kept_events = app.store.events(kept.id).unwrap().len();
         let mut events = app.bus.subscribe();
 
@@ -561,7 +565,13 @@ mod tests {
         let listed: Vec<Chat> = get(&state, &addr, "/v1/chats").await;
         assert_eq!(listed.iter().map(|c| c.id).collect::<Vec<_>>(), [kept.id]);
         // Spend and decisions are history: they stay, without the chat.
-        assert_eq!(app.store.usage_totals(1).unwrap().tokens, tokens);
+        assert_eq!(
+            app.store
+                .usage_totals(1, &crate::store::Scope::default())
+                .unwrap()
+                .tokens,
+            tokens
+        );
         assert_eq!(app.store.usage_for_run(doomed.id).unwrap().len(), 0);
         let still = app.store.judgement(decision.id).unwrap().unwrap();
         assert_eq!(still.run_id, None);

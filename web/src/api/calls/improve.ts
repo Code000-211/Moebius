@@ -11,6 +11,7 @@ import type {
   RetroView,
   Shadowing,
 } from "../types/improve";
+import { type Scope, scopeQuery } from "./usage";
 
 /** The Retros, the latest day first. */
 export function retros(): Promise<RetroSummary[]> {
@@ -89,8 +90,8 @@ export function shadowing(): Promise<Shadowing> {
   return get<Shadowing>("/v1/decision-model");
 }
 
-export function judgementKinds(): Promise<KindCounts[]> {
-  return get<KindCounts[]>("/v1/judgements/kinds");
+export function judgementKinds(scope: Scope = {}): Promise<KindCounts[]> {
+  return get<KindCounts[]>(`/v1/judgements/kinds?${scopeQuery(scope)}`);
 }
 
 /** The training-set exports, the newest first. */

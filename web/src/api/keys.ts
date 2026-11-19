@@ -9,7 +9,8 @@ export const keys = {
   start: ["start"] as const,
   /** The usage of a window of days; a finished run makes all of them stale. */
   usage: ["usage"] as const,
-  usageDays: (days: number) => ["usage", days] as const,
+  usageDays: (days: number, repository: number | null, agent: string) =>
+    ["usage", days, repository, agent] as const,
   settings: ["settings"] as const,
   webhooks: ["webhooks"] as const,
   /** What a repository's files page has read: directories, one file, the paths for "Go to file", a search. */
@@ -84,6 +85,9 @@ export const keys = {
   research: ["research"] as const,
   shadowing: ["decision-model", "shadowing"] as const,
   kinds: ["decision-model", "kinds"] as const,
+  /** The kinds of the judgements of one repository and one agent, either of which may be empty. */
+  kindsOf: (repository: number | null, agent: string) =>
+    ["decision-model", "kinds", repository, agent] as const,
   exports: ["decision-model", "exports"] as const,
   /** The Workflows pages: the list, one definition, and a run with its nodes. */
   workflows: ["workflows"] as const,

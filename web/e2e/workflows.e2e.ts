@@ -6,6 +6,7 @@
  */
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { addFilter } from "./controls";
 import type { FakeServer } from "./fakeServer";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
@@ -81,5 +82,31 @@ describe.skipIf(usesRealServer)("deleting a workflow from its detail page", () =
     await dialog.getByRole("button", { name: "Delete" }).click();
     await dialog.getByText(/has runs queued, running or waiting/).waitFor();
     await page.waitForURL(/\/workflows\/release$/);
+  });
+});
+
+describe.skipIf(usesRealServer)("filtering the workflows list", () => {
+  it("filters by trigger and by last run with the bar, and keeps them across a reload", async () => {
+    await open("/workflows");
+    const bar = page.getByRole("search", { name: "Filter the workflows" });
+    const link = (name: string) => page.getByRole("link", { name, exact: true });
+    await link("deploy").waitFor();
+
+    await addFilter(page, bar, "Trigger", "Schedule");
+    await link("deploy").waitFor({ state: "detached" });
+    await link("release").waitFor();
+    await link("tidy").waitFor();
+    await addFilter(page, bar, "Last run", "Failed");
+    await link("tidy").waitFor({ state: "detached" });
+    expect(new URL(page.url()).search).toBe("?trigger=schedule&last=failed");
+
+    await page.reload();
+    await bar.getByRole("button", { name: "Last run is Failed", exact: true }).waitFor();
+    await link("release").waitFor();
+    expect(await link("tidy").count()).toBe(0);
+
+    await bar.getByRole("button", { name: "Clear filters" }).click();
+    await link("deploy").waitFor();
+    await link("tidy").waitFor();
   });
 });

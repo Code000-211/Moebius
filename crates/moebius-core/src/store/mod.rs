@@ -65,8 +65,8 @@ pub use retros::{OwnEdits, Proposal, Retro, Trial};
 pub use runs::Run;
 pub use shadows::{NewShadow, ShadowStats, ShadowedOutcome, Takeover};
 pub use usage::{
-    ANSWERING, ActivityUsage, AgentUsage, ClassUsage, ModelUsage, NO_RUN, ToolWait, UNKNOWN, Usage,
-    UsageTotals,
+    ANSWERING, ActivityUsage, AgentUsage, ClassUsage, ModelUsage, NO_RUN, Scope, ToolWait, UNKNOWN,
+    Usage, UsageTotals,
 };
 pub use workflows::{WorkflowNodeRun, WorkflowRun};
 

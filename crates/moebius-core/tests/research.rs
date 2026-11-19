@@ -708,7 +708,11 @@ async fn deleting_a_research_takes_out_its_experiments_runs_changes_and_branches
             tools: vec![],
         })
         .unwrap();
-    let tokens = app.store.usage_totals(1).unwrap().tokens;
+    let tokens = app
+        .store
+        .usage_totals(1, &moebius_core::store::Scope::default())
+        .unwrap()
+        .tokens;
     assert_eq!(app.store.changes(repo).unwrap().len(), 1);
     assert!(
         git(&clone, &["branch", "--list", "research/1-*"])
@@ -753,7 +757,13 @@ async fn deleting_a_research_takes_out_its_experiments_runs_changes_and_branches
             .unwrap()
             .contains("research/2-idea")
     );
-    assert_eq!(app.store.usage_totals(1).unwrap().tokens, tokens);
+    assert_eq!(
+        app.store
+            .usage_totals(1, &moebius_core::store::Scope::default())
+            .unwrap()
+            .tokens,
+        tokens
+    );
     // Recorded and announced.
     let recorded = app
         .store
