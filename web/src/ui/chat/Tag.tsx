@@ -13,10 +13,10 @@ import { StatusIcon, type StatusState } from "../page/StatusIcon";
 export type TagTone = "plain" | "progress" | "attention" | "complete" | "error";
 
 const TONE_STATE: Record<Exclude<TagTone, "plain">, StatusState> = {
-  progress: "inProgress",
-  attention: "notStarted",
+  progress: "running",
+  attention: "needsYou",
   complete: "done",
-  error: "blocked",
+  error: "needsYou",
 };
 
 export function Tag({

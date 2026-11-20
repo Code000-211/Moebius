@@ -14,8 +14,8 @@ describe("a state label", () => {
     expect(container.querySelector(".rounded-full")).toBeNull();
   });
 
-  it("gives each tone its own icon and a neutral fact none", () => {
-    const names = { progress: "In progress", attention: "Not started", error: "Blocked" } as const;
+  it("gives each tone an icon and a neutral fact none", () => {
+    const names = { progress: "Running", attention: "Needs you", error: "Needs you" } as const;
     for (const [tone, name] of Object.entries(names)) {
       render(<StateLabel tone={tone as keyof typeof names}>word</StateLabel>);
       expect(screen.getByRole("img", { name })).toBeTruthy();

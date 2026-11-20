@@ -7,15 +7,15 @@ describe("a state label", () => {
     const { container } = render(<MarkLabel mark="live" word="Live" detail="coder" />);
     expect(screen.getByText("Live")).toBeTruthy();
     expect(screen.getByText("· coder")).toBeTruthy();
-    expect(container.querySelector('[data-testid="run-ring"]')?.getAttribute("aria-hidden")).toBe(
-      "true",
-    );
+    expect(
+      container.querySelector('[data-testid="status-running"]')?.getAttribute("aria-hidden"),
+    ).toBe("true");
     expect(screen.queryByRole("img")).toBeNull();
   });
 
   it("says blocked with the blocked icon and a waiting line as grey text alone", () => {
     const { container, rerender } = render(<MarkLabel mark="blocked" word="Blocked" />);
-    expect(container.querySelector('[data-testid="status-blocked"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="status-needsYou"]')).toBeTruthy();
     rerender(<MarkLabel word="Waiting on #24" />);
     expect(container.querySelector("svg")).toBeNull();
     expect(screen.getByText("Waiting on #24").parentElement?.className).toContain("text-secondary");

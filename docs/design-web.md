@@ -201,6 +201,8 @@ The five status icons are Moebius's own, drawn on a 16px grid with a 1.5px strok
 | Done | Filled disc with a check | `--status-done` |
 | Not started | Dashed ring | `--status-todo` |
 
+Pages import icons from one module, `web/src/ui/icons`, by what an icon means; the five status icons are `StatusIcon`. Every column, pull request or tool state maps to one of the five: Backlog and Not started to not started; In progress to running; In review and Ready to merge to in review; Done to done; Blocked, a failure and "waits for approval" to needs you; a name that is none of these to not started. No status icon has an animation class in the code today.
+
 The running ring is the only one that may move, and it moves only while the run is going and not at all with reduced motion (see Motion).
 
 ## Shell
