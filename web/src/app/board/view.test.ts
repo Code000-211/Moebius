@@ -201,13 +201,13 @@ describe("the list layout", () => {
 });
 
 describe("a saved view with ?hide", () => {
-  it("opens with the fields the board still offers and drops the ones that went with the card face", () => {
+  it("opens with the field the board still offers and drops the ones that went with the card face", () => {
     const display = readDisplay(
       new URLSearchParams(
-        "layout=list&hide=description,labels,rounds,pullRequest,priority,due,claim",
+        "layout=list&hide=description,labels,rounds,pullRequest,priority,due,claim,detail",
       ),
       DISPLAY_CHOICES,
     );
-    expect(display).toEqual({ layout: "list", group: "", sort: "", hidden: ["claim", "labels"] });
+    expect(display).toEqual({ layout: "list", group: "", sort: "", hidden: ["detail"] });
   });
 });

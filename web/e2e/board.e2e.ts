@@ -1411,25 +1411,26 @@ describe("Display", () => {
   it.skipIf(usesRealServer)("switches off the fields a card shows", async () => {
     await fresh();
     await openBoard();
-    await page.getByRole("button", { name: "List layout" }).click();
-    await card(1).waitFor();
-    const agent = card(1).getByText("Coder", { exact: true });
+    await bar().getByRole("button", { name: "Display" }).click();
+    await display("List").click();
+    await page.waitForURL("**layout=list");
+    const row = page.getByTestId("list-row").filter({ hasText: "Add a feature" });
+    const agent = row.getByText("Coder", { exact: true });
     await agent.waitFor();
     await bar().getByRole("button", { name: "Display" }).click();
-    await display("Agent", "menuitemcheckbox").click();
-    // The menu stays open for the next field.
-    await display("Labels", "menuitemcheckbox").click();
+    await display("Agent and status", "menuitemcheckbox").click();
     await page.keyboard.press("Escape");
-    await page.waitForURL("**hide=detail%2Clabels");
+    await page.waitForURL("**hide=detail");
     await expect.poll(() => agent.count()).toBe(0);
     await page.reload();
     await bar().getByRole("button", { name: "Display" }).click();
-    expect(await display("Labels", "menuitemcheckbox").getAttribute("aria-checked")).toBe("false");
-    expect(await display("Claimed by", "menuitemcheckbox").getAttribute("aria-checked")).toBe(
-      "true",
+    expect(await display("Agent and status", "menuitemcheckbox").getAttribute("aria-checked")).toBe(
+      "false",
     );
-    // The choices only the card of the board used are gone.
-    expect(await display("Description", "menuitemcheckbox").count()).toBe(0);
+    // The choices only the card of the board used, and the ones the list no longer shows, are gone.
+    for (const gone of ["Description", "Labels", "Claimed by", "Round limit"]) {
+      expect(await display(gone, "menuitemcheckbox").count()).toBe(0);
+    }
   });
 });
 
