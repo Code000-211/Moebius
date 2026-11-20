@@ -86,10 +86,24 @@ const dock = () => page.getByRole("dialog", { name: "Card inspector" });
 /** The properties of the card numbered `number`, which the dock puts in the right column. */
 const properties = (number: number) =>
   page.getByRole("region", { name: `Properties of #${number}`, exact: true });
+/** Opens the window of every property of the card from its menu, unless it is open. */
+const openProperties = async (number: number) => {
+  const region = properties(number);
+  if (await region.isVisible()) return;
+  const window = page.locator("[data-card-window]");
+  // The card's own page has no window: its menu is in the page.
+  const scope = (await window.count()) > 0 ? window : page.getByRole("main");
+  await scope
+    .getByRole("button", { name: `More actions for #${number}`, exact: true })
+    .first()
+    .click();
+  await page.getByRole("menuitem", { name: "Properties…" }).click();
+  await region.waitFor();
+};
 /** The properties of the card numbered `number`, with the fold "More properties" open, once they are drawn. */
 const unfolded = async (number: number) => {
   const region = properties(number);
-  await region.waitFor();
+  await openProperties(number);
   await unfold(region);
   return region;
 };
@@ -138,7 +152,9 @@ describe("a card named by its key", () => {
       await page.getByText("DEMO-31 · #7").first().waitFor();
       expect(new URL(page.url()).pathname).toBe("/card/demo-31");
       expect(await dock().count()).toBe(0);
-      await page.getByRole("button", { name: "Edit issue" }).first().waitFor();
+      await page.getByRole("button", { name: "More actions for #7" }).first().waitFor();
+      // A page inside a page has its way back at the left of its title.
+      await page.getByRole("link", { name: "Back to the board" }).waitFor();
       await page.goto(`${server.url}/card/DEMO-99`);
       await page.getByText("There is no such card").waitFor();
     },
@@ -435,7 +451,8 @@ describe("live data", () => {
     await fresh();
     await openBoard();
     await card(5).click();
-    const pull = dock().getByRole("link", { name: "Pull request #11, open" });
+    await openProperties(5);
+    const pull = page.getByRole("link", { name: "Pull request #11, open" });
     expect(await pull.getAttribute("href")).toBe("https://github.com/acme/demo/pull/11");
   });
 
