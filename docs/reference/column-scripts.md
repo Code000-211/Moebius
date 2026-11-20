@@ -159,7 +159,7 @@ has a blocking finding with evidence and `approve` otherwise; the review is `cha
 `card.review.findings` holds the blocking findings of both under the heading `Standards (...)` or `Spec (...)`, each
 with `Evidence:`. Judgement calls never send the card back; `card.review.judgements` holds them under the same headings.
 
-`moebius.start_run(agent, purpose, note, runner)` returns the run's id (a number).
+`moebius.start_run(agent, purpose, note, runner)` returns the run's id (a number), or nil when `run_limit` runs of cards are going: it then starts no run and the card waits with `the run limit is reached`, so a script that has nothing more to do returns at once (`if moebius.start_run(...) == nil then return end`) and is run again when a run ends. Only runs of cards count; chats and workflow runs do not.
 : Starts a run of the agent named `agent` (an `[agents.<name>]` table of the configuration) for this card in a new
 worktree on a new branch `moebius/run-<id>`. The branch starts at the branch of the card's latest successful `code`
 run, so the run sees the work so far, or at the repository's default branch when the card has none. `purpose` is any
@@ -310,7 +310,7 @@ a model class (see [router](router.md)), used in turn, the first for the first a
 of the agent's own `model`; `note`, text added to the prompt of every attempt as `moebius.start_run` adds its note;
 `runner`, the name of a runner, as for `moebius.start_run`. The attempts are recorded as one group, in `card.attempts`.
 The call returns once the runs are started. Raises an error for another `n`, and for the errors of
-`moebius.start_run`; when one run cannot be started after others were, the error names the runs that were started, and
+`moebius.start_run`, but attempts start only while the run limit has a free slot: as many as fit, and none (an empty array, the card waiting with `the run limit is reached`) when none does. When one run cannot be started after others were, the error names the runs that were started, and
 they stay attempts of the card. The harness refuses a model it cannot give (`this harness cannot choose the model of
 a run`). The time this call takes does not count against the time limit.
 

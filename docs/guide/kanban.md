@@ -332,8 +332,9 @@ local function choose(card, passed)
       moebius.settle_attempts(passed[1].run, "No Reviewer chooses, so the first attempt that passed is kept.")
       moebius.move("In review")
     elseif not limited(card, "Reviewer") then
-      moebius.start_run("Reviewer", "review-select", candidates(passed))
-      moebius.wait("choosing between " .. #passed .. " attempts")
+      if moebius.start_run("Reviewer", "review-select", candidates(passed)) ~= nil then
+        moebius.wait("choosing between " .. #passed .. " attempts")
+      end
     end
   elseif running(selection) then
     moebius.wait("choosing between " .. #passed .. " attempts")
@@ -389,8 +390,9 @@ function on_card(card)
     moebius.start_runs("Coder", ATTEMPTS, { models = MODELS, note = card.note })
     moebius.wait("trying " .. ATTEMPTS .. " attempts")
   else
-    moebius.start_run("Coder", "code", card.note)
-    moebius.wait("coding")
+    if moebius.start_run("Coder", "code", card.note) ~= nil then
+      moebius.wait("coding")
+    end
   end
 end
 ```

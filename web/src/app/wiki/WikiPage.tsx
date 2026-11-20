@@ -164,6 +164,7 @@ export function WikiPage() {
                   path={null}
                   folder={newIn}
                   text=""
+                  version={null}
                   keys={projectKeys}
                   onSaved={(page) => {
                     void refresh();
@@ -360,6 +361,8 @@ function ChosenPage({
           path={path}
           folder={folderOf(path)}
           text={shown.text}
+          version={shown.version.commit}
+          latest={shown}
           keys={projectKeys}
           onSaved={onSaved}
           onCancel={() => onView(null)}

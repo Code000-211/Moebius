@@ -134,9 +134,9 @@ async fn two_servers_are_switched_between_and_each_keeps_its_page() {
     let secrets = Arc::new(Memory::default());
     let mut rail = rail(dir.path(), &secrets);
 
-    let first = rail.add(&one, "token-one").await.unwrap();
+    let first = rail.add(&one, "token-one", false).await.unwrap();
     rail.note_page("/fleet?tab=2");
-    let second = rail.add(&two, "token-two").await.unwrap();
+    let second = rail.add(&two, "token-two", false).await.unwrap();
     assert_ne!(first, second);
     assert_eq!(rail.open_id(), Some(second.as_str()));
     rail.note_page("/chat");
@@ -168,8 +168,8 @@ async fn the_page_of_a_server_that_is_not_open_is_noted_when_its_webview_is_let_
     let secrets = Arc::new(Memory::default());
     let mut rail = rail(dir.path(), &secrets);
 
-    let first = rail.add(&one, "token-one").await.unwrap();
-    let second = rail.add(&two, "token-two").await.unwrap();
+    let first = rail.add(&one, "token-one", false).await.unwrap();
+    let second = rail.add(&two, "token-two", false).await.unwrap();
     assert_eq!(rail.open_id(), Some(second.as_str()));
     // The first server's webview is let go of while the second is shown: its page is noted without opening it.
     rail.note_page_of(&first, "/fleet?tab=2");
@@ -194,8 +194,8 @@ async fn a_server_that_cannot_be_reached_has_the_grey_dot() {
     let dir = tempfile::tempdir().unwrap();
     let secrets = Arc::new(Memory::default());
     let mut rail = rail(dir.path(), &secrets);
-    rail.add(&down, "t2").await.unwrap();
-    rail.add(&up, "t1").await.unwrap();
+    rail.add(&down, "t2", false).await.unwrap();
+    rail.add(&up, "t1", false).await.unwrap();
     assert_eq!(
         rail::poll(rail.targets(), None)
             .await
@@ -220,7 +220,10 @@ async fn a_token_is_in_the_keychain_and_in_no_file_and_removing_the_server_remov
     let dir = tempfile::tempdir().unwrap();
     let secrets = Arc::new(Memory::default());
     let mut rail = rail(dir.path(), &secrets);
-    let id = rail.add(&address, "secret-token-value").await.unwrap();
+    let id = rail
+        .add(&address, "secret-token-value", false)
+        .await
+        .unwrap();
 
     assert_eq!(
         secrets.get(&id).unwrap().as_deref(),
@@ -240,7 +243,7 @@ async fn a_token_is_in_the_keychain_and_in_no_file_and_removing_the_server_remov
     assert_eq!(again.startup_order(), std::slice::from_ref(&id));
     again.open(&id).await.unwrap();
 
-    assert!(again.remove(&id).unwrap());
+    assert!(again.remove(&id).await.unwrap());
     assert_eq!(secrets.get(&id).unwrap(), None);
     assert!(again.startup_order().is_empty());
     assert!(
@@ -257,13 +260,13 @@ async fn a_server_that_refuses_the_token_is_not_added_and_a_lost_token_is_said()
     let dir = tempfile::tempdir().unwrap();
     let secrets = Arc::new(Memory::default());
     let mut rail = rail(dir.path(), &secrets);
-    let refused = rail.add(&address, "wrong").await.unwrap_err();
+    let refused = rail.add(&address, "wrong", false).await.unwrap_err();
     assert!(refused.to_string().contains("does not accept"), "{refused}");
     assert!(rail.targets().is_empty());
 
-    let id = rail.add(&address, "right").await.unwrap();
+    let id = rail.add(&address, "right", false).await.unwrap();
     // The same address again updates the server; it is not a second square.
-    assert_eq!(rail.add(&address, "right").await.unwrap(), id);
+    assert_eq!(rail.add(&address, "right", false).await.unwrap(), id);
     assert_eq!(rail.targets().len(), 1);
 
     secrets.delete(&id).unwrap();
@@ -292,7 +295,7 @@ async fn without_a_keychain_no_server_is_added_and_a_remembered_one_can_still_be
     let (address, _a) = fake("t", 0, 0).await;
     let dir = tempfile::tempdir().unwrap();
     let mut none = Rail::new(dir.path(), Arc::new(Locked), options());
-    let refused = none.add(&address, "t").await.unwrap_err();
+    let refused = none.add(&address, "t", false).await.unwrap_err();
     assert!(matches!(refused, RailError::Keychain(_)), "{refused}");
     assert!(
         Rail::new(dir.path(), Arc::new(Locked), options())
@@ -303,9 +306,15 @@ async fn without_a_keychain_no_server_is_added_and_a_remembered_one_can_still_be
     // A server remembered earlier is removed from the rail even when the keychain cannot delete its token, and the
     // error says so.
     let secrets = Arc::new(Memory::default());
-    let id = rail(dir.path(), &secrets).add(&address, "t").await.unwrap();
+    let id = rail(dir.path(), &secrets)
+        .add(&address, "t", false)
+        .await
+        .unwrap();
     let mut locked = Rail::new(dir.path(), Arc::new(Locked), options());
-    assert!(matches!(locked.remove(&id), Err(RailError::Keychain(_))));
+    assert!(matches!(
+        locked.remove(&id).await,
+        Err(RailError::Keychain(_))
+    ));
     assert!(locked.startup_order().is_empty());
 }
 
@@ -400,6 +409,7 @@ while True:
                 ssh: fake_ssh(tools.path()),
                 moebius: fake_moebius(tools.path()),
                 files,
+                ..Options::standard()
             },
         );
 
@@ -425,6 +435,7 @@ while True:
                 ssh: fake_ssh(tools.path()),
                 moebius: "moebius".into(),
                 files,
+                ..Options::standard()
             },
         );
         assert!(!rail::poll(restarted.targets(), None).await[0].reachable);
@@ -440,8 +451,8 @@ async fn the_rail_reads_one_small_route_and_not_the_open_server_the_tray_follows
     let dir = tempfile::tempdir().unwrap();
     let secrets = Arc::new(Memory::default());
     let mut rail = rail(dir.path(), &secrets);
-    rail.add(&one, "token-one").await.unwrap();
-    rail.add(&two, "token-two").await.unwrap();
+    rail.add(&one, "token-one", false).await.unwrap();
+    rail.add(&two, "token-two", false).await.unwrap();
     let count = |entries: &[rail::Entry]| entries.iter().map(|e| e.inbox).collect::<Vec<_>>();
 
     // Without the tray's figures each server is asked once, with the small route only.
@@ -468,5 +479,133 @@ async fn the_rail_reads_one_small_route_and_not_the_open_server_the_tray_follows
     assert_eq!(
         [&one_dear, &two_dear].map(|n| n.load(Ordering::SeqCst)),
         [0, 0]
+    );
+}
+
+/// A keychain that never answers, as a Secret Service does that can be started over D-Bus and is not running. Its
+/// calls return once the sender is dropped, so that the test's threads end.
+struct Silent(std::sync::Mutex<std::sync::mpsc::Receiver<()>>);
+
+impl Silent {
+    fn new() -> (Arc<Self>, std::sync::mpsc::Sender<()>) {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        (Arc::new(Self(std::sync::Mutex::new(receiver))), sender)
+    }
+
+    fn wait(&self) -> SecretError {
+        let _ = self.0.lock().unwrap().recv();
+        SecretError("no default store".into())
+    }
+}
+
+impl Secrets for Silent {
+    fn get(&self, _: &str) -> Result<Option<String>, SecretError> {
+        Err(self.wait())
+    }
+    fn set(&self, _: &str, _: &str) -> Result<(), SecretError> {
+        Err(self.wait())
+    }
+    fn delete(&self, _: &str) -> Result<(), SecretError> {
+        Err(self.wait())
+    }
+}
+
+fn quick() -> Options {
+    Options {
+        keychain_limit: std::time::Duration::from_millis(300),
+        ..options()
+    }
+}
+
+#[tokio::test]
+async fn a_keychain_that_never_answers_ends_a_connect_with_the_remedy_and_hangs_nothing() {
+    let (address, _a) = fake("t", 0, 0).await;
+    let dir = tempfile::tempdir().unwrap();
+    let (silent, release) = Silent::new();
+    let mut rail = Rail::new(dir.path(), silent, quick());
+
+    // The first call waits out its limit; the next ones, with the first still stuck, fail at once instead of piling up.
+    for _ in 0..3 {
+        let refused = rail.add(&address, "t", false).await.unwrap_err();
+        let RailError::Keychain(error) = &refused else {
+            panic!("{refused}")
+        };
+        let text = error.to_string();
+        assert!(text.contains("keychain does not answer"), "{text}");
+        assert!(text.contains("gnome-keyring or KWallet"), "{text}");
+        assert!(text.contains("this session only"), "{text}");
+    }
+    assert!(rail.startup_order().is_empty());
+    drop(release);
+}
+
+#[tokio::test]
+async fn a_remembered_server_with_a_silent_keychain_fails_to_open_and_the_poll_does_not_wait() {
+    let (address, _a) = fake("t", 0, 0).await;
+    let dir = tempfile::tempdir().unwrap();
+    let secrets = Arc::new(Memory::default());
+    let id = rail(dir.path(), &secrets)
+        .add(&address, "t", false)
+        .await
+        .unwrap();
+
+    let (silent, release) = Silent::new();
+    let mut rail = Rail::new(dir.path(), silent, quick());
+    assert!(matches!(rail.open(&id).await, Err(RailError::Keychain(_))));
+    let entries = rail::poll(rail.targets(), None).await;
+    assert!(!entries[0].reachable);
+    drop(release);
+}
+
+#[tokio::test]
+async fn a_session_only_server_is_open_and_in_no_file_and_not_there_at_the_next_start() {
+    let (address, _a) = fake("session-token", 0, 0).await;
+    let dir = tempfile::tempdir().unwrap();
+    let (silent, release) = Silent::new();
+    let mut rail = Rail::new(dir.path(), silent, quick());
+    let id = rail.add(&address, "session-token", true).await.unwrap();
+    assert_eq!(rail.open_id(), Some(id.as_str()));
+    assert!(rail.open_server().is_some());
+    // Switching away and back finds its token in memory, and the silent keychain is not asked.
+    assert!(rail.open(&id).await.is_ok());
+    let entries = rail::poll(rail.targets(), None).await;
+    assert_eq!(entries.len(), 1);
+    assert!(entries[0].reachable);
+
+    // Nothing of it is on disk.
+    for entry in std::fs::read_dir(dir.path())
+        .into_iter()
+        .flatten()
+        .flatten()
+    {
+        let text = std::fs::read_to_string(entry.path()).unwrap_or_default();
+        assert!(!text.contains("session-token"), "{:?}", entry.path());
+        assert!(!text.contains(&id), "{:?}", entry.path());
+    }
+    assert!(
+        Rail::new(dir.path(), Arc::new(Memory::default()), options())
+            .startup_order()
+            .is_empty()
+    );
+
+    // Removing it does not ask the keychain.
+    assert!(rail.remove(&id).await.unwrap());
+    assert!(rail.startup_order().is_empty());
+    drop(release);
+}
+
+#[tokio::test]
+async fn connecting_again_with_a_working_keychain_remembers_a_session_only_server() {
+    let (address, _a) = fake("t", 0, 0).await;
+    let dir = tempfile::tempdir().unwrap();
+    let secrets = Arc::new(Memory::default());
+    let mut rail = rail(dir.path(), &secrets);
+    let id = rail.add(&address, "t", true).await.unwrap();
+    assert_eq!(secrets.get(&id).unwrap(), None);
+    assert_eq!(rail.add(&address, "t", false).await.unwrap(), id);
+    assert_eq!(secrets.get(&id).unwrap().as_deref(), Some("t"));
+    assert_eq!(
+        Rail::new(dir.path(), secrets, options()).startup_order(),
+        vec![id]
     );
 }

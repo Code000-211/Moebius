@@ -96,7 +96,7 @@ Try both paths: `"$MOEBIUS" check-script ready.luau --column "Not started"` and
 
 - `no column "In Progress"`: column names are exact (`In progress`).
 - A card that waits with no reason: call `moebius.wait(reason)` on every path that leaves it.
-- Runs that pile up: `start_run` ignores the run limit; wait while `card.run.status` is `starting` or `running`.
+- Runs that pile up: `start_run` starts nothing and returns nil while `moebius.run_limit` runs of cards are going (the card waits with `the run limit is reached`); wait while `card.run.status` is `starting` or `running`.
 - `moebius.decide` takes the fail-closed option in `check-script` and wherever no plugin answers the kind.
 - The override does nothing: it is not merged yet, or not on the default branch.
 - A script error on the server shows as the card's `waiting` reason `script error: ...` in `"$MOEBIUS" card <id>`.

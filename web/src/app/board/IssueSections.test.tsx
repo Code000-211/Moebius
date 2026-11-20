@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { keys } from "../../api/keys";
 import type { Card } from "../../api/types/board";
 import { ActivitySection } from "./IssueSections";
 
@@ -64,8 +65,10 @@ function server(answers: Record<string, { status: number; body: unknown }> = {})
   return sent;
 }
 
-function inClient(ui: React.ReactElement) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function inClient(
+  ui: React.ReactElement,
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter>{ui}</MemoryRouter>
@@ -97,6 +100,35 @@ describe("the activity of an issue", () => {
       "/v1/cards/5/comments",
       { body: "Decided." },
     ]);
+  });
+
+  it("keeps a comment being typed and its list of people while the card's data is read again", async () => {
+    const sent = server({
+      "GET /v1/people": {
+        status: 200,
+        body: [
+          { id: 1, handle: "owner", name: "Owner", role: "owner", disabled: false, created_at: 0 },
+        ],
+      },
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    inClient(<ActivitySection card={card(5)} />, client);
+    const box = (await screen.findByRole("combobox", {
+      name: "Write a comment",
+    })) as HTMLTextAreaElement;
+    const text = "Please look, @ow";
+    fireEvent.change(box, { target: { value: text, selectionStart: text.length } });
+    await screen.findByRole("option", { name: /@owner/ });
+    const reads = () => sent.filter(([method]) => method === "GET").length;
+    const before = reads();
+    // What an event does to the card's data: everything it was read from is read again.
+    await client.invalidateQueries({ queryKey: keys.comments(5) });
+    await client.invalidateQueries({ queryKey: keys.history(5) });
+    await client.invalidateQueries({ queryKey: keys.people });
+    await waitFor(() => expect(reads()).toBeGreaterThanOrEqual(before + 3));
+    expect(box.value).toBe(text);
+    expect(screen.getByRole("option", { name: /@owner/ })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Write a comment" })).toBe(box);
   });
 
   it("says there are none, and does not send an empty comment", async () => {

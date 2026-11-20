@@ -124,6 +124,20 @@ pub fn may_start(app: &App, card: &Card) -> Result<(), StartError> {
     }
 }
 
+/// How many more runs of cards may start under `run_limit`: the limit less the runs of cards that have not ended. Chats,
+/// workflow runs and the other runs that belong to no card do not count. Every starter in a column script asks this, so
+/// the limit holds in whichever column the run starts.
+pub fn free_run_slots(app: &App, run_limit: u32) -> Result<usize, StartError> {
+    let active = app
+        .store
+        .active_runs()
+        .map_err(|e| StartError::Store(e.to_string()))?
+        .iter()
+        .filter(|run| run.card_id.is_some())
+        .count();
+    Ok((run_limit as usize).saturating_sub(active))
+}
+
 /// What the board engine needs of a harness: runs of cards. The real ones drive a harness (Pi-Bolt, Claude Code);
 /// tests use fakes.
 pub trait CardRuns: Send + Sync {

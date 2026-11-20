@@ -7,6 +7,7 @@ fn main() {
     let manifest = tauri_build::AppManifest::new().commands(&[
         "connect",
         "connect_ssh",
+        "startup_notice",
         "servers",
         "switch_server",
         "remove_server",

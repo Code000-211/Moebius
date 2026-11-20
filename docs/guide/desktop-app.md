@@ -86,6 +86,14 @@ Tokens are kept in the system's keychain (Secret Service on Linux, which GNOME K
 Manager on Windows), never in a file. The list of servers, without tokens, is `servers.json` in the app's configuration
 directory (`~/.config/io.github.code000-211.moebius` on Linux).
 
+The app needs a keychain that answers. Every call to it has a limit of 8 seconds, so a keychain that is installed and not
+running (GNOME Keyring or KWallet that is not started, or locked without a prompt: common on minimal desktops, remote
+sessions and tiling window managers) ends the connection with an error that names the remedy, and the button says
+**Saving the token in the keychain…** while it waits. Install or unlock a keyring, or press **Connect for this session
+only**: the token then stays in memory, is written to no file, and is asked for again at the next start (the server is not
+in the list of remembered ones). When the app starts and cannot read the token of a remembered server because the
+keychain does not answer, it shows the connect page with that message instead of waiting.
+
 ### The app runs once
 
 Starting the app while it already runs does not make a second one: the second start brings the first one's window
@@ -176,8 +184,9 @@ The answer's `token` (it starts with `moebius-access-`) goes into the app with t
 - **"the server did not answer within 90 seconds"**: read `~/.moebius/server/serve.log`; a port 7171 that is taken by
   another program is the usual reason (change `listen` in `~/.moebius/server/moebius.toml`).
 - **"the system's keychain does not answer"**: nothing offers a Secret Service on this Linux session (install
-  `gnome-keyring` or KWallet and sign in to it) or the keychain is locked. The app keeps no token anywhere else, so it
-  does not add the server.
+  `gnome-keyring` or KWallet and sign in to it), the keychain is locked, or it does not answer within 8 seconds. The app
+  keeps no token in a file, so it does not remember the server; **Connect for this session only** keeps the token in
+  memory until the app closes.
 - **"no server is set up on <host>"** over SSH: the login worked and there is no token on the host; say yes to set
   one up, or run `moebius connect <host>` in a terminal.
 - **The shortcut does nothing, or the quick window says it could not be taken**: another program holds that key

@@ -116,19 +116,21 @@ local function review(card, run)
   elseif run.purpose == "review-standards" and run.status == "succeeded" then
     local agent = axis_agent("Spec")
     if not limited(card, agent) then
-      moebius.start_run(agent, "review-spec", note)
-      moebius.wait("reviewing the spec")
+      if moebius.start_run(agent, "review-spec", note) ~= nil then
+        moebius.wait("reviewing the spec")
+      end
     end
   elseif run.purpose ~= "code" and card.reviews >= moebius.round_limit then
     stuck("the round limit is reached")
   else
     local agent = axis_agent("Standards")
     if not limited(card, agent) then
-      moebius.start_run(agent, "review-standards")
-      if run.purpose == "code" then
-        moebius.wait("reviewing the standards")
-      else
-        moebius.wait("reviewing, try " .. (card.reviews + 1))
+      if moebius.start_run(agent, "review-standards") ~= nil then
+        if run.purpose == "code" then
+          moebius.wait("reviewing the standards")
+        else
+          moebius.wait("reviewing, try " .. (card.reviews + 1))
+        end
       end
     end
   end
