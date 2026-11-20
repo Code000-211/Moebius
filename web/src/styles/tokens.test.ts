@@ -1,13 +1,11 @@
 // @vitest-environment node
 /**
  * Keeps the tokens of `theme.css` and `tailwind.css` inside the design standard,
- * [`docs/design-web.md`](../../../docs/design-web.md), the quiet standard with depth of
- * [ADR 0020](../../../docs/adr/0020-a-quiet-standard-with-depth.md). It reads the standard's own numbers: both themes
- * define the same names, every token of the standard (the accent, the status hues, the edge, the card's shadows, glass
- * and grain) is there in both, every radius and every step of the type and spacing scale is one the standard lists,
- * text is readable on the surface it sits on in both themes, reduced motion turns every transition off, and no colour
- * literal appears anywhere else in the app. It also fails a name that no theme defines, because a declaration that names a token which
- * is not there is dropped in silence and the control simply loses its colour, its border or its focus ring.
+ * [`docs/design-web.md`](../../../docs/design-web.md). It parses the token table of that page and compares every
+ * value with `theme.css`, in both themes, so a value that differs in either place fails; it checks the radii, the
+ * depth tokens, the tabular numerals, the contrast pairs the standard names and the muted range, that no colour
+ * literal appears outside `theme.css`, and that no name the app asks for is defined nowhere, because a declaration
+ * that names a token which is not there is dropped in silence and the control simply loses its colour.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative } from "node:path";
@@ -17,9 +15,10 @@ import { describe, expect, it } from "vitest";
 const css = readFileSync(new URL("./theme.css", import.meta.url), "utf8");
 const tailwind = readFileSync(new URL("./tailwind.css", import.meta.url), "utf8");
 const srcRoot = fileURLToPath(new URL("..", import.meta.url));
+const standard = readFileSync(new URL("../../../docs/design-web.md", import.meta.url), "utf8");
 
-/** The radii the standard allows: 6 for controls and rows, 8 for cards, 12 for windows and dialogs, full for dots. */
-const RADII = new Set(["6px", "8px", "12px", "999px"]);
+/** The radii the standard allows: 6 for controls and rows, 8 for cards, 10 for the panel and windows, round for dots. */
+const RADII = new Set(["6px", "8px", "10px", "9999px"]);
 /**
  * The type scale: 11 for keys and small capitals, 12 for captions and metadata, 13 body, 14 the text of an issue or a
  * page, and titles of 15, 17 and 20.
@@ -48,7 +47,7 @@ const HEIGHTS: [string, string][] = [
   ["row-list", "36px"],
   ["head-bar", "44px"],
 ];
-/** The tokens of the standard that are not plain colours, which both themes must still set for themselves. */
+/** The depth tokens of the former palette, which the new standard flattens rather than deletes. */
 const DEPTH = [
   "edge",
   "shadow-card",
@@ -56,23 +55,39 @@ const DEPTH = [
   "shadow-raised",
   "shadow-relief",
   "glow",
-  "grain",
 ];
 
 type Tokens = Map<string, string>;
 
-/** The two themes of `theme.css`: the default, which is dark, and the one under `[data-theme="light"]`. */
+/**
+ * The two themes of `theme.css`: light is the base block and dark the `[data-theme="dark"]` block, which sets only
+ * what differs, so the dark theme is the base with that block over it.
+ */
 function themes(): { dark: Tokens; light: Tokens } {
-  const dark: Tokens = new Map();
   const light: Tokens = new Map();
-  for (const block of css.matchAll(/:root(\[data-theme="light"\])?\s*\{([^}]*)\}/g)) {
-    const into = block[1] ? light : dark;
+  const over: Tokens = new Map();
+  for (const block of css.matchAll(/:root(\[data-theme="dark"\])?\s*\{([^}]*)\}/g)) {
+    const into = block[1] ? over : light;
     const body = (block[2] ?? "").replace(/\/\*[\s\S]*?\*\//g, "");
     for (const [, name, value] of body.matchAll(/--([a-z0-9-]+):\s*([^;]+);/g)) {
       into.set(name ?? "", (value ?? "").trim());
     }
   }
-  return { dark, light };
+  return { light, dark: new Map([...light, ...over]) };
+}
+
+/** One row of the standard's token table: the name and its two values, as written. */
+function tableOfTheStandard(): { name: string; light: string; dark: string }[] {
+  const rows: { name: string; light: string; dark: string }[] = [];
+  const start = standard.indexOf("### Token table");
+  const end = standard.indexOf("The size table, which follows");
+  expect(start, "the token table's heading").toBeGreaterThan(-1);
+  expect(end, "the end of the token table").toBeGreaterThan(start);
+  for (const line of standard.slice(start, end).split("\n")) {
+    const cells = /^\|\s*`--([a-z0-9-]+)`\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|[^|]*\|\s*$/.exec(line);
+    if (cells) rows.push({ name: cells[1] ?? "", light: cells[2] ?? "", dark: cells[3] ?? "" });
+  }
+  return rows;
 }
 
 const { dark, light } = themes();
@@ -99,6 +114,18 @@ function channels(colour: string): [number, number, number, number] | null {
 function resolve(token: string, theme: Tokens, depth = 0): string {
   const alias = /^var\(--([a-z0-9-]+)\)$/.exec(token);
   if (alias && depth < 8) return resolve(theme.get(alias[1] ?? "") ?? "", theme, depth + 1);
+  // `color-mix(in srgb, <one> N%, <other>)`, as the faint tints of the former names are written.
+  const mix =
+    /^color-mix\(in srgb,\s*(var\(--[a-z0-9-]+\))\s+(\d+)%,\s*(var\(--[a-z0-9-]+\))\)$/.exec(token);
+  if (mix && depth < 8) {
+    const top = channels(resolve(mix[1] ?? "", theme, depth + 1));
+    const under = channels(resolve(mix[3] ?? "", theme, depth + 1));
+    if (top && under) {
+      const share = Number(mix[2]) / 100;
+      const blend = (a: number, b: number) => Math.round(a * share + b * (1 - share));
+      return `rgb(${blend(top[0], under[0])} ${blend(top[1], under[1])} ${blend(top[2], under[2])})`;
+    }
+  }
   return token;
 }
 
@@ -128,43 +155,59 @@ function contrast(foreground: string, background: string): number {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
-/** Where text has to be readable: body and secondary on each surface, and status text on its own tint. */
+/** The surfaces the standard names for body, secondary, muted and indigo text. */
+const SURFACES = ["panel", "canvas", "accent-tint", "row-hover", "group-fill", "control-fill"];
+
+/** The white label of the primary button and of an avatar. */
+const WHITE = "#ffffff";
+
+/** Where text has to be readable, as the standard lists the pairs: foreground, background. */
 const readable: [string, string][] = [
-  ["text", "background"],
-  ["text", "surface"],
-  ["text", "surface-raised"],
-  ["text", "hover"],
+  ...["text", "text-secondary", "text-muted", "accent-text"].flatMap((fore): [string, string][] =>
+    SURFACES.map((back): [string, string] => [fore, back]),
+  ),
+  ["needs-you-text", "panel"],
+  ["running-text", "panel"],
+  ["danger-text", "panel"],
+  ["danger-text", "canvas"],
+  ["danger-text", "row-hover"],
+  ["needs-you-text", "needs-you-tint"],
+  [WHITE, "accent-fill"],
+  [WHITE, "avatar-1"],
+  [WHITE, "avatar-2"],
+  [WHITE, "avatar-3"],
+  ["code-text", "code-bg"],
+  ["code-head", "code-bg"],
+  ["code-keyword", "code-bg"],
+  ["code-function", "code-bg"],
+  ["code-operator", "code-bg"],
+  ["code-number", "code-bg"],
+  ["code-comment", "code-bg"],
+  // What the former names still draw, on what they are drawn on.
   ["text", "selected"],
-  ["text-secondary", "background"],
-  ["text-secondary", "surface"],
   ["text-secondary", "sidebar"],
-  ["text-secondary", "ground"],
   ["text-secondary", "selected"],
-  ["accent-text", "background"],
-  ["accent-text", "accent-fill"],
-  ["text", "glass-solid"],
-  ["on-ink", "text"],
-  ["progress-text", "background"],
-  ["progress-text", "progress-fill"],
-  ["attention-text", "background"],
-  ["attention-text", "attention-fill"],
-  ["attention-text", "attention-hover"],
-  ["complete-text", "background"],
-  ["complete-text", "complete-fill"],
-  ["error-text", "background"],
-  ["error-text", "error-fill"],
-  ["error-text", "error-hover"],
-  ["terminal-text", "terminal"],
   ["sidebar-group", "sidebar"],
   ["sidebar-text", "sidebar"],
   ["online-text", "sidebar"],
-  ["text", "code-background"],
-  ["text-secondary", "code-background"],
-  ["code-keyword", "code-background"],
-  ["code-string", "code-background"],
-  ["code-number", "code-background"],
-  ["complete-text", "code-background"],
-  ["error-text", "code-background"],
+  ["progress-text", "progress-fill"],
+  ["attention-text", "attention-fill"],
+  ["complete-text", "complete-fill"],
+  ["error-text", "error-fill"],
+  ["error-text", "error-hover"],
+  ["terminal-text", "terminal"],
+  ["on-ink", "text"],
+];
+
+/** The marks that carry no words, which need 3 to 1 on the panel. */
+const MARKS = [
+  "needs-you",
+  "running",
+  "danger",
+  "status-todo",
+  "status-done",
+  "status-review",
+  "text-faint",
 ];
 
 /** Every file the app is built from, so a colour literal hidden in a component is found. */
@@ -187,79 +230,86 @@ function isColour(value: string): boolean {
 }
 
 describe("the tokens", () => {
-  it("define the same names in both themes", () => {
-    expect(dark.size).toBeGreaterThan(80);
-    const missing = [...dark.keys()].filter(
-      (name) => /^(?:#[0-9a-f]{3,8}|rgb\()/.test(dark.get(name) ?? "") && !light.has(name),
-    );
-    const extra = [...light.keys()].filter(
-      (name) => /^(?:#[0-9a-f]{3,8}|rgb\()/.test(light.get(name) ?? "") && !dark.has(name),
-    );
-    expect(missing, "missing from the light theme").toEqual([]);
-    expect(extra, "missing from the dark theme").toEqual([]);
-  });
-
-  it("keeps the values of the standard", () => {
-    const expected: [Tokens, string, string][] = [
-      [dark, "ground", "#0b0b0a"],
-      [dark, "page", "#161615"],
-      [dark, "surface", "#1b1b1a"],
-      [dark, "text", "#ecebe8"],
-      [dark, "text-secondary", "#9d9c98"],
-      [dark, "text-muted", "#6c6b67"],
-      [dark, "accent", "#8b8cf5"],
-      [dark, "status-todo", "#8a8985"],
-      [dark, "status-progress", "#e8b44a"],
-      [dark, "status-review", "#6aa7f0"],
-      [dark, "status-done", "#5fb98a"],
-      [dark, "status-error", "#e5686e"],
-      [dark, "glass", "rgb(30 30 29 / 72%)"],
-      [dark, "grain", "0.09"],
-      [light, "ground", "#efefec"],
-      [light, "page", "#fdfdfc"],
-      [light, "surface", "#ffffff"],
-      [light, "text", "#1d1d1b"],
-      [light, "text-secondary", "#6a6965"],
-      [light, "text-muted", "#9c9b97"],
-      [light, "accent", "#5e5ff0"],
-      [light, "status-todo", "#9c9b97"],
-      [light, "status-progress", "#d39b1e"],
-      [light, "status-review", "#3b82e0"],
-      [light, "status-done", "#2f9a66"],
-      [light, "status-error", "#d2444b"],
-      [light, "glass", "rgb(255 255 255 / 75%)"],
-      [light, "grain", "0.12"],
-    ];
-    for (const [theme, name, value] of expected) {
-      expect(theme.get(name), `--${name}`).toBe(value);
+  it("takes every value of the standard's token table, in both themes", () => {
+    const table = tableOfTheStandard();
+    expect(table.length, "rows of the token table").toBeGreaterThan(40);
+    const wrong: string[] = [];
+    for (const row of table) {
+      for (const [theme, label, expected] of [
+        [light, "light", row.light],
+        [dark, "dark", row.dark],
+      ] as [Tokens, string, string][]) {
+        const value = theme.get(row.name);
+        // A colour is compared without regard to the case of its hex digits; any other value as written.
+        const same =
+          value !== undefined &&
+          (/^#[0-9a-f]{6}$/i.test(expected)
+            ? value.toLowerCase() === expected.toLowerCase()
+            : value === expected);
+        if (!same)
+          wrong.push(`--${row.name} in ${label}: theme.css has ${value}, the table ${expected}`);
+      }
     }
+    expect(wrong).toEqual([]);
   });
 
-  it("sets depth for each theme: the edge, the card's shadows, the relief, the glow and the grain", () => {
+  it("makes light the base and lets dark set only names the base has", () => {
+    const base = css.indexOf(":root {");
+    const overrides = css.indexOf(':root[data-theme="dark"] {');
+    expect(base, "the base block").toBeGreaterThan(-1);
+    expect(overrides, "the dark block").toBeGreaterThan(base);
+    expect(light.get("canvas")).toBe("#f6f6f8");
+    expect(dark.get("canvas")).toBe("#0f0f10");
+    const body = css.slice(overrides).replace(/\/\*[\s\S]*?\*\//g, "");
+    const only = [...body.matchAll(/--([a-z0-9-]+):/g)].map(([, name]) => name ?? "");
+    expect(only.filter((name) => !light.has(name))).toEqual([]);
+    // Every colour of the table differs, or is the same on purpose in the standard itself: the dark block sets each.
+    for (const row of tableOfTheStandard())
+      expect(only, `--${row.name} in the dark block`).toContain(row.name);
+  });
+
+  it("flattens depth: a shadow is one hairline or nothing, and there is no grain and no glow", () => {
+    const flat =
+      /^(?:0 0 0 0 transparent|0 0 0 1px var\(--hairline(?:-strong)?\)|var\(--shadow-window\))$/;
     for (const name of DEPTH) {
-      expect(dark.has(name), `--${name} in dark`).toBe(true);
-      expect(light.has(name), `--${name} in light`).toBe(true);
+      for (const [theme, label] of bothThemes) {
+        expect(theme.get(name), `--${name} in ${label}`).toMatch(flat);
+      }
     }
-    // In dark a wide shadow bands on the near-black ground, so the edge of a large surface is a line and a light
-    // from above, with no blur at all.
-    const blurs = (value: string) =>
-      [...value.matchAll(/(?:^|,)\s*(?:inset\s+)?-?\d+(?:px)?\s+-?\d+(?:px)?\s+(\d+)px/g)].map(
-        (m) => Number(m[1]),
-      );
-    expect(Math.max(0, ...blurs(dark.get("edge") ?? "")), "--edge in dark").toBe(0);
-    expect(Math.max(0, ...blurs(light.get("edge") ?? "")), "--edge in light").toBeGreaterThan(0);
+    for (const [theme, label] of bothThemes) {
+      expect(theme.get("grain"), `--grain in ${label}`).toBe("0");
+      expect(theme.get("glow"), `--glow in ${label}`).toBe("0 0 0 0 transparent");
+      expect(theme.get("wash"), `--wash in ${label}`).toBe("transparent");
+    }
+    // The one real shadow is the window's, and it has one blur.
+    for (const [theme, label] of bothThemes) {
+      const blurs = (theme.get("shadow-window") ?? "").match(/\d+px 32px/g) ?? [];
+      expect(blurs.length, `--shadow-window in ${label}`).toBe(1);
+    }
+  });
+
+  it("sets tabular numerals on the body and follows the theme with color-scheme", () => {
+    const body = /\n {2}body \{([^}]*)\}/.exec(tailwind)?.[1] ?? "";
+    expect(body).toContain("font-variant-numeric: tabular-nums;");
+    expect(tailwind).toMatch(/html \{[^}]*color-scheme: light;/);
+    expect(tailwind).toMatch(/html\[data-theme="dark"\] \{[^}]*color-scheme: dark;/);
+    expect(dark.get("canvas")).not.toBe(light.get("canvas"));
   });
 
   it("keeps the heights of rows and of the head bar", () => {
     for (const [name, value] of HEIGHTS) expect(dark.get(name), `--${name}`).toBe(value);
   });
 
-  it("radii are controls, cards, windows and dots", () => {
+  it("radii are controls, cards, the panel and dots", () => {
     const radii = [...css.matchAll(/--radius-[a-z0-9-]+:\s*([^;]+);/g)]
       .map((m) => (m[1] ?? "").trim())
       .filter((value) => !value.startsWith("var("));
     expect(radii.length).toBeGreaterThan(4);
     for (const radius of radii) expect(RADII.has(radius), radius).toBe(true);
+    expect(css).toContain("--radius-control: 6px;");
+    expect(css).toContain("--radius-card: 8px;");
+    expect(css).toContain("--radius-panel: 10px;");
+    expect(css).toContain("--radius-round: 9999px;");
   });
 
   it("spacing is on the grid", () => {
@@ -298,21 +348,28 @@ describe("the tokens", () => {
   it("gives text 4.5 to 1 on what it sits on, in both themes", () => {
     for (const [theme, name] of bothThemes) {
       for (const [fore, back] of readable) {
-        expect(theme.has(fore), `--${fore} in ${name}`).toBe(true);
-        const backdrop = theme.get(back) ?? "";
-        const ratio = contrast(over(theme.get(fore) ?? "", backdrop, theme), backdrop);
+        const foreground = fore.startsWith("#") ? fore : (theme.get(fore) ?? "");
+        expect(foreground, `--${fore} in ${name}`).not.toBe("");
+        const backdrop = resolve(theme.get(back) ?? "", theme);
+        const ratio = contrast(over(foreground, backdrop, theme), backdrop);
         expect(ratio, `--${fore} on --${back} in ${name}`).toBeGreaterThanOrEqual(4.5);
       }
     }
   });
 
-  it("keeps muted below the readable text it must not compete with", () => {
+  it("holds the muted range: muted is text at 4.5 to 1, faint is a mark that never carries words", () => {
     for (const [theme, label] of bothThemes) {
-      for (const name of ["text-muted"]) {
-        const background = theme.get("background") ?? "";
-        const ratio = contrast(over(theme.get(name) ?? "", background, theme), background);
-        expect(ratio, `--${name} in ${label}`).toBeLessThan(4.5);
-        expect(ratio, `--${name} in ${label} should still be visible`).toBeGreaterThan(2.5);
+      for (const surface of SURFACES) {
+        const background = theme.get(surface) ?? "";
+        const muted = contrast(theme.get("text-muted") ?? "", background);
+        expect(muted, `--text-muted on --${surface} in ${label}`).toBeGreaterThanOrEqual(4.5);
+        const faint = contrast(theme.get("text-faint") ?? "", background);
+        expect(faint, `--text-faint on --${surface} in ${label}`).toBeLessThan(4.5);
+      }
+      const panel = theme.get("panel") ?? "";
+      for (const name of MARKS) {
+        const ratio = contrast(theme.get(name) ?? "", panel);
+        expect(ratio, `--${name} on --panel in ${label}`).toBeGreaterThanOrEqual(3);
       }
     }
   });

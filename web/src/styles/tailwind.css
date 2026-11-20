@@ -103,6 +103,35 @@
   --color-status-done: var(--status-done);
   --color-status-error: var(--status-error);
 
+  /* The token table of the standard, by its own names: the grey steps, the indigo, the three signals, code, avatars. */
+  --color-canvas: var(--canvas);
+  --color-panel: var(--panel);
+  --color-text-faint: var(--text-faint);
+  --color-accent-border: var(--accent-border);
+  --color-accent-tint: var(--accent-tint);
+  --color-row-hover: var(--row-hover);
+  --color-group-fill: var(--group-fill);
+  --color-control-fill: var(--control-fill);
+  --color-nav-selected: var(--nav-selected);
+  --color-needs-you: var(--needs-you);
+  --color-needs-you-text: var(--needs-you-text);
+  --color-needs-you-tint: var(--needs-you-tint);
+  --color-needs-you-edge: var(--needs-you-edge);
+  --color-running: var(--running);
+  --color-running-text: var(--running-text);
+  --color-danger: var(--danger);
+  --color-danger-text: var(--danger-text);
+  --color-code-bg: var(--code-bg);
+  --color-code-text: var(--code-text);
+  --color-code-head: var(--code-head);
+  --color-code-function: var(--code-function);
+  --color-code-operator: var(--code-operator);
+  --color-code-comment: var(--code-comment);
+  --color-avatar-1: var(--avatar-1);
+  --color-avatar-2: var(--avatar-2);
+  --color-avatar-3: var(--avatar-3);
+  --color-avatar-agent: var(--avatar-agent);
+
   /* The rest of the palette by the other names it is asked for: the text roles by their token name, and the parts of
    * a step or a diff, which are named for the thing they colour rather than for a role. */
   --color-text-secondary: var(--text-secondary);
@@ -116,7 +145,7 @@
   --color-diff-removed-mark: var(--diff-removed-mark);
   --color-diff-added-mark: var(--diff-added-mark);
 
-  /* Radii: 6 for controls and rows, 8 for cards, 12 for windows and dialogs, full for dots and avatars. Tailwind's
+  /* Radii: 6 for controls and rows, 8 for cards, 10 for the panel and windows, full for dots and avatars. Tailwind's
    * own steps land on the same three, so a copied `rounded-lg` is still one of them. */
   --radius-none: 0;
   --radius-xs: var(--radius-small);
@@ -129,11 +158,11 @@
   --radius-full: var(--radius-round);
   --radius-card: var(--radius-card);
   --radius-sheet: var(--radius-sheet);
+  --radius-panel: var(--radius-panel);
   --radius-control: var(--radius-control);
   --radius-composer: var(--radius-composer);
 
-  /* Depth: the edge of a large surface, a card's short shadow and its hover, a floating layer, the primary button's
-   * relief and the glow of the chosen card. */
+  /* Depth is one hairline or nothing: the edge of a large surface, a card, a window above a dimmed panel. */
   --shadow-edge: var(--edge);
   --shadow-card: var(--shadow-card);
   --shadow-card-hover: var(--shadow-card-hover);
@@ -278,21 +307,14 @@
 }
 
 /*
- * The textured ground of the shell: the ground's colour, a light from above that fades out by the middle of the
- * window, and a fine grain over all of it. It lies under the whole window, so the sidebar, the air around the page and
- * what shows past the page's rounded corners are one surface. The grain is drawn under the content (`isolate` keeps
- * its layer inside the ground) and catches no pointer; `--grain`, `--grain-blend` and `--grain-filter` say how it is
- * laid on in each theme.
+ * The ground of the shell: the canvas colour, flat. It lies under the whole window, so the sidebar, the air around the
+ * page and what shows past the page's rounded corners are one surface. The grain layer stays until the shell's own
+ * step takes it out, and its opacity is 0 in both themes, so nothing is drawn.
  */
 @utility ground {
   position: relative;
   isolation: isolate;
   background-color: var(--ground);
-  background-image: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--text) 5%, transparent),
-    transparent 45%
-  );
 
   &::after {
     content: "";
@@ -462,12 +484,13 @@
   }
 
   html {
-    /* The theme of `src/theme.ts`; without it the system theme would still be right, since the tokens are dark first. */
-    color-scheme: dark;
+    /* The theme of `src/theme.ts`. Light is the base of `theme.css`; dark is set by `data-theme`, and the browser's own
+       parts (scrollbars, form controls) follow it through `color-scheme`. */
+    color-scheme: light;
   }
 
-  html[data-theme="light"] {
-    color-scheme: light;
+  html[data-theme="dark"] {
+    color-scheme: dark;
   }
 
   body {
@@ -479,6 +502,8 @@
     /* Inter's optical sizes, its plainer forms of a few letters, and a hair of tracking taken back at this size. */
     font-optical-sizing: auto;
     font-feature-settings: "cv11", "ss01", "ss03";
+    /* Every figure is tabular, so a column of ages or costs lines up and nothing has to remember to ask. */
+    font-variant-numeric: tabular-nums;
     letter-spacing: -0.003em;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;

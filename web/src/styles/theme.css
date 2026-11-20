@@ -1,173 +1,171 @@
 /*
- * The tokens of the web app as CSS variables: colour, radius, spacing, heights, widths, type, shadow and motion. Every
- * value is the quiet standard with depth of `docs/design-web.md` (ADR 0020): warm greys in both themes, dark by
- * default; colour only on small status marks and one accent; a type scale of 11, 12, 13, 14, 15, 17 and 20 with 13 for
- * body text and 14 for the text of an issue; radii of 6 for controls and rows, 8 for cards and 12 for windows and
- * dialogs; spacing on a 4px grid with 2, 6 and 10 for the tight places of a dense row; and motion of 120 to 240ms,
- * ease-out.
+ * The tokens of the web app as CSS variables: colour, radius, spacing, heights, widths, type, shadow and motion. The
+ * colours are the token table of `docs/design-web.md` (ADR 0023), every value exactly as written there, and
+ * `tokens.test.ts` parses that table and fails when a value here differs from it: nearly monochrome grey steps, one
+ * indigo accent, and three signal colours that each mean one thing; radii of 6 for controls and rows, 8 for cards and
+ * 10 for the panel and windows, round for dots; spacing on a 4px grid with 2, 6 and 10 for the tight places of a dense
+ * row; and motion of 80 to 240ms, ease-out.
  *
- * Both themes define every name. The dark values are the default and `:root[data-theme="light"]` carries the light
- * ones; `src/theme.ts` sets that attribute from the system theme unless a person picked one. Components never carry a
- * colour literal, a radius or a size of their own: they use these variables through the Tailwind names in
- * `tailwind.css`, and `tokens.test.ts` fails when a token of one theme is missing from the other, when a radius, a
- * size or a step of the scale leaves the standard, or when a pair of tokens is unreadable in either theme.
+ * Light is the base block and dark is `:root[data-theme="dark"]`, which sets only the colours that differ. A name
+ * defined once, below the table, is the same in both themes, or is an alias of a table token and so follows the theme.
+ * `src/theme.ts` sets the attribute from the system theme unless a person picked one, and a system that does not ask
+ * for dark gets light. Components never carry a colour literal, a radius or a size of their own: they use these
+ * variables through the Tailwind names in `tailwind.css`.
  *
- * Depth comes from surfaces, not lines. In light a surface casts a faint soft shadow; in dark a wide shadow on a
- * near-black ground has too few steps of grey and shows as bands, so there a large surface is set apart by its
- * lightness and a faint light edge (`--edge`) alone, and only small things — a card, a menu — keep a short shadow.
+ * The names of the former palette stay, so that no `var()` dangles while the pages are moved to the new standard one
+ * by one; each is an alias of a token of the table, and the new standard has no depth of its own for them to carry:
+ * the shadows are one hairline or nothing, and there is no grain, no glow and no wash.
  */
 
-/* Dark, the default. */
+/* Light, the base. The table's names, first. */
 :root {
-  color-scheme: dark;
+  color-scheme: light;
+
+  --canvas: #f6f6f8;
+  --panel: #ffffff;
+  --hairline: #ebebef;
+  --hairline-strong: #dcdce2;
+  --text: #1b1b1f;
+  --text-secondary: #3c3c43;
+  --text-muted: #6b6b76;
+  --text-faint: #8b8b96;
+  --accent: #5e6ad2;
+  --accent-text: #5460c8;
+  --accent-fill: #5e6ad2;
+  --accent-border: #5560c4;
+  --accent-tint: #eceefb;
+  --row-hover: #f4f4f7;
+  --group-fill: #fafafb;
+  --control-fill: #f1f1f4;
+  --nav-selected: #ffffff;
+  --needs-you: #d9690a;
+  --needs-you-text: #a85a0c;
+  --needs-you-tint: #fff8f0;
+  --needs-you-edge: #f4d8b8;
+  --running: #1f9d62;
+  --running-text: #177a4c;
+  --danger: #d6455a;
+  --danger-text: #c23a4f;
+  --status-todo: #8a8a95;
+  --status-done: #8a8a95;
+  --status-review: #5e6ad2;
+  --code-bg: #1e2038;
+  --code-text: #d8daf0;
+  --code-head: #8c90b4;
+  --code-keyword: #c49bff;
+  --code-function: #7cc4ff;
+  --code-operator: #ff9aa8;
+  --code-number: #ffc27a;
+  --code-comment: #858bb4;
+  --avatar-1: #a3563a;
+  --avatar-2: #4f7a8c;
+  --avatar-3: #7a6a9a;
+  --avatar-agent: #2a2c4f;
+  --scrim: rgb(0 0 0 / 32%);
+  --shadow-window: 0 8px 32px rgb(0 0 0 / 14%), 0 0 0 1px var(--hairline-strong);
 
   /*
-   * The ground the shell lies on, the page on it a shade lighter, and the layers on the page. The hover and the chosen
-   * fill are the warm white at 5 and 8 percent over the page, written out opaque so their contrast can be measured.
+   * The marks and the words of what happens. A run going is green and a thing waiting for a person is orange; a thing
+   * that is complete is grey, and a failure is the one restrained red. Nothing else wears a hue. The `-fill`, `-border`
+   * and `-hover` forms of the signal colours are not in the standard: where a page still draws one it is a faint tint
+   * of the signal over the panel (and the table's own tint for "needs you"), kept distinct from the neutral fills so
+   * that the audit still tells a state pill from a chip, until its own step of the redesign takes the box away.
    */
-  --ground: #0b0b0a;
-  --page: #161615;
-  --background: #161615;
-  --surface: #1b1b1a;
-  --surface-raised: #212120;
-  --surface-sunken: #111110;
-  /* The ground a control is typed into: the lowest layer inside a card. */
-  --field: #111110;
-  --lane: #131312;
-  --hover: #222221;
-  --selected: #292928;
-  --track: #292928;
-  --heat-empty: #222221;
-  /* The ground a sheet or a dialog sits on: enough to push the page back without hiding it. */
-  --scrim: rgb(0 0 0 / 40%);
-  /* Overlays — the palette, menus, dialogs, tooltips — are glass, translucent with a blur. */
-  --glass: rgb(30 30 29 / 72%);
-  /* Where `backdrop-filter` is missing, the glass is this opaque surface instead. */
-  --glass-solid: #1e1e1d;
+  --progress: var(--running);
+  --progress-text: var(--running-text);
+  --progress-fill: color-mix(in srgb, var(--running) 10%, var(--panel));
+  --progress-border: var(--hairline-strong);
+  --attention: var(--needs-you);
+  --attention-text: var(--needs-you-text);
+  --attention-fill: var(--needs-you-tint);
+  --attention-border: var(--needs-you-edge);
+  --attention-hover: color-mix(in srgb, var(--needs-you) 14%, var(--panel));
+  --complete: var(--status-done);
+  --complete-text: var(--text-secondary);
+  --complete-fill: color-mix(in srgb, var(--status-done) 12%, var(--panel));
+  --complete-border: var(--hairline-strong);
+  --error: var(--danger);
+  --error-text: var(--danger-text);
+  --error-fill: color-mix(in srgb, var(--danger) 7%, var(--panel));
+  --error-border: var(--hairline-strong);
+  --error-hover: color-mix(in srgb, var(--danger) 10%, var(--panel));
+  --status-progress: var(--running);
+  --status-error: var(--danger);
 
-  /*
-   * Text. Muted is for detail that is decorative or inactive, never for what a person has to read; everything a
-   * person does have to read sits at 4.5 to 1 or better, which `tokens.test.ts` checks in both themes.
-   */
-  --text: #ecebe8;
-  --text-secondary: #9d9c98;
-  --text-muted: #6c6b67;
-  --hairline: rgb(255 255 250 / 7%);
-  --hairline-strong: rgb(255 255 250 / 11%);
-
-  /*
-   * The one accent: links, the chosen thing, focus, a run in progress. `--accent-text` is the accent where it is read
-   * as words, `--accent-fill` the tint behind it, `--wash` the faint light at the top of the content and
-   * `--selection` the tint of selected text.
-   */
-  --accent: #8b8cf5;
-  --accent-text: #a5a6f7;
-  --accent-fill: #23233a;
-  --wash: color-mix(in srgb, var(--accent) 7%, transparent);
+  /* The old names of the surfaces, as aliases of the table's. */
+  --ground: var(--canvas);
+  --page: var(--panel);
+  --background: var(--panel);
+  --surface: var(--panel);
+  --surface-raised: var(--panel);
+  --surface-sunken: var(--group-fill);
+  --field: var(--panel);
+  --lane: var(--group-fill);
+  --hover: var(--row-hover);
+  --selected: var(--accent-tint);
+  --track: var(--control-fill);
+  --heat-empty: var(--hairline);
+  /* Overlays are opaque; blur belongs to a small menu, a tooltip and the palette, and is settled by their own step. */
+  --glass: var(--panel);
+  --glass-solid: var(--panel);
+  --sidebar: var(--canvas);
+  --sidebar-text: var(--text-secondary);
+  --sidebar-group: var(--text-muted);
+  --steps-fill: var(--group-fill);
+  --steps-border: var(--hairline);
+  --steps-ink: var(--text);
+  --online-text: var(--running-text);
+  --scrollbar-thumb: var(--hairline-strong);
+  --focus: var(--accent);
+  --wash: transparent;
   --selection: color-mix(in srgb, var(--accent) 35%, transparent);
+  --code-background: var(--code-bg);
+  --code-string: var(--code-text);
+  --diff-removed: color-mix(in srgb, var(--danger) 12%, transparent);
+  --diff-added: color-mix(in srgb, var(--running) 12%, transparent);
+  --diff-removed-mark: var(--danger);
+  --diff-added-mark: var(--running);
+
+  /* The label of a control filled with the ink colour: the ground the ink is drawn on. */
+  --on-ink: var(--panel);
+
+  /* Categories: the models of the Usage page and diagrams. Away from the signal colours on purpose. */
+  --cat-1: #7c5cd6;
+  --cat-2: #1e8b9c;
+  --cat-3: #c74f96;
+  --cat-4: #5d8f22;
+  --cat-5: #a75f2e;
+  --cat-6: #5b6a83;
+
+  /* The terminal is dark in both themes. */
+  --terminal: #0f0f10;
+  --terminal-text: #ededef;
+  --terminal-dim: #8b8b93;
+  --terminal-cursor: #ededef;
+  --terminal-selection: #303035;
 
   /*
-   * The hues of status, which only small things wear: the icon of a column, urgent, blocked, an error. Everything else
-   * is grey.
+   * Depth is one level: the canvas, the panel, and a window above a dimmed panel. A card and the edge of a large
+   * surface are one hairline, nothing lifts, and there is no relief, glow or grain.
    */
-  --status-todo: #8a8985;
-  --status-progress: #e8b44a;
-  --status-review: #6aa7f0;
-  --status-done: #5fb98a;
-  --status-error: #e5686e;
-
-  /*
-   * The tones of what is said in words: a run in progress is the accent, needs attention is amber, complete is green
-   * and error is red. Each has a text value that stays readable on its own fill, in this theme and in light.
-   */
-  --progress: #8b8cf5;
-  --progress-text: #a5a6f7;
-  --progress-fill: #23233a;
-  --progress-border: #3a3b66;
-  --attention: #e8b44a;
-  --attention-text: #e8b44a;
-  --attention-fill: #2e2718;
-  --attention-border: #57461f;
-  --attention-hover: #3a311d;
-  --complete: #5fb98a;
-  --complete-text: #6cc496;
-  --complete-fill: #1a2a21;
-  --complete-border: #2a4a38;
-  --error: #e5686e;
-  --error-text: #f07a80;
-  --error-fill: #2f1d1e;
-  --error-border: #5a3033;
-  --error-hover: #3a2223;
-
-  /* The label of a control filled with the ink colour, and the soft ring of a focused one. */
-  --on-ink: #111110;
-  --focus: #8b8cf5;
-
-  /* Categories: the models of the Usage page, avatars and diagrams. Away from the status hues on purpose. */
-  --cat-1: #a78bfa;
-  --cat-2: #45b8c9;
-  --cat-3: #f07ac0;
-  --cat-4: #93c552;
-  --cat-5: #cf7f4e;
-  --cat-6: #93a0b8;
-
-  /* Code, diffs and terminals. */
-  --code-background: #121211;
-  /* Syntax colours that hold 4.5 to 1 on the code ground; the category hues are for swatches, not for text. */
-  --code-keyword: #a5a6f7;
-  --code-string: #6cc496;
-  --code-number: #d7a35a;
-  --diff-removed: #2f1d1e;
-  --diff-added: #1a2a21;
-  --diff-removed-mark: #e5686e;
-  --diff-added-mark: #5fb98a;
-  --terminal: #0e0e0d;
-  --terminal-text: #e3e2de;
-  --terminal-dim: #8b8a86;
-  --terminal-cursor: #ecebe8;
-  --terminal-selection: #2c2c2b;
-
-  /*
-   * Layers, in the names the shell uses. The sidebar lies on the ground without a surface of its own; the page is the
-   * lighter surface beside it. `--sidebar` is the ground's colour under that name, for what sits on the sidebar.
-   */
-  --sidebar: #0b0b0a;
-  --sidebar-text: #9d9c98;
-  --sidebar-group: #8c8b87;
-  --steps-fill: #131312;
-  --steps-border: rgb(255 255 250 / 7%);
-  --steps-ink: #ecebe8;
-  --online-text: #6cc496;
-  --scrollbar-thumb: #3a3a38;
-  /*
-   * The fine grain of the ground: how strongly it shows, an opacity, and how it is laid on. In dark the white noise
-   * lightens the ground where it falls; in light it is turned dark and multiplied in.
-   */
-  --grain: 0.09;
-  --grain-blend: overlay;
+  --edge: 0 0 0 1px var(--hairline-strong);
+  --shadow-card: 0 0 0 1px var(--hairline-strong);
+  --shadow-card-hover: 0 0 0 1px var(--hairline-strong);
+  --shadow-raised: var(--shadow-window);
+  --shadow-relief: 0 0 0 0 transparent;
+  --glow: 0 0 0 0 transparent;
+  --grain: 0;
+  --grain-blend: normal;
   --grain-filter: none;
 
-  /*
-   * Shadows. `--edge` sets a large surface apart: in dark a faint light line and a light from above, no wide shadow.
-   * A card has a short soft shadow that grows on hover; a floating layer has a short one under a faint edge; the
-   * primary button has a slight relief drawn inside its box; the chosen card glows softly in the accent.
-   */
-  --edge: 0 0 0 1px rgb(255 255 255 / 4.5%), inset 0 1px 0 rgb(255 255 255 / 3%);
-  --shadow-card: 0 1px 1px rgb(0 0 0 / 25%), 0 2px 6px -2px rgb(0 0 0 / 30%);
-  --shadow-card-hover: 0 1px 1px rgb(0 0 0 / 25%), 0 6px 14px -4px rgb(0 0 0 / 40%);
-  --shadow-raised: 0 0 0 1px rgb(255 255 255 / 4.5%), 0 12px 32px -8px rgb(0 0 0 / 55%);
-  --shadow-relief: inset 0 1px 0 rgb(255 255 255 / 60%), inset 0 -1px 0 rgb(0 0 0 / 14%);
-  --glow:
-    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
-    0 0 22px -6px color-mix(in srgb, var(--accent) 40%, transparent);
-
-  /* Radii: 6 for controls and rows, 8 for cards, 12 for windows and dialogs, full for dots and avatars. */
+  /* Radii: 6 for controls and rows, 8 for cards, 10 for the panel and windows, round for dots, avatars and switches. */
   --radius-control: 6px;
   --radius-small: 6px;
   --radius-card: 8px;
   --radius-composer: 8px;
-  --radius-sheet: 12px;
-  --radius-round: 999px;
+  --radius-panel: 10px;
+  --radius-sheet: var(--radius-panel);
+  --radius-round: 9999px;
 
   /* The layers a screen is stacked from, so a component never invents a number of its own. */
   --z-scrim: 40;
@@ -230,108 +228,50 @@
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
-/* Light. Every colour above appears here with a value of its own. */
-:root[data-theme="light"] {
-  color-scheme: light;
+/* Dark, neutral and without a tint: only the colours that differ from the light base. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
 
-  --ground: #efefec;
-  --page: #fdfdfc;
-  --background: #fdfdfc;
-  --surface: #ffffff;
-  --surface-raised: #ffffff;
-  --surface-sunken: #f6f6f4;
-  --field: #ffffff;
-  --lane: #f6f6f4;
-  --hover: #f3f3f1;
-  /* A chosen thing has to look chosen: the chosen fill is a step below the hover of its own. */
-  --selected: #ebebe8;
-  --track: #e8e8e5;
-  --heat-empty: #efefec;
-  --scrim: rgb(20 20 15 / 18%);
-  --glass: rgb(255 255 255 / 75%);
-  --glass-solid: #ffffff;
-
-  --text: #1d1d1b;
-  --text-secondary: #6a6965;
-  --text-muted: #9c9b97;
-  --hairline: rgb(20 20 15 / 7%);
-  --hairline-strong: rgb(20 20 15 / 12%);
-
-  --accent: #5e5ff0;
-  --accent-text: #4b4cd6;
-  --accent-fill: #ececfd;
-  --wash: color-mix(in srgb, var(--accent) 7%, transparent);
-  --selection: color-mix(in srgb, var(--accent) 35%, transparent);
-
-  --status-todo: #9c9b97;
-  --status-progress: #d39b1e;
-  --status-review: #3b82e0;
-  --status-done: #2f9a66;
-  --status-error: #d2444b;
-
-  --progress: #5e5ff0;
-  --progress-text: #4b4cd6;
-  --progress-fill: #ececfd;
-  --progress-border: #c9c9fa;
-  --attention: #d39b1e;
-  --attention-text: #7a5405;
-  --attention-fill: #f8f0df;
-  --attention-border: #ead6a8;
-  --attention-hover: #f3e7cd;
-  --complete: #2f9a66;
-  --complete-text: #1d6e47;
-  --complete-fill: #e4f2ea;
-  --complete-border: #b6dcc6;
-  --error: #d2444b;
-  --error-text: #b0303a;
-  --error-fill: #fbe8e9;
-  --error-border: #f0c0c3;
-  --error-hover: #f7dcde;
-
-  --on-ink: #ffffff;
-  --focus: #5e5ff0;
-
-  --cat-1: #7c5cd6;
-  --cat-2: #1e8b9c;
-  --cat-3: #c74f96;
-  --cat-4: #5d8f22;
-  --cat-5: #a75f2e;
-  --cat-6: #5b6a83;
-
-  --code-background: #f8f8f6;
-  --code-keyword: #4b4cd6;
-  --code-string: #1d6e47;
-  --code-number: #9a4f1c;
-  --diff-removed: #fbe8e9;
-  --diff-added: #e4f2ea;
-  --diff-removed-mark: #d2444b;
-  --diff-added-mark: #2f9a66;
-  --terminal: #161615;
-  --terminal-text: #e3e2de;
-  --terminal-dim: #8b8a86;
-  --terminal-cursor: #ecebe8;
-  --terminal-selection: #3a3a38;
-
-  --sidebar: #efefec;
-  --sidebar-text: #5f5e5a;
-  --sidebar-group: #6a6965;
-  --steps-fill: #f6f6f4;
-  --steps-border: rgb(20 20 15 / 7%);
-  --steps-ink: #1d1d1b;
-  --online-text: #1d6e47;
-  --scrollbar-thumb: #c4c3bf;
-  --grain: 0.12;
-  --grain-blend: multiply;
-  --grain-filter: invert(1);
-
-  --edge:
-    0 0 0 1px rgb(0 0 0 / 4%), 0 1px 2px rgb(0 0 0 / 4%), 0 4px 14px -4px rgb(0 0 0 / 6%),
-    0 18px 48px -12px rgb(0 0 0 / 8%);
-  --shadow-card: 0 1px 1px rgb(0 0 0 / 4%), 0 2px 6px -2px rgb(0 0 0 / 8%);
-  --shadow-card-hover: 0 1px 1px rgb(0 0 0 / 5%), 0 6px 14px -4px rgb(0 0 0 / 12%);
-  --shadow-raised: 0 0 0 1px rgb(0 0 0 / 4%), 0 12px 32px -8px rgb(0 0 0 / 18%);
-  --shadow-relief: inset 0 1px 0 rgb(255 255 255 / 12%), inset 0 -1px 0 rgb(0 0 0 / 30%);
-  --glow:
-    0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent),
-    0 0 22px -6px color-mix(in srgb, var(--accent) 30%, transparent);
+  --canvas: #0f0f10;
+  --panel: #161617;
+  --hairline: #26262a;
+  --hairline-strong: #303035;
+  --text: #ededef;
+  --text-secondary: #c6c6cc;
+  --text-muted: #8b8b93;
+  --text-faint: #6e6e77;
+  --accent: #7c85e0;
+  --accent-text: #7c85e0;
+  --accent-fill: #6068d0;
+  --accent-border: #7c85e0;
+  --accent-tint: #1c1d32;
+  --row-hover: #1b1b1d;
+  --group-fill: #19191b;
+  --control-fill: #222226;
+  --nav-selected: #1c1c1e;
+  --needs-you: #f29442;
+  --needs-you-text: #f29442;
+  --needs-you-tint: #2a1f16;
+  --needs-you-edge: #4a3523;
+  --running: #3ec586;
+  --running-text: #3ec586;
+  --danger: #f0707f;
+  --danger-text: #f0707f;
+  --status-todo: #8b8b93;
+  --status-done: #72727b;
+  --status-review: #8e96e8;
+  --code-bg: #1e2038;
+  --code-text: #d8daf0;
+  --code-head: #8c90b4;
+  --code-keyword: #c49bff;
+  --code-function: #7cc4ff;
+  --code-operator: #ff9aa8;
+  --code-number: #ffc27a;
+  --code-comment: #858bb4;
+  --avatar-1: #a3563a;
+  --avatar-2: #4f7a8c;
+  --avatar-3: #7a6a9a;
+  --avatar-agent: #2a2c4f;
+  --scrim: rgb(0 0 0 / 56%);
+  --shadow-window: 0 8px 32px rgb(0 0 0 / 50%), 0 0 0 1px var(--hairline-strong);
 }
