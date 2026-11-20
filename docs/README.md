@@ -41,7 +41,7 @@ reads them too: they are its `moebius` skill.
   [`moebius`](../crates/moebius/README.md) (the binary and command line), [`moebius-desktop`](../crates/moebius-desktop/README.md)
   (the desktop app) and [`moebius-plugin-api`](../crates/moebius-plugin-api/README.md).
 - [`design-web.md`](design-web.md): the standard the web app is built to — voice, type, colour and its token table, components, interaction.
-- [`design/web-redesign/`](design/web-redesign/DECISIONS.md): the decisions behind the current look of the web app, and the approved mockups.
+- [`design/web-redesign/`](design/web-redesign/DECISIONS.md): the decisions behind the current look of the web app, and the approved mockups. [`IMPLEMENTING.md`](design/web-redesign/IMPLEMENTING.md) says how an issue of the redesign is worked.
 - [`web/README.md`](../web/README.md): the web app, its layout, scripts and licenses.
 
 ## Why it is the way it is
