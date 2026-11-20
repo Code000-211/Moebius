@@ -1,6 +1,6 @@
 /**
  * The editor of a wiki page: the Markdown, and how it reads under it, with an optional line for the commit. A new
- * page also takes its path, in the folder it was started in. Saving is
+ * page also takes its path, in the folder it was started in. Save and Cancel stay pinned at the foot of the column. Saving is
  * `PUT /v1/wiki/pages/{path}`, a commit by the person pushed to the wiki's origin; when the push fails the server says
  * why and nothing is lost from the editor. The save carries `base`, the commit of the page as the editor loaded it, so
  * a page someone else saved meanwhile is refused (409) rather than overwritten: the editor says so (before saving too,
@@ -287,7 +287,8 @@ export function PageEditor({
           </pre>
         </section>
       )}
-      <div className="flex flex-wrap gap-2">
+      {/* Pinned to the foot of the scrolling column, so saving is never a scroll away. */}
+      <div className="sticky -bottom-6 z-10 -mx-8 -mb-6 flex flex-wrap gap-2 border-t border-hairline bg-panel px-8 py-3">
         <Button type="submit" disabled={!ready}>
           {save.isPending ? "Saving" : "Save"}
         </Button>

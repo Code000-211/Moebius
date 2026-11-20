@@ -343,6 +343,16 @@ describe("the Wiki page", () => {
       ),
     );
     expect(shadows.every((shadow) => shadow === "none")).toBe(true);
+
+    // Editing keeps the outline and keeps Save and Cancel in view without a scroll.
+    await page.goto(`${server.url}/wiki?page=Runbook&view=edit`);
+    const form = page.getByRole("form", { name: "Edit Runbook" });
+    await form.getByRole("button", { name: "Save" }).waitFor();
+    expect(await outline.isVisible()).toBe(true);
+    for (const name of ["Save", "Cancel"]) {
+      const box = await form.getByRole("button", { name }).boundingBox();
+      expect((box?.y ?? 9999) + (box?.height ?? 0)).toBeLessThanOrEqual(720);
+    }
     await context.close();
   });
 });
