@@ -6,8 +6,8 @@
  */
 import {
   ArrowsClockwiseIcon,
-  BookmarkSimpleIcon,
-  BookOpenTextIcon,
+  BookOpenIcon,
+  CalendarDotsIcon,
   ChartLineUpIcon,
   ChatCircleIcon,
   ClockIcon,
@@ -26,19 +26,19 @@ import {
   ListChecksIcon,
   PlugIcon,
   PlugsConnectedIcon,
-  RepeatIcon,
+  PulseIcon,
+  RadioButtonIcon,
   RobotIcon,
   RocketLaunchIcon,
   ScalesIcon,
   ShapesIcon,
   SparkleIcon,
+  StackIcon,
   TerminalWindowIcon,
   TrayArrowDownIcon,
   TrayIcon,
   TreeStructureIcon,
-  UserIcon,
   UsersIcon,
-  UsersThreeIcon,
 } from "@phosphor-icons/react";
 
 /** The sidebar group a page is in; the first group has no name. */
@@ -64,17 +64,17 @@ export interface PageDef {
 
 export const PAGES: readonly PageDef[] = [
   { path: "inbox", title: "Inbox", group: "", icon: TrayIcon },
-  { path: "my-issues", title: "My issues", group: "", icon: UserIcon },
+  { path: "my-issues", title: "My issues", group: "", icon: RadioButtonIcon },
   { path: "chat", title: "Chat", group: "Other", icon: ChatCircleIcon },
-  { path: "fleet", title: "Fleet", group: "", icon: UsersThreeIcon },
+  { path: "fleet", title: "Fleet", group: "", icon: PulseIcon },
   { path: "automations", title: "Automations", group: "Other", icon: ClockIcon },
   { path: "workflows", title: "Workflows", group: "Other", icon: TreeStructureIcon },
   { path: "projects", title: "Projects", group: "Projects", icon: FolderIcon },
   { path: "milestones", title: "Milestones", group: "Other", icon: FlagIcon },
-  { path: "wiki", title: "Wiki", group: "Workspace", icon: BookOpenTextIcon },
-  { path: "cycles", title: "Cycles", group: "Workspace", icon: RepeatIcon },
+  { path: "wiki", title: "Wiki", group: "Workspace", icon: BookOpenIcon },
+  { path: "cycles", title: "Cycles", group: "Workspace", icon: CalendarDotsIcon },
   { path: "issues", title: "Issues", group: "Other", icon: ListChecksIcon },
-  { path: "views", title: "Views", group: "Workspace", icon: BookmarkSimpleIcon },
+  { path: "views", title: "Views", group: "Workspace", icon: StackIcon },
   { path: "analytics", title: "Analytics", group: "Other", icon: ChartLineUpIcon },
   { path: "intake", title: "Intake", group: "Other", icon: TrayArrowDownIcon },
   // Agents, Skills, MCP servers and Rules are held by Settings; the command bar still lists them under "Build".

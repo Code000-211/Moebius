@@ -265,18 +265,20 @@ describe("the shell", () => {
     await page.waitForURL("**/settings");
     // The sidebar is the same list on a Settings page, with Settings chosen and no way back to leave it.
     await pages().getByRole("link", { name: "Wiki" }).waitFor();
-    expect(await pages().getByRole("link", { name: "Settings" }).getAttribute("aria-current")).toBe(
-      "page",
-    );
+    await expect
+      .poll(() => pages().getByRole("link", { name: "Settings" }).getAttribute("aria-current"))
+      .toBe("page");
     expect(await pages().getByRole("link", { name: "Back" }).count()).toBe(0);
     expect(await pages().getByRole("link", { name: "Models" }).count()).toBe(0);
     if (!usesRealServer) {
       await pages().getByRole("link", { name: "demo", exact: true }).click();
       await page.waitForURL("**/board/1");
       await page.getByRole("heading", { name: "demo" }).waitFor();
-      expect(
-        await pages().getByRole("link", { name: "demo", exact: true }).getAttribute("aria-current"),
-      ).toBe("page");
+      await expect
+        .poll(() =>
+          pages().getByRole("link", { name: "demo", exact: true }).getAttribute("aria-current"),
+        )
+        .toBe("page");
     }
   });
 
