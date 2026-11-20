@@ -43,6 +43,14 @@ describe("the list of places", () => {
     ]);
   });
 
+  it("shows the server's name at the head with the search button beside it, and no rail of servers", async () => {
+    show();
+    const head = (await screen.findByTestId("server-switch")).parentElement as HTMLElement;
+    expect(head.textContent).toContain("Moebius");
+    expect(within(head).getByRole("button", { name: "Search" })).toBeTruthy();
+    expect(screen.queryByLabelText("Servers")).toBeNull();
+  });
+
   it("opens the search from its button", async () => {
     const onSearch = vi.fn();
     show({ onSearch });

@@ -1,13 +1,14 @@
 /**
- * The rail of the desktop app draws the app's servers: the open one marked, the Inbox's count, a grey dot for one that
- * cannot be reached; a click opens one, "+" connects one, and removing one goes through the app.
+ * The server switch in the sidebar's head: in the desktop app a menu of the app's servers (the open one ticked, the
+ * Inbox's count, "cannot be reached" for one that does not answer) where one is opened, connected, renamed or
+ * removed; in a browser only the server's name, with no menu.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NO_SERVER, type RailServer } from "./bridge";
 import { fakeBridge } from "./fakeBridge";
-import { initial, Rail, SHOWN_EVENT } from "./Rail";
+import { initial, ServerSwitch, SHOWN_EVENT } from "./ServerSwitch";
 
 afterEach(cleanup);
 
@@ -38,53 +39,70 @@ function draw(bridge = fakeBridge()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <Rail bridge={bridge} />
+      <ServerSwitch bridge={bridge} name="Acme" />
     </QueryClientProvider>,
   );
 }
 
-describe("Rail", () => {
-  it("draws nothing in a browser", () => {
+/** Opens the menu the way a keyboard does, which a test environment without pointer capture supports. */
+async function openMenu() {
+  const trigger = await screen.findByTestId("server-switch");
+  fireEvent.keyDown(trigger, { key: "Enter" });
+  await screen.findByRole("menu");
+}
+
+describe("ServerSwitch", () => {
+  it("shows only the name in a browser, with no menu and nothing called Servers", () => {
     const client = new QueryClient();
     render(
       <QueryClientProvider client={client}>
-        <Rail bridge={undefined} />
+        <ServerSwitch bridge={undefined} name="Acme" />
       </QueryClientProvider>,
     );
-    expect(screen.queryByTestId("rail")).toBeNull();
+    expect(screen.getByTestId("server-switch").textContent).toBe("AAcme");
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByLabelText("Servers")).toBeNull();
   });
 
-  it("tells squares apart: words by their first letters, addresses by the end of their port", () => {
-    expect(initial("https://moebius.example")).toBe("ME");
-    expect(initial("devbox")).toBe("DE");
-    expect(initial("Build box")).toBe("BB");
+  it("marks a server by the first letter or digit of its name", () => {
+    expect(initial("Acme")).toBe("A");
+    expect(initial("https://moebius.example")).toBe("M");
+    expect(initial("127.0.0.1:7171")).toBe("1");
     expect(initial("::")).toBe("?");
-    // Three servers on one host are not three squares showing the same character.
-    const three = ["127.0.0.1:7171", "127.0.0.1:7172", "127.0.0.1:7180"].map(initial);
-    expect(new Set(three).size).toBe(3);
-    expect(initial("laptop · 127.0.0.1:7172")).toBe("172");
-    expect(initial("laptop · 127.0.0.1:7171")).not.toBe(initial("laptop · 127.0.0.1:7172"));
   });
 
-  it("marks the open server, counts its Inbox and greys the one it cannot reach", async () => {
+  it("names the open server in the field, and no element is labelled Servers", async () => {
     draw({ ...fakeBridge(), servers: async () => SERVERS });
-    const open = await screen.findByRole("button", {
-      name: /127\.0\.0\.1:7171, 2 items and 1 notice waiting in the Inbox/,
-    });
-    expect(open.getAttribute("aria-current")).toBe("true");
-    // The open server carries a mark of its own, which the other does not.
-    expect(open.querySelector("[data-testid=rail-open]")).not.toBeNull();
-    expect(screen.getAllByTestId("rail-open")).toHaveLength(1);
-    expect(screen.getByTestId("rail-count").textContent).toBe("3");
-    const grey = screen.getByRole("button", { name: "devbox (cannot be reached)" });
-    expect(grey.querySelector("[data-testid=rail-unreachable]")).not.toBeNull();
-    expect(open.querySelector("[data-testid=rail-unreachable]")).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByTestId("server-switch").textContent).toContain("127.0.0.1:7171"),
+    );
+    expect(screen.queryByLabelText("Servers")).toBeNull();
   });
 
-  it("opens another server with a click", async () => {
+  it("ticks the open server, counts its Inbox and says which one cannot be reached", async () => {
+    draw({ ...fakeBridge(), servers: async () => SERVERS });
+    await screen.findByText("127.0.0.1:7171", { selector: "[data-testid=server-switch] span" });
+    await openMenu();
+    const items = screen.getAllByRole("menuitem");
+    expect(items[0]?.getAttribute("aria-current")).toBe("true");
+    expect(screen.getByTestId("server-count").textContent).toBe("3");
+    expect(screen.getByTestId("server-count").getAttribute("title")).toBe(
+      "2 items and 1 notice waiting in the Inbox",
+    );
+    expect(items[1]?.textContent).toContain("devbox");
+    expect(
+      items[1]?.querySelector("[data-testid=server-unreachable]")?.getAttribute("aria-label"),
+    ).toBe("cannot be reached");
+    expect(items[0]?.querySelector("[data-testid=server-unreachable]")).toBeNull();
+    expect(items[1]?.getAttribute("aria-current")).toBeNull();
+  });
+
+  it("opens another server from the menu", async () => {
     const switchServer = vi.fn(async () => {});
     draw({ ...fakeBridge(), servers: async () => SERVERS, switchServer });
-    fireEvent.click(await screen.findByRole("button", { name: /devbox/ }));
+    await screen.findByText("127.0.0.1:7171", { selector: "[data-testid=server-switch] span" });
+    await openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: /devbox/ }));
     expect(switchServer).toHaveBeenCalledWith("b");
   });
 
@@ -93,41 +111,49 @@ describe("Rail", () => {
     const switchServer = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
     const servers = vi.fn(async () => SERVERS);
     draw({ ...fakeBridge(), servers, switchServer });
-    const other = await screen.findByRole("button", { name: /devbox/ });
-    fireEvent.click(other);
-    expect(other.getAttribute("aria-current")).toBe("true");
-    expect(other.getAttribute("aria-busy")).toBe("true");
-    expect(
-      screen.getByRole("button", { name: /127\.0\.0\.1:7171/ }).getAttribute("aria-current"),
-    ).toBeNull();
+    await screen.findByText("127.0.0.1:7171", { selector: "[data-testid=server-switch] span" });
+    await openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: /devbox/ }));
+    const field = screen.getByTestId("server-switch");
+    await waitFor(() => expect(field.textContent).toContain("devbox"));
+    expect(field.getAttribute("aria-busy")).toBe("true");
     const reads = servers.mock.calls.length;
     finish();
     await waitFor(() => expect(servers.mock.calls.length).toBeGreaterThan(reads));
-    await waitFor(() => expect(other.getAttribute("aria-busy")).toBeNull());
+    await waitFor(() => expect(field.getAttribute("aria-busy")).toBeNull());
   });
 
   it("reads the servers again when the app shows this page after another server's", async () => {
     const servers = vi.fn(async () => SERVERS);
     draw({ ...fakeBridge(), servers });
-    await screen.findByRole("button", { name: /devbox/ });
+    await waitFor(() => expect(servers).toHaveBeenCalled());
     const reads = servers.mock.calls.length;
     window.dispatchEvent(new Event(SHOWN_EVENT));
     await waitFor(() => expect(servers.mock.calls.length).toBeGreaterThan(reads));
   });
 
-  it("removes a server from its menu", async () => {
+  it("removes a server from the menu", async () => {
     const removeServer = vi.fn(async () => {});
     draw({ ...fakeBridge(), servers: async () => SERVERS, removeServer });
-    fireEvent.contextMenu(await screen.findByRole("button", { name: /devbox/ }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Remove server" }));
+    await screen.findByText("127.0.0.1:7171", { selector: "[data-testid=server-switch] span" });
+    await openMenu();
+    const sub = screen.getByRole("menuitem", { name: "Remove server" });
+    fireEvent.keyDown(sub, { key: "ArrowRight" });
+    const rows = await screen.findAllByRole("menuitem", { name: "devbox" });
+    fireEvent.click(rows[rows.length - 1] as HTMLElement);
     await waitFor(() => expect(removeServer).toHaveBeenCalledWith("b"));
   });
 
-  it("renames a server from its menu, and an empty name gives its own back", async () => {
+  it("renames a server from the menu, and an empty name gives its own back", async () => {
     const renameServer = vi.fn(async () => {});
     draw({ ...fakeBridge(), servers: async () => SERVERS, renameServer });
-    fireEvent.contextMenu(await screen.findByRole("button", { name: /devbox/ }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename server" }));
+    await screen.findByText("127.0.0.1:7171", { selector: "[data-testid=server-switch] span" });
+    await openMenu();
+    fireEvent.keyDown(screen.getByRole("menuitem", { name: "Rename server" }), {
+      key: "ArrowRight",
+    });
+    const rows = await screen.findAllByRole("menuitem", { name: "devbox" });
+    fireEvent.click(rows[rows.length - 1] as HTMLElement);
     const field = await screen.findByLabelText("Name");
     expect((field as HTMLInputElement).value).toBe("devbox");
     fireEvent.change(field, { target: { value: "Build box" } });
@@ -137,7 +163,8 @@ describe("Rail", () => {
 
   it("labels the fields of the dialog, as the first-start page does", async () => {
     draw({ ...fakeBridge() });
-    fireEvent.click(await screen.findByRole("button", { name: "Connect a server" }));
+    await openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Connect a server" }));
     expect(await screen.findByText("Address", { selector: "label span" })).toBeTruthy();
     expect(screen.getByText("Access token", { selector: "label span" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Over SSH" }));
@@ -149,7 +176,8 @@ describe("Rail", () => {
       throw "the server does not accept this access token";
     });
     draw({ ...fakeBridge(), connect });
-    fireEvent.click(await screen.findByRole("button", { name: "Connect a server" }));
+    await openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Connect a server" }));
     fireEvent.change(await screen.findByLabelText("Address"), { target: { value: "h:1" } });
     fireEvent.change(screen.getByLabelText("Access token"), { target: { value: "tok" } });
     fireEvent.click(screen.getByRole("button", { name: "Connect" }));
@@ -168,7 +196,8 @@ describe("Rail", () => {
       if (!setUp) throw `${NO_SERVER} no server is set up on devbox`;
     });
     draw({ ...fakeBridge(), connectSsh });
-    fireEvent.click(await screen.findByRole("button", { name: "Connect a server" }));
+    await openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Connect a server" }));
     fireEvent.click(await screen.findByRole("button", { name: "Over SSH" }));
     fireEvent.change(screen.getByLabelText("SSH host"), { target: { value: "devbox" } });
     fireEvent.click(screen.getByRole("button", { name: "Connect" }));
