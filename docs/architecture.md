@@ -788,7 +788,7 @@ At the top:
 | `server/api/roles/mod.rs` | The role each route of the desktop API needs, and whether the Moebius agent's run token may use it: the table the reference repeats, and the check `authenticate` makes with it. |
 | `server/api/roles/tests.rs` | For the tests only: the role table against the reference and the routes of the code, and every route called as a viewer, a member, an owner and the Moebius agent. |
 | `server/api/web.rs` | The web app embedded from `web/dist` and served at `/` without a token, with `index.html` for any path that is no file, or a page that says it was not built. |
-| `server/api/events.rs` | The event WebSocket `GET /v1/events`. |
+| `server/api/events.rs` | The event WebSocket `GET /v1/events`: what a person may see, a run's pieces only for the runs a client subscribed to. |
 | `server/api/testing.rs` | For the tests only: a server on port 0 with a fake Pi, and the requests the tests of the API share. |
 | `server/settings/mod.rs` | Editing `moebius.toml` while the server runs: what `PUT /v1/settings` takes and answers, and reading and writing the file. |
 | `server/settings/edit.rs` | A change applied to the file's text with `toml_edit`, its comments and order kept. |
