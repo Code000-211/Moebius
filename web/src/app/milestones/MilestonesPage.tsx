@@ -1,65 +1,32 @@
 /**
- * The Milestones page (pattern 15 of the design drafts): the goals of the organisation, each with its target date and
- * how far its cards are, as a list by default and as a timeline in Display. A milestone holds cards of any projects; the
+ * The Milestones page (pattern 15 of the design drafts): the goals of the organisation, each a row on a time axis
+ * with its target date and how far its cards are. A milestone holds cards of any projects; the
  * server counts and lists only the cards of the projects the person may see, so every number here is theirs. A row opens
  * to its description, its share in each project and its cards; a card is put in a milestone from its properties.
  */
-import { FlagIcon, PencilSimpleIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PlusIcon } from "@phosphor-icons/react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { Link } from "react-router";
-import {
-  addMilestone,
-  deleteMilestone,
-  editMilestone,
-  listMilestones,
-  readMilestone,
-} from "../../api/calls/milestones";
+import { deleteMilestone, listMilestones } from "../../api/calls/milestones";
 import { listProjects } from "../../api/calls/projects";
-import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
-import type { MilestoneFields, MilestoneView } from "../../api/types/milestones";
-import { Markdown } from "../../ui/chat/Markdown";
+import type { MilestoneView } from "../../api/types/milestones";
 import { Button } from "../../ui/components/Button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "../../ui/components/Dialog";
-import { Input } from "../../ui/components/Input";
 import { FilterBar } from "../../ui/filters/FilterBar";
 import { displayQuery, readDisplay } from "../../ui/filters/model";
 import { useQueryParams } from "../../ui/filters/useQueryParams";
-import { cn } from "../../ui/lib/cn";
 import { ConfirmDelete } from "../../ui/page/ConfirmDelete";
 import { Empty } from "../../ui/page/Empty";
-import { Field, TextArea } from "../../ui/page/Field";
-import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
-import { cardPath } from "../pages";
-import {
-  dateWords,
-  inProject,
-  overdue,
-  percent,
-  progressWords,
-  projectsWords,
-  SORTS,
-  sorted,
-  timeline,
-} from "./model";
+import { MilestoneDialog } from "./MilestoneDialogs";
+import { Timeline } from "./MilestoneRows";
+import { inProject, SORTS, sorted } from "./model";
 
-/** What Display offers here: the two layouts and the sorts; milestones have no grouping and no fields to hide. */
+/** What Display offers here: the sorts; milestones have one layout, no grouping and no fields to hide. */
 const CHOICES = {
-  layouts: [
-    ["list", "List"],
-    ["timeline", "Timeline"],
-  ] as Array<[string, string]>,
+  layouts: [] as Array<[string, string]>,
   groups: [] as Array<[string, string]>,
   sorts: SORTS,
   fields: [] as Array<[string, string]>,
@@ -77,7 +44,6 @@ export function MilestonesPage() {
   const projects = useQuery({ queryKey: keys.projects, queryFn: listProjects });
   const [params, setQuery] = useQueryParams();
   const display = useMemo(() => readDisplay(params, CHOICES), [params]);
-  const layout = display.layout === "timeline" ? "timeline" : "list";
   const project = params.get("project") ?? "";
   // The milestone that is opened is in the address, so a reload and a link keep it open.
   const opened = Number(params.get("milestone")) || null;
@@ -151,30 +117,23 @@ export function MilestonesPage() {
             }
             display={{
               choices: CHOICES,
-              value: { ...display, layout },
+              value: display,
               onChange: (next) => setQuery(displayQuery(next)),
             }}
           />
           {shown.length === 0 ? (
             <Empty title="No milestone matches" body="No milestone holds a card of that project." />
-          ) : layout === "timeline" ? (
-            <Timeline list={shown} now={now} onOpen={setEditing} />
           ) : (
-            <ul className="m-0 flex list-none flex-col gap-2 p-0" aria-label="Milestones">
-              {shown.map((milestone) => (
-                <Row
-                  key={milestone.id}
-                  milestone={milestone}
-                  now={now}
-                  open={milestone.id === opened}
-                  onToggle={() =>
-                    setQuery({ milestone: milestone.id === opened ? "" : String(milestone.id) })
-                  }
-                  onEdit={() => setEditing(milestone)}
-                  onDelete={() => setDeleting(milestone)}
-                />
-              ))}
-            </ul>
+            <Timeline
+              list={shown}
+              now={now}
+              opened={opened}
+              onToggle={(milestone) =>
+                setQuery({ milestone: milestone.id === opened ? "" : String(milestone.id) })
+              }
+              onEdit={setEditing}
+              onDelete={setDeleting}
+            />
           )}
         </>
       )}
@@ -195,322 +154,5 @@ export function MilestonesPage() {
         </ConfirmDelete>
       )}
     </>
-  );
-}
-
-/** The bar of progress: the part done, with the words the bar stands for as its name. */
-function Progress({ done, cards, className }: { done: number; cards: number; className?: string }) {
-  const value = percent(done, cards);
-  return (
-    <div
-      role="progressbar"
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={value}
-      aria-label={progressWords(done, cards)}
-      className={cn("h-1.5 overflow-hidden rounded-full bg-sunken", className)}
-    >
-      <div className="h-full bg-complete" style={{ width: `${value}%` }} />
-    </div>
-  );
-}
-
-/** One milestone of the list: its name, projects and date, its progress, and under it, once opened, its cards. */
-function Row({
-  milestone,
-  now,
-  open,
-  onToggle,
-  onEdit,
-  onDelete,
-}: {
-  milestone: MilestoneView;
-  now: string;
-  open: boolean;
-  onToggle: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const late = overdue(milestone, now);
-  return (
-    <li className="@container rounded-card bg-raised shadow-card" data-testid="milestone">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={onToggle}
-        className="grid w-full cursor-pointer appearance-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 rounded-card bg-transparent p-3 text-left @4xl:grid-cols-[minmax(0,1fr)_auto_14rem]"
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          <FlagIcon className="size-4 shrink-0 text-secondary" aria-hidden="true" />
-          <span
-            className="min-w-0 truncate text-base font-semibold text-text"
-            title={milestone.name}
-          >
-            {milestone.name}
-          </span>
-          <span className="shrink-0 text-sm text-secondary">{projectsWords(milestone)}</span>
-        </span>
-        <span className={cn("shrink-0 text-sm", late ? "text-attention-text" : "text-secondary")}>
-          {late
-            ? `Overdue · ${dateWords(milestone.target_date, now)}`
-            : dateWords(milestone.target_date, now)}
-        </span>
-        <span className="col-span-2 flex items-center gap-3 @4xl:col-span-1 @4xl:w-56">
-          <Progress done={milestone.done} cards={milestone.cards} className="flex-1" />
-          <span className="shrink-0 text-sm text-secondary tabular-nums">
-            {progressWords(milestone.done, milestone.cards)}
-          </span>
-        </span>
-      </button>
-      {open && <Detail milestone={milestone} onEdit={onEdit} onDelete={onDelete} />}
-    </li>
-  );
-}
-
-/** What a milestone holds: its description, its share in each project and its cards, read when it is opened. */
-function Detail({
-  milestone,
-  onEdit,
-  onDelete,
-}: {
-  milestone: MilestoneView;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  const detail = useQuery({
-    queryKey: keys.milestone(milestone.id),
-    queryFn: () => readMilestone(milestone.id),
-  });
-  return (
-    <div className="flex flex-col gap-3 border-0 border-t border-solid border-hairline p-3">
-      <div className="flex gap-2">
-        <Button size="sm" variant="secondary" onClick={onEdit}>
-          <PencilSimpleIcon className="size-4" aria-hidden="true" />
-          Edit
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onDelete}>
-          <TrashIcon className="size-4" aria-hidden="true" />
-          Delete
-        </Button>
-      </div>
-      {milestone.description !== "" && (
-        <Markdown content={milestone.description} className="max-w-prose text-md text-text" />
-      )}
-      {milestone.projects.length > 0 && (
-        <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-sm text-secondary">
-          {milestone.projects.map((p) => (
-            <li key={p.id}>
-              <span className="font-mono">{p.key}</span> {progressWords(p.done, p.cards)}
-            </li>
-          ))}
-        </ul>
-      )}
-      {detail.isError ? (
-        <p className="m-0 text-sm text-secondary">The cards could not be read.</p>
-      ) : (
-        <ul
-          className="m-0 flex list-none flex-col gap-1 p-0"
-          aria-label={`Cards of ${milestone.name}`}
-        >
-          {(detail.data?.cards ?? []).map((card) => (
-            <li key={card.id} className="flex min-w-0 items-baseline gap-2 text-sm">
-              <Link
-                className="min-w-0 flex-1 truncate text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
-                to={cardPath(card.repository_id, card.id)}
-              >
-                {card.title}
-              </Link>
-              <span className="shrink-0 text-secondary">{card.done ? "Done" : card.column}</span>
-            </li>
-          ))}
-          {detail.data?.cards.length === 0 && (
-            <li className="text-sm text-secondary">No card yet. Put one in from its properties.</li>
-          )}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-/** The timeline: a row for each milestone, its bar from the day it was made to its target date, and a line at today. */
-function Timeline({
-  list,
-  now,
-  onOpen,
-}: {
-  list: MilestoneView[];
-  now: string;
-  onOpen: (milestone: MilestoneView) => void;
-}) {
-  const t = timeline(list, now);
-  return (
-    <div className="overflow-hidden rounded-card bg-raised shadow-card">
-      <table aria-label="Milestones on a timeline" className="w-full table-fixed border-collapse">
-        <thead>
-          <tr className="border-0 border-b border-solid border-hairline">
-            <th scope="col" className="w-44 px-3 py-2 text-left text-sm font-medium text-secondary">
-              Milestone
-            </th>
-            <th
-              scope="col"
-              className="relative h-8 p-0 text-left text-sm font-normal text-secondary"
-            >
-              {t.months.map((month) => (
-                <span
-                  key={month.label}
-                  className="absolute top-2 pl-1"
-                  style={{ left: `${month.left}%` }}
-                >
-                  {month.label}
-                </span>
-              ))}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {t.bars.map((bar) => (
-            <tr
-              key={bar.milestone.id}
-              className="border-0 border-b border-solid border-hairline last:border-b-0"
-            >
-              <th scope="row" className="min-w-0 px-3 py-2 text-left font-normal">
-                <div className="truncate text-base text-text">{bar.milestone.name}</div>
-                <div className="truncate text-xs text-secondary">
-                  {projectsWords(bar.milestone)} · {dateWords(bar.milestone.target_date, now)}
-                </div>
-              </th>
-              <td className="relative h-12 p-0">
-                <span
-                  aria-hidden
-                  className="absolute inset-y-0 w-px bg-progress"
-                  style={{ left: `${t.today}%` }}
-                />
-                <button
-                  type="button"
-                  title={`${bar.milestone.name}, ${progressWords(bar.milestone.done, bar.milestone.cards)}`}
-                  aria-label={`${bar.milestone.name}: ${progressWords(bar.milestone.done, bar.milestone.cards)}, due ${bar.milestone.target_date}`}
-                  onClick={() => onOpen(bar.milestone)}
-                  className="absolute top-3.5 h-5 cursor-pointer appearance-none overflow-hidden rounded-full border-0 bg-selected p-0"
-                  style={{ left: `${bar.left}%`, width: `${bar.width}%` }}
-                >
-                  <span
-                    className="block h-full bg-complete/60"
-                    style={{ width: `${bar.progress}%` }}
-                  />
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/** The dialog that makes a milestone or edits one: its name, its target date and its description. */
-function MilestoneDialog({
-  editing,
-  onClose,
-}: {
-  editing: MilestoneView | "new" | null;
-  onClose: () => void;
-}) {
-  const queryClient = useQueryClient();
-  const initial: MilestoneFields =
-    editing === null || editing === "new"
-      ? { name: "", target_date: "", description: "" }
-      : { name: editing.name, target_date: editing.target_date, description: editing.description };
-  return (
-    <Dialog open={editing !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        {editing !== null && (
-          <MilestoneForm
-            key={editing === "new" ? "new" : editing.id}
-            initial={initial}
-            id={editing === "new" ? null : editing.id}
-            onDone={() => {
-              void queryClient.invalidateQueries({ queryKey: keys.milestones });
-              void queryClient.invalidateQueries({ queryKey: keys.cards });
-              onClose();
-            }}
-            onCancel={onClose}
-          />
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function MilestoneForm({
-  initial,
-  id,
-  onDone,
-  onCancel,
-}: {
-  initial: MilestoneFields;
-  id: number | null;
-  onDone: () => void;
-  onCancel: () => void;
-}) {
-  const [fields, setFields] = useState(initial);
-  const save = useMutation({
-    mutationFn: () =>
-      id === null
-        ? addMilestone({ ...fields, name: fields.name.trim() })
-        : editMilestone(id, { ...fields, name: fields.name.trim() }),
-    onSuccess: onDone,
-  });
-  const ready = fields.name.trim() !== "" && fields.target_date !== "" && !save.isPending;
-  return (
-    <form
-      className="flex flex-col gap-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (ready) save.mutate();
-      }}
-    >
-      <DialogHeader>
-        <DialogTitle>{id === null ? "New milestone" : "Edit milestone"}</DialogTitle>
-        <DialogDescription>
-          A goal of the organisation. Put cards of any project in it from the card's properties.
-        </DialogDescription>
-      </DialogHeader>
-      <Field label="Name">
-        <Input
-          value={fields.name}
-          placeholder="Launch 2.0"
-          autoComplete="off"
-          onChange={(event) => setFields({ ...fields, name: event.target.value })}
-        />
-      </Field>
-      <Field label="Target date">
-        <Input
-          type="date"
-          value={fields.target_date}
-          onChange={(event) => setFields({ ...fields, target_date: event.target.value })}
-        />
-      </Field>
-      <Field label="Description">
-        <TextArea
-          value={fields.description}
-          rows={3}
-          onChange={(event) => setFields({ ...fields, description: event.target.value })}
-        />
-      </Field>
-      {save.isError && (
-        <Notice tone="error">
-          <span className="font-semibold">Couldn't save the milestone. </span>
-          {sayError(save.error, "Try again.")}
-        </Notice>
-      )}
-      <DialogFooter>
-        <Button type="button" variant="secondary" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={!ready}>
-          {save.isPending ? "Saving" : id === null ? "Make milestone" : "Save"}
-        </Button>
-      </DialogFooter>
-    </form>
   );
 }

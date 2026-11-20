@@ -61,6 +61,16 @@ function show(path = "/milestones") {
 }
 
 describe("the Milestones page", () => {
+  it("shows each milestone as a bar with its progress on one axis, with no raised card", async () => {
+    show();
+    const row = (await screen.findByText("Launch")).closest("li") as HTMLElement;
+    const bar = within(row).getByRole("progressbar");
+    expect(bar.getAttribute("aria-valuenow")).toBe("50");
+    expect(bar.getAttribute("aria-label")).toBe("1 of 2 cards");
+    expect(row.className).not.toMatch(/shadow|rounded/);
+    expect(screen.queryByRole("table")).toBeNull();
+  });
+
   it("keeps the opened milestone in the address, and opens it again from there", async () => {
     show();
     fireEvent.click(await screen.findByRole("button", { name: /Launch/ }));

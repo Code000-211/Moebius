@@ -9,7 +9,7 @@ import {
   progressWords,
   projectsWords,
   sorted,
-  timeline,
+  spanOf,
 } from "./model";
 
 function milestone(over: Partial<MilestoneView> & { id: number }): MilestoneView {
@@ -77,32 +77,17 @@ describe("sorting and filtering", () => {
   });
 });
 
-describe("the timeline", () => {
-  it("puts whole months on the axis and a bar from the day a milestone was made to its date", () => {
-    const t = timeline(
-      [milestone({ id: 1, target_date: "2027-01-31", cards: 4, done: 1 })],
-      "2026-11-19",
-    );
-    expect(t.months.map((m) => m.label)).toEqual(["Nov 2026", "Dec", "Jan 2027"]);
-    expect(t.months[0]?.left).toBe(0);
-    const bar = t.bars[0];
-    expect(bar?.left).toBe(0);
-    expect(bar?.progress).toBe(25);
-    expect((bar?.left ?? 0) + (bar?.width ?? 0)).toBeCloseTo(100, 5);
-    expect(t.today).toBeGreaterThan(0);
-    expect(t.today).toBeLessThan(100);
+describe("the span of a milestone", () => {
+  it("runs from the day it was made to its target date", () => {
+    expect(spanOf(milestone({ id: 1, target_date: "2027-01-31" }))).toEqual({
+      start: "2026-11-01",
+      end: "2027-01-31",
+    });
   });
-  it("keeps a bar visible for a milestone made on its target date", () => {
-    const made = Date.UTC(2026, 10, 19) / 1000;
-    const t = timeline(
-      [milestone({ id: 1, created_at: made, target_date: "2026-11-19" })],
-      "2026-11-19",
-    );
-    expect(t.bars[0]?.width).toBeGreaterThanOrEqual(1.5);
-  });
-  it("has an axis even with no milestone", () => {
-    const t = timeline([], "2026-11-19");
-    expect(t.months.length).toBe(1);
-    expect(t.bars).toEqual([]);
+  it("is the target date alone when the milestone was made after it", () => {
+    expect(spanOf(milestone({ id: 1, target_date: "2026-10-01" }))).toEqual({
+      start: "2026-10-01",
+      end: "2026-10-01",
+    });
   });
 });
