@@ -11,7 +11,8 @@
  */
 import { ArrowsOutIcon, XIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { memo, useEffect, useState } from "react";
+import { memo, type ReactNode, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router";
 import { cardRuns, script } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
@@ -19,7 +20,6 @@ import { keys } from "../../api/keys";
 import type { Board, Card, InboxItem } from "../../api/types/board";
 import { ChangeDelta, ChangesCard } from "../../diff/Changes";
 import { Button } from "../../ui/components/Button";
-import { Dialog, DialogContent } from "../../ui/components/Dialog";
 import { IconButton } from "../../ui/components/IconButton";
 import { Input } from "../../ui/components/Input";
 import { KanbanIssueSection } from "../../ui/components/KanbanIssuePanel";
@@ -183,6 +183,104 @@ function QueryText({
   return empty ? <p className="m-0 text-sm text-secondary">{empty}</p> : null;
 }
 
+/** The tabbable elements inside `box`, in order. */
+function tabbables(box: HTMLElement): HTMLElement[] {
+  return [
+    ...box.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
+    ),
+  ].filter((el) => el.offsetParent !== null);
+}
+
+/**
+ * The window's frame: a scrim that dims the page (no blur) and a solid, centred dialog over it that is modal for the
+ * keyboard and the focus. It is not a Radix layer on purpose: Radix gives the Escape key to one layer by the order
+ * they mounted in, and a window that the page opens other windows over (the palette, a new issue, a question about
+ * blocking) must not take that key from them. So Escape is heard here after every layer over the window has had it, and
+ * closes the window only when nothing marked the key as handled and the window is the topmost dialog. The focus
+ * goes into the window, stays in it on Tab, and returns to what opened it when it closes.
+ */
+function WindowFrame({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  // Noted while the window renders for the first time, before anything in it takes the focus.
+  const opener = useRef<Element | null>(
+    typeof document === "undefined" ? null : document.activeElement,
+  );
+  const close = useRef(onClose);
+  close.current = onClose;
+
+  useEffect(() => {
+    const element = box.current;
+    if (!element) return;
+    // The window takes the focus, so the keys of the card in it are the page's.
+    if (!element.contains(document.activeElement)) element.focus();
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        if (event.defaultPrevented) return;
+        const open = document.querySelectorAll('[role="dialog"][data-state="open"]');
+        if (open[open.length - 1] !== element) return;
+        const target = event.target as HTMLElement;
+        // A field of the window keeps its Escape for leaving itself; the card stays until the second one.
+        if (
+          element?.contains(target) &&
+          (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
+        )
+          return;
+        event.preventDefault();
+        close.current();
+      } else if (event.key === "Tab" && element) {
+        const open = document.querySelectorAll('[role="dialog"][data-state="open"]');
+        if (open[open.length - 1] !== element) return;
+        const inside = tabbables(element);
+        if (inside.length === 0) return;
+        const first = inside[0];
+        const last = inside[inside.length - 1];
+        const at = document.activeElement;
+        if (event.shiftKey && (at === first || at === element)) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && at === last) {
+          event.preventDefault();
+          first?.focus();
+        } else if (!element.contains(at)) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      const back = opener.current;
+      if (back instanceof HTMLElement && back.isConnected && back !== document.body) back.focus();
+    };
+  }, []);
+
+  return createPortal(
+    <>
+      <div
+        aria-hidden="true"
+        data-state="open"
+        className="fixed inset-0 z-scrim bg-scrim"
+        onPointerDown={onClose}
+      />
+      <div
+        ref={box}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Card inspector"
+        data-state="open"
+        data-card-window=""
+        tabIndex={-1}
+        className="fixed inset-0 z-sheet m-auto flex h-[calc(100%-4rem)] max-h-[56rem] w-full max-w-3xl flex-col overflow-hidden rounded-sheet bg-panel shadow-raised outline-none"
+      >
+        {children}
+      </div>
+    </>,
+    document.body,
+  );
+}
+
 function CardWindowView({
   board,
   card,
@@ -250,200 +348,176 @@ function CardWindowView({
   };
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent
-        data-card-window=""
-        hideCloseButton
-        // The window is named for what it is, not by the title it holds, and has no description to read out.
-        aria-label="Card inspector"
-        aria-labelledby={undefined}
-        aria-describedby={undefined}
-        // A toast lies over the window, and a click on its Undo is not a click away from the card.
-        onInteractOutside={(event) => {
-          if ((event.target as HTMLElement).closest("[data-toast-host]")) event.preventDefault();
-        }}
-        onEscapeKeyDown={(event) => {
-          // A field keeps its Escape for leaving itself (it cancels its edit); the card stays until the second one.
-          const target = event.target as HTMLElement;
-          if (
-            target.tagName === "INPUT" ||
-            target.tagName === "TEXTAREA" ||
-            target.isContentEditable
-          ) {
-            event.preventDefault();
-          }
-        }}
-        className="h-[calc(100%-4rem)] max-h-[56rem] max-w-3xl gap-0 overflow-hidden p-0"
-      >
-        {/* Where the card is, and the two ways out of the window. */}
-        <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-hairline px-6">
-          {url ? (
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="-ml-2 inline-flex min-h-7 items-center rounded-control px-2 font-mono text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
-            >
-              {id}
-            </a>
-          ) : (
-            <span className="font-mono text-sm text-secondary">{id}</span>
-          )}
-          <div className="flex items-center gap-1">
-            {/* Until the card has a page of its own, "as a page" is the board with the card open. */}
-            <Button asChild variant="ghost" size="sm">
-              <Link to={`${boardPath(repository.id)}?card=${card.id}`}>
-                <ArrowsOutIcon className="size-4" aria-hidden="true" />
-                Open as page
-              </Link>
-            </Button>
-            <IconButton icon={XIcon} aria-label="Close the inspector" onClick={onClose} />
+    <WindowFrame onClose={onClose}>
+      {/* Where the card is, and the two ways out of the window. */}
+      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-hairline px-6">
+        {url ? (
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="-ml-2 inline-flex min-h-7 items-center rounded-control px-2 font-mono text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
+          >
+            {id}
+          </a>
+        ) : (
+          <span className="font-mono text-sm text-secondary">{id}</span>
+        )}
+        <div className="flex items-center gap-1">
+          {/* Until the card has a page of its own, "as a page" is the board with the card open. */}
+          <Button asChild variant="ghost" size="sm">
+            <Link to={`${boardPath(repository.id)}?card=${card.id}`}>
+              <ArrowsOutIcon className="size-4" aria-hidden="true" />
+              Open as page
+            </Link>
+          </Button>
+          <IconButton icon={XIcon} aria-label="Close the inspector" onClick={onClose} />
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* What the card is, and who and what it is about. The title wraps, however long. */}
+        <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-3">
+          <h2 className="m-0 min-w-0 text-2xl font-semibold tracking-tight text-text [overflow-wrap:anywhere]">
+            {card.title}
+          </h2>
+          <div className="flex shrink-0 items-center gap-3 pt-1.5">
+            <StatusIcon state={iconOf(card, status)} />
+            {owner && <Avatar handle={owner} className="size-6" />}
+            {changes[0] && <ChangeDelta change={changes[0].id} className="text-sm" />}
+            <CardMenu card={card} {...menu} />
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          {/* What the card is, and who and what it is about. The title wraps, however long. */}
-          <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-3">
-            <h2 className="m-0 min-w-0 text-2xl font-semibold tracking-tight text-text [overflow-wrap:anywhere]">
-              {card.title}
-            </h2>
-            <div className="flex shrink-0 items-center gap-3 pt-1.5">
-              <StatusIcon state={iconOf(card, status)} />
-              {owner && <Avatar handle={owner} className="size-6" />}
-              {changes[0] && <ChangeDelta change={changes[0].id} className="text-sm" />}
-              <CardMenu card={card} {...menu} />
-            </div>
-          </div>
+        <CardProperties
+          board={board}
+          card={card}
+          item={item}
+          stopped={stopped}
+          boards={boards}
+          onOpenCard={onOpenCard}
+        />
 
-          <CardProperties
-            board={board}
-            card={card}
-            item={item}
-            stopped={stopped}
-            boards={boards}
-            onOpenCard={onOpenCard}
-          />
-
-          {/* The issue is what the card asks for, and the card is only its title: without the body a person decides
+        {/* The issue is what the card asks for, and the card is only its title: without the body a person decides
               about a sentence they were never given. */}
-          <KanbanIssueSection title="The issue">
-            {card.body.trim() !== "" && (
-              <CardText content={card.body} projectKey={card.project_key} className="max-w-prose" />
-            )}
-            <Button
-              variant="secondary"
-              size="sm"
-              className="mt-4 w-fit"
-              onClick={() => setEditing(true)}
-            >
-              Edit issue
-            </Button>
-            <EditIssueDialog key={card.id} card={card} open={editing} onOpenChange={setEditing} />
-          </KanbanIssueSection>
+        <KanbanIssueSection title="The issue">
+          {card.body.trim() !== "" && (
+            <CardText content={card.body} projectKey={card.project_key} className="max-w-prose" />
+          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            className="mt-4 w-fit"
+            onClick={() => setEditing(true)}
+          >
+            Edit issue
+          </Button>
+          {/* Drawn only while it is open, so a closed one leaves nothing in the stack of layers. */}
+          {editing && <EditIssueDialog key={card.id} card={card} open onOpenChange={setEditing} />}
+        </KanbanIssueSection>
 
-          {/* A change is what a person came to the card to weigh, so it follows the issue it answers instead of
+        {/* A change is what a person came to the card to weigh, so it follows the issue it answers instead of
               waiting behind the runs that made it. */}
-          {changes.length > 0 && (
-            <KanbanIssueSection title="Changes">
-              <div className="flex flex-col gap-4">
-                {changes.map((change, index) => {
-                  const pullRequest = pullRequestIn(change.id, change.repository);
-                  return (
-                    <div
-                      key={change.id}
-                      data-testid="card-change"
-                      className="flex min-w-0 flex-col gap-2"
-                    >
-                      {changes.length > 1 && (
-                        <p className="m-0 flex flex-wrap items-baseline gap-x-2 text-sm text-text">
-                          <span className="font-medium">{change.repository}</span>
-                          <span className="text-secondary">
-                            {`Checks: ${CHECKS[change.checks] ?? change.checks}`}
-                          </span>
-                        </p>
-                      )}
-                      {pullRequest && (
-                        <PrBadge
-                          number={pullRequest.number}
-                          url={pullRequest.url}
-                          status={pullRequest.status}
-                        />
-                      )}
-                      <ChangesCard
-                        of={{ change: change.id }}
-                        worktree={index === 0 ? worktree : null}
+        {changes.length > 0 && (
+          <KanbanIssueSection title="Changes">
+            <div className="flex flex-col gap-4">
+              {changes.map((change, index) => {
+                const pullRequest = pullRequestIn(change.id, change.repository);
+                return (
+                  <div
+                    key={change.id}
+                    data-testid="card-change"
+                    className="flex min-w-0 flex-col gap-2"
+                  >
+                    {changes.length > 1 && (
+                      <p className="m-0 flex flex-wrap items-baseline gap-x-2 text-sm text-text">
+                        <span className="font-medium">{change.repository}</span>
+                        <span className="text-secondary">
+                          {`Checks: ${CHECKS[change.checks] ?? change.checks}`}
+                        </span>
+                      </p>
+                    )}
+                    {pullRequest && (
+                      <PrBadge
+                        number={pullRequest.number}
+                        url={pullRequest.url}
+                        status={pullRequest.status}
                       />
-                    </div>
-                  );
-                })}
-              </div>
-            </KanbanIssueSection>
-          )}
-
-          {item && (
-            <KanbanIssueSection title="Your turn">
-              <p className="m-0 mb-4 text-base text-text [overflow-wrap:anywhere]">{item.title}</p>
-              <Actions
-                card={card}
-                item={item}
-                busy={busy}
-                askFor={askFor}
-                onAskAnswered={onAskAnswered}
-                onDecide={onDecide}
-              />
-            </KanbanIssueSection>
-          )}
-
-          {card.run && (
-            <KanbanIssueSection title="Its run">
-              <div className="flex flex-wrap gap-2">
-                <Button asChild variant="secondary" size="sm" className="w-fit">
-                  <Link to={`/runs/${card.run.id}`}>Open live view</Link>
-                </Button>
-                {status === "live" && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="w-fit"
-                    disabled={busy}
-                    onClick={() => menu.onStop(card)}
-                  >
-                    Stop run
-                  </Button>
-                )}
-              </div>
-            </KanbanIssueSection>
-          )}
-
-          <ActivitySection card={card} />
-
-          <KanbanIssueSection title={`Script of ${card.column}`}>
-            <QueryText query={source} />
-            {source.data && (
-              <>
-                <p className="m-0 mb-3 text-sm text-secondary">
-                  {source.data.path} ·{" "}
-                  {source.data.source === "project" ? "this project's own" : "built in"}
-                </p>
-                <pre
-                  data-testid="script"
-                  className="m-0 max-h-48 overflow-auto rounded-control bg-code p-4 font-mono text-sm text-text"
-                >
-                  {source.data.text}
-                </pre>
-                <Button asChild variant="secondary" size="sm" className="mt-4 w-fit">
-                  <Link
-                    to={`/board/${repository.id}/scripts/${encodeURIComponent(card.column)}?project=${card.project_id}`}
-                  >
-                    Open the script
-                  </Link>
-                </Button>
-              </>
-            )}
+                    )}
+                    <ChangesCard
+                      of={{ change: change.id }}
+                      worktree={index === 0 ? worktree : null}
+                    />
+                  </div>
+                );
+              })}
+            </div>
           </KanbanIssueSection>
-        </div>
-      </DialogContent>
-    </Dialog>
+        )}
+
+        {item && (
+          <KanbanIssueSection title="Your turn">
+            <p className="m-0 mb-4 text-base text-text [overflow-wrap:anywhere]">{item.title}</p>
+            <Actions
+              card={card}
+              item={item}
+              busy={busy}
+              askFor={askFor}
+              onAskAnswered={onAskAnswered}
+              onDecide={onDecide}
+            />
+          </KanbanIssueSection>
+        )}
+
+        {card.run && (
+          <KanbanIssueSection title="Its run">
+            <div className="flex flex-wrap gap-2">
+              <Button asChild variant="secondary" size="sm" className="w-fit">
+                <Link to={`/runs/${card.run.id}`}>Open live view</Link>
+              </Button>
+              {status === "live" && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="w-fit"
+                  disabled={busy}
+                  onClick={() => menu.onStop(card)}
+                >
+                  Stop run
+                </Button>
+              )}
+            </div>
+          </KanbanIssueSection>
+        )}
+
+        <ActivitySection card={card} />
+
+        <KanbanIssueSection title={`Script of ${card.column}`}>
+          <QueryText query={source} />
+          {source.data && (
+            <>
+              <p className="m-0 mb-3 text-sm text-secondary">
+                {source.data.path} ·{" "}
+                {source.data.source === "project" ? "this project's own" : "built in"}
+              </p>
+              <pre
+                data-testid="script"
+                className="m-0 max-h-48 overflow-auto rounded-control bg-code p-4 font-mono text-sm text-text"
+              >
+                {source.data.text}
+              </pre>
+              <Button asChild variant="secondary" size="sm" className="mt-4 w-fit">
+                <Link
+                  to={`/board/${repository.id}/scripts/${encodeURIComponent(card.column)}?project=${card.project_id}`}
+                >
+                  Open the script
+                </Link>
+              </Button>
+            </>
+          )}
+        </KanbanIssueSection>
+      </div>
+    </WindowFrame>
   );
 }
 

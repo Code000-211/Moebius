@@ -214,7 +214,7 @@ describe("the diff of a card", () => {
       expect((await headline.textContent()) ?? "").toMatch(/\+\d+ added -\d+ removed/);
       // The lines themselves are read in a sheet over the page, which closes on Escape.
       await headline.click();
-      const sheet = page.getByRole("dialog");
+      const sheet = page.getByRole("dialog", { name: "Changes" });
       await sheet
         .locator('[data-testid="diff-line"][data-kind="added"]')
         .filter({ hasText: "cc -O2 main.c" })
@@ -245,7 +245,7 @@ describe("the diff of a card", () => {
       await open("/board/1?card=5");
       const dock = page.getByRole("dialog", { name: "Card inspector" });
       await dock.getByTestId("diff-card").click();
-      const sheet = page.getByRole("dialog");
+      const sheet = page.getByRole("dialog", { name: "Changes" });
       await sheet.getByTestId("diff-summary").waitFor();
       // The count of a file is `+14 -4`, and there is no key to the colours beside it.
       const summary = sheet.getByTestId("diff-summary");
@@ -262,7 +262,7 @@ describe("the diff of a card", () => {
       await open("/board/1?card=5");
       const dock = page.getByRole("dialog", { name: "Card inspector" });
       await dock.getByTestId("diff-card").click();
-      const sheet = page.getByRole("dialog");
+      const sheet = page.getByRole("dialog", { name: "Changes" });
       const lastLine = sheet.locator('[data-testid="diff-line"]').last();
       await lastLine.waitFor();
       // The sheet is as tall as the diff it holds. Held to the height of the window, a change of one file sits in a
@@ -286,7 +286,7 @@ describe("the diff of a card", () => {
       fake().changeDiff = MANY_FILE_CHANGE_DIFF;
       await page.reload();
       await page.getByTestId("diff-card").click();
-      const sheet = page.getByRole("dialog");
+      const sheet = page.getByRole("dialog", { name: "Changes" });
       const lastLine = sheet.locator('[data-testid="diff-line"]').last();
       await lastLine.waitFor();
       // The lines are as tall as the file they hold. Held to the height of the list beside them, the last line of a
@@ -309,7 +309,7 @@ describe("the diff of a card", () => {
       fake().changeDiff = LONG_CHANGE_DIFF;
       await page.reload();
       await page.getByTestId("diff-card").click();
-      const sheet = page.getByRole("dialog");
+      const sheet = page.getByRole("dialog", { name: "Changes" });
       const lines = sheet.getByTestId("diff-lines");
       await lines.waitFor();
       const box = await sheet.boundingBox();

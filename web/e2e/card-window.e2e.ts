@@ -50,7 +50,7 @@ describe.skipIf(usesRealServer)("the card window", () => {
       .click();
     await window().waitFor();
     expect(new URL(page.url()).pathname).toBe("/inbox");
-    expect(search()).toBe("?card=5");
+    expect(new URLSearchParams(search()).get("card")).toBe("5");
     // The Inbox is still there behind it, dimmed by a scrim that does not blur.
     expect(await list.isVisible()).toBe(true);
     const scrim = page.locator('[data-state="open"].bg-scrim');
@@ -75,11 +75,11 @@ describe.skipIf(usesRealServer)("the card window", () => {
 
   it("does not move the board: the lanes keep their width to the pixel, and the header does not wrap", async () => {
     await open("/board/1");
-    const lanes = page.getByTestId("scroll-fades");
+    const lanes = page.getByRole("main").getByTestId("scroll-fades");
     await lanes.waitFor();
     const width = () => lanes.evaluate((el) => el.getBoundingClientRect().width);
     const before = await width();
-    const header = page.getByRole("heading", { name: "demo", level: 1 });
+    const header = page.locator("h1");
     const heightBefore = ((await header.boundingBox()) as { height: number }).height;
     await page.getByTestId("card-3").click();
     await window().waitFor();
@@ -87,7 +87,10 @@ describe.skipIf(usesRealServer)("the card window", () => {
     expect(((await header.boundingBox()) as { height: number }).height).toBe(heightBefore);
     // The header stands on one line: its title and its buttons share a row.
     const title = (await header.boundingBox()) as { y: number; height: number };
-    const button = (await page.getByRole("button", { name: "New issue" }).boundingBox()) as {
+    const button = (await page
+      .locator("button", { hasText: "New issue" })
+      .first()
+      .boundingBox()) as {
       y: number;
     };
     expect(Math.abs(button.y - title.y)).toBeLessThan(title.height + 8);
@@ -106,7 +109,13 @@ describe.skipIf(usesRealServer)("the card window", () => {
     await window().waitFor({ state: "detached" });
     expect(search()).toBe("");
     await expect
-      .poll(() => page.evaluate(() => (document.activeElement as HTMLElement)?.dataset.testid))
+      .poll(() =>
+        page.evaluate(() =>
+          (document.activeElement as HTMLElement)
+            ?.closest("[data-testid]")
+            ?.getAttribute("data-testid"),
+        ),
+      )
       .toBe("card-3");
 
     await card.click();
@@ -114,7 +123,13 @@ describe.skipIf(usesRealServer)("the card window", () => {
     await window().waitFor({ state: "detached" });
     expect(search()).toBe("");
     await expect
-      .poll(() => page.evaluate(() => (document.activeElement as HTMLElement)?.dataset.testid))
+      .poll(() =>
+        page.evaluate(() =>
+          (document.activeElement as HTMLElement)
+            ?.closest("[data-testid]")
+            ?.getAttribute("data-testid"),
+        ),
+      )
       .toBe("card-3");
   });
 

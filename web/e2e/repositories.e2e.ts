@@ -4,8 +4,10 @@
  * changes in two repositories shows both, each with its repository and checks, on the board and in its dock. The cards
  * are the fake server's own (e2e/fake/board.ts), which has no counterpart against a real server.
  */
+
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { unfold } from "./controls";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
 let browser: Browser;
@@ -103,6 +105,7 @@ describe.skipIf(usesRealServer)("the repositories of a card", () => {
     expect(await changes.nth(1).textContent()).toContain("web");
     expect(await changes.nth(1).textContent()).toContain("Checks: Failed");
     const facts = properties(5);
+    await unfold(facts);
     await facts.getByText("Checks in demo").waitFor();
     await facts.getByText("Checks in web").waitFor();
   });
