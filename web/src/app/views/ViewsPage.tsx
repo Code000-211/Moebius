@@ -235,7 +235,9 @@ function OpenView({
               className={view.layout === "board" ? "min-w-64 flex-1" : ""}
             >
               {group.name !== "" && (
-                <h3 className="m-0 mb-1 text-sm font-semibold text-secondary">{group.name}</h3>
+                <h3 className="m-0 flex h-[30px] items-center border-b border-hairline bg-group-fill px-4 text-xs font-medium text-secondary">
+                  {group.name}
+                </h3>
               )}
               <ul className="m-0 list-none border-t border-hairline p-0">
                 {group.cards.map((card) => (

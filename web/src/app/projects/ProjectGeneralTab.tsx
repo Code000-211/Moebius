@@ -90,8 +90,6 @@ function Access({ project, canEdit }: { project: Project; canEdit: boolean }) {
           label="Private"
           checked={project.private}
           disabled={change.isPending || (!project.private && me === undefined)}
-          on="Private"
-          off="Public"
           onChange={(next) => change.mutate(next)}
         />
       ) : (
