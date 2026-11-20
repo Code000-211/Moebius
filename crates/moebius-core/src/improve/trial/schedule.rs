@@ -140,6 +140,12 @@ pub fn start(
         }));
     }
     publish_status(app, id, "trying");
+    // The answer is what this call wrote. Reading the proposal again after the thread started could show the trial's
+    // end instead (a proposal that names no cards is over at once).
+    let started_as = Proposal {
+        status: "trying".to_string(),
+        ..proposal.clone()
+    };
     let (app, runs, repo) = (app.clone(), runs.clone(), repo.clone());
     let started = std::thread::Builder::new()
         .name(format!("trial of proposal {id}"))
@@ -162,7 +168,7 @@ pub fn start(
         publish_status(&app, id, "open");
         return Err(AppError::Invalid(format!("cannot start the trial: {e}")));
     }
-    find(&app, id)
+    Ok(started_as)
 }
 
 /// The schedule's check, once a minute: inside the trial window, and when no other proposal is being tried and the
