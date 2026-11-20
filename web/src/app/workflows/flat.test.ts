@@ -14,3 +14,12 @@ describe("the workflow pages", () => {
     expect(source).not.toContain("shadow-card");
   });
 });
+
+describe("the JSON block", () => {
+  it("reads in the code colours, so it is legible on the code background in both themes", () => {
+    const source = readFileSync("src/ui/page/JsonValue.tsx", "utf8");
+    expect(source).toContain("bg-code-bg");
+    expect(source).toContain("text-code-text");
+    expect(source).not.toMatch(/bg-code\b(?!-)[^"]*text-text/);
+  });
+});
