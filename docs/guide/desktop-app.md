@@ -143,6 +143,11 @@ The answer's `token` (it starts with `moebius-access-`) goes into the app with t
 
 ## What can go wrong
 
+- **The window is slow, blank or uses a whole core on Linux**: WebKitGTK's accelerated compositing has no working GPU
+  path on virtual machines, remote desktops, Xvfb and some NVIDIA and Wayland setups. The app turns compositing off
+  at start when `/dev/dri` has no render node. To choose yourself, start it with `MOEBIUS_RENDERING=software` (compositing
+  off) or `MOEBIUS_RENDERING=gpu` (WebKitGTK's own choice); setting `WEBKIT_DISABLE_COMPOSITING_MODE` or
+  `WEBKIT_DISABLE_DMABUF_RENDERER` yourself also stops the app from choosing. Windows is not affected.
 - **No tray icon on Linux**: a desktop without a status area (GNOME without its AppIndicator extension) shows none.
   The app works without it, only its Pause all agents item is out of reach: use `moebius pause` then.
 
