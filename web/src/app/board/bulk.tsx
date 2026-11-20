@@ -117,6 +117,15 @@ export function useBulk({
     [chosen, board, inbox, actions],
   );
   const anyChosen = chosen.length > 0;
+  const { ensure } = choice;
+  const { open: openMenu } = menu;
+  const onContextMenu = useCallback(
+    (card: Card) => (event: MouseEvent) => {
+      ensure(card.id);
+      openMenu(event);
+    },
+    [ensure, openMenu],
+  );
   const title = `${chosen.length} card${chosen.length === 1 ? "" : "s"}`;
 
   return {
@@ -130,11 +139,10 @@ export function useBulk({
         onToggle={(range) => choice.toggle(card.id, range)}
       />
     ),
+    /** Whether anything is chosen: every box shows. */
+    anyChosen,
     /** Opens the menu for a right click on a card: it joins the choice it is in, or becomes the choice. */
-    onContextMenu: (card: Card) => (event: MouseEvent) => {
-      choice.ensure(card.id);
-      menu.open(event);
-    },
+    onContextMenu,
     /** The bar and the menu; drawn once by the page. */
     surface: (
       <>

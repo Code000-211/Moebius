@@ -4,6 +4,7 @@
  */
 import { KanbanIcon, ListBulletsIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
+import { memo } from "react";
 import { Link } from "react-router";
 import { readSettings } from "../../api/calls/projects";
 import { keys } from "../../api/keys";
@@ -14,7 +15,7 @@ import { Notice } from "../../ui/page/Notice";
  * Said on the board of a repository whose default branch still has a `.moebius/` folder: nothing in it is read any
  * more, so its rules, checks and scripts do not apply until they are moved into the project's settings.
  */
-export function LeftoverNotice({ repository }: { repository: number }) {
+export const LeftoverNotice = memo(function LeftoverNotice({ repository }: { repository: number }) {
   const settings = useQuery({
     queryKey: keys.projectSettings(repository),
     queryFn: () => readSettings(repository),
@@ -36,7 +37,7 @@ export function LeftoverNotice({ repository }: { repository: number }) {
       {leftover.join(", ")}). Move them into the project's settings.
     </Notice>
   );
-}
+});
 
 /** The two layouts as two buttons in the head of the page; Display holds the same choice among the rest. */
 export function LayoutSwitch({
