@@ -24,7 +24,7 @@ export function WorkflowGraph({ definition }: { definition: WorkflowDefinition }
   return (
     <section
       aria-label="Definition graph"
-      className="min-h-0 flex-1 overflow-auto rounded-card bg-lane p-4"
+      className="min-h-0 flex-1 overflow-auto rounded-card border border-hairline bg-canvas p-4"
     >
       <div className="relative" style={{ width: width + GAP, height: height + GAP }}>
         <svg
@@ -80,7 +80,7 @@ export function WorkflowGraph({ definition }: { definition: WorkflowDefinition }
 function NodeCard({ node }: { node: WorkflowNode }) {
   return (
     <article
-      className="absolute flex flex-col gap-2 rounded-card bg-surface p-3 shadow-card"
+      className="absolute flex flex-col gap-2 rounded-card border border-hairline-strong bg-panel p-3"
       style={{ left: node.position.x, top: node.position.y, width: CARD }}
     >
       <div className="flex min-w-0 flex-col">

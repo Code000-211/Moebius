@@ -69,6 +69,16 @@ describe("the workflows list", () => {
     expect(screen.getByText("Never run")).toBeTruthy();
   });
 
+  it("draws each workflow as one flat 36px row, with no card around the list", async () => {
+    show(LIST);
+    const rows = await screen.findAllByTestId("workflow-row");
+    for (const row of rows) {
+      expect(row.className).toContain("h-row-list");
+      expect(row.className).not.toContain("shadow-card");
+    }
+    expect(rows[0]?.parentElement?.parentElement?.className ?? "").not.toContain("shadow-card");
+  });
+
   it("opens the definition by its name, escaping the name in the address", async () => {
     show([{ ...LIST[0], name: "night build" }]);
     const link = await screen.findByRole("link", { name: "night build" });

@@ -46,7 +46,7 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { PageProperties, Property } from "../../ui/page/Properties";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
-import { lastRunLine, looksLikeAutomation, needsAttention, runStatus, triggerName } from "./model";
+import { lastRunLine, looksLikeAutomation, runStatus, triggerName } from "./model";
 import { RunWorkflowDialog } from "./RunWorkflowDialog";
 import { WorkflowGraph } from "./WorkflowGraph";
 
@@ -204,7 +204,7 @@ export function WorkflowPage() {
         <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto">
           <section
             aria-labelledby="workflow-file-title"
-            className="flex min-h-0 flex-col rounded-card bg-surface p-4 shadow-card"
+            className="flex min-h-0 flex-col border-t border-hairline pt-4"
           >
             <h2 id="workflow-file-title" className="m-0 text-base font-semibold text-text">
               File
@@ -216,7 +216,7 @@ export function WorkflowPage() {
           </section>
           <section
             aria-labelledby="workflow-runs-title"
-            className="flex min-h-0 flex-col gap-2 rounded-card bg-surface p-4 shadow-card"
+            className="flex min-h-0 flex-col gap-2 border-t border-hairline pt-4"
           >
             <h2 id="workflow-runs-title" className="m-0 text-base font-semibold text-text">
               Runs
@@ -229,7 +229,7 @@ export function WorkflowPage() {
               <p className="m-0 text-sm text-secondary">This workflow has not run.</p>
             ) : (
               // biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely
-              <ul role="list" className="m-0 flex list-none flex-col gap-2 p-0">
+              <ul role="list" className="m-0 list-none divide-y divide-hairline p-0">
                 {history.map((each) => {
                   const status = runStatus(each.status);
                   const open =
@@ -240,11 +240,9 @@ export function WorkflowPage() {
                     <li
                       key={each.id}
                       data-testid="workflow-run-row"
-                      className="flex flex-wrap items-center gap-2 text-sm"
+                      className="flex h-row-list items-center gap-2.5 text-sm"
                     >
-                      <Tag tone={needsAttention(each.status) ? status.tone : "plain"}>
-                        {status.label}
-                      </Tag>
+                      <Tag tone={status.tone}>{status.label}</Tag>
                       <Link
                         className="rounded-round underline-offset-4 hover:underline"
                         to={`/workflow-runs/${each.id}`}

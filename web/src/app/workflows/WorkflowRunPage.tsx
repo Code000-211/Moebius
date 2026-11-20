@@ -16,12 +16,13 @@ import { keys } from "../../api/keys";
 import type { WorkflowNodeRun } from "../../api/types/workflows";
 import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
+import { cn } from "../../ui/lib/cn";
 import { elapsed } from "../../ui/lib/format";
 import { JsonValue } from "../../ui/page/JsonValue";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
-import { needsAttention, runStatus, triggerName } from "./model";
+import { runStatus, triggerName } from "./model";
 
 export function WorkflowRunPage() {
   const id = Number(useParams().id);
@@ -101,9 +102,9 @@ export function WorkflowRunPage() {
         <div className="flex flex-col gap-4 pb-6">
           <section
             aria-label="Run"
-            className="flex flex-wrap items-center gap-3 rounded-card bg-surface p-4 shadow-card"
+            className="flex flex-wrap items-center gap-3 border-b border-hairline pb-4"
           >
-            <Tag tone={needsAttention(shown.status) ? status.tone : "plain"}>{status.label}</Tag>
+            <Tag tone={status.tone}>{status.label}</Tag>
             <span className="text-sm text-secondary">{triggerName(shown.trigger)}</span>
             {shown.error ? (
               <p role="alert" className="m-0 w-full text-sm text-error-text">
@@ -138,7 +139,7 @@ function WaitingPanel({ node, asks }: { node: string; asks: unknown }) {
   return (
     <section
       aria-label="Waiting"
-      className="flex flex-col gap-3 rounded-card bg-attention-fill p-4 text-attention-text shadow-card"
+      className="flex flex-col gap-3 rounded-card border border-needs-you-edge bg-attention-fill p-4 text-attention-text"
     >
       <h2 className="m-0 text-base font-semibold">Waiting at {node}</h2>
       <p className="m-0 text-sm">This run cannot go on until what it asks is answered.</p>
@@ -158,18 +159,17 @@ function NodePanel({ node, waiting }: { node: WorkflowNodeRun; waiting: boolean 
     <section
       aria-label={`Node ${node.node}`}
       aria-current={waiting ? "step" : undefined}
-      className={
-        waiting
-          ? "flex flex-col gap-4 rounded-card bg-surface p-4 shadow-card"
-          : "flex flex-col gap-4 rounded-card bg-surface p-4 shadow-card"
-      }
+      className={cn(
+        "flex flex-col gap-4 border-b border-hairline pb-4",
+        waiting && "border-l-2 border-l-accent pl-3",
+      )}
     >
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="m-0 text-base font-semibold text-text">
           {node.node} <span className="font-normal text-secondary">· {node.kind}</span>
         </h2>
         <div className="flex flex-wrap items-center gap-2 text-sm text-secondary">
-          <Tag tone={needsAttention(node.status) ? status.tone : "plain"}>{status.label}</Tag>
+          <Tag tone={status.tone}>{status.label}</Tag>
           <span>attempt {node.attempt}</span>
           {length === null ? null : <span className="tabular-nums">took {length}</span>}
         </div>

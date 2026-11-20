@@ -34,7 +34,7 @@ export function NodeCard({ data, selected }: NodeProps) {
       data-testid="canvas-node"
       data-node-id={card.id}
       className={cn(
-        "rounded-card bg-surface px-3 py-3 shadow-card transition-shadow duration-(--motion-routine)",
+        "rounded-card border border-hairline-strong bg-panel px-3 py-3",
         WIDTH,
         selected && "canvas-node--selected",
         card.problems.length > 0 && "canvas-node--problem",
