@@ -20,9 +20,27 @@ export function WindowControls({ bridge = desktopBridge() }: { bridge?: DesktopB
       className="absolute top-0 right-1.5 z-sheet flex h-12 items-center gap-0.5"
     >
       <span aria-hidden="true" className="mr-2 h-5 w-px bg-hairline" />
-      <IconButton icon={MinusIcon} aria-label="Minimize" onClick={() => bridge.minimize()} />
-      <IconButton icon={SquareIcon} aria-label="Maximize" onClick={() => bridge.toggleMaximize()} />
-      <IconButton icon={XIcon} aria-label="Close" onClick={() => bridge.close()} />
+      <IconButton
+        iconClassName="size-3.5"
+        iconWeight="regular"
+        icon={MinusIcon}
+        aria-label="Minimize"
+        onClick={() => bridge.minimize()}
+      />
+      <IconButton
+        iconClassName="size-3.5"
+        iconWeight="regular"
+        icon={SquareIcon}
+        aria-label="Maximize"
+        onClick={() => bridge.toggleMaximize()}
+      />
+      <IconButton
+        iconClassName="size-3.5"
+        iconWeight="regular"
+        icon={XIcon}
+        aria-label="Close"
+        onClick={() => bridge.close()}
+      />
     </div>
   );
 }

@@ -15,7 +15,13 @@ export function WindowBar({ bridge = desktopBridge() }: { bridge?: DesktopBridge
       data-testid="window-bar"
       className="fixed inset-x-0 top-0 z-sheet flex h-9 items-center justify-end px-1.5"
     >
-      <IconButton icon={XIcon} aria-label="Close" onClick={() => bridge.close()} />
+      <IconButton
+        iconClassName="size-3.5"
+        iconWeight="regular"
+        icon={XIcon}
+        aria-label="Close"
+        onClick={() => bridge.close()}
+      />
     </div>
   );
 }
