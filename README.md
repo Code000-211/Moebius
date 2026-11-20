@@ -55,7 +55,7 @@ Moebius lets it decide alongside the teacher model until it agrees often enough 
 | 📖 **Wiki** | The organisation's pages, a git repository where every edit is a commit by its person. Links between pages and to cards, backlinks, search, history and templates. Agents read it and propose pages through the inbox. |
 | 🗓 **Planning** | Priorities, due dates and estimates; cycles per project and milestones across projects, with burn-ups; kinds of issues with fields of their own; duplicates and related issues; saved views as a list, board, calendar or timeline; analytics; intake of requests per project; an import from Jira. |
 | 💬 **The Moebius agent, everywhere** | "Ask Moebius" (`Ctrl+J`) in the right column of every page opens a chat that knows what you are looking at: the file and line in the editor, the script or rule you are editing. Ask it to write an issue, a rule, an agent's instructions or a whole workflow. |
-| 🛰 **Fleet** | Every working agent at a glance, live, and one button to pause them all. |
+| 🛰 **Fleet** | Every working agent at a glance, live; choose any of them and stop their runs at once. |
 | 🤖 **Coder and Reviewer** | Two built-in agents, each with its own instructions. Make a new agent blank or as a copy of any existing one, settings, skills and extensions included. |
 | ⌨️ **Chat or terminal** | Chat with any agent, or switch the same conversation into Pi-Bolt's own terminal interface. |
 | 🔁 **The Retro** | Reads the day's failed runs every night, and can be asked to try a failed day again. |
@@ -69,7 +69,7 @@ Moebius lets it decide alongside the teacher model until it agrees often enough 
 | 🧱 **Plugins** | Deciders compiled in, or as their own program in any language, speaking JSON Lines. A launcher plugin wraps how a run starts: [`nono-sandbox`](https://github.com/Code000-211/moebius-plugins) runs every Pi-Bolt process in a sandbox. |
 | 📦 **Packages** | Find, install, update and remove plugins, workflows, rules and skills from registries, and Pi packages from pi.dev, on the Plugins page and in an agent's Extensions. Changes to your configuration wait in the inbox. |
 | 🔬 **Autoresearch** | Experiments against a baseline, with a budget of experiments or of tokens. |
-| 🖥 **The desktop app** | The web app in a window of its own for Linux and Windows: several servers, tokens in the system's keychain, a local server, native notifications, a tray icon and a global shortcut to ask Moebius or make an issue. |
+| 🖥 **The desktop app** | The web app in a window of its own for Linux and Windows: several servers, tokens in the system's keychain, a local server, native notifications, a tray icon with Pause all agents and a global shortcut to ask Moebius or make an issue. |
 | 🪝 **Webhooks** | Forges' webhooks in, so changes arrive without waiting for the poll, and Moebius's own events out to any URL, signed. |
 | 🧰 **A command line** | Everything the web app does, as `moebius` commands, for scripts and for the agent itself. |
 
@@ -196,7 +196,7 @@ Windows installer) does the same with an access token, and can also set up a ser
 app](docs/guide/desktop-app.md). The **Get started** page lists what is still missing.
 
 **5. Add people.** An owner adds a person on the People page (under Setup), or from the command line, and hands over
-the `token` of the answer, which is shown once:
+the `token.token` of the answer, which is shown once:
 
 ```sh
 moebius api POST /v1/people --body '{"handle": "lea", "name": "Lea", "role": "member"}'
