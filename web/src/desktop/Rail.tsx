@@ -178,7 +178,7 @@ function AddServer({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-4 p-6">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Connect a server</DialogTitle>
           <DialogDescription>

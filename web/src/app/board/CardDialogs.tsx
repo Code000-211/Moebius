@@ -88,7 +88,7 @@ export const BlockDialog = memo(function BlockDialog({
       <DialogContent>
         {shown && (
           <form
-            className="flex flex-col gap-4 p-6"
+            className="flex flex-col gap-4"
             onSubmit={(e) => {
               e.preventDefault();
               if (!send.isPending) send.mutate(shown);
@@ -169,7 +169,7 @@ export const DeleteDialog = memo(function DeleteDialog({
       <DialogContent>
         {shown && (
           <form
-            className="flex flex-col gap-4 p-6"
+            className="flex flex-col gap-4"
             onSubmit={(e) => {
               e.preventDefault();
               if (!send.isPending) send.mutate(shown);
@@ -255,7 +255,7 @@ export const ParentDialog = memo(function ParentDialog({
       <DialogContent>
         {shown && (
           <form
-            className="flex flex-col gap-4 p-6"
+            className="flex flex-col gap-4"
             onSubmit={(e) => {
               e.preventDefault();
               if (!send.isPending) {

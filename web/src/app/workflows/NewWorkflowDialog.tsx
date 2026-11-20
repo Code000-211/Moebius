@@ -56,7 +56,7 @@ export function NewWorkflowDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-4 p-6">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>New workflow</DialogTitle>
           <DialogDescription>

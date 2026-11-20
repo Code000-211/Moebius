@@ -36,6 +36,7 @@ function CommandDialog({
     <Dialog {...props}>
       <DialogContent
         className="overflow-hidden p-0"
+        data-audit="flush"
         hideCloseButton
         overlayClassName="backdrop-blur-[2px]"
         onCloseAutoFocus={onCloseAutoFocus}
