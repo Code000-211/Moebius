@@ -1,5 +1,7 @@
 # A quiet standard with depth replaces the first one
 
+Status: superseded by [0023](0023-a-quieter-light-first-standard.md). The text below is kept as it was.
+
 The standard of [0016](0016-the-web-app-has-its-own-design-standard.md) drew the web app with 15px body text, radii of 12
 and 16, coloured pills for every state, cards inside cards and shadows on every layer. With projects, people and planning
 ([0018](0018-more-than-one-person.md), [0019](0019-a-project-is-a-board-over-any-repositories.md)) a screen holds far
