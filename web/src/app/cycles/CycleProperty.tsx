@@ -3,7 +3,7 @@
  * menu that puts it in another or takes it out, saved at once (`ui/page/EditableProperty.tsx`). A card is in at most
  * one open cycle, and only of its own project's, so the menu lists just those.
  */
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cardCycle, listCycles, setCardCycle } from "../../api/calls/cycles";
 import { keys } from "../../api/keys";
 import { EditableProperty } from "../../ui/page/EditableProperty";
@@ -19,6 +19,7 @@ export function CycleProperty({
   /** Called after a save, refused or not, so what the page shows is what the server has. */
   onSaved: () => void;
 }) {
+  const queryClient = useQueryClient();
   const held = useQuery({ queryKey: keys.cardCycle(card), queryFn: () => cardCycle(card) });
   const all = useQuery({
     queryKey: keys.projectCycles(project),
@@ -35,7 +36,14 @@ export function CycleProperty({
         none: "No cycle",
         onSave: async (next) => {
           try {
-            await setCardCycle(card, next === null ? null : Number(next));
+            // The answer is the card's cycle: shown at once.
+            queryClient.setQueryData(
+              keys.cardCycle(card),
+              await setCardCycle(card, next === null ? null : Number(next)),
+            );
+          } catch (error) {
+            void queryClient.invalidateQueries({ queryKey: keys.cardCycle(card) });
+            throw error;
           } finally {
             onSaved();
           }

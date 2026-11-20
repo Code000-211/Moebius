@@ -10,6 +10,7 @@ import { comment, comments, editCard, history } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Card } from "../../api/types/board";
+import { putCard } from "../../live/cardCache";
 import { CardScope } from "../../ui/chat/CardLinks";
 import { Button } from "../../ui/components/Button";
 import {
@@ -193,8 +194,8 @@ export function EditIssueDialog({
   const [body, setBody] = useState(card.body);
   const save = useMutation({
     mutationFn: () => editCard(card.id, title.trim(), body),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: keys.snapshot });
+    onSuccess: (saved) => {
+      putCard(queryClient, saved);
       onOpenChange(false);
     },
   });

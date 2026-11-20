@@ -4,12 +4,13 @@
  * sends the request, tells the outcome in a sentence (what the server did, or why it refused) and reads the board
  * again; the events of the server do the same, so a second client sees it too.
  */
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { approve, merge, reject, retry, unblock } from "../../api/calls/board";
 import { stopRun } from "../../api/calls/chat";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
+import { putCards } from "../../live/cardCache";
 
 export type Decision =
   | { kind: "approve"; card: number; number: number }
@@ -34,17 +35,17 @@ const VERB: Record<Decision["kind"], string> = {
   reject: "send back",
 };
 
-async function send(decision: Decision): Promise<string> {
+async function send(decision: Decision, queryClient: QueryClient): Promise<string> {
   const n = `#${decision.number}`;
   switch (decision.kind) {
     case "approve":
-      await approve(decision.card);
+      putCards(queryClient, [await approve(decision.card)]);
       return `Approved ${n}. It moves to Not started.`;
     case "retry":
-      await retry(decision.card);
+      putCards(queryClient, [await retry(decision.card)]);
       return `Retrying ${n}.`;
     case "unblock":
-      await unblock(decision.card);
+      putCards(queryClient, [await unblock(decision.card)]);
       return `Unblocked ${n}. The board works on it again.`;
     case "stop":
       await stopRun(decision.run);
@@ -54,7 +55,7 @@ async function send(decision: Decision): Promise<string> {
       return `Merged ${n}. Commit ${commit.slice(0, 7)}.`;
     }
     case "reject":
-      await reject(decision.change, decision.reason);
+      putCards(queryClient, [await reject(decision.change, decision.reason)]);
       return `Sent ${n} back to coding.`;
   }
 }
@@ -69,12 +70,13 @@ export function useDecisions() {
   const queryClient = useQueryClient();
   const [notice, setNotice] = useState<Notice | null>(null);
   const mutation = useMutation({
-    mutationFn: send,
+    mutationFn: (decision: Decision) => send(decision, queryClient),
     onSuccess: (text) => setNotice({ tone: "ok", text }),
-    onError: (error, decision) => setNotice({ tone: "error", text: failure(decision, error) }),
-    onSettled: () => {
+    onError: (error, decision) => {
+      // Refused: read the board, so what is shown is what the server has.
       void queryClient.invalidateQueries({ queryKey: keys.snapshot });
       void queryClient.invalidateQueries({ queryKey: keys.cards });
+      setNotice({ tone: "error", text: failure(decision, error) });
     },
   });
   // `mutate` keeps its identity from one render to the next, which the board's memoised cards rely on.

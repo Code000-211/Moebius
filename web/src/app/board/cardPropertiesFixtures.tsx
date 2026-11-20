@@ -124,9 +124,13 @@ export function server(answers: Record<string, { status: number; body: unknown }
 }
 
 /** The properties of `of` on a board that also has `others`; `onOpen` is what opening another issue does. */
-export function properties(of: Card, others: Card[] = [], waiting: Record<string, string> = {}) {
+export function properties(
+  of: Card,
+  others: Card[] = [],
+  waiting: Record<string, string> = {},
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   const onOpen = vi.fn();
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter>

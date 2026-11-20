@@ -11,6 +11,7 @@ import { block, deleteCard, setParent } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Board, Card, Repository } from "../../api/types/board";
+import { putCards, removeCard } from "../../live/cardCache";
 import { Button } from "../../ui/components/Button";
 import {
   Dialog,
@@ -60,6 +61,10 @@ export const BlockDialog = memo(function BlockDialog({
     mutationFn: async (target: Card) => {
       const all = [target, ...more];
       const results = await Promise.allSettled(all.map((one) => block(one.id, reason.trim())));
+      putCards(
+        queryClient,
+        results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : [])),
+      );
       const refused = results.find((result) => result.status === "rejected");
       if (refused) {
         void queryClient.invalidateQueries({ queryKey: keys.snapshot });
@@ -67,7 +72,6 @@ export const BlockDialog = memo(function BlockDialog({
       }
     },
     onSuccess: (_, target) => {
-      void queryClient.invalidateQueries({ queryKey: keys.snapshot });
       setReason("");
       onClose();
       onDone(
@@ -153,7 +157,7 @@ export const DeleteDialog = memo(function DeleteDialog({
   const send = useMutation({
     mutationFn: (target: Card) => deleteCard(target.id),
     onSuccess: (_, target) => {
-      void queryClient.invalidateQueries({ queryKey: keys.snapshot });
+      removeCard(queryClient, target.id);
       void queryClient.invalidateQueries({ queryKey: keys.cards });
       onClose();
       onDone(target, `Deleted #${target.number}.`);
@@ -232,8 +236,8 @@ export const ParentDialog = memo(function ParentDialog({
   const send = useMutation({
     mutationFn: ({ target, parent }: { target: Card; parent: number | null }) =>
       setParent(target.id, parent),
-    onSuccess: (_, { target, parent }) => {
-      void queryClient.invalidateQueries({ queryKey: keys.snapshot });
+    onSuccess: (answer, { target, parent }) => {
+      putCards(queryClient, [answer]);
       setChosen(null);
       onClose();
       onDone(

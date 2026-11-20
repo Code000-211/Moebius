@@ -3,7 +3,7 @@
  * in one or takes it out, saved at once (`ui/page/EditableProperty.tsx`). The server answers only for a card of a
  * project the person may see.
  */
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cardMilestones, listMilestones, setCardMilestones } from "../../api/calls/milestones";
 import { keys } from "../../api/keys";
 import { EditableProperty } from "../../ui/page/EditableProperty";
@@ -16,6 +16,7 @@ export function MilestonesProperty({
   /** Called after a save, refused or not, so what the page shows is what the server has. */
   onSaved: () => void;
 }) {
+  const queryClient = useQueryClient();
   const held = useQuery({
     queryKey: keys.cardMilestones(card),
     queryFn: () => cardMilestones(card),
@@ -31,7 +32,14 @@ export function MilestonesProperty({
         value: ids,
         onSave: async (next) => {
           try {
-            await setCardMilestones(card, next.map(Number));
+            // The answer is the card's milestones: shown at once.
+            queryClient.setQueryData(
+              keys.cardMilestones(card),
+              await setCardMilestones(card, next.map(Number)),
+            );
+          } catch (error) {
+            void queryClient.invalidateQueries({ queryKey: keys.cardMilestones(card) });
+            throw error;
           } finally {
             onSaved();
           }
