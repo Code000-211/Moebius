@@ -458,7 +458,7 @@ mod tests {
         }
         assert_eq!(engine.scripts_run(), settled, "an idle tick runs no script");
 
-        // A person gives the first card a label: its script runs again, the other one's too, since the store changed.
+        // Anything written to the store, here a card's `moved_at`, runs the scripts of all cards again.
         let card = f.card(1).unwrap();
         app.store
             .set_card_moved_at(card.id, crate::store::now())

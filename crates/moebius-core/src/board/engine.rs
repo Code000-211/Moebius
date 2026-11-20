@@ -3,6 +3,7 @@
 //! the card waits. The script of a column is the repository's override, or the built-in one (see `kanban`).
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
@@ -231,8 +232,9 @@ impl Engine {
         }
     }
 
-    /// How many column scripts the engine has run since it was made.
-    pub fn scripts_run(&self) -> u64 {
+    /// How many column scripts the engine has run since it was made, for tests.
+    #[cfg(test)]
+    pub(crate) fn scripts_run(&self) -> u64 {
         self.scripts_run.load(Ordering::Relaxed)
     }
 
@@ -241,6 +243,7 @@ impl Engine {
         self.memo.begin();
     }
 
+    /// Ends the tick: project scripts are read afresh from now on.
     pub fn end_tick(&self) {
         self.memo.end();
     }
@@ -270,7 +273,7 @@ impl Engine {
     }
 
     /// Forgets the quiet cards that are no longer on the board.
-    pub fn keep_quiet_only(&self, alive: &std::collections::HashSet<i64>) {
+    pub fn keep_quiet_only(&self, alive: &HashSet<i64>) {
         self.quiet.keep_only(alive);
     }
 

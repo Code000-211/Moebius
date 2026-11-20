@@ -30,7 +30,7 @@ pub mod scripts;
 #[cfg(test)]
 pub(crate) mod testing;
 
-pub use cache::RECHECK;
+pub use cache::{RECHECK, Stamp};
 pub use card::{Review, latest_review};
 pub use dry_run::check_script;
 pub use engine::{BoardError, Engine, Step};

@@ -6,7 +6,7 @@
 //! - [`ScriptMemo`]: the text of the project scripts read during one tick, so that the harness configuration
 //!   repository's files are read once per project and column and not once per card.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -86,7 +86,7 @@ impl Quiet {
     }
 
     /// Forgets the cards that are not in `alive`, so that the deleted ones do not stay.
-    pub(super) fn keep_only(&self, alive: &std::collections::HashSet<i64>) {
+    pub(super) fn keep_only(&self, alive: &HashSet<i64>) {
         locked(&self.cards).retain(|id, _| alive.contains(id));
     }
 }
