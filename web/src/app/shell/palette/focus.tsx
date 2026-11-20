@@ -30,7 +30,8 @@ export function PaletteFocusProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
-      if (modalIsOpen() || fieldHasKeys(event.target)) return;
+      // The card window is where the card in focus is read, so its keys work over it.
+      if (modalIsOpen({ exceptCardWindow: true }) || fieldHasKeys(event.target)) return;
       const command = latest.current?.commands.find((c) => c.key === event.key.toLowerCase());
       if (!command) return;
       event.preventDefault();

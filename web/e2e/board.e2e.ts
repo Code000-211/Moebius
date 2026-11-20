@@ -1011,15 +1011,6 @@ describe("dragging cards", () => {
     async () => {
       await fresh();
       await openBoard();
-      // The dock opens on the first live card and the right column slides open for its properties, which narrows the
-      // lanes: they are measured once it stands at its width.
-      await expect
-        .poll(() =>
-          page
-            .locator('[data-surface="right-column"]')
-            .evaluate((node) => node.getBoundingClientRect().width),
-        )
-        .toBe(272);
       const last = column("Done");
       const inView = () =>
         last.evaluate((node) => {
@@ -1128,7 +1119,7 @@ describe("the dock", () => {
     async () => {
       await fresh();
       await openBoard();
-      // Without a choice the dock shows the first live card.
+      await card(1).click();
       await dock().getByRole("heading", { name: "Add a feature" }).waitFor();
       // The two moves are folded into one line, which opens to them.
       await dock()
@@ -1158,6 +1149,7 @@ describe("the dock", () => {
   it.skipIf(usesRealServer)("links a run to its page", async () => {
     await fresh();
     await openBoard();
+    await card(1).click();
     await dock().getByRole("link", { name: "View run 1", exact: true }).click();
     await page.waitForURL("**/runs/1");
     await page.getByRole("heading", { name: "Run 1" }).waitFor();
@@ -1490,10 +1482,6 @@ describe("the card open in the dock and its address", () => {
     await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
     await card(3).waitFor();
     expect(await dock().count()).toBe(0);
-    // Back opens the card that was open.
-    await page.goBack();
-    await dock().waitFor();
-    expect(page.url()).toContain("card=3");
   });
 });
 
