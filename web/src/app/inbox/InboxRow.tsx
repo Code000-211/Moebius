@@ -50,7 +50,7 @@ export function InboxRow({
             variant="secondary"
             size="sm"
             disabled={approving}
-            className="text-accent-text"
+            className="h-6 px-2.5 text-accent-text"
             onClick={(event) => {
               event.stopPropagation();
               onApprove(card);

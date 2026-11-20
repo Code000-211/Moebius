@@ -415,6 +415,30 @@ describe("the inbox", () => {
     },
   );
 
+  it.skipIf(usesRealServer)("draws few rows of 2000 items, and the last is reachable", async () => {
+    await open("/inbox");
+    await items().first().waitFor();
+    for (let n = 0; n < 2000; n++) {
+      fake().addInboxItem({ kind: "stuck", card_id: null, title: `Seeded item ${n}`, data: {} });
+    }
+    server.broadcast?.({ kind: "card_updated", data: {} });
+    await item("Seeded item 1999").waitFor();
+    expect(await page.getByTestId("inbox-item").count()).toBeLessThan(100);
+    const list = page.getByRole("list", { name: "Inbox" });
+    await list.focus();
+    await page.keyboard.press("End");
+    // The last row of the whole list is drawn: its place is the size of the list.
+    await expect
+      .poll(async () => {
+        const rows = page.getByRole("listitem");
+        const last = rows.last();
+        return (
+          (await last.getAttribute("aria-posinset")) === (await last.getAttribute("aria-setsize"))
+        );
+      })
+      .toBe(true);
+  });
+
   it.skipIf(usesRealServer)("shows an item that arrives while the page is open", async () => {
     await open("/inbox");
     await items().first().waitFor();
