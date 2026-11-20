@@ -533,4 +533,24 @@ mod tests {
         assert!(s.start_trying(2).unwrap());
         assert!(s.proposal(3).unwrap().is_none());
     }
+
+    #[test]
+    fn a_write_is_seen_at_once_by_a_read_on_the_pool_and_by_one_from_another_thread() {
+        let (_dir, s) = store();
+        let s = std::sync::Arc::new(s);
+        s.add_retro("2026-03-10", &json!({}), "proposed").unwrap();
+        for n in 0..50 {
+            s.add_proposal("2026-03-10", &format!("b{n}"), "t", "", &[], &[])
+                .unwrap();
+            let id = n + 1;
+            s.set_proposal_status(id, "trying").unwrap();
+            assert_eq!(s.proposal(id).unwrap().unwrap().status, "trying");
+            let seen = {
+                let s = s.clone();
+                std::thread::spawn(move || s.proposal(id).unwrap().unwrap().status)
+            };
+            assert_eq!(seen.join().unwrap(), "trying");
+            s.set_proposal_status(id, "untried").unwrap();
+        }
+    }
 }
