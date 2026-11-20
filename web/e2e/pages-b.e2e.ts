@@ -171,6 +171,7 @@ describe("the Agents page", () => {
       await page.getByRole("button", { name: "Delete agent" }).click();
       await page.getByText("Delete this agent?").waitFor();
       await page.getByRole("button", { name: "Keep" }).click();
+      await page.getByText("Delete this agent?").waitFor({ state: "detached" });
       expect(fake().agents.Tester).toBeDefined();
       await page.getByRole("button", { name: "Delete agent" }).click();
       await page.getByRole("button", { name: "Delete agent" }).last().click();
@@ -296,10 +297,7 @@ describe("the Agents page", () => {
       await page.getByLabel("skill path").fill("skills/extra");
       await page.getByRole("button", { name: "Add skill" }).click();
       await save().click();
-      await page
-        .getByTestId("detail-column")
-        .getByText("Saved in moebius.toml.", { exact: true })
-        .waitFor();
+      await page.getByText("Saved in moebius.toml.", { exact: true }).waitFor();
       const { set } = sent<{ set: Record<string, unknown> }>("PUT", "/v1/settings");
       expect(set["agents.Coder"]).toMatchObject({
         model: "fake-small",

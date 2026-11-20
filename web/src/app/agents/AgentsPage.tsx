@@ -44,10 +44,9 @@ function rowLine(agent: Agent): string {
   return agent.harness === "claude-code" ? `${base} · ${harnessName(agent.harness)}` : base;
 }
 
-/** The one word at the right of a row: what is wrong with the agent, or that it is built in. */
+/** The one word at the right of a row: that the agent is broken, or built in. */
 function rowState(agent: Agent): { text: string; className: string } | null {
   if (agent.error) return { text: "Broken", className: "text-error-text" };
-  if (agent.model === "") return { text: "Needs a model", className: "text-attention-text" };
   if (agent.built_in) return { text: "Built in", className: "text-muted" };
   return null;
 }
@@ -61,7 +60,14 @@ function AgentRow({ agent, onOpen }: { agent: Agent; onOpen?: () => void }) {
         {agent.name}
       </span>
       <span
-        className={cn("min-w-0 flex-1 truncate", agent.error ? "text-error-text" : "text-muted")}
+        className={cn(
+          "min-w-0 flex-1 truncate",
+          agent.error
+            ? "text-error-text"
+            : agent.model === ""
+              ? "text-attention-text"
+              : "text-muted",
+        )}
       >
         {rowLine(agent)}
       </span>
