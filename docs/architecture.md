@@ -686,7 +686,7 @@ At the top:
 | `store/projects.rs` | The projects (name, key, repositories in order), a repository's home project and a card's project, how a key is made from a name, the migration that makes one project for each repository and puts every card on it, whether a project is private with its members, and the project a judgement belongs to. |
 | `store/paused.rs` | Whether all agents are paused, who paused them and when: the table `runs_paused`, one row at most. |
 | `store/favourites.rs` | The places a person pinned, in their order, and the places they opened lately (the last 20), kept per person so they follow them to every browser. |
-| `store/events.rs` | A run's events, in order, redacted before they are stored. |
+| `store/events.rs` | A run's events, in order, redacted before they are stored: queued and written in batches (streamed deltas wait up to 100 ms), the deltas of an ended message joined, and told to the bus after they are committed. |
 | `store/automations.rs` | Automations, their firings with the status of each chat, and the server's local minute; the workflow file is the definition and the row keeps the id the firings use. |
 | `store/chats.rs` | Chats: where they were started, what they work in and how far a person has read them. |
 | `store/deletions.rs` | Deleting a chat, a research or a replay from the store in one transaction each; usage and judgements stay, without a run. |

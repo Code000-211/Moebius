@@ -107,7 +107,7 @@ impl Store {
         tail: &str,
         params: impl rusqlite::Params,
     ) -> Result<Vec<Judgement>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut stmt = conn.prepare(&format!(
             "SELECT id, kind, context, options, choice, reason, decider, run_id, card_id, outcome, at
              FROM judgements {tail}"
@@ -174,7 +174,7 @@ impl Store {
         scope: &Scope,
         mut each: impl FnMut(&str, i64, bool, &str),
     ) -> Result<()> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut stmt = conn.prepare(&format!(
             "SELECT kind, id, outcome IS NOT NULL, decider FROM judgements WHERE 1 = 1{} ORDER BY id",
             scope.clause("run_id", Some("card_id"))
@@ -206,7 +206,7 @@ impl Store {
     /// Whether a judgement made for the card still waits for the outcome that `set_missing_outcomes` sets. The hints
     /// of `localize` are left out: their outcome is the files a change touched, which a failed run never reports.
     pub fn has_pending_outcomes(&self, card_id: i64) -> Result<bool> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             "SELECT EXISTS (SELECT 1 FROM judgements WHERE card_id = ?1 AND outcome IS NULL AND kind <> 'localize')",
             [card_id],
             |r| r.get(0),

@@ -125,7 +125,7 @@ impl Store {
 
     /// The person's notices, newest first, at most [`LISTED`].
     pub fn notices(&self, person_id: i64) -> Result<Vec<Notice>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut stmt = conn.prepare(&format!(
             "SELECT {COLUMNS} FROM notices WHERE person_id = ?1 ORDER BY id DESC LIMIT {LISTED}"
         ))?;
@@ -163,7 +163,7 @@ impl Store {
     /// The people who follow the card, in the order they were added: those who chose to, and, unless they chose not
     /// to, the one who wrote it (`author_handle`, without the `@`) and those it is given to. Disabled people do not.
     pub fn followers(&self, card_id: i64, author_handle: Option<&str>) -> Result<Vec<Person>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut stmt = conn.prepare(&format!(
             "SELECT {} FROM people p WHERE p.disabled = 0 AND COALESCE(\
                 (SELECT f.following FROM card_follows f WHERE f.card_id = ?1 AND f.person_id = p.id), \

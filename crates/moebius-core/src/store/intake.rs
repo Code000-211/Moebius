@@ -120,7 +120,7 @@ impl Store {
         project_id: i64,
         requester_id: Option<i64>,
     ) -> Result<Vec<IntakeRequest>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut stmt = conn.prepare(&format!(
             "SELECT {COLUMNS} FROM {FROM} WHERE r.project_id = ?1 AND (?2 IS NULL OR r.requester_id = ?2) \
              ORDER BY r.id DESC"

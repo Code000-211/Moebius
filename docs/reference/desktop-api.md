@@ -2222,6 +2222,13 @@ The stored events of a run, in order. A client loads a long run in pieces and th
 `seq` it has: every `run_event` on the stream carries the `seq` the event was stored under, so the client drops those
 it already has and sees every event exactly once.
 
+A streamed answer is stored compactly. The `message_update` events of a message that has ended are joined: neighbouring
+`text_delta`s become one `message_update` whose `delta` is their text in order, likewise neighbouring `thinking_delta`s,
+and the `seq` of the first is kept, so the `seq`s of a finished message have gaps where the rest were. Reading the
+`delta`s of a finished run in order gives the same answer as before. While a message is streaming its deltas are stored
+in groups at most 100 ms behind their publication on `GET /v1/events`, so a page read in that moment can lack the last
+few; a client that follows the stream by `seq` sees them there.
+
 A page is read either forwards or backwards, never both at once. Forwards: `after` (default 0) returns only events with
 a `seq` above it. Backwards, for a page that opens a long chat at its last message: `tail` (default false) returns the
 newest events, and `before` returns those with a `seq` below it; each is answered oldest first, so the page that follows
@@ -4279,7 +4286,8 @@ message with `"stopReason": "error"` and an `"errorMessage"`, in the `message` o
 Moebius ends in failure has a `moebius_error` event instead.
 
 `seq` is the number the event is stored under, the same as in `GET /v1/runs/{id}/events`. Events of a run are published in
-the order of their `seq`. Every event of a run is published and stored: Pi's records, `tool_check`, `mcp_call`, `mcp_error` and `launcher_note` events, `steered` events
+the order of their `seq`, once they are stored; a `message_update` can be published up to 100 ms after Pi sent it, with the
+events stored with it. Every event of a run is published and stored: Pi's records, `tool_check`, `mcp_call`, `mcp_error` and `launcher_note` events, `steered` events
 (`{"message"}`, a person's steer, with secrets removed), `said` events (`{"message"}`, a person's message to a chat, the first
 one included, with secrets removed; stored before the agent's records of its answer) `shell_opened` events (`{"who"}`, a person opened a shell in the worktree; see `GET /v1/runs/{id}/terminal`), `tui_opened` events (`{"who"}`, a person opened Pi-Bolt's terminal interface in a chat; see `GET /v1/chats/{id}/tui`), `settings_changed` events (`{"model", "protocol", "thinking"}`, what a chat runs with in place of its agent's; see `POST /v1/chats/{id}/settings`) and `moebius_error` events (`{"message"}`) that explain why a
 run failed. The one exception is a run that was still going when the server stopped: it is failed at the next start with
