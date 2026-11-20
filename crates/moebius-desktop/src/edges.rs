@@ -5,7 +5,8 @@
 //! edge to edge, which take the pointer from the toolkit's handler for the window itself (and on Linux the webviews
 //! are packed into the window, so no border can be left uncovered). So each page watches its own outer
 //! [`EDGE`] pixels: it shows the resize cursor there, and a press of the main button starts Tauri's
-//! `start_resize_dragging` for that edge, as long as the window is not maximized. The script is plain JavaScript in
+//! `start_resize_dragging` for that edge at once, as long as the window is not maximized (asked when the pointer comes to
+//! an edge, since the system needs the button still held). The edge takes the top few pixels of the window strip too. The script is plain JavaScript in
 //! [`SCRIPT`], so that it is tested here (with `node`, in the tests below) rather than only by hand.
 
 /// How wide, in pixels of the page, the edge is that resizes the window.
@@ -26,21 +27,24 @@ pub const SCRIPT: &str = r#"
     return vertical + horizontal || null;
   };
   const invoke = (command, args) => window.__TAURI_INTERNALS__.invoke(command, { label: "main", ...args });
+  if (!window.__TAURI_INTERNALS__) return;
+  // Whether the window is maximized, asked when the pointer comes to an edge, so that a press starts the resize at
+  // once: the system needs the button still held when it is asked to resize.
+  let maximized = false;
   let shown = null;
   window.addEventListener("mousemove", (event) => {
     const edge = edgeAt(event.clientX, event.clientY);
     if (edge === shown || !document.documentElement) return;
     shown = edge;
     document.documentElement.style.cursor = edge ? CURSORS[edge] : "";
+    if (edge) invoke("plugin:window|is_maximized").then((answer) => { maximized = answer === true; }, () => {});
   }, true);
   window.addEventListener("mousedown", (event) => {
     const edge = event.button === 0 ? edgeAt(event.clientX, event.clientY) : null;
-    if (!edge) return;
+    if (!edge || maximized) return;
     event.preventDefault();
     event.stopPropagation();
-    invoke("plugin:window|is_maximized")
-      .then((maximized) => maximized || invoke("plugin:window|start_resize_dragging", { value: edge }))
-      .catch(() => {});
+    invoke("plugin:window|start_resize_dragging", { value: edge }).catch(() => {});
   }, true);
 })();
 "#;
@@ -102,10 +106,13 @@ const mouse = (type, x, y, button = 0) =>
               ["West", 2, 350], ["East", 997, 350], ["North", 500, 2], ["South", 500, 697],
               ["NorthWest", 1, 1], ["NorthEast", 998, 1], ["SouthWest", 1, 698], ["SouthEast", 998, 698],
             ]) {
+              mouse("mousemove", x, y);
+              await new Promise((r) => setTimeout(r, 0));
               calls.length = 0;
               mouse("mousedown", x, y);
               await new Promise((r) => setTimeout(r, 0));
               seen[name] = calls.map((c) => c[1].value ?? c[0].split("|")[1]).join(",");
+              mouse("mousemove", 500, 350);
             }
             console.log(JSON.stringify(seen));
             "#,
@@ -123,7 +130,7 @@ const mouse = (type, x, y, button = 0) =>
             "SouthWest",
             "SouthEast",
         ] {
-            assert_eq!(seen[name], format!("is_maximized,{name}"), "{name}");
+            assert_eq!(seen[name], name, "{name}");
         }
     }
 
@@ -150,14 +157,17 @@ const mouse = (type, x, y, button = 0) =>
         let Some(out) = run(
             true,
             r#"
+            mouse("mousemove", 2, 350);
+            await new Promise((r) => setTimeout(r, 0));
+            calls.length = 0;
             mouse("mousedown", 2, 350);
             await new Promise((r) => setTimeout(r, 0));
-            console.log(JSON.stringify(calls.map((c) => c[0])));
+            console.log(JSON.stringify({ calls: calls.length, stopped }));
             "#,
         ) else {
             return;
         };
-        assert_eq!(out, r#"["plugin:window|is_maximized"]"#);
+        assert_eq!(out, r#"{"calls":0,"stopped":0}"#);
     }
 
     #[test]
