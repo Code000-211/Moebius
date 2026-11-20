@@ -5,13 +5,17 @@
  * /v1/repositories/{id}/issues`; the card appears the way every card does, through the event stream and the snapshot.
  * "Create more" keeps the form open for the next card, with the properties as they were. What the server refused stays
  * in the form, beside the field it belongs to. "Ask Moebius" starts a chat with the Moebius agent, which writes the
- * issue out from what is typed so far.
+ * issue out from what is typed so far. A chip picks one of the kinds the repository's project offers; when the chosen kind
+ * has an issue template, "Use the template" asks the server to fill what is left empty from it (`use_template`).
  */
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { createIssue } from "../../api/calls/board";
 import { startChat } from "../../api/calls/chat";
+import { listKinds } from "../../api/calls/kinds";
+import { listProjects } from "../../api/calls/projects";
+import { listTemplates } from "../../api/calls/templates";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Board, Card } from "../../api/types/board";
@@ -68,9 +72,37 @@ export function NewIssueDialog({
   const wanted = chosen ?? (initialParent === null ? "none" : String(initialParent));
   // A parent of another repository's board is no parent here.
   const parent = board.cards.some((c) => String(c.number) === wanted) ? wanted : "none";
+  // The kinds the repository's project offers, and the template the chosen one has.
+  const projects = useQuery({ queryKey: keys.projects, queryFn: listProjects, enabled: open });
+  const allKinds = useQuery({ queryKey: keys.issueKinds, queryFn: listKinds, enabled: open });
+  const templates = useQuery({
+    queryKey: keys.templates,
+    queryFn: listTemplates,
+    enabled: open,
+    retry: false,
+  });
+  const home = (Array.isArray(projects.data) ? projects.data : []).find(
+    (p) => p.files === repository || p.repositories.some((r) => r.id === repository),
+  );
+  const offered = (Array.isArray(allKinds.data) ? allKinds.data : []).filter(
+    (k) => home !== undefined && k.projects.includes(home.id),
+  );
+  const [kindChosen, setKindChosen] = useState("none");
+  const kind = offered.find((k) => k.name === kindChosen);
+  const template = kind
+    ? templates.data?.issues?.find((t) => t.kind.toLowerCase() === kind.name.toLowerCase())
+    : undefined;
+  const [useTemplate, setUseTemplate] = useState(false);
+  const templated = template !== undefined && useTemplate;
   const create = useMutation({
     mutationFn: () =>
-      createIssue(repository, title.trim(), body, parent === "none" ? null : Number(parent)),
+      createIssue(
+        repository,
+        title.trim(),
+        body,
+        parent === "none" ? null : Number(parent),
+        kind ? { name: kind.name, useTemplate: templated } : null,
+      ),
     onSuccess: (card) => {
       void queryClient.invalidateQueries({ queryKey: keys.snapshot });
       setTitle("");
@@ -83,6 +115,8 @@ export function NewIssueDialog({
         return;
       }
       setChosen(null);
+      setKindChosen("none");
+      setUseTemplate(false);
       onOpenChange(false);
     },
   });
@@ -109,7 +143,9 @@ export function NewIssueDialog({
   useEffect(() => {
     if (made) titleField.current?.focus();
   }, [made]);
-  const ready = title.trim() !== "" && !create.isPending;
+  // A template that gives a title makes an empty one enough.
+  const ready =
+    (title.trim() !== "" || (templated && template.title.trim() !== "")) && !create.isPending;
   const close = () => {
     // Leaving by the door of the dialog itself, so the next time it opens does not still hold the refusal.
     create.reset();
@@ -184,7 +220,7 @@ export function NewIssueDialog({
               Makes a card in the Backlog of {name}. On a forge the issue is opened there too.
             </DialogDescription>
           </DialogHeader>
-          {(repositories.length > 1 || board.cards.length > 0) && (
+          {(repositories.length > 1 || board.cards.length > 0 || offered.length > 0) && (
             <div className="flex flex-wrap items-center gap-2">
               {repositories.length > 1 && onRepository && (
                 <Select
@@ -192,6 +228,21 @@ export function NewIssueDialog({
                   value={String(repository)}
                   options={repositories.map((r): [string, string] => [String(r.id), r.name])}
                   onChange={(value) => onRepository(Number(value))}
+                  className="w-auto min-w-32 max-w-56 rounded-full"
+                />
+              )}
+              {offered.length > 0 && (
+                <Select
+                  aria-label="Kind"
+                  value={kind ? kind.name : "none"}
+                  options={[
+                    ["none", "No kind"],
+                    ...offered.map((k): [string, string] => [k.name, k.name]),
+                  ]}
+                  onChange={(value) => {
+                    setKindChosen(value);
+                    setUseTemplate(false);
+                  }}
                   className="w-auto min-w-32 max-w-56 rounded-full"
                 />
               )}
@@ -224,6 +275,18 @@ export function NewIssueDialog({
             )}
           </Field>
           {refusedAt === "title" && create.isError && refusalNotice}
+          {template && (
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-secondary">
+              <input
+                type="checkbox"
+                checked={useTemplate}
+                onChange={(e) => setUseTemplate(e.target.checked)}
+                className="size-4"
+              />
+              Use the template of {kind?.name}
+              <span className="text-secondary">(fills what is left empty)</span>
+            </label>
+          )}
           <Field label="Description" hint="What the issue asks for, in a few sentences.">
             {(id) => (
               <TextArea

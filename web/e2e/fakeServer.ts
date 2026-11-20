@@ -21,6 +21,7 @@ import { createPagesAFake, type PagesAFake } from "./fake/pages-a";
 import { createPagesBFake, type PagesBFake } from "./fake/pages-b";
 import { createPagesCFake, type PagesCFake } from "./fake/pages-c";
 import { createFakeRuns, type FakeRuns } from "./fake/runs";
+import { createTemplatesFake, type TemplatesFake } from "./fake/templates";
 import { createViewsFake, type ViewsFake } from "./fake/views";
 import { createWikiFake, type WikiFake } from "./fake/wiki";
 import { createWorkflowsFake, type WorkflowsFake } from "./fake/workflows";
@@ -94,6 +95,8 @@ export interface FakeServer {
   wiki: WikiFake;
   /** The kinds of issues and the issues across projects (e2e/fake/kinds.ts). */
   kinds: KindsFake;
+  /** The issue and page templates, the secrets and the Jira import (e2e/fake/templates.ts). */
+  templates: TemplatesFake;
 }
 
 function cookieOf(request: IncomingMessage): string | undefined {
@@ -180,9 +183,11 @@ export async function startFakeServer(): Promise<FakeServer> {
   const pagesB = createPagesBFake();
   const pagesC = createPagesCFake(broadcast);
   const workflows = createWorkflowsFake();
-  const wiki = createWikiFake(broadcast, pagesA);
-  const packages = createPackagesFake(broadcast, pagesA);
   const kinds = createKindsFake(broadcast);
+  const templates = createTemplatesFake(kinds);
+  board.issueTemplate = templates.issueTemplate;
+  const wiki = createWikiFake(broadcast, pagesA, templates);
+  const packages = createPackagesFake(broadcast, pagesA);
   let port = 0;
 
   const signedIn = (request: IncomingMessage) => {
@@ -330,6 +335,8 @@ export async function startFakeServer(): Promise<FakeServer> {
       return text(response, 403, "a viewer reads the wiki");
     if (await wiki.handle(request, response, path, person ?? { name: "Owner", handle: "owner" }))
       return;
+    // Before the pages that answer `PUT /v1/secrets/{name}` too: a Jira token is read back from here.
+    if (await templates.handle(request, response, path)) return;
     // Answers only once a test of its pages has called use(), so the Settings page's fake keeps /v1/settings otherwise.
     if (await cycles.handle(request, response, path)) return;
     if (await milestones.handle(request, response, path)) return;
@@ -425,6 +432,7 @@ export async function startFakeServer(): Promise<FakeServer> {
     workflows,
     wiki,
     kinds,
+    templates,
     broadcast,
     notify(handle, notice) {
       const person = people.find((p) => p.handle === handle);
