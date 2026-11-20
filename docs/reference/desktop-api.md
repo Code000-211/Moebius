@@ -304,6 +304,7 @@ any route to any role that is not what its row says.
 | `DELETE /v1/packages/{name}` | owner | no |
 | `POST /v1/packages/{name}/update` | owner | no |
 | `GET /v1/usage` | viewer | yes |
+| `GET /v1/status` | viewer | no |
 | `GET /v1/analytics` | viewer | yes |
 | `GET /v1/judgements` | viewer | yes |
 | `GET /v1/judgements/kinds` | viewer | yes |
@@ -365,6 +366,17 @@ any route to any role that is not what its row says.
 | `POST /v1/webhooks/{forge}/secret` | owner | no |
 | `POST /api/hooks/{path}` | none | — |
 | `POST /api/hooks/{repository}/{path}` | none | — |
+
+## Compression
+
+An answer of 1 KiB or more, an API answer or a file of the web app, is compressed with brotli or gzip when the request's
+`Accept-Encoding` lists one; the answer then has `Content-Encoding` and `Vary: Accept-Encoding`, and no `Content-Length`.
+A client that sends no `Accept-Encoding` (`curl` without `--compressed`, a script) gets the plain body, and one that does
+must decode it (`curl --compressed` does). Smaller answers, images, fonts, `text/event-stream` and the WebSockets (the
+event stream, the terminals and the ports) are never compressed, and an answer is compressed as it is sent, so a
+download such as an export is not held back. The router's own listener, the one models are called on, does not
+compress. A proxy in front of the server, and the desktop app's loopback, pass `Accept-Encoding` and the compressed body
+on unchanged.
 
 ## Errors
 
@@ -520,6 +532,9 @@ framed by another site. `plugin-frame.html`, the frame a plugin's page for its s
 its own](plugin-api.md#a-page-of-its-own)), has a stricter policy that forbids it every connection; the files under
 `fonts/` carry `Access-Control-Allow-Origin: *`, since that frame has no origin. Nothing under `/v1/` is a file: an unknown `/v1/` path is answered `401` without
 a valid token and `404` with one.
+
+Every file carries a weak `ETag` (a hash of its content), and a request whose `If-None-Match` holds it, or is `*`, is answered `304`
+without a body, which is what makes the `no-cache` of `index.html` cheap.
 
 At start, `moebius serve` prints the line `Open the web app: http://<listen address>/?login=<code>` on standard output
 (not in the log). The page signs in with the code and takes it out of the address.
@@ -1921,7 +1936,7 @@ day, the report lists the cards whose estimate was furthest off (see [`POST /v1/
 ### `PUT /v1/cards/{id}/estimate`
 
 Sets the estimate. Request: `{"estimate": 5}`, a whole number from 1 to 1000, or `{"estimate": null}` for none.
-Response: the `Card`. Errors: `404` no such card; `422` a number outside 1 to 1000, or a body that is not a whole number or null.
+Response: the `Card`. Errors: `404` no such card; `422` a number that is not a whole number from 1 to 1000 (the sentence is "N is not an estimate (1 to 1000 points)"), or a body whose `estimate` is not a number or null.
 
 ### `GET /v1/cards/{id}/estimate/proposal`
 
@@ -2403,6 +2418,23 @@ Response:
   the most tokens first. The same calls are counted under their model in `models` too.
 
 Errors: `422` `days` is not from 1 to 365.
+
+### `GET /v1/status`
+
+The few figures the desktop app's tray and rail show of a server, from a few small reads instead of the snapshot, the
+notices and the usage. Response:
+
+```json
+{"working": 2, "inbox": 3, "unread_notices": 1, "tokens": 1840000, "day_budget": 8000000, "paused": false}
+```
+
+- `working`: the cards the person sees (not archived, not in Done) whose latest run, with an attempt that was not picked and
+  a trial of the Retro left out, is starting or running. `unread_notices` counts only the notices the person sees.
+- `inbox`: the open inbox items the person sees, as many as `inbox` of the snapshot has.
+- `unread_notices`: the person's notices that are not read, as `GET /v1/notices` lists them; `0` for a token that is no
+  person's.
+- `tokens`: the tokens used since local midnight of the server (`totals.tokens` of `GET /v1/usage`), `day_budget` the
+  `day_tokens` of `moebius.toml` or `null`, and `paused` whether all agents are paused.
 
 ### `GET /v1/analytics`
 

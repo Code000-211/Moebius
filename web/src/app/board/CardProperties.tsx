@@ -253,6 +253,10 @@ export function CardProperties({
         editor={{
           kind: "number",
           value: card.estimate,
+          invalid: (points) =>
+            Number.isInteger(points) && points >= 1 && points <= 1000
+              ? null
+              : "Use a whole number from 1 to 1000.",
           onSave: (next) => saved(setEstimate(card.id, next)),
         }}
       >

@@ -16,7 +16,6 @@ import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Board, Card, InboxItem } from "../../api/types/board";
 import { ChangesCard } from "../../diff/Changes";
-import { Markdown } from "../../ui/chat/Markdown";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { KanbanIssuePanel, KanbanIssueSection } from "../../ui/components/KanbanIssuePanel";
@@ -27,6 +26,7 @@ import { Notice } from "../../ui/page/Notice";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { CardMenu } from "./CardMenu";
 import { CardProperties, CHECKS, STATUS_MARK } from "./CardProperties";
+import { CardText } from "./CardText";
 import { cardName } from "./cardKey";
 import type { Decision } from "./decisions";
 import { ActivitySection, EditIssueDialog } from "./IssueSections";
@@ -252,7 +252,7 @@ function DockView({
           about a sentence they were never given. */}
       <KanbanIssueSection title="The issue">
         {card.body.trim() !== "" && (
-          <Markdown content={card.body} keepNewlines className="max-w-prose" />
+          <CardText content={card.body} projectKey={card.project_key} className="max-w-prose" />
         )}
         <Button
           variant="secondary"

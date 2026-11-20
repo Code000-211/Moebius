@@ -16,8 +16,8 @@ use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
 use super::{ApiError, ApiState, blocking};
-use crate::app::EstimateProposal;
-use crate::store::Card;
+use crate::app::{AppError, EstimateProposal};
+use crate::store::{Card, ESTIMATE_LIMIT};
 
 /// The routes of priorities, due dates and estimates.
 pub(super) fn routes() -> Router<ApiState> {
@@ -43,7 +43,8 @@ pub struct NewDue {
 /// The body of `PUT /v1/cards/{id}/estimate`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NewEstimate {
-    pub estimate: Option<u32>,
+    /// Any number, so that a negative or fractional one reaches the check that says what an estimate is.
+    pub estimate: Option<serde_json::Number>,
 }
 
 async fn set_estimate(
@@ -51,7 +52,19 @@ async fn set_estimate(
     UrlPath(id): UrlPath<i64>,
     Json(new): Json<NewEstimate>,
 ) -> Result<Json<Card>, ApiError> {
-    blocking(&state.app, move |app| app.set_estimate(id, new.estimate)).await
+    let points = match new.estimate {
+        None => None,
+        Some(number) => match number.as_u64().and_then(|n| u32::try_from(n).ok()) {
+            Some(points) => Some(points),
+            None => {
+                return Err(AppError::Invalid(format!(
+                    "{number} is not an estimate (1 to {ESTIMATE_LIMIT} points)"
+                ))
+                .into());
+            }
+        },
+    };
+    blocking(&state.app, move |app| app.set_estimate(id, points)).await
 }
 
 async fn propose_estimate(
@@ -193,9 +206,28 @@ mod tests {
             (got.estimate, got.labels),
             (Some(8), vec!["estimate:8".to_string()])
         );
-        for bad in [json!(0), json!(5000), json!("big")] {
-            assert!(put(new.id, bad).await.unwrap().status().is_client_error());
+        for bad in [
+            json!(0),
+            json!(5000),
+            json!(-3),
+            json!(2.5),
+            json!(99999999999u64),
+        ] {
+            let answer = put(new.id, bad.clone()).await.unwrap();
+            assert_eq!(answer.status(), 422, "{bad}");
+            let said = answer.text().await.unwrap();
+            assert!(
+                said.contains("is not an estimate (1 to 1000 points)"),
+                "{bad}: {said}"
+            );
         }
+        assert!(
+            put(new.id, json!("big"))
+                .await
+                .unwrap()
+                .status()
+                .is_client_error()
+        );
 
         let proposal: serde_json::Value = client
             .get(format!(

@@ -76,8 +76,8 @@ on Linux (an AppImage and a `.deb`) and Windows (an installer):
    cookie and origin) that stays up while another is shown, and the page the window was on when another was opened
    (`Rail::note_page`), which `Proxy::entry_url_at` leads back to. A server over SSH keeps its tunnel
    (`rail::ssh`, the same `ssh -L` as `moebius connect`, in batch mode) beside its proxy; a host with no server is set up
-   by `moebius connect --yes` after a yes. `rail::poll` asks each server for its Inbox (`/v1/snapshot` and
-   `/v1/notices`), and one that does not answer is drawn with a grey dot. The web app draws the rail (`desktop/Rail.tsx`)
+   by `moebius connect --yes` after a yes. `rail::poll` asks each server for its Inbox (`GET /v1/status`, one small route, never the snapshot; the open server is
+   not asked while the tray follows it, whose last figures the rail shows), and one that does not answer is drawn with a grey dot. The web app draws the rail (`desktop/Rail.tsx`)
    and calls the commands of `servers.rs` through the bridge; removing a server there is also how a person disconnects,
    since sign-out in the web app does nothing in the app. At its start the app opens the server that was open last.
 5. The window opens that address, and keeps only its own pages: a link to anywhere else, such as a pull request on a
@@ -538,8 +538,9 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `notices.rs` | A person's notices on a server for the app: `watch` follows `/v1/events` (and reads `GET /v1/notices` after each connection) with the token and says, as `Effect`s, to notify a notice once and what the count of unread ones is; the first read is the baseline and notifies nothing. |
 | `badge.rs` | What the icon says of that count: the title `(3) Moebius`, and the red disc with digits drawn over the taskbar icon on Windows. |
 | `notifications.rs` | The Tauri side of notices, in the program: the system's notification (a click shows the window and opens the notice in the web app), the badge count of the icon, the overlay and the title. |
+| `render.rs` | WebKitGTK's rendering mode on Linux: compositing off where there is no GPU render node, `MOEBIUS_RENDERING` to override. |
 | `instance.rs` | Which start of the app is the first: a lock in the configuration directory and a loopback port; a later start tells the first to show its window and ends. |
-| `tray.rs` | What the tray shows of a server and asks of it: the figures read from the snapshot and the usage (agents working, the Inbox, today's tokens against the budget, whether all agents are paused), their lines, `follow`, which reads them again after every burst of events, and the pause and resume routes. |
+| `tray.rs` | What the tray shows of a server and asks of it: the figures read from `GET /v1/status` (agents working, the Inbox, today's tokens against the budget, whether all agents are paused), their lines, `follow`, which reads them again after a burst of events (the steps of runs only every ten seconds), and the pause and resume routes. |
 | `tray_icon.rs` | The Tauri side of the tray, in the program: the icon and its menu (the figures as lines, New issue, Ask Moebius, Open Moebius, Pause all agents), following the server the window is connected to. |
 | `proxy/mod.rs` | The app's own address on the loopback: the web app at every path, `/v1/` forwarded to the server, and the key, `Host` and `Origin` checks that let only the window use it. |
 | `proxy/assets.rs` | The web app embedded from `web/dist`, served with the policies of `web/csp.json`. |
@@ -731,6 +732,7 @@ At the top:
 | `server/api/cards.rs` | The snapshot of every board, issues, cards and their changes (edit, approve, block, unblock, delete, retry, merge, reject), a card's runs and history. |
 | `server/api/planning.rs` | The routes that set a card's priority and due date. |
 | `server/api/notices.rs` | The routes of a person's notices and of following a card. |
+| `server/api/status.rs` | `GET /v1/status`: the figures of the desktop app's tray and rail, without the snapshot. |
 | `server/api/kinds.rs` | The routes of kinds of issues, the kinds a project offers, a card's kind and fields, and the cards of every project filtered and sorted by them. |
 | `server/api/card_repositories.rs` | The route that names the repositories a card works in. |
 | `server/api/assignees.rs` | The routes that give a card or an inbox item to people. |

@@ -4,6 +4,7 @@
 use std::borrow::Cow;
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use axum::Router;
 use axum::extract::State;
@@ -13,6 +14,7 @@ use axum::routing::get;
 use moebius_desktop::rail::secrets::{Memory, SecretError, Secrets};
 use moebius_desktop::rail::{self, Options, Rail, RailError};
 use moebius_desktop::server::VERSION;
+use moebius_desktop::tray::Figures;
 use serde_json::json;
 
 fn files(name: &str) -> Option<Cow<'static, [u8]>> {
@@ -31,6 +33,9 @@ struct Fake {
     token: &'static str,
     inbox: usize,
     unread: usize,
+    /// How many times `/v1/status` was read, and how many times a route that costs the server more was.
+    asked: Arc<AtomicUsize>,
+    dear: Arc<AtomicUsize>,
 }
 
 impl Fake {
@@ -46,6 +51,23 @@ async fn fake(
     inbox: usize,
     unread: usize,
 ) -> (String, tokio::task::JoinHandle<()>) {
+    let (address, task, _, _) = counted(token, inbox, unread).await;
+    (address, task)
+}
+
+/// [`fake`] with the counts of the reads of `/v1/status` and of the snapshot and notices.
+async fn counted(
+    token: &'static str,
+    inbox: usize,
+    unread: usize,
+) -> (
+    String,
+    tokio::task::JoinHandle<()>,
+    Arc<AtomicUsize>,
+    Arc<AtomicUsize>,
+) {
+    let asked = Arc::new(AtomicUsize::new(0));
+    let dear = Arc::new(AtomicUsize::new(0));
     async fn health(State(f): State<Fake>, headers: HeaderMap) -> impl IntoResponse {
         if f.allowed(&headers) {
             (StatusCode::OK, axum::Json(json!({ "version": VERSION }))).into_response()
@@ -53,35 +75,40 @@ async fn fake(
             StatusCode::UNAUTHORIZED.into_response()
         }
     }
-    async fn snapshot(State(f): State<Fake>, headers: HeaderMap) -> impl IntoResponse {
+    async fn status(State(f): State<Fake>, headers: HeaderMap) -> impl IntoResponse {
         if !f.allowed(&headers) {
             return StatusCode::UNAUTHORIZED.into_response();
         }
-        axum::Json(json!({ "inbox": vec![json!({}); f.inbox] })).into_response()
+        f.asked.fetch_add(1, Ordering::SeqCst);
+        axum::Json(
+            json!({ "working": 0, "inbox": f.inbox, "unread_notices": f.unread, "tokens": 0,
+                           "day_budget": null, "paused": false }),
+        )
+        .into_response()
     }
-    async fn notices(State(f): State<Fake>, headers: HeaderMap) -> impl IntoResponse {
-        if !f.allowed(&headers) {
-            return StatusCode::UNAUTHORIZED.into_response();
-        }
-        let mut all = vec![json!({ "read": true })];
-        all.extend(vec![json!({ "read": false }); f.unread]);
-        axum::Json(all).into_response()
+    async fn costly(State(f): State<Fake>) -> impl IntoResponse {
+        f.dear.fetch_add(1, Ordering::SeqCst);
+        StatusCode::INTERNAL_SERVER_ERROR
     }
+    let f = Fake {
+        token,
+        inbox,
+        unread,
+        asked: asked.clone(),
+        dear: dear.clone(),
+    };
     let app = Router::new()
         .route("/v1/health", get(health))
-        .route("/v1/snapshot", get(snapshot))
-        .route("/v1/notices", get(notices))
-        .with_state(Fake {
-            token,
-            inbox,
-            unread,
-        });
+        .route("/v1/status", get(status))
+        .route("/v1/snapshot", get(costly))
+        .route("/v1/notices", get(costly))
+        .with_state(f);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
     let task = tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
-    (address, task)
+    (address, task, asked, dear)
 }
 
 fn rail(dir: &Path, secrets: &Arc<Memory>) -> Rail {
@@ -125,7 +152,7 @@ async fn two_servers_are_switched_between_and_each_keeps_its_page() {
     rail.open(&first).await.unwrap();
     assert_ne!(rail.open_origin().unwrap(), origin_two);
 
-    let entries = rail::poll(rail.targets()).await;
+    let entries = rail::poll(rail.targets(), None).await;
     let shown: Vec<_> = entries
         .iter()
         .map(|e| (e.open, e.reachable, e.inbox))
@@ -143,7 +170,7 @@ async fn a_server_that_cannot_be_reached_has_the_grey_dot() {
     rail.add(&down, "t2").await.unwrap();
     rail.add(&up, "t1").await.unwrap();
     assert_eq!(
-        rail::poll(rail.targets())
+        rail::poll(rail.targets(), None)
             .await
             .iter()
             .map(|e| e.reachable)
@@ -153,7 +180,7 @@ async fn a_server_that_cannot_be_reached_has_the_grey_dot() {
 
     gone.abort();
     let _ = gone.await;
-    let entries = rail::poll(rail.targets()).await;
+    let entries = rail::poll(rail.targets(), None).await;
     assert!(!entries[0].reachable);
     assert_eq!(entries[0].inbox, 0);
     assert!(entries[1].reachable);
@@ -360,7 +387,7 @@ while True:
         let id = rail.add_ssh("devbox", true).await.unwrap();
         assert!(tools.path().join("ready").exists());
         assert_eq!(secrets.get(&id).unwrap().as_deref(), Some("ssh-token"));
-        let entries = rail::poll(rail.targets()).await;
+        let entries = rail::poll(rail.targets(), None).await;
         assert_eq!((entries[0].reachable, entries[0].inbox), (true, 5));
 
         // After a restart the tunnel is not up: grey until the server is opened, which opens the tunnel again.
@@ -373,8 +400,46 @@ while True:
                 files,
             },
         );
-        assert!(!rail::poll(restarted.targets()).await[0].reachable);
+        assert!(!rail::poll(restarted.targets(), None).await[0].reachable);
         restarted.open(&id).await.unwrap();
-        assert!(rail::poll(restarted.targets()).await[0].reachable);
+        assert!(rail::poll(restarted.targets(), None).await[0].reachable);
     }
+}
+
+#[tokio::test]
+async fn the_rail_reads_one_small_route_and_not_the_open_server_the_tray_follows() {
+    let (one, _a, one_asked, one_dear) = counted("token-one", 2, 1).await;
+    let (two, _b, two_asked, two_dear) = counted("token-two", 4, 0).await;
+    let dir = tempfile::tempdir().unwrap();
+    let secrets = Arc::new(Memory::default());
+    let mut rail = rail(dir.path(), &secrets);
+    rail.add(&one, "token-one").await.unwrap();
+    rail.add(&two, "token-two").await.unwrap();
+    let count = |entries: &[rail::Entry]| entries.iter().map(|e| e.inbox).collect::<Vec<_>>();
+
+    // Without the tray's figures each server is asked once, with the small route only.
+    assert_eq!(count(&rail::poll(rail.targets(), None).await), [3, 4]);
+    assert_eq!(
+        [&one_asked, &two_asked].map(|n| n.load(Ordering::SeqCst)),
+        [1, 1]
+    );
+
+    // With them the open server (the second) is not asked: the count is the tray's, items and unread notices.
+    let followed = Figures {
+        inbox: 6,
+        unread: 2,
+        ..Figures::default()
+    };
+    assert_eq!(
+        count(&rail::poll(rail.targets(), Some(followed)).await),
+        [3, 8]
+    );
+    assert_eq!(
+        [&one_asked, &two_asked].map(|n| n.load(Ordering::SeqCst)),
+        [2, 1]
+    );
+    assert_eq!(
+        [&one_dear, &two_dear].map(|n| n.load(Ordering::SeqCst)),
+        [0, 0]
+    );
 }
