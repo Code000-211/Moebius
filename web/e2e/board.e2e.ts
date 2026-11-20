@@ -80,7 +80,7 @@ const broadcast = (event: { kind: string; data: unknown }) => {
   server.broadcast(event);
 };
 // By the label, not the role: a card window over the board is modal and hides the board from the accessibility tree.
-const column = (name: string) => page.locator(`[aria-label="${name}"]`);
+const column = (name: string) => page.locator(`section[aria-label="${name}"]`);
 const card = (number: number) => page.getByTestId(`card-${number}`);
 const dock = () => page.getByRole("dialog", { name: "Card inspector" });
 /** The properties of the card numbered `number`, which the dock puts in the right column. */

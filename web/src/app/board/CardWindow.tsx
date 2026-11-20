@@ -263,7 +263,7 @@ function CardWindowView({
           if ((event.target as HTMLElement).closest("[data-toast-host]")) event.preventDefault();
         }}
         onEscapeKeyDown={(event) => {
-          // A field keeps its Escape for leaving itself; the card stays until the second one.
+          // A field keeps its Escape for leaving itself (it cancels its edit); the card stays until the second one.
           const target = event.target as HTMLElement;
           if (
             target.tagName === "INPUT" ||
@@ -271,7 +271,6 @@ function CardWindowView({
             target.isContentEditable
           ) {
             event.preventDefault();
-            target.blur();
           }
         }}
         className="h-[calc(100%-4rem)] max-h-[56rem] max-w-3xl gap-0 overflow-hidden p-0"
