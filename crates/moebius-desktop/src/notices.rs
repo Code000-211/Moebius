@@ -33,6 +33,12 @@ pub struct Notice {
 }
 
 impl Notice {
+    /// Whether the notice waits for the person (given to them, or mentioning them) and so is counted, as the sidebar of
+    /// the web app counts it; a change to a card they follow only tells.
+    pub fn waits(&self) -> bool {
+        self.kind != "changed"
+    }
+
     /// The path of the web app that opens this notice: the Inbox's Mentions tab, which reads it and goes to its card or
     /// item.
     pub fn path(&self) -> String {
@@ -164,7 +170,7 @@ impl Tally {
         self.seen.extend(notices.iter().map(|notice| notice.id));
         self.unread = notices
             .iter()
-            .filter(|notice| !notice.read)
+            .filter(|notice| !notice.read && notice.waits())
             .map(|notice| notice.id)
             .collect();
         self.loaded = true;
@@ -188,7 +194,9 @@ impl Tally {
                 if notice.read {
                     self.unread.remove(&notice.id);
                 } else {
-                    self.unread.insert(notice.id);
+                    if notice.waits() {
+                        self.unread.insert(notice.id);
+                    }
                     if new {
                         effects.push(Effect::Notify(notice));
                     }
@@ -325,6 +333,30 @@ mod tests {
         json!({"kind": kind, "data": {"person": "lea", "notice": {
             "id": notice.id, "kind": notice.kind, "by": notice.by, "card_id": 7, "inbox_item_id": null,
             "title": notice.title, "body": notice.body, "at": 5, "read": notice.read}}})
+    }
+
+    #[test]
+    fn a_change_to_a_followed_card_is_notified_but_not_counted() {
+        let mut tally = Tally::default();
+        tally.load(&[]);
+        let followed = Notice {
+            kind: "changed".into(),
+            ..notice(8, false)
+        };
+        assert_eq!(
+            tally.event(&event("notice_added", &followed)),
+            [Effect::Notify(followed)]
+        );
+        assert_eq!(
+            tally.load(&[
+                notice(9, false),
+                Notice {
+                    kind: "changed".into(),
+                    ..notice(8, false)
+                }
+            ]),
+            [Effect::Notify(notice(9, false)), Effect::Count(1)]
+        );
     }
 
     #[test]

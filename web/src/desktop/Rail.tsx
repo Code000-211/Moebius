@@ -258,6 +258,8 @@ function RenameServer({
           onSubmit={(event) => {
             event.preventDefault();
             const name = String(new FormData(event.currentTarget).get("name") ?? "");
+            // A name left as it was shown (it can carry the address that told two servers apart) is not kept.
+            if (name === server?.name) return onClose();
             onRename(name).then(onClose, (reason) => setError(String(reason)));
           }}
         >
