@@ -7,6 +7,7 @@
 import { FlagIcon, PencilSimpleIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { Link } from "react-router";
 import {
   addMilestone,
   deleteMilestone,
@@ -39,6 +40,7 @@ import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
+import { cardPath } from "../pages";
 import {
   dateWords,
   inProject,
@@ -294,7 +296,12 @@ function Detail({
         >
           {(detail.data?.cards ?? []).map((card) => (
             <li key={card.id} className="flex min-w-0 items-baseline gap-2 text-sm">
-              <span className="min-w-0 flex-1 truncate text-text">{card.title}</span>
+              <Link
+                className="min-w-0 flex-1 truncate text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
+                to={cardPath(card.repository_id, card.id)}
+              >
+                {card.title}
+              </Link>
               <span className="shrink-0 text-secondary">{card.done ? "Done" : card.column}</span>
             </li>
           ))}
