@@ -62,7 +62,8 @@ export interface EditorProps {
   mcp: McpServer[] | null;
   runners: Runner[];
   available: AvailableModels | undefined;
-  /** The window closes: after a save or a delete, or when the change is dropped or there is none. */
+  /** The window closes: after a save or a delete, when the change is dropped or there is none, or (with its draft kept)
+   * when the package sheet opens. */
   onClose: () => void;
 }
 
@@ -288,7 +289,11 @@ export function AgentEditor(props: EditorProps) {
           <AgentInstructions form={form} onChange={change} onProblem={setProblem} />
           {builtIn && (
             <>
-              <Box title="Built-in instructions" aside="Read only" className="flex flex-col gap-4">
+              <Box
+                title="Built-in instructions"
+                aside="Read only"
+                className="flex flex-col gap-4 [&>header]:mb-0"
+              >
                 <pre
                   data-testid="built-in-instructions"
                   className="m-0 overflow-x-auto whitespace-pre-wrap rounded-control bg-code p-4 font-mono text-sm text-text"
@@ -296,7 +301,11 @@ export function AgentEditor(props: EditorProps) {
                   {builtIn.instructions}
                 </pre>
               </Box>
-              <Box title="Built-in skills" aside="Read only" className="flex flex-col gap-3">
+              <Box
+                title="Built-in skills"
+                aside="Read only"
+                className="flex flex-col gap-3 [&>header]:mb-0"
+              >
                 {builtIn.skills.length === 0 && (
                   <p className="m-0 text-base text-secondary">No built-in skill.</p>
                 )}
@@ -313,7 +322,7 @@ export function AgentEditor(props: EditorProps) {
           <Box
             title="Engineering skills"
             aside={`${engineering.length} of ${ENGINEERING_SKILLS.length}`}
-            className="flex flex-col gap-3"
+            className="flex flex-col gap-3 [&>header]:mb-0"
           >
             {ENGINEERING_SKILLS.map((skill) => (
               <Item
@@ -332,7 +341,14 @@ export function AgentEditor(props: EditorProps) {
               />
             ))}
           </Box>
-          <AgentFiles form={form} change={change} inFile={inFile} skills={skills} mcp={mcp} />
+          <AgentFiles
+            form={form}
+            change={change}
+            inFile={inFile}
+            skills={skills}
+            mcp={mcp}
+            onBrowse={props.onClose}
+          />
         </>
       )}
       <ConfirmDelete

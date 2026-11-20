@@ -1,7 +1,8 @@
 /**
- * The right column of the agent editor: the skills, MCP servers and extensions the agent is given. A server without a
+ * The skills, servers and extensions of the agent editor: the skills, MCP servers and extensions the agent is given. A server without a
  * harness configuration repository keeps paths in `moebius.toml` in place of the repository's skills and MCP servers.
- * Browse Pi packages opens the package sheet on the pi.dev catalog, for this agent.
+ * Browse Pi packages opens the package sheet on the pi.dev catalog, for this agent; the editor window steps aside (its
+ * draft stays with the page) because the sheet lies beside the page, not over the window.
  */
 
 import type { McpServer, SkillListed } from "../../api/types/harness";
@@ -17,6 +18,7 @@ export function AgentFiles({
   inFile,
   skills,
   mcp,
+  onBrowse,
 }: {
   form: AgentForm;
   change: (patch: Partial<AgentForm>) => void;
@@ -25,6 +27,8 @@ export function AgentFiles({
   skills: SkillListed[] | null;
   /** The servers `mcp.toml` of the repository holds, or null when the page could not read them. */
   mcp: McpServer[] | null;
+  /** Called as the package sheet opens, which lies beside the page and so cannot be used under the editor window. */
+  onBrowse: () => void;
 }) {
   const packages = usePackageSheet();
   const skillsOffered = (skills ?? []).filter((skill) => !skill.built_in);
@@ -49,7 +53,7 @@ export function AgentFiles({
                 ? `${form.skills.length} chosen`
                 : `${form.skills.length} of ${skillsOffered.length}`
             }
-            className="flex flex-col gap-3"
+            className="flex flex-col gap-3 [&>header]:mb-0"
           >
             {/* A read that failed is not a repository with nothing in it, and the two say opposite things. */}
             {skills === null && (
@@ -85,7 +89,7 @@ export function AgentFiles({
             aside={
               mcp === null ? `${form.mcp.length} chosen` : `${form.mcp.length} of ${mcp.length}`
             }
-            className="flex flex-col gap-3"
+            className="flex flex-col gap-3 [&>header]:mb-0"
           >
             {mcp === null && (
               <p className="m-0 text-base text-secondary">
@@ -139,7 +143,10 @@ export function AgentFiles({
         browse={{
           label: "Browse Pi packages",
           // A package is named for an agent that exists; a new one has no files to name it in yet.
-          onClick: () => packages.open("pi", form.exists ? form.name : null),
+          onClick: () => {
+            packages.open("pi", form.exists ? form.name : null);
+            onBrowse();
+          },
         }}
       />
     </div>

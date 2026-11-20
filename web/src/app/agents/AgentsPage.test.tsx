@@ -143,6 +143,16 @@ describe("the draft of an agent", () => {
     await waitFor(() => expect(screen.queryByTestId("editor-window")).toBeNull());
   });
 
+  it("steps aside for the package sheet and comes back with what was typed", async () => {
+    show();
+    fireEvent.change(await screen.findByLabelText("Model"), { target: { value: "qwen-local" } });
+    fireEvent.click(screen.getByRole("button", { name: "Browse Pi packages" }));
+    await waitFor(() => expect(screen.queryByTestId("editor-window")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Edit agent Coder" }));
+    expect(((await screen.findByLabelText("Model")) as HTMLInputElement).value).toBe("qwen-local");
+    expect(saveButton().disabled).toBe(false);
+  });
+
   it("deletes after asking", async () => {
     show();
     await screen.findByLabelText("Model");

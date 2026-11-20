@@ -139,15 +139,15 @@ describe("the Agents page", () => {
     await page.getByRole("button", { name: "docs", exact: true }).click();
     await page.getByLabel("extension path").fill("extensions/log.ts");
     await page.getByRole("button", { name: "Add extension" }).click();
+    // A server that cannot be read is marked in red and cannot be chosen away silently.
+    expect(await page.getByRole("button", { name: "broken", exact: true }).textContent()).toBe(
+      "broken",
+    );
     await save().click();
     await page.getByText("Saved as commit").waitFor();
     expect(requests("PUT", "/v1/agents/Reviewer")[0]?.body).toMatchObject({
       settings: { skills: ["house-style"], mcp: ["docs"], extensions: ["extensions/log.ts"] },
     });
-    // A server that cannot be read is marked in red and cannot be chosen away silently.
-    expect(await page.getByRole("button", { name: "broken", exact: true }).textContent()).toBe(
-      "broken",
-    );
   });
 
   it.skipIf(usesRealServer)(
