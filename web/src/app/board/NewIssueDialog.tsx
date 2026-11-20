@@ -172,7 +172,7 @@ export function NewIssueDialog({
     >
       <DialogContent>
         <form
-          className="flex flex-col gap-4 p-6"
+          className="flex flex-col gap-4"
           onSubmit={(e) => {
             e.preventDefault();
             submit();

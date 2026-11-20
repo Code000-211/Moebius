@@ -163,7 +163,7 @@ export function WorkflowPage() {
         <Dialog open onOpenChange={(open) => !open && leave()}>
           <DialogContent>
             <form
-              className="flex flex-col gap-4 p-6"
+              className="flex flex-col gap-4"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (!remove.isPending) remove.mutate();

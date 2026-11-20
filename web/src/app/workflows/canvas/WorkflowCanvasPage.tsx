@@ -560,7 +560,7 @@ function UnsavedChanges({
 
   return (
     <Dialog open={blocker.state === "blocked"} onOpenChange={(next) => !next && blocker.reset?.()}>
-      <DialogContent className="gap-4 p-6">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Leave with unsaved changes?</DialogTitle>
         </DialogHeader>

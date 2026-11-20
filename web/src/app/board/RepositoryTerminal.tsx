@@ -66,7 +66,7 @@ export const RepositoryTerminal = memo(function RepositoryTerminal({
           aria-describedby={undefined}
           className="h-[min(34rem,85vh)] max-w-5xl"
         >
-          <div className="flex min-h-0 flex-1 flex-col gap-4 p-6">
+          <div className="flex min-h-0 flex-1 flex-col gap-4">
             <DialogHeader>
               <DialogTitle>Terminal</DialogTitle>
             </DialogHeader>
