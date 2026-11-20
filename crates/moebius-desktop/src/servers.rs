@@ -26,6 +26,9 @@ pub struct Servers {
     shown: std::sync::Mutex<Vec<Entry>>,
     /// Why no remembered server was opened at the start (the keychain did not answer), for the connect page to show.
     notice: std::sync::Mutex<Option<String>>,
+    /// Whether the start's try at the remembered servers is over, which the connect page waits for before it asks for
+    /// the notice.
+    started: tokio::sync::watch::Sender<bool>,
 }
 
 impl Servers {
@@ -39,6 +42,7 @@ impl Servers {
             rail: Mutex::new(Rail::new(&dir, Arc::new(Keychain), Options::standard())),
             shown: std::sync::Mutex::new(Vec::new()),
             notice: std::sync::Mutex::new(None),
+            started: tokio::sync::watch::channel(false).0,
         }
     }
 }
@@ -85,11 +89,16 @@ fn show_connect_page(app: &tauri::AppHandle) -> Result<(), String> {
 /// none does. A keychain that does not answer ends the tries, since every server needs it: the connect page says so.
 pub async fn open_remembered(app: tauri::AppHandle) {
     let servers = app.state::<Servers>();
+    open_first(&app, &servers).await;
+    servers.started.send_replace(true);
+}
+
+async fn open_first(app: &tauri::AppHandle, servers: &Servers) {
     let mut rail = servers.rail.lock().await;
     for id in rail.startup_order() {
         match rail.open(&id).await {
             Ok(url) => {
-                let _ = show(&app, &mut rail, &url);
+                let _ = show(app, &mut rail, &url);
                 return;
             }
             Err(error @ RailError::Keychain(_)) => {
@@ -103,10 +112,14 @@ pub async fn open_remembered(app: tauri::AppHandle) {
     }
 }
 
-/// What kept the remembered servers from opening at the start, or none: the connect page shows it above its form.
+/// What kept the remembered servers from opening at the start, or none: the connect page shows it above its form. It
+/// answers once the start's try is over, which can take as long as the keychain's time limit.
 #[tauri::command]
-pub fn startup_notice(app: tauri::AppHandle) -> Option<String> {
-    app.state::<Servers>().notice.lock().ok()?.clone()
+pub async fn startup_notice(app: tauri::AppHandle) -> Option<String> {
+    let servers = app.state::<Servers>();
+    let mut over = servers.started.subscribe();
+    over.wait_for(|over| *over).await.ok()?;
+    servers.notice.lock().ok()?.clone()
 }
 
 /// Connects to the server at `address` with the access token `token`: checks it, keeps its token in the keychain and

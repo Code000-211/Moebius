@@ -8,7 +8,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::sync::Semaphore;
 
@@ -91,13 +91,16 @@ impl Secrets for Memory {
 pub const LIMIT: Duration = Duration::from_secs(8);
 
 /// A [`Secrets`] asked from async code: each call runs on a blocking thread, at most one at a time, and gives up after
-/// the limit. A call that never returns keeps its thread and its turn, so the calls after it fail at once with the same
-/// message instead of piling up threads; they work again when it returns.
+/// the limit. A call that never returns keeps its thread and its turn, so after a call has run out of time the calls of
+/// the next `limit` fail at once with the same message (a second wait would double what the person waits), and later
+/// ones wait for the turn again: at most one thread is ever stuck. A `set` that ran out of time may still finish later.
 #[derive(Clone)]
 pub struct Guarded {
     inner: Arc<dyn Secrets>,
     turn: Arc<Semaphore>,
     limit: Duration,
+    /// When a call last ran out of time.
+    timed_out: Arc<Mutex<Option<Instant>>>,
 }
 
 impl Guarded {
@@ -106,6 +109,7 @@ impl Guarded {
             inner,
             turn: Arc::new(Semaphore::new(1)),
             limit,
+            timed_out: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -118,6 +122,14 @@ impl Guarded {
             "no answer within {} seconds ({what})",
             self.limit.as_secs()
         ));
+        let recently = self
+            .timed_out
+            .lock()
+            .expect("not poisoned")
+            .is_some_and(|at| at.elapsed() < self.limit);
+        if recently {
+            return Err(waiting);
+        }
         let within = async {
             let turn = self
                 .turn
@@ -133,9 +145,13 @@ impl Guarded {
             .await
             .map_err(|e| SecretError(e.to_string()))?
         };
-        tokio::time::timeout(self.limit, within)
-            .await
-            .unwrap_or(Err(waiting))
+        match tokio::time::timeout(self.limit, within).await {
+            Ok(result) => result,
+            Err(_) => {
+                *self.timed_out.lock().expect("not poisoned") = Some(Instant::now());
+                Err(waiting)
+            }
+        }
     }
 
     pub async fn get(&self, id: &str) -> Result<Option<String>, SecretError> {
