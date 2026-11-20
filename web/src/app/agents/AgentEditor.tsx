@@ -18,8 +18,7 @@ import { availableModels, saveSettings } from "../../api/calls/models";
 import { keys } from "../../api/keys";
 import { type Agent, type AvailableModels, listedModel, offeredLevels } from "../../api/types/chat";
 import type { AgentDetail, McpServer, Runner, SkillListed } from "../../api/types/harness";
-import { Button } from "../../ui/components/Button";
-import { EditorWindow } from "../../ui/components/EditorWindow";
+import { DeleteButton, EditorWindow } from "../../ui/components/EditorWindow";
 import { Input } from "../../ui/components/Input";
 import { Box } from "../../ui/page/Box";
 import { Chip } from "../../ui/page/Chip";
@@ -171,11 +170,7 @@ export function AgentEditor(props: EditorProps) {
       canSave={!broken}
       error={problem}
       actions={
-        form.exists && (
-          <Button variant="danger" size="sm" onClick={() => setDeleting(true)}>
-            Delete agent
-          </Button>
-        )
+        form.exists && <DeleteButton onClick={() => setDeleting(true)}>Delete agent</DeleteButton>
       }
       onSave={() => save.mutate()}
       onClose={close}

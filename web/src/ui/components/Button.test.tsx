@@ -154,3 +154,13 @@ describe("a button inside a form", () => {
     expect(submitted).toEqual(["submitted"]);
   });
 });
+
+describe("Button danger", () => {
+  it("is outlined with the danger text, never filled", () => {
+    render(<Button variant="danger">Delete</Button>);
+    const { className } = screen.getByRole("button", { name: "Delete" });
+    expect(className).toContain("text-danger-text");
+    expect(className).toContain("outline-hairline-strong");
+    expect(className).not.toContain("bg-error-fill");
+  });
+});

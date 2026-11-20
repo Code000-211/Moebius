@@ -106,7 +106,7 @@ export function NewAgentChoice({
   );
 }
 
-/** The window while an agent is read, or when it cannot be: the same window, with nothing to save yet. */
+/** The window while an agent is read, or when it cannot be: the same window, with Close and no Save. */
 export function AgentWait({
   title,
   onClose,
@@ -117,14 +117,7 @@ export function AgentWait({
   children: React.ReactNode;
 }) {
   return (
-    <EditorWindow
-      open
-      title={title}
-      dirty={false}
-      canSave={false}
-      onSave={() => {}}
-      onClose={onClose}
-    >
+    <EditorWindow open title={title} dirty={false} height="fit" onClose={onClose}>
       {children}
     </EditorWindow>
   );

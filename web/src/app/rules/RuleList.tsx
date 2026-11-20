@@ -9,8 +9,7 @@
 import { useState } from "react";
 import { sayError } from "../../api/errorText";
 import type { Rule } from "../../api/types/rules";
-import { Button } from "../../ui/components/Button";
-import { EditorWindow } from "../../ui/components/EditorWindow";
+import { DeleteButton, EditorWindow } from "../../ui/components/EditorWindow";
 import { Input } from "../../ui/components/Input";
 import { AddIcon } from "../../ui/icons";
 import { cn } from "../../ui/lib/cn";
@@ -120,9 +119,7 @@ export function RuleList({
           error={error}
           actions={
             editing.rule !== null && (
-              <Button variant="danger" size="sm" onClick={() => setDeleting(true)}>
-                Delete rule
-              </Button>
+              <DeleteButton onClick={() => setDeleting(true)}>Delete rule</DeleteButton>
             )
           }
           onSave={() => void save(editing)}
