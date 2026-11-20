@@ -34,6 +34,7 @@ import { useThread } from "../../chat/useThread";
 import { thinkingLabel } from "../../ui/chat/ChatCollapsedThinking";
 import { Button } from "../../ui/components/Button";
 import { ContextMenu, useContextMenu } from "../../ui/components/ContextMenu";
+import { FilterMenu } from "../../ui/filters/FilterMenu";
 import { readFilters } from "../../ui/filters/model";
 import { useQueryParams } from "../../ui/filters/useQueryParams";
 import { AgentIcon, ErrorIcon, PauseIcon, PlayIcon, ProhibitIcon } from "../../ui/icons";
@@ -115,20 +116,23 @@ export function FleetPage() {
           />
         }
         actions={
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={press}
-            disabled={pause.busy}
-            data-testid="pause-all"
-          >
-            {pause.paused ? (
-              <PlayIcon className="size-4" aria-hidden="true" />
-            ) : (
-              <PauseIcon className="size-4" aria-hidden="true" />
-            )}
-            {pause.paused ? "Resume" : "Pause all"}
-          </Button>
+          <>
+            {tab === "active" && <FleetFilter />}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={press}
+              disabled={pause.busy}
+              data-testid="pause-all"
+            >
+              {pause.paused ? (
+                <PlayIcon className="size-4" aria-hidden="true" />
+              ) : (
+                <PauseIcon className="size-4" aria-hidden="true" />
+              )}
+              {pause.paused ? "Resume all" : "Pause all"}
+            </Button>
+          </>
         }
       />
       {/* The list scrolls in the room that is left under the header; the panel itself does not. */}
@@ -137,9 +141,37 @@ export function FleetPage() {
         value={tab}
         className="flex h-[calc(100%-3rem)] min-h-40 flex-col outline-none"
       >
+        {pause.paused && (
+          <p className="mb-2 shrink-0 text-sm text-muted">
+            {`Paused by ${pause.paused.by.replace(/^person:/, "@")}`}
+          </p>
+        )}
         {tab === "finished" ? <FinishedRuns /> : <ActiveRuns />}
       </TabPanel>
     </>
+  );
+}
+
+/** The header's Filter: project, agent and kind, set in the address, offering what the working runs have in them. */
+function FleetFilter() {
+  const data = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
+  const chats = useQuery({ queryKey: keys.chats, queryFn: readChats });
+  const [params, setQuery] = useQueryParams();
+  const everything = data.data ? working(data.data, chats.data ?? []) : [];
+  const fields = filterFields(
+    everything,
+    readFilters(
+      params,
+      FILTER_KEYS.map((key) => ({ key, label: key, options: [] })),
+    ),
+  );
+  return (
+    <FilterMenu
+      fields={fields}
+      values={readFilters(params, fields)}
+      onFilter={(key, value) => setQuery({ [key]: value })}
+      onClear={() => setQuery(Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])))}
+    />
   );
 }
 

@@ -42,11 +42,11 @@ describe("pausing all agents", () => {
     await page.goto(`${server.url}/fleet`);
     await page.getByRole("button", { name: "Pause all", exact: true }).click();
     await page.getByText("All agents paused.").waitFor();
-    await page.getByRole("button", { name: "Resume", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Resume all", exact: true }).waitFor();
     await page.getByRole("button", { name: "Undo" }).click();
     await page.getByRole("button", { name: "Pause all", exact: true }).waitFor();
     await page.getByRole("button", { name: "Pause all", exact: true }).click();
-    await page.getByRole("button", { name: "Resume", exact: true }).click();
+    await page.getByRole("button", { name: "Resume all", exact: true }).click();
     await page.getByText("Agents resumed.").waitFor();
     await page.getByRole("button", { name: "Pause all", exact: true }).waitFor();
     const calls = server.pagesA?.requests.map((r) => r.path).filter((p) => /pause|resume/.test(p));
@@ -63,7 +63,8 @@ describe("pausing all agents", () => {
     await page.goto(`${server.url}/fleet`);
     await page.getByRole("button", { name: "Pause all", exact: true }).waitFor();
     expect((await post("/v1/runs/pause")).ok()).toBe(true);
-    await page.getByRole("button", { name: "Resume", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Resume all", exact: true }).waitFor();
+    await page.getByText("Paused by @owner").waitFor();
     expect((await post("/v1/runs/resume")).ok()).toBe(true);
     await page.getByRole("button", { name: "Pause all", exact: true }).waitFor();
   });
@@ -79,7 +80,7 @@ describe("pausing all agents", () => {
     await page.getByRole("option", { name: "Stop a run" }).waitFor();
     await page.getByPlaceholder("Search…").fill("pause");
     await page.getByRole("option", { name: "Pause all agents" }).click();
-    await page.getByRole("button", { name: "Resume", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Resume all", exact: true }).waitFor();
     await page.keyboard.press("Control+k");
     await page.getByPlaceholder("Search…").fill("resume");
     await page.getByRole("option", { name: "Resume all agents" }).click();

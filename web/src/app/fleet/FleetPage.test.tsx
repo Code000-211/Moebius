@@ -196,7 +196,8 @@ describe("pausing all agents from Fleet", () => {
   it("offers to resume while paused", async () => {
     const posted = serve(true);
     show();
-    fireEvent.click(await screen.findByRole("button", { name: "Resume" }));
+    await screen.findByText("Paused by @ada");
+    fireEvent.click(await screen.findByRole("button", { name: "Resume all" }));
     await waitFor(() => expect(posted).toContain("/v1/runs/resume"));
   });
 });
