@@ -19,7 +19,7 @@ import { listTemplates } from "../../api/calls/templates";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Board, Card } from "../../api/types/board";
-import { ASSISTANT_AGENT } from "../../chat/AgentChat";
+import { ASSISTANT_AGENT } from "../../chat/assistant";
 import { Button } from "../../ui/components/Button";
 import {
   Dialog,

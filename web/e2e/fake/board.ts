@@ -767,6 +767,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
         path === "/v1/repositories/1/issues" ||
         /^\/v1\/(cards|changes)\/\d+\//.test(path) ||
         /^\/v1\/cards\/\d+$/.test(path) ||
+        /^\/v1\/cards\/by-key\/[^/]+$/.test(path) ||
         /^\/v1\/runs\/\d+\/stop$/.test(path) ||
         /^\/v1\/projects\/1\/scripts\//.test(path);
       if (!known) return undefined;
@@ -775,6 +776,12 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       if (refusal) {
         refusals.delete(`${method} ${path}`);
         return fail(refusal.status, refusal.message);
+      }
+      const byKey = /^\/v1\/cards\/by-key\/([^/]+)$/.exec(path);
+      if (byKey && method === "GET") {
+        const wanted = decodeURIComponent(byKey[1] ?? "").toUpperCase();
+        const found = cards.find((c) => `${c.project_key}-${c.project_number}` === wanted);
+        return found ? ok(view(found)) : fail(404, `card ${wanted} not found`);
       }
       if (path === "/v1/repositories/1/issues" && method === "POST") {
         const {

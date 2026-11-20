@@ -46,7 +46,9 @@ and does not know anything the API does not say.
 - **Live data.** One WebSocket to `/v1/events` feeds the query cache: an event that changes what the snapshot shows
   invalidates it (the reference says the snapshot is read on every event), `card_waiting` is patched in place, and a
   socket that connects again, after a wait that grows from 1 to 30 seconds, makes every read stale, because events are
-  not replayed. A socket that cannot connect asks `GET /v1/session` again: 401 sends the person to the sign-in page, no
+  not replayed (the first connect leaves what was read in the last 5 seconds, and while the socket is up the snapshot is
+  not read again when the tab gets the focus). A card named in the address (`/card/KEY`, `?card=`) has its reads started
+  beside the snapshot, and the chat sheet is loaded when it is first shown. A socket that cannot connect asks `GET /v1/session` again: 401 sends the person to the sign-in page, no
   answer shows a banner over what is on screen.
 - **Serving.** The server embeds `web/dist` and serves it at `/`, with `index.html` for the paths of the pages. In
   development `pnpm dev` proxies `/v1` to a running server. The desktop app embeds the same build and serves it from
