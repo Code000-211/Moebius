@@ -139,5 +139,7 @@ export const keys = {
   workflowDefinitions: ["workflow"] as const,
   workflow: (name: string) => ["workflow", name] as const,
   workflowRun: (id: number) => ["workflow-run", id] as const,
+  /** Every workflow's list of runs. */
+  allWorkflowRuns: ["workflow-runs"] as const,
   workflowRuns: (workflow: string) => ["workflow-runs", workflow] as const,
 };

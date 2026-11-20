@@ -1,0 +1,75 @@
+{
+  "list": [
+    {
+      "name": "release",
+      "description": "Build and publish a release.",
+      "trigger_kind": "manual",
+      "node_count": 1,
+      "last_run": {
+        "id": 7,
+        "status": "failed",
+        "created_at": 1700000000,
+        "started_at": 1700000001,
+        "finished_at": 1700000050
+      }
+    }
+  ],
+  "show": {
+    "name": "release",
+    "file": "name = \"release\"\ndescription = \"Build and publish a release.\"\n",
+    "definition": {
+      "name": "release",
+      "description": "Build and publish a release.",
+      "trigger": [{ "kind": "manual", "params": {} }],
+      "nodes": [
+        {
+          "id": "build",
+          "kind": "test",
+          "params": {},
+          "position": { "x": 320, "y": 120 }
+        }
+      ],
+      "edges": [{ "from": "trigger", "to": "build", "port": "out" }]
+    }
+  },
+  "runs": [
+    {
+      "id": 7,
+      "workflow": "release",
+      "repository_id": 1,
+      "trigger": "manual",
+      "status": "failed",
+      "value": { "version": "1.0.0" },
+      "created_at": 1700000000,
+      "started_at": 1700000001,
+      "finished_at": 1700000050,
+      "error": "node build failed"
+    }
+  ],
+  "run": {
+    "id": 7,
+    "workflow": "release",
+    "repository_id": 1,
+    "trigger": "manual",
+    "status": "failed",
+    "value": { "version": "1.0.0" },
+    "created_at": 1700000000,
+    "started_at": 1700000001,
+    "finished_at": 1700000050,
+    "error": "node build failed",
+    "nodes": [
+      {
+        "node": "build",
+        "kind": "test",
+        "attempt": 1,
+        "status": "failed",
+        "input": { "version": "1.0.0" },
+        "output": null,
+        "started_at": 1700000001,
+        "finished_at": 1700000050,
+        "error": "node build failed"
+      }
+    ],
+    "waiting": null
+  }
+}

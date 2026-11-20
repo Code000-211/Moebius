@@ -28,11 +28,14 @@ import {
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useBlocker, useLocation, useParams } from "react-router";
-import { saveWorkflow, workflow, workflowRuns } from "../../../api/calls/workflows";
+import { saveWorkflow, workflow, workflowRun, workflowRuns } from "../../../api/calls/workflows";
 import { ApiError } from "../../../api/http";
 import { keys } from "../../../api/keys";
-import type { WorkflowDefinition, WorkflowEdge } from "../../../api/types/workflows";
-import { type WorkflowNodeRun, workflowRun } from "../../../api/workflows";
+import type {
+  WorkflowDefinition,
+  WorkflowEdge,
+  WorkflowNodeRun,
+} from "../../../api/types/workflows";
 import { Button } from "../../../ui/components/Button";
 import {
   Dialog,
@@ -58,6 +61,7 @@ import {
   edgeId,
   isDirty,
   moveNode,
+  newWorkflowDraft,
   nextPosition,
   type Problem,
   problemFor,
@@ -83,6 +87,8 @@ export function WorkflowCanvasPage() {
     queryKey: keys.workflow(name),
     queryFn: () => workflow(name),
     enabled: incoming === null,
+    // A name no file holds yet is a new workflow, so a read that finds none is not tried again.
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 3,
   });
   const back = (
     <Button asChild variant="ghost" size="sm">
@@ -107,6 +113,18 @@ export function WorkflowCanvasPage() {
         <PageHeader title={`${name} — canvas`} back={back} />
         <SkeletonLines lines={6} message="Reading the definition" />
       </div>
+    );
+  }
+  // The address of a workflow that is not saved yet, reloaded before its first save: a blank canvas, as the dialog opens.
+  if (
+    definition.isError &&
+    definition.error instanceof ApiError &&
+    definition.error.status === 404
+  ) {
+    return (
+      <ReactFlowProvider>
+        <Canvas key={name} name={name} loaded={newWorkflowDraft(name, "")} isNew />
+      </ReactFlowProvider>
     );
   }
   if (definition.isError) {
@@ -154,6 +172,28 @@ function draftOf(state: unknown): WorkflowDefinition | null {
   return draft as WorkflowDefinition;
 }
 
+/** The width of a node card on the board, for telling whether a new one is in view. */
+const CARD_WIDTH = 240;
+const CARD_HEIGHT = 120;
+
+/** Whether a node at `at` is wholly in the part of the board no panel covers. */
+function inView(board: ReturnType<typeof useReactFlow>, at: { x: number; y: number }): boolean {
+  const pane = document.querySelector(".react-flow")?.getBoundingClientRect();
+  if (!pane) return true;
+  const inspector = document
+    .querySelector('[data-testid="canvas-inspector"]')
+    ?.getBoundingClientRect();
+  const right = Math.min(pane.right, inspector ? inspector.left : pane.right);
+  const zoom = board.getZoom();
+  const corner = board.flowToScreenPosition(at);
+  return (
+    corner.x >= pane.left &&
+    corner.y >= pane.top &&
+    corner.x + CARD_WIDTH * zoom <= right &&
+    corner.y + CARD_HEIGHT * zoom <= pane.bottom
+  );
+}
+
 /** The editor for one workflow, starting from the graph as it is saved. */
 function Canvas({
   name,
@@ -180,7 +220,12 @@ function Canvas({
 
   const dirty = !savedOnce || isDirty(saved, draft);
   const triggerIssue = triggerProblem(draft.trigger[0]);
-  const runs = useQuery({ queryKey: keys.workflowRuns(name), queryFn: () => workflowRuns(name) });
+  // A workflow that is not saved has no runs to ask for.
+  const runs = useQuery({
+    queryKey: keys.workflowRuns(name),
+    queryFn: () => workflowRuns(name),
+    enabled: savedOnce,
+  });
   const run = useQuery({
     queryKey: keys.workflowRun(runId ?? 0),
     queryFn: () => workflowRun(runId ?? 0),
@@ -248,9 +293,15 @@ function Canvas({
       setDraft(withNode);
       if (added) {
         setSelection({ kind: "node", id: added.id });
+        // A node added by the palette or the keyboard lands where the graph ends, which may be out of sight, behind
+        // the inspector or past the edge. The board then fits the whole graph, so what was in view stays in view; a
+        // node dropped where the pointer is, or one already in view, leaves the view as it is.
+        if (!at && !inView(board, added.position)) {
+          void board.fitView({ padding: 0.2 });
+        }
       }
     },
-    [draft],
+    [draft, board],
   );
 
   const onNodesChange = useCallback(

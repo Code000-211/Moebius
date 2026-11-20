@@ -1,5 +1,5 @@
 /**
- * A run's page: the status and the trigger, a panel for each node with its input, output, log and error, the redaction
+ * A run's page: the status and the trigger, a panel for each node with its input, output and error, the redaction
  * mark kept as the string the server sent, a long value cut until it is asked for whole, and a waiting run saying where
  * it stopped and what it asks.
  */
@@ -7,7 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { WorkflowRun } from "../../api/workflows";
+import type { WorkflowRun } from "../../api/types/workflows";
 import { WorkflowRunPage } from "./WorkflowRunPage";
 
 const LONG = "the workspace compiled and the tests began to run\n".repeat(40);
@@ -16,7 +16,7 @@ const FAILED: WorkflowRun = {
   id: 41,
   workflow: "release",
   repository_id: 1,
-  trigger: { kind: "schedule", detail: "0 6 * * 1" },
+  trigger: "schedule",
   status: "failed",
   value: null,
   created_at: 1,
@@ -31,7 +31,6 @@ const FAILED: WorkflowRun = {
       status: "succeeded",
       input: { prompt: "Build the release" },
       output: { stdout: LONG },
-      log: "built the workspace in 41s",
       error: null,
       started_at: 1,
       finished_at: 42,
@@ -43,7 +42,6 @@ const FAILED: WorkflowRun = {
       status: "failed",
       input: { command: "cargo test", token: "[redacted]" },
       output: null,
-      log: "61 passed; 1 failed",
       error: "expected `done`, got `in progress`",
       started_at: 42,
       finished_at: 95,
@@ -56,7 +54,7 @@ const WAITING: WorkflowRun = {
   ...FAILED,
   id: 42,
   workflow: "deploy",
-  trigger: { kind: "manual", detail: null },
+  trigger: "manual",
   status: "waiting",
   error: null,
   nodes: [
@@ -68,7 +66,6 @@ const WAITING: WorkflowRun = {
       status: "waiting",
       input: { version: "1.4.0" },
       output: null,
-      log: "waiting for a person",
       error: null,
       started_at: 42,
       finished_at: null,
@@ -103,15 +100,14 @@ describe("a run that failed at a node", () => {
   it("says the status, the trigger and why it failed", async () => {
     show(FAILED);
     expect((await screen.findAllByText("Failed")).length).toBeGreaterThan(0);
-    expect(screen.getByText("Schedule · 0 6 * * 1")).toBeTruthy();
+    expect(screen.getAllByText("Schedule").length).toBeTruthy();
     expect(screen.getByText("The test node failed.")).toBeTruthy();
   });
 
-  it("gives each node its input, output, log and error", async () => {
+  it("gives each node its input, output and error", async () => {
     show(FAILED);
     const test = await screen.findByRole("region", { name: "Node test" });
     expect(within(test).getByText(/cargo test/)).toBeTruthy();
-    expect(within(test).getByText("61 passed; 1 failed")).toBeTruthy();
     expect(within(test).getByText(/expected `done`/)).toBeTruthy();
   });
 

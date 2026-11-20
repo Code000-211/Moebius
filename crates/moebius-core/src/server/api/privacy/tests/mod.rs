@@ -666,7 +666,7 @@ async fn events_of_a_private_project_reach_its_members_only() {
 /// a workflow, by name, a kind of issues or a template of the organisation, a person's own notice, a wiki page, its links or the pages that link to a card (a private project's pages and cards are
 /// left out by the wiki's own handlers); or that checks what it names in its own handler (a card by its key, a milestone of the
 /// organisation, whose cards are counted and listed with `App::may_see_project`).
-const UNGUARDED: [&str; 31] = [
+const UNGUARDED: [&str; 32] = [
     "/v1/cards/by-key/",
     "/v1/templates/",
     "/v1/kinds/",
@@ -688,6 +688,7 @@ const UNGUARDED: [&str; 31] = [
     "/v1/skills/",
     "/v1/mcp-servers/",
     "/v1/workflows/{name}",
+    "/v1/workflow-runs/",
     "/v1/extensions/",
     "/v1/packages/",
     "/v1/models/",
