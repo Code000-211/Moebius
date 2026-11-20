@@ -56,4 +56,16 @@ describe("the newlines of an answer", () => {
   it("leaves a Markdown file's wrapping to the file", () => {
     expect(drawn()).not.toContain("whitespace-pre-wrap");
   });
+
+  it("takes the file of a code block from the info string of its fence", () => {
+    const { getByText, queryByText } = render(
+      <Markdown content={"```rust path=src/engine.rs\nfn main() {}\n```\n\n```sh\nls\n```"} />,
+    );
+    expect(getByText("src/engine.rs")).toBeTruthy();
+    expect(getByText("rust")).toBeTruthy();
+    expect(getByText("sh")).toBeTruthy();
+    expect(queryByText("·", { exact: true })?.parentElement?.textContent).toBe(
+      "rust·src/engine.rs",
+    );
+  });
 });
