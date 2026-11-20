@@ -2462,7 +2462,7 @@ The few figures the desktop app's tray and rail show of a server, from a few sma
 notices and the usage. Response:
 
 ```json
-{"working": 2, "inbox": 3, "unread_notices": 1, "tokens": 1840000, "day_budget": 8000000, "paused": false}
+{"working": 2, "inbox": 3, "unread_notices": 2, "waiting_notices": 1, "tokens": 1840000, "day_budget": 8000000, "paused": false}
 ```
 
 - `working`: the cards the person sees (not archived, not in Done) whose latest run, with an attempt that was not picked and
@@ -2470,6 +2470,9 @@ notices and the usage. Response:
 - `inbox`: the open inbox items the person sees, as many as `inbox` of the snapshot has.
 - `unread_notices`: the person's notices that are not read, as `GET /v1/notices` lists them; `0` for a token that is no
   person's.
+- `waiting_notices`: those of them that were given to the person or mention them (not the `changed` ones of cards they
+  follow). `inbox` and `waiting_notices` together are the number the web app's sidebar and Inbox page, the tray and the
+  desktop app's rail all say.
 - `tokens`: the tokens used since local midnight of the server (`totals.tokens` of `GET /v1/usage`), `day_budget` the
   `day_tokens` of `moebius.toml` or `null`, and `paused` whether all agents are paused.
 

@@ -28,6 +28,10 @@ pub struct Status {
     pub inbox: usize,
     /// The person's notices that are not read yet.
     pub unread_notices: usize,
+    /// The unread notices that wait for the person: those given to them or that mention them, not the ones that only
+    /// tell of a card they follow. The web app's Inbox count is `inbox` and this together.
+    #[serde(default)]
+    pub waiting_notices: usize,
     /// The tokens used since local midnight of the server.
     pub tokens: i64,
     /// `day_tokens` of `moebius.toml`, if it has one.
@@ -68,11 +72,15 @@ async fn status(
             }
         }
         let mut unread_notices = 0;
+        let mut waiting_notices = 0;
         // Agents and scripts have no notices, and the figure is 0 for them.
         if matches!(by, Actor::Member { .. }) {
             for notice in app.notices(&by)? {
                 if !notice.read && super::notices::sees_notice(app, &sight, &notice)? {
                     unread_notices += 1;
+                    if notice.kind != "changed" {
+                        waiting_notices += 1;
+                    }
                 }
             }
         }
@@ -80,6 +88,7 @@ async fn status(
             working: cards.len(),
             inbox,
             unread_notices,
+            waiting_notices,
             tokens: app.store.tokens_today()?,
             day_budget,
             paused: app.store.runs_paused()?.is_some(),
@@ -116,6 +125,7 @@ mod tests {
                 working: 0,
                 inbox: 0,
                 unread_notices: 0,
+                waiting_notices: 0,
                 tokens: 0,
                 day_budget: Some(10000),
                 paused: false
@@ -163,6 +173,12 @@ mod tests {
         );
         // The notice is Lea's alone.
         assert_eq!(owner.unread_notices, 0);
-        assert_eq!(read(&addr, &token).await.unread_notices, 1);
+        let lea_status = read(&addr, &token).await;
+        // A card given to Lea waits for her; the owner's own are not hers.
+        assert_eq!(
+            (lea_status.unread_notices, lea_status.waiting_notices),
+            (1, 1)
+        );
+        assert_eq!(owner.waiting_notices, 0);
     }
 }

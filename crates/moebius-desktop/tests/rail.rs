@@ -81,7 +81,7 @@ async fn counted(
         }
         f.asked.fetch_add(1, Ordering::SeqCst);
         axum::Json(
-            json!({ "working": 0, "inbox": f.inbox, "unread_notices": f.unread, "tokens": 0,
+            json!({ "working": 0, "inbox": f.inbox, "waiting_notices": f.unread, "tokens": 0,
                            "day_budget": null, "paused": false }),
         )
         .into_response()

@@ -36,7 +36,7 @@ pub struct Figures {
     pub working: usize,
     /// The inbox items that are not resolved yet.
     pub inbox: usize,
-    /// The notices of the person that are not read yet.
+    /// The notices of the person that are not read yet and wait for them (`waiting_notices`).
     pub unread: usize,
     /// The tokens the model calls used since local midnight of the server.
     pub tokens: i64,
@@ -64,7 +64,7 @@ impl Figures {
         Some(Self {
             working: status.working,
             inbox: status.inbox,
-            unread: status.unread_notices,
+            unread: status.waiting_notices,
             tokens: status.tokens,
             budget: status.day_budget,
             paused: status.paused,
@@ -72,7 +72,7 @@ impl Figures {
     }
 
     /// The count the rail shows of the server: what the sidebar of the web app counts, the open items of the inbox
-    /// and the notices not read yet.
+    /// and the unread notices that wait for the person.
     pub fn rail_count(&self) -> u32 {
         u32::try_from(self.inbox + self.unread).unwrap_or(u32::MAX)
     }
@@ -87,8 +87,8 @@ impl Figures {
         // The sidebar and the rail count the items and the unread notices together; the tray says which is which.
         let inbox = match self.unread {
             0 => format!("Inbox: {}", self.inbox),
-            1 => format!("Inbox: {}, 1 unread notice", self.inbox),
-            n => format!("Inbox: {}, {n} unread notices", self.inbox),
+            1 => format!("Inbox: {}, 1 notice waiting", self.inbox),
+            n => format!("Inbox: {}, {n} notices waiting", self.inbox),
         };
         let tokens = match self.budget {
             Some(budget) => format!("Tokens today: {} of {}", short(self.tokens), short(budget)),
@@ -126,7 +126,8 @@ pub struct Lines {
 struct Status {
     working: usize,
     inbox: usize,
-    unread_notices: usize,
+    #[serde(default)]
+    waiting_notices: usize,
     tokens: i64,
     day_budget: Option<i64>,
     paused: bool,
@@ -271,7 +272,7 @@ mod tests {
     use super::*;
 
     fn status(working: usize, inbox: usize, tokens: i64, budget: Option<i64>) -> serde_json::Value {
-        json!({"working": working, "inbox": inbox, "unread_notices": 1, "tokens": tokens,
+        json!({"working": working, "inbox": inbox, "waiting_notices": 1, "tokens": tokens,
                "day_budget": budget, "paused": false})
     }
 
@@ -306,8 +307,8 @@ mod tests {
             .inbox
         };
         assert_eq!(lines(61, 0), "Inbox: 61");
-        assert_eq!(lines(61, 1), "Inbox: 61, 1 unread notice");
-        assert_eq!(lines(61, 200), "Inbox: 61, 200 unread notices");
+        assert_eq!(lines(61, 1), "Inbox: 61, 1 notice waiting");
+        assert_eq!(lines(61, 200), "Inbox: 61, 200 notices waiting");
     }
 
     #[test]

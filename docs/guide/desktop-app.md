@@ -65,7 +65,7 @@ The rail at the far left of the window holds a square for every server the app k
 reports (`GET /v1/server`), or its address without `http://`, and with its address added when two servers have the same
 name. It shows the first letters of that name, or, for a server named by an address, the end of its port, so that servers
 on one host differ (`…7171` and `…7172` show 171 and 172); hovering gives the whole name and address. The count of its
-Inbox is in a badge (the items of the Inbox and the unread notices together, as the sidebar counts them; hovering says
+Inbox is in a badge (the items of the Inbox and the unread notices that wait for you, as the sidebar counts them; hovering says
 both figures), and a grey dot shows when it does not answer. The open one is raised, ringed and has a bar at its left. The app asks each server for these few figures
 with one small request (`GET /v1/status`) every ten seconds, and takes the open server's from the tray, which follows
 it by its events, so a busy server is not read as a whole to draw a badge. Click a square to
@@ -121,7 +121,7 @@ is counted and not announced.
 
 Once the app is running, its icon sits in the tray (the notification area of Windows, the
 status area of a Linux desktop that shows tray icons, which GNOME needs an extension for). Its menu shows the
-server's state: **the agents working**, **the Inbox** (its items, and its unread notices when there are some, since the rail and the sidebar count both), and **today's tokens** against the day's budget. These
+server's state: **the agents working**, **the Inbox** (its items, and its notices waiting for you when there are some, since the rail and the sidebar count both), and **today's tokens** against the day's budget. These
 figures follow the server's events. Under them: **New issue** and **Ask Moebius** bring the window up and open the
 form of a new issue or a new chat, **Open Moebius** brings the window up, also when it was minimized, and **Pause all
 agents** holds every run of the server and starts none until you choose **Resume all agents**, which the same item

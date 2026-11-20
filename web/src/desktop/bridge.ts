@@ -24,7 +24,7 @@ export interface RailServer {
   inbox: number;
   /** The items of its inbox that are not resolved. */
   items: number;
-  /** Its notices that are not read. */
+  /** Its notices that wait for the person (given to them or mentioning them). */
   unread: number;
 }
 

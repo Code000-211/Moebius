@@ -69,7 +69,7 @@ describe("Rail", () => {
   it("marks the open server, counts its Inbox and greys the one it cannot reach", async () => {
     draw({ ...fakeBridge(), servers: async () => SERVERS });
     const open = await screen.findByRole("button", {
-      name: /127\.0\.0\.1:7171, 2 items and 1 unread notice in the Inbox/,
+      name: /127\.0\.0\.1:7171, 2 items and 1 notice waiting in the Inbox/,
     });
     expect(open.getAttribute("aria-current")).toBe("true");
     // The open server carries a mark of its own, which the other does not.

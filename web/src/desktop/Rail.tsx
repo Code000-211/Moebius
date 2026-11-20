@@ -62,7 +62,7 @@ export function countWords(server: RailServer): string {
   const part = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
   const parts = [
     server.items > 0 ? part(server.items, "item", "items") : "",
-    server.unread > 0 ? part(server.unread, "unread notice", "unread notices") : "",
+    server.unread > 0 ? part(server.unread, "notice waiting", "notices waiting") : "",
   ].filter(Boolean);
   return parts.length > 0 ? `${parts.join(" and ")} in the Inbox` : "";
 }

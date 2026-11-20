@@ -29,7 +29,7 @@ pub struct Entry {
     pub inbox: u32,
     /// The items of its inbox that are not resolved.
     pub items: u32,
-    /// Its notices that the person has not read.
+    /// Its notices that wait for the person.
     pub unread: u32,
 }
 
