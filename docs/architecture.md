@@ -538,6 +538,7 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `rail/secrets.rs` | Where the tokens are kept: the system's keychain (`Keychain`), or `Memory` in tests. |
 | `rail/ssh.rs` | A server over SSH: the `ssh` tunnel that forwards a port and prints the host's token, and setting a host up with `moebius connect --yes`. |
 | `rail/status.rs` | What the rail shows of a server: whether it answers and its Inbox's count (`Entry`). |
+| `edges.rs` | The script every page of the desktop window gets so that the window, which has no frame of the system, can be resized from its edges and corners. |
 | `views.rs` | Which servers have a webview of their own in the window, and which to let go of (the ones left for long, or beyond three): the bookkeeping, tested without a window. |
 | `pages.rs` | The Tauri side of the window's webviews, in the program: one for the connect page and one per opened server, one shown at a time, a new one shown once it has drawn its rail. |
 | `servers.rs` | The rail's commands on the Tauri side (`connect`, `connect_ssh`, `servers`, `switch_server`, `remove_server`, and the local server's `local_state` and `local_connect`): showing a server's web app in the window, the connect page when none is left, and opening the server that was open last at the start. |

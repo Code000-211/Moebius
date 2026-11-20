@@ -5,12 +5,14 @@
 //! shown once it has drawn its rail, so the window is never blank and the rail never goes away. Webviews not looked at for long
 //! are closed, and the page each was on is noted by the rail, which opens that server there again.
 //!
-//! Every webview is a child of the window, which is why the program uses [`main_window`] and [`front`] where it once
+//! Every page gets the script that resizes the window from its edges (`edges`), which the child webviews would
+//! otherwise leave without one. Every webview is a child of the window, which is why the program uses [`main_window`] and [`front`] where it once
 //! asked for the one webview window: a window with several webviews is not a webview window to Tauri.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use moebius_desktop::edges;
 use moebius_desktop::links::{self, Target};
 use moebius_desktop::rail::Rail;
 use moebius_desktop::views::{self, Views};
@@ -99,6 +101,7 @@ fn make(
     let builder = WebviewBuilder::new(label, url)
         .auto_resize()
         .initialization_script(BRIDGE)
+        .initialization_script(edges::SCRIPT)
         .on_navigation(
             move |url| match links::target(url.as_str(), navigating.as_deref()) {
                 Target::Window => true,

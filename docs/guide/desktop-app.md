@@ -29,7 +29,9 @@ macOS build. `moebius open` and `moebius connect` stay for everyone without it.
 3. **Start the app and connect.** The window asks for the server's address (`127.0.0.1:7171`, or the address the
    server listens on; `https://` for a server behind TLS) and the token. Connect opens the web app, signed in as the
    person the token belongs to. The window has no frame of the system: drag the strip along its top to move it, double
-   click it to maximize, and minimize, maximize and close with the buttons at its right end.
+   click it to maximize, and minimize, maximize and close with the buttons at its right end. Resize the window by
+   dragging any edge or corner (the outer six pixels of the page show the resize cursor); it keeps its size when you
+   switch servers, and cannot be made smaller than 720×480.
 4. **Open the quick window from anywhere.** While the app runs, even behind other windows or minimized, press
    `Ctrl+Shift+Space`: a small window opens over everything. **Ask Moebius** sends what you type to the Moebius agent;
    **New issue** makes an issue in the project you pick (the first line is the title, the rest the description).
