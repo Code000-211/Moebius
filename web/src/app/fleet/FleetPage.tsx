@@ -40,6 +40,7 @@ import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SelectBox } from "../../ui/page/SelectBox";
 import { SelectionBar, type SelectionCommand } from "../../ui/page/SelectionBar";
 import { SkeletonList } from "../../ui/page/Skeleton";
+import { useOpenCard } from "../board/CardWindowHost";
 import {
   afterSteps,
   byAgent,
@@ -330,6 +331,7 @@ const Row = memo(function Row({
   onContextMenu,
 }: RowProps) {
   const navigate = useNavigate();
+  const openCard = useOpenCard();
   const thread = useThread(work.run);
   // A card's run says when it started; a chat's start is in the list of chats.
   const run = useQuery({
@@ -347,11 +349,7 @@ const Row = memo(function Row({
   const ended = afterSteps(thread.entries);
   const status = statusWord(work.status, work.asks);
   const open = () =>
-    navigate(
-      work.open.kind === "card"
-        ? `/board/${work.open.repository}?card=${work.open.card}`
-        : `/chat/${work.open.chat}`,
-    );
+    work.open.kind === "card" ? openCard(work.open.card) : navigate(`/chat/${work.open.chat}`);
   const about = [work.repository, work.tokens === null ? "" : tokensText(work.tokens)]
     .filter((part) => part !== "")
     .join(" · ");

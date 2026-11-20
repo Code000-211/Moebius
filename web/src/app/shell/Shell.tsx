@@ -5,7 +5,8 @@
  * above it and no texture under it. The panel holds the banner while the server cannot be reached, what the route
  * draws, and, only on a page that supplies properties, the pane for them (`RightColumn.tsx`). The agent and the package
  * sheet, which pages open from where a person meets plugins and extensions, lie over that place in the same panel. It
- * owns the command palette and its shortcut, the form of a new issue and `C` (`board/NewIssueHost.tsx`), holds what is
+ * owns the command palette and its shortcut, the form of a new issue and `C` (`board/NewIssueHost.tsx`), the card window
+ * for `?card=` on any page (`board/CardWindowHost.tsx`), holds what is
  * in focus for it (`palette/focus.tsx`), and notes the places seen and the sidebar's collapsed state (kept per
  * browser). In the desktop app the panel carries the window's controls once at its top right
  * (`desktop/WindowControls.tsx`), and the rail of servers lies at the window's far left (`desktop/Rail.tsx`).
@@ -25,6 +26,7 @@ import { PageBoundary } from "../../ui/page/PageBoundary";
 import { PropertiesProvider, useProperties } from "../../ui/page/Properties";
 import { SheetSlotProvider } from "../../ui/page/SheetSlot";
 import { SkeletonCard } from "../../ui/page/Skeleton";
+import { CardWindowHost } from "../board/CardWindowHost";
 import { isTyping, NewIssueProvider } from "../board/NewIssueHost";
 import { prefetchCard } from "../board/prefetchCard";
 import { readFlag, writeFlag } from "../storage";
@@ -79,13 +81,10 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
   const { present: hasProperties } = useProperties();
   const connection = useConnection();
   const location = useLocation();
-  // A card named in the address the page opened at is read now, while the board's code and the snapshot are on their way.
+  // A card named in the address the page opened at (`?card=`, on any page) is read now, while the board's code and the snapshot are on their way.
   const queryClient = useQueryClient();
   useEffect(() => {
-    const opened = /^\/board\/\d+$/.test(window.location.pathname)
-      ? new URLSearchParams(window.location.search).get("card")
-      : null;
-    const id = Number(opened);
+    const id = Number(new URLSearchParams(window.location.search).get("card"));
     if (Number.isInteger(id) && id > 0) prefetchCard(queryClient, id);
   }, [queryClient]);
   const reconnect = useReconnect();
@@ -193,6 +192,7 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
         <PackageSheet />
         <WindowControls />
       </div>
+      <CardWindowHost />
       <CommandBar open={commandOpen} onOpenChange={setCommandOpen} />
     </div>
   );

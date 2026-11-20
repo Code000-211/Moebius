@@ -877,7 +877,7 @@ it("keeps every control of the board's head bar clickable with the agent sheet a
     for (const width of [1280, 1440, 1920]) {
       const page = await openPage({ width, height: 900 }, theme);
       await page.goto(`${base}/board/1?card=1`);
-      await page.getByRole("region", { name: "Card inspector" }).waitFor({ timeout: 10_000 });
+      await page.getByRole("dialog", { name: "Card inspector" }).waitFor({ timeout: 10_000 });
       await open(page, "chat");
       await page.waitForTimeout(400);
       const covered = await page.evaluate(() =>

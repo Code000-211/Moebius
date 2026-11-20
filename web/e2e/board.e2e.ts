@@ -81,7 +81,7 @@ const broadcast = (event: { kind: string; data: unknown }) => {
 };
 const column = (name: string) => page.getByRole("region", { name, exact: true });
 const card = (number: number) => page.getByTestId(`card-${number}`);
-const dock = () => page.getByRole("region", { name: "Card inspector" });
+const dock = () => page.getByRole("dialog", { name: "Card inspector" });
 /** The properties of the card numbered `number`, which the dock puts in the right column. */
 const properties = (number: number) =>
   page.getByRole("region", { name: `Properties of #${number}`, exact: true });

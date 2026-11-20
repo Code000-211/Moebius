@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { board, card, item, run, running } from "./fixtures";
-import { boardColumns, DONE_SHOWN, groupByColumn, inspectedCard, NO_FILTERS } from "./index";
+import { boardColumns, DONE_SHOWN, groupByColumn, NO_FILTERS } from "./index";
 
 describe("boardColumns", () => {
   it("lists the default workflow, with Backlog even while it holds no card", () => {
@@ -70,26 +70,5 @@ describe("groupByColumn", () => {
     expect(numbers("needs-you")).toEqual([1]);
     expect(numbers("stuck")).toEqual([2]);
     expect(numbers("idle")).toEqual([3]);
-  });
-});
-
-describe("inspectedCard", () => {
-  const b = board([card(1, { column: "Done" }), card(2), card(3, { run }), card(4)]);
-
-  it("is the first live card without a choice", () => {
-    expect(inspectedCard(b, [], null)?.id).toBe(3);
-  });
-
-  it("is the first card that waits for a person when none is live", () => {
-    const quiet = board([card(1, { column: "Done" }), card(2), card(4)]);
-    expect(inspectedCard(quiet, [item("approve_issue", 4)], null)?.id).toBe(4);
-    expect(inspectedCard(quiet, [], null)?.id).toBe(2);
-  });
-
-  it("obeys a choice, and none when the dock was closed", () => {
-    expect(inspectedCard(b, [], "4")?.id).toBe(4);
-    expect(inspectedCard(b, [], "none")).toBeUndefined();
-    // A card that is gone — deleted, in this tab or in another — leaves the dock closed rather than opening another.
-    expect(inspectedCard(b, [], "99")).toBeUndefined();
   });
 });

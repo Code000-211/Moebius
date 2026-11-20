@@ -107,7 +107,7 @@ describe("the run view", () => {
 
     await card.click();
     await page.waitForURL("**/board/1?card=1");
-    await page.getByRole("region", { name: "Card inspector" }).waitFor();
+    await page.getByRole("dialog", { name: "Card inspector" }).waitFor();
   });
 
   it.skipIf(usesRealServer)("steers a running run", async () => {
@@ -206,7 +206,7 @@ describe("the diff of a card", () => {
     "shows the headline of a change in the dock and its lines in a sheet",
     async () => {
       await open("/board/1?card=5");
-      const dock = page.getByRole("region", { name: "Card inspector" });
+      const dock = page.getByRole("dialog", { name: "Card inspector" });
       await dock.getByText("Changes", { exact: true }).waitFor();
       // The dock has room for one line about a change: what it touches, and what it costs.
       const headline = dock.getByTestId("diff-card");
@@ -243,7 +243,7 @@ describe("the diff of a card", () => {
     "spells what each file costs, and keeps no key to the colours",
     async () => {
       await open("/board/1?card=5");
-      const dock = page.getByRole("region", { name: "Card inspector" });
+      const dock = page.getByRole("dialog", { name: "Card inspector" });
       await dock.getByTestId("diff-card").click();
       const sheet = page.getByRole("dialog");
       await sheet.getByTestId("diff-summary").waitFor();
@@ -260,7 +260,7 @@ describe("the diff of a card", () => {
     "ends where the diff ends, with no band of nothing under the last line",
     async () => {
       await open("/board/1?card=5");
-      const dock = page.getByRole("region", { name: "Card inspector" });
+      const dock = page.getByRole("dialog", { name: "Card inspector" });
       await dock.getByTestId("diff-card").click();
       const sheet = page.getByRole("dialog");
       const lastLine = sheet.locator('[data-testid="diff-line"]').last();

@@ -24,6 +24,7 @@ import {
   CommandItem,
   CommandList,
 } from "../../ui/components/Command";
+import { useOpenCard } from "../board/CardWindowHost";
 import { cardKey } from "../board/cardKey";
 import { useNewIssue } from "../board/NewIssueHost";
 import { usePause } from "../fleet/usePause";
@@ -72,6 +73,7 @@ export function CommandBar({
   const here = useLocation().pathname;
   const focus = usePaletteFocus();
   const newIssue = useNewIssue();
+  const openCard = useOpenCard();
   const pause = usePause(open);
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot(), enabled: open });
   const [query, setQuery] = useState("");
@@ -258,7 +260,10 @@ export function CommandBar({
                 <CommandItem
                   key={card.id}
                   value={`card ${card.id}`}
-                  onSelect={() => go(`${boardPath(board.repository.id)}?card=${card.id}`)}
+                  onSelect={() => {
+                    close();
+                    openCard(card.id);
+                  }}
                 >
                   <KanbanIcon className="size-5" weight="regular" />
                   <span className="truncate">{`${cardKey(card)} ${card.title}`}</span>

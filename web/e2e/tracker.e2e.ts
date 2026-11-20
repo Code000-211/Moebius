@@ -60,7 +60,7 @@ async function openBoard(): Promise<void> {
   await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
 }
 
-const dock = () => page.getByRole("region", { name: "Card inspector" });
+const dock = () => page.getByRole("dialog", { name: "Card inspector" });
 /** The properties of the card in the dock, in the right column. */
 const properties = () => page.getByRole("region", { name: /^Properties of #/ });
 /** The value of a property, a button named by the property and what it says. */

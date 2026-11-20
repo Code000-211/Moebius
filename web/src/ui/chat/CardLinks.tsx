@@ -12,6 +12,7 @@
  */
 import { QueryClientContext, useQuery } from "@tanstack/react-query";
 import {
+  type ComponentProps,
   createContext,
   Fragment,
   type ReactNode,
@@ -23,11 +24,12 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { Link, useInRouterContext } from "react-router";
+import { Link, useInRouterContext, useLocation } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { keys } from "../../api/keys";
 import type { Board, Card } from "../../api/types/board";
 import { ColumnMark } from "../../app/board/ColumnMark";
+import { withCard } from "../../app/board/cardAddress";
 import { cardName } from "../../app/board/cardKey";
 import { boardPath } from "../../app/pages";
 import { RunningDots } from "../components/RunningDots";
@@ -144,6 +146,23 @@ function CardRefLink({
   return <PreviewLink text={text} board={found.board} card={found.card} />;
 }
 
+/** A link that opens the card as the window over the page it is on, which stays as it is. */
+function OpenHere({
+  card,
+  children,
+  ...props
+}: { card: number; children: ReactNode } & Omit<ComponentProps<typeof Link>, "to">) {
+  const { pathname, search } = useLocation();
+  return (
+    <Link
+      to={{ pathname, search: withCard(new URLSearchParams(search), card).toString() }}
+      {...props}
+    >
+      {children}
+    </Link>
+  );
+}
+
 function PreviewLink({ text, board, card }: { text: string; board: Board; card: Card }) {
   const [open, setOpen] = useState(false);
   const [at, setAt] = useState<{ left: number; top: number } | null>(null);
@@ -151,7 +170,7 @@ function PreviewLink({ text, board, card }: { text: string; board: Board; card: 
   const anchor = useRef<HTMLAnchorElement>(null);
   const id = useId();
   const inRouter = useInRouterContext();
-  const to = `${boardPath(board.repository.id)}?card=${card.id}`;
+  const href = `${boardPath(board.repository.id)}?card=${card.id}`;
 
   const show = useCallback(() => {
     clearTimeout(timer.current);
@@ -192,11 +211,11 @@ function PreviewLink({ text, board, card }: { text: string; board: Board; card: 
   return (
     <>
       {inRouter ? (
-        <Link to={to} {...props}>
+        <OpenHere card={card.id} {...props}>
           {text}
-        </Link>
+        </OpenHere>
       ) : (
-        <a href={to} {...props}>
+        <a href={href} {...props}>
           {text}
         </a>
       )}

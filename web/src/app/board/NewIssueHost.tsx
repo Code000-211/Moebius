@@ -1,7 +1,7 @@
 /**
  * The form of a new issue for the whole app. The shell wraps its pages in `NewIssueProvider`, which draws the form
  * (`NewIssueDialog.tsx`) over whatever page is open and opens it on `C` — from any page, but not while a person is
- * typing in a field, not with a modifier held, and not while another sheet is over the page. A page opens it itself
+ * typing in a field, not with a modifier held, and not while another sheet is over the page (a card window is no obstacle: the form opens over it). A page opens it itself
  * with `useNewIssue().open(...)`: the board's "New issue" button, a card's "Add a sub-issue", a column's "+". The form
  * is for the repository the page shows (the board's or the project's), or the first one there is, and offers the
  * others as a chip. A card made from a page that has no way to say so (`onCreated` left out) is said in a line at the
@@ -98,7 +98,13 @@ export function NewIssueProvider({ children }: { children: ReactNode }) {
     function onKey(event: KeyboardEvent) {
       if (event.key.toLowerCase() !== "c") return;
       if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
-      if (event.shiftKey || event.repeat || isTyping(event.target) || modalIsOpen()) return;
+      if (
+        event.shiftKey ||
+        event.repeat ||
+        isTyping(event.target) ||
+        modalIsOpen({ exceptCardWindow: true })
+      )
+        return;
       event.preventDefault();
       open();
     }

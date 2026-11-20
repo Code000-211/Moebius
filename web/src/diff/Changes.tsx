@@ -58,6 +58,17 @@ function DiffReadFailed({
   );
 }
 
+/** What a change adds and removes, as `+84 -12`, for a line that has no room for the headline; nothing while it is read or if it cannot be. */
+export function ChangeDelta({ change, className }: { change: number; className?: string }) {
+  const query = useDiff({ change });
+  const total = useMemo(
+    () => (query.data ? totals(parseUnifiedDiff(query.data.diff)) : null),
+    [query.data],
+  );
+  if (total === null || (total.additions === 0 && total.deletions === 0)) return null;
+  return <Delta additions={total.additions} deletions={total.deletions} className={className} />;
+}
+
 export function Changes({ of }: { of: DiffOf }) {
   const query = useDiff(of);
   if (query.isPending) return <SkeletonLines lines={10} message="Reading the changes" />;
