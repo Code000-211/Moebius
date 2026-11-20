@@ -312,7 +312,7 @@ function CardWindowView({
               <StatusIcon state={iconOf(card, status)} />
               {owner && <Avatar handle={owner} className="size-6" />}
               {changes[0] && <ChangeDelta change={changes[0].id} className="text-sm" />}
-              <CardMenu card={card} {...menu} className="-mr-2" />
+              <CardMenu card={card} {...menu} />
             </div>
           </div>
 

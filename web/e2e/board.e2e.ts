@@ -592,7 +592,7 @@ describe("the keyboard", () => {
       ).toBe("n");
       expect(await options.filter({ hasText: "New issue" }).locator("kbd").textContent()).toBe("c");
       await page.keyboard.press("Escape");
-      await page.getByRole("dialog").waitFor({ state: "detached" });
+      await options.first().waitFor({ state: "detached" });
       await page.locator("body").press("n");
       await status("Approved #2").waitFor();
       await column("Not started").getByTestId("card-2").waitFor();
@@ -1131,10 +1131,9 @@ describe("the dock", () => {
       expect(await run.getAttribute("href")).toBe("/runs/1");
       await dock().getByText("projects/demo/code.luau · built in").waitFor();
       await dock().getByText('moebius.wait("nothing to do in In progress")').waitFor();
-      await page
-        .getByRole("region", { name: /^Properties of #/ })
-        .getByRole("link", { name: "Coder · code", exact: true })
-        .waitFor();
+      const facts = page.getByRole("region", { name: /^Properties of #/ });
+      await unfold(facts);
+      await facts.getByRole("link", { name: "Coder · code", exact: true }).waitFor();
       // The state is said once, by the pill beside the title — the run line does not repeat it.
       await dock().getByText("Live", { exact: true }).waitFor();
 
@@ -1379,6 +1378,8 @@ describe("Display", () => {
       await shownIs(1);
       await card(6).getByRole("button").click();
       await dock().waitFor();
+      await page.keyboard.press("Escape");
+      await dock().waitFor({ state: "detached" });
 
       await bar().getByRole("button", { name: "Display" }).click();
       await display("Board").click();

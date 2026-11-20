@@ -200,12 +200,14 @@ function InlineField({
 
 /**
  * Puts the focus back on a button once it is drawn again, unless the person has already moved on: the focus is then
- * on another control, and taking it would send their next key to the wrong place.
+ * on another control, and taking it would send their next key to the wrong place. A window's own frame is no control.
  */
 function giveBackFocus(target: { current: HTMLElement | null }) {
   requestAnimationFrame(() => {
     const now = document.activeElement;
-    if (now === null || now === document.body) target.current?.focus();
+    // Inside a modal window the focus a removed field leaves falls to the window itself, which is nowhere either.
+    const nowhere = now === null || now === document.body || now.getAttribute("role") === "dialog";
+    if (nowhere) target.current?.focus();
   });
 }
 
