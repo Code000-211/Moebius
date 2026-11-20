@@ -29,6 +29,7 @@
 
 @theme inline {
   --color-*: initial;
+  --color-white: #fff;
   --color-transparent: transparent;
   --color-current: currentColor;
 

@@ -208,6 +208,7 @@ export async function startFakeServer(): Promise<FakeServer> {
       const body = JSON.parse((await readBody(request)) || "{}") as {
         token?: string;
         code?: string;
+        stay?: boolean;
       };
       if (body.token === AGENT_TOKEN) return text(response, 403, "only a person can do this");
       const person =
@@ -217,7 +218,9 @@ export async function startFakeServer(): Promise<FakeServer> {
       const session = randomBytes(16).toString("hex");
       sessions.set(session, person);
       response.writeHead(204, {
-        "set-cookie": `moebius_session=${session}; HttpOnly; Path=/; SameSite=Strict`,
+        "set-cookie": `moebius_session=${session}; HttpOnly; Path=/; SameSite=Strict${
+          body.stay === false ? "" : "; Max-Age=2592000"
+        }`,
       });
       return response.end();
     }

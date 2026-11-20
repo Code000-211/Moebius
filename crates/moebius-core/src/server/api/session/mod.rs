@@ -9,7 +9,7 @@
 //!
 //! A session lives in the store (`store::access`) for [`SESSION_LIFETIME`] seconds, so it survives a restart; it ends
 //! sooner when the person signs out, when the access token it was opened with is revoked, or when the person is
-//! disabled. The one-time codes live in memory for [`CODE_LIFETIME`] seconds. Neither a token, a code nor a session id
+//! disabled. Without `stay`, the cookie has no `Max-Age`, so the browser drops it when its session ends. The one-time codes live in memory for [`CODE_LIFETIME`] seconds. Neither a token, a code nor a session id
 //! is ever logged, nor stored but as its hash. What a cookie may do is decided in [`super::authenticate`]; this module
 //! holds the codes and the routes.
 
@@ -134,6 +134,8 @@ pub(super) fn routes() -> Router<ApiState> {
 struct SignIn {
     token: Option<String>,
     code: Option<String>,
+    /// Whether the browser stays signed in after it is closed; without it the cookie lasts for the browser session.
+    stay: Option<bool>,
 }
 
 fn unauthorized() -> ApiError {
@@ -187,9 +189,12 @@ async fn sign_in(
     } else {
         ""
     };
-    let cookie = format!(
-        "{COOKIE}={id}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_LIFETIME}{secure}"
-    );
+    let lifetime = if request.stay.unwrap_or(true) {
+        format!("; Max-Age={SESSION_LIFETIME}")
+    } else {
+        String::new()
+    };
+    let cookie = format!("{COOKIE}={id}; HttpOnly; SameSite=Strict; Path=/{lifetime}{secure}");
     Ok(with_cookie(StatusCode::NO_CONTENT, &cookie))
 }
 

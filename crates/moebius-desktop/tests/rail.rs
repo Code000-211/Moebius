@@ -533,7 +533,7 @@ async fn a_keychain_that_never_answers_ends_a_connect_with_the_remedy_and_hangs_
         let text = error.to_string();
         assert!(text.contains("keychain does not answer"), "{text}");
         assert!(text.contains("gnome-keyring or KWallet"), "{text}");
-        assert!(text.contains("this session only"), "{text}");
+        assert!(text.contains("clear Stay signed in"), "{text}");
     }
     assert!(rail.startup_order().is_empty());
     drop(release);

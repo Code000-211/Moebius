@@ -20,23 +20,17 @@
         <p class="hint" id="local-hint"></p>
         <p class="hint" id="local-working" hidden>Working: the first start downloads the program, which can take a minute.</p>
         <p class="error" id="local-error" role="alert" hidden></p>
+        <label class="stay"><input type="checkbox" id="local-stay" checked /> Stay signed in</label>
         <button type="button" class="primary" id="local-start"></button>
-        <button type="button" id="local-session" hidden>Connect for this session only</button>
       </section>
       <form class="sheet" id="connect">
         <h1>Connect to a server</h1>
-        <p class="hint">
-          The address of a Moebius server, and an access token of yours from its My tokens page or
-          <code>moebius login</code>. The token stays in this app.
-        </p>
+        <p class="hint">An address and an access token of yours, from My tokens or <code>moebius login</code>.</p>
         <label>Address <input name="address" placeholder="127.0.0.1:7171" autocomplete="url" required /></label>
         <label>Access token <input name="token" type="password" autocomplete="off" required /></label>
+        <label class="stay"><input type="checkbox" name="stay" id="connect-stay" checked /> Stay signed in</label>
         <p class="error" id="error" role="alert" hidden></p>
         <button type="submit" class="primary" id="connect-submit">Connect</button>
-        <button type="button" id="connect-session" hidden>Connect for this session only</button>
-        <p class="hint" id="connect-session-hint" hidden>
-          The token then stays in memory: it is written to no file and asked for again at the next start.
-        </p>
       </form>
       <!-- The servers the app remembers, when it could not open one at its start (they may be down). -->
       <section class="sheet" id="saved" hidden>

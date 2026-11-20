@@ -61,6 +61,22 @@ async fn sign_in_as(addr: &str, body: serde_json::Value) -> String {
 }
 
 #[tokio::test]
+async fn without_stay_the_cookie_lasts_for_the_browser_session_only() {
+    let (_dir, state, addr) = start().await;
+    for (stay, kept) in [(false, false), (true, true)] {
+        let response = http()
+            .post(format!("http://{addr}/v1/session"))
+            .json(&serde_json::json!({"token": &*state.token, "stay": stay}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), Status::NO_CONTENT);
+        let set = response.headers()["set-cookie"].to_str().unwrap();
+        assert_eq!(set.contains("Max-Age"), kept, "{set}");
+    }
+}
+
+#[tokio::test]
 async fn the_token_signs_in_and_the_cookie_acts_as_a_person() {
     let (_dir, state, addr) = start().await;
     let cookie = sign_in_as(&addr, serde_json::json!({"token": &*state.token})).await;

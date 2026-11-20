@@ -545,7 +545,9 @@ At start, `moebius serve` prints the line `Open the web app: http://<listen addr
 
 Signs a browser in. No `Authorization` is needed. Request body: `{"token": string}` with a person's access token or the
 server's token (which signs in the first owner), or `{"code": string}` with a one-time code of `POST
-/v1/session/codes`. Response: `204` and the cookie `moebius_session=<id>; Max-Age=2592000` (see Authentication). The
+/v1/session/codes`. Optional `"stay": bool` (default `true`): with `false` the cookie has no `Max-Age`, so the browser forgets it when its
+session ends and asks for the token again. Response: `204` and the cookie `moebius_session=<id>; Max-Age=2592000` (see
+Authentication; without `Max-Age` for `"stay": false`). The
 session is kept in the store, as the SHA-256 of its id and never the id itself, for 30 days, so it survives a restart of
 the server. It ends sooner when the browser signs out, when the access token it was opened with (or the token that
 made its code) is revoked, and when its person is disabled; from then on the cookie is answered `401`. Errors: `401`

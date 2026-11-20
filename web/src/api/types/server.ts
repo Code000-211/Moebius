@@ -62,7 +62,10 @@ export interface Session {
  * The body of `POST /v1/session`: a person's access token or the server's token, or the one-time code of a `?login=`
  * link.
  */
-export type SignIn = { token: string } | { code: string };
+export type SignIn = ({ token: string } | { code: string }) & {
+  /** False keeps the sign-in for the browser session only; the server defaults to true. */
+  stay?: boolean;
+};
 
 /** `GET /v1/start`: one step of the first start. */
 export interface StartStep {

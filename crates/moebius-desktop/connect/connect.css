@@ -1,7 +1,7 @@
-/* The connect page in the web app's look (web/src/styles/theme.css): the textured ground, one sheet on it. */
+/* The connect page in the web app's look (web/src/styles/theme.css): the canvas, one centred card on it. */
 :root {
-  --ground: #0b0b0a;
-  --page: #161615;
+  --ground: #0f0f10;
+  --page: #161617;
   --field: #111110;
   --text: #ecebe8;
   --text-secondary: #9d9c98;
@@ -9,14 +9,11 @@
   --hairline-strong: rgb(255 255 250 / 11%);
   --accent: #8b8cf5;
   --error-text: #f07a80;
-  --grain: 0.09;
-  --grain-blend: overlay;
-  --grain-filter: none;
   color-scheme: dark;
 }
 :root[data-theme="light"] {
-  --ground: #efefec;
-  --page: #fdfdfc;
+  --ground: #f6f6f8;
+  --page: #ffffff;
   --field: #ffffff;
   --text: #1d1d1b;
   --text-secondary: #6a6965;
@@ -24,9 +21,6 @@
   --hairline-strong: rgb(20 20 15 / 12%);
   --accent: #5e5ff0;
   --error-text: #b0303a;
-  --grain: 0.12;
-  --grain-blend: multiply;
-  --grain-filter: invert(1);
   color-scheme: light;
 }
 * {
@@ -42,21 +36,7 @@ body {
   color: var(--text);
 }
 .ground {
-  position: relative;
-  isolation: isolate;
   background-color: var(--ground);
-  background-image: linear-gradient(180deg, color-mix(in srgb, var(--text) 5%, transparent), transparent 45%);
-}
-.ground::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: var(--grain);
-  mix-blend-mode: var(--grain-blend);
-  filter: var(--grain-filter);
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
 }
 .window-bar {
   position: fixed;
@@ -115,7 +95,7 @@ main {
   flex-direction: column;
   gap: 12px;
   padding: 24px;
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--page);
   box-shadow: 0 0 0 1px var(--hairline-strong);
 }
@@ -164,17 +144,12 @@ input:focus-visible {
 .primary:disabled {
   opacity: 0.6;
 }
-#connect-session,
-#local-session {
-  font: inherit;
-  align-self: flex-end;
-  padding: 6px 14px;
-  color: var(--text);
-  background: transparent;
-  border: 1px solid var(--hairline-strong);
-  border-radius: 6px;
+label.stay {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
 }
-#connect-session:disabled,
-#local-session:disabled {
-  opacity: 0.6;
+label.stay input {
+  accent-color: var(--accent);
 }

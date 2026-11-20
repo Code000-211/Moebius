@@ -27,7 +27,7 @@ macOS build. `moebius open` and `moebius connect` stay for everyone without it.
    sidebar), or ask an owner to make one for you on the People page. The server's own token (`.moebius/token`) works
    too, and acts as the first owner.
 3. **Start the app and connect.** The window asks for the server's address (`127.0.0.1:7171`, or the address the
-   server listens on; `https://` for a server behind TLS) and the token. Connect opens the web app, signed in as the
+   server listens on; `https://` for a server behind TLS) and the token, with **Stay signed in** on (the token goes to the keychain; off, it stays in memory). Connect opens the web app, signed in as the
    person the token belongs to. The window has no frame of the system: drag the strip along its top to move it, double
    click it to maximize, and minimize, maximize and close with the buttons at its right end. Resize the window by
    dragging any edge or corner (the outer six pixels of the page show the resize cursor); it keeps its size when you
@@ -194,7 +194,7 @@ The answer's `token` (it starts with `moebius-access-`) goes into the app with t
   another program is the usual reason (change `listen` in `~/.moebius/server/moebius.toml`).
 - **"the system's keychain does not answer"**: nothing offers a Secret Service on this Linux session (install
   `gnome-keyring` or KWallet and sign in to it), the keychain is locked, or it does not answer within 8 seconds. The app
-  keeps no token in a file, so it does not remember the server; **Connect for this session only** keeps the token in
+  keeps no token in a file, so it does not remember the server; clearing **Stay signed in** (the app does it for you) keeps the token in
   memory until the app closes.
 - **"no server is set up on <host>"** over SSH: the login worked and there is no token on the host; say yes to set
   one up, or run `moebius connect <host>` in a terminal.

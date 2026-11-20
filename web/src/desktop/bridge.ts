@@ -45,8 +45,11 @@ export interface DesktopBridge {
   removeServer(id: string): Promise<void>;
   /** Names a server; an empty name gives back the server's own. */
   renameServer(id: string, name: string): Promise<void>;
-  /** Adds the server at `address` with its access token, and opens it. */
-  connect(address: string, token: string): Promise<void>;
+  /**
+   * Adds the server at `address` with its access token, and opens it. With `sessionOnly` the token stays in memory and
+   * is asked for again at the next start.
+   */
+  connect(address: string, token: string, sessionOnly?: boolean): Promise<void>;
   /** Adds the server of an SSH host and opens it, setting it up there first when `setUp`. */
   connectSsh(host: string, setUp: boolean): Promise<void>;
 }

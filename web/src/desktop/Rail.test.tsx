@@ -157,7 +157,10 @@ describe("Rail", () => {
       "textContent",
       "the server does not accept this access token",
     );
-    expect(connect).toHaveBeenCalledWith("h:1", "tok");
+    expect(connect).toHaveBeenCalledWith("h:1", "tok", false);
+    fireEvent.click(screen.getByLabelText("Stay signed in"));
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(connect).toHaveBeenLastCalledWith("h:1", "tok", true));
   });
 
   it("sets a host up over SSH only after a yes", async () => {

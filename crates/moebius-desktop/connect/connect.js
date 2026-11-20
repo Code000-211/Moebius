@@ -7,23 +7,22 @@ document.querySelectorAll("[data-window]").forEach((button) => {
 const form = document.getElementById("connect");
 const error = document.getElementById("error");
 const submit = document.getElementById("connect-submit");
-const sessionOnly = document.getElementById("connect-session");
-const sessionHint = document.getElementById("connect-session-hint");
+const stay = document.getElementById("connect-stay");
+const localStay = document.getElementById("local-stay");
 
-// Shows why connecting failed. A keychain that does not answer also offers to go on without it, for this session.
+// Shows why connecting failed. A keychain that does not answer clears "Stay signed in": the next try keeps the token
+// in memory only.
 function fail(reason) {
   const text = String(reason);
   error.textContent = text;
   error.hidden = false;
-  const keychain = text.includes("keychain does not answer");
-  sessionOnly.hidden = !keychain;
-  sessionHint.hidden = !keychain;
+  if (text.includes("keychain does not answer")) stay.checked = false;
 }
 
-async function connect(session) {
+async function connect() {
   const data = new FormData(form);
+  const session = !stay.checked;
   submit.disabled = true;
-  sessionOnly.disabled = true;
   error.hidden = true;
   const label = submit.textContent;
   submit.textContent = session ? "Connecting…" : "Saving the token in the keychain…";
@@ -38,14 +37,10 @@ async function connect(session) {
   }
   submit.textContent = label;
   submit.disabled = false;
-  sessionOnly.disabled = false;
 }
 form.addEventListener("submit", (event) => {
   event.preventDefault();
-  void connect(false);
-});
-sessionOnly.addEventListener("click", () => {
-  if (form.reportValidity()) void connect(true);
+  void connect();
 });
 
 // Why the remembered servers did not open at the start, when the keychain did not answer.
@@ -123,10 +118,9 @@ window.__TAURI_INTERNALS__
     local.hidden = false;
   })
   .catch(() => {});
-const localSession = document.getElementById("local-session");
-async function startLocal(session) {
+async function startLocal() {
+  const session = !localStay.checked;
   localStart.disabled = true;
-  localSession.disabled = true;
   localError.hidden = true;
   localWorking.hidden = false;
   try {
@@ -134,11 +128,9 @@ async function startLocal(session) {
   } catch (reason) {
     localError.textContent = String(reason);
     localError.hidden = false;
-    localSession.hidden = !String(reason).includes("keychain does not answer");
+    if (String(reason).includes("keychain does not answer")) localStay.checked = false;
   }
   localStart.disabled = false;
-  localSession.disabled = false;
   localWorking.hidden = true;
 }
-localStart.addEventListener("click", () => void startLocal(false));
-localSession.addEventListener("click", () => void startLocal(true));
+localStart.addEventListener("click", () => void startLocal());
