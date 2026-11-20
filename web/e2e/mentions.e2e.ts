@@ -85,6 +85,14 @@ describe.skipIf(usesRealServer)("mentions", () => {
   it("completes the handle of a person after an @ in a comment", async () => {
     await open("/board/1");
     await page.getByTestId("card-7").click();
+    // The dock first shows the card the board picked and is drawn again for the one clicked: a draft typed before
+    // that goes with the first card's box. Wait for the dock of card 7 (its address and its number).
+    await page.waitForURL(/\/board\/1\?card=7$/);
+    await page
+      .getByRole("region", { name: "Card inspector" })
+      .getByText("DEMO-31 · #7")
+      .first()
+      .waitFor();
     const box = page.getByRole("combobox", { name: "Write a comment" });
     await box.fill("Please look, @ow");
     const option = page.getByRole("option", { name: /@owner/ });
