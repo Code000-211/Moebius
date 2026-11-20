@@ -16,14 +16,39 @@ import { Empty } from "../../ui/page/Empty";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
 import { NoticeRow } from "./NoticeRow";
-import { MENTIONS, pathOf } from "./notices";
+import { inTab, MENTIONS, pathOf } from "./notices";
 
-export function MentionsList({ snapshot, now }: { snapshot: Snapshot; now: number }) {
+const EMPTY: Record<string, { title: string; body: string }> = {
+  mentions: {
+    title: "Nothing mentions you",
+    body: "A comment that names you with @ will turn up here.",
+  },
+  assigned: { title: "Nothing is given to you", body: "A card given to you will turn up here." },
+  following: {
+    title: "Nothing changed",
+    body: "A change to a card you follow will turn up here.",
+  },
+};
+
+export function MentionsList({
+  snapshot,
+  now,
+  tab = MENTIONS,
+}: {
+  snapshot: Snapshot;
+  now: number;
+  tab?: string;
+}) {
   const data = useQuery({ queryKey: keys.notices, queryFn: readNotices });
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const read = useMutation({
     mutationFn: (notice: Notice) => readNotice(notice.id),
+    // The row shows it is read at once; the list is read again to be sure.
+    onMutate: (notice: Notice) =>
+      queryClient.setQueryData<Notice[]>(keys.notices, (before) =>
+        before?.map((each) => (each.id === notice.id ? { ...each, read: true } : each)),
+      ),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: keys.notices }),
   });
   const wanted = useSearchParams()[0].get("notice");
@@ -65,12 +90,13 @@ export function MentionsList({ snapshot, now }: { snapshot: Snapshot; now: numbe
       />
     );
   }
-  if (data.data.length === 0) {
+  const shown = inTab(data.data, tab);
+  if (shown.length === 0) {
     return (
       <Empty
-        title="Nothing mentions you"
+        title={EMPTY[tab]?.title ?? "Nothing here"}
         icon={<AtIcon className="size-6 text-secondary" />}
-        body="A card given to you, a comment that names you with @ and a change to a card you follow will turn up here."
+        body={EMPTY[tab]?.body ?? ""}
       />
     );
   }
@@ -78,7 +104,7 @@ export function MentionsList({ snapshot, now }: { snapshot: Snapshot; now: numbe
     <div className="overflow-hidden rounded-card bg-surface shadow-card">
       {/* biome-ignore lint/a11y/noRedundantRoles: list-style: none drops the list in WebKit */}
       <ul role="list" className="m-0 list-none divide-y divide-hairline p-0">
-        {data.data.map((notice) => (
+        {shown.map((notice) => (
           <li key={notice.id}>
             <NoticeRow
               notice={notice}
