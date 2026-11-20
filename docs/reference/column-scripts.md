@@ -536,7 +536,9 @@ The `checks` of a change in `card.changes` say how the checks of the change's cu
   so that the change's code, which the checks run, sees no token or key of the server.
 
 The change's `conflict` lists the files that keep it from merging cleanly into its `base` (found with
-`git merge-tree`; nothing is checked out), or is nil when it merges cleanly.
+`git merge-tree`; nothing is checked out), or is nil when it merges cleanly. It is found when a script first reads it,
+not when the card is read, and the answer is kept for as long as the heads of `base` and of the change's branch stay the
+same, so a script that reads it at every tick starts git only when one of them moves.
 
 ## Cards over several repositories
 

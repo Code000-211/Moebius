@@ -398,7 +398,7 @@ impl App {
     /// when it merges cleanly.
     pub fn conflict_of(&self, change: &Change) -> Result<Option<String>> {
         let repository = self.repository_of(change)?;
-        Ok(self.repos.conflicts(
+        Ok(self.repos.conflicts_kept(
             Path::new(&repository.path),
             &repository.base_ref(),
             &change.branch,

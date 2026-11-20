@@ -797,6 +797,7 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `repos/mod.rs` | Clones, worktrees, branches, pushes, merges and conflict checks through the `git` command line. |
+| `repos/conflicts.rs` | What `git merge-tree` finds for a change, kept per (clone, base, branch) until the head of either branch moves; the heads are read from the clone's ref files, so asking again starts no git process. |
 | `repos/kept.rs` | A clone the server keeps in step with its `origin`, as the harness configuration repository and the wiki are: cloned once, refreshed by a fast-forward, and an edit a commit pushed to `origin` that is undone when the push fails. |
 | `repos/forge.rs` | The `Forge` trait with the forges `none`, `github`, `gitlab` and `forgejo`, and the forge-neutral `Issue` (with its labels, parent, blockers and comments). |
 | `repos/tracker_tests.rs` | Tests (only) of what the forge clients write and read for an issue tracker, against a fake forge that records its requests. |
