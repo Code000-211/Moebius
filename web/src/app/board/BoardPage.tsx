@@ -1,8 +1,8 @@
 /**
  * The board of a repository: its columns of the default workflow with their cards (dragged only where a person may
- * move them), the filters, the inspector dock and a shell in the repository's clone, in a sheet over the board. The
+ * move them), the filters and a shell in the repository's clone, in a sheet over the board. The
  * head is two lines: the title with the layout switch, Terminal and New issue (the form of a new issue, which the shell
- * holds and `C` opens too), and the filter bar under it. A column ends in "+ Add", which makes a card in place
+ * holds and `C` opens too), and the filter bar under it. The card chosen opens as a window over the page (`CardWindowHost.tsx`). A column ends in "+ Add", which makes a card in place
  * (`ColumnAdd.tsx`). The
  * column of work in progress is the point of the page, so everything else is quiet: the header counts in one sentence,
  * the filters are chips, a column says what its cards are doing in a word, and an empty column says
@@ -17,7 +17,7 @@
 import { BookmarkSimpleIcon, PlusIcon, TerminalWindowIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { addView, listViews } from "../../api/calls/views";
 import { sayError } from "../../api/errorText";
@@ -27,26 +27,21 @@ import { Button } from "../../ui/components/Button";
 import { type DropResult, KanbanCardFace, KanbanProvider } from "../../ui/components/KanbanBoard";
 import { FilterBar } from "../../ui/filters/FilterBar";
 import { type Display, displayQuery, readDisplay } from "../../ui/filters/model";
-import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
 import { Select } from "../../ui/page/Field";
 import { PageHeader } from "../../ui/page/PageHeader";
-import { usePropertiesShown } from "../../ui/page/Properties";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { ScrollFades } from "../../ui/page/ScrollFades";
-import { useSheetSlot } from "../../ui/page/SheetSlot";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
-import { useAgent } from "../shell/AgentContext";
 import { boardFiltersOf, viewOfBoard } from "../views/model";
 import { CardContent } from "./BoardCardContent";
 import { BoardColumn } from "./BoardColumn";
 import { LayoutSwitch, LeftoverNotice } from "./BoardHead";
 import { useBulk } from "./bulk";
 import { BlockDialog, DeleteDialog, ParentDialog } from "./CardDialogs";
-import { CardFocus } from "./CardFocus";
+import { useOpenCard } from "./CardWindowHost";
 import { cardKey } from "./cardKey";
-import { Dock } from "./Dock";
 import { type Decision, useDecisions } from "./decisions";
 import { ListLayout } from "./ListLayout";
 import {
@@ -56,8 +51,6 @@ import {
   type Filters,
   groupByColumn,
   inboxOf,
-  inspectedCard,
-  mergeStoppedOf,
   NO_FILTERS,
   nextCard,
   rootOf,
@@ -99,24 +92,7 @@ export function BoardPage() {
   // The stacks a person opened, by the id of the card at the top.
   const [opened, setOpened] = useState<ReadonlySet<number>>(new Set());
   const [terminalOpen, setTerminalOpen] = useState(false);
-  const propertiesShown = usePropertiesShown();
-  const sheetShown = useSheetSlot().active !== null;
-  // The agent's panel is a column of the page's surface, so the drawer stands against its left edge.
-  const agentOpen = useAgent().open;
-  // With a sheet over the column the drawer stands beside the sheet, further left than the column it was laid for:
-  // the head of the page and the drawer's own column take the difference, so the board ends where the drawer starts.
-  const beside = propertiesShown
-    ? {
-        head: "dock:pr-[calc(24rem+var(--sheet-width)-var(--column-width))]",
-        column: "dock:mr-[calc(var(--sheet-width)-var(--column-width))]",
-      }
-    : {
-        head: "dock:pr-[calc(24rem+var(--sheet-width)-var(--column-rail-width))]",
-        column: "dock:mr-[calc(var(--sheet-width)-var(--column-rail-width))]",
-      };
-  // The card a send-back needs a reason for, not a count: a count stays raised once it is raised, so every card
-  // opened afterwards found the reason form waiting for it.
-  const [rejectFor, setRejectFor] = useState<number | null>(null);
+  const openCard = useOpenCard();
   // The card a menu asked to block or to delete, until the question is answered.
   const [blocking, setBlocking] = useState<Card | null>(null);
   // The cards that are blocked with it, for the one reason, when several were chosen.
@@ -173,13 +149,8 @@ export function BoardPage() {
   // refs, or through a state setter's function form.
   const setParamsRef = useRef(setParams);
   setParamsRef.current = setParams;
-  // A board with no `card` in its address shows its first live card; a dock closed on purpose is remembered in the
-  // history entry's state, so the address stays clean, a reload keeps the dock closed, and Back reopens the card.
-  const location = useLocation();
-  const locationState = useRef(location.state);
-  locationState.current = location.state;
-  const closedOnPurpose = (location.state as { noCard?: boolean } | null)?.noCard === true;
-  const setQuery = useCallback((changes: Record<string, string>, close = false) => {
+  // The filters change the address in place; a card opens as the window over the page (`CardWindowHost.tsx`).
+  const setQuery = useCallback((changes: Record<string, string>) => {
     setParamsRef.current(
       (current) => {
         const next = new URLSearchParams(current);
@@ -189,13 +160,13 @@ export function BoardPage() {
         }
         return next;
       },
-      {
-        replace: !close,
-        state: close ? { noCard: true } : "card" in changes ? null : locationState.current,
-      },
+      { replace: true },
     );
   }, []);
-  const onSelect = useCallback((card: Card) => setQuery({ card: String(card.id) }), [setQuery]);
+  // The columns' cards are memoised on this handler, so it keeps its identity while the address changes.
+  const openCardRef = useRef(openCard);
+  openCardRef.current = openCard;
+  const onSelect = useCallback((card: Card) => openCardRef.current(card.id), []);
   const repositoryId = board?.repository.id;
   const openForm = useCallback(
     (parent: number | null) => {
@@ -221,10 +192,9 @@ export function BoardPage() {
     }),
     [decide, openForm],
   );
-  const inspected = board
-    ? inspectedCard(board, inbox, params.get("card") ?? (closedOnPurpose ? "none" : null))
-    : undefined;
-  // A stack is open when a person opened it, and while the dock shows one of its sub-issues: closing it there would hide
+  // The card the window shows, marked on the board behind it.
+  const inspected = board?.cards.find((card) => String(card.id) === params.get("card"));
+  // A stack is open when a person opened it, and while the window shows one of its sub-issues: closing it there would hide
   // the card that is being read.
   const inspectedTopId = board && inspected ? rootOf(board, inspected).id : undefined;
   const inspectedTopRef = useRef(inspectedTopId);
@@ -354,17 +324,12 @@ export function BoardPage() {
     },
     [notify, clearChoice],
   );
-  const clearReject = useCallback(() => setRejectFor(null), []);
-  const closeDock = useCallback(() => {
-    setQuery({ card: "" }, true);
-    setRejectFor(null);
-  }, [setQuery]);
   const closeDelete = useCallback(() => setDeleting(null), []);
   const cardParam = params.get("card");
   const doneDelete = useCallback(
     (card: Card, text: string) => {
-      // A card's id can be given again once it is gone, so a dock that was open on it is closed for good.
-      if (cardParam === String(card.id)) setQuery({ card: "" }, true);
+      // A card's id can be given again once it is gone, so a window that was open on it is closed for good.
+      if (cardParam === String(card.id)) setQuery({ card: "" });
       notify({ tone: "ok", text });
     },
     [cardParam, setQuery, notify],
@@ -431,12 +396,11 @@ export function BoardPage() {
     if (drop.kind === "retry") decision = { kind: "retry", card: card.id, number };
     if (drop.kind === "merge") decision = { kind: "merge", change: drop.change, number };
     if (decision) {
-      setQuery({ card: String(card.id) });
+      openCard(card.id);
       decide(decision);
     } else if (drop.kind === "reject") {
-      // Sending a change back needs a reason: the dock asks for it, and only for this card.
-      setQuery({ card: String(card.id) });
-      setRejectFor(card.id);
+      // Sending a change back needs a reason: the window asks for it, and only for this card.
+      openCard(card.id, { askToReject: true });
     } else if (drop.kind === "refused") {
       notify({ tone: "error", text: `Cannot move #${number} to ${to}: ${drop.reason}` });
     }
@@ -468,14 +432,8 @@ export function BoardPage() {
 
   return (
     <>
-      {/* A card open takes a column of the page for its drawer, and the head of the page is part of the page: its
-          actions stand left of the drawer rather than under it. */}
-      <div className={inspected ? (sheetShown ? beside.head : "dock:pr-96") : undefined}>
-        {header}
-      </div>
-      {/* The dock stands beside the whole of the board, not beside its lanes: it belongs to the page, and starting it
-          under the filters spent the room it asks for and left the filters standing alone over nothing. */}
-      <div className="flex min-w-0 flex-col gap-4 dock:flex-row dock:items-start">
+      {header}
+      <div className="flex min-w-0 flex-col">
         <div className="flex min-w-0 flex-1 flex-col">
           {openView && (
             <p
@@ -549,62 +507,7 @@ export function BoardPage() {
             </ScrollFades>
           )}
         </div>
-        {inspected && (
-          // The column holds the drawer's width so the board keeps the room it has; the drawer itself runs the whole
-          // height of the page's surface and is flush to its top, right and bottom edges, inside its rounded corners —
-          // it is the page's own card inspector rather than a sheet laid over it — and scrolls its sections rather
-          // than the page scrolling them. It is placed in the page's surface (`data-surface="page"`, which is
-          // positioned), not in the window: in the desktop app the window has a strip of its own above the page and a
-          // rail beside it, which a position in the window would not know. It lies above the slim right column it
-          // covers, under the sheets over it; while the column stands unfolded with the card's properties, the drawer
-          // stands beside it instead.
-          <div className={cn("w-full shrink-0 dock:w-96", sheetShown && beside.column)}>
-            <div
-              data-testid="inspector-drawer"
-              className={cn(
-                "dock:absolute dock:inset-y-0 dock:z-10 dock:w-96 dock:overflow-hidden",
-                // A sheet (the package sheet) lies over the column and a strip of the page, so the drawer stands
-                // beside it: the board gives way, and the card's text is not under the sheet. The agent's panel is
-                // beside the page instead, so the drawer ends where it starts.
-                sheetShown
-                  ? "dock:right-[var(--sheet-width)] dock:rounded-r-sheet"
-                  : agentOpen
-                    ? "dock:right-[var(--agent-width)]"
-                    : propertiesShown
-                      ? "dock:right-[var(--column-width)]"
-                      : "dock:right-0 dock:rounded-r-sheet",
-              )}
-            >
-              <Dock
-                key={inspected.id}
-                board={board}
-                card={inspected}
-                item={inboxOf(inbox, inspected)}
-                stopped={mergeStoppedOf(inbox, inspected)}
-                boards={data.data?.boards}
-                busy={pending}
-                askFor={rejectFor}
-                onAskAnswered={clearReject}
-                onDecide={decide}
-                menu={menu}
-                onOpenCard={onSelect}
-                onClose={closeDock}
-              />
-            </div>
-          </div>
-        )}
       </div>
-      {inspected && (
-        <CardFocus
-          card={inspected}
-          item={inboxOf(inbox, inspected)}
-          decide={decide}
-          onNotice={notify}
-          onBlock={setBlocking}
-          onAddSubIssue={(card) => openForm(card.number)}
-          onReject={(card) => setRejectFor(card.id)}
-        />
-      )}
       <RepositoryTerminal
         repository={board.repository.id}
         open={terminalOpen}

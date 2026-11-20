@@ -1,12 +1,10 @@
 /**
  * The columns of a board and the cards each shows: their names, the order of the cards, the stacks under them after the
- * filters, and the card the dock shows.
+ * filters.
  */
 import type { Board, Card, InboxItem } from "../../../api/types/board";
 import { type Filters, matchesCard, priorityRank } from "./filters";
-import { inboxOf } from "./inbox";
 import { descendants, isClosed, rootOf, type Stack } from "./stacks";
-import { isLive } from "./status";
 
 /** The columns of the default workflow, left to right. */
 export const COLUMNS = [
@@ -116,25 +114,4 @@ export function groupByColumn(
         stacks,
       };
     });
-}
-
-/**
- * The card the dock shows. A card chosen with `selected` (a card id, or "none" for a dock closed on purpose) wins;
- * a chosen card that is not on the board — it was deleted — leaves the dock closed; without a choice it is the first
- * live card, else the first that waits for a person, else the first not done.
- */
-export function inspectedCard(
-  board: Board,
-  inbox: readonly InboxItem[],
-  selected: string | null,
-): Card | undefined {
-  if (selected === "none") return undefined;
-  if (selected !== null) {
-    return board.cards.find((card) => String(card.id) === selected);
-  }
-  return (
-    board.cards.find(isLive) ??
-    board.cards.find((card) => inboxOf(inbox, card) !== undefined) ??
-    board.cards.find((card) => card.column !== "Done")
-  );
 }

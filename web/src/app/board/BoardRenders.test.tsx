@@ -148,15 +148,15 @@ describe("the board of 120 cards", () => {
   it("draws only the two cards whose choice changes when another card is opened", async () => {
     const seen = await measure(() => screen.getByTestId("card-7").click());
     expect(where.path).toContain("card=7");
-    // The drawer is new content, which has to be drawn (its rows and menus, and again as what it reads lands); what the
-    // board holds is not: the board in full is more than 3,500.
+    // The window lies over the board and is the shell's, not the page's: the page draws only the two cards whose
+    // choice changes.
     expect(seen.byName.BoardCard).toBeLessThanOrEqual(4);
-    expect(seen.rendered).toBeLessThan(1000);
+    expect(seen.rendered).toBeLessThan(200);
   });
 
   it("draws only the two cards whose choice changes when the card is closed", async () => {
     await measure(() => screen.getByTestId("card-7").click());
-    const seen = await measure(() => where.go("/board/1?card=none"));
+    const seen = await measure(() => where.go("/board/1"));
     expect(seen.byName.BoardCard).toBeLessThanOrEqual(4);
     expect(seen.rendered).toBeLessThan(200);
   });

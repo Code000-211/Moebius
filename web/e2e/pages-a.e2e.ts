@@ -396,8 +396,12 @@ describe("the inbox", () => {
     await (await choose("Speed up the build"))
       .getByRole("button", { name: "Open live view" })
       .click();
-    await page.waitForURL("**/board/1?card=5");
-    await page.goBack();
+    // The card opens as a window over the Inbox, which stays where it is.
+    await page.getByRole("dialog", { name: "Card inspector" }).waitFor();
+    expect(new URL(page.url()).pathname).toBe("/inbox");
+    expect(new URL(page.url()).searchParams.get("card")).toBe("5");
+    await page.keyboard.press("Escape");
+    await page.getByRole("dialog", { name: "Card inspector" }).waitFor({ state: "detached" });
     await (await choose("Add a retry helper")).getByRole("button", { name: "Open chat" }).click();
     await page.waitForURL("**/chat/9");
   });
@@ -979,8 +983,10 @@ describe("the fleet", () => {
 
       // A click opens the live view of the card or the chat.
       await card.click();
-      await page.waitForURL("**/board/1?card=1");
-      await page.goBack();
+      await page.waitForURL("**/fleet?card=1");
+      await page.getByRole("dialog", { name: "Card inspector" }).waitFor();
+      await page.keyboard.press("Escape");
+      await page.getByRole("dialog", { name: "Card inspector" }).waitFor({ state: "detached" });
       await tiles.filter({ hasText: "Write a ready.luau" }).click();
       await page.waitForURL(`**/chat/${chat}`);
     },

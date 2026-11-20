@@ -94,7 +94,7 @@ describe.skipIf(usesRealServer)("mentions", () => {
     // that goes with the first card's box. Wait for the dock of card 7 (its address and its number).
     await page.waitForURL(/\/board\/1\?card=7$/);
     await page
-      .getByRole("region", { name: "Card inspector" })
+      .getByRole("dialog", { name: "Card inspector" })
       .getByText("DEMO-31 · #7")
       .first()
       .waitFor();

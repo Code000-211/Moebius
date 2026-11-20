@@ -166,7 +166,7 @@ describe("the preview of a link to a card", () => {
     expect(preview.textContent).toContain("Moebius");
     expect(preview.textContent).toContain("In progress");
     expect(preview.textContent).toContain("Coder");
-    expect(link.getAttribute("href")).toBe("/board/1?card=118");
+    expect(link.getAttribute("href")).toBe("/?card=118");
     fireEvent.mouseLeave(link);
     expect(screen.queryByTestId("card-preview")).toBeNull();
   });
@@ -194,9 +194,9 @@ describe("the preview of a link to a card", () => {
   it("links a card key on any board, and #5 means the card numbered 5 in the project", async () => {
     inApp(<Markdown content="See MOE-18, moe-18, UTF-8, MOE-99 and #5, not #40" />);
     const key = await screen.findByRole("link", { name: "MOE-18" });
-    expect(key.getAttribute("href")).toBe("/board/1?card=118");
+    expect(key.getAttribute("href")).toBe("/?card=118");
     const same = screen.getByRole("link", { name: "#5" });
-    expect(same.getAttribute("href")).toBe("/board/1?card=140");
+    expect(same.getAttribute("href")).toBe("/?card=140");
     fireEvent.focus(same);
     expect(screen.getByTestId("card-preview").textContent).toContain("MOE-5");
     expect(screen.getAllByRole("link").map((l) => l.textContent)).toEqual(["MOE-18", "#5", "#40"]);
