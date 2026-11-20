@@ -290,6 +290,7 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("POST", "/v1/packages/{name}/update", OWNER_PERSON),
     // Improving Moebius.
     ("GET", "/v1/usage", VIEWER),
+    ("GET", "/v1/status", VIEWER_PERSON),
     ("GET", "/v1/analytics", VIEWER),
     ("GET", "/v1/judgements", VIEWER),
     ("GET", "/v1/judgements/kinds", VIEWER),

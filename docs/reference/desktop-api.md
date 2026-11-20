@@ -304,6 +304,7 @@ any route to any role that is not what its row says.
 | `DELETE /v1/packages/{name}` | owner | no |
 | `POST /v1/packages/{name}/update` | owner | no |
 | `GET /v1/usage` | viewer | yes |
+| `GET /v1/status` | viewer | no |
 | `GET /v1/analytics` | viewer | yes |
 | `GET /v1/judgements` | viewer | yes |
 | `GET /v1/judgements/kinds` | viewer | yes |
@@ -2396,6 +2397,23 @@ Response:
   the most tokens first. The same calls are counted under their model in `models` too.
 
 Errors: `422` `days` is not from 1 to 365.
+
+### `GET /v1/status`
+
+The few figures the desktop app's tray and rail show of a server, from a few small reads instead of the snapshot, the
+notices and the usage. Response:
+
+```json
+{"working": 2, "inbox": 3, "unread_notices": 1, "tokens": 1840000, "day_budget": 8000000, "paused": false}
+```
+
+- `working`: the cards the person sees (not archived, not in Done) whose latest run, an attempt that was not picked left
+  out, is starting or running.
+- `inbox`: the open inbox items the person sees, as many as `inbox` of the snapshot has.
+- `unread_notices`: the person's notices that are not read, as `GET /v1/notices` lists them; `0` for a token that is no
+  person's.
+- `tokens`: the tokens used since local midnight of the server (`totals.tokens` of `GET /v1/usage`), `day_budget` the
+  `day_tokens` of `moebius.toml` or `null`, and `paused` whether all agents are paused.
 
 ### `GET /v1/analytics`
 

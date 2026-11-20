@@ -9,6 +9,7 @@
 //! - `assignees`: giving a card or an inbox item to people.
 //! - `planning`: a card's priority and due date.
 //! - `notices`: what concerns a person (given, mentioned, a followed card changed), and following cards.
+//! - `status`: the few figures the tray and the rail of the desktop app show, without the snapshot.
 //! - `kinds`: kinds of issues and their fields, the kinds a project offers, a card's kind and fields, and the cards of every project by them.
 //! - `templates`: templates for issues and wiki pages, and making a page from one.
 //! - `repositories`: adding and editing repositories, and their settings and files.
@@ -91,6 +92,7 @@ mod runs;
 mod scope;
 mod session;
 mod settings;
+mod status;
 mod templates;
 mod terminals;
 mod uploads;
@@ -250,6 +252,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(card_repositories::routes())
         .merge(planning::routes())
         .merge(notices::routes())
+        .merge(status::routes())
         .merge(kinds::routes())
         .merge(repositories::routes())
         .merge(projects::routes())

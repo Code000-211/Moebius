@@ -26,6 +26,7 @@ pub use status::Entry;
 
 use crate::proxy::{self, Files, Proxy};
 use crate::server::{self, ConnectError, Server};
+use crate::tray::Figures;
 
 /// Why the rail did not do what it was asked.
 #[derive(Debug, thiserror::Error)]
@@ -364,15 +365,17 @@ impl Rail {
     }
 }
 
-/// Asks each server of `targets` how it is, all at once, in the order of the rail.
-pub async fn poll(targets: Vec<Target>) -> Vec<Entry> {
-    let http = reqwest::Client::new();
+/// Asks each server of `targets` how it is, all at once, in the order of the rail. The open server is not asked while
+/// the tray follows it: `followed` is what the tray last read of it (none when the tray has nothing), which its events
+/// keep up to date.
+pub async fn poll(targets: Vec<Target>, followed: Option<Figures>) -> Vec<Entry> {
     let asking = targets.into_iter().map(|target| {
-        let http = http.clone();
+        let followed = followed.clone().filter(|_| target.open);
         async move {
-            let count = match &target.server {
-                Some(server) => status::inbox_count(&http, server).await,
-                None => None,
+            let count = match (&followed, &target.server) {
+                (Some(figures), _) => Some(figures.rail_count()),
+                (None, Some(server)) => status::inbox_count(server).await,
+                (None, None) => None,
             };
             Entry {
                 id: target.id,

@@ -81,6 +81,8 @@ pub fn create(app: &mut tauri::App) -> tauri::Result<()> {
 pub fn follow(app: &AppHandle, server: Option<Server>) {
     let tray = app.state::<Tray>();
     *lock(&tray.server) = server.clone();
+    // The figures of the server followed before are not the new one's: the rail asks the server until they are read.
+    *lock(&tray.figures) = None;
     let task = server.map(|server| {
         let handle = app.clone();
         tauri::async_runtime::spawn(tray::follow(server, move |figures| {
@@ -95,6 +97,11 @@ pub fn follow(app: &AppHandle, server: Option<Server>) {
         show(app, None);
     }
     let _ = tray.pause.set_enabled(following);
+}
+
+/// What the tray last read of the server it follows, which the rail shows of that server in place of asking it.
+pub fn figures(app: &AppHandle) -> Option<Figures> {
+    lock(&app.state::<Tray>().figures).clone()
 }
 
 /// Puts `figures` into the menu and the tooltip; none means the server cannot be reached.
