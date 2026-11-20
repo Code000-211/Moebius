@@ -81,7 +81,13 @@ describe("the page of a card by its key", () => {
     expect(await screen.findByText("Fix the login redirect")).toBeTruthy();
     expect(screen.queryByRole("dialog", { name: "Card inspector" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Close the inspector" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Edit issue" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "More actions for #13" })).toBeTruthy();
+    // A page inside a page has the way back at the left of its title.
+    const back = screen.getByRole("link", { name: "Back to the board" });
+    expect(back.getAttribute("href")).toBe("/board/1");
+    expect(back.compareDocumentPosition(screen.getByText("Fix the login redirect"))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
     expect(requested).toContain("/v1/cards/by-key/WEB-24");
   });
 

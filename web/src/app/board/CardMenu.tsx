@@ -1,5 +1,5 @@
 /**
- * The ⋯ menu of a card, on the board and in the dock: Add a sub-issue…, Move to another parent…, Stop run (while a run is live), Block… or
+ * The ⋯ menu of a card, on the board and in the card window: Edit issue… and Properties… (the window's only), Add a sub-issue…, Move to another parent…, Stop run (while a run is live), Block… or
  * Unblock, and Delete…. The menu only says what was
  * chosen; the page owns the questions that follow (`CardDialogs.tsx`) and the requests. It is a real menu — the
  * trigger is a button with a name, Enter and the arrow keys work, Escape closes it and returns to the button — and it
@@ -13,6 +13,8 @@
  */
 import {
   DotsThreeIcon,
+  ListBulletsIcon,
+  NotePencilIcon,
   PlayIcon,
   PlusIcon,
   ProhibitIcon,
@@ -42,6 +44,8 @@ export function CardMenu({
   onDelete,
   onAddSubIssue,
   onMoveParent,
+  onEdit,
+  onProperties,
   className,
 }: {
   card: Card;
@@ -56,6 +60,10 @@ export function CardMenu({
   onStop: (card: Card) => void;
   /** Asks before deleting; the page opens its dialog. */
   onDelete: (card: Card) => void;
+  /** Opens the edit of the issue's title and text; only the card window offers it. */
+  onEdit?: (card: Card) => void;
+  /** Opens every property of the card; only the card window offers it. */
+  onProperties?: (card: Card) => void;
   className?: string;
 }) {
   // A choice that opens a dialog keeps the focus the dialog takes: the menu does not hand it back to its button.
@@ -84,6 +92,28 @@ export function CardMenu({
           opensDialog.current = false;
         }}
       >
+        {onEdit && (
+          <DropdownMenuItem
+            onSelect={() => {
+              opensDialog.current = true;
+              onEdit(card);
+            }}
+          >
+            <NotePencilIcon aria-hidden="true" />
+            Edit issue…
+          </DropdownMenuItem>
+        )}
+        {onProperties && (
+          <DropdownMenuItem
+            onSelect={() => {
+              opensDialog.current = true;
+              onProperties(card);
+            }}
+          >
+            <ListBulletsIcon aria-hidden="true" />
+            Properties…
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem
           onSelect={() => {
             opensDialog.current = true;

@@ -9,7 +9,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Board, Card } from "../../api/types/board";
-import { ActivitySection } from "../../app/board/IssueSections";
+import { CardThread } from "../../app/board/IssueSections";
 import { RunPage } from "../../app/runs/RunPage";
 import { ThreadView } from "../../chat/ThreadView";
 import { PREVIEW_DELAY_MS } from "./CardLinks";
@@ -232,7 +232,15 @@ describe("where the preview is drawn", () => {
 
   it("works in the comments of an issue", async () => {
     serve([{ id: 1, card_id: 118, author: "person", body: "Blocked by #19", at: 1 }]);
-    inApp(<ActivitySection card={BOARD.cards[0] as Card} />);
+    inApp(
+      <CardThread
+        card={BOARD.cards[0] as Card}
+        live={false}
+        busy={false}
+        onStop={() => {}}
+        needsYou={() => null}
+      />,
+    );
     fireEvent.focus(await screen.findByRole("link", { name: "#19" }));
     expect(screen.getByTestId("card-preview").textContent).toContain("Issue 19");
   });

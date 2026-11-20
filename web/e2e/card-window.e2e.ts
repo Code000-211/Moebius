@@ -175,4 +175,71 @@ describe.skipIf(usesRealServer)("the card window", () => {
     expect(await scrim.evaluate((el) => getComputedStyle(el).backdropFilter)).toBe("none");
     expect(Number(await scrim.evaluate((el) => getComputedStyle(el).opacity))).toBeGreaterThan(0);
   });
+
+  it("reads as a timeline: one needs-you block in its token's colour, two collapsed lines, the reply field inside the window", async () => {
+    await open("/board/1?card=5");
+    await window().getByRole("heading", { name: "Speed up the build" }).waitFor();
+    const blocks = window().getByTestId("needs-you-block");
+    await blocks.first().waitFor();
+    expect(await blocks.count()).toBe(1);
+    // Its background is the resolved needs-you tint.
+    const [shown, token] = await blocks.first().evaluate((el) => {
+      const probe = document.createElement("div");
+      probe.style.backgroundColor = "var(--needs-you-tint)";
+      document.body.append(probe);
+      const resolved = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return [getComputedStyle(el).backgroundColor, resolved];
+    });
+    expect(shown).toBe(token);
+    // A card that waits for nobody has none.
+    // The run and the review are collapsed lines that open to their details.
+    const code = window().getByRole("button", { name: "Code run" });
+    const review = window().getByRole("button", { name: "Review" });
+    expect(await code.getAttribute("aria-expanded")).toBe("false");
+    expect(await review.getAttribute("aria-expanded")).toBe("false");
+    await code.click();
+    expect(await code.getAttribute("aria-expanded")).toBe("true");
+    await window().getByRole("link", { name: "View run 11" }).waitFor();
+    expect(await review.getAttribute("aria-expanded")).toBe("false");
+    // Scrolled to the top, the reply field lies inside the window, which fits the viewport.
+    await window()
+      .getByTestId("thread")
+      .evaluate((el) => {
+        for (let node: HTMLElement | null = el; node; node = node.parentElement) node.scrollTop = 0;
+      });
+    const frame = (await window().boundingBox()) as {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
+    const field = (await window()
+      .getByRole("combobox", { name: "Write a comment" })
+      .boundingBox()) as { x: number; y: number; width: number; height: number };
+    expect(field.y).toBeGreaterThanOrEqual(frame.y);
+    expect(field.y + field.height).toBeLessThanOrEqual(frame.y + frame.height);
+    expect(frame.y + frame.height).toBeLessThanOrEqual(720);
+    expect(frame.y).toBeGreaterThanOrEqual(0);
+  });
+
+  it("has no needs-you block for a card that waits for nobody", async () => {
+    await open("/board/1?card=3");
+    await window().getByRole("heading", { name: "Document the API" }).waitFor();
+    expect(await window().getByTestId("needs-you-block").count()).toBe(0);
+  });
+
+  it("keeps every property and Edit issue in the menu, not in the window", async () => {
+    await open("/board/1?card=3");
+    await window().getByRole("heading", { name: "Document the API" }).waitFor();
+    expect(await window().getByText("Due date").count()).toBe(0);
+    await window()
+      .getByRole("button", { name: /More actions for/ })
+      .click();
+    await page.getByRole("menuitem", { name: "Properties…" }).click();
+    await page
+      .getByRole("dialog", { name: /Properties of/ })
+      .getByText("Due date")
+      .waitFor();
+  });
 });

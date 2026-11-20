@@ -1,26 +1,49 @@
 /**
  * A card's history as one timeline: the comments of people and the entries of `GET /v1/cards/{id}/history` put in
- * order, with the small changes that follow one another folded into one line ("3 changes"). Only a comment has a
- * frame of its own; a run and a refusal of a rule are lines that say more than a change, so they are never folded.
+ * order. A move is a small line of its own; a run is one line that holds what its start and its end said (a coding
+ * run, a review or another run, told apart by the run's purpose); a refusal of a rule is a line; the other small
+ * changes that follow one another are folded into one line ("3 changes"). What waits for a person comes last, as one
+ * block, from the item of the Inbox the card has.
  */
-import type { Comment } from "../../api/types/board";
+import type { Comment, InboxItem } from "../../api/types/board";
 import type { HistoryEntry } from "../../api/types/cards";
 import { describeHistory } from "./model";
 
-/** A line of the timeline: what happened, when, and the run it opens, if it was one. */
+/** A line of the timeline: what happened and when. */
 export interface TimelineEvent {
   at: number;
   text: string;
-  /** How it is marked: a run, a refusal of a rule, or a plain change. */
-  tone: "run" | "refusal" | "change";
-  /** The run this line opens the page of. */
-  run: number | null;
+  /** How it is marked: a refusal of a rule, a move to a column, or a plain change. */
+  tone: "refusal" | "move" | "change";
+  /** The column a move went to. */
+  to?: string;
+  /** What was said about the move. */
+  note?: string;
+}
+
+/** What a run is called on the timeline: the coding run and the review are told apart; any other is named by its purpose. */
+export type RunKind = "code" | "review" | "other";
+
+/** A run of the card, from its start and its end. */
+export interface TimelineRun {
+  run: number;
+  agent: string;
+  purpose: string;
+  kind: RunKind;
+  startedAt: number;
+  /** When it ended; null while it runs. */
+  endedAt: number | null;
+  /** How it ended (`done`, `failed`, `stopped`…); null while it runs. */
+  status: string | null;
 }
 
 export type TimelineItem =
   | { type: "comment"; comment: Comment }
+  | { type: "move"; event: TimelineEvent }
+  | { type: "run"; run: TimelineRun }
   | { type: "event"; event: TimelineEvent }
-  | { type: "fold"; events: TimelineEvent[] };
+  | { type: "fold"; events: TimelineEvent[] }
+  | { type: "needs-you"; item: InboxItem };
 
 /** A decision about a tool call that said no: a rule (or a person) refused it. */
 function isRefusal(entry: HistoryEntry): boolean {
@@ -29,45 +52,85 @@ function isRefusal(entry: HistoryEntry): boolean {
   );
 }
 
-function runOf(entry: HistoryEntry): number | null {
-  const run = entry.data.run;
-  return typeof run === "number" ? run : null;
+const text = (value: unknown): string => (typeof value === "string" ? value : "");
+
+/** Which of the card's runs this purpose is: the review of a change (`review`, `review-spec`…) or the code run. */
+export function runKindOf(purpose: string): RunKind {
+  if (purpose === "code") return "code";
+  if (purpose === "review" || purpose.startsWith("review-")) return "review";
+  return "other";
+}
+
+/** What a run is called: "Code run", "Review", or the purpose in a word such as "Plan run". */
+export function runLabel(run: TimelineRun): string {
+  if (run.kind === "code") return "Code run";
+  if (run.kind === "review") return "Review";
+  const word = run.purpose.replaceAll("-", " ");
+  return `${word.charAt(0).toUpperCase()}${word.slice(1)} run`.trim();
 }
 
 /** The entry as a line of the timeline. */
 export function eventOf(entry: HistoryEntry): TimelineEvent {
-  if (entry.kind === "run_started") {
-    return { at: entry.at, text: describeHistory(entry), tone: "run", run: runOf(entry) };
+  if (entry.kind === "moved") {
+    return {
+      at: entry.at,
+      text: describeHistory(entry),
+      tone: "move",
+      to: text(entry.data.to),
+      note: text(entry.data.note),
+    };
   }
   if (isRefusal(entry)) {
-    const reason = typeof entry.data.reason === "string" ? entry.data.reason : "";
-    const decider = typeof entry.data.decider === "string" ? entry.data.decider : "A rule";
+    const reason = text(entry.data.reason);
+    const decider = text(entry.data.decider) || "A rule";
     return {
       at: entry.at,
       text: reason ? `${decider} refused a tool call: ${reason}` : `${decider} refused a tool call`,
       tone: "refusal",
-      run: null,
     };
   }
-  return { at: entry.at, text: describeHistory(entry), tone: "change", run: null };
+  return { at: entry.at, text: describeHistory(entry), tone: "change" };
 }
 
 /**
  * The comments and the history in order of time; of the same second the history comes first, in the order the server
- * sent it. Changes that follow one another, with nothing else between them, become one fold; one change alone stays
- * a line.
+ * sent it. A run's start and end are one item, where it started. Changes that follow one another, with nothing else
+ * between them, become one fold; one change alone stays a line. The item of the Inbox that waits for a person ends it.
  */
-export function timelineOf(history: HistoryEntry[], comments: Comment[]): TimelineItem[] {
-  const merged: Array<{ at: number; item: TimelineItem }> = [
-    ...history.map((entry) => ({
-      at: entry.at,
-      item: { type: "event", event: eventOf(entry) } as TimelineItem,
-    })),
-    ...comments.map((comment) => ({
-      at: comment.at,
-      item: { type: "comment", comment } as TimelineItem,
-    })),
-  ];
+export function timelineOf(
+  history: HistoryEntry[],
+  comments: Comment[],
+  needsYou?: InboxItem,
+): TimelineItem[] {
+  const ended = new Map<number, HistoryEntry>();
+  for (const entry of history) {
+    if (entry.kind === "run_ended" && typeof entry.data.run === "number") {
+      ended.set(entry.data.run, entry);
+    }
+  }
+  const merged: Array<{ at: number; item: TimelineItem }> = [];
+  for (const entry of history) {
+    if (entry.kind === "run_ended") continue;
+    if (entry.kind === "run_started" && typeof entry.data.run === "number") {
+      const end = ended.get(entry.data.run);
+      const purpose = text(entry.data.purpose);
+      const run: TimelineRun = {
+        run: entry.data.run,
+        agent: text(entry.data.agent),
+        purpose,
+        kind: runKindOf(purpose),
+        startedAt: entry.at,
+        endedAt: end?.at ?? null,
+        status: end ? text(end.data.status) : null,
+      };
+      merged.push({ at: entry.at, item: { type: "run", run } });
+      continue;
+    }
+    const event = eventOf(entry);
+    merged.push({ at: entry.at, item: { type: event.tone === "move" ? "move" : "event", event } });
+  }
+  for (const comment of comments)
+    merged.push({ at: comment.at, item: { type: "comment", comment } });
   // Array.prototype.sort is stable, so equal times keep the history first and each list in its own order.
   merged.sort((a, b) => a.at - b.at);
   const items: TimelineItem[] = [];
@@ -86,10 +149,20 @@ export function timelineOf(history: HistoryEntry[], comments: Comment[]): Timeli
     items.push(item);
   }
   flush();
+  if (needsYou) items.push({ type: "needs-you", item: needsYou });
   return items;
 }
 
 /** What a fold says of itself: how many changes it holds. */
 export function foldLabel(count: number): string {
   return `${count} changes`;
+}
+
+/** How long a run took, such as `4m 12s`; null while it runs. */
+export function runDuration(run: TimelineRun): string | null {
+  if (run.endedAt === null) return null;
+  const seconds = Math.max(0, run.endedAt - run.startedAt);
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3_600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  return `${Math.floor(seconds / 3_600)}h ${Math.floor((seconds % 3_600) / 60)}m`;
 }

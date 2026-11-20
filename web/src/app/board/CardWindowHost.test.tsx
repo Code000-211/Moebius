@@ -6,7 +6,7 @@
  * opens its own dialog over it, whose Escape leaves the window open.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Board, Card } from "../../api/types/board";
@@ -137,7 +137,10 @@ describe("the card window", () => {
   it("leaves the window open when Escape closes the dialog over it", async () => {
     shell("/inbox?card=5");
     await screen.findByRole("dialog", { name: "Card inspector" });
-    fireEvent.click(screen.getByRole("button", { name: "Edit issue" }));
+    fireEvent.keyDown(screen.getByRole("button", { name: "More actions for #5" }), {
+      key: "Enter",
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit issue…" }));
     const edit = await screen.findByRole("dialog", { name: "Edit #5" });
     fireEvent.keyDown(edit, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit #5" })).toBeNull());
@@ -145,11 +148,27 @@ describe("the card window", () => {
     expect(where()).toBe("/inbox?card=5");
   });
 
-  it("names the properties in one compact block with the rest folded", async () => {
+  it("keeps every property out of the window, in a window of their own that the menu opens", async () => {
     shell("/inbox?card=5");
     const dialog = await screen.findByRole("dialog", { name: "Card inspector" });
-    const block = dialog.querySelector('section[aria-label="Properties of #5"]');
+    expect(dialog.querySelector('section[aria-label="Properties of #5"]')).toBeNull();
+    expect(screen.queryByText("Priority")).toBeNull();
+    fireEvent.keyDown(screen.getByRole("button", { name: "More actions for #5" }), {
+      key: "Enter",
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Properties…" }));
+    const properties = await screen.findByRole("dialog", { name: "Properties of #5" });
+    const block = properties.querySelector('section[aria-label="Properties of #5"]');
     expect(block?.textContent).toContain("Priority");
     expect(block?.querySelector("details")?.hasAttribute("open")).toBe(false);
+  });
+
+  it("has no captions: no Its run, Activity, Write a comment or Edit issue button in the window", async () => {
+    shell("/inbox?card=5");
+    const dialog = await screen.findByRole("dialog", { name: "Card inspector" });
+    for (const caption of ["Its run", "Activity", "Your turn", "The issue", "More properties"]) {
+      expect(within(dialog).queryByText(caption)).toBeNull();
+    }
+    expect(within(dialog).queryByRole("button", { name: "Edit issue" })).toBeNull();
   });
 });

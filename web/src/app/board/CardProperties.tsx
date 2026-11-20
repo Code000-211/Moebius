@@ -1,5 +1,5 @@
 /**
- * The properties of the card in the card window (`CardWindow.tsx`), as a compact block under its title: the state of
+ * The properties of the card, in the window its menu opens (`CardDetails.tsx`), as a compact block: the state of
  * the issue, who it is given to, its labels, priority, due date, repositories and parent, each edited in place and saved
  * alone (`ui/page/EditableProperty.tsx`), and under "More properties" every other fact and field — where the card is,
  * who wrote it, its kind and the fields of that kind, its cycle, milestones, estimate, claim, sub-issues, blockers, what
@@ -168,7 +168,7 @@ export function CardProperties({
 
   // The seven a person changes most are the block under the title; the rest of the facts and fields are one fold below it.
   return (
-    <section aria-label={`Properties of #${card.number}`} className="px-6 pb-2">
+    <section aria-label={`Properties of #${card.number}`} className="pb-2">
       <div className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
         <EditableProperty
           name="State"
