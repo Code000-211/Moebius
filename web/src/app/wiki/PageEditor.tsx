@@ -2,22 +2,28 @@
  * The editor of a wiki page: the Markdown at the left and how it reads at the right, side by side on a wide screen,
  * with an optional line for the commit. A new page also takes its path, in the folder it was started in. Saving is
  * `PUT /v1/wiki/pages/{path}`, a commit by the person pushed to the wiki's origin; when the push fails the server says
- * why and nothing is lost from the editor. Typing `[[` offers the pages and the start of a card's name (`WEB-`) the
+ * why and nothing is lost from the editor. The save carries `base`, the commit of the page as the editor loaded it, so
+ * a page someone else saved meanwhile is refused (409) rather than overwritten: the editor says so (before saving too,
+ * when `wiki_changed` shows a newer version), shows their version and lets the person keep their own text. Leaving with
+ * unsaved text asks first (`LeaveGuard`). Typing `[[` offers the pages and the start of a card's name (`WEB-`) the
  * cards, under the text: arrows choose, Enter or Tab completes, Escape closes.
  */
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { snapshot } from "../../api/calls/board";
-import { wikiPages, writeWikiPage } from "../../api/calls/wiki";
+import { staleWrite, wikiPages, writeWikiPage } from "../../api/calls/wiki";
 import { sayError } from "../../api/errorText";
 import { keys as queryKeys } from "../../api/keys";
 import type { WikiPageView } from "../../api/types/wiki";
 import { Markdown } from "../../ui/chat/Markdown";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
+import { ago } from "../../ui/lib/format";
+import { useNow } from "../../ui/lib/useNow";
 import { Field, TextArea } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { cardKey } from "../board/cardKey";
+import { LeaveGuard } from "./LeaveGuard";
 import {
   type CardChoice,
   cardChoices,
@@ -32,6 +38,8 @@ export function PageEditor({
   path,
   folder,
   text,
+  version,
+  latest,
   keys,
   onSaved,
   onCancel,
@@ -41,6 +49,10 @@ export function PageEditor({
   /** Where a new page goes, empty at the top. */
   folder: string;
   text: string;
+  /** The commit of the page as `text` is of it; null for a new page. */
+  version: string | null;
+  /** The page as it is now, which moves on while the editor is open; undefined for a new page. */
+  latest?: WikiPageView;
   /** The project keys a page may be under. */
   keys: readonly string[];
   onSaved: (page: WikiPageView) => void;
@@ -48,6 +60,13 @@ export function PageEditor({
 }) {
   const [name, setName] = useState("");
   const [draft, setDraft] = useState(text);
+  const [loaded] = useState(text);
+  // What the save is built on: the page as it was loaded, or as the person chose to keep their text over.
+  const [base, setBase] = useState(version ?? "");
+  const [refused, setRefused] = useState<{ current: WikiPageView | null } | null>(null);
+  const [theirs, setTheirs] = useState(false);
+  const saved = useRef(false);
+  const now = useNow();
   const [message, setMessage] = useState("");
   const field = useRef<HTMLTextAreaElement>(null);
   const [caret, setCaret] = useState(0);
@@ -90,9 +109,18 @@ export function PageEditor({
   const target = path ?? (folder === "" ? name.trim() : `${folder}/${name.trim()}`);
   const problem = path === null ? pathProblem(target, keys) : null;
   const save = useMutation({
-    mutationFn: () => writeWikiPage(target, draft, message.trim() || undefined),
-    onSuccess: onSaved,
+    mutationFn: () => writeWikiPage(target, draft, message.trim() || undefined, base),
+    onSuccess: (page) => {
+      saved.current = true;
+      onSaved(page);
+    },
+    onError: (error) => setRefused(staleWrite(error) ?? null),
   });
+  // A page someone saved since it was loaded: found out by a refused save, or by the event that brought it.
+  const newer = refused?.current ?? (latest && latest.version.commit !== base ? latest : null);
+  const gone = refused !== null && refused.current === null;
+  const dirty = () =>
+    !saved.current && (path === null ? name.trim() !== "" || draft !== "" : draft !== loaded);
   const ready = problem === null && !save.isPending && (path !== null || name.trim() !== "");
   return (
     <form
@@ -197,7 +225,62 @@ export function PageEditor({
           onChange={(event) => setMessage(event.target.value)}
         />
       </Field>
-      {save.isError && (
+      <LeaveGuard dirty={dirty} />
+      {(newer !== null || gone) && (
+        <Notice
+          tone="error"
+          action={
+            <div className="flex flex-wrap gap-2">
+              {newer !== null && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  type="button"
+                  aria-pressed={theirs}
+                  onClick={() => setTheirs(!theirs)}
+                >
+                  {theirs ? "Hide their version" : "See their version"}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="secondary"
+                type="button"
+                onClick={() => {
+                  setBase(newer?.version.commit ?? "");
+                  setRefused(null);
+                  setTheirs(false);
+                  save.reset();
+                }}
+              >
+                {gone ? "Save it again" : "Keep my text"}
+              </Button>
+            </div>
+          }
+        >
+          {gone ? (
+            <>
+              <span className="font-semibold">This page was deleted or moved. </span>
+              Your text is still here.
+            </>
+          ) : (
+            <>
+              <span className="font-semibold">Someone saved a newer version. </span>
+              {newer ? `${newer.version.author}, ${ago(now, newer.version.at)}. ` : ""}
+              Your text is still here: copy what you need from theirs, or keep yours to replace it.
+            </>
+          )}
+        </Notice>
+      )}
+      {theirs && newer !== null && (
+        <section aria-label="Their version" className="flex min-w-0 flex-col gap-1.5">
+          <span className="text-sm font-semibold text-secondary">Their version</span>
+          <pre className="m-0 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-card bg-sunken p-4 font-mono text-sm text-text">
+            {newer.text}
+          </pre>
+        </section>
+      )}
+      {save.isError && refused === null && (
         <Notice tone="error">
           <span className="font-semibold">Couldn't save the page. </span>
           {sayError(save.error, "Try again.")}

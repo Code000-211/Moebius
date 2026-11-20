@@ -303,9 +303,27 @@ export function createWikiFake(send: Send, pagesA: PagesAFake): WikiFake {
         return true;
       }
       if (method === "PUT") {
-        const body = JSON.parse(await readBody(request)) as { text: string; message?: string };
+        const body = JSON.parse(await readBody(request)) as {
+          text: string;
+          message?: string;
+          base?: string;
+        };
         const text = body.text === "" || body.text.endsWith("\n") ? body.text : `${body.text}\n`;
         const before = current(page);
+        // A save built on a page that has changed since is refused with the page as it is, as the server does.
+        if (body.base !== undefined) {
+          const same = before
+            ? before.commit === body.base ||
+              (body.base.length >= 7 && before.commit.startsWith(body.base))
+            : body.base === "";
+          if (!same) {
+            answer(response, 409, {
+              error: `someone saved a newer version of ${page} since you opened it`,
+              current: before ? view(page, before) : null,
+            });
+            return true;
+          }
+        }
         if (before && before.text === text) {
           answer(response, 200, view(page, before));
           return true;

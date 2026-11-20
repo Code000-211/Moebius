@@ -20,6 +20,22 @@ impl Wiki {
         text: &str,
         message: Option<&str>,
     ) -> Result<PageView> {
+        self.write_page_from(app, by, path, text, message, None)
+    }
+
+    /// [`Wiki::write_page`] for a save that is built on the page as a person read it: `base` is the commit of the
+    /// page they loaded (at least its first 7 characters), or `""` for a page that was not there. When the page's
+    /// latest commit is another, or the page is there or gone against that, nothing is written and the error is
+    /// [`AppError::Stale`] with the page as it is. Without `base` the text replaces the page whatever it holds.
+    pub fn write_page_from(
+        &self,
+        app: &App,
+        by: &Author,
+        path: &str,
+        text: &str,
+        message: Option<&str>,
+        base: Option<&str>,
+    ) -> Result<PageView> {
         let file = file_of(path)?;
         check_project(app, path)?;
         let mut text = text.to_string();
@@ -30,6 +46,30 @@ impl Wiki {
             let _turn = self.turn();
             self.follow(app)?;
             let target = self.inside(&file)?;
+            if let Some(base) = base {
+                let latest = if target.is_file() {
+                    self.history_of(&file)?.into_iter().next()
+                } else {
+                    None
+                };
+                let based_on_it = match &latest {
+                    None => base.is_empty(),
+                    Some(version) => {
+                        version.commit == base
+                            || (base.len() >= 7 && version.commit.starts_with(base))
+                    }
+                };
+                if !based_on_it {
+                    let current = match latest {
+                        Some(_) => Some(Box::new(self.page_held(path, None)?)),
+                        None => None,
+                    };
+                    return Err(AppError::Stale {
+                        path: path.to_string(),
+                        current,
+                    });
+                }
+            }
             let verb = if target.is_file() { "Update" } else { "Add" };
             let message = message_or(message, || format!("{verb} {path}"));
             let write = || {

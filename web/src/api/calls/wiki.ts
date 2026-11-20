@@ -1,5 +1,5 @@
 /** The calls of the Wiki page: the pages, one page (or an older version of it), its history, and writing, moving and deleting one. */
-import { del, get, post, put } from "../http";
+import { del, get, isApiError, post, put } from "../http";
 import type { PageInfo, PageLinks, Version, WikiHit, WikiPageView } from "../types/wiki";
 
 /** A page's path in a URL: each part percent-encoded, the slashes kept. */
@@ -18,12 +18,30 @@ export function wikiPage(path: string, at?: string): Promise<WikiPageView> {
   return get<WikiPageView>(`/v1/wiki/pages/${pageUrl(path)}${query}`);
 }
 
-/** Writes the page `path`, making it if it is not there: a commit by the person, pushed to the wiki's origin. */
-export function writeWikiPage(path: string, text: string, message?: string): Promise<WikiPageView> {
-  return put<WikiPageView>(
-    `/v1/wiki/pages/${pageUrl(path)}`,
-    message ? { text, message } : { text },
-  );
+/**
+ * Writes the page `path`, making it if it is not there: a commit by the person, pushed to the wiki's origin. `base` is
+ * the commit of the page as it was loaded (`""` for a page that was not there); when the page has changed since, the
+ * server writes nothing and answers 409, which `staleWrite` reads.
+ */
+export function writeWikiPage(
+  path: string,
+  text: string,
+  message?: string,
+  base?: string,
+): Promise<WikiPageView> {
+  return put<WikiPageView>(`/v1/wiki/pages/${pageUrl(path)}`, {
+    text,
+    ...(message ? { message } : {}),
+    ...(base !== undefined ? { base } : {}),
+  });
+}
+
+/** What a refused save says: the page as it is now (`null` when it is gone), or undefined for any other failure. */
+export function staleWrite(error: unknown): { current: WikiPageView | null } | undefined {
+  if (!isApiError(error) || error.status !== 409 || !error.body || !("current" in error.body)) {
+    return undefined;
+  }
+  return { current: (error.body.current as WikiPageView | null) ?? null };
 }
 
 /** Moves or renames a page; its history follows it. */
