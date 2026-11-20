@@ -82,6 +82,33 @@ describe("signing in", () => {
     expect(path()).toBe("/inbox");
   });
 
+  it("keeps the sign-in across a closed browser with Stay signed in, and drops it without", async () => {
+    await fresh();
+    await page.goto(server.url);
+    const stay = page.getByLabel("Stay signed in");
+    expect(await stay.isChecked()).toBe(true);
+    await page.getByLabel("Token").fill(server.token);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await pages().waitFor();
+    // A cookie with an expiry survives the browser being closed; reload and the stored state both stay signed in.
+    const kept = (await context.cookies()).find((c) => c.name === "moebius_session");
+    expect(kept?.expires).toBeGreaterThan(Date.now() / 1000);
+    await page.reload();
+    await pages().waitFor();
+
+    await context.clearCookies();
+    await page.goto(server.url);
+    await stay.uncheck();
+    await page.getByLabel("Token").fill(server.token);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await pages().waitFor();
+    // Without an expiry the cookie ends with the browser session: a new browser starts without it.
+    const session = (await context.cookies()).find((c) => c.name === "moebius_session");
+    expect(session?.expires).toBe(-1);
+    await page.reload();
+    await pages().waitFor();
+  });
+
   it("signs a person in with the access token an owner made for them", async () => {
     await fresh();
     const added = await fetch(`${server.url}/v1/people`, {

@@ -32,7 +32,25 @@ describe("SignIn", () => {
     const [path, init] = fake.mock.calls[0] as [string, RequestInit];
     expect(path).toBe("/v1/session");
     expect(init.method).toBe("POST");
-    expect(init.body).toBe('{"token":"secret"}');
+    expect(init.body).toBe('{"token":"secret","stay":true}');
+  });
+
+  it("stays signed in unless the box is cleared, and says so to the server", async () => {
+    const fake = answers(204);
+    render(<SignIn onSignedIn={() => {}} />);
+    const box = screen.getByLabelText("Stay signed in") as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    fireEvent.change(screen.getByLabelText("Token"), { target: { value: "t" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(fake).toHaveBeenCalledOnce());
+    expect((fake.mock.calls[0] as [string, RequestInit])[1].body).toBe('{"token":"t","stay":true}');
+    fireEvent.click(box);
+    expect(box.checked).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(fake).toHaveBeenCalledTimes(2));
+    expect((fake.mock.calls[1] as [string, RequestInit])[1].body).toBe(
+      '{"token":"t","stay":false}',
+    );
   });
 
   it("shows the refusal and stays", async () => {

@@ -19,7 +19,7 @@ const SERVICE: &str = "Moebius desktop";
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 #[error(
     "the system's keychain does not answer: {0}. Install or unlock a keyring (gnome-keyring or KWallet on Linux), or \
-     connect for this session only"
+     clear Stay signed in"
 )]
 pub struct SecretError(pub String);
 

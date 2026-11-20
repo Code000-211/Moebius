@@ -24,6 +24,7 @@ import { Input } from "../ui/components/Input";
 import { Tooltip } from "../ui/components/Tooltip";
 import { cn } from "../ui/lib/cn";
 import { Field } from "../ui/page/Field";
+import { StayCheckbox } from "../ui/page/StayCheckbox";
 import { type DesktopBridge, NO_SERVER, type RailServer } from "./bridge";
 
 /** How often the rail asks the app how each server is. */
@@ -315,7 +316,7 @@ function AddServer({
           <DialogDescription>
             {ssh
               ? "A host you can log in to with ssh keys: the app opens a tunnel to its server, as moebius connect does."
-              : "The address of a Moebius server and an access token of yours. The token is kept in the system's keychain."}
+              : "The address of a Moebius server and an access token of yours. Stay signed in keeps the token in the system's keychain; without it, it stays in memory."}
           </DialogDescription>
         </DialogHeader>
         <div className="flex gap-2">
@@ -336,7 +337,11 @@ function AddServer({
               () =>
                 ssh
                   ? bridge.connectSsh(host, false)
-                  : bridge.connect(String(data.get("address")), String(data.get("token"))),
+                  : bridge.connect(
+                      String(data.get("address")),
+                      String(data.get("token")),
+                      data.get("stay") === null,
+                    ),
               ssh ? host : undefined,
             );
           }}
@@ -353,6 +358,7 @@ function AddServer({
               <Field label="Access token">
                 <Input name="token" type="password" autoComplete="off" required />
               </Field>
+              <StayCheckbox name="stay" />
             </>
           )}
           {setUp !== null && (
