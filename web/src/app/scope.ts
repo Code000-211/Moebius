@@ -60,3 +60,17 @@ export function useScopeFilters(): ScopeFilters {
     clear: () => setQuery(Object.fromEntries(SCOPE_KEYS.map((key) => [key, ""]))),
   };
 }
+
+/**
+ * The window (a number of days) a page reads, kept in the address as `days` so a reload and a link keep it. A value
+ * the page has no chip for falls back to `fallback`, and the fallback leaves no trace in the address.
+ */
+export function useDays(
+  allowed: readonly number[],
+  fallback: number,
+): [number, (days: number) => void] {
+  const [params, setQuery] = useQueryParams();
+  const asked = Number(params.get("days"));
+  const days = allowed.includes(asked) ? asked : fallback;
+  return [days, (next) => setQuery({ days: next === fallback ? "" : String(next) })];
+}

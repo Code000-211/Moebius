@@ -18,6 +18,7 @@ import { listProjects } from "../../api/calls/projects";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { MilestoneFields, MilestoneView } from "../../api/types/milestones";
+import { Markdown } from "../../ui/chat/Markdown";
 import { Button } from "../../ui/components/Button";
 import {
   Dialog,
@@ -76,6 +77,8 @@ export function MilestonesPage() {
   const display = useMemo(() => readDisplay(params, CHOICES), [params]);
   const layout = display.layout === "timeline" ? "timeline" : "list";
   const project = params.get("project") ?? "";
+  // The milestone that is opened is in the address, so a reload and a link keep it open.
+  const opened = Number(params.get("milestone")) || null;
   const [editing, setEditing] = useState<MilestoneView | "new" | null>(null);
   const [deleting, setDeleting] = useState<MilestoneView | null>(null);
   const queryClient = useQueryClient();
@@ -161,6 +164,10 @@ export function MilestonesPage() {
                   key={milestone.id}
                   milestone={milestone}
                   now={now}
+                  open={milestone.id === opened}
+                  onToggle={() =>
+                    setQuery({ milestone: milestone.id === opened ? "" : String(milestone.id) })
+                  }
                   onEdit={() => setEditing(milestone)}
                   onDelete={() => setDeleting(milestone)}
                 />
@@ -210,22 +217,25 @@ function Progress({ done, cards, className }: { done: number; cards: number; cla
 function Row({
   milestone,
   now,
+  open,
+  onToggle,
   onEdit,
   onDelete,
 }: {
   milestone: MilestoneView;
   now: string;
+  open: boolean;
+  onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const late = overdue(milestone, now);
   return (
     <li className="rounded-card bg-raised shadow-card" data-testid="milestone">
       <button
         type="button"
         aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        onClick={onToggle}
         className="grid w-full cursor-pointer appearance-none grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 rounded-card bg-transparent p-3 text-left sm:grid-cols-[minmax(0,1fr)_14rem_auto]"
       >
         <span className="flex min-w-0 items-center gap-2">
@@ -268,10 +278,18 @@ function Detail({
   });
   return (
     <div className="flex flex-col gap-3 border-0 border-t border-solid border-hairline p-3">
+      <div className="flex gap-2">
+        <Button size="sm" variant="secondary" onClick={onEdit}>
+          <PencilSimpleIcon className="size-4" aria-hidden="true" />
+          Edit
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onDelete}>
+          <TrashIcon className="size-4" aria-hidden="true" />
+          Delete
+        </Button>
+      </div>
       {milestone.description !== "" && (
-        <p className="m-0 max-w-prose whitespace-pre-wrap text-md text-text">
-          {milestone.description}
-        </p>
+        <Markdown content={milestone.description} className="max-w-prose text-md text-text" />
       )}
       {milestone.projects.length > 0 && (
         <ul className="m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-sm text-secondary">
@@ -300,16 +318,6 @@ function Detail({
           )}
         </ul>
       )}
-      <div className="flex gap-2">
-        <Button size="sm" variant="secondary" onClick={onEdit}>
-          <PencilSimpleIcon className="size-4" aria-hidden="true" />
-          Edit
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onDelete}>
-          <TrashIcon className="size-4" aria-hidden="true" />
-          Delete
-        </Button>
-      </div>
     </div>
   );
 }

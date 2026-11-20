@@ -67,6 +67,29 @@ fn invalid(message: impl Into<String>) -> AppError {
     AppError::Invalid(message.into())
 }
 
+/// What is wrong with `text` as a configuration, for a person who edits it from the web app: the key and what it
+/// took, without the path of the file or an excerpt of it ("run_limit: invalid value: integer `-5`, expected u32").
+/// A message that is not about the parse of the file is kept as it is.
+fn problem(error: &crate::config::ConfigError, text: &str) -> String {
+    let message = match error {
+        crate::config::ConfigError::Parse { source, .. } => {
+            let key = source
+                .span()
+                .and_then(|span| text.get(..span.start))
+                .and_then(|before| before.rsplit('\n').next())
+                .and_then(|line| line.split('=').next())
+                .map(str::trim)
+                .filter(|key| !key.is_empty() && !key.contains(['[', '"']));
+            match key {
+                Some(key) => format!("{key}: {}", source.message()),
+                None => source.message().to_string(),
+            }
+        }
+        other => other.to_string(),
+    };
+    redact(&message)
+}
+
 /// Reads and parses the configuration file; a file that is not there is an empty one.
 pub fn read_raw(file: &Path) -> Result<(String, toml::Table)> {
     let text = match std::fs::read_to_string(file) {
@@ -142,5 +165,19 @@ mod tests {
         write_atomically(&secrets, b"k = 2\n", true).unwrap();
         assert_eq!(std::fs::read_to_string(&secrets).unwrap(), "k = 2\n");
         assert_eq!(mode(&secrets), 0o600);
+    }
+
+    #[test]
+    fn a_value_out_of_range_is_told_by_its_key_without_the_path_or_an_excerpt() {
+        let text = "run_limit = -5\n";
+        let file = Path::new("/srv/moebius.toml");
+        let error = crate::config::Config::parse(text, Path::new("/srv"), file).unwrap_err();
+        let said = problem(&error, text);
+        assert_eq!(said, "run_limit: invalid value: integer `-5`, expected u32");
+        assert!(!said.contains("/srv") && !said.contains('|'));
+        // Other refusals keep their words.
+        let other =
+            crate::config::Config::parse("run_limit = 0\n", Path::new("/srv"), file).unwrap_err();
+        assert_eq!(problem(&other, ""), "run_limit must be at least 1");
     }
 }

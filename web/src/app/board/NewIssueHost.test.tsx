@@ -19,6 +19,13 @@ const snapshot = {
       waiting: {},
       changes: [],
     },
+    {
+      repository: { id: 2, name: "storefront", forge: "github" },
+      cards: [],
+      round_limit: 5,
+      waiting: {},
+      changes: [],
+    },
   ],
   inbox: [],
 };
@@ -31,6 +38,16 @@ afterEach(() => {
 function stub() {
   const fetch = vi.fn(async (_url: string, init?: { method?: string }) => {
     const made = init?.method === "POST";
+    if (_url === "/v1/projects") {
+      const project = (id: number, repository: number) => ({
+        id,
+        name: `P${id}`,
+        key: `P${id}`,
+        repositories: [{ id: repository, name: "r", home: true }],
+        files: null,
+      });
+      return { ok: true, status: 200, text: async () => JSON.stringify([project(5, 2)]) };
+    }
     return {
       ok: true,
       status: 200,
@@ -42,11 +59,11 @@ function stub() {
   return fetch;
 }
 
-function page() {
+function page(path = "/agents") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={["/agents"]}>
+      <MemoryRouter initialEntries={[path]}>
         <NewIssueProvider>
           <input aria-label="Elsewhere" />
           <p>The page</p>
@@ -66,6 +83,23 @@ describe("C", () => {
     expect(await screen.findByRole("dialog", { name: "New issue" })).toBeTruthy();
   });
 
+  it("hands the focus back to where it was when Escape closes the form", async () => {
+    stub();
+    await page();
+    const elsewhere = screen.getByLabelText("Elsewhere");
+    elsewhere.focus();
+    // The key is for the page: a field in focus would keep it, so the opener is a button.
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    fireEvent.keyDown(opener, { key: "c" });
+    const title = await screen.findByLabelText("Title");
+    fireEvent.keyDown(title, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+    opener.remove();
+  });
+
   it("is left alone while a person types in a field", async () => {
     stub();
     await page();
@@ -78,6 +112,27 @@ describe("C", () => {
     await page();
     fireEvent.keyDown(document.body, { key: "c", ctrlKey: true });
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("C on the Issues page filtered to a project", () => {
+  it("starts with that project's repository, not the first one", async () => {
+    stub();
+    await page("/issues?project=5");
+    // The project's repositories are read once the page is filtered.
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await new Promise((r) => setTimeout(r, 50));
+    fireEvent.keyDown(document.body, { key: "c" });
+    const dialog = await screen.findByRole("dialog", { name: "New issue" });
+    expect(dialog.textContent).toContain("Backlog of storefront");
+  });
+
+  it("starts with the first repository when no project is filtered", async () => {
+    stub();
+    await page("/issues");
+    fireEvent.keyDown(document.body, { key: "c" });
+    const dialog = await screen.findByRole("dialog", { name: "New issue" });
+    expect(dialog.textContent).toContain("Backlog of travel-timeline");
   });
 });
 

@@ -10,7 +10,26 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import * as React from "react";
 import { cn } from "../lib/cn";
 
-const Dialog = DialogPrimitive.Root;
+/** The element that had the focus when the dialog opened, for the content to hand the focus back to. */
+const Opener = React.createContext<React.RefObject<Element | null>>({ current: null });
+
+/**
+ * A dialog. Opened by state (`open`, with no trigger), it notes which element had the focus the moment it opens —
+ * before the sheet's own content, an `autoFocus` field included, takes it — so that closing it with Escape gives the
+ * focus back there rather than leaving it on the page's body.
+ */
+function Dialog({ open, ...props }: DialogPrimitive.DialogProps) {
+  const opener = React.useRef<Element | null>(null);
+  const was = React.useRef(false);
+  if (open && !was.current && typeof document !== "undefined")
+    opener.current = document.activeElement;
+  was.current = open === true;
+  return (
+    <Opener.Provider value={opener}>
+      <DialogPrimitive.Root open={open} {...props} />
+    </Opener.Provider>
+  );
+}
 
 function DialogPortal({ children, ...props }: DialogPrimitive.DialogPortalProps) {
   return <DialogPrimitive.Portal {...props}>{children}</DialogPrimitive.Portal>;
@@ -40,37 +59,61 @@ const DialogContent = React.forwardRef<
     /** Classes of the scrim behind the sheet, for one that blurs the page. */
     overlayClassName?: string;
   }
->(({ className, children, hideCloseButton = false, overlayClassName, ...props }, ref) => {
-  return (
-    <DialogPortal>
-      <DialogOverlay className={overlayClassName} />
-      <DialogPrimitive.Content
-        ref={ref}
-        // Radix hides the page behind the sheet but does not say so in the dialog's own role; `modalIsOpen` looks for it.
-        aria-modal="true"
-        className={cn(
-          "fixed inset-0 z-sheet m-auto flex h-fit max-h-[calc(100%_-_2rem)] w-full max-w-lg",
-          "flex-col overflow-y-auto",
-          "glass rounded-sheet shadow-raised",
-          "data-[state=open]:animate-in data-[state=closed]:animate-out",
-          "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-          "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
-          "duration-(--motion-routine)",
-          className,
-        )}
-        {...props}
-      >
-        {children}
-        {!hideCloseButton && (
-          <DialogPrimitive.Close className="absolute top-2 right-2 inline-flex size-8 cursor-pointer items-center justify-center rounded-control text-secondary transition-colors duration-(--motion-routine) hover:bg-hover hover:text-text disabled:pointer-events-none">
-            <XIcon className="size-4" />
-            <span className="sr-only">Close</span>
-          </DialogPrimitive.Close>
-        )}
-      </DialogPrimitive.Content>
-    </DialogPortal>
-  );
-});
+>(
+  (
+    {
+      className,
+      children,
+      hideCloseButton = false,
+      overlayClassName,
+      onCloseAutoFocus,
+      onOpenAutoFocus,
+      ...props
+    },
+    ref,
+  ) => {
+    const opener = React.useContext(Opener);
+    return (
+      <DialogPortal>
+        <DialogOverlay className={overlayClassName} />
+        <DialogPrimitive.Content
+          ref={ref}
+          // Radix hides the page behind the sheet but does not say so in the dialog's own role; `modalIsOpen` looks for it.
+          aria-modal="true"
+          onOpenAutoFocus={onOpenAutoFocus}
+          onCloseAutoFocus={(event) => {
+            onCloseAutoFocus?.(event);
+            const back = opener.current;
+            if (event.defaultPrevented || !(back instanceof HTMLElement) || !back.isConnected)
+              return;
+            if (back === document.body) return;
+            event.preventDefault();
+            back.focus();
+          }}
+          className={cn(
+            "fixed inset-0 z-sheet m-auto flex h-fit max-h-[calc(100%_-_2rem)] w-full max-w-lg",
+            "flex-col overflow-y-auto",
+            "glass rounded-sheet shadow-raised",
+            "data-[state=open]:animate-in data-[state=closed]:animate-out",
+            "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+            "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+            "duration-(--motion-routine)",
+            className,
+          )}
+          {...props}
+        >
+          {children}
+          {!hideCloseButton && (
+            <DialogPrimitive.Close className="absolute top-2 right-2 inline-flex size-8 cursor-pointer items-center justify-center rounded-control text-secondary transition-colors duration-(--motion-routine) hover:bg-hover hover:text-text disabled:pointer-events-none">
+              <XIcon className="size-4" />
+              <span className="sr-only">Close</span>
+            </DialogPrimitive.Close>
+          )}
+        </DialogPrimitive.Content>
+      </DialogPortal>
+    );
+  },
+);
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (

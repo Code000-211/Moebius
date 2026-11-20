@@ -7,6 +7,8 @@
 import { TrayArrowDownIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link } from "react-router";
+import { snapshot } from "../../api/calls/board";
 import {
   acceptRequest,
   declineRequest,
@@ -29,6 +31,7 @@ import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
+import { boardPath } from "../pages";
 import { useRole } from "../shell/session";
 import { decides, open, ordered, statusWords } from "./model";
 
@@ -217,6 +220,16 @@ function RequestCard({ request, decider }: { request: IntakeRequest; decider: bo
     mutationFn: () => declineRequest(request.id, reason),
     onSettled: settled,
   });
+  // The card an accepted request made, found among the boards the page already holds.
+  const boards = useQuery({
+    queryKey: keys.snapshot,
+    queryFn: () => snapshot(),
+    enabled: request.card_id !== null,
+  });
+  const home =
+    request.card_id === null
+      ? undefined
+      : boards.data?.boards.find((b) => b.cards.some((c) => c.id === request.card_id));
   const failed = [save, accept, decline].find((each) => each.isError);
   const editable = decider && open(request);
   return (
@@ -227,6 +240,14 @@ function RequestCard({ request, decider }: { request: IntakeRequest; decider: bo
     >
       <p className="m-0 text-sm text-secondary">
         @{request.requester} · {statusWords(request)}
+        {home && (
+          <>
+            {" · "}
+            <Link to={`${boardPath(home.repository.id)}?card=${request.card_id}`}>
+              Open the card
+            </Link>
+          </>
+        )}
       </p>
       <p className="m-0 whitespace-pre-wrap text-base text-text">{request.text}</p>
       {editable && request.status === "drafted" && (

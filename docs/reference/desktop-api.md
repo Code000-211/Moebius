@@ -3397,7 +3397,8 @@ The change is made to the text of the file, so its comments and the order of its
 variable of an upstream that is not set, a secret that is not stored, a GitHub App key file, a GitHub, GitLab or Forgejo
 token file that cannot be read, a token secret that is not stored or a token that is empty, `[agents.*]` together with
 `[harness]`) the
-answer is `422` with the message of the parse and nothing is written. Otherwise the file is written in one step (a
+answer is `422` and nothing is written; the message names the key and what it took, without the path of the file or an excerpt
+of it (``run_limit: invalid value: integer `-5`, expected u32``). Otherwise the file is written in one step (a
 temporary file in its directory that replaces it), the decision is recorded (kind `edit_settings`, decider `person`,
 the `set` and `remove` in its context; a URL has no user name and password there, and a key is never part of a
 change), and the keys that are live take effect at once. Response: `{"restart_needed": boolean, "restart_keys":
