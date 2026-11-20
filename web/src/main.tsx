@@ -11,9 +11,11 @@ import { makeQueryClient } from "./app/shell/queryClient";
 import { startLogin } from "./auth/login";
 import "./styles/tailwind.css";
 import { start as startTheme } from "./theme";
+import { start as startEffects } from "./ui/lib/effects";
 
 void startLogin(window);
 startTheme();
+startEffects();
 
 const queryClient = makeQueryClient();
 
