@@ -107,7 +107,7 @@ export function ListRow({
           <span
             aria-hidden="true"
             data-testid="unread-dot"
-            className="size-1.5 shrink-0 rounded-full bg-accent"
+            className="absolute left-1 top-1/2 size-1.5 -translate-y-1/2 rounded-full bg-accent"
           />
           <span className="sr-only">Unread</span>
         </>
@@ -115,7 +115,7 @@ export function ListRow({
       {reason && <span className="min-w-0 shrink-[2] truncate text-muted">{reason}</span>}
       <span className="ml-auto flex shrink-0 items-center gap-2.5">
         {action}
-        {owner && <Avatar handle={owner} />}
+        {owner && <Avatar handle={owner} className="size-[18px]" />}
         {age !== undefined && (
           <span className="w-10 text-right text-xs tabular-nums text-muted">{age}</span>
         )}

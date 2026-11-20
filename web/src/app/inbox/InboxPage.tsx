@@ -199,6 +199,7 @@ export function InboxPage() {
             empty={
               filtered ? (
                 <Empty
+                  centered
                   title="Nothing here with those filters"
                   action={
                     <Button
@@ -212,6 +213,7 @@ export function InboxPage() {
                 />
               ) : (
                 <Empty
+                  centered
                   title="Nothing needs you"
                   icon={<CheckCircleIcon className="size-6 text-complete-text" weight="fill" />}
                   action={

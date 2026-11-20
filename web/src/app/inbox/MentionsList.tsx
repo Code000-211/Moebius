@@ -112,7 +112,11 @@ export function MentionsList({ snapshot, now }: { snapshot: Snapshot; now: numbe
         />
       )}
       empty={
-        <Empty title="Nothing mentions you" icon={<AtIcon className="size-6 text-secondary" />} />
+        <Empty
+          centered
+          title="Nothing mentions you"
+          icon={<AtIcon className="size-6 text-secondary" />}
+        />
       }
     />
   );
