@@ -10,8 +10,7 @@ import { useState } from "react";
 import { deleteSkillFile, saveSkillFile, skillFile } from "../../api/calls/harness";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
-import { Button } from "../../ui/components/Button";
-import { EditorWindow } from "../../ui/components/EditorWindow";
+import { DeleteButton, EditorWindow } from "../../ui/components/EditorWindow";
 import { Input } from "../../ui/components/Input";
 import { ConfirmDelete } from "../../ui/page/ConfirmDelete";
 import { Field, TextArea } from "../../ui/page/Field";
@@ -99,9 +98,7 @@ export function FileEditor({
       error={error ?? (detail.isError ? detail.error.message : null)}
       actions={
         !naming && !builtIn ? (
-          <Button variant="danger" size="sm" onClick={() => setDeleting(true)}>
-            Delete file
-          </Button>
+          <DeleteButton onClick={() => setDeleting(true)}>Delete file</DeleteButton>
         ) : undefined
       }
       onSave={() => {

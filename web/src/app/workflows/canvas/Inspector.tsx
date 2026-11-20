@@ -2,7 +2,6 @@
  * The window a chosen step opens in (`ui/components/EditorWindow.tsx`): a node, the trigger or an edge. The edits are a
  * draft held in the window; Save gives them to the graph, and the shared window guards the draft when it is closed.
  */
-import { TrashIcon } from "@phosphor-icons/react";
 import { type ReactNode, useState } from "react";
 import type {
   Trigger,
@@ -11,8 +10,7 @@ import type {
   WorkflowNode,
   WorkflowNodeRun,
 } from "../../../api/types/workflows";
-import { Button } from "../../../ui/components/Button";
-import { EditorWindow } from "../../../ui/components/EditorWindow";
+import { DeleteButton, EditorWindow } from "../../../ui/components/EditorWindow";
 import { Input } from "../../../ui/components/Input";
 import { Field } from "../../../ui/page/Field";
 import { JsonValue } from "../../../ui/page/JsonValue";
@@ -136,10 +134,9 @@ function NodeWindow({
       onSave={() => onSave(id.trim(), params)}
       onClose={onClose}
       actions={
-        <Button variant="danger" size="sm" onClick={onDelete} data-testid="delete-node">
-          <TrashIcon size={16} />
+        <DeleteButton onClick={onDelete} data-testid="delete-node">
           Delete node
-        </Button>
+        </DeleteButton>
       }
     >
       <Field label="Id" hint="The name the file writes the node by, and the edges to it.">
@@ -207,13 +204,12 @@ function EdgeWindow({
       open
       title={`${edge.from} → ${edge.to}`}
       dirty={false}
-      onSave={onClose}
+      height="fit"
       onClose={onClose}
       actions={
-        <Button variant="danger" size="sm" onClick={onDelete} data-testid="delete-edge">
-          <TrashIcon size={16} />
+        <DeleteButton onClick={onDelete} data-testid="delete-edge">
           Delete edge
-        </Button>
+        </DeleteButton>
       }
     >
       <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">

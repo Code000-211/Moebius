@@ -424,10 +424,12 @@ describe("the Skills page", () => {
       expect(await page.getByRole("tab", { name: "Rendered" }).getAttribute("aria-selected")).toBe(
         "true",
       );
+      await page
+        .getByRole("paragraph")
+        .filter({ hasText: "Use short sentences." })
+        .first()
+        .waitFor();
       expect(await page.getByRole("textbox", { name: "SKILL.md", exact: true }).count()).toBe(0);
-      expect(
-        await page.getByRole("paragraph").filter({ hasText: "Use short sentences." }).count(),
-      ).toBeGreaterThan(0);
     },
   );
 
