@@ -373,6 +373,51 @@ describe("the command bar", () => {
     await page.getByRole("heading", { name: "Retro", level: 1 }).waitFor();
   });
 
+  it("draws rows of 36px with an icon and no key hint", async () => {
+    await fresh();
+    await page.goto(server.loginUrl);
+    await pages().waitFor();
+    await page.keyboard.press("Control+k");
+    const dialog = page.getByRole("dialog", { name: "Search" });
+    await dialog.getByRole("option").first().waitFor();
+    expect(await dialog.locator("kbd").count()).toBe(0);
+    const row = await dialog.getByRole("option").first().boundingBox();
+    expect(row?.height).toBe(36);
+    for (const option of await dialog.getByRole("option").all()) {
+      expect(await option.locator("svg").count()).toBeGreaterThan(0);
+    }
+  });
+
+  it("sends the typed text to the agent on Tab, and does nothing on Tab with no text", async () => {
+    await fresh();
+    await page.goto(server.loginUrl);
+    await pages().waitFor();
+    const agent = page.getByRole("complementary", { name: "Moebius agent" });
+    await page.keyboard.press("Control+k");
+    const input = page.getByPlaceholder("Search…");
+    await input.waitFor();
+    await page.keyboard.press("Tab");
+    expect(await input.isVisible()).toBe(true);
+    expect(await agent.count()).toBe(0);
+    await input.fill("What is this page?");
+    await page.keyboard.press("Tab");
+    await input.waitFor({ state: "detached" });
+    await agent.waitFor();
+    await agent.getByText("You said: What is this page?").first().waitFor();
+  });
+
+  it("starts a new conversation with the agent from the palette", async () => {
+    await fresh();
+    await page.goto(server.loginUrl);
+    await pages().waitFor();
+    const agent = page.getByRole("complementary", { name: "Moebius agent" });
+    await page.keyboard.press("Control+k");
+    await page.getByPlaceholder("Search…").fill("new conversation");
+    await page.getByRole("option", { name: "New conversation" }).click();
+    await agent.waitFor();
+    expect(await agent.getByText("You said:").count()).toBe(0);
+  });
+
   it("opens from the sidebar's search and closes with Escape", async () => {
     await fresh();
     await page.goto(server.loginUrl);

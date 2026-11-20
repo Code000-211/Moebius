@@ -21,6 +21,7 @@ export function AgentPanel() {
         onClose={() => agent.hide(true)}
         takePending={agent.take}
         pending={agent.pending}
+        fresh={agent.fresh}
       />
     </Suspense>
   );

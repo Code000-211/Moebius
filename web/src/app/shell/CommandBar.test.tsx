@@ -8,10 +8,10 @@ import { useState } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../api/keys";
+import { AgentProvider, useAgent } from "./AgentContext";
 import { CommandBar } from "./CommandBar";
 import { PaletteFocusFor, PaletteFocusProvider } from "./palette/focus";
 import type { PaletteCommand } from "./palette/model";
-import { NEW_ISSUE_KEY, SHORTCUTS_KEY } from "./palette/shortcuts";
 
 afterEach(() => {
   cleanup();
@@ -79,12 +79,25 @@ function open(commands: PaletteCommand[] = [], label = "#7 Focus card", owner = 
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <PaletteFocusProvider>
-          {commands.length > 0 && <PaletteFocusFor focus={{ label, commands }} />}
-          <CommandBar open onOpenChange={() => {}} />
-        </PaletteFocusProvider>
+        <AgentProvider>
+          <PaletteFocusProvider>
+            {commands.length > 0 && <PaletteFocusFor focus={{ label, commands }} />}
+            <CommandBar open onOpenChange={() => {}} />
+            <AgentProbe />
+          </PaletteFocusProvider>
+        </AgentProvider>
       </MemoryRouter>
     </QueryClientProvider>,
+  );
+}
+
+/** Shows what the agent was handed, so a test can see where Tab and the New conversation command went. */
+function AgentProbe() {
+  const agent = useAgent();
+  return (
+    <output data-testid="agent">
+      {`${agent.open ? "open" : "closed"}|${agent.pending ?? ""}|${agent.fresh}`}
+    </output>
   );
 }
 
@@ -111,25 +124,52 @@ describe("the palette", () => {
     within(dialog).getByRole("listbox", { name: "Commands and places" });
   });
 
-  it("lists the commands of the focus first, with their keys", async () => {
+  it("lists the commands of the focus first", async () => {
     const run = vi.fn();
     open([{ id: "assign", label: "Assign to me", key: "a", run }]);
     const options = await screen.findAllByRole("option");
     expect(options[0]?.textContent).toContain("Assign to me");
-    expect(options[0]?.querySelector("kbd")?.textContent).toBe("a");
     expect(screen.getByText("#7 Focus card")).toBeTruthy();
     fireEvent.click(options[0] as HTMLElement);
     expect(run).toHaveBeenCalledTimes(1);
   });
 
-  it("shows the key of the commands it always offers, the same as the shortcuts page lists", async () => {
+  it("draws no key on any row", async () => {
+    open([{ id: "assign", label: "Assign to me", key: "a", run: () => {} }]);
+    await screen.findAllByRole("option");
+    expect(screen.getByRole("dialog").querySelectorAll("kbd")).toHaveLength(0);
+  });
+
+  it("gives every row an icon and a name", async () => {
     open();
-    await screen.findByRole("combobox");
-    const keyOf = (name: string) =>
-      screen.getAllByRole("option", { name: new RegExp(name) })[0]?.querySelector("kbd")
-        ?.textContent;
-    expect(keyOf("New issue")).toBe(NEW_ISSUE_KEY);
-    expect(keyOf("Keyboard shortcuts")).toBe(SHORTCUTS_KEY);
+    const options = await screen.findAllByRole("option");
+    for (const option of options) expect(option.querySelector("svg")).toBeTruthy();
+  });
+
+  it("sends the typed text to the agent on Tab and closes", async () => {
+    open();
+    const field = await screen.findByRole("combobox");
+    fireEvent.change(field, { target: { value: "  why is the build red?  " } });
+    fireEvent.keyDown(field, { key: "Tab" });
+    expect(screen.getByTestId("agent").textContent).toBe("open|why is the build red?|0");
+  });
+
+  it("keeps the palette open and the agent closed on Tab with nothing typed", async () => {
+    open();
+    const field = await screen.findByRole("combobox");
+    const event = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    field.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    fireEvent.change(field, { target: { value: "   " } });
+    fireEvent.keyDown(field, { key: "Tab" });
+    expect(screen.getByTestId("agent").textContent).toBe("closed||0");
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+
+  it("starts a fresh conversation with the agent from the New conversation command", async () => {
+    open();
+    fireEvent.click(await screen.findByRole("option", { name: "New conversation" }));
+    expect(screen.getByTestId("agent").textContent).toBe("open||1");
   });
 
   it("keeps the commands of the focus while they match and finds the rest by kind", async () => {
@@ -139,7 +179,7 @@ describe("the palette", () => {
     ]);
     const field = await screen.findByRole("combobox");
     fireEvent.change(field, { target: { value: "block" } });
-    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Block…b"]);
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Block…"]);
     fireEvent.change(field, { target: { value: "a" } });
     const names = screen.getAllByRole("option").map((o) => o.textContent ?? "");
     expect(names[0]).toContain("Assign to me");

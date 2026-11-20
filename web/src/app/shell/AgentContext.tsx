@@ -25,6 +25,10 @@ interface Agent {
   pending: string | null;
   /** Hands the message from the dock to the panel and opens it. */
   ask: (message: string) => void;
+  /** Counts the fresh conversations asked for; the panel starts a new one each time it moves. */
+  fresh: number;
+  /** Opens the panel on a new, empty conversation. */
+  newConversation: () => void;
   /** Takes the pending message; asked twice, the second answer is null. */
   take: () => string | null;
   show: () => void;
@@ -39,6 +43,8 @@ const NOWHERE: Agent = {
   built: false,
   pending: null,
   ask: () => {},
+  fresh: 0,
+  newConversation: () => {},
   take: () => null,
   show: () => {},
   hide: () => {},
@@ -50,6 +56,7 @@ const Context = createContext<Agent>(NOWHERE);
 export function AgentProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [built, setBuilt] = useState(false);
+  const [fresh, setFresh] = useState(0);
   const [pending, setPending] = useState<string | null>(null);
   const held = useRef<string | null>(null);
   const refocus = useRef(false);
@@ -70,6 +77,12 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     },
     [show],
   );
+  const newConversation = useCallback(() => {
+    held.current = null;
+    setPending(null);
+    setFresh((n) => n + 1);
+    show();
+  }, [show]);
   const take = useCallback(() => {
     const message = held.current;
     held.current = null;
@@ -95,8 +108,8 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   }, [open, show, hide]);
 
   const value = useMemo(
-    () => ({ open, built, pending, ask, take, show, hide, takeFocus }),
-    [open, built, pending, ask, take, show, hide, takeFocus],
+    () => ({ open, built, pending, ask, fresh, newConversation, take, show, hide, takeFocus }),
+    [open, built, pending, ask, fresh, newConversation, take, show, hide, takeFocus],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
