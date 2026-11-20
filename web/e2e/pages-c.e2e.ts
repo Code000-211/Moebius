@@ -481,12 +481,17 @@ describe("the Retro page", () => {
       // The list scrolls in turn, and the day stays where the reader left it.
       // The wheel scrolls smoothly, so what the reader has read is where the column stops, not where it first moved.
       let read = await detail.evaluate((el) => el.scrollTop);
+      let still = 0;
       await expect
-        .poll(async () => {
-          const before = read;
-          read = await detail.evaluate((el) => el.scrollTop);
-          return read === before;
-        })
+        .poll(
+          async () => {
+            const before = read;
+            read = await detail.evaluate((el) => el.scrollTop);
+            still = read === before ? still + 1 : 0;
+            return still >= 3;
+          },
+          { interval: 100 },
+        )
         .toBe(true);
       const listBox = await list.boundingBox();
       if (!listBox) throw new Error("the column of days drew no box");
