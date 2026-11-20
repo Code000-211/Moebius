@@ -9,7 +9,7 @@ import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
 import { FieldRow, Rows } from "../../ui/page/Field";
 import { leaveSession } from "../shell/session";
-import { AreaTitle, ValueRow } from "./parts";
+import { AreaColumn, AreaTitle, ValueRow } from "./parts";
 
 export function ProfilePage() {
   const queryClient = useQueryClient();
@@ -17,7 +17,7 @@ export function ProfilePage() {
   const [leaving, setLeaving] = useState(false);
   const person = session.data?.person;
   return (
-    <div className="max-w-3xl">
+    <AreaColumn>
       <AreaTitle title="Profile" />
       <Rows>
         {person ? (
@@ -43,6 +43,6 @@ export function ProfilePage() {
           </Button>
         </FieldRow>
       </Rows>
-    </div>
+    </AreaColumn>
   );
 }
