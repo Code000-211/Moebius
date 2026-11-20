@@ -1,6 +1,9 @@
-/** The panel beside the graph: what the person has chosen, and what is done to it. */
+/**
+ * The window a chosen step opens in (`ui/components/EditorWindow.tsx`): a node, the trigger or an edge. The edits are a
+ * draft held in the window; Save gives them to the graph, and the shared window guards the draft when it is closed.
+ */
 import { TrashIcon } from "@phosphor-icons/react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useState } from "react";
 import type {
   Trigger,
   WorkflowDefinition,
@@ -9,9 +12,11 @@ import type {
   WorkflowNodeRun,
 } from "../../../api/types/workflows";
 import { Button } from "../../../ui/components/Button";
+import { EditorWindow } from "../../../ui/components/EditorWindow";
 import { Input } from "../../../ui/components/Input";
 import { Field } from "../../../ui/page/Field";
 import { JsonValue } from "../../../ui/page/JsonValue";
+import { triggerProblem } from "../forms/trigger";
 import { formFor, nodeKinds, triggerFormFor } from "../nodeKinds";
 import { nodeOf, TRIGGER } from "./model";
 import { ParamForm } from "./ParamForm";
@@ -27,86 +32,64 @@ export function Inspector({
   graph,
   selection,
   run,
-  onRename,
-  onParams,
-  onTrigger,
+  onSaveNode,
+  onSaveTrigger,
   onDeleteNode,
   onDeleteEdge,
+  onClose,
 }: {
   graph: WorkflowDefinition;
   selection: Selection;
   /** The chosen node's part of the run a person is looking at, when one is picked. */
   run?: WorkflowNodeRun | null;
-  onRename: (from: string, to: string) => void;
-  onParams: (id: string, params: Record<string, unknown>) => void;
-  onTrigger: (trigger: Trigger) => void;
+  /** The node's new id and parameters, once the window's Save is pressed. */
+  onSaveNode: (from: string, to: string, params: Record<string, unknown>) => void;
+  onSaveTrigger: (trigger: Trigger) => void;
   onDeleteNode: (id: string) => void;
   onDeleteEdge: (edge: WorkflowEdge) => void;
+  onClose: () => void;
 }) {
-  return (
-    <aside
-      data-testid="canvas-inspector"
-      className="flex w-80 shrink-0 flex-col gap-4 overflow-y-auto border-l border-hairline bg-surface p-4"
-    >
-      <Body
-        graph={graph}
-        selection={selection}
-        run={run ?? null}
-        onRename={onRename}
-        onParams={onParams}
-        onTrigger={onTrigger}
-        onDeleteNode={onDeleteNode}
-        onDeleteEdge={onDeleteEdge}
-      />
-    </aside>
-  );
-}
-
-function Body({
-  graph,
-  selection,
-  run,
-  onRename,
-  onParams,
-  onTrigger,
-  onDeleteNode,
-  onDeleteEdge,
-}: Parameters<typeof Inspector>[0] & { run: WorkflowNodeRun | null }) {
   if (selection === null) {
-    return (
-      <p className="m-0 text-sm text-secondary">
-        Choose a node to edit what it is given, or an edge to take it away.
-      </p>
-    );
+    return null;
   }
   if (selection.kind === "trigger") {
-    return <TriggerPanel trigger={graph.trigger[0]} onTrigger={onTrigger} />;
+    return (
+      <TriggerWindow
+        trigger={graph.trigger[0]}
+        onSave={(trigger) => {
+          onSaveTrigger(trigger);
+          onClose();
+        }}
+        onClose={onClose}
+      />
+    );
   }
   if (selection.kind === "edge") {
-    return <EdgePanel edge={selection.edge} onDelete={() => onDeleteEdge(selection.edge)} />;
+    return (
+      <EdgeWindow
+        edge={selection.edge}
+        onDelete={() => onDeleteEdge(selection.edge)}
+        onClose={onClose}
+      />
+    );
   }
   const node = nodeOf(graph, selection.id);
   if (!node) {
-    return <p className="m-0 text-sm text-secondary">This node is no longer on the graph.</p>;
+    return null;
   }
   return (
-    <NodePanel
+    <NodeWindow
+      key={node.id}
       node={node}
       graph={graph}
-      run={run}
-      onRename={(to) => onRename(node.id, to)}
-      onParams={(params) => onParams(node.id, params)}
+      run={run ?? null}
+      onSave={(to, params) => {
+        onSaveNode(node.id, to, params);
+        onClose();
+      }}
       onDelete={() => onDeleteNode(node.id)}
+      onClose={onClose}
     />
-  );
-}
-
-function Head({ title, subtitle }: { title: string; subtitle: string }) {
-  return (
-    <div className="flex min-w-0 flex-col">
-      <h2 className="m-0 truncate font-mono text-base font-semibold text-text">{title}</h2>
-      <p className="m-0 text-xs text-secondary">{subtitle}</p>
-    </div>
   );
 }
 
@@ -119,42 +102,63 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function NodePanel({
+function NodeWindow({
   node,
   graph,
   run,
-  onRename,
-  onParams,
+  onSave,
   onDelete,
+  onClose,
 }: {
   node: WorkflowNode;
   graph: WorkflowDefinition;
   run: WorkflowNodeRun | null;
-  onRename: (to: string) => void;
-  onParams: (params: Record<string, unknown>) => void;
+  onSave: (id: string, params: Record<string, unknown>) => void;
   onDelete: () => void;
+  onClose: () => void;
 }) {
   const kind = nodeKinds.find((entry) => entry.kind === node.kind);
   const Custom = formFor(node.kind);
+  const [id, setId] = useState(node.id);
+  const [params, setParams] = useState<Record<string, unknown>>(
+    () => (node.params ?? {}) as Record<string, unknown>,
+  );
+  const working: WorkflowNode = { ...node, params };
+  const dirty =
+    id.trim() !== node.id || JSON.stringify(params) !== JSON.stringify(node.params ?? {});
   return (
-    <>
-      <Head
-        title={node.id}
-        subtitle={kind ? kind.description : "A kind the registry does not describe"}
-      />
+    <EditorWindow
+      open
+      title={node.id}
+      description={kind?.description}
+      dirty={dirty}
+      canSave={idProblem(id, node, graph) === undefined}
+      onSave={() => onSave(id.trim(), params)}
+      onClose={onClose}
+      actions={
+        <Button variant="danger" size="sm" onClick={onDelete} data-testid="delete-node">
+          <TrashIcon size={16} />
+          Delete node
+        </Button>
+      }
+    >
       <Field label="Id" hint="The name the file writes the node by, and the edges to it.">
-        <IdField node={node} graph={graph} onRename={onRename} />
+        <Input aria-label="Id" mono value={id} onChange={(event) => setId(event.target.value)} />
+        {idProblem(id, node, graph) ? (
+          <p className="mt-1 m-0 text-xs text-error-text" data-testid="id-problem">
+            {idProblem(id, node, graph)}
+          </p>
+        ) : null}
       </Field>
       {Custom ? (
-        <Custom key={node.id} node={node} graph={graph} onParams={onParams} />
+        <Custom node={working} graph={graph} onParams={setParams} />
       ) : (
         <ParamForm
-          key={node.id}
-          node={node}
+          node={working}
           graph={graph}
           fields={kind?.params ?? []}
           known={kind !== undefined}
-          onParams={onParams}
+          onParams={setParams}
         />
       )}
       {run === null ? null : (
@@ -170,63 +174,48 @@ function NodePanel({
           {run.error ? <p className="m-0 text-sm text-error-text">{run.error}</p> : null}
         </Section>
       )}
-      <div>
-        <Button variant="danger" size="sm" onClick={onDelete} data-testid="delete-node">
-          <TrashIcon size={16} />
-          Delete node
-        </Button>
-      </div>
-    </>
+    </EditorWindow>
   );
 }
 
-/** The node's id, given back only when it is a name the graph can take. */
-function IdField({
-  node,
-  graph,
-  onRename,
-}: {
-  node: WorkflowNode;
-  graph: WorkflowDefinition;
-  onRename: (to: string) => void;
-}) {
-  const [draft, setDraft] = useState(node.id);
-  useEffect(() => setDraft(node.id), [node.id]);
+/** Why the id typed cannot be the node's, or nothing when the graph can take it. */
+function idProblem(
+  draft: string,
+  node: WorkflowNode,
+  graph: WorkflowDefinition,
+): string | undefined {
   const trimmed = draft.trim();
-  const error =
-    trimmed === ""
-      ? "A node needs an id."
-      : trimmed === TRIGGER
-        ? "The trigger's id is reserved."
-        : trimmed !== node.id && graph.nodes.some((other) => other.id === trimmed)
-          ? "Another node already has this id."
-          : undefined;
-  return (
-    <>
-      <Input
-        aria-label="Id"
-        mono
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={() => {
-          if (error === undefined && trimmed !== node.id) {
-            onRename(draft);
-          }
-        }}
-      />
-      {error ? (
-        <p className="mt-1 m-0 text-xs text-error-text" data-testid="id-problem">
-          {error}
-        </p>
-      ) : null}
-    </>
-  );
+  if (trimmed === "") return "A node needs an id.";
+  if (trimmed === TRIGGER) return "The trigger's id is reserved.";
+  if (trimmed !== node.id && graph.nodes.some((other) => other.id === trimmed)) {
+    return "Another node already has this id.";
+  }
+  return undefined;
 }
 
-function EdgePanel({ edge, onDelete }: { edge: WorkflowEdge; onDelete: () => void }) {
+function EdgeWindow({
+  edge,
+  onDelete,
+  onClose,
+}: {
+  edge: WorkflowEdge;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
   return (
-    <>
-      <Head title={`${edge.from} → ${edge.to}`} subtitle="An edge of the graph" />
+    <EditorWindow
+      open
+      title={`${edge.from} → ${edge.to}`}
+      dirty={false}
+      onSave={onClose}
+      onClose={onClose}
+      actions={
+        <Button variant="danger" size="sm" onClick={onDelete} data-testid="delete-edge">
+          <TrashIcon size={16} />
+          Delete edge
+        </Button>
+      }
+    >
       <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
         <dt className="text-secondary">Leaves</dt>
         <dd className="m-0 font-mono text-text">{edge.from}</dd>
@@ -235,39 +224,40 @@ function EdgePanel({ edge, onDelete }: { edge: WorkflowEdge; onDelete: () => voi
         <dt className="text-secondary">Comes to</dt>
         <dd className="m-0 font-mono text-text">{edge.to}</dd>
       </dl>
-      <div>
-        <Button variant="danger" size="sm" onClick={onDelete} data-testid="delete-edge">
-          <TrashIcon size={16} />
-          Delete edge
-        </Button>
-      </div>
-    </>
+    </EditorWindow>
   );
 }
 
-function TriggerPanel({
+function TriggerWindow({
   trigger,
-  onTrigger,
+  onSave,
+  onClose,
 }: {
   trigger: Trigger | undefined;
-  onTrigger: (trigger: Trigger) => void;
+  onSave: (trigger: Trigger) => void;
+  onClose: () => void;
 }) {
-  const Custom = trigger ? triggerFormFor(trigger.kind) : undefined;
+  const [draft, setDraft] = useState(trigger);
+  const Custom = draft ? triggerFormFor(draft.kind) : undefined;
   return (
-    <>
-      <Head title="Trigger" subtitle={trigger ? trigger.kind : "This workflow has none"} />
-      {trigger ? (
-        <>
-          {Custom ? <Custom trigger={trigger} onTrigger={onTrigger} /> : null}
-          <Section title="What it is given">
-            <JsonValue value={trigger.params ?? {}} name="trigger" />
-          </Section>
-        </>
+    <EditorWindow
+      open
+      title="Trigger"
+      description={trigger ? trigger.kind : "This workflow has none"}
+      dirty={JSON.stringify(draft) !== JSON.stringify(trigger)}
+      canSave={triggerProblem(draft) === null}
+      onSave={() => draft && onSave(draft)}
+      onClose={onClose}
+    >
+      {draft ? (
+        Custom ? (
+          <Custom trigger={draft} onTrigger={setDraft} />
+        ) : null
       ) : (
         <p className="m-0 text-sm text-secondary">
           A workflow needs exactly one trigger, and this file has none.
         </p>
       )}
-    </>
+    </EditorWindow>
   );
 }

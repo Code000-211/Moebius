@@ -94,7 +94,7 @@ function card(id: string): Locator {
 }
 
 const state = () => page.getByTestId("canvas-state");
-const inspector = () => page.getByTestId("canvas-inspector");
+const inspector = () => page.getByTestId("editor-window");
 const preview = () => inspector().getByTestId("params-preview");
 
 async function shows(locator: Locator, ...phrases: string[]): Promise<void> {
@@ -110,7 +110,13 @@ async function shows(locator: Locator, ...phrases: string[]): Promise<void> {
   }
 }
 
+/** Gives the window's edits to the graph, then saves the graph. */
 async function save(): Promise<void> {
+  const window = page.getByTestId("editor-window");
+  if ((await window.count()) > 0) {
+    await window.getByRole("button", { name: "Save", exact: true }).click();
+    await window.waitFor({ state: "detached" });
+  }
   await page.getByTestId("canvas-save").click();
 }
 

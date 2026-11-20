@@ -176,14 +176,11 @@ function draftOf(state: unknown): WorkflowDefinition | null {
 const CARD_WIDTH = 240;
 const CARD_HEIGHT = 120;
 
-/** Whether a node at `at` is wholly in the part of the board no panel covers. */
+/** Whether a node at `at` is wholly in the board. */
 function inView(board: ReturnType<typeof useReactFlow>, at: { x: number; y: number }): boolean {
   const pane = document.querySelector(".react-flow")?.getBoundingClientRect();
   if (!pane) return true;
-  const inspector = document
-    .querySelector('[data-testid="canvas-inspector"]')
-    ?.getBoundingClientRect();
-  const right = Math.min(pane.right, inspector ? inspector.left : pane.right);
+  const right = pane.right;
   const zoom = board.getZoom();
   const corner = board.flowToScreenPosition(at);
   return (
@@ -292,10 +289,8 @@ function Canvas({
       const added = withNode.nodes[withNode.nodes.length - 1];
       setDraft(withNode);
       if (added) {
-        setSelection({ kind: "node", id: added.id });
-        // A node added by the palette or the keyboard lands where the graph ends, which may be out of sight, behind
-        // the inspector or past the edge. The board then fits the whole graph, so what was in view stays in view; a
-        // node dropped where the pointer is, or one already in view, leaves the view as it is.
+        // A node added by the palette or the keyboard lands where the graph ends, which may be out of sight, past the edge.
+        // The board then fits the whole graph, so what was in view stays in view; a node dropped where the pointer is, or one already in view, leaves the view as it is.
         if (!at && !inView(board, added.position)) {
           void board.fitView({ padding: 0.2 });
         }
@@ -474,35 +469,33 @@ function Canvas({
             </div>
           ) : null}
         </div>
-        <Inspector
-          graph={draft}
-          selection={selection}
-          run={
-            selection?.kind === "node"
-              ? (run.data?.nodes.find((entry) => entry.node === selection.id) ?? null)
-              : null
-          }
-          onRename={(from, to) => {
-            const renamed = renameNode(draft, from, to);
-            if (!renamed) {
-              return;
-            }
-            setDraft(renamed);
-            // The panel follows the node it is showing, so its parameters and run stay beside the new name.
-            setSelection({ kind: "node", id: to.trim() });
-          }}
-          onParams={(id, params) => setDraft((graph) => setParams(graph, id, params))}
-          onTrigger={(trigger) => setDraft((graph) => setTrigger(graph, trigger))}
-          onDeleteNode={(id) => {
-            setDraft((graph) => removeNode(graph, id));
-            setSelection(null);
-          }}
-          onDeleteEdge={(edge) => {
-            setDraft((graph) => removeEdge(graph, edge));
-            setSelection(null);
-          }}
-        />
       </div>
+      <Inspector
+        graph={draft}
+        selection={selection}
+        run={
+          selection?.kind === "node"
+            ? (run.data?.nodes.find((entry) => entry.node === selection.id) ?? null)
+            : null
+        }
+        onSaveNode={(from, to, params) => {
+          const renamed = renameNode(draft, from, to);
+          if (!renamed) {
+            return;
+          }
+          setDraft(setParams(renamed, to, params));
+        }}
+        onSaveTrigger={(trigger) => setDraft((graph) => setTrigger(graph, trigger))}
+        onDeleteNode={(id) => {
+          setDraft((graph) => removeNode(graph, id));
+          setSelection(null);
+        }}
+        onDeleteEdge={(edge) => {
+          setDraft((graph) => removeEdge(graph, edge));
+          setSelection(null);
+        }}
+        onClose={() => setSelection(null)}
+      />
       <UnsavedChanges
         open={dirty && !save.isPending}
         onSave={async () => {
