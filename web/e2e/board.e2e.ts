@@ -586,11 +586,10 @@ describe("the keyboard", () => {
         .toBe(true);
       await page.keyboard.press("Control+k");
       const options = page.getByRole("option");
-      expect(await options.filter({ hasText: "Unassign" }).locator("kbd").textContent()).toBe("a");
-      expect(
-        await options.filter({ hasText: "Move to Not started" }).locator("kbd").textContent(),
-      ).toBe("n");
-      expect(await options.filter({ hasText: "New issue" }).locator("kbd").textContent()).toBe("c");
+      // The palette no longer shows a key box on a row: the commands of the card are there by their words.
+      await options.filter({ hasText: "Unassign" }).waitFor();
+      await options.filter({ hasText: "Move to Not started" }).waitFor();
+      await options.filter({ hasText: "New issue" }).waitFor();
       await page.keyboard.press("Escape");
       await options.first().waitFor({ state: "detached" });
       await page.locator("body").press("n");
