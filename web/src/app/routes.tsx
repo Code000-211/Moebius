@@ -11,6 +11,8 @@ import { createBrowserRouter, Navigate } from "react-router";
 import { App } from "./App";
 import { DEFAULT_PAGE, PAGES } from "./pages";
 import { harnessRoutes } from "./routesB";
+import { SettingsLayout } from "./settings/SettingsLayout";
+import { SETTINGS_ENTRIES } from "./settings/settingsEntries";
 import { NotFoundPage, PlaceholderPage } from "./shell/Page";
 
 const AutomationsPage = lazy(() =>
@@ -43,17 +45,11 @@ const IssuesPage = lazy(() =>
 const KindsPage = lazy(() =>
   import("./kinds/KindsPage").then((all) => ({ default: all.KindsPage })),
 );
-const PeoplePage = lazy(() =>
-  import("./people/PeoplePage").then((all) => ({ default: all.PeoplePage })),
-);
 const TokensPage = lazy(() =>
   import("./people/TokensPage").then((all) => ({ default: all.TokensPage })),
 );
 const PluginSettingsPage = lazy(() =>
   import("./plugins/PluginSettingsPage").then((all) => ({ default: all.PluginSettingsPage })),
-);
-const ShortcutsPage = lazy(() =>
-  import("./shortcuts/ShortcutsPage").then((all) => ({ default: all.ShortcutsPage })),
 );
 const PortsPage = lazy(() =>
   import("./ports/PortsPage").then((all) => ({ default: all.PortsPage })),
@@ -82,32 +78,17 @@ const IntakePage = lazy(() =>
 const ProjectsPage = lazy(() =>
   import("./projects/ProjectsPage").then((all) => ({ default: all.ProjectsPage })),
 );
-const RetroPage = lazy(() =>
-  import("./retro/RetroPage").then((all) => ({ default: all.RetroPage })),
-);
-const RulesPage = lazy(() =>
-  import("./rules/RulesPage").then((all) => ({ default: all.RulesPage })),
-);
 const RunPage = lazy(() => import("./runs/RunPage").then((all) => ({ default: all.RunPage })));
-const SettingsPage = lazy(() =>
-  import("./settings/SettingsPage").then((all) => ({ default: all.SettingsPage })),
-);
 const StartPage = lazy(() =>
   import("./start/StartPage").then((all) => ({ default: all.StartPage })),
 );
 const TerminalPage = lazy(() =>
   import("./terminal/TerminalPage").then((all) => ({ default: all.TerminalPage })),
 );
-const AnalyticsPage = lazy(() =>
-  import("./analytics/AnalyticsPage").then((all) => ({ default: all.AnalyticsPage })),
-);
 const UsagePage = lazy(() =>
   import("./usage/UsagePage").then((all) => ({ default: all.UsagePage })),
 );
 const WikiPage = lazy(() => import("./wiki/WikiPage").then((all) => ({ default: all.WikiPage })));
-const WorkflowsPage = lazy(() =>
-  import("./workflows/WorkflowsPage").then((all) => ({ default: all.WorkflowsPage })),
-);
 const WorkflowPage = lazy(() =>
   import("./workflows/WorkflowPage").then((all) => ({ default: all.WorkflowPage })),
 );
@@ -160,6 +141,14 @@ const PAGES_BUILT = new Set([
   "wiki",
 ]);
 
+/** Settings: one layout route around every page `settingsEntries.ts` registers, each at the path it always had. */
+const settingsRoute = {
+  element: <SettingsLayout />,
+  children: SETTINGS_ENTRIES.flatMap((entry) =>
+    entry.page ? [{ path: entry.path, element: <entry.page /> }] : [],
+  ),
+};
+
 export const routes = [
   // The small window of the desktop app's global shortcut: outside the shell, it is a window of its own.
   {
@@ -180,11 +169,11 @@ export const routes = [
         path: page.path,
         element: <PlaceholderPage page={page} />,
       })),
+      settingsRoute,
       { path: "inbox", element: <InboxPage /> },
       { path: "fleet", element: <FleetPage /> },
       { path: "milestones", element: <MilestonesPage /> },
       { path: "cycles", element: <CyclesPage /> },
-      { path: "analytics", element: <AnalyticsPage /> },
       { path: "views", element: <ViewsPage /> },
       { path: "views/:id", element: <ViewsPage /> },
       { path: "intake", element: <IntakePage /> },
@@ -194,8 +183,6 @@ export const routes = [
       { path: "projects/:id/settings/:tab?", element: <ProjectSettingsPage /> },
       { path: "usage", element: <UsagePage /> },
       { path: "start", element: <StartPage /> },
-      { path: "settings", element: <SettingsPage /> },
-      { path: "people", element: <PeoplePage /> },
       { path: "issues", element: <IssuesPage /> },
       { path: "kinds", element: <KindsPage /> },
       { path: "tokens", element: <TokensPage /> },
@@ -203,14 +190,10 @@ export const routes = [
       { path: "chat", element: <ChatPage /> },
       { path: "terminal", element: <TerminalPage /> },
       { path: "ports", element: <PortsPage /> },
-      { path: "shortcuts", element: <ShortcutsPage /> },
       { path: "automations", element: <AutomationsPage /> },
-      { path: "rules", element: <RulesPage /> },
-      { path: "retro", element: <RetroPage /> },
       { path: "experiments", element: <ExperimentsPage /> },
       { path: "decision-model", element: <DecisionModelPage /> },
       { path: "wiki", element: <WikiPage /> },
-      { path: "workflows", element: <WorkflowsPage /> },
       { path: "workflows/:name", element: <WorkflowPage /> },
       { path: "workflows/:name/canvas", element: <WorkflowCanvasPage /> },
       { path: "workflow-runs/:id", element: <WorkflowRunPage /> },

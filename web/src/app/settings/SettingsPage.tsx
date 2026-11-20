@@ -21,7 +21,6 @@ import { Field, Select } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
 import { Reading, SkeletonCard } from "../../ui/page/Skeleton";
-import { Appearance } from "./Appearance";
 import type { Form } from "./fields";
 import {
   changed,
@@ -39,7 +38,7 @@ type Outcome = { tone: "ok" | "error"; text: string } | null;
 
 export function SettingsPage() {
   const data = useQuery({ queryKey: keys.settings, queryFn: () => settings() });
-  const header = <PageHeader title="Settings" />;
+  const header = <PageHeader title="General" />;
   // The heading stays while the file is read, so the page does not move under a person who is already looking at it.
   if (data.isPending) {
     return (
@@ -108,7 +107,7 @@ function SettingsForm({ initial }: { initial: ServerSettings }) {
   return (
     <div>
       <PageHeader
-        title="Settings"
+        title="General"
         actions={
           <Button
             size="sm"
@@ -138,7 +137,6 @@ function SettingsForm({ initial }: { initial: ServerSettings }) {
         </div>
         <WebhooksBox />
         <div className="grid items-start gap-6 xl:grid-cols-2">
-          <Appearance />
           <ThisServer
             info={info.data}
             pending={info.isPending}

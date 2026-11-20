@@ -1317,7 +1317,7 @@ describe("settings", () => {
 
   it("loads for a real server and for the fake", async () => {
     await open("/settings");
-    await page.getByRole("heading", { name: "Settings", level: 1 }).waitFor();
+    await page.getByRole("heading", { name: "General", level: 1 }).waitFor();
     for (const box of [
       "Server",
       "Board and budgets",
@@ -1333,8 +1333,13 @@ describe("settings", () => {
     }
     await page.getByRole("button", { name: "Save", exact: true }).waitFor();
     await page.getByRole("heading", { name: "This server" }).waitFor();
-    // How the app looks is chosen here rather than in the sidebar, and takes effect at once.
-    await page.getByRole("heading", { name: "Appearance", exact: true, level: 2 }).waitFor();
+    // How the app looks is its own page of Settings, reached from the navigation, and takes effect at once.
+    await page
+      .getByRole("navigation", { name: "Settings" })
+      .getByRole("link", { name: "Appearance" })
+      .click();
+    await page.waitForURL("**/appearance");
+    await page.getByRole("heading", { name: "Appearance", exact: true, level: 1 }).waitFor();
     await page.getByRole("radio", { name: "Light" }).check();
     await expect(page.locator("html").getAttribute("data-theme")).resolves.toBe("light");
     await page.getByRole("radio", { name: "Follow the system" }).check();
@@ -1365,7 +1370,7 @@ describe("settings", () => {
     "shows every key with its value or its default and the file",
     async () => {
       await open("/settings");
-      await page.getByRole("heading", { name: "Settings", exact: true }).waitFor();
+      await page.getByRole("heading", { name: "General", exact: true }).waitFor();
       expect(await page.getByLabel("Coding rounds a card").inputValue()).toBe("7");
       expect(await page.getByLabel("Tokens a day").inputValue()).toBe("8000000");
       // A key the file does not set shows the default.

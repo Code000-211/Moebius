@@ -9,7 +9,6 @@ import { useRef } from "react";
 import { useReduceMotion } from "../../motion";
 import { type ThemePreference, useTheme } from "../../theme";
 import { cn } from "../../ui/lib/cn";
-import { Box } from "../../ui/page/Box";
 
 /** The three appearances the standard offers. */
 const CHOICES: Array<{ value: ThemePreference; label: string; icon: Icon }> = [
@@ -19,15 +18,11 @@ const CHOICES: Array<{ value: ThemePreference; label: string; icon: Icon }> = [
 ];
 
 export function Appearance() {
-  const { preference, theme, setPreference } = useTheme();
+  const { preference, setPreference } = useTheme();
   const motion = useReduceMotion();
   const row = useRef<HTMLDivElement>(null);
   return (
-    <Box
-      title="Appearance"
-      aside={preference === "system" ? `Following the system: ${theme}` : "Saved in this browser"}
-      className="min-w-0"
-    >
+    <div className="min-w-0">
       <div
         role="radiogroup"
         aria-label="Appearance"
@@ -80,6 +75,6 @@ export function Appearance() {
         Reduce motion
         {motion.system && <span className="text-secondary">Set by the system</span>}
       </label>
-    </Box>
+    </div>
   );
 }
