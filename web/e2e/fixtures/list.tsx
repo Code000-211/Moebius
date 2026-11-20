@@ -12,6 +12,11 @@ import { type ListItem, VirtualList } from "../../src/ui/page/VirtualList";
 
 const ROWS = 2000;
 
+// The app sets the theme in `public/theme-init.js`; the fixture does the same so both themes can be looked at.
+document.documentElement.dataset.theme = matchMedia("(prefers-color-scheme: dark)").matches
+  ? "dark"
+  : "light";
+
 const items: ListItem<number>[] = [];
 for (let n = 0; n < ROWS; n++) {
   if (n % 100 === 0) items.push({ type: "group", key: `group-${n}`, name: `Group ${n / 100 + 1}` });
@@ -34,7 +39,11 @@ function Fixture() {
             onClick={onClick}
             status={n % 3 === 0 ? "needsYou" : n % 3 === 1 ? "running" : "done"}
             id={`MOE-${n}`}
-            title={`Row number ${n} with a title that goes on`}
+            title={
+              n === 3
+                ? `Row number 3 with a title so long that it cannot fit on one line of the list however wide the window is, ${"and on ".repeat(20)}`
+                : `Row number ${n} with a title that goes on`
+            }
             reason={n === 0 ? "Review found a data loss" : "editing engine.rs"}
             owner={n % 2 === 0 ? "leon" : undefined}
             age="2m"
