@@ -44,10 +44,6 @@ describe.skipIf(usesRealServer)("the card window", () => {
     const list = page.getByTestId("inbox-item").first();
     await list.waitFor();
     await page.getByTestId("inbox-item").filter({ hasText: "Speed up the build" }).click();
-    await page
-      .getByTestId("inbox-decision")
-      .getByRole("button", { name: "Open live view" })
-      .click();
     await window().waitFor();
     expect(new URL(page.url()).pathname).toBe("/inbox");
     expect(new URLSearchParams(search()).get("card")).toBe("5");
