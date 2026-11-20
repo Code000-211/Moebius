@@ -125,6 +125,8 @@ function json(response: ServerResponse, value: unknown): void {
 
 export async function startFakeServer(): Promise<FakeServer> {
   /** Each session's person, by id. */
+  /** What each person chose for themselves (`/v1/preferences`), by person id. */
+  const preferences = new Map<number, boolean>();
   const sessions = new Map<string, number>();
   const people = [
     { id: 1, handle: "owner", name: "Owner", role: "owner", disabled: false, created_at: 0 },
@@ -240,6 +242,13 @@ export async function startFakeServer(): Promise<FakeServer> {
     const asker = sessions.get(cookieOf(request) as string) as number;
     const askerRole = people.find((p) => p.id === asker)?.role;
     const mine = (id: number) => [...accessTokens.entries()].filter(([, t]) => t.person_id === id);
+    if (path === "/v1/preferences") {
+      if (method === "PUT") {
+        const body = JSON.parse(await readBody(request)) as { show_thinking_expanded: boolean };
+        preferences.set(asker, body.show_thinking_expanded);
+      }
+      return json(response, { show_thinking_expanded: preferences.get(asker) ?? false });
+    }
     if (path === "/v1/people" && method === "GET") return json(response, people);
     if (path === "/v1/people" && method === "POST") {
       if (askerRole !== "owner") return text(response, 403, "only an owner can do this");

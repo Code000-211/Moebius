@@ -15,6 +15,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { type CSSProperties, Suspense, useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
+import { ThinkingSetting } from "../../chat/thinking";
 import { desktopBridge } from "../../desktop/bridge";
 import { Rail } from "../../desktop/Rail";
 import { WINDOW_BUTTONS_WIDTH, WindowControls } from "../../desktop/WindowControls";
@@ -71,7 +72,9 @@ export function Shell(props: { unreachable: boolean; onRetry: () => void }) {
           <PaletteFocusProvider>
             <NewIssueProvider>
               <AgentProvider>
-                <Frame {...props} />
+                <ThinkingSetting>
+                  <Frame {...props} />
+                </ThinkingSetting>
               </AgentProvider>
             </NewIssueProvider>
           </PaletteFocusProvider>

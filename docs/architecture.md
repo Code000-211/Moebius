@@ -706,6 +706,7 @@ At the top:
 | `store/chats.rs` | Chats: where they were started, what they work in and how far a person has read them. |
 | `store/deletions.rs` | Deleting a chat, a research or a replay from the store in one transaction each; usage and judgements stay, without a run. |
 | `store/localize.rs` | The search index of `localize`: a repository's files in an FTS5 table of their own, split into words for ranking by BM25, and the commit it was made from. |
+| `store/preferences.rs` | What a person chose for themselves in the web app (whether thinking is shown open), one row per person. |
 | `store/plugin_settings.rs` | The values of plugins' settings for the server, by plugin and key; a save replaces a plugin's values whole. A repository's are files of its project settings. |
 | `store/judgements.rs` | Judgements at decision points, their outcomes, and the refusals counted by rule. |
 | `store/replays.rs` | Replays of refused tool calls and the refusals still to replay. |
@@ -787,6 +788,7 @@ At the top:
 | `server/api/scope.rs` | What a Grilling partner's run token reaches in the issue tracker: its chat's repository and the cards with a `wayfinder:` label. |
 | `server/api/session/mod.rs` | Signing in from a browser: with an access token, the server's token or a one-time login code, sessions kept in the store, the codes in memory, and `/v1/session` and `/v1/session/codes`. |
 | `server/api/session/tests.rs` | For the tests only: signing in with each kind of token and code, a session that survives a restart, and what ends one. |
+| `server/api/preferences.rs` | A person's preferences: reading them and replacing them. |
 | `server/api/favourites.rs` | A person's pins and recent places: listing both, pinning, reordering and removing a pin, noting a place opened, and forgetting the places they can no longer see. |
 | `server/api/people.rs` | The people and their access tokens: listing people, an owner adding one with their first token, making, listing and revoking tokens. |
 | `server/api/roles/mod.rs` | The role each route of the desktop API needs, and whether the Moebius agent's run token may use it: the table the reference repeats, and the check `authenticate` makes with it. |

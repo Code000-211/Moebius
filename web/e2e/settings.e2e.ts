@@ -62,4 +62,27 @@ describe("Settings", () => {
     await search.fill("zzz");
     await nav(page).getByText("No settings match.").waitFor();
   });
+
+  it("keeps Show thinking expanded on the server, so it is still on after a reload and in a new browser", async () => {
+    server = await startServer();
+    const page = await (await browser.newContext()).newPage();
+    page.setDefaultTimeout(8000);
+    await page.goto(server.loginUrl);
+    await page.goto(`${server.url}/appearance`);
+    const row = page.getByRole("switch", { name: "Show thinking expanded" });
+    expect(await row.getAttribute("aria-checked")).toBe("false");
+    const saved = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/v1/preferences") && response.request().method() === "PUT",
+    );
+    await row.click();
+    await saved;
+    await page.reload();
+    await page
+      .getByRole("switch", { name: "Show thinking expanded" })
+      .and(page.locator("[aria-checked='true']"))
+      .waitFor();
+    // Nothing is kept in this browser: the value is the person's record on the server.
+    expect(await page.evaluate(() => JSON.stringify({ ...localStorage }))).not.toMatch(/thinking/i);
+  });
 });
