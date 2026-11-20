@@ -6,23 +6,55 @@ document.querySelectorAll("[data-window]").forEach((button) => {
 
 const form = document.getElementById("connect");
 const error = document.getElementById("error");
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
+const submit = document.getElementById("connect-submit");
+const sessionOnly = document.getElementById("connect-session");
+const sessionHint = document.getElementById("connect-session-hint");
+
+// Shows why connecting failed. A keychain that does not answer also offers to go on without it, for this session.
+function fail(reason) {
+  const text = String(reason);
+  error.textContent = text;
+  error.hidden = false;
+  const keychain = text.includes("keychain does not answer");
+  sessionOnly.hidden = !keychain;
+  sessionHint.hidden = !keychain;
+}
+
+async function connect(session) {
   const data = new FormData(form);
-  const submit = form.querySelector("button[type=submit]");
   submit.disabled = true;
+  sessionOnly.disabled = true;
   error.hidden = true;
+  const label = submit.textContent;
+  submit.textContent = session ? "Connecting…" : "Saving the token in the keychain…";
   try {
     await window.__TAURI_INTERNALS__.invoke("connect", {
       address: String(data.get("address")),
       token: String(data.get("token")),
+      sessionOnly: session,
     });
   } catch (reason) {
-    error.textContent = String(reason);
-    error.hidden = false;
-    submit.disabled = false;
+    fail(reason);
   }
+  submit.textContent = label;
+  submit.disabled = false;
+  sessionOnly.disabled = false;
+}
+form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void connect(false);
 });
+sessionOnly.addEventListener("click", () => {
+  if (form.reportValidity()) void connect(true);
+});
+
+// Why the remembered servers did not open at the start, when the keychain did not answer.
+window.__TAURI_INTERNALS__
+  .invoke("startup_notice")
+  .then((notice) => {
+    if (notice) fail(notice);
+  })
+  .catch(() => {});
 
 // The servers the app remembers (their tokens are in the system's keychain): a click opens one, or says why not.
 (async () => {
@@ -91,16 +123,22 @@ window.__TAURI_INTERNALS__
     local.hidden = false;
   })
   .catch(() => {});
-localStart.addEventListener("click", async () => {
+const localSession = document.getElementById("local-session");
+async function startLocal(session) {
   localStart.disabled = true;
+  localSession.disabled = true;
   localError.hidden = true;
   localWorking.hidden = false;
   try {
-    await window.__TAURI_INTERNALS__.invoke("local_connect");
+    await window.__TAURI_INTERNALS__.invoke("local_connect", { sessionOnly: session });
   } catch (reason) {
     localError.textContent = String(reason);
     localError.hidden = false;
-    localStart.disabled = false;
+    localSession.hidden = !String(reason).includes("keychain does not answer");
   }
+  localStart.disabled = false;
+  localSession.disabled = false;
   localWorking.hidden = true;
-});
+}
+localStart.addEventListener("click", () => void startLocal(false));
+localSession.addEventListener("click", () => void startLocal(true));

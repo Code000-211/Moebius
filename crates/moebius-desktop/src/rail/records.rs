@@ -48,11 +48,21 @@ impl Records {
             .unwrap_or_default()
     }
 
-    pub fn save(&self, saved: &Saved) -> std::io::Result<()> {
+    /// Writes `saved`, leaving out the servers of `except` (the ones kept for this session only).
+    pub fn save(
+        &self,
+        saved: &Saved,
+        except: &std::collections::HashSet<String>,
+    ) -> std::io::Result<()> {
         if let Some(dir) = self.path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let text = serde_json::to_string_pretty(saved).map_err(std::io::Error::other)?;
+        let mut saved = saved.clone();
+        saved.servers.retain(|r| !except.contains(&r.id));
+        if saved.last.as_ref().is_some_and(|id| except.contains(id)) {
+            saved.last = None;
+        }
+        let text = serde_json::to_string_pretty(&saved).map_err(std::io::Error::other)?;
         std::fs::write(&self.path, text)
     }
 }
