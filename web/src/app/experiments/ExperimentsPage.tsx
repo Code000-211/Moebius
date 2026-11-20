@@ -24,17 +24,18 @@ import { Button } from "../../ui/components/Button";
 import { plural } from "../../ui/lib/format";
 import { Empty } from "../../ui/page/Empty";
 import { ListCard, ListDetail } from "../../ui/page/List";
-import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonCard } from "../../ui/page/Skeleton";
+import { useToast } from "../../ui/page/Toast";
 import { BriefBox } from "./BriefBox";
 import { EditBrief, NewBrief } from "./BriefForms";
 import { Baseline, Levers } from "./Levers";
 import { emptyForm, type Form, SUGGESTED_BRIEFS, statusTag } from "./model";
-import { Region } from "./parts";
 
 export function ExperimentsPage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const list = useQuery({ queryKey: keys.research, queryFn: researches });
   const boards = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
   // The research is in the address (`?research=`), so a reload and a link keep it; with none the first is read.
@@ -55,7 +56,6 @@ export function ExperimentsPage() {
   /** The brief the form starts from, when the page offered one. */
   const [starting, setStarting] = useState<Form | null>(null);
   const [editing, setEditing] = useState(false);
-  const [failed, setFailed] = useState<string | null>(null);
   const repositories = boards.data?.boards.map((board) => board.repository) ?? [];
   const repositoryName = (research: Research) =>
     repositories.find((each) => each.id === research.repository_id)?.name ?? "";
@@ -65,14 +65,13 @@ export function ExperimentsPage() {
   const answered = useMutation({
     mutationFn: (request: () => Promise<Research>) => request(),
     onSuccess: async (research) => {
-      setFailed(null);
       setComposing(false);
       setStarting(null);
       setEditing(false);
       setPicked(research.id);
       await refresh();
     },
-    onError: (error) => setFailed(sayError(error, "The request was refused.")),
+    onError: (error) => toast({ kind: "error", text: sayError(error, "The request was refused.") }),
   });
 
   const header = (
@@ -87,7 +86,6 @@ export function ExperimentsPage() {
             setComposing(true);
             setStarting(null);
             setEditing(false);
-            setFailed(null);
           }}
         >
           <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
@@ -108,7 +106,12 @@ export function ExperimentsPage() {
     return (
       <>
         {header}
-        <Notice tone="error">{sayError(list.error, "Could not read the research.")}</Notice>
+        <ReadFailed
+          error={list.error}
+          fallback="Could not read the research."
+          busy={list.isFetching}
+          onRetry={() => void list.refetch()}
+        />
       </>
     );
   }
@@ -117,7 +120,6 @@ export function ExperimentsPage() {
     setStarting({ ...emptyForm(), ...brief });
     setComposing(true);
     setEditing(false);
-    setFailed(null);
   };
 
   // With no research there is nothing to list beside the page, so the page is one card that says how to begin.
@@ -125,11 +127,6 @@ export function ExperimentsPage() {
     return (
       <>
         {header}
-        {failed && (
-          <Region label="The request was refused">
-            <Notice tone="error">{failed}</Notice>
-          </Region>
-        )}
         {composing ? (
           <NewBrief
             repositories={repositories}
@@ -185,53 +182,44 @@ export function ExperimentsPage() {
                 setPicked(research.id);
                 setComposing(false);
                 setEditing(false);
-                setFailed(null);
               }}
             />
           );
         })}
         detail={
-          <>
-            {failed && !editing && (
-              <Region label="The request was refused">
-                <Notice tone="error">{failed}</Notice>
-              </Region>
-            )}
-            {composing ? (
-              <NewBrief
-                repositories={repositories}
-                busy={answered.isPending}
-                starting={starting}
-                onStore={(repository, brief) =>
-                  answered.mutate(() => createResearch(repository, brief))
-                }
-                onCancel={() => setComposing(false)}
-              />
-            ) : chosen ? (
-              <>
-                {editing && chosen.status === "draft" ? (
-                  <EditBrief
-                    research={chosen}
-                    busy={answered.isPending}
-                    error={failed}
-                    onCancel={() => setEditing(false)}
-                    onSave={(brief) => answered.mutate(() => editResearch(chosen.id, brief))}
-                  />
-                ) : (
-                  <BriefBox
-                    research={chosen}
-                    repository={repositoryName(chosen)}
-                    busy={answered.isPending}
-                    onEdit={() => setEditing(true)}
-                    onDeleted={() => setPicked(null)}
-                    onAct={(action) => answered.mutate(() => actOnResearch(chosen.id, action))}
-                  />
-                )}
-                <Baseline research={chosen} />
-                <Levers research={chosen} />
-              </>
-            ) : null}
-          </>
+          composing ? (
+            <NewBrief
+              repositories={repositories}
+              busy={answered.isPending}
+              starting={starting}
+              onStore={(repository, brief) =>
+                answered.mutate(() => createResearch(repository, brief))
+              }
+              onCancel={() => setComposing(false)}
+            />
+          ) : chosen ? (
+            <>
+              {editing && chosen.status === "draft" ? (
+                <EditBrief
+                  research={chosen}
+                  busy={answered.isPending}
+                  onCancel={() => setEditing(false)}
+                  onSave={(brief) => answered.mutate(() => editResearch(chosen.id, brief))}
+                />
+              ) : (
+                <BriefBox
+                  research={chosen}
+                  repository={repositoryName(chosen)}
+                  busy={answered.isPending}
+                  onEdit={() => setEditing(true)}
+                  onDeleted={() => setPicked(null)}
+                  onAct={(action) => answered.mutate(() => actOnResearch(chosen.id, action))}
+                />
+              )}
+              <Baseline research={chosen} />
+              <Levers research={chosen} />
+            </>
+          ) : null
         }
       />
     </div>

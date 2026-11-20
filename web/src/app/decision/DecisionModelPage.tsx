@@ -27,6 +27,7 @@ import { CELL, Table } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
 import { StateLabel } from "../../ui/page/StateLabel";
+import { useToast } from "../../ui/page/Toast";
 import { useScopeFilters } from "../scope";
 import { DeleteExport } from "./DeleteExport";
 
@@ -45,6 +46,7 @@ const NUMBER = `${CELL} tabular-nums`;
 
 export function DecisionModelPage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const filters = useScopeFilters();
   const { repository = null, agent = "" } = filters.scope;
   const kinds = useQuery({
@@ -55,8 +57,16 @@ export function DecisionModelPage() {
   const exports = useQuery({ queryKey: keys.exports, queryFn: trainingExports });
   const shadows = useQuery({ queryKey: keys.shadowing, queryFn: shadowing });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["decision-model"] });
-  const exporting = useMutation({ mutationFn: startExport, onSuccess: refresh });
-  const release = useMutation({ mutationFn: releaseTakeover, onSuccess: refresh });
+  const exporting = useMutation({
+    mutationFn: startExport,
+    onSuccess: refresh,
+    onError: (error) => toast({ kind: "error", text: sayError(error, "The export was refused.") }),
+  });
+  const release = useMutation({
+    mutationFn: releaseTakeover,
+    onSuccess: refresh,
+    onError: (error) => toast({ kind: "error", text: sayError(error, "Could not release it.") }),
+  });
 
   const kindList = kinds.data ?? [];
   const exportList = exports.data ?? [];
@@ -89,13 +99,7 @@ export function DecisionModelPage() {
         onFilter={filters.set}
         onClear={filters.clear}
       />
-      <div className="flex flex-col gap-8">
-        {exporting.error && (
-          <Box title="The export was refused">
-            <Notice tone="error">{sayError(exporting.error, "The export was refused.")}</Notice>
-          </Box>
-        )}
-
+      <div className="flex flex-col">
         <Box title="Decision types">
           {kinds.isPending ? (
             <Body>Reading the decision types.</Body>
@@ -150,7 +154,7 @@ export function DecisionModelPage() {
                 })}
               </Table>
               <Body>The files stay on the server. To write them to a directory, run:</Body>
-              <code className="block w-fit rounded-control bg-code px-3 py-2 font-mono text-sm text-text">
+              <code className="block w-fit font-mono text-sm text-secondary">
                 moebius export --out {"<directory>"}
               </code>
             </div>
@@ -238,13 +242,13 @@ export function DecisionModelPage() {
                   ))}
                 </Table>
               )}
-              {release.error && (
-                <Notice tone="error">{sayError(release.error, "Could not release it.")}</Notice>
-              )}
               {shadows.data.takeovers
                 .filter((takeover) => takeover.status === "merged")
                 .map((takeover) => (
-                  <div key={takeover.id} className="flex flex-wrap items-center gap-4">
+                  <div
+                    key={takeover.id}
+                    className="flex min-h-9 flex-wrap items-center gap-4 border-b border-hairline"
+                  >
                     <span className="min-w-0 flex-1 text-base text-text tabular-nums">
                       The decision model decides {takeover.kind}: it agreed on{" "}
                       {percent(takeover.agreement)} of{" "}

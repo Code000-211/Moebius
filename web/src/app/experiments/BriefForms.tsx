@@ -8,97 +8,83 @@ import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { Box } from "../../ui/page/Box";
 import { Chip } from "../../ui/page/Chip";
-import { Field } from "../../ui/page/Field";
-import { Notice } from "../../ui/page/Notice";
-import { Body } from "../../ui/page/PageHeader";
+import { FieldRow, Rows } from "../../ui/page/Field";
 import { briefOf, defaultAmount, emptyForm, type Form, formOf, withKind } from "./model";
 
 /** The fields every brief has: what should get better, the command that measures it, which way of that number is
- * the goal, and the budget. The words here are the ones the form shows; `goal`, `measure` and `better` are what the
- * request calls them. */
+ * the goal, and the budget, one row each with the label at the left. The words here are the ones the form shows;
+ * `goal`, `measure` and `better` are what the request calls them. */
 function BriefFields({ form, onChange }: { form: Form; onChange: (form: Form) => void }) {
   return (
     <>
-      <Field label="What should get better">
-        {(id) => (
-          <Input
-            id={id}
-            placeholder="Cut the clean build time of the host"
-            value={form.goal}
-            onChange={(event) => onChange({ ...form, goal: event.target.value })}
-          />
-        )}
-      </Field>
-      <Field
+      <FieldRow label="What should get better" wide>
+        <Input
+          placeholder="Cut the clean build time of the host"
+          value={form.goal}
+          onChange={(event) => onChange({ ...form, goal: event.target.value })}
+        />
+      </FieldRow>
+      <FieldRow
         label="Measurement"
-        hint="A shell command run in a worktree. Its result is the last number it prints."
+        description="A shell command run in a worktree. Its result is the last number it prints."
+        wide
       >
-        {(id) => (
-          <Input
-            id={id}
-            className="font-mono text-sm"
-            placeholder="cargo bench | tail -1"
-            value={form.measure}
-            onChange={(event) => onChange({ ...form, measure: event.target.value })}
-          />
-        )}
-      </Field>
-      <div className="grid gap-4 md:grid-cols-2">
-        <fieldset className="m-0 min-w-0 border-0 p-0">
-          <legend className="m-0 mb-2 p-0 text-sm font-semibold text-secondary">Goal</legend>
-          <div className="flex flex-wrap gap-2">
-            <Chip
-              selected={form.better === "lower"}
-              onClick={() => onChange({ ...form, better: "lower" })}
-            >
-              Lower is better
-            </Chip>
-            <Chip
-              selected={form.better === "higher"}
-              onClick={() => onChange({ ...form, better: "higher" })}
-            >
-              Higher is better
-            </Chip>
-          </div>
-        </fieldset>
-        <fieldset className="m-0 min-w-0 border-0 p-0">
-          <legend className="m-0 mb-2 p-0 text-sm font-semibold text-secondary">Limited by</legend>
-          <div className="flex flex-wrap gap-2">
-            <Chip
-              selected={form.kind === "experiments"}
-              onClick={() => onChange(withKind(form, "experiments"))}
-            >
-              Experiments
-            </Chip>
-            <Chip
-              selected={form.kind === "tokens"}
-              onClick={() => onChange(withKind(form, "tokens"))}
-            >
-              Tokens
-            </Chip>
-          </div>
-        </fieldset>
-        <Field
-          label={form.kind === "experiments" ? "Experiments" : "Tokens"}
-          hint={
-            form.kind === "experiments"
-              ? "The most levers measured against the baseline before it stops."
-              : "What the research may spend before it stops."
-          }
-          className="min-w-0 md:col-span-2"
-        >
-          {(id) => (
-            <Input
-              id={id}
-              inputMode="numeric"
-              className="tabular-nums"
-              placeholder={defaultAmount(form.kind)}
-              value={form.budget}
-              onChange={(event) => onChange({ ...form, budget: event.target.value })}
-            />
-          )}
-        </Field>
-      </div>
+        <Input
+          className="font-mono text-sm"
+          placeholder="cargo bench | tail -1"
+          value={form.measure}
+          onChange={(event) => onChange({ ...form, measure: event.target.value })}
+        />
+      </FieldRow>
+      <FieldRow label="Goal">
+        <div className="flex flex-wrap gap-2">
+          <Chip
+            selected={form.better === "lower"}
+            onClick={() => onChange({ ...form, better: "lower" })}
+          >
+            Lower is better
+          </Chip>
+          <Chip
+            selected={form.better === "higher"}
+            onClick={() => onChange({ ...form, better: "higher" })}
+          >
+            Higher is better
+          </Chip>
+        </div>
+      </FieldRow>
+      <FieldRow label="Limited by">
+        <div className="flex flex-wrap gap-2">
+          <Chip
+            selected={form.kind === "experiments"}
+            onClick={() => onChange(withKind(form, "experiments"))}
+          >
+            Experiments
+          </Chip>
+          <Chip
+            selected={form.kind === "tokens"}
+            onClick={() => onChange(withKind(form, "tokens"))}
+          >
+            Tokens
+          </Chip>
+        </div>
+      </FieldRow>
+      <FieldRow
+        label={form.kind === "experiments" ? "Experiments" : "Tokens"}
+        description={
+          form.kind === "experiments"
+            ? "The most levers measured against the baseline before it stops."
+            : "What the research may spend before it stops."
+        }
+        wide
+      >
+        <Input
+          inputMode="numeric"
+          className="tabular-nums"
+          placeholder={defaultAmount(form.kind)}
+          value={form.budget}
+          onChange={(event) => onChange({ ...form, budget: event.target.value })}
+        />
+      </FieldRow>
     </>
   );
 }
@@ -125,28 +111,31 @@ export function NewBrief({
   return (
     <Box title="New brief">
       <div className="flex flex-col gap-4">
-        <fieldset className="m-0 min-w-0 border-0 p-0">
-          <legend className="m-0 mb-2 p-0 text-sm font-semibold text-secondary">Repository</legend>
-          {repositories.length === 0 ? (
-            <p className="m-0 break-words text-sm text-secondary">
-              No repository yet. Add one under Projects first.
-            </p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {repositories.map((each) => (
-                <Chip
-                  key={each.id}
-                  selected={repository === each.id}
-                  onClick={() => setForm({ ...form, repository: each.id })}
-                >
-                  {each.name}
-                </Chip>
-              ))}
-            </div>
-          )}
-        </fieldset>
-        <BriefFields form={form} onChange={setForm} />
-        <Body>The brief is stored as a draft. Nothing runs until it is confirmed and started.</Body>
+        <Rows className="border-t-0">
+          <FieldRow label="Repository">
+            {repositories.length === 0 ? (
+              <p className="m-0 break-words text-sm text-secondary">
+                No repository yet. Add one under Projects first.
+              </p>
+            ) : (
+              <div className="flex flex-wrap justify-end gap-2">
+                {repositories.map((each) => (
+                  <Chip
+                    key={each.id}
+                    selected={repository === each.id}
+                    onClick={() => setForm({ ...form, repository: each.id })}
+                  >
+                    {each.name}
+                  </Chip>
+                ))}
+              </div>
+            )}
+          </FieldRow>
+          <BriefFields form={form} onChange={setForm} />
+        </Rows>
+        <p className="m-0 text-sm text-muted">
+          The brief is stored as a draft. Nothing runs until it is confirmed and started.
+        </p>
         <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
@@ -164,17 +153,15 @@ export function NewBrief({
   );
 }
 
-/** The brief of a draft grown into its editor. */
+/** The brief of a draft grown into its editor. A refusal is the page's toast. */
 export function EditBrief({
   research,
   busy,
-  error,
   onCancel,
   onSave,
 }: {
   research: Research;
   busy: boolean;
-  error: string | null;
   onCancel: () => void;
   onSave: (brief: NonNullable<ReturnType<typeof briefOf>>) => void;
 }) {
@@ -183,8 +170,9 @@ export function EditBrief({
   return (
     <Box title="Brief">
       <div className="flex flex-col gap-4">
-        <BriefFields form={form} onChange={setForm} />
-        {error && <Notice tone="error">{error}</Notice>}
+        <Rows className="border-t-0">
+          <BriefFields form={form} onChange={setForm} />
+        </Rows>
         <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
