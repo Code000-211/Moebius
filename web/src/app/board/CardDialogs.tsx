@@ -6,7 +6,7 @@
  * the card under it is redrawn or goes.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { block, deleteCard, setParent } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
@@ -39,7 +39,7 @@ function refusal(error: unknown, fallback: string): string {
   return isApiError(error) ? error.message : fallback;
 }
 
-export function BlockDialog({
+export const BlockDialog = memo(function BlockDialog({
   card,
   more = [],
   onClose,
@@ -88,7 +88,7 @@ export function BlockDialog({
       <DialogContent>
         {shown && (
           <form
-            className="flex flex-col gap-4 p-6"
+            className="flex flex-col gap-4"
             onSubmit={(e) => {
               e.preventDefault();
               if (!send.isPending) send.mutate(shown);
@@ -133,9 +133,9 @@ export function BlockDialog({
       </DialogContent>
     </Dialog>
   );
-}
+});
 
-export function DeleteDialog({
+export const DeleteDialog = memo(function DeleteDialog({
   card,
   repository,
   onClose,
@@ -169,7 +169,7 @@ export function DeleteDialog({
       <DialogContent>
         {shown && (
           <form
-            className="flex flex-col gap-4 p-6"
+            className="flex flex-col gap-4"
             onSubmit={(e) => {
               e.preventDefault();
               if (!send.isPending) send.mutate(shown);
@@ -199,7 +199,7 @@ export function DeleteDialog({
       </DialogContent>
     </Dialog>
   );
-}
+});
 
 /** The issues `card` may be moved below: every other issue of the board but its own sub-issues, which would make a circle. */
 export function parentChoices(board: Board, card: Card): Card[] {
@@ -212,7 +212,7 @@ export function parentChoices(board: Board, card: Card): Card[] {
 /** The words of an issue in a list of choices. */
 export const issueWords = (c: Card) => `#${c.number} ${c.title}`;
 
-export function ParentDialog({
+export const ParentDialog = memo(function ParentDialog({
   board,
   card,
   onClose,
@@ -255,7 +255,7 @@ export function ParentDialog({
       <DialogContent>
         {shown && (
           <form
-            className="flex flex-col gap-4 p-6"
+            className="flex flex-col gap-4"
             onSubmit={(e) => {
               e.preventDefault();
               if (!send.isPending) {
@@ -303,4 +303,4 @@ export function ParentDialog({
       </DialogContent>
     </Dialog>
   );
-}
+});

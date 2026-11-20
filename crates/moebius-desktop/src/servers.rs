@@ -9,18 +9,18 @@ use moebius_desktop::local::{self, Local};
 use moebius_desktop::rail::secrets::Keychain;
 use moebius_desktop::rail::{self, Entry, Options, Rail, RailError};
 use std::sync::Arc;
-use tauri::{Manager, Url};
+use tauri::Manager;
 use tokio::sync::Mutex;
 
-use crate::window::{Connected, MAIN};
+use crate::pages;
+use crate::window::Connected;
 
 /// What an error starts with when the SSH host has no server set up, so that the page can offer to set one up.
 pub const NO_SERVER: &str = "no-server:";
 
-/// The window's rail, and the connect page's address for when no server is open.
+/// The window's rail.
 pub struct Servers {
     rail: Mutex<Rail>,
-    connect_page: std::sync::Mutex<Option<Url>>,
     /// What the rail last showed, for a call that comes while the rail is busy opening a server (which can take a while
     /// over SSH) and must not wait for it.
     shown: std::sync::Mutex<Vec<Entry>>,
@@ -35,14 +35,8 @@ impl Servers {
             .unwrap_or_else(|_| std::env::temp_dir().join("moebius-desktop"));
         Self {
             rail: Mutex::new(Rail::new(&dir, Arc::new(Keychain), Options::standard())),
-            connect_page: std::sync::Mutex::new(None),
             shown: std::sync::Mutex::new(Vec::new()),
         }
-    }
-
-    /// Notes the address of the connect page, which the window shows first.
-    pub fn note_connect_page(&self, url: Url) {
-        *self.connect_page.lock().expect("not poisoned") = Some(url);
     }
 }
 
@@ -62,45 +56,26 @@ impl Servers {
     }
 }
 
-/// Notes the page the window is on, if it is a page of the server that is open.
-fn note_page(window: &tauri::WebviewWindow, rail: &mut Rail) {
-    let (Some(origin), Ok(url)) = (rail.open_origin(), window.url()) else {
-        return;
+/// Shows the web app of the server that is open in the window (`pages`), and points what follows a server at it.
+fn show(app: &tauri::AppHandle, rail: &mut Rail, url: &str) -> Result<(), String> {
+    let (Some(id), Some(origin)) = (rail.open_id().map(str::to_string), rail.open_origin()) else {
+        return Err("no server is open".to_string());
     };
-    if url.as_str().starts_with(&origin) {
-        let query = url.query().map(|q| format!("?{q}")).unwrap_or_default();
-        rail.note_page(&format!("{}{query}", url.path()));
-    }
-}
-
-/// Shows the address of a server's web app in the window.
-fn show(app: &tauri::AppHandle, rail: &Rail, url: &str) -> Result<(), String> {
-    let window = app.get_webview_window(MAIN).ok_or("the window is gone")?;
-    app.state::<Connected>().set(rail.open_origin());
+    app.state::<Connected>().set(Some(origin.clone()));
     match rail.open_server() {
         Some(server) => crate::notifications::start(app, server),
         None => crate::notifications::stop(app),
     }
     crate::tray_icon::follow(app, rail.open_server());
-    window
-        .navigate(url.parse().map_err(|e| format!("{e}"))?)
-        .map_err(|e| e.to_string())
+    pages::show_server(app, rail, &id, &origin, url)
 }
 
 /// Shows the connect page, when no server is left to show.
 fn show_connect_page(app: &tauri::AppHandle) -> Result<(), String> {
-    let window = app.get_webview_window(MAIN).ok_or("the window is gone")?;
     app.state::<Connected>().set(None);
     crate::notifications::stop(app);
     crate::tray_icon::follow(app, None);
-    let page = app
-        .state::<Servers>()
-        .connect_page
-        .lock()
-        .map_err(|_| "the app's state is broken")?
-        .clone()
-        .ok_or("the connect page is not known")?;
-    window.navigate(page).map_err(|e| e.to_string())
+    pages::show_connect(app)
 }
 
 /// Opens the first server of the rail that answers, the one open at the last close first; the connect page stays when
@@ -110,7 +85,7 @@ pub async fn open_remembered(app: tauri::AppHandle) {
     let mut rail = servers.rail.lock().await;
     for id in rail.startup_order() {
         if let Ok(url) = rail.open(&id).await {
-            let _ = show(&app, &rail, &url);
+            let _ = show(&app, &mut rail, &url);
             return;
         }
     }
@@ -122,12 +97,9 @@ pub async fn open_remembered(app: tauri::AppHandle) {
 pub async fn connect(app: tauri::AppHandle, address: String, token: String) -> Result<(), String> {
     let servers = app.state::<Servers>();
     let mut rail = servers.rail.lock().await;
-    if let Some(window) = app.get_webview_window(MAIN) {
-        note_page(&window, &mut rail);
-    }
     let id = rail.add(&address, &token).await.map_err(say)?;
     let url = rail.open(&id).await.map_err(say)?;
-    show(&app, &rail, &url)
+    show(&app, &mut rail, &url)
 }
 
 /// Connects to the server of the SSH host `host`, setting it up there first when `set_up` (the person said yes).
@@ -135,12 +107,9 @@ pub async fn connect(app: tauri::AppHandle, address: String, token: String) -> R
 pub async fn connect_ssh(app: tauri::AppHandle, host: String, set_up: bool) -> Result<(), String> {
     let servers = app.state::<Servers>();
     let mut rail = servers.rail.lock().await;
-    if let Some(window) = app.get_webview_window(MAIN) {
-        note_page(&window, &mut rail);
-    }
     let id = rail.add_ssh(&host, set_up).await.map_err(say)?;
     let url = rail.open(&id).await.map_err(say)?;
-    show(&app, &rail, &url)
+    show(&app, &mut rail, &url)
 }
 
 /// What the rail shows: each server, the open one marked, with its Inbox's count and whether it answers. While the rail
@@ -152,23 +121,20 @@ pub async fn servers(app: tauri::AppHandle) -> Vec<Entry> {
         Ok(rail) => rail.targets(),
         Err(_) => return servers.shown.lock().map(|e| e.clone()).unwrap_or_default(),
     };
-    let entries = rail::poll(targets).await;
+    let entries = rail::poll(targets, crate::tray_icon::figures(&app)).await;
     if let Ok(mut shown) = servers.shown.lock() {
         *shown = entries.clone();
     }
     entries
 }
 
-/// Shows the server `id` in the window, on the page it was left on.
+/// Shows the server `id` in the window: its webview, on the page it was left on, when it has one.
 #[tauri::command]
 pub async fn switch_server(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let servers = app.state::<Servers>();
     let mut rail = servers.rail.lock().await;
-    if let Some(window) = app.get_webview_window(MAIN) {
-        note_page(&window, &mut rail);
-    }
     let url = rail.open(&id).await.map_err(say)?;
-    show(&app, &rail, &url)
+    show(&app, &mut rail, &url)
 }
 
 /// Removes the server `id`, its token with it. When it was the open one, the window shows the next server that
@@ -177,12 +143,14 @@ pub async fn switch_server(app: tauri::AppHandle, id: String) -> Result<(), Stri
 pub async fn remove_server(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let servers = app.state::<Servers>();
     let mut rail = servers.rail.lock().await;
-    if !rail.remove(&id).map_err(say)? {
+    let was_open = rail.remove(&id).map_err(say);
+    pages::forget(&app, &id);
+    if !was_open? {
         return Ok(());
     }
     for next in rail.startup_order() {
         if let Ok(url) = rail.open(&next).await {
-            return show(&app, &rail, &url);
+            return show(&app, &mut rail, &url);
         }
     }
     show_connect_page(&app)

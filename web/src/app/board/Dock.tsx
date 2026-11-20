@@ -9,14 +9,13 @@
  * history screen; the script's editor comes with its page.
  */
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { cardRuns, script } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Board, Card, InboxItem } from "../../api/types/board";
 import { ChangesCard } from "../../diff/Changes";
-import { Markdown } from "../../ui/chat/Markdown";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { KanbanIssuePanel, KanbanIssueSection } from "../../ui/components/KanbanIssuePanel";
@@ -27,6 +26,7 @@ import { Notice } from "../../ui/page/Notice";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { CardMenu } from "./CardMenu";
 import { CardProperties, CHECKS, STATUS_MARK } from "./CardProperties";
+import { CardText } from "./CardText";
 import { cardName } from "./cardKey";
 import type { Decision } from "./decisions";
 import { ActivitySection, EditIssueDialog } from "./IssueSections";
@@ -35,7 +35,9 @@ import {
   changeOf,
   changesOfCard,
   changeWorktree,
+  descendants,
   issueUrl,
+  parentOf,
   pullRequestOf,
   STATUS_LABELS,
 } from "./model";
@@ -165,7 +167,7 @@ function QueryText({
   return empty ? <p className="m-0 text-sm text-secondary">{empty}</p> : null;
 }
 
-export function Dock({
+function DockView({
   board,
   card,
   item,
@@ -250,7 +252,7 @@ export function Dock({
           about a sentence they were never given. */}
       <KanbanIssueSection title="The issue">
         {card.body.trim() !== "" && (
-          <Markdown content={card.body} keepNewlines className="max-w-prose" />
+          <CardText content={card.body} projectKey={card.project_key} className="max-w-prose" />
         )}
         <Button
           variant="secondary"
@@ -366,3 +368,45 @@ export function Dock({
     </KanbanIssuePanel>
   );
 }
+
+type DockProps = Parameters<typeof DockView>[0];
+
+/** Whether two lists hold the same cards, by identity. */
+const sameCards = (a: readonly Card[], b: readonly Card[]) =>
+  a.length === b.length && a.every((card, at) => card === b[at]);
+
+/** Whether two reads of a board say the same about `card`: what the dock reads of the board, and nothing else. */
+function sameForCard(was: Board, now: Board, card: Card): boolean {
+  const key = String(card.id);
+  return (
+    was.repository === now.repository &&
+    was.round_limit === now.round_limit &&
+    was.waiting[key] === now.waiting[key] &&
+    was.changes === now.changes &&
+    parentOf(was, card) === parentOf(now, card) &&
+    sameCards(descendants(was, card), descendants(now, card))
+  );
+}
+
+/**
+ * The dock draws again when its card or anything it was handed changes, and when the board changes in what it reads of it:
+ * the repository, the card's parent and sub-issues, the changes and what the card waits for. A read of the snapshot in
+ * which another card changed leaves it alone; the dock is the heaviest part of the page, and it is open on most boards.
+ */
+function sameDock(was: DockProps, now: DockProps): boolean {
+  for (const key of Object.keys(now) as (keyof DockProps)[]) {
+    if (key === "board" || key === "boards") continue;
+    if (!Object.is(was[key], now[key])) return false;
+  }
+  if (!sameForCard(was.board, now.board, now.card)) return false;
+  const [before, after] = [was.boards ?? [], now.boards ?? []];
+  return (
+    before.length === after.length &&
+    before.every(
+      (each, at) =>
+        each.repository === after[at]?.repository && each.changes === after[at]?.changes,
+    )
+  );
+}
+
+export const Dock = memo(DockView, sameDock);

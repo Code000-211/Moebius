@@ -77,6 +77,8 @@ export function useDecisions() {
       void queryClient.invalidateQueries({ queryKey: keys.cards });
     },
   });
-  const decide = useCallback((decision: Decision) => mutation.mutate(decision), [mutation]);
+  // `mutate` keeps its identity from one render to the next, which the board's memoised cards rely on.
+  const { mutate } = mutation;
+  const decide = useCallback((decision: Decision) => mutate(decision), [mutate]);
   return { decide, pending: mutation.isPending, notice, setNotice };
 }

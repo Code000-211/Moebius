@@ -62,8 +62,14 @@ x86_64 only, so another system gets no offer. On Windows, WSL 2 has to be instal
 ## Several servers
 
 The rail at the far left of the window holds a square for every server the app knows: the first letter of its address,
-the count of its Inbox in a badge, and a grey dot when it does not answer. The open one is raised. Click a square to
-open that server; it opens on the page you left it on. **+** connects another one:
+the count of its Inbox in a badge, and a grey dot when it does not answer. The open one is raised. The app asks each server for these few figures
+with one small request (`GET /v1/status`) every ten seconds, and takes the open server's from the tray, which follows
+it by its events, so a busy server is not read as a whole to draw a badge. Click a square to
+open that server. The app keeps the page of every server you opened, so switching back to one shows it at once, as you
+left it (the scroll, the filters, the open card), and the rail stays where it is; a server opened for the first time
+loads out of sight while the page you are on stays, and shows when it is ready. To keep memory bounded the app lets
+go of the pages of servers you have not looked at for half an hour, and of all but the three you left last; such a
+server opens again on the page you left it on. **+** connects another one:
 
 - **Address**: the server's address and an access token, as for the first one.
 - **Over SSH**: a host you can log in to with keys or the agent (the app asks no question: `ssh` runs in batch mode). The
@@ -132,7 +138,7 @@ The answer's `token` (it starts with `moebius-access-`) goes into the app with t
   window.
 - Revoke the token on the My tokens page and start the app again: the server's square has a grey dot, and opening it
   answers that the server does not accept the token. Remove it and connect again with a new token.
-- Connect a second server: its square appears in the rail; switch between them, and each comes back on its page.
+- Connect a second server: its square appears in the rail; switch between them, and each comes back at once, as you left it (scroll down a page, switch away and back: it is where it was).
 
 - Have someone give you a card (or mention you in a comment): a notification appears, the count rises by one, and
   choosing it opens the card.
@@ -143,6 +149,11 @@ The answer's `token` (it starts with `moebius-access-`) goes into the app with t
 
 ## What can go wrong
 
+- **The window is slow, blank or uses a whole core on Linux**: WebKitGTK's accelerated compositing has no working GPU
+  path on virtual machines, remote desktops, Xvfb and some NVIDIA and Wayland setups. The app turns compositing off
+  at start when `/dev/dri` has no render node. To choose yourself, start it with `MOEBIUS_RENDERING=software` (compositing
+  off) or `MOEBIUS_RENDERING=gpu` (WebKitGTK's own choice); setting `WEBKIT_DISABLE_COMPOSITING_MODE` or
+  `WEBKIT_DISABLE_DMABUF_RENDERER` yourself also stops the app from choosing. Windows is not affected.
 - **No tray icon on Linux**: a desktop without a status area (GNOME without its AppIndicator extension) shows none.
   The app works without it, only its Pause all agents item is out of reach: use `moebius pause` then.
 

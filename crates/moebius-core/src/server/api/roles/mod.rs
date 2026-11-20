@@ -264,6 +264,8 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("PUT", "/v1/workflows/{name}", OWNER),
     ("DELETE", "/v1/workflows/{name}", OWNER),
     ("GET", "/v1/workflows/{name}/run-inputs", VIEWER),
+    ("GET", "/v1/workflow-runs", VIEWER),
+    ("GET", "/v1/workflow-runs/{id}", VIEWER),
     ("POST", "/v1/workflows/{name}/runs", MEMBER),
     ("POST", "/v1/workflows/runs/{id}/cancel", MEMBER),
     ("POST", "/v1/workflows/runs/{run_id}/resume", MEMBER),
@@ -290,6 +292,7 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("POST", "/v1/packages/{name}/update", OWNER_PERSON),
     // Improving Moebius.
     ("GET", "/v1/usage", VIEWER),
+    ("GET", "/v1/status", VIEWER_PERSON),
     ("GET", "/v1/analytics", VIEWER),
     ("GET", "/v1/judgements", VIEWER),
     ("GET", "/v1/judgements/kinds", VIEWER),

@@ -169,6 +169,8 @@ export interface InboxItem {
 
 /** `GET /v1/snapshot`. */
 export interface Snapshot {
+  /** Who paused all agents and when, while they are paused; left out otherwise. */
+  paused?: { by: string; at: number };
   boards: Board[];
   harness_changes: Change[];
   inbox: InboxItem[];

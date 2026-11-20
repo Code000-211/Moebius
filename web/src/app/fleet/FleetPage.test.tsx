@@ -3,10 +3,21 @@
  * agent is working, which is the opposite of what the person needs to know.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { keys } from "../../api/keys";
+import type { Card } from "../../api/types/board";
+import { watchRenders } from "../../test-renders";
+import { card, board as makeBoard, running } from "../board/model/fixtures";
 import { FleetPage } from "./FleetPage";
+
+// The conversation of a run follows the event stream, which these tests have none of.
+vi.mock("../../live/LiveProvider", () => ({
+  useServerEvents: () => {},
+  useWatchRun: () => {},
+  useConnection: () => "online",
+}));
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -32,5 +43,102 @@ describe("a fleet that could not be read", () => {
     expect(alert.textContent).toContain("the server is starting");
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
     expect(screen.queryByText("No agent is working")).toBeNull();
+  });
+});
+
+describe("a fleet with many runs", () => {
+  it("draws only the row of the run that changed", async () => {
+    const at = (cards: Card[]) => ({ boards: [makeBoard(cards)], inbox: [] });
+    const runs = Array.from({ length: 30 }, (_, at) =>
+      card(at + 1, { column: "In progress", run: { ...running, id: at + 1 } }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => ({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify(String(url).endsWith("/snapshot") ? at(runs) : []),
+      })),
+    );
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
+    });
+    client.setQueryData(keys.snapshot, at(runs));
+    client.setQueryData(keys.chats, []);
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <FleetPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    expect(await screen.findAllByTestId("fleet-row")).toHaveLength(30);
+    await act(() => new Promise((done) => setTimeout(done, 100)));
+
+    const watch = watchRenders();
+    const changed = runs.map((each) => (each.id === 5 ? { ...each, tokens: 900 } : each));
+    await act(async () => {
+      client.setQueryData(keys.snapshot, at(changed));
+      await new Promise((done) => setTimeout(done, 100));
+    });
+    const seen = watch.stop();
+    // A memoised row shows as two components, the memo and the row inside it.
+    expect(seen.byName.Row).toBe(2);
+    expect(screen.getAllByTestId("fleet-row")[4]?.textContent).toContain("900");
+  });
+});
+
+describe("pausing all agents from Fleet", () => {
+  function serve(paused: boolean) {
+    const posted: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: { method?: string }) => {
+        const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+        if (init?.method === "POST") posted.push(path);
+        const body = path.startsWith("/v1/snapshot")
+          ? {
+              boards: [],
+              harness_changes: [],
+              inbox: [],
+              ...(paused ? { paused: { by: "person:ada", at: 1 } } : {}),
+            }
+          : path.startsWith("/v1/chats")
+            ? []
+            : { paused: !paused };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => body,
+          text: async () => JSON.stringify(body),
+        };
+      }),
+    );
+    return posted;
+  }
+  const show = () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <FleetPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  };
+
+  it("offers to pause, and says who paused when they are paused", async () => {
+    const posted = serve(false);
+    show();
+    fireEvent.click(await screen.findByRole("button", { name: "Pause all agents" }));
+    await waitFor(() => expect(posted).toContain("/v1/runs/pause"));
+  });
+
+  it("offers to resume while paused", async () => {
+    const posted = serve(true);
+    show();
+    await screen.findByText(/All agents are paused by @ada/);
+    fireEvent.click(screen.getByRole("button", { name: "Resume all agents" }));
+    await waitFor(() => expect(posted).toContain("/v1/runs/resume"));
   });
 });

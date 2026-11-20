@@ -55,7 +55,7 @@ pub struct CardFilter {
 impl Store {
     /// The first moment of the local day that is `days - 1` days ago, as Unix seconds.
     pub fn window_start(&self, days: i64) -> Result<i64> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             &format!("SELECT {}", super::usage::WINDOW_START),
             [days],
             |r| r.get(0),

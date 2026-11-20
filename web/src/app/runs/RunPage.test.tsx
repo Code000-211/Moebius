@@ -14,7 +14,7 @@ import { RunPage } from "./RunPage";
 vi.mock("../../chat/useThread", () => ({
   useThread: () => ({ entries: [], lastSeq: 0, loaded: true, error: null }),
 }));
-vi.mock("../../live/LiveProvider", () => ({ useServerEvents: () => {} }));
+vi.mock("../../live/LiveProvider", () => ({ useServerEvents: () => {}, useWatchRun: () => {} }));
 
 const RUN = {
   id: 1000,

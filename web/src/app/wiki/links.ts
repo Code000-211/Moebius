@@ -28,6 +28,47 @@ export function linkPages(text: string, links: readonly PageLink[]): string {
   );
 }
 
+/** The key of the project a page is a page of (`projects/<key>/…`); empty for any other page. */
+function projectOf(path: string): string {
+  const [root, key, page] = path.split("/");
+  return root === "projects" && key && page ? key : "";
+}
+
+/** The folder a page is in. */
+function folderOf(path: string): string {
+  const cut = path.lastIndexOf("/");
+  return cut < 0 ? "" : path.slice(0, cut);
+}
+
+/**
+ * The page each `[[link]]` of a card's text leads to, as the server decides it for a page (`wiki/links.rs`): a path in
+ * any case first, else a name, the one in the project's folder (`projects/<key>/`) before another of that project's, then the
+ * first by path. A card's text is read as if it were in its project's folder (`projectKey`).
+ */
+export function pageLinksOf(
+  text: string,
+  pages: readonly PageInfo[],
+  projectKey: string | undefined,
+): PageLink[] {
+  const source = projectKey ? `projects/${projectKey}/x` : "x";
+  const paths = pages.map((page) => page.path);
+  const found: PageLink[] = [];
+  for (const match of text.matchAll(LINK)) {
+    const target = match[2]?.trim();
+    if (match[1] !== undefined || !target) continue;
+    const lower = target.toLowerCase();
+    const named = paths.filter((path) => path.toLowerCase() === lower);
+    const rank = (path: string) =>
+      folderOf(path) === folderOf(source) ? 0 : projectOf(path) === projectOf(source) ? 1 : 2;
+    const byName = paths
+      .filter((path) => (path.split("/").pop() ?? path).toLowerCase() === lower)
+      .sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
+    const path = named.find((p) => p === target) ?? named[0] ?? byName[0] ?? null;
+    found.push({ link: target, path });
+  }
+  return found;
+}
+
 /** What is being completed at the caret: a page after `[[`, or a card once its key and hyphen are typed. */
 export interface Completion {
   kind: "page" | "card";

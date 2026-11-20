@@ -128,7 +128,7 @@ describe("the chat page", () => {
       const title = page.getByTestId("chat-title");
       await title.waitFor();
       await page.getByTestId("chat-chip").click();
-      await page.getByRole("button", { name: "Rename" }).click();
+      await page.getByTestId("chat-chip-panel").getByRole("button", { name: "Rename" }).click();
       const field = page.getByTestId("chat-title-field");
       await field.fill("Where the login screen went wrong");
       await field.press("Enter");
@@ -223,8 +223,30 @@ describe("a chat longer than the page opens with", () => {
     // It starts once the chat has settled at its end: a turn of the wheel made before is undone by the move there.
     await expect.poll(() => distanceFromEnd(thread())).toBeLessThan(40);
     await thread().hover();
+    // One turn of the wheel is the person's, and it ends the following of the answer. The list is virtual: it
+    // measures the turns it draws as it goes and corrects its position, so a single move can stop short of the top
+    // (and a wheel still turning would carry on past the turn read once the page above arrives). So the person is
+    // taken to the top again, without a wheel, until the page above is asked for. The page keeps the note itself and each
+    // step looks and moves in one go: a move made after the page above arrived would be a move of the test.
+    // The page notes for itself that the page above is loading (its row appears, which is seen however briefly).
+    await thread().evaluate((element) => {
+      const note = element as HTMLElement & { askedForOlder?: boolean };
+      const look = () => {
+        if (document.querySelector('[data-testid="older"]') !== null) note.askedForOlder = true;
+      };
+      new MutationObserver(look).observe(element, { subtree: true, childList: true });
+      look();
+    });
     await page.mouse.wheel(0, -2_000);
-    await page.mouse.wheel(0, -100_000);
+    await expect
+      .poll(() =>
+        thread().evaluate((element) => {
+          const note = element as HTMLElement & { askedForOlder?: boolean };
+          if (!note.askedForOlder) element.scrollTop = 0;
+          return note.askedForOlder === true;
+        }),
+      )
+      .toBe(true);
     await expect.poll(() => history().length).toBe(2);
     // The page above stops below the oldest message held, and the conversation does not move down to make room
     // for what arrives there: the turn being read stays where it was, although the turn at the top of the list
@@ -235,8 +257,15 @@ describe("a chat longer than the page opens with", () => {
     await page.getByText("Answer 134. And more 134.").waitFor();
     // The chat begins with what that page brought: the top of the conversation now holds its first message, so
     // scrolling there again asks for nothing and nothing appears above it.
-    await page.mouse.wheel(0, -100_000);
-    await page.getByText("Question 1", { exact: true }).waitFor();
+    // Again the list measures as it goes, so the person goes to the top until the first message is there.
+    await expect
+      .poll(async () => {
+        await thread().evaluate((element) => {
+          element.scrollTop = 0;
+        });
+        return page.getByText("Question 1", { exact: true }).count();
+      })
+      .toBe(1);
     await expect.poll(() => page.getByTestId("older").count()).toBe(0);
     await expect
       .poll(() => fake().reads.filter((read) => read.before !== undefined).length)
@@ -738,10 +767,10 @@ describe("an open chat", () => {
       const run = fake().chats[0]?.id as number;
       fake().agentStart(run);
       await page.getByTestId("chat-chip").click();
-      await page.getByRole("button", { name: "Stop" }).click();
+      await page.getByTestId("chat-chip-panel").getByRole("button", { name: "Stop" }).click();
       await page.getByText("Stop this chat?").waitFor();
       await page.getByRole("button", { name: "Keep going" }).click();
-      await page.getByRole("button", { name: "Stop" }).click();
+      await page.getByTestId("chat-chip-panel").getByRole("button", { name: "Stop" }).click();
       await page.getByRole("button", { name: "Stop chat" }).click();
       // The panel stays only while it is used; with the chat stopped it is closed again.
       await page.getByTestId("chat-chip").click();
@@ -767,7 +796,8 @@ describe("an open chat", () => {
       await page.getByTestId("chat-chip").click();
       const terminal = page.getByRole("button", { name: "Terminal" });
       await terminal.waitFor();
-      expect(await terminal.isEnabled()).toBe(true);
+      // The chat's state is read again within a second of the event that changed it, so the button turns on then.
+      await expect.poll(() => terminal.isEnabled()).toBe(true);
     },
   );
 

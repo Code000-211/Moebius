@@ -6,6 +6,7 @@
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { PagesAFake } from "./pages-a";
+import type { TemplatesFake } from "./templates";
 
 type Send = (event: { kind: string; data: unknown }) => void;
 
@@ -76,7 +77,7 @@ function pageLinks(text: string, all: string[]): Array<{ link: string; path: str
   });
 }
 
-export function createWikiFake(send: Send, pagesA: PagesAFake): WikiFake {
+export function createWikiFake(send: Send, pagesA: PagesAFake, templates: TemplatesFake): WikiFake {
   /** Every page that ever was, by its path now, with its versions oldest first. */
   const pages = new Map<string, Version[]>();
   let commits = 0;
@@ -185,6 +186,24 @@ export function createWikiFake(send: Send, pagesA: PagesAFake): WikiFake {
             snippet: text.trim().slice(0, 80),
           }));
         answer(response, 200, hits);
+        return true;
+      }
+      if (path === "/v1/wiki/from-template" && method === "POST") {
+        const body = JSON.parse(await readBody(request)) as { template: string; path: string };
+        const text = templates.pageTemplate(body.template);
+        if (text === undefined) return refuse(response, 404, `no page template ${body.template}`);
+        if (current(body.path)) return refuse(response, 409, `page ${body.path} exists already`);
+        const made: Version = {
+          commit: commit(),
+          author: author.name,
+          handle: author.handle,
+          at: clock,
+          message: `Add ${body.path} from the template ${body.template}`,
+          path: body.path,
+          text: text.endsWith("\n") ? text : `${text}\n`,
+        };
+        record(body.path, made);
+        answer(response, 200, view(body.path, made));
         return true;
       }
       const decision = /^\/v1\/wiki\/proposals\/(\d+)\/(merge|dismiss)$/.exec(path);

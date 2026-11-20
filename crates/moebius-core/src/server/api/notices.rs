@@ -53,7 +53,7 @@ async fn notices(
 
 /// Whether `sight` sees what `notice` is about: a notice of a card or inbox item of a private project the person is no
 /// member of (any more) is left out, and answered `404`.
-fn sees_notice(app: &App, sight: &Sight, notice: &Notice) -> crate::app::Result<bool> {
+pub(super) fn sees_notice(app: &App, sight: &Sight, notice: &Notice) -> crate::app::Result<bool> {
     if let Some(card) = notice.card_id
         && !app.sees_card(sight, card)?
     {

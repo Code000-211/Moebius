@@ -7,7 +7,7 @@
  * (the address, by `model.ts`); the bar only says what changed.
  */
 import { BookmarkSimpleIcon, PlusIcon, SlidersHorizontalIcon, XIcon } from "@phosphor-icons/react";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { Button } from "../components/Button";
 import {
   DropdownMenu,
@@ -170,7 +170,7 @@ function DisplayMenu({ choices, value, onChange }: DisplayProps) {
   );
 }
 
-export function FilterBar({
+export const FilterBar = memo(function FilterBar({
   label,
   leading,
   fields,
@@ -236,4 +236,4 @@ export function FilterBar({
       </div>
     </search>
   );
-}
+});

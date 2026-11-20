@@ -76,10 +76,15 @@ on Linux (an AppImage and a `.deb`) and Windows (an installer):
    cookie and origin) that stays up while another is shown, and the page the window was on when another was opened
    (`Rail::note_page`), which `Proxy::entry_url_at` leads back to. A server over SSH keeps its tunnel
    (`rail::ssh`, the same `ssh -L` as `moebius connect`, in batch mode) beside its proxy; a host with no server is set up
-   by `moebius connect --yes` after a yes. `rail::poll` asks each server for its Inbox (`/v1/snapshot` and
-   `/v1/notices`), and one that does not answer is drawn with a grey dot. The web app draws the rail (`desktop/Rail.tsx`)
+   by `moebius connect --yes` after a yes. `rail::poll` asks each server for its Inbox (`GET /v1/status`, one small route, never the snapshot; the open server is
+   not asked while the tray follows it, whose last figures the rail shows), and one that does not answer is drawn with a grey dot. The web app draws the rail (`desktop/Rail.tsx`)
    and calls the commands of `servers.rs` through the bridge; removing a server there is also how a person disconnects,
    since sign-out in the web app does nothing in the app. At its start the app opens the server that was open last.
+   The window (`pages.rs`) holds a webview for the connect page and one for every server that was opened, all of its
+   size, and shows one: switching to a server opened before shows its webview with the page as it was left, and a
+   server opened for the first time loads out of sight and is shown once it has drawn its rail, so the window is never
+   blank. `views::Views` decides which webviews exist and lets go of those left for half an hour and of all but three
+   hidden ones (their page is noted by the rail).
 5. The window opens that address, and keeps only its own pages: a link to anywhere else, such as a pull request on a
    forge, opens in the system's browser (`links::target`). Every page of the window gets `window.moebiusDesktop` first, which the web app's
    `desktop/WindowControls.tsx` calls to minimize, maximize and close the window from a strip on the textured ground.
@@ -116,7 +121,9 @@ finds the server again by that directory: it answers, or it is started again wit
    (`NoForge::refresh` fetches `origin` and fast-forwards the default branch when it can) and publishes a failure as
    `forge_error`.
 2. **The board ticks.** The loop in `Server::serve` calls `Server::tick` on a blocking thread every `board.tick_ms`.
-   For each card it calls `Engine::settle`, which calls `Engine::tick` until a script stops moving the card.
+   For each card that `Engine::is_quiet` does not say can be left alone (its last script did nothing, no row was
+   written to the store since, the limits are the same and a minute has not passed; `board/cache.rs`) it calls
+   `Engine::settle_card`, which calls `Engine::settle`, which calls `Engine::tick` until a script stops moving the card.
    `Engine::tick` finds the script for the card's column: the `<script>` file of the card's project, read by
    `App::project_file` from `projects/<project name>/` of the harness configuration repository's clone, else the built-in one from `kanban/` (`Engine::script`). `Engine::run_script`
    runs it in a fresh sandboxed Luau state with `card_table` and the `moebius` table, and applies the effects.
@@ -528,6 +535,8 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `rail/secrets.rs` | Where the tokens are kept: the system's keychain (`Keychain`), or `Memory` in tests. |
 | `rail/ssh.rs` | A server over SSH: the `ssh` tunnel that forwards a port and prints the host's token, and setting a host up with `moebius connect --yes`. |
 | `rail/status.rs` | What the rail shows of a server: whether it answers and its Inbox's count (`Entry`). |
+| `views.rs` | Which servers have a webview of their own in the window, and which to let go of (the ones left for long, or beyond three): the bookkeeping, tested without a window. |
+| `pages.rs` | The Tauri side of the window's webviews, in the program: one for the connect page and one per opened server, one shown at a time, a new one shown once it has drawn its rail. |
 | `servers.rs` | The rail's commands on the Tauri side (`connect`, `connect_ssh`, `servers`, `switch_server`, `remove_server`, and the local server's `local_state` and `local_connect`): showing a server's web app in the window, the connect page when none is left, and opening the server that was open last at the start. |
 | `server.rs` | A server the app connects to (`Server`: its address and the access token), and `check`: the token and the server's version with `GET /v1/health`, refusing a server of another minor version with the release that matches. |
 | `quick.rs` | The global shortcut without a window: which key combinations are accepted and how they are written, the file that keeps the chosen one across restarts, and the script that asks the main window to open a page of the web app. |
@@ -536,8 +545,9 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `notices.rs` | A person's notices on a server for the app: `watch` follows `/v1/events` (and reads `GET /v1/notices` after each connection) with the token and says, as `Effect`s, to notify a notice once and what the count of unread ones is; the first read is the baseline and notifies nothing. |
 | `badge.rs` | What the icon says of that count: the title `(3) Moebius`, and the red disc with digits drawn over the taskbar icon on Windows. |
 | `notifications.rs` | The Tauri side of notices, in the program: the system's notification (a click shows the window and opens the notice in the web app), the badge count of the icon, the overlay and the title. |
+| `render.rs` | WebKitGTK's rendering mode on Linux: compositing off where there is no GPU render node, `MOEBIUS_RENDERING` to override. |
 | `instance.rs` | Which start of the app is the first: a lock in the configuration directory and a loopback port; a later start tells the first to show its window and ends. |
-| `tray.rs` | What the tray shows of a server and asks of it: the figures read from the snapshot and the usage (agents working, the Inbox, today's tokens against the budget, whether all agents are paused), their lines, `follow`, which reads them again after every burst of events, and the pause and resume routes. |
+| `tray.rs` | What the tray shows of a server and asks of it: the figures read from `GET /v1/status` (agents working, the Inbox, today's tokens against the budget, whether all agents are paused), their lines, `follow`, which reads them again after a burst of events (the steps of runs only every ten seconds), and the pause and resume routes. |
 | `tray_icon.rs` | The Tauri side of the tray, in the program: the icon and its menu (the figures as lines, New issue, Ask Moebius, Open Moebius, Pause all agents), following the server the window is connected to. |
 | `proxy/mod.rs` | The app's own address on the loopback: the web app at every path, `/v1/` forwarded to the server, and the key, `Host` and `Origin` checks that let only the window use it. |
 | `proxy/assets.rs` | The web app embedded from `web/dist`, served with the policies of `web/csp.json`. |
@@ -566,6 +576,7 @@ At the top:
 | `app/issues/similar.rs` | The words of an issue and how alike two issues are, for finding the open issues that probably say the same. |
 | `app/issues/sync.rs` | What the poll copies besides an issue's text, acting only on what the forge changed; which sub-issues count; the graph of what waits for what. |
 | `app/issues/text.rs` | The lines of a description that hold a parent ("Part of #n") or a blocker ("Blocked by #n") where the forge has none. |
+| `app/snapshot.rs` | What the snapshot needs to know about each card (repositories, people, approvals, dependencies, open changes), read once for all cards. |
 | `app/stopping.rs` | Holding (blocking), releasing and deleting a card, which stops its runs and, for a delete, removes what it left in the clone. |
 | `app/pausing.rs` | Pausing all agents: the pause kept in the store, which the board engine and every starter of a run read, and the harness holding the runs going. |
 | `app/runs.rs` | A person's hand in a run: steering, stopping, a shell in its worktree, a chat's terminal interface, and a shell on the server. |
@@ -686,7 +697,7 @@ At the top:
 | `store/projects.rs` | The projects (name, key, repositories in order), a repository's home project and a card's project, how a key is made from a name, the migration that makes one project for each repository and puts every card on it, whether a project is private with its members, and the project a judgement belongs to. |
 | `store/paused.rs` | Whether all agents are paused, who paused them and when: the table `runs_paused`, one row at most. |
 | `store/favourites.rs` | The places a person pinned, in their order, and the places they opened lately (the last 20), kept per person so they follow them to every browser. |
-| `store/events.rs` | A run's events, in order, redacted before they are stored. |
+| `store/events.rs` | A run's events, in order, redacted before they are stored: queued and written in batches (streamed deltas wait up to 100 ms), the deltas of an ended message joined, and told to the bus after they are committed. |
 | `store/automations.rs` | Automations, their firings with the status of each chat, and the server's local minute; the workflow file is the definition and the row keeps the id the firings use. |
 | `store/chats.rs` | Chats: where they were started, what they work in and how far a person has read them. |
 | `store/deletions.rs` | Deleting a chat, a research or a replay from the store in one transaction each; usage and judgements stay, without a run. |
@@ -728,6 +739,7 @@ At the top:
 | `server/api/cards.rs` | The snapshot of every board, issues, cards and their changes (edit, approve, block, unblock, delete, retry, merge, reject), a card's runs and history. |
 | `server/api/planning.rs` | The routes that set a card's priority and due date. |
 | `server/api/notices.rs` | The routes of a person's notices and of following a card. |
+| `server/api/status.rs` | `GET /v1/status`: the figures of the desktop app's tray and rail, without the snapshot. |
 | `server/api/kinds.rs` | The routes of kinds of issues, the kinds a project offers, a card's kind and fields, and the cards of every project filtered and sorted by them. |
 | `server/api/card_repositories.rs` | The route that names the repositories a card works in. |
 | `server/api/assignees.rs` | The routes that give a card or an inbox item to people. |
@@ -776,7 +788,7 @@ At the top:
 | `server/api/roles/mod.rs` | The role each route of the desktop API needs, and whether the Moebius agent's run token may use it: the table the reference repeats, and the check `authenticate` makes with it. |
 | `server/api/roles/tests.rs` | For the tests only: the role table against the reference and the routes of the code, and every route called as a viewer, a member, an owner and the Moebius agent. |
 | `server/api/web.rs` | The web app embedded from `web/dist` and served at `/` without a token, with `index.html` for any path that is no file, or a page that says it was not built. |
-| `server/api/events.rs` | The event WebSocket `GET /v1/events`. |
+| `server/api/events.rs` | The event WebSocket `GET /v1/events`: what a person may see, a run's pieces only for the runs a client subscribed to. |
 | `server/api/testing.rs` | For the tests only: a server on port 0 with a fake Pi, and the requests the tests of the API share. |
 | `server/settings/mod.rs` | Editing `moebius.toml` while the server runs: what `PUT /v1/settings` takes and answers, and reading and writing the file. |
 | `server/settings/edit.rs` | A change applied to the file's text with `toml_edit`, its comments and order kept. |
@@ -794,6 +806,7 @@ At the top:
 | Module | What it is for |
 |---|---|
 | `repos/mod.rs` | Clones, worktrees, branches, pushes, merges and conflict checks through the `git` command line. |
+| `repos/conflicts.rs` | What `git merge-tree` finds for a change, kept per (clone, base, branch) until the head of either branch moves; the heads are read from the clone's ref files, so asking again starts no git process. |
 | `repos/kept.rs` | A clone the server keeps in step with its `origin`, as the harness configuration repository and the wiki are: cloned once, refreshed by a fast-forward, and an edit a commit pushed to `origin` that is undone when the push fails. |
 | `repos/forge.rs` | The `Forge` trait with the forges `none`, `github`, `gitlab` and `forgejo`, and the forge-neutral `Issue` (with its labels, parent, blockers and comments). |
 | `repos/tracker_tests.rs` | Tests (only) of what the forge clients write and read for an issue tracker, against a fake forge that records its requests. |
@@ -820,6 +833,7 @@ At the top:
 | `board/review.rs` | The review along two axes: the findings with evidence of the Standards and Spec runs read into one verdict. |
 | `board/attempts.rs` | `moebius.start_runs`, `moebius.check_attempt` and `moebius.settle_attempts`, and the `card.attempts` and `card.selection` fields. |
 | `board/card.rs` | The `card` table a script reads, with the card's change and the verdict of its review. |
+| `board/cache.rs` | What the engine remembers between script calls: the bytecode of each script text, the cards a tick can leave alone (settled with nothing to do, while the store's write counter and the limits stay the same, for at most a minute) and the project scripts read during one tick. |
 | `board/sandbox.rs` | The Luau sandbox every script runs in, with its memory and time limits. |
 | `board/limits.rs` | The run, round and token limits scripts see, and a script call's memory and time. |
 | `board/kanban.rs` | The columns, the default Kanban's scripts built into the server, and a project's overrides. |

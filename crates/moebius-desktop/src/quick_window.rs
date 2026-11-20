@@ -18,7 +18,7 @@ use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 use crate::servers::Servers;
-use crate::window::{Connected, MAIN, open_in_browser};
+use crate::window::{Connected, open_in_browser};
 
 /// The label of the small window, which `capabilities/quick.json` names.
 pub const QUICK: &str = "quick";
@@ -176,7 +176,7 @@ async fn show(app: &AppHandle) -> tauri::Result<()> {
 
 /// Brings the main window to the front, from the tray or the back of other windows.
 fn bring_forward(app: &AppHandle) -> tauri::Result<()> {
-    if let Some(window) = app.get_webview_window(MAIN) {
+    if let Some(window) = crate::pages::main_window(app) {
         window.unminimize()?;
         window.show()?;
         window.set_focus()?;
@@ -249,7 +249,7 @@ pub fn quick_finish(app: AppHandle, path: Option<String>) -> Result<(), String> 
     }
     if let Some(script) = script {
         bring_forward(&app).map_err(|e| e.to_string())?;
-        if let Some(window) = app.get_webview_window(MAIN) {
+        if let Some(window) = crate::pages::front(&app) {
             window.eval(script).map_err(|e| e.to_string())?;
         }
     }

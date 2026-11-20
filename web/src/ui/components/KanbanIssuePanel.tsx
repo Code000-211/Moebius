@@ -47,7 +47,9 @@ export function KanbanIssuePanel({
   const fades = useScrollFades<HTMLDivElement>();
 
   const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== "Escape") return;
+    // A menu, a popover or a combobox that took the key to close itself marks it handled (a menu is drawn outside the
+    // panel but bubbles to it through the tree that opened it), so the card stays until the second Escape.
+    if (e.key !== "Escape" || e.defaultPrevented) return;
     const target = e.target as HTMLElement;
     // Escape belongs to the topmost layer. A sheet the inspector itself opened — the diff of a change — is inside
     // this section in the tree that opened it, even though it draws over the whole page, so its own Escape is

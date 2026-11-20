@@ -11,6 +11,7 @@ import { snapshot as readSnapshot } from "../api/calls/board";
 import { chats as readChats } from "../api/calls/chat";
 import { keys } from "../api/keys";
 import { usePackageSheet } from "../packages/PackageSheetContext";
+import { ChatActions } from "./ChatActions";
 import { ChatTopBar } from "./ChatTopBar";
 import { NewChat } from "./NewChat";
 import { ChatTitle, OpenChat } from "./OpenChat";
@@ -67,7 +68,14 @@ export function ChatPage() {
               </span>
             )
           }
-          actions={open ? <ShareChat chat={open} /> : undefined}
+          actions={
+            open ? (
+              <>
+                <ChatActions chat={open} />
+                <ShareChat chat={open} />
+              </>
+            ) : undefined
+          }
         />
         {openId === null ? (
           <NewChat snapshot={snapshot.data} />

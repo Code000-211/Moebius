@@ -436,6 +436,16 @@ mod tests {
     }
 
     async fn connect(state: &ApiState, addr: &str) -> impl StreamExt<Item = AppEvent> + Unpin {
+        connect_for(state, addr, &[]).await
+    }
+
+    /// A client of the event stream that asked for the events of `runs`, as a client that follows them does.
+    async fn connect_for(
+        state: &ApiState,
+        addr: &str,
+        runs: &[i64],
+    ) -> impl StreamExt<Item = AppEvent> + Unpin + use<> {
+        use futures_util::SinkExt;
         let mut request = format!("ws://{addr}/v1/events")
             .into_client_request()
             .unwrap();
@@ -443,7 +453,23 @@ mod tests {
             "authorization",
             format!("Bearer {}", state.token).parse().unwrap(),
         );
-        let (ws, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+        let (mut ws, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+        if !runs.is_empty() {
+            let ask = serde_json::json!({ "subscribe": runs }).to_string();
+            ws.send(tokio_tungstenite::tungstenite::Message::text(ask))
+                .await
+                .unwrap();
+            // The server says when it has read the request.
+            while !ws
+                .next()
+                .await
+                .unwrap()
+                .unwrap()
+                .to_text()
+                .unwrap()
+                .contains("subscribed")
+            {}
+        }
         ws.map(|message| serde_json::from_str(message.unwrap().to_text().unwrap()).unwrap())
     }
 
@@ -571,7 +597,7 @@ mod tests {
         .await;
 
         // A client follows the stream, reads what is stored so far, and drops what it has already read.
-        let mut stream = connect(&state, &addr).await;
+        let mut stream = connect_for(&state, &addr, &[run.id]).await;
         let path = format!("/v1/runs/{}/events", run.id);
         let mut seen: Vec<Event> = get(&state, &addr, &path).await;
         let read = seen.last().unwrap().seq;

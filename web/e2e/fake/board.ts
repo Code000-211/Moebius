@@ -193,6 +193,8 @@ function change(id: number, card_id: number, extra: Partial<FakeChange>): FakeCh
 }
 
 export interface BoardFake {
+  /** The issue template of a kind, which `use_template` fills a new issue from; set by the templates fake. */
+  issueTemplate: (kind: string) => { title: string; body: string } | undefined;
   /** `GET /v1/snapshot`. */
   snapshot(): unknown;
   /** Answers a board route; undefined when `path` is none of them. */
@@ -704,7 +706,8 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
     return undefined;
   }
 
-  return {
+  const fake: BoardFake = {
+    issueTemplate: () => undefined,
     requests,
     snapshot() {
       return {
@@ -775,10 +778,27 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       }
       if (path === "/v1/repositories/1/issues" && method === "POST") {
         const {
-          title,
-          body: text,
+          title: given,
+          body: givenText,
           parent,
-        } = (body ?? {}) as { title?: string; body?: string; parent?: number };
+          kind,
+          use_template: useTemplate,
+        } = (body ?? {}) as {
+          title?: string;
+          body?: string;
+          parent?: number;
+          kind?: string;
+          use_template?: boolean;
+        };
+        let title = given;
+        let text = givenText;
+        if (useTemplate) {
+          if (!kind) return fail(422, "use_template needs a kind");
+          const template = fake.issueTemplate(kind);
+          if (!template) return fail(404, `the kind ${kind} has no template`);
+          if (!title || title.trim() === "") title = template.title;
+          if (!text || text.trim() === "") text = template.body;
+        }
         if (!title || title.trim() === "") return fail(422, "the title is empty");
         if (parent !== undefined && !numbered(parent)) {
           return fail(404, `issue #${parent} (the parent) not found`);
@@ -872,4 +892,5 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       return decide(method, path, body);
     },
   };
+  return fake;
 }

@@ -11,7 +11,6 @@ import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Card } from "../../api/types/board";
 import { CardScope } from "../../ui/chat/CardLinks";
-import { Markdown } from "../../ui/chat/Markdown";
 import { Button } from "../../ui/components/Button";
 import {
   Dialog,
@@ -29,6 +28,7 @@ import { Field, TextArea } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { MentionTextArea } from "../people/MentionTextArea";
+import { CardText } from "./CardText";
 import { foldLabel, type TimelineEvent, timelineOf } from "./timeline";
 
 /** What the server said when it refused, or a sentence for a failure that said nothing. */
@@ -144,7 +144,11 @@ export function ActivitySection({ card }: { card: Card }) {
                   {item.comment.author} · {ago(now, item.comment.at)}
                 </span>
                 <CardScope.Provider value={card.repository_id}>
-                  <Markdown content={item.comment.body} keepNewlines className="max-w-prose" />
+                  <CardText
+                    content={item.comment.body}
+                    projectKey={card.project_key}
+                    className="max-w-prose"
+                  />
                 </CardScope.Provider>
               </div>
             ) : item.type === "fold" ? (
@@ -212,7 +216,7 @@ export function EditIssueDialog({
     <Dialog open={open} onOpenChange={leave}>
       <DialogContent>
         <form
-          className="flex flex-col gap-4 p-6"
+          className="flex flex-col gap-4"
           onSubmit={(e) => {
             e.preventDefault();
             if (title.trim() !== "" && !save.isPending) save.mutate();

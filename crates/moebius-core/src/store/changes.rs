@@ -283,7 +283,7 @@ impl Store {
 
     /// The merged changes of cards of the repository, the latest first, at most `limit`.
     pub fn merged_card_changes(&self, repository_id: i64, limit: usize) -> Result<Vec<Change>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut stmt = conn.prepare(&format!(
             "SELECT {CHANGE_COLUMNS} FROM changes
              WHERE repository_id = ?1 AND card_id IS NOT NULL AND state = 'merged' ORDER BY id DESC LIMIT ?2"

@@ -1,6 +1,9 @@
 # The store
 
-One SQLite connection behind a mutex (`Store`), opened at `<data_dir>/moebius.sqlite`, with its schema migrated at
+One SQLite connection for writes behind a mutex, and four read-only ones for reads, so that a read does not wait for a
+write (`Store`; the database is in WAL mode with `synchronous=NORMAL`: a crash of the process loses nothing committed, a
+crash of the machine can lose the last commits but not corrupt the file). Run events are queued and written in batches
+(`events`). It is opened at `<data_dir>/moebius.sqlite`, with its schema migrated at
 start. One module per kind of record; `mod.rs` opens the store, holds the migrations, the local clock and the row
 helpers, and re-exports every record type. Large content lives in `blobs`, and every value written through a record
 goes through secret redaction first.

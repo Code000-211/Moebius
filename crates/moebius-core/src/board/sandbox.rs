@@ -10,12 +10,12 @@ use mlua::{Lua, Table, Value, VmState};
 
 use super::Limits;
 
-/// Runs `source` in the sandbox every script runs in, and calls its `on_card` with the table `card` makes. The script
+/// Runs `source`, the text of a script or its bytecode, in the sandbox every script runs in, and calls its `on_card` with the table `card` makes. The script
 /// has no unsafe globals, a memory limit, and a time limit that the table `api` makes (the `moebius` table) can
 /// extend while it acts for the script.
 pub(super) fn run_sandboxed(
     name: &str,
-    source: &str,
+    source: impl AsRef<[u8]>,
     limits: &Limits,
     api: impl FnOnce(&Lua, &Rc<Cell<Instant>>) -> mlua::Result<Table>,
     card: impl FnOnce(&Lua) -> mlua::Result<Table>,
@@ -47,7 +47,7 @@ pub(super) fn run_sandboxed(
             Ok(VmState::Continue)
         }
     });
-    lua.load(source).set_name(name).exec()?;
+    lua.load(source.as_ref()).set_name(name).exec()?;
     let on_card: Option<mlua::Function> = lua.globals().get("on_card")?;
     let on_card = on_card.ok_or_else(|| {
         mlua::Error::runtime("the script does not define a function on_card(card)")

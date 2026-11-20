@@ -23,6 +23,7 @@ export function ConfirmDelete({
   title,
   children,
   confirmLabel = "Delete",
+  pendingLabel = "Deleting",
   onConfirm,
 }: {
   open: boolean;
@@ -32,6 +33,8 @@ export function ConfirmDelete({
   /** What is removed, in a sentence or two. */
   children: React.ReactNode;
   confirmLabel?: string;
+  /** The button's word while the request is made. */
+  pendingLabel?: string;
   /** Makes the request; a rejection is shown in the dialog, which stays open. */
   onConfirm: () => Promise<void>;
 }) {
@@ -59,7 +62,7 @@ export function ConfirmDelete({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="gap-4 p-6">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{children}</DialogDescription>
@@ -70,7 +73,7 @@ export function ConfirmDelete({
             Keep
           </Button>
           <Button variant="danger" disabled={pending} onClick={() => void confirm()}>
-            {pending ? "Deleting" : confirmLabel}
+            {pending ? pendingLabel : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

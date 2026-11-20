@@ -27,6 +27,8 @@ interface Kind {
 export interface KindsFake {
   /** Answers one of these routes and returns true, or returns false for any other path. */
   handle(request: IncomingMessage, response: ServerResponse, path: string): Promise<boolean>;
+  /** The kinds as they are now. */
+  list(): Array<{ name: string; fields: Array<{ name: string }> }>;
   /** Every request made to these routes, as method, path with query, and body. */
   readonly calls: Array<{ method: string; path: string; body: unknown }>;
 }
@@ -123,6 +125,7 @@ export function createKindsFake(send: Send): KindsFake {
 
   const fake: KindsFake = {
     calls,
+    list: () => kinds,
     async handle(request, response, path) {
       if (!/^\/v1\/(kinds(\/\d+)?|issues|projects\/\d+\/kinds)$/.test(path)) return false;
       const method = request.method ?? "GET";

@@ -20,28 +20,37 @@ const CHECKS_GRACE: i64 = 120;
 /// How much of the end of the output of a repository's checks is kept.
 const CHECK_OUTPUT: usize = 4096;
 
+/// `App::checks_of` for a caller that has the repositories at hand: `on_forge` says whether the change's repository is on
+/// a forge, and is asked only when the answer matters.
+pub(crate) fn checks_state(
+    change: &Change,
+    on_forge: impl FnOnce() -> Result<bool>,
+) -> Result<&'static str> {
+    let recorded = change
+        .checks
+        .as_deref()
+        .filter(|_| change.checks_head == change.head);
+    Ok(match recorded {
+        Some("success") => "success",
+        Some("failure") => "failure",
+        Some(_) => "pending",
+        None if change.pull_request.is_some()
+            && on_forge()?
+            && now() - change.published_at.unwrap_or(0) < CHECKS_GRACE =>
+        {
+            "pending"
+        }
+        None => "none",
+    })
+}
+
 impl App {
     /// How the checks of the change stand for its current commit: `pending`, `success`, `failure` or `none`. Checks
     /// recorded for an older commit do not count; on a forge the change then waits for its checks for a while after
     /// it was published, so that a pushed commit is not taken for one without CI. A change without a pull request, one
     /// not offered yet, has no checks on the forge to wait for.
     pub fn checks_of(&self, change: &Change) -> Result<&'static str> {
-        let recorded = change
-            .checks
-            .as_deref()
-            .filter(|_| change.checks_head == change.head);
-        Ok(match recorded {
-            Some("success") => "success",
-            Some("failure") => "failure",
-            Some(_) => "pending",
-            None if change.pull_request.is_some()
-                && self.repository_of(change)?.forge != "none"
-                && now() - change.published_at.unwrap_or(0) < CHECKS_GRACE =>
-            {
-                "pending"
-            }
-            None => "none",
-        })
+        checks_state(change, || Ok(self.repository_of(change)?.forge != "none"))
     }
 
     /// Runs the repository's own checks, the command in the project's `checks` file (never in the change's repository,

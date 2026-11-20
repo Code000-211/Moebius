@@ -26,6 +26,7 @@ pub use status::Entry;
 
 use crate::proxy::{self, Files, Proxy};
 use crate::server::{self, ConnectError, Server};
+use crate::tray::Figures;
 
 /// Why the rail did not do what it was asked.
 #[derive(Debug, thiserror::Error)]
@@ -299,6 +300,18 @@ impl Rail {
         }
     }
 
+    /// Notes the page of the server `id`, whose webview is let go of, so that opening it again leads there.
+    pub fn note_page_of(&mut self, id: &str, page: &str) {
+        if self.live.contains_key(id) {
+            self.pages.insert(id.to_string(), page.to_string());
+        }
+    }
+
+    /// The origin of the web app of the server `id`, which its webview's handlers compare addresses with.
+    pub fn origin_of(&self, id: &str) -> Option<String> {
+        self.live.get(id).map(|l| l.proxy.origin())
+    }
+
     /// The server that is open, with its token, which the notifications and the tray follow.
     pub fn open_server(&self) -> Option<Server> {
         self.live.get(self.open.as_ref()?).map(|l| l.server.clone())
@@ -364,15 +377,17 @@ impl Rail {
     }
 }
 
-/// Asks each server of `targets` how it is, all at once, in the order of the rail.
-pub async fn poll(targets: Vec<Target>) -> Vec<Entry> {
-    let http = reqwest::Client::new();
+/// Asks each server of `targets` how it is, all at once, in the order of the rail. The open server is not asked while
+/// the tray follows it: `followed` is what the tray last read of it (none when the tray has nothing), which its events
+/// keep up to date.
+pub async fn poll(targets: Vec<Target>, followed: Option<Figures>) -> Vec<Entry> {
     let asking = targets.into_iter().map(|target| {
-        let http = http.clone();
+        let followed = followed.clone().filter(|_| target.open);
         async move {
-            let count = match &target.server {
-                Some(server) => status::inbox_count(&http, server).await,
-                None => None,
+            let count = match (&followed, &target.server) {
+                (Some(figures), _) => Some(figures.rail_count()),
+                (None, Some(server)) => status::inbox_count(server).await,
+                (None, None) => None,
             };
             Entry {
                 id: target.id,

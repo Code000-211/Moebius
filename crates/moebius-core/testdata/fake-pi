@@ -110,8 +110,11 @@ for line in sys.stdin.buffer:
         if "[hang]" in command["message"] or "[child]" in command["message"]:
             hanging = True
             continue
-        with open(os.path.join(os.environ["PI_CODING_AGENT_DIR"], "prompt.txt"), "w") as f:
+        # Written under another name and renamed, so that a test polling for the file never reads it half written.
+        prompt_file = os.path.join(os.environ["PI_CODING_AGENT_DIR"], "prompt.txt")
+        with open(prompt_file + ".tmp", "w") as f:
             f.write(command["message"])
+        os.replace(prompt_file + ".tmp", prompt_file)
         if "[provider error]" in command["message"]:
             # The provider turned the request away; as Pi does after an upstream error the turn ends without an
             # answer, the run settles as not aborted, and no summary was set.

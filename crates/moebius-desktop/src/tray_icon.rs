@@ -12,8 +12,6 @@ use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder, PredefinedMenuIt
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager};
 
-use crate::window::MAIN;
-
 const NEW_ISSUE: &str = "new-issue";
 const ASK: &str = "ask-moebius";
 const OPEN: &str = "open-moebius";
@@ -80,7 +78,13 @@ pub fn create(app: &mut tauri::App) -> tauri::Result<()> {
 /// when no server is shown (the connect page), which leaves the tray with no server to ask.
 pub fn follow(app: &AppHandle, server: Option<Server>) {
     let tray = app.state::<Tray>();
+    // The task of the server followed before ends first, so that it cannot show its figures after the new ones.
+    if let Some(earlier) = lock(&tray.following).take() {
+        earlier.abort();
+    }
     *lock(&tray.server) = server.clone();
+    // The figures of the server followed before are not the new one's: the rail asks the server until they are read.
+    *lock(&tray.figures) = None;
     let task = server.map(|server| {
         let handle = app.clone();
         tauri::async_runtime::spawn(tray::follow(server, move |figures| {
@@ -88,13 +92,16 @@ pub fn follow(app: &AppHandle, server: Option<Server>) {
         }))
     });
     let following = task.is_some();
-    if let Some(earlier) = std::mem::replace(&mut *lock(&tray.following), task) {
-        earlier.abort();
-    }
+    *lock(&tray.following) = task;
     if !following {
         show(app, None);
     }
     let _ = tray.pause.set_enabled(following);
+}
+
+/// What the tray last read of the server it follows, which the rail shows of that server in place of asking it.
+pub fn figures(app: &AppHandle) -> Option<Figures> {
+    lock(&app.state::<Tray>().figures).clone()
 }
 
 /// Puts `figures` into the menu and the tooltip; none means the server cannot be reached.
@@ -126,10 +133,11 @@ fn chosen(app: &AppHandle, id: &str) {
 
 /// Shows the main window and runs `script` in it, when it shows a server's web app, which the script is for.
 fn bring_up_and(app: &AppHandle, script: &str) {
-    if let Some(window) = bring_up(app)
+    if bring_up(app).is_some()
         && connected(app)
+        && let Some(webview) = crate::pages::front(app)
     {
-        let _ = window.eval(script);
+        let _ = webview.eval(script);
     }
 }
 
@@ -139,8 +147,8 @@ fn connected(app: &AppHandle) -> bool {
 }
 
 /// Shows the main window in front, also when it was minimized.
-pub fn bring_up(app: &AppHandle) -> Option<tauri::WebviewWindow> {
-    let window = app.get_webview_window(MAIN)?;
+pub fn bring_up(app: &AppHandle) -> Option<tauri::Window> {
+    let window = crate::pages::main_window(app)?;
     let _ = window.unminimize();
     let _ = window.show();
     let _ = window.set_focus();

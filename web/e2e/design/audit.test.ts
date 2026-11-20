@@ -18,7 +18,8 @@
  * precision, but not out of the overflow and contrast checks.
  *
  * Some routes open a thing before they are measured — the search, the Moebius agent, a form, a menu — because a sheet
- * only shows what it is once it is on the screen. MOEBIUS_DESIGN_ONLY=chat-menu,inbox-search measures those routes
+ * only shows what it is once it is on the screen. A dialog whose padding is under 16px (`bare`) fails every run, and so does text cut off with no title (`unreachable`) at 1024 and 800px on the pages of `SQUEEZED`.
+ * MOEBIUS_DESIGN_ONLY=chat-menu,inbox-search measures those routes
  * alone, which is how one layer is looked at again without the other hundred.
  *
  * `pnpm e2e` does not run this. Run `pnpm build && pnpm audit:design`. Without MOEBIUS_DESIGN_URL it starts the fake
@@ -38,7 +39,18 @@ interface Route {
   path: string;
   name: string;
   /** Something to open before measuring, so a sheet is on the screen when it is the thing being judged. */
-  open?: "search" | "chat" | "new issue" | "menu" | "terminal" | "diff" | "changes" | "steps";
+  open?:
+    | "new cycle"
+    | "new milestone"
+    | "new project"
+    | "search"
+    | "chat"
+    | "new issue"
+    | "menu"
+    | "terminal"
+    | "diff"
+    | "changes"
+    | "steps";
 }
 
 /** One page as the browser measured it. Every list holds findings as plain sentences. */
@@ -66,6 +78,10 @@ interface PageAudit {
   spilled: string[];
   /** A sheet with a band of nothing under the last thing in it. */
   chins: string[];
+  /** Text cut off by its own box with no title on it or around it, so there is no way to read the rest. */
+  unreachable: string[];
+  /** A dialog whose content starts closer than 16px to its edge: title, labels and buttons touching it. */
+  bare: string[];
   /** A coloured pill that stands for a state: a rounded box filled with the tint of progress, attention, complete or error. */
   pills: string[];
   body: { family: string; size: string; weight: string; lineHeight: string };
@@ -93,6 +109,9 @@ const themes = ["dark", "light"];
 const widths = [
   { name: "wide", width: 1440, height: 900 },
   { name: "narrow", width: 900, height: 700 },
+  // The widths a laptop window and a half screen are: where a pane squeezed between the sidebar and the Properties column clips.
+  { name: "tablet", width: 1024, height: 768 },
+  { name: "small", width: 800, height: 700 },
 ];
 
 /** Every page of the app, with the ids the fake server answers (repository 1, card 1, run 1000). */
@@ -141,6 +160,8 @@ const routes: Route[] = [
   { path: "/inbox", name: "inbox-chat", open: "chat" },
   // A card open takes a column of the page for a drawer, and its change opens a sheet of its own.
   { path: "/board/1?card=1", name: "board-dock" },
+  // The card and the Moebius agent together: the card's text stays in its own pane, clear of the sheet.
+  { path: "/board/1?card=1", name: "board-dock-chat", open: "chat" },
   { path: "/board/1", name: "board-new-issue", open: "new issue" },
   { path: "/board/1", name: "board-terminal", open: "terminal" },
   { path: "/board/1?card=5", name: "board-diff", open: "diff" },
@@ -149,8 +170,17 @@ const routes: Route[] = [
   { path: "/chat", name: "chat-menu", open: "menu" },
   // A conversation with a block of steps, folded and opened, which is the one place the log's 32px row is measured.
   { path: "/chat", name: "chat-steps", open: "steps" },
+  { path: "/cycles", name: "cycles" },
+  { path: "/milestones", name: "milestones" },
+  // The sheets of the pages that kept their form without an inset of their own.
+  { path: "/cycles", name: "cycles-new", open: "new cycle" },
+  { path: "/milestones", name: "milestones-new", open: "new milestone" },
+  { path: "/projects", name: "projects-new-sheet", open: "new project" },
   { path: "/chat", name: "chat-steps-trouble", open: "steps" },
 ];
+
+/** The pages the issue about narrow widths named: their panes sit between the sidebar and the Properties column. */
+const SQUEEZED = new Set(["/decision-model", "/cycles", "/milestones", "/rules", "/wiki"]);
 
 let browser: Browser;
 let fake: FakeServer | undefined;
@@ -265,6 +295,14 @@ function chatsForSwitcher() {
 
 /** Opens the thing a route is measured with, and waits for it to answer. */
 async function open(page: Page, what: NonNullable<Route["open"]>) {
+  if (what === "new cycle" || what === "new milestone" || what === "new project") {
+    await page
+      .getByRole("button", { name: what.replace(/^new/, "New"), exact: true })
+      .first()
+      .click();
+    await page.getByRole("dialog").first().waitFor({ timeout: 5_000 });
+    return;
+  }
   if (what === "search") {
     await page.keyboard.press("Control+k");
     await page.getByRole("dialog").first().waitFor({ timeout: 5_000 });
@@ -289,13 +327,15 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
   }
   if (what === "terminal") {
     // The shell is the reason the board's terminal is a sheet, so the sheet is measured like one.
-    await page.getByRole("button", { name: "Terminal" }).click();
+    await page
+      .getByRole("button", { name: "Terminal" })
+      .evaluate((button) => (button as HTMLElement).click());
     await page.getByRole("dialog").first().waitFor({ timeout: 5_000 });
     return;
   }
   if (what === "diff") {
     // The dock keeps one line about a change; the diff is measured where it is read.
-    await page.getByTestId("diff-card").click();
+    await page.getByTestId("diff-card").evaluate((card) => (card as HTMLElement).click());
     await page.getByRole("dialog").first().waitFor({ timeout: 5_000 });
     return;
   }
@@ -304,7 +344,11 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
     await page.getByTestId("diff").waitFor({ timeout: 5_000 });
     return;
   }
-  await page.getByRole("button", { name: "New issue" }).click();
+  // Below 1024px the card's dock lies over the board's head bar, so a pointer click would land on the dock; the
+  // button is pressed by the page instead, because what is measured is the dialog it opens.
+  await page
+    .getByRole("button", { name: "New issue" })
+    .evaluate((button) => (button as HTMLElement).click());
   await page.getByRole("dialog").first().waitFor({ timeout: 5_000 });
 }
 
@@ -431,6 +475,8 @@ function measure(input: {
     layers: [] as string[],
     spilled: [] as string[],
     chins: [] as string[],
+    unreachable: [] as string[],
+    bare: [] as string[],
     body: {
       family: getComputedStyle(document.body).fontFamily.split(",")[0]?.replace(/"/g, "") ?? "",
       size: getComputedStyle(document.body).fontSize,
@@ -458,6 +504,10 @@ function measure(input: {
     if (text && !faded && (style.overflowX === "hidden" || style.overflowX === "clip")) {
       if ((el as HTMLElement).scrollWidth > (el as HTMLElement).clientWidth + 1) {
         found.clipped.push(name(el, `cut at ${el.clientWidth}px`));
+        // Cut text a person can still read is one with a title, which the browser shows on hover.
+        if (el.closest("[title]") === null) {
+          found.unreachable.push(name(el, `cut at ${el.clientWidth}px with no title`));
+        }
       }
     }
 
@@ -690,6 +740,20 @@ function measure(input: {
     }
   }
 
+  // A sheet whose children start at its edge. A search palette is flush on purpose and says so.
+  for (const sheet of Array.from(document.querySelectorAll('div[role="dialog"]'))) {
+    if (
+      !visible(sheet) ||
+      sheet.closest('[data-audit="flush"]') ||
+      sheet.matches('[data-audit="flush"]')
+    )
+      continue;
+    const style = getComputedStyle(sheet);
+    const least = Math.min(px(style.paddingLeft), px(style.paddingRight), px(style.paddingTop));
+    if (least < 16)
+      found.bare.push(name(sheet, `padding ${least}px, under the 16px a sheet is inset by`));
+  }
+
   return found;
 }
 
@@ -724,6 +788,8 @@ function report(rows: Row[]): string {
     ["words below the row", (page) => page.spilled],
     ["bands of nothing", (page) => page.chins],
     ["state pills", (page) => page.pills],
+    ["cut text with no title", (page) => page.unreachable],
+    ["dialogs without padding", (page) => page.bare],
   ];
   for (const [kind, pick] of kinds) {
     const at = rows.find((row) => pick(row.page).length > 0);
@@ -788,6 +854,15 @@ it("audits every page in both themes and both widths", async () => {
   process.stdout.write(`Pictures and report: ${join(out, label)}\n\n`);
 
   expect(rows.length).toBeGreaterThan(0);
+  // Not behind the strict flag, as `pnpm e2e` is what runs on every change and this is what the issue was about: a
+  // dialog is inset at every width, and the pages the narrow widths squeezed keep every word reachable.
+  for (const row of rows) {
+    expect(row.page.bare, `${row.theme} ${row.width} ${row.page.path}`).toEqual([]);
+    if ((row.width === "tablet" || row.width === "small") && SQUEEZED.has(row.page.path)) {
+      expect(row.page.unreachable, `${row.theme} ${row.width} ${row.page.path}`).toEqual([]);
+      expect(row.page.overflow, `${row.theme} ${row.width} ${row.page.path}`).toEqual([]);
+    }
+  }
   if (strict) {
     const wide = rows.filter((row) => row.width === "wide");
     for (const row of wide) {

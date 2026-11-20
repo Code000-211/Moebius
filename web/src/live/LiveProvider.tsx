@@ -81,6 +81,12 @@ export function useServerEvents(listener: Listener): void {
   useEffect(() => listen((event) => latest.current(event)), [listen]);
 }
 
+/** Asks the server for the events of run `id` while the component is mounted (`null` asks for none). */
+export function useWatchRun(id: number | null): void {
+  const stream = useStream();
+  useEffect(() => (id === null ? undefined : stream.watchRun(id)), [stream, id]);
+}
+
 /** The state of the event stream. */
 export function useConnection(): ConnectionState {
   const stream = useStream();

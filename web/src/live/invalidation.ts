@@ -1,7 +1,7 @@
 /**
  * What the server's events do to the TanStack Query cache. The reference says the snapshot is read again on every
  * event, so an event that changes what the snapshot shows invalidates it; `card_waiting` is also patched in place,
- * which shows the reason at once. What is read about one card (history, runs) goes stale with the snapshot, and the
+ * which shows the reason at once and so does not make the snapshot stale. What is read about one card (history, runs) goes stale with the snapshot, and the
  * column scripts with `script_changed`, and a project's settings with `project_settings_changed`. A new page that reads something the events change adds its key to `keys.ts` and a
  * line to `invalidates` below (the package sheet is in `packagePages`; the pages of Rules, Automations, Retro, Experiments and Decision model are in `improvePages`). A workflow run's events make the workflow list, the definition it belongs to and its own run stale (`workflowPages`). Events are not replayed, so when the socket connects all that is shown is read again.
  */
@@ -11,6 +11,7 @@ import type { Snapshot } from "../api/types/board";
 import type { Chat } from "../api/types/chat";
 import type { ServerEvent } from "../api/types/events";
 import { applyChatEvent, listChanged } from "../chat/chatList";
+import { markStale } from "./coalesce";
 
 /** The kinds that change what the snapshot holds: repositories, cards, changes, runs of cards and the inbox. */
 const SNAPSHOT_KINDS = new Set([
@@ -21,7 +22,6 @@ const SNAPSHOT_KINDS = new Set([
   "card_updated",
   "card_deleted",
   "card_moved",
-  "card_waiting",
   "card_parent_changed",
   "card_labels_changed",
   "card_assignees_changed",
@@ -51,6 +51,8 @@ const SNAPSHOT_KINDS = new Set([
   "takeover_proposed",
   "takeover_status",
   "retro_done",
+  "runs_paused",
+  "runs_resumed",
 ]);
 
 /** The events about kinds of issues, their fields and the values cards hold, which the Kinds and Issues pages read. */
@@ -134,7 +136,7 @@ export function invalidates(event: ServerEvent): QueryKey[] {
 function workflowPages(event: ServerEvent): QueryKey[] {
   if (!event.kind.startsWith("workflow_")) return [];
   const run = event.data.run;
-  const stale: QueryKey[] = [keys.workflows, keys.workflowDefinitions];
+  const stale: QueryKey[] = [keys.workflows, keys.workflowDefinitions, keys.allWorkflowRuns];
   if (typeof run === "number") stale.push(keys.workflowRun(run));
   return stale;
 }
@@ -217,13 +219,11 @@ export function patchChats(queryClient: QueryClient, event: ServerEvent): void {
   );
 }
 
-/** Applies one event to the cache. */
+/** Applies one event to the cache: what it patches now, what it makes stale marked now and read again at the end of the window (`coalesce.ts`). */
 export function applyEvent(queryClient: QueryClient, event: ServerEvent): void {
   patchSnapshot(queryClient, event);
   patchChats(queryClient, event);
-  for (const queryKey of invalidates(event)) {
-    void queryClient.invalidateQueries({ queryKey });
-  }
+  markStale(queryClient, invalidates(event));
 }
 
 /** The socket connected (again): what is shown may have missed events, so every read is made again. */

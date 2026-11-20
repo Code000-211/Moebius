@@ -5,10 +5,13 @@
  * follow the stream's `run_event`s while it is open, so the step moves on its own; a row opens the card's board or the
  * chat. A read that fails says what could not be read and offers to try again, rather than saying that nothing is
  * working. A box at the left of a row chooses it (shift-click chooses a range), and a bar at the foot, or a right click,
- * stops every chosen run in one go; Escape lets go of the choice.
+ * stops every chosen run in one go; Escape lets go of the choice. A row has its own Stop in its right column, shown
+ * under the pointer and on focus, and the header pauses and resumes all agents, saying so while they are paused.
  */
+
+import { PauseIcon, PlayIcon, StopIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type MouseEvent, useState } from "react";
+import { type MouseEvent, memo, useCallback, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { snapshot as readSnapshot } from "../../api/calls/board";
 import { chats as readChats, stopRun } from "../../api/calls/chat";
@@ -54,6 +57,7 @@ import {
   working,
   workStartedAt,
 } from "./model";
+import { usePause } from "./usePause";
 
 /** What a row is chosen by: a card's run and a chat can share a number. */
 const choiceKey = (work: Work) => `${work.open.kind}:${work.run}`;
@@ -64,6 +68,7 @@ export function FleetPage() {
   // How long a run has been going is said in seconds, so this page's clock ticks faster than the rest.
   const now = useNow(5_000);
   const [params, setQuery] = useQueryParams();
+  const pause = usePause();
   if (data.isPending || chats.isPending) {
     return (
       <>
@@ -107,10 +112,35 @@ export function FleetPage() {
         title="Fleet"
         context={
           set && everything.length > 0
-            ? `${context(list.length)} · ${everything.length} in all`
-            : context(list.length)
+            ? `${context(list)} · ${everything.length} in all`
+            : context(list)
+        }
+        actions={
+          <Button
+            variant="secondary"
+            onClick={pause.toggle}
+            disabled={pause.busy}
+            data-testid="pause-all"
+          >
+            {pause.paused ? (
+              <PlayIcon className="size-4" aria-hidden="true" />
+            ) : (
+              <PauseIcon className="size-4" aria-hidden="true" />
+            )}
+            {pause.paused ? "Resume all agents" : "Pause all agents"}
+          </Button>
         }
       />
+      {pause.paused && (
+        <Notice tone="ok" className="mb-4">
+          {`All agents are paused by ${pause.paused.by.replace(/^person:/, "@")}. Runs are held and none starts until they are resumed.`}
+        </Notice>
+      )}
+      {pause.error && (
+        <Notice tone="error" className="mb-4">
+          {pause.error}
+        </Notice>
+      )}
       <FilterBar
         label="Filter the runs"
         fields={fields}
@@ -157,30 +187,51 @@ function RunGroups({ list, now }: { list: Work[]; now: number }) {
   // The order the rows are drawn in, which a range chosen with Shift follows.
   const choice = useSelection(groups.flatMap(([, runs]) => runs.map(choiceKey)));
   const chosen = list.filter((work) => choice.has(choiceKey(work)));
-  const stopAll = async () => {
-    const targets = chosen;
-    const results = await Promise.allSettled(targets.map((work) => stopRun(work.run)));
-    void queryClient.invalidateQueries({ queryKey: keys.snapshot });
-    void queryClient.invalidateQueries({ queryKey: keys.chats });
-    const failed = results.flatMap((result, at) =>
-      result.status === "rejected" && targets[at]
-        ? [{ work: targets[at], error: result.reason }]
-        : [],
-    );
-    if (failed.length === 0) {
+  // What a row is given keeps its identity, so that a row draws again only when its own run changes.
+  const { toggle, ensure } = choice;
+  const { open: openMenu } = menu;
+  const choose = useCallback(
+    (work: Work, range: boolean) => toggle(choiceKey(work), range),
+    [toggle],
+  );
+  const rightClick = useCallback(
+    (work: Work, event: MouseEvent) => {
+      ensure(choiceKey(work));
+      openMenu(event);
+    },
+    [ensure, openMenu],
+  );
+  const { clear } = choice;
+  const stopRuns = useCallback(
+    async (targets: Work[]) => {
+      const results = await Promise.allSettled(targets.map((work) => stopRun(work.run)));
+      void queryClient.invalidateQueries({ queryKey: keys.snapshot });
+      void queryClient.invalidateQueries({ queryKey: keys.chats });
+      const failed = results.flatMap((result, at) =>
+        result.status === "rejected" && targets[at]
+          ? [{ work: targets[at], error: result.reason }]
+          : [],
+      );
+      if (failed.length === 0) {
+        setNotice({
+          tone: "ok",
+          text: `Stopping ${targets.length} run${targets.length === 1 ? "" : "s"}.`,
+        });
+        clear();
+        return;
+      }
+      const reason = isApiError(failed[0]?.error)
+        ? failed[0].error.message
+        : "something went wrong";
       setNotice({
-        tone: "ok",
-        text: `Stopping ${targets.length} run${targets.length === 1 ? "" : "s"}.`,
+        tone: "error",
+        text: `Could not stop ${failed.map((one) => one.work.title).join(", ")}: ${reason}`,
       });
-      choice.clear();
-      return;
-    }
-    const reason = isApiError(failed[0]?.error) ? failed[0].error.message : "something went wrong";
-    setNotice({
-      tone: "error",
-      text: `Could not stop ${failed.map((one) => one.work.title).join(", ")}: ${reason}`,
-    });
-  };
+    },
+    [queryClient, clear],
+  );
+  const stop = useCallback((work: Work) => void stopRuns([work]), [stopRuns]);
+  const stopAll = () => stopRuns(chosen);
   const commands: SelectionCommand[] =
     chosen.length === 0
       ? []
@@ -224,11 +275,9 @@ function RunGroups({ list, now }: { list: Work[]; now: number }) {
                       now={now}
                       chosen={choice.has(choiceKey(work))}
                       anyChosen={chosen.length > 0}
-                      onChoose={(range) => choice.toggle(choiceKey(work), range)}
-                      onContextMenu={(event) => {
-                        choice.ensure(choiceKey(work));
-                        menu.open(event);
-                      }}
+                      onChoose={choose}
+                      onStop={stop}
+                      onContextMenu={rightClick}
                     />
                   </li>
                 ))}
@@ -248,21 +297,38 @@ function RunGroups({ list, now }: { list: Work[]; now: number }) {
   );
 }
 
-function Row({
+/** Whether two reads of a run say the same: the page makes new objects at every read of the snapshot. */
+function sameRow(was: RowProps, now: RowProps): boolean {
+  return (
+    was.now === now.now &&
+    was.chosen === now.chosen &&
+    was.anyChosen === now.anyChosen &&
+    was.onChoose === now.onChoose &&
+    was.onStop === now.onStop &&
+    was.onContextMenu === now.onContextMenu &&
+    JSON.stringify(was.work) === JSON.stringify(now.work)
+  );
+}
+
+type RowProps = {
+  work: Work;
+  now: number;
+  chosen: boolean;
+  anyChosen: boolean;
+  onChoose: (work: Work, range: boolean) => void;
+  onStop: (work: Work) => void;
+  onContextMenu: (work: Work, event: MouseEvent) => void;
+};
+
+const Row = memo(function Row({
   work,
   now,
   chosen,
   anyChosen,
   onChoose,
+  onStop,
   onContextMenu,
-}: {
-  work: Work;
-  now: number;
-  chosen: boolean;
-  anyChosen: boolean;
-  onChoose: (range: boolean) => void;
-  onContextMenu: (event: MouseEvent) => void;
-}) {
+}: RowProps) {
   const navigate = useNavigate();
   const thread = useThread(work.run);
   // A card's run says when it started; a chat's start is in the list of chats.
@@ -295,12 +361,12 @@ function Row({
   const worked = began === null ? null : elapsed(stops - began);
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the right click is a second way to the menu the bar has
-    <div className="group relative" onContextMenu={onContextMenu}>
+    <div className="group relative" onContextMenu={(event) => onContextMenu(work, event)}>
       <SelectBox
         label={`Choose ${work.title}`}
         checked={chosen}
         anyChosen={anyChosen}
-        onToggle={onChoose}
+        onToggle={(range) => onChoose(work, range)}
         className="absolute top-1/2 left-3 z-10 -translate-y-1/2"
       />
       <button
@@ -308,7 +374,7 @@ function Row({
         data-testid="fleet-row"
         onClick={open}
         className={cn(
-          "flex min-h-12 w-full cursor-pointer flex-wrap items-center gap-x-4 gap-y-1 py-2 pr-4 pl-10 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover",
+          "flex min-h-12 w-full cursor-pointer flex-wrap items-center gap-x-4 gap-y-1 py-2 pr-20 pl-10 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover",
           chosen && "bg-selected",
         )}
       >
@@ -349,6 +415,16 @@ function Row({
           {startedAt > 0 ? elapsed(now - startedAt) : (worked ?? "")}
         </span>
       </button>
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-label={`Stop ${work.title}`}
+        onClick={() => onStop(work)}
+        className="absolute top-1/2 right-2 z-10 -translate-y-1/2 opacity-0 transition-opacity duration-(--motion-fast) ease-out focus-visible:opacity-100 group-hover:opacity-100"
+      >
+        <StopIcon className="size-4" aria-hidden="true" />
+        Stop
+      </Button>
     </div>
   );
-}
+}, sameRow);

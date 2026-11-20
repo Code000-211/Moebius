@@ -33,7 +33,8 @@ next to its title that edits the title and body in place (`PUT /v1/cards/{id}`),
 "blocked by #n" and "Part of #n" in the body set its blockers and its parent. An issue can also have sub-issues, labels, a
 claim and comments, and be closed and reopened: see [the issue tracker](../reference/desktop-api.md#the-issue-tracker).
 
-The board engine runs the script of every card's column on every tick (`board.tick_ms`, two seconds by default). When a
+The board engine runs the script of every card's column on every tick (`board.tick_ms`, two seconds by default), except a card that is waiting with nothing changed since its
+last script, which has it run at least once a minute (see [the reference](../reference/column-scripts.md)). When a
 script moves the card, the script of the next column runs at once. [Column scripts](column-scripts.md) says how to
 change any of them for one repository.
 
@@ -490,7 +491,7 @@ On GitHub a person can also merge the pull request there; the poll notices and t
 - `GET /v1/snapshot`: every card's column, the changes, the inbox, and `waiting`, the reason each waiting card waits.
 - `GET /v1/cards/{id}/history`: moves (with the note), runs starting and ending, decisions and inbox items of one card.
 - `GET /v1/cards/{id}/runs`, `GET /v1/runs/{id}` and `GET /v1/runs/{id}/events`: the runs and what each did.
-- `GET /v1/events`, a WebSocket: everything as it happens, including `board_error`, `card_waiting` and `run_event`.
+- `GET /v1/events`, a WebSocket: everything as it happens, including `board_error`, `card_waiting` and, for the runs a client subscribed to, `run_event`.
 
 ## What can go wrong and how you see it
 

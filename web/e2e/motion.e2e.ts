@@ -100,8 +100,14 @@ describe("reduced motion", () => {
     const page = await board("no-preference");
     expect((await page.evaluate(moving)).length).toBeGreaterThan(0);
     const card = page.locator(".lift").first();
-    await card.hover();
-    await expect.poll(() => card.evaluate((el) => getComputedStyle(el).transform)).not.toBe("none");
+    // The board moves the new card to the column it belongs in within a few seconds, from under the pointer, so the
+    // pointer follows the card until it lifts.
+    await expect
+      .poll(async () => {
+        await card.hover();
+        return card.evaluate((el) => getComputedStyle(el).transform);
+      })
+      .not.toBe("none");
     await page.context().close();
   });
 });

@@ -204,7 +204,7 @@ What the nodes of a [workflow](workflows.md) may reach. The table is optional; a
 
 | Key | Type | Default | Meaning and validation |
 |---|---|---|---|
-| `board.tick_ms` | integer | `2000` | Milliseconds between two runs of the column scripts over all cards. A value below 50 is raised to 50. |
+| `board.tick_ms` | integer | `2000` | Milliseconds between two runs of the column scripts over all cards. A value below 50 is raised to 50. A change applies at once: the sleeping loop wakes. A card whose script did nothing is not run again until something is written or a minute has passed (see [column scripts](column-scripts.md)). |
 | `board.round_limit` | integer | `5` | How many `code` rounds a card gets (counted from its latest retry) before the default `code.luau` marks it stuck. Scripts read it as `moebius.round_limit`. |
 
 ## `[budgets]`

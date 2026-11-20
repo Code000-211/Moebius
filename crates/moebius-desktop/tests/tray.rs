@@ -133,3 +133,92 @@ async fn a_server_that_cannot_be_reached_shows_no_figures_and_is_no_error_of_the
     ));
     assert!(tray::set_paused(&gone, true).await.is_err());
 }
+
+/// A fake server that counts what the tray reads: `(status reads, snapshot reads)`, and sends to the event stream
+/// whatever the test sends to the returned sender.
+async fn counting() -> (
+    Server,
+    std::sync::Arc<(
+        std::sync::atomic::AtomicUsize,
+        std::sync::atomic::AtomicUsize,
+    )>,
+    tokio::sync::mpsc::UnboundedSender<String>,
+) {
+    use axum::extract::ws::{Message, WebSocketUpgrade};
+    use axum::routing::get;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let counts = std::sync::Arc::new((AtomicUsize::new(0), AtomicUsize::new(0)));
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let receiver = std::sync::Arc::new(tokio::sync::Mutex::new(receiver));
+    let status = counts.clone();
+    let snapshot = counts.clone();
+    let app = axum::Router::new()
+        .route(
+            "/v1/status",
+            get(move || async move {
+                status.0.fetch_add(1, Ordering::SeqCst);
+                axum::Json(
+                    json!({"working": 0, "inbox": 0, "unread_notices": 0, "tokens": 0,
+                                  "day_budget": null, "paused": false}),
+                )
+            }),
+        )
+        .route(
+            "/v1/snapshot",
+            get(move || async move {
+                snapshot.1.fetch_add(1, Ordering::SeqCst);
+                axum::Json(json!({}))
+            }),
+        )
+        .route(
+            "/v1/events",
+            get(move |upgrade: WebSocketUpgrade| async move {
+                upgrade.on_upgrade(move |mut socket| async move {
+                    let mut receiver = receiver.lock().await;
+                    while let Some(text) = receiver.recv().await {
+                        if socket.send(Message::text(text)).await.is_err() {
+                            break;
+                        }
+                    }
+                })
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (Server::new(&base, "token"), counts, sender)
+}
+
+#[tokio::test]
+async fn the_steps_of_runs_do_not_make_the_tray_read_but_other_events_do_and_the_snapshot_is_never_read()
+ {
+    use std::sync::atomic::Ordering;
+    let (server, counts, events) = counting().await;
+    let mut shown = following(&server);
+    until(&mut shown, |_| true).await;
+    assert_eq!(counts.0.load(Ordering::SeqCst), 1);
+
+    // A run taking many steps is read no more than once more, and not before its minimum wait.
+    let step = json!({"kind": "run_event", "data": {}}).to_string();
+    for _ in 0..200 {
+        events.send(step.clone()).unwrap();
+    }
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert_eq!(
+        counts.0.load(Ordering::SeqCst),
+        1,
+        "a step is no reason to read now"
+    );
+
+    // An event that changes what the tray shows is read within about a second, steps or not.
+    events
+        .send(json!({"kind": "runs_paused", "data": {}}).to_string())
+        .unwrap();
+    until(&mut shown, |_| true).await;
+    assert_eq!(counts.0.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        counts.1.load(Ordering::SeqCst),
+        0,
+        "the snapshot is not the tray's to read"
+    );
+}

@@ -196,6 +196,8 @@ export function ThreadView({
   const [anchor, setAnchor] = useState({ base: FIRST_INDEX, first: null as number | null });
   const lastGesture = useRef<number | null>(null);
   const repins = useRef(0);
+  /** How many turns arrived above the one first drawn, until the list has been put back at it. */
+  const arrived = useRef<number | null>(null);
 
   const first = turns[0]?.from ?? null;
   const lastKey = turns[turns.length - 1]?.key ?? null;
@@ -274,7 +276,29 @@ export function ThreadView({
   if (first !== anchor.first) {
     const above = first === null ? null : prepended(turns, anchor.first);
     setAnchor(above === null ? { base: FIRST_INDEX, first } : { base: anchor.base - above, first });
+    arrived.current = above !== null && above > 0 ? above : null;
   }
+
+  // Older turns arrived above the one read. The list keeps its place by counting from a lower number, but it moves by
+  // what it guessed the turns to be, and draws them at what it measured, so the turn read can end up off screen. Once
+  // the list has made its own move (a frame later) it is put back at that turn, at the top, where the person reached
+  // the start of the list.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when turns arrive above
+  useEffect(() => {
+    const above = arrived.current;
+    arrived.current = null;
+    if (above === null || state.current.follow) return;
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() =>
+        list.current?.scrollToIndex({ index: above, align: "start" }),
+      );
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+    };
+  }, [anchor]);
 
   // Reaching the top of the list is how a person asks for what is above it. The list opens at its end, so its top is
   // only reached by someone who scrolled up: following an answer is never interrupted by a page nobody asked for.

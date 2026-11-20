@@ -402,6 +402,26 @@ describe("live data", () => {
     await properties(3).getByText("In review", { exact: true }).waitFor();
   });
 
+  it.skipIf(!usesRealServer)("opens the card of an issue clicked on the Issues page", async () => {
+    await fresh();
+    await openBoard();
+    const ids: number[] = [];
+    for (const title of ["First issue", "Second issue"]) {
+      const made = await context.request.post(`${server.url}/v1/repositories/${demo}/issues`, {
+        headers: { "X-Moebius": "1" },
+        data: { title },
+      });
+      expect(made.ok(), await made.text()).toBe(true);
+      ids.push(((await made.json()) as { id: number }).id);
+    }
+    await page.goto(`${server.url}/issues`);
+    await page.getByTestId(`issue-${ids[0]}`).getByRole("link", { name: "First issue" }).click();
+    await page.waitForURL(`**/board/${demo}?card=${ids[0]}`);
+    await dock().getByText("First issue").first().waitFor();
+    await page.goBack();
+    await page.getByTestId("issues-page").waitFor();
+  });
+
   it.skipIf(usesRealServer)("links the pull request of a card from the dock", async () => {
     await fresh();
     await openBoard();
@@ -453,6 +473,36 @@ describe("live data", () => {
       await dock().getByRole("button", { name: "Close the inspector" }).click();
       await facts.waitFor({ state: "detached" });
       await expect.poll(() => column.getAttribute("data-folded")).toBe("");
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "keeps the dock clear of the Moebius agent, and the Following row inside the column",
+    async () => {
+      for (const width of [1280, 1440]) {
+        await fresh();
+        await page.setViewportSize({ width, height: 900 });
+        await openBoard();
+        await card(3).click();
+        await properties(3).getByText("Not started", { exact: true }).waitFor();
+        const column = page.locator('[data-surface="right-column"]');
+        const row = column.getByText("Following", { exact: true });
+        if ((await row.count()) > 0) {
+          const edge = (await column.boundingBox()) as { x: number; width: number };
+          for (const button of await column.getByRole("button").all()) {
+            const box = await button.boundingBox();
+            if (box) expect(box.x + box.width).toBeLessThanOrEqual(edge.x + edge.width + 1);
+          }
+        }
+        await page.keyboard.press("Control+j");
+        const chat = page.getByRole("dialog", { name: /Moebius/ });
+        await chat.waitFor();
+        const sheet = (await chat.boundingBox()) as { x: number };
+        const drawer = (await dock().boundingBox()) as { x: number; width: number };
+        expect(drawer.x + drawer.width, `at ${width}`).toBeLessThanOrEqual(sheet.x + 1);
+        await context.close();
+        await server.stop().catch(() => {});
+      }
     },
   );
 
@@ -1439,6 +1489,54 @@ describe("Display", () => {
     expect(await display("Description", "menuitemcheckbox").getAttribute("aria-checked")).toBe(
       "true",
     );
+  });
+});
+
+describe("the card open in the dock and its address", () => {
+  it.skipIf(usesRealServer)(
+    "closes only the menu on the first Escape and the card on the second",
+    async () => {
+      await fresh();
+      await page.goto(`${server.url}/board/1?card=3`);
+      await properties(3).waitFor();
+      const openers: [string, () => Locator][] = [
+        ["Priority", () => properties(3).getByRole("button", { name: /^Priority/ })],
+        ["Cycle", () => properties(3).getByRole("button", { name: /^Cycle/ })],
+        ["Assignee", () => properties(3).getByRole("button", { name: /^Assignee/ })],
+        ["Milestone", () => properties(3).getByRole("button", { name: /^Milestone/ })],
+        ["Labels", () => properties(3).getByRole("button", { name: "Add a label" })],
+        ["Due date", () => properties(3).getByRole("button", { name: /^Due date/ })],
+      ];
+      for (const [name, opener] of openers) {
+        await opener().click();
+        // Whatever opened is the only thing the key may close.
+        await page.keyboard.press("Escape");
+        await page.getByRole("menu").waitFor({ state: "detached" });
+        expect(page.url(), name).toContain("card=3");
+        await dock().waitFor();
+      }
+      await dock().focus();
+      await page.keyboard.press("Escape");
+      await dock().waitFor({ state: "detached" });
+    },
+  );
+
+  it.skipIf(usesRealServer)("takes the card out of the address when it is closed", async () => {
+    await fresh();
+    await page.goto(`${server.url}/board/1?card=3`);
+    await dock().waitFor();
+    await page.getByRole("button", { name: "Close the inspector" }).click();
+    await dock().waitFor({ state: "detached" });
+    expect(page.url()).not.toContain("card=");
+    // A reload of the board with no card open shows no card.
+    await page.reload();
+    await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
+    await card(3).waitFor();
+    expect(await dock().count()).toBe(0);
+    // Back opens the card that was open.
+    await page.goBack();
+    await dock().waitFor();
+    expect(page.url()).toContain("card=3");
   });
 });
 

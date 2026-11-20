@@ -201,12 +201,12 @@ pub struct Merged {
 /// What a board shows of a card, from the facts read for its whole board (`App::board_facts`). A card in Done carries
 /// none of it, which keeps the snapshot cheap to read on every event.
 fn card_view(
-    app: &App,
+    lookups: &crate::app::CardLookups,
     sight: &crate::app::Sight,
     facts: &BoardFacts,
     card: Card,
 ) -> crate::app::Result<CardView> {
-    let counts_as_sub_issue = app.counts_as_sub_issue(&card);
+    let counts_as_sub_issue = lookups.counts_as_sub_issue(&card);
     let mut view = CardView {
         card,
         counts_as_sub_issue,
@@ -247,7 +247,7 @@ fn card_view(
             reason: a.reason,
         })
         .collect();
-    view.blocked_by = app.blocked_by_seen(&view.card, sight)?;
+    view.blocked_by = lookups.blocked_by_seen(&view.card, sight);
     if let Some(run) = &card_facts.run {
         view.refusals = facts.refusals.get(&run.id).copied().unwrap_or(0);
         view.run = Some(RunView {
@@ -258,15 +258,15 @@ fn card_view(
         });
     }
     let verdict = latest_review(runs).map(|r| r.verdict.to_string());
-    for change in app.open_changes(&view.card)? {
+    for change in lookups.open_changes(&view.card)? {
         let shown = ChangeView {
             id: change.id,
             repository: match change.repository_id {
-                Some(id) => app.repository(id)?.name,
+                Some(id) => lookups.repository_name(id)?,
                 None => String::new(),
             },
             state: change.state.clone(),
-            checks: app.checks_of(&change)?.to_string(),
+            checks: lookups.checks_of(&change)?.to_string(),
             review_verdict: verdict.clone(),
         };
         if change.repository_id == Some(view.card.repository_id) {
@@ -282,20 +282,32 @@ async fn snapshot(
     Extension(by): Extension<Actor>,
 ) -> Result<axum::Json<Snapshot>, ApiError> {
     let round_limit = state.config.get().round_limit;
-    blocking(&state.app, move |app| {
-        let sight = app.sight(&by)?;
+    blocking(&state.app, move |app| build_snapshot(app, &by, round_limit)).await
+}
+
+/// What `GET /v1/snapshot` answers to `by`. The cards, changes and the rest the views are made from are read once for
+/// all of them, so the number of reads grows with the number of repositories and not with the number of cards.
+fn build_snapshot(app: &App, by: &Actor, round_limit: u32) -> crate::app::Result<Snapshot> {
+    {
+        let sight = app.sight(by)?;
         let mut boards = Vec::new();
         let repositories = app.store.repositories()?;
+        // Every card and change is read once; the views below are made from what was read.
+        let mut cards = std::collections::HashMap::new();
+        let mut changes = std::collections::HashMap::new();
+        for repository in &repositories {
+            changes.insert(repository.id, app.store.changes(repository.id)?);
+            if sight.repository(repository.id) {
+                cards.insert(repository.id, app.store.cards(repository.id)?);
+            }
+        }
+        let lookups = app.card_lookups(&repositories, &cards, &changes)?;
         // A card over several repositories is on its own repository's board, and its change in another repository is
         // on that repository's board, so a change is left out only when its card is hidden or archived everywhere.
         let mut seen = std::collections::HashSet::new();
-        for repository in &repositories {
-            if sight.repository(repository.id) {
-                for card in app.store.cards(repository.id)? {
-                    if card.archived_at.is_none() && sight.card(&card) {
-                        seen.insert(card.id);
-                    }
-                }
+        for card in cards.values().flatten() {
+            if card.archived_at.is_none() && sight.card(card) {
+                seen.insert(card.id);
             }
         }
         for repository in repositories {
@@ -303,20 +315,20 @@ async fn snapshot(
                 continue;
             }
             // An archived card is off the board.
-            let mut cards = app.store.cards(repository.id)?;
-            cards.retain(|card| card.archived_at.is_none() && sight.card(card));
-            let waiting = app.waiting(&cards);
-            let facts = app.board_facts(repository.id, &cards)?;
+            let mut board_cards = cards.remove(&repository.id).unwrap_or_default();
+            board_cards.retain(|card| card.archived_at.is_none() && sight.card(card));
+            let waiting = app.waiting(&board_cards);
+            let facts = app.board_facts(repository.id, &board_cards)?;
             boards.push(Board {
                 waiting,
-                cards: cards
+                cards: board_cards
                     .into_iter()
-                    .map(|card| card_view(app, &sight, &facts, card))
+                    .map(|card| card_view(&lookups, &sight, &facts, card))
                     .collect::<Result<_, _>>()?,
                 round_limit,
-                changes: app
-                    .store
-                    .changes(repository.id)?
+                changes: changes
+                    .remove(&repository.id)
+                    .unwrap_or_default()
                     .into_iter()
                     .filter(|change| change.card_id.is_none_or(|card| seen.contains(&card)))
                     .collect(),
@@ -335,8 +347,7 @@ async fn snapshot(
             inbox,
             paused: app.store.runs_paused()?,
         })
-    })
-    .await
+    }
 }
 
 async fn create_issue(
@@ -550,12 +561,165 @@ mod tests {
         .unwrap();
         let cards = store.cards(repo.id).unwrap();
         let facts = app.board_facts(repo.id, &cards).unwrap();
-        let view = card_view(app, &crate::app::Sight::everything(), &facts, card.clone()).unwrap();
+        let repositories = app.store.repositories().unwrap();
+        let lookups = app
+            .card_lookups(
+                &repositories,
+                &std::collections::HashMap::from([(repo.id, cards.clone())]),
+                &std::collections::HashMap::from([(repo.id, store.changes(repo.id).unwrap())]),
+            )
+            .unwrap();
+        let view = card_view(
+            &lookups,
+            &crate::app::Sight::everything(),
+            &facts,
+            card.clone(),
+        )
+        .unwrap();
         assert_eq!(view.run.unwrap().id, code.id);
         assert_eq!(view.refusals, 1);
         assert_eq!(view.attempts.len(), 1);
         // The batched facts say what the facts of the one card say.
         assert_eq!(facts.cards[&card.id], app.card_facts(&card).unwrap());
+    }
+
+    /// Adds `count` cards to `repo`: each is blocked by the one before, every third was approved by a person, and every
+    /// second has an open change.
+    fn fill_board(app: &App, repo: &crate::store::Repository, count: usize) -> Vec<Card> {
+        let store = &app.store;
+        let mut cards: Vec<Card> = Vec::new();
+        for i in 0..count {
+            let column = if i % 5 == 0 { "Done" } else { "In review" };
+            let card = store
+                .add_card(repo.id, &format!("Card {i}"), "", "outsider", column)
+                .unwrap();
+            if let Some(before) = cards.last() {
+                store.add_dependency(card.id, before.number).unwrap();
+            }
+            if i % 3 == 0 {
+                store
+                    .add_judgement(&crate::store::NewJudgement {
+                        kind: "approve_issue".into(),
+                        choice: "approve".into(),
+                        card_id: Some(card.id),
+                        ..Default::default()
+                    })
+                    .unwrap();
+            }
+            if i % 2 == 0 {
+                store
+                    .add_change(repo.id, Some(card.id), &format!("b{i}"), None, "head")
+                    .unwrap();
+            }
+            cards.push(card);
+        }
+        cards
+    }
+
+    #[tokio::test]
+    async fn the_snapshot_reads_the_store_a_number_of_times_that_does_not_grow_with_the_cards() {
+        let (dir, state, _addr) = start().await;
+        let app = &state.app;
+        let sight_of = Actor::Script {
+            column: "In review".into(),
+        };
+        let reads = |app: &App| {
+            let before = crate::store::connections_taken();
+            let snapshot = build_snapshot(app, &sight_of, 3).unwrap();
+            (crate::store::connections_taken() - before, snapshot)
+        };
+        let small = app
+            .add_repository("small", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        fill_board(app, &small, 10);
+        let (few, _) = reads(app);
+        fill_board(app, &small, 190);
+        let (many, snapshot) = reads(app);
+        let board = snapshot
+            .boards
+            .iter()
+            .find(|b| b.repository.id == small.id)
+            .unwrap();
+        assert_eq!(board.cards.len(), 200);
+        assert_eq!(few, many, "10 cards took {few} reads, 200 took {many}");
+    }
+
+    #[tokio::test]
+    async fn a_card_view_made_from_the_lookups_says_what_the_calls_for_one_card_say() {
+        let (dir, state, _addr) = start().await;
+        let app = &state.app;
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let cards = fill_board(app, &repo, 30);
+        // A blocker the forge was seen to close, and one that does not exist.
+        app.store.add_dependency(cards[1].id, 900).unwrap();
+        app.store.add_dependency(cards[1].id, 901).unwrap();
+        app.store
+            .set_forge_seen(repo.id, 900, "state", "closed")
+            .unwrap();
+        let repositories = app.store.repositories().unwrap();
+        let all = app.store.cards(repo.id).unwrap();
+        let lookups = app
+            .card_lookups(
+                &repositories,
+                &std::collections::HashMap::from([(repo.id, all.clone())]),
+                &std::collections::HashMap::from([(repo.id, app.store.changes(repo.id).unwrap())]),
+            )
+            .unwrap();
+        let sight = crate::app::Sight::everything();
+        for card in &all {
+            assert_eq!(
+                lookups.counts_as_sub_issue(card),
+                app.counts_as_sub_issue(card)
+            );
+            assert_eq!(
+                lookups.blocked_by_seen(card, &sight),
+                app.blocked_by_seen(card, &sight).unwrap(),
+                "blockers of {}",
+                card.number
+            );
+            assert_eq!(
+                lookups.open_changes(card).unwrap(),
+                app.open_changes(card).unwrap()
+            );
+        }
+        let blocked = lookups.blocked_by_seen(&all[1], &sight);
+        assert_eq!(
+            blocked,
+            [901],
+            "900 is closed on the forge, and card 1 is done"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_waiting_reason_the_card_already_has_is_not_published_again() {
+        let (_dir, state, _addr) = start().await;
+        let app = &state.app;
+        let mut events = app.bus.subscribe();
+        for reason in [
+            Some("reviewing"),
+            Some("reviewing"),
+            None,
+            None,
+            Some("reviewing"),
+        ] {
+            app.set_waiting(7, reason.map(String::from));
+        }
+        let mut published = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            if event.kind == "card_waiting" {
+                published.push(event.data["reason"].clone());
+            }
+        }
+        assert_eq!(
+            published,
+            [
+                serde_json::json!("reviewing"),
+                serde_json::Value::Null,
+                serde_json::json!("reviewing")
+            ]
+        );
     }
 
     #[tokio::test]

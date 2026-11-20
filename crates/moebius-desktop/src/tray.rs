@@ -1,18 +1,27 @@
 //! What the tray icon shows of a server and what it asks of it (ADR 0021): the agents working, the Inbox, today's
 //! tokens against the day's budget, and whether all agents are paused, with the routes that pause and resume them. The
-//! figures are read from the snapshot and the usage of the server, and [`follow`] reads them again whenever the event
-//! stream says something happened. The tray itself, a menu the system draws, is the program's `tray_icon` module.
+//! figures are the answer of one small route, `GET /v1/status` (never the snapshot), and [`follow`] reads them again
+//! when the event stream says something that can change them happened. The tray itself, a menu the system draws, is the program's `tray_icon` module.
 
 use std::time::Duration;
 
+use tokio::time::Instant;
+
 use futures_util::StreamExt;
-use serde_json::Value;
+use serde::Deserialize;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 use crate::server::Server;
 
-/// How long [`follow`] waits for more events before it reads the figures: a busy run says something at every step.
+/// How long [`follow`] waits after the first event of a burst before it reads the figures.
 const DEBOUNCE: Duration = Duration::from_millis(750);
+
+/// The least time between two readings that only the steps of runs ask for: a busy run says something at every step,
+/// which changes the figures of the tokens and nothing else.
+const STEPS: Duration = Duration::from_secs(10);
+
+/// The kind of the events that say a run took a step.
+const STEP_EVENT: &str = "run_event";
 
 /// How long [`follow`] waits before it tries a server that cannot be reached again.
 const RETRY: Duration = Duration::from_secs(5);
@@ -27,6 +36,8 @@ pub struct Figures {
     pub working: usize,
     /// The inbox items that are not resolved yet.
     pub inbox: usize,
+    /// The notices of the person that are not read yet.
+    pub unread: usize,
     /// The tokens the model calls used since local midnight of the server.
     pub tokens: i64,
     /// `day_tokens` of the server's `moebius.toml`, if it has one.
@@ -47,21 +58,23 @@ pub enum Error {
 }
 
 impl Figures {
-    /// The figures of the answers of `GET /v1/snapshot` and `GET /v1/usage`.
-    pub fn read(snapshot: &Value, usage: &Value) -> Option<Self> {
-        let boards = snapshot.get("boards")?.as_array()?;
-        let working = boards
-            .iter()
-            .flat_map(|board| board["cards"].as_array().into_iter().flatten())
-            .filter(|card| matches!(card["run"]["status"].as_str(), Some("starting" | "running")))
-            .count();
+    /// The figures of the answer of `GET /v1/status`.
+    pub fn read(status: &serde_json::Value) -> Option<Self> {
+        let status = Status::deserialize(status).ok()?;
         Some(Self {
-            working,
-            inbox: snapshot.get("inbox")?.as_array()?.len(),
-            tokens: usage["totals"]["tokens"].as_i64()?,
-            budget: usage["totals"]["day_budget"].as_i64(),
-            paused: snapshot.get("paused").is_some_and(|p| !p.is_null()),
+            working: status.working,
+            inbox: status.inbox,
+            unread: status.unread_notices,
+            tokens: status.tokens,
+            budget: status.day_budget,
+            paused: status.paused,
         })
+    }
+
+    /// The count the rail shows of the server: what the sidebar of the web app counts, the open items of the inbox
+    /// and the notices not read yet.
+    pub fn rail_count(&self) -> u32 {
+        u32::try_from(self.inbox + self.unread).unwrap_or(u32::MAX)
     }
 
     /// The lines of the tray's menu and its tooltip.
@@ -103,6 +116,17 @@ pub struct Lines {
     pub tooltip: String,
 }
 
+/// The answer of `GET /v1/status`.
+#[derive(Deserialize)]
+struct Status {
+    working: usize,
+    inbox: usize,
+    unread_notices: usize,
+    tokens: i64,
+    day_budget: Option<i64>,
+    paused: bool,
+}
+
 /// The lines of a server that cannot be reached.
 pub fn offline() -> Lines {
     Lines {
@@ -125,31 +149,31 @@ fn short(tokens: i64) -> String {
     format!("{}{unit}", text.strip_suffix(".0").unwrap_or(&text))
 }
 
-async fn get(server: &Server, path: &str) -> Result<Value, Error> {
-    let response = reqwest::Client::new()
-        .get(format!("{}{path}", server.url))
+/// Reads the figures of `server`, waiting for it at most `timeout`.
+pub async fn read_within(server: &Server, timeout: Duration) -> Result<Figures, Error> {
+    let response = crate::server::http()
+        .get(format!("{}/v1/status", server.url))
         .bearer_auth(&server.token)
-        .timeout(TIMEOUT)
+        .timeout(timeout)
         .send()
         .await
         .map_err(|e| Error::Unreachable(e.without_url().to_string()))?;
     if !response.status().is_success() {
         return Err(Error::Refused(response.status().as_u16()));
     }
-    response.json().await.map_err(|_| Error::Unreadable)
+    let status = response.json().await.map_err(|_| Error::Unreadable)?;
+    Figures::read(&status).ok_or(Error::Unreadable)
 }
 
 /// Reads the figures of `server`.
 pub async fn read(server: &Server) -> Result<Figures, Error> {
-    let snapshot = get(server, "/v1/snapshot").await?;
-    let usage = get(server, "/v1/usage?days=1").await?;
-    Figures::read(&snapshot, &usage).ok_or(Error::Unreadable)
+    read_within(server, TIMEOUT).await
 }
 
 /// Pauses all agents of `server`, or resumes them.
 pub async fn set_paused(server: &Server, paused: bool) -> Result<(), Error> {
     let route = if paused { "pause" } else { "resume" };
-    let response = reqwest::Client::new()
+    let response = crate::server::http()
         .post(format!("{}/v1/runs/{route}", server.url))
         .bearer_auth(&server.token)
         .json(&serde_json::json!({ "reason": "from the tray" }))
@@ -173,26 +197,49 @@ pub async fn follow(server: Server, mut show: impl FnMut(Option<Figures>) + Send
             continue;
         };
         // Read once connected, so that nothing between the last reading and the connection is missed.
-        loop {
+        'connected: loop {
             show(read(&server).await.ok());
+            let read_at = Instant::now();
             // Wait for something to happen, then for the burst it belongs to to end.
-            if events.next().await.is_none_or(|m| m.is_err()) {
-                break;
-            }
-            let burst = tokio::time::sleep(DEBOUNCE);
-            tokio::pin!(burst);
+            let mut due: Option<Instant> = None;
             loop {
+                let wait = async {
+                    match due {
+                        Some(at) => tokio::time::sleep_until(at).await,
+                        None => std::future::pending().await,
+                    }
+                };
                 tokio::select! {
-                    () = &mut burst => break,
-                    next = events.next() => if next.is_none_or(|m| m.is_err()) {
-                        break;
-                    },
+                    () = wait => break,
+                    next = events.next() => {
+                        let Some(Ok(message)) = next else { break 'connected };
+                        let now = Instant::now();
+                        due = Some(match (due, is_step(&message)) {
+                            (None, true) => (now + DEBOUNCE).max(read_at + STEPS),
+                            (None, false) => now + DEBOUNCE,
+                            (Some(at), true) => at,
+                            (Some(at), false) => at.min(now + DEBOUNCE),
+                        });
+                    }
                 }
             }
         }
         show(None);
         tokio::time::sleep(RETRY).await;
     }
+}
+
+/// Whether `message` of the event stream says a run took a step, which changes nothing the tray shows but the tokens.
+fn is_step(message: &tokio_tungstenite::tungstenite::Message) -> bool {
+    #[derive(Deserialize)]
+    struct Kind {
+        kind: String,
+    }
+    message
+        .to_text()
+        .ok()
+        .and_then(|text| serde_json::from_str::<Kind>(text).ok())
+        .is_some_and(|event| event.kind == STEP_EVENT)
 }
 
 type Events =
@@ -218,40 +265,39 @@ mod tests {
 
     use super::*;
 
-    fn snapshot(statuses: &[&str], inbox: usize, paused: bool) -> Value {
-        let cards: Vec<Value> = statuses
-            .iter()
-            .map(|s| json!({"run": if s.is_empty() { Value::Null } else { json!({"status": s}) }}))
-            .collect();
-        let mut snapshot = json!({"boards": [{"cards": cards}], "inbox": vec![json!({}); inbox]});
-        if paused {
-            snapshot["paused"] = json!({"by": "person:ada", "at": 1});
-        }
-        snapshot
-    }
-
-    fn usage(tokens: i64, budget: Option<i64>) -> Value {
-        json!({"totals": {"tokens": tokens, "day_budget": budget}})
+    fn status(working: usize, inbox: usize, tokens: i64, budget: Option<i64>) -> serde_json::Value {
+        json!({"working": working, "inbox": inbox, "unread_notices": 1, "tokens": tokens,
+               "day_budget": budget, "paused": false})
     }
 
     #[test]
-    fn the_figures_count_the_cards_with_a_run_going_the_inbox_and_the_days_tokens() {
-        let figures = Figures::read(
-            &snapshot(&["running", "starting", "succeeded", ""], 2, false),
-            &usage(1_250_000, Some(8_000_000)),
-        )
-        .unwrap();
+    fn the_figures_are_the_answer_of_the_status_route() {
+        let figures = Figures::read(&status(2, 2, 1_250_000, Some(8_000_000))).unwrap();
         assert_eq!(
             figures,
             Figures {
                 working: 2,
                 inbox: 2,
+                unread: 1,
                 tokens: 1_250_000,
                 budget: Some(8_000_000),
                 paused: false
             }
         );
-        assert_eq!(Figures::read(&json!({}), &usage(1, None)), None);
+        // The rail counts what the sidebar of the web app counts.
+        assert_eq!(figures.rail_count(), 3);
+        assert_eq!(Figures::read(&json!({})), None);
+    }
+
+    #[test]
+    fn only_the_steps_of_runs_are_slow_to_be_read() {
+        use tokio_tungstenite::tungstenite::Message;
+        let message = |kind: &str| Message::text(json!({"kind": kind, "data": {}}).to_string());
+        assert!(is_step(&message("run_event")));
+        assert!(!is_step(&message("run_ended")));
+        assert!(!is_step(&message("notice_added")));
+        assert!(!is_step(&Message::text("not json")));
+        assert!(!is_step(&Message::Binary(vec![1].into())));
     }
 
     #[test]
@@ -259,6 +305,7 @@ mod tests {
         let lines = Figures {
             working: 3,
             inbox: 1,
+            unread: 0,
             tokens: 12_500,
             budget: Some(8_000_000),
             paused: false,

@@ -280,6 +280,8 @@ any route to any role that is not what its row says.
 | `PUT /v1/workflows/{name}` | owner | yes |
 | `DELETE /v1/workflows/{name}` | owner | yes |
 | `GET /v1/workflows/{name}/run-inputs` | viewer | yes |
+| `GET /v1/workflow-runs` | viewer | yes |
+| `GET /v1/workflow-runs/{id}` | viewer | yes |
 | `POST /v1/workflows/{name}/runs` | member | yes |
 | `POST /v1/workflows/runs/{id}/cancel` | member | yes |
 | `POST /v1/workflows/runs/{run_id}/resume` | member | yes |
@@ -304,6 +306,7 @@ any route to any role that is not what its row says.
 | `DELETE /v1/packages/{name}` | owner | no |
 | `POST /v1/packages/{name}/update` | owner | no |
 | `GET /v1/usage` | viewer | yes |
+| `GET /v1/status` | viewer | no |
 | `GET /v1/analytics` | viewer | yes |
 | `GET /v1/judgements` | viewer | yes |
 | `GET /v1/judgements/kinds` | viewer | yes |
@@ -365,6 +368,17 @@ any route to any role that is not what its row says.
 | `POST /v1/webhooks/{forge}/secret` | owner | no |
 | `POST /api/hooks/{path}` | none | — |
 | `POST /api/hooks/{repository}/{path}` | none | — |
+
+## Compression
+
+An answer of 1 KiB or more, an API answer or a file of the web app, is compressed with brotli or gzip when the request's
+`Accept-Encoding` lists one; the answer then has `Content-Encoding` and `Vary: Accept-Encoding`, and no `Content-Length`.
+A client that sends no `Accept-Encoding` (`curl` without `--compressed`, a script) gets the plain body, and one that does
+must decode it (`curl --compressed` does). Smaller answers, images, fonts, `text/event-stream` and the WebSockets (the
+event stream, the terminals and the ports) are never compressed, and an answer is compressed as it is sent, so a
+download such as an export is not held back. The router's own listener, the one models are called on, does not
+compress. A proxy in front of the server, and the desktop app's loopback, pass `Accept-Encoding` and the compressed body
+on unchanged.
 
 ## Errors
 
@@ -520,6 +534,9 @@ framed by another site. `plugin-frame.html`, the frame a plugin's page for its s
 its own](plugin-api.md#a-page-of-its-own)), has a stricter policy that forbids it every connection; the files under
 `fonts/` carry `Access-Control-Allow-Origin: *`, since that frame has no origin. Nothing under `/v1/` is a file: an unknown `/v1/` path is answered `401` without
 a valid token and `404` with one.
+
+Every file carries a weak `ETag` (a hash of its content), and a request whose `If-None-Match` holds it, or is `*`, is answered `304`
+without a body, which is what makes the `no-cache` of `index.html` cheap.
 
 At start, `moebius serve` prints the line `Open the web app: http://<listen address>/?login=<code>` on standard output
 (not in the log). The page signs in with the code and takes it out of the address.
@@ -717,8 +734,33 @@ resolved yet, oldest first.
 ### `GET /v1/events`
 
 A WebSocket. After the upgrade, every event the core publishes arrives as one JSON text message, see Events below. Events
-are not replayed: a client sees only what happens after it connected, so read the snapshot after connecting. Messages the
-client sends are ignored; closing the socket ends the stream.
+are not replayed: a client sees only what happens after it connected, so read the snapshot after connecting. Closing the
+socket ends the stream.
+
+What a run says while it works is sent only to a client that asked for that run. A `run_event` of a run the client did
+not ask for is left out, except of the kinds `agent_start`, `agent_settled` and `moebius_error`, which tell where a run
+is; every other event (`run_started`, `run_ended`, the board's, the inbox's, `chat_renamed`) is sent to everyone who may
+see it, as before. A client asks on the same socket, with a JSON text message:
+
+```json
+{"subscribe": [12, 15]}
+{"unsubscribe": [12]}
+```
+
+Both keys are optional and each is an array of run ids. A connection may watch at most 256 runs at a time; asks beyond
+that are ignored, as is a message that is not one of these. A subscription lasts as long as the socket: after a client
+connects again it asks again, and reads what it missed with `GET /v1/runs/{id}/events?after=<last seq>`. Asking for a
+run does not widen what a person may see: the events of a private project's run, or of a chat that is not shared with
+them, are not sent whether asked for or not. Who may see a run is worked out once for each run and connection, and
+again after `project_changed`, `repository_added`, `repository_updated`, `repository_removed`, `chat_shared` or
+`chat_deleted`.
+
+The server answers a `subscribe` with `{"kind": "subscribed", "data": {"runs": [id]}}`, naming every run the connection
+watches now; it is sent after the request was read, so that the events of those runs are streamed from then on. A client
+that follows a run (a run page, a chat, the Fleet's current step) reads the run's stored events again after that answer
+(`GET /v1/runs/{id}/events?after=<last seq>`), and so loses nothing that happened between its first read and the
+subscription. An event that arrives twice has the same `seq`. The answer is not an event of the bus and is not in the
+table below.
 
 ### Projects
 
@@ -1033,7 +1075,7 @@ one). Every word of `q` must be in the page, in any order, the last one may be o
 of the text, so a page called for the words comes before one that mentions them. Response: `[SearchHit]`, the best
 first, `{"path": string, "name": string, "project": string | null, "snippet": string}`: the page's path and name, the
 key of its project (`null` for the organisation's pages) and the words around the match as plain text. An empty `q`
-finds nothing (`[]`).
+finds nothing (`[]`). The web app's Wiki page has a search box above its tree that asks this route.
 
 **Only what the asker may see is returned**: a page under `projects/<key>/` of a private project the asker is no member
 of is never in the answer, and does not take the place of a page that is. The index is derived from the pages
@@ -1167,7 +1209,7 @@ requester is told the reason in the Inbox's Mentions tab and reads it in the req
 
 A member makes a page from a page [template](#templates). Request body: `{"template": string, "path": string}`. The page
 at `path` has the template's text and is a commit in the wiki like any write. Response: the `PageView`. Errors: `404` for
-no such template, `409` for a page at `path` already or a server without a wiki, `422` for a path that is not a page's.
+no such template, `409` for a page at `path` already or a server without a wiki, `422` for a path that is not a page's. In the web app: "From a template" above the editor of a new page on the Wiki page.
 
 ### Templates
 
@@ -1261,7 +1303,7 @@ for a cycle of another project or a closed one.
 ### Importing from Jira
 
 A one-off copy of a Jira project into a Moebius project, which can be run again. Only an owner imports, never an agent,
-since it may make people. The Jira API token is kept like the other keys, in `secrets.toml` (`PUT /v1/secrets/{name}`,
+since it may make people. The web app has it as the Import tab of a project's settings. The Jira API token is kept like the other keys, in `secrets.toml` (`PUT /v1/secrets/{name}`,
 see [Secrets](configuration.md#secrets)); the request names it and never carries it, and it is not stored, logged or
 answered.
 
@@ -1921,7 +1963,7 @@ day, the report lists the cards whose estimate was furthest off (see [`POST /v1/
 ### `PUT /v1/cards/{id}/estimate`
 
 Sets the estimate. Request: `{"estimate": 5}`, a whole number from 1 to 1000, or `{"estimate": null}` for none.
-Response: the `Card`. Errors: `404` no such card; `422` a number outside 1 to 1000, or a body that is not a whole number or null.
+Response: the `Card`. Errors: `404` no such card; `422` a number that is not a whole number from 1 to 1000 (the sentence is "N is not an estimate (1 to 1000 points)"), or a body whose `estimate` is not a number or null.
 
 ### `GET /v1/cards/{id}/estimate/proposal`
 
@@ -1967,7 +2009,9 @@ follow. Disabled people are told nothing. Notices go with their card when it is 
 
 ### `GET /v1/notices`
 
-The notices of the person asking, newest first, at most 200 (the web app says "200+" on a tab when the list has that many). Response: an array of `Notice`: `id`, `kind` (`assigned`,
+The notices of the person asking, newest first, at most 200 (the web app says "200+" on a tab when the list has that
+many). A notice that was read is deleted 30 days after it was made (checked once a minute); one not read yet stays.
+Response: an array of `Notice`: `id`, `kind` (`assigned`,
 `mentioned` or `changed`), `by` (the handle of the person who caused it, or null), `card_id` and `inbox_item_id` (each
 or null), `title` (of the card or item), `body` (the start of the comment, or what changed), `at` and `read`.
 
@@ -2219,8 +2263,15 @@ One run, for the live view. Response: the `Run`. Errors: `403` the run is a chat
 ### `GET /v1/runs/{id}/events`
 
 The stored events of a run, in order. A client loads a long run in pieces and then follows `GET /v1/events` from the last
-`seq` it has: every `run_event` on the stream carries the `seq` the event was stored under, so the client drops those
+`seq` it has (after subscribing to the run, see [`GET /v1/events`](#get-v1events)): every `run_event` on the stream carries the `seq` the event was stored under, so the client drops those
 it already has and sees every event exactly once.
+
+A streamed answer is stored compactly. The `message_update` events of a message that has ended are joined: neighbouring
+`text_delta`s become one `message_update` whose `delta` is their text in order, likewise neighbouring `thinking_delta`s,
+and the `seq` of the first is kept, so the `seq`s of a finished message have gaps where the rest were. Reading the
+`delta`s of a finished run in order gives the same answer as before. While a message is streaming its deltas are stored
+in groups at most 100 ms behind their publication on `GET /v1/events`, so a page read in that moment can lack the last
+few; a client that follows the stream by `seq` sees them there.
 
 A page is read either forwards or backwards, never both at once. Forwards: `after` (default 0) returns only events with
 a `seq` above it. Backwards, for a page that opens a long chat at its last message: `tail` (default false) returns the
@@ -2396,6 +2447,23 @@ Response:
   the most tokens first. The same calls are counted under their model in `models` too.
 
 Errors: `422` `days` is not from 1 to 365.
+
+### `GET /v1/status`
+
+The few figures the desktop app's tray and rail show of a server, from a few small reads instead of the snapshot, the
+notices and the usage. Response:
+
+```json
+{"working": 2, "inbox": 3, "unread_notices": 1, "tokens": 1840000, "day_budget": 8000000, "paused": false}
+```
+
+- `working`: the cards the person sees (not archived, not in Done) whose latest run, with an attempt that was not picked and
+  a trial of the Retro left out, is starting or running. `unread_notices` counts only the notices the person sees.
+- `inbox`: the open inbox items the person sees, as many as `inbox` of the snapshot has.
+- `unread_notices`: the person's notices that are not read, as `GET /v1/notices` lists them; `0` for a token that is no
+  person's.
+- `tokens`: the tokens used since local midnight of the server (`totals.tokens` of `GET /v1/usage`), `day_budget` the
+  `day_tokens` of `moebius.toml` or `null`, and `paused` whether all agents are paused.
 
 ### `GET /v1/analytics`
 
@@ -2729,15 +2797,17 @@ commit (left out when the text changed nothing, and always for a `rules_file`). 
 
 The workflows of the harness configuration repository, in name order. A workflow is a file `workflows/<name>.toml` in
 that repository (see [workflows](workflows.md)). Response: an array of
-`{"name": string, "description": string, "trigger_kind": string, "node_count": number}`; `trigger_kind` is the `kind` of
-the first trigger, empty for a workflow with none. Errors: `409` the server has no `[harness]`; `422` a workflow file
+`{"name": string, "description": string, "trigger_kind": string, "node_count": number, "last_run": object or null}`;
+`trigger_kind` is the `kind` of the first trigger, empty for a workflow with none, and `last_run` is the newest run of
+the workflow that the person sees, `{"id": number, "status": string, "created_at": number, "started_at": number or null,
+"finished_at": number or null}`, or null when it never ran. Errors: `409` the server has no `[harness]`; `422` a workflow file
 that cannot be used (the message names its file).
 
 ### `GET /v1/workflows/{name}`
 
 One workflow. Response: `{"name": string, "file": string, "definition": object}`, the text of the file exactly as it is
-saved and the definition parsed from it. Errors: `422` the name or the file cannot be used (there is no such workflow, or
-it is not valid); `409` the server has no `[harness]`.
+saved and the definition parsed from it. Errors: `404` there is no such workflow; `422` the name or the file cannot be used
+(the name is not one a file can have, or the file is not valid); `409` the server has no `[harness]`.
 
 ### `PUT /v1/workflows/{name}`
 
@@ -2769,6 +2839,22 @@ and a run waiting on a person leaves its inbox item withdrawn. The run's worktre
 "worktree": string or null}`, its
 `status` `cancelled` and its `error` `cancelled by a person`. Errors: `404` no such run; `409` the run has ended
 already, and the message names the status it ended as.
+
+### `GET /v1/workflow-runs`
+
+The runs of the workflows, newest first, leaving out the runs of a repository the person does not see. Query:
+`workflow` (only the runs of this workflow) and `limit` (the most runs to answer, 50 when left out, at most 200).
+Response: an array of `{"id": number, "workflow": string, "repository_id": number, "trigger": string, "status": string,
+"value": any, "created_at": number, "started_at": number or null, "finished_at": number or null, "error": string or null}`;
+`trigger` is the kind of the trigger that started the run.
+
+### `GET /v1/workflow-runs/{id}`
+
+One run with what each of its nodes was given and answered: the fields of the list's run, and `nodes`, an array of
+`{"node": string, "kind": string, "attempt": number, "status": string, "input": any, "output": any or null,
+"started_at": number or null, "finished_at": number or null, "error": string or null}` in the order the nodes ran
+(`kind` is empty when the workflow no longer has the node), and `waiting`, `{"node": string, "asks": any}` for the node a
+run in status `waiting` stopped at, or null. Errors: `404` no such run, or a run of a repository the person does not see.
 
 ### `POST /api/hooks/{path}`
 
@@ -4210,7 +4296,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `attempt_judged` | An attempt of a card was judged by its tests and checks (`moebius.check_attempt`). | `{"card": id, "run": id, "result": "passed" \| "failed"}` |
 | `attempts_settled` | A card's open attempts were settled (`moebius.settle_attempts`): one picked, or none passed. | `{"card": id, "picked": id or null, "runs": [id]}` |
 | `run_started` | A harness process for a run started. | `{"run": id, "card": id or null}` (null for a chat or an agent of a workflow run) |
-| `run_event` | Something happened in a run. | `{"run": id, "seq": number, "kind": string, "data": object}` (below) |
+| `run_event` | Something happened in a run. Sent for a run the client subscribed to; to others only `agent_start`, `agent_settled` and `moebius_error`. | `{"run": id, "seq": number, "kind": string, "data": object}` (below) |
 | `run_ended` | A run ended. | `{"run": id, "status": "succeeded" \| "failed" \| "stopped"}` |
 | `workflow_run_queued` | A workflow run was stored, queued for its first node. | `{"run": id, "workflow": string, "repository": id}` |
 | `workflow_run_started` | A workflow run began running. | `{"run": id}` |
@@ -4279,7 +4365,8 @@ message with `"stopReason": "error"` and an `"errorMessage"`, in the `message` o
 Moebius ends in failure has a `moebius_error` event instead.
 
 `seq` is the number the event is stored under, the same as in `GET /v1/runs/{id}/events`. Events of a run are published in
-the order of their `seq`. Every event of a run is published and stored: Pi's records, `tool_check`, `mcp_call`, `mcp_error` and `launcher_note` events, `steered` events
+the order of their `seq`, once they are stored; a `message_update` can be published up to 100 ms after Pi sent it, with the
+events stored with it. Every event of a run is published and stored: Pi's records, `tool_check`, `mcp_call`, `mcp_error` and `launcher_note` events, `steered` events
 (`{"message"}`, a person's steer, with secrets removed), `said` events (`{"message"}`, a person's message to a chat, the first
 one included, with secrets removed; stored before the agent's records of its answer) `shell_opened` events (`{"who"}`, a person opened a shell in the worktree; see `GET /v1/runs/{id}/terminal`), `tui_opened` events (`{"who"}`, a person opened Pi-Bolt's terminal interface in a chat; see `GET /v1/chats/{id}/tui`), `settings_changed` events (`{"model", "protocol", "thinking"}`, what a chat runs with in place of its agent's; see `POST /v1/chats/{id}/settings`) and `moebius_error` events (`{"message"}`) that explain why a
 run failed. The one exception is a run that was still going when the server stopped: it is failed at the next start with

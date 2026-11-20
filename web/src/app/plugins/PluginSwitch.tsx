@@ -76,7 +76,7 @@ export function PluginSwitch({ name, enabled }: { name: string; enabled: boolean
           }
         }}
       >
-        <DialogContent className="gap-4 p-6">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Turn off the guard?</DialogTitle>
             <DialogDescription>
@@ -116,7 +116,7 @@ export function PluginSwitch({ name, enabled }: { name: string; enabled: boolean
           }
         }}
       >
-        <DialogContent className="gap-4 p-6">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Turn off the last launcher?</DialogTitle>
             <DialogDescription>

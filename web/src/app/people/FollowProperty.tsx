@@ -8,6 +8,7 @@ import { follow, followers } from "../../api/calls/notices";
 import { getSession } from "../../api/calls/session";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
+import { cn } from "../../ui/lib/cn";
 import { Property } from "../../ui/page/Properties";
 
 export function FollowProperty({ card }: { card: number }) {
@@ -24,13 +25,14 @@ export function FollowProperty({ card }: { card: number }) {
   const following = list.data.some((handle) => handle.toLowerCase() === me.toLowerCase());
   return (
     <Property name="Following">
-      <span className="flex items-center gap-2">
-        <span className={following ? "text-text" : "text-secondary"}>
+      <span className="flex flex-wrap items-center gap-x-2">
+        <span className={cn("whitespace-nowrap", following ? "text-text" : "text-secondary")}>
           {following ? "You follow it" : "Not following"}
         </span>
         <Button
           variant="ghost"
           size="sm"
+          className="whitespace-nowrap"
           disabled={change.isPending}
           onClick={() => change.mutate(!following)}
         >

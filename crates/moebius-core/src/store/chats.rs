@@ -57,7 +57,7 @@ impl Store {
     /// The `seq` of the last event of the run that a person has to read: an answer that settled, or an error. Zero
     /// without one.
     pub fn answered_seq(&self, run_id: i64) -> Result<i64> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             "SELECT COALESCE(MAX(seq), 0) FROM events
              WHERE run_id = ?1 AND kind IN ('agent_settled', 'moebius_error')",
             [run_id],

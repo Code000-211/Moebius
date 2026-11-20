@@ -365,7 +365,7 @@ impl Store {
 
     /// The local minute it is on the server, as `YYYY-MM-DD HH:MM`.
     pub fn local_minute(&self) -> Result<String> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             "SELECT strftime('%Y-%m-%d %H:%M', 'now', 'localtime')",
             [],
             |r| r.get(0),
@@ -391,7 +391,7 @@ impl Store {
 
     /// The Unix second SQLite reads the local minute `minute` as; none when it is no time.
     fn unix_of_minute(&self, minute: &str) -> Result<Option<i64>> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             "SELECT CAST(strftime('%s', ?1, 'utc') AS INTEGER)",
             [minute],
             |r| r.get(0),
@@ -400,7 +400,7 @@ impl Store {
 
     /// The local minute (`YYYY-MM-DD HH:MM`) the Unix second `unix` falls in; none when it falls in no minute.
     fn local_minute_of(&self, unix: i64) -> Result<Option<String>> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             "SELECT strftime('%Y-%m-%d %H:%M', ?1, 'unixepoch', 'localtime')",
             [unix],
             |r| r.get(0),

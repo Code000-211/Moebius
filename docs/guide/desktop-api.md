@@ -133,7 +133,7 @@ curl -s -H "$AUTH" $API/v1/runs/$RUN | jq '{status, summary}'
 curl -s -H "$AUTH" "$API/v1/runs/$RUN/events?after=0&limit=500" | jq -c '.[] | {seq, kind}'
 ```
 
-On the event stream the same events arrive as `run_event` with the same `seq`, so a client that loads the stored events
+On the event stream the same events arrive as `run_event` with the same `seq` for a client that subscribed to the run with `{"subscribe": [id]}`, so a client that loads the stored events
 and then follows the stream drops the ones it has and sees each one once. A `tool_check` event is the answer to a tool
 call check (see [Rules](rules.md)).
 
@@ -214,6 +214,19 @@ done
 CHANGE=$(echo "$SNAPSHOT" | jq -r --argjson c $CARD '.boards[].changes[] | select(.card_id == $c and .state == "open") | .id')
 curl -s -X POST -H "$AUTH" -H "$JSON" -d '{"reason": "merged by the script"}' $API/v1/changes/$CHANGE/merge
 ```
+
+## Where the web app has them
+
+Search, templates and the Jira import have a screen as well as a route, so a person can do by hand what a script does:
+
+| Route | In the web app |
+|---|---|
+| `GET /v1/wiki/search` | The search box above the tree on the **Wiki** page: the matches stand in the place of the tree, each with the line around the match. |
+| `GET /v1/templates`, `PUT` and `DELETE /v1/templates/pages/{name}` | **Templates** in the header of the Wiki page: make, edit and delete page templates. |
+| `POST /v1/wiki/from-template` | **From a template** above the editor of a **New page**: pick a template and a name. |
+| `PUT` and `DELETE /v1/templates/issues/{kind}` | **Issue template** in each kind's box on the **Kinds** page (an owner's). |
+| `use_template` of `POST /v1/repositories/{id}/issues` | **New issue**: choose a **Kind**, then tick **Use the template of <kind>** (offered only for a kind that has one). |
+| `POST /v1/projects/{id}/import/jira` | The **Import** tab of a project's settings (an owner's): the Jira address, the project key, the secret the token is kept under and the token; the report and its warnings follow. The route has no dry run, so the page has no preview. |
 
 ## What can go wrong and how you see it
 
