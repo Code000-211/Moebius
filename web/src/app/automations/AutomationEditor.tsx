@@ -51,6 +51,8 @@ export function Editor({
   const queryClient = useQueryClient();
   const [form, setForm] = useState<Form>(() => (saved ? formOf(saved) : (starting ?? newForm())));
   const [confirming, setConfirming] = useState(false);
+  // Set once Save was pressed, so the fields that are still empty are marked.
+  const [tried, setTried] = useState(false);
   const id = saved?.id ?? null;
   const edit = (change: Partial<Form>) => {
     setNotice(null);
@@ -59,12 +61,6 @@ export function Editor({
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.automations });
   const agentList = useQuery({ queryKey: keys.agents, queryFn: agents });
   const repositories = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
-  const past = useQuery({
-    queryKey: keys.firings(id ?? 0),
-    queryFn: () => firings(id as number),
-    enabled: id !== null,
-  });
-
   const save = useMutation({
     mutationFn: (settings: AutomationSettings) => saveAutomation(id, settings),
     onSuccess: async (automation) => {
@@ -89,6 +85,8 @@ export function Editor({
   const remove = useMutation({
     mutationFn: () => deleteAutomation(id as number),
     onSuccess: async () => {
+      // Its past runs are no longer read: the server has no list for an automation that is gone.
+      queryClient.removeQueries({ queryKey: keys.firings(id as number) });
       await refresh();
       onDeleted();
     },
@@ -98,7 +96,15 @@ export function Editor({
     },
   });
 
+  const past = useQuery({
+    queryKey: keys.firings(id ?? 0),
+    queryFn: () => firings(id as number),
+    // Not once it is deleted: the list of a gone automation is a 404.
+    enabled: id !== null && !remove.isSuccess,
+  });
+
   const submit = () => {
+    setTried(true);
     const made = request(form);
     if ("problem" in made) setNotice({ tone: "error", text: made.problem });
     else save.mutate(made.ok);
@@ -148,7 +154,10 @@ export function Editor({
       >
         <div className="flex flex-col gap-4">
           {!saved && (
-            <Field label="Name of the automation">
+            <Field
+              label="Name of the automation"
+              error={tried && form.name.trim() === "" ? "Give the automation a name." : undefined}
+            >
               {(fieldId) => (
                 <Input
                   id={fieldId}
@@ -207,7 +216,14 @@ export function Editor({
 
       <Box title="Chat" aside="Ends once the agent has answered">
         <div className="flex flex-col gap-4">
-          <Field label="Prompt">
+          <Field
+            label="Prompt"
+            error={
+              tried && form.prompt.trim() === ""
+                ? "Write the prompt its chats start with."
+                : undefined
+            }
+          >
             {(fieldId) => (
               <TextArea
                 id={fieldId}

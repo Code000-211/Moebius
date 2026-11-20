@@ -60,7 +60,8 @@ export function WikiPage() {
   const tree = buildTree(pages.data ?? [], projects.data ?? []);
 
   const chosen = params.get("page") ?? pages.data?.[0]?.path ?? null;
-  const newIn = params.get("new");
+  // A viewer has no form for a new page, whatever the address says: the server refuses the save.
+  const newIn = canWrite ? params.get("new") : null;
   const view = params.get("view");
   const at = params.get("at");
   const [search, setSearch] = useState("");

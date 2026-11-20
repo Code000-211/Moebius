@@ -54,6 +54,11 @@ function server(intake: boolean, requests: IntakeRequest[]) {
         sent.push([`${init.method} ${url}`, JSON.parse(init.body ?? "{}")]);
         return reply(drafted);
       }
+      if (url === "/v1/snapshot") {
+        return reply({
+          boards: [{ repository: { id: 8, name: "shop" }, cards: [{ id: 77, number: 1 }] }],
+        });
+      }
       return reply(url === "/v1/projects" ? [project(intake)] : requests);
     }),
   );
@@ -144,5 +149,12 @@ describe("the Intake page", () => {
     await waitFor(() =>
       expect(sent[1]).toEqual(["POST /v1/requests/5/decline", { reason: "Out of scope" }]),
     );
+  });
+
+  it("links an accepted request to the card it made", async () => {
+    server(true, [{ ...drafted, status: "accepted", card_id: 77 }]);
+    show("member");
+    const link = await screen.findByRole("link", { name: "Open the card" });
+    expect(link.getAttribute("href")).toBe("/board/8?card=77");
   });
 });

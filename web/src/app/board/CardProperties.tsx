@@ -28,6 +28,7 @@ import {
 } from "../../api/calls/board";
 import { keys } from "../../api/keys";
 import type { Board, Card, InboxItem, Priority } from "../../api/types/board";
+import { patchCard, putCards } from "../../live/cardCache";
 import { EditableProperty, ListProperty } from "../../ui/page/EditableProperty";
 import { MarkLabel, type StateMark } from "../../ui/page/MarkLabel";
 import { PageProperties, Property } from "../../ui/page/Properties";
@@ -147,13 +148,15 @@ export function CardProperties({
   onOpenCard: (card: Card) => void;
 }) {
   const queryClient = useQueryClient();
-  // Every save reads the board again, refused or not, so what the property shows is what the server has.
+  // A save that is answered shows the answer at once (the event it makes reads the board again); one that is refused
+  // reads the board, so what the property shows is what the server has.
   const saved = async (request: Promise<unknown>) => {
     try {
-      await request;
-    } finally {
+      putCards(queryClient, [await request]);
+    } catch (error) {
       void queryClient.invalidateQueries({ queryKey: keys.snapshot });
       void queryClient.invalidateQueries({ queryKey: keys.cards });
+      throw error;
     }
   };
   const status = cardStatus(card, item, board);
@@ -211,14 +214,12 @@ export function CardProperties({
         card={card.id}
         project={card.project_id}
         onSaved={() => {
-          void queryClient.invalidateQueries({ queryKey: keys.cardCycle(card.id) });
           void queryClient.invalidateQueries({ queryKey: keys.cycles });
         }}
       />
       <MilestonesProperty
         card={card.id}
         onSaved={() => {
-          void queryClient.invalidateQueries({ queryKey: keys.cardMilestones(card.id) });
           void queryClient.invalidateQueries({ queryKey: keys.milestones });
         }}
       />
@@ -337,8 +338,20 @@ export function CardProperties({
         }))}
         empty="No issue"
         addLabel="Add a blocker by its number"
-        onAdd={(typed) => saved(addBlocker(card.id, issueNumber(typed)))}
-        onRemove={(key) => saved(removeBlocker(card.id, Number(key)))}
+        onAdd={(typed) =>
+          saved(
+            addBlocker(card.id, issueNumber(typed)).then((blocked_by) =>
+              patchCard(queryClient, card.id, { blocked_by }),
+            ),
+          )
+        }
+        onRemove={(key) =>
+          saved(
+            removeBlocker(card.id, Number(key)).then((blocked_by) =>
+              patchCard(queryClient, card.id, { blocked_by }),
+            ),
+          )
+        }
       />
       <ListProperty
         name="Labels"

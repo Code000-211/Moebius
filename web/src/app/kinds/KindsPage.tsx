@@ -131,7 +131,12 @@ function OfferedBy({
         <label key={project.id} className="flex min-h-7 items-center gap-2 text-sm">
           <input
             type="checkbox"
-            checked={kind.projects.includes(project.id)}
+            // The tick shows at once; the list it is saved into is read again after.
+            checked={
+              offer.isPending && offer.variables.project.id === project.id
+                ? offer.variables.on
+                : kind.projects.includes(project.id)
+            }
             disabled={offer.isPending}
             onChange={(event) => offer.mutate({ project, on: event.target.checked })}
           />
@@ -158,6 +163,7 @@ function KindForm({ kind, title }: { kind?: Kind; title?: string }) {
       await queryClient.invalidateQueries({ queryKey: keys.issueKinds });
     },
   });
+  const unsaved = JSON.stringify(draft) !== JSON.stringify(draftOf(kind));
   const field = (index: number, change: Partial<FieldDraft>) =>
     setDraft({
       ...draft,
@@ -234,6 +240,11 @@ function KindForm({ kind, title }: { kind?: Kind; title?: string }) {
         <Button type="submit" size="sm" disabled={draft.name.trim() === "" || save.isPending}>
           {kind ? "Save kind" : "Add kind"}
         </Button>
+        {unsaved && kind && (
+          <span role="status" className="self-center text-sm text-secondary">
+            Unsaved changes
+          </span>
+        )}
       </div>
     </form>
   );

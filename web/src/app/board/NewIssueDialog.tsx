@@ -20,6 +20,7 @@ import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Board, Card } from "../../api/types/board";
 import { ASSISTANT_AGENT } from "../../chat/assistant";
+import { putCard } from "../../live/cardCache";
 import { Button } from "../../ui/components/Button";
 import {
   Dialog,
@@ -104,7 +105,8 @@ export function NewIssueDialog({
         kind ? { name: kind.name, useTemplate: templated } : null,
       ),
     onSuccess: (card) => {
-      void queryClient.invalidateQueries({ queryKey: keys.snapshot });
+      // The card is on its board before the dialog closes.
+      putCard(queryClient, card);
       setTitle("");
       setBody("");
       onCreated(card);

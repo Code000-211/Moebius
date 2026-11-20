@@ -10,6 +10,7 @@ import { people as loadPeople } from "../../api/calls/people";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Card, InboxItem } from "../../api/types/board";
+import { putCards } from "../../live/cardCache";
 import { assignable } from "../people/AssigneesProperty";
 import { PaletteFocusFor } from "../shell/palette/focus";
 import { type CardActions, cardCommands } from "./cardCommands";
@@ -37,15 +38,17 @@ export function CardFocus({
   const queryClient = useQueryClient();
   const send = useMutation({
     mutationFn: ({ change }: { change: () => Promise<unknown>; text: string }) => change(),
-    onSuccess: (_, { text }) => onNotice({ tone: "ok", text }),
-    onError: (error, { text }) =>
+    onSuccess: (answer, { text }) => {
+      putCards(queryClient, [answer]);
+      onNotice({ tone: "ok", text });
+    },
+    onError: (error, { text }) => {
+      void queryClient.invalidateQueries({ queryKey: keys.snapshot });
+      void queryClient.invalidateQueries({ queryKey: keys.cards });
       onNotice({
         tone: "error",
         text: `${text} failed: ${isApiError(error) ? error.message : "something went wrong"}`,
-      }),
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: keys.snapshot });
-      void queryClient.invalidateQueries({ queryKey: keys.cards });
+      });
     },
   });
   const { mutate } = send;

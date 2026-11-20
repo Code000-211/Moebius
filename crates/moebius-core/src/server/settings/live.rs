@@ -12,7 +12,7 @@ use serde_json::Value;
 use tokio::sync::Notify;
 
 use super::keys::{restart_keys, values, without_passwords};
-use super::{Changes, Saved, Secrets, edit, invalid, read_raw, write_atomically};
+use super::{Changes, Saved, Secrets, edit, invalid, problem, read_raw, write_atomically};
 use crate::app::{App, AppError, Result};
 use crate::blobs::redact;
 use crate::board::Engine;
@@ -145,7 +145,7 @@ impl Live {
         let edited = edit(&text, changes)?;
         let base = self.started.file.parent().unwrap_or(Path::new("."));
         Config::parse(&edited, base, &self.started.file)
-            .map_err(|e| invalid(redact(&e.to_string())))?;
+            .map_err(|e| invalid(problem(&e, &edited)))?;
         Ok((text, edited))
     }
 
@@ -188,7 +188,7 @@ impl Live {
         let edited = edit(&text, changes)?;
         let base = self.started.file.parent().unwrap_or(Path::new("."));
         let config = Config::parse(&edited, base, &self.started.file)
-            .map_err(|e| invalid(redact(&e.to_string())))?;
+            .map_err(|e| invalid(problem(&e, &edited)))?;
         let confirm = Confirm {
             unwrap_runs: confirm.unwrap_runs || changes.unwrap_runs,
             allow_unchecked: confirm.allow_unchecked || changes.allow_unchecked,
@@ -257,8 +257,7 @@ impl Live {
             ));
         }
         let base = file.parent().unwrap_or(Path::new("."));
-        let config =
-            Config::parse(&text, base, file).map_err(|e| invalid(redact(&e.to_string())))?;
+        let config = Config::parse(&text, base, file).map_err(|e| invalid(problem(&e, &text)))?;
         let dir = base.join("harness");
         let url = dir.display().to_string();
         let changes = Changes {
@@ -595,7 +594,7 @@ impl Live {
             ConfigError::LauncherLeavesAgents { .. } => {
                 invalid(self.leaves_agents(plugin, enabled, &edited))
             }
-            other => invalid(redact(&other.to_string())),
+            other => invalid(problem(&other, &edited)),
         })?;
         let unwrapped = was != Some(enabled) && {
             let before = known_plugins(app, &self.get().plugins, &after.plugins);

@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import { useLocation } from "react-router";
 import { snapshot } from "../../api/calls/board";
+import { listProjects } from "../../api/calls/projects";
 import { keys } from "../../api/keys";
 import type { Card } from "../../api/types/board";
 import { modalIsOpen } from "../../ui/lib/shortcuts";
@@ -66,7 +67,23 @@ export function NewIssueProvider({ children }: { children: ReactNode }) {
   const [chosen, setChosen] = useState<number | null>(null);
   const [said, setSaid] = useState<string | null>(null);
   const boards = data.data?.boards ?? [];
-  const here = repositoryOf(location.pathname);
+  // The Issues page filtered to one project is about that project's home repository.
+  const filtered =
+    location.pathname === "/issues"
+      ? Number(new URLSearchParams(location.search).get("project")) || null
+      : null;
+  const projects = useQuery({
+    queryKey: keys.projects,
+    queryFn: listProjects,
+    enabled: filtered !== null,
+  });
+  const project = projects.data?.find((p) => p.id === filtered);
+  const homeOfProject =
+    project === undefined
+      ? null
+      : ((project.repositories.find((r) => r.home) ?? project.repositories[0])?.id ??
+        project.files);
+  const here = repositoryOf(location.pathname) ?? homeOfProject;
 
   const open = useCallback<Open>(
     (next = {}) => {

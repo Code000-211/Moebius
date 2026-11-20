@@ -13,6 +13,7 @@ import { stopRun } from "../../api/calls/chat";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Board, Card, InboxItem } from "../../api/types/board";
+import { putCards } from "../../live/cardCache";
 import { ContextMenu, useContextMenu } from "../../ui/components/ContextMenu";
 import { useSelection } from "../../ui/lib/useSelection";
 import { SelectBox } from "../../ui/page/SelectBox";
@@ -61,13 +62,19 @@ export function useBulk({
       said: { done: string; failed: string },
     ) => {
       const results = await Promise.allSettled(cards.map(call));
-      void queryClient.invalidateQueries({ queryKey: keys.snapshot });
-      void queryClient.invalidateQueries({ queryKey: keys.cards });
+      putCards(
+        queryClient,
+        results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : [])),
+      );
       const failed = results.flatMap((result, at) =>
         result.status === "rejected" && cards[at]
           ? [{ card: cards[at], error: result.reason }]
           : [],
       );
+      if (failed.length > 0) {
+        void queryClient.invalidateQueries({ queryKey: keys.snapshot });
+        void queryClient.invalidateQueries({ queryKey: keys.cards });
+      }
       if (failed.length === 0) {
         onNotice({ tone: "ok", text: `${said.done} ${numbers(cards)}.` });
         clear();
