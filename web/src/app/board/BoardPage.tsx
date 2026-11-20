@@ -560,7 +560,6 @@ export function BoardPage() {
             <div
               data-testid="card-drawer"
               className={cn(
-<<<<<<< HEAD
                 "dock:absolute dock:inset-y-0 dock:z-10 dock:w-96 dock:overflow-hidden",
                 // A sheet (the Moebius agent) lies over the column and a strip of the page, so the drawer stands
                 // beside it: the board gives way, and the card's text is not under the sheet.
@@ -569,16 +568,6 @@ export function BoardPage() {
                   : propertiesShown
                     ? "dock:right-[var(--column-width)]"
                     : "dock:right-0 dock:rounded-r-sheet",
-=======
-                "dock:fixed dock:inset-y-1.5 dock:z-10 dock:w-96 dock:overflow-hidden",
-                // A sheet (the Moebius agent) lies over the column and a strip of the page, so the drawer stands
-                // beside it: the board gives way, and the card's text is not under the sheet.
-                sheetShown
-                  ? "dock:right-[calc(var(--sheet-width)+0.375rem)] dock:rounded-r-sheet"
-                  : propertiesShown
-                    ? "dock:right-[calc(var(--column-width)+0.375rem)]"
-                    : "dock:right-1.5 dock:rounded-r-sheet",
->>>>>>> origin/main
               )}
             >
               <Dock
