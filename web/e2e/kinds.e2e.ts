@@ -114,7 +114,7 @@ describe.skipIf(usesRealServer)("kinds of issues", () => {
     await page.goBack();
     await page.getByTestId("issues-page").waitFor();
     expect(new URL(page.url()).searchParams.get("field.Severity")).toBe("high");
-    expect(new URL(page.url()).searchParams.get("sort")).toBe("Estimate");
+    expect(new URL(page.url()).searchParams.get("sort")).toBe("asc:Estimate");
     await context.close();
   });
 });
