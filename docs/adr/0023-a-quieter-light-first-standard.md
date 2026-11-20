@@ -7,7 +7,7 @@ The standard of 0020 made the app denser and calmer than the first one, but it k
 light on the ground, a wash of the accent, a glow on the chosen card, translucent glass sheets with a 24px blur, cards
 that lift on hover, edge fades on every scroller, and a docked inspector beside the board. In use, these were the wrong
 trade. The desktop app (WebKitGTK, [0021](0021-a-desktop-app-in-tauri.md)) stutters while scrolling, and the known
-causes are exactly these: blur on large surfaces, mask images on scrollers, hover transitions and a panel that squeezes
+causes are exactly these: blur on large surfaces, mask images on scrollers, hover lift transitions and a panel that squeezes
 the board. And the screens still held more than a person needs: key boxes, hint bars, headers over lists, captions that
 repeat their value. The decisions and the mockups the user approved are in
 [`design/web-redesign/`](../design/web-redesign/DECISIONS.md).
