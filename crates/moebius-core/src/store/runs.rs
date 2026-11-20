@@ -218,6 +218,22 @@ impl Store {
             .collect())
     }
 
+    /// The runs of cards that have ended, the one that ended last first, each with the tokens it used, at most `limit`.
+    /// Trials are not among them, nor are chats (they have no card).
+    pub fn finished_card_runs(&self, limit: i64) -> Result<Vec<(Run, i64)>> {
+        self.rows(
+            "SELECT r.id, r.card_id, r.agent, r.harness, r.purpose, r.status, r.worktree, r.started_at, r.ended_at,
+                    r.summary, r.repository_id, r.harness_repository, r.origin, r.runner, r.title, r.workflow_run_id,
+                    r.owner_id, r.shared,
+                    COALESCE((SELECT SUM(u.input_tokens + u.output_tokens) FROM usage u WHERE u.run_id = r.id), 0)
+             FROM runs r
+             WHERE r.ended_at IS NOT NULL AND r.card_id IS NOT NULL AND r.purpose <> 'trial'
+             ORDER BY r.ended_at DESC, r.id DESC LIMIT ?1",
+            params![limit],
+            |r| Ok((run_from_row(r)?, r.get(18)?)),
+        )
+    }
+
     /// The runs that have not ended.
     pub fn active_runs(&self) -> Result<Vec<Run>> {
         self.runs_where("ended_at IS NULL AND ?1", 1.into())
@@ -367,6 +383,27 @@ mod tests {
         assert_eq!(on_board.len(), 1);
         assert_eq!(on_board[0].title.as_deref(), Some("Named"));
         assert_eq!(on_board[0], s.run(run.id).unwrap().unwrap());
+    }
+
+    #[test]
+    fn finished_card_runs_lists_the_ended_runs_of_cards_newest_first_with_their_tokens() {
+        let (_dir, s) = store();
+        let repo = s.add_repository("r", "/srv/r", "none", "main").unwrap();
+        let card = s.add_card(repo.id, "First", "", "leon", "Backlog").unwrap();
+        let first = s.add_run(Some(card.id), "Coder", "x", "code").unwrap();
+        s.set_run_status(first.id, "succeeded").unwrap();
+        let second = s.add_run(Some(card.id), "Reviewer", "x", "review").unwrap();
+        s.set_run_status(second.id, "failed").unwrap();
+        let _going = s.add_run(Some(card.id), "Coder", "x", "code").unwrap();
+        let trial = s.add_run(Some(card.id), "Coder", "x", "trial").unwrap();
+        s.set_run_status(trial.id, "succeeded").unwrap();
+        let chat = s.add_run(None, "Moebius", "x", "chat").unwrap();
+        s.set_run_status(chat.id, "stopped").unwrap();
+
+        let finished = s.finished_card_runs(10).unwrap();
+        let ids: Vec<i64> = finished.iter().map(|(run, _)| run.id).collect();
+        assert_eq!(ids, vec![second.id, first.id]);
+        assert_eq!(s.finished_card_runs(1).unwrap().len(), 1);
     }
 
     #[test]

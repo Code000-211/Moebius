@@ -1,5 +1,6 @@
 //! The runs: one run and its stored events, and what a person does to a run that is going on.
 //!
+//! - `GET /v1/runs/finished?limit=`: the runs of cards that have ended, the newest first, with their cards and tokens.
 //! - `GET /v1/runs/{id}`: a run. `GET /v1/runs/{id}/events?after=&before=&tail=&limit=`: its stored events, in pages.
 //! - `GET /v1/runs/{id}/diff`: what the run changed, as a unified diff.
 //! - `POST /v1/runs/{id}/steer` `{message}`: a person sends a message to a running run.
@@ -14,13 +15,14 @@ use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 
 use super::{ApiError, ApiState, Reason, blocking};
-use crate::app::AppError;
+use crate::app::{AppError, FinishedRun};
 use crate::decide::Actor;
 use crate::store::{Event, Run};
 
 /// The routes of the runs.
 pub(super) fn routes() -> Router<ApiState> {
     Router::new()
+        .route("/v1/runs/finished", get(finished_runs))
         .route("/v1/runs/pause", post(pause_runs))
         .route("/v1/runs/resume", post(resume_runs))
         .route("/v1/runs/{id}", get(get_run))
@@ -137,6 +139,28 @@ async fn stop_run(
         app.stop_run(&by, &*runs, id, &stop.reason)
     })
     .await
+}
+
+/// How many finished runs one request returns unless it asks for fewer or more.
+const DEFAULT_FINISHED: usize = 200;
+/// The most finished runs one request returns.
+const MAX_FINISHED: usize = 1000;
+
+#[derive(Debug, Deserialize)]
+struct FinishedQuery {
+    limit: Option<usize>,
+}
+
+async fn finished_runs(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    Query(query): Query<FinishedQuery>,
+) -> Result<axum::Json<Vec<FinishedRun>>, ApiError> {
+    let limit = query
+        .limit
+        .unwrap_or(DEFAULT_FINISHED)
+        .clamp(1, MAX_FINISHED);
+    blocking(&state.app, move |app| app.finished_runs(&by, limit)).await
 }
 
 async fn get_run(
@@ -659,6 +683,41 @@ mod tests {
             app.store.run(run.id).unwrap().unwrap().status == "stopped"
         })
         .await;
+    }
+
+    #[tokio::test]
+    async fn finished_runs_lists_the_ended_runs_of_cards_newest_first() {
+        let (dir, state, addr) = start().await;
+        let app = state.app.clone();
+        let repo = app
+            .add_repository("demo", origin(dir.path()).to_str().unwrap())
+            .unwrap();
+        let card = app
+            .create_issue(repo.id, "Finish me", "", OWNER_AUTHOR)
+            .unwrap();
+        let done = app
+            .store
+            .add_run(Some(card.id), "Coder", "pi-bolt", "code")
+            .unwrap();
+        app.store.set_run_status(done.id, "succeeded").unwrap();
+        let failed = app
+            .store
+            .add_run(Some(card.id), "Reviewer", "pi-bolt", "review")
+            .unwrap();
+        app.store.set_run_status(failed.id, "failed").unwrap();
+        let _going = app
+            .store
+            .add_run(Some(card.id), "Coder", "pi-bolt", "code")
+            .unwrap();
+
+        let all: Vec<FinishedRun> = get(&state, &addr, "/v1/runs/finished").await;
+        let ids: Vec<i64> = all.iter().map(|one| one.run.id).collect();
+        assert_eq!(ids, vec![failed.id, done.id]);
+        assert_eq!(all[0].card.id, card.id);
+        assert_eq!(all[0].card.title, "Finish me");
+        assert_eq!(all[0].run.status, "failed");
+        let one: Vec<FinishedRun> = get(&state, &addr, "/v1/runs/finished?limit=1").await;
+        assert_eq!(one.len(), 1);
     }
 
     #[tokio::test]

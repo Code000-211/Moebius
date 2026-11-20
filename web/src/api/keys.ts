@@ -90,6 +90,8 @@ export const keys = {
   skills: ["skills"] as const,
   /** Everything read about runs starts with this: `run_started` and `run_ended` make it stale. */
   runs: ["run"] as const,
+  /** The runs that have ended, for the Fleet's Finished tab; under `runs`, so a run that starts or ends makes it stale. */
+  finishedRuns: ["run", "finished"] as const,
   run: (id: number) => ["run", id] as const,
   /** What a run or a change changed; an event that moves a change or ends a run makes all of them stale. */
   diffs: ["diff"] as const,

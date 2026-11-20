@@ -62,3 +62,31 @@ describe.skipIf(usesRealServer)("the fleet with 500 runs", () => {
     await expect.poll(() => page.getByRole("button", { name: /^Stop/ }).count()).toBe(0);
   });
 });
+
+describe.skipIf(usesRealServer)("the Finished tab", () => {
+  it("keeps the tab in the address through a reload and lists only runs that ended", async () => {
+    await fresh();
+    await page.goto(`${server.url}/fleet`);
+    await page.getByRole("tab", { name: "Finished" }).click();
+    await page.waitForURL(/\/fleet\?tab=finished$/);
+    const rows = page.getByTestId("list-row");
+    await rows.first().waitFor();
+    // Three runs of the fake have ended (a failed, a succeeded, a stopped one); the two going on are not among them.
+    await expect.poll(() => rows.count()).toBe(3);
+    expect(await page.getByTestId("outcome-failed").count()).toBe(1);
+    expect(await page.getByTestId("outcome-succeeded").count()).toBe(1);
+    expect(await page.getByTestId("outcome-stopped").count()).toBe(1);
+    await page.getByTestId("group-row").first().getByText("Today").waitFor();
+
+    await page.reload();
+    await rows.first().waitFor();
+    expect(page.url()).toMatch(/\/fleet\?tab=finished$/);
+    expect(await page.getByRole("tab", { name: "Finished" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    await expect.poll(() => rows.count()).toBe(3);
+
+    await page.getByRole("tab", { name: "Active" }).click();
+    await page.waitForURL(/\/fleet$/);
+  });
+});

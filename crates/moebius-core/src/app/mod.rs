@@ -93,6 +93,7 @@ pub(crate) use issues::now_millis;
 pub use issues::{Child, IssueQuery, IssueView, Links, Similar, state_of};
 pub use planning::{Compared, EstimateProposal};
 pub use reproduce::{Reproduction, TestRun, parse as parse_reproduction};
+pub use runs::{FinishedCard, FinishedRun};
 pub use whereabouts::{ClientInfo, OFFICIAL_REPOSITORY, ServerInfo};
 
 /// The columns of the default workflow (spec 6).

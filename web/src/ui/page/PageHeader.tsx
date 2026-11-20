@@ -41,7 +41,11 @@ export function PageHeader({
           {title}
         </h1>
       </div>
-      {tabs && <div className="flex h-full min-w-0 items-end">{tabs}</div>}
+      {tabs && (
+        <div className="-mb-1 flex min-w-0 self-stretch [&>[role=tablist]]:items-stretch [&_[role=tab]]:h-full [&_[role=tab]]:pb-1">
+          {tabs}
+        </div>
+      )}
       {actions && (
         <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2">
           {actions}

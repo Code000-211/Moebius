@@ -230,6 +230,7 @@ any route to any role that is not what its row says.
 | `GET /v1/changes/{id}/diff` | viewer | yes |
 | `POST /v1/runs/pause` | member | no |
 | `POST /v1/runs/resume` | member | no |
+| `GET /v1/runs/finished` | viewer | yes |
 | `GET /v1/runs/{id}` | viewer | yes |
 | `GET /v1/runs/{id}/events` | viewer | yes |
 | `GET /v1/runs/{id}/diff` | viewer | yes |
@@ -2281,6 +2282,15 @@ without a merge.`; the closed change stays closed and the next publish opens a n
 Request: `{"reason": "..."}`; `reason` is optional, but send `{}` without one.
 
 Response: the `Card`. Errors: `404` no such card; `422` the card has neither an open `stuck` nor an open `change_closed` inbox item.
+
+### `GET /v1/runs/finished`
+
+The runs of cards that have ended (`succeeded`, `failed` or `stopped`), the one that ended last first: what the Fleet's
+Finished tab lists. Chats and trials are not among them, nor are the runs of cards of a project the caller may not see.
+Query: `limit` (default 200, at most 1000, at least 1). Response: an array of `{"run": Run, "card": {"id", "repository_id",
+"number", "project_key", "project_number", "title"}, "tokens": number}`, where `tokens` is what the run used, input and
+output together (0 when none was recorded). The card's key is built as in [column scripts](column-scripts.md) from
+`project_key` and `project_number`, or `#<number>` when the key is empty.
 
 ### `GET /v1/runs/{id}`
 
