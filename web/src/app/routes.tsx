@@ -51,6 +51,7 @@ const TokensPage = lazy(() =>
 const PluginSettingsPage = lazy(() =>
   import("./plugins/PluginSettingsPage").then((all) => ({ default: all.PluginSettingsPage })),
 );
+const MorePage = lazy(() => import("./more/MorePage").then((all) => ({ default: all.MorePage })));
 const PortsPage = lazy(() =>
   import("./ports/PortsPage").then((all) => ({ default: all.PortsPage })),
 );
@@ -139,6 +140,7 @@ const PAGES_BUILT = new Set([
   "kinds",
   "tokens",
   "wiki",
+  "more",
 ]);
 
 /** Settings: one layout route around every page `settingsEntries.ts` registers, each at the path it always had. */
@@ -190,6 +192,7 @@ export const routes = [
       { path: "chat", element: <ChatPage /> },
       { path: "terminal", element: <TerminalPage /> },
       { path: "ports", element: <PortsPage /> },
+      { path: "more", element: <MorePage /> },
       { path: "automations", element: <AutomationsPage /> },
       { path: "experiments", element: <ExperimentsPage /> },
       { path: "decision-model", element: <DecisionModelPage /> },
