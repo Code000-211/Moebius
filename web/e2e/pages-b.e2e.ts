@@ -415,6 +415,9 @@ describe("the Skills page", () => {
       await page.getByRole("heading", { name: "Notes", exact: true }).waitFor();
       await windowSave().click();
       // Back in the skill, the drawing stays picked.
+      await page
+        .getByRole("dialog", { name: "house-style · notes/readme.md" })
+        .waitFor({ state: "detached" });
       await editor().getByRole("tab", { name: "Rendered" }).waitFor();
       expect(await page.getByRole("tab", { name: "Rendered" }).getAttribute("aria-selected")).toBe(
         "true",

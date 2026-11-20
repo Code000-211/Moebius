@@ -122,14 +122,14 @@ export function SkillEditor({
       onClose={onClose}
     >
       {naming && (
-        <Field label="Name of the new skill" hint="Letters, digits, - and _.">
+        <Field label="Name of the new skill">
           {(id) => (
             <Input
               id={id}
               mono
               autoFocus
               value={name}
-              placeholder="name-of-the-skill"
+              placeholder="pdf"
               onChange={(event) => {
                 setName(event.target.value);
                 setError(null);
@@ -156,7 +156,7 @@ export function SkillEditor({
           <p className="m-0 text-base text-secondary">{description}</p>
         </div>
       ) : (
-        <Field label="Description" hint="One line an agent reads to decide when the skill applies.">
+        <Field label="Description">
           {(id) => (
             <Input
               id={id}
@@ -186,7 +186,7 @@ export function SkillEditor({
         </div>
       )}
       <div className="flex min-w-0 flex-col gap-2">
-        <span className="text-sm font-semibold text-secondary">SKILL.md</span>
+        <span className="font-mono text-sm font-semibold text-secondary">SKILL.md</span>
         <MarkdownBody
           label="SKILL.md"
           text={text}
@@ -201,35 +201,33 @@ export function SkillEditor({
           }}
         />
       </div>
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-sm font-semibold text-secondary">Files</span>
-          {!builtIn && exists ? (
-            <Button variant="secondary" size="sm" onClick={() => setFile("")}>
-              New file
-            </Button>
-          ) : (
-            <span className="text-sm text-secondary">
-              {builtIn ? "Read only" : "Save the skill to add files"}
-            </span>
-          )}
+      {(files.length > 0 || (!builtIn && exists)) && (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-semibold text-secondary">Files</span>
+            {!builtIn && exists && (
+              <Button variant="secondary" size="sm" onClick={() => setFile("")}>
+                New file
+              </Button>
+            )}
+          </div>
+          {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely */}
+          <ul role="list" className="m-0 flex list-none flex-col gap-1 p-0">
+            {files.map((path) => (
+              <li key={path}>
+                <button
+                  type="button"
+                  onClick={() => setFile(path)}
+                  className="flex min-h-8 w-full cursor-pointer items-center gap-3 rounded-control px-3 text-left font-mono text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
+                >
+                  <FileIcon className="size-4 shrink-0 text-secondary" />
+                  <span className="min-w-0 break-all">{path}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
-        {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely */}
-        <ul role="list" className="m-0 flex list-none flex-col gap-1 p-0">
-          {files.map((path) => (
-            <li key={path}>
-              <button
-                type="button"
-                onClick={() => setFile(path)}
-                className="flex min-h-8 w-full cursor-pointer items-center gap-3 rounded-control px-3 text-left font-mono text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
-              >
-                <FileIcon className="size-4 shrink-0 text-secondary" />
-                <span className="min-w-0 break-all">{path}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
+      )}
       <ConfirmDelete
         open={deleting}
         onOpenChange={setDeleting}

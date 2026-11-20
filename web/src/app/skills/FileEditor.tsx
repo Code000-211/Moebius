@@ -155,6 +155,7 @@ export function FileEditor({
         <TextArea
           rows={10}
           aria-label="File text"
+          className="font-mono text-sm"
           value={text}
           readOnly={builtIn}
           placeholder="The file's text."
