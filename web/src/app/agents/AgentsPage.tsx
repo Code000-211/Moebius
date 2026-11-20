@@ -1,15 +1,13 @@
 /**
- * The Agents page: the agents the server can run and the editor of the one chosen (`AgentEditor`). The chosen agent is
- * in the address (`?agent=`, or `?new=1` for a new one), so a reload and a link keep it. A server without a harness
+ * The Agents page: the agents the server can run as one list of 36px rows (the name, what it runs on, and at the right
+ * a word where something is wrong), and the editor of the one chosen in the editor window (`AgentEditor`,
+ * `ui/components/EditorWindow.tsx`). The chosen agent is in the address (`?agent=`, or `?new=1` for a new one), so a
+ * reload and a link keep it open; closing the window takes it out of the address. A server without a harness
  * configuration repository keeps its agents in `moebius.toml`: the page then reads the agent from the settings and
  * offers to set the repository up.
- *
- * The page fills the window and each column scrolls on its own: an agent's instructions are read on their own, and the
- * list of agents should stay where it was left.
  */
 import { PlusIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { agents as readAgents } from "../../api/calls/chat";
 import {
@@ -24,41 +22,76 @@ import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Agent } from "../../api/types/chat";
 import type { AgentDetail } from "../../api/types/harness";
-import type { TagTone } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
+import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
-import { chosenOrFirst, ListCard, ListDetail } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard, SkeletonList } from "../../ui/page/Skeleton";
 import { useDrafts } from "../harness/form";
 import { HarnessSetup } from "../harness/HarnessSetup";
-import { AgentEditor, type Saved } from "./AgentEditor";
+import { AgentEditor } from "./AgentEditor";
 import { type AgentForm, blankForm, copyable, formOf, fromFile } from "./model";
-import { NewAgentChoice, NewAgentEditor } from "./NewAgent";
+import { AgentWait, NewAgentChoice, NewAgentEditor } from "./NewAgent";
 
 const harnessName = (harness: string) =>
   harness === "pi-bolt" ? "Pi-Bolt" : harness === "claude-code" ? "Claude Code" : harness;
 
-function cardLine(agent: Agent): string {
+function rowLine(agent: Agent): string {
   if (agent.error) return agent.error;
   if (agent.model === "") return "Needs a model";
   const base = `${agent.model} · ${agent.protocol}`;
   return agent.harness === "claude-code" ? `${base} · ${harnessName(agent.harness)}` : base;
 }
 
-function cardTags(agent: Agent): Array<{ label: string; tone: TagTone }> {
-  const tags: Array<{ label: string; tone: TagTone }> = [];
-  if (agent.built_in) tags.push({ label: "Built in", tone: "plain" });
-  if (agent.error) tags.push({ label: "Broken", tone: "error" });
-  else if (agent.model === "") tags.push({ label: "Needs a model", tone: "attention" });
-  return tags;
+/** The one word at the right of a row: what is wrong with the agent, or that it is built in. */
+function rowState(agent: Agent): { text: string; className: string } | null {
+  if (agent.error) return { text: "Broken", className: "text-error-text" };
+  if (agent.model === "") return { text: "Needs a model", className: "text-attention-text" };
+  if (agent.built_in) return { text: "Built in", className: "text-muted" };
+  return null;
+}
+
+/** One agent as a row of 36px that opens it; without `onOpen` (no harness configuration to edit in) it is read only. */
+function AgentRow({ agent, onOpen }: { agent: Agent; onOpen?: () => void }) {
+  const state = rowState(agent);
+  const body = (
+    <>
+      <span className="shrink-0 truncate font-medium" style={{ maxWidth: "14rem" }}>
+        {agent.name}
+      </span>
+      <span
+        className={cn("min-w-0 flex-1 truncate", agent.error ? "text-error-text" : "text-muted")}
+      >
+        {rowLine(agent)}
+      </span>
+      {state && (
+        <span className={cn("ml-auto shrink-0 text-xs", state.className)}>{state.text}</span>
+      )}
+    </>
+  );
+  const row =
+    "flex h-9 w-full items-center gap-2.5 border-b border-hairline px-4 text-left text-base text-text";
+  return onOpen ? (
+    <button
+      type="button"
+      data-testid="agent-row"
+      aria-label={`Edit agent ${agent.name}`}
+      onClick={onOpen}
+      className={cn(row, "cursor-pointer hover:bg-row-hover")}
+    >
+      {body}
+    </button>
+  ) : (
+    <div data-testid="agent-row" className={row}>
+      {body}
+    </div>
+  );
 }
 
 export function AgentsPage() {
   const [params, setParams] = useSearchParams();
-  const [saved, setSaved] = useState<Saved | null>(null);
-  // What was typed for each agent, held while the page lives, so choosing another row keeps the draft.
+  // What was typed for each agent, held while the page lives, so a window that reopens on it keeps the draft.
   const drafts = useDrafts<AgentForm | null>();
   const newDraft = { hold: drafts.hold(NEW), drop: () => drafts.drop(NEW) };
   const agents = useQuery({ queryKey: keys.agents, queryFn: readAgents });
@@ -87,6 +120,8 @@ export function AgentsPage() {
       },
       { replace: true },
     );
+  const open = (name: string) => select({ agent: name, new: null, from: null, blank: null });
+  const close = () => select({ agent: null, new: null, from: null, blank: null });
 
   // A server with a harness configuration repository always lists the built-in skills, so none means agents are kept
   // in the tables of moebius.toml.
@@ -96,20 +131,18 @@ export function AgentsPage() {
   // Why the button that adds an agent is quiet, printed beside it so that a keyboard and a screen reader reach it:
   // a `disabled` button is out of the tab order and a tooltip does not go there. When the agents are kept in
   // moebius.toml the box above the list already says what to do, and adding one there is allowed.
-  // The first agent is opened rather than an empty pane beside a list that has one in it; a list that cannot be
-  // opened yet chooses nothing.
-  const picked = chosenOrFirst(
-    chosen,
-    creating,
-    editable ? (agents.data?.map((agent) => agent.name) ?? []) : [],
-  );
   const whyQuiet =
     !editable && skills.isError
       ? "The harness configuration could not be read, so no agent can be added yet."
       : undefined;
-  const startNew = () => {
-    setSaved(null);
-    select({ new: "1", agent: null, from: null, blank: null });
+  const startNew = () => select({ new: "1", agent: null, from: null, blank: null });
+  const shared = {
+    inFile,
+    skills: skills.isError ? null : (skills.data ?? []),
+    mcp: mcp.isError ? null : (mcp.data ?? []),
+    runners: runners.data ?? [],
+    available: available.data,
+    onClose: close,
   };
 
   return (
@@ -155,118 +188,75 @@ export function AgentsPage() {
           </Notice>
         </div>
       )}
-      <ListDetail
-        list={
-          agents.isPending ? (
-            <SkeletonList rows={4} message="Reading the agents" />
-          ) : agents.isError ? (
-            <Notice
-              tone="error"
-              action={
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={agents.isFetching}
-                  onClick={() => void agents.refetch()}
-                >
-                  Try again
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {agents.isPending ? (
+          <SkeletonList rows={4} message="Reading the agents" />
+        ) : agents.isError ? (
+          <Notice
+            tone="error"
+            action={
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={agents.isFetching}
+                onClick={() => void agents.refetch()}
+              >
+                Try again
+              </Button>
+            }
+          >
+            {sayError(agents.error, "Could not read the agents. Try again.")}
+          </Notice>
+        ) : none ? (
+          <Empty
+            title="No agents yet"
+            body="An agent is what a run works with: its model, its instructions, the skills it reads. Create one to give the coder something to start from."
+            action={
+              editable ? (
+                <Button size="sm" onClick={startNew}>
+                  <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
+                  New agent
                 </Button>
-              }
-            >
-              {sayError(agents.error, "Could not read the agents. Try again.")}
-            </Notice>
-          ) : (
-            agents.data.map((agent) => (
-              <ListCard
-                key={agent.name}
-                title={agent.name}
-                tags={cardTags(agent)}
-                line={cardLine(agent)}
-                alert={agent.error !== undefined}
-                selected={editable && !creating && picked === agent.name}
-                onClick={
-                  editable
-                    ? () => {
-                        setSaved(null);
-                        select({ agent: agent.name, new: null, from: null, blank: null });
-                      }
-                    : undefined
-                }
-              />
-            ))
-          )
-        }
-        detail={
-          creating && !startsBlank && startsFrom === null ? (
-            <NewAgentChoice
-              key="choice"
-              agents={copyable(agents.data ?? [])}
-              onBlank={() => select({ blank: "1" })}
-              onFrom={(name) => select({ from: name })}
+              ) : undefined
+            }
+          />
+        ) : (
+          agents.data.map((agent) => (
+            <AgentRow
+              key={agent.name}
+              agent={agent}
+              onOpen={editable ? () => open(agent.name) : undefined}
             />
-          ) : creating ? (
-            <NewAgentEditor
-              key={`new-${startsFrom ?? ""}`}
-              from={startsBlank ? null : startsFrom}
-              agents={agents.data ?? []}
-              draft={drafts.take(NEW, () => null)}
-              drafts={newDraft}
-              inFile={inFile}
-              skills={skills.isError ? null : (skills.data ?? [])}
-              mcp={mcp.isError ? null : (mcp.data ?? [])}
-              runners={runners.data ?? []}
-              available={available.data}
-              saved={saved}
-              onSaved={setSaved}
-              onNamed={(name) => {
-                drafts.drop(NEW);
-                select({ agent: name, new: null, from: null, blank: null });
-              }}
-              onDeleted={() => {
-                drafts.drop(NEW);
-                select({ agent: null, new: null, from: null, blank: null });
-              }}
-            />
-          ) : picked !== null && editable ? (
-            <ChosenAgent
-              key={picked}
-              name={picked}
-              draft={drafts.take(picked, () => null)}
-              drafts={{ hold: drafts.hold(picked), drop: () => drafts.drop(picked) }}
-              builtIn={
-                agents.data?.some((agent) => agent.name === picked && agent.built_in) ?? false
-              }
-              inFile={inFile}
-              skills={skills.isError ? null : (skills.data ?? [])}
-              mcp={mcp.isError ? null : (mcp.data ?? [])}
-              runners={runners.data ?? []}
-              available={available.data}
-              saved={saved}
-              onSaved={setSaved}
-              onNamed={(name) => select({ agent: name, new: null, from: null, blank: null })}
-              onDeleted={() => select({ agent: null, new: null, from: null, blank: null })}
-            />
-          ) : none ? (
-            <Empty
-              title="No agents yet"
-              body="An agent is what a run works with: its model, its instructions, the skills it reads. Create one to give the coder something to start from."
-              action={
-                editable ? (
-                  <Button size="sm" onClick={startNew}>
-                    <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
-                    New agent
-                  </Button>
-                ) : undefined
-              }
-            />
-          ) : (
-            <Empty
-              title="Nothing chosen"
-              body="Pick an agent on the left to change its model, its instructions and the skills it reads."
-            />
-          )
-        }
-      />
+          ))
+        )}
+      </div>
+      {creating && !startsBlank && startsFrom === null ? (
+        <NewAgentChoice
+          key="choice"
+          agents={copyable(agents.data ?? [])}
+          onBlank={() => select({ blank: "1" })}
+          onFrom={(name) => select({ from: name })}
+          onClose={close}
+        />
+      ) : creating ? (
+        <NewAgentEditor
+          key={`new-${startsFrom ?? ""}`}
+          from={startsBlank ? null : startsFrom}
+          agents={agents.data ?? []}
+          draft={drafts.take(NEW, () => null)}
+          drafts={newDraft}
+          {...shared}
+        />
+      ) : chosen !== null && editable ? (
+        <ChosenAgent
+          key={chosen}
+          name={chosen}
+          draft={drafts.take(chosen, () => null)}
+          drafts={{ hold: drafts.hold(chosen), drop: () => drafts.drop(chosen) }}
+          builtIn={agents.data?.some((agent) => agent.name === chosen && agent.built_in) ?? false}
+          {...shared}
+        />
+      ) : null}
     </div>
   );
 }
@@ -300,13 +290,13 @@ function ChosenAgent({
   let broken: string | undefined;
   if (shared.inFile) {
     if (settings.isPending || (builtIn && detail.isPending))
-      return <SkeletonCard lines={4} message="Reading the agent" />;
+      return <Reading name={name} onClose={shared.onClose} />;
     if (settings.isError)
       return <Broken name={name} message={settings.error.message} {...shared} />;
     opened = fromFile(name, settings.data) ?? { name };
     if (detail.data?.built_in) opened = { ...opened, built_in: detail.data.built_in };
   } else {
-    if (detail.isPending) return <SkeletonCard lines={4} message="Reading the agent" />;
+    if (detail.isPending) return <Reading name={name} onClose={shared.onClose} />;
     if (detail.isError) {
       // The Moebius agent is there without files; saving it makes them.
       if (builtIn && isApiError(detail.error) && detail.error.status === 404) opened = { name };
@@ -323,4 +313,12 @@ function ChosenAgent({
 function Broken({ name, message, ...shared }: Shared & { name: string; message: string }) {
   const stored = { ...blankForm(name), exists: true };
   return <AgentEditor {...shared} initial={stored} stored={stored} broken={message} />;
+}
+
+function Reading({ name, onClose }: { name: string; onClose: () => void }) {
+  return (
+    <AgentWait title={`Edit agent ${name}`} onClose={onClose}>
+      <SkeletonCard lines={4} message="Reading the agent" />
+    </AgentWait>
+  );
 }

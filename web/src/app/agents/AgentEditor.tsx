@@ -1,13 +1,15 @@
 /**
- * The editor of one agent (the former desktop app's A1 Bento workbench): the head with Save and Delete, the settings row, the
- * instructions (written, or asked of the Moebius agent), what a built-in agent brings itself, and the skills, MCP
- * servers and extensions the agent is given (Browse Pi packages opens the package sheet on the pi.dev catalog, for this
- * agent). A save is `PUT /v1/agents/{name}`, a commit in the harness configuration
- * repository; a server without one keeps its agents in `moebius.toml`, where the same editor saves
- * `agents.<name>` with `PUT /v1/settings` and has paths in place of the repository's skills and MCP servers.
+ * The editor of one agent, in the editor window (`EditorWindow`, the one the rules open in): the name while a new agent
+ * is named, the settings, the instructions (written, or asked of the Moebius agent), what a built-in agent brings
+ * itself, and the skills, MCP servers and extensions the agent is given, in one column. Save and Cancel are the
+ * window's; Delete (which asks first) is at the left of the foot. Closing with a change asks before it drops it, and
+ * what is typed is held with the page (`drafts`) while the window is open. A save is `PUT /v1/agents/{name}`, a commit in
+ * the harness configuration repository, and is told by a toast; a server without one keeps its agents in
+ * `moebius.toml`, where the same editor saves `agents.<name>` with `PUT /v1/settings` and has paths in place of the
+ * repository's skills and MCP servers. A refusal stays in the window, beside the buttons.
  *
- * The instructions box is `AgentInstructions.tsx`, the right column of skills, servers and extensions `AgentFiles.tsx`,
- * and `AgentParts.tsx` the rows and path lists they share.
+ * The instructions box is `AgentInstructions.tsx`, the skills, servers and extensions `AgentFiles.tsx`, and
+ * `AgentParts.tsx` the rows and path lists they share.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
@@ -16,13 +18,16 @@ import { availableModels, saveSettings } from "../../api/calls/models";
 import { keys } from "../../api/keys";
 import { type Agent, type AvailableModels, listedModel, offeredLevels } from "../../api/types/chat";
 import type { AgentDetail, McpServer, Runner, SkillListed } from "../../api/types/harness";
+import { Button } from "../../ui/components/Button";
+import { EditorWindow } from "../../ui/components/EditorWindow";
 import { Input } from "../../ui/components/Input";
 import { Box } from "../../ui/page/Box";
 import { Chip } from "../../ui/page/Chip";
+import { ConfirmDelete } from "../../ui/page/ConfirmDelete";
 import { Field, Select } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
-import { PropertyFields } from "../../ui/page/Properties";
-import { ActionRow, Committed, EditorHead, useDraft } from "../harness/form";
+import { useToast } from "../../ui/page/Toast";
+import { useDraft } from "../harness/form";
 import { ModelField, ModelNote } from "../harness/ModelField";
 import { AgentFiles } from "./AgentFiles";
 import { AgentInstructions } from "./AgentInstructions";
@@ -41,15 +46,12 @@ import {
   toggle,
 } from "./model";
 
-/** What the page says of the last save: the commit it made (none when nothing changed), or that moebius.toml was written. */
-export type Saved = { name: string; commit: string | null } | { name: string; written: true };
-
 export interface EditorProps {
   initial: AgentForm;
   /** What the server has for this agent, so Save can say whether anything waits for it even when the editor
    * reopened on a draft, which is not what the file holds. */
   stored: AgentForm;
-  /** Where the page keeps what is typed here, so choosing another row does not lose it. */
+  /** Where the page keeps what is typed here while the window is open. */
   drafts?: { hold: (form: AgentForm) => void; drop: () => void };
   /** Why the agent's files cannot be read; the agent can then only be deleted. */
   broken?: string;
@@ -60,32 +62,42 @@ export interface EditorProps {
   mcp: McpServer[] | null;
   runners: Runner[];
   available: AvailableModels | undefined;
-  saved: Saved | null;
-  onSaved: (saved: Saved | null) => void;
-  /** The agent is saved (under this name) or deleted. */
-  onNamed: (name: string) => void;
-  onDeleted: () => void;
+  /** The window closes: after a save or a delete, or when the change is dropped or there is none. */
+  onClose: () => void;
+}
+
+/** What a toast says of a save: the commit it made (none when nothing changed), or that moebius.toml was written. */
+function said(commit: string | null | undefined, written: boolean): string {
+  if (written) return "Saved in moebius.toml.";
+  return commit
+    ? `Saved as commit ${commit}.`
+    : "Saved. It changed nothing, so there is no commit.";
 }
 
 export function AgentEditor(props: EditorProps) {
-  const { inFile, skills, mcp, runners, available, saved, onSaved } = props;
+  const { inFile, skills, mcp, runners, available } = props;
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [form, setForm] = useState<AgentForm>(props.initial);
   // What the server has, so that Save says whether it has anything to send even when the editor reopened on a draft.
-  const [baseline, setBaseline] = useState<AgentForm>(props.stored);
+  const [baseline] = useState<AgentForm>(props.stored);
   const [problem, setProblem] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   // Whether the last ask of the upstreams answered with nothing wrong; it says nothing before the button is pressed.
   const [answered, setAnswered] = useState(false);
   const now = useRef(form);
   now.current = form;
   const dirty = JSON.stringify(form) !== JSON.stringify(baseline);
-  // What is typed here stays with the page, so moving along the list and back does not lose it.
+  // What is typed here stays with the page while the window is open.
   useDraft(form, dirty, props.drafts);
   const change = (patch: Partial<AgentForm>) => {
     setForm((held) => ({ ...held, ...patch }));
     setProblem(null);
-    onSaved(null);
+  };
+  const close = () => {
+    props.drafts?.drop();
+    props.onClose();
   };
 
   const refresh = async () => {
@@ -101,7 +113,7 @@ export function AgentEditor(props: EditorProps) {
   };
 
   const save = useMutation({
-    mutationFn: async (): Promise<Saved> => {
+    mutationFn: async (): Promise<string> => {
       const request = agentRequest(form);
       if (typeof request === "string") throw new Error(request);
       const { name, settings, instructions } = request;
@@ -114,42 +126,32 @@ export function AgentEditor(props: EditorProps) {
       }
       if (inFile) {
         await saveSettings({ [`agents.${name}`]: fileTable(settings, instructions) }, []);
-        return { name, written: true };
+        return said(null, true);
       }
       const detail: AgentDetail = await saveAgent(name, settings, instructions);
-      return { name, commit: detail.commit ?? null };
+      return said(detail.commit, false);
     },
-    onSuccess: async (result) => {
-      const next = { ...now.current, name: result.name, naming: false, exists: true };
-      setForm(next);
-      setBaseline(next);
-      setProblem(null);
-      onSaved(result);
+    onSuccess: async (text) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: keys.agents }),
-        queryClient.invalidateQueries({ queryKey: keys.agent(result.name) }),
+        queryClient.invalidateQueries({ queryKey: keys.agent(form.name.trim()) }),
         queryClient.invalidateQueries({ queryKey: keys.settings }),
         queryClient.invalidateQueries({ queryKey: keys.modelsInUse }),
       ]);
-      props.onNamed(result.name);
+      toast({ kind: "confirmation", text });
+      close();
     },
     onError: (error) => setProblem(error.message),
   });
-  const remove = useMutation({
-    mutationFn: async () => {
-      if (inFile) await saveSettings({}, [`agents.${form.name}`]);
-      else await deleteAgent(form.name);
-    },
-    onSuccess: async () => {
-      props.drafts?.drop();
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: keys.agents }),
-        queryClient.invalidateQueries({ queryKey: keys.settings }),
-      ]);
-      props.onDeleted();
-    },
-    onError: (error) => setProblem(error.message),
-  });
+  const remove = async () => {
+    if (inFile) await saveSettings({}, [`agents.${form.name}`]);
+    else await deleteAgent(form.name);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: keys.agents }),
+      queryClient.invalidateQueries({ queryKey: keys.settings }),
+    ]);
+    close();
+  };
   const choices = modelChoices(available);
   const builtIn = form.builtIn;
   const engineering = engineeringOf(form);
@@ -157,50 +159,50 @@ export function AgentEditor(props: EditorProps) {
   if (form.thinking !== null && !levels.includes(form.thinking)) levels.push(form.thinking);
   const places = [THIS_SERVER, ...runners.map((runner) => runner.name)];
   if (form.runner !== null && !places.includes(form.runner)) places.push(form.runner);
-  const showSaved = saved && saved.name === form.name;
+  const broken = props.broken !== undefined;
 
-  const head = (
-    <Box className="flex flex-col gap-4">
-      <EditorHead
-        name={form.name}
-        naming={form.naming}
-        exists={form.exists}
-        deleteLabel="Delete agent"
-        namePlaceholder="Name of the new agent"
-        onName={(name) => change({ name })}
-        saving={save.isPending}
-        canSave={props.broken === undefined}
-        dirty={dirty}
-        saveHint={props.broken === undefined ? undefined : "Its files cannot be read"}
-        onSave={() => save.mutate()}
-        onDelete={() => remove.mutate()}
-        deleting={remove.isPending}
-        readOnly={
-          props.broken === undefined ? undefined : (
-            <ActionRow
-              exists
-              deleteLabel="Delete agent"
-              name={form.name}
-              saving={false}
-              canSave={false}
-              saveHint="Its files cannot be read"
-              onSave={() => {}}
-              onDelete={() => remove.mutate()}
-              deleting={remove.isPending}
-            />
-          )
-        }
-      />
-      {props.broken !== undefined ? (
+  return (
+    <EditorWindow
+      open
+      title={form.naming ? "New agent" : `Edit agent ${form.name}`}
+      dirty={dirty}
+      saving={save.isPending}
+      canSave={!broken}
+      error={problem}
+      actions={
+        form.exists && (
+          <Button variant="danger" size="sm" onClick={() => setDeleting(true)}>
+            Delete agent
+          </Button>
+        )
+      }
+      onSave={() => save.mutate()}
+      onClose={close}
+    >
+      {broken ? (
         <>
           <Notice tone="error">{props.broken}</Notice>
-          <p className="m-0 max-w-prose text-base text-secondary">
+          <p className="m-0 text-base text-secondary">
             Its files cannot be read, so it cannot run. Fix them in the repository or delete the
             agent.
           </p>
         </>
       ) : (
-        <PropertyFields label={`Properties of ${form.name || "the new agent"}`}>
+        <>
+          {form.naming && (
+            <Field label="Name of the new agent" hint="Letters, digits, - and _.">
+              {(id) => (
+                <Input
+                  id={id}
+                  mono
+                  autoFocus
+                  value={form.name}
+                  placeholder="Name of the new agent"
+                  onChange={(event) => change({ name: event.target.value })}
+                />
+              )}
+            </Field>
+          )}
           <Field label="Model">
             {(id) => (
               <ModelField
@@ -220,48 +222,52 @@ export function AgentEditor(props: EditorProps) {
               />
             )}
           </Field>
-          <Field label="Protocol">
-            {(id) => (
-              <Select
-                id={id}
-                options={[...PROTOCOLS]}
-                value={form.protocol}
-                onChange={(protocol) => change({ protocol })}
-              />
-            )}
-          </Field>
-          <Field label="Harness">
-            {(id) => (
-              <Select
-                id={id}
-                options={[...HARNESSES]}
-                value={form.harness}
-                onChange={(harness) => change({ harness })}
-              />
-            )}
-          </Field>
-          {(runners.length > 0 || form.runner !== null) && (
-            <Field label="Runner">
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Protocol">
               {(id) => (
                 <Select
                   id={id}
-                  options={places}
-                  value={form.runner ?? THIS_SERVER}
-                  onChange={(runner) => change({ runner: runner === THIS_SERVER ? null : runner })}
+                  options={[...PROTOCOLS]}
+                  value={form.protocol}
+                  onChange={(protocol) => change({ protocol })}
                 />
               )}
             </Field>
-          )}
-          <Field label="Thinking">
-            {(id) => (
-              <Select
-                id={id}
-                options={levels}
-                value={form.thinking ?? NOT_SET}
-                onChange={(level) => change({ thinking: level === NOT_SET ? null : level })}
-              />
+            <Field label="Harness">
+              {(id) => (
+                <Select
+                  id={id}
+                  options={[...HARNESSES]}
+                  value={form.harness}
+                  onChange={(harness) => change({ harness })}
+                />
+              )}
+            </Field>
+            {(runners.length > 0 || form.runner !== null) && (
+              <Field label="Runner">
+                {(id) => (
+                  <Select
+                    id={id}
+                    options={places}
+                    value={form.runner ?? THIS_SERVER}
+                    onChange={(runner) =>
+                      change({ runner: runner === THIS_SERVER ? null : runner })
+                    }
+                  />
+                )}
+              </Field>
             )}
-          </Field>
+            <Field label="Thinking">
+              {(id) => (
+                <Select
+                  id={id}
+                  options={levels}
+                  value={form.thinking ?? NOT_SET}
+                  onChange={(level) => change({ thinking: level === NOT_SET ? null : level })}
+                />
+              )}
+            </Field>
+          </div>
           <Field label="Token budget per card">
             {(id) => (
               <Input
@@ -279,26 +285,7 @@ export function AgentEditor(props: EditorProps) {
             refreshing={refreshing}
             answered={answered}
           />
-        </PropertyFields>
-      )}
-      {problem && <Notice tone="error">{problem}</Notice>}
-      {showSaved &&
-        ("written" in saved ? (
-          <Notice tone="ok">Saved in moebius.toml.</Notice>
-        ) : (
-          <Committed commit={saved.commit} />
-        ))}
-    </Box>
-  );
-  if (props.broken !== undefined) return <div className="flex flex-col gap-8">{head}</div>;
-
-  const instructions = <AgentInstructions form={form} onChange={change} onProblem={setProblem} />;
-
-  return (
-    <div className="flex flex-col gap-8">
-      {head}
-      <div className="grid items-start gap-8 xl:grid-cols-2">
-        <div className="flex min-w-0 flex-col gap-8">
+          <AgentInstructions form={form} onChange={change} onProblem={setProblem} />
           {builtIn && (
             <>
               <Box title="Built-in instructions" aside="Read only" className="flex flex-col gap-4">
@@ -345,10 +332,18 @@ export function AgentEditor(props: EditorProps) {
               />
             ))}
           </Box>
-          {instructions}
-        </div>
-        <AgentFiles form={form} change={change} inFile={inFile} skills={skills} mcp={mcp} />
-      </div>
-    </div>
+          <AgentFiles form={form} change={change} inFile={inFile} skills={skills} mcp={mcp} />
+        </>
+      )}
+      <ConfirmDelete
+        open={deleting}
+        onOpenChange={setDeleting}
+        title="Delete this agent?"
+        confirmLabel="Delete agent"
+        onConfirm={remove}
+      >
+        The agent {form.name} and its files are removed.
+      </ConfirmDelete>
+    </EditorWindow>
   );
 }

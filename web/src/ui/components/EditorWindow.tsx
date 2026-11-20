@@ -79,7 +79,7 @@ export function EditorWindow({
           </DialogTitle>
           <IconButton icon={XIcon} aria-label="Close" onClick={close} />
         </DialogHeader>
-        <div className="flex min-w-0 flex-col gap-4 p-6">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-6">
           {description ? (
             <DialogDescription>{description}</DialogDescription>
           ) : (
@@ -96,7 +96,7 @@ export function EditorWindow({
           <div
             role="alertdialog"
             aria-label="Discard changes?"
-            className="flex flex-col gap-3 border-t border-hairline px-6 py-4"
+            className="flex shrink-0 flex-col gap-3 border-t border-hairline px-6 py-4"
           >
             <p className="m-0 text-base text-text">Discard changes? What you typed is lost.</p>
             <DialogFooter>
@@ -109,7 +109,7 @@ export function EditorWindow({
             </DialogFooter>
           </div>
         ) : (
-          <DialogFooter className="items-center border-t border-hairline px-6 py-3">
+          <DialogFooter className="shrink-0 items-center border-t border-hairline px-6 py-3">
             {actions && <div className="flex gap-2 sm:mr-auto">{actions}</div>}
             <Button variant="secondary" size="sm" disabled={saving} onClick={close}>
               Cancel

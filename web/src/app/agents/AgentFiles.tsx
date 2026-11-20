@@ -29,7 +29,7 @@ export function AgentFiles({
   const packages = usePackageSheet();
   const skillsOffered = (skills ?? []).filter((skill) => !skill.built_in);
   return (
-    <div className="flex min-w-0 flex-col gap-8">
+    <div className="flex min-w-0 flex-col gap-4">
       {inFile ? (
         <Paths
           heading="Skills"

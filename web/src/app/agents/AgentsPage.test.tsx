@@ -1,9 +1,10 @@
 /**
- * The draft of an agent on the Agents page: choosing another row keeps what was typed, and the editor that reopens on
- * that draft still says the work is waiting — what the file holds did not change, so there is something to save.
+ * The Agents page as a list of 36px rows, each opening its agent in the editor window: `?agent=` and `?new=1` open it,
+ * a change is guarded when the window closes, a save writes the agent and closes the window, and a new agent starts
+ * with its choice.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentsPage } from "./AgentsPage";
@@ -75,24 +76,83 @@ afterEach(() => vi.unstubAllGlobals());
 /** Save, the one of the editor open now; being disabled is how it says there is nothing to write. */
 const saveButton = () => screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
 
+describe("the agents as a list of rows", () => {
+  it("lists every agent as one row and opens no window by itself", async () => {
+    show("/agents");
+    const rows = await screen.findAllByTestId("agent-row");
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringContaining("Moebius"),
+      expect.stringContaining("Coder"),
+      expect.stringContaining("Reviewer"),
+    ]);
+    expect(rows[0]?.textContent).toContain("Built in");
+    expect(rows[1]?.textContent).toContain("fake-small · openai");
+    expect(screen.queryByTestId("editor-window")).toBeNull();
+  });
+
+  it("opens the window of the agent a row names, and puts it in the address", async () => {
+    show("/agents");
+    fireEvent.click(await screen.findByRole("button", { name: "Edit agent Reviewer" }));
+    const window = await screen.findByTestId("editor-window");
+    expect(window).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Edit agent Reviewer" })).toBeTruthy();
+    expect(await screen.findByDisplayValue("Say what is wrong.")).toBeTruthy();
+  });
+
+  it("opens the window of the agent ?agent= names", async () => {
+    show();
+    expect(await screen.findByDisplayValue("Keep changes tiny.")).toBeTruthy();
+    expect(screen.getByRole("dialog", { name: "Edit agent Coder" })).toBeTruthy();
+  });
+});
+
 describe("the draft of an agent", () => {
-  it("survives another row being chosen, and still says it is unsaved", async () => {
+  it("is guarded when the window closes, and Keep editing leaves it as typed", async () => {
     show();
     const model = await screen.findByLabelText("Model");
     fireEvent.change(model, { target: { value: "qwen-local" } });
-    expect(await screen.findByText("Unsaved changes")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: /Reviewer/ }));
-    expect(await screen.findByDisplayValue("Say what is wrong.")).toBeTruthy();
-    // Nothing to write is said by the quiet button, not by a warning beside one that still works.
-    expect(saveButton().disabled).toBe(true);
-    expect(screen.queryByText("Nothing to save")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: /Coder/ }));
-    expect(await screen.findByDisplayValue("qwen-local")).toBeTruthy();
-    // The file still has `fake-small`, so the draft is work waiting for a save, not nothing to save.
-    expect(await screen.findByText("Unsaved changes")).toBeTruthy();
     expect(saveButton().disabled).toBe(false);
+    fireEvent.keyDown(screen.getByTestId("editor-window"), { key: "Escape" });
+    expect(screen.getByRole("alertdialog", { name: "Discard changes?" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect((screen.getByLabelText("Model") as HTMLInputElement).value).toBe("qwen-local");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(screen.queryByTestId("editor-window")).toBeNull());
+    // Dropped for good: the agent opens again as the file has it.
+    fireEvent.click(screen.getByRole("button", { name: "Edit agent Coder" }));
+    expect(((await screen.findByLabelText("Model")) as HTMLInputElement).value).toBe("fake-small");
+  });
+
+  it("closes a clean window at once, and Save rests until there is a change", async () => {
+    show();
+    await screen.findByLabelText("Model");
+    expect(saveButton().disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByTestId("editor-window")).toBeNull());
+  });
+
+  it("saves with the usual PUT and closes the window", async () => {
+    show();
+    fireEvent.change(await screen.findByLabelText("Model"), { target: { value: "qwen-local" } });
+    fireEvent.click(saveButton());
+    await vi.waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0]?.[0]).toBe("PUT");
+    expect(writes[0]?.[1]).toBe("/v1/agents/Coder");
+    expect(writes[0]?.[2]).toMatchObject({ settings: { model: "qwen-local" } });
+    await waitFor(() => expect(screen.queryByTestId("editor-window")).toBeNull());
+  });
+
+  it("deletes after asking", async () => {
+    show();
+    await screen.findByLabelText("Model");
+    fireEvent.click(screen.getByRole("button", { name: "Delete agent" }));
+    expect(await screen.findByText("Delete this agent?")).toBeTruthy();
+    expect(writes).toEqual([]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete agent" }).at(-1) as HTMLElement);
+    await vi.waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0]?.[0]).toBe("DELETE");
+    expect(writes[0]?.[1]).toBe("/v1/agents/Coder");
   });
 });
 
@@ -167,6 +227,7 @@ describe("a new agent", () => {
   it("first asks for blank or an existing agent, and starts blank", async () => {
     show("/agents", routes);
     await newAgent();
+    expect(await screen.findByRole("dialog", { name: "New agent" })).toBeTruthy();
     expect(await screen.findByRole("button", { name: "Blank" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "From an existing agent" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
