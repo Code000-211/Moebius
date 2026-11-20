@@ -79,7 +79,7 @@ on Linux (an AppImage and a `.deb`) and Windows (an installer):
    (`Rail::note_page`), which `Proxy::entry_url_at` leads back to. A server over SSH keeps its tunnel
    (`rail::ssh`, the same `ssh -L` as `moebius connect`, in batch mode) beside its proxy; a host with no server is set up
    by `moebius connect --yes` after a yes. `rail::poll` asks each server for its Inbox (`GET /v1/status`, one small route, never the snapshot; the open server is
-   not asked while the tray follows it, whose last figures the rail shows), and one that does not answer is drawn with a grey dot. The web app draws the rail (`desktop/Rail.tsx`)
+   not asked while the tray follows it, whose last figures the rail shows), and one that does not answer is drawn with a grey dot. The web app draws the servers in the switch of the sidebar's head (`desktop/ServerSwitch.tsx`)
    and calls the commands of `servers.rs` through the bridge; removing a server there is also how a person disconnects,
    since sign-out in the web app does nothing in the app. At its start the app opens the server that was open last.
    The window (`pages.rs`) holds a webview for the connect page and one for every server that was opened, all of its
