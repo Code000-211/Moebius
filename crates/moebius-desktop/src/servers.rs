@@ -24,6 +24,8 @@ pub struct Servers {
     /// What the rail last showed, for a call that comes while the rail is busy opening a server (which can take a while
     /// over SSH) and must not wait for it.
     shown: std::sync::Mutex<Vec<Entry>>,
+    /// Why no remembered server was opened at the start (the keychain did not answer), for the connect page to show.
+    notice: std::sync::Mutex<Option<String>>,
 }
 
 impl Servers {
@@ -36,6 +38,7 @@ impl Servers {
         Self {
             rail: Mutex::new(Rail::new(&dir, Arc::new(Keychain), Options::standard())),
             shown: std::sync::Mutex::new(Vec::new()),
+            notice: std::sync::Mutex::new(None),
         }
     }
 }
@@ -79,25 +82,49 @@ fn show_connect_page(app: &tauri::AppHandle) -> Result<(), String> {
 }
 
 /// Opens the first server of the rail that answers, the one open at the last close first; the connect page stays when
-/// none does.
+/// none does. A keychain that does not answer ends the tries, since every server needs it: the connect page says so.
 pub async fn open_remembered(app: tauri::AppHandle) {
     let servers = app.state::<Servers>();
     let mut rail = servers.rail.lock().await;
     for id in rail.startup_order() {
-        if let Ok(url) = rail.open(&id).await {
-            let _ = show(&app, &mut rail, &url);
-            return;
+        match rail.open(&id).await {
+            Ok(url) => {
+                let _ = show(&app, &mut rail, &url);
+                return;
+            }
+            Err(error @ RailError::Keychain(_)) => {
+                if let Ok(mut notice) = servers.notice.lock() {
+                    *notice = Some(error.to_string());
+                }
+                return;
+            }
+            Err(_) => {}
         }
     }
 }
 
-/// Connects to the server at `address` with the access token `token`: checks it, keeps its token in the keychain and
-/// shows its web app in the window. A server it refuses leaves the window as it is, with the reason.
+/// What kept the remembered servers from opening at the start, or none: the connect page shows it above its form.
 #[tauri::command]
-pub async fn connect(app: tauri::AppHandle, address: String, token: String) -> Result<(), String> {
+pub fn startup_notice(app: tauri::AppHandle) -> Option<String> {
+    app.state::<Servers>().notice.lock().ok()?.clone()
+}
+
+/// Connects to the server at `address` with the access token `token`: checks it, keeps its token in the keychain and
+/// shows its web app in the window. With `session_only` the token stays in memory and is asked for again at the next
+/// start. A server it refuses leaves the window as it is, with the reason.
+#[tauri::command]
+pub async fn connect(
+    app: tauri::AppHandle,
+    address: String,
+    token: String,
+    session_only: Option<bool>,
+) -> Result<(), String> {
     let servers = app.state::<Servers>();
     let mut rail = servers.rail.lock().await;
-    let id = rail.add(&address, &token).await.map_err(say)?;
+    let id = rail
+        .add(&address, &token, session_only.unwrap_or(false))
+        .await
+        .map_err(say)?;
     let url = rail.open(&id).await.map_err(say)?;
     show(&app, &mut rail, &url)
 }
@@ -143,7 +170,7 @@ pub async fn switch_server(app: tauri::AppHandle, id: String) -> Result<(), Stri
 pub async fn remove_server(app: tauri::AppHandle, id: String) -> Result<(), String> {
     let servers = app.state::<Servers>();
     let mut rail = servers.rail.lock().await;
-    let was_open = rail.remove(&id).map_err(say);
+    let was_open = rail.remove(&id).await.map_err(say);
     pages::forget(&app, &id);
     if !was_open? {
         return Ok(());
@@ -173,10 +200,14 @@ pub async fn local_state() -> String {
 }
 
 /// Sets up the server of this machine where it is not, starts it where it does not run, and adds it to the rail and
-/// shows it. The token is read by the app and never goes to the page.
+/// shows it, its token in the keychain or, with `session_only`, in memory. The token is read by the app and never goes
+/// to the page.
 #[tauri::command]
-pub async fn local_connect(app: tauri::AppHandle) -> Result<(), String> {
+pub async fn local_connect(
+    app: tauri::AppHandle,
+    session_only: Option<bool>,
+) -> Result<(), String> {
     let local = Local::of_this_machine()?;
     let server = local.start().await.map_err(|e| e.to_string())?;
-    connect(app, server.url, server.token).await
+    connect(app, server.url, server.token, session_only).await
 }

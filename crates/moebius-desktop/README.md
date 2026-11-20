@@ -17,7 +17,7 @@ app is in [`docs/architecture.md`](../../docs/architecture.md#the-desktop-app).
 | `src/proxy/` | The app's own address on the loopback: `assets.rs` serves the web app embedded from `web/dist`, `forward.rs` forwards `/v1/` to the server with the token (HTTP and WebSockets), `mod.rs` lets only the window use it. |
 | `src/tray.rs` | What the tray shows of a server and asks of it: the figures, their lines, `follow` (reads `GET /v1/status` again after a burst of the server's events, and for the steps of runs only every ten seconds) and the routes that pause and resume all agents. |
 | `src/tray_icon.rs` | The Tauri side of the tray, in the program: the icon, its menu and what its items do. |
-| `src/rail/` | The rail of servers: `mod.rs` (the remembered servers, a proxy and a page of each, adding, opening, removing, `poll`), `records.rs` (`servers.json`, no token), `secrets.rs` (the system's keychain), `ssh.rs` (a server over an SSH tunnel) and `status.rs` (whether a server answers and its Inbox's count). |
+| `src/rail/` | The rail of servers: `mod.rs` (the remembered servers, a proxy and a page of each, adding, opening, removing, `poll`), `records.rs` (`servers.json`, no token), `secrets.rs` (the system's keychain, and `Guarded`, which calls it on a thread of its own with a time limit), `ssh.rs` (a server over an SSH tunnel) and `status.rs` (whether a server answers and its Inbox's count). |
 | `src/servers.rs` | The rail's commands on the Tauri side: `connect`, `connect_ssh`, `servers`, `switch_server` and `remove_server`, and `local_state` and `local_connect` for the server of this machine. |
 | `src/views.rs` | `Views`: which servers have a webview of their own in the window and which to let go of (those left for half an hour, and all but three hidden ones). |
 | `src/pages.rs` | The Tauri side of the window's webviews, a module of the program: the connect page's and one per opened server, all of the window's size, one shown at a time; switching shows the webview of a server opened before, and a new one is shown once it has drawn its rail. |
@@ -76,5 +76,5 @@ The later parts of ADR 0021 build on these names:
 - **A server** is `server::Server`, checked with `server::check` before anything opens, and shown through a
   `proxy::Proxy` (`proxy::start`, then `Proxy::entry_url` in a webview of the window). Several servers (the rail) keep one `Proxy`
   each (each has its own port, cookie and origin, `Proxy::origin`) and, in the window, one webview each (`pages`), and dropping a proxy stops everything it relays; the
-  keychain holds their `Server::token`, which the app never writes to a file.
+  keychain holds their `Server::token`, which the app never writes to a file (a server connected "for this session only" keeps it in memory instead, `Rail::add`'s `session_only`, and is not in `servers.json`).
 - The main window's label is `window::MAIN`.

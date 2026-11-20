@@ -15,12 +15,13 @@ pub mod secrets;
 pub mod ssh;
 mod status;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use records::{Record, Records, Saved};
-use secrets::{SecretError, Secrets};
+use secrets::{Guarded, SecretError, Secrets};
 use ssh::{SshError, Tunnel};
 pub use status::Entry;
 
@@ -65,6 +66,8 @@ pub struct Options {
     pub ssh: String,
     pub moebius: String,
     pub files: Files,
+    /// How long a call to the keychain may take in all.
+    pub keychain_limit: Duration,
 }
 
 impl Options {
@@ -74,6 +77,7 @@ impl Options {
             ssh: "ssh".into(),
             moebius: "moebius".into(),
             files: proxy::embedded,
+            keychain_limit: secrets::LIMIT,
         }
     }
 }
@@ -88,7 +92,10 @@ struct Live {
 pub struct Rail {
     records: Records,
     saved: Saved,
-    secrets: Arc<dyn Secrets>,
+    secrets: Guarded,
+    /// The servers kept for this session only: in no file, their tokens in `session_tokens`, gone at the next start.
+    session: HashSet<String>,
+    session_tokens: HashMap<String, String>,
     options: Options,
     live: HashMap<String, Live>,
     /// The page each server was on when another was opened, as a path with its query.
@@ -102,6 +109,8 @@ pub struct Target {
     name: String,
     open: bool,
     server: Option<Server>,
+    /// A server of the keychain that is not up: its address, whose token [`poll`] reads without blocking anything.
+    remembered: Option<(String, Guarded)>,
 }
 
 impl Rail {
@@ -111,7 +120,9 @@ impl Rail {
         Self {
             saved: records.load(),
             records,
-            secrets,
+            secrets: Guarded::new(secrets, options.keychain_limit),
+            session: HashSet::new(),
+            session_tokens: HashMap::new(),
             options,
             live: HashMap::new(),
             pages: HashMap::new(),
@@ -142,12 +153,20 @@ impl Rail {
     }
 
     fn save(&self) -> Result<(), RailError> {
-        self.records.save(&self.saved).map_err(RailError::Records)
+        self.records
+            .save(&self.saved, &self.session)
+            .map_err(RailError::Records)
     }
 
     /// Adds the server at `address` signed in to with `token`, once it accepts the token and is of this app's release
-    /// line; its token goes to the keychain. A server the rail has already is updated with the new token. Opens it.
-    pub async fn add(&mut self, address: &str, token: &str) -> Result<String, RailError> {
+    /// line; its token goes to the keychain, or, with `session_only`, stays in memory and the server is not remembered
+    /// at the next start. A server the rail has already is updated with the new token. Opens it.
+    pub async fn add(
+        &mut self,
+        address: &str,
+        token: &str,
+        session_only: bool,
+    ) -> Result<String, RailError> {
         let server = Server::new(address, token);
         server::check(&server).await?;
         let known = self
@@ -158,7 +177,8 @@ impl Rail {
             .map(|r| r.id.clone());
         let name = server.url.trim_start_matches("http://").to_string();
         let address = server.url.clone();
-        self.keep(known, name, address, false, server, None).await
+        self.keep(known, name, address, false, server, None, session_only)
+            .await
     }
 
     /// Adds the server of the SSH host `host` (as `moebius connect` reaches it), setting it up there first when
@@ -177,7 +197,7 @@ impl Rail {
             .iter()
             .find(|r| r.ssh && r.address == host)
             .map(|r| r.id.clone());
-        self.keep(known, host.clone(), host, true, server, Some(tunnel))
+        self.keep(known, host.clone(), host, true, server, Some(tunnel), false)
             .await
     }
 
@@ -200,6 +220,7 @@ impl Rail {
     }
 
     /// Keeps a server that passed its check: its token in the keychain, its record in the file, its proxy up.
+    #[allow(clippy::too_many_arguments)]
     async fn keep(
         &mut self,
         known: Option<String>,
@@ -208,13 +229,25 @@ impl Rail {
         ssh: bool,
         server: Server,
         tunnel: Option<Tunnel>,
+        session_only: bool,
     ) -> Result<String, RailError> {
         let new = known.is_none();
+        let was_session = known.as_ref().is_some_and(|id| self.session.contains(id));
         let id = known.unwrap_or_else(records::new_id);
         let proxy = proxy::start(server.clone(), self.options.files)
             .await
             .map_err(RailError::Proxy)?;
-        self.secrets.set(&id, &server.token)?;
+        if session_only {
+            // The keychain is not asked at all. A server remembered earlier keeps its token there as it is.
+            if !self.record_known(&id) {
+                self.session.insert(id.clone());
+            }
+            if self.session.contains(&id) {
+                self.session_tokens.insert(id.clone(), server.token.clone());
+            }
+        } else {
+            self.secrets.set(&id, &server.token).await?;
+        }
         if new {
             self.saved.servers.push(Record {
                 id: id.clone(),
@@ -222,11 +255,16 @@ impl Rail {
                 address,
                 ssh,
             });
-            if let Err(e) = self.save() {
+            if !session_only && let Err(e) = self.save() {
                 self.saved.servers.retain(|r| r.id != id);
-                let _ = self.secrets.delete(&id);
+                let _ = self.secrets.delete(&id).await;
                 return Err(e);
             }
+        } else if was_session && !session_only {
+            // Connected with the keychain now: the server is remembered from here on.
+            self.session.remove(&id);
+            self.session_tokens.remove(&id);
+            self.save()?;
         }
         self.live.insert(
             id.clone(),
@@ -239,6 +277,10 @@ impl Rail {
         // A server that is kept but cannot be remembered as the open one is still kept; the file failed, not the server.
         self.opened(&id)?;
         Ok(id)
+    }
+
+    fn record_known(&self, id: &str) -> bool {
+        self.record(id).is_some()
     }
 
     fn opened(&mut self, id: &str) -> Result<(), RailError> {
@@ -264,15 +306,18 @@ impl Rail {
                 let tunnel = self.tunnel(&record.address, false).await?;
                 (tunnel.server.clone(), Some(tunnel))
             } else {
-                let token = self
-                    .secrets
-                    .get(id)?
-                    .ok_or_else(|| RailError::NoToken(record.name.clone()))?;
+                let token = match self.session_tokens.get(id) {
+                    Some(token) => Some(token.clone()),
+                    None => self.secrets.get(id).await?,
+                }
+                .ok_or_else(|| RailError::NoToken(record.name.clone()))?;
                 (Server::new(&record.address, &token), None)
             };
             server::check(&server).await?;
             // A tunnel reads the token again on every start, so the keychain follows the host's.
-            self.secrets.set(id, &server.token)?;
+            if record.ssh {
+                self.secrets.set(id, &server.token).await?;
+            }
             let proxy = proxy::start(server.clone(), self.options.files)
                 .await
                 .map_err(RailError::Proxy)?;
@@ -332,12 +377,14 @@ impl Rail {
 
     /// Removes the server `id`: its proxy and tunnel stop, its token leaves the keychain and it leaves the file. Says
     /// whether it was the one open.
-    pub fn remove(&mut self, id: &str) -> Result<bool, RailError> {
+    pub async fn remove(&mut self, id: &str) -> Result<bool, RailError> {
         if self.record(id).is_none() {
             return Err(RailError::Unknown);
         }
         self.live.remove(id);
         self.pages.remove(id);
+        let session = self.session.remove(id);
+        self.session_tokens.remove(id);
         self.saved.servers.retain(|r| r.id != id);
         if self.saved.last.as_deref() == Some(id) {
             self.saved.last = None;
@@ -348,7 +395,9 @@ impl Rail {
         }
         self.save()?;
         // The server is gone even when the keychain cannot be asked (locked, absent): the error says its token is left.
-        self.secrets.delete(id)?;
+        if !session {
+            self.secrets.delete(id).await?;
+        }
         Ok(was_open)
     }
 
@@ -366,12 +415,14 @@ impl Rail {
                     // An SSH server is reached through a tunnel that is not up: it is not reached.
                     None if record.ssh => None,
                     None => self
-                        .secrets
+                        .session_tokens
                         .get(&record.id)
-                        .ok()
-                        .flatten()
-                        .map(|token| Server::new(&record.address, &token)),
+                        .map(|token| Server::new(&record.address, token)),
                 },
+                remembered: (!self.live.contains_key(&record.id)
+                    && !record.ssh
+                    && !self.session.contains(&record.id))
+                .then(|| (record.address.clone(), self.secrets.clone())),
             })
             .collect()
     }
@@ -384,7 +435,18 @@ pub async fn poll(targets: Vec<Target>, followed: Option<Figures>) -> Vec<Entry>
     let asking = targets.into_iter().map(|target| {
         let followed = followed.clone().filter(|_| target.open);
         async move {
-            let count = match (&followed, &target.server) {
+            // The keychain is asked here, with its time limit, and not while the rail is locked.
+            let server = match (target.server, target.remembered) {
+                (Some(server), _) => Some(server),
+                (None, Some((address, secrets))) => secrets
+                    .get(&target.id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|token| Server::new(&address, &token)),
+                (None, None) => None,
+            };
+            let count = match (&followed, &server) {
                 (Some(figures), _) => Some(figures.rail_count()),
                 (None, Some(server)) => status::inbox_count(server).await,
                 (None, None) => None,

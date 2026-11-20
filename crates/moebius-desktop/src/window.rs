@@ -75,6 +75,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             servers::connect,
             servers::connect_ssh,
+            servers::startup_notice,
             servers::servers,
             servers::switch_server,
             servers::remove_server,
