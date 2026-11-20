@@ -2260,7 +2260,7 @@ One run, for the live view. Response: the `Run`. Errors: `403` the run is a chat
 ### `GET /v1/runs/{id}/events`
 
 The stored events of a run, in order. A client loads a long run in pieces and then follows `GET /v1/events` from the last
-`seq` it has: every `run_event` on the stream carries the `seq` the event was stored under, so the client drops those
+`seq` it has (after subscribing to the run, see [`GET /v1/events`](#get-v1events)): every `run_event` on the stream carries the `seq` the event was stored under, so the client drops those
 it already has and sees every event exactly once.
 
 A streamed answer is stored compactly. The `message_update` events of a message that has ended are joined: neighbouring
@@ -4275,7 +4275,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `attempt_judged` | An attempt of a card was judged by its tests and checks (`moebius.check_attempt`). | `{"card": id, "run": id, "result": "passed" \| "failed"}` |
 | `attempts_settled` | A card's open attempts were settled (`moebius.settle_attempts`): one picked, or none passed. | `{"card": id, "picked": id or null, "runs": [id]}` |
 | `run_started` | A harness process for a run started. | `{"run": id, "card": id or null}` (null for a chat or an agent of a workflow run) |
-| `run_event` | Something happened in a run. | `{"run": id, "seq": number, "kind": string, "data": object}` (below) |
+| `run_event` | Something happened in a run. Sent for a run the client subscribed to; to others only `agent_start`, `agent_settled` and `moebius_error`. | `{"run": id, "seq": number, "kind": string, "data": object}` (below) |
 | `run_ended` | A run ended. | `{"run": id, "status": "succeeded" \| "failed" \| "stopped"}` |
 | `workflow_run_queued` | A workflow run was stored, queued for its first node. | `{"run": id, "workflow": string, "repository": id}` |
 | `workflow_run_started` | A workflow run began running. | `{"run": id}` |

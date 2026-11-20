@@ -133,7 +133,7 @@ curl -s -H "$AUTH" $API/v1/runs/$RUN | jq '{status, summary}'
 curl -s -H "$AUTH" "$API/v1/runs/$RUN/events?after=0&limit=500" | jq -c '.[] | {seq, kind}'
 ```
 
-On the event stream the same events arrive as `run_event` with the same `seq`, so a client that loads the stored events
+On the event stream the same events arrive as `run_event` with the same `seq` for a client that subscribed to the run with `{"subscribe": [id]}`, so a client that loads the stored events
 and then follows the stream drops the ones it has and sees each one once. A `tool_check` event is the answer to a tool
 call check (see [Rules](rules.md)).
 
