@@ -6,6 +6,8 @@
  * at once. Save is the caller's `onSave`; the window stays open while `saving` and shows `error` beside the buttons,
  * and the caller closes it (`onClose`) once the save is done. `actions` puts a further control (Delete) at the left of the foot.
  */
+
+import { XIcon } from "@phosphor-icons/react";
 import { type ReactNode, useState } from "react";
 import { Button } from "./Button";
 import {
@@ -16,6 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./Dialog";
+import { IconButton } from "./IconButton";
 
 export function EditorWindow({
   open,
@@ -64,44 +67,54 @@ export function EditorWindow({
         if (!next) close();
       }}
     >
-      <DialogContent className="max-w-xl" data-testid="editor-window">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+      <DialogContent
+        className="max-w-xl gap-0 p-0"
+        data-audit="flush"
+        data-testid="editor-window"
+        hideCloseButton
+      >
+        <DialogHeader className="h-12 shrink-0 flex-row items-center gap-2 border-b border-hairline pr-2 pl-6">
+          <DialogTitle className="min-w-0 flex-1 truncate text-md font-semibold">
+            {title}
+          </DialogTitle>
+          <IconButton icon={XIcon} aria-label="Close" onClick={close} />
+        </DialogHeader>
+        <div className="flex min-w-0 flex-col gap-4 p-6">
           {description ? (
             <DialogDescription>{description}</DialogDescription>
           ) : (
             <DialogDescription className="sr-only">{title}</DialogDescription>
           )}
-        </DialogHeader>
-        <div className="flex min-w-0 flex-col gap-4">{children}</div>
-        {error && (
-          <p role="alert" className="m-0 break-words text-sm text-error-text">
-            {error}
-          </p>
-        )}
-        {asking ? (
-          <div role="alertdialog" aria-label="Discard changes?" className="flex flex-col gap-3">
-            <p className="m-0 text-base text-text">Discard changes? What you typed is lost.</p>
-            <DialogFooter>
-              <Button variant="secondary" size="sm" onClick={() => setAsking(false)}>
-                Keep editing
+          {children}
+          {error && (
+            <p role="alert" className="m-0 break-words text-sm text-error-text">
+              {error}
+            </p>
+          )}
+          {asking ? (
+            <div role="alertdialog" aria-label="Discard changes?" className="flex flex-col gap-3">
+              <p className="m-0 text-base text-text">Discard changes? What you typed is lost.</p>
+              <DialogFooter>
+                <Button variant="secondary" size="sm" onClick={() => setAsking(false)}>
+                  Keep editing
+                </Button>
+                <Button variant="danger" size="sm" onClick={leave}>
+                  Discard
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : (
+            <DialogFooter className="items-center">
+              {actions && <div className="flex gap-2 sm:mr-auto">{actions}</div>}
+              <Button variant="secondary" size="sm" disabled={saving} onClick={close}>
+                Cancel
               </Button>
-              <Button variant="danger" size="sm" onClick={leave}>
-                Discard
+              <Button size="sm" disabled={saving || !canSave || !dirty} onClick={onSave}>
+                {saving ? "Saving" : "Save"}
               </Button>
             </DialogFooter>
-          </div>
-        ) : (
-          <DialogFooter className="items-center">
-            {actions && <div className="flex gap-2 sm:mr-auto">{actions}</div>}
-            <Button variant="secondary" size="sm" disabled={saving} onClick={close}>
-              Cancel
-            </Button>
-            <Button size="sm" disabled={saving || !canSave || !dirty} onClick={onSave}>
-              {saving ? "Saving" : "Save"}
-            </Button>
-          </DialogFooter>
-        )}
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );
