@@ -46,7 +46,7 @@ export function pageContext(pathname: string, snapshot: Snapshot | undefined): P
   const page = first === undefined ? undefined : pageByPath(first);
   const lines = [
     page
-      ? page.group
+      ? page.group && page.group !== "Other"
         ? `Page: ${page.group} > ${page.title}`
         : `Page: ${page.title}`
       : `Page: ${pathname}`,

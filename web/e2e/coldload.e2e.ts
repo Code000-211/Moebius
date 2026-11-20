@@ -56,10 +56,6 @@ describe.skipIf(usesRealServer)("a cold load", () => {
     await page.goto(`${server.url}/board/1`);
     await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
     // The event stream is up, which is the moment it used to read everything again.
-    await page
-      .getByTestId("connection")
-      .waitFor({ state: "hidden" })
-      .catch(() => {});
     await page.waitForLoadState("networkidle");
     const twice = seen.api.filter((path, i) => seen.api.indexOf(path) !== i);
     expect(twice).toEqual([]);

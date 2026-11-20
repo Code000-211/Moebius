@@ -44,8 +44,7 @@ afterEach(async () => {
 });
 
 /**
- * Gives a real server a project, as the fake starts with one: the sidebar lists the Board and Files of the chosen
- * project, and a server with none lists "All projects" in their place.
+ * Gives a real server a project, as the fake starts with one: the sidebar lists it under Projects.
  */
 async function withProject() {
   if (!usesRealServer) return;
@@ -58,7 +57,7 @@ async function withProject() {
   expect(response.ok(), await response.text()).toBe(true);
 }
 
-const pages = () => page.getByRole("navigation", { name: "Pages" });
+const pages = () => page.getByRole("navigation", { name: "Pages", exact: true });
 const path = () => new URL(page.url()).pathname;
 
 describe("signing in", () => {
@@ -193,85 +192,91 @@ describe("the shell", () => {
     ).toBe("page");
   });
 
-  it("lists the everyday pages, then the pages Settings holds, and the boards", async () => {
+  it("lists the places of the standard, in order, and nothing else", async () => {
     await fresh();
     await withProject();
     await page.goto(server.loginUrl);
     await pages().waitFor();
-    for (const name of [
+    await pages().getByRole("link", { name: "Wiki" }).waitFor();
+    // A link may carry a count after its name ("Inbox 1", "Fleet 2 running"); the projects are the fake's.
+    const names = await pages()
+      .getByRole("link")
+      .evaluateAll((links) =>
+        links.map((link) => (link.textContent ?? "").replace(/\d+( running)?$/, "")),
+      );
+    const projects = ["demo"];
+    expect(names).toEqual([
       "Inbox",
+      "My issues",
       "Fleet",
-      "Board",
-      "Files",
-      "Automations",
-      "Workflows",
-      "Retro",
-      "Experiments",
-      "Decisions",
+      "Projects",
+      ...projects,
+      "Wiki",
+      "Cycles",
+      "Views",
+      "More",
       "Settings",
-    ]) {
-      // An entry may carry a count after its name ("Inbox 1", "Fleet 2").
-      await pages()
-        .getByRole("link", { name: new RegExp(`^${name}\\b`) })
-        .waitFor();
-    }
-    await pages().getByText("Automate", { exact: true }).first().waitFor();
-    // Improve is one row that folds over its pages, and keeps its state over a reload.
-    await pages().getByRole("button", { name: "Collapse Improve" }).click();
-    await pages().getByRole("button", { name: "Expand Improve" }).waitFor();
+    ]);
     expect(
       await pages()
-        .getByRole("link", { name: /^Retro/ })
-        .count(),
-    ).toBe(0);
-    await page.reload();
-    await pages().getByRole("button", { name: "Expand Improve" }).waitFor();
-    await pages().getByRole("button", { name: "Expand Improve" }).click();
-    await pages()
-      .getByRole("link", { name: /^Retro/ })
-      .waitFor();
-    // The list of every project is reached from the switcher.
-    await pages().getByRole("button", { name: "Change project" }).click();
-    await page.getByRole("menuitem", { name: "All projects" }).waitFor();
-    await page.keyboard.press("Escape");
-    // The pages that set the server up are not listed beside the everyday ones: Settings opens them.
-    expect(await pages().getByRole("link", { name: "Models" }).count()).toBe(0);
+        .getByRole("button")
+        .evaluateAll((all) => all.map((b) => b.ariaLabel)),
+    ).toEqual(["Search"]);
+  });
+
+  it("keeps every row 36px high and draws no key hint, mask or live box", async () => {
+    await fresh();
+    await page.goto(server.loginUrl);
+    await pages().getByRole("link", { name: "Wiki" }).waitFor();
+    const heights = await pages()
+      .getByRole("link")
+      .evaluateAll((links) =>
+        links
+          .filter((link) => link.textContent !== "Projects")
+          .map((link) => link.getBoundingClientRect().height),
+      );
+    expect(heights.length).toBeGreaterThan(8);
+    for (const height of heights) expect(height).toBe(36);
+    const inside = await pages().evaluate((nav) => ({
+      kbd: nav.querySelectorAll("kbd").length,
+      masks: [nav, ...nav.querySelectorAll("*")].filter((element) => {
+        const style = getComputedStyle(element);
+        return (
+          (style.maskImage !== "" && style.maskImage !== "none") ||
+          (style.webkitMaskImage !== "" && style.webkitMaskImage !== "none")
+        );
+      }).length,
+      live: nav.querySelectorAll("[data-testid=connection], [data-testid=live]").length,
+    }));
+    expect(inside).toEqual({ kbd: 0, masks: 0, live: 0 });
+  });
+
+  it("opens Projects, a project's board, More and Settings from the sidebar", async () => {
+    await fresh();
+    await withProject();
+    await page.goto(server.loginUrl);
+    await pages().waitFor();
+    await pages().getByRole("link", { name: "Projects", exact: true }).click();
+    await page.waitForURL("**/projects");
+    await pages().getByRole("link", { name: "More" }).click();
+    await page.waitForURL("**/more");
+    await page.getByRole("heading", { name: "More", level: 1 }).waitFor();
     await pages().getByRole("link", { name: "Settings" }).click();
     await page.waitForURL("**/settings");
-    for (const name of [
-      "General",
-      "Models",
-      "Plugins",
-      "Plugin settings",
-      "Terminal",
-      "Ports",
-      "Usage",
-      "Rules",
-      "Agents",
-      "Skills",
-      "MCP",
-    ]) {
-      await pages()
-        .getByRole("link", { name: new RegExp(`^${name}\\b`) })
-        .waitFor();
-    }
-    // The way back is a row under Search, and it goes where the person last was.
-    await pages().getByRole("link", { name: "Back" }).click();
-    await page.waitForURL("**/inbox");
+    // The sidebar is the same list on a Settings page, with Settings chosen and no way back to leave it.
+    await pages().getByRole("link", { name: "Wiki" }).waitFor();
+    expect(await pages().getByRole("link", { name: "Settings" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
+    expect(await pages().getByRole("link", { name: "Back" }).count()).toBe(0);
+    expect(await pages().getByRole("link", { name: "Models" }).count()).toBe(0);
     if (!usesRealServer) {
-      await pages()
-        .getByRole("link", { name: /^Board/ })
-        .click();
+      await pages().getByRole("link", { name: "demo", exact: true }).click();
       await page.waitForURL("**/board/1");
       await page.getByRole("heading", { name: "demo" }).waitFor();
-      // The chosen project stays chosen on other pages and after a reload.
-      await pages()
-        .getByRole("link", { name: /^Fleet/ })
-        .click();
-      await page.reload();
-      await pages()
-        .getByRole("link", { name: /^Board/ })
-        .waitFor();
+      expect(
+        await pages().getByRole("link", { name: "demo", exact: true }).getAttribute("aria-current"),
+      ).toBe("page");
     }
   });
 
@@ -283,22 +288,6 @@ describe("the shell", () => {
     await page.getByRole("heading", { name: "Usage" }).waitFor();
     await page.reload();
     await page.getByRole("heading", { name: "Usage" }).waitFor();
-  });
-
-  it("collapses to a rail and remembers it", async () => {
-    await fresh();
-    await page.goto(server.loginUrl);
-    await pages().waitFor();
-    await page.getByRole("button", { name: "Collapse the sidebar" }).click();
-    await page.getByRole("button", { name: "Expand the sidebar" }).waitFor();
-    await page.reload();
-    await page.getByRole("button", { name: "Expand the sidebar" }).waitFor();
-  });
-
-  it("goes online and tells so", async () => {
-    await fresh();
-    await page.goto(server.loginUrl);
-    await page.getByTestId("connection").getByText("Online").waitFor();
   });
 
   it("keeps the shell standing when a page's file cannot be fetched", async () => {
@@ -315,9 +304,8 @@ describe("the shell", () => {
     await pages().getByRole("link", { name: "Fleet" }).click();
     const line = page.getByRole("alert").filter({ hasText: "The page could not be loaded" });
     await line.getByRole("button", { name: "Reload" }).waitFor();
-    // What is not missing is still there to reload from: the sidebar and the connection, not a stack trace.
+    // What is not missing is still there to reload from: the sidebar not a stack trace.
     await pages().getByRole("link", { name: "Inbox" }).waitFor();
-    await page.getByTestId("connection").waitFor();
     expect(blocked).toBeGreaterThan(0);
   });
 });
@@ -458,12 +446,10 @@ describe("a server that does not answer", () => {
       await server.stop();
       const banner = page.getByRole("alert").filter({ hasText: "Cannot reach the server" });
       await banner.waitFor();
-      await page.getByTestId("connection").getByText("Reconnecting").waitFor();
 
       await server.restart();
       await banner.getByRole("button", { name: "Retry now" }).click();
       await banner.waitFor({ state: "detached" });
-      await page.getByTestId("connection").getByText("Online").waitFor();
     },
   );
 

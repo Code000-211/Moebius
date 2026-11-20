@@ -8,8 +8,7 @@
  * by `Ctrl+J`; the package sheet, which pages open from where a person meets plugins and extensions, lies over the
  * properties pane's place in the same panel. It
  * owns the command palette and its shortcut, the form of a new issue and `C` (`board/NewIssueHost.tsx`), the card window for `?card=` on any page (`board/CardWindowHost.tsx`), holds what is
- * in focus for it (`palette/focus.tsx`), and notes the places seen and the sidebar's collapsed state (kept per
- * browser). In the desktop app the panel carries the window's controls once at its top right
+ * in focus for it (`palette/focus.tsx`), and . In the desktop app the panel carries the window's controls once at its top right
  * (`desktop/WindowControls.tsx`), and the rail of servers lies at the window's far left (`desktop/Rail.tsx`).
  */
 import { useQueryClient } from "@tanstack/react-query";
@@ -32,7 +31,6 @@ import { CardWindowHost } from "../board/CardWindowHost";
 import { isTyping, NewIssueProvider } from "../board/NewIssueHost";
 import { prefetchCard } from "../board/prefetchCard";
 import { inSettingsArea } from "../settings/settingsEntries";
-import { readFlag, writeFlag } from "../storage";
 import { AgentProvider, useAgent } from "./AgentContext";
 import { AgentDock } from "./AgentDock";
 import { AgentPanel } from "./AgentPanel";
@@ -43,28 +41,6 @@ import { noteRecent } from "./palette/model";
 import { SHORTCUTS_KEY } from "./palette/shortcuts";
 import { RightColumn } from "./RightColumn";
 import { Sidebar } from "./Sidebar";
-
-const COLLAPSED_KEY = "moebius.sidebar.collapsed";
-
-/** The window width under which the sidebar folds to its rail by itself, as the pages need the width more. */
-const NARROW_BELOW = 1024;
-
-/** Whether the window is narrower than `NARROW_BELOW`, following it as it is resized. */
-function useNarrow(): boolean {
-  const query = `(max-width: ${NARROW_BELOW - 1}px)`;
-  const [narrow, setNarrow] = useState(
-    () => typeof matchMedia === "function" && matchMedia(query).matches,
-  );
-  useEffect(() => {
-    if (typeof matchMedia !== "function") return;
-    const media = matchMedia(query);
-    const change = () => setNarrow(media.matches);
-    change();
-    media.addEventListener("change", change);
-    return () => media.removeEventListener("change", change);
-  }, [query]);
-  return narrow;
-}
 
 export function Shell(props: { unreachable: boolean; onRetry: () => void }) {
   return (
@@ -101,11 +77,6 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
     if (Number.isInteger(id) && id > 0) prefetchCard(queryClient, id);
   }, [queryClient]);
   const reconnect = useReconnect();
-  const [collapsed, setCollapsed] = useState(() => readFlag(COLLAPSED_KEY));
-  const narrow = useNarrow();
-  // Below `NARROW_BELOW` the sidebar is the rail unless a person opened it for now; the saved choice is left as it was.
-  const [openedNarrow, setOpenedNarrow] = useState(false);
-  const folded = narrow ? !openedNarrow : collapsed;
   const [commandOpen, setCommandOpen] = useState(false);
 
   const navigate = useNavigate();
@@ -144,19 +115,7 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
   return (
     <div className="flex h-full bg-ground py-1.5">
       <Rail bridge={desktopBridge()} />
-      <Sidebar
-        connection={connection}
-        collapsed={folded}
-        onToggle={() => {
-          if (narrow) {
-            setOpenedNarrow(!openedNarrow);
-            return;
-          }
-          writeFlag(COLLAPSED_KEY, !collapsed);
-          setCollapsed(!collapsed);
-        }}
-        onSearch={() => setCommandOpen(true)}
-      />
+      <Sidebar onSearch={() => setCommandOpen(true)} />
       {/* The page: one panel, rounded at all four corners, that clips what scrolls inside it to those corners. The
           sheets lie in it, over the place of its properties pane, so they share its corners and its height. It clips
           rather than hides, so a sheet that takes the focus while it slides in cannot scroll the whole page sideways.

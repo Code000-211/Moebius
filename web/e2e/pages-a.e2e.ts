@@ -1240,17 +1240,14 @@ describe("get started", () => {
       .waitFor();
   });
 
-  it.skipIf(usesRealServer)(
-    "reads the steps again with Refresh, and the sidebar lists the page only while a step is missing",
-    async () => {
-      await open("/start");
-      const pages = page.getByRole("navigation", { name: "Pages" });
-      await pages.getByRole("link", { name: "Get started" }).waitFor();
-      fake().completeStart();
-      await page.getByRole("button", { name: "Refresh" }).click();
-      await pages.getByRole("link", { name: "Get started" }).waitFor({ state: "detached" });
-    },
-  );
+  it.skipIf(usesRealServer)("reads the steps again with Refresh", async () => {
+    await open("/start");
+    await page.getByTestId("start-step").first().waitFor();
+    fake().completeStart();
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await page.getByTestId("start-step").first().waitFor();
+    await page.getByRole("button", { name: "Refresh" }).waitFor();
+  });
 
   it.skipIf(usesRealServer)("sends each missing step to the page that fixes it", async () => {
     await open("/start");

@@ -33,7 +33,7 @@ async function open(path: string) {
   await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: server.url });
   page = await context.newPage();
   await page.goto(server.loginUrl);
-  await page.getByRole("navigation", { name: "Pages" }).waitFor();
+  await page.getByRole("navigation", { name: "Pages", exact: true }).waitFor();
   if (path !== "/inbox") await page.goto(`${server.url}${path}`);
 }
 
@@ -78,76 +78,36 @@ function distanceFromEnd(list: Locator): Promise<number> {
 }
 
 describe("the chat page", () => {
-  it("loads, holds the chats in the sidebar and offers a new one from it", async () => {
+  it("loads with the agent's chooser and the field", async () => {
     await open("/chat");
-    // The sidebar holds the list of chats now, and the way to start one is its button above the list; the top bar
-    // keeps only the title and its actions.
-    await page
-      .getByRole("navigation", { name: "Pages" })
-      .getByText(/^Chats$/, { exact: true })
-      .waitFor();
-    await page.getByRole("link", { name: "Start a chat in the sidebar" }).waitFor();
     await page.getByRole("button", { name: /^Agent: / }).waitFor();
     await field().waitFor();
   });
 
-  it.skipIf(usesRealServer)(
-    "lists the chats newest first and opens one from the sidebar",
-    async () => {
-      await open("/chat");
-      const first = fake().seed({
-        title: "Older chat",
-        events: [["said", { message: "Older chat" }]],
-      });
-      const second = fake().seed({
-        title: "Newer chat",
-        events: [["said", { message: "Newer chat" }]],
-      });
-      await page.reload();
-      const rows = page.getByTestId("chat-entry");
-      await rows.first().waitFor();
-      await expect
-        .poll(() => rows.allInnerTexts())
-        .toEqual([expect.stringContaining("Newer chat"), expect.stringContaining("Older chat")]);
-      await rows.nth(1).click();
-      await page.waitForURL(`**/chat/${first}`);
-      await page.getByTestId("person-message").filter({ hasText: "Older chat" }).waitFor();
-      expect(second).toBeGreaterThan(first);
-    },
-  );
-
-  it.skipIf(usesRealServer)(
-    "names a chat, and the name is what the page and the list both say",
-    async () => {
-      await open("/chat");
-      const id = fake().seed({
-        title: "First line of the chat",
-        events: [["said", { message: "First line of the chat" }]],
-      });
-      await page.goto(`${server.url}/chat/${id}`);
-      const title = page.getByTestId("chat-title");
-      await title.waitFor();
-      await page.getByTestId("chat-chip").click();
-      await page.getByTestId("chat-chip-panel").getByRole("button", { name: "Rename" }).click();
-      const field = page.getByTestId("chat-title-field");
-      await field.fill("Where the login screen went wrong");
-      await field.press("Enter");
-      const named = "Where the login screen went wrong";
-      // The field closes as soon as it is told to save, so the answer is the name itself appearing in the row.
-      await page.getByText(named).first().waitFor();
-      expect.soft(await words(title), "the page says the new name").toContain(named);
-      // The name belongs to the server now: a reload says the same, and so does the list.
-      await page.reload();
-      const again = page.getByTestId("chat-title");
-      await again.waitFor();
-      expect.soft(await words(again), "a reload still says it").toContain(named);
-      const rows = page.getByTestId("chat-entry");
-      await rows.first().waitFor();
-      expect
-        .soft(await words(rows.first()), "and the chats of the sidebar say it too")
-        .toContain(named);
-    },
-  );
+  it.skipIf(usesRealServer)("names a chat, and the name is what the page says", async () => {
+    await open("/chat");
+    const id = fake().seed({
+      title: "First line of the chat",
+      events: [["said", { message: "First line of the chat" }]],
+    });
+    await page.goto(`${server.url}/chat/${id}`);
+    const title = page.getByTestId("chat-title");
+    await title.waitFor();
+    await page.getByTestId("chat-chip").click();
+    await page.getByTestId("chat-chip-panel").getByRole("button", { name: "Rename" }).click();
+    const field = page.getByTestId("chat-title-field");
+    await field.fill("Where the login screen went wrong");
+    await field.press("Enter");
+    const named = "Where the login screen went wrong";
+    // The field closes as soon as it is told to save, so the answer is the name itself appearing in the row.
+    await page.getByText(named).first().waitFor();
+    expect.soft(await words(title), "the page says the new name").toContain(named);
+    // The name belongs to the server now: a reload says the same.
+    await page.reload();
+    const again = page.getByTestId("chat-title");
+    await again.waitFor();
+    expect.soft(await words(again), "a reload still says it").toContain(named);
+  });
 
   it.skipIf(usesRealServer)(
     "offers the ways to begin in an empty chat whatever became of its agent",
@@ -163,26 +123,6 @@ describe("the chat page", () => {
       expect(await field().inputValue()).toBe("What is on the board right now?");
     },
   );
-
-  it.skipIf(usesRealServer)("shows the sidebar's count of unread chats", async () => {
-    await open("/chat");
-    fake().seed({ title: "Done", answered: 5, seen: 0, events: [["said", { message: "Done" }]] });
-    await page.reload();
-    // The rail keeps the Chat entry with the count it was given, so the count is read there.
-    await page.getByRole("button", { name: "Collapse the sidebar" }).click();
-    await page
-      .getByRole("navigation", { name: "Pages" })
-      .getByRole("link", { name: "Chat. 1" })
-      .waitFor();
-    // The list comes back with the sidebar, and its row says the same per chat.
-    await page.getByRole("button", { name: "Expand the sidebar" }).click();
-
-    // The entry says the same thing with a dot rather than a word, and keeps the word in the row's own name.
-    const row = page.getByTestId("chat-entry").filter({ hasText: "Done" });
-    expect.soft(await row.getAttribute("data-unread")).toBe("true");
-    // The link's name is its chat's name, so the word for the unread dot is read as the text it holds.
-    await row.getByText("New answers").waitFor();
-  });
 });
 
 describe("a chat longer than the page opens with", () => {
@@ -841,7 +781,11 @@ describe("the Moebius agent", () => {
 
       // The chat stays across pages, and the next message goes to the same chat.
       await page
-        .getByRole("navigation", { name: "Pages" })
+        .getByRole("navigation", { name: "Pages", exact: true })
+        .getByRole("link", { name: "Settings" })
+        .click();
+      await page
+        .getByRole("navigation", { name: "Settings" })
         .getByRole("link", { name: "Retro" })
         .click();
       await page.waitForURL("**/retro");
@@ -857,12 +801,8 @@ describe("the Moebius agent", () => {
         context: "Page: Improve > Retro",
       });
 
-      // Closed, and the conversation it started is on the Chat page like any other: the
-      // count says one, and the list holds it under the first thing said in it.
       await window.getByRole("button", { name: "Close the Moebius agent" }).click();
       await window.waitFor({ state: "detached" });
-      await page.goto(`${server.url}/chat`);
-      await page.getByTestId("chat-entry").filter({ hasText: "What is this page?" }).waitFor();
     },
   );
 
@@ -1065,9 +1005,6 @@ describe("deleting a chat", () => {
       await dialog().getByRole("button", { name: "Delete" }).click();
       await page.waitForURL(`${server.url}/chat`);
       expect(fake().deleted).toEqual([going]);
-      // The sidebar's list is updated and the other chat stays.
-      await page.getByTestId("chat-entry").filter({ hasText: "Keep this one" }).waitFor();
-      await expect.poll(() => page.getByTestId("chat-entry").count()).toBe(1);
       expect(kept).toBeGreaterThan(0);
     },
   );
@@ -1079,7 +1016,6 @@ describe("deleting a chat", () => {
       const id = fake().seed({ status: "waiting", title: "Doomed" });
       const other = fake().seed({ status: "waiting", title: "Survivor" });
       await page.goto(`${server.url}/chat/${id}`);
-      await expect.poll(() => page.getByTestId("chat-entry").count()).toBe(2);
       await page.evaluate(
         (chat) => fetch(`/v1/chats/${chat}`, { method: "DELETE", headers: { "X-Moebius": "1" } }),
         id,
@@ -1087,7 +1023,6 @@ describe("deleting a chat", () => {
       // The URL has changed once the page has left the chat that is gone; the pathname alone is read, so any way
       // the page gets there is what is awaited.
       await expect.poll(() => new URL(page.url()).pathname, { timeout: 30_000 }).toBe("/chat");
-      await expect.poll(() => page.getByTestId("chat-entry").count()).toBe(1);
       expect(other).toBeGreaterThan(0);
     },
   );
@@ -1126,7 +1061,7 @@ async function openWith(
   context = await browser.newContext(options);
   page = await context.newPage();
   await page.goto(server.loginUrl);
-  await page.getByRole("navigation", { name: "Pages" }).waitFor();
+  await page.getByRole("navigation", { name: "Pages", exact: true }).waitFor();
   if (init) await context.addInitScript(init);
   await page.goto(`${server.url}${path}`);
 }
@@ -1141,10 +1076,13 @@ describe("the chat page on a phone", () => {
     await openWith("/plugins", { viewport: { width, height: 900 } });
     await page.getByRole("button", { name: "Browse packages" }).first().click();
     await sheet().getByTestId("list-card").first().waitFor();
-    // Back to the everyday pages: Plugins is one of Settings, whose sidebar holds no chat list, so "New chat" is
-    // reached from there once the everyday sidebar is back.
-    await page.getByRole("link", { name: /^Back( to the pages)?$/ }).click();
-    await page.getByRole("link", { name: "Start a chat in the sidebar" }).click();
+    // The chat page is one of More's rows.
+    const pages = page.getByRole("navigation", { name: "Pages", exact: true });
+    await pages.getByRole("link", { name: "More" }).click();
+    await page
+      .getByRole("navigation", { name: "More pages" })
+      .getByRole("link", { name: "Chat" })
+      .click();
     await field().waitFor();
     await sheet().waitFor();
   }

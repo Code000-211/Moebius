@@ -33,7 +33,7 @@ async function open(path: string) {
   await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: server.url });
   page = await context.newPage();
   await page.goto(server.loginUrl);
-  await page.getByRole("navigation", { name: "Pages" }).waitFor();
+  await page.getByRole("navigation", { name: "Pages", exact: true }).waitFor();
   await page.goto(`${server.url}${path}`);
 }
 
@@ -485,11 +485,14 @@ describe("the terminals", () => {
 });
 
 describe("the Ports page", () => {
-  it("opens from the sidebar, behind Settings", async () => {
+  it("opens from More", async () => {
     await open("/inbox");
-    const nav = page.getByRole("navigation", { name: "Pages" });
-    await nav.getByRole("link", { name: "Settings" }).click();
-    await nav.getByRole("link", { name: "Ports" }).click();
+    const nav = page.getByRole("navigation", { name: "Pages", exact: true });
+    await nav.getByRole("link", { name: "More" }).click();
+    await page
+      .getByRole("navigation", { name: "More pages" })
+      .getByRole("link", { name: "Ports" })
+      .click();
     await page.waitForURL("**/ports");
     await page.getByRole("heading", { name: "Ports", level: 1 }).waitFor();
   });
