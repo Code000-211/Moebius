@@ -31,7 +31,7 @@ vi.mock("react-virtuoso", () => ({
     itemContent: (index: number, item: unknown) => React.ReactNode;
   }) => <div>{data.map((item, index) => itemContent(index, item))}</div>,
 }));
-vi.mock("../../live/LiveProvider", () => ({ useServerEvents: () => {} }));
+vi.mock("../../live/LiveProvider", () => ({ useServerEvents: () => {}, useWatchRun: () => {} }));
 
 const card = (number: number, extra: Partial<Card> = {}): Card => ({
   id: number + 100,

@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EVENT_PAGE, olderEvents, runEvents } from "../api/calls/chat";
 import type { RunEvent } from "../api/types/chat";
-import { useConnection, useServerEvents } from "../live/LiveProvider";
+import { useConnection, useServerEvents, useWatchRun } from "../live/LiveProvider";
 import { Conversation, type Entry } from "./conversation";
 
 /** How many entries the window holds before the read stops and leaves the rest of the chat above it. */
@@ -107,6 +107,8 @@ export function useThread(id: number | null): Thread {
   /** The number of the latest read; a result of an older one does not touch the page. */
   const latestRead = useRef(0);
   const connection = useConnection();
+  // Asked for before the read below starts, so that nothing between the read and the stream is lost.
+  useWatchRun(id);
 
   const publish = (error: string | null) => {
     const current = conversation.current;

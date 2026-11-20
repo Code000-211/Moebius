@@ -2,13 +2,17 @@
  * The event stream of the server (`GET /v1/events`): one WebSocket that connects again by itself with a growing wait
  * and tells who listens about the connection and every event. Events are not replayed, so a listener reads what it
  * shows again whenever `onConnected` is called. The socket is authenticated by the session cookie.
+ *
+ * The server sends what a run says while it works (every streamed piece of an answer, every tool call) only for the
+ * runs the stream asked for: `watchRun` asks, the way it returns stops asking, and the runs asked for are asked for
+ * again whenever the socket opens.
  */
 import type { ServerEvent } from "./types/events";
 
 export type ConnectionState = "connecting" | "online" | "reconnecting";
 
 /** The part of a WebSocket the stream uses, so a test can stand a fake in. */
-export type SocketLike = Pick<WebSocket, "onopen" | "onmessage" | "onclose" | "close">;
+export type SocketLike = Pick<WebSocket, "onopen" | "onmessage" | "onclose" | "close" | "send">;
 
 export interface EventStreamOptions {
   url: string;
@@ -58,6 +62,8 @@ export class EventStream {
   private timer: unknown = null;
   private failures = 0;
   private stopped = true;
+  /** The runs asked for, and how many watchers each has. */
+  private readonly watched = new Map<number, number>();
 
   constructor(private readonly options: EventStreamOptions) {}
 
@@ -68,6 +74,35 @@ export class EventStream {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
+
+  /** Asks the server for the events of run `id` until the returned function is called; one ask for any number of watchers. */
+  watchRun = (id: number): (() => void) => {
+    const count = this.watched.get(id) ?? 0;
+    this.watched.set(id, count + 1);
+    if (count === 0) this.tell({ subscribe: [id] });
+    let stopped = false;
+    return () => {
+      if (stopped) return;
+      stopped = true;
+      const left = (this.watched.get(id) ?? 1) - 1;
+      if (left > 0) {
+        this.watched.set(id, left);
+        return;
+      }
+      this.watched.delete(id);
+      this.tell({ unsubscribe: [id] });
+    };
+  };
+
+  /** Sends a request to the server when the socket is open; what is asked for is sent again when it opens. */
+  private tell(request: { subscribe: number[] } | { unsubscribe: number[] }): void {
+    if (this.state !== "online" || !this.socket) return;
+    try {
+      this.socket.send(JSON.stringify(request));
+    } catch {
+      // The socket is closing; it asks again when it opens next.
+    }
+  }
 
   start(): void {
     if (!this.stopped) return;
@@ -108,6 +143,9 @@ export class EventStream {
     this.socket = socket;
     socket.onopen = () => {
       this.failures = 0;
+      // Before the page is told, so that what it reads next is already being streamed.
+      if (this.watched.size > 0)
+        socket.send(JSON.stringify({ subscribe: [...this.watched.keys()] }));
       this.setState("online");
       this.options.onConnected?.();
     };
