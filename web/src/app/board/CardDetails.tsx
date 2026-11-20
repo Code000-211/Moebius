@@ -64,7 +64,15 @@ export function CardDetails({
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent aria-describedby={undefined} className="max-w-3xl">
+      <DialogContent
+        aria-describedby={undefined}
+        className="max-w-3xl"
+        // Escape in a field of a property leaves the field first; the window stays until the second one.
+        onEscapeKeyDown={(event) => {
+          const target = event.target as HTMLElement;
+          if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") event.preventDefault();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{`Properties of #${card.number}`}</DialogTitle>
         </DialogHeader>
