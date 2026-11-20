@@ -141,6 +141,8 @@ const routes: Route[] = [
   { path: "/inbox", name: "inbox-chat", open: "chat" },
   // A card open takes a column of the page for a drawer, and its change opens a sheet of its own.
   { path: "/board/1?card=1", name: "board-dock" },
+  // The card and the Moebius agent together: the card's text stays in its own pane, clear of the sheet.
+  { path: "/board/1?card=1", name: "board-dock-chat", open: "chat" },
   { path: "/board/1", name: "board-new-issue", open: "new issue" },
   { path: "/board/1", name: "board-terminal", open: "terminal" },
   { path: "/board/1?card=5", name: "board-diff", open: "diff" },

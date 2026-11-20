@@ -71,6 +71,8 @@ export type PropertyEditor =
   | {
       kind: "number";
       value: number | null;
+      /** What to say of a number that cannot be saved, or null when it can; asked before anything is sent. */
+      invalid?: (value: number) => string | null;
       onSave: (value: number | null) => Promise<unknown>;
     }
   | {
@@ -351,6 +353,9 @@ export function EditableProperty({
       const number = Number(text.replace(/^#/, ""));
       if (text !== "" && !Number.isFinite(number)) {
         void run(() => Promise.reject(new Error(`"${text}" is not a number.`)));
+      } else if (text !== "" && editor.invalid?.(number)) {
+        const said = editor.invalid(number) ?? "";
+        void run(() => Promise.reject(new Error(said)));
       } else {
         void run(() => editor.onSave(text === "" ? null : number));
       }

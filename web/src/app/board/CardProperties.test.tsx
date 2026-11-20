@@ -240,6 +240,18 @@ describe("the estimate of a card", () => {
   });
 });
 
+describe("an estimate that is not one", () => {
+  it("is refused in a sentence before anything is sent", async () => {
+    const sent = server();
+    properties(card(5, { estimate: 3, labels: ["bug", "estimate:3"] }));
+    for (const typed of ["-3", "2.5", "99999999999", "0"]) {
+      type("Estimate 3 points", { role: "textbox", name: "Estimate" }, typed);
+      await screen.findByText("Use a whole number from 1 to 1000.");
+    }
+    expect(sent).toEqual([]);
+  });
+});
+
 describe("the number of an issue as typed", () => {
   it("takes 12 and #12, and refuses anything else", () => {
     expect(issueNumber("12")).toBe(12);
