@@ -315,4 +315,34 @@ describe("the Wiki page", () => {
     await again.waitFor({ state: "detached" });
     await context.close();
   });
+
+  it("shows the tree, the text and the outline together at 1280px, flat", async () => {
+    server = await startServer();
+    const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    const page = await context.newPage();
+    page.setDefaultTimeout(8000);
+    await page.goto(server.loginUrl);
+    await page.getByRole("navigation", { name: "Pages" }).waitFor();
+    const made = await context.request.put(`${server.url}/v1/wiki/pages/Runbook`, {
+      headers: { "x-moebius": "1" },
+      data: { text: "# Runbook\n\nStart.\n\n## Rotation\n\nWeekly.\n\n## Escalation\n\nCall." },
+    });
+    expect(made.status()).toBe(200);
+    await page.goto(`${server.url}/wiki?page=Runbook`);
+    const tree = page.getByRole("navigation", { name: "Pages of the wiki" });
+    const article = page.getByRole("article", { name: "Runbook" });
+    const outline = page.getByRole("navigation", { name: "On this page" });
+    await article.getByText("Start.").waitFor();
+    await outline.getByRole("button", { name: "Escalation" }).waitFor();
+    for (const part of [tree, article, outline]) expect(await part.isVisible()).toBe(true);
+    // The outline is a column of the page, and the page casts no shadow.
+    expect(await page.getByRole("region", { name: /^Properties of/ }).count()).toBe(0);
+    const shadows = await page.evaluate(() =>
+      [...document.querySelectorAll("article, aside, [data-testid=detail-column]")].map(
+        (element) => getComputedStyle(element).boxShadow,
+      ),
+    );
+    expect(shadows.every((shadow) => shadow === "none")).toBe(true);
+    await context.close();
+  });
 });

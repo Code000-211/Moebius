@@ -1,6 +1,6 @@
 /**
- * What links to a page or a card, as properties in the page's right column: the pages and cards that link to a page
- * (`Backlinks`, on the Wiki page), and the pages that link to a card (`WikiPagesProperty`, in the properties of a
+ * What links to a page or a card: the pages and cards that link to a page (`Backlinks`, under the outline at the right
+ * of the Wiki page), and the pages that link to a card (`WikiPagesProperty`, in the properties of a
  * card). Each is a link that opens the page or the card. A wiki the server does not have, or a read that fails, shows
  * nothing: these are an addition to what the page already says.
  */
@@ -14,6 +14,9 @@ import { wikiAddress } from "./links";
 
 const LINK =
   "min-h-7 truncate rounded-control text-sm text-text underline-offset-4 hover:underline focus-visible:underline";
+/** The same links in the outline column: the column has the room of its own, so the row is the outline's. */
+const OUTLINE_LINK =
+  "flex min-h-7 items-center truncate rounded-control px-2 text-sm text-muted hover:bg-hover hover:text-text focus-visible:text-text";
 
 /** The pages and cards that link to the page; nothing while there are none. */
 export function Backlinks({ links }: { links: PageLinks | undefined }) {
@@ -21,25 +24,26 @@ export function Backlinks({ links }: { links: PageLinks | undefined }) {
   const cards = links?.backlinks.cards ?? [];
   if (pages.length === 0 && cards.length === 0) return null;
   return (
-    <Property name="Linked from">
-      <ul aria-label="Linked from" className="m-0 flex list-none flex-col gap-0.5 p-0">
+    <section className="flex flex-col border-t border-hairline pt-3">
+      <h2 className="m-0 px-2 pb-1 text-xs font-medium text-muted">Linked from</h2>
+      <ul aria-label="Linked from" className="m-0 flex list-none flex-col p-0">
         {pages.map((page) => (
           <li key={`page:${page.path}`} className="min-w-0">
-            <Link to={wikiAddress(page.path)} className={LINK} title={page.path}>
+            <Link to={wikiAddress(page.path)} className={OUTLINE_LINK} title={page.path}>
               {page.name}
             </Link>
           </li>
         ))}
         {cards.map((card) => (
           <li key={`card:${card.key}`} className="min-w-0">
-            <Link to={`/card/${card.key}`} className={LINK} title={card.title ?? undefined}>
+            <Link to={`/card/${card.key}`} className={OUTLINE_LINK} title={card.title ?? undefined}>
               {card.key}
               {card.title ? ` · ${card.title}` : ""}
             </Link>
           </li>
         ))}
       </ul>
-    </Property>
+    </section>
   );
 }
 
