@@ -1075,7 +1075,7 @@ one). Every word of `q` must be in the page, in any order, the last one may be o
 of the text, so a page called for the words comes before one that mentions them. Response: `[SearchHit]`, the best
 first, `{"path": string, "name": string, "project": string | null, "snippet": string}`: the page's path and name, the
 key of its project (`null` for the organisation's pages) and the words around the match as plain text. An empty `q`
-finds nothing (`[]`).
+finds nothing (`[]`). The web app's Wiki page has a search box above its tree that asks this route.
 
 **Only what the asker may see is returned**: a page under `projects/<key>/` of a private project the asker is no member
 of is never in the answer, and does not take the place of a page that is. The index is derived from the pages
@@ -1209,7 +1209,7 @@ requester is told the reason in the Inbox's Mentions tab and reads it in the req
 
 A member makes a page from a page [template](#templates). Request body: `{"template": string, "path": string}`. The page
 at `path` has the template's text and is a commit in the wiki like any write. Response: the `PageView`. Errors: `404` for
-no such template, `409` for a page at `path` already or a server without a wiki, `422` for a path that is not a page's.
+no such template, `409` for a page at `path` already or a server without a wiki, `422` for a path that is not a page's. In the web app: "From a template" above the editor of a new page on the Wiki page.
 
 ### Templates
 
@@ -1303,7 +1303,7 @@ for a cycle of another project or a closed one.
 ### Importing from Jira
 
 A one-off copy of a Jira project into a Moebius project, which can be run again. Only an owner imports, never an agent,
-since it may make people. The Jira API token is kept like the other keys, in `secrets.toml` (`PUT /v1/secrets/{name}`,
+since it may make people. The web app has it as the Import tab of a project's settings. The Jira API token is kept like the other keys, in `secrets.toml` (`PUT /v1/secrets/{name}`,
 see [Secrets](configuration.md#secrets)); the request names it and never carries it, and it is not stored, logged or
 answered.
 

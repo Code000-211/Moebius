@@ -1,7 +1,7 @@
 /**
  * A project's settings in tabs (pattern 21 of the design drafts; `/projects/:id/settings/:tab`, with the project's id):
  * General (its name, its key, and whether it is private), Repositories (with their home project and the settings of
- * their code), Members, Workflow (the script of each column), Kinds and Plugins. Every setting of a project is edited
+ * their code), Members, Workflow (the script of each column), Kinds, Plugins and Import (a Jira project copied in, for an owner). Every setting of a project is edited
  * and saved in its tab; the tile of the Projects page opens the page. Only an owner edits: anyone else who sees the
  * project reads it. The tab is part of the address, so a tab can be linked to.
  */
@@ -22,13 +22,22 @@ import { TabPanel, Tabs } from "../../ui/page/Tabs";
 import { boardPath } from "../pages";
 import { useRole } from "../shell/session";
 import { ProjectGeneralTab } from "./ProjectGeneralTab";
+import { ProjectImportTab } from "./ProjectImportTab";
 import { ProjectKindsTab } from "./ProjectKindsTab";
 import { ProjectMembersTab } from "./ProjectMembersTab";
 import { ProjectPluginsTab } from "./ProjectPluginsTab";
 import { ProjectRepositoriesTab } from "./ProjectRepositoriesTab";
 import { ProjectWorkflowTab } from "./ProjectWorkflowTab";
 
-const TABS = ["general", "repositories", "members", "workflow", "kinds", "plugins"] as const;
+const TABS = [
+  "general",
+  "repositories",
+  "members",
+  "workflow",
+  "kinds",
+  "plugins",
+  "import",
+] as const;
 type Tab = (typeof TABS)[number];
 
 /** The tabs with their words; Repositories and Members say how many they hold. */
@@ -40,6 +49,7 @@ function tabLabels(project: Project): Array<{ value: Tab; label: string }> {
     { value: "workflow", label: "Workflow" },
     { value: "kinds", label: "Kinds" },
     { value: "plugins", label: "Plugins" },
+    { value: "import", label: "Import" },
   ];
 }
 
@@ -128,6 +138,7 @@ export function ProjectSettingsPage() {
         {current === "workflow" && <ProjectWorkflowTab project={project} />}
         {current === "kinds" && <ProjectKindsTab project={project} canEdit={canEdit} />}
         {current === "plugins" && <ProjectPluginsTab project={project} />}
+        {current === "import" && <ProjectImportTab project={project} canEdit={canEdit} />}
       </TabPanel>
     </>
   );

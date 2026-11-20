@@ -60,6 +60,8 @@ export const keys = {
   cardCycle: (card: number) => ["card", card, "cycle"] as const,
   /** The kinds of issues with their fields. */
   issueKinds: ["issue-kinds"] as const,
+  /** The issue templates of the kinds and the page templates of the wiki. */
+  templates: ["templates"] as const,
   /** The cards of every project, as the Issues page asks for them: all of them, or the ones a query picks. */
   issues: ["issues"] as const,
   issuesFor: (query: string) => ["issues", query] as const,
