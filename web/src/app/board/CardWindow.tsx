@@ -258,6 +258,10 @@ function CardWindowView({
         aria-label="Card inspector"
         aria-labelledby={undefined}
         aria-describedby={undefined}
+        // A toast lies over the window, and a click on its Undo is not a click away from the card.
+        onInteractOutside={(event) => {
+          if ((event.target as HTMLElement).closest("[data-toast-host]")) event.preventDefault();
+        }}
         onEscapeKeyDown={(event) => {
           // A field keeps its Escape for leaving itself; the card stays until the second one.
           const target = event.target as HTMLElement;

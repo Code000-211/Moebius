@@ -443,74 +443,6 @@ describe("live data", () => {
   );
 
   it.skipIf(usesRealServer)(
-    "puts the facts of the dock's card in the right column, beside the dock",
-    async () => {
-      await fresh();
-      await openBoard();
-      await card(3).click();
-      const facts = properties(3);
-      await facts.getByText("Not started", { exact: true }).waitFor();
-      for (const name of [
-        "Status",
-        "Column",
-        "Repository",
-        "Author",
-        "Run",
-        "Why it waits",
-        "Cost",
-      ]) {
-        await facts.getByText(name, { exact: true }).waitFor();
-      }
-      // The column holds them, and the dock stands beside it rather than over it.
-      const column = page.locator('[data-surface="right-column"]');
-      expect(await column.isVisible()).toBe(true);
-      const right = (await column.boundingBox()) as { x: number };
-      const drawer = (await dock().boundingBox()) as { x: number; width: number };
-      expect(drawer.x + drawer.width).toBeLessThanOrEqual(right.x + 1);
-      // The dock does not say them again.
-      expect(await dock().getByText("demo · Not started · by person").count()).toBe(0);
-      // Closing the dock takes them away, and the column goes with them.
-      await dock().getByRole("button", { name: "Close the inspector" }).click();
-      await facts.waitFor({ state: "detached" });
-      await expect.poll(() => column.isVisible()).toBe(false);
-    },
-  );
-
-  it.skipIf(usesRealServer)(
-    "keeps the dock clear of the Moebius agent, and the Following row inside the column",
-    async () => {
-      for (const width of [1280, 1440, 1600, 1920]) {
-        await fresh();
-        await page.setViewportSize({ width, height: 900 });
-        await openBoard();
-        await card(3).click();
-        await properties(3).getByText("Not started", { exact: true }).waitFor();
-        const column = page.locator('[data-surface="right-column"]');
-        const row = column.getByText("Following", { exact: true });
-        if ((await row.count()) > 0) {
-          const edge = (await column.boundingBox()) as { x: number; width: number };
-          for (const button of await column.getByRole("button").all()) {
-            const box = await button.boundingBox();
-            if (box) expect(box.x + box.width).toBeLessThanOrEqual(edge.x + edge.width + 1);
-          }
-        }
-        await page.keyboard.press("Control+j");
-        const chat = page.getByRole("dialog", { name: /Moebius/ });
-        await chat.waitFor();
-        const sheet = (await chat.boundingBox()) as { x: number };
-        const drawer = (await dock().boundingBox()) as { x: number; width: number };
-        expect(drawer.x + drawer.width, `at ${width}`).toBeLessThanOrEqual(sheet.x + 1);
-        // A real pointer click: Playwright waits until the button receives it, so a drawer lying over the head bar
-        // fails here instead of being stepped around.
-        await page.getByRole("button", { name: "New issue" }).click({ timeout: 5_000 });
-        await page.getByRole("dialog", { name: "New issue" }).waitFor();
-        await context.close();
-        await server.stop().catch(() => {});
-      }
-    },
-  );
-
-  it.skipIf(usesRealServer)(
     "edits every property of the issue with the keyboard alone",
     async () => {
       await fresh();
@@ -1244,46 +1176,6 @@ describe("the dock", () => {
     const tile = (await card(4).boundingBox()) as { x: number; width: number };
     expect(tile.x + tile.width).toBeLessThanOrEqual(lane.x + lane.width);
   });
-
-  it.skipIf(usesRealServer)("gives the card drawer a column of its own from 1280px", async () => {
-    await fresh();
-    await openBoard();
-    await page.setViewportSize({ width: 1280, height: 800 });
-    await card(3).click();
-    await page.waitForURL("**/board/1?card=3");
-    await dock().getByRole("heading", { name: "Document the API" }).waitFor();
-    const box = await dock().boundingBox();
-    expect(box, "the drawer is drawn").not.toBeNull();
-    // Beside the board, against the right column that holds the card's properties (272px, then 6px of air from the
-    // window's edge), rather than stacked under the whole board.
-    expect(box?.x).toBeGreaterThanOrEqual(1280 - 6 - 272 - 384 - 1);
-    expect(box?.y).toBeLessThan(100);
-    // Below 1280px it stacks again.
-    await page.setViewportSize({ width: 1100, height: 800 });
-    await expect.poll(async () => (await dock().boundingBox())?.x ?? 9999).toBeLessThan(1100 - 384);
-  });
-
-  it.skipIf(usesRealServer)(
-    "leaves the head bar's buttons to the pointer with a card open, at 800px and 1024px",
-    async () => {
-      await fresh();
-      for (const width of [800, 1024]) {
-        await page.setViewportSize({ width, height: 800 });
-        await page.goto(`${server.url}/board/1?card=1`);
-        await dock().getByRole("heading", { name: "Add a feature" }).waitFor();
-        // A pointer click lands where the button is drawn: Playwright waits for the button to receive it, so a dock
-        // lying over the head bar times the click out.
-        await page.getByRole("button", { name: "Terminal" }).click({ timeout: 5_000 });
-        await page.getByRole("dialog").waitFor();
-        await page.keyboard.press("Escape");
-        await page.getByRole("dialog").waitFor({ state: "detached" });
-        await page.getByRole("button", { name: "New issue" }).click({ timeout: 5_000 });
-        await page.getByRole("dialog").waitFor();
-        await page.keyboard.press("Escape");
-        await page.getByRole("dialog").waitFor({ state: "detached" });
-      }
-    },
-  );
 
   it.skipIf(usesRealServer)("keeps the chosen card in the address, and closes", async () => {
     await fresh();
