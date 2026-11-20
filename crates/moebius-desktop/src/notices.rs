@@ -210,7 +210,7 @@ async fn connect(server: &Server) -> Option<Stream> {
 
 /// The person's notices, newest first.
 async fn read(server: &Server) -> Option<Vec<Notice>> {
-    reqwest::Client::new()
+    crate::server::http()
         .get(format!("{}/v1/notices", server.url))
         .bearer_auth(&server.token)
         .timeout(Duration::from_secs(10))

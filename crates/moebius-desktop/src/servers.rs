@@ -152,7 +152,7 @@ pub async fn servers(app: tauri::AppHandle) -> Vec<Entry> {
         Ok(rail) => rail.targets(),
         Err(_) => return servers.shown.lock().map(|e| e.clone()).unwrap_or_default(),
     };
-    let entries = rail::poll(targets).await;
+    let entries = rail::poll(targets, crate::tray_icon::figures(&app)).await;
     if let Ok(mut shown) = servers.shown.lock() {
         *shown = entries.clone();
     }
