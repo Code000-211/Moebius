@@ -44,6 +44,26 @@ describe("the answer of a change in the snapshot", () => {
     expect(cards(client, 1).map((c) => c.id)).toEqual([9]);
   });
 
+  it("gives a new card, which the server answers with as the plain card, what the board reads of a card", () => {
+    const client = held(board(1, []));
+    const plain = { id: 9, repository_id: 1, number: 9, title: "T", column: "Backlog", labels: [] };
+    putCard(client, plain as unknown as Card);
+    expect(cards(client)[0]).toMatchObject({
+      blocked_by: [],
+      counts_as_sub_issue: true,
+      run: null,
+      change: null,
+      tokens: 0,
+    });
+  });
+
+  it("keeps what a board shows of a card that the answer does not carry", () => {
+    const client = held(board(1, [card(1, { blocked_by: [4], tokens: 7 })]));
+    const plain = { id: 1, repository_id: 1, number: 1, column: "Not started", labels: ["ui"] };
+    putCard(client, plain as unknown as Card);
+    expect(cards(client)[0]).toMatchObject({ blocked_by: [4], tokens: 7, labels: ["ui"] });
+  });
+
   it("patches a card, takes one away, and does nothing without a snapshot", () => {
     const client = held(board(1, [card(1), card(2)]));
     patchCard(client, 1, { blocked_by: [2] });

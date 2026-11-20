@@ -25,6 +25,24 @@ function changeBoards(queryClient: QueryClient, change: (boards: Board[]) => Boa
   );
 }
 
+/**
+ * What a board shows of a card beyond the card itself (its runs, blockers, change) is not in the answer of a change,
+ * which is the plain card: a card the board lacks gets the values of a card with nothing going on, until the board
+ * is read again. A sub-issue counts, as the server says of one a person made.
+ */
+function withView(card: Card): Card {
+  const nothing: Partial<Card> = {
+    blocked_by: [],
+    counts_as_sub_issue: true,
+    rounds: 0,
+    tokens: 0,
+    refusals: 0,
+    run: null,
+    change: null,
+  };
+  return { ...nothing, ...card };
+}
+
 /** Puts `card`, the answer of a change, in place of the card it replaces on its board; a card the board lacks is added. */
 export function putCard(queryClient: QueryClient, card: Card): void {
   changeBoards(queryClient, (boards) =>
@@ -33,7 +51,7 @@ export function putCard(queryClient: QueryClient, card: Card): void {
       const at = board.cards.findIndex((c) => c.id === card.id);
       const cards =
         at < 0
-          ? [...board.cards, card]
+          ? [...board.cards, withView(card)]
           : board.cards.map((c) => (c.id === card.id ? { ...c, ...card } : c));
       return { ...board, cards };
     }),
