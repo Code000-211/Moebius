@@ -123,7 +123,11 @@ describe("signing in", () => {
     await page.getByRole("button", { name: "Sign in" }).click();
     await pages().waitFor();
     await pages().getByRole("link", { name: "Settings" }).click();
-    await page.getByText("Signed in as Lea").waitFor();
+    await page
+      .getByRole("navigation", { name: "Settings" })
+      .getByRole("link", { name: "Profile" })
+      .click();
+    await page.getByText("@lea").waitFor();
   });
 
   // The real server's run tokens exist only while a run does.
@@ -165,7 +169,11 @@ describe("signing in", () => {
     await page.goto(server.loginUrl);
     await pages().waitFor();
     await pages().getByRole("link", { name: "Settings" }).click();
-    await page.getByRole("heading", { name: "General", level: 2 }).waitFor();
+    await page
+      .getByRole("navigation", { name: "Settings" })
+      .getByRole("link", { name: "Profile" })
+      .click();
+    await page.getByRole("heading", { name: "Profile", level: 2 }).waitFor();
     await page.getByRole("button", { name: "Sign out" }).click();
     // The way back in: the sign-in form's own field, named exactly, since Settings has several that say Token.
     await page.getByLabel("Token", { exact: true }).waitFor();

@@ -29,6 +29,7 @@ import { SheetSlotProvider } from "../../ui/page/SheetSlot";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import { isTyping, NewIssueProvider } from "../board/NewIssueHost";
 import { prefetchCard } from "../board/prefetchCard";
+import { inSettingsArea } from "../settings/settingsEntries";
 import { readFlag, writeFlag } from "../storage";
 import { AgentProvider, useAgent } from "./AgentContext";
 import { AgentDock } from "./AgentDock";
@@ -199,7 +200,7 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
             </PageBoundary>
           </main>
           {/* The quiet field for the agent; not while the agent's panel is open, and not on Settings, which has none. */}
-          {!agent.open && !location.pathname.startsWith("/settings") && <AgentDock />}
+          {!agent.open && !inSettingsArea(location.pathname) && <AgentDock />}
         </div>
         <AgentPanel />
         <RightColumn />
