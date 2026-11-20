@@ -571,7 +571,9 @@ describe("the MCP servers page", () => {
     await save().click();
     await page.getByText("Enter the command.").waitFor();
     await pickOption(page, page.getByLabel("Kind"), "URL");
-    await page.getByLabel("URL", { exact: true }).fill("https://search.example.com/mcp");
+    await page
+      .getByRole("textbox", { name: "URL", exact: true })
+      .fill("https://search.example.com/mcp");
     await page.getByRole("button", { name: "Add header" }).click();
     await page.getByLabel("Name 1").fill("Authorization");
     await page.getByLabel("Value 1").fill(OTHER_BEARER);
@@ -1079,6 +1081,12 @@ describe("the pages that put a list beside a detail", () => {
       await page.getByRole("heading", { name: title, level: 1 }).waitFor();
       await page.getByTestId("list-card").first().click();
       await page.getByTestId("detail-column").waitFor();
+      // The flat editor of a server fits a window; rows of values make it long enough to scroll.
+      if (path === "/mcp-servers") {
+        for (let at = 0; at < 8; at++) {
+          await page.getByRole("button", { name: /^Add (variable|header)$/ }).click();
+        }
+      }
       await columnsScrollEach(page);
       await scrollbarsAreQuiet(page);
     }

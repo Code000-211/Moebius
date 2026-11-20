@@ -25,15 +25,14 @@ import { keys } from "../../api/keys";
 import type { AvailableModels } from "../../api/types/chat";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
-import { Field } from "../../ui/page/Field";
+import { FieldRow, Rows } from "../../ui/page/Field";
 import { CELL, Table } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
-import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import { decisionChoices, modelChoices } from "../agents/model";
 import { Answered } from "../harness/ModelField";
+import { AreaTitle, Section } from "../settings/parts";
 import type { LoginStep } from "./LoginRow";
 import {
   blankUpstream,
@@ -93,7 +92,7 @@ export function ModelsPage() {
   if (models.isPending || server.isPending || form === null) {
     return (
       <>
-        <PageHeader title="Models" />
+        <AreaTitle title="Models" />
         <SkeletonCard lines={6} message="Reading the models" />
       </>
     );
@@ -219,9 +218,8 @@ export function ModelsPage() {
 
   return (
     <>
-      <PageHeader
+      <AreaTitle
         title="Models"
-        context="Where model requests go."
         actions={
           <div className="flex items-center gap-3">
             {saving || !modelsDirty(form) ? null : (
@@ -233,7 +231,7 @@ export function ModelsPage() {
           </div>
         }
       />
-      <div className="flex flex-col gap-8">
+      <div className="flex flex-col">
         {restarting ? (
           <Banner>Restarting the server. The app reconnects by itself.</Banner>
         ) : settings.restart_needed ? (
@@ -252,28 +250,31 @@ export function ModelsPage() {
         {notice?.kind === "failed" && <Notice tone="error">{notice.text}</Notice>}
 
         {form.upstreams.length === 0 ? (
-          <Empty
-            title="Providers"
-            body="Every model request fails until a provider has an address and a key — one that speaks OpenAI or Anthropic."
-            action={
-              <div className="flex flex-wrap gap-3">
-                <Button
-                  size="sm"
-                  onClick={() => edit((next) => void next.upstreams.push(blankUpstream()))}
-                >
-                  Add provider
-                </Button>
-                <Button variant="secondary" size="sm" onClick={() => setChoosing(true)}>
-                  Log in to a provider
-                </Button>
-              </div>
-            }
-          />
+          <Section title="Providers">
+            <Empty
+              plain
+              title="No provider"
+              body="Every model request fails until a provider has an address and a key — one that speaks OpenAI or Anthropic."
+              action={
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    size="sm"
+                    onClick={() => edit((next) => void next.upstreams.push(blankUpstream()))}
+                  >
+                    Add provider
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => setChoosing(true)}>
+                    Log in to a provider
+                  </Button>
+                </div>
+              }
+            />
+          </Section>
         ) : (
-          <Box
+          <Section
             title="Providers"
-            actions={
-              <div className="flex items-center gap-2">
+            aside={
+              <span className="flex items-center gap-2">
                 {answered && <Answered />}
                 <Button
                   variant="secondary"
@@ -283,150 +284,149 @@ export function ModelsPage() {
                 >
                   {refreshing ? "Asking" : "Refresh"}
                 </Button>
-              </div>
+              </span>
             }
-            className="flex flex-col gap-4"
           >
-            {form.upstreams.map((upstream, place) => {
-              const oauth =
-                upstream.origin === null ? undefined : data.upstreams[upstream.origin]?.oauth;
-              return (
-                <UpstreamRow
-                  key={upstream.uid}
-                  upstream={upstream}
-                  place={place}
-                  oauth={oauth}
-                  step={upstream.origin === null ? undefined : logins[upstream.origin]}
-                  failure={failures.get(upstream.baseUrl)}
-                  served={servedBy(available.data, upstream.baseUrl)}
-                  asked={asked}
-                  secrets={secrets}
-                  onPatch={(patch) => patchUpstream(place, patch)}
-                  onKey={(change) => patchKey(place, change)}
-                  onStep={(step) =>
-                    setLogins((held) => {
-                      const origin = upstream.origin;
-                      if (origin === null) return held;
-                      const next = { ...held };
-                      if (step === undefined) delete next[origin];
-                      else next[origin] = step;
-                      return next;
-                    })
-                  }
-                  onRemove={() => edit((next) => void next.upstreams.splice(place, 1))}
-                />
-              );
-            })}
-            {unplaced.map((error) => (
-              <Failure key={error.upstream} {...error} />
-            ))}
-            <div className="flex flex-wrap gap-3">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => edit((next) => void next.upstreams.push(blankUpstream()))}
-              >
-                Add provider
-              </Button>
-              <Button variant="secondary" size="sm" onClick={() => setChoosing(true)}>
-                Log in to a provider
-              </Button>
-            </div>
-            {choosing && (
-              <div className="rounded-card bg-sunken p-4">
-                <ProviderPanel
-                  providers={providers.data ?? []}
-                  adding={adding}
-                  problem={addProblem}
-                  onAdd={(upstream) => void addUpstream(upstream)}
-                  onCancel={() => {
-                    setChoosing(false);
-                    setAddProblem(null);
-                  }}
-                />
+            <Rows>
+              {form.upstreams.map((upstream, place) => {
+                const oauth =
+                  upstream.origin === null ? undefined : data.upstreams[upstream.origin]?.oauth;
+                return (
+                  <UpstreamRow
+                    key={upstream.uid}
+                    upstream={upstream}
+                    place={place}
+                    oauth={oauth}
+                    step={upstream.origin === null ? undefined : logins[upstream.origin]}
+                    failure={failures.get(upstream.baseUrl)}
+                    served={servedBy(available.data, upstream.baseUrl)}
+                    asked={asked}
+                    secrets={secrets}
+                    onPatch={(patch) => patchUpstream(place, patch)}
+                    onKey={(change) => patchKey(place, change)}
+                    onStep={(step) =>
+                      setLogins((held) => {
+                        const origin = upstream.origin;
+                        if (origin === null) return held;
+                        const next = { ...held };
+                        if (step === undefined) delete next[origin];
+                        else next[origin] = step;
+                        return next;
+                      })
+                    }
+                    onRemove={() => edit((next) => void next.upstreams.splice(place, 1))}
+                  />
+                );
+              })}
+              {unplaced.map((error) => (
+                <div key={error.upstream} className="py-3">
+                  <Failure {...error} />
+                </div>
+              ))}
+              <div className="flex flex-wrap gap-3 py-3">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => edit((next) => void next.upstreams.push(blankUpstream()))}
+                >
+                  Add provider
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => setChoosing(true)}>
+                  Log in to a provider
+                </Button>
               </div>
-            )}
-          </Box>
+            </Rows>
+          </Section>
+        )}
+        {choosing && (
+          <ProviderPanel
+            providers={providers.data ?? []}
+            adding={adding}
+            problem={addProblem}
+            onAdd={(upstream) => void addUpstream(upstream)}
+            onCancel={() => {
+              setChoosing(false);
+              setAddProblem(null);
+            }}
+          />
         )}
 
-        <Box title="Model classes" className="flex flex-col gap-6">
-          <p className="m-0 max-w-prose text-base text-secondary">
+        <Section title="Model classes">
+          <p className="m-0 mb-3 max-w-prose text-sm text-secondary">
             A class lists models to try in order; the next takes a request when one fails. An agent,
             the teacher or a chat may name a class instead of a model.
           </p>
-          {form.classes.map((each: ClassForm, place) => (
-            <div key={each.uid} className="flex flex-col gap-4" data-testid="class">
-              <div className="grid items-start gap-4 sm:grid-cols-2">
-                <Field label="Class">
-                  {(id) => (
-                    <Input
-                      id={id}
-                      value={each.name}
-                      placeholder="strong"
-                      onChange={(event) => patchClass(place, { name: event.target.value })}
-                    />
-                  )}
-                </Field>
-                <Field
+          <Rows>
+            {form.classes.map((each: ClassForm, place) => (
+              <div key={each.uid} data-testid="class" className="divide-y divide-hairline">
+                <FieldRow label="Class" wide>
+                  <Input
+                    value={each.name}
+                    placeholder="strong"
+                    onChange={(event) => patchClass(place, { name: event.target.value })}
+                  />
+                </FieldRow>
+                <FieldRow
                   label="Models, first tried first"
-                  hint="Model ids or other classes, separated by commas."
+                  description="Model ids or other classes, separated by commas."
+                  wide
                 >
-                  {(id) => (
-                    <Input
-                      id={id}
-                      mono
-                      value={each.models}
-                      placeholder="claude-opus-5, qwen-local"
-                      onChange={(event) => patchClass(place, { models: event.target.value })}
-                    />
-                  )}
-                </Field>
+                  <Input
+                    mono
+                    value={each.models}
+                    placeholder="claude-opus-5, qwen-local"
+                    onChange={(event) => patchClass(place, { models: event.target.value })}
+                  />
+                </FieldRow>
+                <FieldRow label={`Class ${place + 1}`}>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    aria-label={`Remove class ${place + 1}`}
+                    onClick={() => edit((next) => void next.classes.splice(place, 1))}
+                  >
+                    Remove
+                  </Button>
+                </FieldRow>
               </div>
-              <div className="flex justify-end">
-                <Button
-                  variant="danger"
-                  size="sm"
-                  aria-label={`Remove class ${place + 1}`}
-                  onClick={() => edit((next) => void next.classes.splice(place, 1))}
-                >
-                  Remove
-                </Button>
-              </div>
+            ))}
+            <div className="py-3">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  edit(
+                    (next) =>
+                      void next.classes.push({
+                        uid: nextUid(),
+                        name: "",
+                        models: "",
+                        dayTokens: [],
+                      }),
+                  )
+                }
+              >
+                Add class
+              </Button>
             </div>
-          ))}
-          <div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() =>
-                edit(
-                  (next) =>
-                    void next.classes.push({
-                      uid: nextUid(),
-                      name: "",
-                      models: "",
-                      dayTokens: [],
-                    }),
-                )
-              }
-            >
-              Add class
-            </Button>
-          </div>
-        </Box>
+          </Rows>
+        </Section>
 
         {data.agents.length === 0 ? (
-          <Empty
-            title="No agent yet"
-            body="Nothing asks a model until an agent exists. Create one on the Agents page."
-            action={
-              <Button asChild variant="secondary" size="sm">
-                <Link to="/agents">New agent</Link>
-              </Button>
-            }
-          />
+          <Section title="Agents">
+            <Empty
+              plain
+              title="No agent yet"
+              body="Nothing asks a model until an agent exists. Create one on the Agents page."
+              action={
+                <Button asChild variant="secondary" size="sm">
+                  <Link to="/agents">New agent</Link>
+                </Button>
+              }
+            />
+          </Section>
         ) : (
-          <Box title="Agents" className="flex flex-col gap-4">
+          <Section title="Agents">
             <Table head={["Agent", "Model", "Protocol", "Thinking", "Budget"]}>
               {data.agents.map((agent) => (
                 <tr key={agent.name}>
@@ -448,17 +448,17 @@ export function ModelsPage() {
                 </tr>
               ))}
             </Table>
-            <p className="m-0 text-sm text-secondary">
+            <p className="m-0 mt-3 text-sm text-secondary">
               Agents are edited on the{" "}
               <Link className="underline underline-offset-4" to="/agents">
                 Agents page
               </Link>
               .
             </p>
-          </Box>
+          </Section>
         )}
 
-        <div className="grid items-start gap-8 lg:grid-cols-2">
+        <div className="flex flex-col">
           <OptionalBox
             heading="Teacher"
             about="The teacher model checks the rules written in prose."
@@ -503,7 +503,7 @@ export function ModelsPage() {
 function Failed({ message }: { message: string }) {
   return (
     <>
-      <PageHeader title="Models" />
+      <AreaTitle title="Models" />
       <Notice tone="error">{message}</Notice>
     </>
   );
