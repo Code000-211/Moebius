@@ -62,7 +62,9 @@ x86_64 only, so another system gets no offer. On Windows, WSL 2 has to be instal
 ## Several servers
 
 The rail at the far left of the window holds a square for every server the app knows: the first letter of its address,
-the count of its Inbox in a badge, and a grey dot when it does not answer. The open one is raised. Click a square to
+the count of its Inbox in a badge, and a grey dot when it does not answer. The open one is raised. The app asks each server for these few figures
+with one small request (`GET /v1/status`) every ten seconds, and takes the open server's from the tray, which follows
+it by its events, so a busy server is not read as a whole to draw a badge. Click a square to
 open that server; it opens on the page you left it on. **+** connects another one:
 
 - **Address**: the server's address and an access token, as for the first one.
