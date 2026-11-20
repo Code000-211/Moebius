@@ -203,6 +203,18 @@ impl Store {
         self.judgements_where("card_id = ?1", card_id.into())
     }
 
+    /// The ids of the cards a person approved the issue of (see `App::counts_as_sub_issue`).
+    pub fn cards_approved(&self) -> Result<std::collections::HashSet<i64>> {
+        Ok(self
+            .rows(
+                "SELECT DISTINCT card_id FROM judgements WHERE kind = 'approve_issue' AND choice = 'approve' AND card_id IS NOT NULL",
+                [],
+                |r| r.get(0),
+            )?
+            .into_iter()
+            .collect())
+    }
+
     /// Whether a judgement made for the card still waits for the outcome that `set_missing_outcomes` sets. The hints
     /// of `localize` are left out: their outcome is the files a change touched, which a failed run never reports.
     pub fn has_pending_outcomes(&self, card_id: i64) -> Result<bool> {

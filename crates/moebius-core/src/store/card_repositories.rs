@@ -76,6 +76,19 @@ impl Store {
         )
     }
 
+    /// The repositories every card names besides its own, by card id, in the order each card names them.
+    pub fn all_card_repositories(&self) -> Result<std::collections::HashMap<i64, Vec<i64>>> {
+        let mut by_card: std::collections::HashMap<i64, Vec<i64>> = Default::default();
+        for (card, repository) in self.rows(
+            "SELECT card_id, repository_id FROM card_repositories ORDER BY card_id, position",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )? {
+            by_card.entry(card).or_default().push(repository);
+        }
+        Ok(by_card)
+    }
+
     /// Replaces the repositories the card names besides its own with `repositories`, in that order.
     pub fn set_card_repositories(&self, card_id: i64, repositories: &[i64]) -> Result<()> {
         let mut conn = self.conn();

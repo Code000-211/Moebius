@@ -513,7 +513,22 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     views::SCHEMA,
     paused::SCHEMA,
     imports::SCHEMA,
+    // The snapshot looks up a card's open change in each repository it works in.
+    "CREATE INDEX changes_of_a_card ON changes (card_id, repository_id, state);",
 ];
+
+#[cfg(test)]
+thread_local! {
+    /// How often this thread took the connection: each read or write of the store takes it once, so the difference
+    /// between two readings counts the store calls between them (see [`connections_taken`]).
+    static CONNECTIONS_TAKEN: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many times this thread has taken the store's connection; for tests that count store calls.
+#[cfg(test)]
+pub(crate) fn connections_taken() -> usize {
+    CONNECTIONS_TAKEN.with(std::cell::Cell::get)
+}
 
 pub fn now() -> i64 {
     SystemTime::now()
@@ -583,6 +598,8 @@ impl Store {
     }
 
     fn conn(&self) -> MutexGuard<'_, Connection> {
+        #[cfg(test)]
+        CONNECTIONS_TAKEN.with(|n| n.set(n.get() + 1));
         self.conn
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -725,6 +742,25 @@ mod tests {
         let stored = s.inbox().unwrap().remove(0);
         assert!(!stored.title.contains(secret));
         assert!(!stored.data.to_string().contains(secret));
+    }
+
+    #[test]
+    fn a_repository_is_read_by_its_id_and_an_open_change_by_an_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::in_memory(dir.path()).unwrap();
+        let first = store.add_repository("a", "/a", "none", "main").unwrap();
+        let second = store.add_repository("b", "/b", "none", "main").unwrap();
+        assert_eq!(store.repository(second.id).unwrap(), Some(second));
+        assert_eq!(store.repository(first.id + 100).unwrap(), None);
+        let plan: String = store
+            .conn()
+            .query_row(
+                "EXPLAIN QUERY PLAN SELECT id FROM changes WHERE card_id = 1 AND repository_id = 2 AND state = 'open'",
+                [],
+                |r| r.get(3),
+            )
+            .unwrap();
+        assert!(plan.contains("changes_of_a_card"), "{plan}");
     }
 
     #[test]
