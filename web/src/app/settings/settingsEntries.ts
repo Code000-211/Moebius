@@ -24,6 +24,9 @@ export interface SettingsEntry {
 const named = <T extends string>(load: () => Promise<Record<T, ComponentType>>, name: T) =>
   lazy(() => load().then((all) => ({ default: all[name] })));
 
+const Profile = named(() => import("./ProfilePage"), "ProfilePage");
+const Notifications = named(() => import("./NotificationsPage"), "NotificationsPage");
+const Repositories = named(() => import("./RepositoriesPage"), "RepositoriesPage");
 const Appearance = named(() => import("./AppearancePage"), "AppearancePage");
 const General = named(() => import("./SettingsPage"), "SettingsPage");
 const Shortcuts = named(() => import("../shortcuts/ShortcutsPage"), "ShortcutsPage");
@@ -39,9 +42,9 @@ const Lessons = named(() => import("./LessonsPage"), "LessonsPage");
 const People = named(() => import("../people/PeoplePage"), "PeoplePage");
 
 export const SETTINGS_ENTRIES: readonly SettingsEntry[] = [
-  { group: "You", label: "Profile", path: "profile" },
+  { group: "You", label: "Profile", path: "profile", page: Profile },
   { group: "You", label: "Appearance", path: "appearance", page: Appearance },
-  { group: "You", label: "Notifications", path: "notifications" },
+  { group: "You", label: "Notifications", path: "notifications", page: Notifications },
   { group: "You", label: "Keyboard", path: "shortcuts", page: Shortcuts },
   { group: "Agents", label: "Agents", path: "agents", page: Agents },
   { group: "Agents", label: "Models", path: "models", page: Models },
@@ -56,7 +59,7 @@ export const SETTINGS_ENTRIES: readonly SettingsEntry[] = [
   { group: "Insight", label: "Lessons", path: "lessons", page: Lessons },
   { group: "Insight", label: "Export", path: "export" },
   { group: "Server", label: "General", path: "settings", page: General },
-  { group: "Server", label: "Repositories", path: "repositories" },
+  { group: "Server", label: "Repositories", path: "repositories", page: Repositories },
   { group: "Server", label: "Runners", path: "runners" },
   { group: "Server", label: "Members", path: "people", ownerOnly: true, page: People },
 ];
@@ -82,4 +85,10 @@ export function searchEntries(
           e.group.toLowerCase().includes(needle)),
     ),
   })).filter((g) => g.entries.length > 0);
+}
+
+/** Whether `pathname` is a page of Settings: one of the entries' addresses, which stand at the root, or `/settings`. */
+export function inSettingsArea(pathname: string): boolean {
+  const first = pathname.replace(/^\/+/, "").split("/")[0] ?? "";
+  return SETTINGS_ENTRIES.some((entry) => entry.path === first);
 }

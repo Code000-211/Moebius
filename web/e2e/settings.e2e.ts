@@ -62,4 +62,26 @@ describe("Settings", () => {
     await search.fill("zzz");
     await nav(page).getByText("No settings match.").waitFor();
   });
+
+  it("opens Profile, Notifications and Repositories from the navigation and by address, with no Ask field", async () => {
+    server = await startServer();
+    const page = await (await browser.newContext()).newPage();
+    page.setDefaultTimeout(8000);
+    await page.goto(server.loginUrl);
+    await page.goto(`${server.url}/settings`);
+    await nav(page).waitFor();
+    for (const [label, path] of [
+      ["Profile", "profile"],
+      ["Notifications", "notifications"],
+      ["Repositories", "repositories"],
+    ] as const) {
+      await nav(page).getByRole("link", { name: label, exact: true }).click();
+      await page.waitForURL(`**/${path}`);
+      await page.getByRole("heading", { level: 2, name: label }).waitFor();
+      expect(await page.getByLabel("Ask Moebius").count()).toBe(0);
+      await page.reload();
+      await page.getByRole("heading", { level: 2, name: label }).waitFor();
+    }
+    await page.getByRole("link", { name: /Add a repository/ }).waitFor();
+  });
 });
