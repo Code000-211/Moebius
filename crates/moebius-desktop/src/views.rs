@@ -9,7 +9,7 @@
 //! This holds the bookkeeping only (the program's `pages` module makes and shows the webviews), so that it is tested
 //! without a window.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 /// How many webviews of servers that are not shown are kept.
@@ -25,6 +25,10 @@ pub struct Views {
     /// The origin each server's webview was made for, and when it was last shown or left.
     seen: HashMap<String, (String, Instant)>,
     shown: Option<String>,
+    /// The servers whose webview has drawn its rail, so that it is worth showing.
+    drawn: HashSet<String>,
+    /// The webview that is visible, which is the one shown once it has drawn; none is the connect page.
+    front: Option<String>,
 }
 
 impl Views {
@@ -35,6 +39,8 @@ impl Views {
             idle,
             seen: HashMap::new(),
             shown: None,
+            drawn: HashSet::new(),
+            front: None,
         }
     }
 
@@ -48,6 +54,28 @@ impl Views {
         self.shown.as_deref()
     }
 
+    /// The server whose webview is visible: the one shown, or the one that was before while the one shown loads.
+    pub fn front(&self) -> Option<&str> {
+        self.front.as_deref()
+    }
+
+    /// Notes which webview is visible now, none for the connect page.
+    pub fn set_front(&mut self, id: Option<&str>) {
+        self.front = id.map(str::to_string);
+    }
+
+    /// Notes that the webview of `id` has drawn its rail.
+    pub fn mark_drawn(&mut self, id: &str) {
+        if self.has(id) {
+            self.drawn.insert(id.to_string());
+        }
+    }
+
+    /// Whether the webview of `id` has drawn its rail.
+    pub fn is_drawn(&self, id: &str) -> bool {
+        self.drawn.contains(id)
+    }
+
     /// Notes that the server `id`, whose web app is at `origin`, is shown now, with a webview that was there already
     /// or one the caller makes; says which. A webview made for another origin (the server's tunnel was built again, on
     /// another port) is no use, so the caller makes one. The one shown before is left at `now`.
@@ -57,6 +85,9 @@ impl Views {
             .get(id)
             .is_some_and(|(made_for, _)| made_for == origin);
         self.leave(now);
+        if !there {
+            self.drawn.remove(id);
+        }
         self.seen.insert(id.to_string(), (origin.to_string(), now));
         self.shown = Some(id.to_string());
         there
@@ -78,8 +109,12 @@ impl Views {
     /// Forgets the webview of the server `id`, which is gone or could not be made.
     pub fn forget(&mut self, id: &str) {
         self.seen.remove(id);
+        self.drawn.remove(id);
         if self.shown.as_deref() == Some(id) {
             self.shown = None;
+        }
+        if self.front.as_deref() == Some(id) {
+            self.front = None;
         }
     }
 
@@ -104,6 +139,7 @@ impl Views {
             .collect();
         for id in &dropped {
             self.seen.remove(id);
+            self.drawn.remove(id);
         }
         dropped
     }
@@ -172,6 +208,24 @@ mod tests {
         // d is shown; a, b and c are hidden, left at 1, 2 and 3.
         assert_eq!(views.expired(at(10)), vec!["a".to_string()]);
         assert!(views.has("b") && views.has("c") && views.has("d"));
+    }
+
+    #[test]
+    fn a_webview_is_worth_showing_once_it_has_drawn_and_not_again_after_it_is_gone() {
+        let mut views = Views::new(3, Duration::from_secs(600));
+        views.show("a", "o", at(0));
+        assert!(!views.is_drawn("a"));
+        views.mark_drawn("a");
+        assert!(views.is_drawn("a"));
+        views.set_front(Some("a"));
+        views.forget("a");
+        assert!(!views.is_drawn("a"));
+        assert_eq!(views.front(), None, "the connect page is in front again");
+        // A webview made again for another origin has not drawn.
+        views.show("b", "o", at(1));
+        views.mark_drawn("b");
+        views.show("b", "other", at(2));
+        assert!(!views.is_drawn("b"));
     }
 
     #[test]

@@ -40,12 +40,15 @@ const DRAWN: &str = "!!document.querySelector('[data-testid=\"rail\"]')";
 /// The window's webviews, as the app's state.
 pub struct Pages {
     views: Mutex<Views>,
+    /// Held while a webview is shown and the others hidden, so that two switches in a row end with the last one's.
+    revealing: Mutex<()>,
 }
 
 impl Default for Pages {
     fn default() -> Self {
         Self {
             views: Mutex::new(Views::new(views::KEPT_HIDDEN, views::KEPT_FOR)),
+            revealing: Mutex::new(()),
         }
     }
 }
@@ -67,8 +70,8 @@ pub fn main_window(app: &AppHandle) -> Option<Window> {
 
 /// The webview that is shown in the main window: a server's web app, or the connect page.
 pub fn front(app: &AppHandle) -> Option<Webview> {
-    let shown = app.state::<Pages>().lock().shown().map(label);
-    app.get_webview(shown.as_deref().unwrap_or(CONNECT))
+    let front = app.state::<Pages>().lock().front().map(label);
+    app.get_webview(front.as_deref().unwrap_or(CONNECT))
 }
 
 /// Makes the window's first webview, the connect page, and shows it.
@@ -122,17 +125,24 @@ fn make(
     window.add_child(builder, PhysicalPosition::new(0, 0), window.inner_size()?)
 }
 
-/// Shows the webview of the server `id` and hides the others, when it is the server that is to be shown. The page is
-/// told it is shown when `told`, which a page that was there is, and one that has just drawn itself is not.
+/// Shows the webview of the server `id` and hides the others, when it is the server that is to be shown and its page
+/// has drawn its rail. The page is told it is shown when `told`, which a page that was there is, and one that has just
+/// drawn itself is not.
 fn reveal(app: &AppHandle, id: &str, told: bool) {
-    if app.state::<Pages>().lock().shown() != Some(id) {
-        return;
+    let pages = app.state::<Pages>();
+    let _one_at_a_time = pages.revealing.lock().unwrap_or_else(|e| e.into_inner());
+    {
+        let views = pages.lock();
+        if views.shown() != Some(id) || !views.is_drawn(id) {
+            return;
+        }
     }
     let Some(webview) = app.get_webview(&label(id)) else {
         return;
     };
     let _ = webview.show();
     hide_all_but(app, webview.label());
+    pages.lock().set_front(Some(id));
     let _ = webview.set_focus();
     if told {
         let _ = webview.eval(SHOWN);
@@ -183,16 +193,18 @@ pub fn show_server(
     url: &str,
 ) -> Result<(), String> {
     let window = main_window(app).ok_or("the window is gone")?;
-    let there = app.state::<Pages>().lock().show(id, origin, Instant::now());
+    let url: tauri::Url = url.parse().map_err(|e| format!("{e}"))?;
     let name = label(id);
-    if there && app.get_webview(&name).is_some() {
+    let there = app.state::<Pages>().lock().show(id, origin, Instant::now())
+        && app.get_webview(&name).is_some();
+    if there {
+        // A webview still loading is shown by the task that waits for it; one that has drawn is shown now.
         reveal(app, id, true);
     } else {
         // What stands there was made for an address that is gone.
         if let Some(old) = app.get_webview(&name) {
             let _ = old.close();
         }
-        let url = url.parse().map_err(|e| format!("{e}"))?;
         let made = make(
             app,
             &window,
@@ -206,6 +218,8 @@ pub fn show_server(
                 let (app, id) = (app.clone(), id.to_string());
                 tauri::async_runtime::spawn(async move {
                     let _ = tokio::time::timeout(LOAD_LIMIT, drawn(&webview)).await;
+                    // A page that never drew its rail is shown as it is, so that it is seen.
+                    app.state::<Pages>().lock().mark_drawn(&id);
                     reveal(&app, &id, false);
                 });
             }
@@ -235,15 +249,28 @@ pub fn show_connect(app: &AppHandle) -> Result<(), String> {
     app.state::<Pages>().lock().show_none(Instant::now());
     let webview = app.get_webview(CONNECT).ok_or("the connect page is gone")?;
     let _ = webview.eval("location.reload();");
+    let pages = app.state::<Pages>();
+    let _one_at_a_time = pages.revealing.lock().unwrap_or_else(|e| e.into_inner());
     let _ = webview.show();
     hide_all_but(app, CONNECT);
+    pages.lock().set_front(None);
     let _ = webview.set_focus();
     Ok(())
 }
 
-/// Lets go of the webview of the server `id`, which was removed.
+/// Lets go of the webview of the server `id`, which was removed. When it was the one in front, the connect page comes
+/// forward until the next server has drawn, so that the window is not blank.
 pub fn forget(app: &AppHandle, id: &str) {
-    app.state::<Pages>().lock().forget(id);
+    let pages = app.state::<Pages>();
+    let was_front = {
+        let mut views = pages.lock();
+        let was = views.front() == Some(id);
+        views.forget(id);
+        was
+    };
+    if was_front && let Some(connect) = app.get_webview(CONNECT) {
+        let _ = connect.show();
+    }
     if let Some(webview) = app.get_webview(&label(id)) {
         let _ = webview.close();
     }
