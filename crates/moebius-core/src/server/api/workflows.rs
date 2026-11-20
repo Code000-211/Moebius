@@ -39,6 +39,18 @@ struct Summary {
     description: String,
     trigger_kind: String,
     node_count: usize,
+    /// The newest run of the workflow the person sees; none when it never ran.
+    last_run: Option<LastRun>,
+}
+
+/// The newest run of a workflow, as its row in the list tells it.
+#[derive(Debug, Serialize)]
+struct LastRun {
+    id: i64,
+    status: String,
+    created_at: i64,
+    started_at: Option<i64>,
+    finished_at: Option<i64>,
 }
 
 /// One workflow's file and parsed form.
@@ -78,13 +90,26 @@ struct Deleted {
     commit: Option<String>,
 }
 
-async fn list(State(state): State<ApiState>) -> Result<axum::Json<Vec<Summary>>, ApiError> {
+async fn list(
+    State(state): State<ApiState>,
+    axum::Extension(by): axum::Extension<crate::decide::Actor>,
+) -> Result<axum::Json<Vec<Summary>>, ApiError> {
     let repo = harness(&state)?;
-    blocking(&state.app, move |_| {
-        let workflows = repo.workflows()?;
-        Ok(workflows
-            .into_iter()
-            .map(|(name, definition)| Summary {
+    blocking(&state.app, move |app| {
+        let sight = app.sight(&by)?;
+        let mut summaries = Vec::new();
+        for (name, definition) in repo.workflows()? {
+            let last_run = super::workflow_runs::visible_runs(app, &sight, Some(&name), 1)?
+                .into_iter()
+                .next()
+                .map(|run| LastRun {
+                    id: run.id,
+                    status: run.status,
+                    created_at: run.created_at,
+                    started_at: run.started_at,
+                    finished_at: run.finished_at,
+                });
+            summaries.push(Summary {
                 name,
                 description: definition.description,
                 trigger_kind: definition
@@ -93,8 +118,10 @@ async fn list(State(state): State<ApiState>) -> Result<axum::Json<Vec<Summary>>,
                     .map(|trigger| trigger.kind.clone())
                     .unwrap_or_default(),
                 node_count: definition.nodes.len(),
-            })
-            .collect())
+                last_run,
+            });
+        }
+        Ok(summaries)
     })
     .await
 }
@@ -208,6 +235,11 @@ fn harness(
 
 /// One workflow's file and parsed form.
 fn view(repo: &crate::harness::repo::HarnessRepo, name: &str) -> crate::app::Result<View> {
+    // A name that is no workflow is not found, rather than a file that cannot be read.
+    let file = definition::file_for(name).map_err(|error| AppError::Invalid(error.to_string()))?;
+    if !repo.path().join(file).is_file() {
+        return Err(AppError::NotFound(format!("workflow {name}")));
+    }
     let definition = repo.workflow(name)?;
     let file = definition::read_text(repo.path(), name)
         .map_err(|error| AppError::Invalid(error.to_string()))?;
@@ -492,6 +524,7 @@ port = "out"
                 "description": "Build the change and run its tests.",
                 "trigger_kind": "test",
                 "node_count": 2,
+                "last_run": null,
             }])
         );
 
@@ -660,7 +693,7 @@ port = "out"
         assert!(deleted["commit"].is_string(), "{body}");
 
         let shown = get_response(&state, &addr, "/v1/workflows/release").await;
-        assert_eq!(shown.status(), 422);
+        assert_eq!(shown.status(), 404);
         assert!(!harness.path().join("workflows/release.toml").is_file());
         assert!(
             log(&harness).contains("Delete the workflow release"),
@@ -793,5 +826,105 @@ port = "out"
             !open_ids.contains(&item.id),
             "the run's inbox item is still open: {open_ids:?}"
         );
+    }
+
+    /// The keys of `real` are the keys of `fixture`, all the way down; a null on either side stands for anything, and
+    /// the keys that hold a value of the workflow's own making are not looked into.
+    fn same_keys(real: &Value, fixture: &Value, at: &str) {
+        const FREE: [&str; 5] = ["value", "input", "output", "asks", "params"];
+        match (real, fixture) {
+            (Value::Null, _) | (_, Value::Null) => {}
+            (Value::Object(real), Value::Object(fixture)) => {
+                let keys = |map: &serde_json::Map<String, Value>| {
+                    map.keys()
+                        .cloned()
+                        .collect::<std::collections::BTreeSet<_>>()
+                };
+                assert_eq!(keys(real), keys(fixture), "the keys of {at}");
+                for (key, value) in real {
+                    if !FREE.contains(&key.as_str()) {
+                        same_keys(value, &fixture[key], &format!("{at}.{key}"));
+                    }
+                }
+            }
+            (Value::Array(real), Value::Array(fixture)) => {
+                if let (Some(real), Some(fixture)) = (real.first(), fixture.first()) {
+                    same_keys(real, fixture, &format!("{at}[]"));
+                }
+            }
+            (real, fixture) => assert_eq!(
+                std::mem::discriminant(real),
+                std::mem::discriminant(fixture),
+                "the type of {at}"
+            ),
+        }
+    }
+
+    #[tokio::test]
+    async fn the_answers_have_the_shape_of_the_fixtures_the_web_app_is_tested_with() {
+        let fixtures: Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../web/src/api/fixtures/workflows.json"
+        )))
+        .unwrap();
+        let (_dir, state, addr, harness) = started().await;
+        assert_eq!(
+            put(&state, &addr, "release", json!({ "file": WORKFLOW }))
+                .await
+                .status(),
+            200
+        );
+        let run = waiting(&state, &harness, json!({ "version": "1.0.0" })).await;
+
+        let list: Value = testing::get(&state, &addr, "/v1/workflows").await;
+        let release = list
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|each| each["name"] == "release")
+            .unwrap();
+        same_keys(release, &fixtures["list"][0], "list");
+        let asking = list
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|each| each["name"] == "asking")
+            .unwrap();
+        assert_eq!(asking["last_run"]["id"], run);
+        assert_eq!(asking["last_run"]["status"], "waiting");
+        same_keys(asking, &fixtures["list"][0], "list with a run");
+        assert_eq!(
+            release["last_run"],
+            Value::Null,
+            "a workflow that never ran"
+        );
+
+        let shown: Value = testing::get(&state, &addr, "/v1/workflows/release").await;
+        same_keys(&shown, &fixtures["show"], "show");
+
+        let runs: Value = testing::get(&state, &addr, "/v1/workflow-runs?workflow=asking").await;
+        assert_eq!(runs.as_array().unwrap().len(), 1);
+        same_keys(&runs[0], &fixtures["runs"][0], "runs");
+        let none: Value = testing::get(&state, &addr, "/v1/workflow-runs?workflow=release").await;
+        assert_eq!(none, json!([]));
+
+        let detail: Value = testing::get(&state, &addr, &format!("/v1/workflow-runs/{run}")).await;
+        same_keys(&detail, &fixtures["run"], "run");
+        assert_eq!(detail["waiting"]["node"], "ask");
+        assert_eq!(detail["nodes"][0]["kind"], "approval");
+        assert_eq!(detail["trigger"], "test");
+    }
+
+    #[tokio::test]
+    async fn a_workflow_or_run_that_does_not_exist_is_not_found_without_the_operating_systems_words()
+     {
+        let (_dir, state, addr, _harness) = started().await;
+        for path in ["/v1/workflows/nothing", "/v1/workflow-runs/999"] {
+            let response = get_response(&state, &addr, path).await;
+            assert_eq!(response.status(), 404, "{path}");
+            let body = response.text().await.unwrap();
+            assert!(!body.contains("os error"), "{body}");
+            assert!(!body.contains("cannot be read"), "{body}");
+        }
     }
 }

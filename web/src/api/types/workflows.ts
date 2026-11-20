@@ -25,12 +25,24 @@ export interface WorkflowEdge {
   port: string;
 }
 
+/** The newest run of a workflow, as its row in the list tells it. */
+export interface LastRun {
+  id: number;
+  status: string;
+  /** When it was queued, in seconds since the epoch. */
+  created_at: number;
+  started_at: number | null;
+  finished_at: number | null;
+}
+
 /** One workflow in the list. */
 export interface WorkflowSummary {
   name: string;
   description: string;
+  /** The kind of the first trigger: `manual`, `schedule`, `event`, `webhook` or another; empty with none. */
   trigger_kind: string;
   node_count: number;
+  last_run: LastRun | null;
 }
 
 /** One workflow's file and its parsed form. */
@@ -49,4 +61,71 @@ export interface SavedWorkflow extends WorkflowView {
 export interface DeletedWorkflow {
   name: string;
   commit?: string;
+}
+
+/** One run of a workflow, as the list of runs and the run's page tell it. */
+export interface WorkflowRunSummary {
+  id: number;
+  workflow: string;
+  repository_id: number;
+  /** The kind of the trigger that started it. */
+  trigger: string;
+  /** `queued`, `running`, `waiting`, `succeeded`, `failed` or `cancelled`. */
+  status: string;
+  /** The value the run was started with. */
+  value: unknown;
+  created_at: number;
+  started_at: number | null;
+  finished_at: number | null;
+  error: string | null;
+}
+
+/** One node of one run: what it was given, what it answered and why it failed. */
+export interface WorkflowNodeRun {
+  /** The id the node has in the definition. */
+  node: string;
+  /** What the node does; empty when the workflow no longer has the node. */
+  kind: string;
+  attempt: number;
+  /** `queued`, `running`, `waiting`, `succeeded`, `failed` or `skipped`. */
+  status: string;
+  input: unknown;
+  output: unknown;
+  error: string | null;
+  started_at: number | null;
+  finished_at: number | null;
+}
+
+/** A run that stopped on a node and asked for a person. */
+export interface WorkflowWaiting {
+  node: string;
+  /** What the node was given, which is what it asks about. */
+  asks: unknown;
+}
+
+/** One run with a panel's worth of data for each node. */
+export interface WorkflowRun extends WorkflowRunSummary {
+  nodes: WorkflowNodeRun[];
+  /** Where and on what it waits, when its status is `waiting`; null otherwise. */
+  waiting: WorkflowWaiting | null;
+}
+
+/** What `POST /v1/workflows/{name}/runs` answers: the run as stored. */
+export interface StartedRun {
+  id: number;
+  workflow: string;
+  repository: string;
+  trigger: string;
+  status: string;
+  value: unknown;
+}
+
+/** One input of a manual trigger, as `GET /v1/workflows/{name}/run-inputs` lists it. */
+export interface RunInput {
+  name: string;
+  /** `text`, `number`, `boolean`, `choice` or `repository`. */
+  type: string;
+  required: boolean;
+  default?: unknown;
+  choices?: string[];
 }

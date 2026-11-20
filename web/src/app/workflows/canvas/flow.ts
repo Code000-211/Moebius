@@ -1,7 +1,10 @@
 /** The graph as the canvas draws it: cards for nodes, edges by port, and the start where the nodes begin. */
 import type { Edge, Node } from "@xyflow/react";
-import type { WorkflowDefinition, WorkflowEdge } from "../../../api/types/workflows";
-import type { WorkflowNodeRun } from "../../../api/workflows";
+import type {
+  WorkflowDefinition,
+  WorkflowEdge,
+  WorkflowNodeRun,
+} from "../../../api/types/workflows";
 import { portsOf } from "../nodeKinds";
 import type { CardData } from "./cards";
 import { edgeId, nodeOf, type Problem, TRIGGER, triggerPorts } from "./model";
