@@ -1,19 +1,24 @@
 /**
- * The Fleet page: which runners are up and what they are running, as a compact list grouped by agent. One row for each
- * card whose latest run is starting, running or waiting and for each chat that is, with the status word and its mark,
- * what the run is for, its current step and how long it has run. The rows read their events when the page opens and
- * follow the stream's `run_event`s while it is open, so the step moves on its own; a row opens the card's board or the
- * chat. A read that fails says what could not be read and offers to try again, rather than saying that nothing is
- * working. A box at the left of a row chooses it (shift-click chooses a range), and a bar at the foot, or a right click,
- * stops every chosen run in one go; Escape lets go of the choice. A row has its own Stop in its right column, shown
- * under the pointer and on focus, and the header pauses and resumes all agents, saying so while they are paused.
+ * The Fleet page: the work that is going on, as one virtual list of 36px rows. The runs that wait for the person come
+ * first, under "Needs you", then the others under "Running". A row has the status icon, the issue's id, the title, one
+ * pale line (the kind of run and the step it is at; "Plan ready" for a run that waits) and how long it has gone on. A run
+ * that waits for a plan carries a quiet "Approve plan". Stop and the tokens are on the hovered or the selected row only,
+ * and are not in the page otherwise. The rows that are drawn read their run's events and follow the stream's
+ * `run_event`s, so the step moves on its own; a row opens the card in its window, or the chat. The arrows move the
+ * selection, Shift chooses a range, and a bar at the foot, or a right click, stops every chosen run at once; Escape lets
+ * go. A read that fails says what could not be read and offers to try again, rather than saying that nothing is working.
  */
 
-import { PauseIcon, PlayIcon, StopIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type MouseEvent, memo, useCallback, useState } from "react";
+import {
+  type PointerEvent,
+  type MouseEvent as ReactMouseEvent,
+  useCallback,
+  useMemo,
+  useState,
+} from "react";
 import { Link, useNavigate } from "react-router";
-import { snapshot as readSnapshot } from "../../api/calls/board";
+import { approve, snapshot as readSnapshot } from "../../api/calls/board";
 import { chats as readChats, stopRun } from "../../api/calls/chat";
 import { run as readRun } from "../../api/calls/fleet";
 import { isApiError } from "../../api/http";
@@ -21,47 +26,42 @@ import { keys } from "../../api/keys";
 import { inputPath, inputSummary, toolTitle } from "../../chat/conversation";
 import { useThread } from "../../chat/useThread";
 import { thinkingLabel } from "../../ui/chat/ChatCollapsedThinking";
-import { ToolStatusDot } from "../../ui/chat/ToolStatusDot";
-import { toolStatus } from "../../ui/chat/Turn";
 import { Button } from "../../ui/components/Button";
 import { ContextMenu, useContextMenu } from "../../ui/components/ContextMenu";
 import { FilterBar } from "../../ui/filters/FilterBar";
 import { readFilters } from "../../ui/filters/model";
 import { useQueryParams } from "../../ui/filters/useQueryParams";
-import { cn } from "../../ui/lib/cn";
+import { AgentIcon, PauseIcon, PlayIcon } from "../../ui/icons";
+import { elapsed as age } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import { useSelection } from "../../ui/lib/useSelection";
 import { Empty } from "../../ui/page/Empty";
-import { FadedLine } from "../../ui/page/FadedLine";
-import { MarkLabel } from "../../ui/page/MarkLabel";
+import { ListRow, type RowPosition } from "../../ui/page/ListRow";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
-import { SelectBox } from "../../ui/page/SelectBox";
 import { SelectionBar, type SelectionCommand } from "../../ui/page/SelectionBar";
-import { SkeletonList } from "../../ui/page/Skeleton";
+import { useToast } from "../../ui/page/Toast";
+import { VirtualList } from "../../ui/page/VirtualList";
 import { useOpenCard } from "../board/CardWindowHost";
 import {
   afterSteps,
-  byAgent,
-  context,
-  elapsed,
+  choiceKey,
   FILTER_KEYS,
   filtered,
   filterFields,
+  items,
   latestSteps,
-  statusWord,
+  needsYou,
   thinkingNow,
   thoughtSeconds,
   tokensText,
   type Work,
+  waitingWord,
   working,
   workStartedAt,
 } from "./model";
 import { usePause } from "./usePause";
-
-/** What a row is chosen by: a card's run and a chat can share a number. */
-const choiceKey = (work: Work) => `${work.open.kind}:${work.run}`;
 
 export function FleetPage() {
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
@@ -74,7 +74,13 @@ export function FleetPage() {
     return (
       <>
         <PageHeader title="Fleet" />
-        <SkeletonList rows={2} message="Reading the fleet" />
+        <VirtualList
+          label="Runs"
+          items={[]}
+          renderRow={() => null}
+          loading
+          loadingMessage="Reading the fleet"
+        />
       </>
     );
   }
@@ -106,16 +112,10 @@ export function FleetPage() {
   );
   const values = readFilters(params, fields);
   const list = filtered(everything, values);
-  const set = Object.values(values).some((value) => value !== "");
   return (
     <>
       <PageHeader
         title="Fleet"
-        context={
-          set && everything.length > 0
-            ? `${context(list)} · ${everything.length} in all`
-            : context(list)
-        }
         actions={
           <Button
             variant="secondary"
@@ -132,77 +132,70 @@ export function FleetPage() {
           </Button>
         }
       />
-      {pause.paused && (
-        <Notice tone="ok" className="mb-4">
-          {`All agents are paused by ${pause.paused.by.replace(/^person:/, "@")}. Runs are held and none starts until they are resumed.`}
-        </Notice>
-      )}
-      {pause.error && (
-        <Notice tone="error" className="mb-4">
-          {pause.error}
-        </Notice>
-      )}
-      <FilterBar
-        label="Filter the runs"
-        fields={fields}
-        values={values}
-        onFilter={(key, value) => setQuery({ [key]: value })}
-        onClear={() => setQuery(Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])))}
-      />
-      {list.length === 0 && everything.length > 0 ? (
-        <Empty
-          title="No run matches"
-          body="No agent at work passes these filters. Clear them to see every run."
-          action={
-            <Button
-              variant="secondary"
-              onClick={() => setQuery(Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])))}
-            >
-              Clear filters
-            </Button>
-          }
+      {/* The list scrolls in the room that is left under the header; the panel itself does not. */}
+      <div className="flex h-[calc(100%-3rem)] min-h-40 flex-col">
+        {pause.paused && (
+          <Notice tone="ok" className="mb-4">
+            {`All agents are paused by ${pause.paused.by.replace(/^person:/, "@")}. Runs are held and none starts until they are resumed.`}
+          </Notice>
+        )}
+        {pause.error && (
+          <Notice tone="error" className="mb-4">
+            {pause.error}
+          </Notice>
+        )}
+        <FilterBar
+          label="Filter the runs"
+          fields={fields}
+          values={values}
+          onFilter={(key, value) => setQuery({ [key]: value })}
+          onClear={() => setQuery(Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])))}
         />
-      ) : list.length === 0 ? (
-        <Empty
-          title="No agent is working"
-          body="A row appears here while a card's run or a chat has its agent at work, with what each is doing and how long it has been."
-          action={
-            <Button asChild variant="secondary">
-              <Link to="/chat">Start a chat</Link>
-            </Button>
-          }
-        />
-      ) : (
-        <RunGroups list={list} now={now} />
-      )}
+        {list.length === 0 && everything.length > 0 ? (
+          <Empty
+            title="No run matches"
+            action={
+              <Button
+                variant="secondary"
+                onClick={() => setQuery(Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])))}
+              >
+                Clear filters
+              </Button>
+            }
+          />
+        ) : list.length === 0 ? (
+          <Empty
+            title="No agent is working"
+            icon={<AgentIcon size={24} />}
+            action={
+              <Button asChild variant="secondary">
+                <Link to="/chat">Start a chat</Link>
+              </Button>
+            }
+          />
+        ) : (
+          <RunList list={list} now={now} />
+        )}
+      </div>
     </>
   );
 }
 
-/** The runs grouped by agent, with the choice of them and what is done with the chosen. */
-function RunGroups({ list, now }: { list: Work[]; now: number }) {
+/** The runs as one virtual list, with the choice of them and what is done with the chosen. */
+function RunList({ list, now }: { list: Work[]; now: number }) {
   const queryClient = useQueryClient();
+  const toast = useToast();
+  const openWork = useOpenWork();
   const menu = useContextMenu();
-  const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
-  const groups = byAgent(list);
-  // The order the rows are drawn in, which a range chosen with Shift follows.
-  const choice = useSelection(groups.flatMap(([, runs]) => runs.map(choiceKey)));
+  const [selected, setSelected] = useState<string | null>(null);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const rows = useMemo(() => items(list), [list]);
+  const order = useMemo(() => list.map(choiceKey), [list]);
+  const byKey = useMemo(() => new Map(list.map((work) => [choiceKey(work), work])), [list]);
+  const choice = useSelection(order);
   const chosen = list.filter((work) => choice.has(choiceKey(work)));
-  // What a row is given keeps its identity, so that a row draws again only when its own run changes.
-  const { toggle, ensure } = choice;
+  const { clear, ensure, toggle } = choice;
   const { open: openMenu } = menu;
-  const choose = useCallback(
-    (work: Work, range: boolean) => toggle(choiceKey(work), range),
-    [toggle],
-  );
-  const rightClick = useCallback(
-    (work: Work, event: MouseEvent) => {
-      ensure(choiceKey(work));
-      openMenu(event);
-    },
-    [ensure, openMenu],
-  );
-  const { clear } = choice;
   const stopRuns = useCallback(
     async (targets: Work[]) => {
       const results = await Promise.allSettled(targets.map((work) => stopRun(work.run)));
@@ -214,8 +207,8 @@ function RunGroups({ list, now }: { list: Work[]; now: number }) {
           : [],
       );
       if (failed.length === 0) {
-        setNotice({
-          tone: "ok",
+        toast({
+          kind: "confirmation",
           text: `Stopping ${targets.length} run${targets.length === 1 ? "" : "s"}.`,
         });
         clear();
@@ -224,114 +217,113 @@ function RunGroups({ list, now }: { list: Work[]; now: number }) {
       const reason = isApiError(failed[0]?.error)
         ? failed[0].error.message
         : "something went wrong";
-      setNotice({
-        tone: "error",
+      toast({
+        kind: "error",
         text: `Could not stop ${failed.map((one) => one.work.title).join(", ")}: ${reason}`,
       });
     },
-    [queryClient, clear],
+    [queryClient, clear, toast],
   );
   const stop = useCallback((work: Work) => void stopRuns([work]), [stopRuns]);
-  const stopAll = () => stopRuns(chosen);
   const commands: SelectionCommand[] =
     chosen.length === 0
       ? []
-      : [{ id: "stop", label: "Stop runs", key: "x", run: () => void stopAll() }];
+      : [{ id: "stop", label: "Stop runs", key: "x", run: () => void stopRuns(chosen) }];
+
+  // The pointer and the right click are read once, at the list, from the row they are on.
+  const rowOf = (target: EventTarget | null) =>
+    (target as HTMLElement | null)?.closest<HTMLElement>("[data-key]")?.dataset.key ?? null;
+  const rightClick = (event: ReactMouseEvent) => {
+    const key = rowOf(event.target);
+    if (key === null) return;
+    setSelected(key);
+    ensure(key);
+    openMenu(event);
+  };
   return (
-    <>
-      {notice && (
-        <Notice
-          tone={notice.tone}
-          className="mb-4"
-          action={
-            <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
-              Dismiss
-            </Button>
-          }
-        >
-          {notice.text}
-        </Notice>
-      )}
-      <div className="flex flex-col gap-6">
-        {byAgent(list).map(([agent, runs]) => (
-          <section
-            key={agent}
-            aria-labelledby={`fleet-agent-${agent}`}
-            className="flex flex-col gap-2"
-          >
-            <h2
-              id={`fleet-agent-${agent}`}
-              className="m-0 flex items-baseline gap-2 px-1 text-sm font-semibold text-text"
-            >
-              <span>{agent}</span>
-              <span className="font-normal tabular-nums text-secondary">{runs.length}</span>
-            </h2>
-            <div className="overflow-hidden rounded-card bg-surface shadow-card">
-              {/* biome-ignore lint/a11y/noRedundantRoles: list-style: none drops the list in WebKit */}
-              <ul role="list" className="m-0 list-none divide-y divide-hairline p-0">
-                {runs.map((work) => (
-                  <li key={work.run}>
-                    <Row
-                      work={work}
-                      now={now}
-                      chosen={choice.has(choiceKey(work))}
-                      anyChosen={chosen.length > 0}
-                      onChoose={choose}
-                      onStop={stop}
-                      onContextMenu={rightClick}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </section>
-        ))}
-      </div>
-      <SelectionBar noun="run" count={chosen.length} commands={commands} onClear={choice.clear} />
+    // biome-ignore lint/a11y/noStaticElementInteractions: the right click is a second way to the menu the bar has
+    <div
+      className="flex min-h-0 flex-1 flex-col"
+      onPointerOver={(event: PointerEvent) => setHovered(rowOf(event.target))}
+      onPointerLeave={() => setHovered(null)}
+      onContextMenu={rightClick}
+    >
+      <VirtualList<Work>
+        label="Runs"
+        items={rows}
+        selectedKey={selected}
+        onSelect={(key) => {
+          clear();
+          setSelected(key);
+        }}
+        onSelectRange={(range) => {
+          clear();
+          for (const key of range) toggle(key);
+        }}
+        onOpen={(key) => {
+          const work = byKey.get(key);
+          if (work) openWork(work);
+        }}
+        renderRow={(work, state) => (
+          <Row
+            work={work}
+            now={now}
+            at={state.at}
+            selected={state.selected || choice.has(state.key)}
+            tools={state.selected || hovered === state.key}
+            onClick={(event) => {
+              state.onClick(event);
+              if (!event.shiftKey) openWork(work);
+            }}
+            onStop={stop}
+          />
+        )}
+      />
+      <SelectionBar noun="run" count={chosen.length} commands={commands} onClear={clear} />
       <ContextMenu
         point={menu.point}
         title={`${chosen.length} run${chosen.length === 1 ? "" : "s"}`}
         commands={commands}
         onClose={menu.close}
       />
-    </>
+    </div>
   );
 }
 
-/** Whether two reads of a run say the same: the page makes new objects at every read of the snapshot. */
-function sameRow(was: RowProps, now: RowProps): boolean {
-  return (
-    was.now === now.now &&
-    was.chosen === now.chosen &&
-    was.anyChosen === now.anyChosen &&
-    was.onChoose === now.onChoose &&
-    was.onStop === now.onStop &&
-    was.onContextMenu === now.onContextMenu &&
-    JSON.stringify(was.work) === JSON.stringify(now.work)
-  );
-}
-
-type RowProps = {
-  work: Work;
-  now: number;
-  chosen: boolean;
-  anyChosen: boolean;
-  onChoose: (work: Work, range: boolean) => void;
-  onStop: (work: Work) => void;
-  onContextMenu: (work: Work, event: MouseEvent) => void;
-};
-
-const Row = memo(function Row({
-  work,
-  now,
-  chosen,
-  anyChosen,
-  onChoose,
-  onStop,
-  onContextMenu,
-}: RowProps) {
+/** Opens what a run belongs to: its card in the window, or its chat. */
+function useOpenWork() {
   const navigate = useNavigate();
   const openCard = useOpenCard();
+  return useCallback(
+    (work: Work) =>
+      work.open.kind === "card" ? openCard(work.open.card) : navigate(`/chat/${work.open.chat}`),
+    [navigate, openCard],
+  );
+}
+
+const capital = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
+
+function Row({
+  work,
+  now,
+  at,
+  selected,
+  tools,
+  onClick,
+  onStop,
+}: {
+  work: Work;
+  now: number;
+  at: RowPosition;
+  selected: boolean;
+  /** Whether the pointer is on the row or it is the selected one: Stop and the tokens are drawn only then. */
+  tools: boolean;
+  onClick: (event: ReactMouseEvent<HTMLElement>) => void;
+  onStop: (work: Work) => void;
+}) {
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  // Only a row that is drawn follows its run, so the stream carries as many runs as the window shows.
   const thread = useThread(work.run);
   // A card's run says when it started; a chat's start is in the list of chats.
   const run = useQuery({
@@ -340,89 +332,83 @@ const Row = memo(function Row({
     enabled: work.startedAt === 0,
   });
   const startedAt = work.startedAt || run.data?.started_at || 0;
-  // A thought says how long it went on, which only the step after it can say, so it is measured against the lines of
-  // the whole run; the row shows the last of them, the step the run is at.
   const recent = latestSteps(thread.entries);
   const step = recent.at(-1);
-  const atWork = thinkingNow(work.status);
-  // What came after the last step — the answer, usually — is what says the last of them stopped.
   const ended = afterSteps(thread.entries);
-  const status = statusWord(work.status, work.asks);
-  const open = () =>
-    work.open.kind === "card" ? openCard(work.open.card) : navigate(`/chat/${work.open.chat}`);
-  const about = [work.repository, work.tokens === null ? "" : tokensText(work.tokens)]
-    .filter((part) => part !== "")
-    .join(" · ");
   const began = workStartedAt(thread.entries, thread.hasOlder, startedAt);
   const lastAt = thread.entries.at(-1)?.at ?? now;
   const stops = work.status === "waiting" ? lastAt : now;
-  const worked = began === null ? null : elapsed(stops - began);
+  const waits = needsYou(work);
+  const doing =
+    step === undefined
+      ? ""
+      : step.kind === "tool"
+        ? `${toolTitle(step.call)} ${inputPath(step.call.input) ?? inputSummary(step.call.input)}`.trim()
+        : thinkingLabel(thoughtSeconds(recent, recent.length - 1, ended), thinkingNow(work.status));
+  const reason = waits ? (
+    <span className="text-attention-text">{waitingWord(work)}</span>
+  ) : (
+    [work.open.kind === "chat" ? "" : capital(work.kind), doing]
+      .filter((part) => part !== "")
+      .join(" · ")
+  );
+  const approving = async (event: ReactMouseEvent) => {
+    event.stopPropagation();
+    if (work.approve === null) return;
+    try {
+      await approve(work.approve);
+      void queryClient.invalidateQueries({ queryKey: keys.snapshot });
+    } catch (error) {
+      toast({
+        kind: "error",
+        text: isApiError(error) ? error.message : "Could not approve the plan.",
+      });
+    }
+  };
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: the right click is a second way to the menu the bar has
-    <div className="group relative" onContextMenu={(event) => onContextMenu(work, event)}>
-      <SelectBox
-        label={`Choose ${work.title}`}
-        checked={chosen}
-        anyChosen={anyChosen}
-        onToggle={(range) => onChoose(work, range)}
-        className="absolute top-1/2 left-3 z-10 -translate-y-1/2"
-      />
-      <button
-        type="button"
-        data-testid="fleet-row"
-        onClick={open}
-        className={cn(
-          "flex min-h-12 w-full cursor-pointer flex-wrap items-center gap-x-4 gap-y-1 py-2 pr-20 pl-10 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover",
-          chosen && "bg-selected",
-        )}
-      >
-        <MarkLabel mark={status.mark} word={status.word} className="w-28 shrink-0" />
-        <span className="flex min-w-0 flex-1 basis-60 flex-col">
-          <span className="truncate text-base text-text">{work.title}</span>
-          <span className="flex min-w-0 gap-1 text-sm text-secondary">
-            <span className="shrink-0">{work.kind}</span>
-            {about && <span className="min-w-0 truncate">{about}</span>}
-          </span>
-        </span>
-        <span className="flex min-w-0 flex-1 basis-60 items-center gap-2 text-sm text-secondary">
-          {step === undefined ? (
-            <span>No step yet</span>
-          ) : step.kind === "tool" ? (
+    <ListRow
+      status={waits ? "needsYou" : "running"}
+      id={work.id}
+      title={work.title}
+      reason={reason}
+      action={
+        <>
+          {tools && (
             <>
-              <ToolStatusDot status={toolStatus(step.call)} className="shrink-0" />
-              <span className="shrink-0 font-mono text-text">{toolTitle(step.call)}</span>
-              {/* One line, as in a conversation: a command is read by its end, so what a line that runs out hides is
-                its beginning, and the whole of it stays in the tooltip. */}
-              <FadedLine
-                text={inputSummary(step.call.input)}
-                title={inputPath(step.call.input) ?? inputSummary(step.call.input)}
-                className="flex-1"
-              />
-            </>
-          ) : (
-            <>
-              <span
-                aria-hidden="true"
-                className={cn("size-2 shrink-0 rounded-full", atWork ? "bg-progress" : "bg-track")}
-              />
-              <span>{thinkingLabel(thoughtSeconds(recent, recent.length - 1, ended), atWork)}</span>
+              {work.tokens !== null && (
+                <span className="text-xs tabular-nums text-muted">{tokensText(work.tokens)}</span>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`Stop ${work.title}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onStop(work);
+                }}
+                className="min-h-6 px-1.5 text-xs"
+              >
+                Stop
+              </Button>
             </>
           )}
-        </span>
-        <span className="w-16 shrink-0 text-right text-sm tabular-nums text-secondary">
-          {startedAt > 0 ? elapsed(now - startedAt) : (worked ?? "")}
-        </span>
-      </button>
-      <Button
-        variant="ghost"
-        size="sm"
-        aria-label={`Stop ${work.title}`}
-        onClick={() => onStop(work)}
-        className="absolute top-1/2 right-2 z-10 -translate-y-1/2 opacity-0 transition-opacity duration-(--motion-fast) ease-out focus-visible:opacity-100 group-hover:opacity-100"
-      >
-        <StopIcon className="size-4" aria-hidden="true" />
-        Stop
-      </Button>
-    </div>
+          {work.approve !== null && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={approving}
+              className="min-h-6 px-2 text-xs text-accent-text"
+            >
+              Approve plan
+            </Button>
+          )}
+        </>
+      }
+      age={startedAt > 0 ? age(now - startedAt) : began === null ? "" : age(stops - began)}
+      selected={selected}
+      at={at}
+      onClick={onClick}
+      data-key={choiceKey(work)}
+    />
   );
-}, sameRow);
+}

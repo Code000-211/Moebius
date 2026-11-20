@@ -147,37 +147,56 @@ describe.skipIf(usesRealServer)("choosing cards on the board", () => {
 });
 
 describe.skipIf(usesRealServer)("choosing runs in Fleet", () => {
-  it("stops two runs together", async () => {
+  const rows = () => page.getByTestId("list-row");
+
+  it("stops two runs chosen as a range", async () => {
     await fresh();
     // Two chats that ended take the first ids, as the board's run ids do; the two that are going come after them.
     server.chat?.seed({ status: "succeeded", title: "Old one" });
     server.chat?.seed({ status: "succeeded", title: "Old two" });
-    const first = server.chat?.seed({ status: "running", title: "Write the first rule" }) as number;
-    const second = server.chat?.seed({
-      status: "running",
-      title: "Write the second rule",
-    }) as number;
+    server.chat?.seed({ status: "running", title: "Write the first rule" });
+    server.chat?.seed({ status: "running", title: "Write the second rule" });
     await page.goto(`${server.url}/fleet`);
-    await expect.poll(() => page.getByTestId("fleet-row").count()).toBe(3);
-    await box("Choose Write the first rule").check();
-    await box("Choose Write the second rule").check();
+    await expect.poll(() => rows().count()).toBe(3);
+    // The arrows select without opening anything; Shift and a click then choose the range to the second rule.
+    await page.getByTestId("virtual-list").focus();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await rows()
+      .filter({ hasText: "Write the second rule" })
+      .click({ modifiers: ["Shift"] });
     await says("2 runs chosen").waitFor();
     await bar()
       .getByRole("button", { name: /Stop runs/ })
       .click();
     await page.getByRole("status").filter({ hasText: "Stopping 2 runs." }).waitFor();
-    await expect.poll(() => page.getByTestId("fleet-row").count()).toBe(1);
-    expect(first).not.toBe(second);
+    await expect.poll(() => rows().count()).toBe(1);
   });
 
-  it("clears the choice with Escape", async () => {
+  it("moves the selection with the arrows and clears the choice with Escape", async () => {
     await fresh();
+    server.chat?.seed({ status: "running", title: "Write the first rule" });
     await page.goto(`${server.url}/fleet`);
-    await expect.poll(() => page.getByTestId("fleet-row").count()).toBe(1);
-    await box(/Choose #1/).focus();
-    await page.keyboard.press("Space");
-    await says("1 run chosen").waitFor();
+    await expect.poll(() => rows().count()).toBe(2);
+    await page.getByTestId("virtual-list").focus();
+    await page.keyboard.press("ArrowDown");
+    await expect.poll(() => rows().first().getAttribute("data-selected")).toBe("true");
+    await page.getByRole("button", { name: /^Stop/ }).waitFor();
+    await page.keyboard.press("Shift+ArrowDown");
+    await says("2 runs chosen").waitFor();
     await page.keyboard.press("Escape");
     await bar().waitFor({ state: "detached" });
+  });
+
+  it("opens the menu with a right click, on the chosen run", async () => {
+    await fresh();
+    server.chat?.seed({ status: "running", title: "Write the first rule" });
+    await page.goto(`${server.url}/fleet`);
+    await expect.poll(() => rows().count()).toBe(2);
+    await rows().filter({ hasText: "Write the first rule" }).click({ button: "right" });
+    await page
+      .getByRole("menu", { name: "1 run" })
+      .getByRole("menuitem", { name: /Stop runs/ })
+      .waitFor();
   });
 });

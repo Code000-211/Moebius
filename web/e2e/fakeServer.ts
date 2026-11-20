@@ -54,6 +54,10 @@ export interface FakeServer {
   stop(): Promise<void>;
   /** Listens again on the same port after `stop`. */
   restart(): Promise<void>;
+  /** How many event streams are open now: counted up when one connects and down when it closes. */
+  openStreams(): number;
+  /** How many runs the open event streams have asked for the events of, each counted once. */
+  watchedRuns(): number;
   /** Sends an event to every connected event stream. */
   broadcast(event: { kind: string; data: unknown }): void;
   /** Tells the person with `handle` something, as the server does for a mention: the notice and its event. */
@@ -170,6 +174,8 @@ export async function startFakeServer(): Promise<FakeServer> {
   };
   const codes = new Set<string>([LOGIN_CODE]);
   const sockets = new Set<WebSocket>();
+  /** The runs each open event stream has asked for. */
+  const watching = new Map<WebSocket, Set<number>>();
   const guardLog: Array<string | undefined> = [];
   const events = new WebSocketServer({ noServer: true });
   const broadcast = (event: { kind: string; data: unknown }) => {
@@ -412,7 +418,24 @@ export async function startFakeServer(): Promise<FakeServer> {
     }
     events.handleUpgrade(request, socket, head, (ws) => {
       sockets.add(ws);
-      ws.on("close", () => sockets.delete(ws));
+      const asked = new Set<number>();
+      watching.set(ws, asked);
+      ws.on("message", (data) => {
+        try {
+          const request = JSON.parse(String(data)) as {
+            subscribe?: number[];
+            unsubscribe?: number[];
+          };
+          for (const id of request.subscribe ?? []) asked.add(id);
+          for (const id of request.unsubscribe ?? []) asked.delete(id);
+        } catch {
+          // Not a request of the stream; nothing to count.
+        }
+      });
+      ws.on("close", () => {
+        sockets.delete(ws);
+        watching.delete(ws);
+      });
     });
   });
 
@@ -431,6 +454,8 @@ export async function startFakeServer(): Promise<FakeServer> {
     loginUrl: `${url}/?login=${LOGIN_CODE}`,
     token: TOKEN,
     guardLog,
+    openStreams: () => sockets.size,
+    watchedRuns: () => new Set([...watching.values()].flatMap((asked) => [...asked])).size,
     board,
     chat,
     runs,

@@ -18,6 +18,8 @@ const work = (run: number, agent: string, kind: string, repository: string): Wor
   status: "running",
   asks: false,
   title: `#${run}`,
+  id: `#${run}`,
+  approve: null,
   repository,
   startedAt: 0,
   tokens: null,

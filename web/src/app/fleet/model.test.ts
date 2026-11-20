@@ -4,15 +4,14 @@ import type { Chat } from "../../api/types/chat";
 import type { Entry } from "../../chat/conversation";
 import {
   afterSteps,
-  byAgent,
-  context,
   elapsed,
+  items,
   latestSteps,
-  statusWord,
   thinkingNow,
   thoughtSeconds,
   tokensText,
   type Work,
+  waitingWord,
   working,
   workStartedAt,
 } from "./model";
@@ -112,7 +111,8 @@ describe("which runs are working", () => {
     ]);
     expect(list.map((each) => each.run)).toEqual([6, 7, 9, 11]);
     expect(list.find((each) => each.run === 9)).toMatchObject({
-      title: "#48 Card 48",
+      title: "Card 48",
+      id: "#48",
       repository: "radiance",
       tokens: 412_000,
       kind: "code",
@@ -130,29 +130,58 @@ describe("which runs are working", () => {
     });
   });
 
-  it("says how many agents work", () => {
-    const run = (status: string, at: number) => ({ run: at, status }) as Work;
-    expect(context([])).toBe("Nothing is working.");
-    expect(context([run("running", 1)])).toBe("1 agent working");
-    expect(context([run("running", 1), run("starting", 2), run("running", 3)])).toBe(
-      "3 agents working",
-    );
+  it("names a card by its issue id and keeps its title apart", () => {
+    const list = working(snapshot, []);
+    expect(list.find((each) => each.run === 9)).toMatchObject({ id: "#48", title: "Card 48" });
+    expect(list.find((each) => each.run === 11)?.approve).toBeNull();
   });
 
-  it("counts a run that waits for the person as waiting, not as working", () => {
-    const run = (status: string, at: number) => ({ run: at, status }) as Work;
-    const list = [run("running", 1), run("waiting", 2), run("waiting", 3), run("waiting", 4)];
-    expect(context(list)).toBe("1 agent working · 3 waiting for you");
-    expect(context(list.slice(1))).toBe("Nothing is working · 3 waiting for you");
+  it("offers the approval of a waiting card that has an open approve item", () => {
+    const item = (card_id: number, resolved_at: number | null) => ({
+      id: card_id,
+      kind: "approve_issue",
+      card_id,
+      title: "",
+      data: {},
+      resolved_at,
+      at: 1,
+      assignees: [],
+    });
+    const list = working({ ...snapshot, inbox: [item(2, null), item(1, null)] }, []);
+    expect(list.find((each) => each.run === 11)?.approve).toBe(2);
+    // A run that is going has no plan to approve; an item that was resolved asks for nothing.
+    expect(list.find((each) => each.run === 9)?.approve).toBeNull();
+    expect(
+      working({ ...snapshot, inbox: [item(2, 5)] }, []).find((each) => each.run === 11)?.approve,
+    ).toBeNull();
   });
 });
 
-describe("the word a row leads with", () => {
-  it("says what the run is doing and whether it waits for the person", () => {
-    expect(statusWord("running", false)).toEqual({ word: "Running", mark: "live" });
-    expect(statusWord("starting", false)).toEqual({ word: "Starting", mark: "live" });
-    expect(statusWord("waiting", true)).toEqual({ word: "Asks you", mark: "none" });
-    expect(statusWord("waiting", false)).toEqual({ word: "Your turn", mark: "none" });
+describe("the list the page draws", () => {
+  const run = (at: number, status: string, asks = false, approve: number | null = null) =>
+    ({ run: at, status, asks, approve, open: { kind: "card", card: at } }) as Work;
+
+  it("puts the runs that wait for the person first, under their own group", () => {
+    const list = [run(1, "running"), run(2, "waiting"), run(3, "starting"), run(4, "waiting")];
+    expect(items(list).map((item) => (item.type === "group" ? item.name : item.data.run))).toEqual([
+      "Needs you",
+      2,
+      4,
+      "Running",
+      1,
+      3,
+    ]);
+  });
+
+  it("leaves out a group that has no run", () => {
+    expect(items([run(1, "running")]).map((item) => item.type)).toEqual(["group", "row"]);
+    expect(items([])).toEqual([]);
+  });
+
+  it("says why a run waits", () => {
+    expect(waitingWord(run(1, "waiting", false, 1))).toBe("Plan ready");
+    expect(waitingWord(run(1, "waiting", true))).toBe("Asks you");
+    expect(waitingWord(run(1, "waiting"))).toBe("Your turn");
   });
 });
 
@@ -216,15 +245,5 @@ describe("how a tile tells its run", () => {
     expect(latestSteps([thought, text, thought, thought, text])).toHaveLength(2);
     expect(latestSteps([thought, thought])).toHaveLength(2);
     expect(latestSteps([])).toEqual([]);
-  });
-});
-
-describe("the runs by agent", () => {
-  it("groups the runs under their agent, the agents by name and the runs in the order given", () => {
-    const list = working(snapshot, [chat(9, { agent: "Moebius", status: "running" })]);
-    const groups = byAgent([...list].reverse());
-    expect(groups.map(([agent]) => agent)).toEqual([...new Set(list.map((w) => w.agent))].sort());
-    expect(groups.flatMap(([, runs]) => runs)).toHaveLength(list.length);
-    for (const [agent, runs] of groups) expect(runs.every((w) => w.agent === agent)).toBe(true);
   });
 });

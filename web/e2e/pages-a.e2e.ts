@@ -916,7 +916,7 @@ describe("the fleet", () => {
     await open("/fleet");
     await page.getByRole("heading", { name: "Fleet", level: 1 }).waitFor();
     if (usesRealServer) await page.getByText("Nothing is working.").first().waitFor();
-    else await page.getByTestId("fleet-row").first().waitFor();
+    else await page.getByTestId("list-row").first().waitFor();
   });
 
   it.skipIf(usesRealServer)(
@@ -954,19 +954,20 @@ describe("the fleet", () => {
       server.broadcast?.({ kind: "run_started", data: { run: chat } });
       server.broadcast?.({ kind: "lagged", data: { missed: 1 } });
 
-      await expect.poll(() => page.getByTestId("fleet-row").count()).toBe(2);
-      const tiles = page.getByTestId("fleet-row");
-      const card = tiles.filter({ hasText: "#1 Add a feature" });
-      // The rows are grouped by their agent, whose name heads the group.
-      await page.getByRole("heading", { name: "Coder 1" }).waitFor();
-      await page.getByRole("heading", { name: "Moebius 1" }).waitFor();
-      await card.getByText("code", { exact: true }).waitFor();
-      await card.getByText("demo · 12k tokens").waitFor();
+      await expect.poll(() => page.getByTestId("list-row").count()).toBe(2);
+      const tiles = page.getByTestId("list-row");
+      const card = tiles.filter({ hasText: "Add a feature" });
+      // The runs are one list under "Running", not grouped by agent.
+      await page.getByTestId("group-row").getByText("Running").waitFor();
+      await card.getByText("Code ·").waitFor();
       await card.getByText("cargo test").waitFor();
       const talk = tiles.filter({ hasText: "Write a ready.luau" });
-      await talk.getByText("chat", { exact: true }).waitFor();
-      await talk.getByText("demo", { exact: false }).waitFor();
       await talk.getByText("ready.luau", { exact: false }).first().waitFor();
+      // Stop and the tokens are on a row only while the pointer is on it.
+      expect(await page.getByRole("button", { name: /^Stop/ }).count()).toBe(0);
+      await card.hover();
+      await card.getByText("12k tokens").waitFor();
+      await card.getByRole("button", { name: /^Stop/ }).waitFor();
       // A card that is done is not there.
       expect(await tiles.filter({ hasText: "Ship the first release" }).count()).toBe(0);
 
@@ -992,32 +993,19 @@ describe("the fleet", () => {
     },
   );
 
-  /**
-   * A step of a run is one line in a tile, the way a conversation shows it: a long command is read by its end, so the
-   * line keeps that end and fades the beginning it has no room for, rather than turning the step into a paragraph.
-   */
-  it.skipIf(usesRealServer)(
-    "keeps a long command on one line and fades the part that is out of view",
-    async () => {
-      await open("/fleet");
-      const command = `grep -rn "review_conflicts" ${"crates/moebius-core/src/board/".repeat(8)} | head -12`;
-      const chat = server.chat?.seed({
-        status: "running",
-        title: "Look for the review gate",
-      }) as number;
-      server.chat?.toolCall(chat, { id: "c1", tool: "bash", args: { command }, output: "" });
-      const tile = page.getByTestId("fleet-row").filter({ hasText: "Look for the review gate" });
-      const line = tile.getByText("bash", { exact: true }).locator("xpath=following-sibling::*[1]");
-      await line.getByText(command, { exact: true }).waitFor();
-
-      // One line of words, faded where it ran out, and the whole command still reachable.
-      expect((await line.boundingBox())?.height ?? 0).toBeLessThan(30);
-      expect(await line.evaluate((el) => getComputedStyle(el).maskImage)).toContain(
-        "linear-gradient",
-      );
-      expect(await line.getAttribute("title")).toBe(command);
-    },
-  );
+  /** A step of a run is one line of a 36px row: a long command is cut with an ellipsis and the row keeps its height. */
+  it.skipIf(usesRealServer)("keeps a long command on one line of a 36px row", async () => {
+    await open("/fleet");
+    const command = `grep -rn "review_conflicts" ${"crates/moebius-core/src/board/".repeat(8)} | head -12`;
+    const chat = server.chat?.seed({
+      status: "running",
+      title: "Look for the review gate",
+    }) as number;
+    server.chat?.toolCall(chat, { id: "c1", tool: "bash", args: { command }, output: "" });
+    const tile = page.getByTestId("list-row").filter({ hasText: "Look for the review gate" });
+    await tile.getByText("bash", { exact: false }).waitFor();
+    expect((await tile.boundingBox())?.height ?? 0).toBeLessThanOrEqual(37);
+  });
 
   it.skipIf(usesRealServer)(
     "shows that a question waits for the person, and drops a chat that ended",
@@ -1030,8 +1018,10 @@ describe("the fleet", () => {
         asks: true,
       }) as number;
       server.broadcast?.({ kind: "lagged", data: { missed: 1 } });
-      const tile = page.getByTestId("fleet-row").filter({ hasText: "Which branch?" });
-      await tile.getByText("asks you").waitFor();
+      const tile = page.getByTestId("list-row").filter({ hasText: "Which branch?" });
+      await tile.getByText("Asks you").waitFor();
+      // The run that waits for the person is under its own group.
+      await page.getByTestId("group-row").getByText("Needs you").waitFor();
       const chat = server.chat?.chats.find((each) => each.id === asking);
       if (chat) chat.status = "succeeded";
       server.broadcast?.({ kind: "run_ended", data: { run: asking, status: "succeeded" } });
@@ -1049,25 +1039,25 @@ describe("the fleet", () => {
         repository_id: 1,
       }) as number;
       server.broadcast?.({ kind: "run_started", data: { run: chat } });
-      await expect.poll(() => page.getByTestId("fleet-row").count()).toBe(2);
-      const tiles = page.getByTestId("fleet-row");
+      await expect.poll(() => page.getByTestId("list-row").count()).toBe(2);
+      const tiles = page.getByTestId("list-row");
       const bar = page.getByRole("search", { name: "Filter the runs" });
 
       await addFilter(page, bar, "Agent", "Coder");
       await expect.poll(() => tiles.count()).toBe(1);
-      await tiles.filter({ hasText: "#1 Add a feature" }).waitFor();
+      await tiles.filter({ hasText: "Add a feature" }).waitFor();
       expect(path()).toBe("/fleet?agent=Coder");
 
       await page.reload();
       await bar.getByRole("button", { name: "Agent is Coder", exact: true }).waitFor();
-      await tiles.filter({ hasText: "#1 Add a feature" }).waitFor();
+      await tiles.filter({ hasText: "Add a feature" }).waitFor();
       expect(await tiles.count()).toBe(1);
 
       // A second filter narrows further: no run of the Coder is a chat.
       await addFilter(page, bar, "Kind", "chat");
       await page.getByText("No run matches").waitFor();
       await bar.getByRole("button", { name: "Clear filters" }).click();
-      await expect.poll(() => page.getByTestId("fleet-row").count()).toBe(2);
+      await expect.poll(() => page.getByTestId("list-row").count()).toBe(2);
       expect(await tiles.count()).toBe(2);
       expect(path()).toBe("/fleet");
     },

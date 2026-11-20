@@ -8,6 +8,7 @@ import type { Chat } from "../../api/types/chat";
 import type { Entry } from "../../chat/conversation";
 import { HARNESS_PLACE } from "../../chat/places";
 import type { FilterField } from "../../ui/filters/model";
+import { cardKey } from "../board/cardKey";
 
 /** Where a click on a tile goes. */
 export type OpenTarget =
@@ -23,8 +24,12 @@ export interface Work {
   status: string;
   /** Whether the run waits for an answer to a question its agent asked: only a chat can. */
   asks: boolean;
-  /** `#number title` of a card, the title of a chat. */
+  /** The title of the card, or of the chat. */
   title: string;
+  /** The issue's id (`WEB-24`, or `#17` without a project key); a chat has none and says `Chat`. */
+  id: string;
+  /** The card whose plan waits for approval (an open `approve_issue` item), when the run waits for that. */
+  approve: number | null;
   repository: string;
   /** Unix seconds; 0 when the snapshot does not say (the run is read for it). */
   startedAt: number;
@@ -39,6 +44,11 @@ const isWorking = (status: string) =>
 /** Every working run, the oldest first. */
 export function working(snapshot: Snapshot, chats: readonly Chat[]): Work[] {
   const list: Work[] = [];
+  const approving = new Set(
+    snapshot.inbox
+      .filter((item) => item.kind === "approve_issue" && item.resolved_at === null)
+      .map((item) => item.card_id),
+  );
   for (const board of snapshot.boards) {
     for (const card of board.cards) {
       const run = card.run;
@@ -49,7 +59,9 @@ export function working(snapshot: Snapshot, chats: readonly Chat[]): Work[] {
         kind: run.purpose,
         status: run.status,
         asks: false,
-        title: `#${card.number} ${card.title}`,
+        title: card.title,
+        id: cardKey(card),
+        approve: run.status === "waiting" && approving.has(card.id) ? card.id : null,
         repository: board.repository.name,
         startedAt: 0,
         tokens: card.tokens > 0 ? card.tokens : null,
@@ -70,6 +82,8 @@ export function working(snapshot: Snapshot, chats: readonly Chat[]): Work[] {
       status: chat.status,
       asks: chat.asks,
       title: chat.title === "" ? "Chat" : chat.title,
+      id: "Chat",
+      approve: null,
       repository: place,
       startedAt: chat.started_at,
       tokens: null,
@@ -80,7 +94,6 @@ export function working(snapshot: Snapshot, chats: readonly Chat[]): Work[] {
 }
 
 import { plural } from "../../ui/lib/format";
-import type { StateMark } from "../../ui/page/MarkLabel";
 
 /** The keys of the Fleet's filters in the address, in the order the bar offers them. */
 export const FILTER_KEYS = ["project", "agent", "kind"] as const;
@@ -116,40 +129,39 @@ export function filtered(list: readonly Work[], values: Readonly<Record<string, 
 /** Whether a run is at work: starting or running. A run that waits for the person is not working, it is waiting. */
 export const atWork = (work: Work) => work.status === "starting" || work.status === "running";
 
-/**
- * What the page says under its title: how many agents are at work (starting or running), and how many runs wait for the
- * person, which are not working however long they stay in the list.
- */
-export function context(list: readonly Work[]): string {
-  const busy = list.filter(atWork).length;
-  const waiting = list.length - busy;
-  if (waiting === 0)
-    return busy > 0 ? `${plural(busy, "agent", "agents")} working` : "Nothing is working.";
-  return `${busy > 0 ? `${plural(busy, "agent", "agents")} working` : "Nothing is working"} · ${waiting} waiting for you`;
-}
+/** One line of the list: a group's name, or a run. */
+export type FleetItem =
+  | { type: "group"; key: string; name: string }
+  | { type: "row"; key: string; data: Work };
 
-/** The runs grouped by their agent, the agents in the order of their names and each agent's runs in the order given. */
-export function byAgent(list: readonly Work[]): Array<[string, Work[]]> {
-  const groups = new Map<string, Work[]>();
-  for (const work of list) groups.set(work.agent, [...(groups.get(work.agent) ?? []), work]);
-  return [...groups].sort(([a], [b]) => a.localeCompare(b));
-}
+/** What a row is chosen and kept by: a card's run and a chat can share a number. */
+export const choiceKey = (work: Work) => `${work.open.kind}:${work.run}`;
 
-/** How a working run reads at a glance: the word, and the mark before it. */
-export interface Status {
-  word: string;
-  /** The turning ring for work under way; none for a run that waits for the person, said as grey text. */
-  mark: StateMark;
-}
+/** Whether a run waits for the person. */
+export const needsYou = (work: Work) => work.status === "waiting";
 
 /**
- * The word for a working run, with the mark that belongs to it. `waiting` is a run that waits for the person, which is
- * why it has no ring: nothing is turning.
+ * The flat list the page draws: the group "Needs you" with the runs that wait for the person, then "Running" with the
+ * others. A group with no run is left out, and the runs keep the order they were given in.
  */
-export function statusWord(status: string, asks: boolean): Status {
-  if (status === "waiting") return { word: asks ? "Asks you" : "Your turn", mark: "none" };
-  if (status === "starting") return { word: "Starting", mark: "live" };
-  return { word: "Running", mark: "live" };
+export function items(list: readonly Work[]): FleetItem[] {
+  const out: FleetItem[] = [];
+  for (const [key, name, pick] of [
+    ["needs", "Needs you", true],
+    ["running", "Running", false],
+  ] as const) {
+    const runs = list.filter((work) => needsYou(work) === pick);
+    if (runs.length === 0) continue;
+    out.push({ type: "group", key, name });
+    for (const work of runs) out.push({ type: "row", key: choiceKey(work), data: work });
+  }
+  return out;
+}
+
+/** The pale words of a run that waits for the person. */
+export function waitingWord(work: Work): string {
+  if (work.approve !== null) return "Plan ready";
+  return work.asks ? "Asks you" : "Your turn";
 }
 
 /** A number of tokens: `412k tokens`, `1.5M tokens`. */
