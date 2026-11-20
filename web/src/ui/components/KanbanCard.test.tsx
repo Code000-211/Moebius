@@ -1,18 +1,25 @@
 // @vitest-environment jsdom
 /**
- * A board card as a keyboard and a screen reader meet it. The card is a group and not a button: naming a button makes
- * everything inside it presentational, and a card holds the link to its issue and the badge of its pull request, which
- * a person has to be able to reach. Its title is the control that opens it, and the card itself stays the handle the
- * drag library picks up — which is why the group is focusable too.
+ * A board card: flat and quiet, and as a keyboard and a screen reader meet it. The card is a group and not a button:
+ * its title is the control that opens it, and the card itself stays the handle the drag library picks up — which is why
+ * the group is focusable too.
  */
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { KanbanCard, KanbanCards, KanbanProvider } from "./KanbanBoard";
 import { KanbanCardContent } from "./KanbanCardContent";
 
 afterEach(cleanup);
 
-function Card({ onOpen, preview }: { onOpen: () => void; preview?: string | null }) {
+function Card({
+  onOpen,
+  activity,
+  assignees,
+}: {
+  onOpen: () => void;
+  activity?: { text: string; tone: "quiet" | "needs-you" } | null;
+  assignees?: string[];
+}) {
   return (
     <KanbanProvider onDragEnd={() => {}} renderOverlay={() => null}>
       <KanbanCards>
@@ -25,11 +32,10 @@ function Card({ onOpen, preview }: { onOpen: () => void; preview?: string | null
         >
           <KanbanCardContent
             displayId="#12"
-            issueUrl="https://github.com/acme/demo/issues/12"
             title="Fix the parser"
-            preview={preview}
-            detail="Coder · round 1 of 5"
-            badges={[{ name: "Your turn" }]}
+            status="notStarted"
+            activity={activity}
+            assignees={assignees}
             onOpen={onOpen}
           />
         </KanbanCard>
@@ -39,12 +45,41 @@ function Card({ onOpen, preview }: { onOpen: () => void; preview?: string | null
 }
 
 describe("a board card", () => {
-  it("is a group, so the links it holds stay in the page", () => {
+  it("is a group a keyboard and a screen reader can find", () => {
     render(<Card onOpen={() => {}} />);
     const group = screen.getByRole("group", { name: "#12 Fix the parser" });
     expect(group.getAttribute("aria-roledescription")).toBe("card");
-    expect(within(group).getByRole("link", { name: "Issue #12 on its forge" })).toBeTruthy();
-    expect(within(group).getByText("Your turn")).toBeTruthy();
+  });
+
+  it("is flat when idle: its id and title only, no activity line and no shadow", () => {
+    render(<Card onOpen={() => {}} />);
+    const group = screen.getByTestId("card-12");
+    expect(screen.queryByTestId("card-activity")).toBeNull();
+    expect(group.className).not.toMatch(/shadow/);
+    // The first child holds the icon and the id, the second is the title.
+    const body = group.firstElementChild as HTMLElement;
+    expect(body.children).toHaveLength(2);
+    expect(body.children[0]?.textContent).toContain("#12");
+    expect(body.children[1]?.textContent).toBe("Fix the parser");
+  });
+
+  it("shows a grey line while an agent works", () => {
+    render(<Card onOpen={() => {}} activity={{ text: "Coder · code", tone: "quiet" }} />);
+    const line = screen.getByTestId("card-activity");
+    expect(line.textContent).toBe("Coder · code");
+    expect(line.className).toContain("text-secondary");
+  });
+
+  it("shows an orange line when it needs a person", () => {
+    render(<Card onOpen={() => {}} activity={{ text: "Plan ready", tone: "needs-you" }} />);
+    expect(screen.getByTestId("card-activity").className).toContain("text-needs-you-text");
+  });
+
+  it("shows an avatar only when a person owns it", () => {
+    const { rerender } = render(<Card onOpen={() => {}} />);
+    expect(screen.queryByRole("img", { name: /Given to/ })).toBeNull();
+    rerender(<Card onOpen={() => {}} assignees={["ada"]} />);
+    expect(screen.getByRole("img", { name: "Given to @ada" })).toBeTruthy();
   });
 
   it("opens from its title, once", () => {
@@ -52,17 +87,6 @@ describe("a board card", () => {
     render(<Card onOpen={onOpen} />);
     fireEvent.click(screen.getByRole("button", { name: "Fix the parser" }));
     expect(onOpen).toHaveBeenCalledTimes(1);
-  });
-
-  it("shows what the issue asks for, below the title", () => {
-    render(<Card onOpen={() => {}} preview="The board is cramped on a phone" />);
-    const preview = screen.getByText("The board is cramped on a phone");
-    expect(preview.className).toContain("clamp-3");
-  });
-
-  it("holds nothing where a blank issue would have left a gap", () => {
-    const { container } = render(<Card onOpen={() => {}} preview="   " />);
-    expect(container.querySelector(".clamp-3")).toBeNull();
   });
 
   it("opens with Enter on the card itself, where the drag handle takes focus", () => {
