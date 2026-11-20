@@ -91,12 +91,13 @@ Chromium comes from Playwright: `pnpm exec playwright install chromium` (add `--
 
 ## Theme
 
-The web app follows [`docs/design-web.md`](../docs/design-web.md). The
-standard is a light and dark pair of palettes on a warm near-black and near-white canvas, borderless surfaces raised by
-a shadow rather than outlined by a line, generous radii (16 for a card, 12 for a control, full for a pill), one readable
-sans at 400 for prose and 600 for labels, and spacing on an 8pt grid, where 4 is the half-step a tight row needs and
-2 a nudge. The numbers are what count: `tokens.test.ts` and the design audit below enforce them, so read those for
-anything this paragraph leaves out.
+The web app follows [`docs/design-web.md`](../docs/design-web.md), whose token table lists every colour for both themes
+and is the one source the code follows; the decisions and approved mockups behind it are in
+[`docs/design/web-redesign/`](../docs/design/web-redesign/DECISIONS.md). The standard is a light theme first and a
+neutral dark one, nearly monochrome with one indigo accent, 13px type on rows of 36px, radii of 6, 8 and 10, and fades
+of 120ms at most. The numbers are what count: `tokens.test.ts` and the design audit below enforce them. The code is
+moved to the new standard in steps, so until the last one lands `theme.css` and its test still hold the earlier values
+(the transition note at the end of the standard says which); read those for anything this paragraph leaves out.
 
 `src/styles/theme.css` holds every token twice, once for dark (the default, on `:root`) and once for light (under
 `:root[data-theme="light"]`); `src/styles/tailwind.css` makes them Tailwind colours, radii, sizes, shadows and type
