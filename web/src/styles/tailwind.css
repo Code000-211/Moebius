@@ -187,20 +187,6 @@
   --spacing-icon-2xs: 8px;
   --spacing-dot: 8px;
 
-  /* The three dots of a card whose run is working (RunningDots). */
-  --animate-running-dot-1: running-dot 1.4s ease-in-out infinite;
-  --animate-running-dot-2: running-dot 1.4s ease-in-out 0.2s infinite;
-  --animate-running-dot-3: running-dot 1.4s ease-in-out 0.4s infinite;
-  @keyframes running-dot {
-    0%,
-    100% {
-      opacity: 0.3;
-    }
-    50% {
-      opacity: 1;
-    }
-  }
-
   /* The word of a block of steps that is still going on: a light that passes over it (StepsGroup). */
   --animate-working-shimmer: working-shimmer 2s linear infinite;
   @keyframes working-shimmer {
@@ -282,28 +268,6 @@
   :root[data-blur="on"] & {
     background-color: var(--glass);
     backdrop-filter: blur(16px) saturate(1.2);
-  }
-}
-
-/*
- * A card that answers the pointer: it lifts 1px and its short shadow grows, in 180ms ease-out. Reduced motion keeps
- * the shadow and drops the lift.
- */
-@utility lift {
-  box-shadow: var(--shadow-card);
-  transition-property: transform, box-shadow, border-color;
-  transition-duration: var(--motion-routine);
-  transition-timing-function: var(--motion-ease);
-
-  &:hover {
-    box-shadow: var(--shadow-card-hover);
-    transform: translateY(-1px);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    &:hover {
-      transform: none;
-    }
   }
 }
 
@@ -616,7 +580,7 @@
 
 /*
  * Motion marks meaningful change, and stands aside when a person asks it to: no transition at all, an animation over
- * before it is seen, and nothing lifted on hover. It sits outside every layer on purpose: a declaration in no layer
+ * before it is seen, and no lift. It sits outside every layer on purpose: a declaration in no layer
  * wins over the layered utilities that set a duration, without an `!important`.
  */
 @media (prefers-reduced-motion: reduce) {
@@ -629,4 +593,15 @@
     animation-iteration-count: 1;
     scroll-behavior: auto;
   }
+}
+
+/* The same rules for the switch in Appearance, which sets the attribute on the root (`src/motion.ts`). */
+:root[data-reduce-motion="true"] *,
+:root[data-reduce-motion="true"] ::before,
+:root[data-reduce-motion="true"] ::after {
+  transition: none;
+  animation-duration: 1ms;
+  animation-delay: 0s;
+  animation-iteration-count: 1;
+  scroll-behavior: auto;
 }

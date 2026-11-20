@@ -140,13 +140,14 @@ function Tile({ project }: { project: Project }) {
       </span>
     </>
   );
-  const tile = "flex min-w-0 flex-col gap-3 rounded-card bg-surface p-4 no-underline";
+  const tile =
+    "flex min-w-0 flex-col gap-3 rounded-card bg-surface p-4 no-underline outline outline-1 -outline-offset-1 outline-hairline";
   return (
     <li data-testid="project" className="min-w-0">
       <Link
         to={`/projects/${project.id}/settings`}
         aria-label={`${project.name}, ${project.key}`}
-        className={cn(tile, "lift")}
+        className={tile}
       >
         {body}
       </Link>

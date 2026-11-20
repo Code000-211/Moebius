@@ -6,6 +6,7 @@
  */
 import { type Icon, MonitorIcon, MoonIcon, SunIcon } from "@phosphor-icons/react";
 import { useRef } from "react";
+import { useReduceMotion } from "../../motion";
 import { type ThemePreference, useTheme } from "../../theme";
 import { cn } from "../../ui/lib/cn";
 import { Box } from "../../ui/page/Box";
@@ -19,6 +20,7 @@ const CHOICES: Array<{ value: ThemePreference; label: string; icon: Icon }> = [
 
 export function Appearance() {
   const { preference, theme, setPreference } = useTheme();
+  const motion = useReduceMotion();
   const row = useRef<HTMLDivElement>(null);
   return (
     <Box
@@ -68,6 +70,16 @@ export function Appearance() {
           );
         })}
       </div>
+      <label className="mt-3 flex cursor-pointer items-center gap-2 text-base text-text">
+        <input
+          type="checkbox"
+          checked={motion.on || motion.system}
+          disabled={motion.system}
+          onChange={(event) => motion.setOn(event.target.checked)}
+        />
+        Reduce motion
+        {motion.system && <span className="text-secondary">Set by the system</span>}
+      </label>
     </Box>
   );
 }

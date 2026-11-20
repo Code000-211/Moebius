@@ -10,3 +10,10 @@ try {
 } catch {
   document.documentElement.dataset.theme = "light";
 }
+// The reduce-motion switch (`src/motion.ts` owns the key).
+try {
+  if (localStorage.getItem("moebius.reduce-motion") === "on")
+    document.documentElement.dataset.reduceMotion = "true";
+} catch {
+  // Blocked storage: motion as the system asks.
+}

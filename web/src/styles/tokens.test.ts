@@ -343,6 +343,16 @@ describe("the tokens", () => {
       /@media \(prefers-reduced-motion: reduce\) \{\s*\*,[^}]*\}/.exec(tailwind)?.[0] ?? "";
     expect(block).toContain("transition: none;");
     expect(block).toContain("animation-duration: 1ms;");
+    const attribute = /:root\[data-reduce-motion="true"\] \*,[^}]*\}/.exec(tailwind)?.[0] ?? "";
+    expect(attribute).toContain("transition: none;");
+    expect(attribute).toContain("animation-duration: 1ms;");
+  });
+
+  it("has no lift utility, no running-dot keyframes and no motion over 120ms", () => {
+    expect(tailwind).not.toContain("@utility lift");
+    expect(tailwind).not.toContain("running-dot");
+    for (const [, ms] of css.matchAll(/--motion-[a-z]+: (\d+)ms/g))
+      expect(Number(ms)).toBeLessThanOrEqual(120);
   });
 
   it("gives text 4.5 to 1 on what it sits on, in both themes", () => {

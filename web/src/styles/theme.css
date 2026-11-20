@@ -4,7 +4,7 @@
  * `tokens.test.ts` parses that table and fails when a value here differs from it: nearly monochrome grey steps, one
  * indigo accent, and three signal colours that each mean one thing; radii of 6 for controls and rows, 8 for cards and
  * 10 for the panel and windows, round for dots; spacing on a 4px grid with 2, 6 and 10 for the tight places of a dense
- * row; and motion of 80 to 240ms, ease-out.
+ * row; and motion of 80 to 120ms, ease-out.
  *
  * Light is the base block and dark is `:root[data-theme="dark"]`, which sets only the colours that differ. A name
  * defined once, below the table, is the same in both themes, or is an alias of a table token and so follows the theme.
@@ -218,10 +218,10 @@
   --size-label: 11px;
   --size-code: 12px;
 
-  /* Motion: 120 to 240ms, ease-out. */
-  --motion-fast: 120ms;
-  --motion-routine: 180ms;
-  --motion-slow: 240ms;
+  /* Motion: fades of 120ms or less, ease-out; nothing is slower. */
+  --motion-fast: 80ms;
+  --motion-routine: 120ms;
+  --motion-slow: 120ms;
   --motion-ease: cubic-bezier(0.16, 0.84, 0.44, 1);
 
   --font-sans: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
