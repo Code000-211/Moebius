@@ -869,3 +869,31 @@ it("audits every page in both themes and both widths", async () => {
     }
   }
 });
+
+// The card's drawer beside the Moebius agent's sheet: the head bar's controls stay under the pointer. A control is
+// reached when the topmost thing at its centre is the control itself, and the real click is what proves it.
+it("keeps every control of the board's head bar clickable with the agent sheet and a card open", async () => {
+  for (const theme of themes) {
+    for (const width of [1280, 1440, 1920]) {
+      const page = await openPage({ width, height: 900 }, theme);
+      await page.goto(`${base}/board/1?card=1`);
+      await page.getByRole("region", { name: "Card inspector" }).waitFor({ timeout: 10_000 });
+      await open(page, "chat");
+      await page.waitForTimeout(400);
+      const covered = await page.evaluate(() =>
+        Array.from(document.querySelector("main header")?.querySelectorAll("button") ?? []).flatMap(
+          (button) => {
+            const box = button.getBoundingClientRect();
+            if (box.width < 1) return [];
+            const top = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+            return top && button.contains(top) ? [] : [button.textContent?.trim() ?? "a button"];
+          },
+        ),
+      );
+      expect(covered, `${theme} ${width}`).toEqual([]);
+      await page.getByRole("button", { name: "New issue" }).click({ timeout: 5_000 });
+      await page.getByRole("dialog", { name: "New issue" }).waitFor({ timeout: 5_000 });
+      await page.context().close();
+    }
+  }
+});

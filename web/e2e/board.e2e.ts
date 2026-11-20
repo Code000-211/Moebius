@@ -479,7 +479,7 @@ describe("live data", () => {
   it.skipIf(usesRealServer)(
     "keeps the dock clear of the Moebius agent, and the Following row inside the column",
     async () => {
-      for (const width of [1280, 1440]) {
+      for (const width of [1280, 1440, 1600, 1920]) {
         await fresh();
         await page.setViewportSize({ width, height: 900 });
         await openBoard();
@@ -500,6 +500,10 @@ describe("live data", () => {
         const sheet = (await chat.boundingBox()) as { x: number };
         const drawer = (await dock().boundingBox()) as { x: number; width: number };
         expect(drawer.x + drawer.width, `at ${width}`).toBeLessThanOrEqual(sheet.x + 1);
+        // A real pointer click: Playwright waits until the button receives it, so a drawer lying over the head bar
+        // fails here instead of being stepped around.
+        await page.getByRole("button", { name: "New issue" }).click({ timeout: 5_000 });
+        await page.getByRole("dialog", { name: "New issue" }).waitFor();
         await context.close();
         await server.stop().catch(() => {});
       }
