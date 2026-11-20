@@ -7,6 +7,8 @@ import type { Board, Card, Change, InboxItem, Repository, Snapshot } from "../..
 import type { Proposal } from "../../api/types/improve";
 import type { GrillingIssue } from "../../api/types/inbox";
 import type { StateMark } from "../../ui/page/MarkLabel";
+import type { StatusState } from "../../ui/page/StatusIcon";
+import type { ListItem } from "../../ui/page/VirtualList";
 import { mergeStopped, tokens } from "../board/model";
 
 export const READY_TO_MERGE = "ready_to_merge";
@@ -19,20 +21,6 @@ export const TAKEOVER = "takeover";
 export const WIKI_PROPOSAL = "wiki_proposal";
 export const GRILLING_ISSUES = "grilling_issues";
 export const GRILLING_REPORT = "grilling_report";
-
-/** The kinds the core adds, in the order the filter lists them; kinds of column scripts follow. */
-export const KINDS = [
-  READY_TO_MERGE,
-  APPROVE_ISSUE,
-  STUCK,
-  MERGE_STOPPED,
-  CHANGE_CLOSED,
-  PROPOSAL,
-  TAKEOVER,
-  WIKI_PROPOSAL,
-  GRILLING_ISSUES,
-  GRILLING_REPORT,
-] as const;
 
 /** The branch of a change that offers the work of a chat is `moebius/chat-<id>`. */
 const CHAT_BRANCH = "moebius/chat-";
@@ -122,35 +110,6 @@ export function sentence(kind: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** The name of a kind on its filter chip. */
-export function chipName(kind: string): string {
-  switch (kind) {
-    case READY_TO_MERGE:
-      // The board's own column name, so the chip and the card the chip filters to say one thing.
-      return "Ready to merge";
-    case APPROVE_ISSUE:
-      return "Approvals";
-    case STUCK:
-      return "Stuck";
-    case CHANGE_CLOSED:
-      return "Closed";
-    case MERGE_STOPPED:
-      return "Stopped merges";
-    case PROPOSAL:
-      return "Proposals";
-    case TAKEOVER:
-      return "Takeovers";
-    case WIKI_PROPOSAL:
-      return "Wiki edits";
-    case GRILLING_ISSUES:
-      return "Grilled issues";
-    case GRILLING_REPORT:
-      return "Reports";
-    default:
-      return sentence(kind);
-  }
-}
-
 /**
  * What the item is, said in a word, with the blocked icon before what is stuck and the ready-to-merge icon before a
  * change that waits for the person's merge; every other kind is the word alone, as grey text.
@@ -182,23 +141,6 @@ export function kindTag(item: InboxItem): { label: string; mark: StateMark } {
     default:
       return { label: sentence(item.kind), mark: "none" };
   }
-}
-
-/**
- * The key an inbox row leads with: the card's number, or what else the item is about (a change, a proposal, a takeover,
- * a grilling); nothing for an item that is about none of them.
- */
-export function keyOf(item: InboxItem, about: Found): string {
-  if (about.card) return `#${about.card.number}`;
-  const change = changeOf(item);
-  if (change !== null) return `Change ${change}`;
-  const proposal = proposalOf(item);
-  if (proposal !== null) return `Proposal ${proposal}`;
-  const takeover = takeoverOf(item);
-  if (takeover !== null) return `Takeover ${takeover}`;
-  const grilling = grillingOf(item);
-  if (grilling !== null) return `Grilling ${grilling}`;
-  return "";
 }
 
 /**
@@ -399,30 +341,6 @@ export function shown(snapshot: Snapshot, filters: Filters): InboxItem[] {
     .sort((a, b) => b.at - a.at || b.id - a.id);
 }
 
-/** How many items a chip stands for: those of a kind (any when null) in a repository (any when null). */
-export function count(snapshot: Snapshot, kind: string | null, repository: number | null): number {
-  return snapshot.inbox.filter(
-    (item) => inKind({ kind, repository: null }, item) && inRepository(snapshot, repository, item),
-  ).length;
-}
-
-/** The kinds on the chips: the core's, in order, then those of column scripts by name; only those with an item. */
-export function kindsOf(snapshot: Snapshot): string[] {
-  const present = new Set(snapshot.inbox.map((item) => item.kind));
-  const core = KINDS.filter((kind) => present.has(kind));
-  const others = [...present].filter((kind) => !(KINDS as readonly string[]).includes(kind)).sort();
-  return [...core, ...others];
-}
-
-/** What the page says under its title. */
-export function summary(total: number, shownCount: number): string {
-  // An empty inbox is said by the empty state below it, which says it better.
-  if (total === 0) return "";
-  if (total === 1) return "1 thing needs you.";
-  if (total === shownCount) return `${total} things need you.`;
-  return `${total} things need you; ${shownCount} shown.`;
-}
-
 /** One issue of a grilling as the person edits it. */
 export interface Draft {
   title: string;
@@ -463,4 +381,135 @@ export function issuesSent(drafts: Draft[]): GrillingIssue[] {
 /** Whether the list can be confirmed: it has an issue, and each has a title. */
 export function confirmable(drafts: Draft[]): boolean {
   return drafts.length > 0 && drafts.every((draft) => draft.title.trim() !== "");
+}
+
+/** What a row of the list is about: an item of the inbox, or a card that is running or is done. */
+export interface Entry {
+  /** Names the row in the list and in the address: `item-<id>` or `card-<id>`. */
+  key: string;
+  status: StatusState;
+  /** The key of what it is about, drawn in mono. */
+  id: string;
+  title: string;
+  /** The one pale reason or activity. */
+  reason: string;
+  /** The handle of the person it is given to; none for a run of an agent. */
+  owner?: string;
+  /** Unix seconds, or null when the snapshot does not say. */
+  at: number | null;
+  /** The inbox item; null for a card. */
+  item: InboxItem | null;
+  /** The card a click on the row opens in the card window; null for an item that is about none. */
+  card: number | null;
+  /** The card the one action of the row, Approve plan, approves; null when the row needs no approval. */
+  approves: number | null;
+}
+
+/** The key of a card as a person says it: `WEB-24` with a project key, else `#12`. */
+export function cardKey(card: Card): string {
+  return card.project_key && card.project_number
+    ? `${card.project_key}-${card.project_number}`
+    : `#${card.number}`;
+}
+
+/** An item that is an outsider's issue waiting for approval is a plan ready: the one thing the row can approve. */
+export const approvable = (item: InboxItem): boolean =>
+  item.kind === APPROVE_ISSUE && item.card_id !== null;
+
+/** The one pale reason a row of the inbox gives: "Plan ready", or the kind's word with why it stopped. */
+export function rowReason(item: InboxItem): string {
+  if (approvable(item)) return "Plan ready";
+  const { label } = kindTag(item);
+  const reason = text(item.data.reason);
+  return reason !== "" && (item.kind === STUCK || item.kind === MERGE_STOPPED)
+    ? `${label}: ${reason}`
+    : label;
+}
+
+/** How many closed cards the Earlier group shows. */
+export const EARLIER = 10;
+
+const working = (card: Card) => card.run?.status === "starting" || card.run?.status === "running";
+
+function activity(card: Card): string {
+  const purpose = card.run?.purpose ?? "";
+  const word =
+    purpose === "code"
+      ? "Coding"
+      : purpose === "review"
+        ? "Reviewing"
+        : sentence(purpose || "running");
+  return card.rounds > 1 ? `${word}, round ${card.rounds}` : word;
+}
+
+/**
+ * The list of the page: what needs the person, newest first; the cards an agent is working on; and the last cards that
+ * are done. A card that already has an item in the first group is not repeated in the others. Under a repository or a
+ * change filter only the first group is drawn, because the other two are about cards and say nothing of a change.
+ */
+export function listOf(
+  snapshot: Snapshot,
+  items: InboxItem[],
+  filters: Filters,
+): ListItem<Entry>[] {
+  const out: ListItem<Entry>[] = [];
+  const listed = new Set<number>();
+  if (items.length > 0) out.push({ type: "group", key: "group-needs-you", name: "Needs you" });
+  for (const item of items) {
+    const about = found(snapshot, item);
+    if (item.card_id !== null) listed.add(item.card_id);
+    // Only a card has a key to lead with; the kind's word under it already says a proposal or a change.
+    const key = about.card ? cardKey(about.card) : "";
+    out.push({
+      type: "row",
+      key: `item-${item.id}`,
+      data: {
+        key: `item-${item.id}`,
+        status: item.kind === READY_TO_MERGE ? "readyToMerge" : "needsYou",
+        id: key,
+        title: item.title,
+        reason: rowReason(item),
+        owner: item.assignees[0],
+        at: item.at,
+        item,
+        card: item.card_id !== null && about.board ? item.card_id : null,
+        approves: approvable(item) ? item.card_id : null,
+      },
+    });
+  }
+  if (filters.change != null || filters.kind !== null) return out;
+  const boards = snapshot.boards.filter(
+    (board) => filters.repository === null || board.repository.id === filters.repository,
+  );
+  const cards = boards.flatMap((board) => board.cards).filter((card) => !listed.has(card.id));
+  const entry = (card: Card, status: StatusState, reason: string): ListItem<Entry> => ({
+    type: "row",
+    key: `card-${card.id}`,
+    data: {
+      key: `card-${card.id}`,
+      status,
+      id: cardKey(card),
+      title: card.title,
+      reason,
+      owner: card.assignees[0],
+      at: null,
+      item: null,
+      card: card.id,
+      approves: null,
+    },
+  });
+  const running = cards.filter(working);
+  if (running.length > 0) {
+    out.push({ type: "group", key: "group-running", name: "Running" });
+    for (const card of running) out.push(entry(card, "running", activity(card)));
+  }
+  const earlier = cards
+    .filter((card) => card.closed && !working(card))
+    .sort((a, b) => b.id - a.id)
+    .slice(0, EARLIER);
+  if (earlier.length > 0) {
+    out.push({ type: "group", key: "group-earlier", name: "Earlier" });
+    for (const card of earlier) out.push(entry(card, "done", "Done"));
+  }
+  return out;
 }

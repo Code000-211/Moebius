@@ -2,24 +2,22 @@ import { describe, expect, it } from "vitest";
 import type { Board, Card, Change, InboxItem, Snapshot } from "../../api/types/board";
 import type { Proposal } from "../../api/types/improve";
 import {
+  approvable,
   changeOf,
   chatOf,
-  chipName,
   confirmable,
-  count,
   draftsOf,
   facts,
   found,
   issuesSent,
-  keyOf,
-  kindsOf,
   kindTag,
+  listOf,
   meta,
   NO_FILTERS,
   proposedOf,
   removeIssue,
+  rowReason,
   shown,
-  summary,
   trialsOf,
   why,
 } from "./model";
@@ -168,10 +166,6 @@ describe("how an item tells itself", () => {
       label: "Needs design",
       mark: "none",
     });
-    expect(chipName("approve_issue")).toBe("Approvals");
-    expect(chipName("needs_design")).toBe("Needs design");
-    // The chip says what the column the card sits in is called, not a shorter word for the same thing.
-    expect(chipName("ready_to_merge")).toBe("Ready to merge");
   });
 
   it("says why an item is there", () => {
@@ -305,25 +299,6 @@ describe("the filters", () => {
     expect(changeOf(only[0] as InboxItem)).toBe(2);
     expect(shown(snapshot, { kind: null, repository: null, change: 999 })).toEqual([]);
   });
-
-  it("counts a chip against the other filter", () => {
-    expect(count(snapshot, null, null)).toBe(5);
-    expect(count(snapshot, "ready_to_merge", null)).toBe(2);
-    expect(count(snapshot, "ready_to_merge", 1)).toBe(1);
-    expect(count(snapshot, null, 2)).toBe(2);
-  });
-
-  it("lists the kinds present, the core's in order and then the scripts' by name", () => {
-    expect(kindsOf(snapshot)).toEqual(["ready_to_merge", "approve_issue", "stuck", "needs_design"]);
-  });
-
-  it("tells how many things need the person", () => {
-    // An empty inbox is said by the empty state of the page, and not twice over.
-    expect(summary(0, 0)).toBe("");
-    expect(summary(1, 1)).toBe("1 thing needs you.");
-    expect(summary(5, 5)).toBe("5 things need you.");
-    expect(summary(5, 2)).toBe("5 things need you; 2 shown.");
-  });
 });
 
 describe("the issues of a grilling", () => {
@@ -358,29 +333,12 @@ describe("the issues of a grilling", () => {
   });
 });
 
-describe("the key a row leads with", () => {
-  it("is the card's number, else the change, proposal, takeover or grilling, else nothing", () => {
-    const [stuck, merge, chat] = snapshot.inbox as [InboxItem, InboxItem, InboxItem];
-    expect(keyOf(stuck, found(snapshot, stuck))).toBe("#12");
-    expect(keyOf(merge, found(snapshot, merge))).toBe("#45");
-    expect(keyOf(chat, found(snapshot, chat))).toBe("Change 9");
-    const others: Array<[InboxItem, string]> = [
-      [item(6, "proposal", null, { proposal: 4 }), "Proposal 4"],
-      [item(7, "takeover", null, { takeover: 2 }), "Takeover 2"],
-      [item(8, "grilling_report", null, { grilling: 3 }), "Grilling 3"],
-      [item(9, "needs_design", null, {}), ""],
-    ];
-    for (const [each, key] of others) expect(keyOf(each, found(snapshot, each))).toBe(key);
-  });
-});
-
 describe("a wiki proposal", () => {
-  it("is a Wiki edit with its own chip", () => {
+  it("is a Wiki edit", () => {
     expect(kindTag(item(1, "wiki_proposal", null, {}))).toEqual({
       label: "Wiki edit",
       mark: "none",
     });
-    expect(chipName("wiki_proposal")).toBe("Wiki edits");
   });
 });
 
@@ -457,13 +415,78 @@ describe("a card over several repositories in the Inbox", () => {
     });
     const about = found(two, stopped);
     expect(kindTag(stopped)).toEqual({ label: "Merge stopped", mark: "blocked" });
-    expect(chipName("merge_stopped")).toBe("Stopped merges");
     expect(why(stopped, about)).toBe(
       "The merge in web stopped: the change no longer merges. Merged: demo. Still open: web, docs.",
     );
-    expect(kindsOf({ ...two, inbox: [offer, stopped] })).toEqual([
-      "ready_to_merge",
-      "merge_stopped",
+  });
+});
+
+describe("the list of the page", () => {
+  const demo = (cards: Card[]): Board => board(1, "demo", cards, []);
+  const mine = (id: number, extra: Partial<Card> = {}): Card => card(id, id, extra);
+  const waiting = (id: number, kind: string, cardId: number | null, at = 10): InboxItem => ({
+    id,
+    kind,
+    card_id: cardId,
+    title: `Item ${id}`,
+    data: {},
+    resolved_at: null,
+    at,
+    assignees: ["leon"],
+  });
+  const none = { kind: null, repository: null, change: null };
+
+  it("groups what needs the person, what runs and what is done, each card once", () => {
+    const snap = {
+      boards: [
+        demo([
+          mine(1),
+          mine(2, {
+            run: { id: 9, agent: "coder", purpose: "code", status: "running" },
+            rounds: 2,
+          }),
+          mine(3, { closed: true }),
+        ]),
+      ],
+      harness_changes: [],
+      inbox: [waiting(5, "approve_issue", 1)],
+    } as unknown as Snapshot;
+    const list = listOf(snap, shown(snap, none), none);
+    expect(list.map((each) => (each.type === "group" ? each.name : each.key))).toEqual([
+      "Needs you",
+      "item-5",
+      "Running",
+      "card-2",
+      "Earlier",
+      "card-3",
     ]);
+    const rows = list.flatMap((each) => (each.type === "row" ? [each.data] : []));
+    expect(rows.map((each) => [each.status, each.reason])).toEqual([
+      ["needsYou", "Plan ready"],
+      ["running", "Coding, round 2"],
+      ["done", "Done"],
+    ]);
+    expect(rows[0]?.approves).toBe(1);
+    expect(rows[1]?.approves).toBeNull();
+  });
+
+  it("draws only the items under a change filter, and no group for nothing", () => {
+    const snap = {
+      boards: [demo([mine(2, { closed: true })])],
+      harness_changes: [],
+      inbox: [],
+    } as unknown as Snapshot;
+    expect(listOf(snap, [], { ...none, change: 3 })).toEqual([]);
+    expect(listOf(snap, [], none).map((each) => each.key)).toEqual(["group-earlier", "card-2"]);
+  });
+
+  it("offers Approve plan only for an issue that waits for approval and has a card", () => {
+    expect(approvable(waiting(1, "approve_issue", 4))).toBe(true);
+    expect(approvable(waiting(1, "approve_issue", null))).toBe(false);
+    expect(approvable(waiting(1, "stuck", 4))).toBe(false);
+    expect(rowReason(waiting(1, "stuck", 4))).toBe("Stuck");
+    expect(rowReason({ ...waiting(1, "stuck", 4), data: { reason: "no progress" } })).toBe(
+      "Stuck: no progress",
+    );
   });
 });

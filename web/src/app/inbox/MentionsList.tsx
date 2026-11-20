@@ -1,12 +1,13 @@
 /**
- * The Mentions tab: the person's notices, newest first, as one list. Choosing a notice marks it read on the server
+ * The Mentions tab: the person's notices (mentions, what was given to them and what changed on a card they follow),
+ * newest first, as one virtualised list. Choosing a notice marks it read on the server
  * (for this person alone) and opens the card or the item it is about. It reads the notices, which `notice_added` and
  * `notice_read` keep current. `?notice=<id>` opens that notice as choosing it does (the desktop app's notification
  * goes there), and then leaves the address as the tab's own.
  */
 import { AtIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { readNotice, notices as readNotices } from "../../api/calls/notices";
 import { keys } from "../../api/keys";
@@ -14,31 +15,15 @@ import type { Snapshot } from "../../api/types/board";
 import type { Notice } from "../../api/types/notices";
 import { Empty } from "../../ui/page/Empty";
 import { ReadFailed } from "../../ui/page/ReadFailed";
-import { SkeletonList } from "../../ui/page/Skeleton";
+import { useToast } from "../../ui/page/Toast";
+import { type ListItem, VirtualList } from "../../ui/page/VirtualList";
+import { cardKey } from "./model";
 import { NoticeRow } from "./NoticeRow";
-import { inTab, MENTIONS, pathOf } from "./notices";
+import { MENTIONS, pathOf } from "./notices";
 
-const EMPTY: Record<string, { title: string; body: string }> = {
-  mentions: {
-    title: "Nothing mentions you",
-    body: "A comment that names you with @ will turn up here.",
-  },
-  assigned: { title: "Nothing is given to you", body: "A card given to you will turn up here." },
-  following: {
-    title: "Nothing changed",
-    body: "A change to a card you follow will turn up here.",
-  },
-};
-
-export function MentionsList({
-  snapshot,
-  now,
-  tab = MENTIONS,
-}: {
-  snapshot: Snapshot;
-  now: number;
-  tab?: string;
-}) {
+export function MentionsList({ snapshot, now }: { snapshot: Snapshot; now: number }) {
+  const toast = useToast();
+  const [chosen, setChosen] = useState<string | null>(null);
   const data = useQuery({ queryKey: keys.notices, queryFn: readNotices });
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -49,6 +34,7 @@ export function MentionsList({
       queryClient.setQueryData<Notice[]>(keys.notices, (before) =>
         before?.map((each) => (each.id === notice.id ? { ...each, read: true } : each)),
       ),
+    onError: () => toast({ kind: "error", text: "That mention could not be marked read." }),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: keys.notices }),
   });
   const wanted = useSearchParams()[0].get("notice");
@@ -79,7 +65,6 @@ export function MentionsList({
     data.refetch,
     data.dataUpdatedAt,
   ]);
-  if (data.isPending) return <SkeletonList rows={3} message="Reading your mentions" />;
   if (data.isError) {
     return (
       <ReadFailed
@@ -90,34 +75,57 @@ export function MentionsList({
       />
     );
   }
-  const shown = inTab(data.data, tab);
-  if (shown.length === 0) {
-    return (
-      <Empty
-        title={EMPTY[tab]?.title ?? "Nothing here"}
-        icon={<AtIcon className="size-6 text-secondary" />}
-        body={EMPTY[tab]?.body ?? ""}
-      />
-    );
-  }
+  const items: ListItem<Notice>[] = (data.data ?? []).map((notice) => ({
+    type: "row",
+    key: String(notice.id),
+    data: notice,
+  }));
+  const open = (key: string) => {
+    const found = items.find((each) => each.key === key);
+    const notice = found?.type === "row" ? found.data : undefined;
+    if (notice === undefined) return;
+    if (!notice.read) read.mutate(notice);
+    const path = pathOf(snapshot, notice);
+    if (path !== null) void navigate(path);
+  };
   return (
-    <div className="overflow-hidden rounded-card bg-surface shadow-card">
-      {/* biome-ignore lint/a11y/noRedundantRoles: list-style: none drops the list in WebKit */}
-      <ul role="list" className="m-0 list-none divide-y divide-hairline p-0">
-        {shown.map((notice) => (
-          <li key={notice.id}>
-            <NoticeRow
-              notice={notice}
-              now={now}
-              onChoose={() => {
-                if (!notice.read) read.mutate(notice);
-                const path = pathOf(snapshot, notice);
-                if (path !== null) void navigate(path);
-              }}
-            />
-          </li>
-        ))}
-      </ul>
-    </div>
+    <VirtualList
+      label="Mentions"
+      className="-mx-6 -mb-6 min-h-0 flex-1 outline-none"
+      items={items}
+      loading={data.isPending}
+      loadingMessage="Reading your mentions"
+      selectedKey={chosen}
+      onSelect={setChosen}
+      onOpen={open}
+      renderRow={(notice, { at, selected, onClick }) => (
+        <NoticeRow
+          notice={notice}
+          id={cardKeyOf(snapshot, notice)}
+          now={now}
+          at={at}
+          selected={selected}
+          onClick={(event) => {
+            onClick(event);
+            open(String(notice.id));
+          }}
+        />
+      )}
+      empty={
+        <Empty
+          centered
+          title="Nothing mentions you"
+          icon={<AtIcon className="size-6 text-secondary" />}
+        />
+      }
+    />
   );
+}
+
+/** The key of the card a notice is about, or nothing for one that is about none. */
+function cardKeyOf(snapshot: Snapshot, notice: Notice): string {
+  const card = snapshot.boards
+    .flatMap((board) => board.cards)
+    .find((each) => each.id === notice.card_id);
+  return card ? cardKey(card) : "";
 }

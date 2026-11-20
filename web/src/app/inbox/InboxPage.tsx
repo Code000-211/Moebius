@@ -1,20 +1,22 @@
 /**
- * The Inbox: everything that needs the person in one quiet list, newest first, a row for each item without buttons
- * (`InboxRow`). The kinds are tabs with the number of items of each, and the shared filter bar (`ui/filters`) filters
- * by repository and by change. Choosing a row reads it (it loses its dot) and shows what to decide in the right
- * sidebar (`Decision`). The list is the whole page, so an empty list says what belongs here. It reads the snapshot,
- * which the event stream keeps current, so an item arrives and leaves on its own. What is chosen is in the address
- * (`?kind=`, `?repository=`, `?change=`, `?item=`), so a reload keeps it. The Mentions tab (`?kind=mentions`) is the
- * person's own notices — what was given to them, where they were mentioned, what changed on a card they follow — with
- * a read mark the server keeps for them (`MentionsList`), split into tabs by kind: Mentions, Assigned and Following; there
- * is no bell.
+ * The Inbox: what needs the person, what an agent is working on and what is done, as one virtualised list of 36px rows
+ * under group rows (`VirtualList`, `InboxRow`, `listOf` in `model.ts`). The tabs are All and Mentions, with no counts.
+ * The row that waits for a plan has Approve plan on it, which approves without opening anything. Choosing a row reads
+ * it (it loses its dot) and opens its card in the card window; an item that is about no card shows what to decide in
+ * the right column (`Decision`). It reads the snapshot, which the event stream keeps current, so an item arrives and
+ * leaves on its own. What is chosen is in the address (`?kind=mentions`, `?repository=`, `?change=`, `?item=`), so a
+ * reload keeps it; a repository or change in the address shows the filter bar so it can be taken off. The Mentions
+ * tab is the person's own notices, with a read mark the server keeps for them (`MentionsList`); there is no bell.
+ * Failures are toasts.
  */
 import { CheckCircleIcon } from "@phosphor-icons/react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useId } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useId, useState } from "react";
+import { Link } from "react-router";
 import { snapshot as readSnapshot } from "../../api/calls/board";
 import { changeInboxAssignees } from "../../api/calls/inbox";
 import { readNotice, notices as readNotices } from "../../api/calls/notices";
+import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Snapshot } from "../../api/types/board";
 import type { Notice } from "../../api/types/notices";
@@ -27,14 +29,17 @@ import { Empty } from "../../ui/page/Empty";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { PageProperties } from "../../ui/page/Properties";
 import { ReadFailed } from "../../ui/page/ReadFailed";
-import { SkeletonList } from "../../ui/page/Skeleton";
 import { TabPanel, Tabs } from "../../ui/page/Tabs";
+import { useToast } from "../../ui/page/Toast";
+import { VirtualList } from "../../ui/page/VirtualList";
+import { useOpenCard } from "../board/CardWindowHost";
 import { AssigneesProperty } from "../people/AssigneesProperty";
+import { perform } from "./actions";
 import { Decision } from "./Decision";
 import { InboxRow } from "./InboxRow";
 import { MentionsList } from "./MentionsList";
-import { changeOf, chipName, count, type Filters, kindsOf, shown, summary } from "./model";
-import { CAP, inTab, isNoticeTab, NOTICE_TABS, rows, waiting } from "./notices";
+import { changeOf, type Filters, listOf, shown } from "./model";
+import { isNoticeTab, MENTIONS } from "./notices";
 import { useRead } from "./read";
 
 /** The fields of the bar: the repository, while there is more than one, and the change an item is about. */
@@ -74,15 +79,23 @@ export function InboxPage() {
   const [params, setQuery] = useQueryParams();
   const tabs = useId();
   const now = useNow();
+  const toast = useToast();
+  const openCard = useOpenCard();
   const { read, markRead } = useRead();
   const mentions = useQuery({ queryKey: keys.notices, queryFn: readNotices });
-  if (data.isPending)
-    return (
-      <>
-        <PageHeader title="Inbox" />
-        <SkeletonList rows={3} message="Reading the inbox" />
-      </>
-    );
+  const [picked, setPicked] = useState<string | null>(null);
+  const approving = useMutation({
+    mutationFn: (card: number) => perform({ kind: "approve", card }),
+    onError: (error) =>
+      toast({
+        kind: "error",
+        text: isApiError(error) ? error.message : "The plan could not be approved. Try again.",
+      }),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: keys.snapshot });
+      void queryClient.invalidateQueries({ queryKey: keys.cards });
+    },
+  });
   if (data.isError) {
     return (
       <>
@@ -105,45 +118,41 @@ export function InboxPage() {
     repository: repository !== null && /^\d+$/.test(repository) ? Number(repository) : null,
   };
   const onMentions = isNoticeTab(filters.kind);
-  const noticeList = mentions.data ?? [];
-  const capped = noticeList.length >= CAP;
-  const items = onMentions ? [] : shown(snapshot, filters);
-  const total = snapshot.inbox.length;
-  const waits = waiting(total, noticeList);
+  const items = snapshot === undefined || onMentions ? [] : shown(snapshot, filters);
   const choice = params.get("item");
   const chosen = items.find((each) => String(each.id) === choice) ?? null;
+  const list = snapshot === undefined ? [] : listOf(snapshot, items, filters);
+  const filtered = filters.repository !== null || filters.change != null;
+
+  /** Opens a row: its card in the window, or what to decide about it in the right column. */
+  const open = (key: string) => {
+    const entry = list.find((each) => each.key === key);
+    if (entry?.type !== "row") return;
+    const { item, card } = entry.data;
+    if (item !== null) markRead(item.id);
+    if (card !== null) openCard(card);
+    else if (item !== null) setQuery({ item: String(item.id) });
+  };
+  const selected = picked ?? (chosen === null ? null : `item-${chosen.id}`);
 
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col [&>header]:mb-0">
       <PageHeader
         title="Inbox"
-        context={
-          waits === 0 ? undefined : (
-            <span className="tabular-nums">
-              {summary(waits, waits - (total - (onMentions ? total : items.length)))}
-            </span>
-          )
+        tabs={
+          <Tabs
+            label="Kind"
+            idBase={tabs}
+            value={onMentions ? MENTIONS : ""}
+            onChange={(kind) => setQuery({ kind, item: "" })}
+            tabs={[
+              { value: "", label: "All" },
+              { value: MENTIONS, label: "Mentions" },
+            ]}
+          />
         }
       />
-      <Tabs
-        label="Kind"
-        idBase={tabs}
-        value={filters.kind ?? ""}
-        onChange={(kind) => setQuery({ kind })}
-        tabs={[
-          { value: "", label: `All ${count(snapshot, null, filters.repository)}` },
-          ...NOTICE_TABS.map((tab) => ({
-            value: tab.value,
-            label: `${tab.label} ${rows(inTab(noticeList, tab.value).length, capped)}`,
-          })),
-          ...kindsOf(snapshot).map((kind) => ({
-            value: kind,
-            label: `${chipName(kind)} ${count(snapshot, kind, filters.repository)}`,
-          })),
-        ]}
-        className="mb-4"
-      />
-      {!onMentions && (
+      {!onMentions && filtered && snapshot && (
         <FilterBar
           label="Filter the inbox"
           fields={filterFields(snapshot, filters)}
@@ -155,61 +164,81 @@ export function InboxPage() {
           onClear={() => setQuery({ repository: "", change: "" })}
         />
       )}
-      <TabPanel idBase={tabs} value={filters.kind ?? ""} className="flex flex-col gap-4">
+      <TabPanel
+        idBase={tabs}
+        value={onMentions ? MENTIONS : ""}
+        className="flex min-h-0 flex-1 flex-col"
+      >
         {onMentions ? (
-          <MentionsList snapshot={snapshot} now={now} tab={filters.kind ?? ""} />
-        ) : items.length === 0 ? (
-          total === 0 ? (
-            <Empty
-              title="All caught up"
-              icon={<CheckCircleIcon className="size-6 text-complete-text" weight="fill" />}
-              body="Nothing is waiting on you. A stuck run, a change ready to merge or a proposal from the Retro will turn up here."
-            />
-          ) : (
-            <Empty
-              title="Nothing here with those filters"
-              body="No item matches the filter. Show everything to see the rest."
-              action={
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setQuery({ kind: "", repository: "", change: "" })}
-                >
-                  Show everything
-                </Button>
-              }
-            />
-          )
+          snapshot && <MentionsList snapshot={snapshot} now={now} />
         ) : (
-          <div className="overflow-hidden rounded-card bg-surface shadow-card">
-            {/* biome-ignore lint/a11y/noRedundantRoles: list-style: none drops the list in WebKit */}
-            <ul role="list" className="m-0 list-none divide-y divide-hairline p-0">
-              {items.map((item) => (
-                <li key={item.id}>
-                  <InboxRow
-                    item={item}
-                    snapshot={snapshot}
-                    now={now}
-                    chosen={chosen?.id === item.id}
-                    unread={!read.has(item.id)}
-                    onChoose={() => setQuery({ item: String(item.id) })}
-                  />
-                </li>
-              ))}
-            </ul>
-          </div>
+          <VirtualList
+            label="Inbox"
+            className="-mx-6 -mb-6 min-h-0 flex-1 outline-none"
+            items={list}
+            loading={data.isPending}
+            loadingMessage="Reading the inbox"
+            selectedKey={selected}
+            onSelect={setPicked}
+            onOpen={open}
+            renderRow={(entry, { at, selected: on, onClick }) => (
+              <InboxRow
+                entry={entry}
+                now={now}
+                at={at}
+                selected={on}
+                unread={entry.item !== null && !read.has(entry.item.id)}
+                approving={approving.isPending}
+                onClick={(event) => {
+                  onClick(event);
+                  open(entry.key);
+                }}
+                onApprove={(card) => approving.mutate(card)}
+              />
+            )}
+            empty={
+              filtered ? (
+                <Empty
+                  centered
+                  title="Nothing here with those filters"
+                  action={
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setQuery({ kind: "", repository: "", change: "" })}
+                    >
+                      Show everything
+                    </Button>
+                  }
+                />
+              ) : (
+                <Empty
+                  centered
+                  title="Nothing needs you"
+                  icon={<CheckCircleIcon className="size-6 text-complete-text" weight="fill" />}
+                  action={
+                    <Link to="/fleet" className="text-accent-text no-underline hover:underline">
+                      Open Fleet
+                    </Link>
+                  }
+                />
+              )
+            }
+          />
         )}
       </TabPanel>
-      {chosen && <ReadOnShow id={chosen.id} markRead={markRead} />}
-      <Settled
-        choice={choice}
-        gone={choice !== null && !snapshot.inbox.some((each) => String(each.id) === choice)}
-        onGone={() => setQuery({ item: "" })}
-      />
+      {snapshot && chosen && <ReadOnShow id={chosen.id} markRead={markRead} />}
+      {snapshot && (
+        <Settled
+          choice={choice}
+          gone={choice !== null && !snapshot.inbox.some((each) => String(each.id) === choice)}
+          onGone={() => setQuery({ item: "" })}
+        />
+      )}
       {chosen && (
         <ReadNoticesOf
           item={chosen.id}
-          notices={noticeList}
+          notices={mentions.data ?? []}
           onRead={(id) => {
             queryClient.setQueryData<Notice[]>(keys.notices, (before) =>
               before?.map((each) => (each.id === id ? { ...each, read: true } : each)),
@@ -220,7 +249,7 @@ export function InboxPage() {
           }}
         />
       )}
-      {chosen && (
+      {snapshot && chosen && (
         <PageProperties label="Decide">
           <AssigneesProperty
             key={`assignees-${chosen.id}`}
@@ -236,7 +265,7 @@ export function InboxPage() {
           <Decision key={chosen.id} item={chosen} snapshot={snapshot} />
         </PageProperties>
       )}
-    </>
+    </div>
   );
 }
 

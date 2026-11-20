@@ -8,6 +8,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Snapshot } from "../../api/types/board";
+import { mockViewport } from "../../ui/page/virtualListTest";
 import { MentionsList } from "./MentionsList";
 
 const notice = {
@@ -27,8 +28,10 @@ const snapshot = {
   inbox: [],
 } as unknown as Snapshot;
 let requests: string[];
+let restore: () => void;
 
 beforeEach(() => {
+  restore = mockViewport();
   requests = [];
   vi.stubGlobal(
     "fetch",
@@ -41,6 +44,7 @@ beforeEach(() => {
   );
 });
 afterEach(() => {
+  restore();
   cleanup();
   vi.unstubAllGlobals();
 });
@@ -50,7 +54,7 @@ function Where() {
   return <p data-testid="where">{location.pathname + location.search}</p>;
 }
 
-function open(address: string, tab = "mentions") {
+function open(address: string) {
   render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
@@ -58,7 +62,7 @@ function open(address: string, tab = "mentions") {
       <MemoryRouter initialEntries={[address]}>
         <Where />
         <Routes>
-          <Route path="/inbox" element={<MentionsList snapshot={snapshot} now={2} tab={tab} />} />
+          <Route path="/inbox" element={<MentionsList snapshot={snapshot} now={2} />} />
           <Route path="*" element={null} />
         </Routes>
       </MemoryRouter>
@@ -82,17 +86,12 @@ describe("opening a notice from the address", () => {
   });
 });
 
-describe("a tab shows its own kind", () => {
-  it("lists no assignment under Mentions", async () => {
+describe("the list of notices", () => {
+  it("lists every kind of notice, unread until chosen, and reads one when it is chosen", async () => {
     open("/inbox?kind=mentions");
-    await screen.findByText("Nothing mentions you");
-    expect(screen.queryByTestId("notice")).toBeNull();
-  });
-
-  it("lists the assignment under Assigned and reads it once chosen", async () => {
-    open("/inbox?kind=assigned", "assigned");
     const row = await screen.findByTestId("notice");
     expect(row.getAttribute("data-unread")).toBe("");
+    expect(screen.getByTestId("unread-dot")).toBeTruthy();
     row.click();
     await waitFor(() => expect(requests).toContain("POST /v1/notices/4/read"));
   });
