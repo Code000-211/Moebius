@@ -1,6 +1,4 @@
-/** The logic of the Get started page: the page that fixes each step, and what the page says under its title (the former desktop app's `screens/start`). */
-import type { Start } from "../../api/types/server";
-
+/** The logic of the Get started page: the page that fixes each step, (the former desktop app's `screens/start`). */
 export interface Fix {
   /** The path of the page that fixes the step. */
   to: string;
@@ -21,12 +19,4 @@ export function fix(key: string): Fix | null {
     default:
       return null;
   }
-}
-
-/** What the page says under its title. */
-export function context(answer: Start | undefined): string {
-  if (!answer) return "Reading what the server still needs.";
-  return answer.done
-    ? "Everything is set up. Cards can run."
-    : "A few things have to be set up before the first card can run.";
 }
