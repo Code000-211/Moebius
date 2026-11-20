@@ -187,7 +187,9 @@ function on_card(card)
   elseif moebius.day_budget ~= nil and moebius.tokens_today() >= moebius.day_budget then
     moebius.wait("the daily token budget is spent")
   else
-    moebius.start_run("Coder", "code", card.note)
+    if moebius.start_run("Coder", "code", card.note) == nil then
+      return -- the run limit is reached: the card waits for a free slot
+    end
     if card.rounds == 0 then
       moebius.wait("coding")
     else
@@ -349,7 +351,7 @@ tick. Follow `GET /v1/events` (see the [desktop API](desktop-api.md)) to see `bo
 | The override has no effect. | It is not committed to the default branch of the harness configuration repository, is in the wrong place (it must be `projects/<project name>/<script>`, the project's name as `GET /v1/projects` shows it), the server has no `[harness]`, or the harness repository was changed less than 30 seconds ago elsewhere. The built-in script runs and nothing complains. Check with `git -C <data_dir>/harness show HEAD:projects/<project name>/<script>`. |
 | `no column "<name>"` | `moebius.move` got a name that is not exactly one of the six columns, such as `In Progress`. |
 | `no agent named <name>` | `moebius.start_run` named an agent that is not in `moebius.toml`. Test with `moebius.has_agent(name)` first. |
-| Runs pile up. | `moebius.start_run` does not look at `run_limit` and starts a run every time it is called. A script that calls it on every tick must wait while the card's latest run is going, as `code.luau` does. |
+| Runs pile up. | `moebius.start_run` starts nothing and returns `nil` while `run_limit` runs of cards are going, and the card waits with `the run limit is reached`; return when it does, as `code.luau` does. A script that calls it on every tick must still wait while the card's latest run is going. |
 | A card waits and nobody knows why. | Call `moebius.wait(reason)` on every path that leaves the card where it is. The reason appears in the snapshot's `waiting` and in `card_waiting` events. |
 | `the script ran out of time` | The limit is 2 seconds of the script's own time, and fixed. Time spent inside `moebius.decide`, `start_run`, `publish_change`, `run_checks`, `offer_change` and `merge_change` does not count. |
 | A held card is decided again every tick. | `moebius.decide` records a judgement on every call (see [Plugins](plugins.md)). |

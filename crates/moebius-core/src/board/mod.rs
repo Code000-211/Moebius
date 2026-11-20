@@ -37,5 +37,6 @@ pub use engine::{BoardError, Engine, Step};
 pub use kanban::{Column, Kanban, built_in_script, column_named, project_script, resolve_column};
 pub use limits::Limits;
 pub use runs::{
-    AgentInfo, CardRuns, ChatRuns, ImproveRuns, Runs, StartError, Tui, Variant, may_start,
+    AgentInfo, CardRuns, ChatRuns, ImproveRuns, Runs, StartError, Tui, Variant, free_run_slots,
+    may_start,
 };

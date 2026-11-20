@@ -537,7 +537,7 @@ impl Fixture {
             budget: Mutex::default(),
         });
         let limits = Limits {
-            run_limit: 3,
+            run_limit: 10,
             ..Limits::default()
         };
         let engine = Engine::new(app.clone(), harness.clone(), Kanban::default(), limits);
