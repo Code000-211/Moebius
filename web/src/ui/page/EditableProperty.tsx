@@ -196,6 +196,17 @@ function InlineField({
   );
 }
 
+/**
+ * Puts the focus back on a button once it is drawn again, unless the person has already moved on: the focus is then
+ * on another control, and taking it would send their next key to the wrong place.
+ */
+function giveBackFocus(target: { current: HTMLElement | null }) {
+  requestAnimationFrame(() => {
+    const now = document.activeElement;
+    if (now === null || now === document.body) target.current?.focus();
+  });
+}
+
 /** The value as a field shows it, and what the typing means once it is saved. */
 function typedOf(editor: Extract<PropertyEditor, { kind: "text" | "number" | "date" }>): string {
   if (editor.kind === "text") return editor.value;
@@ -329,7 +340,7 @@ export function EditableProperty({
   const leave = () => {
     setEditing(false);
     // The focus goes back to the value it was opened from, once the button is drawn again.
-    requestAnimationFrame(() => button.current?.focus());
+    giveBackFocus(button);
   };
   const commit = (typed: string) => {
     leave();
@@ -409,7 +420,7 @@ export function ListProperty({
 
   const leave = () => {
     setAdding(false);
-    requestAnimationFrame(() => add.current?.focus());
+    giveBackFocus(add);
   };
 
   return (
