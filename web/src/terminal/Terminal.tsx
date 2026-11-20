@@ -6,7 +6,7 @@
  * with a right click; xterm brackets a paste when the program asked for it. Closing the page or leaving it closes the
  * socket, which kills the shell. The pane itself is exempt from the app's type scale, since it shows characters at a
  * fixed size; the status line and the controls around it are not, and take their colours from the tokens of whichever
- * theme is on, as the pane does.
+ * theme is on, as the pane does. On the Terminal page (`variant="page"`) the status line is hidden while the shell is up.
  */
 import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
@@ -210,7 +210,9 @@ export function Terminal({
         className,
       )}
     >
+      {/* On the Terminal page a shell that is up has nothing to say: the line shows only while it connects or after it ended. */}
       <div
+        hidden={page && status === "open"}
         role={status === "ended" ? (opened ? "status" : "alert") : "status"}
         data-testid={status === "ended" ? "terminal-ended" : undefined}
         className="flex min-h-8 flex-wrap items-center gap-3"
@@ -239,7 +241,11 @@ export function Terminal({
               <span
                 className={cn(
                   "text-sm font-semibold",
-                  status === "connecting" ? "text-progress-text" : "text-complete-text",
+                  page
+                    ? "text-terminal-dim"
+                    : status === "connecting"
+                      ? "text-progress-text"
+                      : "text-complete-text",
                 )}
               >
                 {status === "connecting" ? "Connecting" : "Ready"}
