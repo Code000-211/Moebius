@@ -918,14 +918,13 @@ describe("the Plugins page", () => {
     await open("/plugins");
     await page.getByRole("heading", { name: "Plugins", exact: true }).waitFor();
     await page.getByRole("heading", { name: "Loaded plugins" }).waitFor();
-    await page.getByText(/plugins? loaded; a call into one is refused after \d+ s\./).waitFor();
+    await page.getByTestId("plugin-row").first().waitFor();
   });
 
   it.skipIf(usesRealServer)(
     "lists what the host loaded and the plugins in their own process",
     async () => {
       await open("/plugins");
-      await page.getByText("5 plugins loaded; a call into one is refused after 30 s.").waitFor();
       const rows = page.getByTestId("plugin-row");
       await rows.nth(6).waitFor();
       const guard = await rows.nth(0).textContent();

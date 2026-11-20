@@ -1,7 +1,11 @@
 /**
- * A box of a page: a heading, a line that sums it up at its right, the box's own actions, and the content. The Usage,
- * Settings, Projects, Agents and Models pages are made of these. It is a card, so it is rounded at 8 with a quiet
- * line and a short soft shadow.
+ * A box of a page: a section set apart by a hairline above it, with a quiet heading, a line that sums it up at its
+ * right, the box's own actions, and the content. It has no shadow, no outline and no fill, so it is never a card, and
+ * nothing in it is a card either. The Usage, Settings, Projects, Agents and Models pages are made of these.
+ *
+ * ```tsx
+ * <Box title="Repositories" actions={<Button size="sm">Add</Button>}>…</Box>
+ * ```
  */
 import { type ReactNode, useId } from "react";
 import { cn } from "../lib/cn";
@@ -32,21 +36,16 @@ export function Box({
     <section
       aria-labelledby={title ? headingId : undefined}
       data-testid={testId}
-      className={cn(
-        "rounded-card bg-surface shadow-card outline outline-1 -outline-offset-1 outline-hairline",
-        padded && "p-4",
-        "transition-shadow duration-(--motion-routine)",
-        className,
-      )}
+      className={cn("border-t border-hairline", padded && "py-4", className)}
     >
       {(title || aside || actions) && (
         <header className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
           {title && (
-            <h2 id={headingId} className="m-0 text-lg font-semibold tracking-tight text-text">
+            <h2 id={headingId} className="m-0 text-base font-medium text-secondary">
               {title}
             </h2>
           )}
-          {aside && <span className="text-sm text-secondary">{aside}</span>}
+          {aside && <span className="text-sm text-muted">{aside}</span>}
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </header>
       )}

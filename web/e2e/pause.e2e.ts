@@ -86,12 +86,12 @@ describe.skipIf(usesRealServer)("stopping from Fleet", () => {
     server.chat?.seed({ status: "waiting", title: "Your turn one" });
     server.chat?.seed({ status: "waiting", title: "Your turn two" });
     await page.goto(`${server.url}/fleet`);
-    await page.getByText("2 agents working · 2 waiting for you").waitFor();
+    await expect.poll(() => page.getByTestId("fleet-row").count()).toBe(4);
     const row = page.getByTestId("fleet-row").filter({ hasText: "Write the rule" });
     await row.hover();
     await page.getByRole("button", { name: "Stop Write the rule" }).click();
     await page.getByRole("status").filter({ hasText: "Stopping 1 run." }).waitFor();
-    await page.getByText("1 agent working · 2 waiting for you").waitFor();
+    await expect.poll(() => page.getByTestId("fleet-row").count()).toBe(3);
   });
 });
 

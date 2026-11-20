@@ -202,6 +202,8 @@
   --column-rail-width: 44px;
   /* A sheet over the right column (the Moebius agent, the package sheet): wider than the column, over the page. */
   --sheet-width: 400px;
+  /* The room the window buttons of the desktop app take at the right of the page header; the shell sets it. */
+  --window-buttons: 0px;
   --connect-width: 448px;
   --scrollbar-width: 8px;
 

@@ -38,7 +38,7 @@ describe("a placeholder for a page being read", () => {
   it("draws the rows the list will have, and no more words than that", () => {
     render(<SkeletonList rows={3} message="Reading the skills" />);
     const region = screen.getByRole("status");
-    expect(region.querySelectorAll(".rounded-control")).toHaveLength(3);
+    expect(region.querySelectorAll("[data-skeleton-row]")).toHaveLength(3);
     expect(bars().length).toBeGreaterThan(3);
   });
 
@@ -77,11 +77,11 @@ describe("a placeholder for a page being read", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
-  it("fills its bars with a token and leaves them alone when motion is turned down", () => {
+  it("fills its bars with a token and never animates them", () => {
     render(<SkeletonCard lines={1} message="Reading the project" />);
     for (const bar of bars()) {
       expect(bar.className).toContain("bg-hairline");
-      expect(bar.className).toContain("motion-reduce:animate-none");
+      expect(bar.className).not.toContain("animate-");
     }
   });
 });

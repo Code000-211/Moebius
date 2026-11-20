@@ -48,7 +48,7 @@ export async function offers(page: Page, trigger: Locator): Promise<string[]> {
  * edge of the page's surface rather than a band of padding above it.
  */
 export async function columnsScrollEach(page: Page): Promise<void> {
-  await page.setViewportSize({ width: 1280, height: 400 });
+  await page.setViewportSize({ width: 1280, height: 320 });
   const frame = page.locator("main");
   const list = page.getByTestId("list-column");
   const detail = page.getByTestId("detail-column");

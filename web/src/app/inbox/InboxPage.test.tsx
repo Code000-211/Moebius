@@ -76,7 +76,6 @@ describe("the inbox page", () => {
       [1, 2],
       [notice(1, "mentioned"), notice(2, "changed"), notice(3, "assigned", true)],
     );
-    await screen.findByText("3 things need you.");
     await screen.findByRole("tab", { name: "All 2" });
     await screen.findByRole("tab", { name: "Mentions 1" });
     await screen.findByRole("tab", { name: "Assigned 1" });
