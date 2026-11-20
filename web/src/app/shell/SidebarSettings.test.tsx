@@ -1,7 +1,6 @@
 /**
  * The sidebar's list of settings pages and what stands at its foot: the gear to Settings on every page, the way back
- * to the page the person was on, whom the browser is signed in as, and the way out of the session as a row of the
- * Settings list rather than a foot on every page.
+ * to the page the person was on.
  */
 import { fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -63,38 +62,11 @@ describe("the pages and the settings", () => {
     }
   });
 
-  it("carries the way out of this browser as an item of its own list", async () => {
+  it("leaves the way out of the session to Profile, on no list of the sidebar", async () => {
     show({ at: "/models" });
-    const pages = await screen.findByRole("navigation", { name: "Pages" });
-    expect(pages.textContent).toContain("General");
-    // Signing out does something rather than going somewhere, so it is a row of the list and not a page.
-    expect(screen.getByRole("button", { name: /Sign out/ })).not.toBeNull();
-  });
-
-  it("says whom the browser is signed in as above the way out", async () => {
-    const lea = {
-      id: 2,
-      handle: "lea",
-      name: "Lea",
-      role: "member",
-      disabled: false,
-      created_at: 1,
-    };
-    show({ at: "/models", session: { signed_in: true, person: lea } });
-    await screen.findByRole("button", { name: /Sign out/ });
-    expect(screen.getByText(/Signed in as Lea/).textContent).toBe("Signed in as Lea @lea");
-  });
-
-  it("says nothing of a person the session does not name", async () => {
-    show({ at: "/models", session: { signed_in: true } });
-    await screen.findByRole("button", { name: /Sign out/ });
-    expect(screen.queryByText(/Signed in as/)).toBeNull();
-  });
-
-  it("keeps the way out with the settings, off the everyday list", async () => {
-    show({ at: "/inbox" });
-    await screen.findByRole("link", { name: /^Inbox/ });
+    await screen.findByRole("navigation", { name: "Pages" });
     expect(screen.queryByRole("button", { name: /Sign out/ })).toBeNull();
+    expect(screen.queryByText(/Signed in as/)).toBeNull();
   });
 
   it("goes back to the page the person was last on", async () => {

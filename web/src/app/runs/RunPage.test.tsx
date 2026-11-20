@@ -11,8 +11,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { RunPage } from "./RunPage";
 
 // The events of a run and the event stream are not what these tests are about.
+const TOOL = (seq: number, at: number) => ({
+  kind: "tool",
+  seq,
+  at,
+  call: { id: `c${seq}`, tool: "bash", input: { type: "command", command: "ls" }, output: "" },
+});
 vi.mock("../../chat/useThread", () => ({
-  useThread: () => ({ entries: [], lastSeq: 0, loaded: true, error: null }),
+  useThread: () => ({
+    entries: [TOOL(1, 1), TOOL(2, 1)],
+    lastSeq: 0,
+    loaded: true,
+    error: null,
+  }),
 }));
 vi.mock("../../live/LiveProvider", () => ({ useServerEvents: () => {}, useWatchRun: () => {} }));
 
@@ -87,6 +98,18 @@ describe("the tabs of a run", () => {
     const shown = await screen.findByRole("tabpanel");
     expect(shown.id).toBe(changes.getAttribute("aria-controls"));
     expect(shown.getAttribute("aria-labelledby")).toBe(changes.id);
+  });
+});
+
+describe("the timeline of a run", () => {
+  it("has one header with the tabs in it and a bar with a tick per step", async () => {
+    show();
+    await screen.findByRole("tablist", { name: "Views of the run" });
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    const header = screen.getByRole("banner");
+    expect(within(header).getByRole("tablist")).toBeTruthy();
+    expect(screen.getByRole("progressbar").getAttribute("aria-label")).toMatch(/Running.*2 steps/);
+    expect(screen.getAllByTestId("time-bar-mark")).toHaveLength(2);
   });
 });
 

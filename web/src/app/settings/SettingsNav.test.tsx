@@ -16,7 +16,8 @@ describe("SettingsNav", () => {
     show();
     expect(screen.getByText("Automation")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Models" }).getAttribute("aria-current")).toBe("page");
-    expect(screen.queryByRole("link", { name: "Profile" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Profile" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Runners" })).toBeNull();
   });
 
   it("narrows as one types and says so in one line when nothing matches", () => {

@@ -61,6 +61,7 @@ function fake(): PagesB {
 }
 
 const save = () => page.getByRole("button", { name: "Save", exact: true });
+const agentRow = (name: string) => page.getByTestId("agent-row").filter({ hasText: name }).first();
 const card = (name: string) => page.getByTestId("list-card").filter({ hasText: name }).first();
 /** The body of the first request to `method path`, as the fake received it. */
 function sent<T>(method: string, path: string): T {
@@ -75,16 +76,16 @@ describe("the Agents page", () => {
   it("loads and lists the agents", async () => {
     await open("/agents");
     await page.getByRole("heading", { name: "Agents", exact: true }).waitFor();
-    await card("Moebius").waitFor();
+    await agentRow("Moebius").waitFor();
   });
 
   it.skipIf(usesRealServer)("lists the built-in, the own and the broken agents", async () => {
     await open("/agents");
-    await card("Coder").waitFor();
-    expect(await card("Moebius").textContent()).toContain("Built in");
-    expect(await card("Broken").textContent()).toContain("Broken");
-    expect(await card("Broken").textContent()).toContain("missing field `model`");
-    expect(await card("Coder").textContent()).toContain("fake-coder · openai");
+    await agentRow("Coder").waitFor();
+    expect(await agentRow("Moebius").textContent()).toContain("Built in");
+    expect(await agentRow("Broken").textContent()).toContain("Broken");
+    expect(await agentRow("Broken").textContent()).toContain("missing field `model`");
+    expect(await agentRow("Coder").textContent()).toContain("fake-coder · openai");
   });
 
   it.skipIf(usesRealServer)(
@@ -105,6 +106,8 @@ describe("the Agents page", () => {
         .fill("Keep changes tiny.");
       await save().click();
       await page.getByText("Saved as commit c0ffee1.").waitFor();
+      // A saved agent closes its window.
+      await page.getByTestId("editor-window").waitFor({ state: "detached" });
       expect(requests("PUT", "/v1/agents/Coder")[0]?.body).toEqual({
         settings: {
           model: "claude-fake",
@@ -117,9 +120,9 @@ describe("the Agents page", () => {
         },
         instructions: "Keep changes tiny.",
       });
-      // Nothing waits for the server now, so Save itself says so by resting.
-      expect(await save().isDisabled()).toBe(true);
+      expect(page.url()).not.toContain("agent=");
 
+      await agentRow("Coder").click();
       await page.getByLabel("Token budget per card").fill("0");
       await save().click();
       await page.getByText("The token budget is a whole number of at least 1.").waitFor();
@@ -136,15 +139,15 @@ describe("the Agents page", () => {
     await page.getByRole("button", { name: "docs", exact: true }).click();
     await page.getByLabel("extension path").fill("extensions/log.ts");
     await page.getByRole("button", { name: "Add extension" }).click();
+    // A server that cannot be read is marked in red and cannot be chosen away silently.
+    expect(await page.getByRole("button", { name: "broken", exact: true }).textContent()).toBe(
+      "broken",
+    );
     await save().click();
     await page.getByText("Saved as commit").waitFor();
     expect(requests("PUT", "/v1/agents/Reviewer")[0]?.body).toMatchObject({
       settings: { skills: ["house-style"], mcp: ["docs"], extensions: ["extensions/log.ts"] },
     });
-    // A server that cannot be read is marked in red and cannot be chosen away silently.
-    expect(await page.getByRole("button", { name: "broken", exact: true }).textContent()).toBe(
-      "broken",
-    );
   });
 
   it.skipIf(usesRealServer)(
@@ -161,16 +164,18 @@ describe("the Agents page", () => {
       await pickOption(page, page.getByLabel("Model", { exact: true }), "fake-small");
       await save().click();
       await page.getByText("Saved as commit").waitFor();
-      await card("Tester").waitFor();
+      await agentRow("Tester").waitFor();
       expect(fake().agents.Tester?.settings.model).toBe("fake-small");
 
+      await agentRow("Tester").click();
       await page.getByRole("button", { name: "Delete agent" }).click();
-      await page.getByText("Delete Tester?").waitFor();
+      await page.getByText("Delete this agent?").waitFor();
       await page.getByRole("button", { name: "Keep" }).click();
+      await page.getByText("Delete this agent?").waitFor({ state: "detached" });
       expect(fake().agents.Tester).toBeDefined();
       await page.getByRole("button", { name: "Delete agent" }).click();
       await page.getByRole("button", { name: "Delete agent" }).last().click();
-      await card("Tester").waitFor({ state: "detached" });
+      await agentRow("Tester").waitFor({ state: "detached" });
       expect(fake().agents.Tester).toBeUndefined();
     },
   );
@@ -201,7 +206,7 @@ describe("the Agents page", () => {
         // The Reviewer is built in: its built-in instructions come first, and are the copy's own.
         instructions: expect.stringMatching(/^You are the Reviewer\.[\s\S]*Review kindly\.$/),
       });
-      await card("Reviewer2").waitFor();
+      await agentRow("Reviewer2").waitFor();
     },
   );
 
@@ -213,7 +218,7 @@ describe("the Agents page", () => {
         delete f.agents.Coder;
       });
       const coder = page
-        .getByTestId("list-card")
+        .getByTestId("agent-row")
         .filter({ has: page.getByText("Coder", { exact: true }) });
       await coder.waitFor();
       expect(await coder.textContent()).toContain("Built in");
@@ -292,10 +297,7 @@ describe("the Agents page", () => {
       await page.getByLabel("skill path").fill("skills/extra");
       await page.getByRole("button", { name: "Add skill" }).click();
       await save().click();
-      await page
-        .getByTestId("detail-column")
-        .getByText("Saved in moebius.toml.", { exact: true })
-        .waitFor();
+      await page.getByText("Saved in moebius.toml.", { exact: true }).waitFor();
       const { set } = sent<{ set: Record<string, unknown> }>("PUT", "/v1/settings");
       expect(set["agents.Coder"]).toMatchObject({
         model: "fake-small",
@@ -308,84 +310,97 @@ describe("the Agents page", () => {
 });
 
 describe("the Skills page", () => {
+  const row = (name: string) => page.getByRole("button", { name: `Edit skill ${name}` });
+  const editor = () => page.getByTestId("editor-window");
+  const windowSave = () => editor().getByRole("button", { name: "Save", exact: true });
+
   it("loads", async () => {
     await open("/skills");
     await page.getByRole("heading", { name: "Skills", exact: true }).waitFor();
     // A server with a repository lists the skills; one without offers to set it up.
     await page
-      .locator('[data-testid="list-card"], [data-testid="harness-setup"]')
+      .locator('[data-testid="skill-row"], [data-testid="harness-setup"]')
       .first()
       .waitFor();
   });
 
   it.skipIf(usesRealServer)(
-    "lists the built-in skills first and edits one of the repository",
+    "lists the built-in skills first and edits one of the repository in the window",
     async () => {
       await open("/skills");
-      await card("house-style").waitFor();
-      const names = await page.getByTestId("list-card").allInnerTexts();
+      await row("house-style").waitFor();
+      const names = await page.getByTestId("skill-row").allInnerTexts();
       expect(names[0]).toContain("moebius");
       expect(names.at(-1)).toContain("house-style");
-      await card("house-style").click();
-      const description = page.getByLabel("Description");
+      await row("house-style").click();
+      const description = editor().getByLabel("Description");
       expect(await description.inputValue()).toBe("Write plainly.");
       await description.fill("Write very plainly.");
-      await page
+      await editor()
         .getByRole("textbox", { name: "SKILL.md", exact: true })
         .fill("Use shorter sentences.\n");
-      await save().click();
-      await page.getByText("Saved as commit c0ffee1.").waitFor();
+      await windowSave().click();
+      await page.getByText("Committed: c0ffee1").waitFor();
+      await editor().waitFor({ state: "detached" });
       expect(requests("PUT", "/v1/skills/house-style")[0]?.body).toEqual({
         description: "Write very plainly.",
         text: "Use shorter sentences.",
       });
-      await description.fill("");
-      await save().click();
-      await page.getByText("Enter the description.").waitFor();
+      await row("house-style").click();
+      await editor().getByLabel("Description").fill("");
+      await windowSave().click();
+      await editor().getByText("Enter the description.").waitFor();
     },
   );
+
+  it.skipIf(usesRealServer)("asks before a change is dropped", async () => {
+    await open("/skills?skill=house-style");
+    await editor().getByLabel("Description").fill("Something else.");
+    await page.keyboard.press("Escape");
+    await page.getByRole("alertdialog", { name: "Discard changes?" }).waitFor();
+    await page.getByRole("button", { name: "Discard" }).click();
+    await editor().waitFor({ state: "detached" });
+    expect(requests("PUT", "/v1/skills/house-style")).toHaveLength(0);
+  });
 
   it.skipIf(usesRealServer)("makes a new skill and deletes it after asking", async () => {
     await open("/skills");
     await page.getByRole("button", { name: "New skill" }).click();
-    await page.getByLabel("Name of the new skill").fill("pdf");
-    await page.getByLabel("Description").fill("Fill PDF forms.");
-    await save().click();
-    await page.getByText("Saved as commit").waitFor();
-    await card("pdf").waitFor();
-    await page.getByRole("button", { name: "Delete skill" }).click();
+    await editor().getByLabel("Name of the new skill").fill("pdf");
+    await editor().getByLabel("Description").fill("Fill PDF forms.");
+    await windowSave().click();
+    await row("pdf").waitFor();
+    await row("pdf").click();
+    await editor().getByRole("button", { name: "Delete skill" }).click();
     await page.getByRole("button", { name: "Delete skill" }).last().click();
-    await card("pdf").waitFor({ state: "detached" });
+    await row("pdf").waitFor({ state: "detached" });
     expect(fake().skills.pdf).toBeUndefined();
   });
 
   it.skipIf(usesRealServer)("opens, saves, adds and deletes a skill's other files", async () => {
     await open("/skills?skill=house-style");
-    await page.getByRole("button", { name: "scripts/check.py" }).click();
+    await editor().getByRole("button", { name: "scripts/check.py" }).click();
     const text = page.getByRole("textbox", { name: "File text", exact: true });
     expect(await text.inputValue()).toBe("print('ok')\n");
     await text.fill("print('changed')\n");
-    await page.getByRole("button", { name: "Save file" }).click();
-    await page.getByText("Saved as commit").waitFor();
+    await windowSave().click();
+    await page.getByText("Committed:").waitFor();
     expect(requests("PUT", "/v1/skills/house-style/files/scripts/check.py")[0]?.body).toEqual({
       text: "print('changed')\n",
     });
 
-    await page.getByRole("button", { name: "New file" }).click();
-    // A new file has no path yet: the page says what is missing where it is missing, and will not save until it is
-    // there, rather than waiting to be pressed to find out. The button that cannot be pressed says the same words to
-    // a screen reader, so the line that is on the screen is the first of the two.
+    // The file window goes back to the skill, where a new file is added.
+    await editor().getByRole("button", { name: "New file" }).click();
+    // A new file has no path yet: the window says what is missing where it is missing and will not save until it is.
     await page.getByText("Enter the file's path inside the skill").first().waitFor();
-    expect(await page.getByRole("button", { name: "Save file" }).isDisabled()).toBe(true);
+    expect(await windowSave().isDisabled()).toBe(true);
     await page.getByLabel("Path in the skill").fill("notes/a.md");
     await page.getByRole("textbox", { name: "File text", exact: true }).fill("Notes");
-    await page.getByRole("button", { name: "Save file" }).click();
-    await page.getByText("Saved as commit").waitFor();
-    await page.getByRole("button", { name: "notes/a.md" }).waitFor();
-
-    await page.getByRole("button", { name: "Delete file" }).click();
+    await windowSave().click();
+    await editor().getByRole("button", { name: "notes/a.md" }).click();
+    await editor().getByRole("button", { name: "Delete file" }).click();
     await page.getByRole("button", { name: "Delete the file" }).click();
-    await page.getByRole("button", { name: "notes/a.md" }).waitFor({ state: "detached" });
+    await editor().getByRole("button", { name: "notes/a.md" }).waitFor({ state: "detached" });
     expect(fake().skills["house-style"]?.files["notes/a.md"]).toBeUndefined();
   });
 
@@ -393,18 +408,19 @@ describe("the Skills page", () => {
     "reads every file of a skill the way the first of them was read",
     async () => {
       await open("/skills?skill=house-style");
-      await page.getByRole("button", { name: "New file" }).click();
+      await editor().getByRole("button", { name: "New file" }).click();
       await page.getByLabel("Path in the skill").fill("notes/readme.md");
       await page
         .getByRole("textbox", { name: "File text", exact: true })
         .fill("# Notes\n\nSay it once.\n");
-      await page.getByRole("button", { name: "Save file" }).click();
-      await page.getByText("Saved as commit").waitFor();
-      // It opens as the text; the drawing is one tab away and stays picked for the next file too.
-      expect(await page.getByRole("textbox", { name: "File text", exact: true }).count()).toBe(1);
       await page.getByRole("tab", { name: "Rendered" }).click();
       await page.getByRole("heading", { name: "Notes", exact: true }).waitFor();
-      await page.getByRole("button", { name: "SKILL.md" }).click();
+      await windowSave().click();
+      // Back in the skill, the drawing stays picked.
+      await page
+        .getByRole("dialog", { name: "house-style · notes/readme.md" })
+        .waitFor({ state: "detached" });
+      await editor().getByRole("tab", { name: "Rendered" }).waitFor();
       expect(await page.getByRole("tab", { name: "Rendered" }).getAttribute("aria-selected")).toBe(
         "true",
       );
@@ -419,7 +435,7 @@ describe("the Skills page", () => {
     "lists a file that is not text with its size and does not edit it",
     async () => {
       await open("/skills?skill=house-style");
-      await page.getByRole("button", { name: "assets/logo.bin" }).click();
+      await editor().getByRole("button", { name: "assets/logo.bin" }).click();
       await page.getByText("Not text, or too large to edit (20.0 KB).").waitFor();
       expect(await page.getByRole("textbox", { name: "File text" }).count()).toBe(0);
     },
@@ -438,7 +454,7 @@ describe("the Skills page", () => {
       expect(await box.getAttribute("readonly")).not.toBeNull();
       await page.getByRole("tab", { name: "Rendered" }).click();
       await page.getByText("The tdd skill.").waitFor();
-      expect(await save().count()).toBe(0);
+      expect(await windowSave().isDisabled()).toBe(true);
       await page.getByRole("button", { name: "Update from the repository" }).click();
       await page.getByRole("link", { name: "Open the chat" }).waitFor();
       const message = String(server.chat?.started.at(-1)?.message);
@@ -451,7 +467,7 @@ describe("the Skills page", () => {
     "refuses to delete a skill an agent names, with the server's sentence",
     async () => {
       await open("/skills?skill=house-style");
-      await page.getByRole("button", { name: "Delete skill" }).click();
+      await editor().getByRole("button", { name: "Delete skill" }).click();
       await page.getByRole("button", { name: "Delete skill" }).last().click();
       await page.getByRole("alert").filter({ hasText: "is named by Coder" }).waitFor();
     },
@@ -513,7 +529,7 @@ describe("the Skills page", () => {
     // The server is back with its repository: the event stream reconnects and the page reads again.
     await server.stop();
     await (server as FakeServer).restart();
-    await card("house-style").waitFor();
+    await row("house-style").waitFor();
     expect(await page.getByTestId("harness-setup").count()).toBe(0);
   });
 });

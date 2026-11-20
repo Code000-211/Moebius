@@ -4,7 +4,8 @@
  * (`chat/useThread.ts` follows the event stream, the entries are `ui/chat/`), in a box of its own that scrolls rather
  * than pushing the page wide, with a box under it to steer a running run (`POST /v1/runs/{id}/steer`); the terminal is
  * a shell in the run's worktree while it has one; the changes are what the run changed so far, as a diff. The terminal
- * stays open while another view is shown, so it is not lost by a glance at the conversation.
+ * stays open while another view is shown, so it is not lost by a glance at the conversation. Under the head a bar
+ * spans the run in time with a tick for each tool step; the steps themselves are the small lines of the conversation.
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
@@ -15,6 +16,7 @@ import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Snapshot } from "../../api/types/board";
 import { Composer } from "../../chat/Composer";
+import type { Entry } from "../../chat/conversation";
 import { isOpen, isWorking } from "../../chat/format";
 import { ThreadView } from "../../chat/ThreadView";
 import { useThread } from "../../chat/useThread";
@@ -23,12 +25,14 @@ import { useServerEvents } from "../../live/LiveProvider";
 import { Terminal } from "../../terminal/LazyTerminal";
 import { Button } from "../../ui/components/Button";
 import { cn } from "../../ui/lib/cn";
+import { elapsed, plural } from "../../ui/lib/format";
 import { Empty } from "../../ui/page/Empty";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import type { Tone } from "../../ui/page/StateLabel";
 import { StateLabel } from "../../ui/page/StateLabel";
 import { TabPanel, Tabs } from "../../ui/page/Tabs";
+import { TimeBar } from "../../ui/page/TimeBar";
 
 type Tab = "conversation" | "terminal" | "changes";
 
@@ -41,6 +45,26 @@ const STANDING: Record<string, { word: string; tone: Tone }> = {
   failed: { word: "Failed", tone: "error" },
   stopped: { word: "Stopped", tone: "neutral" },
 };
+
+/** Where a run lies in time: the days it starts and ends on (for the bar), and its length in seconds. */
+function runSpan(startedAt: number, endedAt: number | null, now: number) {
+  const end = Math.max(endedAt ?? now, startedAt);
+  const day = (t: number) => new Date(t * 1000).toISOString().slice(0, 10);
+  return {
+    start: startedAt,
+    end,
+    startDay: day(startedAt),
+    endDay: day(end),
+    seconds: end - startedAt,
+  };
+}
+
+/** The places of the thread's tool steps along the run, as percent of its length. */
+function stepMarks(entries: Entry[], span: { start: number; seconds: number }): number[] {
+  return entries
+    .filter((entry) => entry.kind === "tool")
+    .map((entry) => (span.seconds > 0 ? ((entry.at - span.start) / span.seconds) * 100 : 0));
+}
 
 /** The card a run works for, with the board it is on, found in the snapshot. */
 function cardOf(snapshot: Snapshot | undefined, cardId: number | null) {
@@ -96,19 +120,15 @@ function OpenRun({ id }: { id: number }) {
   });
   useEffect(() => () => clearTimeout(refresh.current), []);
 
-  if (run.isPending)
-    return (
-      <>
-        <PageHeader title={`Run ${id}`} />
-        <SkeletonCard lines={5} message="Reading the run" />
-      </>
-    );
-  if (run.isError || !run.data) {
+  // One header for every state of the page; the tabs join it once the run is read.
+  if (run.isPending || run.isError || !run.data) {
     const missing = isApiError(run.error) && run.error.status === 404;
     return (
       <>
         <PageHeader title={`Run ${id}`} />
-        {missing ? (
+        {run.isPending ? (
+          <SkeletonCard lines={5} message="Reading the run" />
+        ) : missing ? (
           <Empty
             title="There is no such run"
             body="It may have been removed. Open a run from the Fleet page."
@@ -140,6 +160,7 @@ function OpenRun({ id }: { id: number }) {
     word: data.status,
     tone: "neutral" as const,
   };
+  const now = Math.floor(Date.now() / 1000);
   const found = cardOf(snapshot.data, data.card_id);
 
   async function send() {
@@ -164,9 +185,24 @@ function OpenRun({ id }: { id: number }) {
   ];
   const shown: Tab = tab === "terminal" && !open ? "conversation" : tab;
 
+  const tabsRow = (
+    <Tabs
+      idBase={views}
+      tabs={tabs}
+      value={shown}
+      label="Views of the run"
+      onChange={(next) => {
+        setTab(next);
+        if (next === "terminal") setTerminalSeen(true);
+      }}
+    />
+  );
+  const span = runSpan(data.started_at, data.ended_at, now);
+  const marks = stepMarks(thread.entries, span);
+
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="run-page">
-      <PageHeader title={`Run ${id}`} />
+      <PageHeader title={`Run ${id}`} tabs={tabsRow} />
       <div className="mb-3 flex flex-wrap items-center gap-3" data-testid="run-info">
         <StateLabel tone={standing.tone}>{standing.word}</StateLabel>
         <span className="text-base text-text">
@@ -194,25 +230,21 @@ function OpenRun({ id }: { id: number }) {
           </Link>
         )}
       </div>
-      <Tabs
-        idBase={views}
-        tabs={tabs}
-        value={shown}
-        label="Views of the run"
-        className="mb-3"
-        onChange={(next) => {
-          setTab(next);
-          if (next === "terminal") setTerminalSeen(true);
-        }}
+      <TimeBar
+        className="mb-4"
+        start={span.startDay}
+        end={span.endDay}
+        axis={{ start: span.startDay, end: span.endDay }}
+        progress={100}
+        label={`${standing.word}, ${elapsed(span.seconds)}, ${plural(marks.length, "step", "steps")}`}
+        emphasis={running}
+        marks={marks}
       />
 
       {shown === "conversation" && (
         <TabPanel idBase={views} value="conversation" className="flex min-h-0 flex-1 flex-col">
           {/* The log keeps to its own box: a long line scrolls inside it instead of widening the page. */}
-          <div
-            className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-card bg-surface p-4 shadow-card"
-            data-testid="conversation"
-          >
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden" data-testid="conversation">
             {thread.error ? (
               <p
                 role="alert"
