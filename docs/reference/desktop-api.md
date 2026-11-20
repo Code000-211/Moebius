@@ -1948,7 +1948,7 @@ such item; `422` as above.
 
 ### Mentions and following
 
-What concerns a person is a **notice** of their own, shown in the Inbox under Mentions with a read mark that is theirs
+What concerns a person is a **notice** of their own, shown in the Inbox, under the tab of its kind (Mentions, Assigned or Following), with a read mark that is theirs
 alone (ADR 0018; there is no bell). Each happening tells exactly the people it concerns, one notice each, and never
 the person who caused it where that is known:
 
@@ -1967,7 +1967,7 @@ follow. Disabled people are told nothing. Notices go with their card when it is 
 
 ### `GET /v1/notices`
 
-The notices of the person asking, newest first, at most 200. Response: an array of `Notice`: `id`, `kind` (`assigned`,
+The notices of the person asking, newest first, at most 200 (the web app says "200+" on a tab when the list has that many). Response: an array of `Notice`: `id`, `kind` (`assigned`,
 `mentioned` or `changed`), `by` (the handle of the person who caused it, or null), `card_id` and `inbox_item_id` (each
 or null), `title` (of the card or item), `body` (the start of the comment, or what changed), `at` and `read`.
 

@@ -39,7 +39,7 @@ import { Tooltip } from "../../ui/components/Tooltip";
 import { cn } from "../../ui/lib/cn";
 import { getModifierKey } from "../../ui/lib/platform";
 import { ScrollFades } from "../../ui/page/ScrollFades";
-import { unreadCount as unreadNotices } from "../inbox/notices";
+import { waiting } from "../inbox/notices";
 import {
   boardPath,
   DEFAULT_PAGE,
@@ -113,9 +113,9 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
   // Chat leads to the conversation, not to an empty field: the most recent one when there is one, and a new chat
   // when the server has none yet.
   const recent = recentChat(chatList.data ?? []);
-  // What waits for you: the items of the inbox and the notices you have not read, which the Mentions tab holds.
+  // What waits for you: the items of the inbox and the unread notices given to you or naming you.
   const notices = useQuery({ queryKey: keys.notices, queryFn: readNotices });
-  const inbox = (data.data?.inbox.length ?? 0) + unreadNotices(notices.data ?? []);
+  const inbox = waiting(data.data?.inbox.length ?? 0, notices.data ?? []);
   const working = boards.reduce((sum, board) => sum + liveRuns(board), 0);
   const state = STATE[connection];
   const modifier = getModifierKey();

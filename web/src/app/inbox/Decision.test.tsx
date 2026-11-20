@@ -24,7 +24,7 @@ const proposal: InboxItem = {
 
 const calls: Array<{ method: string; url: string }> = [];
 
-function show(role: "member" | "viewer") {
+function show(role: "member" | "viewer", item: InboxItem = proposal, shot: Snapshot = snapshot) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(keys.session, {
     signed_in: true,
@@ -33,7 +33,7 @@ function show(role: "member" | "viewer") {
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <Decision item={proposal} snapshot={snapshot} />
+        <Decision item={item} snapshot={shot} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -87,5 +87,23 @@ describe("the decision about a wiki proposal", () => {
     expect(screen.getByText(/New rule\./)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Merge" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Dismiss" })).toBeNull();
+  });
+});
+
+describe("the way to the card", () => {
+  it("links an item about a card to it", () => {
+    const stuck: InboxItem = { ...proposal, id: 52, kind: "stuck", card_id: 7, title: "Stuck" };
+    const shot = {
+      boards: [{ repository: { id: 3 }, cards: [{ id: 7 }], changes: [] }],
+      harness_changes: [],
+      inbox: [stuck],
+    } as unknown as Snapshot;
+    show("member", stuck, shot);
+    expect(screen.getByTestId("open-card").getAttribute("href")).toBe("/board/3?card=7");
+  });
+
+  it("has no card link for an item that is not about a card", () => {
+    show("member");
+    expect(screen.queryByTestId("open-card")).toBeNull();
   });
 });

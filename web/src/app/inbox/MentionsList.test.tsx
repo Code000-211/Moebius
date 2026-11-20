@@ -50,7 +50,7 @@ function Where() {
   return <p data-testid="where">{location.pathname + location.search}</p>;
 }
 
-function open(address: string) {
+function open(address: string, tab = "mentions") {
   render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
@@ -58,7 +58,7 @@ function open(address: string) {
       <MemoryRouter initialEntries={[address]}>
         <Where />
         <Routes>
-          <Route path="/inbox" element={<MentionsList snapshot={snapshot} now={2} />} />
+          <Route path="/inbox" element={<MentionsList snapshot={snapshot} now={2} tab={tab} />} />
           <Route path="*" element={null} />
         </Routes>
       </MemoryRouter>
@@ -79,5 +79,21 @@ describe("opening a notice from the address", () => {
       expect(screen.getByTestId("where").textContent).toBe("/inbox?kind=mentions"),
     );
     expect(requests).not.toContain("POST /v1/notices/99/read");
+  });
+});
+
+describe("a tab shows its own kind", () => {
+  it("lists no assignment under Mentions", async () => {
+    open("/inbox?kind=mentions");
+    await screen.findByText("Nothing mentions you");
+    expect(screen.queryByTestId("notice")).toBeNull();
+  });
+
+  it("lists the assignment under Assigned and reads it once chosen", async () => {
+    open("/inbox?kind=assigned", "assigned");
+    const row = await screen.findByTestId("notice");
+    expect(row.getAttribute("data-unread")).toBe("");
+    row.click();
+    await waitFor(() => expect(requests).toContain("POST /v1/notices/4/read"));
   });
 });

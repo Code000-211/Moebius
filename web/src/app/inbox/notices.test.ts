@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Board, Snapshot } from "../../api/types/board";
 import type { Notice } from "../../api/types/notices";
-import { kindWord, pathOf, said, unreadCount } from "./notices";
+import { inTab, kindWord, pathOf, rows, said, unreadCount, waiting } from "./notices";
 
 const notice = (extra: Partial<Notice> = {}): Notice => ({
   id: 1,
@@ -48,5 +48,33 @@ describe("notices", () => {
       "/inbox?item=4",
     );
     expect(pathOf(snapshot([], []), notice({ card_id: null, inbox_item_id: 4 }))).toBeNull();
+  });
+
+  it("shows only the notices of a tab's own kind", () => {
+    const all = [
+      notice({ id: 1 }),
+      notice({ id: 2, kind: "assigned" }),
+      notice({ id: 3, kind: "changed" }),
+      notice({ id: 4, kind: "changed" }),
+    ];
+    expect(inTab(all, "mentions").map((each) => each.id)).toEqual([1]);
+    expect(inTab(all, "assigned").map((each) => each.id)).toEqual([2]);
+    expect(inTab(all, "following").map((each) => each.id)).toEqual([3, 4]);
+  });
+
+  it("counts what waits as items and unread notices that are not following", () => {
+    const all = [
+      notice({ id: 1 }),
+      notice({ id: 2, kind: "assigned" }),
+      notice({ id: 3, kind: "assigned", read: true }),
+      notice({ id: 4, kind: "changed" }),
+    ];
+    expect(waiting(58, all)).toBe(60);
+    expect(waiting(0, [])).toBe(0);
+  });
+
+  it("says a capped count with a plus", () => {
+    expect(rows(200, true)).toBe("200+");
+    expect(rows(12, false)).toBe("12");
   });
 });
