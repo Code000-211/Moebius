@@ -366,7 +366,7 @@ describe("the command bar", () => {
     await page.keyboard.press("Enter");
     await page.waitForURL("**/retro");
     await input.waitFor({ state: "detached" });
-    await page.getByRole("heading", { name: "Retro", level: 1 }).waitFor();
+    await page.getByRole("heading", { name: "Retro" }).first().waitFor();
   });
 
   it("draws rows of 36px with an icon and no key hint", async () => {

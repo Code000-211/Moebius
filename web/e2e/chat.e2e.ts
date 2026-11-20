@@ -790,7 +790,7 @@ describe("the Moebius agent", () => {
         .click();
       await page.waitForURL("**/retro");
       // The address changes before the page is drawn; a person writes once the Retro is on the screen.
-      await page.getByRole("heading", { name: "Retro", level: 1 }).waitFor();
+      await page.getByRole("heading", { name: "Retro" }).first().waitFor();
       await window.getByText("You said: What is this page?").first().waitFor();
       await window.getByRole("textbox", { name: "Message" }).fill("And this one?");
       await window.getByRole("textbox", { name: "Message" }).press("Enter");
@@ -1016,6 +1016,8 @@ describe("deleting a chat", () => {
       const id = fake().seed({ status: "waiting", title: "Doomed" });
       const other = fake().seed({ status: "waiting", title: "Survivor" });
       await page.goto(`${server.url}/chat/${id}`);
+      // The page has read the chat list, and so knows the chat, before another client deletes it.
+      await page.waitForLoadState("networkidle");
       await page.evaluate(
         (chat) => fetch(`/v1/chats/${chat}`, { method: "DELETE", headers: { "X-Moebius": "1" } }),
         id,

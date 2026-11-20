@@ -472,10 +472,9 @@ describe("projects", () => {
 
     // The list of every project is the last item of the switcher; the new repository has a project of its own.
     await page
-      .getByRole("navigation", { name: "Pages" })
-      .getByRole("button", { name: "Change project" })
+      .getByRole("navigation", { name: "Pages", exact: true })
+      .getByRole("link", { name: "Projects", exact: true })
       .click();
-    await page.getByRole("menuitem", { name: "All projects" }).click();
     await page.waitForURL("**/projects");
     const tile = page.getByTestId("project").filter({ hasText: "fresh" });
     await tile.getByText("FRESH", { exact: true }).waitFor();
@@ -1067,7 +1066,7 @@ describe("the fleet", () => {
     await open("/fleet");
     await page
       .getByRole("navigation", { name: "Pages" })
-      .getByRole("link", { name: /^Fleet\b.*\b1$/ })
+      .getByRole("link", { name: /^Fleet\b.*\b1 running$/ })
       .waitFor();
   });
 });
