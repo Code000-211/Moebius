@@ -48,8 +48,11 @@ describe("the People page", () => {
     owner.setDefaultTimeout(8000);
     await owner.goto(server.loginUrl);
     await pages(owner).waitFor();
-    await owner.goto(`${server.url}/tokens`);
-    await pages(owner).getByRole("link", { name: "People" }).waitFor();
+    await owner.goto(`${server.url}/settings`);
+    await owner
+      .getByRole("navigation", { name: "Settings" })
+      .getByRole("link", { name: "Members" })
+      .waitFor();
 
     const token = await addLea(owner);
     await owner.getByTestId("person-lea").waitFor();
@@ -63,9 +66,18 @@ describe("the People page", () => {
     await pages(member).waitFor();
     await member.goto(`${server.url}/tokens`);
     await member.getByTestId("tokens-page").waitFor();
-    // The member is shown their own tokens but not the People page, in the sidebar or at its address.
-    await pages(member).getByRole("link", { name: "My tokens" }).waitFor();
-    expect(await pages(member).getByRole("link", { name: "People" }).count()).toBe(0);
+    // The member is shown their own tokens but not the People page, in Settings or at its address.
+    await member.goto(`${server.url}/settings`);
+    await member
+      .getByRole("navigation", { name: "Settings" })
+      .getByRole("link", { name: "General" })
+      .waitFor();
+    expect(
+      await member
+        .getByRole("navigation", { name: "Settings" })
+        .getByRole("link", { name: "Members" })
+        .count(),
+    ).toBe(0);
     await member.goto(`${server.url}/people`);
     await member.getByText("There is no such page").waitFor();
 

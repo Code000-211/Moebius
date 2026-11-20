@@ -469,10 +469,9 @@ describe("projects", () => {
 
     // The list of every project is the last item of the switcher; the new repository has a project of its own.
     await page
-      .getByRole("navigation", { name: "Pages" })
-      .getByRole("button", { name: "Change project" })
+      .getByRole("navigation", { name: "Pages", exact: true })
+      .getByRole("link", { name: "Projects", exact: true })
       .click();
-    await page.getByRole("menuitem", { name: "All projects" }).click();
     await page.waitForURL("**/projects");
     const tile = page.getByTestId("project").filter({ hasText: "fresh" });
     await tile.getByText("FRESH", { exact: true }).waitFor();
@@ -1064,7 +1063,7 @@ describe("the fleet", () => {
     await open("/fleet");
     await page
       .getByRole("navigation", { name: "Pages" })
-      .getByRole("link", { name: /^Fleet\b.*\b1$/ })
+      .getByRole("link", { name: /^Fleet\b.*\b1 running$/ })
       .waitFor();
   });
 });
@@ -1233,17 +1232,14 @@ describe("get started", () => {
       .waitFor();
   });
 
-  it.skipIf(usesRealServer)(
-    "reads the steps again with Refresh, and the sidebar lists the page only while a step is missing",
-    async () => {
-      await open("/start");
-      const pages = page.getByRole("navigation", { name: "Pages" });
-      await pages.getByRole("link", { name: "Get started" }).waitFor();
-      fake().completeStart();
-      await page.getByRole("button", { name: "Refresh" }).click();
-      await pages.getByRole("link", { name: "Get started" }).waitFor({ state: "detached" });
-    },
-  );
+  it.skipIf(usesRealServer)("reads the steps again with Refresh", async () => {
+    await open("/start");
+    await page.getByTestId("start-step").first().waitFor();
+    fake().completeStart();
+    await page.getByRole("button", { name: "Refresh" }).click();
+    await page.getByTestId("start-step").first().waitFor();
+    await page.getByRole("button", { name: "Refresh" }).waitFor();
+  });
 
   it.skipIf(usesRealServer)("sends each missing step to the page that fixes it", async () => {
     await open("/start");

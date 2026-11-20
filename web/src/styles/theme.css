@@ -196,8 +196,7 @@
   --head-bar: 44px;
 
   /* Widths. */
-  --sidebar-width: 280px;
-  --rail-width: 56px;
+  --sidebar-width: 224px;
   /* The properties pane at the panel's right; where a page has none the pane takes no room, so the slim width is 0. */
   --column-width: 272px;
   --column-rail-width: 0px;
