@@ -113,10 +113,19 @@ export function filtered(list: readonly Work[], values: Readonly<Record<string, 
   );
 }
 
-/** What the page says under its title. */
-export function context(count: number): string {
-  if (count === 0) return "Nothing is working.";
-  return `${plural(count, "agent", "agents")} working`;
+/** Whether a run is at work: starting or running. A run that waits for the person is not working, it is waiting. */
+export const atWork = (work: Work) => work.status === "starting" || work.status === "running";
+
+/**
+ * What the page says under its title: how many agents are at work (starting or running), and how many runs wait for the
+ * person, which are not working however long they stay in the list.
+ */
+export function context(list: readonly Work[]): string {
+  const busy = list.filter(atWork).length;
+  const waiting = list.length - busy;
+  if (waiting === 0)
+    return busy > 0 ? `${plural(busy, "agent", "agents")} working` : "Nothing is working.";
+  return `${busy > 0 ? `${plural(busy, "agent", "agents")} working` : "Nothing is working"} · ${waiting} waiting for you`;
 }
 
 /** The runs grouped by their agent, the agents in the order of their names and each agent's runs in the order given. */

@@ -51,6 +51,8 @@ const SNAPSHOT_KINDS = new Set([
   "takeover_proposed",
   "takeover_status",
   "retro_done",
+  "runs_paused",
+  "runs_resumed",
 ]);
 
 /** The events about kinds of issues, their fields and the values cards hold, which the Kinds and Issues pages read. */

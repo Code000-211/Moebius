@@ -25,6 +25,7 @@ import {
 } from "../../ui/components/Command";
 import { cardKey } from "../board/cardKey";
 import { useNewIssue } from "../board/NewIssueHost";
+import { usePause } from "../fleet/usePause";
 import { boardPath, type Group, PAGES, shownTo } from "../pages";
 import { usePaletteFocus } from "./palette/focus";
 import { matches, type PaletteCommand, readRecent } from "./palette/model";
@@ -69,6 +70,7 @@ export function CommandBar({
   const here = useLocation().pathname;
   const focus = usePaletteFocus();
   const newIssue = useNewIssue();
+  const pause = usePause(open);
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot(), enabled: open });
   const [query, setQuery] = useState("");
   // Set by a command that opens a dialog: that dialog takes the focus, and handing it back here would steal it.
@@ -102,7 +104,7 @@ export function CommandBar({
   }
 
   // The commands that work wherever a person is, with their keys: the same keys the shortcuts page lists.
-  const everywhere: PaletteCommand[] = [
+  const everywhere: (PaletteCommand & { words?: string })[] = [
     {
       id: "new-issue",
       label: "New issue",
@@ -116,7 +118,26 @@ export function CommandBar({
       key: SHORTCUTS_KEY,
       run: () => void navigate("/shortcuts"),
     },
-  ].filter((c) => matches(query, `${c.label} command`));
+    pause.paused
+      ? {
+          id: "resume-all",
+          label: "Resume all agents",
+          words: "start continue unpause",
+          run: pause.toggle,
+        }
+      : {
+          id: "pause-all",
+          label: "Pause all agents",
+          words: "stop hold halt",
+          run: pause.toggle,
+        },
+    {
+      id: "stop-runs",
+      label: "Stop a run",
+      words: "pause halt kill agent fleet",
+      run: () => void navigate("/fleet"),
+    },
+  ].filter((c) => matches(query, `${c.label} command ${c.words ?? ""}`));
   const commands = (focus?.commands ?? []).filter((c) =>
     matches(query, `${c.label} command ${focus?.label ?? ""}`),
   );
