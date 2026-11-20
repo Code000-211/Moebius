@@ -5,12 +5,14 @@
  * field, at the size the rest of the chat is read at. Send is only ever pressable when there is something to send; when it is not, the reason waits in its
  * tooltip.
  */
-import { PaperPlaneRightIcon } from "@phosphor-icons/react";
+import { ArrowElbowDownLeftIcon, PaperPlaneRightIcon } from "@phosphor-icons/react";
 import { type ReactNode, useEffect, useLayoutEffect, useRef } from "react";
 import { ChatBoxBase } from "../ui/chat/ChatBoxBase";
 import { Button } from "../ui/components/Button";
+import { cn } from "../ui/lib/cn";
 import { isImeConfirmation } from "../ui/lib/imeComposition";
 import { TextArea } from "../ui/page/Field";
+import { Notice } from "../ui/page/Notice";
 
 /** The most rows the field grows to before it scrolls. */
 const MAX_ROWS = 8;
@@ -77,43 +79,77 @@ export function Composer({
     element.style.height = `${Math.min(element.scrollHeight, line * MAX_ROWS)}px`;
   }, [value]);
 
+  const editor = (
+    <TextArea
+      ref={field}
+      value={value}
+      rows={1}
+      aria-label="Message"
+      placeholder={placeholder}
+      onChange={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" || event.shiftKey || isImeConfirmation(event.nativeEvent)) {
+          return;
+        }
+        event.preventDefault();
+        if (canSend) onSend();
+      }}
+      className={cn(
+        "max-h-60 min-h-8 resize-none",
+        // In the compact field the box around it is the field: no edge, no colour and no focus outline of its own.
+        compact &&
+          "min-h-7 flex-1 bg-transparent! px-0 py-1 shadow-none! focus-visible:outline-none",
+      )}
+    />
+  );
+
+  if (compact) {
+    // A quiet field with the edge of a field, one row, and a small chip inside it that sends. The ring of the focus is
+    // drawn round the whole field, where the eye is, rather than round the bare text.
+    return (
+      <div className="flex w-full flex-col gap-2">
+        {error && <Notice tone="error">{error}</Notice>}
+        <div className="flex items-end gap-2 rounded-card border border-hairline-strong bg-panel py-1.5 pr-1.5 pl-3 transition-colors duration-(--motion-routine) ease-out focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-accent">
+          {editor}
+          {actions}
+          <Button
+            variant="icon"
+            size="sm"
+            onClick={onSend}
+            disabled={!canSend}
+            aria-label={sendLabel}
+            title={canSend ? sendLabel : sendHint}
+            className={cn(
+              "shrink-0 bg-hover!",
+              canSend && "bg-accent-fill! text-white hover:text-white",
+            )}
+          >
+            <ArrowElbowDownLeftIcon aria-hidden="true" className="size-4" />
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <ChatBoxBase
-      inline={compact}
+      inline={false}
       error={error}
       pills={pills}
-      editor={
-        <TextArea
-          ref={field}
-          value={value}
-          rows={1}
-          aria-label="Message"
-          placeholder={placeholder}
-          onChange={(event) => onChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter" || event.shiftKey || isImeConfirmation(event.nativeEvent)) {
-              return;
-            }
-            event.preventDefault();
-            if (canSend) onSend();
-          }}
-          className="max-h-60 min-h-8 resize-none"
-        />
-      }
+      editor={editor}
       footerRight={
         <>
           {actions}
           <Button
-            size={compact ? "icon" : "md"}
+            size="md"
             onClick={onSend}
             disabled={!canSend}
-            aria-label={compact ? sendLabel : undefined}
             // A control that simply has nothing to do says nothing; a reason is for what the page knows and the
             // person cannot see — that a repository has to be chosen first, say.
-            title={canSend ? (compact ? sendLabel : sendTitle) : sendHint}
+            title={canSend ? sendTitle : sendHint}
           >
             <PaperPlaneRightIcon aria-hidden="true" className="size-4" weight="fill" />
-            {compact ? null : sendLabel}
+            {sendLabel}
           </Button>
         </>
       }

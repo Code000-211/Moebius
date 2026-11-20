@@ -98,18 +98,65 @@ describe("what the agent did", () => {
     },
   ];
 
-  it("is one folded row that counts the steps, and shows none of them", () => {
+  it("draws a few steps as the timeline itself, one line each, with nothing to open", () => {
     render(<Turn turn={turnOf(worked)} {...folding} />);
-    const row = screen.getByRole("button", { name: "Worked · 2 steps" });
-    expect(row.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByTestId("steps")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Worked/ })).toBeNull();
+    const steps = screen.getByTestId("steps");
+    expect(steps.textContent).toContain("Thought");
+    expect(steps.textContent).toContain("bash");
   });
 
-  it("holds the steps once it is unfolded", () => {
-    const turn = turnOf(worked);
-    const key = turn.blocks[0]?.key as string;
-    render(<Turn turn={turn} unfolded={new Set([key])} onToggle={() => {}} />);
-    expect(screen.getByTestId("steps").textContent).toContain("Thought");
+  describe("a long run of steps", () => {
+    const many: Entry[] = [
+      { at: 1, seq: 1, kind: "person", said: "said", message: "Do it" },
+      ...[1, 2, 3, 4, 5].map(
+        (n): Entry => ({
+          at: 1 + n,
+          seq: 1 + n,
+          kind: "tool",
+          call: {
+            id: `m${n}`,
+            tool: "bash",
+            input: { type: "command", command: `ls ${n}` },
+            output: "",
+            check: null,
+            mcp: null,
+            execution: { state: "finished", failed: false },
+          },
+        }),
+      ),
+    ];
+
+    it("is one folded row that counts the steps, and shows none of them", () => {
+      render(<Turn turn={turnOf(many)} {...folding} />);
+      const row = screen.getByRole("button", { name: "Worked · 5 steps" });
+      expect(row.getAttribute("aria-expanded")).toBe("false");
+      expect(screen.queryByTestId("steps")).toBeNull();
+    });
+
+    it("holds the steps once it is unfolded", () => {
+      const turn = turnOf(many);
+      const key = turn.blocks[0]?.key as string;
+      render(<Turn turn={turn} unfolded={new Set([key])} onToggle={() => {}} />);
+      expect(screen.getByTestId("steps").textContent).toContain("ls 3");
+    });
+  });
+
+  it("puts the person's message in a bubble on the right", () => {
+    render(<Turn turn={turnOf(worked)} {...folding} />);
+    const bubble = screen.getByTestId("person-message").parentElement?.parentElement;
+    expect(bubble?.className).toContain("items-center");
+    expect(bubble?.parentElement?.className).toContain("items-end");
+  });
+
+  it("draws nothing that moves or is masked while the agent works", () => {
+    const turn = groupTurns(worked, true)[0];
+    if (!turn) throw new Error("one turn");
+    const { container } = render(<Turn turn={turn} {...folding} />);
+    for (const element of container.querySelectorAll("*")) {
+      const classes = element.getAttribute("class") ?? "";
+      expect(classes).not.toMatch(/animate-|shimmer|mask/);
+    }
   });
 
   it("says Working while the agent is at it", () => {

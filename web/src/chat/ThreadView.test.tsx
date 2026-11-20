@@ -117,3 +117,15 @@ describe("a conversation with more chat above it", () => {
     expect(screen.queryByTestId("older")).toBeNull();
   });
 });
+
+describe("a conversation that streams", () => {
+  it("has no scroller mask and nothing that moves for ever", () => {
+    const { container } = render(<ThreadView entries={[said(1)]} working sent={0} />);
+    for (const element of container.querySelectorAll("*")) {
+      const style = element as HTMLElement;
+      expect(style.style.maskImage ?? "").toBe("");
+      expect(style.getAttribute("style") ?? "").not.toMatch(/mask/);
+      expect(element.getAttribute("class") ?? "").not.toMatch(/animate-|shimmer/);
+    }
+  });
+});

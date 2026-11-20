@@ -398,8 +398,7 @@ describe("what the agent does", () => {
         output: "edited",
       });
 
-      // What the agent did is folded under one row until it is opened.
-      await page.getByRole("button", { name: /^(Working|Worked · \d+ steps?)$/ }).click();
+      // A few steps are the timeline itself, one line each, with nothing to open.
       const steps = page.getByTestId("steps");
       await steps.getByRole("button", { name: /Read · 2 files/ }).waitFor();
       await steps.getByText("bash", { exact: true }).waitFor();
@@ -596,6 +595,7 @@ describe("copying", () => {
     await page.getByRole("button", { name: "Copy code" }).getByText("Copied").waitFor();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("echo hello");
 
+    await page.getByTestId("person-message").hover();
     await page.getByRole("button", { name: "Copy your message" }).click();
     await page.getByRole("button", { name: "Copy your message" }).getByText("Copied").waitFor();
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("Copy me");
@@ -863,6 +863,27 @@ describe("the Moebius agent", () => {
       await window.waitFor({ state: "detached" });
       await page.goto(`${server.url}/chat`);
       await page.getByTestId("chat-entry").filter({ hasText: "What is this page?" }).waitFor();
+    },
+  );
+
+  /** The header of the panel only closes it, so starting over is a quiet action at the end of the conversation. */
+  it.skipIf(usesRealServer)(
+    "starts a new conversation from the end of the thread in the panel",
+    async () => {
+      await open("/inbox");
+      await page.keyboard.press("Control+j");
+      const window = page.getByRole("complementary", { name: "Moebius agent" });
+      await window.getByTestId("new-conversation").waitFor({ state: "detached" });
+      await window.getByRole("textbox", { name: "Message" }).fill("First question");
+      await window.getByRole("textbox", { name: "Message" }).press("Enter");
+      await window.getByText("You said: First question").first().waitFor();
+      await window.getByTestId("new-conversation").click();
+      await window.getByTestId("new-conversation").waitFor({ state: "detached" });
+      await window.getByTestId("person-message").first().waitFor({ state: "detached" });
+      await window.getByRole("textbox", { name: "Message" }).fill("Second question");
+      await window.getByRole("textbox", { name: "Message" }).press("Enter");
+      await window.getByText("You said: Second question").first().waitFor();
+      expect(fake().started).toHaveLength(2);
     },
   );
 
