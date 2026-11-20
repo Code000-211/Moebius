@@ -10,7 +10,6 @@ import { projectScripts, script } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Project } from "../../api/types/projects";
-import { Box } from "../../ui/page/Box";
 import { Select } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { SkeletonLines } from "../../ui/page/Skeleton";
@@ -25,7 +24,7 @@ export function ProjectWorkflowTab({ project }: { project: Project }) {
   const columns = scripts.data ?? [];
   const chosen = column ?? columns[0]?.column ?? "";
   return (
-    <Box title="Workflow">
+    <div>
       <div className="flex flex-col gap-4">
         <p className="m-0 max-w-prose text-base text-secondary">
           What each column does with a card. A column runs the built-in script until this project
@@ -53,7 +52,7 @@ export function ProjectWorkflowTab({ project }: { project: Project }) {
           </>
         )}
       </div>
-    </Box>
+    </div>
   );
 }
 

@@ -101,7 +101,6 @@ export function ProjectSettingsPage() {
     <>
       <PageHeader
         title={project.name}
-        context={<span className="font-mono">{project.key}</span>}
         back={
           <Tooltip content="All projects" side="bottom">
             <Button asChild variant="icon" aria-label="All projects">
@@ -111,6 +110,17 @@ export function ProjectSettingsPage() {
             </Button>
           </Tooltip>
         }
+        tabs={
+          <Tabs
+            label="Project settings"
+            idBase={idBase}
+            value={current}
+            tabs={tabLabels(project)}
+            onChange={(next) =>
+              navigate(`/projects/${project.id}/settings${next === "general" ? "" : `/${next}`}`)
+            }
+          />
+        }
         actions={
           board != null && (
             <Button asChild size="sm" variant="secondary">
@@ -118,16 +128,6 @@ export function ProjectSettingsPage() {
             </Button>
           )
         }
-      />
-      <Tabs
-        label="Project settings"
-        idBase={idBase}
-        value={current}
-        tabs={tabLabels(project)}
-        onChange={(next) =>
-          navigate(`/projects/${project.id}/settings${next === "general" ? "" : `/${next}`}`)
-        }
-        className="mb-4"
       />
       <TabPanel idBase={idBase} value={current}>
         {current === "general" && <ProjectGeneralTab project={project} canEdit={canEdit} />}

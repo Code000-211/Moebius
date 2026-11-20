@@ -12,8 +12,8 @@ import { CopyButton } from "../../ui/chat/CopyButton";
 import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
 import { CELL, Table } from "../../ui/page/List";
-import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { forwardCommand, owner, ownerPath } from "./ports";
 
@@ -22,18 +22,16 @@ export function PortsPage() {
   const host = window.location.hostname;
   return (
     <div data-testid="ports-page">
-      <PageHeader
-        title="Ports"
-        context={
-          <>
-            The ports runs, chats and terminals listen on. A browser tab cannot reach them, so
-            forward one over SSH with the command beside it and open{" "}
-            <span className="font-mono text-sm">http://127.0.0.1:&lt;port&gt;</span>.
-          </>
-        }
-      />
+      <PageHeader title="Ports" />
       {ports.isPending && <SkeletonLines lines={4} message="Reading the ports" />}
-      {ports.isError && <Notice tone="error">Cannot read the ports. Try again.</Notice>}
+      {ports.isError && (
+        <ReadFailed
+          error={ports.error}
+          fallback="Cannot read the ports. Try again."
+          busy={ports.isFetching}
+          onRetry={() => void ports.refetch()}
+        />
+      )}
       {ports.data && ports.data.length === 0 && (
         <div data-testid="no-ports">
           <Empty

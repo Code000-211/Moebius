@@ -8,26 +8,22 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { renameProject, setProjectAccess } from "../../api/calls/projects";
 import { getSession } from "../../api/calls/session";
-import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { Project } from "../../api/types/projects";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { Box } from "../../ui/page/Box";
-import { Field } from "../../ui/page/Field";
-import { Notice } from "../../ui/page/Notice";
+import { useErrorToast } from "../../ui/lib/useErrorToast";
+import { FieldRow, Rows } from "../../ui/page/Field";
 import { Switch } from "../../ui/page/Switch";
+import { Code, ValueRow } from "../settings/parts";
 
 export function ProjectGeneralTab({ project, canEdit }: { project: Project; canEdit: boolean }) {
   return (
-    <div className="flex flex-col gap-6">
-      <Box title="Name">
-        <Name key={project.name} project={project} canEdit={canEdit} />
-      </Box>
-      <Box title="Access">
-        <Access project={project} canEdit={canEdit} />
-      </Box>
-    </div>
+    <Rows>
+      <Name key={project.name} project={project} canEdit={canEdit} />
+      <ValueRow label="Key" value={<Code>{project.key}</Code>} />
+      <Access project={project} canEdit={canEdit} />
+    </Rows>
   );
 }
 
@@ -38,46 +34,35 @@ function Name({ project, canEdit }: { project: Project; canEdit: boolean }) {
     mutationFn: () => renameProject(project.id, name.trim()),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.projects }),
   });
+  useErrorToast(rename.error, "Couldn't rename the project.");
   const changed = name.trim() !== project.name && name.trim() !== "";
   return (
-    <form
-      className="flex max-w-md flex-col gap-4"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (changed && !rename.isPending) rename.mutate();
-      }}
-    >
-      <Field label="Name" hint="Its settings move with it, in one commit.">
+    <FieldRow label="Name" description="Its settings move with it, in one commit.">
+      <form
+        className="flex items-center gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (changed && !rename.isPending) rename.mutate();
+        }}
+      >
         <Input
+          className="w-64"
           value={name}
           disabled={!canEdit}
           autoComplete="off"
+          aria-label="Name"
           onChange={(event) => {
             rename.reset();
             setName(event.target.value);
           }}
         />
-      </Field>
-      <Field
-        label="Key"
-        hint="Names the project's cards, such as WEB-24. It stays when the project is renamed."
-      >
-        <Input value={project.key} readOnly mono />
-      </Field>
-      {rename.isError && (
-        <Notice tone="error">
-          <span className="font-semibold">Couldn't rename the project. </span>
-          {sayError(rename.error, "Try again.")}
-        </Notice>
-      )}
-      {canEdit && (
-        <div>
+        {canEdit && (
           <Button type="submit" size="sm" disabled={!changed || rename.isPending}>
             {rename.isPending ? "Saving" : "Save"}
           </Button>
-        </div>
-      )}
-    </form>
+        )}
+      </form>
+    </FieldRow>
   );
 }
 
@@ -94,12 +79,12 @@ function Access({ project, canEdit }: { project: Project; canEdit: boolean }) {
       }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.projects }),
   });
+  useErrorToast(change.error, "Couldn't change the access.");
   return (
-    <div className="flex flex-col gap-3">
-      <p className="m-0 max-w-prose text-base text-secondary">
-        A private project is seen only by its members: its board, cards, runs and files. An owner
-        who is not a member still sees this page, to name the members.
-      </p>
+    <FieldRow
+      label="Private"
+      description="Seen only by its members: its board, cards, runs and files."
+    >
       {canEdit ? (
         <Switch
           label="Private"
@@ -110,14 +95,8 @@ function Access({ project, canEdit }: { project: Project; canEdit: boolean }) {
           onChange={(next) => change.mutate(next)}
         />
       ) : (
-        <p className="m-0 text-base text-text">{project.private ? "Private" : "Public"}</p>
+        <span className="text-base text-text">{project.private ? "Private" : "Public"}</span>
       )}
-      {change.isError && (
-        <Notice tone="error">
-          <span className="font-semibold">Couldn't change the access. </span>
-          {sayError(change.error, "Try again.")}
-        </Notice>
-      )}
-    </div>
+    </FieldRow>
   );
 }

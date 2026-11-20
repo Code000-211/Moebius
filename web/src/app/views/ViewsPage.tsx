@@ -14,7 +14,6 @@ import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-r
 import { snapshot } from "../../api/calls/board";
 import { listProjects } from "../../api/calls/projects";
 import { deleteView, editView, listViews, viewCards } from "../../api/calls/views";
-import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { View, ViewFields, ViewLayout } from "../../api/types/views";
 import { Button } from "../../ui/components/Button";
@@ -27,6 +26,8 @@ import {
   DialogTitle,
 } from "../../ui/components/Dialog";
 import { Input } from "../../ui/components/Input";
+import { cn } from "../../ui/lib/cn";
+import { useErrorToast } from "../../ui/lib/useErrorToast";
 import { ConfirmDelete } from "../../ui/page/ConfirmDelete";
 import { Empty } from "../../ui/page/Empty";
 import { Field, Select } from "../../ui/page/Field";
@@ -76,30 +77,30 @@ export function ViewsPage() {
   if (board !== null) return <Navigate to={board} replace />;
   return (
     <div data-testid="views-page" className="flex flex-col gap-4">
-      <PageHeader
-        title="Views"
-        context="A view is a filter with a layout and a sort. Make one with Save view on a board; share it to show every member the same filter within what each may see."
-      />
+      <PageHeader title="Views" />
       {views.data.length === 0 ? (
         <Empty
           title="No view yet"
           body="Set filters on a board, then choose Save view. A view you make is yours until you share it."
         />
       ) : (
-        <ul className="m-0 flex list-none flex-wrap gap-2 p-0" aria-label="Views">
+        <ul className="m-0 list-none border-t border-hairline p-0" aria-label="Views">
           {views.data.map((view) => (
             <li key={view.id}>
               <Link
                 to={`/views/${view.id}`}
                 aria-current={view.id === selected ? "page" : undefined}
-                className={`inline-flex min-h-8 items-center gap-2 rounded-control px-3 text-sm font-medium text-text no-underline hover:bg-hover ${
-                  view.id === selected ? "bg-selected" : "bg-raised shadow-card"
-                }`}
+                className={cn(
+                  "relative flex h-9 items-center gap-2.5 border-b border-hairline px-4 text-base font-medium text-text no-underline",
+                  view.id === selected
+                    ? "bg-accent-tint before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent"
+                    : "hover:bg-row-hover",
+                )}
               >
                 <BookmarkSimpleIcon className="size-4 text-secondary" aria-hidden="true" />
-                {view.name}
+                <span className="min-w-0 flex-1 truncate">{view.name}</span>
                 {view.shared && (
-                  <span className="inline-flex items-center gap-1 text-secondary">
+                  <span className="inline-flex shrink-0 items-center gap-1 text-xs font-normal text-muted">
                     <UsersIcon className="size-3.5" aria-hidden="true" />
                     Shared
                   </span>
@@ -234,29 +235,27 @@ function OpenView({
               className={view.layout === "board" ? "min-w-64 flex-1" : ""}
             >
               {group.name !== "" && (
-                <h3 className="m-0 mb-1 text-sm font-semibold text-secondary">
-                  {group.name} <span className="font-normal">{group.cards.length}</span>
-                </h3>
+                <h3 className="m-0 mb-1 text-sm font-semibold text-secondary">{group.name}</h3>
               )}
-              <ul className="m-0 list-none rounded-card bg-raised p-0 shadow-card">
+              <ul className="m-0 list-none border-t border-hairline p-0">
                 {group.cards.map((card) => (
                   <li
                     key={card.id}
                     data-testid={`view-card-${card.id}`}
-                    className="flex flex-wrap items-baseline gap-x-3 border-0 border-b border-solid border-hairline px-4 py-2 last:border-b-0"
+                    className="flex h-9 items-center gap-x-3 border-b border-hairline px-4 text-base"
                   >
-                    <span className="text-sm text-secondary tabular-nums">{cardKey(card)}</span>
+                    <span className="shrink-0 font-mono text-xs text-muted">{cardKey(card)}</span>
                     <Link
-                      className="min-w-0 flex-1 text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
+                      className="min-w-0 flex-1 truncate font-medium text-text no-underline hover:underline"
                       to={cardPath(card.repository_id, card.id)}
                     >
                       {card.title}
                     </Link>
                     {view.layout !== "board" && (
-                      <span className="text-sm text-secondary">{card.column}</span>
+                      <span className="shrink-0 text-xs text-muted">{card.column}</span>
                     )}
                     {card.due && view.layout !== "calendar" && (
-                      <span className="text-sm text-secondary">due {card.due}</span>
+                      <span className="shrink-0 text-xs text-muted">due {card.due}</span>
                     )}
                   </li>
                 ))}
@@ -288,6 +287,7 @@ function ViewForm({
     },
     onSuccess: onDone,
   });
+  useErrorToast(save.error, "Couldn't save the view.");
   const ready = fields.name.trim() !== "" && !save.isPending;
   return (
     <form
@@ -342,12 +342,6 @@ function ViewForm({
         />
         Share with every member
       </label>
-      {save.isError && (
-        <Notice tone="error">
-          <span className="font-semibold">Couldn't save the view. </span>
-          {sayError(save.error, "Try again.")}
-        </Notice>
-      )}
       <DialogFooter>
         <Button type="button" variant="secondary" onClick={onCancel}>
           Cancel
