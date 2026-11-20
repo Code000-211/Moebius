@@ -1190,7 +1190,6 @@ describe("get started", () => {
   it("loads for a real server and for the fake", async () => {
     await open("/start");
     await page.getByRole("heading", { name: "Get started", level: 1 }).waitFor();
-    await page.getByRole("heading", { name: "Before the first card" }).waitFor();
     expect(await page.getByTestId("start-step").count()).toBe(5);
   });
 
@@ -1200,12 +1199,9 @@ describe("get started", () => {
     const steps = page.getByTestId("start-step");
     await steps
       .filter({ hasText: "Connect a model provider" })
-      .getByText("Done", { exact: true })
+      .getByTestId("status-done")
       .waitFor();
-    await steps
-      .filter({ hasText: "Install Pi-Bolt" })
-      .getByText("To do", { exact: true })
-      .waitFor();
+    await steps.filter({ hasText: "Install Pi-Bolt" }).getByTestId("status-notStarted").waitFor();
     await page
       .getByText("Could not run pi-bolt: it was not found. Set the program on the Settings page.")
       .waitFor();
@@ -1233,7 +1229,7 @@ describe("get started", () => {
     await page
       .getByTestId("start-step")
       .filter({ hasText: "Keep agents, skills and MCP servers in a repository" })
-      .getByText("Done", { exact: true })
+      .getByTestId("status-done")
       .waitFor();
   });
 
@@ -1265,7 +1261,6 @@ describe("get started", () => {
       await page.getByRole("link", { name }).click();
       await page.waitForURL(`**${target}`);
       await page.goBack();
-      await page.getByRole("heading", { name: "Before the first card" }).waitFor();
     }
   });
 });

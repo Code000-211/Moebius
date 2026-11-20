@@ -1,29 +1,30 @@
 /**
  * The Get started page (the former desktop app's `screens/start`): what a server still needs before the first card can run
  * (an upstream with models, Pi-Bolt, a harness configuration repository, the Coder's model, a repository), read from
- * `GET /v1/start`. The step to take next is the one the page is built around, with the page that fixes it beside it;
- * the steps already taken are named but quiet. Finishing a step moves it as soon as the page is read again: by its
+ * `GET /v1/start`. Each step is a row with its status icon, its name and what it still needs, and the button that fixes it at the right;
+ * the one to take next has the primary button and the steps already taken have none. Finishing a step moves it as soon as the page is read again: by its
  * Refresh button, when the page opens, and when a repository comes or goes. The sidebar lists the page only while a
  * step is missing.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { Link } from "react-router";
 import { start } from "../../api/calls/server";
 import { restartServer, setUpHarness } from "../../api/calls/settings";
 import { sayError } from "../../api/errorText";
-import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
 import { cn } from "../../ui/lib/cn";
-import { Box } from "../../ui/page/Box";
-import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
-import { SkeletonCard } from "../../ui/page/Skeleton";
-import { StateLabel } from "../../ui/page/StateLabel";
-import { context, fix } from "./model";
+import { ReadFailed } from "../../ui/page/ReadFailed";
+import { SkeletonList } from "../../ui/page/Skeleton";
+import { StatusIcon } from "../../ui/page/StatusIcon";
+import { useToast } from "../../ui/page/Toast";
+import { fix } from "./model";
 
 export function StartPage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const answer = useQuery({
     queryKey: keys.start,
     queryFn: () => start(),
@@ -37,16 +38,30 @@ export function StartPage() {
       await setUpHarness();
       await restartServer();
     },
+    onSuccess: () =>
+      toast({
+        kind: "confirmation",
+        text: "Set up. The server restarts and the page reconnects by itself.",
+      }),
+    onError: (error) =>
+      toast({ kind: "error", text: sayError(error, "The repository could not be set up.") }),
     onSettled: () => void queryClient.invalidateQueries({ queryKey: keys.start }),
   });
   const steps = answer.data?.steps ?? [];
   const next = steps.find((step) => !step.done);
+  const warnings = answer.data?.warnings ?? [];
+  // A warning is an error the server reports with the steps; each is told once, by a toast.
+  const told = warnings.join("\n");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `toast` is stable and `told` stands for the warnings
+  useEffect(() => {
+    for (const warning of told === "" ? [] : told.split("\n"))
+      toast({ kind: "error", text: warning });
+  }, [told]);
 
   return (
     <>
       <PageHeader
         title="Get started"
-        context={context(answer.data)}
         actions={
           <Button
             size="sm"
@@ -58,91 +73,62 @@ export function StartPage() {
           </Button>
         }
       />
-      <div className="flex flex-col gap-4">
-        {answer.isError && (
-          <Notice tone="error">
-            {sayError(answer.error, "The steps could not be read. Try again.")}
-          </Notice>
-        )}
-        {setUp.isSuccess && (
-          <Notice tone="ok">Set up. The server restarts and the page reconnects by itself.</Notice>
-        )}
-        {answer.isPending && <SkeletonCard lines={4} message="Reading the steps" />}
-        {answer.data && (
-          <>
-            {answer.data.warnings.map((warning) => (
-              <p
-                key={warning}
-                role="status"
-                className="m-0 break-words rounded-control bg-attention-fill px-3 py-3 text-base text-attention-text"
+      {answer.isError && (
+        <ReadFailed
+          error={answer.error}
+          fallback="The steps could not be read. Try again."
+          busy={answer.isFetching}
+          onRetry={() => void answer.refetch()}
+        />
+      )}
+      {answer.isPending && <SkeletonList rows={5} message="Reading the steps" />}
+      {answer.data && (
+        <ol className="m-0 flex list-none flex-col p-0">
+          {steps.map((step) => {
+            const fixing = step.done ? null : fix(step.key);
+            const harness = step.key === "harness" && !step.done;
+            // The step to take next gets the primary button; the ones already taken stay quiet.
+            const lead = step.key === next?.key;
+            return (
+              <li
+                key={step.key}
+                data-testid="start-step"
+                className="flex min-h-9 items-center gap-2.5 border-b border-hairline px-4 py-2 text-base"
               >
-                {warning}
-              </p>
-            ))}
-            <Box title="Before the first card" aside={next ? `Next: ${next.title}` : undefined}>
-              <ol className="m-0 flex list-none flex-col gap-2 p-0">
-                {steps.map((step) => {
-                  const fixing = step.done ? null : fix(step.key);
-                  const harness = step.key === "harness" && !step.done;
-                  // The step to take next is the page's focal point; the ones already taken stay quiet.
-                  const lead = step.key === next?.key;
-                  return (
-                    <li
-                      key={step.key}
-                      data-testid="start-step"
-                      className={cn(
-                        "flex min-h-8 flex-wrap items-center gap-4 rounded-control p-3",
-                        lead && "bg-sunken",
-                      )}
-                    >
-                      <StateLabel tone={step.done ? "complete" : "attention"} className="shrink-0">
-                        {step.done ? "Done" : "To do"}
-                      </StateLabel>
-                      <span className="flex min-w-0 flex-1 flex-col gap-1">
-                        <span
-                          className={cn(
-                            "break-words font-semibold text-text",
-                            lead ? "text-lg" : "text-base",
-                          )}
-                        >
-                          {step.title}
-                        </span>
-                        <span className="break-words text-base text-secondary">{step.detail}</span>
-                        {harness && setUp.isError && (
-                          <Notice tone="error">
-                            {isApiError(setUp.error)
-                              ? setUp.error.message
-                              : "The repository could not be set up."}
-                          </Notice>
-                        )}
-                      </span>
-                      {harness && (
-                        <Button
-                          size="sm"
-                          variant={lead ? "primary" : "secondary"}
-                          disabled={setUp.isPending || setUp.isSuccess}
-                          onClick={() => setUp.mutate()}
-                        >
-                          {setUp.isPending
-                            ? "Setting up"
-                            : setUp.isSuccess
-                              ? "Restarting"
-                              : "Set up"}
-                        </Button>
-                      )}
-                      {fixing && (
-                        <Button asChild variant={lead ? "primary" : "secondary"}>
-                          <Link to={fixing.to}>{fixing.label}</Link>
-                        </Button>
-                      )}
-                    </li>
-                  );
-                })}
-              </ol>
-            </Box>
-          </>
-        )}
-      </div>
+                <StatusIcon state={step.done ? "done" : "notStarted"} />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span
+                    className={cn(
+                      "break-words font-medium",
+                      step.done ? "text-muted" : "text-text",
+                    )}
+                  >
+                    {step.title}
+                  </span>
+                  {!step.done && (
+                    <span className="break-words text-sm text-muted">{step.detail}</span>
+                  )}
+                </span>
+                {harness && (
+                  <Button
+                    size="sm"
+                    variant={lead ? "primary" : "secondary"}
+                    disabled={setUp.isPending || setUp.isSuccess}
+                    onClick={() => setUp.mutate()}
+                  >
+                    {setUp.isPending ? "Setting up" : setUp.isSuccess ? "Restarting" : "Set up"}
+                  </Button>
+                )}
+                {fixing && (
+                  <Button asChild size="sm" variant={lead ? "primary" : "secondary"}>
+                    <Link to={fixing.to}>{fixing.label}</Link>
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
     </>
   );
 }

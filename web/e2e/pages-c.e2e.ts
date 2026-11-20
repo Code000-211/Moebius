@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { dayName } from "../src/ui/lib/format";
-import { addFilter, columnsScrollEach, pickOption, scrollbarsAreQuiet, showing } from "./controls";
+import { addFilter, columnsScrollEach, scrollbarsAreQuiet } from "./controls";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
 let browser: Browser;
@@ -255,114 +255,90 @@ describe("the Rules page", () => {
 });
 
 describe("the Automations page", () => {
+  const editor = () => page.getByTestId("editor-window");
   it("loads, and saves a new automation that can be deleted again", async () => {
     await fresh();
     await open("/automations", "Automations");
     await page.getByRole("button", { name: "New automation" }).click();
-    await page.getByLabel("Name of the automation").fill("Weekly cleanup");
+    await editor().getByLabel("Name", { exact: true }).fill("Weekly cleanup");
     // A save without a prompt says what is missing, and sends nothing.
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await editor().getByRole("button", { name: "Save", exact: true }).click();
     await alert("Write the prompt its chats start with.").waitFor();
     expect(await page.getByLabel("Cron, in the server's local time").inputValue()).toBe(
       "0 8 * * *",
     );
     await page.getByLabel("Cron, in the server's local time").fill("15 3 * * 0");
     await page.getByLabel("Prompt").fill("Sum up what the agents did this week.");
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await editor().getByRole("button", { name: "Save", exact: true }).click();
     await status("Saved.").waitFor();
-    await page.getByTestId("list-card").filter({ hasText: "Weekly cleanup" }).waitFor();
-    // Saved, it can be fired and deleted.
-    await page.getByRole("button", { name: "Delete automation" }).click();
+    await editor().waitFor({ state: "detached" });
+    const row = page.getByTestId("automation-row").filter({ hasText: "Weekly cleanup" });
+    await row.waitFor();
+    // Saved, it can be opened again and deleted.
+    await row.click();
+    await editor().getByRole("button", { name: "Delete automation" }).click();
     await page.getByText("Delete this automation?").waitFor();
-    await page.getByRole("button", { name: "Delete", exact: true }).click();
-    await page
-      .getByTestId("list-card")
-      .filter({ hasText: "Weekly cleanup" })
-      .waitFor({ state: "detached" });
+    await page.getByRole("button", { name: "Delete automation" }).last().click();
+    await row.waitFor({ state: "detached" });
   });
 
   it.skipIf(usesRealServer)(
-    "lists them, with the editor and the past runs of the one chosen",
+    "lists them, with the editor window and the past runs of the one chosen",
     async () => {
       await fresh();
       await open("/automations", "Automations");
-      const morning = page.getByRole("button", { name: /Morning triage/ });
+      const morning = page.getByRole("button", { name: /Edit automation Morning triage/ });
       await morning.getByText("Weekdays at 8 · next in 3 h").waitFor();
-      await page
-        .getByRole("button", { name: /Outdated dependencies/ })
-        .getByText("Failed")
-        .waitFor();
-      await page
-        .getByRole("button", { name: /Outdated dependencies/ })
-        .getByText("the agent Coder cannot run: its model is not served")
-        .waitFor();
+      const outdated = page.getByRole("button", { name: /Edit automation Outdated dependencies/ });
+      await outdated.getByText("Failed").waitFor();
+      await outdated.getByText("the agent Coder cannot run: its model is not served").waitFor();
       await morning.click();
       expect(new URL(page.url()).search).toBe("?automation=1");
-      const properties = page.getByRole("region", { name: /^Properties of/ });
-      expect(await showing(properties.getByRole("button", { name: /^Name / }))).toBe(
-        "Morning triage",
+      expect(await page.getByLabel("Name", { exact: true }).inputValue()).toBe("Morning triage");
+      expect(await page.getByLabel("Cron, in the server's local time").inputValue()).toBe(
+        "0 8 * * 1-5",
       );
-      expect(await showing(properties.getByRole("button", { name: /^Cron / }))).toBe("0 8 * * 1-5");
-      expect(await showing(properties.getByRole("button", { name: /^Repeats / }))).toBe(
-        "Weekdays at 8",
-      );
-      expect(await showing(properties.getByRole("button", { name: /^Works in / }))).toBe("demo");
       await page.getByText("Fires next in 3 h.").waitFor();
       const runs = region("Past runs");
       await runs.getByText("the chat of the firing before (41) still runs").waitFor();
       const started = runs.getByRole("link", { name: /Chat 41 · succeeded/ });
       expect(await started.getAttribute("href")).toBe("/chat/41");
-      // A property is saved alone, as soon as it is chosen.
-      await pickOption(
-        page,
-        properties.getByRole("button", { name: /^Repeats / }),
-        "Every Friday at 9",
-      );
-      await page.waitForFunction(() => document.body.textContent?.includes("Every Friday at 9"));
-      expect(lastRequest()).toMatchObject({
-        method: "PUT",
-        path: "/v1/automations/1",
-        body: { schedule: "0 9 * * 5", name: "Morning triage" },
-      });
+      // Closing the window without a change takes it out of the address.
+      await editor().getByRole("button", { name: "Cancel" }).click();
+      await editor().waitFor({ state: "detached" });
+      expect(new URL(page.url()).search).toBe("");
     },
   );
 
   it.skipIf(usesRealServer)("runs one now and saves a change", async () => {
     await fresh();
     await open("/automations", "Automations");
-    await page.getByRole("button", { name: /Morning triage/ }).click();
-    await page.getByRole("button", { name: "Run now" }).click();
-    await status("Started; its chat is among the past runs below.").waitFor();
+    await page.getByRole("button", { name: /Edit automation Morning triage/ }).click();
+    await editor().getByRole("button", { name: "Run now" }).click();
+    await status("Started; its chat is among the past runs.").waitFor();
     expect(lastRequest()).toMatchObject({ method: "POST", path: "/v1/automations/1/run" });
     const link = region("Past runs").getByRole("link", { name: /Chat 52 · running/ });
     expect(await link.getAttribute("href")).toBe("/chat/52");
 
-    // Each property is saved alone, with the rest of the automation as it is stored.
-    const properties = page.getByRole("region", { name: /^Properties of/ });
-    await properties.getByRole("button", { name: /^Name / }).click();
-    const name = properties.getByLabel("Name");
-    await name.fill("Morning triage, early");
-    await name.press("Enter");
-    await properties.getByRole("button", { name: /^Name Morning triage, early/ }).waitFor();
-    await pickOption(page, properties.getByRole("button", { name: /^Agent / }), "Coder");
-    await properties.getByRole("button", { name: /^Agent Coder/ }).waitFor();
-    await pickOption(page, properties.getByRole("button", { name: /^Runs / }), "Only when run now");
-    await properties.getByRole("button", { name: /^Runs Only when run now/ }).waitFor();
+    // Save sends the whole automation.
+    await page.getByLabel("Name", { exact: true }).fill("Morning triage, early");
+    await editor().getByRole("switch", { name: "Runs on its schedule" }).click();
+    await editor().getByRole("button", { name: "Save", exact: true }).click();
+    await status("Saved.").waitFor();
     expect(lastRequest()).toMatchObject({
       method: "PUT",
       path: "/v1/automations/1",
       body: {
         name: "Morning triage, early",
         schedule: "0 8 * * 1-5",
-        agent: "Coder",
+        agent: "Moebius",
         repository: 1,
         harness: false,
         enabled: false,
       },
     });
-    await page.getByText('Off: only "Run now" fires it.').waitFor();
     await page
-      .getByRole("button", { name: /Morning triage, early/ })
+      .getByRole("button", { name: /Edit automation Morning triage, early/ })
       .getByText("Off")
       .waitFor();
   });
@@ -372,23 +348,22 @@ describe("the Automations page", () => {
     async () => {
       await fresh();
       await open("/automations", "Automations");
-      await page.getByRole("button", { name: /Morning triage/ }).click();
+      await page.getByRole("button", { name: /Edit automation Morning triage/ }).click();
       fake().refuseNext("PUT", "/v1/automations/1", 422, "the agent Ghost does not exist");
-      const properties = page.getByRole("region", { name: /^Properties of/ });
-      await properties.getByRole("button", { name: /^Name / }).click();
-      const name = properties.getByLabel("Name");
-      await name.fill("Morning triage, once more");
-      await name.press("Enter");
-      await alert("the agent Ghost does not exist").waitFor();
+      await page.getByLabel("Name", { exact: true }).fill("Morning triage, once more");
+      await editor().getByRole("button", { name: "Save", exact: true }).click();
+      // The refusal stays in the window, beside the buttons.
+      await editor()
+        .getByRole("alert")
+        .filter({ hasText: "the agent Ghost does not exist" })
+        .waitFor();
       fake().refuseNext("POST", "/v1/automations/1/run", 404, "no such automation");
-      await page.getByRole("button", { name: "Run now" }).click();
+      await editor().getByRole("button", { name: "Run now" }).click();
       await alert("no such automation").waitFor();
       // A schedule with four fields is stopped before it is sent.
       const sent = fake().requests.length;
-      await properties.getByRole("button", { name: /^Cron / }).click();
-      const cron = properties.getByLabel("Cron");
-      await cron.fill("0 8 * *");
-      await cron.press("Enter");
+      await page.getByLabel("Cron, in the server's local time").fill("0 8 * *");
+      await editor().getByRole("button", { name: "Save", exact: true }).click();
       await alert("A schedule has five fields").waitFor();
       expect(fake().requests.length).toBe(sent);
     },
@@ -397,7 +372,7 @@ describe("the Automations page", () => {
   it.skipIf(usesRealServer)("follows an automation that fires on its own", async () => {
     await fresh();
     await open("/automations", "Automations");
-    await page.getByRole("button", { name: /Morning triage/ }).click();
+    await page.getByRole("button", { name: /Edit automation Morning triage/ }).click();
     await region("Past runs").getByText("It has not fired yet.").count();
     await server.broadcast?.({ kind: "automation_fired", data: { automation: 1 } });
     // The page reads the firings again (the fake still has the same two).

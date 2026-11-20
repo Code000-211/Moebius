@@ -33,20 +33,19 @@ export function FiringRow({ firing, now }: { firing: Firing; now: number }) {
         : `Chat ${firing.run_id}`;
   const body = (
     <>
-      <span className="min-w-0 break-words text-base text-text">{what}</span>
-      <span className="flex flex-wrap items-center gap-2">
-        <Tag tone={tone}>{word}</Tag>
-        <span className="text-sm text-secondary tabular-nums">{ago(now, firing.at)}</span>
-        <span className="text-sm text-secondary">{firing.manual ? "Run now" : "Schedule"}</span>
+      <span className="min-w-0 flex-1 truncate text-text">{what}</span>
+      <Tag tone={tone}>{word}</Tag>
+      <span className="shrink-0 text-xs text-muted tabular-nums">{ago(now, firing.at)}</span>
+      <span className="w-16 shrink-0 text-right text-xs text-muted">
+        {firing.manual ? "Run now" : "Schedule"}
       </span>
     </>
   );
-  const row =
-    "flex min-h-8 flex-col gap-2 rounded-control bg-sunken p-4 transition-colors duration-(--motion-routine) ease-out";
+  const row = "flex min-h-9 items-center gap-2.5 border-b border-hairline py-1.5 text-base";
   return firing.run_id === null ? (
     <div className={row}>{body}</div>
   ) : (
-    <Link to={`/chat/${firing.run_id}`} className={`${row} hover:bg-raised`}>
+    <Link to={`/chat/${firing.run_id}`} className={`${row} hover:bg-row-hover`}>
       {body}
     </Link>
   );
