@@ -245,7 +245,7 @@ export function isStreamUp(queryClient: QueryClient): boolean {
 const connectedBefore = new WeakSet<QueryClient>();
 
 /**
- * The socket connected. The first time, the reads made in the last few seconds are left as they are: they were made
+ * The socket connected. The first time, the reads made in the last few seconds and the ones still running are left as they are: they were made
  * as the page opened, and events that happened since the stream opened arrive on it. After a drop, what is shown may
  * have missed events, so every read is made again.
  */
@@ -256,6 +256,9 @@ export function applyConnected(queryClient: QueryClient): void {
   const now = Date.now();
   void queryClient.invalidateQueries({
     predicate: (query) =>
-      query.queryKey[0] !== "session" && (reconnect || now - query.state.dataUpdatedAt > FRESH_MS),
+      query.queryKey[0] !== "session" &&
+      (reconnect ||
+        // A read still on its way is left to finish: invalidating it would cancel it and ask again.
+        (query.state.fetchStatus !== "fetching" && now - query.state.dataUpdatedAt > FRESH_MS)),
   });
 }

@@ -273,6 +273,21 @@ describe("applyConnected", () => {
     expect(stale(queryClient, keys.session)).toBe(false);
   });
 
+  it("does not cancel a read that is still on its way on the first connect", async () => {
+    const queryClient = client();
+    let calls = 0;
+    void queryClient.prefetchQuery({
+      queryKey: ["card", 1, "history"],
+      queryFn: () => {
+        calls += 1;
+        return new Promise(() => {});
+      },
+    });
+    applyConnected(queryClient);
+    expect(calls).toBe(1);
+    expect(queryClient.isFetching({ queryKey: ["card", 1, "history"] })).toBe(1);
+  });
+
   it("reads everything again after a reconnect, except the session", () => {
     const queryClient = client();
     applyConnected(queryClient);
