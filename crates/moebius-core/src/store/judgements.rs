@@ -207,7 +207,7 @@ impl Store {
     pub fn cards_approved(&self) -> Result<std::collections::HashSet<i64>> {
         Ok(self
             .rows(
-                "SELECT DISTINCT card_id FROM judgements WHERE kind = 'approve_issue' AND choice = 'approve'",
+                "SELECT DISTINCT card_id FROM judgements WHERE kind = 'approve_issue' AND choice = 'approve' AND card_id IS NOT NULL",
                 [],
                 |r| r.get(0),
             )?

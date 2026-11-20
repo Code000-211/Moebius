@@ -816,7 +816,6 @@ impl Store {
         Ok(tx.commit()?)
     }
 
-    /// The numbers of the issues that block a card, in order.
     /// The numbers each card is blocked by, by card id, in ascending order; a card with none is missing.
     pub fn all_dependencies(&self) -> Result<std::collections::HashMap<i64, Vec<i64>>> {
         let mut by_card: std::collections::HashMap<i64, Vec<i64>> = Default::default();
@@ -830,6 +829,7 @@ impl Store {
         Ok(by_card)
     }
 
+    /// The numbers of the issues that block a card, in order.
     pub fn dependencies(&self, card_id: i64) -> Result<Vec<i64>> {
         self.rows(
             "SELECT blocked_by FROM dependencies WHERE card_id = ?1 ORDER BY blocked_by",
