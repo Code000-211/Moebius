@@ -406,3 +406,148 @@ async fn a_dropped_proxy_ends_the_sockets_it_relays() {
         Some(Ok(other)) => panic!("the socket goes on after the proxy stopped: {other:?}"),
     }
 }
+
+/// A server that answers `/v1/packed` the way the real one does for a large JSON answer (gzip, `Vary`, an `ETag`, and
+/// `304` for a request that holds the `ETag`), and `/v1/stream` with one chunk, then the rest only once `release` is
+/// notified.
+async fn compressing_fake() -> (String, Vec<u8>, std::sync::Arc<tokio::sync::Notify>) {
+    use std::io::Write;
+    let mut packer = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    packer.write_all(&b"{\"cards\":[]}".repeat(500)).unwrap();
+    let packed = packer.finish().unwrap();
+    let release = std::sync::Arc::new(tokio::sync::Notify::new());
+    let (sent, gate) = (packed.clone(), release.clone());
+    let app = axum::Router::new()
+        .route(
+            "/v1/packed",
+            axum::routing::get(move |headers: HeaderMap| {
+                let sent = sent.clone();
+                async move {
+                    let asked = headers
+                        .get("accept-encoding")
+                        .map(|v| v.to_str().unwrap().to_string());
+                    if headers
+                        .get("if-none-match")
+                        .is_some_and(|v| v == "W/\"abc\"")
+                    {
+                        return (
+                            axum::http::StatusCode::NOT_MODIFIED,
+                            [("etag", "W/\"abc\""), ("vary", "accept-encoding")],
+                        )
+                            .into_response();
+                    }
+                    assert_eq!(
+                        asked.as_deref(),
+                        Some("gzip, br"),
+                        "Accept-Encoding is passed on"
+                    );
+                    (
+                        [
+                            ("content-encoding", "gzip"),
+                            ("content-type", "application/json"),
+                            ("etag", "W/\"abc\""),
+                            ("vary", "accept-encoding"),
+                        ],
+                        sent,
+                    )
+                        .into_response()
+                }
+            }),
+        )
+        .route(
+            "/v1/stream",
+            axum::routing::get(move || {
+                let gate = gate.clone();
+                async move {
+                    let chunks = futures_util::stream::unfold(0, move |step| {
+                        let gate = gate.clone();
+                        async move {
+                            match step {
+                                0 => Some((
+                                    Ok::<_, std::io::Error>(axum::body::Bytes::from("first;")),
+                                    1,
+                                )),
+                                1 => {
+                                    gate.notified().await;
+                                    Some((Ok(axum::body::Bytes::from("second")), 2))
+                                }
+                                _ => None,
+                            }
+                        }
+                    });
+                    (
+                        [("content-type", "text/event-stream")],
+                        axum::body::Body::from_stream(chunks),
+                    )
+                }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (base, packed, release)
+}
+
+#[tokio::test]
+async fn a_compressed_answer_passes_through_as_it_is_and_a_304_stays_a_304() {
+    use std::io::Read;
+    let (base, packed, _release) = compressing_fake().await;
+    let proxy = proxy::start(Server::new(&base, "t"), files).await.unwrap();
+    let cookie = enter(&proxy).await;
+    let url = format!("http://{}/v1/packed", proxy.addr());
+    // The client does not undo the encoding by itself, so the test sees what the window would.
+    let client = reqwest::Client::new();
+    let answer = client
+        .get(&url)
+        .header("cookie", &cookie)
+        .header("accept-encoding", "gzip, br")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(answer.status(), 200);
+    assert_eq!(answer.headers()["content-encoding"], "gzip");
+    assert_eq!(answer.headers()["etag"], "W/\"abc\"");
+    assert_eq!(answer.headers()["vary"], "accept-encoding");
+    let body = answer.bytes().await.unwrap();
+    assert_eq!(
+        body.to_vec(),
+        packed,
+        "the body is not decoded or encoded again"
+    );
+    let mut text = String::new();
+    flate2::read::GzDecoder::new(&body[..])
+        .read_to_string(&mut text)
+        .unwrap();
+    assert!(text.starts_with("{\"cards\":[]}"));
+
+    let revalidated = client
+        .get(&url)
+        .header("cookie", &cookie)
+        .header("accept-encoding", "gzip, br")
+        .header("if-none-match", "W/\"abc\"")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(revalidated.status(), 304);
+    assert_eq!(revalidated.headers()["etag"], "W/\"abc\"");
+    assert!(revalidated.bytes().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_stream_arrives_chunk_by_chunk_through_the_proxy() {
+    let (base, _packed, release) = compressing_fake().await;
+    let proxy = proxy::start(Server::new(&base, "t"), files).await.unwrap();
+    let cookie = enter(&proxy).await;
+    let mut answer = reqwest::Client::new()
+        .get(format!("http://{}/v1/stream", proxy.addr()))
+        .header("cookie", &cookie)
+        .header("accept-encoding", "gzip")
+        .send()
+        .await
+        .unwrap();
+    // The first chunk is here while the server still holds the rest back.
+    assert_eq!(answer.chunk().await.unwrap().unwrap(), "first;");
+    release.notify_one();
+    assert_eq!(answer.chunk().await.unwrap().unwrap(), "second");
+    assert!(answer.chunk().await.unwrap().is_none());
+}

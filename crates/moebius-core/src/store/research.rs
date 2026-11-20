@@ -202,7 +202,7 @@ impl Store {
 
     /// The tokens the runs of a research used.
     pub fn research_tokens(&self, research_id: i64) -> Result<i64> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             "SELECT COALESCE(SUM(u.input_tokens + u.output_tokens), 0) FROM usage u
              JOIN research_runs x ON x.run_id = u.run_id WHERE x.research_id = ?1",
             [research_id],

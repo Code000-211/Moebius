@@ -61,6 +61,13 @@ struct Health {
     version: String,
 }
 
+/// The one HTTP client of the app: its connections to a server are kept and used again, so that a read of the tray or
+/// the rail is not a new connection (and, over https, a new handshake) each time.
+pub fn http() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
+}
+
 /// Checks that `server` accepts its token and runs this app's release line, and returns the server's version.
 pub async fn check(server: &Server) -> Result<String, ConnectError> {
     check_against(server, VERSION).await
@@ -75,7 +82,7 @@ pub async fn check_against(server: &Server, app: &str) -> Result<String, Connect
         url: server.url.clone(),
         reason: e.without_url().to_string(),
     };
-    let response = reqwest::Client::new()
+    let response = http()
         .get(format!("{}/v1/health", server.url))
         .bearer_auth(&server.token)
         .timeout(TIMEOUT)

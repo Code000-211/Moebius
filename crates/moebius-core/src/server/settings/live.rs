@@ -63,6 +63,8 @@ pub struct Live {
     /// The launchers runs start through.
     launchers: LauncherSlot,
     restart: Notify,
+    /// Told when the board's tick changes, for the sleeping board loop to start over.
+    tick_changed: Notify,
     restarting: AtomicBool,
 }
 
@@ -81,6 +83,7 @@ impl Live {
             targets: None,
             launchers: LauncherSlot::default(),
             restart: Notify::new(),
+            tick_changed: Notify::new(),
             restarting: AtomicBool::new(false),
         }
     }
@@ -297,6 +300,10 @@ impl Live {
         running.trial_token_factor = new.trial_token_factor;
         running.regression_size = new.regression_size;
         running.regression_gate = new.regression_gate;
+        if running.board_tick != new.board_tick {
+            // `notify_one` keeps the wake for a loop that is not sleeping just now.
+            self.tick_changed.notify_one();
+        }
         running.board_tick = new.board_tick;
         running.upstreams = new.upstreams.clone();
         running.classes = new.classes.clone();
@@ -755,6 +762,11 @@ impl Live {
         self.restart.notify_waiters();
     }
 
+    /// Completes when the board's tick was changed by an edit of the settings.
+    pub async fn board_tick_changed(&self) {
+        self.tick_changed.notified().await
+    }
+
     /// Whether a restart was asked for.
     pub fn restart_requested(&self) -> bool {
         self.restarting.load(Ordering::SeqCst)
@@ -921,6 +933,26 @@ mod tests {
                 "{name} is marked live but not applied"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn a_change_of_the_board_tick_wakes_the_loop_that_sleeps_for_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("moebius.toml");
+        std::fs::write(&file, "[router]\nlisten = \"127.0.0.1:0\"\n").unwrap();
+        let server =
+            Server::new(Config::load(&file).unwrap(), "127.0.0.1:1".parse().unwrap()).unwrap();
+        let woken = server.live.board_tick_changed();
+        let changes = Changes {
+            set: BTreeMap::from([("board.tick_ms".to_string(), json!(600_000))]),
+            ..Changes::default()
+        };
+        server.live.save(&server.app, &actor(), &changes).unwrap();
+        woken.await;
+        assert_eq!(
+            server.live.get().board_tick,
+            std::time::Duration::from_millis(600_000)
+        );
     }
 
     #[test]

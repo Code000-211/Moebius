@@ -8,7 +8,7 @@
  * stops every chosen run in one go; Escape lets go of the choice.
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type MouseEvent, useState } from "react";
+import { type MouseEvent, memo, useCallback, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { snapshot as readSnapshot } from "../../api/calls/board";
 import { chats as readChats, stopRun } from "../../api/calls/chat";
@@ -157,6 +157,20 @@ function RunGroups({ list, now }: { list: Work[]; now: number }) {
   // The order the rows are drawn in, which a range chosen with Shift follows.
   const choice = useSelection(groups.flatMap(([, runs]) => runs.map(choiceKey)));
   const chosen = list.filter((work) => choice.has(choiceKey(work)));
+  // What a row is given keeps its identity, so that a row draws again only when its own run changes.
+  const { toggle, ensure } = choice;
+  const { open: openMenu } = menu;
+  const choose = useCallback(
+    (work: Work, range: boolean) => toggle(choiceKey(work), range),
+    [toggle],
+  );
+  const rightClick = useCallback(
+    (work: Work, event: MouseEvent) => {
+      ensure(choiceKey(work));
+      openMenu(event);
+    },
+    [ensure, openMenu],
+  );
   const stopAll = async () => {
     const targets = chosen;
     const results = await Promise.allSettled(targets.map((work) => stopRun(work.run)));
@@ -224,11 +238,8 @@ function RunGroups({ list, now }: { list: Work[]; now: number }) {
                       now={now}
                       chosen={choice.has(choiceKey(work))}
                       anyChosen={chosen.length > 0}
-                      onChoose={(range) => choice.toggle(choiceKey(work), range)}
-                      onContextMenu={(event) => {
-                        choice.ensure(choiceKey(work));
-                        menu.open(event);
-                      }}
+                      onChoose={choose}
+                      onContextMenu={rightClick}
                     />
                   </li>
                 ))}
@@ -248,21 +259,28 @@ function RunGroups({ list, now }: { list: Work[]; now: number }) {
   );
 }
 
-function Row({
-  work,
-  now,
-  chosen,
-  anyChosen,
-  onChoose,
-  onContextMenu,
-}: {
+/** Whether two reads of a run say the same: the page makes new objects at every read of the snapshot. */
+function sameRow(was: RowProps, now: RowProps): boolean {
+  return (
+    was.now === now.now &&
+    was.chosen === now.chosen &&
+    was.anyChosen === now.anyChosen &&
+    was.onChoose === now.onChoose &&
+    was.onContextMenu === now.onContextMenu &&
+    JSON.stringify(was.work) === JSON.stringify(now.work)
+  );
+}
+
+type RowProps = {
   work: Work;
   now: number;
   chosen: boolean;
   anyChosen: boolean;
-  onChoose: (range: boolean) => void;
-  onContextMenu: (event: MouseEvent) => void;
-}) {
+  onChoose: (work: Work, range: boolean) => void;
+  onContextMenu: (work: Work, event: MouseEvent) => void;
+};
+
+const Row = memo(function Row({ work, now, chosen, anyChosen, onChoose, onContextMenu }: RowProps) {
   const navigate = useNavigate();
   const thread = useThread(work.run);
   // A card's run says when it started; a chat's start is in the list of chats.
@@ -295,12 +313,12 @@ function Row({
   const worked = began === null ? null : elapsed(stops - began);
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: the right click is a second way to the menu the bar has
-    <div className="group relative" onContextMenu={onContextMenu}>
+    <div className="group relative" onContextMenu={(event) => onContextMenu(work, event)}>
       <SelectBox
         label={`Choose ${work.title}`}
         checked={chosen}
         anyChosen={anyChosen}
-        onToggle={onChoose}
+        onToggle={(range) => onChoose(work, range)}
         className="absolute top-1/2 left-3 z-10 -translate-y-1/2"
       />
       <button
@@ -351,4 +369,4 @@ function Row({
       </button>
     </div>
   );
-}
+}, sameRow);

@@ -457,6 +457,36 @@ describe("live data", () => {
   );
 
   it.skipIf(usesRealServer)(
+    "keeps the dock clear of the Moebius agent, and the Following row inside the column",
+    async () => {
+      for (const width of [1280, 1440]) {
+        await fresh();
+        await page.setViewportSize({ width, height: 900 });
+        await openBoard();
+        await card(3).click();
+        await properties(3).getByText("Not started", { exact: true }).waitFor();
+        const column = page.locator('[data-surface="right-column"]');
+        const row = column.getByText("Following", { exact: true });
+        if ((await row.count()) > 0) {
+          const edge = (await column.boundingBox()) as { x: number; width: number };
+          for (const button of await column.getByRole("button").all()) {
+            const box = await button.boundingBox();
+            if (box) expect(box.x + box.width).toBeLessThanOrEqual(edge.x + edge.width + 1);
+          }
+        }
+        await page.keyboard.press("Control+j");
+        const chat = page.getByRole("dialog", { name: /Moebius/ });
+        await chat.waitFor();
+        const sheet = (await chat.boundingBox()) as { x: number };
+        const drawer = (await dock().boundingBox()) as { x: number; width: number };
+        expect(drawer.x + drawer.width, `at ${width}`).toBeLessThanOrEqual(sheet.x + 1);
+        await context.close();
+        await server.stop().catch(() => {});
+      }
+    },
+  );
+
+  it.skipIf(usesRealServer)(
     "edits every property of the issue with the keyboard alone",
     async () => {
       await fresh();

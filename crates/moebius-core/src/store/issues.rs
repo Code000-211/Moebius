@@ -174,6 +174,18 @@ impl Store {
             .optional()?)
     }
 
+    /// The numbers of the issues of the repository the forge was seen to say are closed.
+    pub fn closed_on_forge(&self, repository_id: i64) -> Result<std::collections::HashSet<i64>> {
+        Ok(self
+            .rows(
+                "SELECT number FROM forge_seen WHERE repository_id = ?1 AND field = 'state' AND value = 'closed'",
+                [repository_id],
+                |r| r.get(0),
+            )?
+            .into_iter()
+            .collect())
+    }
+
     /// Records what the forge says about `field` of issue `number`.
     pub fn set_forge_seen(
         &self,
@@ -191,7 +203,7 @@ impl Store {
 
     /// Whether the card's change was merged.
     pub fn has_merged_change(&self, card_id: i64) -> Result<bool> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             "SELECT EXISTS (SELECT 1 FROM changes WHERE card_id = ?1 AND state = 'merged')",
             [card_id],
             |r| r.get(0),
@@ -200,7 +212,7 @@ impl Store {
 
     /// Whether the card's change in `repository_id` was merged.
     pub fn has_merged_change_in(&self, card_id: i64, repository_id: i64) -> Result<bool> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             "SELECT EXISTS (SELECT 1 FROM changes WHERE card_id = ?1 AND repository_id = ?2 AND state = 'merged')",
             [card_id, repository_id],
             |r| r.get(0),
@@ -342,7 +354,7 @@ impl Store {
 
     /// How many of the card's comments came from, or were written to, the forge.
     pub fn forge_comment_count(&self, card_id: i64) -> Result<i64> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             "SELECT COUNT(*) FROM card_comments WHERE card_id = ?1 AND forge_id IS NOT NULL",
             [card_id],
             |r| r.get(0),

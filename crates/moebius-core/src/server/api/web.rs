@@ -117,13 +117,47 @@ pub(super) async fn fallback(method: Method, uri: Uri, headers: HeaderMap) -> Re
     if method != Method::GET && method != Method::HEAD {
         return StatusCode::METHOD_NOT_ALLOWED.into_response();
     }
-    serve(
+    let response = serve(
         &embedded,
         path,
         headers
             .get(header::HOST)
             .and_then(|host| host.to_str().ok()),
-    )
+    );
+    not_modified(response, headers.get(header::IF_NONE_MATCH))
+}
+
+/// `response` as a `304` without a body when `if_none_match` lists its `ETag` (or is `*`), else `response` itself.
+fn not_modified(response: Response, if_none_match: Option<&header::HeaderValue>) -> Response {
+    let (Some(wanted), Some(etag)) = (
+        if_none_match.and_then(|value| value.to_str().ok()),
+        response.headers().get(header::ETAG),
+    ) else {
+        return response;
+    };
+    let etag = etag.as_bytes();
+    // Weak comparison: the opaque tags are equal, whether or not either starts with `W/`.
+    let opaque = |tag: &[u8]| tag.strip_prefix(b"W/").unwrap_or(tag).to_vec();
+    let matches = wanted.trim() == "*"
+        || wanted
+            .split(',')
+            .any(|tag| opaque(tag.trim().as_bytes()) == opaque(etag));
+    if !matches {
+        return response;
+    }
+    let (mut parts, _) = response.into_parts();
+    parts.status = StatusCode::NOT_MODIFIED;
+    parts.headers.remove(header::CONTENT_TYPE);
+    parts.headers.remove(header::CONTENT_LENGTH);
+    Response::from_parts(parts, axum::body::Body::empty())
+}
+
+/// The `ETag` of a file with `bytes`: weak, since the same file is sent compressed or not.
+fn etag(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(bytes);
+    let hex: String = digest[..12].iter().map(|b| format!("{b:02x}")).collect();
+    format!("W/\"{hex}\"")
 }
 
 /// The response for the `GET` of `path` with the files `files` gives, to a request with the `Host` header `host`.
@@ -150,8 +184,10 @@ pub(super) fn serve(
     } else {
         "no-cache"
     };
+    let tag = etag(&asset.bytes);
     let mut response = (
         [
+            (header::ETAG, tag.as_str()),
             (header::CONTENT_TYPE, content_type(name)),
             (header::CACHE_CONTROL, cache),
             (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
@@ -361,5 +397,38 @@ mod tests {
             assert!(header_of(&response, header::CONTENT_TYPE).starts_with("text/html"));
             assert!(body(response).await.contains("pnpm -C web build"));
         }
+    }
+
+    #[tokio::test]
+    async fn every_file_has_an_etag_and_a_request_that_holds_it_gets_a_304_without_a_body() {
+        let index = serve(&built, "/", None);
+        let etag = header_of(&index, header::ETAG);
+        assert!(etag.starts_with("W/\""), "{etag}");
+        assert_eq!(etag, header_of(&serve(&built, "/", None), header::ETAG));
+        assert_ne!(
+            etag,
+            header_of(&serve(&built, "/favicon.svg", None), header::ETAG)
+        );
+        for wanted in [
+            etag.clone(),
+            format!("\"x\", {etag}"),
+            "*".into(),
+            etag[2..].to_string(),
+        ] {
+            let value = header::HeaderValue::from_str(&wanted).unwrap();
+            let response = not_modified(serve(&built, "/", None), Some(&value));
+            assert_eq!(response.status(), StatusCode::NOT_MODIFIED, "{wanted}");
+            assert_eq!(header_of(&response, header::ETAG), etag);
+            assert_eq!(header_of(&response, header::CACHE_CONTROL), "no-cache");
+            assert_eq!(body(response).await, "");
+        }
+        let other = header::HeaderValue::from_static("W/\"nope\"");
+        let response = not_modified(serve(&built, "/", None), Some(&other));
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(body(response).await, "<html>app</html>");
+        assert_eq!(
+            not_modified(serve(&built, "/", None), None).status(),
+            StatusCode::OK
+        );
     }
 }

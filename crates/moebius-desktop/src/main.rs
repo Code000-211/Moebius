@@ -10,5 +10,6 @@ mod tray_icon;
 mod window;
 
 fn main() {
+    moebius_desktop::render::apply();
     window::run();
 }

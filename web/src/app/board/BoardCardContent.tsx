@@ -4,20 +4,17 @@
  */
 import { CaretDownIcon, CaretRightIcon } from "@phosphor-icons/react";
 import type { ReactNode, SyntheticEvent } from "react";
-import type { Board, Card, InboxItem } from "../../api/types/board";
+import type { Card, Change, Repository } from "../../api/types/board";
 import { KanbanCardContent } from "../../ui/components/KanbanCardContent";
 import { CardMenu } from "./CardMenu";
 import { cardName } from "./cardKey";
 import {
+  type CardStatus,
   cardBadges,
   cardDetail,
-  cardStatus,
-  changeOf,
-  inboxOf,
   isClosed,
   isPlanningLabel,
   issueUrl,
-  nextCard,
   pullRequestOf,
   type Stack,
   stackWords,
@@ -34,12 +31,18 @@ export type CardMenuActions = {
   onMoveParent: (card: Card) => void;
 };
 
-/** What a card shows, on the board and on the drag overlay. */
+/**
+ * What a card shows, on the board and on the drag overlay. It takes what is derived from the board (the card's status and
+ * change, whether it is the next to start) rather than the board itself, so that the cards the board holds can be
+ * memoised: a card draws again only when one of these changes.
+ */
 export function CardContent({
-  board,
-  inbox,
+  repository,
+  roundLimit,
   card,
-  cards,
+  status,
+  change,
+  next,
   onOpen,
   menu,
   stack,
@@ -49,10 +52,16 @@ export function CardContent({
   select,
   hidden,
 }: {
-  board: Board;
-  inbox: InboxItem[];
+  repository: Repository;
+  /** How many rounds a card may take. */
+  roundLimit: number;
   card: Card;
-  cards: Card[];
+  /** What the card is doing (`cardStatus`). */
+  status: CardStatus;
+  /** The card's change, if it has one (`changeOf`). */
+  change: Change | undefined;
+  /** The card is the one the board starts next. */
+  next: boolean;
   /** The box that chooses the card, in its corner; left out on the drag overlay. */
   select?: ReactNode;
   /** The fields Display switched off. */
@@ -68,15 +77,12 @@ export function CardContent({
   /** The card lies in the stack of its parent, in a column that is not the one it is drawn in: it says which. */
   inStack?: boolean;
 }) {
-  const status = cardStatus(card, inboxOf(inbox, card), board);
-  const change = changeOf(board, card);
   const coding = card.column === "In progress" || card.column === "In review";
-  const next = card.column === "Not started" ? nextCard(cards, board.cards) : undefined;
-  const detail = cardDetail(card, board.round_limit);
+  const detail = cardDetail(card, roundLimit);
   return (
     <KanbanCardContent
-      displayId={cardName(card, board.repository.forge !== "none")}
-      issueUrl={issueUrl(board.repository, card)}
+      displayId={cardName(card, repository.forge !== "none")}
+      issueUrl={issueUrl(repository, card)}
       title={card.title}
       preview={hidden.has("description") ? null : card.body}
       detail={
@@ -99,11 +105,9 @@ export function CardContent({
           <p className="m-0 text-sm text-secondary">{stackWords(stack)}</p>
         ) : undefined
       }
-      badges={cardBadges(card, status, next === card.id)}
-      pullRequest={hidden.has("pullRequest") ? null : pullRequestOf(board.repository, change)}
-      rounds={
-        coding && !hidden.has("rounds") ? { done: card.rounds, limit: board.round_limit } : null
-      }
+      badges={cardBadges(card, status, next)}
+      pullRequest={hidden.has("pullRequest") ? null : pullRequestOf(repository, change)}
+      rounds={coding && !hidden.has("rounds") ? { done: card.rounds, limit: roundLimit } : null}
       muted={card.column === "Done" || card.closed}
       onOpen={onOpen}
       menu={menu && <CardMenu card={card} {...menu} />}

@@ -66,7 +66,7 @@ impl Store {
         clause: &str,
         param: rusqlite::types::Value,
     ) -> Result<Vec<Grilling>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut stmt = conn.prepare(&format!(
             "SELECT id, run_id, repository_id, issues, report, status, reason, at
              FROM grillings WHERE {clause} ORDER BY id DESC"

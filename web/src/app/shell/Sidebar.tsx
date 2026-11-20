@@ -20,7 +20,7 @@
 
 import { MagnifyingGlassIcon, SidebarSimpleIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { chats as readChats } from "../../api/calls/chat";
@@ -153,13 +153,22 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
   // no longer see is up to date.
   const queryClient = useQueryClient();
   const { pathname, search } = location;
+  // A place is noted once it loaded: the snapshot names its project. One that is not there (a private project of
+  // another person, a removed one) is no place, and asking the server to note it would only answer 404.
+  const noted = useRef("");
+  const loaded = data.data !== undefined;
   useEffect(() => {
     const place = placeAt(pathname, search);
-    if (!place) return;
+    if (!place || !loaded) return;
+    const project = Number(/^\/(?:board|projects)\/(\d+)/.exec(pathname)?.[1]);
+    const address = `${pathname}${search}`;
+    if (noted.current === address || !boards.some((board) => board.repository.id === project))
+      return;
+    noted.current = address;
     seen(place)
       .then((next) => queryClient.setQueryData(keys.places, next))
       .catch(() => {});
-  }, [pathname, search, queryClient]);
+  }, [pathname, search, queryClient, loaded, boards]);
   // A project that was removed takes its places with it, so the lists are read again when the projects change.
   const projects = boards.length;
   useEffect(() => {

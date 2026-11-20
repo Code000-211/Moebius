@@ -202,7 +202,7 @@ impl Store {
     /// How many groups of attempts of the card since it was last retried were settled with none picked: rounds that
     /// failed, as a `code` run that failed is.
     pub fn failed_attempt_rounds(&self, card_id: i64) -> Result<i64> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             "SELECT COUNT(DISTINCT group_id) FROM attempts
              WHERE card_id = ?1 AND settled = 1
                AND group_id > COALESCE((SELECT retried_after FROM cards WHERE id = ?1), 0)

@@ -304,6 +304,7 @@ any route to any role that is not what its row says.
 | `DELETE /v1/packages/{name}` | owner | no |
 | `POST /v1/packages/{name}/update` | owner | no |
 | `GET /v1/usage` | viewer | yes |
+| `GET /v1/status` | viewer | no |
 | `GET /v1/analytics` | viewer | yes |
 | `GET /v1/judgements` | viewer | yes |
 | `GET /v1/judgements/kinds` | viewer | yes |
@@ -365,6 +366,17 @@ any route to any role that is not what its row says.
 | `POST /v1/webhooks/{forge}/secret` | owner | no |
 | `POST /api/hooks/{path}` | none | — |
 | `POST /api/hooks/{repository}/{path}` | none | — |
+
+## Compression
+
+An answer of 1 KiB or more, an API answer or a file of the web app, is compressed with brotli or gzip when the request's
+`Accept-Encoding` lists one; the answer then has `Content-Encoding` and `Vary: Accept-Encoding`, and no `Content-Length`.
+A client that sends no `Accept-Encoding` (`curl` without `--compressed`, a script) gets the plain body, and one that does
+must decode it (`curl --compressed` does). Smaller answers, images, fonts, `text/event-stream` and the WebSockets (the
+event stream, the terminals and the ports) are never compressed, and an answer is compressed as it is sent, so a
+download such as an export is not held back. The router's own listener, the one models are called on, does not
+compress. A proxy in front of the server, and the desktop app's loopback, pass `Accept-Encoding` and the compressed body
+on unchanged.
 
 ## Errors
 
@@ -520,6 +532,9 @@ framed by another site. `plugin-frame.html`, the frame a plugin's page for its s
 its own](plugin-api.md#a-page-of-its-own)), has a stricter policy that forbids it every connection; the files under
 `fonts/` carry `Access-Control-Allow-Origin: *`, since that frame has no origin. Nothing under `/v1/` is a file: an unknown `/v1/` path is answered `401` without
 a valid token and `404` with one.
+
+Every file carries a weak `ETag` (a hash of its content), and a request whose `If-None-Match` holds it, or is `*`, is answered `304`
+without a body, which is what makes the `no-cache` of `index.html` cheap.
 
 At start, `moebius serve` prints the line `Open the web app: http://<listen address>/?login=<code>` on standard output
 (not in the log). The page signs in with the code and takes it out of the address.
@@ -1921,7 +1936,7 @@ day, the report lists the cards whose estimate was furthest off (see [`POST /v1/
 ### `PUT /v1/cards/{id}/estimate`
 
 Sets the estimate. Request: `{"estimate": 5}`, a whole number from 1 to 1000, or `{"estimate": null}` for none.
-Response: the `Card`. Errors: `404` no such card; `422` a number outside 1 to 1000, or a body that is not a whole number or null.
+Response: the `Card`. Errors: `404` no such card; `422` a number that is not a whole number from 1 to 1000 (the sentence is "N is not an estimate (1 to 1000 points)"), or a body whose `estimate` is not a number or null.
 
 ### `GET /v1/cards/{id}/estimate/proposal`
 
@@ -2222,6 +2237,13 @@ The stored events of a run, in order. A client loads a long run in pieces and th
 `seq` it has: every `run_event` on the stream carries the `seq` the event was stored under, so the client drops those
 it already has and sees every event exactly once.
 
+A streamed answer is stored compactly. The `message_update` events of a message that has ended are joined: neighbouring
+`text_delta`s become one `message_update` whose `delta` is their text in order, likewise neighbouring `thinking_delta`s,
+and the `seq` of the first is kept, so the `seq`s of a finished message have gaps where the rest were. Reading the
+`delta`s of a finished run in order gives the same answer as before. While a message is streaming its deltas are stored
+in groups at most 100 ms behind their publication on `GET /v1/events`, so a page read in that moment can lack the last
+few; a client that follows the stream by `seq` sees them there.
+
 A page is read either forwards or backwards, never both at once. Forwards: `after` (default 0) returns only events with
 a `seq` above it. Backwards, for a page that opens a long chat at its last message: `tail` (default false) returns the
 newest events, and `before` returns those with a `seq` below it; each is answered oldest first, so the page that follows
@@ -2396,6 +2418,23 @@ Response:
   the most tokens first. The same calls are counted under their model in `models` too.
 
 Errors: `422` `days` is not from 1 to 365.
+
+### `GET /v1/status`
+
+The few figures the desktop app's tray and rail show of a server, from a few small reads instead of the snapshot, the
+notices and the usage. Response:
+
+```json
+{"working": 2, "inbox": 3, "unread_notices": 1, "tokens": 1840000, "day_budget": 8000000, "paused": false}
+```
+
+- `working`: the cards the person sees (not archived, not in Done) whose latest run, with an attempt that was not picked and
+  a trial of the Retro left out, is starting or running. `unread_notices` counts only the notices the person sees.
+- `inbox`: the open inbox items the person sees, as many as `inbox` of the snapshot has.
+- `unread_notices`: the person's notices that are not read, as `GET /v1/notices` lists them; `0` for a token that is no
+  person's.
+- `tokens`: the tokens used since local midnight of the server (`totals.tokens` of `GET /v1/usage`), `day_budget` the
+  `day_tokens` of `moebius.toml` or `null`, and `paused` whether all agents are paused.
 
 ### `GET /v1/analytics`
 
@@ -4279,7 +4318,8 @@ message with `"stopReason": "error"` and an `"errorMessage"`, in the `message` o
 Moebius ends in failure has a `moebius_error` event instead.
 
 `seq` is the number the event is stored under, the same as in `GET /v1/runs/{id}/events`. Events of a run are published in
-the order of their `seq`. Every event of a run is published and stored: Pi's records, `tool_check`, `mcp_call`, `mcp_error` and `launcher_note` events, `steered` events
+the order of their `seq`, once they are stored; a `message_update` can be published up to 100 ms after Pi sent it, with the
+events stored with it. Every event of a run is published and stored: Pi's records, `tool_check`, `mcp_call`, `mcp_error` and `launcher_note` events, `steered` events
 (`{"message"}`, a person's steer, with secrets removed), `said` events (`{"message"}`, a person's message to a chat, the first
 one included, with secrets removed; stored before the agent's records of its answer) `shell_opened` events (`{"who"}`, a person opened a shell in the worktree; see `GET /v1/runs/{id}/terminal`), `tui_opened` events (`{"who"}`, a person opened Pi-Bolt's terminal interface in a chat; see `GET /v1/chats/{id}/tui`), `settings_changed` events (`{"model", "protocol", "thinking"}`, what a chat runs with in place of its agent's; see `POST /v1/chats/{id}/settings`) and `moebius_error` events (`{"message"}`) that explain why a
 run failed. The one exception is a run that was still going when the server stopped: it is failed at the next start with

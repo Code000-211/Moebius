@@ -29,6 +29,16 @@ After a script moved the card, it runs the script of the new column at once, and
 where it is (at most twelve more runs in one tick). A card in `Done` is skipped once every judgement
 made for it has an outcome.
 
+A tick leaves a card alone when its last script did nothing (the card stayed in its column and no run started), the
+card has no open change, nothing at all was written to the store since that script began (a card, label, run, change,
+inbox item, comment or setting a person or the board changed) and the limits scripts see (`moebius.run_limit`,
+`moebius.round_limit`, `moebius.day_budget`) are the same. A card that is skipped is still settled when it has waited
+a minute, so a script that reads the clock (`moebius.now()`, a due date, `card.moved_at`), the project's script files
+or the forge's checks notices within a minute. A card with an open change is settled at every tick, since its checks
+and conflicts come from git and the forge. So a script must not rely on running at every tick: it runs when what it
+reads changed, and at least once a minute. A script's compiled form is kept per script text, and a project's script
+files are read once per tick, not once per card.
+
 Each run of a script is a fresh Luau state. Nothing is kept between runs: global variables a script sets are gone on
 the next tick. Keep state on the card, in the store or in the inbox, through the functions below.
 

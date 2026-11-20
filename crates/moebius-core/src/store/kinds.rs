@@ -171,7 +171,7 @@ fn field_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<KindField> {
 impl Store {
     /// Every kind with its fields, in the order they were made.
     pub fn kinds(&self) -> Result<Vec<Kind>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut kinds: Vec<Kind> = conn
             .prepare("SELECT id, name FROM kinds ORDER BY position, id")?
             .query_map([], |r| {
@@ -355,7 +355,7 @@ impl Store {
 
     /// How many cards of a project have the kind.
     pub fn cards_of_kind(&self, kind_id: i64, project_id: Option<i64>) -> Result<i64> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             "SELECT COUNT(*) FROM cards WHERE kind_id = ?1 AND (?2 IS NULL OR project_id = ?2)",
             params![kind_id, project_id],
             |r| r.get(0),

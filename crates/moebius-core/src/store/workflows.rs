@@ -125,7 +125,7 @@ impl Store {
 
     /// The runs that are still `waiting` (for a person's decision), in the order they were stored.
     pub fn waiting_workflow_runs(&self) -> Result<Vec<WorkflowRun>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut statement =
             conn.prepare("SELECT * FROM workflow_runs WHERE status = 'waiting' ORDER BY id")?;
         let rows = statement.query_map([], run_from_row)?;
@@ -134,7 +134,7 @@ impl Store {
 
     /// How many runs of `workflow` are queued or running, that is, not yet finished.
     pub fn active_workflow_runs(&self, workflow: &str) -> Result<i64> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             "SELECT COUNT(*) FROM workflow_runs
              WHERE workflow = ?1 AND status NOT IN ('succeeded', 'failed', 'cancelled')",
             [workflow],
@@ -248,7 +248,7 @@ impl Store {
 
     /// The nodes of a run, in the order they were stored.
     pub fn workflow_node_runs(&self, run_id: i64) -> Result<Vec<WorkflowNodeRun>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut statement =
             conn.prepare("SELECT * FROM workflow_node_runs WHERE run_id = ?1 ORDER BY id")?;
         let rows = statement.query_map([run_id], node_from_row)?;

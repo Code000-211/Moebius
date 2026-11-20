@@ -1,4 +1,4 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: no i18n; the header takes actions, the column's "+"; a column is a lane of the canvas with no border, and its header counts the cards in it; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); a card has a quiet line and a short soft shadow that grows as it lifts on hover, and the chosen one glows in the accent, and it is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); the card is a group and not a named button, and its title is the button that opens it, so the issue link and the pull-request badge inside it stay in the accessibility tree; dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
+// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: the sensors' options keep their identity, so that a render of the page does not draw every card; no i18n; the header takes actions, the column's "+"; a column is a lane of the canvas with no border, and its header counts the cards in it; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); a card has a quiet line and a short soft shadow that grows as it lifts on hover, and the chosen one glows in the accent, and it is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); the card is a group and not a named button, and its title is the button that opens it, so the issue link and the pull-request badge inside it stay in the accessibility tree; dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
 import {
   type Announcements,
   type CollisionDetection,
@@ -20,6 +20,7 @@ import {
   type Ref,
   type RefObject,
   useCallback,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -269,6 +270,9 @@ function collisionsFor(target: RefObject<string | null>): CollisionDetection {
   };
 }
 
+/** A small distance, so that a click still opens the dock. */
+const POINTER_OPTIONS = { activationConstraint: { distance: 6 } };
+
 export const KanbanProvider = ({
   children,
   onDragEnd,
@@ -319,13 +323,18 @@ export const KanbanProvider = ({
     },
     [],
   );
-  const sensors = useSensors(
-    // A small distance, so that a click still opens the dock.
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, {
+  // The options of the sensors keep their identity: the library makes new sensors, and with them new listeners for every
+  // card, whenever an option is a new object, which drew every card of the board at every render of the page.
+  const keyboardOptions = useMemo(
+    () => ({
       coordinateGetter: coordinates,
       keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space", "Enter"] },
     }),
+    [coordinates],
+  );
+  const sensors = useSensors(
+    useSensor(PointerSensor, POINTER_OPTIONS),
+    useSensor(KeyboardSensor, keyboardOptions),
   );
 
   const nameOf = (item: { data: { current?: { name?: string } | null } }) =>

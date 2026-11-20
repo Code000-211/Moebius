@@ -16,17 +16,17 @@
  */
 import { BookmarkSimpleIcon, PlusIcon, TerminalWindowIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { addView, listViews } from "../../api/calls/views";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
-import type { Card } from "../../api/types/board";
+import type { Card, InboxItem } from "../../api/types/board";
 import { Button } from "../../ui/components/Button";
 import { type DropResult, KanbanCardFace, KanbanProvider } from "../../ui/components/KanbanBoard";
 import { FilterBar } from "../../ui/filters/FilterBar";
-import { displayQuery, readDisplay } from "../../ui/filters/model";
+import { type Display, displayQuery, readDisplay } from "../../ui/filters/model";
 import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
 import { Select } from "../../ui/page/Field";
@@ -35,6 +35,7 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { usePropertiesShown } from "../../ui/page/Properties";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { ScrollFades } from "../../ui/page/ScrollFades";
+import { useSheetSlot } from "../../ui/page/SheetSlot";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
 import { boardFiltersOf, viewOfBoard } from "../views/model";
@@ -50,6 +51,7 @@ import { type Decision, useDecisions } from "./decisions";
 import { ListLayout } from "./ListLayout";
 import {
   cardStatus,
+  changeOf,
   dropRule,
   type Filters,
   groupByColumn,
@@ -57,11 +59,24 @@ import {
   inspectedCard,
   mergeStoppedOf,
   NO_FILTERS,
+  nextCard,
   rootOf,
 } from "./model";
 import { useNewIssue } from "./NewIssueHost";
 import { RepositoryTerminal } from "./RepositoryTerminal";
 import { DISPLAY_CHOICES, filterFields, listGroups } from "./view";
+
+/** No inbox read yet: one array for every render, so that what hangs on the inbox is not worked out again. */
+const NO_INBOX: InboxItem[] = [];
+
+/** `value` itself, or the one this returned before when it is equal to it: a new object with the same content is no change. */
+function useSame<T>(value: T): T {
+  const kept = useRef(value);
+  if (kept.current !== value && JSON.stringify(kept.current) !== JSON.stringify(value)) {
+    kept.current = value;
+  }
+  return kept.current;
+}
 
 export function BoardPage() {
   const { id } = useParams();
@@ -85,6 +100,7 @@ export function BoardPage() {
   const [opened, setOpened] = useState<ReadonlySet<number>>(new Set());
   const [terminalOpen, setTerminalOpen] = useState(false);
   const propertiesShown = usePropertiesShown();
+  const sheetShown = useSheetSlot().active !== null;
   // The card a send-back needs a reason for, not a count: a count stays raised once it is raised, so every card
   // opened afterwards found the reason form waiting for it.
   const [rejectFor, setRejectFor] = useState<number | null>(null);
@@ -95,19 +111,18 @@ export function BoardPage() {
   const [deleting, setDeleting] = useState<Card | null>(null);
 
   const board = data.data?.boards.find((b) => String(b.repository.id) === id);
-  const inbox = data.data?.inbox ?? [];
-  const filters = useMemo<Filters>(
-    () => ({
-      column: params.get("column") ?? "",
-      agent: params.get("agent") ?? "",
-      status: params.get("status") ?? "",
-      label: params.get("label") ?? "",
-      priority: params.get("priority") ?? "",
-      due: params.get("due") ?? "",
-    }),
-    [params],
-  );
-  const display = useMemo(() => readDisplay(params, DISPLAY_CHOICES), [params]);
+  const inbox = data.data?.inbox ?? NO_INBOX;
+  // The filters and Display are read from the address, which also holds the open card: a new address with the same
+  // filters is not a new filter, or opening a card would group the cards again and draw them all.
+  const filters = useSame<Filters>({
+    column: params.get("column") ?? "",
+    agent: params.get("agent") ?? "",
+    status: params.get("status") ?? "",
+    label: params.get("label") ?? "",
+    priority: params.get("priority") ?? "",
+    due: params.get("due") ?? "",
+  });
+  const display = useSame(readDisplay(params, DISPLAY_CHOICES));
   const hidden = useMemo(() => new Set(display.hidden), [display]);
   // The cards are grouped once per read of the board and once per change of the filter, not once per render of the
   // dock or of a decision coming back.
@@ -139,6 +154,205 @@ export function BoardPage() {
       setBlockingMore(cards.slice(1));
     },
   });
+
+  // The handlers the columns and their cards are given keep their identity from one render to the next: a card that
+  // is memoised on them draws again only when its own data changes. They read the latest of what they need through
+  // refs, or through a state setter's function form.
+  const setParamsRef = useRef(setParams);
+  setParamsRef.current = setParams;
+  const setQuery = useCallback((changes: Record<string, string>) => {
+    setParamsRef.current(
+      (current) => {
+        const next = new URLSearchParams(current);
+        for (const [key, value] of Object.entries(changes)) {
+          if (value === "") next.delete(key);
+          else next.set(key, value);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  }, []);
+  const onSelect = useCallback((card: Card) => setQuery({ card: String(card.id) }), [setQuery]);
+  const repositoryId = board?.repository.id;
+  const openForm = useCallback(
+    (parent: number | null) => {
+      if (repositoryId === undefined) return;
+      newIssue({
+        repository: repositoryId,
+        parent,
+        onCreated: (card) => setNotice({ tone: "ok", text: `Created "${card.title}"` }),
+      });
+    },
+    [newIssue, repositoryId, setNotice],
+  );
+  const menu = useMemo(
+    () => ({
+      onBlock: setBlocking,
+      onUnblock: (card: Card) => decide({ kind: "unblock", card: card.id, number: card.number }),
+      onStop: (card: Card) => {
+        if (card.run) decide({ kind: "stop", run: card.run.id, number: card.number });
+      },
+      onDelete: setDeleting,
+      onAddSubIssue: (card: Card) => openForm(card.number),
+      onMoveParent: setMoving,
+    }),
+    [decide, openForm],
+  );
+  const inspected = board ? inspectedCard(board, inbox, params.get("card")) : undefined;
+  // A stack is open when a person opened it, and while the dock shows one of its sub-issues: closing it there would hide
+  // the card that is being read.
+  const inspectedTopId = board && inspected ? rootOf(board, inspected).id : undefined;
+  const inspectedTopRef = useRef(inspectedTopId);
+  inspectedTopRef.current = inspectedTopId;
+  const onToggleStack = useCallback(
+    (card: Card) =>
+      setOpened((now) => {
+        const next = new Set(now);
+        if (now.has(card.id) || inspectedTopRef.current === card.id) next.delete(card.id);
+        else next.add(card.id);
+        return next;
+      }),
+    [],
+  );
+  const onAdding = useCallback(
+    (column: string, open: boolean) => setAdding(open ? column : null),
+    [],
+  );
+  const onCreated = useCallback(
+    (card: Card, where: string) =>
+      setNotice({
+        tone: "ok",
+        text:
+          where === "Backlog"
+            ? `Created "${card.title}"`
+            : `Created "${card.title}" in the Backlog`,
+      }),
+    [setNotice],
+  );
+  const navigateRef = useRef(navigate);
+  navigateRef.current = navigate;
+  const onRepository = useCallback(
+    (value: string) => navigateRef.current(boardPath(Number(value))),
+    [],
+  );
+  const repositories = useSame(
+    data.data?.boards.map((b): [string, string] => [String(b.repository.id), b.repository.name]) ??
+      [],
+  );
+  const leading = useMemo(
+    () => (
+      <Select
+        aria-label="Repository"
+        value={repositoryId === undefined ? "" : String(repositoryId)}
+        options={repositories}
+        onChange={onRepository}
+        className="w-auto min-w-36"
+      />
+    ),
+    [repositoryId, repositories, onRepository],
+  );
+  const fields = useSame(board ? filterFields(board, filters) : []);
+  const filterValues = useMemo<Record<string, string>>(() => ({ ...filters }), [filters]);
+  const onFilter = useCallback(
+    (key: string, value: string) => setQuery({ [key]: value }),
+    [setQuery],
+  );
+  const onClear = useCallback(() => setQuery({ ...NO_FILTERS }), [setQuery]);
+  const displayProps = useMemo(
+    () => ({
+      choices: DISPLAY_CHOICES,
+      value: display,
+      onChange: (next: Display) => setQuery(displayQuery(next)),
+    }),
+    [display, setQuery],
+  );
+  const saveView = useCallback(() => {
+    if (repositoryId === undefined) return;
+    // The view is kept on the server, for this person; Views shares it.
+    void (async () => {
+      try {
+        const count = (await listViews()).length;
+        const fields = viewOfBoard(
+          `View ${count + 1}`,
+          repositoryId,
+          filters,
+          display.layout,
+          display.sort,
+        );
+        const made = await addView(fields);
+        void queryClient.invalidateQueries({ queryKey: keys.views });
+        setNotice({
+          tone: "ok",
+          text: `Saved this view as "${made.name}"`,
+        });
+      } catch (error) {
+        setNotice({ tone: "error", text: sayError(error, "The view could not be saved.") });
+      }
+    })();
+  }, [repositoryId, filters, display.layout, display.sort, queryClient, setNotice]);
+  // The head of the page, drawn again only when its title, the layout or the handlers change: a read of the snapshot
+  // leaves it as it is.
+  const repositoryName = board?.repository.name;
+  const header = useMemo(
+    () => (
+      <PageHeader
+        title={repositoryName ?? ""}
+        actions={
+          <>
+            <LayoutSwitch
+              layout={display.layout === "list" ? "list" : "board"}
+              onChange={(layout) => setQuery(displayQuery({ ...display, layout }))}
+            />
+            <Button variant="secondary" onClick={() => setTerminalOpen(true)}>
+              <TerminalWindowIcon className="size-4" aria-hidden="true" />
+              Terminal
+            </Button>
+            <Button onClick={() => openForm(null)}>
+              <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
+              New issue
+            </Button>
+          </>
+        }
+      />
+    ),
+    [repositoryName, display, setQuery, openForm],
+  );
+  const clearChoice = bulk.choice.clear;
+  const closeBlock = useCallback(() => {
+    setBlocking(null);
+    setBlockingMore([]);
+  }, []);
+  const doneBlock = useCallback(
+    (text: string) => {
+      setNotice({ tone: "ok", text });
+      clearChoice();
+    },
+    [setNotice, clearChoice],
+  );
+  const clearReject = useCallback(() => setRejectFor(null), []);
+  const closeDock = useCallback(() => {
+    setQuery({ card: "none" });
+    setRejectFor(null);
+  }, [setQuery]);
+  const closeDelete = useCallback(() => setDeleting(null), []);
+  const cardParam = params.get("card");
+  const doneDelete = useCallback(
+    (card: Card, text: string) => {
+      // A card's id can be given again once it is gone, so a dock that was open on it is closed for good.
+      if (cardParam === String(card.id)) setQuery({ card: "none" });
+      setNotice({ tone: "ok", text });
+    },
+    [cardParam, setQuery, setNotice],
+  );
+  const closeParent = useCallback(() => setMoving(null), []);
+  const doneParent = useCallback((text: string) => setNotice({ tone: "ok", text }), [setNotice]);
+  const { has, toggle } = bulk.choice;
+  const { anyChosen, onContextMenu } = bulk;
+  const columnBulk = useMemo(
+    () => ({ has, anyChosen, toggle, onContextMenu }),
+    [has, anyChosen, toggle, onContextMenu],
+  );
 
   if (data.isPending)
     return (
@@ -173,75 +387,12 @@ export function BoardPage() {
       </>
     );
   }
-  const setQuery = (changes: Record<string, string>) =>
-    setParams(
-      (current) => {
-        const next = new URLSearchParams(current);
-        for (const [key, value] of Object.entries(changes)) {
-          if (value === "") next.delete(key);
-          else next.set(key, value);
-        }
-        return next;
-      },
-      { replace: true },
-    );
-  const saveView = () => {
-    // The view is kept on the server, for this person; Views shares it.
-    void (async () => {
-      try {
-        const count = (await listViews()).length;
-        const fields = viewOfBoard(
-          `View ${count + 1}`,
-          board.repository.id,
-          filters,
-          display.layout,
-          display.sort,
-        );
-        const made = await addView(fields);
-        void queryClient.invalidateQueries({ queryKey: keys.views });
-        setNotice({
-          tone: "ok",
-          text: `Saved this view as "${made.name}"`,
-        });
-      } catch (error) {
-        setNotice({ tone: "error", text: sayError(error, "The view could not be saved.") });
-      }
-    })();
-  };
-  const inspected = inspectedCard(board, inbox, params.get("card"));
   const openView = views.data?.find((v) => String(v.id) === params.get("view"));
   const asked = openView && boardFiltersOf(openView);
   const viewChanged =
     asked != null &&
     (asked.repository !== board.repository.id ||
       JSON.stringify(asked.filters) !== JSON.stringify(filters));
-  const openForm = (parent: number | null) =>
-    newIssue({
-      repository: board.repository.id,
-      parent,
-      onCreated: (card) => setNotice({ tone: "ok", text: `Created "${card.title}"` }),
-    });
-  const menu = {
-    onBlock: setBlocking,
-    onUnblock: (card: Card) => decide({ kind: "unblock", card: card.id, number: card.number }),
-    onStop: (card: Card) => {
-      if (card.run) decide({ kind: "stop", run: card.run.id, number: card.number });
-    },
-    onDelete: setDeleting,
-    onAddSubIssue: (card: Card) => openForm(card.number),
-    onMoveParent: setMoving,
-  };
-  // A stack is open when a person opened it, and while the dock shows one of its sub-issues: closing it there would hide
-  // the card that is being read.
-  const inspectedTop = inspected ? rootOf(board, inspected) : undefined;
-  const stackOpen = (card: Card) => opened.has(card.id) || inspectedTop?.id === card.id;
-  const toggleStack = (card: Card) =>
-    setOpened((now) => {
-      const next = new Set(now);
-      if (stackOpen(card)) next.delete(card.id);
-      else next.add(card.id);
-      return next;
-    });
   function onDragEnd(result: DropResult) {
     // A decision is on its way: the buttons are disabled for the same moment, and a drag is another way to ask for one.
     if (pending) return;
@@ -278,7 +429,15 @@ export function BoardPage() {
         isLive={status === "live"}
         className="cursor-grabbing"
       >
-        <CardContent board={board} inbox={inbox} card={card} cards={board.cards} hidden={hidden} />
+        <CardContent
+          repository={board.repository}
+          roundLimit={board.round_limit}
+          card={card}
+          status={status}
+          change={changeOf(board, card)}
+          next={card.column === "Not started" && nextCard(board.cards, board.cards) === card.id}
+          hidden={hidden}
+        />
       </KanbanCardFace>
     );
   }
@@ -287,27 +446,7 @@ export function BoardPage() {
     <>
       {/* A card open takes a column of the page for its drawer, and the head of the page is part of the page: its
           actions stand left of the drawer rather than under it. */}
-      <div className={inspected ? "lg:pr-96" : undefined}>
-        <PageHeader
-          title={board.repository.name}
-          actions={
-            <>
-              <LayoutSwitch
-                layout={display.layout === "list" ? "list" : "board"}
-                onChange={(layout) => setQuery(displayQuery({ ...display, layout }))}
-              />
-              <Button variant="secondary" onClick={() => setTerminalOpen(true)}>
-                <TerminalWindowIcon className="size-4" aria-hidden="true" />
-                Terminal
-              </Button>
-              <Button onClick={() => openForm(null)}>
-                <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
-                New issue
-              </Button>
-            </>
-          }
-        />
-      </div>
+      <div className={inspected ? "lg:pr-96" : undefined}>{header}</div>
       {/* The dock stands beside the whole of the board, not beside its lanes: it belongs to the page, and starting it
           under the filters spent the room it asks for and left the filters standing alone over nothing. */}
       <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start">
@@ -334,27 +473,12 @@ export function BoardPage() {
           )}
           <FilterBar
             label="Filter the cards"
-            leading={
-              <Select
-                aria-label="Repository"
-                value={String(board.repository.id)}
-                options={data.data.boards.map((b): [string, string] => [
-                  String(b.repository.id),
-                  b.repository.name,
-                ])}
-                onChange={(value) => navigate(boardPath(Number(value)))}
-                className="w-auto min-w-36"
-              />
-            }
-            fields={filterFields(board, filters)}
-            values={{ ...filters }}
-            onFilter={(key, value) => setQuery({ [key]: value })}
-            onClear={() => setQuery({ ...NO_FILTERS })}
-            display={{
-              choices: DISPLAY_CHOICES,
-              value: display,
-              onChange: (next) => setQuery(displayQuery(next)),
-            }}
+            leading={leading}
+            fields={fields}
+            values={filterValues}
+            onFilter={onFilter}
+            onClear={onClear}
+            display={displayProps}
             onSaveView={saveView}
           />
           <LeftoverNotice repository={board.repository.id} />
@@ -378,7 +502,7 @@ export function BoardPage() {
               groups={rows}
               hidden={hidden}
               inspectedId={inspected?.id}
-              onSelect={(card) => setQuery({ card: String(card.id) })}
+              onSelect={onSelect}
               select={bulk.boxFor}
               onContextMenu={bulk.onContextMenu}
             />
@@ -394,25 +518,18 @@ export function BoardPage() {
                     cards={cards}
                     total={total}
                     stacks={stacks}
-                    stackOpen={stackOpen}
-                    onToggleStack={toggleStack}
+                    opened={opened}
+                    inspectedTopId={inspectedTopId}
+                    onToggleStack={onToggleStack}
                     busy={pending}
                     inspectedId={inspected?.id}
-                    onSelect={(card) => setQuery({ card: String(card.id) })}
+                    onSelect={onSelect}
                     menu={menu}
-                    bulk={bulk}
+                    bulk={columnBulk}
                     hidden={hidden}
                     adding={adding === column}
-                    onAdding={(open) => setAdding(open ? column : null)}
-                    onCreated={(card, where) =>
-                      setNotice({
-                        tone: "ok",
-                        text:
-                          where === "Backlog"
-                            ? `Created "${card.title}"`
-                            : `Created "${card.title}" in the Backlog`,
-                      })
-                    }
+                    onAdding={onAdding}
+                    onCreated={onCreated}
                   />
                 ))}
               </KanbanProvider>
@@ -429,9 +546,13 @@ export function BoardPage() {
             <div
               className={cn(
                 "lg:fixed lg:inset-y-1.5 lg:z-10 lg:w-96 lg:overflow-hidden",
-                propertiesShown
-                  ? "lg:right-[calc(var(--column-width)+0.375rem)]"
-                  : "lg:right-1.5 lg:rounded-r-sheet",
+                // A sheet (the Moebius agent) lies over the column and a strip of the page, so the drawer stands
+                // beside it: the board gives way, and the card's text is not under the sheet.
+                sheetShown
+                  ? "lg:right-[calc(var(--sheet-width)+0.375rem)] lg:rounded-r-sheet"
+                  : propertiesShown
+                    ? "lg:right-[calc(var(--column-width)+0.375rem)]"
+                    : "lg:right-1.5 lg:rounded-r-sheet",
               )}
             >
               <Dock
@@ -443,14 +564,11 @@ export function BoardPage() {
                 boards={data.data?.boards}
                 busy={pending}
                 askFor={rejectFor}
-                onAskAnswered={() => setRejectFor(null)}
+                onAskAnswered={clearReject}
                 onDecide={decide}
                 menu={menu}
-                onOpenCard={(card) => setQuery({ card: String(card.id) })}
-                onClose={() => {
-                  setQuery({ card: "none" });
-                  setRejectFor(null);
-                }}
+                onOpenCard={onSelect}
+                onClose={closeDock}
               />
             </div>
           </div>
@@ -472,35 +590,15 @@ export function BoardPage() {
         open={terminalOpen}
         onOpenChange={setTerminalOpen}
       />
-      <BlockDialog
-        card={blocking}
-        more={blockingMore}
-        onClose={() => {
-          setBlocking(null);
-          setBlockingMore([]);
-        }}
-        onDone={(text) => {
-          setNotice({ tone: "ok", text });
-          bulk.choice.clear();
-        }}
-      />
+      <BlockDialog card={blocking} more={blockingMore} onClose={closeBlock} onDone={doneBlock} />
       {bulk.surface}
       <DeleteDialog
         card={deleting}
         repository={board.repository}
-        onClose={() => setDeleting(null)}
-        onDone={(card, text) => {
-          // A card's id can be given again once it is gone, so a dock that was open on it is closed for good.
-          if (params.get("card") === String(card.id)) setQuery({ card: "none" });
-          setNotice({ tone: "ok", text });
-        }}
+        onClose={closeDelete}
+        onDone={doneDelete}
       />
-      <ParentDialog
-        board={board}
-        card={moving}
-        onClose={() => setMoving(null)}
-        onDone={(text) => setNotice({ tone: "ok", text })}
-      />
+      <ParentDialog board={board} card={moving} onClose={closeParent} onDone={doneParent} />
     </>
   );
 }
