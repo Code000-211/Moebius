@@ -354,7 +354,12 @@ function ChosenPage({
                     <Button size="sm" variant="ghost" onClick={() => setMoving(true)}>
                       Move
                     </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setDeleting(true)}>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="text-error-text"
+                      onClick={() => setDeleting(true)}
+                    >
                       Delete
                     </Button>
                     <Button size="sm" variant="secondary" onClick={() => onView("edit")}>
