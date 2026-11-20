@@ -1,6 +1,6 @@
 /**
  * Stopping agents from where a person looks for it, in a real browser against the fake server: Fleet's header pausing
- * and resuming all agents (and following a pause made elsewhere), the palette finding "pause", "resume" and "stop", the
+ * and resuming all agents with a toast that has Undo (and following a pause made elsewhere), the palette finding "pause", "resume" and "stop", the
  * Stop of a Fleet row, the count that separates working from waiting, and a chat's Stop, Rename and Delete in its head.
  */
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
@@ -40,30 +40,38 @@ describe("pausing all agents", () => {
   it.skipIf(usesRealServer)("pauses and resumes from Fleet's header", async () => {
     await fresh();
     await page.goto(`${server.url}/fleet`);
-    await page.getByRole("button", { name: "Pause all agents" }).click();
-    await page.getByRole("status").filter({ hasText: "All agents are paused" }).waitFor();
-    await page.getByRole("button", { name: "Resume all agents" }).click();
-    await page.getByRole("button", { name: "Pause all agents" }).waitFor();
-    await page.getByText("All agents are paused").waitFor({ state: "detached" });
+    await page.getByRole("button", { name: "Pause all", exact: true }).click();
+    await page.getByText("All agents paused.").waitFor();
+    await page.getByRole("button", { name: "Resume", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Undo" }).click();
+    await page.getByRole("button", { name: "Pause all", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Pause all", exact: true }).click();
+    await page.getByRole("button", { name: "Resume", exact: true }).click();
+    await page.getByText("Agents resumed.").waitFor();
+    await page.getByRole("button", { name: "Pause all", exact: true }).waitFor();
     const calls = server.pagesA?.requests.map((r) => r.path).filter((p) => /pause|resume/.test(p));
-    expect(calls).toEqual(["/v1/runs/pause", "/v1/runs/resume"]);
+    expect(calls).toEqual([
+      "/v1/runs/pause",
+      "/v1/runs/resume",
+      "/v1/runs/pause",
+      "/v1/runs/resume",
+    ]);
   });
 
   it("follows a pause made by another client", async () => {
     await fresh();
     await page.goto(`${server.url}/fleet`);
-    await page.getByRole("button", { name: "Pause all agents" }).waitFor();
+    await page.getByRole("button", { name: "Pause all", exact: true }).waitFor();
     expect((await post("/v1/runs/pause")).ok()).toBe(true);
-    await page.getByRole("button", { name: "Resume all agents" }).waitFor();
-    await page.getByRole("status").filter({ hasText: "paused by @owner" }).waitFor();
+    await page.getByRole("button", { name: "Resume", exact: true }).waitFor();
     expect((await post("/v1/runs/resume")).ok()).toBe(true);
-    await page.getByRole("button", { name: "Pause all agents" }).waitFor();
+    await page.getByRole("button", { name: "Pause all", exact: true }).waitFor();
   });
 
   it("is offered by the palette under pause, resume and stop", async () => {
     await fresh();
     await page.goto(`${server.url}/fleet`);
-    await page.getByRole("button", { name: "Pause all agents" }).waitFor();
+    await page.getByRole("button", { name: "Pause all", exact: true }).waitFor();
     await page.keyboard.press("Control+k");
     await page.getByRole("dialog").waitFor();
     await page.getByPlaceholder("Search…").fill("stop");
@@ -71,11 +79,11 @@ describe("pausing all agents", () => {
     await page.getByRole("option", { name: "Stop a run" }).waitFor();
     await page.getByPlaceholder("Search…").fill("pause");
     await page.getByRole("option", { name: "Pause all agents" }).click();
-    await page.getByRole("button", { name: "Resume all agents" }).waitFor();
+    await page.getByRole("button", { name: "Resume", exact: true }).waitFor();
     await page.keyboard.press("Control+k");
     await page.getByPlaceholder("Search…").fill("resume");
     await page.getByRole("option", { name: "Resume all agents" }).click();
-    await page.getByRole("button", { name: "Pause all agents" }).waitFor();
+    await page.getByRole("button", { name: "Pause all", exact: true }).waitFor();
   });
 });
 

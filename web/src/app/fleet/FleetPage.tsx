@@ -25,6 +25,7 @@ import { Link, useNavigate } from "react-router";
 import { approve, snapshot as readSnapshot } from "../../api/calls/board";
 import { chats as readChats, stopRun } from "../../api/calls/chat";
 import { finishedRuns as readFinished, run as readRun } from "../../api/calls/fleet";
+import { sayError } from "../../api/errorText";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { FinishedRun } from "../../api/types/runs";
@@ -33,7 +34,6 @@ import { useThread } from "../../chat/useThread";
 import { thinkingLabel } from "../../ui/chat/ChatCollapsedThinking";
 import { Button } from "../../ui/components/Button";
 import { ContextMenu, useContextMenu } from "../../ui/components/ContextMenu";
-import { FilterBar } from "../../ui/filters/FilterBar";
 import { readFilters } from "../../ui/filters/model";
 import { useQueryParams } from "../../ui/filters/useQueryParams";
 import { AgentIcon, ErrorIcon, PauseIcon, PlayIcon, ProhibitIcon } from "../../ui/icons";
@@ -42,7 +42,6 @@ import { useNow } from "../../ui/lib/useNow";
 import { useSelection } from "../../ui/lib/useSelection";
 import { Empty } from "../../ui/page/Empty";
 import { ListRow, type RowPosition } from "../../ui/page/ListRow";
-import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SelectionBar, type SelectionCommand } from "../../ui/page/SelectionBar";
@@ -80,6 +79,27 @@ export function FleetPage() {
   const [params, setQuery] = useQueryParams();
   const tab = tabOf(params.get("tab"));
   const pause = usePause();
+  const toast = useToast();
+  const press = async () => {
+    const pausing = !pause.paused;
+    try {
+      await pause.set(pausing);
+    } catch (error) {
+      toast({ kind: "error", text: sayError(error, "Could not change the agents. Try again.") });
+      return;
+    }
+    toast({
+      kind: "confirmation",
+      text: pausing ? "All agents paused." : "Agents resumed.",
+      undo: () =>
+        void pause.set(!pausing).catch((error) =>
+          toast({
+            kind: "error",
+            text: sayError(error, "Could not change the agents. Try again."),
+          }),
+        ),
+    });
+  };
   const base = useId();
   return (
     <>
@@ -97,7 +117,8 @@ export function FleetPage() {
         actions={
           <Button
             variant="secondary"
-            onClick={pause.toggle}
+            size="sm"
+            onClick={press}
             disabled={pause.busy}
             data-testid="pause-all"
           >
@@ -106,7 +127,7 @@ export function FleetPage() {
             ) : (
               <PauseIcon className="size-4" aria-hidden="true" />
             )}
-            {pause.paused ? "Resume all agents" : "Pause all agents"}
+            {pause.paused ? "Resume" : "Pause all"}
           </Button>
         }
       />
@@ -116,16 +137,6 @@ export function FleetPage() {
         value={tab}
         className="flex h-[calc(100%-3rem)] min-h-40 flex-col outline-none"
       >
-        {pause.paused && (
-          <Notice tone="ok" className="mb-4">
-            {`All agents are paused by ${pause.paused.by.replace(/^person:/, "@")}. Runs are held and none starts until they are resumed.`}
-          </Notice>
-        )}
-        {pause.error && (
-          <Notice tone="error" className="mb-4">
-            {pause.error}
-          </Notice>
-        )}
         {tab === "finished" ? <FinishedRuns /> : <ActiveRuns />}
       </TabPanel>
     </>
@@ -177,13 +188,6 @@ function ActiveRuns() {
   const list = filtered(everything, values);
   return (
     <>
-      <FilterBar
-        label="Filter the runs"
-        fields={fields}
-        values={values}
-        onFilter={(key, value) => setQuery({ [key]: value })}
-        onClear={() => setQuery(Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])))}
-      />
       {list.length === 0 && everything.length > 0 ? (
         <Empty
           title="No run matches"
