@@ -13,10 +13,10 @@ import { type Report, ReportView, reported } from "../../packages/Report";
 import { useActions } from "../../packages/useActions";
 import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
-import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonCard } from "../../ui/page/Skeleton";
+import { Section } from "../settings/parts";
 
 export function InstalledPackages({ onBrowse }: { onBrowse: () => void }) {
   const installed = useQuery({ queryKey: keys.packagesInstalled, queryFn: installedPackages });
@@ -36,65 +36,70 @@ export function InstalledPackages({ onBrowse }: { onBrowse: () => void }) {
     );
   }
   return (
-    <Box title="Installed packages" className="flex flex-col gap-4" testId="installed-packages">
-      {report && <ReportView report={report} onLeave={() => {}} />}
-      {installed.data.length === 0 ? (
-        <Empty
-          plain
-          title="No package installed"
-          body="Plugins, workflows, rules and skills from the registries are installed from the package sheet."
-          action={
-            <Button size="sm" variant="secondary" onClick={onBrowse}>
-              Browse packages
-            </Button>
-          }
-        />
-      ) : (
-        <PlainList label="Installed packages" className="gap-4">
-          {installed.data.map((each) => {
-            const state = installedStanding(each);
-            return (
-              <li
-                key={each.name}
-                data-testid="installed-package"
-                className="flex flex-wrap items-center justify-between gap-3"
-              >
-                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                  <h3 className="m-0 min-w-0 break-all font-mono text-sm font-semibold text-text">
-                    {each.name}
-                  </h3>
-                  <Tag>{kindLabel(each.kind)}</Tag>
-                  {each.enabled === false && <Tag>Off</Tag>}
-                  {state.map((each) => (
-                    <Tag
-                      key={each.label}
-                      tone={each.tone === "attention" ? "attention" : "complete"}
+    <Section title="Installed packages">
+      <div data-testid="installed-packages">
+        {report && <ReportView report={report} onLeave={() => {}} />}
+        {installed.data.length === 0 ? (
+          <Empty
+            plain
+            title="No package installed"
+            body="Plugins, workflows, rules and skills from the registries are installed from the package sheet."
+            action={
+              <Button size="sm" variant="secondary" onClick={onBrowse}>
+                Browse packages
+              </Button>
+            }
+          />
+        ) : (
+          <PlainList
+            label="Installed packages"
+            className="divide-y divide-hairline border-t border-hairline"
+          >
+            {installed.data.map((each) => {
+              const state = installedStanding(each);
+              return (
+                <li
+                  key={each.name}
+                  data-testid="installed-package"
+                  className="flex min-h-9 flex-wrap items-center justify-between gap-3 py-1"
+                >
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <h3 className="m-0 min-w-0 break-all font-mono text-sm font-semibold text-text">
+                      {each.name}
+                    </h3>
+                    <Tag>{kindLabel(each.kind)}</Tag>
+                    {each.enabled === false && <Tag>Off</Tag>}
+                    {state.map((each) => (
+                      <Tag
+                        key={each.label}
+                        tone={each.tone === "attention" ? "attention" : "complete"}
+                      >
+                        {each.label}
+                      </Tag>
+                    ))}
+                  </div>
+                  {each.update_available !== null && (
+                    <Button
+                      size="sm"
+                      disabled={actions.busy}
+                      aria-label={`Update ${each.name}`}
+                      onClick={() =>
+                        void actions.run(
+                          () => updatePackage(each.name),
+                          (outcome) => reported([tellOutcome(outcome)]),
+                          `${each.name} could not be updated. Try again.`,
+                        )
+                      }
                     >
-                      {each.label}
-                    </Tag>
-                  ))}
-                </div>
-                {each.update_available !== null && (
-                  <Button
-                    size="sm"
-                    disabled={actions.busy}
-                    aria-label={`Update ${each.name}`}
-                    onClick={() =>
-                      void actions.run(
-                        () => updatePackage(each.name),
-                        (outcome) => reported([tellOutcome(outcome)]),
-                        `${each.name} could not be updated. Try again.`,
-                      )
-                    }
-                  >
-                    {`Update to ${each.update_available}`}
-                  </Button>
-                )}
-              </li>
-            );
-          })}
-        </PlainList>
-      )}
-    </Box>
+                      {`Update to ${each.update_available}`}
+                    </Button>
+                  )}
+                </li>
+              );
+            })}
+          </PlainList>
+        )}
+      </div>
+    </Section>
   );
 }

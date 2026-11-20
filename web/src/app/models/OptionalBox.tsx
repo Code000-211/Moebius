@@ -4,10 +4,10 @@
  */
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { Box } from "../../ui/page/Box";
-import { Field, Select } from "../../ui/page/Field";
+import { FieldRow, Rows, Select } from "../../ui/page/Field";
 import type { modelChoices } from "../agents/model";
 import { ModelField } from "../harness/ModelField";
+import { Section } from "../settings/parts";
 import { KeyField } from "./KeyField";
 import { type Field as FieldForm, type KeyChoice, type OptionalForm, PROTOCOLS } from "./model";
 
@@ -37,88 +37,86 @@ export function OptionalBox({
 }) {
   if (!optional.on) {
     return (
-      <Box title={heading} className="flex flex-col gap-4">
-        <p className="m-0 max-w-prose text-base text-secondary">
-          {optional.wasOn ? "Turned off; Save takes it out of the file." : off}
-        </p>
-        <div>
-          <Button
-            variant="secondary"
-            size="sm"
-            aria-label={`Turn on the ${heading.toLowerCase()}`}
-            onClick={onToggle}
+      <Section title={heading}>
+        <Rows>
+          <FieldRow
+            label={heading}
+            description={optional.wasOn ? "Turned off; Save takes it out of the file." : off}
           >
-            Turn on
-          </Button>
-        </div>
-      </Box>
+            <Button
+              variant="secondary"
+              size="sm"
+              aria-label={`Turn on the ${heading.toLowerCase()}`}
+              onClick={onToggle}
+            >
+              Turn on
+            </Button>
+          </FieldRow>
+        </Rows>
+      </Section>
     );
   }
   return (
-    <Box title={heading} className="flex flex-col gap-4">
-      <p className="m-0 max-w-prose text-base text-secondary">{about}</p>
-      <div className="grid items-start gap-4 sm:grid-cols-2">
+    <Section title={heading}>
+      <p className="m-0 mb-3 max-w-prose text-sm text-secondary">{about}</p>
+      <Rows>
         {optional.fields.map((field: FieldForm) => (
-          <Field
+          <FieldRow
             key={field.key}
             label={field.label}
-            hint={
+            description={
               field.default !== null && field.text.trim() === ""
                 ? `Default ${field.default}`
                 : undefined
             }
+            wide
           >
-            {(id) =>
-              field.kind === "model" ? (
-                <ModelField
-                  id={id}
-                  choices={choices}
-                  value={field.text}
-                  placeholder={field.default ?? ""}
-                  onChange={(text) => onField(field.key, text)}
-                  onPick={onPick}
-                />
-              ) : field.kind === "pick" ? (
-                <Select
-                  id={id}
-                  options={[...PROTOCOLS]}
-                  value={field.text}
-                  onChange={(text) => onField(field.key, text)}
-                />
-              ) : (
-                <Input
-                  id={id}
-                  mono={field.kind === "code" || field.kind === "list"}
-                  className={
-                    field.kind === "whole" || field.kind === "decimal" ? "tabular-nums" : undefined
-                  }
-                  value={field.text}
-                  placeholder={field.default ?? ""}
-                  onChange={(event) => onField(field.key, event.target.value)}
-                />
-              )
-            }
-          </Field>
+            {field.kind === "model" ? (
+              <ModelField
+                choices={choices}
+                value={field.text}
+                placeholder={field.default ?? ""}
+                onChange={(text) => onField(field.key, text)}
+                onPick={onPick}
+              />
+            ) : field.kind === "pick" ? (
+              <Select
+                options={[...PROTOCOLS]}
+                value={field.text}
+                onChange={(text) => onField(field.key, text)}
+              />
+            ) : (
+              <Input
+                mono={field.kind === "code" || field.kind === "list"}
+                className={
+                  field.kind === "whole" || field.kind === "decimal" ? "tabular-nums" : undefined
+                }
+                value={field.text}
+                placeholder={field.default ?? ""}
+                onChange={(event) => onField(field.key, event.target.value)}
+              />
+            )}
+          </FieldRow>
         ))}
-      </div>
-      {optional.key && onKey && (
-        <KeyField
-          label="Key of the decision model"
-          choice={optional.key.now}
-          secrets={secrets ?? []}
-          onChange={onKey}
-        />
-      )}
-      <div>
-        <Button
-          variant="secondary"
-          size="sm"
-          aria-label={`Turn off the ${heading.toLowerCase()}`}
-          onClick={onToggle}
-        >
-          Turn off
-        </Button>
-      </div>
-    </Box>
+        {optional.key && onKey && (
+          <KeyField
+            label="Key of the decision model"
+            choice={optional.key.now}
+            secrets={secrets ?? []}
+            onChange={onKey}
+          />
+        )}
+        <FieldRow label={`Turn off the ${heading.toLowerCase()}`}>
+          <Button
+            variant="secondary"
+            size="sm"
+            aria-label={`Turn off the ${heading.toLowerCase()}`}
+            onClick={onToggle}
+          >
+            Turn off
+          </Button>
+        </FieldRow>
+      </Rows>
+    </Section>
   );
 }

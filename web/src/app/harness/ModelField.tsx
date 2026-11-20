@@ -25,7 +25,8 @@ export function ModelField({
   onChange,
   onPick,
 }: {
-  id: string;
+  /** For a caller whose label points at it; a control in a `FieldRow` is named by the row. */
+  id?: string;
   choices: ModelChoice[];
   value: string;
   placeholder: string;
