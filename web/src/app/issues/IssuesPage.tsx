@@ -5,7 +5,7 @@
  * the filtering (`GET /v1/issues`); the values a filter offers come from the cards there are.
  */
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Link } from "react-router";
+import { useState } from "react";
 import { listIssues, listKinds } from "../../api/calls/kinds";
 import { people as loadPeople } from "../../api/calls/people";
 import { listProjects } from "../../api/calls/projects";
@@ -14,17 +14,26 @@ import { keys } from "../../api/keys";
 import { FilterBar } from "../../ui/filters/FilterBar";
 import { readDisplay, readFilters } from "../../ui/filters/model";
 import { useQueryParams } from "../../ui/filters/useQueryParams";
-import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
+import { ListRow } from "../../ui/page/ListRow";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
-import { SkeletonLines } from "../../ui/page/Skeleton";
+import { SkeletonList } from "../../ui/page/Skeleton";
+import { useFillHeight } from "../../ui/page/useFillHeight";
+import { VirtualList } from "../../ui/page/VirtualList";
+import { iconOf } from "../board/CardWindow";
+import { useOpenCard } from "../board/CardWindowHost";
 import { cardKey } from "../board/cardKey";
+import { isHeld, isLive } from "../board/model";
+import { rowAge } from "../board/rowAge";
 import { fieldsLine, issueDisplayChoices, issueFilterFields, issueQuery } from "../kinds/model";
-import { cardPath } from "../pages";
 
 export function IssuesPage() {
   const [params, setQuery] = useQueryParams();
+  const openCard = useOpenCard();
+  const fill = useFillHeight();
+  const [selected, setSelected] = useState<string | null>(null);
+  const now = Date.now() / 1000;
   const kinds = useQuery({ queryKey: keys.issueKinds, queryFn: listKinds });
   const projects = useQuery({ queryKey: keys.projects, queryFn: listProjects });
   const people = useQuery({ queryKey: keys.people, queryFn: loadPeople });
@@ -68,7 +77,7 @@ export function IssuesPage() {
           onChange: (next) => setQuery({ sort: next.sort }),
         }}
       />
-      {shown.isPending && <SkeletonLines lines={4} message="Reading the issues" />}
+      {shown.isPending && <SkeletonList rows={6} message="Reading the issues" />}
       {shown.isError && (
         <Notice tone="error">
           {sayError(shown.error, "Could not read the issues. Try again.")}
@@ -78,27 +87,35 @@ export function IssuesPage() {
         <Empty title="No issue matches" body="Take a filter off to see more of them." />
       )}
       {shown.data && shown.data.length > 0 && (
-        <Box title={`${shown.data.length} issues`} padded={false}>
-          <ul className="m-0 flex list-none flex-col p-0">
-            {shown.data.map((card) => (
-              <li
-                key={card.id}
-                data-testid={`issue-${card.id}`}
-                className="flex flex-wrap items-baseline gap-x-3 border-b border-hairline px-4 py-2 last:border-b-0"
-              >
-                <span className="text-sm text-secondary tabular-nums">{cardKey(card)}</span>
-                <Link
-                  className="min-w-0 flex-1 text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
-                  to={cardPath(card.repository_id, card.id)}
-                >
-                  {card.title}
-                </Link>
-                {card.kind && <span className="text-sm text-secondary">{card.kind}</span>}
-                <span className="text-sm text-secondary">{fieldsLine(card)}</span>
-              </li>
-            ))}
-          </ul>
-        </Box>
+        <div ref={fill.ref} style={{ height: fill.height }}>
+          <VirtualList
+            label="Issues"
+            items={shown.data.map((card) => ({
+              type: "row" as const,
+              key: String(card.id),
+              data: card,
+            }))}
+            selectedKey={selected}
+            onSelect={setSelected}
+            onOpen={(key) => openCard(Number(key))}
+            className="h-full outline-none"
+            renderRow={(card, { at, onClick, selected: chosen }) => (
+              <ListRow
+                at={at}
+                status={iconOf(card, isHeld(card) ? "held" : isLive(card) ? "live" : "idle")}
+                id={cardKey(card)}
+                title={card.title}
+                reason={card.kind ? `${card.kind} ${fieldsLine(card)}`.trim() : fieldsLine(card)}
+                age={rowAge(card.created_at, now)}
+                selected={chosen}
+                onClick={(event) => {
+                  onClick(event);
+                  openCard(card.id);
+                }}
+              />
+            )}
+          />
+        </div>
       )}
     </div>
   );
