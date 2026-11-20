@@ -44,7 +44,7 @@ agent's run token may use is the column Run token of [Roles](#roles); the others
 can do this`. Where a route below says "a person" and "decider
 `person`" (it is `person:<handle>` of the person whose access token or session it is, and `person:owner` for the
 server's token), an agent that uses its token is the decider instead.
-Records from before people had identities keep the author or decider `person`, which the migration gave to the first owner; no new record is made with it.
+Records from before people had identities had the author or decider `person`; the migration gave them to the first owner, so they now say `person:owner`, and no new record is made with `person`.
 
 A browser signs in once and then carries the cookie `moebius_session` (`HttpOnly; SameSite=Strict; Path=/`, and `Secure` when
 a proxy in front of the server says with `X-Forwarded-Proto: https` that the browser used TLS). Every route, the
