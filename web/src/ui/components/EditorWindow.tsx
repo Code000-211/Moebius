@@ -91,30 +91,34 @@ export function EditorWindow({
               {error}
             </p>
           )}
-          {asking ? (
-            <div role="alertdialog" aria-label="Discard changes?" className="flex flex-col gap-3">
-              <p className="m-0 text-base text-text">Discard changes? What you typed is lost.</p>
-              <DialogFooter>
-                <Button variant="secondary" size="sm" onClick={() => setAsking(false)}>
-                  Keep editing
-                </Button>
-                <Button variant="danger" size="sm" onClick={leave}>
-                  Discard
-                </Button>
-              </DialogFooter>
-            </div>
-          ) : (
-            <DialogFooter className="items-center">
-              {actions && <div className="flex gap-2 sm:mr-auto">{actions}</div>}
-              <Button variant="secondary" size="sm" disabled={saving} onClick={close}>
-                Cancel
+        </div>
+        {asking ? (
+          <div
+            role="alertdialog"
+            aria-label="Discard changes?"
+            className="flex flex-col gap-3 border-t border-hairline px-6 py-4"
+          >
+            <p className="m-0 text-base text-text">Discard changes? What you typed is lost.</p>
+            <DialogFooter>
+              <Button variant="secondary" size="sm" autoFocus onClick={() => setAsking(false)}>
+                Keep editing
               </Button>
-              <Button size="sm" disabled={saving || !canSave || !dirty} onClick={onSave}>
-                {saving ? "Saving" : "Save"}
+              <Button variant="danger" size="sm" onClick={leave}>
+                Discard
               </Button>
             </DialogFooter>
-          )}
-        </div>
+          </div>
+        ) : (
+          <DialogFooter className="items-center border-t border-hairline px-6 py-3">
+            {actions && <div className="flex gap-2 sm:mr-auto">{actions}</div>}
+            <Button variant="secondary" size="sm" disabled={saving} onClick={close}>
+              Cancel
+            </Button>
+            <Button size="sm" disabled={saving || !canSave || !dirty} onClick={onSave}>
+              {saving ? "Saving" : "Save"}
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );
