@@ -74,6 +74,18 @@ export function ago(now: number, then: number): string {
 }
 
 /**
+ * The age of something in the few characters a list row has for it: `now`, `2m`, `3h`, `1d`. `now` and `then` are Unix
+ * seconds. `ago` is the sentence form, for places with room.
+ */
+export function compactAge(now: number, then: number): string {
+  const seconds = Math.max(0, now - then);
+  if (seconds < 60) return "now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h`;
+  return `${Math.floor(seconds / 86_400)}d`;
+}
+
+/**
  * A day in words: "Today", then "Yesterday", then the date — `27 Oct`, with the year once it leaves this one. The two
  * days nearest now are the two nobody has to work out; from two days back a date is shorter and steadier than "3 days
  * ago", which goes stale while the page stays open.

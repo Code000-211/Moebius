@@ -1,76 +1,65 @@
 /**
- * One item of the Inbox as a quiet row without buttons: the kind's status icon, the key of what it is about, the title
- * with a grey line of context under it (the kind's word, where it comes from and why it is here), the time and a dot
- * while it is unread. Choosing the row shows what to decide in the right sidebar (`Decision.tsx`) and reads the item.
+ * One row of the Inbox list: the shared 36px `ListRow` drawn from an `Entry` of `model.ts`. The status icon, the key,
+ * the title, one pale reason, and on the right the owner's avatar (a person only) and the age. A row that waits for a
+ * plan to be approved carries the one action, Approve plan, which approves without opening the card. Choosing the row
+ * is the list's: it selects it, and the page opens the card window or shows what to decide.
  */
-import type { InboxItem, Snapshot } from "../../api/types/board";
-import { cn } from "../../ui/lib/cn";
-import { ago } from "../../ui/lib/format";
-import { MarkIcon } from "../../ui/page/MarkLabel";
-import { found, keyOf, kindTag, meta, why } from "./model";
+import type { MouseEvent } from "react";
+import { Button } from "../../ui/components/Button";
+import { compactAge } from "../../ui/lib/format";
+import { ListRow, type RowPosition } from "../../ui/page/ListRow";
+import type { Entry } from "./model";
 
 export function InboxRow({
-  item,
-  snapshot,
+  entry,
   now,
-  chosen,
+  at,
+  selected,
   unread,
-  onChoose,
+  approving,
+  onClick,
+  onApprove,
 }: {
-  item: InboxItem;
-  snapshot: Snapshot;
+  entry: Entry;
   now: number;
-  chosen: boolean;
+  at: RowPosition;
+  selected: boolean;
   unread: boolean;
-  onChoose: () => void;
+  approving: boolean;
+  onClick: (event: MouseEvent<HTMLElement>) => void;
+  onApprove: (card: number) => void;
 }) {
-  const about = found(snapshot, item);
-  const { label, mark } = kindTag(item);
-  const rest = [meta(item, about), why(item, about) ?? ""]
-    .filter((part) => part !== "")
-    .join(" · ");
-  const key = keyOf(item, about);
+  const card = entry.approves;
   return (
-    <button
-      type="button"
+    <ListRow
       data-testid="inbox-item"
-      data-kind={item.kind}
-      data-unread={unread ? "" : undefined}
-      aria-pressed={chosen}
-      onClick={onChoose}
-      className={cn(
-        "flex min-h-12 w-full cursor-pointer items-center gap-3 px-4 py-2 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover",
-        chosen && "bg-selected",
-      )}
-    >
-      <span className="flex w-4 shrink-0 justify-center">
-        <MarkIcon mark={mark} />
-      </span>
-      {key !== "" && (
-        <span className="w-20 shrink-0 truncate text-sm tabular-nums text-secondary">{key}</span>
-      )}
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className={cn("truncate text-base text-text", unread && "font-semibold")}>
-          {item.title}
-        </span>
-        <span className="flex min-w-0 gap-1 text-sm text-secondary">
-          <span className="shrink-0">{label}</span>
-          {rest !== "" && <span className="min-w-0 truncate">· {rest}</span>}
-        </span>
-      </span>
-      <span className="shrink-0 text-sm tabular-nums text-secondary">{ago(now, item.at)}</span>
-      <span className="flex w-2 shrink-0 justify-center">
-        {unread && (
-          <>
-            <span
-              aria-hidden="true"
-              data-testid="unread-dot"
-              className="size-2 rounded-full bg-accent"
-            />
-            <span className="sr-only">Unread</span>
-          </>
-        )}
-      </span>
-    </button>
+      data-kind={entry.item?.kind ?? "card"}
+      at={at}
+      selected={selected}
+      unread={unread}
+      onClick={onClick}
+      status={entry.status}
+      id={entry.id}
+      title={entry.title}
+      reason={entry.reason}
+      owner={entry.owner}
+      age={entry.at === null ? undefined : compactAge(now, entry.at)}
+      action={
+        card === null ? undefined : (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={approving}
+            className="text-accent-text"
+            onClick={(event) => {
+              event.stopPropagation();
+              onApprove(card);
+            }}
+          >
+            Approve plan
+          </Button>
+        )
+      }
+    />
   );
 }

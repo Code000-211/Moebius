@@ -49,6 +49,7 @@ export function ListRow({
   owner,
   age,
   selected = false,
+  unread = false,
   at,
   onClick,
   className,
@@ -67,10 +68,15 @@ export function ListRow({
   /** The age, already said the compact way (`2m`). */
   age?: string;
   selected?: boolean;
+  /** Draws a small accent dot after the title and until the row has been read. */
+  unread?: boolean;
   at?: RowPosition;
   onClick?: (event: MouseEvent<HTMLDivElement>) => void;
   className?: string;
   "data-key"?: string;
+  /** What a page's tests look a row up by, where it names its own. */
+  "data-testid"?: string;
+  "data-kind"?: string;
 }) {
   return (
     // biome-ignore lint/a11y/useKeyWithClickEvents: the list owns the keys (arrows and Enter); a click is the pointer's way to the same open
@@ -79,6 +85,7 @@ export function ListRow({
       role="listitem"
       data-testid="list-row"
       data-selected={selected ? "true" : undefined}
+      data-unread={unread ? "" : undefined}
       aria-current={selected ? "true" : undefined}
       onClick={onClick}
       {...position(at)}
@@ -95,6 +102,16 @@ export function ListRow({
       <StatusIcon state={status} />
       <span className="w-16 shrink-0 truncate font-mono text-xs text-muted">{id}</span>
       <span className="min-w-0 shrink truncate font-medium text-text">{title}</span>
+      {unread && (
+        <>
+          <span
+            aria-hidden="true"
+            data-testid="unread-dot"
+            className="size-1.5 shrink-0 rounded-full bg-accent"
+          />
+          <span className="sr-only">Unread</span>
+        </>
+      )}
       {reason && <span className="min-w-0 shrink-[2] truncate text-muted">{reason}</span>}
       <span className="ml-auto flex shrink-0 items-center gap-2.5">
         {action}
