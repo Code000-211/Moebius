@@ -57,7 +57,10 @@ export function ModelsBox({ report, span }: { report: UsageReport; span: string 
               />
             ))}
           </div>
-          <Table head={["Model", "Tokens", "Share", "Calls", "Tokens per call", "From cache"]}>
+          <Table
+            figures
+            head={["Model", "Tokens", "Share", "Calls", "Tokens per call", "From cache"]}
+          >
             {report.models.map((model) => (
               <tr key={model.model}>
                 {word(
@@ -133,7 +136,7 @@ export function WaitsBox({ report }: { report: UsageReport }) {
           No tool call waited long enough to be worth naming.
         </p>
       ) : (
-        <Table head={["Tool call", "Calls", "Waited"]}>
+        <Table figures head={["Tool call", "Calls", "Waited"]}>
           {report.tool_waits.map((wait) => (
             <tr key={wait.tool}>
               {word(code(wait.tool))}
@@ -150,14 +153,11 @@ export function WaitsBox({ report }: { report: UsageReport }) {
 /** What each agent used, so a person can see where the tokens came from. */
 export function AgentsBox({ report }: { report: UsageReport }) {
   return (
-    <Box
-      title="By agent"
-      aside={report.agents.length > 0 ? plural(report.agents.length, "agent", "agents") : undefined}
-    >
+    <Box title="By agent">
       {report.agents.length === 0 ? (
         <p className="m-0 text-base text-secondary">{NOTHING}</p>
       ) : (
-        <Table head={["Agent", "Calls", "Tokens", "From cache", "Model time"]}>
+        <Table figures head={["Agent", "Calls", "Tokens", "From cache", "Model time"]}>
           {report.agents.map((agent) => (
             <tr key={agent.agent}>
               {word(agent.agent)}

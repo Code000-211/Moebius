@@ -1076,6 +1076,19 @@ describe("the fleet", () => {
   });
 });
 
+/** The figures at the head of a page are in tabular numerals, and nothing on it casts a shadow. */
+async function expectFlatFigures(page: Page) {
+  const numerals = await page
+    .locator("[data-figure]")
+    .evaluateAll((all) => all.map((el) => getComputedStyle(el).fontVariantNumeric));
+  expect(numerals.length).toBeGreaterThan(0);
+  for (const each of numerals) expect(each).toContain("tabular-nums");
+  const shadows = await page
+    .locator("main section")
+    .evaluateAll((all) => all.map((el) => getComputedStyle(el).boxShadow));
+  for (const each of shadows) expect(each).toBe("none");
+}
+
 describe("usage", () => {
   it("loads for a real server and for the fake", async () => {
     await open("/usage");
@@ -1091,6 +1104,7 @@ describe("usage", () => {
     async () => {
       await open("/usage");
       await page.getByText("1.84M", { exact: true }).first().waitFor();
+      await expectFlatFigures(page);
       // The figure and the budget it is measured against are read together, in that order.
       await page.getByText("of the 8M token budget, 23% used").waitFor();
       await page.getByText("1,284", { exact: true }).waitFor();
@@ -1099,7 +1113,7 @@ describe("usage", () => {
       // The heatmap: a cell for each day of 53 weeks, and the busiest day.
       expect(await page.getByTestId("heatmap").locator("span[title]").count()).toBeGreaterThan(300);
       await page.getByText(/busiest day Sat 24 Oct with 2\.52M/).waitFor();
-      await page.getByText(/The stronger the colour, the more tokens that day used/).waitFor();
+      await page.getByText("No tokens that day").waitFor();
       await page.getByRole("heading", { name: "Tokens by model" }).waitFor();
       const models = page.getByRole("table").first();
       await models.getByText("qwen-flash").waitFor();
@@ -1160,6 +1174,7 @@ describe("analytics", () => {
       await page.getByRole("cell", { name: "demo" }).waitFor();
       await page.getByText("Cycle 3").waitFor();
       await page.getByText("Launch").waitFor();
+      await expectFlatFigures(page);
       await page.getByRole("button", { name: "7 days" }).click();
       const tile = page.getByTestId("Cards done");
       await tile.getByText("7", { exact: true }).waitFor();

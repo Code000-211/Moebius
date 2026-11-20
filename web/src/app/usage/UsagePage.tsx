@@ -14,15 +14,14 @@ import type { UsageReport } from "../../api/types/usage";
 import { Button } from "../../ui/components/Button";
 import { FilterBar } from "../../ui/filters/FilterBar";
 import { cn } from "../../ui/lib/cn";
-import { Box } from "../../ui/page/Box";
 import { Chip } from "../../ui/page/Chip";
+import { Figures } from "../../ui/page/Figures";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
-import { Reading, SkeletonCard } from "../../ui/page/Skeleton";
+import { Reading, SkeletonLines } from "../../ui/page/Skeleton";
 import { StateLabel } from "../../ui/page/StateLabel";
 import { useDays, useScopeFilters } from "../scope";
 import { AgentsBox, ModelsBox, TimeBox, WaitsBox } from "./Boxes";
-import { short } from "./figures";
 import { Heatmap } from "./Heatmap";
 import { type MeterTone, span, tiles, tokenFigure, WINDOWS } from "./model";
 
@@ -33,45 +32,39 @@ const METER: Record<MeterTone, string> = {
   error: "bg-error",
 };
 
-/** The focal figure: what the chosen window cost, and today against the day's budget. */
-function WindowBox({ report }: { report: UsageReport }) {
+/**
+ * The figures at the head of the page: the tokens the chosen window used, then its other totals, with today against
+ * the day's budget as one thin bar and a line under them.
+ */
+function Head({ report }: { report: UsageReport }) {
   const { title, value, note, meter } = tokenFigure(report);
   return (
-    <section className="flex flex-col gap-4 rounded-card bg-surface p-4 shadow-card">
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="m-0 text-lg font-semibold tracking-tight text-text">{title}</h2>
+    <section className="flex flex-col gap-3 pb-4">
+      <Figures
+        items={[
+          { label: title, value },
+          ...tiles(report).map((tile) => ({
+            label: tile.label,
+            value: tile.value,
+            hint: tile.note,
+          })),
+        ]}
+      />
+      <div className="flex flex-wrap items-center gap-3 text-sm text-muted">
         {meter && <StateLabel tone={meter.tone}>{meter.word}</StateLabel>}
-      </div>
-      <div className="flex flex-wrap items-baseline gap-3">
-        <span className="text-2xl font-semibold tabular-nums text-text">{value}</span>
-        <span className="text-base text-secondary">{note}</span>
-      </div>
-      {meter && (
-        <>
-          <div aria-hidden="true" className="flex h-2 gap-px overflow-hidden rounded-full bg-track">
-            {meter.used > 0 && (
-              <span
-                className={cn("h-full rounded-full", METER[meter.tone])}
-                style={{ flex: `${Math.min(100, meter.used) * 100} 1 0` }}
-              />
-            )}
-            <span className="h-full flex-1 rounded-full bg-track" />
+        {meter && (
+          <div
+            aria-hidden="true"
+            className="flex h-1.5 w-40 gap-px overflow-hidden rounded-full bg-track"
+          >
+            <span
+              className={cn("h-full rounded-full", METER[meter.tone])}
+              style={{ width: `${Math.min(100, meter.used * 100)}%` }}
+            />
           </div>
-          <p className="m-0 text-sm text-secondary">
-            {meter.used >= 1 ? (
-              <>
-                Today is over its budget by{" "}
-                <span className="tabular-nums">{short(meter.tokens - meter.budget)}</span>.
-              </>
-            ) : (
-              <>
-                <span className="tabular-nums">{short(meter.budget - meter.tokens)}</span> left for
-                today.
-              </>
-            )}
-          </p>
-        </>
-      )}
+        )}
+        <span>{note}</span>
+      </div>
     </section>
   );
 }
@@ -132,26 +125,11 @@ export function UsagePage() {
         </Notice>
       ) : !data ? (
         <Reading message="Reading usage" className="flex flex-col gap-4">
-          <SkeletonCard lines={1} />
-          <div className="grid gap-4 sm:grid-cols-3">
-            {[0, 1, 2].map((tile) => (
-              <SkeletonCard key={tile} lines={2} />
-            ))}
-          </div>
+          <SkeletonLines lines={2} />
         </Reading>
       ) : (
         <div className="flex flex-col gap-4" data-window={data.days_in_window}>
-          <WindowBox report={data} />
-          {/* The rest of the window's totals; the tokens it used are the figure above. */}
-          <div className="grid gap-4 sm:grid-cols-3">
-            {tiles(data).map((tile) => (
-              <Box key={tile.label} className="flex flex-col gap-2">
-                <span className="text-sm font-semibold text-secondary">{tile.label}</span>
-                <span className="text-xl font-semibold tabular-nums text-text">{tile.value}</span>
-                <span className="text-sm text-secondary">{tile.note}</span>
-              </Box>
-            ))}
-          </div>
+          <Head report={data} />
           <Heatmap report={data} />
           <ModelsBox report={data} span={span(data.days_in_window)} />
           <div className="grid gap-4 lg:grid-cols-2">

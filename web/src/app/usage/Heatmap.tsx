@@ -117,9 +117,6 @@ export function Heatmap({ report }: { report: UsageReport }) {
           <span aria-hidden="true" className="size-3 rounded-small bg-heat" />
           <span className="text-sm text-secondary">No tokens that day</span>
         </li>
-        <li className="text-sm text-secondary">
-          A model keeps one colour. The stronger the colour, the more tokens that day used.
-        </li>
       </ul>
     </Box>
   );
