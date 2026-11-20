@@ -56,7 +56,7 @@ async function add(page: Page, style: string, text: string) {
 }
 
 describe("state pills", () => {
-  for (const theme of ["dark", "light"] as const) {
+  for (const theme of ["light", "dark"] as const) {
     it(`are found when built any way in ${theme}`, async () => {
       const page = await open(theme, "/inbox");
       expect(await page.evaluate(findPills)).toEqual([]);
@@ -90,7 +90,7 @@ describe("state pills", () => {
       );
       await add(
         page,
-        "background:var(--selected);border-radius:6px;padding:2px 8px;height:28px",
+        "background:var(--control-fill);border-radius:6px;padding:2px 8px;height:28px",
         "All",
       );
       await add(
@@ -113,7 +113,7 @@ describe("state pills", () => {
     });
   }
 
-  for (const theme of ["dark", "light"] as const) {
+  for (const theme of ["light", "dark"] as const) {
     it(`are not on the pages that carried them in ${theme}`, async () => {
       for (const path of [
         "/inbox",

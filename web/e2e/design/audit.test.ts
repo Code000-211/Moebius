@@ -105,7 +105,7 @@ const only = (process.env.MOEBIUS_DESIGN_ONLY ?? "")
   .map((name) => name.trim())
   .filter((name) => name.length > 0);
 
-const themes = ["dark", "light"];
+const themes = ["light", "dark"];
 const widths = [
   { name: "wide", width: 1440, height: 900 },
   { name: "narrow", width: 900, height: 700 },
@@ -357,10 +357,10 @@ function measure(input: {
   path: string;
   theme: string;
 }): Omit<PageAudit, "name" | "path" | "status" | "pills"> {
-  const radii = new Set([0, 6, 8, 12]);
+  const radii = new Set([0, 6, 8, 10]);
   const sizes = new Set([11, 12, 13, 14, 15, 17, 20]);
   const canvas: [number, number, number, number] =
-    input.theme === "light" ? [253, 253, 252, 1] : [22, 22, 21, 1];
+    input.theme === "light" ? [255, 255, 255, 1] : [22, 22, 23, 1];
   const skipped = (el: Element) =>
     el.closest(".xterm") !== null ||
     el.closest(".cm-editor") !== null ||
@@ -539,7 +539,7 @@ function measure(input: {
         }
       }
       // A window or a dialog that draws a line round itself. A card has a quiet line, but the larger surfaces are set
-      // apart by their lightness, a faint edge and in light a soft shadow, which is why only a radius of 12 counts.
+      // apart by their lightness, a faint edge and in light a soft shadow, which is why only a radius of 10 counts.
       const edges = [
         px(style.borderTopWidth),
         px(style.borderRightWidth),
@@ -549,7 +549,7 @@ function measure(input: {
       const widest = Math.max(...edges);
       if (widest > 0 && style.borderStyle !== "none" && style.borderStyle !== "hidden") {
         const corner = Math.max(...style.borderRadius.split(" ").map(px));
-        if (corner >= 12)
+        if (corner >= 10)
           found.outlined.push(name(el, `${widest}px line at radius ${Math.round(corner)}`));
       }
     }

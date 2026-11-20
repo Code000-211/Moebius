@@ -46,7 +46,7 @@ function preference(): ThemePreference {
 function system(): MediaQueryList | null {
   if (typeof matchMedia === "undefined") return null;
   if (!following) {
-    following = matchMedia("(prefers-color-scheme: light)");
+    following = matchMedia("(prefers-color-scheme: dark)");
     following.addEventListener("change", notify);
   }
   return following;
@@ -56,7 +56,8 @@ let following: MediaQueryList | null = null;
 /** The theme a preference resolves to right now. */
 function resolve(preference: ThemePreference): Theme {
   if (preference !== "system") return preference;
-  return system()?.matches ? "light" : "dark";
+  // Light unless the system asks for dark: a system with no preference, or no way to ask, gets the primary theme.
+  return system()?.matches ? "dark" : "light";
 }
 
 /** Applies a preference to the document and remembers it; a browser that refuses to remember is not obeyed. */

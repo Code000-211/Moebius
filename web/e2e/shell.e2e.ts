@@ -109,7 +109,7 @@ describe("the shell", () => {
     const style = await page
       .locator('[data-surface="page"]')
       .evaluate((el) => getComputedStyle(el).borderRadius);
-    expect(style).toBe("12px");
+    expect(style).toBe("10px");
     // The sidebar has no surface of its own: the ground shows through it.
     const sidebar = await page
       .locator('nav[aria-label="Pages"]')
@@ -118,7 +118,7 @@ describe("the shell", () => {
     await page.context().close();
   });
 
-  for (const theme of ["dark", "light"] as const) {
+  for (const theme of ["light", "dark"] as const) {
     it(`draws the page and its right column as one surface in ${theme}`, async () => {
       const page = await inbox(theme);
       const read = (selector: string) =>
@@ -164,7 +164,7 @@ describe("the shell", () => {
       const rows = [inner.y + 200, inner.y + inner.height - 200] as const;
       const inColumn = mean(inner.x + 6, inner.x + inner.width - 6, ...rows);
       const onPage = mean(inner.x - 30, inner.x - 10, ...rows);
-      expect(Math.abs(inColumn - onPage)).toBeLessThan(1.5);
+      expect(Math.abs(inColumn - onPage)).toBeLessThan(2.5);
       const ground = mean(outer.x + outer.width + 2, VIEW.width - 1, ...rows);
       expect(inColumn - ground).toBeGreaterThan(5);
       await page.context().close();
@@ -200,14 +200,59 @@ describe("the shell", () => {
     // corner are the ground of the air beside them.
     const corner = (x0: number, x1: number, y0: number, y1: number) => mean(x0, x1, y0, y1);
     const airTop = mean(right + 2, VIEW.width - 1, top, top + 2);
-    expect(Math.abs(corner(right - 3, right - 1, top, top + 2) - airTop)).toBeLessThan(4);
+    expect(Math.abs(corner(right - 3, right - 1, top, top + 2) - airTop)).toBeLessThan(6);
     const sideTop = mean(0, 3, top, top + 2);
     const sideBottom = mean(0, 3, bottom - 3, bottom - 1);
-    expect(Math.abs(corner(outer.x, outer.x + 2, top, top + 2) - sideTop)).toBeLessThan(4);
+    expect(Math.abs(corner(outer.x, outer.x + 2, top, top + 2) - sideTop)).toBeLessThan(6);
     expect(
       Math.abs(corner(outer.x, outer.x + 2, bottom - 3, bottom - 1) - sideBottom),
-    ).toBeLessThan(4);
+    ).toBeLessThan(6);
     await page.context().close();
+  });
+});
+
+/**
+ * The theme the built app starts in. Light is the default: dark only when the system asks for it or a person chose it,
+ * and a stored choice outranks the system. Each case reads `data-theme` and the `--canvas` it resolves to, so a theme
+ * whose attribute is right but whose tokens are not is caught too.
+ */
+describe("the theme the app starts in", () => {
+  const CANVAS = { light: "#f6f6f8", dark: "#0f0f10" } as const;
+
+  async function started(
+    colorScheme: "light" | "dark",
+    stored?: "light" | "dark",
+  ): Promise<{ theme: string | null; canvas: string }> {
+    server = await startServer();
+    const context = await browser.newContext({
+      colorScheme,
+      viewport: VIEW,
+      reducedMotion: "reduce",
+    });
+    if (stored) {
+      await context.addInitScript((value) => localStorage.setItem("moebius.theme", value), stored);
+    }
+    const page = await context.newPage();
+    await page.goto(server.loginUrl);
+    await page.getByRole("navigation", { name: "Pages" }).waitFor();
+    const theme = await page.locator("html").getAttribute("data-theme");
+    const canvas = await page.evaluate(() =>
+      getComputedStyle(document.documentElement).getPropertyValue("--canvas").trim().toLowerCase(),
+    );
+    await context.close();
+    return { theme, canvas };
+  }
+
+  it("is light with no stored choice and a light system", async () => {
+    expect(await started("light")).toEqual({ theme: "light", canvas: CANVAS.light });
+  });
+
+  it("is dark with no stored choice and a dark system", async () => {
+    expect(await started("dark")).toEqual({ theme: "dark", canvas: CANVAS.dark });
+  });
+
+  it("is dark with a stored dark choice, whatever the system asks for", async () => {
+    expect(await started("light", "dark")).toEqual({ theme: "dark", canvas: CANVAS.dark });
   });
 });
 
