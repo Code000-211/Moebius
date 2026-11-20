@@ -78,7 +78,7 @@ export function CyclePage({
     <>
       {header}
       <TimeBar
-        className="mb-2"
+        className="mt-3 mb-2"
         start={cycle.starts_on}
         end={cycle.ends_on}
         axis={{ start: cycle.starts_on, end: cycle.ends_on }}
@@ -152,7 +152,7 @@ function Body({ detail }: { detail: CycleDetail }) {
         ))}
       </dl>
       <BurnUp detail={detail} />
-      <ul className="m-0 mt-4 flex list-none flex-col p-0" aria-label={`Cards of ${detail.name}`}>
+      <ul className="m-0 mt-6 flex list-none flex-col p-0" aria-label={`Cards of ${detail.name}`}>
         {detail.cards.map((card) => (
           <li
             key={card.id}

@@ -92,7 +92,7 @@ export function TimeBar({
         data-testid="time-bar-span"
         className={cn(
           "absolute inset-y-0 overflow-hidden rounded-full",
-          emphasis ? "bg-accent/25" : "bg-hairline-strong",
+          emphasis ? "bg-accent/30" : "bg-hairline-strong",
         )}
         style={{ left: `${left}%`, width: `${width}%` }}
       >
@@ -105,7 +105,7 @@ export function TimeBar({
         <div
           data-testid="time-bar-today"
           aria-hidden="true"
-          className="absolute -inset-y-4 w-px bg-accent"
+          className="absolute -inset-y-[14px] w-px bg-accent"
           style={{ left: `${todayAt.left + todayAt.width / 2}%` }}
         />
       )}
