@@ -89,7 +89,11 @@ export function CommandBar({
   const wikiHits = typed !== "" && Array.isArray(found.data) ? found.data : [];
 
   const boards = data.data?.boards ?? [];
-  const everyone = useQuery({ queryKey: keys.people, queryFn: loadPeople, enabled: open });
+  const everyone = useQuery({
+    queryKey: keys.people,
+    queryFn: loadPeople,
+    enabled: open && role === "owner",
+  });
   const recent = useMemo(() => (open ? readRecent() : []), [open]);
 
   function close() {
