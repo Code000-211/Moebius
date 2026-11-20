@@ -50,7 +50,7 @@ export function Paths({
     setTyped("");
   };
   return (
-    <Box title={heading} aside={aside} className="flex flex-col gap-4">
+    <Box title={heading} aside={aside} className="flex flex-col gap-4 [&>header]:mb-0">
       {paths.length === 0 && <p className="m-0 text-base text-secondary">{empty}</p>}
       {paths.map((path) => (
         <div key={path} className="flex min-h-8 flex-wrap items-center justify-between gap-3">

@@ -61,6 +61,7 @@ function fake(): PagesB {
 }
 
 const save = () => page.getByRole("button", { name: "Save", exact: true });
+const agentRow = (name: string) => page.getByTestId("agent-row").filter({ hasText: name }).first();
 const card = (name: string) => page.getByTestId("list-card").filter({ hasText: name }).first();
 /** The body of the first request to `method path`, as the fake received it. */
 function sent<T>(method: string, path: string): T {
@@ -75,16 +76,16 @@ describe("the Agents page", () => {
   it("loads and lists the agents", async () => {
     await open("/agents");
     await page.getByRole("heading", { name: "Agents", exact: true }).waitFor();
-    await card("Moebius").waitFor();
+    await agentRow("Moebius").waitFor();
   });
 
   it.skipIf(usesRealServer)("lists the built-in, the own and the broken agents", async () => {
     await open("/agents");
-    await card("Coder").waitFor();
-    expect(await card("Moebius").textContent()).toContain("Built in");
-    expect(await card("Broken").textContent()).toContain("Broken");
-    expect(await card("Broken").textContent()).toContain("missing field `model`");
-    expect(await card("Coder").textContent()).toContain("fake-coder · openai");
+    await agentRow("Coder").waitFor();
+    expect(await agentRow("Moebius").textContent()).toContain("Built in");
+    expect(await agentRow("Broken").textContent()).toContain("Broken");
+    expect(await agentRow("Broken").textContent()).toContain("missing field `model`");
+    expect(await agentRow("Coder").textContent()).toContain("fake-coder · openai");
   });
 
   it.skipIf(usesRealServer)(
@@ -105,6 +106,8 @@ describe("the Agents page", () => {
         .fill("Keep changes tiny.");
       await save().click();
       await page.getByText("Saved as commit c0ffee1.").waitFor();
+      // A saved agent closes its window.
+      await page.getByTestId("editor-window").waitFor({ state: "detached" });
       expect(requests("PUT", "/v1/agents/Coder")[0]?.body).toEqual({
         settings: {
           model: "claude-fake",
@@ -117,9 +120,9 @@ describe("the Agents page", () => {
         },
         instructions: "Keep changes tiny.",
       });
-      // Nothing waits for the server now, so Save itself says so by resting.
-      expect(await save().isDisabled()).toBe(true);
+      expect(page.url()).not.toContain("agent=");
 
+      await agentRow("Coder").click();
       await page.getByLabel("Token budget per card").fill("0");
       await save().click();
       await page.getByText("The token budget is a whole number of at least 1.").waitFor();
@@ -136,15 +139,15 @@ describe("the Agents page", () => {
     await page.getByRole("button", { name: "docs", exact: true }).click();
     await page.getByLabel("extension path").fill("extensions/log.ts");
     await page.getByRole("button", { name: "Add extension" }).click();
+    // A server that cannot be read is marked in red and cannot be chosen away silently.
+    expect(await page.getByRole("button", { name: "broken", exact: true }).textContent()).toBe(
+      "broken",
+    );
     await save().click();
     await page.getByText("Saved as commit").waitFor();
     expect(requests("PUT", "/v1/agents/Reviewer")[0]?.body).toMatchObject({
       settings: { skills: ["house-style"], mcp: ["docs"], extensions: ["extensions/log.ts"] },
     });
-    // A server that cannot be read is marked in red and cannot be chosen away silently.
-    expect(await page.getByRole("button", { name: "broken", exact: true }).textContent()).toBe(
-      "broken",
-    );
   });
 
   it.skipIf(usesRealServer)(
@@ -161,16 +164,18 @@ describe("the Agents page", () => {
       await pickOption(page, page.getByLabel("Model", { exact: true }), "fake-small");
       await save().click();
       await page.getByText("Saved as commit").waitFor();
-      await card("Tester").waitFor();
+      await agentRow("Tester").waitFor();
       expect(fake().agents.Tester?.settings.model).toBe("fake-small");
 
+      await agentRow("Tester").click();
       await page.getByRole("button", { name: "Delete agent" }).click();
-      await page.getByText("Delete Tester?").waitFor();
+      await page.getByText("Delete this agent?").waitFor();
       await page.getByRole("button", { name: "Keep" }).click();
+      await page.getByText("Delete this agent?").waitFor({ state: "detached" });
       expect(fake().agents.Tester).toBeDefined();
       await page.getByRole("button", { name: "Delete agent" }).click();
       await page.getByRole("button", { name: "Delete agent" }).last().click();
-      await card("Tester").waitFor({ state: "detached" });
+      await agentRow("Tester").waitFor({ state: "detached" });
       expect(fake().agents.Tester).toBeUndefined();
     },
   );
@@ -201,7 +206,7 @@ describe("the Agents page", () => {
         // The Reviewer is built in: its built-in instructions come first, and are the copy's own.
         instructions: expect.stringMatching(/^You are the Reviewer\.[\s\S]*Review kindly\.$/),
       });
-      await card("Reviewer2").waitFor();
+      await agentRow("Reviewer2").waitFor();
     },
   );
 
@@ -213,7 +218,7 @@ describe("the Agents page", () => {
         delete f.agents.Coder;
       });
       const coder = page
-        .getByTestId("list-card")
+        .getByTestId("agent-row")
         .filter({ has: page.getByText("Coder", { exact: true }) });
       await coder.waitFor();
       expect(await coder.textContent()).toContain("Built in");
@@ -292,10 +297,7 @@ describe("the Agents page", () => {
       await page.getByLabel("skill path").fill("skills/extra");
       await page.getByRole("button", { name: "Add skill" }).click();
       await save().click();
-      await page
-        .getByTestId("detail-column")
-        .getByText("Saved in moebius.toml.", { exact: true })
-        .waitFor();
+      await page.getByText("Saved in moebius.toml.", { exact: true }).waitFor();
       const { set } = sent<{ set: Record<string, unknown> }>("PUT", "/v1/settings");
       expect(set["agents.Coder"]).toMatchObject({
         model: "fake-small",

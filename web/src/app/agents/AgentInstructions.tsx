@@ -31,7 +31,7 @@ export function AgentInstructions({
     onError: (error) => onProblem(error.message),
   });
   return (
-    <Box title="Instructions" className="flex flex-col gap-4">
+    <Box title="Instructions" className="flex flex-col gap-4 [&>header]:mb-0">
       {!form.naming && (
         <div className="flex flex-wrap gap-3">
           <Chip selected={!byAgent} onClick={() => setByAgent(false)}>

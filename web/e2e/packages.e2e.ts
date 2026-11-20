@@ -300,11 +300,8 @@ describe.skipIf(usesRealServer)("an agent's Extensions and the pi.dev catalog", 
     await sheet().waitFor();
     await sheet().getByText("Pi packages from pi.dev, for Reviewer").waitFor();
 
-    // The editor is not under the sheet: its Extensions can be scrolled to a place left of it.
-    await page.getByRole("button", { name: "Add extension" }).scrollIntoViewIfNeeded();
-    const editor = await page.getByRole("button", { name: "Add extension" }).boundingBox();
-    const box = await sheet().boundingBox();
-    expect((editor?.x ?? 0) + (editor?.width ?? 0)).toBeLessThanOrEqual(box?.x ?? 0);
+    // The editor window steps aside for the sheet, which lies beside the page.
+    await page.getByTestId("editor-window").waitFor({ state: "detached" });
 
     const row = sheet().getByTestId("list-card").filter({ hasText: "pi-web-access" });
     await row.waitFor();
