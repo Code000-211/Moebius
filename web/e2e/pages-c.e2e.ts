@@ -83,13 +83,13 @@ async function repository(): Promise<number> {
   return ((await response.json()) as { id: number }).id;
 }
 
+const editor = () => page.getByRole("dialog", { name: /^(Edit rule|New rule)/ });
+
 describe("the Rules page", () => {
-  it("loads, with the built-in patterns", async () => {
+  it("loads, with the built-in patterns and the server's rules in one list", async () => {
     await fresh();
     await open("/rules", "Rules");
-    await region("Built-in patterns").waitFor();
     await region("Built-in patterns").getByText("no-force-push").waitFor();
-    await page.getByRole("button", { name: /Server rules/ }).click();
     await region("Rules in prose").waitFor();
   });
 
@@ -122,92 +122,103 @@ describe("the Rules page", () => {
     await open("/rules", "Rules");
     const patterns = region("Built-in patterns");
     await patterns.getByText("git push --force rewrites history on the remote").waitFor();
-    await patterns.getByText("3 refusals this week").waitFor();
-    await patterns.getByText("No refusals this week").waitFor();
-    await page.getByRole("button", { name: /Server rules/ }).click();
+    await patterns.getByText("3 refusals").waitFor();
     const prose = region("Rules in prose");
     await prose.getByText("leave-ci-alone").waitFor();
-    await prose.getByText("1 refusal this week").waitFor();
+    await prose.getByText("1 refusal").waitFor();
     await prose.getByText("Do not copy dependencies into the tree.").waitFor();
-    await page.getByRole("button", { name: /^demo/ }).click();
     await region("demo").getByText("keep-migrations").waitFor();
-    await region("demo")
-      .getByText("Saved as a commit in the harness configuration repository (repos/demo/rules.md).")
-      .waitFor();
   });
 
-  it.skipIf(usesRealServer)("saves a rule edited in its card as the whole file", async () => {
+  it.skipIf(usesRealServer)(
+    "saves a rule edited in the editor window as the whole file",
+    async () => {
+      await fresh();
+      await open("/rules", "Rules");
+      const prose = region("Rules in prose");
+      await prose.getByRole("button", { name: "Edit rule no-vendoring" }).click();
+      const text = editor().getByLabel("Rule text");
+      await text.fill("Do not copy dependencies into the tree. Use the package manager.");
+      await editor().getByRole("button", { name: "Save", exact: true }).click();
+      await status("Committed: a1b2c3d").waitFor();
+      expect(lastRequest()).toMatchObject({
+        method: "PUT",
+        path: "/v1/rules",
+        body: {
+          text: "Rules for every run.\n\n## leave-ci-alone\nDo not edit files under .github/ or any other CI configuration.\n\n## no-vendoring\nDo not copy dependencies into the tree. Use the package manager.\n",
+        },
+      });
+      await editor().waitFor({ state: "detached" });
+      await prose.getByText("Use the package manager.").waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)("asks before Escape drops a change", async () => {
     await fresh();
-    await open("/rules?set=server", "Rules");
-    const prose = region("Rules in prose");
-    await prose.getByRole("button", { name: "Edit rule no-vendoring" }).click();
-    const text = prose.getByLabel("Rule text");
-    await text.fill("Do not copy dependencies into the tree. Use the package manager.");
-    await prose.getByRole("button", { name: "Save", exact: true }).click();
-    await prose.getByText("Committed: a1b2c3d").waitFor();
-    expect(lastRequest()).toMatchObject({
-      method: "PUT",
-      path: "/v1/rules",
-      body: {
-        text: "Rules for every run.\n\n## leave-ci-alone\nDo not edit files under .github/ or any other CI configuration.\n\n## no-vendoring\nDo not copy dependencies into the tree. Use the package manager.\n",
-      },
-    });
-    // The card is a card again, with the new text.
-    await prose.getByText("Use the package manager.").waitFor();
-    expect(await prose.getByLabel("Rule text").count()).toBe(0);
+    await open("/rules", "Rules");
+    await region("Rules in prose").getByRole("button", { name: "Edit rule no-vendoring" }).click();
+    await page.keyboard.press("Escape");
+    await editor().waitFor({ state: "detached" });
+    await region("Rules in prose").getByRole("button", { name: "Edit rule no-vendoring" }).click();
+    await editor().getByLabel("Rule text").fill("Changed.");
+    await page.keyboard.press("Escape");
+    await page.getByRole("alertdialog", { name: "Discard changes?" }).waitFor();
+    await page.getByRole("button", { name: "Keep editing" }).click();
+    expect(await editor().getByLabel("Rule text").inputValue()).toBe("Changed.");
+    await editor().getByRole("button", { name: "Cancel" }).click();
+    await page.getByRole("button", { name: "Discard", exact: true }).click();
+    await editor().waitFor({ state: "detached" });
   });
 
   it.skipIf(usesRealServer)("keeps a refused rule open and says why", async () => {
     await fresh();
-    await open("/rules?set=server", "Rules");
-    const prose = region("Rules in prose");
-    await prose.getByRole("button", { name: "Add a rule" }).click();
-    const save = prose.getByRole("button", { name: "Save", exact: true });
-    await prose.getByLabel("Rule name").fill("two words");
+    await open("/rules", "Rules");
+    await region("Rules in prose").getByRole("button", { name: "Add a rule" }).click();
+    const save = editor().getByRole("button", { name: "Save", exact: true });
+    await editor().getByLabel("Rule name").fill("two words");
     expect(await save.isDisabled()).toBe(true);
-    await prose.getByLabel("Rule name").fill("leave-ci-alone");
-    await prose.getByLabel("Rule text").fill("Again.");
+    await editor().getByLabel("Rule name").fill("leave-ci-alone");
+    await editor().getByLabel("Rule text").fill("Again.");
     await save.click();
     await alert('line 9: the rule "leave-ci-alone" is named twice').waitFor();
-    expect(await prose.getByLabel("Rule name").inputValue()).toBe("leave-ci-alone");
-    await prose.getByRole("button", { name: "Cancel" }).click();
-    expect(await prose.getByLabel("Rule name").count()).toBe(0);
+    expect(await editor().getByLabel("Rule name").inputValue()).toBe("leave-ci-alone");
   });
 
   it.skipIf(usesRealServer)("adds a rule at the end and deletes one after asking", async () => {
     await fresh();
-    await open("/rules?set=server", "Rules");
+    await open("/rules", "Rules");
     const prose = region("Rules in prose");
     await prose.getByRole("button", { name: "Add a rule" }).click();
-    expect(await prose.getByRole("button", { name: "Delete rule" }).count()).toBe(0);
-    await prose.getByLabel("Rule name").fill("ask-first");
-    await prose.getByLabel("Rule text").fill("Ask before deleting a branch.");
-    await prose.getByRole("button", { name: "Save", exact: true }).click();
+    expect(await editor().getByRole("button", { name: "Delete rule" }).count()).toBe(0);
+    await editor().getByLabel("Rule name").fill("ask-first");
+    await editor().getByLabel("Rule text").fill("Ask before deleting a branch.");
+    await editor().getByRole("button", { name: "Save", exact: true }).click();
     await prose.getByText("ask-first").waitFor();
     expect(lastText()).toMatch(
       /into the tree\.\n\n## ask-first\nAsk before deleting a branch\.\n$/,
     );
 
     await prose.getByRole("button", { name: "Edit rule leave-ci-alone" }).click();
-    await prose.getByRole("button", { name: "Delete rule" }).click();
-    await prose.getByText("Delete this rule?").waitFor();
-    await prose.getByRole("button", { name: "Keep it" }).click();
-    await prose.getByRole("button", { name: "Delete rule" }).waitFor();
-    await prose.getByRole("button", { name: "Delete rule" }).click();
-    await prose.getByRole("button", { name: "Delete", exact: true }).click();
-    await prose.getByText("Committed: a1b2c3d").waitFor();
-    expect(await prose.getByText("leave-ci-alone").count()).toBe(0);
+    await editor().getByRole("button", { name: "Delete rule" }).click();
+    const ask = page.getByRole("dialog", { name: "Delete this rule?" });
+    await ask.waitFor();
+    await ask.getByRole("button", { name: "Keep" }).click();
+    await ask.waitFor({ state: "detached" });
+    await editor().getByRole("button", { name: "Delete rule" }).click();
+    await ask.getByRole("button", { name: "Delete rule" }).click();
+    await status("Committed: a1b2c3d").last().waitFor();
+    await prose.getByText("leave-ci-alone").waitFor({ state: "detached" });
     expect(lastText()).not.toContain("leave-ci-alone");
   });
 
   it.skipIf(usesRealServer)("saves the rules of a repository in its own file", async () => {
     await fresh();
-    await open("/rules?set=1", "Rules");
+    await open("/rules", "Rules");
     const box = region("demo");
     await box.getByRole("button", { name: "Edit rule keep-migrations" }).click();
-    await box.getByLabel("Rule text").fill("Do not edit a migration that exists, ever.");
-    await box.getByRole("button", { name: "Save", exact: true }).click();
-    await box.getByText("Saved.", { exact: true }).waitFor();
+    await editor().getByLabel("Rule text").fill("Do not edit a migration that exists, ever.");
+    await editor().getByRole("button", { name: "Save", exact: true }).click();
+    await status("Saved.").waitFor();
     expect(lastRequest()).toMatchObject({
       method: "PUT",
       path: "/v1/repositories/1/settings/rules.md",
@@ -215,15 +226,15 @@ describe("the Rules page", () => {
     });
     // A refusal names the file.
     await box.getByRole("button", { name: "Add a rule" }).click();
-    await box.getByLabel("Rule name").fill("keep-migrations");
-    await box.getByLabel("Rule text").fill("Twice.");
-    await box.getByRole("button", { name: "Save", exact: true }).click();
+    await editor().getByLabel("Rule name").fill("keep-migrations");
+    await editor().getByLabel("Rule text").fill("Twice.");
+    await editor().getByRole("button", { name: "Save", exact: true }).click();
     await alert('rules.md: line 4: the rule "keep-migrations" is named twice').waitFor();
   });
 
   it.skipIf(usesRealServer)("asks the Moebius agent to write the rules", async () => {
     await fresh();
-    await open("/rules?set=server", "Rules");
+    await open("/rules", "Rules");
     const prose = region("Rules in prose");
     await prose.getByRole("button", { name: "Write with agent" }).click();
     const ask = prose.getByRole("button", { name: "Submit" });

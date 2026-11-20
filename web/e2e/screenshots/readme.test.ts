@@ -364,8 +364,9 @@ for (const theme of THEMES) {
     if (chatAtWork) chatAtWork.status = "running";
     await visit(page, "/chat/5");
     await shoot(page, "chat", theme);
-    await visit(page, "/rules?set=server");
+    await visit(page, "/rules");
     await page.getByRole("button", { name: "Edit rule no-secrets-in-code" }).click();
+    await page.getByRole("dialog").waitFor();
     await page
       .getByLabel("Rule text")
       .fill(
