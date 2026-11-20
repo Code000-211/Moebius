@@ -172,7 +172,7 @@ The answer's `token` (it starts with `moebius-access-`) goes into the app with t
 - **No tray icon on Linux**: a desktop without a status area (GNOME without its AppIndicator extension) shows none.
   The app works without it, only its Pause all agents item is out of reach: use `moebius pause` then.
 
-- **"the server runs Moebius 0.13.0, and this app is Moebius 0.14.0, which works with servers of 0.14 only"**: the
+- **"the server runs Moebius 0.14.0, and this app is Moebius 0.15.0, which works with servers of 0.15 only"**: the
   app and the server are of different releases. The message names the release whose app matches the server; install
   that one, or upgrade the server ([Running Moebius](running-moebius.md)). A server older than the first release with
   a desktop app has no app of its own: upgrade it.
