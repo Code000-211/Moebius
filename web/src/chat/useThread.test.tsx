@@ -303,6 +303,19 @@ describe("following a chat", () => {
     });
   });
 
+  it("reads what it missed once the server says the chat is streamed", async () => {
+    api.tails = [[event(1)]];
+    api.pages = [[event(2)]];
+    const { result } = renderHook(() => useThread(7));
+    await waitFor(() => expect(result.current.lastSeq).toBe(1));
+    // Another chat's subscription is not this chat's.
+    act(() => live.listener?.({ kind: "subscribed", data: { runs: [8] } }));
+    expect(api.asked).toEqual([]);
+    act(() => live.listener?.({ kind: "subscribed", data: { runs: [7, 8] } }));
+    await waitFor(() => expect(result.current.lastSeq).toBe(2));
+    expect(api.asked).toEqual([1]);
+  });
+
   it("ignores an event of another chat and one of no chat at all", async () => {
     api.tails = [[event(1)]];
     api.pages = [[]];

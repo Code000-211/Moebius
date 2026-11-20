@@ -7,7 +7,8 @@
 //! - What a run says while it works (its `run_event`s: every streamed piece of an answer, every tool call) is sent only
 //!   for the runs the client asked for, with `{"subscribe": [run ids]}` and `{"unsubscribe": [run ids]}` on the same
 //!   socket; the rest of the events, and of a run's the ones a board or the Fleet needs (`agent_start`, `agent_settled`,
-//!   `moebius_error`), go to everyone. Who may see a run is worked out once per run and connection, and again after
+//!   `moebius_error`), go to everyone. A `subscribe` is answered with `{"kind": "subscribed", "data": {"runs": [...]}}`
+//!   (every run now watched): from then on the run's events are streamed, so a client reads what it has missed. Who may see a run is worked out once per run and connection, and again after
 //!   an event that changes what a person sees; the store is read on a thread that may block, never on the runtime's.
 
 use std::collections::{HashMap, HashSet};
@@ -185,11 +186,11 @@ impl Gate {
         }
     }
 
-    /// Takes in what the client asked for; anything that is not a request is ignored.
-    fn request(&mut self, text: &str) {
-        let Ok(request) = serde_json::from_str::<Request>(text) else {
-            return;
-        };
+    /// Takes in what the client asked for; anything that is not a request is ignored. Answers the runs the client
+    /// is now sent, when it asked for any.
+    fn request(&mut self, text: &str) -> Option<Vec<i64>> {
+        let request = serde_json::from_str::<Request>(text).ok()?;
+        let asked = !request.subscribe.is_empty();
         for run in request.unsubscribe {
             self.watched.remove(&run);
         }
@@ -198,6 +199,11 @@ impl Gate {
                 self.watched.insert(run);
             }
         }
+        asked.then(|| {
+            let mut runs: Vec<i64> = self.watched.iter().copied().collect();
+            runs.sort_unstable();
+            runs
+        })
     }
 
     /// The run `event` is about, when it is one of the events that carry a run's words.
@@ -221,8 +227,10 @@ impl Gate {
         {
             return Some(false);
         }
-        if OF_A_PERSON.contains(&kind) {
-            return Some(visible(&self.app, &self.by, event));
+        // A notice for another person goes to no one else; one for this person still names a card or an inbox item
+        // that [`seen`] checks against the private projects.
+        if OF_A_PERSON.contains(&kind) && !visible(&self.app, &self.by, event) {
+            return Some(false);
         }
         if kind == "lagged" {
             return Some(true);
@@ -299,8 +307,13 @@ async fn stream(
             incoming = socket.recv() => match incoming {
                 Some(Ok(Message::Close(_))) | None | Some(Err(_)) => return,
                 Some(Ok(Message::Text(text))) => {
-                    if let Ok(mut gate) = gate.lock() {
-                        gate.request(&text);
+                    let asked = gate.lock().ok().and_then(|mut gate| gate.request(&text));
+                    // Told once what is asked for is streamed, so that the client reads what it has missed.
+                    if let Some(runs) = asked {
+                        let ack = serde_json::json!({"kind": "subscribed", "data": {"runs": runs}});
+                        if socket.send(Message::Text(ack.to_string().into())).await.is_err() {
+                            return;
+                        }
                     }
                 }
                 Some(Ok(_)) => {}
@@ -473,21 +486,18 @@ mod tests {
         serde_json::from_str(message.to_text().unwrap()).unwrap()
     }
 
-    /// Asks for `run` and publishes pieces of it until one arrives: the server has read the request, and, as it reads
-    /// them in the order they were sent, every request before it.
-    async fn ask_for(ws: &mut Client, state: &ApiState, run: i64) {
+    /// Asks for `run` and waits until the server says it has read the request, and, as it reads them in the order
+    /// they were sent, every request before it.
+    async fn ask_for(ws: &mut Client, run: i64) {
         use futures_util::SinkExt;
         ws.send(tokio_tungstenite::tungstenite::Message::text(format!(
             r#"{{"subscribe": [{run}]}}"#
         )))
         .await
         .unwrap();
+        // The answer says the request was read.
         loop {
-            state.app.bus.publish(delta(run, 0));
-            if let Ok(Some(Ok(message))) =
-                tokio::time::timeout(std::time::Duration::from_millis(100), ws.next()).await
-                && message.to_text().unwrap().contains("message_update")
-            {
+            if next(ws).await.kind == "subscribed" {
                 return;
             }
         }
@@ -514,7 +524,7 @@ mod tests {
         let (_dir, state, addr) = start().await;
         let mut quiet = connect(&state, &addr).await;
         let mut asking = connect(&state, &addr).await;
-        ask_for(&mut asking, &state, 1).await;
+        ask_for(&mut asking, 1).await;
         // Not asked for by the quiet one; a run's settling and ending go to everyone.
         state.app.bus.publish(delta(1, 41));
         state.app.bus.publish(delta(2, 42));
@@ -541,14 +551,14 @@ mod tests {
         use futures_util::SinkExt;
         let (_dir, state, addr) = start().await;
         let mut ws = connect(&state, &addr).await;
-        ask_for(&mut ws, &state, 1).await;
+        ask_for(&mut ws, 1).await;
         ws.send(tokio_tungstenite::tungstenite::Message::text(
             r#"{"unsubscribe": [1]}"#,
         ))
         .await
         .unwrap();
-        // Run 2's pieces arriving shows the request about run 1 before it was read too.
-        ask_for(&mut ws, &state, 2).await;
+        // The answer about run 2 shows the request about run 1 before it was read too.
+        ask_for(&mut ws, 2).await;
         state.app.bus.publish(delta(1, 77));
         state.app.bus.publish(delta(2, 78));
         loop {
@@ -558,6 +568,37 @@ mod tests {
                 return;
             }
         }
+    }
+
+    #[tokio::test]
+    async fn a_notice_for_the_person_still_goes_through_the_check_of_private_projects() {
+        let (_dir, state, _addr) = start().await;
+        let store = &state.app.store;
+        let lea = store
+            .add_person("lea", "Lea", crate::store::Role::Member)
+            .unwrap();
+        let notice = store
+            .add_notice(
+                lea.id,
+                &crate::store::NewNotice {
+                    kind: crate::store::MENTIONED,
+                    by: None,
+                    card_id: Some(1),
+                    inbox_item_id: None,
+                    title: "t",
+                    body: "b",
+                },
+            )
+            .unwrap();
+        let added = AppEvent::from(Event::NoticeAdded {
+            person: "Lea".into(),
+            notice,
+        });
+        let own = Gate::new(state.app.clone(), Actor::person(lea.id, "lea"));
+        // Not decided by being addressed to the person: the card the notice names is checked too.
+        assert_eq!(own.quick(&added), None);
+        let other = Gate::new(state.app.clone(), Actor::person(lea.id + 1, "ben"));
+        assert_eq!(other.quick(&added), Some(false));
     }
 
     #[tokio::test]
@@ -611,14 +652,15 @@ mod tests {
                 break;
             }
         }
-        // Three runs stream 1,000 pieces of about 340 bytes each, and settle.
-        for seq in 1..=1_000 {
+        // Three runs stream 300 pieces of about 340 bytes each, and settle: fewer events than the bus holds, so
+        // that every piece reaches the connection's decision.
+        for seq in 1..=300 {
             for run in 1..=3 {
                 state.app.bus.publish(delta(run, seq));
             }
         }
         for run in 1..=3 {
-            state.app.bus.publish(settled(run, 1_001));
+            state.app.bus.publish(settled(run, 301));
         }
         state.app.bus.publish(Event::RunEnded {
             run: 3,
@@ -634,6 +676,6 @@ mod tests {
             }
         }
         println!("bytes sent to a client on the board: {bytes}");
-        assert!(bytes < 2_000, "{bytes} bytes for 3,000 pieces");
+        assert!(bytes < 2_000, "{bytes} bytes for 900 pieces");
     }
 }

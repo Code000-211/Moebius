@@ -751,9 +751,14 @@ connects again it asks again, and reads what it missed with `GET /v1/runs/{id}/e
 run does not widen what a person may see: the events of a private project's run, or of a chat that is not shared with
 them, are not sent whether asked for or not. Who may see a run is worked out once for each run and connection, and
 again after `project_changed`, `repository_added`, `repository_updated`, `repository_removed`, `chat_shared` or
-`chat_deleted`. A client that follows a run (a run page, a chat, the Fleet's current step) subscribes before it reads
-the run's stored events, so that nothing falls between the read and the stream; an event that arrives twice has the same
-`seq`.
+`chat_deleted`.
+
+The server answers a `subscribe` with `{"kind": "subscribed", "data": {"runs": [id]}}`, naming every run the connection
+watches now; it is sent after the request was read, so that the events of those runs are streamed from then on. A client
+that follows a run (a run page, a chat, the Fleet's current step) reads the run's stored events again after that answer
+(`GET /v1/runs/{id}/events?after=<last seq>`), and so loses nothing that happened between its first read and the
+subscription. An event that arrives twice has the same `seq`. The answer is not an event of the bus and is not in the
+table below.
 
 ### Projects
 

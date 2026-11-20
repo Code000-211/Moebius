@@ -459,6 +459,16 @@ mod tests {
             ws.send(tokio_tungstenite::tungstenite::Message::text(ask))
                 .await
                 .unwrap();
+            // The server says when it has read the request.
+            while !ws
+                .next()
+                .await
+                .unwrap()
+                .unwrap()
+                .to_text()
+                .unwrap()
+                .contains("subscribed")
+            {}
         }
         ws.map(|message| serde_json::from_str(message.unwrap().to_text().unwrap()).unwrap())
     }

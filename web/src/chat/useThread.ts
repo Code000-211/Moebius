@@ -277,6 +277,13 @@ export function useThread(id: number | null): Thread {
       refill(current);
       return;
     }
+    if (event.kind === "subscribed") {
+      // The server streams the run from here on; what came between the first read and now is read, which a read that
+      // overlaps what is held does no harm to.
+      const runs = event.data.runs;
+      if (Array.isArray(runs) && runs.includes(current.id)) refill(current);
+      return;
+    }
     const stored = runEventOf(current.id, event);
     if (!stored) return;
     current.value.push(stored);
