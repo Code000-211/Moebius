@@ -9,12 +9,12 @@
  * everything a person sees inside it. The shell starts the first time the sheet is opened, not when the board is
  * read, and ends when the page is left.
  */
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Terminal } from "../../terminal/LazyTerminal";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../ui/components/Dialog";
 
-export function RepositoryTerminal({
+export const RepositoryTerminal = memo(function RepositoryTerminal({
   repository,
   open,
   onOpenChange,
@@ -86,4 +86,4 @@ export function RepositoryTerminal({
         )}
     </>
   );
-}
+});
