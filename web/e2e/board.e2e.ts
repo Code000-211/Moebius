@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Browser, type BrowserContext, chromium, type Locator, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { addFilter, offers, showing } from "./controls";
+import { addFilter, offers, showing, unfold } from "./controls";
 import { LONG_TITLE } from "./fake/board";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
@@ -79,12 +79,20 @@ const broadcast = (event: { kind: string; data: unknown }) => {
   if (!server.broadcast) throw new Error("this test needs the fake server");
   server.broadcast(event);
 };
-const column = (name: string) => page.getByRole("region", { name, exact: true });
+// By the label, not the role: a card window over the board is modal and hides the board from the accessibility tree.
+const column = (name: string) => page.locator(`[aria-label="${name}"]`);
 const card = (number: number) => page.getByTestId(`card-${number}`);
 const dock = () => page.getByRole("dialog", { name: "Card inspector" });
 /** The properties of the card numbered `number`, which the dock puts in the right column. */
 const properties = (number: number) =>
   page.getByRole("region", { name: `Properties of #${number}`, exact: true });
+/** The properties of the card numbered `number`, with the fold "More properties" open, once they are drawn. */
+const unfolded = async (number: number) => {
+  const region = properties(number);
+  await region.waitFor();
+  await unfold(region);
+  return region;
+};
 const alert = (text: string | RegExp) => page.getByRole("alert").filter({ hasText: text });
 const status = (text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
 
@@ -397,9 +405,9 @@ describe("live data", () => {
     await fresh();
     await openBoard();
     await page.goto(`${server.url}/board/1?card=3`);
-    await properties(3).getByText("Not started", { exact: true }).waitFor();
+    await (await unfolded(3)).getByText("Not started", { exact: true }).waitFor();
     broadcast(fake().moveCard(3, "In review"));
-    await properties(3).getByText("In review", { exact: true }).waitFor();
+    await (await unfolded(3)).getByText("In review", { exact: true }).waitFor();
   });
 
   it.skipIf(!usesRealServer)("opens the card of an issue clicked on the Issues page", async () => {
@@ -436,9 +444,9 @@ describe("live data", () => {
       await fresh();
       await openBoard();
       await page.goto(`${server.url}/board/1?card=4`);
-      await properties(4).getByText("Why it waits", { exact: true }).waitFor();
-      await properties(4).getByText("Waiting on", { exact: true }).waitFor();
-      expect(await properties(4).getByText("Waiting", { exact: true }).count()).toBe(0);
+      await (await unfolded(4)).getByText("Why it waits", { exact: true }).waitFor();
+      await (await unfolded(4)).getByText("Waiting on", { exact: true }).waitFor();
+      expect(await (await unfolded(4)).getByText("Waiting", { exact: true }).count()).toBe(0);
     },
   );
 
@@ -448,7 +456,7 @@ describe("live data", () => {
       await fresh();
       await openBoard();
       await card(3).click();
-      const facts = properties(3);
+      const facts = await unfolded(3);
       /** Enter opens the value's menu, the arrows move to the row and Enter saves it. */
       const choose = async (value: string, row: string) => {
         await facts.getByRole("button", { name: value }).focus();
@@ -483,22 +491,22 @@ describe("live data", () => {
       await facts.getByRole("button", { name: "Parent #2 Fix the login redirect" }).waitFor();
 
       // Text: Enter opens the field in the value's place, Enter saves, the focus comes back to the value.
-      const title = facts.getByRole("button", { name: "Title Document the API" });
+      const title = facts.getByRole("button", { name: "Estimate No estimate" });
       await title.focus();
       await page.keyboard.press("Enter");
-      const field = facts.getByRole("textbox", { name: "Title" });
+      const field = facts.getByRole("textbox", { name: "Estimate" });
       await field.waitFor();
       await page.keyboard.press("Control+a");
-      await page.keyboard.type("Document the whole API");
+      await page.keyboard.type("3");
       await page.keyboard.press("Enter");
-      const renamed = facts.getByRole("button", { name: "Title Document the whole API" });
+      const renamed = facts.getByRole("button", { name: "Estimate 3 points" });
       await renamed.waitFor();
       await expect.poll(() => renamed.evaluate((el) => el === document.activeElement)).toBe(true);
 
       // Escape leaves the field unsaved, and does not close the dock behind it.
       await page.keyboard.press("Enter");
       await field.waitFor();
-      await page.keyboard.type(" again");
+      await page.keyboard.type("7");
       await page.keyboard.press("Escape");
       await renamed.waitFor();
       await dock().waitFor();
@@ -535,14 +543,14 @@ describe("live data", () => {
       await fresh();
       await openBoard();
       await card(3).click();
-      const facts = properties(3);
-      await facts.getByRole("button", { name: "Title Document the API" }).click();
-      const field = facts.getByRole("textbox", { name: "Title" });
-      await field.fill(" ");
+      const facts = await unfolded(3);
+      await facts.getByRole("button", { name: "Estimate No estimate" }).click();
+      const field = facts.getByRole("textbox", { name: "Estimate" });
+      await field.fill("0");
       await field.press("Enter");
       const refusal = facts.getByRole("alert");
       await refusal.waitFor();
-      const value = facts.getByRole("button", { name: "Title Document the API" });
+      const value = facts.getByRole("button", { name: "Estimate No estimate" });
       // A person hearing the page is told it with the value it is about.
       const described = await value.getAttribute("aria-describedby");
       expect(described).toBe(await refusal.locator("..").getAttribute("id"));
@@ -678,8 +686,10 @@ describe("the decisions", () => {
       .getByRole("button", { name: /\d+ changes/ })
       .last()
       .click();
+    // The note property under "More properties" says it too, folded away.
     await dock()
       .getByText(/The tests are missing/)
+      .locator("visible=true")
       .first()
       .waitFor();
   });
@@ -815,18 +825,18 @@ describe("blocking, unblocking and deleting a card", () => {
     await fresh();
     await openBoard();
     await card(3).click();
-    await properties(3).getByText("Not started", { exact: true }).waitFor();
+    await (await unfolded(3)).getByText("Not started", { exact: true }).waitFor();
     await menuOf(dock(), 3).click();
     await item("Block…").click();
     await asking("Block #3").getByLabel("Reason").fill("needs a design");
     await asking("Block #3").getByRole("button", { name: "Block", exact: true }).click();
     await status("Blocked #3").waitFor();
-    await properties(3).getByText("needs a design (blocked by a person)").waitFor();
+    await (await unfolded(3)).getByText("needs a design (blocked by a person)").waitFor();
     await dock().getByText("Blocked", { exact: true }).first().waitFor();
     await menuOf(dock(), 3).click();
     await item("Unblock").click();
     await status("Unblocked #3.").waitFor();
-    await properties(3)
+    await (await unfolded(3))
       .getByText("needs a design (blocked by a person)")
       .waitFor({ state: "detached" });
   });
@@ -895,7 +905,7 @@ describe("blocking, unblocking and deleting a card", () => {
     await fresh();
     await openBoard();
     await card(3).click();
-    await properties(3).getByText("Not started", { exact: true }).waitFor();
+    await (await unfolded(3)).getByText("Not started", { exact: true }).waitFor();
     await menuOf(dock(), 3).click();
     await item("Delete…").click();
     await asking("Delete #3").getByRole("button", { name: "Delete card" }).click();
@@ -922,7 +932,7 @@ describe("blocking, unblocking and deleting a card", () => {
       await fresh();
       await openBoard();
       await card(3).click();
-      await properties(3).getByText("Not started", { exact: true }).waitFor();
+      await (await unfolded(3)).getByText("Not started", { exact: true }).waitFor();
       const removed = await context.request.delete(`${server.url}/v1/cards/3`, {
         headers: { "X-Moebius": "1" },
       });
@@ -1445,7 +1455,7 @@ describe("the card open in the dock and its address", () => {
     async () => {
       await fresh();
       await page.goto(`${server.url}/board/1?card=3`);
-      await properties(3).waitFor();
+      await unfolded(3);
       const openers: [string, () => Locator][] = [
         ["Priority", () => properties(3).getByRole("button", { name: /^Priority/ })],
         ["Cycle", () => properties(3).getByRole("button", { name: /^Cycle/ })],
