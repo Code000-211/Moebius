@@ -558,7 +558,7 @@ export function BoardPage() {
           // stands beside it instead.
           <div className="w-full shrink-0 dock:w-96">
             <div
-              data-testid="card-drawer"
+              data-testid="inspector-drawer"
               className={cn(
                 "dock:absolute dock:inset-y-0 dock:z-10 dock:w-96 dock:overflow-hidden",
                 // A sheet (the Moebius agent) lies over the column and a strip of the page, so the drawer stands

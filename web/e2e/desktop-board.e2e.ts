@@ -74,7 +74,7 @@ describe("the board in the desktop app's window", () => {
       await page.getByRole("navigation", { name: "Pages" }).waitFor();
       await page.getByTestId("rail").waitFor();
       await page.goto(`${server.url}/board/1?card=3`);
-      const drawer = page.getByTestId("card-drawer");
+      const drawer = page.getByTestId("inspector-drawer");
       await drawer.waitFor();
       const [bar, surface, shown, newIssue] = await Promise.all([
         box(page.getByTestId("window-bar")),
