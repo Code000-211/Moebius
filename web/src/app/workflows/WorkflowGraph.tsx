@@ -8,7 +8,7 @@
  * unreadable.
  */
 import type { WorkflowDefinition, WorkflowNode } from "../../api/types/workflows";
-import { JsonValue } from "../../ui/page/JsonValue";
+import { asJson } from "../../ui/page/JsonValue";
 
 /** The width one node card takes, so a line can end at the middle of it. */
 const CARD = 240;
@@ -84,7 +84,12 @@ function NodeCard({ node }: { node: WorkflowNode }) {
         <h3 className="m-0 truncate text-sm font-semibold text-text">{node.id}</h3>
         <span className="truncate text-xs text-secondary">{node.kind}</span>
       </div>
-      <JsonValue value={node.params ?? {}} name={`${node.id}-parameters`} />
+      <pre
+        data-json={`${node.id}-parameters`}
+        className="m-0 overflow-x-auto whitespace-pre-wrap break-words border-t border-hairline pt-2 font-mono text-xs leading-5 text-secondary"
+      >
+        {asJson(node.params ?? {})}
+      </pre>
     </article>
   );
 }
