@@ -9,15 +9,26 @@
  * `DELETE /v1/workflows/{name}`, asked twice: the actions open a dialog, which warns that a workflow shaped like an
  * automation disappears from the Automations page too, and a run queued or running refuses the deletion in the dialog.
  */
-import { ArrowLeftIcon, PencilSimpleIcon, PlayIcon, TrashIcon } from "@phosphor-icons/react";
+import {
+  ArrowLeftIcon,
+  PencilSimpleIcon,
+  PlayIcon,
+  StopIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { deleteWorkflow } from "../../api/calls/workflows";
+import {
+  cancelWorkflowRun,
+  deleteWorkflow,
+  workflow,
+  workflowRuns,
+} from "../../api/calls/workflows";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
-import { workflow } from "../../api/workflows";
 import { CodeBlock } from "../../ui/chat/CodeBlock";
+import { Tag } from "../../ui/chat/Tag";
 
 import { Button } from "../../ui/components/Button";
 import {
@@ -35,7 +46,8 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { PageProperties, Property } from "../../ui/page/Properties";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
-import { lastRunLine, looksLikeAutomation, triggerName } from "./model";
+import { lastRunLine, looksLikeAutomation, needsAttention, runStatus, triggerName } from "./model";
+import { RunWorkflowDialog } from "./RunWorkflowDialog";
 import { WorkflowGraph } from "./WorkflowGraph";
 
 export function WorkflowPage() {
@@ -45,9 +57,21 @@ export function WorkflowPage() {
   const now = useNow();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [removeRefusal, setRemoveRefusal] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
   const definition = useQuery({
     queryKey: keys.workflow(name),
     queryFn: () => workflow(name),
+  });
+  const runs = useQuery({
+    queryKey: keys.workflowRuns(name),
+    queryFn: () => workflowRuns(name),
+  });
+  const cancel = useMutation({
+    mutationFn: (id: number) => cancelWorkflowRun(id),
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: keys.workflowRuns(name) });
+      await queryClient.invalidateQueries({ queryKey: keys.workflows });
+    },
   });
   const remove = useMutation({
     mutationFn: () => deleteWorkflow(definition.data?.name ?? name),
@@ -90,8 +114,10 @@ export function WorkflowPage() {
     );
   }
 
-  const saved = definition.data;
-  const last = saved.last_run;
+  const saved = definition.data.definition;
+  const file = definition.data.file;
+  const history = runs.data ?? [];
+  const last = history[0] ?? null;
   const leave = () => {
     remove.reset();
     setRemoveRefusal(null);
@@ -111,12 +137,13 @@ export function WorkflowPage() {
                 Edit on the canvas
               </Link>
             </Button>
+            <Button variant="secondary" size="sm" onClick={() => setRunning(true)}>
+              <PlayIcon className="size-4" aria-hidden="true" />
+              Run
+            </Button>
             {last ? (
               <Button asChild variant="secondary" size="sm">
-                <Link to={`/workflow-runs/${last.id}`}>
-                  <PlayIcon className="size-4" aria-hidden="true" />
-                  Open last run
-                </Link>
+                <Link to={`/workflow-runs/${last.id}`}>Open last run</Link>
               </Button>
             ) : null}
             <Button
@@ -131,11 +158,12 @@ export function WorkflowPage() {
           </div>
         }
       />
+      <RunWorkflowDialog name={saved.name} open={running} onOpenChange={setRunning} />
       {confirmingDelete && (
         <Dialog open onOpenChange={(open) => !open && leave()}>
           <DialogContent>
             <form
-              className="flex flex-col gap-4 p-6"
+              className="flex flex-col gap-4"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (!remove.isPending) remove.mutate();
@@ -165,8 +193,8 @@ export function WorkflowPage() {
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <WorkflowGraph definition={saved} />
         <PageProperties label="Definition">
-          <Property name="Trigger">{triggerName(saved.trigger)}</Property>
-          <Property name="Nodes">{plural(saved.node_count, "node", "nodes")}</Property>
+          <Property name="Trigger">{triggerName(saved.trigger[0]?.kind)}</Property>
+          <Property name="Nodes">{plural(saved.nodes.length, "node", "nodes")}</Property>
           <Property name="Last run">
             {last
               ? `${lastRunLine(last)}${last.started_at === null ? "" : ` · ${ago(now, last.started_at)}`}.`
@@ -184,7 +212,70 @@ export function WorkflowPage() {
             <p className="mb-1 mt-1 text-sm text-secondary">
               The workflow as it is saved, ready to copy.
             </p>
-            <CodeBlock language="TOML" code={saved.file} />
+            <CodeBlock language="TOML" code={file} />
+          </section>
+          <section
+            aria-labelledby="workflow-runs-title"
+            className="flex min-h-0 flex-col gap-2 rounded-card bg-surface p-4 shadow-card"
+          >
+            <h2 id="workflow-runs-title" className="m-0 text-base font-semibold text-text">
+              Runs
+            </h2>
+            {runs.isError ? (
+              <Notice tone="error">
+                {sayError(runs.error, "Could not read the runs. Try again.")}
+              </Notice>
+            ) : history.length === 0 ? (
+              <p className="m-0 text-sm text-secondary">This workflow has not run.</p>
+            ) : (
+              // biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely
+              <ul role="list" className="m-0 flex list-none flex-col gap-2 p-0">
+                {history.map((each) => {
+                  const status = runStatus(each.status);
+                  const open =
+                    each.status === "queued" ||
+                    each.status === "running" ||
+                    each.status === "waiting";
+                  return (
+                    <li
+                      key={each.id}
+                      data-testid="workflow-run-row"
+                      className="flex flex-wrap items-center gap-2 text-sm"
+                    >
+                      <Tag tone={needsAttention(each.status) ? status.tone : "plain"}>
+                        {status.label}
+                      </Tag>
+                      <Link
+                        className="rounded-round underline-offset-4 hover:underline"
+                        to={`/workflow-runs/${each.id}`}
+                      >
+                        Run {each.id}
+                      </Link>
+                      <span className="tabular-nums text-secondary">
+                        {ago(now, each.created_at)}
+                      </span>
+                      {open ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          aria-label={`Cancel run ${each.id}`}
+                          disabled={cancel.isPending}
+                          onClick={() => cancel.mutate(each.id)}
+                        >
+                          <StopIcon className="size-4" aria-hidden="true" />
+                          Cancel
+                        </Button>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {cancel.isError ? (
+              <Notice tone="error">
+                {sayError(cancel.error, "Could not cancel the run. Try again.")}
+              </Notice>
+            ) : null}
           </section>
         </aside>
       </div>

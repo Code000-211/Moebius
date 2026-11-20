@@ -14,9 +14,13 @@ class FakeSocket {
   onmessage: SocketLike["onmessage"] = null;
   onclose: SocketLike["onclose"] = null;
   closed = false;
+  sent: unknown[] = [];
   private readonly asSocket = this as unknown as WebSocket;
   close() {
     this.closed = true;
+  }
+  send(data: string) {
+    this.sent.push(JSON.parse(data));
   }
   open() {
     this.onopen?.call(this.asSocket, new Event("open"));
@@ -112,6 +116,35 @@ describe("EventStream", () => {
     t.sockets[0]?.say("junk");
     expect(t.events).toEqual(["card_added"]);
     expect(t.log).toEqual(["connected"]);
+  });
+
+  it("asks for the runs it is told to watch once, and again when the socket opens again", () => {
+    const t = setup();
+    t.stream.start();
+    const first = t.stream.watchRun(7);
+    t.sockets[0]?.open();
+    const second = t.stream.watchRun(7);
+    t.stream.watchRun(8);
+    // Two watchers of run 7 are one ask.
+    expect(t.sockets[0]?.sent).toEqual([{ subscribe: [7] }, { subscribe: [8] }]);
+    first();
+    first();
+    expect(t.sockets[0]?.sent).toEqual([{ subscribe: [7] }, { subscribe: [8] }]);
+    t.sockets[0]?.drop();
+    t.fire();
+    t.sockets[1]?.open();
+    expect(t.sockets[1]?.sent).toEqual([{ subscribe: [7, 8] }]);
+    second();
+    expect(t.sockets[1]?.sent).toEqual([{ subscribe: [7, 8] }, { unsubscribe: [7] }]);
+  });
+
+  it("asks for a run watched before the socket opened as the socket opens", () => {
+    const t = setup();
+    t.stream.start();
+    t.stream.watchRun(3);
+    expect(t.sockets[0]?.sent).toEqual([]);
+    t.sockets[0]?.open();
+    expect(t.sockets[0]?.sent).toEqual([{ subscribe: [3] }]);
   });
 
   it("connects again after the socket closes, waiting longer each time it fails", () => {

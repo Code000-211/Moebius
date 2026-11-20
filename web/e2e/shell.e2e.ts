@@ -325,3 +325,64 @@ describe.skipIf(usesRealServer)("the right column and the Moebius agent", () => 
     await page.context().close();
   });
 });
+
+/** A page of a server of its own at the given window width, signed in, with the shell drawn. */
+async function signedInAt(path: string, width: number): Promise<Page> {
+  server = await startServer();
+  const context = await browser.newContext({
+    viewport: { width, height: 800 },
+    reducedMotion: "reduce",
+  });
+  const page = await context.newPage();
+  await page.goto(server.loginUrl);
+  await page.getByRole("navigation", { name: "Pages" }).waitFor();
+  await page.goto(`${server.url}${path}`);
+  await page.locator('[data-surface="page"] h1').first().waitFor();
+  return page;
+}
+
+describe("windows of 800 and 1280 px", () => {
+  it("folds the sidebar to its rail below 1024 px by itself, and opens it for the moment on a click", async () => {
+    const page = await signedInAt("/inbox", 800);
+    const left = async () => (await box(page, '[data-surface="page"]')).x;
+    expect(await left()).toBeLessThan(100);
+    await page.getByRole("button", { name: "Expand the sidebar" }).click();
+    await page.waitForFunction(
+      () => (document.querySelector('[data-surface="page"]')?.getBoundingClientRect().x ?? 0) > 250,
+    );
+    await page.context().close();
+    const wide = await signedInAt("/inbox", 1280);
+    expect(await box(wide, '[data-surface="page"]').then((b) => b.x)).toBeGreaterThan(250);
+    await wide.context().close();
+  });
+
+  it.skipIf(usesRealServer)(
+    "keeps the description of a built-in pattern readable beside the Properties column",
+    async () => {
+      const page = await signedInAt("/rules", 1280);
+      const description = page
+        .getByRole("region", { name: "Built-in patterns" })
+        .getByText("git push --force rewrites history on the remote");
+      await description.waitFor();
+      // About thirty characters a line at 14px is 200px; the page once left it 40px.
+      expect((await description.boundingBox())?.width ?? 0).toBeGreaterThan(200);
+      await page.context().close();
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "insets a dialog of a page that did not set its own padding",
+    async () => {
+      const page = await signedInAt("/cycles", 1280);
+      await page.getByRole("button", { name: "New cycle", exact: true }).first().click();
+      const dialog = page.getByRole("dialog");
+      await dialog.waitFor();
+      const padding = await dialog.evaluate((el) => {
+        const style = getComputedStyle(el);
+        return [style.paddingLeft, style.paddingTop, style.rowGap];
+      });
+      expect(padding).toEqual(["24px", "24px", "16px"]);
+      await page.context().close();
+    },
+  );
+});

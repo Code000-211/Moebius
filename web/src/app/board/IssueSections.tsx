@@ -216,7 +216,7 @@ export function EditIssueDialog({
     <Dialog open={open} onOpenChange={leave}>
       <DialogContent>
         <form
-          className="flex flex-col gap-4 p-6"
+          className="flex flex-col gap-4"
           onSubmit={(e) => {
             e.preventDefault();
             if (title.trim() !== "" && !save.isPending) save.mutate();

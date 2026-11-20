@@ -5,29 +5,28 @@
  * the pages need to say when a workflow is one of the Automations page's entries rather than a plain workflow.
  */
 
-import type {
-  WorkflowDefinition,
-  WorkflowRunSummary,
-  WorkflowSummary,
-  WorkflowTrigger,
-} from "../../api/workflows";
+import type { LastRun, WorkflowDefinition, WorkflowSummary } from "../../api/types/workflows";
 import type { TagTone } from "../../ui/chat/Tag";
 import type { FilterField } from "../../ui/filters/model";
 
-/** The trigger in a few words: what starts it, and the schedule or event when it has one. */
-export function triggerName(trigger: WorkflowTrigger | null | undefined): string {
-  if (!trigger) return "No trigger";
-  const kind =
-    trigger.kind === "manual"
-      ? "Manual"
-      : trigger.kind === "schedule"
-        ? "Schedule"
-        : trigger.kind === "event"
-          ? "Event"
-          : trigger.kind === "webhook"
-            ? "Webhook"
-            : trigger.kind;
-  return trigger.detail ? `${kind} · ${trigger.detail}` : kind;
+/** The trigger's kind as a word: what starts the workflow. */
+export function triggerName(kind: string | null | undefined): string {
+  switch (kind) {
+    case undefined:
+    case null:
+    case "":
+      return "No trigger";
+    case "manual":
+      return "Manual";
+    case "schedule":
+      return "Schedule";
+    case "event":
+      return "Event";
+    case "webhook":
+      return "Webhook";
+    default:
+      return kind;
+  }
 }
 
 /** A run's status as its label and tone. A run that waits, or failed, is the one worth a hue of its own. */
@@ -53,7 +52,7 @@ export function runStatus(status: string): { label: string; tone: TagTone } {
 }
 
 /** The last run of a workflow, as the line under its name in the list. */
-export function lastRunLine(last: WorkflowRunSummary | null): string {
+export function lastRunLine(last: LastRun | null): string {
   if (!last) return "Never run";
   return `Last run: ${runStatus(last.status).label.toLowerCase()}`;
 }
@@ -66,7 +65,7 @@ export function needsAttention(status: string | null | undefined): boolean {
 /** Whether the workflow is an automation, the way the server's `is_automation` sees it: a schedule that starts one chat. */
 export function looksLikeAutomation(definition: WorkflowDefinition): boolean {
   return (
-    definition.trigger.kind === "schedule" &&
+    definition.trigger[0]?.kind === "schedule" &&
     definition.nodes.length === 1 &&
     definition.nodes[0]?.kind === "chat"
   );
@@ -83,7 +82,7 @@ export function filterFields(
   list: readonly WorkflowSummary[],
   values: Readonly<Record<string, string>>,
 ): FilterField[] {
-  const triggers = new Set(list.map((each) => each.trigger.kind));
+  const triggers = new Set(list.map((each) => each.trigger_kind));
   const last = new Set(list.map((each) => each.last_run?.status ?? NEVER_RUN));
   if (values.trigger) triggers.add(values.trigger);
   if (values.last) last.add(values.last);
@@ -91,9 +90,7 @@ export function filterFields(
     {
       key: "trigger",
       label: "Trigger",
-      options: [...triggers]
-        .sort()
-        .map((kind): [string, string] => [kind, triggerName({ kind, detail: null })]),
+      options: [...triggers].sort().map((kind): [string, string] => [kind, triggerName(kind)]),
     },
     {
       key: "last",
@@ -115,7 +112,7 @@ export function filtered(
 ): WorkflowSummary[] {
   return list.filter(
     (each) =>
-      (!values.trigger || each.trigger.kind === values.trigger) &&
+      (!values.trigger || each.trigger_kind === values.trigger) &&
       (!values.last || (each.last_run?.status ?? NEVER_RUN) === values.last),
   );
 }

@@ -182,7 +182,7 @@ export function RulesPage() {
               aside="Always on. Checked before any model is asked."
               className="min-w-0"
             >
-              <div className="flex flex-col gap-4">
+              <div className="@container flex flex-col gap-4">
                 {view.patterns.map((pattern) => (
                   <PatternRow
                     key={pattern.name}
@@ -316,12 +316,12 @@ function PatternRow({
 }) {
   const tone: TagTone = refused ? "attention" : "plain";
   return (
-    <div className="flex flex-col gap-4 rounded-card bg-sunken p-4 xl:flex-row xl:items-baseline xl:gap-6">
-      <span className="min-w-0 break-words font-mono text-sm font-semibold text-text xl:w-56 xl:shrink-0">
+    <div className="flex flex-col gap-4 rounded-card bg-sunken p-4 @2xl:flex-row @2xl:items-baseline @2xl:gap-6">
+      <span className="min-w-0 break-words font-mono text-sm font-semibold text-text @2xl:w-56 @2xl:shrink-0">
         {name}
       </span>
       <span className="min-w-0 flex-1 break-words text-base text-text">{description}</span>
-      <Tag tone={tone} className="tabular-nums xl:shrink-0">
+      <Tag tone={tone} className="tabular-nums @2xl:shrink-0">
         {refusals}
       </Tag>
     </div>

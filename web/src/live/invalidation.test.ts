@@ -204,6 +204,7 @@ describe("invalidates", () => {
     expect(invalidates({ kind: "workflow_run_queued", data: {} })).toEqual([
       keys.workflows,
       keys.workflowDefinitions,
+      keys.allWorkflowRuns,
     ]);
   });
 });

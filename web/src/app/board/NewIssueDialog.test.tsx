@@ -118,8 +118,13 @@ describe("the parent of a new issue", () => {
     );
     fireEvent.change(screen.getByLabelText("Title"), { target: { value: "A step" } });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
-    await waitFor(() => expect(fetch).toHaveBeenCalled());
-    const [, init] = fetch.mock.calls[0] as unknown as [string, { body: string }];
+    // The form also reads the projects, kinds and templates, with a GET each; the issue is the POST.
+    const posted = () =>
+      (fetch.mock.calls as unknown as Array<[string, { method?: string; body: string }]>).find(
+        ([, init]) => init?.method === "POST",
+      );
+    await waitFor(() => expect(posted()).toBeDefined());
+    const init = posted()?.[1] as { body: string };
     return JSON.parse(init.body) as Record<string, unknown>;
   }
 

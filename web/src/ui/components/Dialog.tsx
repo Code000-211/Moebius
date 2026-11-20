@@ -92,7 +92,7 @@ const DialogContent = React.forwardRef<
           }}
           className={cn(
             "fixed inset-0 z-sheet m-auto flex h-fit max-h-[calc(100%_-_2rem)] w-full max-w-lg",
-            "flex-col overflow-y-auto",
+            "flex-col gap-4 overflow-y-auto p-6",
             "glass rounded-sheet shadow-raised",
             "data-[state=open]:animate-in data-[state=closed]:animate-out",
             "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",

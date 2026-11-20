@@ -1,18 +1,19 @@
 import { describe, expect, it } from "vitest";
-import type { WorkflowRunSummary } from "../../api/workflows";
+import type { LastRun } from "../../api/types/workflows";
 import { lastRunLine, needsAttention, runStatus, triggerName } from "./model";
 
 describe("a trigger", () => {
-  it("says what starts the workflow, with its schedule or event", () => {
-    expect(triggerName({ kind: "manual", detail: null })).toBe("Manual");
-    expect(triggerName({ kind: "schedule", detail: "0 6 * * 1" })).toBe("Schedule · 0 6 * * 1");
-    expect(triggerName({ kind: "event", detail: "issues.opened" })).toBe("Event · issues.opened");
-    expect(triggerName({ kind: "webhook", detail: "push" })).toBe("Webhook · push");
+  it("says what starts the workflow", () => {
+    expect(triggerName("manual")).toBe("Manual");
+    expect(triggerName("schedule")).toBe("Schedule");
+    expect(triggerName("event")).toBe("Event");
+    expect(triggerName("webhook")).toBe("Webhook");
   });
 
   it("keeps a kind it does not know, and says a workflow with none has no trigger", () => {
-    expect(triggerName({ kind: "queue", detail: null })).toBe("queue");
+    expect(triggerName("queue")).toBe("queue");
     expect(triggerName(null)).toBe("No trigger");
+    expect(triggerName("")).toBe("No trigger");
   });
 });
 
@@ -33,9 +34,10 @@ describe("a status", () => {
 });
 
 describe("the line under a workflow's last run", () => {
-  const run = (status: string): WorkflowRunSummary => ({
+  const run = (status: string): LastRun => ({
     id: 7,
     status,
+    created_at: 0,
     started_at: 1,
     finished_at: 2,
   });

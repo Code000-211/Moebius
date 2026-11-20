@@ -3,7 +3,7 @@
  * agent is working, which is the opposite of what the person needs to know.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../api/keys";
@@ -15,6 +15,7 @@ import { FleetPage } from "./FleetPage";
 // The conversation of a run follows the event stream, which these tests have none of.
 vi.mock("../../live/LiveProvider", () => ({
   useServerEvents: () => {},
+  useWatchRun: () => {},
   useConnection: () => "online",
 }));
 
@@ -84,5 +85,60 @@ describe("a fleet with many runs", () => {
     // A memoised row shows as two components, the memo and the row inside it.
     expect(seen.byName.Row).toBe(2);
     expect(screen.getAllByTestId("fleet-row")[4]?.textContent).toContain("900");
+  });
+});
+
+describe("pausing all agents from Fleet", () => {
+  function serve(paused: boolean) {
+    const posted: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: { method?: string }) => {
+        const path = String(url).replace(/^https?:\/\/[^/]+/, "");
+        if (init?.method === "POST") posted.push(path);
+        const body = path.startsWith("/v1/snapshot")
+          ? {
+              boards: [],
+              harness_changes: [],
+              inbox: [],
+              ...(paused ? { paused: { by: "person:ada", at: 1 } } : {}),
+            }
+          : path.startsWith("/v1/chats")
+            ? []
+            : { paused: !paused };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => body,
+          text: async () => JSON.stringify(body),
+        };
+      }),
+    );
+    return posted;
+  }
+  const show = () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <FleetPage />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  };
+
+  it("offers to pause, and says who paused when they are paused", async () => {
+    const posted = serve(false);
+    show();
+    fireEvent.click(await screen.findByRole("button", { name: "Pause all agents" }));
+    await waitFor(() => expect(posted).toContain("/v1/runs/pause"));
+  });
+
+  it("offers to resume while paused", async () => {
+    const posted = serve(true);
+    show();
+    await screen.findByText(/All agents are paused by @ada/);
+    fireEvent.click(screen.getByRole("button", { name: "Resume all agents" }));
+    await waitFor(() => expect(posted).toContain("/v1/runs/resume"));
   });
 });

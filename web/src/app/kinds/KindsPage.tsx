@@ -2,7 +2,8 @@
  * The Kinds page, for owners: the kinds of issues of the organisation (a bug, a feature, a task), each with fields of
  * its own (text, number, choice, date, person), and which projects offer which kind. A kind is edited as a whole and
  * saved with its own button; a project's choice is saved at once. What the server refuses (a name twice, a choice
- * without options, a field whose type changed, a kind that cards still have) is said where it was asked.
+ * without options, a field whose type changed, a kind that cards still have) is said where it was asked. Each kind
+ * also holds its issue template (`IssueTemplate.tsx`).
  */
 import { PlusIcon, TrashIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -23,6 +24,7 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { NotFoundPage } from "../shell/Page";
 import { useRole } from "../shell/session";
+import { IssueTemplateBox } from "./IssueTemplate";
 import { bodyOf, draftOf, type FieldDraft, type KindDraft } from "./model";
 
 export function KindsPage() {
@@ -87,6 +89,7 @@ function KindBox({ kind, kinds, projects }: { kind: Kind; kinds: Kind[]; project
         )}
         <OfferedBy kind={kind} kinds={kinds} projects={projects} onSaved={refresh} />
         <KindForm kind={kind} />
+        <IssueTemplateBox kind={kind} />
       </div>
     </Box>
   );

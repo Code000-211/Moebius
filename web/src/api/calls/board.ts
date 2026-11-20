@@ -29,11 +29,14 @@ export function createIssue(
   title: string,
   body: string,
   parent?: number | null,
+  /** A kind of the project; with `useTemplate` its template fills what is left empty. */
+  kind?: { name: string; useTemplate: boolean } | null,
 ): Promise<CreatedIssue> {
   return post<CreatedIssue>(`/v1/repositories/${repository}/issues`, {
     title,
     body,
     ...(parent != null ? { parent } : {}),
+    ...(kind ? { kind: kind.name, ...(kind.useTemplate ? { use_template: true } : {}) } : {}),
   });
 }
 

@@ -12,6 +12,7 @@ import {
   thinkingNow,
   thoughtSeconds,
   tokensText,
+  type Work,
   working,
   workStartedAt,
 } from "./model";
@@ -130,9 +131,19 @@ describe("which runs are working", () => {
   });
 
   it("says how many agents work", () => {
-    expect(context(0)).toBe("Nothing is working.");
-    expect(context(1)).toBe("1 agent working");
-    expect(context(3)).toBe("3 agents working");
+    const run = (status: string, at: number) => ({ run: at, status }) as Work;
+    expect(context([])).toBe("Nothing is working.");
+    expect(context([run("running", 1)])).toBe("1 agent working");
+    expect(context([run("running", 1), run("starting", 2), run("running", 3)])).toBe(
+      "3 agents working",
+    );
+  });
+
+  it("counts a run that waits for the person as waiting, not as working", () => {
+    const run = (status: string, at: number) => ({ run: at, status }) as Work;
+    const list = [run("running", 1), run("waiting", 2), run("waiting", 3), run("waiting", 4)];
+    expect(context(list)).toBe("1 agent working · 3 waiting for you");
+    expect(context(list.slice(1))).toBe("Nothing is working · 3 waiting for you");
   });
 });
 

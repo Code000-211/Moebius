@@ -343,6 +343,8 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
   const requests: PagesAFake["requests"] = [];
   const refusals = new Map<string, { status: number; message: string }>();
   let clock = NOW;
+  /** Who paused all agents, while they are paused. */
+  let paused: { by: string; at: number } | null = null;
 
   let repositories: Repository[] = [];
   const removed = new Set<number>();
@@ -696,6 +698,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
       inbox: unknown[];
     };
     return {
+      ...(paused ? { paused } : {}),
       boards: [
         ...base.boards
           .filter((each) => !removed.has(each.repository.id))
@@ -910,6 +913,8 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
       const url = new URL(request.url ?? "/", "http://x");
       const mine =
         path === "/v1/snapshot" ||
+        path === "/v1/runs/pause" ||
+        path === "/v1/runs/resume" ||
         path === "/v1/start" ||
         path === "/v1/usage" ||
         path === "/v1/analytics" ||
@@ -950,6 +955,21 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
       if (method !== "GET") requests.push({ method, path, body });
 
       if (path === "/v1/snapshot") return ok(response, snapshot());
+      if (path === "/v1/runs/pause" && method === "POST") {
+        // Pausing what is paused changes nothing and announces nothing.
+        if (!paused) {
+          paused = { by: "person:owner", at: NOW };
+          send({ kind: "runs_paused", data: paused });
+        }
+        return ok(response, { paused: true, ...paused });
+      }
+      if (path === "/v1/runs/resume" && method === "POST") {
+        if (paused) {
+          paused = null;
+          send({ kind: "runs_resumed", data: { by: "person:owner", at: NOW } });
+        }
+        return ok(response, { paused: false });
+      }
       if (path === "/v1/start") {
         return ok(response, {
           done: steps.every((step) => step.done),

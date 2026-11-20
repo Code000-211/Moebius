@@ -43,6 +43,9 @@ pub const ASSIGNED: &str = "assigned";
 pub const MENTIONED: &str = "mentioned";
 pub const CHANGED: &str = "changed";
 
+/// How long a notice that was read is kept, in seconds (30 days).
+pub const KEPT_AFTER_READ: i64 = 30 * 24 * 60 * 60;
+
 /// How many notices of a person are listed, newest first.
 pub const LISTED: usize = 200;
 
@@ -131,6 +134,15 @@ impl Store {
         ))?;
         let rows = stmt.query_map([person_id], row)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Deletes the notices that were read and are older than [`KEPT_AFTER_READ`] at `now`; those not read yet stay.
+    /// Answers how many it deleted.
+    pub fn prune_notices(&self, now: i64) -> Result<usize> {
+        Ok(self.conn().execute(
+            "DELETE FROM notices WHERE read_at IS NOT NULL AND at < ?1",
+            [now - KEPT_AFTER_READ],
+        )?)
     }
 
     /// Marks the person's notice read (once; the first time stays). `None` when the person has no such notice, which
@@ -248,5 +260,27 @@ mod tests {
         assert_eq!(handles(&s), ["tom", "ada"], "a choice beats the author");
         s.set_person_disabled(tom.id, true).unwrap();
         assert_eq!(handles(&s), ["ada"], "a disabled person is not told");
+    }
+
+    #[test]
+    fn notices_that_were_read_long_ago_are_pruned_and_the_others_stay() {
+        let (_dir, s) = test_store();
+        let lea = s.add_person("lea", "Lea", Role::Member).unwrap();
+        let old_read = s.add_notice(lea.id, &new(ASSIGNED)).unwrap();
+        let old_unread = s.add_notice(lea.id, &new(ASSIGNED)).unwrap();
+        let new_read = s.add_notice(lea.id, &new(MENTIONED)).unwrap();
+        s.read_notice(lea.id, old_read.id).unwrap();
+        s.read_notice(lea.id, new_read.id).unwrap();
+        let day = 24 * 60 * 60;
+        s.conn()
+            .execute(
+                "UPDATE notices SET at = ?1 WHERE id IN (?2, ?3)",
+                rusqlite::params![100, old_read.id, old_unread.id],
+            )
+            .unwrap();
+        assert_eq!(s.prune_notices(100 + KEPT_AFTER_READ - day).unwrap(), 0);
+        assert_eq!(s.prune_notices(100 + KEPT_AFTER_READ + day).unwrap(), 1);
+        let ids: Vec<i64> = s.notices(lea.id).unwrap().iter().map(|n| n.id).collect();
+        assert_eq!(ids, [new_read.id, old_unread.id]);
     }
 }

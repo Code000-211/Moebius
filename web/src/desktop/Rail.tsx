@@ -3,12 +3,14 @@
  * server with the one open marked, the count of its Inbox, a grey dot for one that cannot be reached, and "+" to connect
  * one by its address and access token or over SSH. A right click on a square offers to remove the server, which also
  * deletes its token. The app answers `servers()` with every server's state (it asks each, so it is read every few
- * seconds); opening one replaces the page with that server's web app, on the page it was left on. In a browser nothing
- * is drawn.
+ * seconds); opening one shows that server's web app, on the page it was left on (the app keeps a page of every server
+ * it opened, so this page stays where it is, hidden). The square asked for is marked at once and pulses until the app
+ * has shown the server, and a page that is shown again reads the servers again (the app says so with
+ * `moebius:shown`). In a browser nothing is drawn.
  */
 import { PlusIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../ui/components/Button";
 import { ContextMenu, useContextMenu } from "../ui/components/ContextMenu";
 import {
@@ -28,6 +30,9 @@ const REFRESH_MS = 10_000;
 
 const KEY = ["desktop", "servers"] as const;
 
+/** What the app tells a page when it shows it again after the page was hidden behind another server's. */
+export const SHOWN_EVENT = "moebius:shown";
+
 /** The letter a server's square shows: the first of its name, which is its address. */
 export function initial(name: string): string {
   return (name.replace(/^[a-z]+:\/\//i, "").match(/[\p{L}\p{N}]/u)?.[0] ?? "?").toUpperCase();
@@ -44,7 +49,25 @@ export function Rail({ bridge }: { bridge?: DesktopBridge }) {
   const menu = useContextMenu();
   const [target, setTarget] = useState<RailServer | null>(null);
   const [adding, setAdding] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
+  // This page was hidden while another server was shown: what it drew of the servers is old.
+  useEffect(() => {
+    const read = () => void client.invalidateQueries({ queryKey: KEY });
+    window.addEventListener(SHOWN_EVENT, read);
+    return () => window.removeEventListener(SHOWN_EVENT, read);
+  }, [client]);
   if (!bridge) return null;
+
+  function open(server: RailServer) {
+    setPending(server.id);
+    bridge
+      ?.switchServer(server.id)
+      .catch(() => undefined)
+      .finally(() => {
+        setPending(null);
+        void client.invalidateQueries({ queryKey: KEY });
+      });
+  }
 
   async function remove(server: RailServer) {
     try {
@@ -65,7 +88,8 @@ export function Rail({ bridge }: { bridge?: DesktopBridge }) {
         <ServerSquare
           key={server.id}
           server={server}
-          onOpen={() => void bridge.switchServer(server.id).catch(() => undefined)}
+          pending={pending}
+          onOpen={() => open(server)}
           onMenu={(event) => {
             setTarget(server);
             menu.open(event);
@@ -103,13 +127,18 @@ export function Rail({ bridge }: { bridge?: DesktopBridge }) {
 
 function ServerSquare({
   server,
+  pending,
   onOpen,
   onMenu,
 }: {
   server: RailServer;
+  /** The server being opened, which is marked before the app has shown it. */
+  pending: string | null;
   onOpen: () => void;
   onMenu: (event: React.MouseEvent) => void;
 }) {
+  const open = pending === null ? server.open : pending === server.id;
+  const loading = pending === server.id;
   const state = server.reachable ? "" : " (cannot be reached)";
   const count = server.inbox > 0 ? `, ${server.inbox} in the Inbox` : "";
   return (
@@ -117,13 +146,15 @@ function ServerSquare({
       <button
         type="button"
         aria-label={`${server.name}${state}${count}`}
-        aria-current={server.open ? "true" : undefined}
+        aria-current={open ? "true" : undefined}
+        aria-busy={loading ? "true" : undefined}
         data-reachable={server.reachable}
-        onClick={server.open ? undefined : onOpen}
+        onClick={open ? undefined : onOpen}
         onContextMenu={onMenu}
         className={cn(
           "relative flex size-9 cursor-pointer items-center justify-center rounded-control font-medium text-secondary transition-colors hover:bg-hover hover:text-text",
-          server.open ? "bg-raised text-text shadow-edge" : "bg-surface",
+          open ? "bg-raised text-text shadow-edge" : "bg-surface",
+          loading && "animate-pulse",
         )}
       >
         {initial(server.name)}
@@ -178,7 +209,7 @@ function AddServer({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-4 p-6">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Connect a server</DialogTitle>
           <DialogDescription>

@@ -136,6 +136,8 @@ export function boardOfView(view: View): string | null {
   );
   if (sort && sort[0] !== "") query.set("sort", sort[0]);
   query.set("view", String(view.id));
+  // The card that was open on this board has no say in what the view shows.
+  query.set("card", "none");
   return `${boardPath(board.repository)}?${query.toString()}`;
 }
 

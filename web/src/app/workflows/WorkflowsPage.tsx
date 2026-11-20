@@ -13,8 +13,8 @@ import { PlusIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router";
+import { workflows } from "../../api/calls/workflows";
 import { keys } from "../../api/keys";
-import { workflows } from "../../api/workflows";
 import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
 import { FilterBar } from "../../ui/filters/FilterBar";
@@ -141,7 +141,7 @@ export function WorkflowsPage() {
                       <span className="truncate text-sm text-secondary">{each.description}</span>
                     </span>
                     <span className="w-44 shrink-0">
-                      <Tag tone="plain">{triggerName(each.trigger)}</Tag>
+                      <Tag tone="plain">{triggerName(each.trigger_kind)}</Tag>
                     </span>
                     <span className="w-20 shrink-0 text-sm tabular-nums text-secondary">
                       {plural(each.node_count, "node", "nodes")}

@@ -51,6 +51,8 @@ const SNAPSHOT_KINDS = new Set([
   "takeover_proposed",
   "takeover_status",
   "retro_done",
+  "runs_paused",
+  "runs_resumed",
 ]);
 
 /** The events about kinds of issues, their fields and the values cards hold, which the Kinds and Issues pages read. */
@@ -134,7 +136,7 @@ export function invalidates(event: ServerEvent): QueryKey[] {
 function workflowPages(event: ServerEvent): QueryKey[] {
   if (!event.kind.startsWith("workflow_")) return [];
   const run = event.data.run;
-  const stale: QueryKey[] = [keys.workflows, keys.workflowDefinitions];
+  const stale: QueryKey[] = [keys.workflows, keys.workflowDefinitions, keys.allWorkflowRuns];
   if (typeof run === "number") stale.push(keys.workflowRun(run));
   return stale;
 }

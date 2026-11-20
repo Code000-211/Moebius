@@ -46,6 +46,8 @@ import { buildTree, folderOf, headings, PROJECTS, pathProblem } from "./model";
 import { PageEditor } from "./PageEditor";
 import { PageHistory } from "./PageHistory";
 import { Backlinks } from "./WikiBacklinks";
+import { WikiSearchBox, WikiSearchResults } from "./WikiSearch";
+import { FromTemplate, TemplatesDialog } from "./WikiTemplates";
 import { WikiTree } from "./WikiTree";
 
 export function WikiPage() {
@@ -62,6 +64,8 @@ export function WikiPage() {
   const newIn = canWrite ? params.get("new") : null;
   const view = params.get("view");
   const at = params.get("at");
+  const [search, setSearch] = useState("");
+  const [templating, setTemplating] = useState(false);
   const open = (next: Record<string, string>) => setParams(next, { replace: false });
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.wiki });
 
@@ -71,10 +75,15 @@ export function WikiPage() {
       context="The organisation's pages, and a folder for each project. Every edit is a commit."
       actions={
         canWrite && pages.isSuccess ? (
-          <Button size="sm" onClick={() => open({ new: "" })}>
-            <PlusIcon className="size-4" weight="bold" />
-            New page
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setTemplating(true)}>
+              Templates
+            </Button>
+            <Button size="sm" onClick={() => open({ new: "" })}>
+              <PlusIcon className="size-4" weight="bold" />
+              New page
+            </Button>
+          </div>
         ) : undefined
       }
     />
@@ -107,6 +116,7 @@ export function WikiPage() {
           {sayError(pages.error, "Could not read the wiki.")}
         </Notice>
       )}
+      <TemplatesDialog open={templating} onOpenChange={setTemplating} />
       {pages.isPending && (
         <ListDetail
           list={<SkeletonList rows={5} message="Reading the wiki" />}
@@ -116,18 +126,40 @@ export function WikiPage() {
       {pages.isSuccess && (
         <ListDetail
           list={
-            <WikiTree
-              tree={tree}
-              chosen={newIn === null ? chosen : null}
-              canWrite={canWrite}
-              onChoose={(path) => open({ page: path })}
-              onNew={(folder) => open({ new: folder })}
-            />
+            <div className="flex flex-col gap-3">
+              <WikiSearchBox value={search} onChange={setSearch} />
+              {search.trim() !== "" ? (
+                <WikiSearchResults
+                  query={search}
+                  onOpen={(path) => {
+                    setSearch("");
+                    open({ page: path });
+                  }}
+                />
+              ) : (
+                <WikiTree
+                  tree={tree}
+                  chosen={newIn === null ? chosen : null}
+                  canWrite={canWrite}
+                  onChoose={(path) => open({ page: path })}
+                  onNew={(folder) => open({ new: folder })}
+                />
+              )}
+            </div>
           }
           detail={
             newIn !== null ? (
               <section aria-label="New page" className="flex min-w-0 flex-col gap-4">
                 <h2 className="m-0 text-xl font-semibold text-text">New page</h2>
+                <FromTemplate
+                  key={`template:${newIn}`}
+                  folder={newIn}
+                  keys={projectKeys}
+                  onMade={(page) => {
+                    void refresh();
+                    open({ page: page.path });
+                  }}
+                />
                 <PageEditor
                   key={`new:${newIn}`}
                   path={null}

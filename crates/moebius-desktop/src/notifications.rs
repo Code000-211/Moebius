@@ -15,8 +15,6 @@ use moebius_desktop::server::Server;
 use tauri::image::Image;
 use tauri::{AppHandle, Manager};
 
-use crate::window::MAIN;
-
 /// The watch of the connected server's notices; a server connected later replaces it, which stops the earlier one.
 #[derive(Default)]
 pub struct Watching(Mutex<Option<Watcher>>);
@@ -49,7 +47,7 @@ pub fn stop(app: &AppHandle) {
 
 /// Puts the count on the icon and in the title.
 fn count(app: &AppHandle, unread: usize) {
-    let Some(window) = app.get_webview_window(MAIN) else {
+    let Some(window) = crate::pages::main_window(app) else {
         return;
     };
     let _ = window.set_badge_count((unread > 0).then_some(unread as i64));
@@ -71,14 +69,14 @@ fn notify(app: &AppHandle, notice: &Notice) {
 
 /// Brings the window forward and goes to `path` in the web app, as a link of the web app does, without loading it again.
 fn open(app: &AppHandle, path: &str) {
-    let Some(window) = app.get_webview_window(MAIN) else {
+    let Some(window) = crate::pages::main_window(app) else {
         return;
     };
     let _ = window.show();
     let _ = window.unminimize();
     let _ = window.set_focus();
-    if let Ok(path) = serde_json::to_string(path) {
-        let _ = window.eval(format!(
+    if let (Ok(path), Some(webview)) = (serde_json::to_string(path), crate::pages::front(app)) {
+        let _ = webview.eval(format!(
             "history.pushState({{}}, '', {path}); dispatchEvent(new PopStateEvent('popstate'));"
         ));
     }

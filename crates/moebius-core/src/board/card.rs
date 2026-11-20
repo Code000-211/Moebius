@@ -35,12 +35,14 @@
 //! - `card.attempts`, `card.selection`: the attempts the card has not settled yet and what its selection run picked
 //!   (see `attempts`). `card.run` is the card's latest run that is not an attempt that was not picked.
 
+use std::sync::Arc;
+
 use mlua::{Lua, Table};
 
 use super::Engine;
 use super::review::{AxisReview, two_axes};
 use crate::app::{App, CardFacts, runs_since_retry};
-use crate::store::{Card, Run};
+use crate::store::{Card, Change, Run};
 
 /// What a review run concluded: `verdict` is `approve` or `changes`, and `findings` is what it found.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -233,7 +235,7 @@ impl Engine {
 
 /// The card's open changes as scripts see them, in the order the card names their repositories; empty when it has
 /// none. How each one's checks stand is for its current commit; what failed is left out when that is of an older one.
-pub(super) fn changes_table(app: &App, lua: &Lua, card_id: i64) -> mlua::Result<Table> {
+pub(super) fn changes_table(app: &Arc<App>, lua: &Lua, card_id: i64) -> mlua::Result<Table> {
     let card = app.card(card_id).map_err(mlua::Error::external)?;
     let changes = app.open_changes(&card).map_err(mlua::Error::external)?;
     let list = lua.create_table()?;
@@ -261,14 +263,38 @@ pub(super) fn changes_table(app: &App, lua: &Lua, card_id: i64) -> mlua::Result<
             "check_output",
             change.check_output.as_deref().filter(|_| current),
         )?;
-        c.set(
-            "conflict",
-            app.conflict_of(&change).map_err(mlua::Error::external)?,
-        )?;
+        read_conflict_when_asked(lua, &c, app.clone(), change)?;
         list.push(c)?;
     }
     array_of_changes(lua, &list)?;
     Ok(list)
+}
+
+/// Makes `conflict` of a change found on its first read, not when the table is built: only a script that looks at it
+/// pays for a `git merge-tree`, and the answer is kept while neither branch moves (see `Repos::conflicts_kept`). A
+/// read that fails raises the error, so a script fails closed.
+fn read_conflict_when_asked(
+    lua: &Lua,
+    change_table: &Table,
+    app: Arc<App>,
+    change: Change,
+) -> mlua::Result<()> {
+    let meta = lua.create_table()?;
+    meta.set(
+        "__index",
+        lua.create_function(move |lua, (table, key): (Table, mlua::Value)| {
+            if let mlua::Value::String(key) = &key
+                && key.to_str().is_ok_and(|key| key == "conflict")
+            {
+                let found = app.conflict_of(&change).map_err(mlua::Error::external)?;
+                let value = lua.pack(found)?;
+                table.raw_set("conflict", value.clone())?;
+                return Ok(value);
+            }
+            Ok(mlua::Value::Nil)
+        })?,
+    )?;
+    change_table.set_metatable(Some(meta))
 }
 
 /// Makes reading `card.change`, which became `card.changes`, raise an error, so that a script written for one change

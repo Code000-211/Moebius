@@ -62,7 +62,7 @@ export function ConfirmDelete({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="gap-4 p-6">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{children}</DialogDescription>

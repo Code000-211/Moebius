@@ -11,8 +11,9 @@
 import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router";
+import { workflowRun } from "../../api/calls/workflows";
 import { keys } from "../../api/keys";
-import { type WorkflowNodeRun, workflowRun } from "../../api/workflows";
+import type { WorkflowNodeRun } from "../../api/types/workflows";
 import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
 import { elapsed } from "../../ui/lib/format";
@@ -177,17 +178,6 @@ function NodePanel({ node, waiting }: { node: WorkflowNodeRun; waiting: boolean 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Value title="Input" value={node.input} name={`${node.node}-input`} />
         <Value title="Output" value={node.output} name={`${node.node}-output`} />
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <h3 className="m-0 text-sm font-semibold text-text">Log</h3>
-        {node.log ? (
-          <pre className="m-0 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-control bg-code px-3 py-2 font-mono text-xs leading-5 text-text">
-            {node.log}
-          </pre>
-        ) : (
-          <p className="m-0 text-sm text-secondary">This node logged nothing.</p>
-        )}
       </div>
 
       {node.error ? (

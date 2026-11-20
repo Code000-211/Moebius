@@ -11,8 +11,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import { workflows } from "../../api/calls/workflows";
 import { keys } from "../../api/keys";
-import { workflows } from "../../api/workflows";
 import { Button } from "../../ui/components/Button";
 import {
   Dialog,
@@ -56,7 +56,7 @@ export function NewWorkflowDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-4 p-6">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>New workflow</DialogTitle>
           <DialogDescription>

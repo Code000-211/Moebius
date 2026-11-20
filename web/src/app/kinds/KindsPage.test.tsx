@@ -34,7 +34,14 @@ function show() {
       if (init?.method === "PUT") sent.push(`${url} ${init.body}`);
       // The answer to the save comes late, as a server's does.
       if (init?.method === "PUT") await new Promise((r) => setTimeout(r, 100));
-      const body = url === "/v1/kinds" ? [KIND] : url === "/v1/projects" ? [PROJECT] : PROJECT;
+      const body =
+        url === "/v1/kinds"
+          ? [KIND]
+          : url === "/v1/projects"
+            ? [PROJECT]
+            : url === "/v1/templates"
+              ? { editable: false, issues: [], pages: [] }
+              : PROJECT;
       return { ok: true, status: 200, text: async () => JSON.stringify(body) };
     }),
   );
