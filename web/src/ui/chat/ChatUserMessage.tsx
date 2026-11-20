@@ -26,13 +26,16 @@ export function ChatUserMessage({
   renderMarkdown,
 }: ChatUserMessageProps) {
   return (
-    <div className={cn("reveal-copy relative flex min-w-0 flex-col items-end gap-1", className)}>
+    <div className={cn("reveal-copy flex min-w-0 flex-col items-end gap-1", className)}>
       {steered && <span className="text-xs text-secondary">You steered the chat</span>}
-      <div className="flex max-w-[85%] min-w-0 items-center gap-1">
-        <div className="min-w-0 rounded-card bg-sunken px-3 py-2">
-          {renderMarkdown({ content })}
-        </div>
-        {copy && <div className="copy-float flex shrink-0">{copy}</div>}
+      <div className="relative flex max-w-[85%] min-w-0 items-center gap-1">
+        {/* On a screen that can hover, Copy floats to the left of the bubble, so it never covers the words. */}
+        {copy && (
+          <div className="copy-float top-1/2! right-full! bottom-auto! mr-1 flex shrink-0 -translate-y-1/2">
+            {copy}
+          </div>
+        )}
+        <div className="min-w-0 rounded-card bg-hover px-3 py-2">{renderMarkdown({ content })}</div>
       </div>
     </div>
   );

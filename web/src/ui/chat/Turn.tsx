@@ -50,6 +50,11 @@ export function toolStatus(call: ToolCall): ToolStatusLike {
   return { status: "created" };
 }
 
+/** The status a step row says: a call that went well says nothing, one that did not says what happened. */
+function quiet(status: ToolStatusLike): ToolStatusLike | undefined {
+  return status.status === "success" ? undefined : status;
+}
+
 /** The changes a file entry shows: an edit's replacements, or a written file as all added. */
 function changesOf(call: ToolCall): DiffChange[] | null {
   const input = call.input;
@@ -128,7 +133,7 @@ function ToolLine({
         filename={call.input.path}
         additions={additions}
         deletions={deletions}
-        status={status}
+        status={quiet(status)}
         expanded={expanded}
         onToggle={onToggle}
       >
@@ -144,7 +149,7 @@ function ToolLine({
         summary={inputSummary(call.input)}
         detail={inputPath(call.input) ?? undefined}
         toolName={toolTitle(call)}
-        status={status}
+        status={quiet(status)}
         isTruncated={hasDetails}
         expanded={expanded}
         onToggle={onToggle}
@@ -185,7 +190,7 @@ function StepLine({
         entries={step.calls.map((call, index) => ({
           summary: inputSummary(call.input),
           detail: inputPath(call.input) ?? undefined,
-          status: toolStatus(call),
+          status: quiet(toolStatus(call)),
           expansionKey: `${step.key}-${index}`,
         }))}
         expanded={isOpen(step.key)}
@@ -243,11 +248,11 @@ function StepsGroup({
   // A few steps are the timeline itself, one line each; only a long run of them, or one with trouble in it, is folded.
   if (!troubled && block.steps.length < FOLD_FROM) {
     return (
-      <div className="flex min-w-0 flex-col gap-0.5" data-testid="steps">
+      <div className="-ml-3 flex min-w-0 flex-col gap-0.5" data-testid="steps">
         {rows}
         {block.working && (
           <p
-            className="m-0 flex min-h-8 items-center px-3 text-sm text-progress-text"
+            className="m-0 flex min-h-7 items-center px-3 text-sm text-progress-text"
             data-testid="working"
           >
             Working
@@ -264,11 +269,11 @@ function StepsGroup({
     trouble.failed > 0 ? `${trouble.failed} failed` : null,
   ].filter((part) => part !== null);
   return (
-    <div className="flex min-w-0 flex-col">
+    <div className="-ml-3 flex min-w-0 flex-col">
       <button
         type="button"
         className={cn(
-          "flex min-h-8 cursor-pointer items-center gap-2 self-start rounded-control px-3 text-left text-sm transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text",
+          "flex min-h-7 cursor-pointer items-center gap-2 self-start rounded-control px-3 text-left text-sm transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text",
           block.working ? "text-progress-text" : "text-secondary",
         )}
         onClick={() => onToggle(troubled ? closedKey : block.key)}

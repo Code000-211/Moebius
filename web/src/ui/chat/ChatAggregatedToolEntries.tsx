@@ -2,7 +2,7 @@
 // is a real button 32px tall; the count is a figure that does not shift as it grows; a file is named by its name with
 // its whole path kept as the tooltip on one line whose end stays in view; the state of the group is a word with a hue;
 // the caret that says the row opens is always drawn rather than shown only while the pointer is over it.
-import { CaretDownIcon, ListMagnifyingGlassIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, FileTextIcon } from "@phosphor-icons/react";
 import type { ElementType } from "react";
 import { cn } from "../lib/cn";
 import { plural } from "../lib/format";
@@ -60,7 +60,7 @@ export function ChatAggregatedToolEntries({
   onToggle,
   label,
   unit,
-  icon: Icon = ListMagnifyingGlassIcon,
+  icon: Icon = FileTextIcon,
   className,
 }: ChatAggregatedToolEntriesProps) {
   if (entries.length === 0) return null;
@@ -70,11 +70,11 @@ export function ChatAggregatedToolEntries({
   if (only) {
     return (
       <div
-        className={cn("flex min-h-8 flex-wrap items-center gap-3 px-3 text-left", className)}
+        className={cn("flex min-h-7 flex-wrap items-center gap-2 px-3 text-left", className)}
         title={only.detail ?? only.summary}
       >
         <Icon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
-        <FadedLine text={only.summary} className="flex-1 font-mono text-sm text-text" />
+        <FadedLine text={only.summary} className="flex-1 font-mono text-sm text-secondary" />
         {only.status && <ToolStatusDot status={only.status} />}
       </div>
     );
@@ -86,12 +86,12 @@ export function ChatAggregatedToolEntries({
     <div className={cn("flex flex-col", className)}>
       <button
         type="button"
-        className="flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
+        className="flex min-h-7 w-full cursor-pointer items-center gap-2 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
         onClick={onToggle}
         aria-expanded={expanded}
       >
         <Icon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
-        <span className="min-w-0 flex-1 break-words text-base text-secondary">
+        <span className="min-w-0 flex-1 break-words text-sm text-secondary">
           {label} · <span className="tabular-nums">{plural(entries.length, unit, `${unit}s`)}</span>
         </span>
         {aggregateStatus && <ToolStatusDot status={aggregateStatus} />}
@@ -110,10 +110,10 @@ export function ChatAggregatedToolEntries({
             <div
               key={entry.expansionKey}
               title={entry.detail ?? entry.summary}
-              className="flex min-h-8 flex-wrap items-center gap-3 px-3"
+              className="flex min-h-7 flex-wrap items-center gap-2 px-3"
             >
               <Icon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
-              <FadedLine text={entry.summary} className="flex-1 font-mono text-sm text-text" />
+              <FadedLine text={entry.summary} className="flex-1 font-mono text-sm text-secondary" />
               {entry.status && <ToolStatusDot status={entry.status} />}
             </div>
           ))}

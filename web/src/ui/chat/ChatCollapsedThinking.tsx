@@ -38,6 +38,17 @@ export function thinkingLabel(seconds: number | null | undefined, ongoing: boole
   return `Thought ${elapsed(seconds)}`;
 }
 
+/** The label with its length, if it has one, as a quieter figure beside the word: "Thought" and "6s". */
+function ThoughtLabel({ label }: { label: string }) {
+  const [word, ...rest] = label.split(" ");
+  return (
+    <>
+      {word}
+      {rest.length > 0 && <span className="text-muted tabular-nums"> {rest.join(" ")}</span>}
+    </>
+  );
+}
+
 /**
  * A collapsible group for thinking entries. Collapsed it is one 32px row that says what it was and how long it
  * took, at the size of the other steps of the turn so that a thought does not shout over the answer it led to; opened,
@@ -59,12 +70,12 @@ export function ChatCollapsedThinking({
     <div className={cn("flex flex-col", className)}>
       <button
         type="button"
-        className="flex min-h-8 cursor-pointer items-center gap-2 self-start rounded-control px-3 text-left text-base text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
+        className="flex min-h-7 cursor-pointer items-center gap-2 self-start rounded-control px-3 text-left text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
         onClick={onToggle}
         aria-expanded={expanded}
       >
         <LightbulbIcon aria-hidden="true" className="size-4 shrink-0" />
-        {thinkingLabel(seconds, ongoing)}
+        <ThoughtLabel label={thinkingLabel(seconds, ongoing)} />
       </button>
 
       {expanded && (

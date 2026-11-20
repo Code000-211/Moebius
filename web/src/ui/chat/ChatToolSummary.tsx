@@ -65,7 +65,7 @@ export function ChatToolSummary({
     <Root
       type={canExpand ? "button" : undefined}
       className={cn(
-        "flex min-h-8 w-full flex-wrap items-center gap-2 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out",
+        "flex min-h-7 w-full flex-wrap items-center gap-2 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out",
         canExpand && "cursor-pointer hover:bg-hover",
         className,
       )}
@@ -74,8 +74,8 @@ export function ChatToolSummary({
       title={detail || undefined}
     >
       <Icon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
-      {toolName && <span className="shrink-0 text-base text-secondary">{toolName}</span>}
-      <FadedLine text={summary} className="flex-1 font-mono text-sm text-text" />
+      {toolName && <span className="shrink-0 text-sm text-secondary">{toolName}</span>}
+      <FadedLine text={summary} className="flex-1 font-mono text-sm text-secondary" />
       {status && <ToolStatusDot status={status} />}
     </Root>
   );

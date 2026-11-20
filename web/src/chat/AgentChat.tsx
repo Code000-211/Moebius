@@ -202,7 +202,7 @@ export function AgentChat({
           type="button"
           variant="ghost"
           size="sm"
-          className="self-start"
+          className="-ml-2 self-start text-sm text-secondary"
           data-testid="new-conversation"
           onClick={() => {
             setChatId(null);

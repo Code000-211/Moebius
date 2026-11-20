@@ -98,7 +98,7 @@ export function Composer({
         "max-h-60 min-h-8 resize-none",
         // In the compact field the box around it is the field: no edge, no colour and no focus outline of its own.
         compact &&
-          "min-h-7 flex-1 bg-transparent px-0 py-1 [box-shadow:none] focus-visible:outline-none",
+          "min-h-7 flex-1 bg-transparent! px-0 py-1 shadow-none! focus-visible:outline-none",
       )}
     />
   );
@@ -120,8 +120,8 @@ export function Composer({
             aria-label={sendLabel}
             title={canSend ? sendLabel : sendHint}
             className={cn(
-              "shrink-0 bg-sunken",
-              canSend && "bg-accent-fill text-white hover:bg-accent-fill hover:text-white",
+              "shrink-0 bg-hover!",
+              canSend && "bg-accent-fill! text-white hover:text-white",
             )}
           >
             <ArrowElbowDownLeftIcon aria-hidden="true" className="size-4" />
