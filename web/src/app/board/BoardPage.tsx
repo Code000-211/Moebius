@@ -30,7 +30,6 @@ import { type Display, displayQuery, readDisplay } from "../../ui/filters/model"
 import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
 import { Select } from "../../ui/page/Field";
-import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { usePropertiesShown } from "../../ui/page/Properties";
 import { ReadFailed } from "../../ui/page/ReadFailed";
@@ -89,7 +88,7 @@ export function BoardPage() {
     queryFn: listViews,
     enabled: params.has("view"),
   });
-  const { decide, pending, notice, setNotice } = useDecisions();
+  const { decide, pending, notify } = useDecisions();
   const queryClient = useQueryClient();
   const newIssue = useNewIssue();
   // The column whose line for a new card is open.
@@ -159,7 +158,7 @@ export function BoardPage() {
     board,
     inbox,
     order: useMemo(() => choosable.map((card) => card.id), [choosable]),
-    onNotice: setNotice,
+    onNotice: notify,
     onBlock: (cards) => {
       setBlocking(cards[0] ?? null);
       setBlockingMore(cards.slice(1));
@@ -201,10 +200,10 @@ export function BoardPage() {
       newIssue({
         repository: repositoryId,
         parent,
-        onCreated: (card) => setNotice({ tone: "ok", text: `Created "${card.title}"` }),
+        onCreated: (card) => notify({ tone: "ok", text: `Created "${card.title}"` }),
       });
     },
-    [newIssue, repositoryId, setNotice],
+    [newIssue, repositoryId, notify],
   );
   const menu = useMemo(
     () => ({
@@ -243,14 +242,14 @@ export function BoardPage() {
   );
   const onCreated = useCallback(
     (card: Card, where: string) =>
-      setNotice({
+      notify({
         tone: "ok",
         text:
           where === "Backlog"
             ? `Created "${card.title}"`
             : `Created "${card.title}" in the Backlog`,
       }),
-    [setNotice],
+    [notify],
   );
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
@@ -304,15 +303,15 @@ export function BoardPage() {
         );
         const made = await addView(fields);
         void queryClient.invalidateQueries({ queryKey: keys.views });
-        setNotice({
+        notify({
           tone: "ok",
           text: `Saved this view as "${made.name}"`,
         });
       } catch (error) {
-        setNotice({ tone: "error", text: sayError(error, "The view could not be saved.") });
+        notify({ tone: "error", text: sayError(error, "The view could not be saved.") });
       }
     })();
-  }, [repositoryId, filters, display.layout, display.sort, queryClient, setNotice]);
+  }, [repositoryId, filters, display.layout, display.sort, queryClient, notify]);
   // The head of the page, drawn again only when its title, the layout or the handlers change: a read of the snapshot
   // leaves it as it is.
   const repositoryName = board?.repository.name;
@@ -346,11 +345,11 @@ export function BoardPage() {
     setBlockingMore([]);
   }, []);
   const doneBlock = useCallback(
-    (text: string) => {
-      setNotice({ tone: "ok", text });
+    (text: string, undo: () => void) => {
+      notify({ tone: "ok", text, undo });
       clearChoice();
     },
-    [setNotice, clearChoice],
+    [notify, clearChoice],
   );
   const clearReject = useCallback(() => setRejectFor(null), []);
   const closeDock = useCallback(() => {
@@ -363,12 +362,12 @@ export function BoardPage() {
     (card: Card, text: string) => {
       // A card's id can be given again once it is gone, so a dock that was open on it is closed for good.
       if (cardParam === String(card.id)) setQuery({ card: "" }, true);
-      setNotice({ tone: "ok", text });
+      notify({ tone: "ok", text });
     },
-    [cardParam, setQuery, setNotice],
+    [cardParam, setQuery, notify],
   );
   const closeParent = useCallback(() => setMoving(null), []);
-  const doneParent = useCallback((text: string) => setNotice({ tone: "ok", text }), [setNotice]);
+  const doneParent = useCallback((text: string) => notify({ tone: "ok", text }), [notify]);
   const { has, toggle } = bulk.choice;
   const { anyChosen, onContextMenu } = bulk;
   const columnBulk = useMemo(
@@ -436,7 +435,7 @@ export function BoardPage() {
       setQuery({ card: String(card.id) });
       setRejectFor(card.id);
     } else if (drop.kind === "refused") {
-      setNotice({ tone: "error", text: `Cannot move #${number} to ${to}: ${drop.reason}` });
+      notify({ tone: "error", text: `Cannot move #${number} to ${to}: ${drop.reason}` });
     }
   }
 
@@ -506,19 +505,6 @@ export function BoardPage() {
             onSaveView={saveView}
           />
           <LeftoverNotice repository={board.repository.id} />
-          {notice && (
-            <Notice
-              tone={notice.tone}
-              className="mb-4"
-              action={
-                <Button variant="ghost" size="sm" onClick={() => setNotice(null)}>
-                  Dismiss
-                </Button>
-              }
-            >
-              {notice.text}
-            </Notice>
-          )}
           {display.layout === "list" ? (
             <ListLayout
               board={board}
@@ -607,7 +593,7 @@ export function BoardPage() {
           card={inspected}
           item={inboxOf(inbox, inspected)}
           decide={decide}
-          onNotice={setNotice}
+          onNotice={notify}
           onBlock={setBlocking}
           onAddSubIssue={(card) => openForm(card.number)}
           onReject={(card) => setRejectFor(card.id)}

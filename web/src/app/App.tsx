@@ -13,6 +13,7 @@ import { OpenRequests } from "../desktop/OpenRequests";
 import { WindowControls } from "../desktop/WindowControls";
 import { LiveProvider } from "../live/LiveProvider";
 import { Loader } from "../ui/components/Loader";
+import { ToastProvider } from "../ui/page/Toast";
 import { SignIn } from "./SignIn";
 import { Shell } from "./shell/Shell";
 import { Unreachable } from "./shell/Unreachable";
@@ -22,11 +23,11 @@ const RETRY_MS = 3000;
 
 export function App() {
   return (
-    <>
+    <ToastProvider>
       <Screen />
       <WindowControls />
       <OpenRequests />
-    </>
+    </ToastProvider>
   );
 }
 

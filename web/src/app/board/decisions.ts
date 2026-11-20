@@ -1,16 +1,17 @@
 /**
  * What a person decides about a card: approve an issue, merge a change, send it back, retry a stuck card, unblock a
  * blocked one, stop a card's live run (blocking and deleting ask a question first, in `CardDialogs.tsx`). One hook
- * sends the request, tells the outcome in a sentence (what the server did, or why it refused) and reads the board
+ * sends the request, tells the outcome in a toast (what the server did, or why it refused) and reads the board
  * again; the events of the server do the same, so a second client sees it too.
  */
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { approve, merge, reject, retry, unblock } from "../../api/calls/board";
 import { stopRun } from "../../api/calls/chat";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import { putCards } from "../../live/cardCache";
+import { useToast } from "../../ui/page/Toast";
 
 export type Decision =
   | { kind: "approve"; card: number; number: number }
@@ -20,10 +21,21 @@ export type Decision =
   | { kind: "merge"; change: number; number: number }
   | { kind: "reject"; change: number; number: number; reason: string };
 
-/** What the page tells after a decision or a refused drop. */
+/** What the page tells after a decision or a refused drop: a toast, with Undo when it can be taken back. */
 export interface Notice {
   tone: "ok" | "error";
   text: string;
+  undo?: () => void;
+}
+
+/** Shows a notice as a toast. */
+export function useNotify(): (notice: Notice) => void {
+  const toast = useToast();
+  return useCallback(
+    ({ tone, text, undo }: Notice) =>
+      toast({ kind: tone === "error" ? "error" : "confirmation", text, undo }),
+    [toast],
+  );
 }
 
 const VERB: Record<Decision["kind"], string> = {
@@ -68,19 +80,19 @@ export function failure(decision: Decision, error: unknown): string {
 
 export function useDecisions() {
   const queryClient = useQueryClient();
-  const [notice, setNotice] = useState<Notice | null>(null);
+  const notify = useNotify();
   const mutation = useMutation({
     mutationFn: (decision: Decision) => send(decision, queryClient),
-    onSuccess: (text) => setNotice({ tone: "ok", text }),
+    onSuccess: (text) => notify({ tone: "ok", text }),
     onError: (error, decision) => {
       // Refused: read the board, so what is shown is what the server has.
       void queryClient.invalidateQueries({ queryKey: keys.snapshot });
       void queryClient.invalidateQueries({ queryKey: keys.cards });
-      setNotice({ tone: "error", text: failure(decision, error) });
+      notify({ tone: "error", text: failure(decision, error) });
     },
   });
   // `mutate` keeps its identity from one render to the next, which the board's memoised cards rely on.
   const { mutate } = mutation;
   const decide = useCallback((decision: Decision) => mutate(decision), [mutate]);
-  return { decide, pending: mutation.isPending, notice, setNotice };
+  return { decide, pending: mutation.isPending, notify };
 }

@@ -89,7 +89,7 @@ describe("blocking a card", () => {
       "POST",
       JSON.stringify({ reason: "wait for the design" }),
     ]);
-    expect(onDone).toHaveBeenCalledWith("Blocked #12. Its runs are stopped.");
+    expect(onDone).toHaveBeenCalledWith("Blocked #12. Its runs are stopped.", expect.any(Function));
     expect(onClose).toHaveBeenCalled();
   });
 
