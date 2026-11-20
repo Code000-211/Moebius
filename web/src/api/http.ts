@@ -10,11 +10,14 @@ export const UNREACHABLE = 0;
 /** A failed request: the status the server answered (`UNREACHABLE` when it did not) and its plain-text message. */
 export class ApiError extends Error {
   readonly status: number;
+  /** The JSON object of the answer, for the few failures that carry more than a message (a stale wiki save). */
+  readonly body: Record<string, unknown> | undefined;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, body?: Record<string, unknown>) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.body = body;
   }
 
   /** The server does not accept the session: the person has to sign in. */
@@ -94,15 +97,29 @@ async function send(method: Method, path: string, options: RequestOptions): Prom
     throw new ApiError(UNREACHABLE, "cannot reach the server");
   }
   if (!response.ok) {
-    throw new ApiError(response.status, await messageOf(response));
+    const text = (await response.text().catch(() => "")).trim();
+    const body = jsonObject(text);
+    const said = body && typeof body.error === "string" ? body.error : text;
+    throw new ApiError(
+      response.status,
+      said !== "" ? said : `the server answered ${response.status}`,
+      body,
+    );
   }
   return response;
 }
 
-/** The plain-text body of a failed answer, or a sentence for its status when the body is empty. */
-async function messageOf(response: Response): Promise<string> {
-  const text = (await response.text().catch(() => "")).trim();
-  return text !== "" ? text : `the server answered ${response.status}`;
+/** The text as a JSON object, or undefined when it is anything else. */
+function jsonObject(text: string): Record<string, unknown> | undefined {
+  if (!text.startsWith("{")) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export const get = <T>(path: string, options?: RequestOptions) => request<T>("GET", path, options);

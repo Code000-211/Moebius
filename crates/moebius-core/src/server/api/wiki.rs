@@ -3,7 +3,8 @@
 //!
 //! - `GET /v1/wiki/pages`: every page, `[{path, name}]`, sorted by path.
 //! - `GET /v1/wiki/pages/{*path}`: a page, `?at=<commit>` for an older version of it.
-//! - `PUT /v1/wiki/pages/{*path}` `{text, message?}`: writes a page, making it if it is not there.
+//! - `PUT /v1/wiki/pages/{*path}` `{text, message?, base?}`: writes a page, making it if it is not there; with `base`
+//!   (the commit the writer loaded), `409` and the page as it now is when it has changed since.
 //! - `DELETE /v1/wiki/pages/{*path}`: deletes a page; its history stays.
 //! - `POST /v1/wiki/moves` `{from, to}`: moves or renames a page.
 //! - `GET /v1/wiki/history/{*path}`: the commits that changed a page, newest first.
@@ -15,6 +16,8 @@
 //! - `POST /v1/wiki/proposals/{id}/merge` and `/dismiss` `{reason?}`: a person's decision about it.
 
 use axum::extract::{Path as UrlPath, Query, State};
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
 use serde::Deserialize;
@@ -124,6 +127,10 @@ pub struct PageText {
     /// The commit message; without one, it says which page was added or updated.
     #[serde(default)]
     pub message: Option<String>,
+    /// The commit of the page the writer loaded, or `""` for a page that was not there. When the page's latest commit
+    /// is another, nothing is written and the answer is `409` with the page as it now is.
+    #[serde(default)]
+    pub base: Option<String>,
 }
 
 /// What `POST /v1/wiki/proposals` takes.
@@ -176,14 +183,34 @@ async fn write_page(
     Extension(by): Extension<Actor>,
     UrlPath(path): UrlPath<String>,
     Json(new): Json<PageText>,
-) -> Result<Json<PageView>, ApiError> {
-    blocking(&state.app, move |app| {
+) -> Result<Json<PageView>, Response> {
+    let app = state.app.clone();
+    let written = tokio::task::spawn_blocking(move || {
         let wiki = app.wiki()?;
-        visible(app, &by, &path)?;
-        let author = Author::of(app, &by)?;
-        wiki.write_page(app, &author, &path, &new.text, new.message.as_deref())
+        visible(&app, &by, &path)?;
+        let author = Author::of(&app, &by)?;
+        wiki.write_page_from(
+            &app,
+            &author,
+            &path,
+            &new.text,
+            new.message.as_deref(),
+            new.base.as_deref(),
+        )
     })
     .await
+    .map_err(|e| ApiError::from(AppError::Io(std::io::Error::other(e))).into_response())?;
+    match written {
+        Ok(page) => Ok(Json(page)),
+        // A stale save names the page as it is now, so the editor can show it without another read.
+        Err(error) => Err(match &error {
+            AppError::Stale { current, .. } => {
+                let body = serde_json::json!({ "error": error.to_string(), "current": current });
+                (StatusCode::CONFLICT, Json(body)).into_response()
+            }
+            _ => ApiError::from(error).into_response(),
+        }),
+    }
 }
 
 async fn delete_page(
@@ -403,6 +430,69 @@ mod tests {
             links["backlinks"]["pages"],
             json!([{"path": "Index", "name": "Index"}])
         );
+    }
+
+    #[tokio::test]
+    async fn a_save_built_on_an_old_version_is_refused_with_the_page_as_it_is() {
+        let (dir, state, addr) = start().await;
+        let origin = bare_origin(dir.path());
+        let wiki = Wiki::open(
+            &state.app,
+            &origin.to_string_lossy(),
+            &dir.path().join("data/wiki"),
+        )
+        .unwrap();
+        state.app.set_wiki(Arc::new(wiki));
+        let token = state.token.to_string();
+        let put = |text: &'static str, base: Option<Value>| {
+            let mut body = json!({ "text": text });
+            if let Some(base) = base {
+                body["base"] = base;
+            }
+            call("PUT", &addr, &token, "/v1/wiki/pages/Handbook", Some(body))
+        };
+
+        // A page that is not there is made by a save that expects none.
+        let (status, made) = put("Start\n", Some(json!(""))).await;
+        assert_eq!(status, Status::OK, "{made}");
+        let first = made["version"]["commit"].as_str().unwrap().to_string();
+        let (status, again) = put("Other start\n", Some(json!(""))).await;
+        assert_eq!(status, Status::CONFLICT, "{again}");
+        assert_eq!(again["current"]["text"], "Start\n");
+
+        // Two editors load the page; the first saves, the second is refused and nothing is written.
+        let (status, owner) = put("OWNER-EDIT-1\n", Some(json!(first))).await;
+        assert_eq!(status, Status::OK, "{owner}");
+        let (status, refused) = put("TOM-EDIT-1\n", Some(json!(first))).await;
+        assert_eq!(status, Status::CONFLICT, "{refused}");
+        assert!(refused["error"].as_str().unwrap().contains("newer version"));
+        assert_eq!(refused["current"]["text"], "OWNER-EDIT-1\n");
+        assert_eq!(refused["current"]["version"], owner["version"]);
+        let (_, now) = call("GET", &addr, &token, "/v1/wiki/pages/Handbook", None).await;
+        assert_eq!(now["text"], "OWNER-EDIT-1\n");
+        let (_, history) = call("GET", &addr, &token, "/v1/wiki/history/Handbook", None).await;
+        assert_eq!(history.as_array().unwrap().len(), 2);
+
+        // Built on the commit it has, a save goes through, also by its first 7 characters; without a base it always does.
+        let latest = owner["version"]["commit"].as_str().unwrap()[..7].to_string();
+        let (status, _) = call(
+            "PUT",
+            &addr,
+            &token,
+            "/v1/wiki/pages/Handbook",
+            Some(json!({ "text": "TOM-EDIT-2\n", "base": latest })),
+        )
+        .await;
+        assert_eq!(status, Status::OK);
+        let (status, _) = put("NO-BASE\n", None).await;
+        assert_eq!(status, Status::OK);
+
+        // A page that is gone has no current version to show.
+        let (status, _) = call("DELETE", &addr, &token, "/v1/wiki/pages/Handbook", None).await;
+        assert_eq!(status, Status::OK);
+        let (status, gone) = put("Back\n", Some(json!(first))).await;
+        assert_eq!(status, Status::CONFLICT, "{gone}");
+        assert_eq!(gone["current"], Value::Null);
     }
 
     #[tokio::test]

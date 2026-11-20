@@ -191,7 +191,9 @@ impl ApiError {
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Invalid(_) => StatusCode::UNPROCESSABLE_ENTITY,
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
-            AppError::Exists(_) | AppError::Conflict(_) => StatusCode::CONFLICT,
+            AppError::Exists(_) | AppError::Conflict(_) | AppError::Stale { .. } => {
+                StatusCode::CONFLICT
+            }
             AppError::Git(GitError::Conflict { .. }) => StatusCode::CONFLICT,
             AppError::Forge(ForgeError::Git(GitError::Conflict { .. })) => StatusCode::CONFLICT,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
