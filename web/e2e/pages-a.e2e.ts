@@ -1118,7 +1118,6 @@ describe("usage", () => {
       const models = page.getByRole("table").first();
       await models.getByText("qwen-flash").waitFor();
       await models.getByText("claude-sonnet").waitFor();
-      await page.getByText("1.84M today across 2 models").waitFor();
       await page.getByText("Where the model time goes").waitFor();
       await page.getByText("Answering · 40 calls").waitFor();
       await page.getByText("Longest tool waits").waitFor();
@@ -1156,10 +1155,10 @@ describe("usage", () => {
     await open("/usage");
     await page.getByText("of the 8M token budget, 23% used").waitFor();
     await page.getByRole("button", { name: "7 days" }).click();
-    await page.getByText("12.9M in the last 7 days across 2 models").waitFor();
+    await page.getByText("12.9M", { exact: true }).first().waitFor();
     await page.getByText("1.84M a day on average").waitFor();
     await page.getByRole("button", { name: "30 days" }).click();
-    await page.getByText(/in the last 30 days across 2 models/).waitFor();
+    await page.getByText("Tokens, last 30 days", { exact: true }).waitFor();
   });
 });
 

@@ -19,11 +19,10 @@ import { Figures } from "../../ui/page/Figures";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { Reading, SkeletonLines } from "../../ui/page/Skeleton";
-import { StateLabel } from "../../ui/page/StateLabel";
 import { useDays, useScopeFilters } from "../scope";
 import { AgentsBox, ModelsBox, TimeBox, WaitsBox } from "./Boxes";
 import { Heatmap } from "./Heatmap";
-import { type MeterTone, span, tiles, tokenFigure, WINDOWS } from "./model";
+import { type MeterTone, tiles, tokenFigure, WINDOWS } from "./model";
 
 /** The hue of the bar for how today stands against its budget. The word comes with the pill. */
 const METER: Record<MeterTone, string> = {
@@ -51,11 +50,11 @@ function Head({ report }: { report: UsageReport }) {
         ]}
       />
       <div className="flex flex-wrap items-center gap-3 text-sm text-muted">
-        {meter && <StateLabel tone={meter.tone}>{meter.word}</StateLabel>}
+        {meter && <span className="text-text">{meter.word}</span>}
         {meter && (
           <div
             aria-hidden="true"
-            className="flex h-1.5 w-40 gap-px overflow-hidden rounded-full bg-track"
+            className="flex h-1.5 w-64 gap-px overflow-hidden rounded-full bg-track"
           >
             <span
               className={cn("h-full rounded-full", METER[meter.tone])}
@@ -131,9 +130,9 @@ export function UsagePage() {
         <div className="flex flex-col gap-4" data-window={data.days_in_window}>
           <Head report={data} />
           <Heatmap report={data} />
-          <ModelsBox report={data} span={span(data.days_in_window)} />
+          <ModelsBox report={data} />
           <div className="grid gap-4 lg:grid-cols-2">
-            <TimeBox report={data} span={span(data.days_in_window)} />
+            <TimeBox report={data} />
             <WaitsBox report={data} />
           </div>
           <AgentsBox report={data} />

@@ -187,7 +187,7 @@ export function Table({
                 key={name}
                 scope="col"
                 className={cn(
-                  "whitespace-nowrap px-3 py-0 text-sm font-medium text-muted",
+                  "whitespace-nowrap px-3 py-0 first:pl-0 last:pr-0 text-sm font-medium text-muted",
                   figures && at > 0 && "text-right",
                 )}
               >
@@ -203,7 +203,8 @@ export function Table({
 }
 
 /** The classes of a cell of `Table`. */
-export const CELL = "h-9 border-b border-hairline px-3 py-0 align-middle text-text";
+export const CELL =
+  "h-9 border-b border-hairline px-3 py-0 align-middle text-text first:pl-0 last:pr-0";
 
 /**
  * The row a list beside a detail opens on. The address decides when it names one; otherwise the first row is chosen, so

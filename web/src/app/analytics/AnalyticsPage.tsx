@@ -185,7 +185,7 @@ function BurnChart({ burn }: { burn: BurnUp }) {
         fill="none"
         strokeWidth={2}
         vectorEffect="non-scaling-stroke"
-        className="stroke-complete"
+        className="stroke-cat-1"
       />
     </svg>
   );
@@ -199,9 +199,9 @@ function BurnUps({ title, list, none }: { title: string; list: BurnUp[]; none: s
         <p className="m-0 text-base text-secondary">{none}</p>
       ) : (
         // biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely
-        <ul role="list" className="m-0 grid list-none gap-4 p-0 lg:grid-cols-2">
+        <ul role="list" className="m-0 flex list-none flex-col gap-6 p-0">
           {list.map((burn) => (
-            <li key={burn.id} className="flex flex-col gap-2 border-t border-hairline pt-3">
+            <li key={burn.id} className="flex flex-col gap-2">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="break-words text-base font-semibold text-text">{burn.name}</span>
                 <span className="text-sm text-secondary">
