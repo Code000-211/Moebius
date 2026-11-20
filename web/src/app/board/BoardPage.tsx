@@ -101,6 +101,17 @@ export function BoardPage() {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const propertiesShown = usePropertiesShown();
   const sheetShown = useSheetSlot().active !== null;
+  // With a sheet over the column the drawer stands beside the sheet, further left than the column it was laid for:
+  // the head of the page and the drawer's own column take the difference, so the board ends where the drawer starts.
+  const beside = propertiesShown
+    ? {
+        head: "dock:pr-[calc(24rem+var(--sheet-width)-var(--column-width))]",
+        column: "dock:mr-[calc(var(--sheet-width)-var(--column-width))]",
+      }
+    : {
+        head: "dock:pr-[calc(24rem+var(--sheet-width)-var(--column-rail-width))]",
+        column: "dock:mr-[calc(var(--sheet-width)-var(--column-rail-width))]",
+      };
   // The card a send-back needs a reason for, not a count: a count stays raised once it is raised, so every card
   // opened afterwards found the reason form waiting for it.
   const [rejectFor, setRejectFor] = useState<number | null>(null);
@@ -457,7 +468,9 @@ export function BoardPage() {
     <>
       {/* A card open takes a column of the page for its drawer, and the head of the page is part of the page: its
           actions stand left of the drawer rather than under it. */}
-      <div className={inspected ? "dock:pr-96" : undefined}>{header}</div>
+      <div className={inspected ? (sheetShown ? beside.head : "dock:pr-96") : undefined}>
+        {header}
+      </div>
       {/* The dock stands beside the whole of the board, not beside its lanes: it belongs to the page, and starting it
           under the filters spent the room it asks for and left the filters standing alone over nothing. */}
       <div className="flex min-w-0 flex-col gap-4 dock:flex-row dock:items-start">
@@ -556,7 +569,7 @@ export function BoardPage() {
           // rail beside it, which a position in the window would not know. It lies above the slim right column it
           // covers, under the sheets over it; while the column stands unfolded with the card's properties, the drawer
           // stands beside it instead.
-          <div className="w-full shrink-0 dock:w-96">
+          <div className={cn("w-full shrink-0 dock:w-96", sheetShown && beside.column)}>
             <div
               data-testid="inspector-drawer"
               className={cn(
