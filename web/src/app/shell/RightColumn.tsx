@@ -7,8 +7,7 @@
  * the column is folded or a sheet lies over it, so what a person did in them is still there when they come back.
  */
 import { ChatCircleDotsIcon, SidebarSimpleIcon } from "@phosphor-icons/react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AgentChat } from "../../chat/AgentChat";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "../../ui/lib/cn";
 import { getModifierKey } from "../../ui/lib/platform";
 import { isShortcut, modalIsOpen } from "../../ui/lib/shortcuts";
@@ -21,6 +20,11 @@ const FOLDED_KEY = "moebius.properties.folded";
 const ICON_BUTTON =
   "inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-control text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent";
 
+// The chat sheet, with the Markdown and the thread it draws, is loaded when "Ask Moebius" is first used, not with the page.
+const AgentChat = lazy(() =>
+  import("../../chat/AgentChat").then((all) => ({ default: all.AgentChat })),
+);
+
 export function RightColumn() {
   const { present, setTarget, setShown } = useProperties();
   const [folded, setFolded] = useState(() => readFlag(FOLDED_KEY));
@@ -28,6 +32,9 @@ export function RightColumn() {
   // Before paint, so what a page lays beside the column moves in the same frame the column does.
   useLayoutEffect(() => setShown(open), [open, setShown]);
   const slot = useSheetSlot();
+  // Once the chat was shown it stays mounted, so closing the sheet keeps the conversation where it was.
+  const [asked, setAsked] = useState(false);
+  if (slot.active === "chat" && !asked) setAsked(true);
   const ask = useRef<HTMLButtonElement>(null);
   const modifier = getModifierKey();
 
@@ -124,7 +131,11 @@ export function RightColumn() {
           </button>
         </div>
       </div>
-      <AgentChat opener={ask} onProperties={present ? () => fold(false) : undefined} />
+      {asked && (
+        <Suspense fallback={null}>
+          <AgentChat opener={ask} onProperties={present ? () => fold(false) : undefined} />
+        </Suspense>
+      )}
     </>
   );
 }

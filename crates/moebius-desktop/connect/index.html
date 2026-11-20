@@ -21,6 +21,7 @@
         <p class="hint" id="local-working" hidden>Working: the first start downloads the program, which can take a minute.</p>
         <p class="error" id="local-error" role="alert" hidden></p>
         <button type="button" class="primary" id="local-start"></button>
+        <button type="button" id="local-session" hidden>Connect for this session only</button>
       </section>
       <form class="sheet" id="connect">
         <h1>Connect to a server</h1>
@@ -31,7 +32,11 @@
         <label>Address <input name="address" placeholder="127.0.0.1:7171" autocomplete="url" required /></label>
         <label>Access token <input name="token" type="password" autocomplete="off" required /></label>
         <p class="error" id="error" role="alert" hidden></p>
-        <button type="submit" class="primary">Connect</button>
+        <button type="submit" class="primary" id="connect-submit">Connect</button>
+        <button type="button" id="connect-session" hidden>Connect for this session only</button>
+        <p class="hint" id="connect-session-hint" hidden>
+          The token then stays in memory: it is written to no file and asked for again at the next start.
+        </p>
       </form>
       <!-- The servers the app remembers, when it could not open one at its start (they may be down). -->
       <section class="sheet" id="saved" hidden>

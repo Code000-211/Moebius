@@ -22,6 +22,7 @@ import { Button } from "../ui/components/Button";
 import { Notice } from "../ui/page/Notice";
 import { SheetFrame, useSheetBehaviour } from "../ui/page/Sheet";
 import { useSheetSlot } from "../ui/page/SheetSlot";
+import { ASSISTANT_AGENT } from "./assistant";
 import { Composer } from "./Composer";
 import { isOpen, isWorking, statusTag, takesMessage } from "./format";
 import { pageContext } from "./pageContext";
@@ -30,7 +31,7 @@ import { Starters } from "./Starters";
 import { ThreadView } from "./ThreadView";
 import { useThread } from "./useThread";
 
-export const ASSISTANT_AGENT = "Moebius";
+export { ASSISTANT_AGENT };
 
 export function AgentChat({
   opener,

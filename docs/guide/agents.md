@@ -380,7 +380,9 @@ function on_card(card)
   elseif moebius.day_budget ~= nil and moebius.tokens_today() >= moebius.day_budget then
     moebius.wait("the daily token budget is spent")
   else
-    moebius.start_run(agent, "code", card.note)
+    if moebius.start_run(agent, "code", card.note) == nil then
+      return -- the run limit is reached: the card waits for a free slot
+    end
     if card.rounds == 0 then
       moebius.wait("coding")
     else

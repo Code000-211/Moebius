@@ -1,7 +1,7 @@
 //! The `moebius` table, through which a script acts on its card:
 //!
 //! - `moebius.decide(kind, context, options, fail_closed) -> choice, reason`: a decision point (always recorded).
-//! - `moebius.start_run(agent, purpose, note, runner) -> run id`: starts a run for the card; `note` is added to its
+//! - `moebius.start_run(agent, purpose, note, runner) -> run id or nil`: starts a run for the card, or starts none and returns nil, with the card waiting for `the run limit is reached`, while `moebius.run_limit` runs of cards are going; `note` is added to its
 //!   prompt, and `runner` names the runner (`[[runners]]`) it goes to in place of the agent's own.
 //! - `moebius.start_runs(agent, n, opts) -> run ids`, `moebius.check_attempt(run)`, `moebius.settle_attempts(run, text)`:
 //!   a card tried several times at once (see `attempts`).
@@ -58,6 +58,9 @@ use crate::app::{App, Reproduction, TestRun, columns};
 use crate::decide::{Actor, Question};
 use crate::store::Card;
 
+/// What a card waits with when the run limit keeps its run from starting.
+pub(super) const RUN_LIMIT_REACHED: &str = "the run limit is reached";
+
 impl Engine {
     /// The `moebius` table for the script of `card`: what the script does to the card goes into `effects`, and the time
     /// Moebius spends on its behalf moves `deadline` on.
@@ -109,6 +112,7 @@ impl Engine {
             card.clone(),
             deadline.clone(),
         );
+        let run_limit = limits.run_limit;
         m.set(
             "start_run",
             lua.create_function(
@@ -121,6 +125,9 @@ impl Engine {
                 )| {
                     let run = outside_script(&clock, || {
                         super::may_start(&app, &card_copy)?;
+                        if super::free_run_slots(&app, run_limit)? == 0 {
+                            return Ok(None);
+                        }
                         runs.start(
                             &app,
                             &card_copy,
@@ -131,10 +138,16 @@ impl Engine {
                                 runner: runner.as_deref(),
                             },
                         )
+                        .map(Some)
                     })
                     .map_err(|e| mlua::Error::runtime(e.to_string()))?;
+                    let Some(run) = run else {
+                        // The limit is reached: nothing starts, and the card waits for a slot.
+                        fx.borrow_mut().waiting = Some(RUN_LIMIT_REACHED.to_string());
+                        return Ok(None);
+                    };
                     fx.borrow_mut().started_run = Some(run.id);
-                    Ok(run.id)
+                    Ok(Some(run.id))
                 },
             )?,
         )?;

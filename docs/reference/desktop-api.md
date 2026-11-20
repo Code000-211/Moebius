@@ -1039,9 +1039,17 @@ history; `422` for a path that is not a page's.
 ### `PUT /v1/wiki/pages/{*path}`
 
 A member writes a page, making it, and its folders, when it is not there. Request body: `{"text": string, "message"?:
-string}`; the text gets a newline at its end, and `message`, its first line, is the commit's (by default `Add <path>` or
-`Update <path>`). Response: the `PageView` as it now is. Errors: `409` when the push fails, `422` for a path that is not
-a page's or under `projects/` a key no project has.
+string, "base"?: string}`; the text gets a newline at its end, and `message`, its first line, is the commit's (by default
+`Add <path>` or `Update <path>`). Response: the `PageView` as it now is. Errors: `409` when the push fails, `422` for a
+path that is not a page's or under `projects/` a key no project has.
+
+`base` is the `version.commit` of the page the writer loaded (the full id, or at least its first 7 characters), or `""`
+for a page that was not there. It makes the save safe against someone else's: when the page's latest commit is another
+(or the page is gone, or is there when `""` was sent), nothing is written and the answer is `409` with the body
+`{"error": string, "current": PageView | null}`, `current` being the page as it now is (`null` when it is gone), so the
+writer can show it, merge by hand, and save again with `base` set to `current.version.commit` (or without `base`, to
+replace it). Without `base` the text replaces the page whatever it holds, as the command line and the routes an agent
+uses do; an agent's edit is a [proposal](#post-v1wikiproposals) and is not checked this way. The web app sends `base`.
 
 ```sh
 curl -s -X PUT -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \

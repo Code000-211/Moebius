@@ -160,6 +160,157 @@ mod tests {
         assert_eq!(stuck_items(&app).len(), 1);
     }
 
+    /// A card of another repository that has a run going, which uses a slot of the limit.
+    fn busy_card(app: &App, repo: i64) -> Run {
+        let card = app.create_issue(repo, "Busy", "", OWNER_AUTHOR).unwrap();
+        app.move_card(card.id, "In progress", None).unwrap();
+        app.store
+            .add_run(Some(card.id), "Coder", "fake", "code")
+            .unwrap()
+    }
+
+    #[test]
+    fn a_code_round_waits_for_a_free_slot_of_the_run_limit() {
+        let (_dir, app, _, repo) = setup();
+        let engine = engine_with(
+            &app,
+            Limits {
+                run_limit: 1,
+                ..Limits::default()
+            },
+        );
+        let busy = busy_card(&app, repo);
+        let card = app.create_issue(repo, "Waits", "", OWNER_AUTHOR).unwrap();
+        app.move_card(card.id, "In progress", None).unwrap();
+        let step = engine.settle(card.id).unwrap();
+        assert_eq!(step.waiting.as_deref(), Some("the run limit is reached"));
+        assert_eq!(step.started_run, None);
+        assert_eq!(runs_of(&app, &card), 0);
+        app.store.set_run_status(busy.id, "succeeded").unwrap();
+        let step = engine.settle(card.id).unwrap();
+        assert!(step.started_run.is_some());
+        assert_eq!(step.waiting.as_deref(), Some("coding"));
+    }
+
+    #[test]
+    fn a_review_waits_for_a_free_slot_and_its_two_runs_do_not_block_each_other() {
+        let (_dir, app, _, repo) = setup();
+        let engine = engine_with(
+            &app,
+            Limits {
+                run_limit: 1,
+                ..Limits::default()
+            },
+        );
+        let card = app
+            .create_issue(repo, "Reviewed", "", OWNER_AUTHOR)
+            .unwrap();
+        while runs_of(&app, &card) == 0 {
+            engine.settle(card.id).unwrap();
+        }
+        let busy = busy_card(&app, repo);
+        // Publishing the change and waiting for its checks take a few ticks; the review itself waits for the slot.
+        let mut step = engine.settle(card.id).unwrap();
+        for _ in 0..2 {
+            step = engine.settle(card.id).unwrap();
+        }
+        let purposes: Vec<_> = app
+            .store
+            .runs_for_card(card.id)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.purpose)
+            .collect();
+        assert_eq!(purposes, ["code"], "no review starts at the limit");
+        assert_eq!(step.waiting.as_deref(), Some("the run limit is reached"));
+        app.store.set_run_status(busy.id, "succeeded").unwrap();
+        // With one slot, the Standards run ends before the Spec run starts: the review completes.
+        for _ in 0..4 {
+            engine.settle(card.id).unwrap();
+        }
+        let purposes: Vec<_> = app
+            .store
+            .runs_for_card(card.id)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.purpose)
+            .collect();
+        assert_eq!(purposes, ["code", "review-standards", "review-spec"]);
+        assert_eq!(column(&app, &card), "Ready to merge");
+    }
+
+    /// A harness whose runs never end, so the runs going at once can be counted.
+    struct GoingOn;
+
+    impl crate::board::CardRuns for GoingOn {
+        fn start(
+            &self,
+            app: &Arc<App>,
+            card: &Card,
+            agent: &str,
+            (purpose, _): (&str, Option<&str>),
+            _: crate::board::Variant,
+        ) -> Result<Run, crate::board::StartError> {
+            app.store
+                .add_run(Some(card.id), agent, "fake", purpose)
+                .map_err(|e| crate::board::StartError::Store(e.to_string()))
+        }
+        fn has_agent(&self, _: &str) -> bool {
+            true
+        }
+        fn runners(&self) -> Vec<crate::harness::remote::RunnerInfo> {
+            Vec::new()
+        }
+        fn agents(&self) -> Vec<crate::board::AgentInfo> {
+            Vec::new()
+        }
+        fn token_budget(&self, _: &str) -> Option<i64> {
+            None
+        }
+        fn steer(&self, _: i64, _: &str) -> bool {
+            false
+        }
+        fn stop(&self, _: i64) -> bool {
+            false
+        }
+        fn hold(&self, _: bool) {}
+    }
+
+    /// The most runs of cards going at once while 20 cards are in progress and the runs end one at a time: with
+    /// `run_limit = 3` it is 3 (without the limit in `start_run` all 20 started together).
+    #[test]
+    fn twenty_cards_in_progress_never_have_more_runs_going_than_the_run_limit() {
+        let (_dir, app, _, repo) = setup();
+        let engine = Engine::new(
+            app.clone(),
+            Arc::new(GoingOn),
+            Kanban::default(),
+            Limits::default(),
+        );
+        let cards: Vec<Card> = (0..20)
+            .map(|n| {
+                let card = app
+                    .create_issue(repo, &format!("Card {n}"), "", OWNER_AUTHOR)
+                    .unwrap();
+                app.move_card(card.id, "In progress", None).unwrap();
+                card
+            })
+            .collect();
+        let mut peak = 0;
+        while cards.iter().any(|card| runs_of(&app, card) == 0) {
+            for card in &cards {
+                engine.settle(card.id).unwrap();
+            }
+            let active = app.store.active_runs().unwrap();
+            peak = peak.max(active.len());
+            assert!(active.len() <= 3, "{} runs go at once", active.len());
+            for run in active {
+                app.store.set_run_status(run.id, "failed").unwrap();
+            }
+        }
+        assert_eq!(peak, 3);
+    }
+
     #[test]
     fn a_chat_does_not_count_against_the_run_limit() {
         let (_dir, app, _, repo) = setup();

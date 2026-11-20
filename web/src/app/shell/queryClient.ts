@@ -6,12 +6,21 @@
 import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
+import { isStreamUp } from "../../live/invalidation";
 
 export function makeQueryClient(): QueryClient {
   const client: QueryClient = new QueryClient({
     queryCache: new QueryCache({ onError: (error, query) => leave(error, query.queryKey) }),
     mutationCache: new MutationCache({ onError: (error) => leave(error, []) }),
-    defaultOptions: { queries: { staleTime: 30_000, retry: false } },
+    defaultOptions: {
+      queries: {
+        staleTime: 30_000,
+        retry: false,
+        // The event stream keeps the snapshot current, so coming back to the tab does not read it again while it is up.
+        refetchOnWindowFocus: (query) =>
+          !(query.queryKey[0] === keys.snapshot[0] && isStreamUp(client)),
+      },
+    },
   });
   function leave(error: unknown, key: readonly unknown[]) {
     if (!isApiError(error) || !error.unauthorized || key[0] === keys.session[0]) return;

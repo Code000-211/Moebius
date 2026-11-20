@@ -16,7 +16,7 @@ import { listProjects } from "../api/calls/projects";
 import { keys } from "../api/keys";
 import type { Project } from "../api/types/projects";
 import { boardPath } from "../app/pages";
-import { ASSISTANT_AGENT } from "../chat/AgentChat";
+import { ASSISTANT_AGENT } from "../chat/assistant";
 import { Button } from "../ui/components/Button";
 import { Select, TextArea } from "../ui/page/Field";
 import { acceleratorOf } from "./accelerator";

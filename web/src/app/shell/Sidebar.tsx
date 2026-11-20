@@ -170,10 +170,15 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
       .catch(() => {});
   }, [pathname, search, queryClient, loaded, boards]);
   // A project that was removed takes its places with it, so the lists are read again when the projects change.
+  // Not when the first snapshot arrives: the lists were read beside it, and reading them again would ask twice.
   const projects = boards.length;
+  const knownProjects = useRef<number | null>(null);
   useEffect(() => {
-    if (projects >= 0) void queryClient.invalidateQueries({ queryKey: keys.places });
-  }, [projects, queryClient]);
+    if (!loaded) return;
+    if (knownProjects.current !== null && knownProjects.current !== projects)
+      void queryClient.invalidateQueries({ queryKey: keys.places });
+    knownProjects.current = projects;
+  }, [projects, loaded, queryClient]);
 
   // "Get started" is listed only while the server says a step is missing.
   const pagesOf = (group: Group) =>

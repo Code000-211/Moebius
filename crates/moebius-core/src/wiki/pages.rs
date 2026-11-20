@@ -73,6 +73,11 @@ impl Wiki {
     /// The page `path` as it is, or with `at` as the version of that commit, which must be one of its history.
     pub fn page(&self, path: &str, at: Option<&str>) -> Result<PageView> {
         let _turn = self.turn();
+        self.page_held(path, at)
+    }
+
+    /// [`Wiki::page`] with the turn held.
+    pub(super) fn page_held(&self, path: &str, at: Option<&str>) -> Result<PageView> {
         let file = file_of(path)?;
         let history = self.history_of(&file)?;
         let version = match at {
@@ -122,7 +127,7 @@ impl Wiki {
     }
 
     /// The history of `file`, the turn held.
-    fn history_of(&self, file: &str) -> Result<Vec<Version>> {
+    pub(super) fn history_of(&self, file: &str) -> Result<Vec<Version>> {
         if kept::head(&self.path).is_none() {
             return Ok(Vec::new());
         }
