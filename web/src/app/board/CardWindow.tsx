@@ -1,7 +1,7 @@
 /**
  * A card as a centred window over the page it was opened from, which stays behind a dim scrim: the board, the Inbox or
- * Fleet, with nothing squeezed (`CardWindowHost.tsx` mounts it for `?card=` on any route). It is one column: the id, "Open as page"
- * and the way out; the title with the card's status icon, its owner, what its change costs (`+84 -12`) and its menu;
+ * Fleet, with nothing squeezed (`CardWindowHost.tsx` mounts it for `?card=` on any route). It is one column: the id, "Open as page" (the card's own
+ * page, `CardKeyPage.tsx`, which draws the same `CardContent`) and the way out; the title with the card's status icon, its owner, what its change costs (`+84 -12`) and its menu;
  * the properties of its issue as a compact block (`CardProperties.tsx`); the issue's text; the headline of its change,
  * which opens the whole diff in a sheet; what a person can do about it (approve, merge, send back, retry, open or stop
  * its run); its activity (comments, runs, moves and refusals as one timeline) and the script of its column,
@@ -29,11 +29,10 @@ import { Field } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { StatusIcon, type StatusState } from "../../ui/page/StatusIcon";
-import { boardPath } from "../pages";
 import { CardMenu } from "./CardMenu";
 import { CardProperties, CHECKS } from "./CardProperties";
 import { CardText } from "./CardText";
-import { cardName } from "./cardKey";
+import { cardName, cardPagePath } from "./cardKey";
 import type { Decision } from "./decisions";
 import { ActivitySection, EditIssueDialog } from "./IssueSections";
 import {
@@ -281,7 +280,12 @@ function WindowFrame({ onClose, children }: { onClose: () => void; children: Rea
   );
 }
 
-function CardWindowView({
+/**
+ * What a card shows, one column: its id and the way out, the title with its status icon, owner, change and menu, its
+ * properties, the issue, its change, what a person can do about it, its run, its activity and the script of its
+ * column. The window (`CardWindow`) and the card's own page (`CardKeyPage.tsx`) both draw it.
+ */
+export function CardContent({
   board,
   card,
   item,
@@ -293,7 +297,8 @@ function CardWindowView({
   onDecide,
   menu,
   onOpenCard,
-  onClose,
+  bar,
+  scrolls = true,
 }: {
   board: Board;
   card: Card;
@@ -318,7 +323,10 @@ function CardWindowView({
   };
   /** Shows another issue, such as the parent or a sub-issue, in the window. */
   onOpenCard: (card: Card) => void;
-  onClose: () => void;
+  /** The controls at the end of the bar over the card: what leads away from it, which only the window and the page know. */
+  bar?: ReactNode;
+  /** Whether the card scrolls inside its own box (the window's); the page scrolls with the page. */
+  scrolls?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const repository = board.repository;
@@ -348,7 +356,7 @@ function CardWindowView({
   };
 
   return (
-    <WindowFrame onClose={onClose}>
+    <>
       {/* Where the card is, and the two ways out of the window. */}
       <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-hairline px-6">
         {url ? (
@@ -363,24 +371,10 @@ function CardWindowView({
         ) : (
           <span className="font-mono text-sm text-secondary">{id}</span>
         )}
-        <div className="flex items-center gap-1">
-          {/* Until the card has a page of its own, "as a page" is the board with the card open. */}
-          <Button asChild variant="ghost" size="sm">
-            <Link to={`${boardPath(repository.id)}?card=${card.id}`}>
-              <ArrowsOutIcon className="size-4" aria-hidden="true" />
-              Open as page
-            </Link>
-          </Button>
-          <IconButton
-            icon={XIcon}
-            iconWeight="regular"
-            aria-label="Close the inspector"
-            onClick={onClose}
-          />
-        </div>
+        <div className="flex items-center gap-1">{bar}</div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className={scrolls ? "min-h-0 flex-1 overflow-y-auto" : "pb-6"}>
         {/* What the card is, and who and what it is about. The title wraps, however long. */}
         <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-3">
           <h2 className="m-0 min-w-0 text-2xl font-semibold tracking-tight text-text [overflow-wrap:anywhere]">
@@ -534,6 +528,35 @@ function CardWindowView({
           )}
         </KanbanIssueSection>
       </div>
+    </>
+  );
+}
+
+function CardWindowView(
+  props: Omit<Parameters<typeof CardContent>[0], "bar" | "scrolls"> & { onClose: () => void },
+) {
+  const { onClose, ...rest } = props;
+  return (
+    <WindowFrame onClose={onClose}>
+      <CardContent
+        {...rest}
+        bar={
+          <>
+            <Button asChild variant="ghost" size="sm">
+              <Link to={cardPagePath(rest.card)}>
+                <ArrowsOutIcon className="size-4" aria-hidden="true" />
+                Open as page
+              </Link>
+            </Button>
+            <IconButton
+              icon={XIcon}
+              iconWeight="regular"
+              aria-label="Close the inspector"
+              onClick={onClose}
+            />
+          </>
+        }
+      />
     </WindowFrame>
   );
 }
