@@ -12,7 +12,7 @@
 //! migration that gives earlier records to the first owner), `assignees` (who cards and inbox items are given to),
 //! `notices` (what concerns a person, and the cards they follow), `planning` (a card's priority, due date and estimate, read
 //! from its labels), `access` (their access tokens and the sessions of browsers, kept as hashes), `favourites` (the places a
-//! person pinned and opened lately), `kinds` (kinds of issues, their fields and the values cards hold), `projects` (the
+//! person pinned and opened lately), `preferences` (what a person chose for themselves in the web app), `kinds` (kinds of issues, their fields and the values cards hold), `projects` (the
 //! projects, their keys and repositories, and the migration that makes one for each repository) and `cycles` (a project's time boxes) and `imports` (what an import from another tracker made, so that it can be run again) and `milestones` (goals
 //! of the organisation that hold cards of any projects) and `wiki_search` (the wiki's search index, derived from its
 //! pages) and `views` (saved filters with a layout, for a person or for everyone).
@@ -49,6 +49,7 @@ mod paused;
 mod people;
 mod planning;
 mod plugin_settings;
+mod preferences;
 mod projects;
 mod replays;
 mod research;
@@ -101,6 +102,7 @@ pub use planning::{
     ESTIMATE_LIMIT, Priority, estimate_of, is_date, is_planning_label, with_due, with_estimate,
     with_priority,
 };
+pub use preferences::Preferences;
 pub use projects::{KEY_LIMIT, Project, is_key, parse_card_key};
 pub use replays::Replay;
 pub use research::{Budget, BudgetKind, Experiment, Research};
@@ -515,6 +517,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     imports::SCHEMA,
     // The snapshot looks up a card's open change in each repository it works in.
     "CREATE INDEX changes_of_a_card ON changes (card_id, repository_id, state);",
+    preferences::SCHEMA,
 ];
 
 #[cfg(test)]

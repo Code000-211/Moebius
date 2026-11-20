@@ -4,9 +4,11 @@
  * away is answered again from the words it was answering, and the failure is where the person is already looking.
  */
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Entry, ToolCall } from "../../chat/conversation";
-import { groupTurns } from "../../chat/turns";
+import { ThinkingProvider } from "../../chat/thinking";
+import { groupTurns, type Turn as TurnData } from "../../chat/turns";
 import { Turn } from "./Turn";
 
 afterEach(cleanup);
@@ -218,5 +220,120 @@ describe("what the agent did", () => {
       rerender(<Turn turn={turn} unfolded={new Set(toggled)} onToggle={() => {}} />);
       expect(screen.queryByTestId("steps")).toBeNull();
     });
+  });
+});
+
+/** A turn that holds its own folded state, as the thread does. */
+function Held({ turn, on }: { turn: TurnData; on: boolean }) {
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
+  const toggle = (key: string) =>
+    setUnfolded((was) => {
+      const next = new Set(was);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  return (
+    <ThinkingProvider value={on}>
+      <Turn turn={turn} unfolded={unfolded} onToggle={toggle} />
+    </ThinkingProvider>
+  );
+}
+
+describe("the setting that shows thinking open", () => {
+  const thought: Entry[] = [
+    { at: 1, seq: 1, kind: "person", said: "said", message: "Do it" },
+    { at: 2, seq: 2, kind: "thinking", text: "Let me look." },
+    { at: 5, seq: 3, kind: "text", text: "Done." },
+  ];
+  const thoughtOf = (working: boolean) => {
+    const turn = groupTurns(thought, working)[0];
+    if (!turn) throw new Error("one turn");
+    return turn;
+  };
+
+  it("leaves a finished thought folded when it is off", () => {
+    render(<Held turn={thoughtOf(false)} on={false} />);
+    expect(screen.getByRole("button", { name: /^Thought/ }).getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+    expect(screen.queryByText("Let me look.")).toBeNull();
+  });
+
+  it("opens a finished thought when it is on, and keeps a choice to close it", () => {
+    render(<Held turn={thoughtOf(false)} on={true} />);
+    const row = screen.getByRole("button", { name: /^Thought/ });
+    expect(row.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("Let me look.")).toBeTruthy();
+    fireEvent.click(row);
+    expect(screen.queryByText("Let me look.")).toBeNull();
+  });
+
+  it("keeps a thought the person opened against the setting", () => {
+    render(<Held turn={thoughtOf(false)} on={false} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Thought/ }));
+    expect(screen.getByText("Let me look.")).toBeTruthy();
+  });
+
+  it("opens a thought that is still arriving in both settings, and cannot close it", () => {
+    for (const on of [false, true]) {
+      cleanup();
+      const arriving: Entry[] = [
+        { at: 1, seq: 1, kind: "person", said: "said", message: "Do it" },
+        { at: 2, seq: 2, kind: "thinking", text: "Still thinking." },
+      ];
+      const turn = groupTurns(arriving, true)[0];
+      if (!turn) throw new Error("one turn");
+      render(
+        <ThinkingProvider value={on}>
+          <Turn turn={turn} {...folding} />
+        </ThinkingProvider>,
+      );
+      const row = screen.getByRole("button", { name: /^Thinking/ });
+      expect(row.getAttribute("aria-expanded")).toBe("true");
+      expect(screen.getByText("Still thinking.")).toBeTruthy();
+    }
+  });
+
+  it("collapses the thought once the answer has come when it is off", () => {
+    const arriving: Entry[] = thought.slice(0, 2);
+    const during = groupTurns(arriving, true)[0];
+    const after = groupTurns(thought, false)[0];
+    if (!during || !after) throw new Error("one turn");
+    const { rerender } = render(<Turn turn={during} {...folding} />);
+    expect(screen.getByText("Let me look.")).toBeTruthy();
+    rerender(<Turn turn={after} {...folding} />);
+    expect(screen.queryByText("Let me look.")).toBeNull();
+  });
+
+  it("opens a folded group of steps when it is on", () => {
+    const many: Entry[] = [
+      { at: 1, seq: 1, kind: "person", said: "said", message: "Do it" },
+      ...[1, 2, 3, 4, 5].map(
+        (n): Entry => ({
+          at: 1 + n,
+          seq: 1 + n,
+          kind: "tool",
+          call: {
+            id: `m${n}`,
+            tool: "bash",
+            input: { type: "command", command: `ls ${n}` },
+            output: "",
+            check: null,
+            mcp: null,
+            execution: { state: "finished", failed: false },
+          },
+        }),
+      ),
+    ];
+    const turn = groupTurns(many, false)[0];
+    if (!turn) throw new Error("one turn");
+    render(
+      <ThinkingProvider value={true}>
+        <Turn turn={turn} {...folding} />
+      </ThinkingProvider>,
+    );
+    expect(
+      screen.getByRole("button", { name: "Worked · 5 steps" }).getAttribute("aria-expanded"),
+    ).toBe("true");
   });
 });

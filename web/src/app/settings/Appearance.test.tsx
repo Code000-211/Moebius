@@ -1,8 +1,16 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, fireEvent, render as mount, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { start } from "../../ui/lib/effects";
 import { Appearance } from "./Appearance";
+
+/** Renders in a query cache, as the page has. */
+function render(element: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return mount(<QueryClientProvider client={client}>{element}</QueryClientProvider>);
+}
 
 afterEach(() => {
   cleanup();
@@ -28,5 +36,20 @@ describe("Appearance", () => {
     expect(blur.disabled).toBe(true);
     expect(blur.getAttribute("aria-checked")).toBe("false");
     expect(screen.getByText("Off automatically without GPU")).toBeTruthy();
+  });
+
+  it("saves Show thinking expanded to the server when the switch is moved", async () => {
+    const sent: unknown[] = [];
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      if (init?.method === "PUT") sent.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ show_thinking_expanded: sent.length > 0 }));
+    });
+    render(<Appearance />);
+    const row = screen.getByRole("switch", { name: "Show thinking expanded" });
+    expect(row.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(row);
+    await waitFor(() => expect(sent).toEqual([{ show_thinking_expanded: true }]));
+    expect(row.getAttribute("aria-checked")).toBe("true");
+    vi.unstubAllGlobals();
   });
 });

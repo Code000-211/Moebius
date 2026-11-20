@@ -18,6 +18,7 @@ import {
   toolTitle,
   verdict,
 } from "../../chat/conversation";
+import { useThinkingExpanded } from "../../chat/thinking";
 import type { Block, StepView, Turn as TurnData } from "../../chat/turns";
 import { cn } from "../lib/cn";
 import { plural } from "../lib/format";
@@ -163,19 +164,29 @@ function StepLine({
   step,
   isOpen,
   onToggle,
+  shownOpen,
 }: {
   step: StepView;
   isOpen: (key: string) => boolean;
   onToggle: (key: string) => void;
+  /** Whether the person's setting has finished thinking open. */
+  shownOpen: boolean;
 }) {
   if (step.kind === "thinking") {
+    // A thought that is still arriving is open and cannot be closed; one that has stopped follows the person's setting
+    // until they open or close it themselves, which is kept under the key of the step with `:closed` after it when the
+    // setting has it open, so a choice made against the setting is not overwritten by it.
+    const closedKey = `${step.key}:closed`;
+    const expanded = step.ongoing || (shownOpen ? !isOpen(closedKey) : isOpen(step.key));
     return (
       <ChatCollapsedThinking
         entries={[{ content: step.text, expansionKey: step.key }]}
         seconds={step.seconds}
         ongoing={step.ongoing}
-        expanded={isOpen(step.key)}
-        onToggle={() => onToggle(step.key)}
+        expanded={expanded}
+        onToggle={() => {
+          if (!step.ongoing) onToggle(shownOpen ? closedKey : step.key);
+        }}
         renderMarkdown={({ content, className }) => (
           <Markdown content={content} className={className} keepNewlines />
         )}
@@ -240,11 +251,22 @@ function StepsGroup({
   isOpen: (key: string) => boolean;
   onToggle: (key: string) => void;
 }) {
+  const shownOpen = useThinkingExpanded();
   const trouble = troubleOf(block.steps);
   const troubled = trouble.refused + trouble.failed > 0;
   const rows = block.steps.map((step) => (
-    <StepLine key={step.key} step={step} isOpen={isOpen} onToggle={onToggle} />
+    <StepLine
+      key={step.key}
+      step={step}
+      isOpen={isOpen}
+      onToggle={onToggle}
+      shownOpen={shownOpen}
+    />
   ));
+  // The group opens by itself for trouble, for a thought still arriving (it would be hidden in a folded group) and
+  // when the person's setting has thinking open; a choice of theirs is kept under `:closed` as it is for trouble.
+  const opensItself =
+    troubled || shownOpen || block.steps.some((step) => step.kind === "thinking" && step.ongoing);
   // A few steps are the timeline itself, one line each; only a long run of them, or one with trouble in it, is folded.
   if (!troubled && block.steps.length < FOLD_FROM) {
     return (
@@ -262,7 +284,7 @@ function StepsGroup({
     );
   }
   const closedKey = `${block.key}:closed`;
-  const expanded = troubled ? !isOpen(closedKey) : isOpen(block.key);
+  const expanded = opensItself ? !isOpen(closedKey) : isOpen(block.key);
   const bodyId = `${block.key}-steps`;
   const said = [
     trouble.refused > 0 ? `${trouble.refused} refused` : null,
@@ -276,7 +298,7 @@ function StepsGroup({
           "flex min-h-7 cursor-pointer items-center gap-2 self-start rounded-control px-3 text-left text-sm transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text",
           block.working ? "text-progress-text" : "text-secondary",
         )}
-        onClick={() => onToggle(troubled ? closedKey : block.key)}
+        onClick={() => onToggle(opensItself ? closedKey : block.key)}
         aria-expanded={expanded}
         aria-controls={expanded ? bodyId : undefined}
         data-testid={block.working ? "working" : undefined}

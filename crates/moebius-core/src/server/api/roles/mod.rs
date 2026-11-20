@@ -67,6 +67,8 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("DELETE", "/v1/favourites/{id}", VIEWER_PERSON),
     ("POST", "/v1/recent", VIEWER_PERSON),
     ("DELETE", "/v1/recent/{id}", VIEWER_PERSON),
+    ("GET", "/v1/preferences", VIEWER_PERSON),
+    ("PUT", "/v1/preferences", VIEWER_PERSON),
     ("GET", "/v1/server", VIEWER),
     ("GET", "/v1/client", VIEWER),
     ("PUT", "/v1/client", VIEWER_PERSON),

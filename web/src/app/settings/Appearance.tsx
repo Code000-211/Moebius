@@ -6,6 +6,7 @@
  */
 import { type Icon, MonitorIcon, MoonIcon, SunIcon } from "@phosphor-icons/react";
 import { useRef } from "react";
+import { useShowThinking } from "../../chat/thinking";
 import { useReduceMotion } from "../../motion";
 import { type ThemePreference, useTheme } from "../../theme";
 import { cn } from "../../ui/lib/cn";
@@ -24,6 +25,7 @@ export function Appearance() {
   const { preference, setPreference } = useTheme();
   const motion = useReduceMotion();
   const blur = useBlur();
+  const thinking = useShowThinking();
   const row = useRef<HTMLDivElement>(null);
   return (
     <Rows>
@@ -70,6 +72,12 @@ export function Appearance() {
             );
           })}
         </div>
+      </FieldRow>
+      <FieldRow
+        label="Show thinking expanded"
+        description="While an answer streams it is always open"
+      >
+        <Switch label="Show thinking expanded" checked={thinking.on} onChange={thinking.set} />
       </FieldRow>
       <FieldRow label="Reduce motion" description={motion.system ? "Set by the system" : undefined}>
         <Switch
