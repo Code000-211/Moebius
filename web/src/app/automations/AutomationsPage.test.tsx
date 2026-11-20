@@ -25,13 +25,21 @@ function Where() {
   return <span data-testid="where">{useLocation().search}</span>;
 }
 
-function show(initial: string) {
+const asked: string[] = [];
+
+function show(initial: string, gone = false) {
   const sent: Array<{ url: string; method: string; body: unknown }> = [];
+  asked.length = 0;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
-      if (method !== "GET") sent.push({ url, method, body: JSON.parse(String(init?.body)) });
+      asked.push(`${method} ${url}`);
+      if (method !== "GET")
+        sent.push({ url, method, body: JSON.parse(String(init?.body ?? "null")) });
+      if (gone && url.includes("/firings")) {
+        return { ok: false, status: 404, text: async () => JSON.stringify({ error: "not found" }) };
+      }
       const body = url.endsWith("/v1/automations")
         ? [AUTOMATION]
         : url.includes("/firings")
@@ -89,5 +97,26 @@ describe("the properties of an automation", () => {
         enabled: true,
       },
     });
+  });
+
+  it("marks what a new automation is missing when Save is pressed on an empty one", async () => {
+    const sent = show("/automations");
+    fireEvent.click(await screen.findByRole("button", { name: "New automation" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+    expect((await screen.findAllByText("Give the automation a name.")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Write the prompt its chats start with.").length).toBeGreaterThan(0);
+    expect(sent).toEqual([]);
+  });
+
+  it("does not ask for the past runs of an automation it just deleted", async () => {
+    show("/automations?automation=3");
+    fireEvent.click(await screen.findByRole("button", { name: "Delete automation" }));
+    asked.length = 0;
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await waitFor(() =>
+      expect(asked.some((a) => a.startsWith("DELETE /v1/automations/3"))).toBe(true),
+    );
+    await new Promise((r) => setTimeout(r, 100));
+    expect(asked.filter((a) => a.includes("/firings"))).toEqual([]);
   });
 });

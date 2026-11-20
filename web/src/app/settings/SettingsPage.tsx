@@ -100,8 +100,10 @@ function SettingsForm({ initial }: { initial: ServerSettings }) {
         fields: form.fields.map((each) => (each.key === key ? { ...each, text } : each)),
       })),
     );
-  // Save is quiet until a key is different from what the file holds; the reason is the disabled button itself.
+  // Save is quiet until a key is different from what the file holds, and while a field is wrong.
   const dirty = forms.some((form) => form.fields.some(changed));
+  // A value the page can see the server would refuse leaves Save off, with the field saying what it takes.
+  const wrong = forms.some((form) => form.fields.some((field) => "error" in fieldValue(field)));
 
   return (
     <div>
@@ -110,7 +112,7 @@ function SettingsForm({ initial }: { initial: ServerSettings }) {
         actions={
           <Button
             size="sm"
-            disabled={save.isPending || !dirty}
+            disabled={save.isPending || !dirty || wrong}
             onClick={() => {
               setOutcome(null);
               save.mutate();

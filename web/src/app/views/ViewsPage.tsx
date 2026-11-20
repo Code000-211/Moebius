@@ -11,6 +11,8 @@ import { BookmarkSimpleIcon, PencilSimpleIcon, TrashIcon, UsersIcon } from "@pho
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router";
+import { snapshot } from "../../api/calls/board";
+import { listProjects } from "../../api/calls/projects";
 import { deleteView, editView, listViews, viewCards } from "../../api/calls/views";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
@@ -168,6 +170,15 @@ function OpenView({
     queryFn: () => viewCards(view.id),
   });
   const groups = groupsOf(view.layout, shown.data?.cards ?? []);
+  // The names of what the filter holds by id, from the lists other pages read too.
+  const projects = useQuery({ queryKey: keys.projects, queryFn: listProjects });
+  const boards = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
+  const names = {
+    projects: new Map((projects.data ?? []).map((p) => [p.id, p.name])),
+    repositories: new Map(
+      (boards.data?.boards ?? []).map((b) => [b.repository.id, b.repository.name]),
+    ),
+  };
   return (
     <section aria-label={view.name} className="flex flex-col gap-3" data-testid="view">
       <div className="flex flex-wrap items-center gap-3">
@@ -193,7 +204,7 @@ function OpenView({
         )}
       </div>
       <p className="m-0 text-sm text-secondary" data-testid="view-filter">
-        Shows {filterWords(view.filter)}
+        Shows {filterWords(view.filter, names)}
         {boardOfView(view) && (
           <>
             {" · "}

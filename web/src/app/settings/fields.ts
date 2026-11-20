@@ -119,6 +119,9 @@ const TABLES: ReadonlyArray<readonly [table: string, keys: readonly string[]]> =
   ["harness", ["harness.url", "harness.mcp_env"]],
 ];
 
+/** The smallest value of a whole-number key the server accepts, where it is not 0 (the keys are all unsigned). */
+const LEAST: Readonly<Record<string, number>> = { run_limit: 1 };
+
 /** One key of the configuration as an input. */
 export interface Field {
   key: string;
@@ -184,8 +187,13 @@ export function fieldValue(field: Field): { value: unknown } | { error: string }
     case "text":
     case "code":
       return { value: text };
-    case "whole":
-      return /^-?\d+$/.test(text) ? { value: Number(text) } : wrong("a whole number");
+    case "whole": {
+      const least = LEAST[field.key] ?? 0;
+      const taken = /^\d+$/.test(text) && Number(text) >= least;
+      return taken
+        ? { value: Number(text) }
+        : wrong(least > 0 ? `a whole number, at least ${least}` : "a whole number");
+    }
     case "decimal":
       return text !== "" && Number.isFinite(Number(text))
         ? { value: Number(text) }

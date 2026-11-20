@@ -1172,11 +1172,14 @@ describe("analytics", () => {
       await addFilter(page, bar, "Agent", "Coder");
       // The Coder's share of the same week.
       await tile.getByText("4", { exact: true }).waitFor();
-      expect(path()).toBe("/analytics?agent=Coder");
+      expect(path()).toBe("/analytics?days=7&agent=Coder");
       await page.reload();
       await bar.getByRole("button", { name: "Agent is Coder", exact: true }).waitFor();
+      // The window is in the address too, so a reload keeps it.
+      await page.locator('[data-window="7"]').waitFor();
       await page.getByRole("button", { name: "30 days" }).click();
       await page.locator('[data-window="30"]').waitFor();
+      expect(path()).toBe("/analytics?agent=Coder");
     },
   );
 });
@@ -1351,10 +1354,17 @@ describe("settings", () => {
     await page.reload();
     await page.getByLabel("Coding rounds a card").waitFor();
     expect(await page.getByLabel("Coding rounds a card").inputValue()).toBe("9");
-    // A wrong value is refused by the server with its own sentence.
-    await page.getByLabel("Runs at a time").fill("0");
+    // A value the page knows is wrong is marked and not sent; one only the server knows is refused with its sentence,
+    // which names the key and not the file.
+    await page.getByLabel("Runs at a time").fill("-5");
+    await page.getByText("Runs at a time is a whole number, at least 1.").waitFor();
+    expect(await page.getByRole("button", { name: "Save", exact: true }).isDisabled()).toBe(true);
+    await page.getByLabel("Runs at a time").fill("");
+    await page.getByLabel("Retro at (HH:MM)").fill("late");
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await alert(/run_limit|at least|range/i).waitFor();
+    const refusal = alert(/retro_at/i);
+    await refusal.waitFor();
+    expect(await refusal.textContent()).not.toMatch(/moebius\.toml|\|/);
   });
 
   it.skipIf(usesRealServer)(
@@ -1427,16 +1437,21 @@ describe("settings", () => {
     async () => {
       await open("/settings");
       await page.getByLabel("Board tick (ms)").fill("fast");
-      await page.getByRole("button", { name: "Save", exact: true }).click();
-      await alert("Board tick (ms) is a whole number.").waitFor();
+      await page.getByText("Board tick (ms) is a whole number.").waitFor();
+      expect(await page.getByRole("button", { name: "Save", exact: true }).isDisabled()).toBe(true);
       expect(fake().requests.filter((r) => r.path === "/v1/settings")).toHaveLength(0);
 
       await page.getByLabel("Board tick (ms)").fill("");
       await page.getByLabel("Runs at a time").fill("0");
+      // The page says what the key takes, marks the field and leaves Save off.
+      await page.getByText("Runs at a time is a whole number, at least 1.").waitFor();
+      expect(await page.getByRole("button", { name: "Save", exact: true }).isDisabled()).toBe(true);
+      await page.getByLabel("Runs at a time").fill("");
+      await page.getByLabel("Retro at (HH:MM)").fill("late");
       await page.getByRole("button", { name: "Save", exact: true }).click();
-      await alert("run_limit must be at least 1").waitFor();
+      await alert('retro_at must be a time as HH:MM, not "late"').waitFor();
       // The input keeps what was typed.
-      expect(await page.getByLabel("Runs at a time").inputValue()).toBe("0");
+      expect(await page.getByLabel("Retro at (HH:MM)").inputValue()).toBe("late");
     },
   );
 

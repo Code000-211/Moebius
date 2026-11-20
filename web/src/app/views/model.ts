@@ -154,10 +154,18 @@ export function fieldsOf(view: View): ViewFields {
 }
 
 /** What a view's filter asks, in words: "label bug · priority urgent, high"; "everything" when it asks nothing. */
-export function filterWords(filter: ViewFilter): string {
+export function filterWords(
+  filter: ViewFilter,
+  names: {
+    projects?: ReadonlyMap<number, string>;
+    repositories?: ReadonlyMap<number, string>;
+  } = {},
+): string {
+  const named = (ids: readonly number[], by?: ReadonlyMap<number, string>) =>
+    ids.map((id) => by?.get(id) ?? id);
   const parts: Array<[string, readonly (string | number)[]]> = [
-    ["project", filter.projects],
-    ["repository", filter.repositories],
+    ["project", named(filter.projects, names.projects)],
+    ["repository", named(filter.repositories, names.repositories)],
     ["label", filter.labels],
     ["assignee", filter.assignees],
     ["priority", filter.priorities],

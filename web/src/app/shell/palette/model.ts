@@ -32,6 +32,31 @@ export function matches(query: string, text: string): boolean {
     .every((word) => haystack.includes(word));
 }
 
+/**
+ * How well `text` answers the query, 0 for no match: 3 when every word typed is a whole word of the text, 2 when each
+ * starts a word, 1 when it is only somewhere inside one (so "tom" finds "Automations" below the person Tom).
+ */
+export function rank(query: string, text: string): number {
+  const words = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((word) => word !== "");
+  if (!matches(query, text)) return 0;
+  const parts = text.toLowerCase().split(/[^\p{L}\p{N}]+/u);
+  if (words.every((word) => parts.includes(word))) return 3;
+  if (words.every((word) => parts.some((part) => part.startsWith(word)))) return 2;
+  return 1;
+}
+
+/** The items that match the query, the better matches first and the rest in their order. */
+export function ranked<T>(query: string, items: readonly T[], text: (item: T) => string): T[] {
+  return items
+    .map((item, at) => ({ item, at, score: rank(query, text(item)) }))
+    .filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || a.at - b.at)
+    .map((entry) => entry.item);
+}
+
 const RECENT_KEY = "moebius.recent";
 const RECENT_KEPT = 6;
 

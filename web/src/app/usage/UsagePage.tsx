@@ -7,7 +7,6 @@
  * the server does (`GET /v1/usage?repository=&agent=`); the filters are in the address.
  */
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import { usage } from "../../api/calls/usage";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
@@ -21,7 +20,7 @@ import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { Reading, SkeletonCard } from "../../ui/page/Skeleton";
 import { StateLabel } from "../../ui/page/StateLabel";
-import { useScopeFilters } from "../scope";
+import { useDays, useScopeFilters } from "../scope";
 import { AgentsBox, ModelsBox, TimeBox, WaitsBox } from "./Boxes";
 import { short } from "./figures";
 import { Heatmap } from "./Heatmap";
@@ -78,7 +77,10 @@ function WindowBox({ report }: { report: UsageReport }) {
 }
 
 export function UsagePage() {
-  const [days, setDays] = useState(1);
+  const [days, setDays] = useDays(
+    WINDOWS.map((window) => window.days),
+    1,
+  );
   const filters = useScopeFilters();
   const { repository = null, agent = "" } = filters.scope;
   const report = useQuery({

@@ -7,11 +7,12 @@
  * dialog that takes it. The three places the feature is named — the button, the dialog, the field — say Search.
  */
 
-import { BookOpenTextIcon, FolderIcon, KanbanIcon } from "@phosphor-icons/react";
+import { BookOpenTextIcon, FolderIcon, KanbanIcon, UserIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { snapshot } from "../../api/calls/board";
+import { people as loadPeople } from "../../api/calls/people";
 import { searchWiki } from "../../api/calls/wiki";
 import { keys } from "../../api/keys";
 import {
@@ -28,7 +29,7 @@ import { useNewIssue } from "../board/NewIssueHost";
 import { usePause } from "../fleet/usePause";
 import { boardPath, type Group, PAGES, shownTo } from "../pages";
 import { usePaletteFocus } from "./palette/focus";
-import { matches, type PaletteCommand, readRecent } from "./palette/model";
+import { matches, type PaletteCommand, ranked, readRecent } from "./palette/model";
 import { NEW_ISSUE_KEY, SHORTCUTS_KEY } from "./palette/shortcuts";
 import { useRole } from "./session";
 
@@ -37,6 +38,7 @@ const GROUPS: readonly Group[] = ["", "Projects", "Plan", "Build", "Improve", "S
 const CARDS_SHOWN = 8;
 /** Wiki pages shown for a query, and how long typing pauses before the wiki is searched. */
 const WIKI_SHOWN = 6;
+const PEOPLE_SHOWN = 5;
 const WIKI_PAUSE_MS = 200;
 
 /** `value` as it was `ms` milliseconds ago, so a search waits for a person to pause. */
@@ -84,9 +86,16 @@ export function CommandBar({
     enabled: open && typed !== "",
     retry: false,
   });
+  // Searching: the words are typed and the wiki has not answered yet, so "Nothing matches" would be a guess.
+  const searching = query.trim() !== "" && (typed !== query.trim() || found.isFetching);
   const wikiHits = typed !== "" && Array.isArray(found.data) ? found.data : [];
 
   const boards = data.data?.boards ?? [];
+  const everyone = useQuery({
+    queryKey: keys.people,
+    queryFn: loadPeople,
+    enabled: open && role === "owner",
+  });
   const recent = useMemo(() => (open ? readRecent() : []), [open]);
 
   function close() {
@@ -141,19 +150,29 @@ export function CommandBar({
   const commands = (focus?.commands ?? []).filter((c) =>
     matches(query, `${c.label} command ${focus?.label ?? ""}`),
   );
-  const pages = PAGES.filter((page) => shownTo(page, role)).filter((page) =>
-    matches(query, `${page.title} page ${page.group}`),
+  const pages = ranked(
+    query,
+    PAGES.filter((page) => shownTo(page, role)),
+    (page) => `${page.title} page ${page.group}`,
   );
-  const places = boards.filter((board) => matches(query, `${board.repository.name} place project`));
+  const places = ranked(query, boards, (board) => `${board.repository.name} place project`);
   const cards =
     query.trim() === ""
       ? []
-      : boards
-          .flatMap((board) => board.cards.map((card) => ({ card, board })))
-          .filter(({ card }) =>
-            matches(query, `${cardKey(card)} #${card.number} ${card.title} card`),
-          )
-          .slice(0, CARDS_SHOWN);
+      : ranked(
+          query,
+          boards.flatMap((board) => board.cards.map((card) => ({ card, board }))),
+          ({ card }) => `${cardKey(card)} #${card.number} ${card.title} card`,
+        ).slice(0, CARDS_SHOWN);
+  // People are found by name or handle; the People page is the owner's, so it is the owner who is offered them.
+  const folk =
+    query.trim() === "" || role !== "owner"
+      ? []
+      : ranked(
+          query,
+          (Array.isArray(everyone.data) ? everyone.data : []).filter((person) => !person.disabled),
+          (person) => `${person.name} ${person.handle} person`,
+        ).slice(0, PEOPLE_SHOWN);
 
   // What was seen lately, by name, where the name is still known; the place a person is at is not offered to go to.
   const known = new Map<string, { label: string; icon: ReactNode }>();
@@ -190,7 +209,7 @@ export function CommandBar({
       <Command label="Search" shouldFilter={false}>
         <CommandInput placeholder="Search…" value={query} onValueChange={setQuery} />
         <CommandList label="Commands and places">
-          <CommandEmpty>Nothing matches.</CommandEmpty>
+          <CommandEmpty>{searching ? "Searching…" : "Nothing matches."}</CommandEmpty>
           {commands.length > 0 && focus && (
             <CommandGroup heading={focus.label}>
               {commands.map((command) => (
@@ -245,6 +264,23 @@ export function CommandBar({
                   <span className="truncate">{`${cardKey(card)} ${card.title}`}</span>
                   <span className="ml-auto shrink-0 text-xs text-muted">
                     {board.repository.name}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+          {folk.length > 0 && (
+            <CommandGroup heading="People">
+              {folk.map((person) => (
+                <CommandItem
+                  key={person.id}
+                  value={`person ${person.id}`}
+                  onSelect={() => go("/people")}
+                >
+                  <UserIcon className="size-5" weight="regular" />
+                  <span className="truncate">{person.name}</span>
+                  <span className="ml-auto shrink-0 truncate text-xs text-muted">
+                    @{person.handle}
                   </span>
                 </CommandItem>
               ))}

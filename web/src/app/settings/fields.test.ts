@@ -148,7 +148,16 @@ describe("what a save sends", () => {
       error: "Board tick (ms) is a whole number.",
     });
     expect(changes(edit(configured(), "run_limit", "2.5"))).toEqual({
-      error: "Runs at a time is a whole number.",
+      error: "Runs at a time is a whole number, at least 1.",
+    });
+    expect(changes(edit(configured(), "run_limit", "-5"))).toEqual({
+      error: "Runs at a time is a whole number, at least 1.",
+    });
+    expect(changes(edit(configured(), "run_limit", "0"))).toEqual({
+      error: "Runs at a time is a whole number, at least 1.",
+    });
+    expect(changes(edit(configured(), "board.tick_ms", "-1"))).toEqual({
+      error: "Board tick (ms) is a whole number.",
     });
   });
 });

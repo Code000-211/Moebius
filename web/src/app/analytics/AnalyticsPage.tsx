@@ -8,7 +8,6 @@
  * chart has its numbers in words or in a table.
  */
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import { analytics } from "../../api/calls/analytics";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
@@ -24,7 +23,7 @@ import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { Reading, SkeletonCard } from "../../ui/page/Skeleton";
 import { chart } from "../cycles/model";
-import { useScopeFilters } from "../scope";
+import { useDays, useScopeFilters } from "../scope";
 import { grouped, short } from "../usage/figures";
 import {
   bars,
@@ -231,7 +230,10 @@ function BurnUps({ title, list, none }: { title: string; list: BurnUp[]; none: s
 }
 
 export function AnalyticsPage() {
-  const [days, setDays] = useState<number>(DEFAULT_DAYS);
+  const [days, setDays] = useDays(
+    WINDOWS.map((window) => window.days),
+    DEFAULT_DAYS,
+  );
   const filters = useScopeFilters();
   const { repository = null, agent = "" } = filters.scope;
   const report = useQuery({

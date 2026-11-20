@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { useState } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { keys } from "../../api/keys";
 import { CommandBar } from "./CommandBar";
 import { PaletteFocusFor, PaletteFocusProvider } from "./palette/focus";
 import type { PaletteCommand } from "./palette/model";
@@ -43,7 +44,7 @@ const BOARD = {
   ],
 };
 
-function open(commands: PaletteCommand[] = [], label = "#7 Focus card") {
+function open(commands: PaletteCommand[] = [], label = "#7 Focus card", owner = false) {
   // jsdom has none, and the list of results measures itself with one.
   vi.stubGlobal(
     "ResizeObserver",
@@ -55,13 +56,26 @@ function open(commands: PaletteCommand[] = [], label = "#7 Focus card") {
   );
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      text: async () => JSON.stringify({ boards: [BOARD], harness_changes: [], inbox: [] }),
-    })),
+    vi.fn(async (url: string) => {
+      const body = String(url).includes("/v1/people")
+        ? [
+            {
+              id: 1,
+              handle: "tom",
+              name: "Tom Baker",
+              role: "member",
+              disabled: false,
+              created_at: 0,
+            },
+          ]
+        : { boards: [BOARD], harness_changes: [], inbox: [] };
+      return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+    }),
   );
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  if (owner) {
+    client.setQueryData(keys.session, { signed_in: true, person: { handle: "me", role: "owner" } });
+  }
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
@@ -140,7 +154,7 @@ describe("the palette", () => {
     fireEvent.change(field, { target: { value: "page retro" } });
     expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(["Retro"]);
     fireEvent.change(field, { target: { value: "zzzz" } });
-    expect(screen.getByText("Nothing matches.")).toBeTruthy();
+    expect(await screen.findByText("Nothing matches.")).toBeTruthy();
   });
 
   it("finds the wiki's pages by the words typed and opens the one chosen", async () => {
@@ -227,5 +241,46 @@ describe("the palette", () => {
     fireEvent.keyDown(field, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await waitFor(() => expect(document.activeElement?.textContent).toBe("Start"));
+  });
+
+  it("says it is searching, not that nothing matches, while the wiki has not answered", async () => {
+    open();
+    const field = await screen.findByRole("combobox");
+    let answer: (hits: unknown[]) => void = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const body = String(url).includes("/v1/wiki/search")
+          ? await new Promise<unknown[]>((resolve) => {
+              answer = resolve;
+            })
+          : { boards: [BOARD], harness_changes: [], inbox: [] };
+        return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+      }),
+    );
+    fireEvent.change(field, { target: { value: "gamma" } });
+    // Before the pause that starts the search, and while it is out, the list is not empty-handed.
+    expect(screen.getByText("Searching…")).toBeTruthy();
+    expect(screen.queryByText("Nothing matches.")).toBeNull();
+    await waitFor(() => expect(typeof answer).toBe("function"));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(screen.getByText("Searching…")).toBeTruthy();
+    answer([{ path: "Gamma", name: "Gamma", project: null, snippet: "x" }]);
+    await screen.findByRole("option", { name: /Gamma/ });
+    expect(screen.queryByText("Searching…")).toBeNull();
+  });
+
+  it("finds people in a group of their own, above a loose match of a page", async () => {
+    open([], "#7 Focus card", true);
+    const field = await screen.findByRole("combobox");
+    fireEvent.change(field, { target: { value: "tom" } });
+    const person = await screen.findByRole("option", { name: /Tom Baker/ });
+    expect(person.closest("[cmdk-group]")?.querySelector("[cmdk-group-heading]")?.textContent).toBe(
+      "People",
+    );
+    // "Automations" holds "tom" inside a word; the person is the whole word, so comes first.
+    const names = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+    expect(names[0]).toContain("Tom Baker");
+    expect(names.some((n) => n.includes("Automations"))).toBe(true);
   });
 });

@@ -766,6 +766,10 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
     }
     const runLimit = body.set?.run_limit;
     if (typeof runLimit === "number" && runLimit < 1) return "run_limit must be at least 1";
+    const retroAt = body.set?.retro_at;
+    if (typeof retroAt === "string" && !/^\d{2}:\d{2}$/.test(retroAt)) {
+      return `retro_at must be a time as HH:MM, not "${retroAt}"`;
+    }
     return null;
   }
 
