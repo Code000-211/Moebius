@@ -32,7 +32,7 @@ export function PageHeader({
         </div>
         {context && <p className="mt-1 max-w-prose text-base text-secondary">{context}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </header>
   );
 }
