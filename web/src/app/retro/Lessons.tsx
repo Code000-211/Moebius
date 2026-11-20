@@ -1,11 +1,12 @@
 /**
- * The lessons box of the Retro page: what the Retro learned from earlier cards (`GET /v1/lessons`), each with its
+ * The Lessons area of Settings: what the Retro learned from earlier cards (`GET /v1/lessons`), each with its
  * kind, the cards it comes from and how often a run was given it. A person edits a lesson in place
  * (`PUT /v1/lessons/{id}`) and deletes it (`DELETE /v1/lessons/{id}`, after asking); a retired lesson stays on the
  * page with the reason, and can only be deleted.
  *
- * A lesson is read as a sentence first — the situation, what was learned, what to do — with its kind, its cards and
- * how often it was retrieved under it, and its controls at the bottom of the card.
+ * A lesson is a hairline section of the list, read as a sentence first — the situation, what was learned, what to do —
+ * with its kind, its cards and how often it was retrieved under it, and its controls at the bottom. Editing turns it
+ * into label-left rows; a failure is a toast.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -16,24 +17,23 @@ import type { Lesson } from "../../api/types/improve";
 import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { plural } from "../../ui/lib/format";
-import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
-import { Field, TextArea } from "../../ui/page/Field";
-import { Notice } from "../../ui/page/Notice";
+import { FieldRow, Rows, TextArea } from "../../ui/page/Field";
 import { ReadFailed } from "../../ui/page/ReadFailed";
+import { useToast } from "../../ui/page/Toast";
 import { lessonMeta, lessonTag } from "./model";
 
 export function Lessons() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const list = useQuery({ queryKey: keys.lessons, queryFn: lessons });
   const [editing, setEditing] = useState<number | null>(null);
   const [asking, setAsking] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const remove = useMutation({
     mutationFn: deleteLesson,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.lessons }),
-    onError: (e) => setError(sayError(e, "Could not delete the lesson. Try again.")),
+    onError: (e) =>
+      toast({ kind: "error", text: sayError(e, "Could not delete the lesson. Try again.") }),
   });
 
   // A read that failed is not a Retro that has learned nothing: the empty state would say there is nothing to read.
@@ -56,12 +56,8 @@ export function Lessons() {
     );
   }
   return (
-    <Box
-      title="Lessons"
-      aside={<span className="tabular-nums">{plural(list.data.length, "lesson", "lessons")}</span>}
-      className="min-w-0"
-    >
-      <div className="flex flex-col gap-4">
+    <section aria-label="Lessons" className="min-w-0 border-t border-hairline pt-4">
+      <div className="flex flex-col divide-y divide-hairline">
         {list.data.map((lesson) =>
           editing === lesson.id ? (
             <LessonEditor
@@ -78,12 +74,10 @@ export function Lessons() {
               deleting={remove.isPending}
               onEdit={() => {
                 setAsking(null);
-                setError(null);
                 setEditing(lesson.id);
               }}
               onAsk={() => {
                 setEditing(null);
-                setError(null);
                 setAsking(lesson.id);
               }}
               onKeep={() => setAsking(null)}
@@ -94,9 +88,8 @@ export function Lessons() {
             />
           ),
         )}
-        {error && editing === null && <Notice tone="error">{error}</Notice>}
       </div>
-    </Box>
+    </section>
   );
 }
 
@@ -120,7 +113,7 @@ function LessonCard({
   const retired = lesson.status === "retired";
   const kind = lessonTag(lesson.kind);
   return (
-    <article className="flex min-w-0 flex-col gap-4 rounded-card bg-sunken p-4">
+    <article className="flex min-w-0 flex-col gap-3 py-4 first:pt-0 last:pb-0">
       <h3 className="m-0 min-w-0 break-words text-base font-semibold text-text">
         {lesson.situation}
       </h3>
@@ -154,8 +147,8 @@ function LessonCard({
         </Button>
       </div>
       {asking && (
-        <div className="flex flex-col gap-4 rounded-control bg-surface p-4 sm:flex-row sm:items-center">
-          <p className="m-0 flex min-h-8 min-w-0 flex-1 items-center break-words text-base text-text">
+        <div className="flex flex-col gap-3 sm:min-h-9 sm:flex-row sm:items-center">
+          <p className="m-0 flex min-w-0 flex-1 items-center break-words text-base text-text">
             Delete this lesson?
           </p>
           <div className="flex gap-2">
@@ -185,6 +178,7 @@ function LessonEditor({
   const [situation, setSituation] = useState(lesson.situation);
   const [what, setWhat] = useState(lesson.lesson);
   const [advice, setAdvice] = useState(lesson.advice);
+  const toast = useToast();
   const save = useMutation({
     mutationFn: () =>
       editLesson(lesson.id, {
@@ -196,51 +190,33 @@ function LessonEditor({
       await onSaved();
       onDone();
     },
+    onError: (error) =>
+      toast({ kind: "error", text: sayError(error, "Could not save the lesson. Try again.") }),
   });
   const complete = situation.trim() !== "" && what.trim() !== "" && advice.trim() !== "";
   return (
     <form
-      className="flex min-w-0 flex-col gap-4 rounded-card bg-surface p-4"
+      className="flex min-w-0 flex-col gap-3 py-4 first:pt-0 last:pb-0"
       onSubmit={(event) => {
         event.preventDefault();
         if (complete) save.mutate();
       }}
     >
-      <Field label="Situation">
-        {(id) => (
+      <Rows className="border-t-0">
+        <FieldRow label="Situation" wide>
           <Input
-            id={id}
             placeholder="The kind of task"
             value={situation}
             onChange={(event) => setSituation(event.target.value)}
           />
-        )}
-      </Field>
-      <Field label="What happened">
-        {(id) => (
-          <TextArea
-            id={id}
-            rows={3}
-            value={what}
-            onChange={(event) => setWhat(event.target.value)}
-          />
-        )}
-      </Field>
-      <Field label="What to do" hint="The next run is given this sentence.">
-        {(id) => (
-          <TextArea
-            id={id}
-            rows={3}
-            value={advice}
-            onChange={(event) => setAdvice(event.target.value)}
-          />
-        )}
-      </Field>
-      {save.error && (
-        <Notice tone="error">
-          {sayError(save.error, "Could not save the lesson. Try again.")}
-        </Notice>
-      )}
+        </FieldRow>
+        <FieldRow label="What happened" wide>
+          <TextArea rows={3} value={what} onChange={(event) => setWhat(event.target.value)} />
+        </FieldRow>
+        <FieldRow label="What to do" description="The next run is given this sentence." wide>
+          <TextArea rows={3} value={advice} onChange={(event) => setAdvice(event.target.value)} />
+        </FieldRow>
+      </Rows>
       <div className="flex flex-wrap gap-2">
         <Button size="sm" type="submit" disabled={!complete || save.isPending}>
           {save.isPending ? "Saving" : "Save"}

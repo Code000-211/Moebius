@@ -22,6 +22,7 @@ import { FadedClamp } from "../../ui/page/FadedClamp";
 import { Field, TextArea } from "../../ui/page/Field";
 import { MarkLabel } from "../../ui/page/MarkLabel";
 import { Notice } from "../../ui/page/Notice";
+import { useOpenCard } from "../board/CardWindowHost";
 import { pullRequestOf } from "../board/model";
 import { useRole } from "../shell/session";
 import { type Action, perform, working } from "./actions";
@@ -61,6 +62,7 @@ import {
 export function Decision({ item, snapshot }: { item: InboxItem; snapshot: Snapshot }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const openCard = useOpenCard();
   const about = found(snapshot, item);
   const { label, mark } = kindTag(item);
   const [rejecting, setRejecting] = useState<string | null>(null);
@@ -161,10 +163,7 @@ export function Decision({ item, snapshot }: { item: InboxItem; snapshot: Snapsh
       if (item.card_id !== null) {
         const board = about.board;
         buttons.push(
-          plain(
-            "Open live view",
-            board ? () => navigate(`/board/${board.repository.id}?card=${item.card_id}`) : null,
-          ),
+          plain("Open live view", board ? () => openCard(item.card_id as number) : null),
         );
         buttons.push(plain("Reject with a reason", () => setRejecting("")));
       } else {
@@ -174,12 +173,7 @@ export function Decision({ item, snapshot }: { item: InboxItem; snapshot: Snapsh
     } else if (item.kind === MERGE_STOPPED && item.card_id !== null) {
       // What stopped is the forge's or a person's to fix; the card goes on when its last change is merged.
       const board = about.board;
-      buttons.push(
-        plain(
-          "Open the card",
-          board ? () => navigate(`/board/${board.repository.id}?card=${item.card_id}`) : null,
-        ),
-      );
+      buttons.push(plain("Open the card", board ? () => openCard(item.card_id as number) : null));
     } else if (item.kind === APPROVE_ISSUE && item.card_id !== null) {
       buttons.push(primary("Approve", { kind: "approve", card: item.card_id }));
     } else if ((item.kind === STUCK || item.kind === CHANGE_CLOSED) && item.card_id !== null) {

@@ -58,7 +58,7 @@ import { PlacesSection } from "./PlacesSection";
 import { ProjectSection } from "./ProjectSection";
 import { placeAt } from "./places";
 import { Entry, type Trailing } from "./SidebarEntry";
-import { Back, SettingsFoot, SignedInAs, SignOut } from "./SidebarFoot";
+import { Back, SettingsFoot } from "./SidebarFoot";
 import { ImproveRow, Section } from "./SidebarSection";
 import { useRole } from "./session";
 
@@ -362,12 +362,6 @@ export function Sidebar({ connection, collapsed, onToggle, onSearch }: SidebarPr
           <ChatSection chats={chatList.data ?? []} snapshot={data.data} at={at} />
         )}
         {!inSettings && groupSection("Setup", "Setup")}
-        {inSettings && (
-          <Section collapsed={collapsed}>
-            {!collapsed && <SignedInAs />}
-            <SignOut collapsed={collapsed} />
-          </Section>
-        )}
         {/* The one row the list never exchanges: the gear to Settings is the foot of it on every page, drawn as the
             rail draws its rows, so a hand that learned its place keeps it while the list above it is swapped for the
             settings'. */}

@@ -68,7 +68,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 function ToastHost({ toasts, onDismiss }: { toasts: Shown[]; onDismiss: (id: number) => void }) {
   return (
-    <div className="pointer-events-none fixed right-4 bottom-4 z-50 flex w-96 max-w-[calc(100vw-2rem)] flex-col gap-2">
+    <div
+      aria-live="polite"
+      data-toast-host=""
+      className="pointer-events-none fixed right-4 bottom-4 z-50 flex w-96 max-w-[calc(100vw-2rem)] flex-col gap-2"
+    >
       {toasts.map((t) => (
         <ToastItem key={t.id} toast={t} onDismiss={() => onDismiss(t.id)} />
       ))}

@@ -7,7 +7,7 @@
  * panel of its own at the right, opened from the dock, the quiet field at the bottom of the page (`AgentDock.tsx`), and
  * by `Ctrl+J`; the package sheet, which pages open from where a person meets plugins and extensions, lies over the
  * properties pane's place in the same panel. It
- * owns the command palette and its shortcut, the form of a new issue and `C` (`board/NewIssueHost.tsx`), holds what is
+ * owns the command palette and its shortcut, the form of a new issue and `C` (`board/NewIssueHost.tsx`), the card window for `?card=` on any page (`board/CardWindowHost.tsx`), holds what is
  * in focus for it (`palette/focus.tsx`), and notes the places seen and the sidebar's collapsed state (kept per
  * browser). In the desktop app the panel carries the window's controls once at its top right
  * (`desktop/WindowControls.tsx`), and the rail of servers lies at the window's far left (`desktop/Rail.tsx`).
@@ -28,8 +28,10 @@ import { PageBoundary } from "../../ui/page/PageBoundary";
 import { PropertiesProvider, useProperties } from "../../ui/page/Properties";
 import { SheetSlotProvider } from "../../ui/page/SheetSlot";
 import { SkeletonCard } from "../../ui/page/Skeleton";
+import { CardWindowHost } from "../board/CardWindowHost";
 import { isTyping, NewIssueProvider } from "../board/NewIssueHost";
 import { prefetchCard } from "../board/prefetchCard";
+import { inSettingsArea } from "../settings/settingsEntries";
 import { readFlag, writeFlag } from "../storage";
 import { AgentProvider, useAgent } from "./AgentContext";
 import { AgentDock } from "./AgentDock";
@@ -92,13 +94,10 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
   const paneShown = hasProperties || agent.open;
   const connection = useConnection();
   const location = useLocation();
-  // A card named in the address the page opened at is read now, while the board's code and the snapshot are on their way.
+  // A card named in the address the page opened at (`?card=`, on any page) is read now, while the board's code and the snapshot are on their way.
   const queryClient = useQueryClient();
   useEffect(() => {
-    const opened = /^\/board\/\d+$/.test(window.location.pathname)
-      ? new URLSearchParams(window.location.search).get("card")
-      : null;
-    const id = Number(opened);
+    const id = Number(new URLSearchParams(window.location.search).get("card"));
     if (Number.isInteger(id) && id > 0) prefetchCard(queryClient, id);
   }, [queryClient]);
   const reconnect = useReconnect();
@@ -202,13 +201,14 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
             </PageBoundary>
           </main>
           {/* The quiet field for the agent; not while the agent's panel is open, and not on Settings, which has none. */}
-          {!agent.open && !location.pathname.startsWith("/settings") && <AgentDock />}
+          {!agent.open && !inSettingsArea(location.pathname) && <AgentDock />}
         </div>
         <AgentPanel />
         <RightColumn />
         <PackageSheet />
         <WindowControls />
       </div>
+      <CardWindowHost />
       <CommandBar open={commandOpen} onOpenChange={setCommandOpen} />
     </div>
   );

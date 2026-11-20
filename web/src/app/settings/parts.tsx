@@ -7,10 +7,15 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Button } from "../../ui/components/Button";
 import { FieldRow } from "../../ui/page/Field";
 
+/** The column of an area built from rows: as wide as the mockup's, left-aligned under the area's title. */
+export function AreaColumn({ children }: { children: ReactNode }) {
+  return <div className="max-w-[620px]">{children}</div>;
+}
+
 /** The title of the chosen area at the top of the content, with the area's own actions at its right. */
 export function AreaTitle({ title, actions }: { title: string; actions?: ReactNode }) {
   return (
-    <div className="mb-4 flex min-h-10 flex-wrap items-center justify-between gap-3">
+    <div className="mb-3 flex min-h-10 flex-wrap items-center justify-between gap-3">
       <h2 className="m-0 text-xl font-semibold tracking-tight text-text">{title}</h2>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>

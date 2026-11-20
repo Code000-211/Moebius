@@ -1,16 +1,26 @@
 /**
- * Starting a new agent: first one simple choice, a blank agent or one that starts from an existing agent (the Coder
- * and the Reviewer, which always exist, and the person's own; not the agents Moebius runs for itself). A copy has all
- * the settings and instructions of the agent it starts from under a name still to be typed, and is saved as any new
- * agent is, with `PUT /v1/agents/{name}`.
+ * Starting a new agent: first one simple choice in a small window of its own, a blank agent or one that starts from an
+ * existing agent (the Coder and the Reviewer, which always exist, and the person's own; not the agents Moebius runs
+ * for itself). A copy has all the settings and instructions of the agent it starts from under a name still to be
+ * typed, and is saved as any new agent is, with `PUT /v1/agents/{name}`, from the editor window.
  */
+import { XIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { agent as readAgent } from "../../api/calls/harness";
 import { keys } from "../../api/keys";
 import type { Agent } from "../../api/types/chat";
 import { Button } from "../../ui/components/Button";
-import { Box } from "../../ui/page/Box";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../../ui/components/Dialog";
+import { EditorWindow } from "../../ui/components/EditorWindow";
+import { IconButton } from "../../ui/components/IconButton";
 import { Chip } from "../../ui/page/Chip";
 import { Field, Select } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
@@ -23,51 +33,100 @@ export function NewAgentChoice({
   agents,
   onBlank,
   onFrom,
+  onClose,
 }: {
   /** The agents it can start from. */
   agents: Agent[];
   onBlank: () => void;
   onFrom: (name: string) => void;
+  onClose: () => void;
 }) {
   const [fromAgent, setFromAgent] = useState(false);
   const [name, setName] = useState(agents[0]?.name ?? "");
   const chosen = agents.some((agent) => agent.name === name) ? name : (agents[0]?.name ?? "");
   return (
-    <Box title="New agent" className="flex flex-col gap-4">
-      <p className="m-0 max-w-prose text-base text-secondary">
-        Start from nothing, or from an agent that exists: its model, instructions, skills and the
-        rest are copied, and you give the copy a new name.
-      </p>
-      <div className="flex flex-wrap gap-3">
-        <Chip selected={!fromAgent} onClick={() => setFromAgent(false)}>
-          Blank
-        </Chip>
-        <Chip selected={fromAgent} onClick={() => setFromAgent(true)}>
-          From an existing agent
-        </Chip>
-      </div>
-      {fromAgent && (
-        <Field label="Start from">
-          {(id) => (
-            <Select
-              id={id}
-              options={agents.map((agent) => agent.name)}
-              value={chosen}
-              onChange={setName}
-            />
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+    >
+      <DialogContent
+        className="max-w-xl gap-0 p-0"
+        data-audit="flush"
+        data-testid="editor-window"
+        hideCloseButton
+      >
+        <DialogHeader className="h-12 shrink-0 flex-row items-center gap-2 border-b border-hairline pr-2 pl-6">
+          <DialogTitle className="min-w-0 flex-1 truncate text-md font-semibold">
+            New agent
+          </DialogTitle>
+          <IconButton icon={XIcon} aria-label="Close" onClick={onClose} />
+        </DialogHeader>
+        <div className="flex min-w-0 flex-col gap-4 p-6">
+          <DialogDescription>
+            Start from nothing, or from an agent that exists: its model, instructions, skills and
+            the rest are copied, and you give the copy a new name.
+          </DialogDescription>
+          <div className="flex flex-wrap gap-3">
+            <Chip selected={!fromAgent} onClick={() => setFromAgent(false)}>
+              Blank
+            </Chip>
+            <Chip selected={fromAgent} onClick={() => setFromAgent(true)}>
+              From an existing agent
+            </Chip>
+          </div>
+          {fromAgent && (
+            <Field label="Start from">
+              {(id) => (
+                <Select
+                  id={id}
+                  options={agents.map((agent) => agent.name)}
+                  value={chosen}
+                  onChange={setName}
+                />
+              )}
+            </Field>
           )}
-        </Field>
-      )}
-      <div>
-        <Button
-          size="sm"
-          disabled={fromAgent && chosen === ""}
-          onClick={() => (fromAgent ? onFrom(chosen) : onBlank())}
-        >
-          Continue
-        </Button>
-      </div>
-    </Box>
+        </div>
+        <DialogFooter className="shrink-0 items-center border-t border-hairline px-6 py-3">
+          <Button variant="secondary" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            disabled={fromAgent && chosen === ""}
+            onClick={() => (fromAgent ? onFrom(chosen) : onBlank())}
+          >
+            Continue
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** The window while an agent is read, or when it cannot be: the same window, with nothing to save yet. */
+export function AgentWait({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <EditorWindow
+      open
+      title={title}
+      dirty={false}
+      canSave={false}
+      onSave={() => {}}
+      onClose={onClose}
+    >
+      {children}
+    </EditorWindow>
   );
 }
 
@@ -90,9 +149,19 @@ export function NewAgentEditor({
     retry: false,
   });
   if (from === null) return <AgentEditor {...shared} initial={draft ?? blank} stored={blank} />;
-  if (detail.isPending) return <SkeletonCard lines={4} message={`Reading ${from}`} />;
+  if (detail.isPending) {
+    return (
+      <AgentWait title="New agent" onClose={shared.onClose}>
+        <SkeletonCard lines={4} message={`Reading ${from}`} />
+      </AgentWait>
+    );
+  }
   if (detail.isError) {
-    return <Notice tone="error">{`Could not read ${from}. ${detail.error.message}`}</Notice>;
+    return (
+      <AgentWait title="New agent" onClose={shared.onClose}>
+        <Notice tone="error">{`Could not read ${from}. ${detail.error.message}`}</Notice>
+      </AgentWait>
+    );
   }
   const copy = copyOf(
     detail.data,

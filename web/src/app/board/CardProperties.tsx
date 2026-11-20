@@ -1,11 +1,11 @@
 /**
- * The properties of the card in the dock, in the page's right column (`ui/page/Properties.tsx`): every fact the dock
- * used to list beside the issue — where the card is, who wrote it, what it waits for, its run, checks and cost — and
- * what a person changes about the issue, each edited in place and saved alone (`ui/page/EditableProperty.tsx`): its
- * title, whether it is open, who it is given to (its assignees), its kind and the fields of that kind, its cycle, the milestones it is in, who claimed it, its parent, its blockers and its
- * labels. Each save is a request to the
+ * The properties of the card in the card window (`CardWindow.tsx`), as a compact block under its title: the state of
+ * the issue, who it is given to, its labels, priority, due date, repositories and parent, each edited in place and saved
+ * alone (`ui/page/EditableProperty.tsx`), and under "More properties" every other fact and field — where the card is,
+ * who wrote it, its kind and the fields of that kind, its cycle, milestones, estimate, claim, sub-issues, blockers, what
+ * it waits for, its run, checks and cost. The title is the window's heading and is edited with "Edit issue". Each save is a request to the
  * server (`api/calls/board.ts`) that reads the board again once answered, and what the server refuses is said under
- * the property that asked. The dock keeps the issue's text, its change and what a person decides.
+ * the property that asked. The window keeps the issue's text, its change and what a person decides.
  */
 import { ArrowUpRightIcon } from "@phosphor-icons/react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -15,7 +15,6 @@ import {
   changeAssignees,
   claim,
   closeIssue,
-  editCard,
   release,
   removeBlocker,
   reopenIssue,
@@ -31,7 +30,7 @@ import type { Board, Card, InboxItem, Priority } from "../../api/types/board";
 import { patchCard, putCards } from "../../live/cardCache";
 import { EditableProperty, ListProperty } from "../../ui/page/EditableProperty";
 import { MarkLabel, type StateMark } from "../../ui/page/MarkLabel";
-import { PageProperties, Property } from "../../ui/page/Properties";
+import { Property } from "../../ui/page/Properties";
 import { PriorityBars } from "../../ui/page/StatusIcon";
 import { CycleProperty } from "../cycles/CycleProperty";
 import { KindProperties } from "../kinds/KindProperties";
@@ -90,7 +89,7 @@ export function issueNumber(typed: string): number {
   return number;
 }
 
-/** The link-like button that opens another issue of the board in the dock. */
+/** The link-like button that opens another issue of the board in the window. */
 function IssueLink({ card, onOpen }: { card: Card; onOpen: (card: Card) => void }) {
   return (
     <button
@@ -144,7 +143,7 @@ export function CardProperties({
   stopped?: InboxItem;
   /** Every board, which names the repositories a card may be given; the card's own when not given. */
   boards?: Board[];
-  /** Shows another issue, such as the parent or a sub-issue, in the dock. */
+  /** Shows another issue, such as the parent or a sub-issue, in the window. */
   onOpenCard: (card: Card) => void;
 }) {
   const queryClient = useQueryClient();
@@ -167,240 +166,239 @@ export function CardProperties({
   const people: Array<[string, string]> = [[ME, "Me"]];
   if (claimer !== null && claimer !== ME) people.unshift([claimer, claimer]);
 
+  // The seven a person changes most are the block under the title; the rest of the facts and fields are one fold below it.
   return (
-    <PageProperties label={`Properties of #${card.number}`}>
-      <EditableProperty
-        name="Title"
-        editor={{
-          kind: "text",
-          value: card.title,
-          onSave: (title) => saved(editCard(card.id, title, card.body)),
-        }}
-      >
-        {card.title}
-      </EditableProperty>
-      <Property name="Status">
-        <MarkLabel mark={STATUS_MARK[status]} word={STATUS_LABELS[status]} />
-      </Property>
-      <EditableProperty
-        name="State"
-        editor={{
-          kind: "choice",
-          options: [
-            ["open", "Open"],
-            ["closed", "Closed"],
-          ],
-          value: closed ? "closed" : "open",
-          onSave: (next) => saved(next === "closed" ? closeIssue(card.id) : reopenIssue(card.id)),
-        }}
-      >
-        {closed ? "Closed" : "Open"}
-      </EditableProperty>
-      <Property name="Column">{card.column}</Property>
-      <Property name="Repository">{board.repository.name}</Property>
-      <RepositoriesProperty
-        card={card}
-        own={board.repository.name}
-        boards={boards ?? [board]}
-        onSave={(next) => saved(setCardRepositories(card.id, next))}
-      />
-      <Property name="Author">{card.author}</Property>
-      <KindProperties card={card} saved={saved} />
-      <AssigneesProperty
-        assignees={card.assignees}
-        onSave={(next) => saved(changeAssignees(card.id, card.assignees, next))}
-      />
-      <CycleProperty
-        card={card.id}
-        project={card.project_id}
-        onSaved={() => {
-          void queryClient.invalidateQueries({ queryKey: keys.cycles });
-        }}
-      />
-      <MilestonesProperty
-        card={card.id}
-        onSaved={() => {
-          void queryClient.invalidateQueries({ queryKey: keys.milestones });
-        }}
-      />
-      <FollowProperty card={card.id} />
-      {card.project_key !== "" && <WikiPagesProperty cardName={cardKey(card)} />}
-      <EditableProperty
-        name="Priority"
-        editor={{
-          kind: "choice",
-          options: PRIORITY_WORDS,
-          value: card.priority,
-          onSave: (next) => saved(setPriority(card.id, next as Priority)),
-        }}
-      >
-        <span className="inline-flex items-center gap-2">
-          <PriorityBars priority={card.priority} decorative />
-          {PRIORITY_WORDS.find(([name]) => name === card.priority)?.[1] ?? card.priority}
-        </span>
-      </EditableProperty>
-      <EditableProperty
-        name="Due date"
-        editor={{
-          kind: "date",
-          value: card.due,
-          onSave: (next) => saved(setDue(card.id, next)),
-        }}
-      >
-        {card.due ?? <span className="text-secondary">No date</span>}
-      </EditableProperty>
-      <EditableProperty
-        name="Estimate"
-        editor={{
-          kind: "number",
-          value: card.estimate,
-          invalid: (points) =>
-            Number.isInteger(points) && points >= 1 && points <= 1000
-              ? null
-              : "Use a whole number from 1 to 1000.",
-          onSave: (next) => saved(setEstimate(card.id, next)),
-        }}
-      >
-        {card.estimate === null ? (
-          <span className="text-secondary">No estimate</span>
-        ) : (
-          `${card.estimate} ${card.estimate === 1 ? "point" : "points"}`
-        )}
-      </EditableProperty>
-      <EditableProperty
-        name="Claim"
-        editor={{
-          kind: "person",
-          people,
-          none: "No one",
-          value: claimer,
-          onSave: (next) => saved(next === null ? release(card.id) : claim(card.id)),
-        }}
-      >
-        {claimer ?? <span className="text-secondary">No one</span>}
-      </EditableProperty>
-      <EditableProperty
-        name="Parent"
-        editor={{
-          kind: "number",
-          value: card.parent,
-          onSave: (next) => saved(setParent(card.id, next)),
-        }}
-        after={
-          parent && (
-            <button
-              type="button"
-              aria-label={`Open #${parent.number} ${parent.title}`}
-              title={`Open #${parent.number}`}
-              onClick={() => onOpenCard(parent)}
-              className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-control bg-transparent text-secondary hover:bg-hover hover:text-text"
-            >
-              <ArrowUpRightIcon className="size-3.5" aria-hidden="true" weight="bold" />
-            </button>
-          )
-        }
-      >
-        {parent ? (
-          `#${parent.number} ${parent.title}`
-        ) : card.parent !== null ? (
-          `#${card.parent}`
-        ) : (
-          <span className="text-secondary">None</span>
-        )}
-      </EditableProperty>
-      {below.length > 0 && (
-        <Property name="Sub-issues">
-          <span className="flex flex-col gap-0.5 py-1">
-            <span className="text-sm text-secondary">
-              {stackWords({
-                shown: below,
-                total: below.length,
-                done: below.filter(isClosed).length,
-              })}
-            </span>
-            {below.map((child) => (
-              <span key={child.id} className="flex flex-wrap items-baseline gap-x-2">
-                <IssueLink card={child} onOpen={onOpenCard} />
-                <span className="text-sm text-secondary">
-                  {isClosed(child) ? "Closed" : child.column}
-                </span>
-              </span>
-            ))}
+    <section aria-label={`Properties of #${card.number}`} className="px-6 pb-2">
+      <div className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
+        <EditableProperty
+          name="State"
+          editor={{
+            kind: "choice",
+            options: [
+              ["open", "Open"],
+              ["closed", "Closed"],
+            ],
+            value: closed ? "closed" : "open",
+            onSave: (next) => saved(next === "closed" ? closeIssue(card.id) : reopenIssue(card.id)),
+          }}
+        >
+          {closed ? "Closed" : "Open"}
+        </EditableProperty>
+        <AssigneesProperty
+          assignees={card.assignees}
+          onSave={(next) => saved(changeAssignees(card.id, card.assignees, next))}
+        />
+        <ListProperty
+          name="Labels"
+          items={card.labels
+            .filter((name) => !isPlanningLabel(name))
+            .map((name) => ({
+              key: name,
+              label: name,
+              remove: `Remove label ${name}`,
+            }))}
+          empty="None"
+          addLabel="Add a label"
+          onAdd={(typed) => saved(setLabels(card.id, [...card.labels, typed]))}
+          onRemove={(key) =>
+            saved(
+              setLabels(
+                card.id,
+                card.labels.filter((l) => l !== key),
+              ),
+            )
+          }
+        />
+        <EditableProperty
+          name="Priority"
+          editor={{
+            kind: "choice",
+            options: PRIORITY_WORDS,
+            value: card.priority,
+            onSave: (next) => saved(setPriority(card.id, next as Priority)),
+          }}
+        >
+          <span className="inline-flex items-center gap-2">
+            <PriorityBars priority={card.priority} decorative />
+            {PRIORITY_WORDS.find(([name]) => name === card.priority)?.[1] ?? card.priority}
           </span>
-        </Property>
-      )}
-      <ListProperty
-        name="Waiting on"
-        items={card.blocked_by.map((n) => ({
-          key: String(n),
-          label: `#${n}`,
-          remove: `Remove blocker #${n}`,
-        }))}
-        empty="No issue"
-        addLabel="Add a blocker by its number"
-        onAdd={(typed) =>
-          saved(
-            addBlocker(card.id, issueNumber(typed)).then((blocked_by) =>
-              patchCard(queryClient, card.id, { blocked_by }),
-            ),
-          )
-        }
-        onRemove={(key) =>
-          saved(
-            removeBlocker(card.id, Number(key)).then((blocked_by) =>
-              patchCard(queryClient, card.id, { blocked_by }),
-            ),
-          )
-        }
-      />
-      <ListProperty
-        name="Labels"
-        items={card.labels
-          .filter((name) => !isPlanningLabel(name))
-          .map((name) => ({
-            key: name,
-            label: name,
-            remove: `Remove label ${name}`,
-          }))}
-        empty="None"
-        addLabel="Add a label"
-        onAdd={(typed) => saved(setLabels(card.id, [...card.labels, typed]))}
-        onRemove={(key) =>
-          saved(
-            setLabels(
-              card.id,
-              card.labels.filter((l) => l !== key),
-            ),
-          )
-        }
-      />
-      <hr className="my-1 border-0 border-t border-hairline" />
-      <Property name="Run">
-        {card.run ? (
-          <Link
-            to={`/runs/${card.run.id}`}
-            className="text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
+        </EditableProperty>
+        <EditableProperty
+          name="Due date"
+          editor={{
+            kind: "date",
+            value: card.due,
+            onSave: (next) => saved(setDue(card.id, next)),
+          }}
+        >
+          {card.due ?? <span className="text-secondary">No date</span>}
+        </EditableProperty>
+        <RepositoriesProperty
+          card={card}
+          own={board.repository.name}
+          boards={boards ?? [board]}
+          onSave={(next) => saved(setCardRepositories(card.id, next))}
+        />
+        <EditableProperty
+          name="Parent"
+          editor={{
+            kind: "number",
+            value: card.parent,
+            onSave: (next) => saved(setParent(card.id, next)),
+          }}
+          after={
+            parent && (
+              <button
+                type="button"
+                aria-label={`Open #${parent.number} ${parent.title}`}
+                title={`Open #${parent.number}`}
+                onClick={() => onOpenCard(parent)}
+                className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-control bg-transparent text-secondary hover:bg-hover hover:text-text"
+              >
+                <ArrowUpRightIcon className="size-3.5" aria-hidden="true" weight="bold" />
+              </button>
+            )
+          }
+        >
+          {parent ? (
+            `#${parent.number} ${parent.title}`
+          ) : card.parent !== null ? (
+            `#${card.parent}`
+          ) : (
+            <span className="text-secondary">None</span>
+          )}
+        </EditableProperty>
+      </div>
+      <details className="group mt-1">
+        <summary className="inline-flex min-h-8 cursor-pointer list-none items-center gap-1 rounded-control px-1 text-sm text-secondary hover:text-text [&::-webkit-details-marker]:hidden">
+          More properties
+        </summary>
+        <div className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
+          <Property name="Status">
+            <MarkLabel mark={STATUS_MARK[status]} word={STATUS_LABELS[status]} />
+          </Property>
+          <Property name="Column">{card.column}</Property>
+          <Property name="Repository">{board.repository.name}</Property>
+          <Property name="Author">{card.author}</Property>
+          <KindProperties card={card} saved={saved} />
+          <CycleProperty
+            card={card.id}
+            project={card.project_id}
+            onSaved={() => {
+              void queryClient.invalidateQueries({ queryKey: keys.cycles });
+            }}
+          />
+          <MilestonesProperty
+            card={card.id}
+            onSaved={() => {
+              void queryClient.invalidateQueries({ queryKey: keys.milestones });
+            }}
+          />
+          <FollowProperty card={card.id} />
+          {card.project_key !== "" && <WikiPagesProperty cardName={cardKey(card)} />}
+          <EditableProperty
+            name="Estimate"
+            editor={{
+              kind: "number",
+              value: card.estimate,
+              invalid: (points) =>
+                Number.isInteger(points) && points >= 1 && points <= 1000
+                  ? null
+                  : "Use a whole number from 1 to 1000.",
+              onSave: (next) => saved(setEstimate(card.id, next)),
+            }}
           >
-            {`${card.run.agent} · ${card.run.purpose}`}
-          </Link>
-        ) : (
-          <span className="text-secondary">No run has started</span>
-        )}
-      </Property>
-      {card.held && <Property name="Blocked">{heldLine(card.held)}</Property>}
-      <Property name="Why it waits">
-        {waitingLine(board.waiting[String(card.id)], card.refusals)}
-      </Property>
-      {changesOfCard(card).map((change) => (
-        <Property key={change.id} name={`Checks${inRepository(card, change)}`}>
-          {CHECKS[change.checks] ?? change.checks}
-        </Property>
-      ))}
-      {stopped && <MergeStopped item={stopped} />}
-      <Property name="Cost">
-        <span className="tabular-nums">{tokens(card.tokens)}</span>
-      </Property>
-      {card.note && <Property name="Note">{card.note}</Property>}
-    </PageProperties>
+            {card.estimate === null ? (
+              <span className="text-secondary">No estimate</span>
+            ) : (
+              `${card.estimate} ${card.estimate === 1 ? "point" : "points"}`
+            )}
+          </EditableProperty>
+          <EditableProperty
+            name="Claim"
+            editor={{
+              kind: "person",
+              people,
+              none: "No one",
+              value: claimer,
+              onSave: (next) => saved(next === null ? release(card.id) : claim(card.id)),
+            }}
+          >
+            {claimer ?? <span className="text-secondary">No one</span>}
+          </EditableProperty>
+          {below.length > 0 && (
+            <Property name="Sub-issues">
+              <span className="flex flex-col gap-0.5 py-1">
+                <span className="text-sm text-secondary">
+                  {stackWords({
+                    shown: below,
+                    total: below.length,
+                    done: below.filter(isClosed).length,
+                  })}
+                </span>
+                {below.map((child) => (
+                  <span key={child.id} className="flex flex-wrap items-baseline gap-x-2">
+                    <IssueLink card={child} onOpen={onOpenCard} />
+                    <span className="text-sm text-secondary">
+                      {isClosed(child) ? "Closed" : child.column}
+                    </span>
+                  </span>
+                ))}
+              </span>
+            </Property>
+          )}
+          <ListProperty
+            name="Waiting on"
+            items={card.blocked_by.map((n) => ({
+              key: String(n),
+              label: `#${n}`,
+              remove: `Remove blocker #${n}`,
+            }))}
+            empty="No issue"
+            addLabel="Add a blocker by its number"
+            onAdd={(typed) =>
+              saved(
+                addBlocker(card.id, issueNumber(typed)).then((blocked_by) =>
+                  patchCard(queryClient, card.id, { blocked_by }),
+                ),
+              )
+            }
+            onRemove={(key) =>
+              saved(
+                removeBlocker(card.id, Number(key)).then((blocked_by) =>
+                  patchCard(queryClient, card.id, { blocked_by }),
+                ),
+              )
+            }
+          />
+          <Property name="Run">
+            {card.run ? (
+              <Link
+                to={`/runs/${card.run.id}`}
+                className="text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
+              >
+                {`${card.run.agent} · ${card.run.purpose}`}
+              </Link>
+            ) : (
+              <span className="text-secondary">No run has started</span>
+            )}
+          </Property>
+          {card.held && <Property name="Blocked">{heldLine(card.held)}</Property>}
+          <Property name="Why it waits">
+            {waitingLine(board.waiting[String(card.id)], card.refusals)}
+          </Property>
+          {changesOfCard(card).map((change) => (
+            <Property key={change.id} name={`Checks${inRepository(card, change)}`}>
+              {CHECKS[change.checks] ?? change.checks}
+            </Property>
+          ))}
+          {stopped && <MergeStopped item={stopped} />}
+          <Property name="Cost">
+            <span className="tabular-nums">{tokens(card.tokens)}</span>
+          </Property>
+          {card.note && <Property name="Note">{card.note}</Property>}
+        </div>
+      </details>
+    </section>
   );
 }

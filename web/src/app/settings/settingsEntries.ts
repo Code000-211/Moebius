@@ -24,6 +24,9 @@ export interface SettingsEntry {
 const named = <T extends string>(load: () => Promise<Record<T, ComponentType>>, name: T) =>
   lazy(() => load().then((all) => ({ default: all[name] })));
 
+const Profile = named(() => import("./ProfilePage"), "ProfilePage");
+const Notifications = named(() => import("./NotificationsPage"), "NotificationsPage");
+const Repositories = named(() => import("./RepositoriesPage"), "RepositoriesPage");
 const Appearance = named(() => import("./AppearancePage"), "AppearancePage");
 const General = named(() => import("./SettingsPage"), "SettingsPage");
 const Shortcuts = named(() => import("../shortcuts/ShortcutsPage"), "ShortcutsPage");
@@ -36,12 +39,16 @@ const Workflows = named(() => import("../workflows/WorkflowsPage"), "WorkflowsPa
 const Analytics = named(() => import("../analytics/AnalyticsPage"), "AnalyticsPage");
 const Retro = named(() => import("../retro/RetroPage"), "RetroPage");
 const Lessons = named(() => import("./LessonsPage"), "LessonsPage");
+const ColumnScripts = named(() => import("./ColumnScriptsPage"), "ColumnScriptsPage");
+const Schedules = named(() => import("./SchedulesPage"), "SchedulesPage");
+const Export = named(() => import("./ExportPage"), "ExportPage");
+const Runners = named(() => import("./RunnersPage"), "RunnersPage");
 const People = named(() => import("../people/PeoplePage"), "PeoplePage");
 
 export const SETTINGS_ENTRIES: readonly SettingsEntry[] = [
-  { group: "You", label: "Profile", path: "profile" },
+  { group: "You", label: "Profile", path: "profile", page: Profile },
   { group: "You", label: "Appearance", path: "appearance", page: Appearance },
-  { group: "You", label: "Notifications", path: "notifications" },
+  { group: "You", label: "Notifications", path: "notifications", page: Notifications },
   { group: "You", label: "Keyboard", path: "shortcuts", page: Shortcuts },
   { group: "Agents", label: "Agents", path: "agents", page: Agents },
   { group: "Agents", label: "Models", path: "models", page: Models },
@@ -49,15 +56,15 @@ export const SETTINGS_ENTRIES: readonly SettingsEntry[] = [
   { group: "Agents", label: "Plugins", path: "plugins", page: Plugins },
   { group: "Automation", label: "Rules", path: "rules", page: Rules },
   { group: "Automation", label: "Workflows", path: "workflows", page: Workflows },
-  { group: "Automation", label: "Column scripts", path: "column-scripts" },
-  { group: "Automation", label: "Schedules", path: "schedules" },
+  { group: "Automation", label: "Column scripts", path: "column-scripts", page: ColumnScripts },
+  { group: "Automation", label: "Schedules", path: "schedules", page: Schedules },
   { group: "Insight", label: "Analytics", path: "analytics", page: Analytics },
   { group: "Insight", label: "Retro", path: "retro", page: Retro },
   { group: "Insight", label: "Lessons", path: "lessons", page: Lessons },
-  { group: "Insight", label: "Export", path: "export" },
+  { group: "Insight", label: "Export", path: "export", page: Export },
   { group: "Server", label: "General", path: "settings", page: General },
-  { group: "Server", label: "Repositories", path: "repositories" },
-  { group: "Server", label: "Runners", path: "runners" },
+  { group: "Server", label: "Repositories", path: "repositories", page: Repositories },
+  { group: "Server", label: "Runners", path: "runners", page: Runners },
   { group: "Server", label: "Members", path: "people", ownerOnly: true, page: People },
 ];
 
@@ -82,4 +89,10 @@ export function searchEntries(
           e.group.toLowerCase().includes(needle)),
     ),
   })).filter((g) => g.entries.length > 0);
+}
+
+/** Whether `pathname` is a page of Settings: one of the entries' addresses, which stand at the root, or `/settings`. */
+export function inSettingsArea(pathname: string): boolean {
+  const first = pathname.replace(/^\/+/, "").split("/")[0] ?? "";
+  return SETTINGS_ENTRIES.some((entry) => entry.path === first);
 }

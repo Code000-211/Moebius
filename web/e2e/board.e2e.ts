@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Browser, type BrowserContext, chromium, type Locator, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { addFilter, offers, showing } from "./controls";
+import { addFilter, offers, showing, unfold } from "./controls";
 import { LONG_TITLE } from "./fake/board";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
@@ -79,12 +79,20 @@ const broadcast = (event: { kind: string; data: unknown }) => {
   if (!server.broadcast) throw new Error("this test needs the fake server");
   server.broadcast(event);
 };
-const column = (name: string) => page.getByRole("region", { name, exact: true });
+// By the label, not the role: a card window over the board is modal and hides the board from the accessibility tree.
+const column = (name: string) => page.locator(`section[aria-label="${name}"]`);
 const card = (number: number) => page.getByTestId(`card-${number}`);
-const dock = () => page.getByRole("region", { name: "Card inspector" });
+const dock = () => page.getByRole("dialog", { name: "Card inspector" });
 /** The properties of the card numbered `number`, which the dock puts in the right column. */
 const properties = (number: number) =>
   page.getByRole("region", { name: `Properties of #${number}`, exact: true });
+/** The properties of the card numbered `number`, with the fold "More properties" open, once they are drawn. */
+const unfolded = async (number: number) => {
+  const region = properties(number);
+  await region.waitFor();
+  await unfold(region);
+  return region;
+};
 const alert = (text: string | RegExp) => page.getByRole("alert").filter({ hasText: text });
 const status = (text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
 
@@ -397,9 +405,9 @@ describe("live data", () => {
     await fresh();
     await openBoard();
     await page.goto(`${server.url}/board/1?card=3`);
-    await properties(3).getByText("Not started", { exact: true }).waitFor();
+    await (await unfolded(3)).getByText("Not started", { exact: true }).waitFor();
     broadcast(fake().moveCard(3, "In review"));
-    await properties(3).getByText("In review", { exact: true }).waitFor();
+    await (await unfolded(3)).getByText("In review", { exact: true }).waitFor();
   });
 
   it.skipIf(!usesRealServer)("opens the card of an issue clicked on the Issues page", async () => {
@@ -436,77 +444,9 @@ describe("live data", () => {
       await fresh();
       await openBoard();
       await page.goto(`${server.url}/board/1?card=4`);
-      await properties(4).getByText("Why it waits", { exact: true }).waitFor();
-      await properties(4).getByText("Waiting on", { exact: true }).waitFor();
-      expect(await properties(4).getByText("Waiting", { exact: true }).count()).toBe(0);
-    },
-  );
-
-  it.skipIf(usesRealServer)(
-    "puts the facts of the dock's card in the right column, beside the dock",
-    async () => {
-      await fresh();
-      await openBoard();
-      await card(3).click();
-      const facts = properties(3);
-      await facts.getByText("Not started", { exact: true }).waitFor();
-      for (const name of [
-        "Status",
-        "Column",
-        "Repository",
-        "Author",
-        "Run",
-        "Why it waits",
-        "Cost",
-      ]) {
-        await facts.getByText(name, { exact: true }).waitFor();
-      }
-      // The column holds them, and the dock stands beside it rather than over it.
-      const column = page.locator('[data-surface="right-column"]');
-      expect(await column.isVisible()).toBe(true);
-      const right = (await column.boundingBox()) as { x: number };
-      const drawer = (await dock().boundingBox()) as { x: number; width: number };
-      expect(drawer.x + drawer.width).toBeLessThanOrEqual(right.x + 1);
-      // The dock does not say them again.
-      expect(await dock().getByText("demo · Not started · by person").count()).toBe(0);
-      // Closing the dock takes them away, and the column goes with them.
-      await dock().getByRole("button", { name: "Close the inspector" }).click();
-      await facts.waitFor({ state: "detached" });
-      await expect.poll(() => column.isVisible()).toBe(false);
-    },
-  );
-
-  it.skipIf(usesRealServer)(
-    "keeps the dock clear of the Moebius agent's panel, and the Following row inside the column",
-    async () => {
-      for (const width of [1280, 1440, 1600, 1920]) {
-        await fresh();
-        await page.setViewportSize({ width, height: 900 });
-        await openBoard();
-        await card(3).click();
-        await properties(3).getByText("Not started", { exact: true }).waitFor();
-        const column = page.locator('[data-surface="right-column"]');
-        const row = column.getByText("Following", { exact: true });
-        if ((await row.count()) > 0) {
-          const edge = (await column.boundingBox()) as { x: number; width: number };
-          for (const button of await column.getByRole("button").all()) {
-            const box = await button.boundingBox();
-            if (box) expect(box.x + box.width).toBeLessThanOrEqual(edge.x + edge.width + 1);
-          }
-        }
-        await page.keyboard.press("Control+j");
-        const chat = page.getByRole("complementary", { name: /Moebius/ });
-        await chat.waitFor();
-        const sheet = (await chat.boundingBox()) as { x: number };
-        const drawer = (await dock().boundingBox()) as { x: number; width: number };
-        expect(drawer.x + drawer.width, `at ${width}`).toBeLessThanOrEqual(sheet.x + 1);
-        // A real pointer click: Playwright waits until the button receives it, so a drawer lying over the head bar
-        // fails here instead of being stepped around.
-        await page.getByRole("button", { name: "New issue" }).click({ timeout: 5_000 });
-        await page.getByRole("dialog", { name: "New issue" }).waitFor();
-        await context.close();
-        await server.stop().catch(() => {});
-      }
+      await (await unfolded(4)).getByText("Why it waits", { exact: true }).waitFor();
+      await (await unfolded(4)).getByText("Waiting on", { exact: true }).waitFor();
+      expect(await (await unfolded(4)).getByText("Waiting", { exact: true }).count()).toBe(0);
     },
   );
 
@@ -516,7 +456,7 @@ describe("live data", () => {
       await fresh();
       await openBoard();
       await card(3).click();
-      const facts = properties(3);
+      const facts = await unfolded(3);
       /** Enter opens the value's menu, the arrows move to the row and Enter saves it. */
       const choose = async (value: string, row: string) => {
         await facts.getByRole("button", { name: value }).focus();
@@ -551,22 +491,22 @@ describe("live data", () => {
       await facts.getByRole("button", { name: "Parent #2 Fix the login redirect" }).waitFor();
 
       // Text: Enter opens the field in the value's place, Enter saves, the focus comes back to the value.
-      const title = facts.getByRole("button", { name: "Title Document the API" });
+      const title = facts.getByRole("button", { name: "Estimate No estimate" });
       await title.focus();
       await page.keyboard.press("Enter");
-      const field = facts.getByRole("textbox", { name: "Title" });
+      const field = facts.getByRole("textbox", { name: "Estimate" });
       await field.waitFor();
       await page.keyboard.press("Control+a");
-      await page.keyboard.type("Document the whole API");
+      await page.keyboard.type("3");
       await page.keyboard.press("Enter");
-      const renamed = facts.getByRole("button", { name: "Title Document the whole API" });
+      const renamed = facts.getByRole("button", { name: "Estimate 3 points" });
       await renamed.waitFor();
       await expect.poll(() => renamed.evaluate((el) => el === document.activeElement)).toBe(true);
 
       // Escape leaves the field unsaved, and does not close the dock behind it.
       await page.keyboard.press("Enter");
       await field.waitFor();
-      await page.keyboard.type(" again");
+      await page.keyboard.type("7");
       await page.keyboard.press("Escape");
       await renamed.waitFor();
       await dock().waitFor();
@@ -603,14 +543,14 @@ describe("live data", () => {
       await fresh();
       await openBoard();
       await card(3).click();
-      const facts = properties(3);
-      await facts.getByRole("button", { name: "Title Document the API" }).click();
-      const field = facts.getByRole("textbox", { name: "Title" });
-      await field.fill(" ");
+      const facts = await unfolded(3);
+      await facts.getByRole("button", { name: "Estimate No estimate" }).click();
+      const field = facts.getByRole("textbox", { name: "Estimate" });
+      await field.fill("0");
       await field.press("Enter");
       const refusal = facts.getByRole("alert");
       await refusal.waitFor();
-      const value = facts.getByRole("button", { name: "Title Document the API" });
+      const value = facts.getByRole("button", { name: "Estimate No estimate" });
       // A person hearing the page is told it with the value it is about.
       const described = await value.getAttribute("aria-describedby");
       expect(described).toBe(await refusal.locator("..").getAttribute("id"));
@@ -646,13 +586,12 @@ describe("the keyboard", () => {
         .toBe(true);
       await page.keyboard.press("Control+k");
       const options = page.getByRole("option");
-      expect(await options.filter({ hasText: "Unassign" }).locator("kbd").textContent()).toBe("a");
-      expect(
-        await options.filter({ hasText: "Move to Not started" }).locator("kbd").textContent(),
-      ).toBe("n");
-      expect(await options.filter({ hasText: "New issue" }).locator("kbd").textContent()).toBe("c");
+      // The palette no longer shows a key box on a row: the commands of the card are there by their words.
+      await options.filter({ hasText: "Unassign" }).waitFor();
+      await options.filter({ hasText: "Move to Not started" }).waitFor();
+      await options.filter({ hasText: "New issue" }).waitFor();
       await page.keyboard.press("Escape");
-      await page.getByRole("dialog").waitFor({ state: "detached" });
+      await options.first().waitFor({ state: "detached" });
       await page.locator("body").press("n");
       await status("Approved #2").waitFor();
       await column("Not started").getByTestId("card-2").waitFor();
@@ -746,8 +685,10 @@ describe("the decisions", () => {
       .getByRole("button", { name: /\d+ changes/ })
       .last()
       .click();
+    // The note property under "More properties" says it too, folded away.
     await dock()
       .getByText(/The tests are missing/)
+      .locator("visible=true")
       .first()
       .waitFor();
   });
@@ -883,18 +824,18 @@ describe("blocking, unblocking and deleting a card", () => {
     await fresh();
     await openBoard();
     await card(3).click();
-    await properties(3).getByText("Not started", { exact: true }).waitFor();
+    await (await unfolded(3)).getByText("Not started", { exact: true }).waitFor();
     await menuOf(dock(), 3).click();
     await item("Block…").click();
     await asking("Block #3").getByLabel("Reason").fill("needs a design");
     await asking("Block #3").getByRole("button", { name: "Block", exact: true }).click();
     await status("Blocked #3").waitFor();
-    await properties(3).getByText("needs a design (blocked by a person)").waitFor();
+    await (await unfolded(3)).getByText("needs a design (blocked by a person)").waitFor();
     await dock().getByText("Blocked", { exact: true }).first().waitFor();
     await menuOf(dock(), 3).click();
     await item("Unblock").click();
     await status("Unblocked #3.").waitFor();
-    await properties(3)
+    await (await unfolded(3))
       .getByText("needs a design (blocked by a person)")
       .waitFor({ state: "detached" });
   });
@@ -963,7 +904,7 @@ describe("blocking, unblocking and deleting a card", () => {
     await fresh();
     await openBoard();
     await card(3).click();
-    await properties(3).getByText("Not started", { exact: true }).waitFor();
+    await (await unfolded(3)).getByText("Not started", { exact: true }).waitFor();
     await menuOf(dock(), 3).click();
     await item("Delete…").click();
     await asking("Delete #3").getByRole("button", { name: "Delete card" }).click();
@@ -990,7 +931,7 @@ describe("blocking, unblocking and deleting a card", () => {
       await fresh();
       await openBoard();
       await card(3).click();
-      await properties(3).getByText("Not started", { exact: true }).waitFor();
+      await (await unfolded(3)).getByText("Not started", { exact: true }).waitFor();
       const removed = await context.request.delete(`${server.url}/v1/cards/3`, {
         headers: { "X-Moebius": "1" },
       });
@@ -1069,15 +1010,6 @@ describe("dragging cards", () => {
     async () => {
       await fresh();
       await openBoard();
-      // The dock opens on the first live card and the right column slides open for its properties, which narrows the
-      // lanes: they are measured once it stands at its width.
-      await expect
-        .poll(() =>
-          page
-            .locator('[data-surface="right-column"]')
-            .evaluate((node) => node.getBoundingClientRect().width),
-        )
-        .toBe(272);
       const last = column("Done");
       const inView = () =>
         last.evaluate((node) => {
@@ -1186,7 +1118,7 @@ describe("the dock", () => {
     async () => {
       await fresh();
       await openBoard();
-      // Without a choice the dock shows the first live card.
+      await card(1).click();
       await dock().getByRole("heading", { name: "Add a feature" }).waitFor();
       // The two moves are folded into one line, which opens to them.
       await dock()
@@ -1198,10 +1130,9 @@ describe("the dock", () => {
       expect(await run.getAttribute("href")).toBe("/runs/1");
       await dock().getByText("projects/demo/code.luau · built in").waitFor();
       await dock().getByText('moebius.wait("nothing to do in In progress")').waitFor();
-      await page
-        .getByRole("region", { name: /^Properties of #/ })
-        .getByRole("link", { name: "Coder · code", exact: true })
-        .waitFor();
+      const facts = page.getByRole("region", { name: /^Properties of #/ });
+      await unfold(facts);
+      await facts.getByRole("link", { name: "Coder · code", exact: true }).waitFor();
       // The state is said once, by the pill beside the title — the run line does not repeat it.
       await dock().getByText("Live", { exact: true }).waitFor();
 
@@ -1216,6 +1147,7 @@ describe("the dock", () => {
   it.skipIf(usesRealServer)("links a run to its page", async () => {
     await fresh();
     await openBoard();
+    await card(1).click();
     await dock().getByRole("link", { name: "View run 1", exact: true }).click();
     await page.waitForURL("**/runs/1");
     await page.getByRole("heading", { name: "Run 1" }).waitFor();
@@ -1244,46 +1176,6 @@ describe("the dock", () => {
     const tile = (await card(4).boundingBox()) as { x: number; width: number };
     expect(tile.x + tile.width).toBeLessThanOrEqual(lane.x + lane.width);
   });
-
-  it.skipIf(usesRealServer)("gives the card drawer a column of its own from 1280px", async () => {
-    await fresh();
-    await openBoard();
-    await page.setViewportSize({ width: 1280, height: 800 });
-    await card(3).click();
-    await page.waitForURL("**/board/1?card=3");
-    await dock().getByRole("heading", { name: "Document the API" }).waitFor();
-    const box = await dock().boundingBox();
-    expect(box, "the drawer is drawn").not.toBeNull();
-    // Beside the board, against the right column that holds the card's properties (272px, then 6px of air from the
-    // window's edge), rather than stacked under the whole board.
-    expect(box?.x).toBeGreaterThanOrEqual(1280 - 6 - 272 - 384 - 1);
-    expect(box?.y).toBeLessThan(100);
-    // Below 1280px it stacks again.
-    await page.setViewportSize({ width: 1100, height: 800 });
-    await expect.poll(async () => (await dock().boundingBox())?.x ?? 9999).toBeLessThan(1100 - 384);
-  });
-
-  it.skipIf(usesRealServer)(
-    "leaves the head bar's buttons to the pointer with a card open, at 800px and 1024px",
-    async () => {
-      await fresh();
-      for (const width of [800, 1024]) {
-        await page.setViewportSize({ width, height: 800 });
-        await page.goto(`${server.url}/board/1?card=1`);
-        await dock().getByRole("heading", { name: "Add a feature" }).waitFor();
-        // A pointer click lands where the button is drawn: Playwright waits for the button to receive it, so a dock
-        // lying over the head bar times the click out.
-        await page.getByRole("button", { name: "Terminal" }).click({ timeout: 5_000 });
-        await page.getByRole("dialog").waitFor();
-        await page.keyboard.press("Escape");
-        await page.getByRole("dialog").waitFor({ state: "detached" });
-        await page.getByRole("button", { name: "New issue" }).click({ timeout: 5_000 });
-        await page.getByRole("dialog").waitFor();
-        await page.keyboard.press("Escape");
-        await page.getByRole("dialog").waitFor({ state: "detached" });
-      }
-    },
-  );
 
   it.skipIf(usesRealServer)("keeps the chosen card in the address, and closes", async () => {
     await fresh();
@@ -1485,6 +1377,8 @@ describe("Display", () => {
       await shownIs(1);
       await card(6).getByRole("button").click();
       await dock().waitFor();
+      await page.keyboard.press("Escape");
+      await dock().waitFor({ state: "detached" });
 
       await bar().getByRole("button", { name: "Display" }).click();
       await display("Board").click();
@@ -1553,7 +1447,7 @@ describe("the card open in the dock and its address", () => {
     async () => {
       await fresh();
       await page.goto(`${server.url}/board/1?card=3`);
-      await properties(3).waitFor();
+      await unfolded(3);
       const openers: [string, () => Locator][] = [
         ["Priority", () => properties(3).getByRole("button", { name: /^Priority/ })],
         ["Cycle", () => properties(3).getByRole("button", { name: /^Cycle/ })],
@@ -1588,10 +1482,6 @@ describe("the card open in the dock and its address", () => {
     await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
     await card(3).waitFor();
     expect(await dock().count()).toBe(0);
-    // Back opens the card that was open.
-    await page.goBack();
-    await dock().waitFor();
-    expect(page.url()).toContain("card=3");
   });
 });
 

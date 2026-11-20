@@ -13,7 +13,8 @@ import type { FieldValue, Kind } from "../../api/types/kinds";
 import type { IssueTemplate } from "../../api/types/templates";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { Field, Select, TextArea } from "../../ui/page/Field";
+import { useErrorToast } from "../../ui/lib/useErrorToast";
+import { FieldRow, Rows, Select, TextArea } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 
 /** The template as the form holds it: every value of a field is text until it is sent. */
@@ -91,6 +92,8 @@ function TemplateForm({
     mutationFn: () => deleteIssueTemplate(kind.name),
     onSuccess: refresh,
   });
+  useErrorToast(save.error, "Couldn't save the template.");
+  useErrorToast(remove.error, "Could not delete the template.");
   const empty =
     draft.title.trim() === "" &&
     draft.body.trim() === "" &&
@@ -98,7 +101,7 @@ function TemplateForm({
   return (
     <form
       aria-label={`Issue template of ${kind.name}`}
-      className="flex flex-col gap-3 border-0 border-t border-solid border-hairline pt-4"
+      className="flex flex-col gap-3"
       onSubmit={(event) => {
         event.preventDefault();
         if (!empty && editable && !save.isPending) save.mutate();
@@ -115,55 +118,48 @@ function TemplateForm({
           This server has no harness configuration repository, so templates cannot be kept.
         </Notice>
       )}
-      <Field label="Template title">
-        <Input
-          value={draft.title}
-          disabled={!editable}
-          onChange={(event) => setDraft({ ...draft, title: event.target.value })}
-        />
-      </Field>
-      <Field label="Template description">
-        <TextArea
-          rows={4}
-          value={draft.body}
-          disabled={!editable}
-          onChange={(event) => setDraft({ ...draft, body: event.target.value })}
-        />
-      </Field>
-      {kind.fields.map((field) => {
-        const set = (value: string) =>
-          setDraft({ ...draft, fields: { ...draft.fields, [field.name]: value } });
-        const value = draft.fields[field.name] ?? "";
-        return field.type === "choice" ? (
-          <Field key={field.id} label={`Template ${field.name}`}>
-            <Select
-              aria-label={`Template ${field.name}`}
-              disabled={!editable}
-              options={[["", "None"], ...field.options.map((o): [string, string] => [o, o])]}
-              value={value}
-              onChange={set}
-            />
-          </Field>
-        ) : (
-          <Field key={field.id} label={`Template ${field.name}`}>
-            <Input
-              value={value}
-              disabled={!editable}
-              placeholder={field.type === "date" ? "YYYY-MM-DD" : undefined}
-              onChange={(event) => set(event.target.value)}
-            />
-          </Field>
-        );
-      })}
-      {save.isError && (
-        <Notice tone="error">
-          <span className="font-semibold">Couldn't save the template. </span>
-          {sayError(save.error, "Try again.")}
-        </Notice>
-      )}
-      {remove.isError && (
-        <Notice tone="error">{sayError(remove.error, "Could not delete the template.")}</Notice>
-      )}
+      <Rows>
+        <FieldRow wide label="Template title">
+          <Input
+            value={draft.title}
+            disabled={!editable}
+            onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+          />
+        </FieldRow>
+        <FieldRow wide label="Template description">
+          <TextArea
+            rows={4}
+            value={draft.body}
+            disabled={!editable}
+            onChange={(event) => setDraft({ ...draft, body: event.target.value })}
+          />
+        </FieldRow>
+        {kind.fields.map((field) => {
+          const set = (value: string) =>
+            setDraft({ ...draft, fields: { ...draft.fields, [field.name]: value } });
+          const value = draft.fields[field.name] ?? "";
+          return field.type === "choice" ? (
+            <FieldRow wide key={field.id} label={`Template ${field.name}`}>
+              <Select
+                aria-label={`Template ${field.name}`}
+                disabled={!editable}
+                options={[["", "None"], ...field.options.map((o): [string, string] => [o, o])]}
+                value={value}
+                onChange={set}
+              />
+            </FieldRow>
+          ) : (
+            <FieldRow wide key={field.id} label={`Template ${field.name}`}>
+              <Input
+                value={value}
+                disabled={!editable}
+                placeholder={field.type === "date" ? "YYYY-MM-DD" : undefined}
+                onChange={(event) => set(event.target.value)}
+              />
+            </FieldRow>
+          );
+        })}
+      </Rows>
       {editable && (
         <div className="flex gap-2">
           <Button type="submit" size="sm" disabled={empty || save.isPending}>

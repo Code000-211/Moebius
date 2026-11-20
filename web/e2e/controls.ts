@@ -210,3 +210,11 @@ export async function scrollbarsAreQuiet(page: Page): Promise<void> {
     );
   }
 }
+
+/** Opens the fold "More properties" under a card window's compact block of properties, if it is shut. */
+export async function unfold(properties: Locator): Promise<void> {
+  const fold = properties.locator("details");
+  if (!(await fold.evaluate((el) => (el as HTMLDetailsElement).open))) {
+    await fold.locator("summary").click();
+  }
+}

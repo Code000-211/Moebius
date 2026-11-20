@@ -93,14 +93,6 @@ describe("the properties of an issue, edited in place", () => {
     expect(requests(again)).toEqual(["DELETE /v1/cards/5/claim", "POST /v1/cards/5/reopen"]);
   });
 
-  it("renames the issue and keeps its body", async () => {
-    const sent = server();
-    properties(card(5));
-    type("Title Issue 5", { role: "textbox", name: "Title" }, "Issue five");
-    await waitFor(() => expect(sent).toHaveLength(1));
-    expect(sent[0]).toEqual(["PUT", "/v1/cards/5", { title: "Issue five", body: "The body" }]);
-  });
-
   it("sets the parent by its number, and takes it away with an empty field", async () => {
     const sent = server();
     properties(card(5, { parent: 1 }), [card(1)]);

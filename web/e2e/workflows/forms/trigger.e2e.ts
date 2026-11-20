@@ -53,9 +53,16 @@ function card(id: string): Locator {
 }
 
 const state = () => page.getByTestId("canvas-state");
-const inspector = () => page.getByTestId("canvas-inspector");
+const inspector = () => page.getByTestId("editor-window");
 const preview = () => inspector().getByTestId("params-preview");
-const saveButton = () => page.getByTestId("canvas-save");
+const windowSave = () => inspector().getByRole("button", { name: "Save", exact: true });
+
+/** Gives the window's edits to the graph, then saves the graph. */
+async function saveGraph(): Promise<void> {
+  await windowSave().click();
+  await inspector().waitFor({ state: "detached" });
+  await page.getByTestId("canvas-save").click();
+}
 
 async function shows(locator: Locator, ...phrases: string[]): Promise<void> {
   const words = async () => (await locator.textContent()) ?? "";
@@ -82,21 +89,13 @@ describe.skipIf(usesRealServer)("the forms of the triggers", () => {
 
     await page.getByRole("textbox", { name: "Cron" }).fill("not a cron");
     await shows(inspector(), "a cron has five fields");
-    await expect
-      .poll(() => saveButton().getAttribute("aria-disabled"), { timeout: 20_000 })
-      .toBe("true");
-    await expect
-      .poll(() => saveButton().getAttribute("aria-describedby"), { timeout: 20_000 })
-      .not.toBeNull();
-    await shows(page.locator("body"), "a cron has five fields");
+    await expect.poll(() => windowSave().isDisabled(), { timeout: 20_000 }).toBe(true);
 
     // Sunday is day 0 or 7, and the server parses both.
     await page.getByRole("textbox", { name: "Cron" }).fill("0 0 * * 7");
     await shows(preview(), '"cron": "0 0 * * 7"');
-    await expect
-      .poll(() => saveButton().getAttribute("aria-disabled"), { timeout: 20_000 })
-      .not.toBe("true");
-    await saveButton().click();
+    await expect.poll(() => windowSave().isDisabled(), { timeout: 20_000 }).toBe(false);
+    await saveGraph();
     await shows(state(), "Saved as");
     expect(savedTrigger()).toEqual({ kind: "schedule", params: { cron: "0 0 * * 7" } });
   });
@@ -112,7 +111,7 @@ describe.skipIf(usesRealServer)("the forms of the triggers", () => {
     await page.getByRole("textbox", { name: "Path" }).fill("release-v2");
     await pickOption(page, page.getByRole("button", { name: "Secret" }), "anthropic");
     await shows(preview(), '"path": "release-v2"', '"secret": "anthropic"');
-    await saveButton().click();
+    await saveGraph();
     await shows(state(), "Saved as");
     expect(savedTrigger()).toEqual({
       kind: "webhook",
@@ -130,7 +129,7 @@ describe.skipIf(usesRealServer)("the forms of the triggers", () => {
     await page.getByRole("textbox", { name: "Input 1 default" }).fill("v1.4.0");
     await page.getByRole("switch", { name: "Input 1 required" }).click();
     await shows(preview(), '"name": "tag"', '"default": "v1.4.0"', '"required": true');
-    await saveButton().click();
+    await saveGraph();
     await shows(state(), "Saved as");
     expect(savedTrigger()).toEqual({
       kind: "manual",

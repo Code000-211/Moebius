@@ -10,17 +10,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { addKind, deleteKind, listKinds, setProjectKinds, updateKind } from "../../api/calls/kinds";
 import { listProjects } from "../../api/calls/projects";
-import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import { FIELD_TYPES, type Kind } from "../../api/types/kinds";
 import type { Project } from "../../api/types/projects";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
+import { useErrorToast } from "../../ui/lib/useErrorToast";
 import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
-import { Field, Select } from "../../ui/page/Field";
-import { Notice } from "../../ui/page/Notice";
+import { FieldRow, Rows, Select } from "../../ui/page/Field";
 import { PageHeader } from "../../ui/page/PageHeader";
+import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { NotFoundPage } from "../shell/Page";
 import { useRole } from "../shell/session";
@@ -38,16 +38,16 @@ function Kinds() {
   const projects = useQuery({ queryKey: keys.projects, queryFn: listProjects });
   return (
     <div data-testid="kinds-page" className="flex flex-col gap-6">
-      <PageHeader
-        title="Kinds of issues"
-        context="What an issue is, with the fields of its own. A project offers only the kinds it picks."
-      />
+      <PageHeader title="Kinds of issues" />
       <KindForm title="New kind" />
       {kinds.isPending && <SkeletonLines lines={3} message="Reading the kinds" />}
       {kinds.isError && (
-        <Notice tone="error">
-          {sayError(kinds.error, "Could not read the kinds. Try again.")}
-        </Notice>
+        <ReadFailed
+          error={kinds.error}
+          fallback="Could not read the kinds. Try again."
+          busy={kinds.isFetching}
+          onRetry={() => void kinds.refetch()}
+        />
       )}
       {kinds.data?.length === 0 && (
         <Empty title="No kind yet" body="Make one above, then let a project pick it." />
@@ -67,6 +67,7 @@ function KindBox({ kind, kinds, projects }: { kind: Kind; kinds: Kind[]; project
     void queryClient.invalidateQueries({ queryKey: keys.projects });
   };
   const remove = useMutation({ mutationFn: () => deleteKind(kind.id), onSuccess: refresh });
+  useErrorToast(remove.error, "Could not delete the kind.");
   return (
     <Box
       testId={`kind-${kind.name}`}
@@ -84,9 +85,6 @@ function KindBox({ kind, kinds, projects }: { kind: Kind; kinds: Kind[]; project
       }
     >
       <div className="flex flex-col gap-4">
-        {remove.isError && (
-          <Notice tone="error">{sayError(remove.error, "Could not delete the kind.")}</Notice>
-        )}
         <OfferedBy kind={kind} kinds={kinds} projects={projects} onSaved={refresh} />
         <KindForm kind={kind} />
         <IssueTemplateBox kind={kind} />
@@ -124,11 +122,15 @@ function OfferedBy({
       setProjectKinds(project.id, offeredNames(kinds, project, kind, on)),
     onSuccess: onSaved,
   });
+  useErrorToast(offer.error, "Could not change what the project offers.");
   return (
-    <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
-      <legend className="mb-1 text-sm text-secondary">Offered by</legend>
+    <fieldset className="m-0 border-0 p-0">
+      <legend className="mb-1 p-0 text-sm font-medium text-secondary">Offered by</legend>
       {projects.map((project) => (
-        <label key={project.id} className="flex min-h-7 items-center gap-2 text-sm">
+        <label
+          key={project.id}
+          className="flex h-9 items-center gap-2 border-b border-hairline text-base first:border-t"
+        >
           <input
             type="checkbox"
             // The tick shows at once; the list it is saved into is read again after.
@@ -143,11 +145,6 @@ function OfferedBy({
           {project.name}
         </label>
       ))}
-      {offer.isError && (
-        <Notice tone="error">
-          {sayError(offer.error, "Could not change what the project offers.")}
-        </Notice>
-      )}
     </fieldset>
   );
 }
@@ -163,6 +160,7 @@ function KindForm({ kind, title }: { kind?: Kind; title?: string }) {
       await queryClient.invalidateQueries({ queryKey: keys.issueKinds });
     },
   });
+  useErrorToast(save.error, "Could not save the kind.");
   const unsaved = JSON.stringify(draft) !== JSON.stringify(draftOf(kind));
   const field = (index: number, change: Partial<FieldDraft>) =>
     setDraft({
@@ -177,12 +175,14 @@ function KindForm({ kind, title }: { kind?: Kind; title?: string }) {
         save.mutate();
       }}
     >
-      <Field label="Name">
-        <Input
-          value={draft.name}
-          onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-        />
-      </Field>
+      <Rows>
+        <FieldRow wide label="Name">
+          <Input
+            value={draft.name}
+            onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+          />
+        </FieldRow>
+      </Rows>
       {draft.fields.map((f, index) => (
         // The fields have no id of their own in the form; a field is told by its place.
         // biome-ignore lint/suspicious/noArrayIndexKey: the form's fields are edited by place
@@ -220,9 +220,6 @@ function KindForm({ kind, title }: { kind?: Kind; title?: string }) {
           </Button>
         </div>
       ))}
-      {save.isError && (
-        <Notice tone="error">{sayError(save.error, "Could not save the kind. Try again.")}</Notice>
-      )}
       <div className="flex gap-2">
         <Button
           variant="secondary"

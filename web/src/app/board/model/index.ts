@@ -12,7 +12,6 @@ export {
   COLUMNS,
   DONE_SHOWN,
   groupByColumn,
-  inspectedCard,
   orderCards,
 } from "./columns";
 export type { Drop } from "./drops";

@@ -75,6 +75,9 @@ describe("the run view", () => {
     const info = page.getByTestId("run-info");
     await info.getByText("Running", { exact: true }).waitFor();
     await info.getByText("Coder · code").waitFor();
+    // The run is a bar on a timeline, with a tick for each step of the thread.
+    await page.getByTestId("time-bar").waitFor();
+    expect(await page.getByRole("tab", { name: "Conversation" }).count()).toBe(1);
     const card = info.getByRole("link", { name: /#1 Add a feature/ });
     expect(await card.getAttribute("href")).toBe("/board/1?card=1");
 
@@ -106,7 +109,7 @@ describe("the run view", () => {
 
     await card.click();
     await page.waitForURL("**/board/1?card=1");
-    await page.getByRole("region", { name: "Card inspector" }).waitFor();
+    await page.getByRole("dialog", { name: "Card inspector" }).waitFor();
   });
 
   it.skipIf(usesRealServer)("steers a running run", async () => {
@@ -205,7 +208,7 @@ describe("the diff of a card", () => {
     "shows the headline of a change in the dock and its lines in a sheet",
     async () => {
       await open("/board/1?card=5");
-      const dock = page.getByRole("region", { name: "Card inspector" });
+      const dock = page.getByRole("dialog", { name: "Card inspector" });
       await dock.getByText("Changes", { exact: true }).waitFor();
       // The dock has room for one line about a change: what it touches, and what it costs.
       const headline = dock.getByTestId("diff-card");
@@ -213,7 +216,7 @@ describe("the diff of a card", () => {
       expect((await headline.textContent()) ?? "").toMatch(/\+\d+ added -\d+ removed/);
       // The lines themselves are read in a sheet over the page, which closes on Escape.
       await headline.click();
-      const sheet = page.getByRole("dialog");
+      const sheet = page.getByRole("dialog", { name: "Changes" });
       await sheet
         .locator('[data-testid="diff-line"][data-kind="added"]')
         .filter({ hasText: "cc -O2 main.c" })
@@ -242,9 +245,9 @@ describe("the diff of a card", () => {
     "spells what each file costs, and keeps no key to the colours",
     async () => {
       await open("/board/1?card=5");
-      const dock = page.getByRole("region", { name: "Card inspector" });
+      const dock = page.getByRole("dialog", { name: "Card inspector" });
       await dock.getByTestId("diff-card").click();
-      const sheet = page.getByRole("dialog");
+      const sheet = page.getByRole("dialog", { name: "Changes" });
       await sheet.getByTestId("diff-summary").waitFor();
       // The count of a file is `+14 -4`, and there is no key to the colours beside it.
       const summary = sheet.getByTestId("diff-summary");
@@ -259,9 +262,9 @@ describe("the diff of a card", () => {
     "ends where the diff ends, with no band of nothing under the last line",
     async () => {
       await open("/board/1?card=5");
-      const dock = page.getByRole("region", { name: "Card inspector" });
+      const dock = page.getByRole("dialog", { name: "Card inspector" });
       await dock.getByTestId("diff-card").click();
-      const sheet = page.getByRole("dialog");
+      const sheet = page.getByRole("dialog", { name: "Changes" });
       const lastLine = sheet.locator('[data-testid="diff-line"]').last();
       await lastLine.waitFor();
       // The sheet is as tall as the diff it holds. Held to the height of the window, a change of one file sits in a
@@ -285,7 +288,7 @@ describe("the diff of a card", () => {
       fake().changeDiff = MANY_FILE_CHANGE_DIFF;
       await page.reload();
       await page.getByTestId("diff-card").click();
-      const sheet = page.getByRole("dialog");
+      const sheet = page.getByRole("dialog", { name: "Changes" });
       const lastLine = sheet.locator('[data-testid="diff-line"]').last();
       await lastLine.waitFor();
       // The lines are as tall as the file they hold. Held to the height of the list beside them, the last line of a
@@ -308,7 +311,7 @@ describe("the diff of a card", () => {
       fake().changeDiff = LONG_CHANGE_DIFF;
       await page.reload();
       await page.getByTestId("diff-card").click();
-      const sheet = page.getByRole("dialog");
+      const sheet = page.getByRole("dialog", { name: "Changes" });
       const lines = sheet.getByTestId("diff-lines");
       await lines.waitFor();
       const box = await sheet.boundingBox();

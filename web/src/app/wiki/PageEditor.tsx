@@ -1,6 +1,6 @@
 /**
- * The editor of a wiki page: the Markdown at the left and how it reads at the right, side by side on a wide screen,
- * with an optional line for the commit. A new page also takes its path, in the folder it was started in. Saving is
+ * The editor of a wiki page: the Markdown, and how it reads under it, with an optional line for the commit. A new
+ * page also takes its path, in the folder it was started in. Save and Cancel stay pinned at the foot of the column. Saving is
  * `PUT /v1/wiki/pages/{path}`, a commit by the person pushed to the wiki's origin; when the push fails the server says
  * why and nothing is lost from the editor. The save carries `base`, the commit of the page as the editor loaded it, so
  * a page someone else saved meanwhile is refused (409) rather than overwritten: the editor says so (before saving too,
@@ -22,6 +22,7 @@ import { ago } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import { Field, TextArea } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
+import { useToast } from "../../ui/page/Toast";
 import { cardKey } from "../board/cardKey";
 import { LeaveGuard } from "./LeaveGuard";
 import {
@@ -67,6 +68,7 @@ export function PageEditor({
   const [theirs, setTheirs] = useState(false);
   const saved = useRef(false);
   const now = useNow();
+  const toast = useToast();
   const [message, setMessage] = useState("");
   const field = useRef<HTMLTextAreaElement>(null);
   const [caret, setCaret] = useState(0);
@@ -114,7 +116,12 @@ export function PageEditor({
       saved.current = true;
       onSaved(page);
     },
-    onError: (error) => setRefused(staleWrite(error) ?? null),
+    onError: (error) => {
+      const stale = staleWrite(error);
+      setRefused(stale ?? null);
+      if (stale === undefined)
+        toast({ kind: "error", text: `Couldn't save the page. ${sayError(error, "Try again.")}` });
+    },
   });
   // A page someone saved since it was loaded: found out by a refused save, or by the event that brought it.
   const newer = refused?.current ?? (latest && latest.version.commit !== base ? latest : null);
@@ -145,12 +152,12 @@ export function PageEditor({
           />
         </Field>
       )}
-      <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+      <div className="grid min-w-0 gap-4">
         <div className="min-w-0">
           <Field label="Text">
             <TextArea
               ref={field}
-              rows={22}
+              rows={14}
               value={draft}
               mono
               placeholder={"# On call\n\nWho answers at night."}
@@ -180,7 +187,7 @@ export function PageEditor({
             <div
               role="listbox"
               aria-label={completion?.kind === "page" ? "Pages" : "Cards"}
-              className="mt-1 flex flex-col rounded-card bg-sunken p-1"
+              className="mt-1 flex flex-col rounded-card border border-hairline-strong bg-panel p-1"
             >
               {choices.map((choice, index) => (
                 <button
@@ -196,19 +203,19 @@ export function PageEditor({
                   className="flex min-h-8 w-full cursor-pointer items-baseline bg-transparent text-left gap-2 rounded-control px-2 py-1 text-sm text-text aria-selected:bg-hover"
                 >
                   <span className="font-semibold">{choice.label}</span>
-                  {choice.detail && (
-                    <span className="truncate text-secondary">{choice.detail}</span>
-                  )}
+                  {choice.detail && <span className="truncate text-muted">{choice.detail}</span>}
                 </button>
               ))}
             </div>
           )}
         </div>
-        <section aria-label="Preview" className="flex min-w-0 flex-col gap-1.5">
-          <span className="text-sm font-semibold text-secondary">Preview</span>
-          <div className="min-h-24 rounded-card bg-sunken p-4">
+        <section
+          aria-label="Preview"
+          className="flex min-w-0 flex-col border-t border-hairline pt-4"
+        >
+          <div className="min-h-24">
             {draft.trim() === "" ? (
-              <p className="m-0 text-base text-secondary">Nothing written yet.</p>
+              <p className="m-0 text-base text-muted">Nothing written yet.</p>
             ) : (
               <Markdown content={draft} className="max-w-prose" />
             )}
@@ -275,18 +282,13 @@ export function PageEditor({
       {theirs && newer !== null && (
         <section aria-label="Their version" className="flex min-w-0 flex-col gap-1.5">
           <span className="text-sm font-semibold text-secondary">Their version</span>
-          <pre className="m-0 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-card bg-sunken p-4 font-mono text-sm text-text">
+          <pre className="m-0 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-card border border-hairline p-4 font-mono text-sm text-text">
             {newer.text}
           </pre>
         </section>
       )}
-      {save.isError && refused === null && (
-        <Notice tone="error">
-          <span className="font-semibold">Couldn't save the page. </span>
-          {sayError(save.error, "Try again.")}
-        </Notice>
-      )}
-      <div className="flex flex-wrap gap-2">
+      {/* Pinned to the foot of the scrolling column, so saving is never a scroll away. */}
+      <div className="sticky -bottom-6 z-10 -mx-8 -mb-6 flex flex-wrap gap-2 border-t border-hairline bg-panel px-8 py-3">
         <Button type="submit" disabled={!ready}>
           {save.isPending ? "Saving" : "Save"}
         </Button>

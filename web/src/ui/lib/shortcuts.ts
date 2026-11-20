@@ -3,10 +3,18 @@
 /**
  * True while a modal sheet is over the page (the app's `DialogContent` says `aria-modal`; one that is closing does not count). The page underneath still hears its own shortcut while focus is trapped
  * in the sheet, so the panel it opens would land behind the scrim where nobody can see it. A sheet that is not modal —
- * the Moebius agent's sheet, which leaves the page working — does not count.
+ * the Moebius agent's sheet, which leaves the page working — does not count. A shortcut that opens a window over the card window (`C`, a new issue) asks with `exceptCardWindow`.
  */
-export function modalIsOpen(): boolean {
-  return document.querySelector('[role="dialog"][aria-modal="true"][data-state="open"]') !== null;
+export function modalIsOpen({
+  exceptCardWindow = false,
+}: {
+  exceptCardWindow?: boolean;
+} = {}): boolean {
+  // The card window marks itself `data-card-window`; a shortcut that opens a window of its own over it may ignore it.
+  const open = '[role="dialog"][aria-modal="true"][data-state="open"]';
+  return (
+    document.querySelector(exceptCardWindow ? `${open}:not([data-card-window])` : open) !== null
+  );
 }
 
 /**

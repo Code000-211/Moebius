@@ -40,10 +40,10 @@ export function WikiTree({
       />
     ));
   return (
-    <nav aria-label="Pages of the wiki" className="flex flex-col gap-4 pt-1">
+    <nav aria-label="Pages of the wiki" className="flex flex-col gap-3">
       <Group label="Organisation" onNew={canWrite ? () => onNew("") : undefined}>
         {tree.organisation.length === 0 ? (
-          <p className="m-0 px-3 text-sm text-secondary">No page yet.</p>
+          <p className="m-0 px-3 text-sm text-muted">No page yet.</p>
         ) : (
           rows(tree.organisation, 0)
         )}
@@ -57,7 +57,7 @@ export function WikiTree({
             onNew={canWrite ? () => onNew(folder) : undefined}
           >
             {project.nodes.length === 0 ? (
-              <p className="m-0 px-3 text-sm text-secondary">No page yet.</p>
+              <p className="m-0 px-3 text-sm text-muted">No page yet.</p>
             ) : (
               rows(project.nodes, 0)
             )}
@@ -68,7 +68,7 @@ export function WikiTree({
   );
 }
 
-/** A group of the tree with its name in small capitals and "New page" at its foot. */
+/** A group of the tree: a quiet row with its name, its pages, and "New page" at its foot. */
 function Group({
   label,
   onNew,
@@ -79,10 +79,12 @@ function Group({
   children: React.ReactNode;
 }) {
   return (
-    <section aria-label={label} className="flex flex-col gap-0.5">
-      <h2 className="m-0 truncate px-3 pb-1 text-xs font-semibold text-secondary">{label}</h2>
+    <section aria-label={label} className="flex flex-col">
+      <h2 className="m-0 flex h-[30px] items-center truncate px-3 text-sm font-medium text-muted">
+        {label}
+      </h2>
       {/* biome-ignore lint/a11y/noRedundantRoles: preflight takes the bullets off, and WebKit then drops the list */}
-      <ul role="list" className="m-0 flex flex-col gap-0.5 p-0">
+      <ul role="list" className="m-0 flex flex-col p-0">
         {children}
       </ul>
       {onNew && (
@@ -90,9 +92,9 @@ function Group({
           type="button"
           onClick={onNew}
           aria-label={`New page in ${label}`}
-          className="flex min-h-8 cursor-pointer items-center gap-2 rounded-control bg-transparent px-3 text-left text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
+          className="flex min-h-9 cursor-pointer items-center gap-2 rounded-control bg-transparent px-3 text-left text-base text-muted transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
         >
-          <PlusIcon className="size-3.5" aria-hidden />
+          <PlusIcon className="size-[15px]" aria-hidden />
           New page
         </button>
       )}
@@ -117,7 +119,7 @@ function Row({
 }) {
   const indent = { paddingLeft: `${0.75 + depth * 1}rem` };
   const row =
-    "flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-control pr-3 text-left text-base transition-colors duration-(--motion-routine) ease-out";
+    "relative flex min-h-9 w-full cursor-pointer items-center gap-2 rounded-control pr-3 text-left text-base transition-colors duration-(--motion-routine) ease-out";
   if (node.kind === "page") {
     const selected = chosen === node.path;
     return (
@@ -129,10 +131,12 @@ function Row({
           onClick={() => onChoose(node.path)}
           className={cn(
             row,
-            selected ? "bg-selected text-text" : "bg-transparent text-text hover:bg-hover",
+            selected
+              ? "bg-selected font-medium text-text before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full before:bg-accent"
+              : "bg-transparent text-text hover:bg-hover",
           )}
         >
-          <FileTextIcon className="size-4 shrink-0 text-secondary" aria-hidden />
+          <FileTextIcon className="size-[15px] shrink-0 text-muted" aria-hidden />
           <span className="min-w-0 truncate">{node.name}</span>
         </button>
       </li>
@@ -149,12 +153,12 @@ function Row({
         onClick={() => onToggle(node.path)}
         className={cn(row, "bg-transparent text-text hover:bg-hover")}
       >
-        <Caret className="size-4 shrink-0 text-secondary" aria-hidden />
+        <Caret className="size-[15px] shrink-0 text-muted" aria-hidden />
         <span className="min-w-0 truncate">{node.name}</span>
       </button>
       {open && (
         // biome-ignore lint/a11y/noRedundantRoles: preflight takes the bullets off, and WebKit then drops the list
-        <ul role="list" className="m-0 flex flex-col gap-0.5 p-0">
+        <ul role="list" className="m-0 flex flex-col p-0">
           {node.children.map((child) => (
             <Row
               key={child.path}

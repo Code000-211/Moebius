@@ -93,7 +93,7 @@ export function BriefBox({
           )}
           <Property name="Budget">{usage(research)}</Property>
         </PageProperties>
-        <span className="min-w-0 break-words rounded-control bg-sunken px-3 py-2 font-mono text-sm text-text">
+        <span className="min-w-0 break-words font-mono text-sm text-secondary">
           {research.measure}
         </span>
         {limitReached(research) && <Body>{limitReached(research)}</Body>}

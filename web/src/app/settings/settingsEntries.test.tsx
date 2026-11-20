@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { SETTINGS_ENTRIES, SETTINGS_GROUPS, searchEntries, shownEntries } from "./settingsEntries";
+import {
+  inSettingsArea,
+  SETTINGS_ENTRIES,
+  SETTINGS_GROUPS,
+  searchEntries,
+  shownEntries,
+} from "./settingsEntries";
 
 describe("settings entries", () => {
   it("holds the twenty decided entries, in five groups", () => {
@@ -8,22 +14,14 @@ describe("settings entries", () => {
     expect(new Set(SETTINGS_ENTRIES.map((e) => e.path)).size).toBe(20);
   });
 
-  it("lists the entries that still have no page, which later tickets must remove", () => {
-    expect(SETTINGS_ENTRIES.filter((e) => !e.page).map((e) => e.label)).toEqual([
-      "Profile",
-      "Notifications",
-      "Column scripts",
-      "Schedules",
-      "Export",
-      "Repositories",
-      "Runners",
-    ]);
+  it("has a page for every entry", () => {
+    expect(SETTINGS_ENTRIES.filter((e) => !e.page)).toEqual([]);
   });
 
   it("shows registered entries only, and the owner's entries to an owner only", () => {
-    expect(shownEntries("owner")).toHaveLength(13);
+    expect(shownEntries("owner")).toHaveLength(20);
     expect(shownEntries("member").map((e) => e.label)).not.toContain("Members");
-    expect(shownEntries(undefined).map((e) => e.label)).not.toContain("Profile");
+    expect(shownEntries(undefined).map((e) => e.label)).not.toContain("Members");
   });
 
   it("narrows by name or group across the groups, and gives nothing for no match", () => {
@@ -36,7 +34,26 @@ describe("settings entries", () => {
       "Analytics",
       "Retro",
       "Lessons",
+      "Export",
     ]);
     expect(searchEntries(all, "zzz")).toEqual([]);
+  });
+
+  it("knows the addresses of Settings, which stand at the root", () => {
+    for (const path of [
+      "/profile",
+      "/notifications",
+      "/repositories",
+      "/appearance",
+      "/settings",
+      "/column-scripts",
+      "/schedules",
+      "/runners",
+      "/export",
+    ]) {
+      expect(inSettingsArea(path), path).toBe(true);
+    }
+    expect(inSettingsArea("/inbox")).toBe(false);
+    expect(inSettingsArea("/projects/3")).toBe(false);
   });
 });

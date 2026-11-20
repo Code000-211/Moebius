@@ -94,7 +94,8 @@ function port(id: string, title: string): Locator {
 
 const state = () => page.getByTestId("canvas-state");
 const wires = () => page.locator(".react-flow__edge");
-const inspector = () => page.getByTestId("canvas-inspector");
+const inspector = () => page.getByTestId("editor-window");
+const windowSave = () => inspector().getByRole("button", { name: "Save", exact: true });
 
 const words = async (locator: Locator): Promise<string> => (await locator.textContent()) ?? "";
 
@@ -235,8 +236,11 @@ describe.skipIf(usesRealServer)("the workflow canvas", () => {
     await shows(state(), "Unsaved changes");
 
     // What the kind asks for is given, its sub-path is laid out and rejoins, and the same save goes through.
+    await card("for_each").click();
     await shows(inspector(), "Rejoins at");
     await pickOption(page, page.getByRole("button", { name: "Rejoins at" }), "publish");
+    await windowSave().click();
+    await inspector().waitFor({ state: "detached" });
     // The menu has to be gone before the pointer goes to a port, or it takes the first click.
     await atRest(5, 3);
     await join(card("trigger").locator(".canvas-handle"), port("for_each", "Comes in by in"));
@@ -251,24 +255,48 @@ describe.skipIf(usesRealServer)("the workflow canvas", () => {
     ).toContain("for_each");
   });
 
-  it("keeps the panel on a node it renames, and refuses the trigger's name", async () => {
+  it("renames a node when the window is saved, and refuses the trigger's name", async () => {
     await openCanvas();
     await card("test").click();
     await shows(inspector(), "test", "cargo test", "Delete node");
 
-    // The panel follows the node to its new name instead of looking for the old one and finding nothing.
+    // The trigger's name is refused where it is typed, and the window cannot be saved with it.
     const id = page.getByRole("textbox", { name: "Id" });
-    await id.fill("check");
-    await id.blur();
-    await expect.poll(() => card("check").count(), { timeout: 20_000, interval: 100 }).toBe(1);
-    await shows(inspector(), "check", "cargo test", "Delete node");
-    expect(await words(inspector())).not.toContain("no longer on the graph");
-
-    // The trigger's name is refused where it is typed; the node keeps the name it had.
-    await page.getByRole("textbox", { name: "Id" }).fill("trigger");
-    await page.getByRole("textbox", { name: "Id" }).blur();
+    await id.fill("trigger");
     await shows(inspector(), "The trigger's id is reserved.");
-    expect(await card("check").count()).toBe(1);
+    expect(await windowSave().isDisabled()).toBe(true);
+
+    // Nothing changes on the graph until Save is pressed.
+    await id.fill("check");
+    expect(await card("test").count()).toBe(1);
+    await windowSave().click();
+    await inspector().waitFor({ state: "detached" });
+    await expect.poll(() => card("check").count(), { timeout: 20_000, interval: 100 }).toBe(1);
+    expect(await card("test").count()).toBe(0);
+    await shows(state(), "Unsaved changes");
+  });
+
+  it("asks before Escape throws away what was typed in the window", async () => {
+    await openCanvas();
+    await card("test").click();
+    await page.getByRole("textbox", { name: "Id" }).fill("check");
+    await page.keyboard.press("Escape");
+    const ask = page.getByRole("alertdialog", { name: "Discard changes?" });
+    await ask.waitFor();
+    await ask.getByRole("button", { name: "Keep editing" }).click();
+    await inspector().waitFor();
+    await page.keyboard.press("Escape");
+    await ask.waitFor();
+    await ask.getByRole("button", { name: "Discard" }).click();
+    await inspector().waitFor({ state: "detached" });
+    expect(await card("test").count()).toBe(1);
+    await shows(state(), "Saved");
+
+    // An untouched window closes at once.
+    await card("test").click();
+    await inspector().waitFor();
+    await page.keyboard.press("Escape");
+    await inspector().waitFor({ state: "detached" });
   });
 
   it("shows a run picked over the graph, with what each node was given", async () => {
@@ -338,7 +366,7 @@ describe.skipIf(usesRealServer)("the workflow canvas", () => {
 
     // The keyboard takes the chosen node away, the wires with it.
     await card("for_each").click();
-    await page.keyboard.press("Delete");
+    await page.getByTestId("delete-node").click();
     await expect.poll(() => card("for_each").count(), { timeout: 20_000, interval: 100 }).toBe(0);
     await thereAre(wires(), 3);
 

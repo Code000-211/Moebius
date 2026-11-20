@@ -110,7 +110,7 @@ describe.skipIf(usesRealServer)("kinds of issues", () => {
     // A row opens its card on its board, and Back returns to the Issues with the filter and the order still in the address.
     await page.getByRole("link", { name: "Login is broken" }).click();
     await page.waitForURL("**/board/1?card=1");
-    await page.getByRole("region", { name: "Card inspector" }).waitFor();
+    await page.getByRole("dialog", { name: "Card inspector" }).waitFor();
     await page.goBack();
     await page.getByTestId("issues-page").waitFor();
     expect(new URL(page.url()).searchParams.get("field.Severity")).toBe("high");
