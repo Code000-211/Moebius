@@ -1,5 +1,5 @@
 /**
- * The rail of servers at the far left of the desktop app, on the textured ground (pattern 42): a rounded square per
+ * The rail of servers at the far left of the desktop app, on the canvas: a rounded square per
  * server with the one open marked, the count of its Inbox, a grey dot for one that cannot be reached, and "+" to connect
  * one by its address and access token or over SSH. A right click on a square offers to remove the server, which also
  * deletes its token. The app answers `servers()` with every server's state (it asks each, so it is read every few

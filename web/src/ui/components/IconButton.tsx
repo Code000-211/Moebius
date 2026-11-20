@@ -8,6 +8,8 @@ import { cn } from "../lib/cn";
 interface IconButtonProps {
   icon: Icon;
   iconClassName?: string;
+  /** The stroke of the icon; bold unless a quiet control (the window buttons) asks for a lighter one. */
+  iconWeight?: "regular" | "bold";
   onClick?: () => void;
   disabled?: boolean;
   /** `ghost` sits in a toolbar; `secondary` is a filled square beside other controls. */
@@ -21,6 +23,7 @@ interface IconButtonProps {
 export function IconButton({
   icon: IconComponent,
   iconClassName,
+  iconWeight = "bold",
   onClick,
   disabled,
   variant = "ghost",
@@ -43,7 +46,7 @@ export function IconButton({
       aria-label={ariaLabel}
       title={title}
     >
-      <IconComponent className={cn("size-4", iconClassName)} weight="bold" />
+      <IconComponent className={cn("size-4", iconClassName)} weight={iconWeight} />
     </button>
   );
 }

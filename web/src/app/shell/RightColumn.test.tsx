@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * The page's right column: it unfolds for a page that has properties and stays the slim column for one that has none,
- * folding is kept for this browser, "Ask Moebius" and `Ctrl+J` open the agent over the column, and the properties keep
- * their state while the agent lies over them and while they are folded.
+ * The properties pane: it is there for a page that has properties and hidden for one that has none, it has no folded
+ * rail and no row for the agent, `Ctrl+J` opens the agent over it, and the properties keep their state while the agent
+ * lies over them.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -77,69 +77,48 @@ function mount(withProperties: boolean) {
 
 const column = () => document.querySelector('[data-surface="right-column"]') as HTMLElement;
 const agent = () => screen.queryByRole("dialog", { name: "Moebius agent" });
-const ask = () => screen.getByRole("button", { name: "Ask Moebius" });
 
-describe("the right column", () => {
-  it("draws a page's properties in the column, unfolded", async () => {
+describe("the properties pane", () => {
+  it("draws a page's properties in the pane", async () => {
     mount(true);
     const region = await screen.findByRole("region", { name: "Definition" });
     expect(column().contains(region)).toBe(true);
-    expect(column().hasAttribute("data-folded")).toBe(false);
+    expect(column().hidden).toBe(false);
     expect(screen.getByRole("heading", { name: "Properties" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Fold the properties" })).toBeTruthy();
-    expect(ask().textContent).toContain("Ask Moebius");
   });
 
-  it("stays the slim column on a page without properties, with both buttons", () => {
+  it("is not shown on a page without properties", () => {
     mount(false);
-    expect(column().hasAttribute("data-folded")).toBe(true);
-    const unfold = screen.getByRole("button", { name: "Show the properties" }) as HTMLButtonElement;
-    expect(unfold.disabled).toBe(true);
-    expect(ask()).toBeTruthy();
+    expect(column().hidden).toBe(true);
+    expect(screen.queryByRole("button", { name: "Show the properties" })).toBeNull();
   });
 
-  it("folds to the slim column with both buttons, keeps the choice, and keeps the properties' state", async () => {
+  it("has no fold button, no folded rail and no Ask Moebius row", async () => {
     mount(true);
-    fireEvent.click(await screen.findByRole("button", { name: "Pressed 0" }));
-    fireEvent.click(screen.getByRole("button", { name: "Fold the properties" }));
-    expect(column().hasAttribute("data-folded")).toBe(true);
-    expect(screen.getByRole("button", { name: "Show the properties" })).toBeTruthy();
-    expect(ask()).toBeTruthy();
-    expect(localStorage.getItem("moebius.properties.folded")).toBe("1");
+    await screen.findByRole("region", { name: "Definition" });
+    expect(screen.queryByRole("button", { name: "Fold the properties" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ask Moebius" })).toBeNull();
+    expect(column().querySelector("kbd")).toBeNull();
+    expect(column().className).not.toContain("transition");
+  });
 
-    // Another page, or a reload, finds it folded.
+  it("tells the page whether the pane is there", () => {
+    mount(true);
+    expect(screen.getByRole("status", { name: "Beside" }).textContent).toBe("shown");
     cleanup();
-    mount(true);
-    expect(column().hasAttribute("data-folded")).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "Show the properties" }));
-    expect(column().hasAttribute("data-folded")).toBe(false);
-    expect(localStorage.getItem("moebius.properties.folded")).toBe("0");
+    mount(false);
+    expect(screen.getByRole("status", { name: "Beside" }).textContent).toBe("slim");
   });
 
-  it("opens the agent over the column and gives it back, the properties kept as they were", async () => {
+  it("opens the agent with Ctrl+J, the properties kept as they were, and goes back with Properties", async () => {
     mount(true);
     fireEvent.click(await screen.findByRole("button", { name: "Pressed 0" }));
-    fireEvent.click(ask());
+    fireEvent.keyDown(window, { key: "j", ctrlKey: true });
     expect(await screen.findByRole("dialog", { name: "Moebius agent" })).toBeTruthy();
-    // The column is still there under the sheet, with its properties as they were.
     expect(screen.getByRole("button", { name: "Pressed 1" })).toBeTruthy();
-    // "Properties" goes back to them.
     fireEvent.click(screen.getByRole("button", { name: "Properties" }));
     expect(agent()).toBeNull();
     expect(screen.getByRole("button", { name: "Pressed 1" })).toBeTruthy();
-    expect(document.activeElement).toBe(ask());
-  });
-
-  it("tells the page whether it stands unfolded with the properties", () => {
-    mount(true);
-    const beside = () => screen.getByRole("status", { name: "Beside" }).textContent;
-    expect(beside()).toBe("shown");
-    fireEvent.click(screen.getByRole("button", { name: "Fold the properties" }));
-    expect(beside()).toBe("slim");
-    cleanup();
-    localStorage.clear();
-    mount(false);
-    expect(beside()).toBe("slim");
   });
 
   it("toggles the agent with Ctrl+J and closes it on Escape", async () => {

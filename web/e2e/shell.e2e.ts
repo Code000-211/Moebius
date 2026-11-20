@@ -1,12 +1,9 @@
 /**
- * The shell in a real browser, read from its pixels: a textured ground under the whole window, the sidebar on it with
- * no surface of its own, and the page as one surface with its right column, 6px of air above, below and at the right,
- * rounded at all four corners (ADR 0020). In dark the page is set apart by its lightness and a faint light edge alone,
- * because a wide shadow on the near-black ground shows as bands; so the ground in the air beside the page is the same
- * as the ground far from it. The grain stays on while the pixels are read: every reading is the mean of a strip, which
- * evens the grain out, and is compared with a strip of the same rows, which evens out the light from above. Then the
- * right column at work: a page's properties in it, folded and kept folded, and the Moebius agent opened over it and
- * closed again.
+ * The shell in a real browser: one panel floating on the faintly tinted canvas, with the sidebar lying on the canvas
+ * beside it, 6px of air above, below and at the right, round at all four corners, a hairline for its edge and no
+ * shadow, and no strip above it or texture under it (`docs/design-web.md`). Then the properties pane inside the panel,
+ * there only on a page that has properties, with the Moebius agent opened over it and closed again; and the desktop
+ * app's window buttons, which are drawn once, inside the panel.
  */
 import { type Browser, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -63,152 +60,61 @@ async function box(page: Page, selector: string): Promise<Box> {
   return found;
 }
 
-/** A picture of the window as the grey of each pixel, row by row, and a way to take the mean of a rectangle of it. */
-async function picture(page: Page) {
-  const png = (await page.screenshot()).toString("base64");
-  const greys = await page.evaluate(async (data) => {
-    const image = new Image();
-    image.src = `data:image/png;base64,${data}`;
-    await image.decode();
-    const canvas = document.createElement("canvas");
-    canvas.width = image.width;
-    canvas.height = image.height;
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("no canvas");
-    context.drawImage(image, 0, 0);
-    const { data: rgba } = context.getImageData(0, 0, image.width, image.height);
-    const out: number[] = [];
-    for (let i = 0; i < rgba.length; i += 4) {
-      out.push(((rgba[i] ?? 0) + (rgba[i + 1] ?? 0) + (rgba[i + 2] ?? 0)) / 3);
-    }
-    return { width: image.width, out };
-  }, png);
-  /** The mean grey of the pixels from `x0` to `x1` and `y0` to `y1`, both ends included. */
-  return (x0: number, x1: number, y0: number, y1: number): number => {
-    let sum = 0;
-    let count = 0;
-    for (let y = Math.round(y0); y <= Math.round(y1); y += 1) {
-      for (let x = Math.round(x0); x <= Math.round(x1); x += 1) {
-        sum += greys.out[y * greys.width + x] ?? 0;
-        count += 1;
-      }
-    }
-    return sum / count;
-  };
-}
-
 describe("the shell", () => {
-  it("lays the page on the ground with 6px of air above, below and at the right", async () => {
-    const page = await inbox("dark");
-    const surface = await box(page, '[data-surface="page"]');
-    const nav = await box(page, 'nav[aria-label="Pages"]');
-    expect(surface.y).toBe(6);
-    expect(VIEW.height - (surface.y + surface.height)).toBe(6);
-    expect(VIEW.width - (surface.x + surface.width)).toBe(6);
-    expect(surface.x).toBe(nav.x + nav.width);
-    const style = await page
-      .locator('[data-surface="page"]')
-      .evaluate((el) => getComputedStyle(el).borderRadius);
-    expect(style).toBe("10px");
-    // The sidebar has no surface of its own: the ground shows through it.
-    const sidebar = await page
-      .locator('nav[aria-label="Pages"]')
-      .evaluate((el) => getComputedStyle(el).backgroundColor);
-    expect(sidebar).toBe("rgba(0, 0, 0, 0)");
-    await page.context().close();
-  });
-
   for (const theme of ["light", "dark"] as const) {
-    it(`draws the page and its right column as one surface in ${theme}`, async () => {
+    it(`floats one panel on the canvas in ${theme}, with a hairline edge and no shadow`, async () => {
       const page = await inbox(theme);
-      const read = (selector: string) =>
-        page.locator(selector).evaluate((el) => {
-          const style = getComputedStyle(el);
-          return {
-            background: style.backgroundColor,
-            line: style.borderLeftColor,
-            lineWidth: style.borderLeftWidth,
-            shadow: style.boxShadow,
-          };
-        });
-      const surface = await read('[data-surface="page"]');
-      const column = await read('[data-surface="right-column"]');
-      // The column has no colour of its own and no shadow: it is the page's surface, behind a soft line.
-      expect(column.background).toBe("rgba(0, 0, 0, 0)");
-      expect(column.shadow).toBe("none");
-      expect(column.lineWidth).toBe("1px");
-      const hairline = await page.evaluate(() => {
-        const probe = document.createElement("div");
-        probe.style.color = "var(--hairline)";
-        document.body.append(probe);
-        const colour = getComputedStyle(probe).color;
-        probe.remove();
-        return colour;
+      const surface = await box(page, '[data-surface="page"]');
+      const nav = await box(page, 'nav[aria-label="Pages"]');
+      expect(surface.y).toBe(6);
+      expect(VIEW.height - (surface.y + surface.height)).toBe(6);
+      expect(VIEW.width - (surface.x + surface.width)).toBe(6);
+      expect(surface.x).toBe(nav.x + nav.width);
+      const read = await page.evaluate(() => {
+        const panel = document.querySelector('[data-surface="page"]') as HTMLElement;
+        const probe = (name: string) => {
+          const el = document.createElement("div");
+          el.style.color = `var(${name})`;
+          document.body.append(el);
+          const colour = getComputedStyle(el).color;
+          el.remove();
+          return colour;
+        };
+        const style = getComputedStyle(panel);
+        const canvas = getComputedStyle(panel.parentElement as HTMLElement);
+        return {
+          radius: style.borderRadius,
+          line: style.borderTopColor,
+          lineWidth: style.borderTopWidth,
+          shadow: style.boxShadow,
+          background: style.backgroundColor,
+          canvasBackground: canvas.backgroundColor,
+          canvasTexture: getComputedStyle(panel.parentElement as HTMLElement, "::after").content,
+          canvasPadding: canvas.paddingTop,
+          hairline: probe("--hairline"),
+          panelColour: probe("--panel"),
+          canvasColour: probe("--canvas"),
+        };
       });
-      expect(column.line).toBe(hairline);
-      expect(surface.background).not.toBe("rgba(0, 0, 0, 0)");
-
-      // The column lies inside the page's box, flush with its top, right and bottom.
-      const outer = await box(page, '[data-surface="page"]');
-      const inner = await box(page, '[data-surface="right-column"]');
-      expect(inner.y).toBe(outer.y);
-      expect(inner.x + inner.width).toBe(outer.x + outer.width);
-      expect(inner.y + inner.height).toBe(outer.y + outer.height);
-      // Its head is the height of the page's head bar.
-      const head = await box(page, '[data-surface="right-column"] [data-part="head"]');
-      expect(head.height).toBe(44);
-
-      // And it reads so: the column, below its head, is the grey of the page beside it, and both are lighter than the
-      // ground.
-      const mean = await picture(page);
-      const rows = [inner.y + 200, inner.y + inner.height - 200] as const;
-      const inColumn = mean(inner.x + 6, inner.x + inner.width - 6, ...rows);
-      const onPage = mean(inner.x - 30, inner.x - 10, ...rows);
-      expect(Math.abs(inColumn - onPage)).toBeLessThan(2.5);
-      const ground = mean(outer.x + outer.width + 2, VIEW.width - 1, ...rows);
-      expect(inColumn - ground).toBeGreaterThan(5);
+      expect(read.radius).toBe("10px");
+      expect(read.lineWidth).toBe("1px");
+      expect(read.line).toBe(read.hairline);
+      expect(read.shadow).toBe("none");
+      expect(read.background).toBe(read.panelColour);
+      expect(read.canvasBackground).toBe(read.canvasColour);
+      expect(read.canvasBackground).not.toBe(read.background);
+      // No texture layer under the window, and no strip of padding above the panel but the 6px of air.
+      expect(read.canvasTexture).toBe("none");
+      expect(read.canvasPadding).toBe("6px");
+      // The sidebar has no surface of its own: the canvas shows through it.
+      const sidebar = await page
+        .locator('nav[aria-label="Pages"]')
+        .evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(sidebar).toBe("rgba(0, 0, 0, 0)");
+      expect(await page.locator(".pt-9").count()).toBe(0);
       await page.context().close();
     });
   }
-
-  it("shows no banding at the page's edge in dark, and no square edge under its corners", async () => {
-    const page = await inbox("dark");
-    const outer = await box(page, '[data-surface="page"]');
-    const mean = await picture(page);
-    const right = outer.x + outer.width;
-    const bottom = outer.y + outer.height;
-    const top = outer.y;
-
-    // The right air, column by column past the 1px edge, against the ground at the far left of the same rows, in
-    // the sidebar's own padding. A wide shadow would darken the air near the page and lighten it step by step away
-    // from it; the ground beside the page is the ground far from it.
-    const rows = [top + 40, top + 600] as const;
-    const far = mean(0, 3, ...rows);
-    for (let x = right + 2; x < VIEW.width; x += 1) {
-      expect(
-        Math.abs(mean(x, x, ...rows) - far),
-        `the air ${x - right}px right of the page`,
-      ).toBeLessThan(1.5);
-    }
-    // The air under the page, against the air under the sidebar, row by row.
-    for (let y = bottom + 2; y < VIEW.height; y += 1) {
-      const under = mean(outer.x + 40, outer.x + 600, y, y);
-      const beside = mean(0, outer.x - 40, y, y);
-      expect(Math.abs(under - beside), `the air ${y - bottom}px under the page`).toBeLessThan(1.5);
-    }
-    // Past each rounded corner the ground shows, not a square of the page's colour: a few pixels in the cut of the
-    // corner are the ground of the air beside them.
-    const corner = (x0: number, x1: number, y0: number, y1: number) => mean(x0, x1, y0, y1);
-    const airTop = mean(right + 2, VIEW.width - 1, top, top + 2);
-    expect(Math.abs(corner(right - 3, right - 1, top, top + 2) - airTop)).toBeLessThan(6);
-    const sideTop = mean(0, 3, top, top + 2);
-    const sideBottom = mean(0, 3, bottom - 3, bottom - 1);
-    expect(Math.abs(corner(outer.x, outer.x + 2, top, top + 2) - sideTop)).toBeLessThan(6);
-    expect(
-      Math.abs(corner(outer.x, outer.x + 2, bottom - 3, bottom - 1) - sideBottom),
-    ).toBeLessThan(6);
-    await page.context().close();
-  });
 });
 
 /**
@@ -271,28 +177,33 @@ async function signedIn(path: string): Promise<Page> {
 const COLUMN = '[data-surface="right-column"]';
 
 /**
- * The right column with a page's properties in it, and the Moebius agent lying over it: a workflow's definition has
- * properties (what starts it, its nodes, its last run), the Inbox has none. The properties are marked before the agent
- * opens, so a column drawn again from nothing would be told by the mark being gone.
+ * The properties pane with a page's properties in it, and the Moebius agent lying over it: a workflow's definition has
+ * properties (what starts it, its nodes, its last run), the Inbox has none and shows no pane. The properties are marked
+ * before the agent opens, so a pane drawn again from nothing would be told by the mark being gone.
  */
-describe.skipIf(usesRealServer)("the right column and the Moebius agent", () => {
+describe.skipIf(usesRealServer)("the properties pane and the Moebius agent", () => {
   it("opens and closes the agent over a page with properties, which keep their state", async () => {
     const page = await signedIn("/workflows/release");
     const properties = page.locator(COLUMN).getByRole("region", { name: "Definition" });
     await properties.getByText("3 nodes").waitFor();
-    expect((await box(page, COLUMN)).width).toBe(272);
+    // The pane lies inside the panel, flush with its top, right and bottom (the 1px edge of the panel apart).
+    const panel = await box(page, '[data-surface="page"]');
+    const pane = await box(page, COLUMN);
+    expect(pane.width).toBe(272);
+    expect(pane.y).toBe(panel.y + 1);
+    expect(pane.x + pane.width).toBe(panel.x + panel.width - 1);
+    expect(pane.y + pane.height).toBe(panel.y + panel.height - 1);
     await page.locator(COLUMN).getByRole("heading", { name: "Properties" }).waitFor();
     await properties.evaluate((element) => {
       element.dataset.kept = "yes";
     });
     const main = await box(page, "main");
 
-    await page.getByRole("button", { name: "Ask Moebius" }).click();
+    await page.keyboard.press("Control+j");
     const agent = page.getByRole("dialog", { name: "Moebius agent" });
     await agent.waitFor();
-    // It lies over the column, wider than it, flush with the page's top, right and bottom; the page keeps its width.
-    // The boxes are read together, once the layout the sheet opened has settled: on a busy machine the page can be
-    // measured while it is drawn again, a scrollbar narrower, and the sheet a moment later.
+    // It lies over the pane, wider than it, flush with the panel's inside; the page keeps its width. The boxes are
+    // read together, once the layout the sheet opened has settled.
     const layout = async () => {
       const surface = await box(page, '[data-surface="page"]');
       const over = await box(page, '[role="dialog"][aria-label="Moebius agent"]');
@@ -304,9 +215,10 @@ describe.skipIf(usesRealServer)("the right column and the Moebius agent", () => 
         main: await box(page, "main"),
       };
     };
+    // Inside the panel's 1px edge.
     await expect
       .poll(layout)
-      .toEqual({ overLeftOfColumn: true, right: 0, top: 0, height: 0, main });
+      .toEqual({ overLeftOfColumn: true, right: -1, top: 1, height: -2, main });
 
     // "Properties" gives the place back, and they are as they were.
     await agent.getByRole("button", { name: "Properties" }).click();
@@ -320,20 +232,17 @@ describe.skipIf(usesRealServer)("the right column and the Moebius agent", () => 
     await page.keyboard.press("Escape");
     await agent.waitFor({ state: "hidden" });
     expect(await properties.getAttribute("data-kept")).toBe("yes");
-    expect(
-      await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? null),
-    ).toBe("Ask Moebius");
     await page.context().close();
   });
 
-  it("opens and closes the agent over a page without properties, whose column stays slim", async () => {
+  it("shows no right column on a page without properties, and still opens the agent", async () => {
     const page = await signedIn("/inbox");
-    const column = page.locator(COLUMN);
-    expect((await box(page, COLUMN)).width).toBe(44);
-    expect(await column.getByRole("button", { name: "Show the properties" }).isDisabled()).toBe(
-      true,
-    );
-    await column.getByRole("button", { name: "Ask Moebius" }).click();
+    expect(await page.locator(COLUMN).isVisible()).toBe(false);
+    expect(await page.locator(COLUMN).boundingBox()).toBeNull();
+    // Nothing on the page offers to fold, show or ask: there is no rail and no row for the agent.
+    expect(await page.getByRole("button", { name: "Show the properties" }).count()).toBe(0);
+    expect(await page.getByRole("button", { name: "Ask Moebius" }).count()).toBe(0);
+    await page.keyboard.press("Control+j");
     const agent = page.getByRole("dialog", { name: "Moebius agent" });
     await agent.waitFor();
     expect((await box(page, '[role="dialog"][aria-label="Moebius agent"]')).width).toBe(400);
@@ -341,32 +250,97 @@ describe.skipIf(usesRealServer)("the right column and the Moebius agent", () => 
     expect(await agent.getByRole("button", { name: "Properties" }).count()).toBe(0);
     await agent.getByRole("button", { name: "Close the Moebius agent" }).click();
     await agent.waitFor({ state: "hidden" });
-    expect((await box(page, COLUMN)).width).toBe(44);
+    expect(await page.locator(COLUMN).isVisible()).toBe(false);
     // No round button floats at the bottom right any more.
     expect(await page.getByRole("button", { name: "Open the floating chat" }).count()).toBe(0);
     await page.context().close();
   });
 
-  it("folds to a slim column with both buttons, and stays folded from page to page", async () => {
+  it("has the pane without a fold button, and keeps it from page to page", async () => {
     const page = await signedIn("/workflows/release");
     const column = page.locator(COLUMN);
-    const properties = column.getByRole("region", { name: "Definition" });
-    await properties.getByText("3 nodes").waitFor();
-    await column.getByRole("button", { name: "Fold the properties" }).click();
-    expect((await box(page, COLUMN)).width).toBe(44);
-    await properties.waitFor({ state: "hidden" });
-    await column.getByRole("button", { name: "Show the properties" }).waitFor();
-    await column.getByRole("button", { name: "Ask Moebius" }).waitFor();
-
-    // Away to the list and back to the workflow: it is still folded.
+    await column.getByRole("region", { name: "Definition" }).getByText("3 nodes").waitFor();
+    expect(await column.getByRole("button", { name: "Fold the properties" }).count()).toBe(0);
+    // Away to the list, which has none, and back.
     await page.locator("main").getByRole("link", { name: "Workflows" }).click();
     await page.getByRole("heading", { name: "Workflows", level: 1 }).waitFor();
+    await column.waitFor({ state: "hidden" });
     await page.getByRole("link", { name: "release" }).click();
     await page.getByRole("heading", { name: "release", level: 1 }).waitFor();
-    expect((await box(page, COLUMN)).width).toBe(44);
-    await column.getByRole("button", { name: "Show the properties" }).click();
     expect((await box(page, COLUMN)).width).toBe(272);
-    await properties.getByText("3 nodes").waitFor();
+    await page.context().close();
+  });
+});
+
+/**
+ * The desktop app's window has no system frame, so the web app draws the window's buttons: once, inside the panel,
+ * when the app's bridge is there; and a strip that moves and closes the window on the screens outside the shell.
+ */
+describe.skipIf(usesRealServer)("the window buttons in the desktop app", () => {
+  async function desktop(): Promise<Page> {
+    server = await startServer();
+    const context = await browser.newContext({ viewport: VIEW, reducedMotion: "reduce" });
+    await context.addInitScript(() => {
+      const nothing = async () => {};
+      Object.defineProperty(window, "moebiusDesktop", {
+        value: {
+          minimize: () => {},
+          toggleMaximize: () => {},
+          close: () => {
+            const counted = window as unknown as { closeCalls?: number };
+            counted.closeCalls = (counted.closeCalls ?? 0) + 1;
+          },
+          servers: async () => [],
+          switchServer: nothing,
+          removeServer: nothing,
+          renameServer: nothing,
+          connect: nothing,
+          connectSsh: nothing,
+        },
+      });
+    });
+    return context.newPage();
+  }
+
+  it("draws exactly one set, inside the panel, and no strip above it", async () => {
+    const page = await desktop();
+    await page.goto(server.loginUrl);
+    await page.getByRole("navigation", { name: "Pages" }).waitFor();
+    await page.goto(`${server.url}/inbox`);
+    await page.locator('[data-surface="page"] h1').first().waitFor();
+    for (const name of ["Minimize", "Maximize", "Close"]) {
+      expect(await page.getByRole("button", { name, exact: true }).count(), name).toBe(1);
+      expect(
+        await page
+          .locator('[data-surface="page"]')
+          .getByRole("button", { name, exact: true })
+          .count(),
+        `${name} in the panel`,
+      ).toBe(1);
+    }
+    expect(await page.locator(".pt-9").count()).toBe(0);
+    expect(await page.getByTestId("window-bar").count()).toBe(0);
+    // At the panel's top right, level with the header, which does not run under them.
+    const panel = await box(page, '[data-surface="page"]');
+    const controls = await box(page, '[data-testid="window-controls"]');
+    expect(controls.y).toBeGreaterThanOrEqual(panel.y);
+    expect(controls.x + controls.width).toBeLessThanOrEqual(panel.x + panel.width);
+    expect(panel.x + panel.width - (controls.x + controls.width)).toBeLessThan(16);
+    const header = await box(page, '[data-surface="page"] header');
+    expect(header.y).toBeLessThan(controls.y + controls.height);
+    await page.context().close();
+  });
+
+  it("keeps a way to move and close the window on the sign-in screen", async () => {
+    const page = await desktop();
+    await page.goto(`${server.url}/inbox`);
+    await page.getByRole("button", { name: "Sign in" }).first().waitFor();
+    const bar = page.getByTestId("window-bar");
+    expect(await bar.getAttribute("data-tauri-drag-region")).not.toBeNull();
+    await bar.getByRole("button", { name: "Close" }).click();
+    expect(
+      await page.evaluate(() => (window as unknown as { closeCalls?: number }).closeCalls),
+    ).toBe(1);
     await page.context().close();
   });
 });

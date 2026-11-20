@@ -1,7 +1,7 @@
 /**
- * The board in the desktop app's window at its default size (1280×800): the app draws a strip of its own above the page
- * and a rail of servers beside it, and a card's drawer is placed in the page's surface, so it stays under the strip,
- * inside the surface and clear of the board's own controls. The bridge the app gives the page is faked.
+ * The board in the desktop app's window at its default size (1280×800): the app draws its window buttons in the page's
+ * panel and a rail of servers beside it, and a card's drawer is placed in the panel, so it stays clear of the buttons,
+ * inside the panel and clear of the board's own controls. The bridge the app gives the page is faked.
  */
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -38,7 +38,7 @@ const box = async (locator: ReturnType<Page["locator"]>) => (await locator.bound
 
 describe("the board in the desktop app's window", () => {
   it.skipIf(usesRealServer)(
-    "keeps a card's drawer under the window strip, inside the page and off the board's controls",
+    "keeps a card's drawer clear of the window's buttons, inside the page and off the board's controls",
     async () => {
       server = await startServer();
       context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
@@ -81,7 +81,7 @@ describe("the board in the desktop app's window", () => {
       await page.evaluate(() => document.fonts.ready);
       const measure = async () => {
         const [bar, surface, shown, newIssue] = await Promise.all([
-          box(page.getByTestId("window-bar")),
+          box(page.getByTestId("window-controls")),
           box(page.locator('[data-surface="page"]')),
           box(drawer),
           box(page.getByRole("button", { name: "New issue" })),
@@ -103,8 +103,13 @@ describe("the board in the desktop app's window", () => {
         )
         .toBe(true);
       const { bar, surface, shown } = await measure();
-      // Under the strip, and inside the surface of the page, as it is in a browser.
-      expect(shown.y).toBeGreaterThanOrEqual(bar.y + bar.height);
+      // Clear of the window's buttons, and inside the surface of the page, as it is in a browser.
+      expect(
+        shown.x + shown.width <= bar.x ||
+          shown.y >= bar.y + bar.height ||
+          shown.y + shown.height <= bar.y,
+        "the drawer lies over the window's buttons",
+      ).toBe(true);
       expect(shown.y).toBeGreaterThanOrEqual(surface.y - 0.5);
       expect(shown.y + shown.height).toBeLessThanOrEqual(surface.y + surface.height + 0.5);
       expect(shown.x + shown.width).toBeLessThanOrEqual(surface.x + surface.width + 0.5);

@@ -1,27 +1,46 @@
 /**
- * The window's controls in the desktop app: a strip along the top of the window on the textured ground, which moves
- * the window when dragged (and maximizes it on a double click), with minimize, maximize and close at its right end.
- * The shell leaves the strip's height free above the sidebar and the page (`WINDOW_BAR_CLASS`); in a browser
- * nothing is drawn and nothing is left free.
+ * The window's controls in the desktop app, which has no system frame of its own: minimize, maximize and close, drawn
+ * once at the top right of the shell's panel, level with the page header, after a hairline that sets them apart from
+ * the header's own buttons. The header is the drag region that moves the window (and maximizes it on a double click);
+ * the shell reserves the controls' width in `--window-buttons` for it (`WINDOW_BUTTONS_WIDTH`). In a browser nothing is
+ * drawn and nothing is reserved. The screens outside the shell have `WindowBar` instead.
  */
 import { MinusIcon, SquareIcon, XIcon } from "@phosphor-icons/react";
 import { IconButton } from "../ui/components/IconButton";
 import { type DesktopBridge, desktopBridge } from "./bridge";
 
-/** The top padding of the shell's ground in the desktop app: the height of the strip. */
-export const WINDOW_BAR_CLASS = "pt-9";
+/** The room the controls take at the right of the panel's header, hairline and edge included. */
+export const WINDOW_BUTTONS_WIDTH = "8rem";
 
 export function WindowControls({ bridge = desktopBridge() }: { bridge?: DesktopBridge }) {
   if (!bridge) return null;
   return (
     <div
-      data-tauri-drag-region
-      data-testid="window-bar"
-      className="fixed inset-x-0 top-0 z-sheet flex h-9 items-center justify-end gap-0.5 px-1.5"
+      data-testid="window-controls"
+      className="absolute top-0 right-1.5 z-sheet flex h-12 items-center gap-0.5"
     >
-      <IconButton icon={MinusIcon} aria-label="Minimize" onClick={() => bridge.minimize()} />
-      <IconButton icon={SquareIcon} aria-label="Maximize" onClick={() => bridge.toggleMaximize()} />
-      <IconButton icon={XIcon} aria-label="Close" onClick={() => bridge.close()} />
+      <span aria-hidden="true" className="mr-2 h-5 w-px bg-hairline" />
+      <IconButton
+        iconClassName="size-3.5"
+        iconWeight="regular"
+        icon={MinusIcon}
+        aria-label="Minimize"
+        onClick={() => bridge.minimize()}
+      />
+      <IconButton
+        iconClassName="size-3.5"
+        iconWeight="regular"
+        icon={SquareIcon}
+        aria-label="Maximize"
+        onClick={() => bridge.toggleMaximize()}
+      />
+      <IconButton
+        iconClassName="size-3.5"
+        iconWeight="regular"
+        icon={XIcon}
+        aria-label="Close"
+        onClick={() => bridge.close()}
+      />
     </div>
   );
 }
