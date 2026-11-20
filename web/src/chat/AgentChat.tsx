@@ -34,6 +34,7 @@ export function AgentChat({
   onClose,
   pending,
   takePending,
+  fresh = 0,
 }: {
   /** Whether the panel is open. */
   open: boolean;
@@ -43,6 +44,8 @@ export function AgentChat({
   /** A message from the docked field that is waiting to be sent, and how to take it. */
   pending: string | null;
   takePending: () => string | null;
+  /** Moves each time a new conversation is asked for (from the palette): the panel then forgets this chat. */
+  fresh?: number;
 }) {
   const queryClient = useQueryClient();
   const location = useLocation();
@@ -158,6 +161,18 @@ export function AgentChat({
     }
     setSending(false);
   }
+
+  // A new conversation was asked for: the next message starts a chat of its own, and nothing typed is carried over.
+  const seenFresh = useRef(fresh);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when a new conversation is asked for
+  useEffect(() => {
+    if (seenFresh.current === fresh) return;
+    seenFresh.current = fresh;
+    setChatId(null);
+    setError(null);
+    setSent(0);
+    write("");
+  }, [fresh]);
 
   // A message from the docked field is sent once, as soon as the panel is built.
   // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when a message is handed over
