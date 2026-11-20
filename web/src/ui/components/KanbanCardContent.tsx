@@ -1,53 +1,26 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/KanbanCardContent.tsx (Apache-2.0), changed: no i18n; the card
-// shows what a Moebius card has — the state of its run and its change in words, its title, the agent and the round,
-// the rounds it has left of the most it gets, and the links to its issue and its pull request — in place of priority,
-// assignees, tags, relationships and the description preview; the "more actions" button is a slot (`menu`) the page
-// fills with its own menu, beside the title, and a state word may carry a hint, shown in a tooltip; both links are 32px
-// targets and only the issue number is monospaced; the state words are the shared `MarkLabel` (a mark and grey text), and the card is
-// opened by its title being a button, so the card itself stays a group the links sit in; the labels of the issue, who
-// claimed it and a slot for the stack of its sub-issues (`stack`) are added, and a slot for the box that chooses the
-// card (`select`), which stands in the card's top left corner; the priority as its bars and the due day beside the
-// labels.
+// From BloopAI/vibe-kanban packages/ui/src/components/KanbanCardContent.tsx (Apache-2.0), changed: no i18n; the card is
+// flat and quiet, and shows only its status icon, its number in mono, its title (which wraps, however long) and the
+// avatar of the person it is given to, with one pale line under them while an agent works on it or it needs a person —
+// in place of priority, tags, relationships, the description preview, state words, round bars and links; the "more
+// actions" button is a slot (`menu`) the page fills with its own menu, beside the avatar; the card is opened by its
+// title being a button, so the card itself stays a group; a slot for the stack of its sub-issues (`stack`), and a slot
+// for the box that chooses the card (`select`), which stands in the card's top left corner.
 
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
 import { AvatarStack } from "../page/Avatar";
-import { FadedClamp } from "../page/FadedClamp";
-import { MarkLabel, type StateMark } from "../page/MarkLabel";
-import { type Priority, PriorityBars } from "../page/StatusIcon";
-import { PrBadge, type PrBadgeStatus } from "./PrBadge";
-import { Tooltip } from "./Tooltip";
-
-export interface KanbanPullRequest {
-  number: number;
-  url?: string | null;
-  status: PrBadgeStatus;
-}
-
-/** A word of a card and the mark before it (`page/MarkLabel`); the word carries the state, the mark helps find it. */
-type CardLabel = {
-  name: string;
-  mark?: StateMark;
-  /** Said after the word, such as the agent of a live card. */
-  detail?: string;
-  /** More about the state, in a tooltip; it supplements the word and carries nothing the card needs. */
-  hint?: string;
-};
+import { StatusIcon, type StatusState } from "../page/StatusIcon";
 
 export type KanbanCardContentProps = {
-  /** The card's number as it is written, such as `#12`. */
+  /** The card's number as it is written, such as `MOE-12` or `#12`. */
   displayId: string;
-  /** Where the card's issue is, when the app knows; the number is then a link. */
-  issueUrl?: string | null;
   title: string;
-  /** The first lines of the issue behind the card; the whole of it is in the dock the card opens. */
-  preview?: string | null;
-  /** The line under the title: the agent and how far its rounds are. */
-  detail?: string | null;
-  badges?: CardLabel[];
-  pullRequest?: KanbanPullRequest | null;
-  /** The rounds so far of the most the card gets; shown as a bar when both are above zero. */
-  rounds?: { done: number; limit: number } | null;
+  /** The icon of the card; one of the five of the standard. */
+  status: StatusState;
+  /** The pale line under the title: what the agent is doing, or why the card waits (grey), or that it needs a person (orange). */
+  activity?: { text: string; tone: "quiet" | "needs-you"; hint?: string } | null;
+  /** The handles of the people the card is given to, as avatars; none while it is no one's. */
+  assignees?: string[];
   /** A card in Done is drawn quiet. */
   muted?: boolean;
   /**
@@ -55,20 +28,8 @@ export type KanbanCardContentProps = {
    * overlay, which only shows what is under the pointer — the title stays the text it is.
    */
   onOpen?: () => void;
-  /** The card's menu, beside its title; left out on the drag overlay, which is only a picture of the card. */
+  /** The card's menu, beside its number; left out on the drag overlay, which is only a picture of the card. */
   menu?: ReactNode;
-  /** The labels of the issue, as small words under its title. */
-  labels?: string[];
-  /** Who claimed the issue, said under the labels; none while it is free. */
-  claimedBy?: string | null;
-  /** The handles of the people the card is given to, shown as avatars with the labels; none while it is no one's. */
-  assignees?: string[];
-  /** How soon the card should be done; the bars show it unless it is none or left out. */
-  priority?: Priority;
-  /** The day the card is due as `YYYY-MM-DD`; none while it has none. */
-  due?: string | null;
-  /** Whether the due day has passed, which the date says in a stronger colour. */
-  overdue?: boolean;
   /** The box that chooses the card, drawn in its top left corner; left out where a card cannot be chosen. */
   select?: ReactNode;
   /** What a card with sub-issues shows at its foot: how many are done, and the control that opens the stack. */
@@ -78,178 +39,65 @@ export type KanbanCardContentProps = {
 
 export function KanbanCardContent({
   displayId,
-  issueUrl,
   title,
-  preview,
-  detail,
-  badges = [],
-  pullRequest,
-  rounds,
+  status,
+  activity,
+  assignees = [],
   muted = false,
   onOpen,
   menu,
-  labels = [],
-  claimedBy,
-  assignees = [],
-  priority = "none",
-  due = null,
-  overdue = false,
-  stack,
   select,
+  stack,
   className,
 }: KanbanCardContentProps) {
+  const titleClass = cn(
+    "min-w-0 text-base font-medium [overflow-wrap:anywhere]",
+    muted ? "text-secondary" : "text-text",
+  );
   return (
-    <div className={cn("relative flex min-w-0 flex-col gap-2", className)}>
-      {select && <div className="absolute -top-1.5 -left-3 z-10">{select}</div>}
-      {/* Row 1: the state of the card, in words */}
-      {badges.length > 0 && (
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          {badges.map((badge) =>
-            badge.hint ? (
-              <Tooltip key={badge.name} content={badge.hint} side="bottom">
-                {/* Focusable, so that the hint is reachable without a pointer. */}
-                {/* biome-ignore lint/a11y/noNoninteractiveTabindex: the pill carries a hint a keyboard should reach */}
-                <span tabIndex={0} className="inline-flex rounded-control">
-                  <MarkLabel mark={badge.mark} word={badge.name} detail={badge.detail} />
-                </span>
-              </Tooltip>
-            ) : (
-              <MarkLabel
-                key={badge.name}
-                mark={badge.mark}
-                word={badge.name}
-                detail={badge.detail}
-              />
-            ),
-          )}
-        </div>
-      )}
-
-      {/* Row 2: the title, wrapped, however long, and the control that opens the card, with the card's menu */}
-      <div className="flex min-w-0 items-start gap-2">
-        {onOpen ? (
-          <button
-            type="button"
-            onClick={(e) => {
-              // The card answers a click on itself as well; this one is the title's, and opens the card once.
-              e.stopPropagation();
-              onOpen();
-            }}
-            className={cn(
-              // The title keeps the 28px a row is asked to have and takes back the slack inside it, so the line of
-              // type sits the row's own gap from the state above it and the body below it rather than a gap and a half.
-              "-my-1 flex min-h-7 min-w-0 flex-1 appearance-none items-center rounded-control bg-transparent p-0 text-left text-base font-medium [overflow-wrap:anywhere]",
-              muted ? "text-secondary" : "text-text",
-            )}
-          >
-            {title}
-          </button>
-        ) : (
-          <span
-            className={cn(
-              "min-w-0 flex-1 text-base font-medium [overflow-wrap:anywhere]",
-              muted ? "text-secondary" : "text-text",
-            )}
-          >
-            {title}
-          </span>
-        )}
-        {menu && <div className="-mr-2 -my-2 shrink-0">{menu}</div>}
-      </div>
-
-      {/* Row 3: what the issue asks for, three lines of it, the whole of it a click away */}
-      {preview && preview.trim() !== "" && (
-        <FadedClamp text={preview.trim()} className="text-sm text-secondary" />
-      )}
-
-      {/* The labels and the claim of the issue */}
-      {(labels.length > 0 ||
-        claimedBy ||
-        assignees.length > 0 ||
-        priority !== "none" ||
-        due !== null) && (
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          {priority !== "none" && <PriorityBars priority={priority} />}
-          {due !== null && (
-            <span
-              className={cn("text-sm tabular-nums", overdue ? "text-error-text" : "text-secondary")}
-            >
-              {`Due ${due}`}
-            </span>
-          )}
-          {labels.map((label) => (
-            <span
-              key={label}
-              className="inline-flex max-w-full items-center rounded-full bg-hover px-2 py-0.5 text-xs text-secondary [overflow-wrap:anywhere]"
-            >
-              {label}
-            </span>
-          ))}
+    <div className={cn("relative flex min-w-0 flex-col gap-1", className)}>
+      <div className="relative flex min-h-6 min-w-0 items-center gap-2">
+        {select && <div className="absolute -top-1.5 -left-3 z-10">{select}</div>}
+        <StatusIcon state={status} />
+        <span className="font-mono text-xs text-muted tabular-nums">{displayId}</span>
+        <span className="ml-auto flex shrink-0 items-center gap-1">
           <AvatarStack handles={assignees} />
-          {claimedBy && (
-            <span className="text-sm text-secondary [overflow-wrap:anywhere]">
-              Claimed by {claimedBy}
+          {menu && (
+            // Quiet until the card is pointed at, focused or its menu is open.
+            <span className="-my-2 -mr-2 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 has-[[aria-expanded=true]]:opacity-100">
+              {menu}
             </span>
           )}
-        </div>
+        </span>
+      </div>
+      {onOpen ? (
+        <button
+          type="button"
+          onClick={(e) => {
+            // The card answers a click on itself as well; this one is the title's, and opens the card once.
+            e.stopPropagation();
+            onOpen();
+          }}
+          className={cn("appearance-none bg-transparent p-0 text-left", titleClass)}
+        >
+          {title}
+        </button>
+      ) : (
+        <span className={titleClass}>{title}</span>
       )}
-
-      {/* Row 4: the agent and the round */}
-      {detail && (
-        <span className="text-sm text-secondary tabular-nums [overflow-wrap:anywhere]">
-          {detail}
+      {activity && (
+        <span
+          data-testid="card-activity"
+          title={activity.hint}
+          className={cn(
+            "text-sm [overflow-wrap:anywhere]",
+            activity.tone === "needs-you" ? "text-needs-you-text" : "text-secondary",
+          )}
+        >
+          {activity.text}
         </span>
       )}
-
-      {/* Row 5: the rounds of the card, one segment each */}
-      {rounds && rounds.limit > 0 && rounds.done > 0 && (
-        <div
-          role="img"
-          aria-label={`Round ${rounds.done} of ${rounds.limit}`}
-          className="flex gap-1"
-        >
-          {Array.from({ length: rounds.limit }, (_, round) => (
-            <span
-              // biome-ignore lint/suspicious/noArrayIndexKey: the segments are the rounds, in order
-              key={round}
-              className={cn(
-                "h-1 flex-1 rounded-full",
-                round < rounds.done ? "bg-progress" : "bg-track",
-              )}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* The sub-issues of the card: how many are done, and the control that opens them */}
       {stack}
-
-      {/* Row 6: where the card lives outside Moebius, each link a 28px target */}
-      {(issueUrl || pullRequest) && (
-        <div className="-mx-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
-          {issueUrl ? (
-            <a
-              href={issueUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`Issue ${displayId} on its forge`}
-              onClick={(e) => e.stopPropagation()}
-              className="inline-flex min-h-7 items-center rounded-control px-2 font-mono text-sm text-secondary tabular-nums transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
-            >
-              {displayId}
-            </a>
-          ) : (
-            <span className="px-2 font-mono text-sm text-secondary">{displayId}</span>
-          )}
-          {pullRequest && (
-            <PrBadge
-              number={pullRequest.number}
-              url={pullRequest.url}
-              status={pullRequest.status}
-            />
-          )}
-        </div>
-      )}
     </div>
   );
 }

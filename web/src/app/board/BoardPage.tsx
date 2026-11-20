@@ -46,13 +46,11 @@ import { type Decision, useDecisions } from "./decisions";
 import { ListLayout } from "./ListLayout";
 import {
   cardStatus,
-  changeOf,
   dropRule,
   type Filters,
   groupByColumn,
   inboxOf,
   NO_FILTERS,
-  nextCard,
   rootOf,
 } from "./model";
 import { useNewIssue } from "./NewIssueHost";
@@ -412,20 +410,8 @@ export function BoardPage() {
     if (!board || !card) return null;
     const status = cardStatus(card, inboxOf(inbox, card), board);
     return (
-      <KanbanCardFace
-        name={`${cardKey(card)} ${card.title}`}
-        isLive={status === "live"}
-        className="cursor-grabbing"
-      >
-        <CardContent
-          repository={board.repository}
-          roundLimit={board.round_limit}
-          card={card}
-          status={status}
-          change={changeOf(board, card)}
-          next={card.column === "Not started" && nextCard(board.cards, board.cards) === card.id}
-          hidden={hidden}
-        />
+      <KanbanCardFace name={`${cardKey(card)} ${card.title}`} className="cursor-grabbing">
+        <CardContent card={card} status={status} />
       </KanbanCardFace>
     );
   }
@@ -480,14 +466,13 @@ export function BoardPage() {
           ) : (
             <ScrollFades className="flex-1 pb-3">
               <KanbanProvider onDragEnd={onDragEnd} renderOverlay={renderOverlay}>
-                {groups.map(({ column, cards, total, stacks }) => (
+                {groups.map(({ column, cards, stacks }) => (
                   <BoardColumn
                     key={column}
                     board={board}
                     inbox={inbox}
                     name={column}
                     cards={cards}
-                    total={total}
                     stacks={stacks}
                     opened={opened}
                     inspectedTopId={inspectedTopId}
@@ -497,7 +482,6 @@ export function BoardPage() {
                     onSelect={onSelect}
                     menu={menu}
                     bulk={columnBulk}
-                    hidden={hidden}
                     adding={adding === column}
                     onAdding={onAdding}
                     onCreated={onCreated}

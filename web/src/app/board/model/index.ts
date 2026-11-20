@@ -52,10 +52,12 @@ export {
   isLive,
   STATUS_LABELS,
 } from "./status";
-export type { CardBadge } from "./words";
+export type { CardActivity, CardBadge } from "./words";
 export {
+  cardActivity,
   cardBadges,
   cardDetail,
+  cardIcon,
   changeOf,
   changeWorktree,
   deleteWords,
