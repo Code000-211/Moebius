@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../api/keys";
 import { WikiPage } from "./WikiPage";
@@ -23,9 +23,11 @@ function show(role: string, path: string) {
   client.setQueryData(keys.session, { signed_in: true, person: { handle: "me", role } });
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[path]}>
-        <WikiPage />
-      </MemoryRouter>
+      <RouterProvider
+        router={createMemoryRouter([{ path: "*", element: <WikiPage /> }], {
+          initialEntries: [path],
+        })}
+      />
     </QueryClientProvider>,
   );
 }
