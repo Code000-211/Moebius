@@ -10,6 +10,8 @@
 //! The program's `rail` module wraps a [`Rail`] in the window's state and turns it into commands; everything here is
 //! tested without a window.
 
+mod names;
+pub use names::short_address;
 pub mod records;
 pub mod secrets;
 pub mod ssh;
@@ -107,6 +109,7 @@ pub struct Rail {
 pub struct Target {
     id: String,
     name: String,
+    address: String,
     open: bool,
     server: Option<Server>,
     /// A server of the keychain that is not up: its address, whose token [`poll`] reads without blocking anything.
@@ -175,7 +178,7 @@ impl Rail {
             .iter()
             .find(|r| !r.ssh && r.address == server.url)
             .map(|r| r.id.clone());
-        let name = server.url.trim_start_matches("http://").to_string();
+        let name = names::default_name(server::host_of(&server).await.as_deref(), &server.url);
         let address = server.url.clone();
         self.keep(known, name, address, false, server, None, session_only)
             .await
@@ -338,6 +341,24 @@ impl Rail {
         })
     }
 
+    /// Names the server `id` `name`, which the person chose; an empty name takes the server's own name back (its
+    /// address, as far as the rail knows without asking the server again).
+    pub fn rename(&mut self, id: &str, name: &str) -> Result<(), RailError> {
+        let name = name.trim();
+        let record = self
+            .saved
+            .servers
+            .iter_mut()
+            .find(|r| r.id == id)
+            .ok_or(RailError::Unknown)?;
+        record.name = if name.is_empty() {
+            names::default_name(None, &record.address)
+        } else {
+            name.chars().take(40).collect()
+        };
+        self.save()
+    }
+
     /// Notes the page the window is on in the server that is open, so that coming back to it leads there.
     pub fn note_page(&mut self, page: &str) {
         if let Some(id) = &self.open {
@@ -403,12 +424,21 @@ impl Rail {
 
     /// What is needed to ask each server how it is; see [`poll`].
     pub fn targets(&self) -> Vec<Target> {
+        let named: Vec<(&str, &str)> = self
+            .saved
+            .servers
+            .iter()
+            .map(|r| (r.name.as_str(), r.address.as_str()))
+            .collect();
+        let names = names::distinct(&named);
         self.saved
             .servers
             .iter()
-            .map(|record| Target {
+            .zip(names)
+            .map(|(record, name)| Target {
                 id: record.id.clone(),
-                name: record.name.clone(),
+                name,
+                address: record.address.clone(),
                 open: self.open.as_deref() == Some(&record.id),
                 server: match self.live.get(&record.id) {
                     Some(live) => Some(live.server.clone()),
@@ -447,16 +477,21 @@ pub async fn poll(targets: Vec<Target>, followed: Option<Figures>) -> Vec<Entry>
                 (None, None) => None,
             };
             let count = match (&followed, &server) {
-                (Some(figures), _) => Some(figures.rail_count()),
-                (None, Some(server)) => status::inbox_count(server).await,
+                (Some(figures), _) => Some(figures.clone()),
+                (None, Some(server)) => status::figures(server).await,
                 (None, None) => None,
             };
+            let count_is_some = count.is_some();
+            let figures = count.unwrap_or_default();
             Entry {
                 id: target.id,
                 name: target.name,
+                address: target.address,
                 open: target.open,
-                reachable: count.is_some(),
-                inbox: count.unwrap_or(0),
+                reachable: count_is_some,
+                inbox: figures.rail_count(),
+                items: u32::try_from(figures.inbox).unwrap_or(u32::MAX),
+                unread: u32::try_from(figures.unread).unwrap_or(u32::MAX),
             }
         }
     });

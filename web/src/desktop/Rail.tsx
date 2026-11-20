@@ -23,6 +23,7 @@ import {
 import { Input } from "../ui/components/Input";
 import { Tooltip } from "../ui/components/Tooltip";
 import { cn } from "../ui/lib/cn";
+import { Field } from "../ui/page/Field";
 import { type DesktopBridge, NO_SERVER, type RailServer } from "./bridge";
 
 /** How often the rail asks the app how each server is. */
@@ -33,9 +34,37 @@ const KEY = ["desktop", "servers"] as const;
 /** What the app tells a page when it shows it again after the page was hidden behind another server's. */
 export const SHOWN_EVENT = "moebius:shown";
 
-/** The letter a server's square shows: the first of its name, which is its address. */
+/**
+ * The few characters a server's square shows. A name made of words shows their first letters (`Build box` is BB). A
+ * server named by an address, or by a name and an address when another has the same name, shows the end of the
+ * address's port, which is what tells servers on one host apart (`127.0.0.1:7172` is 172).
+ */
 export function initial(name: string): string {
-  return (name.replace(/^[a-z]+:\/\//i, "").match(/[\p{L}\p{N}]/u)?.[0] ?? "?").toUpperCase();
+  const address = name.includes(" · ") ? (name.split(" · ").pop() ?? name) : name;
+  const bare = address.replace(/^[a-z]+:\/\//i, "");
+  const port = bare.match(/^[\d.]+:(\d+)$/) ?? bare.match(/:(\d+)$/);
+  if (/^[\d.]+(:\d+)?$/.test(bare) || (name.includes(" · ") && port)) {
+    const digits = (port ? port[1] : bare.split(".").pop()) ?? "";
+    return digits.slice(-3) || "?";
+  }
+  const words = name.replace(/^[a-z]+:\/\//i, "").match(/[\p{L}\p{N}]+/gu) ?? [];
+  if (words.length === 0) return "?";
+  const letters = (word: string | undefined, n: number) =>
+    Array.from(word ?? "")
+      .slice(0, n)
+      .join("");
+  if (words.length === 1) return letters(words[0], 2).toUpperCase();
+  return (letters(words[0], 1) + letters(words[1], 1)).toUpperCase();
+}
+
+/** What the badge on a square counts, in words: the sidebar counts the items and the unread notices together. */
+export function countWords(server: RailServer): string {
+  const part = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
+  const parts = [
+    server.items > 0 ? part(server.items, "item", "items") : "",
+    server.unread > 0 ? part(server.unread, "notice waiting", "notices waiting") : "",
+  ].filter(Boolean);
+  return parts.length > 0 ? `${parts.join(" and ")} in the Inbox` : "";
 }
 
 export function Rail({ bridge }: { bridge?: DesktopBridge }) {
@@ -49,6 +78,7 @@ export function Rail({ bridge }: { bridge?: DesktopBridge }) {
   const menu = useContextMenu();
   const [target, setTarget] = useState<RailServer | null>(null);
   const [adding, setAdding] = useState(false);
+  const [renaming, setRenaming] = useState<RailServer | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   // This page was hidden while another server was shown: what it drew of the servers is old.
   useEffect(() => {
@@ -112,6 +142,11 @@ export function Rail({ bridge }: { bridge?: DesktopBridge }) {
         title={target?.name ?? "Server"}
         commands={[
           {
+            id: "rename",
+            label: "Rename server",
+            run: () => setRenaming(target),
+          },
+          {
             id: "remove",
             label: "Remove server",
             run: () => {
@@ -121,6 +156,16 @@ export function Rail({ bridge }: { bridge?: DesktopBridge }) {
         ]}
       />
       <AddServer bridge={bridge} open={adding} onOpenChange={setAdding} />
+      <RenameServer
+        key={renaming?.id ?? "none"}
+        server={renaming}
+        onClose={() => setRenaming(null)}
+        onRename={async (name) => {
+          if (!renaming) return;
+          await bridge.renameServer(renaming.id, name);
+          await client.invalidateQueries({ queryKey: KEY });
+        }}
+      />
     </nav>
   );
 }
@@ -140,9 +185,11 @@ function ServerSquare({
   const open = pending === null ? server.open : pending === server.id;
   const loading = pending === server.id;
   const state = server.reachable ? "" : " (cannot be reached)";
-  const count = server.inbox > 0 ? `, ${server.inbox} in the Inbox` : "";
+  const words = countWords(server);
+  const count = words ? `, ${words}` : "";
+  const tip = [server.name !== server.address ? server.address : "", words].filter(Boolean);
   return (
-    <Tooltip content={`${server.name}${state}`} side="right">
+    <Tooltip content={[`${server.name}${state}`, ...tip].join(" · ")} side="right">
       <button
         type="button"
         aria-label={`${server.name}${state}${count}`}
@@ -153,11 +200,18 @@ function ServerSquare({
         onContextMenu={onMenu}
         className={cn(
           "relative flex size-9 cursor-pointer items-center justify-center rounded-control font-medium text-secondary transition-colors hover:bg-hover hover:text-text",
-          open ? "bg-raised text-text shadow-edge" : "bg-surface",
+          open ? "bg-raised text-text shadow-edge ring-1 ring-accent" : "bg-surface",
           loading && "animate-pulse",
         )}
       >
-        {initial(server.name)}
+        {open && (
+          <span
+            data-testid="rail-open"
+            aria-hidden="true"
+            className="absolute top-1/2 -left-1.5 h-5 w-1 -translate-y-1/2 rounded-full bg-accent"
+          />
+        )}
+        <span className="text-sm leading-none">{initial(server.name)}</span>
         {server.inbox > 0 && (
           <span
             data-testid="rail-count"
@@ -175,6 +229,52 @@ function ServerSquare({
         )}
       </button>
     </Tooltip>
+  );
+}
+
+/** The sheet that names a server. An empty name gives back the server's own. */
+function RenameServer({
+  server,
+  onClose,
+  onRename,
+}: {
+  server: RailServer | null;
+  onClose: () => void;
+  onRename: (name: string) => Promise<void>;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <Dialog open={server !== null} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Rename server</DialogTitle>
+          <DialogDescription>
+            The name on the server's square and in the tray. Leave it empty to use the server's own
+            name.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const name = String(new FormData(event.currentTarget).get("name") ?? "");
+            // A name left as it was shown (it can carry the address that told two servers apart) is not kept.
+            if (name === server?.name) return onClose();
+            onRename(name).then(onClose, (reason) => setError(String(reason)));
+          }}
+        >
+          <Field label="Name">
+            <Input name="name" defaultValue={server?.name ?? ""} maxLength={40} />
+          </Field>
+          {error !== null && (
+            <p role="alert" className="text-sm text-error-text">
+              {error}
+            </p>
+          )}
+          <Button type="submit">Save</Button>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -242,17 +342,17 @@ function AddServer({
           }}
         >
           {ssh ? (
-            <Input name="host" aria-label="SSH host" placeholder="user@host" required />
+            <Field label="SSH host">
+              <Input name="host" placeholder="user@host" required />
+            </Field>
           ) : (
             <>
-              <Input name="address" aria-label="Address" placeholder="127.0.0.1:7171" required />
-              <Input
-                name="token"
-                type="password"
-                aria-label="Access token"
-                autoComplete="off"
-                required
-              />
+              <Field label="Address">
+                <Input name="address" placeholder="127.0.0.1:7171" required />
+              </Field>
+              <Field label="Access token">
+                <Input name="token" type="password" autoComplete="off" required />
+              </Field>
             </>
           )}
           {setUp !== null && (

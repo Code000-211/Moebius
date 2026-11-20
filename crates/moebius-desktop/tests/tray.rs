@@ -158,7 +158,7 @@ async fn counting() -> (
             get(move || async move {
                 status.0.fetch_add(1, Ordering::SeqCst);
                 axum::Json(
-                    json!({"working": 0, "inbox": 0, "unread_notices": 0, "tokens": 0,
+                    json!({"working": 0, "inbox": 0, "waiting_notices": 0, "tokens": 0,
                                   "day_budget": null, "paused": false}),
                 )
             }),

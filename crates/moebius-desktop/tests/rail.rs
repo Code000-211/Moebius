@@ -81,7 +81,7 @@ async fn counted(
         }
         f.asked.fetch_add(1, Ordering::SeqCst);
         axum::Json(
-            json!({ "working": 0, "inbox": f.inbox, "unread_notices": f.unread, "tokens": 0,
+            json!({ "working": 0, "inbox": f.inbox, "waiting_notices": f.unread, "tokens": 0,
                            "day_budget": null, "paused": false }),
         )
         .into_response()
@@ -608,4 +608,49 @@ async fn connecting_again_with_a_working_keychain_remembers_a_session_only_serve
         Rail::new(dir.path(), secrets, options()).startup_order(),
         vec![id]
     );
+}
+
+#[tokio::test]
+async fn servers_on_one_host_are_told_apart_and_a_rename_is_kept() {
+    let (one, _a) = fake("token-one", 4, 2).await;
+    let (two, _b) = fake("token-two", 0, 0).await;
+    let dir = tempfile::tempdir().unwrap();
+    let secrets = Arc::new(Memory::default());
+    let mut rail = rail(dir.path(), &secrets);
+    let first = rail.add(&one, "token-one", false).await.unwrap();
+    let second = rail.add(&two, "token-two", false).await.unwrap();
+
+    // Neither fake says its own name, so each is named by its address: they differ by port.
+    let entries = rail::poll(rail.targets(), None).await;
+    assert_eq!(entries[0].name, one);
+    assert_eq!(entries[1].name, two);
+    assert_ne!(entries[0].name, entries[1].name);
+    // The count is what the sidebar counts, and the two figures are given apart.
+    assert_eq!(
+        (entries[0].inbox, entries[0].items, entries[0].unread),
+        (6, 4, 2)
+    );
+
+    // A name the person gives is the name, after a restart too; an empty one gives the address back.
+    rail.rename(&first, "  Build box ").unwrap();
+    rail.rename(&second, "Build box").unwrap();
+    let names =
+        |entries: &[rail::Entry]| entries.iter().map(|e| e.name.clone()).collect::<Vec<_>>();
+    // Two servers given one name are still told apart.
+    assert_eq!(
+        names(&rail::poll(rail.targets(), None).await),
+        [format!("Build box · {one}"), format!("Build box · {two}")]
+    );
+    rail.rename(&second, "Test").unwrap();
+    let again = Rail::new(dir.path(), secrets.clone(), options());
+    assert_eq!(
+        names(&rail::poll(again.targets(), None).await),
+        ["Build box".to_string(), "Test".to_string()]
+    );
+    rail.rename(&first, "").unwrap();
+    assert_eq!(names(&rail::poll(rail.targets(), None).await)[0], one);
+    assert!(matches!(
+        rail.rename("nobody", "x"),
+        Err(rail::RailError::Unknown)
+    ));
 }

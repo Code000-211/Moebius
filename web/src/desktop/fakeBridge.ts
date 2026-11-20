@@ -9,6 +9,7 @@ export function fakeBridge(): DesktopBridge {
     servers: async () => [],
     switchServer: async () => {},
     removeServer: async () => {},
+    renameServer: async () => {},
     connect: async () => {},
     connectSsh: async () => {},
   };

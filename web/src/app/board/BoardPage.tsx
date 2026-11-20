@@ -564,19 +564,23 @@ export function BoardPage() {
           // The column holds the drawer's width so the board keeps the room it has; the drawer itself runs the whole
           // height of the page's surface and is flush to its top, right and bottom edges, inside its rounded corners —
           // it is the page's own card inspector rather than a sheet laid over it — and scrolls its sections rather
-          // than the page scrolling them. It lies above the slim right column it covers, under the sheets over it;
-          // while the column stands unfolded with the card's properties, the drawer stands beside it instead.
+          // than the page scrolling them. It is placed in the page's surface (`data-surface="page"`, which is
+          // positioned), not in the window: in the desktop app the window has a strip of its own above the page and a
+          // rail beside it, which a position in the window would not know. It lies above the slim right column it
+          // covers, under the sheets over it; while the column stands unfolded with the card's properties, the drawer
+          // stands beside it instead.
           <div className={cn("w-full shrink-0 dock:w-96", sheetShown && beside.column)}>
             <div
+              data-testid="inspector-drawer"
               className={cn(
-                "dock:fixed dock:inset-y-1.5 dock:z-10 dock:w-96 dock:overflow-hidden",
+                "dock:absolute dock:inset-y-0 dock:z-10 dock:w-96 dock:overflow-hidden",
                 // A sheet (the Moebius agent) lies over the column and a strip of the page, so the drawer stands
                 // beside it: the board gives way, and the card's text is not under the sheet.
                 sheetShown
-                  ? "dock:right-[calc(var(--sheet-width)+0.375rem)] dock:rounded-r-sheet"
+                  ? "dock:right-[var(--sheet-width)] dock:rounded-r-sheet"
                   : propertiesShown
-                    ? "dock:right-[calc(var(--column-width)+0.375rem)]"
-                    : "dock:right-1.5 dock:rounded-r-sheet",
+                    ? "dock:right-[var(--column-width)]"
+                    : "dock:right-0 dock:rounded-r-sheet",
               )}
             >
               <Dock

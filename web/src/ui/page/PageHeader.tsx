@@ -8,7 +8,8 @@
  */
 import type { ReactNode } from "react";
 
-/** The title of a page with the sentence under it and the page's actions on the right. */
+/** The title of a page with the sentence under it and the page's actions on the right; the actions wrap when the page is
+ * too narrow for them in a row, as beside a card's drawer, rather than run under what stands beside the page. */
 export function PageHeader({
   title,
   context,
@@ -32,7 +33,9 @@ export function PageHeader({
         </div>
         {context && <p className="mt-1 max-w-prose text-base text-secondary">{context}</p>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && (
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">{actions}</div>
+      )}
     </header>
   );
 }

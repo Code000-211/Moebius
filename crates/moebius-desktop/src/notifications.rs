@@ -21,7 +21,9 @@ pub struct Watching(Mutex<Option<Watcher>>);
 
 /// Follows the notices of `server` until the next server replaces it.
 pub fn start(app: &AppHandle, server: Server) {
-    let (watcher, mut effects) = notices::watch(server);
+    let label = moebius_desktop::rail::short_address(&server.url);
+    let (watcher, effects) = notices::watch(server);
+    let mut effects = notices::coalesce(effects, notices::BURST);
     if let Ok(mut watching) = app.state::<Watching>().0.lock() {
         *watching = Some(watcher);
     }
@@ -32,6 +34,11 @@ pub fn start(app: &AppHandle, server: Server) {
             match effect {
                 Effect::Count(unread) => count(&app, unread),
                 Effect::Notify(notice) => notify(&app, &notice),
+                Effect::Digest(notices) => {
+                    let (title, body, path) = notices::digest_text(&notices, &label);
+                    let app = app.clone();
+                    show(&title, &body, move || open(&app, &path));
+                }
             }
         }
     });
@@ -82,24 +89,33 @@ fn open(app: &AppHandle, path: &str) {
     }
 }
 
+/// How long a notification's answer is waited for. A notification stays in the system's notification service for as
+/// long as that keeps it; after this the app lets go of it (and of the connection it waits on), so that a service that
+/// never says a notification was closed does not hold something of the app for each one.
+#[cfg(target_os = "linux")]
+const ANSWER_WAIT: std::time::Duration = std::time::Duration::from_secs(120);
+
 /// The system's notification service on Linux: a notification with the one action `default`, which choosing it
-/// answers. Waiting for the answer takes a thread of its own, which ends when the notification is closed.
+/// answers. Waiting for the answer is a task of the app's runtime, not a thread of its own, and ends when the
+/// notification is closed or after [`ANSWER_WAIT`].
 #[cfg(target_os = "linux")]
 fn show(title: &str, body: &str, on_click: impl FnOnce() + Send + 'static) {
     let (title, body) = (title.to_string(), body.to_string());
-    std::thread::spawn(move || {
+    tauri::async_runtime::spawn(async move {
         let shown = notify_rust::Notification::new()
             .appname("Moebius")
             .summary(&title)
             .body(&body)
             .action("default", "Open")
-            .show();
+            .show_async()
+            .await;
         if let Ok(handle) = shown {
-            handle.wait_for_action(|action| {
-                if action == "default" {
+            let waiting = handle.wait_for_action_async(|response| {
+                if matches!(response, notify_rust::NotificationResponse::Default) {
                     on_click();
                 }
             });
+            let _ = tokio::time::timeout(ANSWER_WAIT, waiting).await;
         }
     });
 }
