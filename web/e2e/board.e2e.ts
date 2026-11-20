@@ -1442,6 +1442,54 @@ describe("Display", () => {
   });
 });
 
+describe("the card open in the dock and its address", () => {
+  it.skipIf(usesRealServer)(
+    "closes only the menu on the first Escape and the card on the second",
+    async () => {
+      await fresh();
+      await page.goto(`${server.url}/board/1?card=3`);
+      await properties(3).waitFor();
+      const openers: [string, () => Locator][] = [
+        ["Priority", () => properties(3).getByRole("button", { name: /^Priority/ })],
+        ["Cycle", () => properties(3).getByRole("button", { name: /^Cycle/ })],
+        ["Assignee", () => properties(3).getByRole("button", { name: /^Assignee/ })],
+        ["Milestone", () => properties(3).getByRole("button", { name: /^Milestone/ })],
+        ["Labels", () => properties(3).getByRole("button", { name: "Add a label" })],
+        ["Due date", () => properties(3).getByRole("button", { name: /^Due date/ })],
+      ];
+      for (const [name, opener] of openers) {
+        await opener().click();
+        // Whatever opened is the only thing the key may close.
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(200);
+        expect(page.url(), name).toContain("card=3");
+        await dock().waitFor();
+      }
+      await dock().focus();
+      await page.keyboard.press("Escape");
+      await dock().waitFor({ state: "detached" });
+    },
+  );
+
+  it.skipIf(usesRealServer)("takes the card out of the address when it is closed", async () => {
+    await fresh();
+    await page.goto(`${server.url}/board/1?card=3`);
+    await dock().waitFor();
+    await page.getByRole("button", { name: "Close the inspector" }).click();
+    await dock().waitFor({ state: "detached" });
+    expect(page.url()).not.toContain("card=");
+    // A reload of the board with no card open shows no card.
+    await page.reload();
+    await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
+    await card(3).waitFor();
+    expect(await dock().count()).toBe(0);
+    // Back opens the card that was open.
+    await page.goBack();
+    await dock().waitFor();
+    expect(page.url()).toContain("card=3");
+  });
+});
+
 describe("the repositories", () => {
   it.skipIf(usesRealServer)(
     "lists the repositories and opens the board of the one chosen",

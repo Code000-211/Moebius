@@ -17,7 +17,7 @@
 import { BookmarkSimpleIcon, PlusIcon, TerminalWindowIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { addView, listViews } from "../../api/calls/views";
 import { sayError } from "../../api/errorText";
@@ -158,7 +158,13 @@ export function BoardPage() {
   // refs, or through a state setter's function form.
   const setParamsRef = useRef(setParams);
   setParamsRef.current = setParams;
-  const setQuery = useCallback((changes: Record<string, string>) => {
+  // A board with no `card` in its address shows its first live card; a dock closed on purpose is remembered in the
+  // history entry's state, so the address stays clean, a reload keeps the dock closed, and Back reopens the card.
+  const location = useLocation();
+  const locationState = useRef(location.state);
+  locationState.current = location.state;
+  const closedOnPurpose = (location.state as { noCard?: boolean } | null)?.noCard === true;
+  const setQuery = useCallback((changes: Record<string, string>, close = false) => {
     setParamsRef.current(
       (current) => {
         const next = new URLSearchParams(current);
@@ -168,7 +174,10 @@ export function BoardPage() {
         }
         return next;
       },
-      { replace: true },
+      {
+        replace: !close,
+        state: close ? { noCard: true } : "card" in changes ? null : locationState.current,
+      },
     );
   }, []);
   const onSelect = useCallback((card: Card) => setQuery({ card: String(card.id) }), [setQuery]);
@@ -197,7 +206,9 @@ export function BoardPage() {
     }),
     [decide, openForm],
   );
-  const inspected = board ? inspectedCard(board, inbox, params.get("card")) : undefined;
+  const inspected = board
+    ? inspectedCard(board, inbox, params.get("card") ?? (closedOnPurpose ? "none" : null))
+    : undefined;
   // A stack is open when a person opened it, and while the dock shows one of its sub-issues: closing it there would hide
   // the card that is being read.
   const inspectedTopId = board && inspected ? rootOf(board, inspected).id : undefined;
@@ -330,7 +341,7 @@ export function BoardPage() {
   );
   const clearReject = useCallback(() => setRejectFor(null), []);
   const closeDock = useCallback(() => {
-    setQuery({ card: "none" });
+    setQuery({ card: "" }, true);
     setRejectFor(null);
   }, [setQuery]);
   const closeDelete = useCallback(() => setDeleting(null), []);
@@ -338,7 +349,7 @@ export function BoardPage() {
   const doneDelete = useCallback(
     (card: Card, text: string) => {
       // A card's id can be given again once it is gone, so a dock that was open on it is closed for good.
-      if (cardParam === String(card.id)) setQuery({ card: "none" });
+      if (cardParam === String(card.id)) setQuery({ card: "" }, true);
       setNotice({ tone: "ok", text });
     },
     [cardParam, setQuery, setNotice],
