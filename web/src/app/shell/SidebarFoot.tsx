@@ -15,7 +15,7 @@ export function SettingsFoot({ current }: { current: boolean }) {
       aria-current={current ? "page" : undefined}
       className={cn(ROW, rowTone(current))}
     >
-      <SettingsIcon className="size-5 shrink-0" weight="regular" />
+      <SettingsIcon className="size-[18px] shrink-0" weight="regular" />
       <span className="min-w-0 flex-1 truncate">Settings</span>
     </Link>
   );

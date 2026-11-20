@@ -8,7 +8,7 @@ import { Link } from "react-router";
 import { cn } from "../../ui/lib/cn";
 
 /** The classes of a group's name. */
-const GROUP = "flex h-[30px] items-center rounded-control px-3 text-sm text-sidebar-group";
+const GROUP = "flex h-[30px] items-center rounded-control px-2.5 text-sm text-sidebar-group";
 
 export function Section({
   title,

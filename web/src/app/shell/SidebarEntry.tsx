@@ -17,7 +17,7 @@ export interface Trailing {
 
 /** The classes every row of the sidebar shares: its height, its radius and the edge a chosen row shows. */
 export const ROW =
-  "flex h-(--row-list) items-center gap-2 rounded-control border border-transparent px-3 text-base";
+  "flex h-(--row-list) items-center gap-2 rounded-control border border-transparent px-2.5 text-base";
 
 /** The fill of a chosen row, and the text of one that waits. */
 export function rowTone(current: boolean): string {
@@ -47,7 +47,7 @@ export function Entry({
         aria-current={current ? "page" : undefined}
         className={cn(ROW, rowTone(current))}
       >
-        <IconComponent className="size-5 shrink-0" weight="regular" />
+        <IconComponent className="size-[18px] shrink-0" weight="regular" />
         <span className="min-w-0 flex-1 truncate" title={label}>
           {label}
         </span>
