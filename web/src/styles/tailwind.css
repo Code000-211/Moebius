@@ -29,7 +29,6 @@
 
 @theme inline {
   --color-*: initial;
-  --color-white: #fff;
   --color-transparent: transparent;
   --color-current: currentColor;
 
@@ -107,6 +106,7 @@
   /* The token table of the standard, by its own names: the grey steps, the indigo, the three signals, code, avatars. */
   --color-canvas: var(--canvas);
   --color-panel: var(--panel);
+  --color-on-accent: var(--on-accent);
   --color-text-faint: var(--text-faint);
   --color-accent-border: var(--accent-border);
   --color-accent-tint: var(--accent-tint);
