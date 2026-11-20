@@ -366,6 +366,17 @@ any route to any role that is not what its row says.
 | `POST /api/hooks/{path}` | none | — |
 | `POST /api/hooks/{repository}/{path}` | none | — |
 
+## Compression
+
+An answer of 1 KiB or more, an API answer or a file of the web app, is compressed with brotli or gzip when the request's
+`Accept-Encoding` lists one; the answer then has `Content-Encoding` and `Vary: Accept-Encoding`, and no `Content-Length`.
+A client that sends no `Accept-Encoding` (`curl` without `--compressed`, a script) gets the plain body, and one that does
+must decode it (`curl --compressed` does). Smaller answers, images, fonts, `text/event-stream` and the WebSockets (the
+event stream, the terminals and the ports) are never compressed, and an answer is compressed as it is sent, so a
+download such as an export is not held back. The router's own listener, the one models are called on, does not
+compress. A proxy in front of the server, and the desktop app's loopback, pass `Accept-Encoding` and the compressed body
+on unchanged.
+
 ## Errors
 
 A failed request has a status code and a plain-text message as its body.
@@ -520,6 +531,9 @@ framed by another site. `plugin-frame.html`, the frame a plugin's page for its s
 its own](plugin-api.md#a-page-of-its-own)), has a stricter policy that forbids it every connection; the files under
 `fonts/` carry `Access-Control-Allow-Origin: *`, since that frame has no origin. Nothing under `/v1/` is a file: an unknown `/v1/` path is answered `401` without
 a valid token and `404` with one.
+
+Every file carries a weak `ETag` (a hash of its content), and a request whose `If-None-Match` holds it, or is `*`, is answered `304`
+without a body, which is what makes the `no-cache` of `index.html` cheap.
 
 At start, `moebius serve` prints the line `Open the web app: http://<listen address>/?login=<code>` on standard output
 (not in the log). The page signs in with the code and takes it out of the address.
