@@ -424,8 +424,8 @@ describe("live data", () => {
       ids.push(((await made.json()) as { id: number }).id);
     }
     await page.goto(`${server.url}/issues`);
-    await page.getByTestId(`issue-${ids[0]}`).getByRole("link", { name: "First issue" }).click();
-    await page.waitForURL(`**/board/${demo}?card=${ids[0]}`);
+    await page.getByTestId("list-row").filter({ hasText: "First issue" }).click();
+    await page.waitForURL(`**/issues?**card=${ids[0]}`);
     await dock().getByText("First issue").first().waitFor();
     await page.goBack();
     await page.getByTestId("issues-page").waitFor();
@@ -1198,7 +1198,10 @@ describe("the dock", () => {
  * by a route before the columns follow it; counting at once can read the board as it was. */
 const shownIs = (count: number) =>
   expect
-    .poll(() => page.getByTestId(/^card-/).count(), { timeout: 10_000, message: `${count} cards` })
+    .poll(() => page.getByTestId(/^(card-\d+|list-row)$/).count(), {
+      timeout: 10_000,
+      message: `${count} cards`,
+    })
     .toBe(count);
 
 const bar = () => page.getByRole("search", { name: "Filter the cards" });
@@ -1356,27 +1359,17 @@ describe("Display", () => {
       await display("List").click();
       await page.waitForURL("**layout=list");
       // The lanes are gone and every card is a row under the heading of its column.
-      await column("Done").waitFor();
-      expect(
-        await page
-          .getByRole("list")
-          .getByTestId(/^card-/)
-          .count(),
-      ).toBe(7);
+      await page.getByTestId("group-row").filter({ hasText: "Done" }).waitFor();
+      expect(await page.getByTestId("list-row").count()).toBe(7);
       await shownIs(7);
       await page.reload();
       await shownIs(7);
-      expect(
-        await page
-          .getByRole("list")
-          .getByTestId(/^card-/)
-          .count(),
-      ).toBe(7);
+      expect(await page.getByTestId("list-row").count()).toBe(7);
 
       // A row opens the card, and a filter still applies.
       await addFilter(page, bar(), "Agent", "Reviewer");
       await shownIs(1);
-      await card(6).getByRole("button").click();
+      await page.getByTestId("list-row").click();
       await dock().waitFor();
       await page.keyboard.press("Escape");
       await dock().waitFor({ state: "detached" });
@@ -1384,12 +1377,7 @@ describe("Display", () => {
       await bar().getByRole("button", { name: "Display" }).click();
       await display("Board").click();
       await page.waitForURL((url) => !url.search.includes("layout="));
-      expect(
-        await page
-          .getByRole("list")
-          .getByTestId(/^card-/)
-          .count(),
-      ).toBe(0);
+      expect(await page.getByTestId("list-row").count()).toBe(0);
       await card(6).waitFor();
     },
   );
@@ -1402,8 +1390,8 @@ describe("Display", () => {
     await bar().getByRole("button", { name: "Display" }).click();
     await display("Status").click();
     await page.waitForURL("**group=status");
-    await page.getByRole("region", { name: "Your turn", exact: true }).waitFor();
-    expect(await page.getByRole("region", { name: "Not started" }).count()).toBe(0);
+    await page.getByTestId("group-row").filter({ hasText: "Your turn" }).waitFor();
+    expect(await page.getByTestId("group-row").filter({ hasText: "Not started" }).count()).toBe(0);
 
     await bar().getByRole("button", { name: "Display" }).click();
     await display("None").click();
@@ -1414,8 +1402,10 @@ describe("Display", () => {
     await page.reload();
     await shownIs(7);
     const titles = await page
-      .getByTestId(/^card-/)
-      .evaluateAll((rows) => rows.map((row) => row.querySelectorAll("span")[1]?.textContent ?? ""));
+      .getByTestId("list-row")
+      .evaluateAll((rows) =>
+        rows.map((row) => row.querySelector("span.font-medium")?.textContent ?? ""),
+      );
     expect(titles).toHaveLength(7);
     expect(titles).toEqual([...titles].sort((x, y) => x.localeCompare(y)));
   });

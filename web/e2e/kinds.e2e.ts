@@ -27,7 +27,7 @@ afterEach(async () => {
 /** The titles of the issues the Issues page lists, in order. */
 async function titles(page: Page): Promise<string[]> {
   // By test id rather than by role: while a menu is open or closing the page behind it is hidden from the roles.
-  const links = page.locator('[data-testid^="issue-"] a');
+  const links = page.locator('[data-testid="list-row"] span.font-medium');
   return (await links.allTextContents()).map((t) => t.trim());
 }
 
@@ -76,7 +76,7 @@ describe.skipIf(usesRealServer)("kinds of issues", () => {
     // The Issues page lists the cards of both projects.
     await page.goto(`${server.url}/issues`);
     await page.getByTestId("issues-page").waitFor();
-    await page.getByTestId("issue-3").waitFor();
+    await page.getByTestId("list-row").first().waitFor();
     expect(await titles(page)).toEqual([
       "Login is broken",
       "A typo on the home page",
@@ -90,7 +90,7 @@ describe.skipIf(usesRealServer)("kinds of issues", () => {
     await page.getByRole("menuitemradio", { name: "high" }).click();
     await issues.getByRole("button", { name: "Severity is high", exact: true }).waitFor();
     await page.waitForFunction(
-      () => document.querySelectorAll('[data-testid^="issue-"]').length === 2,
+      () => document.querySelectorAll('[data-testid="list-row"]').length === 2,
     );
     expect(await titles(page)).toEqual(["Login is broken", "Checkout fails"]);
     expect(new URL(page.url()).searchParams.get("field.Severity")).toBe("high");
@@ -100,16 +100,18 @@ describe.skipIf(usesRealServer)("kinds of issues", () => {
     await page.getByRole("menuitemradio", { name: "Estimate, lowest first" }).click();
     await page.keyboard.press("Escape");
     await page.waitForFunction(
-      () => document.querySelector('[data-testid^="issue-"] a')?.textContent === "Checkout fails",
+      () =>
+        document.querySelector('[data-testid="list-row"] span.font-medium')?.textContent ===
+        "Checkout fails",
     );
     expect(await titles(page)).toEqual(["Checkout fails", "Login is broken"]);
     if (!server.kinds) throw new Error("this test needs the fake server");
     const asked = server.kinds.calls.filter((c) => c.path.startsWith("/v1/issues?")).at(-1);
     expect(asked?.path).toBe("/v1/issues?field.Severity=high&sort=Estimate");
 
-    // A row opens its card on its board, and Back returns to the Issues with the filter and the order still in the address.
-    await page.getByRole("link", { name: "Login is broken" }).click();
-    await page.waitForURL("**/board/1?card=1");
+    // A row opens its card window over the Issues, and Back closes it with the filter and the order still in the address.
+    await page.getByTestId("list-row").filter({ hasText: "Login is broken" }).click();
+    await page.waitForURL("**/issues?**card=1");
     await page.getByRole("dialog", { name: "Card inspector" }).waitFor();
     await page.goBack();
     await page.getByTestId("issues-page").waitFor();
