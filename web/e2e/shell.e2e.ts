@@ -387,7 +387,8 @@ describe("windows of 800 and 1280 px", () => {
   it.skipIf(usesRealServer)(
     "keeps the description of a built-in pattern readable beside the Properties column",
     async () => {
-      const page = await signedInAt("/rules", 1280);
+      // Settings now holds its own navigation beside the page, so the window is wide enough for it, the sidebar and the column.
+      const page = await signedInAt("/rules", 1600);
       const description = page
         .getByRole("region", { name: "Built-in patterns" })
         .getByText("git push --force rewrites history on the remote");

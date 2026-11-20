@@ -137,7 +137,7 @@ describe("motion", () => {
 
   it("leaves no transition when the switch is on, also after a reload", async () => {
     const page = await board("no-preference");
-    await page.goto(`${server.url}/settings`);
+    await page.goto(`${server.url}/appearance`);
     await page.getByRole("checkbox", { name: "Reduce motion" }).check();
     expect(await page.evaluate(moving)).toEqual([]);
     await page.reload();
