@@ -241,4 +241,78 @@ describe("the Wiki page", () => {
     await page.getByRole("article", { name: "Rota" }).getByText("Who answers.").waitFor();
     await context.close();
   });
+
+  it("refuses a second person's stale save without losing their text, and asks before unsaved text is left", async () => {
+    server = await startServer();
+    const context = await browser.newContext();
+    const owner = await context.newPage();
+    owner.setDefaultTimeout(8000);
+    await owner.goto(server.loginUrl);
+    await owner.getByRole("navigation", { name: "Pages" }).waitFor();
+    await owner.goto(`${server.url}/wiki`);
+    await owner.getByText("No page yet", { exact: true }).first().waitFor();
+    await owner.getByRole("button", { name: "New page", exact: true }).first().click();
+    const made = owner.getByRole("form", { name: "New page" });
+    await made.getByLabel("Name").fill("Handbook");
+    await made.getByLabel("Text").fill("# Handbook\n\nStart.");
+    await made.getByRole("button", { name: "Save" }).click();
+    await made.waitFor({ state: "detached" });
+
+    // Another browser of the same team: the same session in a second tab.
+    const tom = await context.newPage();
+    tom.setDefaultTimeout(8000);
+    await tom.goto(`${server.url}/wiki?page=Handbook&view=edit`);
+    const tomEditor = tom.getByRole("form", { name: "Edit Handbook" });
+    await tomEditor.getByLabel("Text").fill("# Handbook\n\nTOM-EDIT-1");
+
+    // Both edit, the owner saves first.
+    await owner.goto(`${server.url}/wiki?page=Handbook&view=edit`);
+    const ownerEditor = owner.getByRole("form", { name: "Edit Handbook" });
+    await ownerEditor.getByLabel("Text").fill("# Handbook\n\nOWNER-EDIT-1");
+    await ownerEditor.getByRole("button", { name: "Save" }).click();
+    await ownerEditor.waitFor({ state: "detached" });
+    await owner.getByRole("article", { name: "Handbook" }).getByText("OWNER-EDIT-1").waitFor();
+
+    // Tom is told before saving, by the event, and his text stays.
+    await tomEditor.getByText("Someone saved a newer version.").waitFor();
+    expect(await tomEditor.getByLabel("Text").inputValue()).toContain("TOM-EDIT-1");
+
+    // Saving anyway is refused by the server; nothing of the owner's is overwritten.
+    await tomEditor.getByRole("button", { name: "Save" }).click();
+    await tomEditor.getByText("Someone saved a newer version.").waitFor();
+    await tomEditor.getByRole("button", { name: "See their version" }).click();
+    await tom
+      .getByRole("region", { name: "Their version" })
+      .getByText(/OWNER-EDIT-1/)
+      .waitFor();
+    const read = await context.request.get(`${server.url}/v1/wiki/pages/Handbook`, {
+      headers: { "X-Moebius": "1" },
+    });
+    expect(((await read.json()) as { text: string }).text).toContain("OWNER-EDIT-1");
+
+    // Keeping his text saves it over theirs, as a new version.
+    await tomEditor.getByRole("button", { name: "Keep my text" }).click();
+    await tomEditor.getByRole("button", { name: "Save" }).click();
+    await tomEditor.waitFor({ state: "detached" });
+    await tom.getByRole("article", { name: "Handbook" }).getByText("TOM-EDIT-1").waitFor();
+
+    // Leaving with unsaved text asks first: another page of the tree, and then Back.
+    await owner.goto(`${server.url}/wiki?page=Handbook`);
+    await owner.getByRole("button", { name: "Edit" }).click();
+    const again = owner.getByRole("form", { name: "Edit Handbook" });
+    await again.getByLabel("Text").fill("# Handbook\n\nUNSAVED");
+    await owner
+      .getByRole("navigation", { name: "Pages of the wiki" })
+      .getByRole("button", { name: "Handbook" })
+      .click();
+    const asked = owner.getByRole("dialog", { name: "Leave with unsaved text?" });
+    await asked.waitFor();
+    await asked.getByRole("button", { name: "Keep editing" }).click();
+    expect(await again.getByLabel("Text").inputValue()).toContain("UNSAVED");
+    await owner.goBack();
+    await asked.waitFor();
+    await asked.getByRole("button", { name: "Leave without saving" }).click();
+    await again.waitFor({ state: "detached" });
+    await context.close();
+  });
 });

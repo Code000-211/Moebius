@@ -154,6 +154,13 @@ pub enum AppError {
     Conflict(String),
     #[error("{0}")]
     Forbidden(String),
+    /// A wiki page changed after the version a person based their save on: what is there now, `None` when the page is
+    /// gone. Nothing was written.
+    #[error("someone saved a newer version of {path} since you opened it")]
+    Stale {
+        path: String,
+        current: Option<Box<crate::wiki::PageView>>,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, AppError>;
