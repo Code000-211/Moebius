@@ -293,9 +293,6 @@ export function CommandBar({
                 >
                   <BoardIcon className={ICON} />
                   <span className="truncate">{`${cardKey(card)} ${card.title}`}</span>
-                  <span className="ml-auto shrink-0 text-xs text-muted">
-                    {board.repository.name}
-                  </span>
                 </CommandItem>
               ))}
             </CommandGroup>
