@@ -10,35 +10,10 @@ import { boardPath } from "../pages";
 
 /** The value of the tab's `?kind=`. */
 export const MENTIONS = "mentions";
-/** The `?kind=` of the tab of the notices of cards given to the person. */
-export const ASSIGNED = "assigned";
-/** The `?kind=` of the tab of the notices of cards the person follows. */
-export const FOLLOWING = "following";
 
-/** The tabs of notices, in order, with the kind of notice each holds. */
-export const NOTICE_TABS = [
-  { value: MENTIONS, label: "Mentions", kind: "mentioned" },
-  { value: ASSIGNED, label: "Assigned", kind: "assigned" },
-  { value: FOLLOWING, label: "Following", kind: "changed" },
-] as const;
-
-/** Whether `kind` (a `?kind=`) is the tab of a kind of notice. */
+/** Whether `kind` (a `?kind=`) is the Mentions tab; the older `assigned` and `following` addresses lead there too. */
 export const isNoticeTab = (kind: string | null): boolean =>
-  NOTICE_TABS.some((tab) => tab.value === kind);
-
-/** The notices a tab shows: only those of its own kind. */
-export function inTab(notices: readonly Notice[], tab: string): Notice[] {
-  const kind = NOTICE_TABS.find((each) => each.value === tab)?.kind;
-  return notices.filter((notice) => notice.kind === kind);
-}
-
-/** How many notices `GET /v1/notices` answers at most. */
-export const CAP = 200;
-
-/** A number of rows as a tab says it: "200+" when the server's list was cut at its cap. */
-export function rows(count: number, capped: boolean): string {
-  return capped ? `${count}+` : String(count);
-}
+  kind === MENTIONS || kind === "assigned" || kind === "following";
 
 /**
  * How many things wait for the person: the open items of the inbox and the unread notices that were given to them
@@ -64,18 +39,6 @@ export function said(notice: Notice): string {
       return `${by === "" ? "Someone" : by} mentioned you: ${notice.body}`;
     case "changed":
       return notice.body;
-  }
-}
-
-/** The word on the row for what kind of notice it is. */
-export function kindWord(notice: Notice): string {
-  switch (notice.kind) {
-    case "assigned":
-      return "Assigned";
-    case "mentioned":
-      return "Mention";
-    case "changed":
-      return "Following";
   }
 }
 

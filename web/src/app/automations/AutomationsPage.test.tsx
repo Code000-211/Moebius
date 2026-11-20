@@ -1,6 +1,6 @@
 /**
- * The Automations page's properties: the chosen automation is in the address, its settings are edited in the right
- * column, and each is saved alone with the rest of the automation as stored.
+ * The Automations page: the chosen automation is in the address and is edited in the editor window, which saves the
+ * whole automation.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -67,22 +67,22 @@ function show(initial: string, gone = false) {
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("the properties of an automation", () => {
-  it("puts the chosen automation in the address", async () => {
+describe("the automations list and its editor window", () => {
+  it("puts the chosen automation in the address and opens it in the editor window", async () => {
     show("/automations");
-    fireEvent.click(await screen.findByTestId("list-card"));
+    fireEvent.click(await screen.findByTestId("automation-row"));
     expect(screen.getByTestId("where").textContent).toBe("?automation=3");
-    expect(
-      await screen.findByRole("region", { name: "Properties of Morning triage" }),
-    ).toBeTruthy();
+    expect(await screen.findByTestId("editor-window")).toBeTruthy();
+    expect(((await screen.findByLabelText("Name")) as HTMLInputElement).value).toBe(
+      "Morning triage",
+    );
   });
 
-  it("saves one property alone, with the rest as stored", async () => {
+  it("saves the whole automation with Save, and leaves the address", async () => {
     const sent = show("/automations?automation=3");
-    fireEvent.click(await screen.findByRole("button", { name: /Name/ }));
     const field = await screen.findByLabelText("Name");
     fireEvent.change(field, { target: { value: "Evening triage" } });
-    fireEvent.keyDown(field, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toEqual({
       url: "/v1/automations/3",
@@ -97,14 +97,16 @@ describe("the properties of an automation", () => {
         enabled: true,
       },
     });
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe(""));
   });
 
-  it("marks what a new automation is missing when Save is pressed on an empty one", async () => {
+  it("keeps a new automation that is missing its name in the window, and sends nothing", async () => {
     const sent = show("/automations");
     fireEvent.click(await screen.findByRole("button", { name: "New automation" }));
+    fireEvent.change(await screen.findByLabelText("Prompt"), { target: { value: "Say hi." } });
     fireEvent.click(await screen.findByRole("button", { name: "Save" }));
-    expect((await screen.findAllByText("Give the automation a name.")).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Write the prompt its chats start with.").length).toBeGreaterThan(0);
+    expect(await screen.findByText("Give the automation a name.")).toBeTruthy();
+    expect(screen.getByTestId("editor-window")).toBeTruthy();
     expect(sent).toEqual([]);
   });
 
@@ -112,7 +114,9 @@ describe("the properties of an automation", () => {
     show("/automations?automation=3");
     fireEvent.click(await screen.findByRole("button", { name: "Delete automation" }));
     asked.length = 0;
-    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Delete automation", hidden: false }),
+    );
     await waitFor(() =>
       expect(asked.some((a) => a.startsWith("DELETE /v1/automations/3"))).toBe(true),
     );
