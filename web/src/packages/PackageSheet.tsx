@@ -12,7 +12,6 @@ import { snapshot as readSnapshot } from "../api/calls/board";
 import { installedPi } from "../api/calls/packages";
 import { keys } from "../api/keys";
 import type { PiHit } from "../api/types/packages";
-import { ScrollFades } from "../ui/page/ScrollFades";
 import { SheetFrame, useSheetBehaviour } from "../ui/page/Sheet";
 import { TabPanel, Tabs } from "../ui/page/Tabs";
 import { Browse, type Browsing } from "./Browse";
@@ -93,7 +92,7 @@ function Body({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <Tabs tabs={TABS} value={tab} onChange={choose} label="Packages" idBase={ids} />
-      <ScrollFades className="min-h-0 flex-1">
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto">
         <TabPanel idBase={ids} value={tab} className="flex flex-col gap-3 pb-6">
           {report && <ReportView report={report} onLeave={hide} />}
           {reading !== null ? (
@@ -136,7 +135,7 @@ function Body({
             />
           )}
         </TabPanel>
-      </ScrollFades>
+      </div>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/Dialog.tsx (Apache-2.0), changed to this app's design standard:
-// glass at the window radius of 12 with the raised shadow and no border, the overlay the canvas behind it dimmed, the close control a
-// 32px square, and the routine transition at 180ms. React 19 ComponentRef in place of ElementRef.
+// a solid panel at the window radius of 12 with the raised shadow and no border, the overlay a dim scrim that does not blur the
+// page (a window never blurs), the close control a 32px square, and a fade of 120ms at most. React 19 ComponentRef in place of ElementRef.
 //
 // The sheet is as tall as what is in it: `inset-0` with `margin: auto` centres a box whose height is set, so it is
 // `h-fit` against a maximum, not a box stretched to the window with its content parked at the top.
@@ -44,7 +44,7 @@ const DialogOverlay = React.forwardRef<
     className={cn(
       "fixed inset-0 z-scrim bg-scrim",
       "data-[state=open]:animate-in data-[state=closed]:animate-out",
-      "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 duration-(--motion-fast)",
       className,
     )}
     {...props}
@@ -56,8 +56,8 @@ const DialogContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
     hideCloseButton?: boolean;
-    /** Classes of the scrim behind the sheet, for one that blurs the page. */
-    overlayClassName?: string;
+    /** The command palette is the one window that is glass; every other window is a solid panel. */
+    glass?: boolean;
   }
 >(
   (
@@ -65,7 +65,7 @@ const DialogContent = React.forwardRef<
       className,
       children,
       hideCloseButton = false,
-      overlayClassName,
+      glass = false,
       onCloseAutoFocus,
       onOpenAutoFocus,
       ...props
@@ -75,7 +75,7 @@ const DialogContent = React.forwardRef<
     const opener = React.useContext(Opener);
     return (
       <DialogPortal>
-        <DialogOverlay className={overlayClassName} />
+        <DialogOverlay />
         <DialogPrimitive.Content
           ref={ref}
           // Radix hides the page behind the sheet but does not say so in the dialog's own role; `modalIsOpen` looks for it.
@@ -93,11 +93,11 @@ const DialogContent = React.forwardRef<
           className={cn(
             "fixed inset-0 z-sheet m-auto flex h-fit max-h-[calc(100%_-_2rem)] w-full max-w-lg",
             "flex-col gap-4 overflow-y-auto p-6",
-            "glass rounded-sheet shadow-raised",
+            "rounded-sheet shadow-raised",
+            glass ? "glass" : "bg-panel",
             "data-[state=open]:animate-in data-[state=closed]:animate-out",
             "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-            "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
-            "duration-(--motion-routine)",
+            "duration-(--motion-fast)",
             className,
           )}
           {...props}

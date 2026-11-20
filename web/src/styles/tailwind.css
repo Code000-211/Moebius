@@ -272,15 +272,16 @@
 }
 
 /*
- * Glass, for the overlays: the palette, menus, dialogs and tooltips. It is translucent with a blur, and an opaque
- * surface where the browser cannot blur what is behind it.
+ * Glass, for what is small and floats: a menu, a tooltip, the card preview and the palette. It is the solid `--panel`
+ * unless the root says `data-blur="on"` (`ui/lib/effects.ts`: a machine with a GPU, a person who has not turned it
+ * off), and then it is a translucent `--panel` over a blur of 16px at most. Windows, sheets and bars are never glass.
  */
 @utility glass {
   background-color: var(--glass-solid);
 
-  @supports (backdrop-filter: blur(1px)) {
+  :root[data-blur="on"] & {
     background-color: var(--glass);
-    backdrop-filter: blur(24px) saturate(1.4);
+    backdrop-filter: blur(16px) saturate(1.2);
   }
 }
 
