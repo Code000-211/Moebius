@@ -96,6 +96,13 @@ export const BoardColumn = memo(function BoardColumn({
   onCreated: (card: Card, column: string) => void;
 }) {
   const next = name === "Not started" ? nextCard(cards, board.cards) : undefined;
+  // A sub-issue in a stack is the next to start when it is the first the whole board could start; worked out only when a
+  // stack is open.
+  let nextAnywhere: number | undefined | null = null;
+  const nextOfBoard = () => {
+    if (nextAnywhere === null) nextAnywhere = nextCard(board.cards, board.cards);
+    return nextAnywhere;
+  };
   const shared = {
     repository: board.repository,
     roundLimit: board.round_limit,
@@ -147,7 +154,7 @@ export const BoardColumn = memo(function BoardColumn({
                       card={child}
                       selected={inspectedId === child.id}
                       column={child.column}
-                      next={false}
+                      next={child.column === "Not started" && nextOfBoard() === child.id}
                       inStack
                     />
                   ))}
