@@ -191,6 +191,27 @@ fn card_records_last(runs: &str, changes: &str, cards: &str) -> Vec<String> {
     ]
 }
 
+const REPOSITORY_COLUMNS: &str =
+    "id, name, path, forge, default_branch, github, trusted, project, home_project_id, files_of";
+
+fn repository_from_row(r: &rusqlite::Row) -> rusqlite::Result<Repository> {
+    let trusted: String = r.get(6)?;
+    Ok(Repository {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        path: r.get(2)?,
+        forge: r.get(3)?,
+        default_branch: r.get(4)?,
+        github: r.get(5)?,
+        trusted: serde_json::from_str(&trusted).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(6, rusqlite::types::Type::Text, e.into())
+        })?,
+        project: r.get(7)?,
+        home_project_id: r.get(8)?,
+        files_of: r.get(9)?,
+    })
+}
+
 impl Store {
     pub fn add_repository(
         &self,
@@ -281,27 +302,11 @@ impl Store {
     }
 
     pub fn repositories(&self) -> Result<Vec<Repository>> {
-        self.rows("SELECT id, name, path, forge, default_branch, github, trusted, project, home_project_id, files_of FROM repositories ORDER BY id", [], |r| {
-            let trusted: String = r.get(6)?;
-            Ok(Repository {
-                id: r.get(0)?,
-                name: r.get(1)?,
-                path: r.get(2)?,
-                forge: r.get(3)?,
-                default_branch: r.get(4)?,
-                github: r.get(5)?,
-                trusted: serde_json::from_str(&trusted).map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        6,
-                        rusqlite::types::Type::Text,
-                        e.into(),
-                    )
-                })?,
-                project: r.get(7)?,
-                home_project_id: r.get(8)?,
-                files_of: r.get(9)?,
-            })
-        })
+        self.rows(
+            &format!("SELECT {REPOSITORY_COLUMNS} FROM repositories ORDER BY id"),
+            [],
+            repository_from_row,
+        )
     }
 
     /// Replaces the logins whose issues on the repository's forge need no approval.
@@ -313,8 +318,16 @@ impl Store {
         Ok(())
     }
 
+    /// The repository with `id`, read as one row.
     pub fn repository(&self, id: i64) -> Result<Option<Repository>> {
-        Ok(self.repositories()?.into_iter().find(|r| r.id == id))
+        Ok(self
+            .conn()
+            .query_row(
+                &format!("SELECT {REPOSITORY_COLUMNS} FROM repositories WHERE id = ?1"),
+                [id],
+                repository_from_row,
+            )
+            .optional()?)
     }
 
     /// Removes a repository and everything stored for it: its cards with their changes, runs, decisions, inbox,
@@ -804,6 +817,19 @@ impl Store {
     }
 
     /// The numbers of the issues that block a card, in order.
+    /// The numbers each card is blocked by, by card id, in ascending order; a card with none is missing.
+    pub fn all_dependencies(&self) -> Result<std::collections::HashMap<i64, Vec<i64>>> {
+        let mut by_card: std::collections::HashMap<i64, Vec<i64>> = Default::default();
+        for (card, blocker) in self.rows(
+            "SELECT card_id, blocked_by FROM dependencies ORDER BY card_id, blocked_by",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )? {
+            by_card.entry(card).or_default().push(blocker);
+        }
+        Ok(by_card)
+    }
+
     pub fn dependencies(&self, card_id: i64) -> Result<Vec<i64>> {
         self.rows(
             "SELECT blocked_by FROM dependencies WHERE card_id = ?1 ORDER BY blocked_by",

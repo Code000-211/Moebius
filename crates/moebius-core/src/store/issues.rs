@@ -174,6 +174,18 @@ impl Store {
             .optional()?)
     }
 
+    /// The numbers of the issues of the repository the forge was seen to say are closed.
+    pub fn closed_on_forge(&self, repository_id: i64) -> Result<std::collections::HashSet<i64>> {
+        Ok(self
+            .rows(
+                "SELECT number FROM forge_seen WHERE repository_id = ?1 AND field = 'state' AND value = 'closed'",
+                [repository_id],
+                |r| r.get(0),
+            )?
+            .into_iter()
+            .collect())
+    }
+
     /// Records what the forge says about `field` of issue `number`.
     pub fn set_forge_seen(
         &self,

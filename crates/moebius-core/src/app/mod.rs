@@ -3,7 +3,7 @@
 //!
 //! This module holds `App` itself, its errors and the lookups every operation shares; the operations are grouped by
 //! what they act on: `repositories` adds and edits repositories, `cards` keeps cards in line with their issues and
-//! moves them, `issues` is the issue tracker (parents, blocking, labels, claims, comments, closing), `issues` is the issue tracker (parents, blocking, labels, claims, comments, closing), `stopping` holds, releases and deletes a card, `runs` is a person's hand in a running run (steering,
+//! moves them, `issues` is the issue tracker (parents, blocking, labels, claims, comments, closing), `issues` is the issue tracker (parents, blocking, labels, claims, comments, closing), `snapshot` reads for every card at once what the snapshot shows of each, `stopping` holds, releases and deletes a card, `runs` is a person's hand in a running run (steering,
 //! stopping, shells), `chats` starts and carries on chats, `changes` publishes, offers and merges changes, `checks`
 //! runs a repository's own checks on them, `packages` proposes installing, updating and removing Pi packages as changes
 //! of the harness configuration repository, `localize` gives a code run the files its issue is likely to touch and
@@ -46,6 +46,7 @@ mod projects;
 mod repositories;
 mod reproduce;
 mod runs;
+mod snapshot;
 mod stopping;
 mod templates;
 mod view_filters;
@@ -168,6 +169,7 @@ pub use jira::{
 pub use kinds::{CardQuery, KindView};
 pub use milestones::{MilestoneDetail, MilestoneFields, MilestoneProject, MilestoneView};
 pub use projects::{Member, ProjectRepository, ProjectView, Sight, UNQUOTED};
+pub use snapshot::CardLookups;
 pub use stopping::CardStopWaits;
 pub use templates::{IssueTemplateView, PageTemplateView, Templates};
 pub use views::{ViewCard, ViewCards, ViewEdit, ViewFields};
