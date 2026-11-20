@@ -294,7 +294,7 @@ describe("the board page", () => {
       expect(
         await running.getByRole("link", { name: "Issue #1 on its forge" }).getAttribute("href"),
       ).toBe("https://github.com/acme/demo/issues/1");
-      await running.getByTestId("run-ring").waitFor();
+      await running.getByTestId("status-running").waitFor();
       await running.getByText("Live", { exact: true }).waitFor();
       await running.getByText("Coder · round 1 of 5").waitFor();
       await running.getByRole("img", { name: "Round 1 of 5" }).waitFor();

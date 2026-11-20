@@ -38,7 +38,7 @@ function CommandDialog({
         className="overflow-hidden p-0"
         data-audit="flush"
         hideCloseButton
-        overlayClassName="backdrop-blur-[2px]"
+        glass
         onCloseAutoFocus={onCloseAutoFocus}
         onOpenAutoFocus={onOpenAutoFocus}
         aria-describedby={undefined}

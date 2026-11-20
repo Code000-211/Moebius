@@ -105,8 +105,8 @@
   --selected: var(--accent-tint);
   --track: var(--control-fill);
   --heat-empty: var(--hairline);
-  /* Overlays are opaque; blur belongs to a small menu, a tooltip and the palette, and is settled by their own step. */
-  --glass: var(--panel);
+  /* Glass is a translucent panel where blur is on (`glass` in tailwind.css), and the opaque panel otherwise. */
+  --glass: color-mix(in srgb, var(--panel) 82%, transparent);
   --glass-solid: var(--panel);
   --sidebar: var(--canvas);
   --sidebar-text: var(--text-secondary);

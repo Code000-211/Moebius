@@ -1,5 +1,5 @@
 /**
- * The sheet the shell lays over the page's right column: a glass card the whole height of the page's surface, wider
+ * The sheet the shell lays over the page's right column: a solid card the whole height of the page's surface, wider
  * than the column, with a header (a title, a line under it, the sheet's own controls, and the control that closes it).
  * The Moebius agent and the package sheet are both made of these pieces, so they open, close and keep their state the
  * same way: Escape or the close control hides the sheet and puts the focus back on the button that opened it, when one
@@ -83,8 +83,8 @@ export function SheetFrame({
       // The attribute, not a class: preflight hides it, and a person hearing the page does not find a sheet that is away.
       hidden={hidden}
       className={cn(
-        "glass absolute inset-y-0 right-0 z-sheet flex w-(--sheet-width) max-w-full flex-col gap-3 rounded-sheet p-3 shadow-raised",
-        "animate-in fade-in-0 slide-in-from-right-4 duration-(--motion-slow) ease-(--motion-ease)",
+        "absolute inset-y-0 right-0 z-sheet flex w-(--sheet-width) max-w-full flex-col gap-3 rounded-sheet bg-panel p-3 shadow-raised",
+        "animate-in fade-in-0 slide-in-from-right-4 duration-(--motion-fast) ease-(--motion-ease)",
       )}
     >
       <header className="flex items-center gap-2">
