@@ -824,6 +824,23 @@ describe("blocking, unblocking and deleting a card", () => {
     },
   );
 
+  it.skipIf(usesRealServer)("takes a block back with Undo in the toast", async () => {
+    await fresh();
+    await openBoard();
+    await menuOf(card(3), 3).click();
+    await item("Block…").click();
+    await asking("Block #3").getByLabel("Reason").fill("by mistake");
+    await asking("Block #3").getByRole("button", { name: "Block", exact: true }).click();
+    const toast = status("Blocked #3. Its runs are stopped.");
+    await toast.waitFor();
+    const tag = column("Not started").getByTestId("card-3").getByText("Blocked", { exact: true });
+    await tag.waitFor();
+    await toast.getByRole("button", { name: "Undo" }).click();
+    await toast.waitFor({ state: "detached" });
+    await tag.waitFor({ state: "detached" });
+    expect(fake().requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/cards/3/unblock" });
+  });
+
   it.skipIf(usesRealServer)("stops the run of a card that is blocked", async () => {
     await fresh();
     await openBoard();
@@ -1015,6 +1032,18 @@ describe("dragging cards", () => {
       await alert("Cannot move #3 to Done: Nobody decides this card now").waitFor();
       await column("Not started").getByTestId("card-3").waitFor();
       expect(fake().requests.length).toBe(before);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "shows a toast with the server's reason when a move fails, and the card stays",
+    async () => {
+      await fresh();
+      await openBoard();
+      fake().refuseNext("POST", "/v1/cards/2/approve", 409, "the issue changed meanwhile");
+      await drag(card(2), 1);
+      await alert("Could not approve #2: the issue changed meanwhile").waitFor();
+      await column("Backlog").getByTestId("card-2").waitFor();
     },
   );
 

@@ -7,7 +7,7 @@
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { memo, useRef, useState } from "react";
-import { block, deleteCard, setParent } from "../../api/calls/board";
+import { block, deleteCard, setParent, unblock } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Board, Card, Repository } from "../../api/types/board";
@@ -23,6 +23,7 @@ import {
 } from "../../ui/components/Dialog";
 import { Field, Select, TextArea } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
+import { useNotify } from "./decisions";
 import { deleteWords, descendants, parentOf } from "./model";
 
 /**
@@ -51,10 +52,11 @@ export const BlockDialog = memo(function BlockDialog({
   /** Cards blocked with it, for one reason, when several were chosen. */
   more?: readonly Card[];
   onClose: () => void;
-  /** The server blocked the card: the sentence that says so. */
-  onDone: (text: string) => void;
+  /** The server blocked the card: the sentence that says so, and what takes the block off again. */
+  onDone: (text: string, undo: () => void) => void;
 }) {
   const queryClient = useQueryClient();
+  const notify = useNotify();
   const shown = useShown(card);
   const [reason, setReason] = useState("");
   const send = useMutation({
@@ -72,12 +74,23 @@ export const BlockDialog = memo(function BlockDialog({
       }
     },
     onSuccess: (_, target) => {
+      const all = [target, ...more];
       setReason("");
       onClose();
       onDone(
         more.length === 0
           ? `Blocked #${target.number}. Its runs are stopped.`
           : `Blocked ${more.length + 1} cards. Their runs are stopped.`,
+        () => {
+          // Undo takes the block off again. The runs it stopped stay stopped.
+          Promise.all(all.map((one) => unblock(one.id))).then(
+            (cards) => putCards(queryClient, cards),
+            (error) => {
+              void queryClient.invalidateQueries({ queryKey: keys.snapshot });
+              notify({ tone: "error", text: refusal(error, "Could not unblock the card.") });
+            },
+          );
+        },
       );
     },
   });
