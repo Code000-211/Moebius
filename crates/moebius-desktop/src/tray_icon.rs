@@ -80,6 +80,10 @@ pub fn create(app: &mut tauri::App) -> tauri::Result<()> {
 /// when no server is shown (the connect page), which leaves the tray with no server to ask.
 pub fn follow(app: &AppHandle, server: Option<Server>) {
     let tray = app.state::<Tray>();
+    // The task of the server followed before ends first, so that it cannot show its figures after the new ones.
+    if let Some(earlier) = lock(&tray.following).take() {
+        earlier.abort();
+    }
     *lock(&tray.server) = server.clone();
     // The figures of the server followed before are not the new one's: the rail asks the server until they are read.
     *lock(&tray.figures) = None;
@@ -90,9 +94,7 @@ pub fn follow(app: &AppHandle, server: Option<Server>) {
         }))
     });
     let following = task.is_some();
-    if let Some(earlier) = std::mem::replace(&mut *lock(&tray.following), task) {
-        earlier.abort();
-    }
+    *lock(&tray.following) = task;
     if !following {
         show(app, None);
     }

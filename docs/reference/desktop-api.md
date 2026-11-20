@@ -2407,8 +2407,8 @@ notices and the usage. Response:
 {"working": 2, "inbox": 3, "unread_notices": 1, "tokens": 1840000, "day_budget": 8000000, "paused": false}
 ```
 
-- `working`: the cards the person sees (not archived, not in Done) whose latest run, an attempt that was not picked left
-  out, is starting or running.
+- `working`: the cards the person sees (not archived, not in Done) whose latest run, with an attempt that was not picked and
+  a trial of the Retro left out, is starting or running. `unread_notices` counts only the notices the person sees.
 - `inbox`: the open inbox items the person sees, as many as `inbox` of the snapshot has.
 - `unread_notices`: the person's notices that are not read, as `GET /v1/notices` lists them; `0` for a token that is no
   person's.

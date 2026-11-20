@@ -46,10 +46,13 @@ async fn status(
         let mut cards = HashSet::new();
         for run in app.store.active_runs()? {
             let Some(id) = run.card_id else { continue };
-            if run.purpose == "attempt" || !matches!(run.status.as_str(), "starting" | "running") {
+            if matches!(run.purpose.as_str(), "attempt" | "trial")
+                || !matches!(run.status.as_str(), "starting" | "running")
+            {
                 continue;
             }
-            let card = app.card(id)?;
+            // A card deleted since the runs were read is no card working.
+            let Ok(card) = app.card(id) else { continue };
             if card.archived_at.is_none()
                 && card.column != columns::DONE
                 && sight.repository(card.repository_id)
@@ -127,8 +130,12 @@ mod tests {
             .add_run(Some(card.id), "Coder", "test", "code")
             .unwrap();
         store.set_run_status(run.id, "running").unwrap();
-        // A run that is not of a card, and an attempt, are not a card working.
+        // A run that is not of a card, and a trial of the Retro, are not a card working.
         store.add_run(None, "Chatty", "test", "chat").unwrap();
+        let trial = store
+            .add_run(Some(card.id), "Coder", "test", "trial")
+            .unwrap();
+        store.set_run_status(trial.id, "running").unwrap();
         store
             .add_inbox_item("stuck", None, "Needs a person", &serde_json::json!({}))
             .unwrap();

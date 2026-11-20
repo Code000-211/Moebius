@@ -13,7 +13,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 use crate::server::Server;
 
-/// How long [`follow`] waits for more events before it reads the figures.
+/// How long [`follow`] waits after the first event of a burst before it reads the figures.
 const DEBOUNCE: Duration = Duration::from_millis(750);
 
 /// The least time between two readings that only the steps of runs ask for: a busy run says something at every step,
