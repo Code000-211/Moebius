@@ -75,6 +75,9 @@ describe("the run view", () => {
     const info = page.getByTestId("run-info");
     await info.getByText("Running", { exact: true }).waitFor();
     await info.getByText("Coder · code").waitFor();
+    // The run is a bar on a timeline, with a tick for each step of the thread.
+    await page.getByTestId("time-bar").waitFor();
+    expect(await page.getByRole("tab", { name: "Conversation" }).count()).toBe(1);
     const card = info.getByRole("link", { name: /#1 Add a feature/ });
     expect(await card.getAttribute("href")).toBe("/board/1?card=1");
 
@@ -101,8 +104,7 @@ describe("the run view", () => {
       toolName: "bash",
       args: { command: "make test" },
     });
-    // What the run did is folded under one row until it is opened.
-    await page.getByRole("button", { name: /^(Working|Worked · \d+ steps?)$/ }).click();
+    // A few steps are drawn as the timeline itself.
     await page.getByText("make test").first().waitFor();
 
     await card.click();

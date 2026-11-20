@@ -39,10 +39,10 @@ export function ChatFileEntry({
   const FileIcon = fileIcon ?? DefaultFileIcon;
 
   return (
-    <div className={cn("overflow-hidden rounded-control bg-sunken", className)}>
+    <div className={cn("overflow-hidden rounded-control", className)}>
       <button
         type="button"
-        className="flex min-h-8 w-full flex-wrap items-center gap-3 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
+        className="flex min-h-7 w-full flex-wrap items-center gap-2 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
         onClick={onToggle}
         aria-expanded={onToggle ? expanded : undefined}
       >
@@ -50,7 +50,7 @@ export function ChatFileEntry({
         <FadedLine
           text={fileName(filename)}
           title={filename}
-          className="flex-1 font-mono text-sm text-text"
+          className="flex-1 font-mono text-sm text-secondary"
         />
         {hasStats && (
           <span className="shrink-0 text-sm tabular-nums">

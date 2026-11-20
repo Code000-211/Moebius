@@ -1082,6 +1082,19 @@ describe("the fleet", () => {
   });
 });
 
+/** The figures at the head of a page are in tabular numerals, and nothing on it casts a shadow. */
+async function expectFlatFigures(page: Page) {
+  const numerals = await page
+    .locator("[data-figure]")
+    .evaluateAll((all) => all.map((el) => getComputedStyle(el).fontVariantNumeric));
+  expect(numerals.length).toBeGreaterThan(0);
+  for (const each of numerals) expect(each).toContain("tabular-nums");
+  const shadows = await page
+    .locator("main section")
+    .evaluateAll((all) => all.map((el) => getComputedStyle(el).boxShadow));
+  for (const each of shadows) expect(each).toBe("none");
+}
+
 describe("usage", () => {
   it("loads for a real server and for the fake", async () => {
     await open("/usage");
@@ -1097,6 +1110,7 @@ describe("usage", () => {
     async () => {
       await open("/usage");
       await page.getByText("1.84M", { exact: true }).first().waitFor();
+      await expectFlatFigures(page);
       // The figure and the budget it is measured against are read together, in that order.
       await page.getByText("of the 8M token budget, 23% used").waitFor();
       await page.getByText("1,284", { exact: true }).waitFor();
@@ -1105,12 +1119,11 @@ describe("usage", () => {
       // The heatmap: a cell for each day of 53 weeks, and the busiest day.
       expect(await page.getByTestId("heatmap").locator("span[title]").count()).toBeGreaterThan(300);
       await page.getByText(/busiest day Sat 24 Oct with 2\.52M/).waitFor();
-      await page.getByText(/The stronger the colour, the more tokens that day used/).waitFor();
+      await page.getByText("No tokens that day").waitFor();
       await page.getByRole("heading", { name: "Tokens by model" }).waitFor();
       const models = page.getByRole("table").first();
       await models.getByText("qwen-flash").waitFor();
       await models.getByText("claude-sonnet").waitFor();
-      await page.getByText("1.84M today across 2 models").waitFor();
       await page.getByText("Where the model time goes").waitFor();
       await page.getByText("Answering · 40 calls").waitFor();
       await page.getByText("Longest tool waits").waitFor();
@@ -1148,10 +1161,10 @@ describe("usage", () => {
     await open("/usage");
     await page.getByText("of the 8M token budget, 23% used").waitFor();
     await page.getByRole("button", { name: "7 days" }).click();
-    await page.getByText("12.9M in the last 7 days across 2 models").waitFor();
+    await page.getByText("12.9M", { exact: true }).first().waitFor();
     await page.getByText("1.84M a day on average").waitFor();
     await page.getByRole("button", { name: "30 days" }).click();
-    await page.getByText(/in the last 30 days across 2 models/).waitFor();
+    await page.getByText("Tokens, last 30 days", { exact: true }).waitFor();
   });
 });
 
@@ -1166,6 +1179,7 @@ describe("analytics", () => {
       await page.getByRole("cell", { name: "demo" }).waitFor();
       await page.getByText("Cycle 3").waitFor();
       await page.getByText("Launch").waitFor();
+      await expectFlatFigures(page);
       await page.getByRole("button", { name: "7 days" }).click();
       const tile = page.getByTestId("Cards done");
       await tile.getByText("7", { exact: true }).waitFor();
@@ -1323,7 +1337,7 @@ describe("settings", () => {
 
   it("loads for a real server and for the fake", async () => {
     await open("/settings");
-    await page.getByRole("heading", { name: "Settings", level: 1 }).waitFor();
+    await page.getByRole("heading", { name: "General", level: 2 }).waitFor();
     for (const box of [
       "Server",
       "Board and budgets",
@@ -1335,15 +1349,20 @@ describe("settings", () => {
       "Forgejo",
     ]) {
       // The level keeps the box of a key apart from a webhook of the same forge further down the page.
-      await page.getByRole("heading", { name: box, exact: true, level: 2 }).waitFor();
+      await page.getByRole("heading", { name: box, exact: true, level: 3 }).waitFor();
     }
     await page.getByRole("button", { name: "Save", exact: true }).waitFor();
     await page.getByRole("heading", { name: "This server" }).waitFor();
-    // How the app looks is chosen here rather than in the sidebar, and takes effect at once.
+    // How the app looks is its own page of Settings, reached from the navigation, and takes effect at once.
+    await page
+      .getByRole("navigation", { name: "Settings" })
+      .getByRole("link", { name: "Appearance" })
+      .click();
+    await page.waitForURL("**/appearance");
     await page.getByRole("heading", { name: "Appearance", exact: true, level: 2 }).waitFor();
     await page.getByRole("radio", { name: "Light" }).check();
     await expect(page.locator("html").getAttribute("data-theme")).resolves.toBe("light");
-    await page.getByRole("radio", { name: "Follow the system" }).check();
+    await page.getByRole("radio", { name: "System" }).check();
   });
 
   it("saves a key to the file of a real server and reads it back", async () => {
@@ -1371,7 +1390,7 @@ describe("settings", () => {
     "shows every key with its value or its default and the file",
     async () => {
       await open("/settings");
-      await page.getByRole("heading", { name: "Settings", exact: true }).waitFor();
+      await page.getByRole("heading", { name: "General", exact: true }).waitFor();
       expect(await page.getByLabel("Coding rounds a card").inputValue()).toBe("7");
       expect(await page.getByLabel("Tokens a day").inputValue()).toBe("8000000");
       // A key the file does not set shows the default.

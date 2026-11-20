@@ -7,7 +7,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { Empty } from "./Empty";
-import { ListCard, ListDetail } from "./List";
+import { CELL, ListCard, ListDetail, Table } from "./List";
 
 afterEach(cleanup);
 
@@ -42,5 +42,23 @@ describe("a list beside a detail", () => {
     render(<ListDetail list={<p>Reading the servers</p>} detail={<p>Nothing chosen</p>} />);
     expect(screen.getByText("Reading the servers")).toBeTruthy();
     expect(screen.getByText("Nothing chosen")).toBeTruthy();
+  });
+});
+
+describe("a table of figures", () => {
+  it("has rows of 36px and heads the figure columns at the right", () => {
+    render(
+      <Table figures head={["Model", "Tokens"]}>
+        <tr>
+          <td className={CELL}>qwen</td>
+          <td className={CELL}>960k</td>
+        </tr>
+      </Table>,
+    );
+    const heads = screen.getAllByRole("columnheader");
+    expect(heads[0]?.className).not.toContain("text-right");
+    expect(heads[1]?.className).toContain("text-right");
+    expect(heads[0]?.closest("tr")?.className).toContain("h-9");
+    expect(screen.getByRole("cell", { name: "qwen" }).className).toContain("h-9");
   });
 });

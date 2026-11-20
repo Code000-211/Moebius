@@ -1,30 +1,26 @@
 /**
- * The Moebius agent on every page: "Ask Moebius", the last row of the page's right column (`Ctrl+J`), opens it as a
- * sheet over that column, wider than it, the page recognisable beside it (`app/shell/RightColumn.tsx`). Escape, or the
- * control that closes it, gives the column back and the focus goes back to "Ask Moebius"; "Properties" does the same on
- * a page that has some. The conversation stays while it is closed and across pages. Every message carries
- * where the person is, which only the agent is told; the first one starts a chat of origin `assistant`, in the
- * repository of the page when it has one, and the later ones go to the same chat. That chat is a chat of the Chat page
- * like any other — listed there, unread until it is read in one place or the other.
- * A chat whose agent went away is taken up again with what was said in it, as on the Chat page; one the agent ended
- * is left behind, and the next message starts a new conversation.
+ * The conversation of the Moebius agent, one for the whole window, drawn in its right panel (`ui/chat/AgentFrame.tsx`).
+ * It stays built while the panel is closed, so the conversation is kept across pages and across closing: the shell
+ * opens the panel when a message comes from the docked field (`app/shell/AgentDock.tsx`) and when an answer arrives
+ * while it is closed. Escape, or the close control, closes it. Every message carries where the person is, which only
+ * the agent is told; the first one starts a chat of origin `assistant`, in the repository of the page when it has
+ * one, and the later ones go to the same chat. That chat is a chat of the Chat page like any other — listed there,
+ * unread until it is read in one place or the other. A chat whose agent went away is taken up again with what was
+ * said in it, as on the Chat page; one the agent ended is left behind, and the next message starts a new conversation.
  */
-import { ArrowSquareOutIcon, PlusIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router";
 import { snapshot as readSnapshot } from "../api/calls/board";
 import { markSeen, chats as readChats, say, startChat } from "../api/calls/chat";
 import { keys } from "../api/keys";
 import type { Chat } from "../api/types/chat";
-import { Tag } from "../ui/chat/Tag";
+import { AgentFrame } from "../ui/chat/AgentFrame";
 import { Button } from "../ui/components/Button";
 import { Notice } from "../ui/page/Notice";
-import { SheetFrame, useSheetBehaviour } from "../ui/page/Sheet";
-import { useSheetSlot } from "../ui/page/SheetSlot";
 import { ASSISTANT_AGENT } from "./assistant";
 import { Composer } from "./Composer";
-import { isOpen, isWorking, statusTag, takesMessage } from "./format";
+import { isOpen, isWorking, takesMessage } from "./format";
 import { pageContext } from "./pageContext";
 import { seqToMark } from "./readMarkers";
 import { Starters } from "./Starters";
@@ -34,21 +30,29 @@ import { useThread } from "./useThread";
 export { ASSISTANT_AGENT };
 
 export function AgentChat({
-  opener,
-  onProperties,
+  open,
+  onShow,
+  onClose,
+  pending,
+  takePending,
+  fresh = 0,
 }: {
-  /** "Ask Moebius", which the focus goes back to when the sheet closes. */
-  opener: RefObject<HTMLButtonElement | null>;
-  /** On a page with properties: closes the sheet and shows them, unfolded. */
-  onProperties?: () => void;
+  /** Whether the panel is open. */
+  open: boolean;
+  /** Opens the panel, for an answer that arrived while it was closed. */
+  onShow: () => void;
+  onClose: () => void;
+  /** A message from the docked field that is waiting to be sent, and how to take it. */
+  pending: string | null;
+  takePending: () => string | null;
+  /** Moves each time a new conversation is asked for (from the palette): the panel then forgets this chat. */
+  fresh?: number;
 }) {
   const queryClient = useQueryClient();
   const location = useLocation();
   const snapshot = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
   const chats = useQuery({ queryKey: keys.chats, queryFn: readChats });
-  // The chat and the package sheet share one place, so showing this one hides the other (which keeps its state).
-  const slot = useSheetSlot();
-  const shown = slot.active === "chat";
+  const shown = open;
   const [chatId, setChatId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
@@ -84,18 +88,29 @@ export function AgentChat({
   const writesHere = chat ? takesMessage(chat.status) : chatId !== null;
   // Whether the agent is still up: a message to a chat whose agent went away starts that agent again on the same chat.
   const up = chat !== undefined && isOpen(chat.status);
-  // Where the person is now: sent with every message, and said under the sheet's own name, because the page behind it
-  // is partly covered and is the thing being asked about.
+  // Where the person is now: sent with every message.
   const where = pageContext(location.pathname, snapshot.data);
   const working = chat !== undefined && isWorking(chat.status);
-  // The same words the Chat page uses for the state of the chat, so the sheet does not look alive when its agent is
-  // gone: the next message takes the chat up again rather than starting a new one.
-  const tag = chat ? statusTag(chat.status, chat.asks) : null;
 
-  // Escape and the close control hide the sheet, and the focus goes back to "Ask Moebius".
-  const { hide: release } = slot;
-  const hide = useCallback(() => release("chat"), [release]);
-  useSheetBehaviour(shown, hide, opener);
+  // Escape closes the panel, wherever the focus is on the page, unless a control over it took the key first.
+  useEffect(() => {
+    if (!shown) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [shown, onClose]);
+
+  // An answer that arrives while the panel is closed opens it. What was already answered when the chat was first seen
+  // does not count, and neither does an answer to a chat that is not ours.
+  const answered = chat?.answered;
+  const lastAnswered = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    const before = lastAnswered.current;
+    lastAnswered.current = answered;
+    if (before !== undefined && answered !== undefined && answered > before && !shown) onShow();
+  }, [answered, shown, onShow]);
 
   // Marks the conversation read once an answer is held, not at every streamed piece of it, and only while the sheet is
   // open. An answer that arrived after it was closed is still unread, which is what the Chat page's count is for.
@@ -118,8 +133,8 @@ export function AgentChat({
     });
   }, [shown, chatId, chat?.answered, chat?.seen, thread.lastSeq]);
 
-  async function send() {
-    const text = message.trim();
+  async function send(said = message) {
+    const text = said.trim();
     if (text === "" || sending) return;
     setSending(true);
     setError(null);
@@ -141,66 +156,37 @@ export function AgentChat({
         setChatId(run.id);
         await queryClient.invalidateQueries({ queryKey: keys.chats });
       }
-      if (held.current.trim() === text) write("");
+      if (said === message && held.current.trim() === text) write("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't send the message. Try again.");
     }
     setSending(false);
   }
 
+  // A new conversation was asked for: the next message starts a chat of its own, and nothing typed is carried over.
+  const seenFresh = useRef(fresh);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when a new conversation is asked for
+  useEffect(() => {
+    if (seenFresh.current === fresh) return;
+    seenFresh.current = fresh;
+    setChatId(null);
+    setError(null);
+    setSent(0);
+    write("");
+  }, [fresh]);
+
+  // A message from the docked field is sent once, as soon as the panel is built.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when a message is handed over
+  useEffect(() => {
+    if (pending === null) return;
+    const text = takePending();
+    if (text !== null) void send(text);
+  }, [pending]);
+
   if (!shown) return null;
 
   return (
-    <SheetFrame
-      label="Moebius agent"
-      title="Moebius"
-      tag={tag && <Tag tone={tag.tone}>{tag.label}</Tag>}
-      line={`viewing ${where.name}`}
-      closeLabel="Close the Moebius agent"
-      onClose={hide}
-      // New conversation and Open in Chat belong to a conversation that exists: nothing is left behind, and nowhere
-      // else to open, when this is one nobody has spoken in yet.
-      actions={
-        <>
-          {onProperties && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              title="Back to the properties"
-              onClick={() => {
-                hide();
-                onProperties();
-              }}
-            >
-              Properties
-            </Button>
-          )}
-          {chatId !== null && (
-            <>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                aria-label="New conversation"
-                title="New conversation"
-                onClick={() => {
-                  setChatId(null);
-                  setError(null);
-                }}
-              >
-                <PlusIcon aria-hidden="true" className="size-5" weight="bold" />
-              </Button>
-              <Button asChild variant="ghost" size="icon" title="Open in Chat">
-                <Link to={`/chat/${chatId}`} aria-label="Open in Chat" onClick={hide}>
-                  <ArrowSquareOutIcon aria-hidden="true" className="size-5" weight="bold" />
-                </Link>
-              </Button>
-            </>
-          )}
-        </>
-      }
-    >
+    <AgentFrame onClose={onClose}>
       <div className="min-h-0 flex-1" data-testid="agent-conversation">
         {/* A conversation already read stays on screen: a failed read shows its reason above it, not instead of it,
             and a read that never succeeded shows the reason where the bars would have been. */}
@@ -224,16 +210,34 @@ export function AgentChat({
           />
         )}
       </div>
+      {/* The header only closes the panel, so the way to start over is at the end of what was said, once it has a
+          message and the agent is not at work: one quiet action, not a control that is always there. */}
+      {chatId !== null && thread.entries.length > 0 && !working && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="-ml-2 self-start text-sm text-secondary"
+          data-testid="new-conversation"
+          onClick={() => {
+            setChatId(null);
+            setError(null);
+            write("");
+          }}
+        >
+          New conversation
+        </Button>
+      )}
       <Composer
         value={message}
         onChange={write}
         onSend={() => void send()}
         canSend={message.trim() !== "" && !sending}
         error={error}
-        placeholder="Ask the agent"
+        placeholder="Reply to Moebius…"
         autoFocus
         compact
       />
-    </SheetFrame>
+    </AgentFrame>
   );
 }

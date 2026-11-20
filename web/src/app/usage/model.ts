@@ -29,11 +29,6 @@ export const WINDOWS: readonly Window[] = [
   { label: "30 days", days: 30 },
 ];
 
-/** How a total over the window is told: "today", "in the last 7 days". */
-export function span(days: number): string {
-  return days === 1 ? "today" : `in the last ${days} days`;
-}
-
 /** The tokens used today and the day's budget, for the meter of the sidebar. */
 export function todayOf(report: UsageReport): { tokens: number; budget: number | null } {
   const day = report.days.find((each) => each.date === report.today);

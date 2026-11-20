@@ -36,7 +36,8 @@ pub const BRIDGE: &str = r#"
       switchServer: (id) => window.__TAURI_INTERNALS__.invoke("switch_server", { id }),
       removeServer: (id) => window.__TAURI_INTERNALS__.invoke("remove_server", { id }),
       renameServer: (id, name) => window.__TAURI_INTERNALS__.invoke("rename_server", { id, name }),
-      connect: (address, token) => window.__TAURI_INTERNALS__.invoke("connect", { address, token }),
+      connect: (address, token, sessionOnly) =>
+        window.__TAURI_INTERNALS__.invoke("connect", { address, token, sessionOnly }),
       connectSsh: (host, setUp) => window.__TAURI_INTERNALS__.invoke("connect_ssh", { host, setUp }),
     }),
   });

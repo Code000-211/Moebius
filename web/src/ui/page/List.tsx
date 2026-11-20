@@ -166,15 +166,31 @@ export function ListDetail({ list, detail }: { list: ReactNode; detail: ReactNod
   );
 }
 
-/** A table with a head row; the cells are the caller's. */
-export function Table({ head, children }: { head: string[]; children: ReactNode }) {
+/** A table of figures with a head row and rows of 36px; the cells are the caller's. */
+export function Table({
+  head,
+  figures = false,
+  children,
+}: {
+  head: string[];
+  /** Every column after the first holds figures, so its head is right aligned over them. */
+  figures?: boolean;
+  children: ReactNode;
+}) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-left text-base">
         <thead>
-          <tr className="border-b border-hairline">
-            {head.map((name) => (
-              <th key={name} scope="col" className="px-3 py-2 text-sm font-semibold text-secondary">
+          <tr className="h-9 border-b border-hairline">
+            {head.map((name, at) => (
+              <th
+                key={name}
+                scope="col"
+                className={cn(
+                  "whitespace-nowrap px-3 py-0 first:pl-0 last:pr-0 text-sm font-medium text-muted",
+                  figures && at > 0 && "text-right",
+                )}
+              >
                 {name}
               </th>
             ))}
@@ -187,7 +203,8 @@ export function Table({ head, children }: { head: string[]; children: ReactNode 
 }
 
 /** The classes of a cell of `Table`. */
-export const CELL = "border-b border-hairline px-3 py-3 align-top text-text";
+export const CELL =
+  "h-9 border-b border-hairline px-3 py-0 align-middle text-text first:pl-0 last:pr-0";
 
 /**
  * The row a list beside a detail opens on. The address decides when it names one; otherwise the first row is chosen, so

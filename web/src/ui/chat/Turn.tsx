@@ -3,11 +3,12 @@
  * answered as its body. Presentational: the turn comes in as data (see `chat/turns.ts`), and so do the folded state
  * and the clicks. A later page that shows a run's conversation draws it with this.
  *
- * The answer is body text across the full width of the column. What the agent did is one row apiece — thinking, a tool, a group of
- * reads, a changed file, a todo list — each a row 32px tall that says its state in a word, opens to the text it
- * worked with, and keeps that text on the colour of code rather than in a box of its own colours.
+ * The person's message is a bubble on the right; the answer is free text across the width of the column. What the agent
+ * did is one line apiece — thinking, a tool, a group of reads, a changed file, a todo list — each 32px tall with an
+ * icon, a label and its duration or state, opening to the text it worked with on the colour of code. A long run of
+ * steps is folded into one row.
  */
-import { CaretRightIcon, CircleNotchIcon } from "@phosphor-icons/react";
+import { CaretRightIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 import {
   inputPath,
@@ -37,6 +38,9 @@ import type { ToolStatusLike } from "./ToolStatusDot";
 /** The most lines of a tool's output drawn; the rest is said to be left out. */
 const MAX_OUTPUT_LINES = 200;
 
+/** From this many steps on, a block of steps is folded into one row; fewer are drawn as the timeline. */
+const FOLD_FROM = 5;
+
 /** The status a tool call is in, told by one of the words `ToolStatusDot` knows. */
 export function toolStatus(call: ToolCall): ToolStatusLike {
   if (refused(call)) return { status: "denied" };
@@ -44,6 +48,11 @@ export function toolStatus(call: ToolCall): ToolStatusLike {
     return { status: call.execution.failed ? "failed" : "success" };
   }
   return { status: "created" };
+}
+
+/** The status a step row says: a call that went well says nothing, one that did not says what happened. */
+function quiet(status: ToolStatusLike): ToolStatusLike | undefined {
+  return status.status === "success" ? undefined : status;
 }
 
 /** The changes a file entry shows: an edit's replacements, or a written file as all added. */
@@ -124,7 +133,7 @@ function ToolLine({
         filename={call.input.path}
         additions={additions}
         deletions={deletions}
-        status={status}
+        status={quiet(status)}
         expanded={expanded}
         onToggle={onToggle}
       >
@@ -140,7 +149,7 @@ function ToolLine({
         summary={inputSummary(call.input)}
         detail={inputPath(call.input) ?? undefined}
         toolName={toolTitle(call)}
-        status={status}
+        status={quiet(status)}
         isTruncated={hasDetails}
         expanded={expanded}
         onToggle={onToggle}
@@ -181,7 +190,7 @@ function StepLine({
         entries={step.calls.map((call, index) => ({
           summary: inputSummary(call.input),
           detail: inputPath(call.input) ?? undefined,
-          status: toolStatus(call),
+          status: quiet(toolStatus(call)),
           expansionKey: `${step.key}-${index}`,
         }))}
         expanded={isOpen(step.key)}
@@ -233,6 +242,25 @@ function StepsGroup({
 }) {
   const trouble = troubleOf(block.steps);
   const troubled = trouble.refused + trouble.failed > 0;
+  const rows = block.steps.map((step) => (
+    <StepLine key={step.key} step={step} isOpen={isOpen} onToggle={onToggle} />
+  ));
+  // A few steps are the timeline itself, one line each; only a long run of them, or one with trouble in it, is folded.
+  if (!troubled && block.steps.length < FOLD_FROM) {
+    return (
+      <div className="-ml-3 flex min-w-0 flex-col gap-0.5" data-testid="steps">
+        {rows}
+        {block.working && (
+          <p
+            className="m-0 flex min-h-7 items-center px-3 text-sm text-progress-text"
+            data-testid="working"
+          >
+            Working
+          </p>
+        )}
+      </div>
+    );
+  }
   const closedKey = `${block.key}:closed`;
   const expanded = troubled ? !isOpen(closedKey) : isOpen(block.key);
   const bodyId = `${block.key}-steps`;
@@ -241,12 +269,12 @@ function StepsGroup({
     trouble.failed > 0 ? `${trouble.failed} failed` : null,
   ].filter((part) => part !== null);
   return (
-    <div className="flex min-w-0 flex-col">
+    <div className="-ml-3 flex min-w-0 flex-col">
       <button
         type="button"
         className={cn(
-          "flex min-h-8 cursor-pointer items-center gap-2 self-start rounded-control px-3 text-left text-sm transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text",
-          block.working ? "font-semibold text-progress-text" : "text-secondary",
+          "flex min-h-7 cursor-pointer items-center gap-2 self-start rounded-control px-3 text-left text-sm transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text",
+          block.working ? "text-progress-text" : "text-secondary",
         )}
         onClick={() => onToggle(troubled ? closedKey : block.key)}
         aria-expanded={expanded}
@@ -260,18 +288,7 @@ function StepsGroup({
             expanded && "rotate-90",
           )}
         />
-        {block.working && (
-          <CircleNotchIcon aria-hidden="true" className="size-4 shrink-0 animate-spin" />
-        )}
-        {block.working ? (
-          // The word keeps its own colour, which is what is measured and what is read; the light that passes over it
-          // is drawn over it by the style `working-shimmer` from the word itself.
-          <span className="working-shimmer" data-text="Working">
-            Working
-          </span>
-        ) : (
-          `Worked · ${plural(block.steps.length, "step", "steps")}`
-        )}
+        {block.working ? "Working" : `Worked · ${plural(block.steps.length, "step", "steps")}`}
         {said.length > 0 && (
           <span className="font-semibold text-error-text" data-testid="steps-trouble">
             {` · ${said.join(" · ")}`}
@@ -281,12 +298,10 @@ function StepsGroup({
       {expanded && (
         <div
           id={bodyId}
-          className="ml-4 flex flex-col gap-1 border-l-2 border-hairline py-1 pl-3"
+          className="ml-4 flex flex-col gap-0.5 border-l border-hairline py-1 pl-3"
           data-testid="steps"
         >
-          {block.steps.map((step) => (
-            <StepLine key={step.key} step={step} isOpen={isOpen} onToggle={onToggle} />
-          ))}
+          {rows}
         </div>
       )}
     </div>
@@ -391,9 +406,8 @@ export function Turn({
 }: TurnProps) {
   const isOpen = (key: string) => unfolded.has(key);
   const head = turn.head;
-  // A turn is written on the canvas rather than stacked in boxes: the person's message is a band of the sunken
-  // colour, and what the agent did, answered and got wrong is the text and the rows under it, in the order it came. A
-  // card of its own would put a second shadow inside the chat, which is itself a card on the page or a sheet over it.
+  // A turn is written on the canvas rather than stacked in boxes: the person's message is a bubble on the right, and
+  // what the agent did, answered and got wrong is the text and the rows under it, in the order it came.
   // Going again answers the whole turn once, so only its last error offers it.
   const lastError = turn.blocks.findLast((block) => block.kind === "error")?.key;
   const lastQuestion = turn.blocks.findLast((block) => block.kind === "question")?.key;
@@ -413,12 +427,11 @@ export function Turn({
       {head && (
         <ChatUserMessage
           content={head.message}
-          title={head.said === "steered" ? "You steered the chat" : "You"}
-          className="rounded-card"
-          headerRight={<CopyButton text={head.message} label="Copy your message" />}
+          steered={head.said === "steered"}
+          copy={<CopyButton text={head.message} label="Copy your message" />}
           renderMarkdown={({ content }) => (
             <p
-              className="break-words whitespace-pre-wrap text-base leading-relaxed text-text"
+              className="m-0 break-words whitespace-pre-wrap text-base leading-relaxed text-text"
               data-testid="person-message"
             >
               {content}

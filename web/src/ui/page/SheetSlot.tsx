@@ -1,12 +1,11 @@
 /**
- * The one place the two sheets share, over the page's right column: the shell holds which of them is showing, so the
- * Moebius agent and the package sheet never lie over each other. Opening one hides the other, which keeps its state; Escape and the
- * close control only reach the one that is showing.
+ * The place of the sheet over the page's right column: the shell holds whether it is showing. The Moebius agent no
+ * longer lies here (it has a panel of its own, `app/shell/AgentPanel.tsx`), so the package sheet has the slot to itself.
  */
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
 
 /** The sheets that take the slot. */
-export type SheetId = "chat" | "packages";
+export type SheetId = "packages";
 
 interface Slot {
   /** The sheet that is showing; none when both are hidden. */

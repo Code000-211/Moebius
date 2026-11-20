@@ -99,8 +99,8 @@ describe.skipIf(usesRealServer)("a cold load", () => {
     await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
     await page.waitForLoadState("networkidle");
     expect(seen.files.filter((file) => /\/AgentChat-/.test(file))).toEqual([]);
-    await page.getByRole("button", { name: "Ask Moebius" }).click();
-    await page.getByRole("dialog", { name: "Moebius agent" }).waitFor();
+    await page.keyboard.press("Control+j");
+    await page.getByRole("complementary", { name: "Moebius agent" }).waitFor();
     expect(seen.files.some((file) => /\/AgentChat-/.test(file))).toBe(true);
   });
 });

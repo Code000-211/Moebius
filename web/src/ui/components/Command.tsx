@@ -1,5 +1,5 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/Command.tsx (Apache-2.0), changed to this app's design
-// standard: every item is 32px tall and carries the control radius, the field of the query sits on the glass rather
+// standard: every row is 36px tall, an icon and a name and carries the control radius, the field of the query sits on the glass rather
 // than a rule, group headings are the small label rather than muted monospace, React 19 ComponentRef in place of
 // ElementRef, and one word — Search — for the dialog, the sidebar's entry and the field of the query.
 
@@ -121,7 +121,7 @@ const CommandItem = React.forwardRef<
   <CommandPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex min-h-8 cursor-pointer select-none items-center gap-3 rounded-control px-3 text-base outline-none",
+      "relative flex h-9 shrink-0 cursor-pointer select-none items-center gap-3 rounded-control px-3 text-base outline-none",
       "data-[selected=true]:bg-selected data-[selected=true]:text-text",
       "data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-45",
       className,

@@ -304,7 +304,10 @@ async function visit(page: Page, path: string) {
 async function askAssistant(page: Page) {
   const before = fake.chat.chats.length;
   fake.chat.autoAnswer = false;
-  await page.getByPlaceholder("Ask the agent").fill("What is waiting on the discount fix?");
+  // The docked field sends it, which opens the panel with the message.
+  await page
+    .getByRole("textbox", { name: "Ask Moebius" })
+    .fill("What is waiting on the discount fix?");
   await page.keyboard.press("Enter");
   await expect.poll(() => fake.chat.chats.length).toBe(before + 1);
   const id = (fake.chat.chats[0] as { id: number }).id;
@@ -340,7 +343,6 @@ for (const theme of THEMES) {
     await visit(hero, "/board/1?card=none");
     // The sidebar is a rail, so that the board and the Moebius agent both fit.
     await hero.getByRole("button", { name: "Collapse the sidebar" }).click();
-    await hero.getByRole("button", { name: "Ask Moebius" }).first().click();
     await askAssistant(hero);
     await hero.screenshot({ path: join(OUT, `hero-${theme}.png`) });
     // The Moebius agent's conversation is the hero's alone: the lists of the other pages do not hold it.
@@ -362,8 +364,9 @@ for (const theme of THEMES) {
     if (chatAtWork) chatAtWork.status = "running";
     await visit(page, "/chat/5");
     await shoot(page, "chat", theme);
-    await visit(page, "/rules?set=server");
+    await visit(page, "/rules");
     await page.getByRole("button", { name: "Edit rule no-secrets-in-code" }).click();
+    await page.getByRole("dialog").waitFor();
     await page
       .getByLabel("Rule text")
       .fill(

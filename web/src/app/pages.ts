@@ -10,6 +10,7 @@ import {
   ChatCircleIcon,
   ClockIcon,
   CpuIcon,
+  DotsThreeIcon,
   FadersHorizontalIcon,
   FlagIcon,
   FlaskIcon,
@@ -38,7 +39,7 @@ import {
 } from "@phosphor-icons/react";
 
 /** The sidebar group a page is in; the first group has no name. */
-export type Group = "" | "Projects" | "Plan" | "Build" | "Improve" | "Setup";
+export type Group = "" | "Projects" | "Plan" | "Build" | "Improve" | "Setup" | "More";
 
 export interface PageDef {
   /** The path, without the leading slash. */
@@ -86,6 +87,8 @@ export const PAGES: readonly PageDef[] = [
   { path: "people", title: "People", group: "Setup", icon: UsersIcon, ownerOnly: true },
   { path: "kinds", title: "Kinds of issues", group: "Setup", icon: ShapesIcon, ownerOnly: true },
   { path: "tokens", title: "My tokens", group: "Setup", icon: KeyIcon },
+  // The list of the pages with no other home; the sidebar draws its own link to it, so it has a group of its own.
+  { path: "more", title: "More", group: "More", icon: DotsThreeIcon },
 ];
 
 export const DEFAULT_PAGE = "inbox";

@@ -18,10 +18,11 @@ import { noun, plural } from "../../ui/lib/format";
 import { Box } from "../../ui/page/Box";
 import { Chip } from "../../ui/page/Chip";
 import { Empty } from "../../ui/page/Empty";
+import { Figures } from "../../ui/page/Figures";
 import { CELL, Table } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
-import { Reading, SkeletonCard } from "../../ui/page/Skeleton";
+import { Reading, SkeletonLines } from "../../ui/page/Skeleton";
 import { chart } from "../cycles/model";
 import { useDays, useScopeFilters } from "../scope";
 import { grouped, short } from "../usage/figures";
@@ -37,17 +38,6 @@ import {
   WINDOWS,
 } from "./model";
 
-/** A tile of the figures under the header. */
-function Tile({ label, value, note }: { label: string; value: string; note: string }) {
-  return (
-    <Box testId={label} className="flex flex-col gap-2">
-      <span className="text-sm font-semibold text-secondary">{label}</span>
-      <span className="text-xl font-semibold tabular-nums text-text">{value}</span>
-      <span className="text-sm text-secondary">{note}</span>
-    </Box>
-  );
-}
-
 /** How a spread of times is told under a tile: the middle and the slowest tenth. */
 function spreadNote(spread: Spread | null, what: string): string {
   return spread
@@ -60,10 +50,7 @@ function ThroughputBox({ data }: { data: Analytics }) {
   const days = bars(data.throughput);
   const total = data.totals.done;
   return (
-    <Box
-      title="Done each day"
-      aside={`${plural(total, "card", "cards")} in the last ${data.days} days`}
-    >
+    <Box title="Done each day">
       {total === 0 ? (
         <p className="m-0 text-base text-secondary">No card was done in this window.</p>
       ) : (
@@ -109,7 +96,7 @@ function ThroughputBox({ data }: { data: Analytics }) {
 function ColumnsBox({ data }: { data: Analytics }) {
   const columns = columnBars(data.columns);
   return (
-    <Box title="Time in each column" aside="what one card spends there, on average">
+    <Box title="Time in each column">
       {columns.length === 0 ? (
         <p className="m-0 text-base text-secondary">No card has sat in a column in this window.</p>
       ) : (
@@ -145,11 +132,14 @@ function ColumnsBox({ data }: { data: Analytics }) {
 /** What each project got done and what a point cost it. */
 function ProjectsBox({ data }: { data: Analytics }) {
   return (
-    <Box title="By project" aside={plural(data.projects.length, "project", "projects")}>
+    <Box title="By project">
       {data.projects.length === 0 ? (
         <p className="m-0 text-base text-secondary">No project has a card in these figures.</p>
       ) : (
-        <Table head={["Project", "Cards done", "Points done", "Tokens", "Tokens per point"]}>
+        <Table
+          figures
+          head={["Project", "Cards done", "Points done", "Tokens", "Tokens per point"]}
+        >
           {data.projects.map((project) => (
             <tr key={project.id}>
               <td className={CELL}>{project.name}</td>
@@ -195,7 +185,7 @@ function BurnChart({ burn }: { burn: BurnUp }) {
         fill="none"
         strokeWidth={2}
         vectorEffect="non-scaling-stroke"
-        className="stroke-complete"
+        className="stroke-cat-1"
       />
     </svg>
   );
@@ -209,9 +199,9 @@ function BurnUps({ title, list, none }: { title: string; list: BurnUp[]; none: s
         <p className="m-0 text-base text-secondary">{none}</p>
       ) : (
         // biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely
-        <ul role="list" className="m-0 grid list-none gap-4 p-0 lg:grid-cols-2">
+        <ul role="list" className="m-0 flex list-none flex-col gap-6 p-0">
           {list.map((burn) => (
-            <li key={burn.id} className="flex flex-col gap-2 rounded-card bg-raised p-3">
+            <li key={burn.id} className="flex flex-col gap-2">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="break-words text-base font-semibold text-text">{burn.name}</span>
                 <span className="text-sm text-secondary">
@@ -285,12 +275,8 @@ export function AnalyticsPage() {
         </Notice>
       ) : !data ? (
         <Reading message="Reading analytics" className="flex flex-col gap-4">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {[0, 1, 2, 3].map((tile) => (
-              <SkeletonCard key={tile} lines={2} />
-            ))}
-          </div>
-          <SkeletonCard lines={3} />
+          <SkeletonLines lines={2} />
+          <SkeletonLines lines={3} />
         </Reading>
       ) : isEmpty(data) ? (
         <Empty
@@ -299,33 +285,33 @@ export function AnalyticsPage() {
         />
       ) : (
         <div className="flex flex-col gap-4" data-window={data.days} aria-busy={report.isFetching}>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Tile
-              label="Cards done"
-              value={grouped(data.totals.done)}
-              note={`${plural(data.totals.points_done, "point", "points")} · ${data.totals.open} open`}
-            />
-            <Tile
-              label="Start to done"
-              value={data.cycle_time ? lengthOf(data.cycle_time.median_seconds) : "–"}
-              note={spreadNote(data.cycle_time, "started")}
-            />
-            <Tile
-              label="Made to done"
-              value={data.lead_time ? lengthOf(data.lead_time.median_seconds) : "–"}
-              note={spreadNote(data.lead_time, "done")}
-            />
-            <Tile
-              label="Tokens per point"
-              value={perPoint(data.totals.tokens_per_point)}
-              note={`${short(data.totals.tokens)} tokens on the cards done`}
-            />
-          </div>
+          <Figures
+            items={[
+              {
+                label: "Cards done",
+                value: grouped(data.totals.done),
+                hint: `${plural(data.totals.points_done, "point", "points")} · ${data.totals.open} open`,
+              },
+              {
+                label: "Start to done",
+                value: data.cycle_time ? lengthOf(data.cycle_time.median_seconds) : "–",
+                hint: spreadNote(data.cycle_time, "started"),
+              },
+              {
+                label: "Made to done",
+                value: data.lead_time ? lengthOf(data.lead_time.median_seconds) : "–",
+                hint: spreadNote(data.lead_time, "done"),
+              },
+              {
+                label: "Tokens per point",
+                value: perPoint(data.totals.tokens_per_point),
+                hint: `${short(data.totals.tokens)} tokens on the cards done`,
+              },
+            ]}
+          />
           <ThroughputBox data={data} />
-          <div className="grid gap-4 lg:grid-cols-2">
-            <ColumnsBox data={data} />
-            <ProjectsBox data={data} />
-          </div>
+          <ColumnsBox data={data} />
+          <ProjectsBox data={data} />
           <BurnUps title="Cycles" list={data.cycles} none="No cycle has a card in these figures." />
           <BurnUps
             title="Milestones"

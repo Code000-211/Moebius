@@ -12,11 +12,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { type ScrollerProps, Virtuoso, type VirtuosoHandle } from "react-virtuoso";
+import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Turn } from "../ui/chat/Turn";
 import { Button } from "../ui/components/Button";
 import { Empty } from "../ui/page/Empty";
-import { useScrollFades } from "../ui/page/ScrollFades";
 import { Reading, Skeleton, SkeletonThread } from "../ui/page/Skeleton";
 import type { Entry } from "./conversation";
 import {
@@ -29,32 +28,6 @@ import {
   shouldRepin,
 } from "./follow";
 import { groupTurns } from "./turns";
-
-/**
- * The scroller of the list, with the edges that have more behind them faded out. A conversation is read from its end,
- * so the text cut off at the top is always the part just left behind; fading it lets the turns blend into the heading
- * above rather than ending mid-word. The object that names it is made once, below, because a new one each render would
- * make the list build its scroller again.
- */
-function FadedScroller({ children, style, ref, ...rest }: ScrollerProps) {
-  const fades = useScrollFades<HTMLDivElement>();
-  const given = useRef(ref);
-  given.current = ref;
-  const hold = useCallback(
-    (element: HTMLDivElement | null) => {
-      fades.box.current = element;
-      const target = given.current;
-      if (typeof target === "function") target(element);
-      else if (target) target.current = element;
-    },
-    [fades.box],
-  );
-  return (
-    <div {...rest} ref={hold} onScroll={fades.measure} style={{ ...style, ...fades.style }}>
-      {children}
-    </div>
-  );
-}
 
 /**
  * What the row above the oldest turn can say: whether a page of the chat is on its way, why it could not come, and
@@ -111,7 +84,7 @@ function OlderRow({ context }: { context: Older }) {
   );
 }
 
-const COMPONENTS = { Scroller: FadedScroller, Header: OlderRow };
+const COMPONENTS = { Header: OlderRow };
 
 interface ThreadViewProps {
   entries: Entry[];

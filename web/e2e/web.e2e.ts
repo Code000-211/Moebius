@@ -82,6 +82,33 @@ describe("signing in", () => {
     expect(path()).toBe("/inbox");
   });
 
+  it("keeps the sign-in across a closed browser with Stay signed in, and drops it without", async () => {
+    await fresh();
+    await page.goto(server.url);
+    const stay = page.getByLabel("Stay signed in");
+    expect(await stay.isChecked()).toBe(true);
+    await page.getByLabel("Token").fill(server.token);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await pages().waitFor();
+    // A cookie with an expiry survives the browser being closed; reload and the stored state both stay signed in.
+    const kept = (await context.cookies()).find((c) => c.name === "moebius_session");
+    expect(kept?.expires).toBeGreaterThan(Date.now() / 1000);
+    await page.reload();
+    await pages().waitFor();
+
+    await context.clearCookies();
+    await page.goto(server.url);
+    await stay.uncheck();
+    await page.getByLabel("Token").fill(server.token);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await pages().waitFor();
+    // Without an expiry the cookie ends with the browser session: a new browser starts without it.
+    const session = (await context.cookies()).find((c) => c.name === "moebius_session");
+    expect(session?.expires).toBe(-1);
+    await page.reload();
+    await pages().waitFor();
+  });
+
   it("signs a person in with the access token an owner made for them", async () => {
     await fresh();
     const added = await fetch(`${server.url}/v1/people`, {
@@ -138,7 +165,7 @@ describe("signing in", () => {
     await page.goto(server.loginUrl);
     await pages().waitFor();
     await pages().getByRole("link", { name: "Settings" }).click();
-    await page.getByRole("heading", { name: "Settings", level: 1 }).waitFor();
+    await page.getByRole("heading", { name: "General", level: 2 }).waitFor();
     await page.getByRole("button", { name: "Sign out" }).click();
     // The way back in: the sign-in form's own field, named exactly, since Settings has several that say Token.
     await page.getByLabel("Token", { exact: true }).waitFor();
@@ -344,6 +371,51 @@ describe("the command bar", () => {
     await page.waitForURL("**/retro");
     await input.waitFor({ state: "detached" });
     await page.getByRole("heading", { name: "Retro", level: 1 }).waitFor();
+  });
+
+  it("draws rows of 36px with an icon and no key hint", async () => {
+    await fresh();
+    await page.goto(server.loginUrl);
+    await pages().waitFor();
+    await page.keyboard.press("Control+k");
+    const dialog = page.getByRole("dialog", { name: "Search" });
+    await dialog.getByRole("option").first().waitFor();
+    expect(await dialog.locator("kbd").count()).toBe(0);
+    const row = await dialog.getByRole("option").first().boundingBox();
+    expect(row?.height).toBe(36);
+    for (const option of await dialog.getByRole("option").all()) {
+      expect(await option.locator("svg").count()).toBeGreaterThan(0);
+    }
+  });
+
+  it("sends the typed text to the agent on Tab, and does nothing on Tab with no text", async () => {
+    await fresh();
+    await page.goto(server.loginUrl);
+    await pages().waitFor();
+    const agent = page.getByRole("complementary", { name: "Moebius agent" });
+    await page.keyboard.press("Control+k");
+    const input = page.getByPlaceholder("Search…");
+    await input.waitFor();
+    await page.keyboard.press("Tab");
+    expect(await input.isVisible()).toBe(true);
+    expect(await agent.count()).toBe(0);
+    await input.fill("What is this page?");
+    await page.keyboard.press("Tab");
+    await input.waitFor({ state: "detached" });
+    await agent.waitFor();
+    await agent.getByText("You said: What is this page?").first().waitFor();
+  });
+
+  it("starts a new conversation with the agent from the palette", async () => {
+    await fresh();
+    await page.goto(server.loginUrl);
+    await pages().waitFor();
+    const agent = page.getByRole("complementary", { name: "Moebius agent" });
+    await page.keyboard.press("Control+k");
+    await page.getByPlaceholder("Search…").fill("new conversation");
+    await page.getByRole("option", { name: "New conversation" }).click();
+    await agent.waitFor();
+    expect(await agent.getByText("You said:").count()).toBe(0);
   });
 
   it("opens from the sidebar's search and closes with Escape", async () => {

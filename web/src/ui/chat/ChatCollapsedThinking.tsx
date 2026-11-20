@@ -1,7 +1,7 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/ChatCollapsedThinking.tsx (Apache-2.0), changed: no i18n; the
-// row is a real button 32px tall with a readable label, and the thinking it holds is body text at the size of the
+// row is a real button 32px tall with a lightbulb in front and no caret with a readable label, and the thinking it holds is body text at the size of the
 // conversation rather than a muted line; `workspaceId` is gone.
-import { CaretRightIcon } from "@phosphor-icons/react";
+import { LightbulbIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
 import { elapsed } from "../lib/format";
@@ -38,6 +38,17 @@ export function thinkingLabel(seconds: number | null | undefined, ongoing: boole
   return `Thought ${elapsed(seconds)}`;
 }
 
+/** The label with its length, if it has one, as a quieter figure beside the word: "Thought" and "6s". */
+function ThoughtLabel({ label }: { label: string }) {
+  const [word, ...rest] = label.split(" ");
+  return (
+    <>
+      {word}
+      {rest.length > 0 && <span className="text-muted tabular-nums"> {rest.join(" ")}</span>}
+    </>
+  );
+}
+
 /**
  * A collapsible group for thinking entries. Collapsed it is one 32px row that says what it was and how long it
  * took, at the size of the other steps of the turn so that a thought does not shout over the answer it led to; opened,
@@ -59,18 +70,12 @@ export function ChatCollapsedThinking({
     <div className={cn("flex flex-col", className)}>
       <button
         type="button"
-        className="flex min-h-8 cursor-pointer items-center gap-2 self-start rounded-control px-3 text-left text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
+        className="flex min-h-7 cursor-pointer items-center gap-2 self-start rounded-control px-3 text-left text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
         onClick={onToggle}
         aria-expanded={expanded}
       >
-        <CaretRightIcon
-          aria-hidden="true"
-          className={cn(
-            "size-4 shrink-0 transition-transform duration-(--motion-routine) ease-out",
-            expanded && "rotate-90",
-          )}
-        />
-        {thinkingLabel(seconds, ongoing)}
+        <LightbulbIcon aria-hidden="true" className="size-4 shrink-0" />
+        <ThoughtLabel label={thinkingLabel(seconds, ongoing)} />
       </button>
 
       {expanded && (

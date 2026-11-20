@@ -1,42 +1,19 @@
 // @vitest-environment jsdom
 /**
  * The properties pane: it is there for a page that has properties and hidden for one that has none, it has no folded
- * rail and no row for the agent, `Ctrl+J` opens the agent over it, and the properties keep their state while the agent
- * lies over them.
+ * rail and no row for the agent, it is hidden while the agent's panel is open, and the properties keep their state
+ * while it is.
  */
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { MemoryRouter } from "react-router";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { PageProperties, PropertiesProvider, usePropertiesShown } from "../../ui/page/Properties";
-import { SheetSlotProvider } from "../../ui/page/SheetSlot";
+import { AgentProvider, useAgent } from "./AgentContext";
 import { RightColumn } from "./RightColumn";
-
-// The agent's conversation follows the event stream, which these tests have none of.
-vi.mock("../../live/LiveProvider", () => ({
-  useServerEvents: () => {},
-  useWatchRun: () => {},
-  useConnection: () => "online",
-}));
-
-beforeEach(() => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (path: string) => {
-      if (path === "/v1/snapshot") {
-        return new Response(JSON.stringify({ boards: [], harness_changes: [], inbox: [] }));
-      }
-      if (path.startsWith("/v1/chats")) return new Response("[]");
-      return new Response(`no stub for ${path}`, { status: 404 });
-    }),
-  );
-});
 
 afterEach(() => {
   cleanup();
-  vi.unstubAllGlobals();
-  localStorage.clear();
 });
 
 /** A property with state of its own: a count that only a remount would lose. */
@@ -54,29 +31,36 @@ function Beside() {
   return <output aria-label="Beside">{usePropertiesShown() ? "shown" : "slim"}</output>;
 }
 
+/** Stands for the dock and the panel's close control. */
+function Toggle() {
+  const agent = useAgent();
+  return (
+    <button type="button" onClick={() => (agent.open ? agent.hide() : agent.show())}>
+      {agent.open ? "agent open" : "agent closed"}
+    </button>
+  );
+}
+
 function mount(withProperties: boolean) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/workflows/release"]}>
-        <SheetSlotProvider>
-          <PropertiesProvider>
-            {withProperties && (
-              <PageProperties label="Definition">
-                <Counter />
-              </PageProperties>
-            )}
-            <RightColumn />
-            <Beside />
-          </PropertiesProvider>
-        </SheetSlotProvider>
-      </MemoryRouter>
-    </QueryClientProvider>,
+    <MemoryRouter initialEntries={["/workflows/release"]}>
+      <AgentProvider>
+        <PropertiesProvider>
+          {withProperties && (
+            <PageProperties label="Definition">
+              <Counter />
+            </PageProperties>
+          )}
+          <RightColumn />
+          <Beside />
+          <Toggle />
+        </PropertiesProvider>
+      </AgentProvider>
+    </MemoryRouter>,
   );
 }
 
 const column = () => document.querySelector('[data-surface="right-column"]') as HTMLElement;
-const agent = () => screen.queryByRole("dialog", { name: "Moebius agent" });
 
 describe("the properties pane", () => {
   it("draws a page's properties in the pane", async () => {
@@ -110,28 +94,22 @@ describe("the properties pane", () => {
     expect(screen.getByRole("status", { name: "Beside" }).textContent).toBe("slim");
   });
 
-  it("opens the agent with Ctrl+J, the properties kept as they were, and goes back with Properties", async () => {
+  it("hides the pane while the agent is open, the properties kept as they were", async () => {
     mount(true);
     fireEvent.click(await screen.findByRole("button", { name: "Pressed 0" }));
-    fireEvent.keyDown(window, { key: "j", ctrlKey: true });
-    expect(await screen.findByRole("dialog", { name: "Moebius agent" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Pressed 1" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Properties" }));
-    expect(agent()).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "agent closed" }));
+    expect(column().hidden).toBe(true);
+    expect(screen.getByRole("status", { name: "Beside" }).textContent).toBe("slim");
+    fireEvent.click(screen.getByRole("button", { name: "agent open" }));
+    expect(column().hidden).toBe(false);
     expect(screen.getByRole("button", { name: "Pressed 1" })).toBeTruthy();
   });
 
-  it("toggles the agent with Ctrl+J and closes it on Escape", async () => {
+  it("toggles the agent with Ctrl+J", () => {
     mount(false);
-    expect(agent()).toBeNull();
     fireEvent.keyDown(window, { key: "j", ctrlKey: true });
-    expect(await screen.findByRole("dialog", { name: "Moebius agent" })).toBeTruthy();
-    // A page without properties has nothing to go back to.
-    expect(screen.queryByRole("button", { name: "Properties" })).toBeNull();
+    expect(screen.getByRole("button", { name: "agent open" })).toBeTruthy();
     fireEvent.keyDown(window, { key: "j", ctrlKey: true });
-    expect(agent()).toBeNull();
-    fireEvent.keyDown(window, { key: "j", ctrlKey: true });
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(agent()).toBeNull();
+    expect(screen.getByRole("button", { name: "agent closed" })).toBeTruthy();
   });
 });

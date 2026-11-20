@@ -16,12 +16,10 @@ import { keys } from "../../api/keys";
 import type { ServerSettings } from "../../api/types/settings";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { Box } from "../../ui/page/Box";
-import { Field, Select } from "../../ui/page/Field";
+import { FieldRow, Rows, Select } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
-import { Body, PageHeader } from "../../ui/page/PageHeader";
+import { Body } from "../../ui/page/PageHeader";
 import { Reading, SkeletonCard } from "../../ui/page/Skeleton";
-import { Appearance } from "./Appearance";
 import type { Form } from "./fields";
 import {
   changed,
@@ -31,7 +29,7 @@ import {
   readForms,
   type Field as Setting,
 } from "./fields";
-import { Code, KeyValue, KeyValueGrid } from "./parts";
+import { AreaTitle, Code, Section, ValueRow } from "./parts";
 import { RestartBanner } from "./RestartBanner";
 import { WebhooksBox } from "./Webhooks";
 
@@ -39,14 +37,13 @@ type Outcome = { tone: "ok" | "error"; text: string } | null;
 
 export function SettingsPage() {
   const data = useQuery({ queryKey: keys.settings, queryFn: () => settings() });
-  const header = <PageHeader title="Settings" />;
+  const header = <AreaTitle title="General" />;
   // The heading stays while the file is read, so the page does not move under a person who is already looking at it.
   if (data.isPending) {
     return (
       <>
         {header}
-        <Reading message="Reading the settings" className="grid items-start gap-6 xl:grid-cols-2">
-          <SkeletonCard lines={4} />
+        <Reading message="Reading the settings" className="flex max-w-3xl flex-col gap-6">
           <SkeletonCard lines={4} />
         </Reading>
       </>
@@ -106,9 +103,9 @@ function SettingsForm({ initial }: { initial: ServerSettings }) {
   const wrong = forms.some((form) => form.fields.some((field) => "error" in fieldValue(field)));
 
   return (
-    <div>
-      <PageHeader
-        title="Settings"
+    <div className="max-w-3xl">
+      <AreaTitle
+        title="General"
         actions={
           <Button
             size="sm"
@@ -125,20 +122,17 @@ function SettingsForm({ initial }: { initial: ServerSettings }) {
       <div className="flex flex-col gap-6">
         <RestartBanner />
         {outcome && <Notice tone={outcome.tone}>{outcome.text}</Notice>}
-        <div className="grid items-start gap-6 xl:grid-cols-2">
+        <div>
           {forms.map((form) => (
-            <Box key={form.title} title={form.title} className="min-w-0">
-              <div className="flex flex-col gap-4">
+            <Section key={form.title} title={form.title}>
+              <Rows>
                 {form.fields.map((each) => (
                   <KeyInput key={each.key} field={each} onChange={(text) => edit(each.key, text)} />
                 ))}
-              </div>
-            </Box>
+              </Rows>
+            </Section>
           ))}
-        </div>
-        <WebhooksBox />
-        <div className="grid items-start gap-6 xl:grid-cols-2">
-          <Appearance />
+          <WebhooksBox />
           <ThisServer
             info={info.data}
             pending={info.isPending}
@@ -159,10 +153,11 @@ function KeyInput({ field, onChange }: { field: Setting; onChange: (text: string
   const typed = fieldValue(field);
   const problem = "error" in typed ? typed.error : undefined;
   return (
-    <Field
+    <FieldRow
       label={field.label}
       error={problem}
-      hint={showsDefault ? `Default ${field.default}` : undefined}
+      description={showsDefault ? `Default ${field.default}` : undefined}
+      wide
     >
       {field.kind === "yesno" ? (
         <Select
@@ -186,7 +181,7 @@ function KeyInput({ field, onChange }: { field: Setting; onChange: (text: string
           }
         />
       )}
-    </Field>
+    </FieldRow>
   );
 }
 
@@ -213,22 +208,22 @@ function ThisServer({
 }) {
   if (error) {
     return (
-      <Box title="This server">
+      <Section title="This server">
         <Notice tone="error">{error}</Notice>
-      </Box>
+      </Section>
     );
   }
   return (
-    <Box title="This server" aside={pending ? "Reading" : undefined}>
+    <Section title="This server" aside={pending ? "Reading" : undefined}>
       {info ? (
-        <KeyValueGrid>
+        <Rows>
           {rows(info).map(([label, value]) => (
-            <KeyValue key={label} label={label} value={<Code>{value}</Code>} />
+            <ValueRow key={label} label={label} value={<Code>{value}</Code>} />
           ))}
-        </KeyValueGrid>
+        </Rows>
       ) : (
         <Body>Reading where the server runs</Body>
       )}
-    </Box>
+    </Section>
   );
 }
