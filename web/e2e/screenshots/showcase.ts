@@ -165,6 +165,8 @@ function card(id: number, extra: Record<string, unknown>) {
     id,
     repository_id: 1,
     project_id: 1,
+    project_key: "SHOP",
+    project_number: id,
     number: id,
     title: "",
     body: "",

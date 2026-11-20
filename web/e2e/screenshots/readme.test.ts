@@ -25,6 +25,7 @@ beforeAll(async () => {
   fake = await startFakeServer();
   mkdirSync(OUT, { recursive: true });
   await seedRules();
+  await seedWiki();
   seedChats();
 });
 
@@ -71,6 +72,32 @@ Do not add a crate to Cargo.toml unless the issue names it.
   });
   await put("/v1/repositories/1/settings/rules.md", {
     text: "## migrations-are-forward-only\nDo not edit a migration that has been merged. Add a new one.",
+  });
+}
+
+/** The pages of the wiki's picture: a runbook that links to another page and to a card. */
+async function seedWiki() {
+  await put("/v1/wiki/pages/runbooks/rollback", {
+    text: "# Rolling back\n\nRedeploy the tag before the bad one with `deploy.sh <tag>`.\n",
+  });
+  await put("/v1/wiki/pages/runbooks/deploy", {
+    text: `# Deploying the storefront
+
+The storefront deploys from \`main\` every weekday at 10:00. A change waits in the inbox until a person merges it.
+
+## Before
+
+- Every check of the change is green.
+- The migrations of the release are forward only; see [[runbooks/rollback|Rolling back]] if one fails.
+
+## Steps
+
+1. Tag the release: \`git tag v$(date +%Y.%m.%d)\`.
+2. Run \`deploy.sh\` with the tag, and watch the error rate for ten minutes.
+3. Post the tag in the release channel.
+
+The export of orders (SHOP-24) is slow for the bigger shops: deploy it outside the busy hours.
+`,
   });
 }
 
@@ -210,6 +237,22 @@ async function answer(page: Page) {
       });
     }
     if (path === "/v1/changes/1/diff") return json(route, { diff, truncated: false });
+    // A card of the showcase is read from the snapshot; what the fake keeps of its own cards is left out.
+    const card = /^\/v1\/cards\/(\d+)(?:\/([a-z]+))?$/.exec(path);
+    if (card) {
+      const found = snapshot()
+        .boards.flatMap((board) => board.cards)
+        .find((each) => each.id === Number(card[1]));
+      if (!card[2] && found) return json(route, found);
+      if (card[2] === "history" || card[2] === "comments" || card[2] === "runs")
+        return json(route, []);
+    }
+    // The showcase's repository keeps no `.moebius/` folder, so the board shows no warning about one.
+    if (path === "/v1/repositories/1/settings") {
+      const response = await route.fetch();
+      const body = (await response.json()) as Record<string, unknown>;
+      return json(route, { ...body, leftover: [] });
+    }
     if (
       path === "/v1/agents" ||
       path === "/v1/models/available" ||
@@ -277,11 +320,11 @@ async function askAssistant(page: Page) {
     id: "b",
     tool: "bash",
     args: { command: '"$MOEBIUS" card 30' },
-    output: "#30 Add the refunds endpoint: waiting on #24",
+    output: "SHOP-30 Add the refunds endpoint: waiting on SHOP-24",
   });
   fake.chat.delta(
     id,
-    "\n\nOne card: #30, the refunds endpoint. It waits for #24, the discount fix, which the Coder is testing now. #24 is in its first round, so #30 should start within the hour.",
+    "\n\nOne card: SHOP-30, the refunds endpoint. It waits for SHOP-24, the discount fix, which the Coder is testing now. SHOP-24 is in its first round, so SHOP-30 should start within the hour.",
   );
   fake.chat.settle(id, "Done.");
   await page.waitForTimeout(1200);
@@ -294,10 +337,10 @@ const shoot = (page: Page, name: string, theme: string) =>
 for (const theme of THEMES) {
   it(`takes the pictures in the ${theme} theme`, async () => {
     const hero = await open(theme, 1.44, 1132, 2012);
-    await visit(hero, "/board/1");
+    await visit(hero, "/board/1?card=none");
     // The sidebar is a rail, so that the board and the Moebius agent both fit.
     await hero.getByRole("button", { name: "Collapse the sidebar" }).click();
-    await hero.getByRole("button", { name: "Ask Moebius" }).click();
+    await hero.getByRole("button", { name: "Ask Moebius" }).first().click();
     await askAssistant(hero);
     await hero.screenshot({ path: join(OUT, `hero-${theme}.png`) });
     // The Moebius agent's conversation is the hero's alone: the lists of the other pages do not hold it.
@@ -309,12 +352,17 @@ for (const theme of THEMES) {
     // The chat at work is the chat page's picture; the Fleet shows the cards' runs.
     const chatAtWork = fake.chat.chats.find((chat) => chat.status === "running");
     if (chatAtWork) chatAtWork.status = "stopped";
+    // A card of the board with its properties in the right column.
+    await visit(page, "/board/1?card=24");
+    await shoot(page, "card", theme);
+    await visit(page, "/wiki?page=runbooks/deploy");
+    await shoot(page, "wiki", theme);
     await visit(page, "/fleet");
     await shoot(page, "fleet", theme);
     if (chatAtWork) chatAtWork.status = "running";
     await visit(page, "/chat/5");
     await shoot(page, "chat", theme);
-    await visit(page, "/rules");
+    await visit(page, "/rules?set=server");
     await page.getByRole("button", { name: "Edit rule no-secrets-in-code" }).click();
     await page
       .getByLabel("Rule text")
