@@ -107,7 +107,7 @@ describe("the inbox", () => {
       await page.getByRole("heading", { name: "All caught up" }).waitFor();
       await page.getByText(/Nothing is waiting on you\./).waitFor();
     } else {
-      await page.getByText(/things need you/).waitFor();
+      await page.getByRole("tab", { name: /^All \d+/ }).waitFor();
     }
   });
 
@@ -130,7 +130,7 @@ describe("the inbox", () => {
         data: { reason: "no mockup yet" },
       });
       server.broadcast?.({ kind: "card_updated", data: {} });
-      await page.getByText("11 things need you.").waitFor();
+      await expect.poll(() => items().count()).toBe(11);
       expect(await items().count()).toBe(11);
       const kinds = [
         [
@@ -231,9 +231,8 @@ describe("the inbox", () => {
       await kinds.getByRole("tab", { name: "All 9" }).waitFor();
 
       await kinds.getByRole("tab", { name: "Stuck 1" }).click();
-      // Counted only once the page says it filtered, so the count is not of the list before the click.
-      await page.getByText("9 things need you; 1 shown.").waitFor();
-      expect(await items().count()).toBe(1);
+      // Counted once the list has been filtered, so the count is not of the list before the click.
+      await expect.poll(() => items().count()).toBe(1);
       expect(await kinds.getByRole("tab", { name: "Stuck 1" }).getAttribute("aria-selected")).toBe(
         "true",
       );
@@ -245,21 +244,20 @@ describe("the inbox", () => {
       await bar.getByRole("button", { name: "Repository is second", exact: true }).click();
       await page.getByRole("menuitemradio", { name: "demo", exact: true }).click();
       await page.getByText("No item matches the filter.").waitFor({ state: "detached" });
-      await page.getByText("9 things need you; 1 shown.").waitFor();
+      await expect.poll(() => items().count()).toBe(1);
       expect(await items().count()).toBe(1);
 
       // The address holds both, so a reload shows the same page.
       await page.reload();
       await bar.getByRole("button", { name: "Repository is demo", exact: true }).waitFor();
-      await page.getByText("9 things need you; 1 shown.").waitFor();
+      await expect.poll(() => items().count()).toBe(1);
       expect(await kinds.getByRole("tab", { name: "Stuck 1" }).getAttribute("aria-selected")).toBe(
         "true",
       );
 
       await bar.getByRole("button", { name: "Clear filters" }).click();
       await kinds.getByRole("tab", { name: /^All \d+$/ }).click();
-      await page.getByText("9 things need you.").waitFor();
-      expect(await items().count()).toBe(9);
+      await expect.poll(() => items().count()).toBe(9);
     },
   );
 
@@ -913,10 +911,8 @@ describe("the fleet", () => {
   it("loads for a real server and for the fake", async () => {
     await open("/fleet");
     await page.getByRole("heading", { name: "Fleet", level: 1 }).waitFor();
-    await page
-      .getByText(usesRealServer ? "Nothing is working." : /agents? working/)
-      .first()
-      .waitFor();
+    if (usesRealServer) await page.getByText("Nothing is working.").first().waitFor();
+    else await page.getByTestId("fleet-row").first().waitFor();
   });
 
   it.skipIf(usesRealServer)(
@@ -954,7 +950,7 @@ describe("the fleet", () => {
       server.broadcast?.({ kind: "run_started", data: { run: chat } });
       server.broadcast?.({ kind: "lagged", data: { missed: 1 } });
 
-      await page.getByText("2 agents working").waitFor();
+      await expect.poll(() => page.getByTestId("fleet-row").count()).toBe(2);
       const tiles = page.getByTestId("fleet-row");
       const card = tiles.filter({ hasText: "#1 Add a feature" });
       // The rows are grouped by their agent, whose name heads the group.
@@ -1047,13 +1043,12 @@ describe("the fleet", () => {
         repository_id: 1,
       }) as number;
       server.broadcast?.({ kind: "run_started", data: { run: chat } });
-      await page.getByText("2 agents working").waitFor();
+      await expect.poll(() => page.getByTestId("fleet-row").count()).toBe(2);
       const tiles = page.getByTestId("fleet-row");
       const bar = page.getByRole("search", { name: "Filter the runs" });
 
       await addFilter(page, bar, "Agent", "Coder");
-      await page.getByText("1 agent working · 2 in all").waitFor();
-      expect(await tiles.count()).toBe(1);
+      await expect.poll(() => tiles.count()).toBe(1);
       await tiles.filter({ hasText: "#1 Add a feature" }).waitFor();
       expect(path()).toBe("/fleet?agent=Coder");
 
@@ -1066,7 +1061,7 @@ describe("the fleet", () => {
       await addFilter(page, bar, "Kind", "chat");
       await page.getByText("No run matches").waitFor();
       await bar.getByRole("button", { name: "Clear filters" }).click();
-      await page.getByText("2 agents working").waitFor();
+      await expect.poll(() => page.getByTestId("fleet-row").count()).toBe(2);
       expect(await tiles.count()).toBe(2);
       expect(path()).toBe("/fleet");
     },
@@ -1194,7 +1189,7 @@ describe("get started", () => {
 
   it.skipIf(usesRealServer)("lists the steps with a button for each that is missing", async () => {
     await open("/start");
-    await page.getByText("A few things have to be set up before the first card can run.").waitFor();
+    await page.getByTestId("start-step").first().waitFor();
     const steps = page.getByTestId("start-step");
     await steps
       .filter({ hasText: "Connect a model provider" })
@@ -1243,7 +1238,6 @@ describe("get started", () => {
       await pages.getByRole("link", { name: "Get started" }).waitFor();
       fake().completeStart();
       await page.getByRole("button", { name: "Refresh" }).click();
-      await page.getByText("Everything is set up. Cards can run.").waitFor();
       await pages.getByRole("link", { name: "Get started" }).waitFor({ state: "detached" });
     },
   );

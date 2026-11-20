@@ -1,6 +1,5 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/Button.tsx (Apache-2.0), changed to this app's design standard:
-// the variants are primary, secondary, ghost, danger and attention; the primary fills with the ink colour and labels it
-// with the canvas colour and has a slight relief drawn inside its box; the attention one also wears an outline (not a ring, which is a shadow) in the
+// the variants are primary, secondary, ghost, danger and attention; the primary fills with `--accent-fill`, edged in `--accent-border` with a white label; the attention one also wears an outline (not a ring, which is a shadow) in the
 // warning's border colour, because its fill is close to the canvas of a warning banner; nothing else carries a border, a size under 28px, or a colour
 // of its own; the focus ring comes from the
 // global `:focus-visible` rule in `styles/tailwind.css`; a button that cannot be pressed and has a reason stays
@@ -18,7 +17,7 @@ import { Tooltip } from "./Tooltip";
 /**
  * One implementation of a button, for every page.
  *
- * `primary` is the one clear action of a screen and fills with the ink colour; `secondary` and `ghost` are quieter
+ * `primary` is the one clear action of a screen and fills with the indigo accent, a white label on it; `secondary` and `ghost` are quieter
  * alternatives beside it; `danger` is the destructive one, which says what it does in its label or, when it is only a
  * trashcan, in its `aria-label`, and `attention` is the action of a warning, which wears the warning's own colours.
  * Both hover to a token of their own (`--error-hover`, `--attention-hover`), opaque and checked for contrast in
@@ -30,7 +29,8 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        primary: "bg-text text-on-ink shadow-relief hover:bg-text/90",
+        primary:
+          "bg-accent-fill text-white outline outline-1 -outline-offset-1 outline-accent-border hover:bg-accent-fill/90",
         secondary:
           "bg-transparent text-text outline outline-1 -outline-offset-1 outline-hairline-strong hover:bg-hover",
         ghost: "bg-transparent text-secondary hover:bg-hover hover:text-text",

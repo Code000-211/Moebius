@@ -135,10 +135,6 @@ describe.skipIf(usesRealServer)("the Cycles page", () => {
     });
     // The closed cycle keeps both cards and is closed; the open one has the carried card.
     await page.getByRole("button", { name: "Close cycle" }).waitFor({ state: "detached" });
-    await page
-      .getByText(/Closed$/)
-      .first()
-      .waitFor();
     await page.getByRole("button", { name: "All cycles" }).click();
     await row("Cycle 2").getByText("0 of 3 points · 0 of 1 card").waitFor();
     await row("Cycle 1").getByText("5 of 8 points · 1 of 2 cards").waitFor();

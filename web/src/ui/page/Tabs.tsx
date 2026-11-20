@@ -1,6 +1,7 @@
 /**
- * The switch between the views of one thing — a run's events, changes and terminal. Each is a
- * 32px row at the control radius, the chosen one is the selected fill rather than an underline. The row is a tablist with the focus on one
+ * The switch between the views of one thing — a run's events, changes and terminal. Each is a word 26px high in the
+ * muted colour; the chosen one is indigo, semibold, with a 2px underline of the accent that sits on the bottom rule of
+ * what holds the row. No pill, no fill. The row is a tablist with the focus on one
  * tab: only the chosen one is in the tab order, and an arrow key moves the choice and the focus with it, so Tab steps
  * out of the row rather than through it. `TabPanel` is the view a tab chooses; it names the tab that shows it, and the
  * chosen tab names it in turn. A page takes one id from `useId` and gives it to both, under `idBase`.
@@ -36,7 +37,7 @@ export function Tabs<T extends string>({
       role="tablist"
       aria-label={label}
       ref={row}
-      className={cn("flex flex-wrap gap-2", className)}
+      className={cn("flex flex-wrap items-end gap-4", className)}
       onKeyDown={(event) => {
         if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
         const at = tabs.findIndex((each) => each.value === value);
@@ -65,10 +66,10 @@ export function Tabs<T extends string>({
             aria-controls={chosen ? panelId(idBase, each.value) : undefined}
             onClick={() => onChange(each.value)}
             className={cn(
-              "inline-flex min-h-8 cursor-pointer items-center gap-2 rounded-control px-3 text-base transition-colors duration-(--motion-fast) ease-out",
+              "relative inline-flex h-[26px] cursor-pointer items-center gap-1 rounded-control bg-transparent px-1 text-base transition-colors duration-(--motion-fast) ease-out",
               chosen
-                ? "bg-selected font-medium text-text"
-                : "bg-transparent text-secondary hover:bg-hover hover:text-text",
+                ? "font-semibold text-accent-text after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-accent"
+                : "text-muted hover:bg-hover hover:text-text",
             )}
           >
             {each.label}

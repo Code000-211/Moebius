@@ -16,6 +16,8 @@
  * a live region is announced when its text changes and not reliably when it is inserted already holding text. The
  * bars themselves are hidden from a screen reader: they are the shape of writing, not writing.
  *
+ * A placeholder is still: no animation, since the running ring is the only thing that moves.
+ *
  * The fill is the hairline token, the tenth of the text colour that a divider is drawn with, so a bar reads as a line
  * that has not been drawn yet rather than as a control that cannot be used. It works in either theme and adds no colour
  * of its own to the standard.
@@ -31,10 +33,7 @@ export function Skeleton({ className }: { className?: string }) {
   return (
     <span
       aria-hidden="true"
-      className={cn(
-        "block h-3 shrink-0 rounded-round bg-hairline animate-pulse motion-reduce:animate-none",
-        className,
-      )}
+      className={cn("block h-3 shrink-0 rounded-round bg-hairline", className)}
     />
   );
 }
@@ -81,7 +80,7 @@ function Lines({ lines, className }: { lines: number; className?: string }) {
   );
 }
 
-/** The rows of the list on the left of a page, on their way: `ListCard`s with nothing said on them yet. */
+/** The rows of a list on their way: rows of 36px with a hairline between them and nothing said on them yet. */
 export function SkeletonList({
   rows = 4,
   message,
@@ -92,15 +91,16 @@ export function SkeletonList({
   className?: string;
 }) {
   return (
-    <Reading message={message} className={cn("flex flex-col gap-2", className)}>
+    <Reading message={message} className={cn("flex flex-col", className)}>
       {Array.from({ length: rows }, (_, place) => (
         <div
           // biome-ignore lint/suspicious/noArrayIndexKey: the rows of a placeholder draw the same every time, in order
           key={place}
-          className="flex flex-col gap-2 rounded-control bg-surface p-3"
+          data-skeleton-row=""
+          className="flex h-row-list items-center gap-3 border-b border-hairline px-4 last:border-b-0"
         >
-          <Skeleton className="h-4 w-2/5" />
-          <Skeleton className="w-3/4" />
+          <Skeleton className="size-4" />
+          <Skeleton className="w-3/5" />
         </div>
       ))}
     </Reading>

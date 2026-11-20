@@ -1,8 +1,11 @@
 /**
- * The state of a place with nothing in it yet: what belongs here and how to begin. It replaces a blank panel or a row
- * of machinery, and carries an action only when there is one to take. On the canvas it is a card of its own; where it
- * sits on a surface that is already one — a card, a lane of the board — it is `plain`, because one surface is enough to
- * read a sentence on.
+ * The state of a place with nothing in it yet: an icon, one short line and one action. It replaces a blank panel and
+ * carries an action only when there is one to take. It is never a card: it is drawn straight on the panel, with no
+ * surface, outline or shadow of its own, so it reads the same on a page, in a lane of the board and inside a box.
+ *
+ * ```tsx
+ * <Empty icon={<Check />} title="Nothing needs you" action={<Button>Open Fleet</Button>} />
+ * ```
  */
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
@@ -12,55 +15,38 @@ export function Empty({
   body,
   icon,
   action,
-  plain = false,
   centered = false,
   className,
 }: {
-  /**
-   * What belongs here, said plainly: "No agent yet". Only where the place has no name on the screen already — a column
-   * whose header says what it is needs the sentence alone.
-   */
+  /** The one short line: "Nothing needs you". */
   title?: string;
-  /** How to begin, or what the absence means. */
+  /** How to begin, when the line alone does not say. */
   body?: ReactNode;
-  /**
-   * The shape of the state, beside its name — a check for a place with nothing waiting in it. It leans on the title
-   * rather than carrying it, so it is hidden from a screen reader and never needs words of its own.
-   */
+  /** The shape of the state, above its line. It leans on the line, so it is hidden from a screen reader. */
   icon?: ReactNode;
   /** The first thing to do, when there is one. */
   action?: ReactNode;
-  /** Flat, for the empty state that sits inside a card: the card is already the surface under it. */
+  /** Kept so today's callers compile: an empty state is never a card now, so there is nothing to turn off. */
   plain?: boolean;
-  /**
-   * The words in the middle of the place, which the state takes the whole of. For a place whose emptiness is all there
-   * is to read — a column with no cards in it — where words left at the top would sit in the corner of the space.
-   */
+  /** The words in the middle of the place, which the state takes the whole of, as a column with no cards in it. */
   centered?: boolean;
-  /** For a card that sits inside another card, where the padding of a full one is too much. */
   className?: string;
 }) {
   return (
     <section
       className={cn(
-        "flex flex-col gap-3",
+        "flex flex-col gap-3 py-6",
         centered ? "flex-1 items-center justify-center text-center" : "items-start",
-        !plain &&
-          "rounded-card bg-surface p-6 shadow-card outline outline-1 -outline-offset-1 outline-hairline",
         className,
       )}
     >
-      {(title || icon) && (
-        <div className="flex items-center gap-3">
-          {icon && (
-            <span aria-hidden="true" className="flex shrink-0">
-              {icon}
-            </span>
-          )}
-          {title && <h2 className="m-0 text-lg font-semibold tracking-tight text-text">{title}</h2>}
-        </div>
+      {icon && (
+        <span aria-hidden="true" className="flex shrink-0 text-text-faint">
+          {icon}
+        </span>
       )}
-      {body && <p className="m-0 max-w-prose text-base text-secondary">{body}</p>}
+      {title && <h2 className="m-0 text-base font-medium text-text">{title}</h2>}
+      {body && <p className="m-0 max-w-prose text-base text-muted">{body}</p>}
       {action}
     </section>
   );

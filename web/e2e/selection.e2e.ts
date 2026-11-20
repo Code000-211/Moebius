@@ -158,7 +158,7 @@ describe.skipIf(usesRealServer)("choosing runs in Fleet", () => {
       title: "Write the second rule",
     }) as number;
     await page.goto(`${server.url}/fleet`);
-    await page.getByText("3 agents working").waitFor();
+    await expect.poll(() => page.getByTestId("fleet-row").count()).toBe(3);
     await box("Choose Write the first rule").check();
     await box("Choose Write the second rule").check();
     await says("2 runs chosen").waitFor();
@@ -166,14 +166,14 @@ describe.skipIf(usesRealServer)("choosing runs in Fleet", () => {
       .getByRole("button", { name: /Stop runs/ })
       .click();
     await page.getByRole("status").filter({ hasText: "Stopping 2 runs." }).waitFor();
-    await page.getByText("1 agent working").waitFor();
+    await expect.poll(() => page.getByTestId("fleet-row").count()).toBe(1);
     expect(first).not.toBe(second);
   });
 
   it("clears the choice with Escape", async () => {
     await fresh();
     await page.goto(`${server.url}/fleet`);
-    await page.getByText("1 agent working").waitFor();
+    await expect.poll(() => page.getByTestId("fleet-row").count()).toBe(1);
     await box(/Choose #1/).focus();
     await page.keyboard.press("Space");
     await says("1 run chosen").waitFor();

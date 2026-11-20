@@ -762,7 +762,7 @@ describe("the Decisions page", () => {
   it.skipIf(usesRealServer)("counts the kinds, lists the exports and the shadowing", async () => {
     await fresh();
     await open("/decision-model", "Decisions");
-    await page.getByText("1227 judgements in 3 types").waitFor();
+    await region("Decision types").getByRole("row").nth(3).waitFor();
     const kinds = region("Decision types");
     const merge = kinds.getByRole("row").filter({ hasText: "merge" });
     await merge.getByText("GET /v1/exports/1/merge.jsonl").waitFor();
@@ -800,10 +800,10 @@ describe("the Decisions page", () => {
     async () => {
       await fresh();
       await open("/decision-model", "Decisions");
-      await page.getByText("1227 judgements in 3 types").waitFor();
+      await region("Decision types").getByRole("row").nth(3).waitFor();
       const bar = page.getByRole("search", { name: "Filter the decisions" });
       await addFilter(page, bar, "Agent", "Coder");
-      await page.getByText("9 judgements in 1 type").waitFor();
+      await expect.poll(() => region("Decision types").getByRole("row").count()).toBeLessThan(3);
       const kinds = region("Decision types");
       await kinds.getByRole("row").filter({ hasText: "merge" }).waitFor();
       expect(await kinds.getByRole("row").filter({ hasText: "tool_call" }).count()).toBe(0);
@@ -811,10 +811,10 @@ describe("the Decisions page", () => {
 
       await page.reload();
       await bar.getByRole("button", { name: "Agent is Coder", exact: true }).waitFor();
-      await page.getByText("9 judgements in 1 type").waitFor();
+      await expect.poll(() => region("Decision types").getByRole("row").count()).toBeLessThan(3);
 
       await bar.getByRole("button", { name: "Clear filters" }).click();
-      await page.getByText("1227 judgements in 3 types").waitFor();
+      await region("Decision types").getByRole("row").nth(3).waitFor();
     },
   );
 
