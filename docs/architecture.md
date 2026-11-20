@@ -116,7 +116,9 @@ finds the server again by that directory: it answers, or it is started again wit
    (`NoForge::refresh` fetches `origin` and fast-forwards the default branch when it can) and publishes a failure as
    `forge_error`.
 2. **The board ticks.** The loop in `Server::serve` calls `Server::tick` on a blocking thread every `board.tick_ms`.
-   For each card it calls `Engine::settle`, which calls `Engine::tick` until a script stops moving the card.
+   For each card that `Engine::is_quiet` does not say can be left alone (its last script did nothing, no row was
+   written to the store since, the limits are the same and a minute has not passed; `board/cache.rs`) it calls
+   `Engine::settle_card`, which calls `Engine::settle`, which calls `Engine::tick` until a script stops moving the card.
    `Engine::tick` finds the script for the card's column: the `<script>` file of the card's project, read by
    `App::project_file` from `projects/<project name>/` of the harness configuration repository's clone, else the built-in one from `kanban/` (`Engine::script`). `Engine::run_script`
    runs it in a fresh sandboxed Luau state with `card_table` and the `moebius` table, and applies the effects.
@@ -821,6 +823,7 @@ At the top:
 | `board/review.rs` | The review along two axes: the findings with evidence of the Standards and Spec runs read into one verdict. |
 | `board/attempts.rs` | `moebius.start_runs`, `moebius.check_attempt` and `moebius.settle_attempts`, and the `card.attempts` and `card.selection` fields. |
 | `board/card.rs` | The `card` table a script reads, with the card's change and the verdict of its review. |
+| `board/cache.rs` | What the engine remembers between script calls: the bytecode of each script text, the cards a tick can leave alone (settled with nothing to do, while the store's write counter and the limits stay the same, for at most a minute) and the project scripts read during one tick. |
 | `board/sandbox.rs` | The Luau sandbox every script runs in, with its memory and time limits. |
 | `board/limits.rs` | The run, round and token limits scripts see, and a script call's memory and time. |
 | `board/kanban.rs` | The columns, the default Kanban's scripts built into the server, and a project's overrides. |

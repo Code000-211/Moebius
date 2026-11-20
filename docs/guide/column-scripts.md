@@ -23,7 +23,8 @@ The exact contract is in [`docs/reference/column-scripts.md`](../reference/colum
 5. Save it as `<script>` in the project's settings, `projects/<project name>/` of the harness configuration repository
    (see below). Only what is committed to that repository's default branch counts.
 6. The script is read again on every run, so the next tick (`board.tick_ms`, two seconds by default) uses it. There is
-   nothing to restart.
+   nothing to restart. A card whose script did nothing and for which nothing was written to the store since is left
+   alone until it has waited a minute, so a card that is waiting may take up to a minute to run the new script.
 
 ### Where the file goes
 
