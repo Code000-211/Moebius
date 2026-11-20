@@ -1,7 +1,7 @@
 /**
  * A bar on a time axis: it starts where its first day falls on the axis, ends where its last day does, and fills from
  * its left edge as far as its progress. Several bars given the same axis line up as rows of one timeline, and a thin
- * line marks today where it falls inside the axis. The Cycles page uses it for each cycle; the days are `YYYY-MM-DD`
+ * line marks today where it falls inside the axis; `marks` draws ticks inside the bar, for the steps of a run. The Cycles page uses it for each cycle; the days are `YYYY-MM-DD`
  * and both ends of the axis and of the bar count as whole days.
  *
  * ```tsx
@@ -56,6 +56,7 @@ export function TimeBar({
   label,
   today,
   emphasis = false,
+  marks,
   className,
 }: {
   start: string;
@@ -69,6 +70,8 @@ export function TimeBar({
   today?: string;
   /** The bar of the one that is under way: accent instead of grey. */
   emphasis?: boolean;
+  /** Places inside the bar to mark with a tick, each as percent of the bar from its left edge (a run's steps). */
+  marks?: number[];
   className?: string;
 }) {
   const { left, width } = placeOnAxis(start, end, axis);
@@ -100,6 +103,16 @@ export function TimeBar({
           className={cn("h-full", emphasis ? "bg-accent" : "bg-status-done")}
           style={{ width: `${value}%` }}
         />
+        {marks?.map((at, i) => (
+          <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: ticks have no identity but their place
+            key={i}
+            data-testid="time-bar-mark"
+            aria-hidden="true"
+            className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-panel"
+            style={{ left: `${Math.min(100, Math.max(0, at))}%` }}
+          />
+        ))}
       </div>
       {todayAt && (
         <div
