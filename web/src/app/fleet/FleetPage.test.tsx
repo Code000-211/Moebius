@@ -15,6 +15,7 @@ import { FleetPage } from "./FleetPage";
 // The conversation of a run follows the event stream, which these tests have none of.
 vi.mock("../../live/LiveProvider", () => ({
   useServerEvents: () => {},
+  useWatchRun: () => {},
   useConnection: () => "online",
 }));
 
