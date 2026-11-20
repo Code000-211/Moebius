@@ -86,7 +86,7 @@ function NodeCard({ node }: { node: WorkflowNode }) {
       </div>
       <pre
         data-json={`${node.id}-parameters`}
-        className="m-0 overflow-x-auto whitespace-pre-wrap break-words border-t border-hairline pt-2 font-mono text-xs leading-5 text-secondary"
+        className="m-0 overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-secondary"
       >
         {asJson(node.params ?? {})}
       </pre>
