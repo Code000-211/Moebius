@@ -237,7 +237,7 @@ function OpenRun({ id }: { id: number }) {
         axis={{ start: span.startDay, end: span.endDay }}
         progress={100}
         label={`${standing.word}, ${elapsed(span.seconds)}, ${plural(marks.length, "step", "steps")}`}
-        emphasis={open}
+        emphasis={running}
         marks={marks}
       />
 
