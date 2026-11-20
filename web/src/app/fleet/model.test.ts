@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { Card, CardRun, Snapshot } from "../../api/types/board";
 import type { Chat } from "../../api/types/chat";
+import type { FinishedRun } from "../../api/types/runs";
 import type { Entry } from "../../chat/conversation";
 import {
   afterSteps,
   elapsed,
+  finishedId,
+  finishedItems,
+  finishedKey,
   items,
+  lasted,
   latestSteps,
+  tabOf,
   thinkingNow,
   thoughtSeconds,
   tokensText,
@@ -245,5 +251,76 @@ describe("how a tile tells its run", () => {
     expect(latestSteps([thought, text, thought, thought, text])).toHaveLength(2);
     expect(latestSteps([thought, thought])).toHaveLength(2);
     expect(latestSteps([])).toEqual([]);
+  });
+});
+
+describe("the finished runs", () => {
+  const ended = (id: number, status: string, endedAt: number | null, tokens = 0): FinishedRun => ({
+    run: {
+      id,
+      card_id: 1,
+      agent: "Coder",
+      harness: "pi-bolt",
+      purpose: "code",
+      status: status as FinishedRun["run"]["status"],
+      worktree: null,
+      started_at: 1_700_000_000,
+      ended_at: endedAt,
+      summary: null,
+      repository_id: null,
+      harness_repository: false,
+      origin: "chat",
+      runner: null,
+      title: null,
+    },
+    card: {
+      id: 1,
+      repository_id: 1,
+      number: 24,
+      project_key: "WEB",
+      project_number: 24,
+      title: "A card",
+    },
+    tokens,
+  });
+  const noon = (days: number) => {
+    const at = new Date(2026, 10, 20 - days, 12, 0, 0);
+    return Math.floor(at.getTime() / 1000);
+  };
+
+  it("keeps the address's tab, and reads anything but finished as Active", () => {
+    expect(tabOf("finished")).toBe("finished");
+    expect(tabOf("active")).toBe("active");
+    expect(tabOf(null)).toBe("active");
+    expect(tabOf("nonsense")).toBe("active");
+  });
+
+  it("lists only runs that ended, newest first, under the day they ended on", () => {
+    const list = finishedItems(
+      [
+        ended(1, "succeeded", noon(2)),
+        ended(2, "failed", noon(0)),
+        ended(3, "running", null),
+        ended(4, "stopped", noon(0) + 60),
+        ended(5, "succeeded", noon(1)),
+      ],
+      "2026-11-20",
+    );
+    expect(list.map((one) => (one.type === "group" ? one.name : one.data.run.id))).toEqual([
+      "Today",
+      4,
+      2,
+      "Yesterday",
+      5,
+      "18 Nov",
+      1,
+    ]);
+  });
+
+  it("names a card by its key and says how long a run went on", () => {
+    const one = ended(1, "succeeded", 1_700_000_432);
+    expect(finishedId(one)).toBe("WEB-24");
+    expect(lasted(one)).toBe(432);
+    expect(finishedKey(one)).toBe("finished:1");
   });
 });

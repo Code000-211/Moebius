@@ -4,7 +4,7 @@
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../api/keys";
 import type { Card, CardRun, InboxItem } from "../../api/types/board";
@@ -192,5 +192,107 @@ describe("pausing all agents from Fleet", () => {
     await screen.findByText(/All agents are paused by @ada/);
     fireEvent.click(screen.getByRole("button", { name: "Resume all agents" }));
     await waitFor(() => expect(posted).toContain("/v1/runs/resume"));
+  });
+});
+
+function Where() {
+  const at = useLocation();
+  return <output data-testid="where">{`${at.pathname}${at.search}`}</output>;
+}
+
+describe("the tabs of the fleet", () => {
+  let restore: () => void;
+  beforeEach(() => {
+    restore = mockViewport({ height: 600 });
+  });
+  afterEach(() => restore());
+
+  const finished = (id: number, status: "succeeded" | "failed" | "stopped", endedAt: number) => ({
+    run: {
+      id,
+      card_id: id,
+      agent: "Coder",
+      harness: "pi-bolt",
+      purpose: "code",
+      status,
+      worktree: null,
+      started_at: endedAt - 120,
+      ended_at: endedAt,
+      summary: null,
+      repository_id: null,
+      harness_repository: false,
+      origin: "chat",
+      runner: null,
+      title: null,
+    },
+    card: {
+      id,
+      repository_id: 1,
+      number: id,
+      project_key: "WEB",
+      project_number: id,
+      title: `Finished ${id}`,
+    },
+    tokens: id === 1 ? 48_000 : 0,
+  });
+
+  function show(address: string) {
+    const now = Math.floor(Date.now() / 1000);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
+    });
+    client.setQueryData(keys.snapshot, { boards: [makeBoard([])], inbox: [], harness_changes: [] });
+    client.setQueryData(keys.chats, []);
+    client.setQueryData(keys.finishedRuns, [
+      finished(1, "succeeded", now - 60),
+      finished(2, "failed", now - 30),
+      finished(3, "stopped", now - 10),
+    ]);
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={[address]}>
+          <FleetPage />
+          <Where />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  it("opens on Active, and choosing Finished puts the tab in the address", async () => {
+    show("/fleet");
+    expect(screen.getByRole("tab", { name: "Active" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("tab", { name: "Finished" }));
+    expect(screen.getByTestId("where").textContent).toBe("/fleet?tab=finished");
+    expect(await screen.findByText("Finished 1")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Active" }));
+    expect(screen.getByTestId("where").textContent).toBe("/fleet");
+  });
+
+  it("reads the tab from the address, so a reload keeps it", async () => {
+    show("/fleet?tab=finished");
+    expect(screen.getByRole("tab", { name: "Finished" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(await screen.findByText("Finished 3")).toBeTruthy();
+  });
+
+  it("lists the finished runs newest first under Today, with outcome, id, tokens and duration", async () => {
+    show("/fleet?tab=finished");
+    const rows = await screen.findAllByTestId("list-row");
+    expect(screen.getAllByTestId("group-row").map((row) => row.textContent)).toEqual(["Today"]);
+    expect(rows.map((row) => row.textContent?.match(/Finished \d/)?.[0])).toEqual([
+      "Finished 3",
+      "Finished 2",
+      "Finished 1",
+    ]);
+    expect(within(rows[0] as HTMLElement).getByTestId("outcome-stopped")).toBeTruthy();
+    expect(within(rows[1] as HTMLElement).getByTestId("outcome-failed")).toBeTruthy();
+    const last = rows[2] as HTMLElement;
+    expect(within(last).getByTestId("outcome-succeeded")).toBeTruthy();
+    expect(last.textContent).toContain("WEB-1");
+    expect(last.textContent).toContain("48k tokens");
+    expect(last.textContent).toContain("2m");
+    // No Stop and no Approve plan on a run that is over.
+    expect(screen.queryByRole("button", { name: /^Stop/ })).toBeNull();
   });
 });

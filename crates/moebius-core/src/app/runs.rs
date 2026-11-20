@@ -14,7 +14,74 @@ use crate::decide::Actor;
 use crate::harness::terminal::{MAX_PER_RUN, SERVER, Slot, repository_key, tui_key};
 use crate::store::Run;
 
+/// A finished run of a card, with what names the card and the tokens the run used: one row of the Fleet's Finished tab.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct FinishedRun {
+    pub run: Run,
+    pub card: FinishedCard,
+    /// The tokens this run used, input and output together.
+    pub tokens: i64,
+}
+
+/// The card a finished run belongs to.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct FinishedCard {
+    pub id: i64,
+    pub repository_id: i64,
+    pub number: i64,
+    pub project_key: String,
+    pub project_number: i64,
+    pub title: String,
+}
+
 impl App {
+    /// The runs of cards that have ended, the one that ended last first, at most `limit`, leaving out the cards of
+    /// projects `who` may not see.
+    pub fn finished_runs(&self, who: &Actor, limit: usize) -> Result<Vec<FinishedRun>> {
+        let sight = self.sight(who)?;
+        let mut out = Vec::new();
+        let mut cards = std::collections::HashMap::new();
+        // Runs of cards that are hidden are skipped, so more are read until the page is full or there are no more.
+        let mut asked = limit.max(1);
+        loop {
+            let rows = self.store.finished_card_runs(asked as i64)?;
+            let read = rows.len();
+            out.clear();
+            for (run, tokens) in rows {
+                let Some(card_id) = run.card_id else { continue };
+                if let std::collections::hash_map::Entry::Vacant(e) = cards.entry(card_id) {
+                    let seen = match self.store.card(card_id)? {
+                        Some(card) if sight.project(card.project_id) => Some(FinishedCard {
+                            id: card.id,
+                            repository_id: card.repository_id,
+                            number: card.number,
+                            project_key: card.project_key,
+                            project_number: card.project_number,
+                            title: card.title,
+                        }),
+                        _ => None,
+                    };
+                    e.insert(seen);
+                }
+                let Some(Some(card)) = cards.get(&card_id) else {
+                    continue;
+                };
+                out.push(FinishedRun {
+                    run,
+                    card: card.clone(),
+                    tokens,
+                });
+                if out.len() == limit {
+                    return Ok(out);
+                }
+            }
+            if read < asked {
+                return Ok(out);
+            }
+            asked = asked.saturating_mul(4);
+        }
+    }
+
     /// A person sends a message to a running run: the agent gets it and the run keeps it as a `steered` event.
     pub fn steer_run(
         &self,

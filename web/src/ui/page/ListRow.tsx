@@ -41,7 +41,8 @@ function position(at: RowPosition | undefined) {
 }
 
 export function ListRow({
-  status,
+  status = "notStarted",
+  mark,
   id,
   title,
   reason,
@@ -55,7 +56,10 @@ export function ListRow({
   className,
   ...data
 }: {
-  status: StatusState;
+  /** The state the status icon draws; a row with a `mark` of its own needs none. */
+  status?: StatusState;
+  /** What stands in the place of the status icon, for a row whose state is not one of the five (a run's outcome). */
+  mark?: ReactNode;
   /** The issue's id, drawn in mono. */
   id: string;
   title: string;
@@ -99,7 +103,7 @@ export function ListRow({
         className,
       )}
     >
-      <StatusIcon state={status} />
+      {mark ?? <StatusIcon state={status} />}
       <span className="w-16 shrink-0 truncate font-mono text-xs text-muted">{id}</span>
       <span className="min-w-0 shrink truncate font-medium text-text">{title}</span>
       {unread && (

@@ -208,6 +208,38 @@ export function createFakeRuns(
       origin: "chat",
       runner: null,
     },
+    {
+      id: 1003,
+      card_id: 5,
+      agent: "Reviewer",
+      harness: "pi-bolt",
+      purpose: "review",
+      status: "failed",
+      worktree: null,
+      started_at: NOW - 3500,
+      ended_at: NOW - 3200,
+      summary: null,
+      repository_id: null,
+      harness_repository: false,
+      origin: "chat",
+      runner: null,
+    },
+    {
+      id: 1004,
+      card_id: 1,
+      agent: "Coder",
+      harness: "pi-bolt",
+      purpose: "code",
+      status: "stopped",
+      worktree: null,
+      started_at: NOW - 3 * 86_400 - 900,
+      ended_at: NOW - 3 * 86_400,
+      summary: null,
+      repository_id: null,
+      harness_repository: false,
+      origin: "chat",
+      runner: null,
+    },
   ];
   const events = new Map<number, Array<{ seq: number; kind: string; data: object; at: number }>>();
   const terminals: FakeTerminal[] = [];
@@ -241,6 +273,27 @@ export function createFakeRuns(
       if (path === "/v1/ports" && method === "GET") return reply(response, 200, fake.ports);
       if (path === "/v1/changes/1/diff" && method === "GET") {
         return reply(response, 200, { diff: fake.changeDiff, truncated: false });
+      }
+      if (path === "/v1/runs/finished" && method === "GET") {
+        const limit = Number(url.searchParams.get("limit") ?? 200);
+        const titles: Record<number, string> = { 1: "Add a feature", 5: "Fix the login redirect" };
+        const ended = runs
+          .filter((each) => each.ended_at !== null && each.card_id !== null)
+          .sort((a, b) => (b.ended_at ?? 0) - (a.ended_at ?? 0))
+          .slice(0, limit)
+          .map((each) => ({
+            run: each,
+            card: {
+              id: each.card_id as number,
+              repository_id: 1,
+              number: each.card_id as number,
+              project_key: "",
+              project_number: each.card_id as number,
+              title: titles[each.card_id as number] ?? "A card",
+            },
+            tokens: each.id === 1001 ? 48_000 : 0,
+          }));
+        return reply(response, 200, ended);
       }
       const one = /^\/v1\/runs\/(\d+)(\/(?:events|steer|diff))?$/.exec(path);
       if (!one) return false;
