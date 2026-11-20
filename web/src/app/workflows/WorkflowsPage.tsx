@@ -26,15 +26,7 @@ import { Empty } from "../../ui/page/Empty";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
-import {
-  FILTER_KEYS,
-  filtered,
-  filterFields,
-  lastRunLine,
-  needsAttention,
-  runStatus,
-  triggerName,
-} from "./model";
+import { FILTER_KEYS, filtered, filterFields, lastRunLine, runStatus, triggerName } from "./model";
 import { NewWorkflowDialog } from "./NewWorkflowDialog";
 
 const CTX = "Graphs of nodes that run on their own, what starts them, and how their last run went.";
@@ -117,58 +109,56 @@ export function WorkflowsPage() {
         />
       ) : (
         <div className="min-h-0 overflow-y-auto">
-          <div className="overflow-hidden rounded-card bg-surface shadow-card">
-            {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely */}
-            <ul role="list" className="m-0 list-none divide-y divide-hairline p-0">
-              {shown.map((each) => {
-                const last = each.last_run;
-                const status = last ? runStatus(last.status) : null;
-                return (
-                  <li
-                    key={each.name}
-                    data-testid="workflow-row"
-                    className="flex min-h-12 flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2"
-                  >
-                    <span className="flex min-w-0 flex-1 basis-60 flex-col">
-                      <h2 className="m-0 truncate text-base font-medium text-text">
-                        <Link
-                          className="rounded-round underline-offset-4 hover:underline"
-                          to={`/workflows/${encodeURIComponent(each.name)}`}
-                        >
-                          {each.name}
-                        </Link>
-                      </h2>
-                      <span className="truncate text-sm text-secondary">{each.description}</span>
-                    </span>
-                    <span className="w-44 shrink-0">
-                      <Tag tone="plain">{triggerName(each.trigger_kind)}</Tag>
-                    </span>
-                    <span className="w-20 shrink-0 text-sm tabular-nums text-secondary">
-                      {plural(each.node_count, "node", "nodes")}
-                    </span>
-                    {last && status ? (
+          {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely */}
+          <ul role="list" className="m-0 list-none divide-y divide-hairline p-0">
+            {shown.map((each) => {
+              const last = each.last_run;
+              const status = last ? runStatus(last.status) : null;
+              return (
+                <li
+                  key={each.name}
+                  data-testid="workflow-row"
+                  className="flex h-row-list items-center gap-x-2.5 px-4 hover:bg-hover"
+                >
+                  <span className="flex min-w-0 flex-1 items-baseline gap-2.5">
+                    <h2 className="m-0 shrink-0 truncate text-base font-medium text-text">
                       <Link
-                        className="flex w-64 min-w-0 shrink-0 items-center gap-2 rounded-round text-sm text-secondary underline-offset-4 hover:underline"
-                        to={`/workflow-runs/${last.id}`}
+                        className="rounded-round underline-offset-4 hover:underline"
+                        to={`/workflows/${encodeURIComponent(each.name)}`}
                       >
-                        <Tag tone={needsAttention(last.status) ? status.tone : "plain"}>
-                          {status.label}
-                        </Tag>
-                        <span className="truncate tabular-nums">
-                          {lastRunLine(last)}
-                          {last.started_at === null ? "" : ` · ${ago(now, last.started_at)}`}
-                        </span>
+                        {each.name}
                       </Link>
-                    ) : (
-                      <span className="w-64 shrink-0 text-sm text-secondary">
-                        {lastRunLine(null)}
+                    </h2>
+                    <span className="min-w-0 truncate text-xs text-text-muted">
+                      {each.description}
+                    </span>
+                  </span>
+                  <span className="hidden w-28 shrink-0 text-xs text-text-muted sm:block">
+                    {triggerName(each.trigger_kind)}
+                  </span>
+                  <span className="hidden w-16 shrink-0 text-xs tabular-nums text-text-muted sm:block">
+                    {plural(each.node_count, "node", "nodes")}
+                  </span>
+                  {last && status ? (
+                    <Link
+                      className="flex w-72 min-w-0 shrink-0 items-center gap-2 rounded-round text-xs text-text-muted underline-offset-4 hover:underline"
+                      to={`/workflow-runs/${last.id}`}
+                    >
+                      <Tag tone={status.tone}>{status.label}</Tag>
+                      <span className="truncate tabular-nums">
+                        {lastRunLine(last)}
+                        {last.started_at === null ? "" : ` · ${ago(now, last.started_at)}`}
                       </span>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+                    </Link>
+                  ) : (
+                    <span className="w-72 shrink-0 text-xs text-text-muted">
+                      {lastRunLine(null)}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
       <NewWorkflowDialog open={creating} onOpenChange={setCreating} />

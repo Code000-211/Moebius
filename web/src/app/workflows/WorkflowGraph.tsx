@@ -8,7 +8,7 @@
  * unreadable.
  */
 import type { WorkflowDefinition, WorkflowNode } from "../../api/types/workflows";
-import { JsonValue } from "../../ui/page/JsonValue";
+import { asJson } from "../../ui/page/JsonValue";
 
 /** The width one node card takes, so a line can end at the middle of it. */
 const CARD = 240;
@@ -22,10 +22,7 @@ export function WorkflowGraph({ definition }: { definition: WorkflowDefinition }
   const height = Math.max(240, ...nodes.map((node) => node.position.y + 180), 180 + GAP * 2);
   const byId = new Map(nodes.map((node) => [node.id, node]));
   return (
-    <section
-      aria-label="Definition graph"
-      className="min-h-0 flex-1 overflow-auto rounded-card bg-lane p-4"
-    >
+    <section aria-label="Definition graph" className="min-h-0 flex-1 overflow-auto p-2">
       <div className="relative" style={{ width: width + GAP, height: height + GAP }}>
         <svg
           aria-hidden="true"
@@ -80,14 +77,19 @@ export function WorkflowGraph({ definition }: { definition: WorkflowDefinition }
 function NodeCard({ node }: { node: WorkflowNode }) {
   return (
     <article
-      className="absolute flex flex-col gap-2 rounded-card bg-surface p-3 shadow-card"
+      className="absolute flex flex-col gap-2 rounded-card border border-hairline-strong bg-panel p-3"
       style={{ left: node.position.x, top: node.position.y, width: CARD }}
     >
       <div className="flex min-w-0 flex-col">
         <h3 className="m-0 truncate text-sm font-semibold text-text">{node.id}</h3>
         <span className="truncate text-xs text-secondary">{node.kind}</span>
       </div>
-      <JsonValue value={node.params ?? {}} name={`${node.id}-parameters`} />
+      <pre
+        data-json={`${node.id}-parameters`}
+        className="m-0 overflow-x-auto whitespace-pre-wrap break-words font-mono text-xs leading-5 text-secondary"
+      >
+        {asJson(node.params ?? {})}
+      </pre>
     </article>
   );
 }
