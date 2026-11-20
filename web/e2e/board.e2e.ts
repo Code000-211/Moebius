@@ -463,16 +463,16 @@ describe("live data", () => {
       }
       // The column holds them, and the dock stands beside it rather than over it.
       const column = page.locator('[data-surface="right-column"]');
-      expect(await column.getAttribute("data-folded")).toBeNull();
+      expect(await column.isVisible()).toBe(true);
       const right = (await column.boundingBox()) as { x: number };
       const drawer = (await dock().boundingBox()) as { x: number; width: number };
       expect(drawer.x + drawer.width).toBeLessThanOrEqual(right.x + 1);
       // The dock does not say them again.
       expect(await dock().getByText("demo · Not started · by person").count()).toBe(0);
-      // Closing the dock takes them away, and the column folds to its slim width.
+      // Closing the dock takes them away, and the column goes with them.
       await dock().getByRole("button", { name: "Close the inspector" }).click();
       await facts.waitFor({ state: "detached" });
-      await expect.poll(() => column.getAttribute("data-folded")).toBe("");
+      await expect.poll(() => column.isVisible()).toBe(false);
     },
   );
 

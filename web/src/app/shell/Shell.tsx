@@ -1,28 +1,28 @@
 /**
- * The frame of a signed-in person's page: the textured ground under the whole window, the sidebar lying on it without
- * a surface of its own, and the page as one surface on it — 6px of air above, below and at the right, all four
- * corners round, a shade lighter than the ground and set apart by its edge alone (ADR 0020). The page holds the banner
- * while the server cannot be reached, what the route draws, and its right column (`RightColumn.tsx`) for the page's
- * properties and the Moebius agent, which is part of the same surface behind a soft line. The agent and the package
- * sheet, which pages open from where a person meets plugins and extensions, lie over that column in one place. It owns
- * the command palette and its shortcut, the form of a new issue and `C` (`board/NewIssueHost.tsx`), holds what is in
- * focus for it (`palette/focus.tsx`), and notes the places seen and the sidebar's collapsed state (kept per browser).
- * In the desktop app the ground leaves a strip free at the top for the window's controls, and the rail of servers lies at its
- * far left (`desktop/Rail.tsx`).
+ * The frame of a signed-in person's page: the canvas under the whole window, flat and faintly tinted, with the sidebar
+ * lying on it without a surface of its own, and the page as one panel floating on it — 6px of air above, below and at
+ * the right, all four corners round, a hairline for its edge and no shadow (`docs/design-web.md`). There is no strip
+ * above it and no texture under it. The panel holds the banner while the server cannot be reached, what the route
+ * draws, and, only on a page that supplies properties, the pane for them (`RightColumn.tsx`). The agent and the package
+ * sheet, which pages open from where a person meets plugins and extensions, lie over that place in the same panel. It
+ * owns the command palette and its shortcut, the form of a new issue and `C` (`board/NewIssueHost.tsx`), holds what is
+ * in focus for it (`palette/focus.tsx`), and notes the places seen and the sidebar's collapsed state (kept per
+ * browser). In the desktop app the panel carries the window's controls once at its top right
+ * (`desktop/WindowControls.tsx`), and the rail of servers lies at the window's far left (`desktop/Rail.tsx`).
  */
 import { useQueryClient } from "@tanstack/react-query";
-import { Suspense, useEffect, useState } from "react";
+import { type CSSProperties, Suspense, useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { desktopBridge } from "../../desktop/bridge";
 import { Rail } from "../../desktop/Rail";
-import { WINDOW_BAR_CLASS } from "../../desktop/WindowControls";
+import { WINDOW_BUTTONS_WIDTH, WindowControls } from "../../desktop/WindowControls";
 import { useConnection, useReconnect } from "../../live/LiveProvider";
 import { PackageSheet } from "../../packages/PackageSheet";
 import { PackageSheetProvider, usePackageSheet } from "../../packages/PackageSheetContext";
 import { cn } from "../../ui/lib/cn";
 import { isShortcut, modalIsOpen } from "../../ui/lib/shortcuts";
 import { PageBoundary } from "../../ui/page/PageBoundary";
-import { PropertiesProvider } from "../../ui/page/Properties";
+import { PropertiesProvider, useProperties } from "../../ui/page/Properties";
 import { SheetSlotProvider } from "../../ui/page/SheetSlot";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import { isTyping, NewIssueProvider } from "../board/NewIssueHost";
@@ -76,6 +76,7 @@ export function Shell(props: { unreachable: boolean; onRetry: () => void }) {
 
 function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => void }) {
   const packages = usePackageSheet();
+  const { present: hasProperties } = useProperties();
   const connection = useConnection();
   const location = useLocation();
   // A card named in the address the page opened at is read now, while the board's code and the snapshot are on their way.
@@ -129,7 +130,7 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
   const offline = unreachable || connection === "reconnecting";
 
   return (
-    <div className={cn("ground flex h-full py-1.5", desktopBridge() && WINDOW_BAR_CLASS)}>
+    <div className="flex h-full bg-ground py-1.5">
       <Rail bridge={desktopBridge()} />
       <Sidebar
         connection={connection}
@@ -144,14 +145,23 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
         }}
         onSearch={() => setCommandOpen(true)}
       />
-      {/* The page: one surface, rounded at all four corners, that clips what scrolls inside it to those corners. The
-          sheets lie in it, over its right column, so they share its corners and its height. It clips rather than
-          hides, so a sheet that takes the focus while it slides in cannot scroll the whole page sideways. */}
+      {/* The page: one panel, rounded at all four corners, that clips what scrolls inside it to those corners. The
+          sheets lie in it, over the place of its properties pane, so they share its corners and its height. It clips
+          rather than hides, so a sheet that takes the focus while it slides in cannot scroll the whole page sideways.
+          The window's controls are in it once; the header reserves their room (`--window-buttons`) unless the
+          properties pane lies at the panel's right, which then leaves it to its own head. */}
       <div
         data-surface="page"
-        className="relative mr-1.5 flex min-w-0 flex-1 overflow-clip rounded-sheet bg-page shadow-edge"
+        className="relative mr-1.5 flex min-w-0 flex-1 overflow-clip rounded-sheet border border-hairline bg-page"
       >
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div
+          className="flex min-w-0 flex-1 flex-col"
+          style={
+            desktopBridge() && !hasProperties
+              ? ({ "--window-buttons": WINDOW_BUTTONS_WIDTH } as CSSProperties)
+              : undefined
+          }
+        >
           {offline && (
             <ConnectionBanner
               onRetry={() => {
@@ -167,7 +177,7 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
           <main
             className={cn(
               "min-h-0 flex-1 overflow-y-auto p-6",
-              packages.shown && "2xl:pr-[calc(var(--sheet-width)-var(--column-rail-width)+1.5rem)]",
+              packages.shown && "2xl:pr-[calc(var(--sheet-width)+1.5rem)]",
             )}
           >
             {/* A page is fetched when it opens, so the shell holds the space it needs while it arrives, and says so
@@ -181,6 +191,7 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
         </div>
         <RightColumn />
         <PackageSheet />
+        <WindowControls />
       </div>
       <CommandBar open={commandOpen} onOpenChange={setCommandOpen} />
     </div>
