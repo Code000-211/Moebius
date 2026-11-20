@@ -19,12 +19,13 @@ import { Empty } from "../../ui/page/Empty";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
+import { axisOf, TimeBar } from "../../ui/page/TimeBar";
 import { decides } from "../intake/model";
 import { useRole } from "../shell/session";
 import { CycleDialog } from "./CycleDialogs";
 import { CyclePage } from "./CyclePage";
-import { Progress, STATE_WORDS } from "./CycleProgress";
-import { ordered, periodWords, progressWords, stateOf } from "./model";
+import { STATE_WORDS } from "./CycleProgress";
+import { ordered, percent, periodWords, progressWords, stateOf } from "./model";
 
 /** Today as `YYYY-MM-DD`, in the person's own time zone. */
 function today(): string {
@@ -178,11 +179,7 @@ function ProjectCycles({
               action={mayChange ? newButton : undefined}
             />
           ) : (
-            <ul className="m-0 flex list-none flex-col gap-2 p-0" aria-label="Cycles">
-              {ordered(cycles.data).map((cycle) => (
-                <Row key={cycle.id} cycle={cycle} now={now} onOpen={() => onOpen(cycle.id)} />
-              ))}
-            </ul>
+            <Timeline cycles={cycles.data} now={now} onOpen={onOpen} />
           )}
         </>
       )}
@@ -196,30 +193,79 @@ function ProjectCycles({
   );
 }
 
-/** One cycle of the list: its name and dates, where it stands and its progress; a click opens its page. */
-function Row({ cycle, now, onOpen }: { cycle: CycleView; now: string; onOpen: () => void }) {
-  const state = stateOf(cycle, now);
+/** The cycles as rows on one time axis: each bar spans its dates, and the one under way is marked. */
+export function Timeline({
+  cycles,
+  now,
+  onOpen,
+}: {
+  cycles: CycleView[];
+  now: string;
+  onOpen: (cycle: number) => void;
+}) {
+  const axis = axisOf(cycles.map((c) => ({ start: c.starts_on, end: c.ends_on })));
+  if (axis === null) return null;
   return (
-    <li className="rounded-card bg-raised shadow-card" data-testid="cycle">
+    <ul className="m-0 flex list-none flex-col p-0" aria-label="Cycles">
+      {ordered(cycles).map((cycle) => (
+        <Row key={cycle.id} cycle={cycle} now={now} axis={axis} onOpen={() => onOpen(cycle.id)} />
+      ))}
+    </ul>
+  );
+}
+
+/** One cycle of the timeline: its name and dates, where it stands, and its bar; a click opens its page. */
+function Row({
+  cycle,
+  now,
+  axis,
+  onOpen,
+}: {
+  cycle: CycleView;
+  now: string;
+  axis: { start: string; end: string };
+  onOpen: () => void;
+}) {
+  const state = stateOf(cycle, now);
+  const current = state === "running";
+  return (
+    <li
+      className="border-b border-hairline"
+      data-testid="cycle"
+      aria-current={current ? "date" : undefined}
+    >
       <button
         type="button"
         onClick={onOpen}
-        className="grid w-full cursor-pointer appearance-none grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 rounded-card bg-transparent p-3 text-left sm:grid-cols-[minmax(0,1fr)_12rem_16rem]"
+        className={cn(
+          "grid min-h-9 w-full cursor-pointer appearance-none grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 bg-transparent px-3 py-2 text-left hover:bg-row-hover",
+          "sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_13rem]",
+        )}
       >
-        <span className="min-w-0 truncate text-base font-semibold text-text">{cycle.name}</span>
+        <span className="min-w-0 truncate text-base font-medium text-text">{cycle.name}</span>
         <span
           className={cn(
-            "shrink-0 text-sm",
-            state === "overdue" ? "text-attention-text" : "text-secondary",
+            "shrink-0 whitespace-nowrap text-right text-sm sm:col-start-3 sm:row-start-1",
+            state === "overdue"
+              ? "text-attention-text"
+              : current
+                ? "text-accent-text"
+                : "text-secondary",
           )}
         >
-          {periodWords(cycle, now)} · {STATE_WORDS[state]}
+          {periodWords(cycle, now)} · {current ? "Current" : STATE_WORDS[state]}
         </span>
-        <span className="col-span-2 flex items-center gap-3 sm:col-span-1">
-          <Progress cycle={cycle} className="flex-1" />
-          <span className="shrink-0 text-sm text-secondary tabular-nums">
-            {progressWords(cycle)}
-          </span>
+        <span className="col-span-2 flex items-center sm:col-span-1 sm:col-start-2 sm:row-start-1">
+          <TimeBar
+            className="flex-1"
+            start={cycle.starts_on}
+            end={cycle.ends_on}
+            axis={axis}
+            progress={percent(cycle)}
+            label={progressWords(cycle)}
+            today={now}
+            emphasis={current}
+          />
         </span>
       </button>
     </li>
