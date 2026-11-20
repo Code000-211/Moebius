@@ -21,7 +21,7 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { cardKey } from "../board/cardKey";
 import { fieldsLine, issueDisplayChoices, issueFilterFields, issueQuery } from "../kinds/model";
-import { boardPath } from "../pages";
+import { cardPath } from "../pages";
 
 export function IssuesPage() {
   const [params, setQuery] = useQueryParams();
@@ -89,7 +89,7 @@ export function IssuesPage() {
                 <span className="text-sm text-secondary tabular-nums">{cardKey(card)}</span>
                 <Link
                   className="min-w-0 flex-1 text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
-                  to={boardPath(card.repository_id)}
+                  to={cardPath(card.repository_id, card.id)}
                 >
                   {card.title}
                 </Link>

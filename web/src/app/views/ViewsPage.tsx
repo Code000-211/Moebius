@@ -33,7 +33,7 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
 import { cardKey } from "../board/cardKey";
-import { boardPath } from "../pages";
+import { cardPath } from "../pages";
 import { boardOfView, fieldsOf, filterWords, groupsOf, LAYOUTS, SORTS } from "./model";
 
 export function ViewsPage() {
@@ -237,7 +237,7 @@ function OpenView({
                     <span className="text-sm text-secondary tabular-nums">{cardKey(card)}</span>
                     <Link
                       className="min-w-0 flex-1 text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
-                      to={boardPath(card.repository_id)}
+                      to={cardPath(card.repository_id, card.id)}
                     >
                       {card.title}
                     </Link>
