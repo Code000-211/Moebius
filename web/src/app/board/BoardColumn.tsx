@@ -9,6 +9,7 @@
  */
 import { type MouseEvent, memo } from "react";
 import type { Board, Card, InboxItem } from "../../api/types/board";
+import { ContextMenu, useContextMenu } from "../../ui/components/ContextMenu";
 import {
   KanbanBoard,
   KanbanCard,
@@ -18,7 +19,7 @@ import {
 import { Empty } from "../../ui/page/Empty";
 import { SelectBox } from "../../ui/page/SelectBox";
 import { CardContent, type CardMenuActions } from "./BoardCardContent";
-import { ColumnAdd, ColumnAddButton } from "./ColumnAdd";
+import { ColumnAdd } from "./ColumnAdd";
 import { cardKey } from "./cardKey";
 import { type CardStatus, cardStatus, inboxOf, type Stack } from "./model";
 
@@ -95,6 +96,13 @@ export const BoardColumn = memo(function BoardColumn({
   return (
     <KanbanBoard name={name}>
       <ColumnHead name={name} onAdding={onAdding} />
+      <ColumnLine
+        repository={board.repository.id}
+        name={name}
+        adding={adding}
+        onAdding={onAdding}
+        onCreated={onCreated}
+      />
       <KanbanCards className="min-h-9">
         {cards.map((card) => {
           const stack = stacks.get(card.id);
@@ -140,18 +148,15 @@ export const BoardColumn = memo(function BoardColumn({
             that reads as a card which has lost its words. */}
         {cards.length === 0 && <Empty plain centered body={COLUMN_EMPTY[name] ?? ANY_COLUMN} />}
       </KanbanCards>
-      <ColumnFoot
-        repository={board.repository.id}
-        name={name}
-        adding={adding}
-        onAdding={onAdding}
-        onCreated={onCreated}
-      />
     </KanbanBoard>
   );
 });
 
-/** The head of a column: its name and the "+", which draws again only when the name changes. */
+/**
+ * The head of a column: its name alone. Its context menu (right click, the menu key, or Enter while it has the focus)
+ * offers "Add a card", the one way to add to a column that is not the header's New issue button. Draws again only when
+ * the name changes.
+ */
 const ColumnHead = memo(function ColumnHead({
   name,
   onAdding,
@@ -159,16 +164,33 @@ const ColumnHead = memo(function ColumnHead({
   name: string;
   onAdding: (column: string, open: boolean) => void;
 }) {
+  const menu = useContextMenu();
   return (
-    <KanbanHeader
-      name={name}
-      actions={<ColumnAddButton column={name} onClick={() => onAdding(name, true)} />}
-    />
+    <>
+      <KanbanHeader
+        name={name}
+        focusable
+        onContextMenu={menu.open}
+        onActivate={(box) =>
+          menu.open({
+            preventDefault: () => {},
+            clientX: box.left,
+            clientY: box.bottom,
+          } as MouseEvent)
+        }
+      />
+      <ContextMenu
+        point={menu.point}
+        onClose={menu.close}
+        title={name}
+        commands={[{ id: "add", label: "Add a card", run: () => onAdding(name, true) }]}
+      />
+    </>
   );
 });
 
-/** The foot of a column: "+ Add", or the line it turns into while it is open. */
-const ColumnFoot = memo(function ColumnFoot({
+/** The line for a new card, under the name while it is open. */
+const ColumnLine = memo(function ColumnLine({
   repository,
   name,
   adding,
@@ -186,7 +208,6 @@ const ColumnFoot = memo(function ColumnFoot({
       repository={repository}
       column={name}
       open={adding}
-      onOpen={() => onAdding(name, true)}
       onClose={() => onAdding(name, false)}
       onCreated={onCreated}
     />
