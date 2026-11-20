@@ -2,12 +2,14 @@
  * The Fleet page when its reads fail: it says what happened and offers to try again. The empty state would say that no
  * agent is working, which is the opposite of what the person needs to know.
  */
+
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../api/keys";
 import type { Card, CardRun, InboxItem } from "../../api/types/board";
+import { ToastProvider } from "../../ui/page/Toast";
 import { mockViewport } from "../../ui/page/virtualListTest";
 import { card, board as makeBoard, running } from "../board/model/fixtures";
 import { FleetPage } from "./FleetPage";
@@ -172,9 +174,11 @@ describe("pausing all agents from Fleet", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
-        <MemoryRouter>
-          <FleetPage />
-        </MemoryRouter>
+        <ToastProvider>
+          <MemoryRouter>
+            <FleetPage />
+          </MemoryRouter>
+        </ToastProvider>
       </QueryClientProvider>,
     );
   };
@@ -182,15 +186,18 @@ describe("pausing all agents from Fleet", () => {
   it("offers to pause, and says who paused when they are paused", async () => {
     const posted = serve(false);
     show();
-    fireEvent.click(await screen.findByRole("button", { name: "Pause all agents" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Pause all" }));
     await waitFor(() => expect(posted).toContain("/v1/runs/pause"));
+    expect(await screen.findByText("All agents paused.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() => expect(posted).toContain("/v1/runs/resume"));
   });
 
   it("offers to resume while paused", async () => {
     const posted = serve(true);
     show();
-    await screen.findByText(/All agents are paused by @ada/);
-    fireEvent.click(screen.getByRole("button", { name: "Resume all agents" }));
+    await screen.findByText("Paused by @ada");
+    fireEvent.click(await screen.findByRole("button", { name: "Resume all" }));
     await waitFor(() => expect(posted).toContain("/v1/runs/resume"));
   });
 });

@@ -14,7 +14,8 @@ export function usePause(enabled = true) {
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot(), enabled });
   const paused = data.data?.paused ?? null;
   const change = useMutation({
-    mutationFn: () => (paused ? resumeRuns() : pauseRuns()),
+    mutationFn: (pause: boolean | undefined) =>
+      (pause === undefined ? !paused : pause) ? pauseRuns() : resumeRuns(),
     onSettled: () => queryClient.invalidateQueries({ queryKey: keys.snapshot }),
   });
   return {
@@ -24,6 +25,8 @@ export function usePause(enabled = true) {
       ? sayError(change.error, "Could not change the agents. Try again.")
       : null,
     /** Pauses all agents, or resumes them when they are paused. */
-    toggle: () => change.mutate(),
+    toggle: () => change.mutate(undefined),
+    /** Pauses (true) or resumes (false) all agents and settles when the server has answered; rejects on a refusal. */
+    set: (pause: boolean) => change.mutateAsync(pause),
   };
 }

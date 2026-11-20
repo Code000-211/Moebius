@@ -1026,7 +1026,7 @@ describe("the fleet", () => {
   );
 
   it.skipIf(usesRealServer)(
-    "filters the runs with the bar and keeps the filter across a reload",
+    "filters the runs from the header's Filter menu and keeps the filter across a reload",
     async () => {
       await open("/fleet");
       const chat = server.chat?.seed({
@@ -1037,24 +1037,27 @@ describe("the fleet", () => {
       server.broadcast?.({ kind: "run_started", data: { run: chat } });
       await expect.poll(() => page.getByTestId("list-row").count()).toBe(2);
       const tiles = page.getByTestId("list-row");
-      const bar = page.getByRole("search", { name: "Filter the runs" });
+      expect(await page.getByRole("search", { name: "Filter the runs" }).count()).toBe(0);
+      const filter = page.getByRole("button", { name: "Filter", exact: true });
 
-      await addFilter(page, bar, "Agent", "Coder");
+      await filter.click();
+      await page.getByRole("menuitem", { name: "Agent" }).click();
+      await page.getByRole("menuitemradio", { name: "Coder" }).click();
       await expect.poll(() => tiles.count()).toBe(1);
       await tiles.filter({ hasText: "Add a feature" }).waitFor();
       expect(path()).toBe("/fleet?agent=Coder");
+      await page.getByRole("button", { name: "Filter · 1" }).waitFor();
 
       await page.reload();
-      await bar.getByRole("button", { name: "Agent is Coder", exact: true }).waitFor();
-      await tiles.filter({ hasText: "Add a feature" }).waitFor();
+      await page.getByRole("button", { name: "Filter · 1" }).waitFor();
       expect(await tiles.count()).toBe(1);
 
       // A second filter narrows further: no run of the Coder is a chat.
-      await addFilter(page, bar, "Kind", "chat");
+      await page.goto(`${server.url}/fleet?agent=Coder&kind=chat`);
       await page.getByText("No run matches").waitFor();
-      await bar.getByRole("button", { name: "Clear filters" }).click();
+      await page.getByRole("button", { name: "Filter · 2" }).click();
+      await page.getByRole("menuitem", { name: "Clear filters" }).click();
       await expect.poll(() => page.getByTestId("list-row").count()).toBe(2);
-      expect(await tiles.count()).toBe(2);
       expect(path()).toBe("/fleet");
     },
   );
