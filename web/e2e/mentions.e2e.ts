@@ -69,7 +69,8 @@ describe.skipIf(usesRealServer)("mentions", () => {
     await notices.first().getByText("@lea mentioned you: @owner can you look?").waitFor();
     await inbox.getByText(String(waiting + 2), { exact: true }).waitFor();
     await page.getByRole("tab", { name: /^Assigned 1/ }).click();
-    expect(await notices.first().getAttribute("data-kind")).toBe("assigned");
+    await page.locator('[data-testid="notice"][data-kind="assigned"]').waitFor();
+    expect(await notices.count()).toBe(1);
     expect(await page.locator("[data-unread]").count()).toBe(1);
 
     // Choosing the assignment reads it without a reload and opens the card.
