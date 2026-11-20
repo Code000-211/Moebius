@@ -56,9 +56,11 @@ describe.skipIf(usesRealServer)("the Cycles page", () => {
     await rows().first().waitFor();
     expect(await rows().count()).toBe(2);
     // Cycle 1 holds a done card of 5 points and an open one of 3.
-    await row("Cycle 1").getByText("5 of 8 points · 1 of 2 cards").waitFor();
-    expect(await row("Cycle 1").getByRole("progressbar").getAttribute("aria-valuenow")).toBe("63");
-    await row("Cycle 2").getByText("0 of 0 cards").waitFor();
+    const bar = (name: string) => row(name).getByRole("progressbar");
+    await bar("Cycle 1").waitFor();
+    expect(await bar("Cycle 1").getAttribute("aria-label")).toBe("5 of 8 points · 1 of 2 cards");
+    expect(await bar("Cycle 1").getAttribute("aria-valuenow")).toBe("63");
+    expect(await bar("Cycle 2").getAttribute("aria-label")).toBe("0 of 0 cards");
   });
 
   it("opens a cycle to its figures, its burn-up and its cards", async () => {
@@ -136,8 +138,8 @@ describe.skipIf(usesRealServer)("the Cycles page", () => {
     // The closed cycle keeps both cards and is closed; the open one has the carried card.
     await page.getByRole("button", { name: "Close cycle" }).waitFor({ state: "detached" });
     await page.getByRole("button", { name: "All cycles" }).click();
-    await row("Cycle 2").getByText("0 of 3 points · 0 of 1 card").waitFor();
-    await row("Cycle 1").getByText("5 of 8 points · 1 of 2 cards").waitFor();
+    await row("Cycle 2").getByLabel("0 of 3 points · 0 of 1 card").waitFor();
+    await row("Cycle 1").getByLabel("5 of 8 points · 1 of 2 cards").waitFor();
   });
 
   it("closes a cycle and takes its unfinished card out of any cycle", async () => {
@@ -149,7 +151,7 @@ describe.skipIf(usesRealServer)("the Cycles page", () => {
     await dialog.waitFor({ state: "detached" });
     expect(fake().requests.at(-1)).toMatchObject({ body: { carry: "out" } });
     await page.getByRole("button", { name: "All cycles" }).click();
-    await row("Cycle 2").getByText("0 of 0 cards").waitFor();
+    await row("Cycle 2").getByLabel("0 of 0 cards").waitFor();
   });
 
   it("shows a card's cycle in its properties and puts it in another", async () => {
@@ -167,8 +169,8 @@ describe.skipIf(usesRealServer)("the Cycles page", () => {
     });
     // The page of cycles counts it now: one card of 5 points moved over.
     await page.goto(`${server.url}/cycles`);
-    await row("Cycle 2").getByText("5 of 5 points · 1 of 1 card").waitFor();
-    await row("Cycle 1").getByText("0 of 3 points · 0 of 1 card").waitFor();
+    await row("Cycle 2").getByLabel("5 of 5 points · 1 of 1 card").waitFor();
+    await row("Cycle 1").getByLabel("0 of 3 points · 0 of 1 card").waitFor();
   });
 
   it("deletes a cycle and leaves its cards", async () => {

@@ -13,9 +13,10 @@ import { ConfirmDelete } from "../../ui/page/ConfirmDelete";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
+import { TimeBar } from "../../ui/page/TimeBar";
 import { CloseDialog } from "./CycleDialogs";
-import { Progress, STATE_WORDS } from "./CycleProgress";
-import { chart, periodWords, perPointWords, progressWords, stateOf } from "./model";
+import { STATE_WORDS } from "./CycleProgress";
+import { chart, percent, periodWords, perPointWords, progressWords, stateOf } from "./model";
 
 /** A cycle's page: its figures and burn-up above the list of its cards, and what a member does with it. */
 export function CyclePage({
@@ -44,7 +45,6 @@ export function CyclePage({
   const header = (
     <PageHeader
       title={cycle.name}
-      context={`${periodWords(cycle, now)} · ${STATE_WORDS[state]}`}
       back={
         <Button size="icon" variant="ghost" aria-label="All cycles" onClick={onBack}>
           <ArrowLeftIcon className="size-4" aria-hidden="true" />
@@ -77,8 +77,20 @@ export function CyclePage({
   return (
     <>
       {header}
-      <Progress cycle={cycle} className="mb-2" />
-      <p className="mt-0 mb-4 text-sm text-secondary">{progressWords(cycle)}</p>
+      <TimeBar
+        className="mb-2"
+        start={cycle.starts_on}
+        end={cycle.ends_on}
+        axis={{ start: cycle.starts_on, end: cycle.ends_on }}
+        progress={percent(cycle)}
+        label={progressWords(cycle)}
+        today={now}
+        emphasis={state === "running"}
+      />
+      <p className="mt-0 mb-4 text-sm text-secondary">
+        {periodWords(cycle, now)} · {state === "running" ? "Current" : STATE_WORDS[state]} ·{" "}
+        {progressWords(cycle)}
+      </p>
       {detail.isPending ? (
         <SkeletonList rows={3} message="Reading the cycle" />
       ) : detail.isError ? (
@@ -132,23 +144,20 @@ function Body({ detail }: { detail: CycleDetail }) {
   ];
   return (
     <>
-      <dl className="m-0 mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <dl className="m-0 mb-4 grid grid-cols-2 gap-x-4 gap-y-3 border-y border-hairline py-3 sm:grid-cols-4">
         {tiles.map(([name, value]) => (
-          <div key={name} className="rounded-card bg-raised p-3 shadow-card">
+          <div key={name}>
             <dt className="text-sm text-secondary">{name}</dt>
             <dd className="m-0 text-lg font-semibold text-text tabular-nums">{value}</dd>
           </div>
         ))}
       </dl>
       <BurnUp detail={detail} />
-      <ul
-        className="m-0 mt-4 flex list-none flex-col gap-1 p-0"
-        aria-label={`Cards of ${detail.name}`}
-      >
+      <ul className="m-0 mt-4 flex list-none flex-col p-0" aria-label={`Cards of ${detail.name}`}>
         {detail.cards.map((card) => (
           <li
             key={card.id}
-            className="flex min-w-0 items-baseline gap-2 rounded-card bg-raised px-3 py-2 text-sm shadow-card"
+            className="flex min-h-9 min-w-0 items-baseline gap-2 border-b border-hairline px-1 py-2 text-sm"
           >
             <span className="min-w-0 flex-1 truncate text-text">{card.title}</span>
             <span className="shrink-0 text-secondary tabular-nums">
@@ -172,7 +181,7 @@ function BurnUp({ detail }: { detail: CycleDetail }) {
   const lines = chart(detail.burn_up, width, height);
   const last = detail.burn_up[detail.burn_up.length - 1];
   return (
-    <figure className="m-0 rounded-card bg-raised p-3 shadow-card">
+    <figure className="m-0">
       <figcaption className="mb-2 text-sm text-secondary">
         Burn-up, in points
         {last ? `: ${last.done} done of ${last.scope} planned` : ": the cycle has not started"}
