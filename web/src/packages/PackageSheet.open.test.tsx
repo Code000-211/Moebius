@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The package sheet closed and open, and its search: closed until it is opened, the place it shares with the other sheet, the results with their filter, and a registry that cannot be read.
+ * The package sheet closed and open, and its search: closed until it is opened, the results with their filter, and a registry that cannot be read.
  */
 import { fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
@@ -33,23 +33,6 @@ describe("opening and closing the sheet", () => {
     openRegistries();
     const field = await inSheet().findByRole("textbox", { name: "Search the registries" });
     expect(document.activeElement).toBe(field);
-  });
-
-  it("shares its place with the other sheet: opening one hides the other, which keeps its state", async () => {
-    answers["GET /v1/packages/search?q="] = { body: { packages: [summary()], problems: [] } };
-    mount();
-    openRegistries();
-    await inSheet().findByText("gate");
-    fireEvent.click(screen.getByRole("button", { name: "open the other sheet" }));
-    expect(screen.queryByRole("dialog", { name: "Package sheet" })).toBeNull();
-    expect(screen.getByRole("dialog", { name: "Other sheet" })).toBeTruthy();
-    // Escape does not reach the hidden one.
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.getByRole("dialog", { name: "Other sheet" })).toBeTruthy();
-    expect(screen.queryByRole("dialog", { name: "Package sheet" })).toBeNull();
-    openRegistries();
-    expect(await inSheet().findByText("gate")).toBeTruthy();
-    expect(screen.queryByRole("dialog", { name: "Other sheet" })).toBeNull();
   });
 
   it("switches its catalog when it is opened from elsewhere", async () => {

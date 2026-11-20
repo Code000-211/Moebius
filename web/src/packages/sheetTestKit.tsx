@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, vi } from "vitest";
-import { SheetSlotProvider, useSheetSlot } from "../ui/page/SheetSlot";
+import { SheetSlotProvider } from "../ui/page/SheetSlot";
 import { PackageSheet } from "./PackageSheet";
 import { PackageSheetProvider, usePackageSheet } from "./PackageSheetContext";
 
@@ -77,24 +77,10 @@ function Where() {
   return <p data-testid="where">{useLocation().pathname + useLocation().search}</p>;
 }
 
-/** Stands for the Moebius agent: the other tenant of the place over the right column. */
-function OtherSheet() {
-  const slot = useSheetSlot();
-  return (
-    <>
-      <button type="button" onClick={() => slot.show("chat")}>
-        open the other sheet
-      </button>
-      {slot.active === "chat" && <section role="dialog" aria-label="Other sheet" />}
-    </>
-  );
-}
-
 function Openers() {
   const sheet = usePackageSheet();
   return (
     <>
-      <OtherSheet />
       <button type="button" onClick={() => sheet.open("moebius")}>
         open registries
       </button>

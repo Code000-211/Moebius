@@ -3,8 +3,10 @@
  * lying on it without a surface of its own, and the page as one panel floating on it — 6px of air above, below and at
  * the right, all four corners round, a hairline for its edge and no shadow (`docs/design-web.md`). There is no strip
  * above it and no texture under it. The panel holds the banner while the server cannot be reached, what the route
- * draws, and, only on a page that supplies properties, the pane for them (`RightColumn.tsx`). The agent and the package
- * sheet, which pages open from where a person meets plugins and extensions, lie over that place in the same panel. It
+ * draws, and, only on a page that supplies properties, the pane for them (`RightColumn.tsx`). The Moebius agent has a
+ * panel of its own at the right, opened from the dock, the quiet field at the bottom of the page (`AgentDock.tsx`), and
+ * by `Ctrl+J`; the package sheet, which pages open from where a person meets plugins and extensions, lies over the
+ * properties pane's place in the same panel. It
  * owns the command palette and its shortcut, the form of a new issue and `C` (`board/NewIssueHost.tsx`), holds what is
  * in focus for it (`palette/focus.tsx`), and notes the places seen and the sidebar's collapsed state (kept per
  * browser). In the desktop app the panel carries the window's controls once at its top right
@@ -28,6 +30,9 @@ import { SkeletonCard } from "../../ui/page/Skeleton";
 import { isTyping, NewIssueProvider } from "../board/NewIssueHost";
 import { prefetchCard } from "../board/prefetchCard";
 import { readFlag, writeFlag } from "../storage";
+import { AgentProvider, useAgent } from "./AgentContext";
+import { AgentDock } from "./AgentDock";
+import { AgentPanel } from "./AgentPanel";
 import { CommandBar } from "./CommandBar";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { PaletteFocusProvider } from "./palette/focus";
@@ -65,7 +70,9 @@ export function Shell(props: { unreachable: boolean; onRetry: () => void }) {
         <PropertiesProvider>
           <PaletteFocusProvider>
             <NewIssueProvider>
-              <Frame {...props} />
+              <AgentProvider>
+                <Frame {...props} />
+              </AgentProvider>
             </NewIssueProvider>
           </PaletteFocusProvider>
         </PropertiesProvider>
@@ -77,6 +84,9 @@ export function Shell(props: { unreachable: boolean; onRetry: () => void }) {
 function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => void }) {
   const packages = usePackageSheet();
   const { present: hasProperties } = useProperties();
+  const agent = useAgent();
+  // The pane at the panel's right, the properties or the agent, owns the head's right end, with the window's controls.
+  const paneShown = hasProperties || agent.open;
   const connection = useConnection();
   const location = useLocation();
   // A card named in the address the page opened at is read now, while the board's code and the snapshot are on their way.
@@ -157,7 +167,7 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
         <div
           className="flex min-w-0 flex-1 flex-col"
           style={
-            desktopBridge() && !hasProperties
+            desktopBridge() && !paneShown
               ? ({ "--window-buttons": WINDOW_BUTTONS_WIDTH } as CSSProperties)
               : undefined
           }
@@ -188,7 +198,10 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
               </Suspense>
             </PageBoundary>
           </main>
+          {/* The quiet field for the agent; not while the agent's panel is open, and not on Settings, which has none. */}
+          {!agent.open && !location.pathname.startsWith("/settings") && <AgentDock />}
         </div>
+        <AgentPanel />
         <RightColumn />
         <PackageSheet />
         <WindowControls />

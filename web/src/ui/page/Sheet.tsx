@@ -1,10 +1,9 @@
 /**
  * The sheet the shell lays over the page's right column: a solid card the whole height of the page's surface, wider
  * than the column, with a header (a title, a line under it, the sheet's own controls, and the control that closes it).
- * The Moebius agent and the package sheet are both made of these pieces, so they open, close and keep their state the
- * same way: Escape or the close control hides the sheet and puts the focus back on the button that opened it, when one
- * did, and the sheet's state stays where it was until it is opened again. The two share that one place
- * (`SheetSlot.tsx`): opening one hides the other.
+ * The package sheet is made of these pieces: Escape or the close control hides the sheet and puts the focus back on
+ * the button that opened it, when one did, and the sheet's state stays where it was until it is opened again. It has
+ * the place (`SheetSlot.tsx`) to itself; the Moebius agent has a panel of its own.
  */
 import { XIcon } from "@phosphor-icons/react";
 import { type ReactNode, type RefObject, useEffect, useRef } from "react";

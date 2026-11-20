@@ -37,6 +37,7 @@ import { ScrollFades } from "../../ui/page/ScrollFades";
 import { useSheetSlot } from "../../ui/page/SheetSlot";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
+import { useAgent } from "../shell/AgentContext";
 import { boardFiltersOf, viewOfBoard } from "../views/model";
 import { CardContent } from "./BoardCardContent";
 import { BoardColumn } from "./BoardColumn";
@@ -100,6 +101,8 @@ export function BoardPage() {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const propertiesShown = usePropertiesShown();
   const sheetShown = useSheetSlot().active !== null;
+  // The agent's panel is a column of the page's surface, so the drawer stands against its left edge.
+  const agentOpen = useAgent().open;
   // With a sheet over the column the drawer stands beside the sheet, further left than the column it was laid for:
   // the head of the page and the drawer's own column take the difference, so the board ends where the drawer starts.
   const beside = propertiesShown
@@ -560,13 +563,16 @@ export function BoardPage() {
               data-testid="inspector-drawer"
               className={cn(
                 "dock:absolute dock:inset-y-0 dock:z-10 dock:w-96 dock:overflow-hidden",
-                // A sheet (the Moebius agent) lies over the column and a strip of the page, so the drawer stands
-                // beside it: the board gives way, and the card's text is not under the sheet.
+                // A sheet (the package sheet) lies over the column and a strip of the page, so the drawer stands
+                // beside it: the board gives way, and the card's text is not under the sheet. The agent's panel is
+                // beside the page instead, so the drawer ends where it starts.
                 sheetShown
                   ? "dock:right-[var(--sheet-width)] dock:rounded-r-sheet"
-                  : propertiesShown
-                    ? "dock:right-[var(--column-width)]"
-                    : "dock:right-0 dock:rounded-r-sheet",
+                  : agentOpen
+                    ? "dock:right-[var(--agent-width)]"
+                    : propertiesShown
+                      ? "dock:right-[var(--column-width)]"
+                      : "dock:right-0 dock:rounded-r-sheet",
               )}
             >
               <Dock

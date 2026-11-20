@@ -200,8 +200,10 @@
   /* The properties pane at the panel's right; where a page has none the pane takes no room, so the slim width is 0. */
   --column-width: 272px;
   --column-rail-width: 0px;
-  /* A sheet over the right column (the Moebius agent, the package sheet): wider than the column, over the page. */
+  /* A sheet over the right column (the package sheet): wider than the column, over the page. */
   --sheet-width: 400px;
+  /* The Moebius agent's panel, beside the page. */
+  --agent-width: 344px;
   /* The room the window buttons of the desktop app take at the right of the page header; the shell sets it. */
   --window-buttons: 0px;
   --connect-width: 448px;

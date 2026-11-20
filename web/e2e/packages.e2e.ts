@@ -275,24 +275,6 @@ describe.skipIf(usesRealServer)("the Plugins page and the Moebius registries", (
     expect(await contentRight()).toBeLessThan(before);
   });
 
-  it("takes the Moebius agent's place: opening one hides the other, which keeps its state", async () => {
-    await open("/plugins");
-    await openRegistries();
-    const where = await place(sheet());
-    const chat = page.getByRole("dialog", { name: "Moebius agent" });
-    await page.keyboard.press("Control+j");
-    await chat.waitFor();
-    await sheet().waitFor({ state: "hidden" });
-    expect(await place(chat)).toEqual(where);
-    // The agent lies over the page's button, so it is closed first; the sheet waits hidden until it is opened again.
-    await page.keyboard.press("Control+j");
-    await chat.waitFor({ state: "hidden" });
-    expect(await sheet().isVisible()).toBe(false);
-    await openRegistries();
-    // The search it had is where it was left.
-    await sheet().getByTestId("list-card").first().waitFor();
-  });
-
   it("reads again what the events say changed", async () => {
     await open("/plugins");
     await page.getByTestId("installed-packages").getByTestId("installed-package").first().waitFor();
