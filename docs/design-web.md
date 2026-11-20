@@ -358,19 +358,19 @@ Shared principles, voice, visual language, interaction patterns, and the shared 
 
 ## Transition
 
-*This section goes when the last step of the redesign has landed; the clean-up ticket (T51) deletes it.* The code is moved to this standard in steps. Until each lands, it still does the following, which this page no longer allows. T-numbers are the tickets of the redesign.
+*This section goes when the last step of the redesign has landed; the clean-up issue (#613) deletes it.* The code is moved to this standard in steps. Until each lands, it still does the following, which this page no longer allows. The numbers are the issues of the redesign.
 
 | What the code still does | Removed by |
 | --- | --- |
-| Warm greys, dark as the default theme, and the old token names (`--ground`, `--page`, `--surface`, `--glass`, `--glow`, `--wash`, `--grain`) | T01B replaces the tokens; T51 deletes the old names |
-| Grain and a light from above on the ground, and the accent wash at the top of the content | T01B (tokens), T07 (shell) |
-| A glow on the chosen card | T20 |
-| Glass sheets and dialogs with a 24px blur, and glass on the head bar | T06 (blur only on small menus, tooltips and the palette; dimmed solid windows) |
-| Cards and tiles that lift on hover, and per-element animations | T05 |
-| Edge fades on scrollers (`ScrollFades`, `useScrollFades`, `FadedLine`, `FadedClamp`) | T21 and T22 (board), T23, T26, T30, T34, T37 (pages); T51 deletes the components |
-| The right Properties column with its slim rail, and the card's inspector docked beside the board | T07 (shell), T17 and T19 (card window and thread) |
-| The agent and the package panel as glass sheets over the right column, and "Ask Moebius" as the column's last row | T29 |
-| A spinning ring on every running card, and coloured state pills | T02 (status icons), T05 |
-| A sentence under the title of a page | T03 (header); T44 to T47 (pages) |
-| Windows of radius 12, sidebar rows of 28px | T01B, T07, T13 |
-| Settings as many pages in the sidebar | T08 to T11 |
+| Warm greys, dark as the default theme, and the old token names (`--ground`, `--page`, `--surface`, `--glass`, `--glow`, `--wash`, `--grain`) | #565 replaces the tokens; #613 deletes the old names |
+| Grain and a light from above on the ground, and the accent wash at the top of the content | #565 (tokens), #571 (shell) |
+| A glow on the chosen card | #584 |
+| Glass sheets and dialogs with a 24px blur, and glass on the head bar | #570 (blur only on small menus, tooltips and the palette; dimmed solid windows) |
+| Cards and tiles that lift on hover, and per-element animations | #569 |
+| Edge fades on scrollers (`ScrollFades`, `useScrollFades`, `FadedLine`, `FadedClamp`) | #585 and #586 (board), #587, #590, #594, #598, #601 (pages); #613 deletes the components |
+| The right Properties column with its slim rail, and the card's inspector docked beside the board | #571 (shell), #581 and #583 (card window and thread) |
+| The agent and the package panel as glass sheets over the right column, and "Ask Moebius" as the column's last row | #593 |
+| A spinning ring on every running card, and coloured state pills | #566 (status icons), #569 |
+| A sentence under the title of a page | #567 (header); #608 to #611 (pages) |
+| Windows of radius 12, sidebar rows of 28px | #565, #571, #577 |
+| Settings as many pages in the sidebar | #572 to #575 |
