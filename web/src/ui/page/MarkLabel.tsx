@@ -1,18 +1,18 @@
 /**
  * A state said as a small mark and a line of grey text, the way the board, the Inbox and Fleet say what a thing is
- * doing: "Live" with the turning ring and the agent's name, "Blocked" with the blocked icon, "Waiting on #24" and "Your
+ * doing: "Live" with the running ring and the agent's name, "Blocked" with the blocked icon, "Waiting on #24" and "Your
  * turn" as the grey text alone. It replaces the coloured pill (`Status`) for those pages; the word is always there,
  * so the mark is decorative and the colour is never the only signal. The label is never a control.
  */
 import { cn } from "../lib/cn";
-import { RunRing, StatusIcon, type StatusState } from "./StatusIcon";
+import { StatusIcon, type StatusState } from "./StatusIcon";
 
-/** The mark before the word: the turning ring, one of the status icons, or none for a state that is only said. */
+/** The mark before the word: the running ring, one of the status icons, or none for a state that is only said. */
 export type StateMark = "none" | "live" | StatusState;
 
 export function MarkIcon({ mark }: { mark: StateMark }) {
   if (mark === "none") return null;
-  if (mark === "live") return <RunRing decorative />;
+  if (mark === "live") return <StatusIcon state="running" decorative />;
   return <StatusIcon state={mark} decorative />;
 }
 

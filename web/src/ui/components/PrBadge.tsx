@@ -11,7 +11,7 @@ export type PrBadgeStatus = "open" | "merged" | "closed";
 const STATES: Record<PrBadgeStatus, { word: string; mark: StatusState }> = {
   open: { word: "Open", mark: "inReview" },
   merged: { word: "Merged", mark: "done" },
-  closed: { word: "Closed", mark: "blocked" },
+  closed: { word: "Closed", mark: "notStarted" },
 };
 
 export interface PrBadgeProps {

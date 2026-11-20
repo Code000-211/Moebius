@@ -1,6 +1,6 @@
 /**
  * One state of a page, said as a status icon and a word: what every page shows a state with, in place of a coloured pill. The tone
- * picks the icon (progress is the half ring, attention the empty ring, complete the check, error the bar), the icon carries the state's name, and the word beside it says what is
+ * picks the icon (progress is the running ring, attention and error the needs-you mark, complete the check), the icon carries the state's name, and the word beside it says what is
  * meant here. A neutral fact that is not a state has no icon and is plain text.
  */
 import type { ReactNode } from "react";
@@ -11,10 +11,10 @@ import { StatusIcon, type StatusState } from "./StatusIcon";
 export type Tone = "neutral" | "progress" | "attention" | "complete" | "error";
 
 const TONE_STATE: Record<Exclude<Tone, "neutral">, StatusState> = {
-  progress: "inProgress",
-  attention: "notStarted",
+  progress: "running",
+  attention: "needsYou",
   complete: "done",
-  error: "blocked",
+  error: "needsYou",
 };
 
 export function StateLabel({

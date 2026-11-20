@@ -9,10 +9,10 @@ afterEach(cleanup);
 describe("a tag", () => {
   it("says a toned state in the icon's name and in text, without a pill", () => {
     const names = {
-      progress: "In progress",
-      attention: "Not started",
+      progress: "Running",
+      attention: "Needs you",
       complete: "Done",
-      error: "Blocked",
+      error: "Needs you",
     } as const;
     for (const [tone, name] of Object.entries(names)) {
       const { container } = render(<Tag tone={tone as keyof typeof names}>word</Tag>);

@@ -1,6 +1,6 @@
 /**
  * The small marks that replace coloured pills for states: `StatusIcon` for the state of a column, `PriorityBars` for
- * priority, `RunRing` for a run that is going and `LabelDot` for a label. Each says its state by its shape as well as
+ * priority and `LabelDot` for a label. Each says its state by its shape as well as
  * its hue, carries an accessible name (or, with `decorative`, hides itself because a word stands beside it), and takes
  * its colour from the status tokens of `styles/theme.css`, so both themes work. They replace the coloured pills, of which none is left;
  * the board, the Inbox and Fleet use them through `MarkLabel.tsx`, the other pages through `StateLabel.tsx`.
@@ -8,14 +8,30 @@
  * ```tsx
  * <StatusIcon state="inReview" />        // announced as "In review"
  * <PriorityBars priority="urgent" />     // the only coloured priority
- * <RunRing />                            // a turning ring, announced as "Running"
+ * <StatusIcon state="running" />         // a still ring with a quarter arc, announced as "Running"
  * <LabelDot name="Design" />             // a dot and the word
  * ```
  */
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
 
-/** The states of a column, in the order a card passes through them. */
+/** The five status icons, Moebius's own: each is told by its shape as well as its colour. */
+export const STATUS_KINDS = ["needsYou", "running", "inReview", "done", "notStarted"] as const;
+export type StatusKind = (typeof STATUS_KINDS)[number];
+
+/** What each icon is called to a person hearing it. */
+export const STATUS_KIND_NAMES: Record<StatusKind, string> = {
+  needsYou: "Needs you",
+  running: "Running",
+  inReview: "In review",
+  done: "Done",
+  notStarted: "Not started",
+};
+
+/**
+ * The states callers name, each mapped to one of the five icons. A column, a pull request or a tool call that is not
+ * listed here is "not started".
+ */
 export const STATUS_STATES = [
   "backlog",
   "notStarted",
@@ -24,28 +40,34 @@ export const STATUS_STATES = [
   "readyToMerge",
   "done",
   "blocked",
+  "needsYou",
+  "running",
 ] as const;
 export type StatusState = (typeof STATUS_STATES)[number];
 
-/** What each state is called to a person hearing it. */
-export const STATUS_NAMES: Record<StatusState, string> = {
-  backlog: "Backlog",
-  notStarted: "Not started",
-  inProgress: "In progress",
-  inReview: "In review",
-  readyToMerge: "Ready to merge",
-  done: "Done",
-  blocked: "Blocked",
+export const STATUS_OF: Record<StatusState, StatusKind> = {
+  backlog: "notStarted",
+  notStarted: "notStarted",
+  inProgress: "running",
+  running: "running",
+  inReview: "inReview",
+  readyToMerge: "inReview",
+  done: "done",
+  blocked: "needsYou",
+  needsYou: "needsYou",
 };
 
-const STATUS_HUE: Record<StatusState, string> = {
-  backlog: "var(--status-todo)",
-  notStarted: "var(--status-todo)",
-  inProgress: "var(--status-progress)",
+/** The icon of a state a caller names; a name that is not a state is "not started". */
+export function statusKind(state: string): StatusKind {
+  return (STATUS_OF as Record<string, StatusKind | undefined>)[state] ?? "notStarted";
+}
+
+const STATUS_HUE: Record<StatusKind, string> = {
+  needsYou: "var(--needs-you)",
+  running: "var(--running)",
   inReview: "var(--status-review)",
-  readyToMerge: "var(--status-done)",
   done: "var(--status-done)",
-  blocked: "var(--status-error)",
+  notStarted: "var(--status-todo)",
 };
 
 interface MarkProps {
@@ -78,54 +100,40 @@ function Mark({
   );
 }
 
-/** A thick arc inside the ring: radius 3 with a 6 wide stroke fills a pie of the given fraction. */
-function Pie({ fraction, hue }: { fraction: number; hue: string }) {
-  const c = 2 * Math.PI * 3;
-  return (
-    <circle
-      cx="8"
-      cy="8"
-      r="3"
-      stroke={hue}
-      strokeWidth="6"
-      strokeDasharray={`${c * fraction} ${c}`}
-      transform="rotate(-90 8 8)"
-    />
-  );
-}
-
-function body(state: StatusState, hue: string): ReactNode {
-  const ring = <circle cx="8" cy="8" r="6" stroke={hue} strokeWidth="1.5" />;
-  switch (state) {
-    case "backlog":
-      return <circle cx="8" cy="8" r="6" stroke={hue} strokeWidth="1.5" strokeDasharray="2 2" />;
-    case "notStarted":
-      return ring;
-    case "inProgress":
+function body(kind: StatusKind, hue: string): ReactNode {
+  const ring = <circle cx="8" cy="8" r="6.25" stroke={hue} strokeWidth="1.5" />;
+  switch (kind) {
+    case "needsYou":
       return (
         <>
           {ring}
-          <Pie fraction={0.5} hue={hue} />
+          <path d="M8 4.75v3.5" stroke={hue} strokeWidth="1.5" strokeLinecap="round" />
+          <circle cx="8" cy="10.9" r="0.9" fill={hue} />
         </>
       );
+    case "running": {
+      const c = 2 * Math.PI * 6.25;
+      return (
+        <>
+          <circle cx="8" cy="8" r="6.25" stroke={hue} strokeWidth="1.5" opacity="0.25" />
+          <circle
+            cx="8"
+            cy="8"
+            r="6.25"
+            stroke={hue}
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeDasharray={`${c / 4} ${c}`}
+            transform="rotate(-90 8 8)"
+          />
+        </>
+      );
+    }
     case "inReview":
       return (
         <>
           {ring}
-          <Pie fraction={0.75} hue={hue} />
-        </>
-      );
-    case "readyToMerge":
-      return (
-        <>
-          {ring}
-          <path
-            d="M6.5 5.5 9.5 8 6.5 10.5"
-            stroke={hue}
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+          <path d="M8 4.25a3.75 3.75 0 0 1 0 7.5Z" fill={hue} />
         </>
       );
     case "done":
@@ -134,33 +142,34 @@ function body(state: StatusState, hue: string): ReactNode {
           <circle cx="8" cy="8" r="7" fill={hue} />
           <path
             d="M5 8.2 7.1 10.2 11 6"
-            stroke="var(--background)"
+            stroke="var(--panel)"
             strokeWidth="1.5"
             strokeLinecap="round"
             strokeLinejoin="round"
           />
         </>
       );
-    case "blocked":
+    case "notStarted":
       return (
-        <>
-          <circle cx="8" cy="8" r="7" fill={hue} />
-          <path d="M5 8h6" stroke="var(--background)" strokeWidth="1.75" strokeLinecap="round" />
-        </>
+        <circle cx="8" cy="8" r="6.25" stroke={hue} strokeWidth="1.5" strokeDasharray="2.2 2.2" />
       );
   }
 }
 
-/** The state of a column as a 16px icon: dashed ring, ring, half, three quarters, chevron, check, bar. */
+/**
+ * One of the five status icons at 16px: needs you, running, in review, done, not started. A state a caller names (a
+ * column such as "In progress") is mapped to its icon; none of them moves.
+ */
 export function StatusIcon({ state, decorative, className }: MarkProps & { state: StatusState }) {
+  const kind = statusKind(state);
   return (
     <Mark
-      name={STATUS_NAMES[state]}
+      name={STATUS_KIND_NAMES[kind]}
       decorative={decorative}
       className={className}
-      testId={`status-${state}`}
+      testId={`status-${kind}`}
     >
-      {body(state, STATUS_HUE[state])}
+      {body(kind, STATUS_HUE[kind])}
     </Mark>
   );
 }
@@ -222,24 +231,6 @@ export function PriorityBars({
           />
         ))
       )}
-    </Mark>
-  );
-}
-
-/**
- * A run that is going: a ring in the accent with a gap, turning. Reduced motion stops the turning and the arc still
- * says it is a run.
- */
-export function RunRing({ decorative, className }: MarkProps) {
-  return (
-    <Mark
-      name="Running"
-      decorative={decorative}
-      testId="run-ring"
-      className={cn("animate-spin motion-reduce:animate-none", className)}
-    >
-      <circle cx="8" cy="8" r="6" stroke="var(--hairline-strong)" strokeWidth="1.5" />
-      <path d="M8 2a6 6 0 0 1 6 6" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" />
     </Mark>
   );
 }
