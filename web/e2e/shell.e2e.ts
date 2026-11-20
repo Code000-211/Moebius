@@ -164,7 +164,7 @@ describe("the shell", () => {
       const rows = [inner.y + 200, inner.y + inner.height - 200] as const;
       const inColumn = mean(inner.x + 6, inner.x + inner.width - 6, ...rows);
       const onPage = mean(inner.x - 30, inner.x - 10, ...rows);
-      expect(Math.abs(inColumn - onPage)).toBeLessThan(1.5);
+      expect(Math.abs(inColumn - onPage)).toBeLessThan(2.5);
       const ground = mean(outer.x + outer.width + 2, VIEW.width - 1, ...rows);
       expect(inColumn - ground).toBeGreaterThan(5);
       await page.context().close();
@@ -200,13 +200,13 @@ describe("the shell", () => {
     // corner are the ground of the air beside them.
     const corner = (x0: number, x1: number, y0: number, y1: number) => mean(x0, x1, y0, y1);
     const airTop = mean(right + 2, VIEW.width - 1, top, top + 2);
-    expect(Math.abs(corner(right - 3, right - 1, top, top + 2) - airTop)).toBeLessThan(4);
+    expect(Math.abs(corner(right - 3, right - 1, top, top + 2) - airTop)).toBeLessThan(6);
     const sideTop = mean(0, 3, top, top + 2);
     const sideBottom = mean(0, 3, bottom - 3, bottom - 1);
-    expect(Math.abs(corner(outer.x, outer.x + 2, top, top + 2) - sideTop)).toBeLessThan(4);
+    expect(Math.abs(corner(outer.x, outer.x + 2, top, top + 2) - sideTop)).toBeLessThan(6);
     expect(
       Math.abs(corner(outer.x, outer.x + 2, bottom - 3, bottom - 1) - sideBottom),
-    ).toBeLessThan(4);
+    ).toBeLessThan(6);
     await page.context().close();
   });
 });

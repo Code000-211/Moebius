@@ -82,7 +82,7 @@
   --attention-hover: color-mix(in srgb, var(--needs-you) 14%, var(--panel));
   --complete: var(--status-done);
   --complete-text: var(--text-secondary);
-  --complete-fill: color-mix(in srgb, var(--status-done) 12%, var(--panel));
+  --complete-fill: color-mix(in srgb, var(--status-done) 30%, var(--panel));
   --complete-border: var(--hairline-strong);
   --error: var(--danger);
   --error-text: var(--danger-text);
