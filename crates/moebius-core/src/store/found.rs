@@ -27,7 +27,7 @@ impl Store {
         to: i64,
         run: Option<i64>,
     ) -> Result<Vec<Found>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut stmt = conn.prepare(sql)?;
         let rows = stmt.query_map(params![from, to, run], |r| {
             Ok(Found {

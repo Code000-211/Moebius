@@ -135,7 +135,7 @@ impl Store {
 
     /// Every milestone, the nearest target date first.
     pub fn milestones(&self) -> Result<Vec<Milestone>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut stmt = conn.prepare(&format!(
             "SELECT {COLUMNS} FROM milestones ORDER BY target_date, id"
         ))?;
@@ -156,7 +156,7 @@ impl Store {
 
     /// Every card of the milestone, in the order of the cards, with the project each is on.
     pub fn milestone_cards(&self, id: i64) -> Result<Vec<MilestoneCard>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut stmt = conn.prepare(
             "SELECT c.id, c.project_id, c.repository_id, c.number, c.title, c.column_name, \
                     (c.closed OR c.column_name = 'Done') \
@@ -169,7 +169,7 @@ impl Store {
 
     /// The milestones a card is in, in the order of their target dates.
     pub fn card_milestones(&self, card_id: i64) -> Result<Vec<Milestone>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut stmt = conn.prepare(
             "SELECT m.id, m.name, m.target_date, m.description, m.created_at \
              FROM milestone_cards c JOIN milestones m ON m.id = c.milestone_id \

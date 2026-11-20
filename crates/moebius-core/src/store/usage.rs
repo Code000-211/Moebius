@@ -161,7 +161,7 @@ impl Store {
 
     /// Tokens `model` used since the start of the server's local day, whatever asked for it.
     pub fn model_tokens_today(&self, model: &str) -> Result<i64> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             &format!(
                 "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM usage
                  WHERE at >= {WINDOW_START} AND model = ?2"
@@ -209,7 +209,7 @@ impl Store {
 
     /// Tokens used by the runs of a card since it was last retried.
     pub fn tokens_for_card(&self, card_id: i64) -> Result<i64> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             "SELECT COALESCE(SUM(u.input_tokens + u.output_tokens), 0) FROM usage u JOIN runs r ON r.id = u.run_id
              WHERE r.card_id = ?1 AND r.purpose <> 'trial'
                AND r.id > COALESCE((SELECT retried_after FROM cards WHERE id = ?1), 0)",
@@ -225,7 +225,7 @@ impl Store {
 
     /// Everything used in the last `days` local days, today included.
     pub fn usage_totals(&self, days: i64, scope: &Scope) -> Result<UsageTotals> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             &format!(
                 "SELECT COALESCE(SUM(input_tokens + output_tokens), 0), COUNT(*), COALESCE(SUM(input_tokens), 0),
                         COALESCE(SUM(cached_tokens), 0), COALESCE(SUM(duration_ms), 0)

@@ -71,7 +71,7 @@ impl Store {
         run: Option<i64>,
         limit: i64,
     ) -> Result<Vec<Replay>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut stmt = conn.prepare(
             "SELECT id, judgement_id, run_id, exit, timed_out, output, created, changed, deleted, at
              FROM replays WHERE (?1 IS NULL OR judgement_id = ?1) AND (?2 IS NULL OR run_id = ?2)
@@ -108,7 +108,7 @@ impl Store {
 
     /// How many replays were made since `since`.
     pub fn replays_since(&self, since: i64) -> Result<usize> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             "SELECT COUNT(*) FROM replays WHERE at >= ?1",
             [since],
             |r| r.get::<_, i64>(0),

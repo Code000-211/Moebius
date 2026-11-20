@@ -133,7 +133,7 @@ impl Store {
     }
 
     fn retros_where(&self, clause: &str, param: &str) -> Result<Vec<Retro>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut stmt = conn.prepare(&format!(
             "SELECT date, report, status, run_id, warnings, at FROM retros WHERE {clause} ORDER BY date DESC"
         ))?;
@@ -240,7 +240,7 @@ impl Store {
         clause: &str,
         param: rusqlite::types::Value,
     ) -> Result<Vec<Proposal>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut stmt = conn.prepare(&format!(
             "SELECT id, retro_date, branch, title, body, agents, cards, status, at, kind, diff, edits, repository_id,
              change_id FROM proposals WHERE {clause} ORDER BY id DESC"

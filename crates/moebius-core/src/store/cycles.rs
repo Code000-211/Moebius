@@ -237,7 +237,7 @@ impl Store {
 
     /// Every card of the cycle, in the order of the cards.
     pub fn cycle_cards(&self, id: i64) -> Result<Vec<CycleCard>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut stmt = conn.prepare(
             "SELECT c.id, c.repository_id, c.number, c.title, c.column_name, \
                     (c.closed OR c.column_name = 'Done') AS done, (SELECT json_group_array(label) FROM card_labels WHERE card_id = c.id), m.added_at, \

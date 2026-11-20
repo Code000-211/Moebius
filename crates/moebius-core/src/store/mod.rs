@@ -524,15 +524,34 @@ pub fn now() -> i64 {
 /// The store. Safe to share between threads; each call takes the connection for as long as it needs it.
 pub struct Store {
     conn: Mutex<Connection>,
+    /// Read-only connections to the same file, so that a read never waits for the writer (the database is in WAL mode:
+    /// readers see the last commit and do not block it). Empty for a store in memory, whose reads use `conn`.
+    readers: Vec<Mutex<Connection>>,
+    next_reader: std::sync::atomic::AtomicUsize,
     blobs: BlobStore,
+    events: events::EventLog,
 }
+
+/// How many read-only connections a store on disk opens.
+const READERS: usize = 4;
 
 impl Store {
     /// Opens (or creates) the store in `data_dir` and brings its schema up to date.
     pub fn open(data_dir: &Path) -> Result<Self> {
         std::fs::create_dir_all(data_dir)?;
-        let conn = Connection::open(data_dir.join("moebius.sqlite"))?;
-        Self::with(conn, BlobStore::new(data_dir.join("blobs")))
+        let path = data_dir.join("moebius.sqlite");
+        let conn = Connection::open(&path)?;
+        let mut store = Self::with(conn, BlobStore::new(data_dir.join("blobs")))?;
+        for _ in 0..READERS {
+            let reader = Connection::open_with_flags(
+                &path,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                    | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            )?;
+            reader.busy_timeout(std::time::Duration::from_secs(10))?;
+            store.readers.push(Mutex::new(reader));
+        }
+        Ok(store)
     }
 
     /// A store in memory, with blobs under `blob_dir`; for tests.
@@ -543,6 +562,9 @@ impl Store {
     fn with(mut conn: Connection, blobs: BlobStore) -> Result<Self> {
         conn.pragma_update(None, "foreign_keys", true)?;
         conn.pragma_update_and_check(None, "journal_mode", "WAL", |_| Ok(()))?;
+        // With WAL a commit is durable once it is in the log and the log is synced at a checkpoint: a crash of the
+        // process loses nothing, a crash of the machine can lose the last commits but never corrupts the database.
+        conn.pragma_update(None, "synchronous", "NORMAL")?;
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         for (i, sql) in MIGRATIONS.iter().enumerate().skip(version as usize) {
             let tx = conn.transaction()?;
@@ -553,12 +575,34 @@ impl Store {
         projects::give_keys(&conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
+            readers: Vec::new(),
+            next_reader: std::sync::atomic::AtomicUsize::new(0),
             blobs,
+            events: events::EventLog::default(),
         })
     }
 
     fn conn(&self) -> MutexGuard<'_, Connection> {
         self.conn
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// A connection for reading: one of the read-only connections, the first that is free, so that reads run in
+    /// parallel and do not wait for a write; the writer's own connection for a store in memory.
+    fn read(&self) -> MutexGuard<'_, Connection> {
+        if self.readers.is_empty() {
+            return self.conn();
+        }
+        let start = self
+            .next_reader
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        for i in 0..self.readers.len() {
+            if let Ok(guard) = self.readers[(start + i) % self.readers.len()].try_lock() {
+                return guard;
+            }
+        }
+        self.readers[start % self.readers.len()]
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
@@ -575,7 +619,7 @@ impl Store {
 
     pub fn schema_version(&self) -> Result<usize> {
         let version: i64 = self
-            .conn()
+            .read()
             .query_row("PRAGMA user_version", [], |r| r.get(0))?;
         Ok(version as usize)
     }
@@ -587,7 +631,7 @@ impl Store {
         params: impl Params,
         row: impl FnMut(&Row) -> rusqlite::Result<T>,
     ) -> Result<Vec<T>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut stmt = conn.prepare(sql)?;
         let rows = stmt.query_map(params, row)?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -619,7 +663,7 @@ impl Store {
     /// The date of today on the server, as `YYYY-MM-DD`.
     pub fn today(&self) -> Result<String> {
         Ok(self
-            .conn()
+            .read()
             .query_row("SELECT strftime('%Y-%m-%d', 'now', 'localtime')", [], |r| {
                 r.get(0)
             })?)

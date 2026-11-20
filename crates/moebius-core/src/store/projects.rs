@@ -394,7 +394,7 @@ impl Store {
     /// The ids of the private projects that the person `person` is no member of: every private project when there is
     /// no person.
     pub fn hidden_projects(&self, person: Option<i64>) -> Result<HashSet<i64>> {
-        let conn = self.conn();
+        let conn = self.read();
         let mut stmt = conn.prepare(
             "SELECT id FROM projects WHERE private AND NOT EXISTS
                  (SELECT 1 FROM project_members WHERE project_id = projects.id AND person_id = ?1)",
@@ -407,7 +407,7 @@ impl Store {
     /// The project a judgement on the card `card`, made in the run `run`, belongs to: the card's, else that of the
     /// run's card, else the home project of the run's repository; none for a judgement about no project's work.
     pub fn project_of(&self, card: Option<i64>, run: Option<i64>) -> Result<Option<i64>> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             "SELECT COALESCE(
                  (SELECT project_id FROM cards WHERE id = ?1),
                  (SELECT cards.project_id FROM runs JOIN cards ON cards.id = runs.card_id WHERE runs.id = ?2),
@@ -420,7 +420,7 @@ impl Store {
 
     /// How many cards on the project's board are open: not closed and not in `Done`.
     pub fn open_cards(&self, project_id: i64) -> Result<i64> {
-        Ok(self.conn().query_row(
+        Ok(self.read().query_row(
             "SELECT COUNT(*) FROM cards WHERE project_id = ?1 AND NOT closed AND column_name <> 'Done'",
             [project_id],
             |r| r.get(0),

@@ -213,8 +213,6 @@ pub struct App {
     tests: Mutex<HashMap<reproduce::TestKey, TestRun>>,
     /// Whether the schedule's replays are going now (see `replay::start_due`).
     pub replaying: AtomicBool,
-    /// Held while a run event is stored and published, so that events are published in the order of their `seq`.
-    run_events: Mutex<()>,
     /// Held while a message is given to a chat's agent or a chat's work is committed to be offered, so that the agent
     /// does not start on a message while its worktree is committed.
     chat_turns: Mutex<()>,
@@ -281,10 +279,23 @@ impl App {
         let mut forges: BTreeMap<&'static str, Box<dyn Forge>> = BTreeMap::new();
         let none = NoForge::new(repos.clone());
         forges.insert(none.name(), Box::new(none));
+        let bus = Bus::new();
+        // A run's events are published once they are committed, in the order of their `seq`, whoever stored them.
+        let events_bus = bus.clone();
+        store.observe_events(move |events| {
+            for e in events {
+                events_bus.publish(Event::RunEvent {
+                    run: e.run_id,
+                    seq: e.seq,
+                    kind: e.kind.clone(),
+                    data: e.data.clone(),
+                });
+            }
+        });
         Self {
             decisions: Decisions::new(store.clone(), host),
             store,
-            bus: Bus::new(),
+            bus,
             repos,
             data_dir: data_dir.to_path_buf(),
             checks_timeout: Duration::from_secs(1800),
@@ -296,7 +307,6 @@ impl App {
             moved_told: Mutex::default(),
             tests: Mutex::default(),
             replaying: AtomicBool::new(false),
-            run_events: Mutex::default(),
             chat_turns: Mutex::default(),
             waking: Mutex::default(),
             researching: Mutex::default(),
@@ -480,23 +490,22 @@ impl App {
         Ok(())
     }
 
-    /// Stores an event of a run and publishes it as `run_event` with the `seq` it was stored under.
+    /// Stores an event of a run and publishes it as `run_event` with the `seq` it was stored under, once it is
+    /// committed. A streamed delta (`message_update`) waits a moment to be stored with the others (see
+    /// `Store::queue_delta`); any other event is stored, with the deltas before it, before this returns.
     pub fn record_run_event(
         &self,
         run_id: i64,
         kind: &str,
         data: &serde_json::Value,
     ) -> Result<()> {
-        let _ordered = self.run_events.lock().unwrap_or_else(|e| e.into_inner());
-        // Pi's records can carry what a tool printed; nothing unredacted is stored or streamed. The store redacts
-        // once and gives back what it stored.
-        let (seq, data) = self.store.append_redacted_event(run_id, kind, data)?;
-        self.bus.publish(Event::RunEvent {
-            run: run_id,
-            seq,
-            kind: kind.to_string(),
-            data,
-        });
+        // Pi's records can carry what a tool printed; nothing unredacted is stored or streamed: the store redacts
+        // once, and what it publishes is what it stored.
+        if kind == "message_update" {
+            self.store.queue_delta(run_id, data)?;
+        } else {
+            self.store.append_redacted_event(run_id, kind, data)?;
+        }
         Ok(())
     }
 }
