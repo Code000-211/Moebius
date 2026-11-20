@@ -9,21 +9,22 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { people as loadPeople } from "../../api/calls/people";
 import { setProjectAccess } from "../../api/calls/projects";
-import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { Project } from "../../api/types/projects";
 import { Button } from "../../ui/components/Button";
-import { Box } from "../../ui/page/Box";
-import { Notice } from "../../ui/page/Notice";
+import { useErrorToast } from "../../ui/lib/useErrorToast";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { assignable } from "../people/AssigneesProperty";
 
 export function ProjectMembersTab({ project, canEdit }: { project: Project; canEdit: boolean }) {
   const list = (
-    <ul className="m-0 flex list-none flex-col gap-1 p-0" aria-label="Members">
+    <ul className="m-0 list-none border-t border-hairline p-0" aria-label="Members">
       {project.members.map((member) => (
-        <li key={member.id} className="text-base text-text">
+        <li
+          key={member.id}
+          className="flex h-9 items-center border-b border-hairline text-base text-text"
+        >
           {member.name === "" ? `@${member.handle}` : `${member.name} (@${member.handle})`}
         </li>
       ))}
@@ -31,7 +32,7 @@ export function ProjectMembersTab({ project, canEdit }: { project: Project; canE
   );
   if (!project.private)
     return (
-      <Box title="Members">
+      <div>
         <p className="m-0 mb-3 max-w-prose text-base text-secondary">
           This project is public: everyone of the organisation who is not disabled is a member.{" "}
           {canEdit && (
@@ -45,9 +46,9 @@ export function ProjectMembersTab({ project, canEdit }: { project: Project; canE
           )}
         </p>
         {list}
-      </Box>
+      </div>
     );
-  if (!canEdit) return <Box title="Members">{list}</Box>;
+  if (!canEdit) return list;
   return <Editor key={project.members.map((m) => m.handle).join(",")} project={project} />;
 }
 
@@ -60,28 +61,22 @@ function Editor({ project }: { project: Project }) {
     mutationFn: () => setProjectAccess(project.id, { private: true, members: [...chosen] }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.projects }),
   });
-  if (people.isPending)
-    return (
-      <Box title="Members">
-        <SkeletonLines lines={3} message="Reading the people" />
-      </Box>
-    );
+  useErrorToast(save.error, "Couldn't save the members.");
+  if (people.isPending) return <SkeletonLines lines={3} message="Reading the people" />;
   if (people.isError)
     return (
-      <Box title="Members">
-        <ReadFailed
-          error={people.error}
-          fallback="The people could not be read. Try again."
-          busy={people.isFetching}
-          onRetry={() => void people.refetch()}
-        />
-      </Box>
+      <ReadFailed
+        error={people.error}
+        fallback="The people could not be read. Try again."
+        busy={people.isFetching}
+        onRetry={() => void people.refetch()}
+      />
     );
   const offered = assignable(people.data);
   const was = new Set(project.members.map((m) => m.handle));
   const changed = chosen.size !== was.size || [...chosen].some((handle) => !was.has(handle));
   return (
-    <Box title="Members">
+    <div>
       <form
         className="flex flex-col gap-4"
         onSubmit={(event) => {
@@ -93,10 +88,13 @@ function Editor({ project }: { project: Project }) {
           Only the people ticked see this project. An owner who is not ticked still sees the project
           here, but not its board.
         </p>
-        <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
+        <fieldset className="m-0 border-0 border-t border-hairline p-0">
           <legend className="sr-only">Members</legend>
           {offered.map(([handle, label]) => (
-            <label key={handle} className="flex min-h-7 items-center gap-2 text-base">
+            <label
+              key={handle}
+              className="flex h-9 items-center gap-2 border-b border-hairline text-base"
+            >
               <input
                 type="checkbox"
                 checked={chosen.has(handle)}
@@ -112,18 +110,12 @@ function Editor({ project }: { project: Project }) {
             </label>
           ))}
         </fieldset>
-        {save.isError && (
-          <Notice tone="error">
-            <span className="font-semibold">Couldn't save the members. </span>
-            {sayError(save.error, "Try again.")}
-          </Notice>
-        )}
         <div>
           <Button type="submit" size="sm" disabled={!changed || save.isPending}>
             {save.isPending ? "Saving" : "Save members"}
           </Button>
         </div>
       </form>
-    </Box>
+    </div>
   );
 }

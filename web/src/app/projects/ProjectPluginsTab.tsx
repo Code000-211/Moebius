@@ -4,17 +4,14 @@
  * nothing a plugin could ask of.
  */
 import type { Project } from "../../api/types/projects";
-import { Box } from "../../ui/page/Box";
 import { PluginSettings } from "./PluginSettings";
 
 export function ProjectPluginsTab({ project }: { project: Project }) {
   if (project.repositories.length === 0)
     return (
-      <Box title="Plugins">
-        <p className="m-0 max-w-prose text-base text-secondary">
-          Plugins ask their settings of a repository, and this project has none yet.
-        </p>
-      </Box>
+      <p className="m-0 max-w-prose text-base text-secondary">
+        Plugins ask their settings of a repository, and this project has none yet.
+      </p>
     );
   return (
     <div className="flex flex-col gap-8">

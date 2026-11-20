@@ -8,17 +8,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { addPerson, changePerson, people, type Role, tokensOf } from "../../api/calls/people";
 import { getSession } from "../../api/calls/session";
-import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { AddedPerson, Person } from "../../api/types/server";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { Box } from "../../ui/page/Box";
+import { useErrorToast } from "../../ui/lib/useErrorToast";
 import { ConfirmDelete } from "../../ui/page/ConfirmDelete";
-import { Field, Select } from "../../ui/page/Field";
-import { Notice } from "../../ui/page/Notice";
-import { PageHeader } from "../../ui/page/PageHeader";
+import { FieldRow, Rows, Select } from "../../ui/page/Field";
+import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
+import { AreaTitle, Section } from "../settings/parts";
 import { NotFoundPage } from "../shell/Page";
 import { useRole } from "../shell/session";
 import { IssuedNotice, TokensList } from "./TokensList";
@@ -35,32 +34,34 @@ function People() {
   const list = useQuery({ queryKey: keys.people, queryFn: people });
   const [added, setAdded] = useState<AddedPerson | null>(null);
   return (
-    <div data-testid="people-page" className="flex flex-col gap-6">
-      <PageHeader
-        title="People"
-        context="Who can sign in, with which role. A viewer reads and proposes, a member works on cards, an owner configures."
-      />
-      <AddPerson onAdded={setAdded} />
-      {added && (
-        <Box title={`@${added.person.handle} is added`}>
-          <IssuedNotice issued={added.token} />
-        </Box>
-      )}
-      <Box title="Everyone" padded={false}>
+    <div data-testid="people-page" className="max-w-3xl">
+      <AreaTitle title="Members" />
+      <Section title="Add a person">
+        <AddPerson onAdded={setAdded} />
+        {added && (
+          <div className="mt-3">
+            <IssuedNotice issued={added.token} />
+          </div>
+        )}
+      </Section>
+      <Section title="Everyone">
         {list.isPending && <SkeletonLines lines={3} message="Reading the people" />}
         {list.isError && (
-          <Notice tone="error">
-            {sayError(list.error, "Could not read the people. Try again.")}
-          </Notice>
+          <ReadFailed
+            error={list.error}
+            fallback="Could not read the people. Try again."
+            busy={list.isFetching}
+            onRetry={() => void list.refetch()}
+          />
         )}
         {list.data && (
-          <ul className="m-0 flex list-none flex-col p-0">
+          <ul className="m-0 list-none border-t border-hairline p-0">
             {list.data.map((person) => (
               <PersonRow key={person.id} person={person} />
             ))}
           </ul>
         )}
-      </Box>
+      </Section>
     </div>
   );
 }
@@ -79,46 +80,40 @@ function AddPerson({ onAdded }: { onAdded: (added: AddedPerson) => void }) {
       await queryClient.invalidateQueries({ queryKey: keys.people });
     },
   });
+  useErrorToast(add.error, "Could not add the person.");
   return (
-    <Box title="Add a person">
-      <form
-        className="flex flex-col gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          add.mutate({ handle, name, role });
-        }}
+    <form
+      className="flex flex-col gap-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        add.mutate({ handle, name, role });
+      }}
+    >
+      <Rows>
+        <FieldRow wide label="Handle" description="Lowercase letters, digits, - and _.">
+          <Input value={handle} onChange={(event) => setHandle(event.target.value)} />
+        </FieldRow>
+        <FieldRow wide label="Name">
+          <Input value={name} onChange={(event) => setName(event.target.value)} />
+        </FieldRow>
+        <FieldRow wide label="Role">
+          <Select
+            aria-label="Role"
+            options={ROLES}
+            value={role}
+            onChange={(value) => setRole(value as Role)}
+          />
+        </FieldRow>
+      </Rows>
+      <Button
+        type="submit"
+        size="sm"
+        className="self-start"
+        disabled={handle.trim() === "" || name.trim() === "" || add.isPending}
       >
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Handle" hint="Lowercase letters, digits, - and _.">
-            <Input value={handle} onChange={(event) => setHandle(event.target.value)} />
-          </Field>
-          <Field label="Name">
-            <Input value={name} onChange={(event) => setName(event.target.value)} />
-          </Field>
-          <Field label="Role">
-            {(id) => (
-              <Select
-                id={id}
-                options={ROLES}
-                value={role}
-                onChange={(value) => setRole(value as Role)}
-              />
-            )}
-          </Field>
-        </div>
-        {add.isError && (
-          <Notice tone="error">
-            {sayError(add.error, "Could not add the person. Try again.")}
-          </Notice>
-        )}
-        <Button
-          type="submit"
-          disabled={handle.trim() === "" || name.trim() === "" || add.isPending}
-        >
-          Add person
-        </Button>
-      </form>
-    </Box>
+        Add person
+      </Button>
+    </form>
   );
 }
 
@@ -131,16 +126,14 @@ function PersonRow({ person }: { person: Person }) {
     mutationFn: (what: { role?: Role; disabled?: boolean }) => changePerson(person.id, what),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.people }),
   });
+  useErrorToast(change.error, "Could not change the person.");
   return (
-    <li
-      data-testid={`person-${person.handle}`}
-      className="border-b border-hairline px-4 py-2 last:border-b-0"
-    >
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="min-w-0 flex-1 break-words text-base text-text">
-          <span className="font-semibold">{person.name}</span>{" "}
-          <span className="text-secondary">@{person.handle}</span>
-          {person.disabled && <span className="ml-2 text-sm text-secondary">Disabled</span>}
+    <li data-testid={`person-${person.handle}`} className="border-b border-hairline">
+      <div className="flex min-h-9 flex-wrap items-center gap-2.5 py-1">
+        <span className="min-w-0 flex-1 truncate text-base text-text">
+          <span className="font-medium">{person.name}</span>{" "}
+          <span className="text-muted">@{person.handle}</span>
+          {person.disabled && <span className="ml-2 text-xs text-muted">Disabled</span>}
         </span>
         <Select
           aria-label={`Role of @${person.handle}`}
@@ -175,11 +168,6 @@ function PersonRow({ person }: { person: Person }) {
         This is your own row: you are signed out at once and cannot sign in again until another
         owner enables you.
       </ConfirmDelete>
-      {change.isError && (
-        <Notice tone="error" className="mt-2">
-          {sayError(change.error, "Could not change the person. Try again.")}
-        </Notice>
-      )}
       {open && (
         <div className="mt-2">
           <TokensList
