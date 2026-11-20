@@ -7,6 +7,7 @@
 import { FlagIcon, PencilSimpleIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { Link } from "react-router";
 import {
   addMilestone,
   deleteMilestone,
@@ -39,6 +40,7 @@ import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
+import { cardPath } from "../pages";
 import {
   dateWords,
   inProject,
@@ -221,16 +223,19 @@ function Row({
   const [open, setOpen] = useState(false);
   const late = overdue(milestone, now);
   return (
-    <li className="rounded-card bg-raised shadow-card" data-testid="milestone">
+    <li className="@container rounded-card bg-raised shadow-card" data-testid="milestone">
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen(!open)}
-        className="grid w-full cursor-pointer appearance-none grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 rounded-card bg-transparent p-3 text-left sm:grid-cols-[minmax(0,1fr)_14rem_auto]"
+        className="grid w-full cursor-pointer appearance-none grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 rounded-card bg-transparent p-3 text-left @4xl:grid-cols-[minmax(0,1fr)_auto_14rem]"
       >
         <span className="flex min-w-0 items-center gap-2">
           <FlagIcon className="size-4 shrink-0 text-secondary" aria-hidden="true" />
-          <span className="min-w-0 truncate text-base font-semibold text-text">
+          <span
+            className="min-w-0 truncate text-base font-semibold text-text"
+            title={milestone.name}
+          >
             {milestone.name}
           </span>
           <span className="shrink-0 text-sm text-secondary">{projectsWords(milestone)}</span>
@@ -240,7 +245,7 @@ function Row({
             ? `Overdue · ${dateWords(milestone.target_date, now)}`
             : dateWords(milestone.target_date, now)}
         </span>
-        <span className="col-span-2 flex items-center gap-3 sm:col-span-1 sm:w-56">
+        <span className="col-span-2 flex items-center gap-3 @4xl:col-span-1 @4xl:w-56">
           <Progress done={milestone.done} cards={milestone.cards} className="flex-1" />
           <span className="shrink-0 text-sm text-secondary tabular-nums">
             {progressWords(milestone.done, milestone.cards)}
@@ -291,7 +296,12 @@ function Detail({
         >
           {(detail.data?.cards ?? []).map((card) => (
             <li key={card.id} className="flex min-w-0 items-baseline gap-2 text-sm">
-              <span className="min-w-0 flex-1 truncate text-text">{card.title}</span>
+              <Link
+                className="min-w-0 flex-1 truncate text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
+                to={cardPath(card.repository_id, card.id)}
+              >
+                {card.title}
+              </Link>
               <span className="shrink-0 text-secondary">{card.done ? "Done" : card.column}</span>
             </li>
           ))}

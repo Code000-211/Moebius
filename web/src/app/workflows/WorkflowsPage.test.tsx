@@ -6,20 +6,21 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import fixtures from "../../api/fixtures/workflows.json";
 import { WorkflowsPage } from "./WorkflowsPage";
 
 const LIST = [
   {
+    ...fixtures.list[0],
     name: "release",
     description: "Build, test and publish a release.",
-    trigger: { kind: "schedule", detail: "0 6 * * 1" },
+    trigger_kind: "schedule",
     node_count: 3,
-    last_run: { id: 41, status: "failed", started_at: 1, finished_at: 2 },
   },
   {
     name: "triage",
     description: "Sort new issues.",
-    trigger: { kind: "manual", detail: null },
+    trigger_kind: "manual",
     node_count: 1,
     last_run: null,
   },
@@ -59,7 +60,7 @@ describe("the workflows list", () => {
     // One row each, in the order the server listed them.
     expect(screen.getAllByTestId("workflow-row")).toHaveLength(2);
     expect(screen.getByText("Build, test and publish a release.")).toBeTruthy();
-    expect(screen.getByText("Schedule · 0 6 * * 1")).toBeTruthy();
+    expect(screen.getByText("Schedule")).toBeTruthy();
     expect(screen.getByText("3 nodes")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Failed/ })).toBeTruthy();
 

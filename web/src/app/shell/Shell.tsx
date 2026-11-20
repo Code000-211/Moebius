@@ -38,6 +38,26 @@ import { Sidebar } from "./Sidebar";
 
 const COLLAPSED_KEY = "moebius.sidebar.collapsed";
 
+/** The window width under which the sidebar folds to its rail by itself, as the pages need the width more. */
+const NARROW_BELOW = 1024;
+
+/** Whether the window is narrower than `NARROW_BELOW`, following it as it is resized. */
+function useNarrow(): boolean {
+  const query = `(max-width: ${NARROW_BELOW - 1}px)`;
+  const [narrow, setNarrow] = useState(
+    () => typeof matchMedia === "function" && matchMedia(query).matches,
+  );
+  useEffect(() => {
+    if (typeof matchMedia !== "function") return;
+    const media = matchMedia(query);
+    const change = () => setNarrow(media.matches);
+    change();
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, [query]);
+  return narrow;
+}
+
 export function Shell(props: { unreachable: boolean; onRetry: () => void }) {
   return (
     <SheetSlotProvider>
@@ -69,6 +89,10 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
   }, [queryClient]);
   const reconnect = useReconnect();
   const [collapsed, setCollapsed] = useState(() => readFlag(COLLAPSED_KEY));
+  const narrow = useNarrow();
+  // Below `NARROW_BELOW` the sidebar is the rail unless a person opened it for now; the saved choice is left as it was.
+  const [openedNarrow, setOpenedNarrow] = useState(false);
+  const folded = narrow ? !openedNarrow : collapsed;
   const [commandOpen, setCommandOpen] = useState(false);
 
   const navigate = useNavigate();
@@ -109,8 +133,12 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
       <Rail bridge={desktopBridge()} />
       <Sidebar
         connection={connection}
-        collapsed={collapsed}
+        collapsed={folded}
         onToggle={() => {
+          if (narrow) {
+            setOpenedNarrow(!openedNarrow);
+            return;
+          }
           writeFlag(COLLAPSED_KEY, !collapsed);
           setCollapsed(!collapsed);
         }}

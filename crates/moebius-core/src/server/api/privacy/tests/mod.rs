@@ -523,6 +523,28 @@ async fn the_lists_leave_out_a_private_project_for_a_non_member() {
 
 /// An owner makes a project private through the API; its board leaves the snapshot of a member who is not named.
 #[tokio::test]
+async fn the_runs_of_a_workflow_of_a_private_project_are_left_out_for_a_non_member() {
+    let (_dir, state, addr) = start().await;
+    let private = private(&state);
+    let list = "/v1/workflow-runs?workflow=release";
+    let detail = format!("/v1/workflow-runs/{}", private.workflow_run);
+
+    let (status, seen) = call(&addr, &private.lea, "GET", list).await;
+    assert_eq!(status, 200);
+    assert_eq!(seen.as_array().unwrap().len(), 1, "{seen}");
+    assert_eq!(call(&addr, &private.lea, "GET", &detail).await.0, 200);
+
+    for token in [&private.ben, &private.olga] {
+        let (status, hidden) = call(&addr, token, "GET", list).await;
+        assert_eq!(status, 200);
+        assert!(hidden.as_array().unwrap().is_empty(), "{hidden}");
+        let (status, body) = call(&addr, token, "GET", &detail).await;
+        assert_eq!(status, 404, "{body}");
+        assert!(!body.to_string().contains("secret"), "{body}");
+    }
+}
+
+#[tokio::test]
 async fn an_owner_makes_a_project_private_through_the_api() {
     let (_dir, state, addr) = start().await;
     let ben = token_of(&state, "ben", Role::Member, 2);
@@ -666,7 +688,7 @@ async fn events_of_a_private_project_reach_its_members_only() {
 /// a workflow, by name, a kind of issues or a template of the organisation, a person's own notice, a wiki page, its links or the pages that link to a card (a private project's pages and cards are
 /// left out by the wiki's own handlers); or that checks what it names in its own handler (a card by its key, a milestone of the
 /// organisation, whose cards are counted and listed with `App::may_see_project`).
-const UNGUARDED: [&str; 31] = [
+const UNGUARDED: [&str; 32] = [
     "/v1/cards/by-key/",
     "/v1/templates/",
     "/v1/kinds/",
@@ -688,6 +710,7 @@ const UNGUARDED: [&str; 31] = [
     "/v1/skills/",
     "/v1/mcp-servers/",
     "/v1/workflows/{name}",
+    "/v1/workflow-runs/",
     "/v1/extensions/",
     "/v1/packages/",
     "/v1/models/",

@@ -280,6 +280,8 @@ any route to any role that is not what its row says.
 | `PUT /v1/workflows/{name}` | owner | yes |
 | `DELETE /v1/workflows/{name}` | owner | yes |
 | `GET /v1/workflows/{name}/run-inputs` | viewer | yes |
+| `GET /v1/workflow-runs` | viewer | yes |
+| `GET /v1/workflow-runs/{id}` | viewer | yes |
 | `POST /v1/workflows/{name}/runs` | member | yes |
 | `POST /v1/workflows/runs/{id}/cancel` | member | yes |
 | `POST /v1/workflows/runs/{run_id}/resume` | member | yes |
@@ -732,8 +734,33 @@ resolved yet, oldest first.
 ### `GET /v1/events`
 
 A WebSocket. After the upgrade, every event the core publishes arrives as one JSON text message, see Events below. Events
-are not replayed: a client sees only what happens after it connected, so read the snapshot after connecting. Messages the
-client sends are ignored; closing the socket ends the stream.
+are not replayed: a client sees only what happens after it connected, so read the snapshot after connecting. Closing the
+socket ends the stream.
+
+What a run says while it works is sent only to a client that asked for that run. A `run_event` of a run the client did
+not ask for is left out, except of the kinds `agent_start`, `agent_settled` and `moebius_error`, which tell where a run
+is; every other event (`run_started`, `run_ended`, the board's, the inbox's, `chat_renamed`) is sent to everyone who may
+see it, as before. A client asks on the same socket, with a JSON text message:
+
+```json
+{"subscribe": [12, 15]}
+{"unsubscribe": [12]}
+```
+
+Both keys are optional and each is an array of run ids. A connection may watch at most 256 runs at a time; asks beyond
+that are ignored, as is a message that is not one of these. A subscription lasts as long as the socket: after a client
+connects again it asks again, and reads what it missed with `GET /v1/runs/{id}/events?after=<last seq>`. Asking for a
+run does not widen what a person may see: the events of a private project's run, or of a chat that is not shared with
+them, are not sent whether asked for or not. Who may see a run is worked out once for each run and connection, and
+again after `project_changed`, `repository_added`, `repository_updated`, `repository_removed`, `chat_shared` or
+`chat_deleted`.
+
+The server answers a `subscribe` with `{"kind": "subscribed", "data": {"runs": [id]}}`, naming every run the connection
+watches now; it is sent after the request was read, so that the events of those runs are streamed from then on. A client
+that follows a run (a run page, a chat, the Fleet's current step) reads the run's stored events again after that answer
+(`GET /v1/runs/{id}/events?after=<last seq>`), and so loses nothing that happened between its first read and the
+subscription. An event that arrives twice has the same `seq`. The answer is not an event of the bus and is not in the
+table below.
 
 ### Projects
 
@@ -1982,7 +2009,8 @@ follow. Disabled people are told nothing. Notices go with their card when it is 
 
 ### `GET /v1/notices`
 
-The notices of the person asking, newest first, at most 200. Response: an array of `Notice`: `id`, `kind` (`assigned`,
+The notices of the person asking, newest first, at most 200. A notice that was read is deleted 30 days after it was
+made (checked once a minute); one not read yet stays. Response: an array of `Notice`: `id`, `kind` (`assigned`,
 `mentioned` or `changed`), `by` (the handle of the person who caused it, or null), `card_id` and `inbox_item_id` (each
 or null), `title` (of the card or item), `body` (the start of the comment, or what changed), `at` and `read`.
 
@@ -2234,7 +2262,7 @@ One run, for the live view. Response: the `Run`. Errors: `403` the run is a chat
 ### `GET /v1/runs/{id}/events`
 
 The stored events of a run, in order. A client loads a long run in pieces and then follows `GET /v1/events` from the last
-`seq` it has: every `run_event` on the stream carries the `seq` the event was stored under, so the client drops those
+`seq` it has (after subscribing to the run, see [`GET /v1/events`](#get-v1events)): every `run_event` on the stream carries the `seq` the event was stored under, so the client drops those
 it already has and sees every event exactly once.
 
 A streamed answer is stored compactly. The `message_update` events of a message that has ended are joined: neighbouring
@@ -2768,15 +2796,17 @@ commit (left out when the text changed nothing, and always for a `rules_file`). 
 
 The workflows of the harness configuration repository, in name order. A workflow is a file `workflows/<name>.toml` in
 that repository (see [workflows](workflows.md)). Response: an array of
-`{"name": string, "description": string, "trigger_kind": string, "node_count": number}`; `trigger_kind` is the `kind` of
-the first trigger, empty for a workflow with none. Errors: `409` the server has no `[harness]`; `422` a workflow file
+`{"name": string, "description": string, "trigger_kind": string, "node_count": number, "last_run": object or null}`;
+`trigger_kind` is the `kind` of the first trigger, empty for a workflow with none, and `last_run` is the newest run of
+the workflow that the person sees, `{"id": number, "status": string, "created_at": number, "started_at": number or null,
+"finished_at": number or null}`, or null when it never ran. Errors: `409` the server has no `[harness]`; `422` a workflow file
 that cannot be used (the message names its file).
 
 ### `GET /v1/workflows/{name}`
 
 One workflow. Response: `{"name": string, "file": string, "definition": object}`, the text of the file exactly as it is
-saved and the definition parsed from it. Errors: `422` the name or the file cannot be used (there is no such workflow, or
-it is not valid); `409` the server has no `[harness]`.
+saved and the definition parsed from it. Errors: `404` there is no such workflow; `422` the name or the file cannot be used
+(the name is not one a file can have, or the file is not valid); `409` the server has no `[harness]`.
 
 ### `PUT /v1/workflows/{name}`
 
@@ -2808,6 +2838,22 @@ and a run waiting on a person leaves its inbox item withdrawn. The run's worktre
 "worktree": string or null}`, its
 `status` `cancelled` and its `error` `cancelled by a person`. Errors: `404` no such run; `409` the run has ended
 already, and the message names the status it ended as.
+
+### `GET /v1/workflow-runs`
+
+The runs of the workflows, newest first, leaving out the runs of a repository the person does not see. Query:
+`workflow` (only the runs of this workflow) and `limit` (the most runs to answer, 50 when left out, at most 200).
+Response: an array of `{"id": number, "workflow": string, "repository_id": number, "trigger": string, "status": string,
+"value": any, "created_at": number, "started_at": number or null, "finished_at": number or null, "error": string or null}`;
+`trigger` is the kind of the trigger that started the run.
+
+### `GET /v1/workflow-runs/{id}`
+
+One run with what each of its nodes was given and answered: the fields of the list's run, and `nodes`, an array of
+`{"node": string, "kind": string, "attempt": number, "status": string, "input": any, "output": any or null,
+"started_at": number or null, "finished_at": number or null, "error": string or null}` in the order the nodes ran
+(`kind` is empty when the workflow no longer has the node), and `waiting`, `{"node": string, "asks": any}` for the node a
+run in status `waiting` stopped at, or null. Errors: `404` no such run, or a run of a repository the person does not see.
 
 ### `POST /api/hooks/{path}`
 
@@ -4249,7 +4295,7 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `attempt_judged` | An attempt of a card was judged by its tests and checks (`moebius.check_attempt`). | `{"card": id, "run": id, "result": "passed" \| "failed"}` |
 | `attempts_settled` | A card's open attempts were settled (`moebius.settle_attempts`): one picked, or none passed. | `{"card": id, "picked": id or null, "runs": [id]}` |
 | `run_started` | A harness process for a run started. | `{"run": id, "card": id or null}` (null for a chat or an agent of a workflow run) |
-| `run_event` | Something happened in a run. | `{"run": id, "seq": number, "kind": string, "data": object}` (below) |
+| `run_event` | Something happened in a run. Sent for a run the client subscribed to; to others only `agent_start`, `agent_settled` and `moebius_error`. | `{"run": id, "seq": number, "kind": string, "data": object}` (below) |
 | `run_ended` | A run ended. | `{"run": id, "status": "succeeded" \| "failed" \| "stopped"}` |
 | `workflow_run_queued` | A workflow run was stored, queued for its first node. | `{"run": id, "workflow": string, "repository": id}` |
 | `workflow_run_started` | A workflow run began running. | `{"run": id}` |

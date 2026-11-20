@@ -300,6 +300,18 @@ impl Rail {
         }
     }
 
+    /// Notes the page of the server `id`, whose webview is let go of, so that opening it again leads there.
+    pub fn note_page_of(&mut self, id: &str, page: &str) {
+        if self.live.contains_key(id) {
+            self.pages.insert(id.to_string(), page.to_string());
+        }
+    }
+
+    /// The origin of the web app of the server `id`, which its webview's handlers compare addresses with.
+    pub fn origin_of(&self, id: &str) -> Option<String> {
+        self.live.get(id).map(|l| l.proxy.origin())
+    }
+
     /// The server that is open, with its token, which the notifications and the tray follow.
     pub fn open_server(&self) -> Option<Server> {
         self.live.get(self.open.as_ref()?).map(|l| l.server.clone())

@@ -16,6 +16,7 @@ import { RightColumn } from "./RightColumn";
 // The agent's conversation follows the event stream, which these tests have none of.
 vi.mock("../../live/LiveProvider", () => ({
   useServerEvents: () => {},
+  useWatchRun: () => {},
   useConnection: () => "online",
 }));
 

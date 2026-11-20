@@ -161,6 +161,33 @@ async fn two_servers_are_switched_between_and_each_keeps_its_page() {
 }
 
 #[tokio::test]
+async fn the_page_of_a_server_that_is_not_open_is_noted_when_its_webview_is_let_go_of() {
+    let (one, _a) = fake("token-one", 0, 0).await;
+    let (two, _b) = fake("token-two", 0, 0).await;
+    let dir = tempfile::tempdir().unwrap();
+    let secrets = Arc::new(Memory::default());
+    let mut rail = rail(dir.path(), &secrets);
+
+    let first = rail.add(&one, "token-one").await.unwrap();
+    let second = rail.add(&two, "token-two").await.unwrap();
+    assert_eq!(rail.open_id(), Some(second.as_str()));
+    // The first server's webview is let go of while the second is shown: its page is noted without opening it.
+    rail.note_page_of(&first, "/fleet?tab=2");
+    assert_eq!(rail.open_id(), Some(second.as_str()));
+    assert_ne!(rail.origin_of(&first), rail.origin_of(&second));
+    assert_eq!(rail.origin_of("nobody"), None);
+
+    let url = rail.open(&first).await.unwrap();
+    assert_eq!(leads_to(&url).await, "/fleet?tab=2");
+    // A server the rail does not know keeps no page.
+    rail.note_page_of("nobody", "/chat");
+    assert_eq!(
+        rail.open("nobody").await.err().map(|e| e.to_string()),
+        Some("there is no such server in the rail".into())
+    );
+}
+
+#[tokio::test]
 async fn a_server_that_cannot_be_reached_has_the_grey_dot() {
     let (up, _a) = fake("t1", 1, 0).await;
     let (down, gone) = fake("t2", 4, 0).await;

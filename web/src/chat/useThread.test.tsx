@@ -16,6 +16,8 @@ const PAGE = 100;
 
 const live = vi.hoisted(() => ({
   connection: "online" as string,
+  /** The chats the hook asked the stream for. */
+  watched: [] as (number | null)[],
   listener: null as ((event: { kind: string; data: Record<string, unknown> }) => void) | null,
 }));
 const api = vi.hoisted(() => ({
@@ -31,6 +33,9 @@ const api = vi.hoisted(() => ({
 
 vi.mock("../live/LiveProvider", () => ({
   useConnection: () => live.connection,
+  useWatchRun: (id: number | null) => {
+    live.watched.push(id);
+  },
   useServerEvents: (listener: (event: { kind: string; data: Record<string, unknown> }) => void) => {
     live.listener = listener;
   },
@@ -82,6 +87,7 @@ function fullPage(from: number): RunEvent[] {
 beforeEach(() => {
   live.connection = "online";
   live.listener = null;
+  live.watched = [];
   api.tails = [];
   api.pages = [];
   api.asked = [];
@@ -89,6 +95,17 @@ beforeEach(() => {
 });
 
 describe("opening a chat", () => {
+  it("asks the stream for the chat's own events, and for none when there is no chat", async () => {
+    api.tails = [[event(1)]];
+    const { result } = renderHook(() => useThread(7));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(live.watched.every((id) => id === 7)).toBe(true);
+    expect(live.watched.length).toBeGreaterThan(0);
+    live.watched = [];
+    renderHook(() => useThread(null));
+    expect(live.watched.every((id) => id === null)).toBe(true);
+  });
+
   it("reads it even while the stream is still trying to connect", async () => {
     // A laptop wakes, or the server is restarted: the socket is behind, but reading is an ordinary request and the
     // chat is there to be read. It used to be left on "Reading the chat", unread, until the socket opened again.
@@ -284,6 +301,19 @@ describe("following a chat", () => {
       kind: "text",
       text: "piece 1piece 2piece 3",
     });
+  });
+
+  it("reads what it missed once the server says the chat is streamed", async () => {
+    api.tails = [[event(1)]];
+    api.pages = [[event(2)]];
+    const { result } = renderHook(() => useThread(7));
+    await waitFor(() => expect(result.current.lastSeq).toBe(1));
+    // Another chat's subscription is not this chat's.
+    act(() => live.listener?.({ kind: "subscribed", data: { runs: [8] } }));
+    expect(api.asked).toEqual([]);
+    act(() => live.listener?.({ kind: "subscribed", data: { runs: [7, 8] } }));
+    await waitFor(() => expect(result.current.lastSeq).toBe(2));
+    expect(api.asked).toEqual([1]);
   });
 
   it("ignores an event of another chat and one of no chat at all", async () => {

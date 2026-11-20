@@ -7,7 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NO_SERVER, type RailServer } from "./bridge";
 import { fakeBridge } from "./fakeBridge";
-import { initial, Rail } from "./Rail";
+import { initial, Rail, SHOWN_EVENT } from "./Rail";
 
 afterEach(cleanup);
 
@@ -57,6 +57,33 @@ describe("Rail", () => {
     draw({ ...fakeBridge(), servers: async () => SERVERS, switchServer });
     fireEvent.click(await screen.findByRole("button", { name: /devbox/ }));
     expect(switchServer).toHaveBeenCalledWith("b");
+  });
+
+  it("marks the server asked for at once, before the app has shown it, and reads the servers when it has", async () => {
+    let finish = () => {};
+    const switchServer = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+    const servers = vi.fn(async () => SERVERS);
+    draw({ ...fakeBridge(), servers, switchServer });
+    const other = await screen.findByRole("button", { name: /devbox/ });
+    fireEvent.click(other);
+    expect(other.getAttribute("aria-current")).toBe("true");
+    expect(other.getAttribute("aria-busy")).toBe("true");
+    expect(
+      screen.getByRole("button", { name: /127\.0\.0\.1:7171/ }).getAttribute("aria-current"),
+    ).toBeNull();
+    const reads = servers.mock.calls.length;
+    finish();
+    await waitFor(() => expect(servers.mock.calls.length).toBeGreaterThan(reads));
+    await waitFor(() => expect(other.getAttribute("aria-busy")).toBeNull());
+  });
+
+  it("reads the servers again when the app shows this page after another server's", async () => {
+    const servers = vi.fn(async () => SERVERS);
+    draw({ ...fakeBridge(), servers });
+    await screen.findByRole("button", { name: /devbox/ });
+    const reads = servers.mock.calls.length;
+    window.dispatchEvent(new Event(SHOWN_EVENT));
+    await waitFor(() => expect(servers.mock.calls.length).toBeGreaterThan(reads));
   });
 
   it("removes a server from its menu", async () => {

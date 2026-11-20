@@ -491,7 +491,7 @@ On GitHub a person can also merge the pull request there; the poll notices and t
 - `GET /v1/snapshot`: every card's column, the changes, the inbox, and `waiting`, the reason each waiting card waits.
 - `GET /v1/cards/{id}/history`: moves (with the note), runs starting and ending, decisions and inbox items of one card.
 - `GET /v1/cards/{id}/runs`, `GET /v1/runs/{id}` and `GET /v1/runs/{id}/events`: the runs and what each did.
-- `GET /v1/events`, a WebSocket: everything as it happens, including `board_error`, `card_waiting` and `run_event`.
+- `GET /v1/events`, a WebSocket: everything as it happens, including `board_error`, `card_waiting` and, for the runs a client subscribed to, `run_event`.
 
 ## What can go wrong and how you see it
 

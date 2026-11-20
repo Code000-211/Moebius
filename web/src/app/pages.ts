@@ -138,3 +138,8 @@ export function pageByPath(path: string): PageDef | undefined {
 export function boardPath(repositoryId: number): string {
   return `/board/${repositoryId}`;
 }
+
+/** The path of the board of a repository with one card open in the dock. */
+export function cardPath(repositoryId: number, cardId: number): string {
+  return `${boardPath(repositoryId)}?card=${cardId}`;
+}

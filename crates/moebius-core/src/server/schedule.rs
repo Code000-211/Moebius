@@ -1,6 +1,6 @@
 //! The schedule: once a minute, whether the Retro is due, a proposal of the Retro is to be tried, a research is to
 //! start, a replay is to run, a lesson is to be retired, the installed Pi packages are to be checked for updates or an automation is to fire (see `app::automations`), the nightly look for newer versions of the installed Moebius packages (`packages::check_if_due`), and the pause of the Pi of each
-//! chat that has waited long for its next message (`PiBolt::pause_idle_chats`). It is also where the workflows on a
+//! chat that has waited long for its next message (`PiBolt::pause_idle_chats`), and the deletion of notices read more than 30 days ago (`Store::prune_notices`). It is also where the workflows on a
 //! `schedule` trigger are woken (`on_workflow_schedules`), so that everything that happens by itself goes off the
 //! one clock. What fails is reported on the bus as `retro_error`.
 
@@ -82,6 +82,8 @@ impl Server {
             });
         }
         self.harness.pause_idle_chats(&self.app, Instant::now());
+        // A notice read a month ago is of no use to anyone; the list of a person's notices would only grow.
+        let _ = self.app.store.prune_notices(crate::store::now());
     }
 
     /// Ends the chats of automations that have answered, at the local minute.

@@ -51,3 +51,17 @@ brings a desktop app back without a second front end: it is the web app in a nat
 - A macOS build is left out until someone needs it; Tauri builds one from the same code, so adding it later is a
   matter of CI, signing and a test on a Mac, not of design.
 - The name "desktop API" fits again.
+
+## Follow-up: one webview per server
+
+The first version showed a server by navigating the window's one webview to that server's proxy, which loads the whole
+web app again (1.4 to 4 s with a blank window on a machine under load, against 0.4 to 1.1 s for a browser's full load
+of the same page) and loses the page's state. The window now holds a webview for the connect page and one for every
+server that was opened, all of the window's size (Tauri's multiwebview support, the `unstable` feature), and shows
+exactly one. Switching to a server that was opened is showing its webview, in about a tenth of a second and as it was
+left; a server opened for the first time loads out of sight while the page shown stays, and is shown once it has drawn
+its rail, so the window is never blank and the rail never goes away. The web app marks the square asked for at once.
+Memory stays bounded: at most three hidden webviews are kept, each for at most half an hour, and a dropped one is
+opened again on the page it was left on. Each webview keeps its own server's origin (its handlers compare addresses
+with it), the tray, the notifications and the quick window follow the server that is open, and the main window is a
+window with several webviews rather than a webview window.

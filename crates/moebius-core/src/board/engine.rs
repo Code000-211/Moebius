@@ -507,6 +507,56 @@ end
     }
 
     #[test]
+    fn conflicts_of_an_open_change_are_found_only_when_a_script_reads_them_and_kept_until_a_branch_moves()
+     {
+        let (_dir, app, engine, repo) = setup();
+        let card = app
+            .create_issue(repo, "Add a feature", "", OWNER_AUTHOR)
+            .unwrap();
+        for _ in 0..6 {
+            if app.card(card.id).unwrap().column == columns::READY_TO_MERGE {
+                break;
+            }
+            engine.settle(card.id).unwrap();
+        }
+        assert_eq!(app.card(card.id).unwrap().column, columns::READY_TO_MERGE);
+        let project = app.harness_repo().unwrap().project_dir("demo");
+        std::fs::create_dir_all(&project).unwrap();
+        // A script that waits without reading `conflict`.
+        std::fs::write(
+            project.join("merge.luau"),
+            "function on_card(card)\n  assert(#card.changes == 1)\nend\n",
+        )
+        .unwrap();
+        let before = app.repos.merge_tree_runs();
+        for _ in 0..5 {
+            engine.settle(card.id).unwrap();
+        }
+        assert_eq!(
+            app.repos.merge_tree_runs(),
+            before,
+            "no git process for an unread conflict"
+        );
+        // A script that reads it, tick after tick: the answer found when the card arrived is kept.
+        std::fs::write(
+            project.join("merge.luau"),
+            "function on_card(card)\n  assert(card.changes[1].conflict == nil)\nend\n",
+        )
+        .unwrap();
+        for _ in 0..5 {
+            engine.settle(card.id).unwrap();
+        }
+        assert_eq!(app.repos.merge_tree_runs(), before);
+        // The default branch moves: the next read looks again.
+        let clone = std::path::PathBuf::from(app.store.repository(repo).unwrap().unwrap().path);
+        std::fs::write(clone.join("other.txt"), "x").unwrap();
+        crate::repos::git(&clone, &["add", "."]).unwrap();
+        crate::repos::git(&clone, &["commit", "--quiet", "-m", "other"]).unwrap();
+        engine.settle(card.id).unwrap();
+        assert_eq!(app.repos.merge_tree_runs(), before + 1);
+    }
+
+    #[test]
     fn a_script_that_reads_the_old_single_change_fails_and_leaves_the_card() {
         let (_dir, app, engine, repo) = setup();
         let project = app.harness_repo().unwrap().project_dir("demo");

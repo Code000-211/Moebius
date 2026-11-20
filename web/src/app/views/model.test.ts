@@ -122,12 +122,13 @@ describe("a saved view opened on the board", () => {
       due: "week",
       sort: "newest",
       view: "4",
+      card: "none",
     });
     expect(boardFiltersOf(view)?.filters.status).toBe("needs-you");
   });
 
   it("keeps the list layout of the board, and no sort that is the default", () => {
-    expect(boardOfView(made({ layout: "list" }))).toBe("/board/7?layout=list&view=4");
+    expect(boardOfView(made({ layout: "list" }))).toBe("/board/7?layout=list&view=4&card=none");
   });
 
   it("stays on the Views page when the board cannot say what the view asks", () => {

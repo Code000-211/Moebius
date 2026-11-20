@@ -1,9 +1,10 @@
 /**
  * The Workflows pages in a real browser: the list with each workflow's trigger and last run, a definition's saved graph
  * and file, a run that failed at a node, and a run that waits. The failed run is moved on by the run and node events the
- * fake server broadcasts, which is how the page is checked to update without a reload. None of it runs against a real
- * server (MOEBIUS_E2E_SERVER): the workflow routes come in their own backend cards, so a real server has nothing to
- * list, open or run yet, and the fake's workflows are all this test has to read and change.
+ * fake server broadcasts, which is how the page is checked to update without a reload. Most of it needs the fake's
+ * workflows and runs and is skipped against a real server (MOEBIUS_E2E_SERVER); "a workflow saved through the API" at
+ * the end runs against both, with a workflow it saves itself, so the pages are tried against the JSON the real server
+ * answers and not only against the fake's.
  */
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -53,7 +54,7 @@ describe.skipIf(usesRealServer)("the Workflows list", () => {
     await open("/workflows", "Workflows");
     await page.getByRole("heading", { name: "release" }).waitFor();
     await page.getByText("Build, test and publish a release.").waitFor();
-    await page.getByText("Schedule · 0 6 * * 1").waitFor();
+    await page.getByText("Schedule", { exact: true }).first().waitFor();
     await page.getByText("3 nodes").waitFor();
     await page.getByText(/Last run: failed/).waitFor();
     await page.getByRole("heading", { name: "deploy" }).waitFor();
@@ -86,13 +87,12 @@ describe.skipIf(usesRealServer)("a workflow's definition", () => {
 });
 
 describe.skipIf(usesRealServer)("a run that failed at a node", () => {
-  it("shows the status, each node's input, output, log and error, and the redaction marks", async () => {
+  it("shows the status, each node's input, output and error, and the redaction marks", async () => {
     await fresh();
     await open("/workflow-runs/41", "release · run 41");
     await page.getByRole("region", { name: "Run" }).getByText("Failed", { exact: true }).waitFor();
     const test = page.getByRole("region", { name: "Node test" });
     await test.getByText(/\[redacted\]/).waitFor();
-    await test.getByText(/61 passed; 1 failed/).waitFor();
     await test.getByText(/expected `done`, got `in progress`/).waitFor();
     await page.getByText("The test node failed.", { exact: true }).waitFor();
   });
@@ -150,5 +150,74 @@ describe.skipIf(usesRealServer)("a run that waits", () => {
     const approve = page.getByRole("region", { name: "Node approve" });
     await approve.waitFor();
     await expect.poll(() => approve.getAttribute("aria-current")).toBe("step");
+  });
+});
+
+/** Saves a workflow the way the command line does, so a real server and the fake both hold it. */
+async function saveWorkflow(name: string): Promise<void> {
+  const response = await context.request.put(`${server.url}/v1/workflows/${name}`, {
+    headers: { "X-Moebius": "1", Authorization: `Bearer ${server.token}` },
+    data: {
+      definition: {
+        name,
+        description: "Made by the end-to-end test.",
+        trigger: [{ kind: "manual", params: {} }],
+        nodes: [
+          {
+            id: "shape",
+            kind: "code",
+            params: { source: "return input" },
+            position: { x: 320, y: 120 },
+          },
+        ],
+        edges: [{ from: "trigger", to: "shape", port: "out" }],
+      },
+    },
+  });
+  if (!response.ok())
+    throw new Error(`saving ${name}: ${response.status()} ${await response.text()}`);
+}
+
+describe("a workflow saved through the API (a real server and the fake alike)", () => {
+  it("is listed with its trigger and as never run, and opens with its nodes", async () => {
+    await fresh();
+    await saveWorkflow("wf1");
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await open("/workflows", "Workflows");
+    const row = page.getByTestId("workflow-row").filter({ hasText: "wf1" });
+    await row.getByText("Manual", { exact: true }).waitFor();
+    await row.getByText("1 node", { exact: true }).waitFor();
+    await row.getByText("Never run").waitFor();
+
+    await row.getByRole("link", { name: "wf1" }).click();
+    await page.getByRole("heading", { name: "wf1", level: 1 }).waitFor();
+    const graph = page.getByRole("region", { name: "Definition graph" });
+    await graph.getByRole("heading", { name: "shape" }).waitFor();
+    await graph.getByText("code", { exact: true }).waitFor();
+    await page.getByText("This workflow has not run.").first().waitFor();
+    await page.getByRole("button", { name: "Run" }).waitFor();
+    expect(errors).toEqual([]);
+  });
+
+  it("opens the canvas of a name that is not saved yet blank, after a reload, without a failed read", async () => {
+    await fresh();
+    const failed: string[] = [];
+    page.on("response", (response) => {
+      if (response.status() >= 400) failed.push(`${response.status()} ${response.url()}`);
+    });
+    await page.goto(`${server.url}/workflows/notyet/canvas`);
+    await page
+      .getByRole("heading", { name: /notyet/ })
+      .first()
+      .waitFor();
+    await page.getByRole("button", { name: /Save/ }).waitFor();
+    await page
+      .getByText(/could not be read|cannot be read|os error/i)
+      .waitFor({ state: "detached" });
+    await page.reload();
+    await page.getByRole("button", { name: /Save/ }).waitFor();
+    // The one read of the workflow answers 404 and is not an error of the page; the runs are not asked for.
+    expect(failed.filter((entry) => entry.includes("workflow-runs"))).toEqual([]);
   });
 });

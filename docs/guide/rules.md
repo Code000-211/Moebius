@@ -147,7 +147,7 @@ curl -s -H "Authorization: Bearer $TOKEN" "$API/v1/runs/$RUN/events?limit=5000" 
 {"tool":"bash","tool_call_id":"call-1","decision":"refuse","reason":"no-force-push: git push --force rewrites history on the remote"}
 ```
 
-The same events arrive on `GET /v1/events` as `run_event` with the kind `tool_check`. The judgement behind each call also
+The same events arrive on `GET /v1/events` as `run_event` with the kind `tool_check`, to a client that subscribed to the run (see [the events](../reference/desktop-api.md#get-v1events)). The judgement behind each call also
 appears in the card's history, `GET /v1/cards/{id}/history`, as an entry `decided` with the kind `tool_call`, the
 choice, the reason and the decider: `guard/patterns` for the built-in rules, for a rules file that cannot be read and for
 calls with no prose rule to check, `guard/teacher` for the teacher's answers and for the refusal when there is no

@@ -1,6 +1,7 @@
 //! Repositories and worktrees (spec 3): one clone per repository under the data directory, a worktree and branch per
 //! run, and local merges for repositories without a forge. Everything goes through the `git` command line.
 
+pub mod conflicts;
 pub mod files;
 pub mod forge;
 pub mod forgejo;
@@ -182,6 +183,10 @@ pub struct Repos {
     clone_locks: std::sync::Arc<
         std::sync::Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<std::sync::Mutex<()>>>>,
     >,
+    /// What `git merge-tree` found for a change, for the heads it was found at (see `conflicts`).
+    kept_conflicts: conflicts::KeptConflicts,
+    /// How many times `git merge-tree` was started.
+    merge_tree_runs: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl Repos {
@@ -191,6 +196,8 @@ impl Repos {
             worktrees: data_dir.join("worktrees"),
             worktree_lock: Default::default(),
             clone_locks: Default::default(),
+            kept_conflicts: Default::default(),
+            merge_tree_runs: Default::default(),
         }
     }
 
@@ -497,6 +504,8 @@ impl Repos {
     /// is checked out or changed.
     pub fn conflicts(&self, clone: &Path, base: &str, branch: &str) -> Result<Option<String>> {
         let args = ["merge-tree", "--write-tree", "--name-only", base, branch];
+        self.merge_tree_runs
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let output = git_output(clone, &args, &[])?;
         let text = String::from_utf8_lossy(&output.stdout);
         match output.status.code() {

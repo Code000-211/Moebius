@@ -1,39 +1,33 @@
 /**
- * The workflows the Workflows pages read, the runs they show and the delete route they ask: three workflows whose
- * graphs are saved — one that failed on a node, one that waits for a person and one shaped like an automation (a
- * schedule that starts one chat), so the detail page's warning can be read — and one run that failed. The shapes are the
- * types of `src/api/workflows.ts`; the real server
- * answers the same routes once its workflow API lands. A test can change a run and broadcast the event the server would
- * send, which is how the live updates are tried, or empty the list.
+ * The workflows the Workflows pages read, the runs they show and the routes they ask: three workflows whose graphs are
+ * saved — one that failed on a node, one that waits for a person and one shaped like an automation (a schedule that
+ * starts one chat) — and two runs. It answers what the real server answers, key for key (`web/src/api/fixtures/
+ * workflows.json` holds that shape, and a test on each side holds the two to it): the list is made from the graphs and
+ * the runs, so a run that is started or cancelled changes the list's last run, and a saved graph is the definition
+ * the next read answers. A test can change a run and broadcast the event the server would send, which is how the live
+ * updates are tried.
  *
- * A workflow answers with both shapes at once: the flat one the read-only definition page reads, and the parsed graph
- * under `definition` that the canvas edits and that `PUT /v1/workflows/{name}` takes back. A save is checked the way
- * `WorkflowDefinition::validate` in the server checks it: in the same order and with the same messages for the kinds
- * the server's registry knows. A kind that only exists in these fixtures is taken as known, because the registry the
- * real server runs is still being filled by its own cards.
+ * A save is checked the way `WorkflowDefinition::validate` in the server checks it: in the same order and with the
+ * same messages for the kinds the server's registry knows. A kind that only exists in these fixtures is taken as
+ * known.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type {
   WorkflowDefinition as GraphDefinition,
   Trigger as GraphTrigger,
-} from "../../src/api/types/workflows";
-import type {
-  WorkflowDefinition,
   WorkflowRun,
   WorkflowRunSummary,
   WorkflowSummary,
-} from "../../src/api/workflows";
+} from "../../src/api/types/workflows";
 
 const NOW = () => Math.floor(Date.now() / 1000);
 
 export interface WorkflowsFake {
   /** Answers a route of the workflows and returns true; false for any other path. */
   handle(request: IncomingMessage, response: ServerResponse, path: string): Promise<boolean>;
-  /** What `GET /v1/workflows` answers, in order. A test that needs an empty page empties it. */
+  /** What `GET /v1/workflows` answers now, in name order: each row is made from the graph and the runs. */
   readonly workflows: WorkflowSummary[];
-  /** Each workflow's definition, by name, as the read-only pages read it. */
-  readonly definitions: Map<string, WorkflowDefinition>;
-  /** Each workflow's graph, by name, as the canvas saves it. A save replaces it. */
+  /** Each workflow's definition, by name, as the server answers it and the canvas saves it. A save replaces it. */
   readonly graphs: Map<string, GraphDefinition>;
   /** Each run, by id. A test changes one to stand in for the engine moving it on. */
   readonly runs: Map<number, WorkflowRun>;
@@ -351,177 +345,124 @@ function inlineTrigger(trigger: GraphTrigger | undefined): string {
   return `{ kind = ${JSON.stringify(trigger.kind)}${parts.length > 0 ? `, ${parts.join(", ")}` : ""} }`;
 }
 
-const RELEASE_FILE = `name = "release"
-description = "Build, test and publish a release"
-trigger = { kind = "schedule", detail = "0 6 * * 1" }
-
-[[nodes]]
-id = "build"
-kind = "agent"
-at = [16, 16]
-[nodes.parameters]
-prompt = "Build the release"
-model = "auto"
-
-[[nodes]]
-id = "test"
-kind = "script"
-at = [320, 16]
-[nodes.parameters]
-command = "cargo test --workspace"
-
-[[nodes]]
-id = "publish"
-kind = "script"
-at = [624, 16]
-[nodes.parameters]
-command = "cargo publish"
-`;
-
-const DEPLOY_FILE = `name = "deploy"
-description = "Build and deploy after a person approves"
-trigger = { kind = "manual" }
-
-[[nodes]]
-id = "build"
-kind = "script"
-at = [16, 16]
-[nodes.parameters]
-command = "pnpm build"
-
-[[nodes]]
-id = "approve"
-kind = "wait"
-at = [320, 16]
-[nodes.parameters]
-question = "Publish 1.4.0 to the registry?"
-`;
-
-const TIDY_FILE = `name = "tidy"
-description = "Tidy old branches, every weeknight"
-trigger = { kind = "schedule", detail = "0 23 * * 1-5" }
-
-[[nodes]]
-id = "chat"
-kind = "chat"
-at = [16, 16]
-[nodes.parameters]
-prompt = "Tidy the merged branches"
-`;
-
 const LONG_OUTPUT = `${"compiling the workspace and linking every test binary\n".repeat(24)}done`;
 
-function summaryOf(
-  definition: WorkflowDefinition,
-  last: WorkflowRunSummary | null,
-): WorkflowSummary {
+/** What `GET /v1/workflows` answers for a workflow: its row, with the newest of its runs. */
+function summaryOf(graph: GraphDefinition, runs: Iterable<WorkflowRun>): WorkflowSummary {
+  const newest = [...runs]
+    .filter((run) => run.workflow === graph.name)
+    .sort((a, b) => b.id - a.id)[0];
   return {
-    name: definition.name,
-    description: definition.description,
-    trigger: definition.trigger,
-    node_count: definition.nodes.length,
-    last_run: last,
+    name: graph.name,
+    description: graph.description,
+    trigger_kind: graph.trigger[0]?.kind ?? "",
+    node_count: graph.nodes.length,
+    last_run: newest
+      ? {
+          id: newest.id,
+          status: newest.status,
+          created_at: newest.created_at,
+          started_at: newest.started_at,
+          finished_at: newest.finished_at,
+        }
+      : null,
   };
+}
+
+/** A run as the list of runs answers it: the run without its nodes. */
+function briefOf(run: WorkflowRun): WorkflowRunSummary {
+  const { nodes: _nodes, waiting: _waiting, ...brief } = run;
+  return brief;
 }
 
 export function createWorkflowsFake(): WorkflowsFake {
   const started = NOW() - 5 * 3600;
-  const lastFailed: WorkflowRunSummary = {
-    id: 41,
-    status: "failed",
-    started_at: started,
-    finished_at: started + 94,
-  };
-  const release: WorkflowDefinition = {
-    name: "release",
-    description: "Build, test and publish a release.",
-    trigger: { kind: "schedule", detail: "0 6 * * 1" },
-    node_count: 3,
-    last_run: lastFailed,
-    nodes: [
+  const graphs = new Map<string, GraphDefinition>([
+    [
+      "release",
       {
-        id: "build",
-        kind: "agent",
-        parameters: { prompt: "Build the release", model: "auto" },
-        position: { x: 16, y: 16 },
-      },
-      {
-        id: "test",
-        kind: "script",
-        parameters: { command: "cargo test --workspace" },
-        position: { x: 320, y: 16 },
-      },
-      {
-        id: "publish",
-        kind: "script",
-        parameters: { command: "cargo publish" },
-        position: { x: 624, y: 16 },
-      },
-    ],
-    edges: [
-      { from: "build", to: "test" },
-      { from: "test", to: "publish" },
-    ],
-    file: RELEASE_FILE,
-  };
-  const deploy: WorkflowDefinition = {
-    name: "deploy",
-    description: "Build and deploy after a person approves.",
-    trigger: { kind: "manual", detail: null },
-    node_count: 2,
-    last_run: {
-      id: 42,
-      status: "waiting",
-      started_at: NOW() - 300,
-      finished_at: null,
-    },
-    nodes: [
-      {
-        id: "build",
-        kind: "script",
-        parameters: { command: "pnpm build" },
-        position: { x: 16, y: 16 },
-      },
-      {
-        id: "approve",
-        kind: "wait",
-        parameters: { question: "Publish 1.4.0 to the registry?" },
-        position: { x: 320, y: 16 },
+        name: "release",
+        description: "Build, test and publish a release.",
+        trigger: [{ kind: "schedule", params: { cron: "0 6 * * 1" } }],
+        nodes: [
+          {
+            id: "build",
+            kind: "agent",
+            params: { prompt: "Build the release", model: "auto" },
+            position: { x: 16, y: 16 },
+          },
+          {
+            id: "test",
+            kind: "script",
+            params: { command: "cargo test --workspace" },
+            position: { x: 320, y: 16 },
+          },
+          {
+            id: "publish",
+            kind: "script",
+            params: { command: "cargo publish" },
+            position: { x: 624, y: 16 },
+          },
+        ],
+        edges: [
+          { from: "trigger", to: "build", port: "out" },
+          { from: "build", to: "test", port: "out" },
+          { from: "test", to: "publish", port: "out" },
+        ],
       },
     ],
-    edges: [{ from: "build", to: "approve" }],
-    file: DEPLOY_FILE,
-  };
-  const tidy: WorkflowDefinition = {
-    name: "tidy",
-    description: "Tidy old branches, every weeknight.",
-    trigger: { kind: "schedule", detail: "0 23 * * 1-5" },
-    node_count: 1,
-    last_run: null,
-    nodes: [
+    [
+      "deploy",
       {
-        id: "chat",
-        kind: "chat",
-        parameters: { prompt: "Tidy the merged branches" },
-        position: { x: 16, y: 16 },
+        name: "deploy",
+        description: "Build and deploy after a person approves.",
+        trigger: [{ kind: "manual", params: {} }],
+        nodes: [
+          {
+            id: "build",
+            kind: "script",
+            params: { command: "pnpm build" },
+            position: { x: 16, y: 16 },
+          },
+          {
+            id: "approve",
+            kind: "wait",
+            params: { question: "Publish 1.4.0 to the registry?" },
+            position: { x: 320, y: 16 },
+          },
+        ],
+        edges: [
+          { from: "trigger", to: "build", port: "out" },
+          { from: "build", to: "approve", port: "out" },
+        ],
       },
     ],
-    edges: [],
-    file: TIDY_FILE,
-  };
-  const definitions = new Map<string, WorkflowDefinition>([
-    [release.name, release],
-    [deploy.name, deploy],
-    [tidy.name, tidy],
+    [
+      "tidy",
+      {
+        name: "tidy",
+        description: "Tidy old branches, every weeknight.",
+        trigger: [{ kind: "schedule", params: { cron: "0 23 * * 1-5" } }],
+        nodes: [
+          {
+            id: "chat",
+            kind: "chat",
+            params: { prompt: "Tidy the merged branches" },
+            position: { x: 16, y: 16 },
+          },
+        ],
+        edges: [{ from: "trigger", to: "chat", port: "out" }],
+      },
+    ],
   ]);
   const runs = new Map<number, WorkflowRun>([
     [
       41,
       {
         id: 41,
-        workflow: release.name,
+        workflow: "release",
         repository_id: 1,
-        trigger: release.trigger,
+        trigger: "schedule",
         status: "failed",
         value: { tag: "v1.4.0" },
         created_at: started,
@@ -536,7 +477,6 @@ export function createWorkflowsFake(): WorkflowsFake {
             status: "succeeded",
             input: { prompt: "Build the release", model: "auto" },
             output: { artifact: "target/release/moebius", stdout: LONG_OUTPUT },
-            log: "built the workspace in 41s",
             error: null,
             started_at: started,
             finished_at: started + 41,
@@ -548,7 +488,6 @@ export function createWorkflowsFake(): WorkflowsFake {
             status: "failed",
             input: { command: "cargo test --workspace", token: "[redacted]" },
             output: null,
-            log: "running 62 tests\n61 passed; 1 failed",
             error: "test first_card::a_card_moves failed: expected `done`, got `in progress`",
             started_at: started + 41,
             finished_at: started + 94,
@@ -560,7 +499,6 @@ export function createWorkflowsFake(): WorkflowsFake {
             status: "skipped",
             input: null,
             output: null,
-            log: null,
             error: null,
             started_at: null,
             finished_at: null,
@@ -573,9 +511,9 @@ export function createWorkflowsFake(): WorkflowsFake {
       42,
       {
         id: 42,
-        workflow: deploy.name,
+        workflow: "deploy",
         repository_id: 1,
-        trigger: deploy.trigger,
+        trigger: "manual",
         status: "waiting",
         value: { version: "1.4.0" },
         created_at: NOW() - 300,
@@ -590,7 +528,6 @@ export function createWorkflowsFake(): WorkflowsFake {
             status: "succeeded",
             input: { command: "pnpm build" },
             output: { files: 352 },
-            log: "built in 9s",
             error: null,
             started_at: NOW() - 300,
             finished_at: NOW() - 291,
@@ -602,7 +539,6 @@ export function createWorkflowsFake(): WorkflowsFake {
             status: "waiting",
             input: { version: "1.4.0", token: "[redacted]" },
             output: null,
-            log: "waiting for a person",
             error: null,
             started_at: NOW() - 291,
             finished_at: null,
@@ -619,64 +555,13 @@ export function createWorkflowsFake(): WorkflowsFake {
       },
     ],
   ]);
-  const graphs = new Map<string, GraphDefinition>([
-    [
-      release.name,
-      {
-        name: release.name,
-        description: release.description,
-        trigger: [{ kind: "schedule", params: { cron: "0 6 * * 1" } }],
-        nodes: release.nodes.map((node) => ({
-          id: node.id,
-          kind: node.kind,
-          params: asRecord(node.parameters),
-          position: { ...node.position },
-        })),
-        edges: [
-          { from: "trigger", to: "build", port: "out" },
-          ...release.edges.map((edge) => ({ from: edge.from, to: edge.to, port: "out" })),
-        ],
-      },
-    ],
-    [
-      deploy.name,
-      {
-        name: deploy.name,
-        description: deploy.description,
-        trigger: [{ kind: "manual", params: {} }],
-        nodes: deploy.nodes.map((node) => ({
-          id: node.id,
-          kind: node.kind,
-          params: asRecord(node.parameters),
-          position: { ...node.position },
-        })),
-        edges: [
-          { from: "trigger", to: "build", port: "out" },
-          ...deploy.edges.map((edge) => ({ from: edge.from, to: edge.to, port: "out" })),
-        ],
-      },
-    ],
-    [
-      tidy.name,
-      {
-        name: tidy.name,
-        description: tidy.description,
-        trigger: [{ kind: "schedule", params: { cron: "0 23 * * 1-5" } }],
-        nodes: tidy.nodes.map((node) => ({
-          id: node.id,
-          kind: node.kind,
-          params: asRecord(node.parameters),
-          position: { ...node.position },
-        })),
-        edges: [{ from: "trigger", to: "chat", port: "out" }],
-      },
-    ],
-  ]);
-  const workflows: WorkflowSummary[] = [
-    summaryOf(release, lastFailed),
-    summaryOf(deploy, { id: 42, status: "waiting", started_at: NOW() - 300, finished_at: null }),
-    summaryOf(tidy, null),
-  ];
+  /** The text of each saved workflow's file; what a save wrote, or what the graph renders as. */
+  const files = new Map<string, string>([...graphs].map(([name, graph]) => [name, render(graph)]));
+  /** What `GET /v1/workflows` answers, in name order and from the graphs and runs as they stand now. */
+  const listed = (): WorkflowSummary[] =>
+    [...graphs.values()]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((graph) => summaryOf(graph, runs.values()));
   /** Each save, so a test can read what was written and the page can name the commit. */
   let saves = 0;
   const calls: Array<{ method: string | undefined; path: string }> = [];
@@ -692,52 +577,103 @@ export function createWorkflowsFake(): WorkflowsFake {
     calls.push({ method: request.method, path: url });
     if (named) {
       const name = named[1] ?? "";
-      const found = definitions.get(name);
+      const found = graphs.get(name);
       if (request.method === "DELETE") {
         const refusal = nextDeleteRefusal;
         nextDeleteRefusal = null;
         if (refusal) return plain(response, refusal.status, refusal.message);
-        if (!found) return plain(response, 404, "No such workflow.");
-        definitions.delete(name);
+        if (!found) return plain(response, 404, `workflow ${name} not found`);
         graphs.delete(name);
-        const kept = workflows.filter((entry) => entry.name !== name);
-        workflows.length = 0;
-        for (const entry of kept) workflows.push(entry);
+        files.delete(name);
         return reply(response, 200, {
           name,
           commit: `${(0x1a2b3c + saves).toString(16)}${"0".repeat(34)}${saves}`,
         });
       }
-      if (!found) return plain(response, 404, "No such workflow.");
       if (request.method === "PUT") {
         return save(name, request, response);
       }
       if (request.method !== "GET") return false;
-      // Both shapes: the flat one the read-only page reads, and the graph the canvas edits.
-      return reply(response, 200, { ...found, definition: graphs.get(name) });
+      if (!found) return plain(response, 404, `workflow ${name} not found`);
+      return reply(response, 200, { name, file: files.get(name) ?? "", definition: found });
+    }
+    const inputs = /^\/v1\/workflows\/([^/]+)\/run-inputs$/.exec(url);
+    if (inputs && request.method === "GET") {
+      const found = graphs.get(inputs[1] ?? "");
+      if (!found) return plain(response, 404, `workflow ${inputs[1]} not found`);
+      if (found.trigger[0]?.kind !== "manual") {
+        return plain(
+          response,
+          409,
+          `the workflow's trigger is ${found.trigger[0]?.kind}, not manual`,
+        );
+      }
+      return reply(response, 200, { trigger_kind: "manual", inputs: [] });
+    }
+    const starting = /^\/v1\/workflows\/([^/]+)\/runs$/.exec(url);
+    if (starting && request.method === "POST") {
+      const found = graphs.get(starting[1] ?? "");
+      if (!found) return plain(response, 404, `workflow ${starting[1]} not found`);
+      const body = JSON.parse((await readBody(request)) || "{}") as { repository?: string };
+      if (!body.repository) {
+        return plain(
+          response,
+          422,
+          'the trigger has no repository input, so "repository" names the run\'s repository',
+        );
+      }
+      const id = Math.max(0, ...runs.keys()) + 1;
+      const run: WorkflowRun = {
+        id,
+        workflow: found.name,
+        repository_id: 1,
+        trigger: "manual",
+        status: "running",
+        value: {},
+        created_at: NOW(),
+        started_at: NOW(),
+        finished_at: null,
+        error: null,
+        nodes: [],
+        waiting: null,
+      };
+      runs.set(id, run);
+      return reply(response, 200, {
+        id,
+        workflow: found.name,
+        repository: body.repository,
+        trigger: "manual",
+        status: "running",
+        value: {},
+      });
+    }
+    const cancelling = /^\/v1\/workflows\/runs\/(\d+)\/cancel$/.exec(url);
+    if (cancelling && request.method === "POST") {
+      const run = runs.get(Number(cancelling[1]));
+      if (!run) return plain(response, 404, `workflow run ${cancelling[1]} not found`);
+      if (["succeeded", "failed", "cancelled"].includes(run.status)) {
+        return plain(response, 409, `workflow run ${run.id} has already ended as ${run.status}`);
+      }
+      run.status = "cancelled";
+      run.error = "cancelled by a person";
+      run.finished_at = NOW();
+      return reply(response, 200, briefOf(run));
     }
     if (request.method !== "GET") return false;
-    if (url === "/v1/workflows") return reply(response, 200, workflows);
+    if (url === "/v1/workflows") return reply(response, 200, listed());
     const list = /^\/v1\/workflow-runs\?(.*)$/.exec(decoded(request.url ?? url));
     if (list) {
       const wanted = new URLSearchParams(list[1]).get("workflow");
       const ofWorkflow = [...runs.values()]
-        .filter((entry) => entry.workflow === wanted)
+        .filter((entry) => wanted === null || entry.workflow === wanted)
         .sort((a, b) => b.id - a.id)
-        .map(
-          (entry): WorkflowRunSummary => ({
-            id: entry.id,
-            status: entry.status,
-            started_at: entry.started_at,
-            finished_at: entry.finished_at,
-          }),
-        );
+        .map(briefOf);
       return reply(response, 200, ofWorkflow);
     }
     const run = /^\/v1\/workflow-runs\/(\d+)$/.exec(url);
     if (run) {
       const found = runs.get(Number(run[1]));
-      if (!found) return plain(response, 404, "No such workflow run.");
+      if (!found) return plain(response, 404, `workflow run ${run[1]} not found`);
       return reply(response, 200, found);
     }
     return false;
@@ -766,10 +702,7 @@ export function createWorkflowsFake(): WorkflowsFake {
       return plain(response, 422, `workflow workflows/${name}.toml: ${refusal}`);
     }
     graphs.set(name, saved);
-    const flat = definitions.get(name);
-    if (flat) {
-      definitions.set(name, { ...flat, file: render(saved) });
-    }
+    files.set(name, render(saved));
     saves += 1;
     return reply(response, 200, {
       name,
@@ -781,8 +714,9 @@ export function createWorkflowsFake(): WorkflowsFake {
 
   return {
     handle,
-    workflows,
-    definitions,
+    get workflows() {
+      return listed();
+    },
     graphs,
     runs,
     calls,
