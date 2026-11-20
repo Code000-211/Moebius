@@ -1921,7 +1921,7 @@ day, the report lists the cards whose estimate was furthest off (see [`POST /v1/
 ### `PUT /v1/cards/{id}/estimate`
 
 Sets the estimate. Request: `{"estimate": 5}`, a whole number from 1 to 1000, or `{"estimate": null}` for none.
-Response: the `Card`. Errors: `404` no such card; `422` a number outside 1 to 1000, or a body that is not a whole number or null.
+Response: the `Card`. Errors: `404` no such card; `422` a number that is not a whole number from 1 to 1000 (the sentence is "N is not an estimate (1 to 1000 points)"), or a body whose `estimate` is not a number or null.
 
 ### `GET /v1/cards/{id}/estimate/proposal`
 

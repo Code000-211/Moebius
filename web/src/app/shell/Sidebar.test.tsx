@@ -189,6 +189,27 @@ describe("the rail", () => {
   });
 });
 
+describe("noting the places a person opens", () => {
+  const noted = () =>
+    vi
+      .mocked(fetch)
+      .mock.calls.filter(([path]) => String(path).startsWith("/v1/recent"))
+      .map(([, init]) => (init as RequestInit | undefined)?.body);
+
+  it("notes a project's board once the snapshot has it", async () => {
+    show({ at: "/board/2" });
+    await waitFor(() =>
+      expect(noted()).toEqual([JSON.stringify({ kind: "project", repository_id: 2 })]),
+    );
+  });
+
+  it("asks nothing about a board the snapshot does not hold, as a private project of someone else", async () => {
+    show({ at: "/board/12" });
+    await screen.findByRole("link", { name: /^Board/ });
+    expect(noted()).toEqual([]);
+  });
+});
+
 describe("the pins and recent places", () => {
   const places = {
     favourites: [

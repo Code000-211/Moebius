@@ -35,6 +35,7 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { usePropertiesShown } from "../../ui/page/Properties";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { ScrollFades } from "../../ui/page/ScrollFades";
+import { useSheetSlot } from "../../ui/page/SheetSlot";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
 import { boardFiltersOf, viewOfBoard } from "../views/model";
@@ -85,6 +86,7 @@ export function BoardPage() {
   const [opened, setOpened] = useState<ReadonlySet<number>>(new Set());
   const [terminalOpen, setTerminalOpen] = useState(false);
   const propertiesShown = usePropertiesShown();
+  const sheetShown = useSheetSlot().active !== null;
   // The card a send-back needs a reason for, not a count: a count stays raised once it is raised, so every card
   // opened afterwards found the reason form waiting for it.
   const [rejectFor, setRejectFor] = useState<number | null>(null);
@@ -429,9 +431,13 @@ export function BoardPage() {
             <div
               className={cn(
                 "lg:fixed lg:inset-y-1.5 lg:z-10 lg:w-96 lg:overflow-hidden",
-                propertiesShown
-                  ? "lg:right-[calc(var(--column-width)+0.375rem)]"
-                  : "lg:right-1.5 lg:rounded-r-sheet",
+                // A sheet (the Moebius agent) lies over the column and a strip of the page, so the drawer stands
+                // beside it: the board gives way, and the card's text is not under the sheet.
+                sheetShown
+                  ? "lg:right-[calc(var(--sheet-width)+0.375rem)] lg:rounded-r-sheet"
+                  : propertiesShown
+                    ? "lg:right-[calc(var(--column-width)+0.375rem)]"
+                    : "lg:right-1.5 lg:rounded-r-sheet",
               )}
             >
               <Dock
