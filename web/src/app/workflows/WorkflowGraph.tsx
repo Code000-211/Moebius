@@ -22,10 +22,7 @@ export function WorkflowGraph({ definition }: { definition: WorkflowDefinition }
   const height = Math.max(240, ...nodes.map((node) => node.position.y + 180), 180 + GAP * 2);
   const byId = new Map(nodes.map((node) => [node.id, node]));
   return (
-    <section
-      aria-label="Definition graph"
-      className="min-h-0 flex-1 overflow-auto rounded-card border border-hairline bg-canvas p-4"
-    >
+    <section aria-label="Definition graph" className="min-h-0 flex-1 overflow-auto p-2">
       <div className="relative" style={{ width: width + GAP, height: height + GAP }}>
         <svg
           aria-hidden="true"

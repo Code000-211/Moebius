@@ -206,12 +206,9 @@ export function WorkflowPage() {
             aria-labelledby="workflow-file-title"
             className="flex min-h-0 flex-col border-t border-hairline pt-4"
           >
-            <h2 id="workflow-file-title" className="m-0 text-base font-semibold text-text">
+            <h2 id="workflow-file-title" className="m-0 mb-2 text-base font-semibold text-text">
               File
             </h2>
-            <p className="mb-1 mt-1 text-sm text-secondary">
-              The workflow as it is saved, ready to copy.
-            </p>
             <CodeBlock language="TOML" code={file} />
           </section>
           <section
