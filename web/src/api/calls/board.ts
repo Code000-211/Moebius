@@ -10,6 +10,11 @@ export function snapshot(): Promise<Snapshot> {
   return get<Snapshot>("/v1/snapshot");
 }
 
+/** The issue a card key such as `WEB-24` names; a `404` when no card has it. */
+export function cardByKey(key: string): Promise<Card> {
+  return get<Card>(`/v1/cards/by-key/${encodeURIComponent(key)}`);
+}
+
 /** The card's timeline, oldest first. */
 export function history(card: number): Promise<HistoryEntry[]> {
   return get<HistoryEntry[]>(`/v1/cards/${card}/history`);

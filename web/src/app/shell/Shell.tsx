@@ -10,6 +10,7 @@
  * In the desktop app the ground leaves a strip free at the top for the window's controls, and the rail of servers lies at its
  * far left (`desktop/Rail.tsx`).
  */
+import { useQueryClient } from "@tanstack/react-query";
 import { Suspense, useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { desktopBridge } from "../../desktop/bridge";
@@ -25,6 +26,7 @@ import { PropertiesProvider } from "../../ui/page/Properties";
 import { SheetSlotProvider } from "../../ui/page/SheetSlot";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import { isTyping, NewIssueProvider } from "../board/NewIssueHost";
+import { prefetchCard } from "../board/prefetchCard";
 import { readFlag, writeFlag } from "../storage";
 import { CommandBar } from "./CommandBar";
 import { ConnectionBanner } from "./ConnectionBanner";
@@ -56,6 +58,15 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
   const packages = usePackageSheet();
   const connection = useConnection();
   const location = useLocation();
+  // A card named in the address the page opened at is read now, while the board's code and the snapshot are on their way.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const opened = /^\/board\/\d+$/.test(window.location.pathname)
+      ? new URLSearchParams(window.location.search).get("card")
+      : null;
+    const id = Number(opened);
+    if (Number.isInteger(id) && id > 0) prefetchCard(queryClient, id);
+  }, [queryClient]);
   const reconnect = useReconnect();
   const [collapsed, setCollapsed] = useState(() => readFlag(COLLAPSED_KEY));
   const [commandOpen, setCommandOpen] = useState(false);

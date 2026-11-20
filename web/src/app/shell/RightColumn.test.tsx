@@ -119,7 +119,7 @@ describe("the right column", () => {
     mount(true);
     fireEvent.click(await screen.findByRole("button", { name: "Pressed 0" }));
     fireEvent.click(ask());
-    expect(agent()).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: "Moebius agent" })).toBeTruthy();
     // The column is still there under the sheet, with its properties as they were.
     expect(screen.getByRole("button", { name: "Pressed 1" })).toBeTruthy();
     // "Properties" goes back to them.
@@ -141,10 +141,11 @@ describe("the right column", () => {
     expect(beside()).toBe("slim");
   });
 
-  it("toggles the agent with Ctrl+J and closes it on Escape", () => {
+  it("toggles the agent with Ctrl+J and closes it on Escape", async () => {
     mount(false);
+    expect(agent()).toBeNull();
     fireEvent.keyDown(window, { key: "j", ctrlKey: true });
-    expect(agent()).toBeTruthy();
+    expect(await screen.findByRole("dialog", { name: "Moebius agent" })).toBeTruthy();
     // A page without properties has nothing to go back to.
     expect(screen.queryByRole("button", { name: "Properties" })).toBeNull();
     fireEvent.keyDown(window, { key: "j", ctrlKey: true });

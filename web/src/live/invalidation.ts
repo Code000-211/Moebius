@@ -224,7 +224,38 @@ export function applyEvent(queryClient: QueryClient, event: ServerEvent): void {
   markStale(queryClient, invalidates(event));
 }
 
-/** The socket connected (again): what is shown may have missed events, so every read is made again. */
+/** How long a read counts as made after the stream's last silence: the first connect leaves what is younger than this. */
+export const FRESH_MS = 5000;
+
+/** Which clients have their stream connected now. */
+const streamUp = new WeakSet<QueryClient>();
+
+/** Records that the event stream of `queryClient` is connected or not. */
+export function setStreamUp(queryClient: QueryClient, up: boolean): void {
+  if (up) streamUp.add(queryClient);
+  else streamUp.delete(queryClient);
+}
+
+/** Whether the event stream is connected, which keeps what it covers (the snapshot) current without a read on every focus. */
+export function isStreamUp(queryClient: QueryClient): boolean {
+  return streamUp.has(queryClient);
+}
+
+/** Which clients had their stream connected before, so that the first connect is told from a reconnect. */
+const connectedBefore = new WeakSet<QueryClient>();
+
+/**
+ * The socket connected. The first time, the reads made in the last few seconds are left as they are: they were made
+ * as the page opened, and events that happened since the stream opened arrive on it. After a drop, what is shown may
+ * have missed events, so every read is made again.
+ */
 export function applyConnected(queryClient: QueryClient): void {
-  void queryClient.invalidateQueries({ predicate: (query) => query.queryKey[0] !== "session" });
+  setStreamUp(queryClient, true);
+  const reconnect = connectedBefore.has(queryClient);
+  connectedBefore.add(queryClient);
+  const now = Date.now();
+  void queryClient.invalidateQueries({
+    predicate: (query) =>
+      query.queryKey[0] !== "session" && (reconnect || now - query.state.dataUpdatedAt > FRESH_MS),
+  });
 }

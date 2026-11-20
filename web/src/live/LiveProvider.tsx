@@ -16,7 +16,7 @@ import {
 import { type ConnectionState, EventStream, eventsUrl } from "../api/events";
 import { keys } from "../api/keys";
 import type { ServerEvent } from "../api/types/events";
-import { applyConnected, applyEvent } from "./invalidation";
+import { applyConnected, applyEvent, setStreamUp } from "./invalidation";
 
 type Listener = (event: ServerEvent) => void;
 
@@ -41,6 +41,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         },
         onConnected: () => applyConnected(queryClient),
         onDisconnected: () => {
+          setStreamUp(queryClient, false);
           void queryClient.invalidateQueries({ queryKey: keys.session });
         },
       }),

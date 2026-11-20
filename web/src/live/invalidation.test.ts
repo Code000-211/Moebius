@@ -2,7 +2,8 @@ import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import { keys } from "../api/keys";
 import type { Snapshot } from "../api/types/board";
-import { applyConnected, applyEvent, invalidates } from "./invalidation";
+import { makeQueryClient } from "../app/shell/queryClient";
+import { applyConnected, applyEvent, FRESH_MS, invalidates, setStreamUp } from "./invalidation";
 
 const snapshot: Snapshot = {
   boards: [
@@ -255,12 +256,43 @@ describe("applyEvent", () => {
 });
 
 describe("applyConnected", () => {
-  it("reads everything again except the session", () => {
+  it("leaves what was read a moment ago on the first connect", () => {
     const queryClient = client();
+    applyConnected(queryClient);
+    expect(stale(queryClient, keys.snapshot)).toBe(false);
+    expect(stale(queryClient, keys.health)).toBe(false);
+  });
+
+  it("reads what is older than the last few seconds on the first connect, except the session", () => {
+    const queryClient = client();
+    queryClient.setQueryData(keys.snapshot, snapshot, { updatedAt: Date.now() - FRESH_MS - 1000 });
+    queryClient.setQueryData(keys.session, { signed_in: true }, { updatedAt: 1 });
+    applyConnected(queryClient);
+    expect(stale(queryClient, keys.snapshot)).toBe(true);
+    expect(stale(queryClient, keys.health)).toBe(false);
+    expect(stale(queryClient, keys.session)).toBe(false);
+  });
+
+  it("reads everything again after a reconnect, except the session", () => {
+    const queryClient = client();
+    applyConnected(queryClient);
     applyConnected(queryClient);
     expect(stale(queryClient, keys.snapshot)).toBe(true);
     expect(stale(queryClient, keys.health)).toBe(true);
     expect(stale(queryClient, keys.session)).toBe(false);
+  });
+
+  it("does not read the snapshot on a focus while the stream is up, and does when it is not", () => {
+    const queryClient = makeQueryClient();
+    const options = queryClient.getDefaultOptions().queries?.refetchOnWindowFocus;
+    const ask = (key: readonly unknown[]) =>
+      (options as (query: { queryKey: readonly unknown[] }) => boolean)({ queryKey: key });
+    expect(ask(keys.snapshot)).toBe(true);
+    applyConnected(queryClient);
+    expect(ask(keys.snapshot)).toBe(false);
+    expect(ask(keys.health)).toBe(true);
+    setStreamUp(queryClient, false);
+    expect(ask(keys.snapshot)).toBe(true);
   });
 });
 
