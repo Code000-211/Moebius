@@ -44,6 +44,10 @@ impl Server {
             }
         }
         settle_order(&mut cards);
+        self.engine
+            .keep_quiet_only(&cards.iter().map(|c| c.id).collect());
+        self.engine.begin_tick();
+        let _scripts_kept = ScriptsKept(&self.engine);
         for card in cards {
             // An archived card is off the board: no script runs for it.
             if card.archived_at.is_some() {
@@ -59,15 +63,21 @@ impl Server {
             {
                 continue;
             }
-            self.settle_card(card.id);
+            self.settle_card(&card);
         }
     }
 
     /// Runs the script of one card until it stays where it is. A script that fails is reported on the bus and kept as
     /// the card's waiting reason until a script runs cleanly again; a card that was deleted or held since the tick
     /// began is left alone, since there is nothing to report for it.
-    fn settle_card(&self, card_id: i64) {
-        let Err(e) = self.engine.settle(card_id) else {
+    fn settle_card(&self, card: &crate::store::Card) {
+        let card_id = card.id;
+        // Read before the script runs: whatever is written meanwhile makes the next tick run it again.
+        let before = self.engine.stamp();
+        if self.engine.is_quiet(card, before) {
+            return;
+        }
+        let Err(e) = self.engine.settle_card(card, before) else {
             return;
         };
         match self.app.card(card_id) {
@@ -162,6 +172,15 @@ impl Server {
     }
 }
 
+/// Ends the tick's reading of project scripts when it goes out of scope, however the tick ends.
+struct ScriptsKept<'a>(&'a crate::board::Engine);
+
+impl Drop for ScriptsKept<'_> {
+    fn drop(&mut self) {
+        self.0.end_tick();
+    }
+}
+
 /// Puts cards in the order the tick settles them: the most urgent first, then the one due first, then the oldest. With
 /// the run limit reached, the cards that come first are the ones that start.
 pub(crate) fn settle_order(cards: &mut [crate::store::Card]) {
@@ -178,8 +197,15 @@ pub(super) async fn board(server: Arc<Server>) {
         let started = Instant::now();
         let s = server.clone();
         let _ = tokio::task::spawn_blocking(move || s.tick()).await;
-        let tick = server.live.get().board_tick;
-        tokio::time::sleep(tick.saturating_sub(started.elapsed())).await;
+        // Waits for the tick as it is now, and starts over at once when the settings change it.
+        loop {
+            let tick = server.live.get().board_tick;
+            let left = tick.saturating_sub(started.elapsed());
+            tokio::select! {
+                () = tokio::time::sleep(left) => break,
+                () = server.live.board_tick_changed() => {}
+            }
+        }
     }
 }
 
@@ -409,6 +435,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_tick_runs_no_script_for_a_card_while_nothing_was_written_and_runs_it_again_when_something_was()
+     {
+        let f = Fixture::new().await;
+        f.fake.set_issues(
+            "\"v1\"",
+            vec![
+                issue(1, "open", "mallory", "Waits for a person to approve it."),
+                issue(2, "open", "mallory", "So does this one."),
+            ],
+        );
+        f.server.poll_github().await;
+        let app = &f.server.app;
+        let engine = &f.server.engine;
+        // The first tick writes (the inbox item), the second finds nothing to do.
+        f.server.tick();
+        f.server.tick();
+        let settled = engine.scripts_run();
+        assert!(settled > 0);
+        for _ in 0..3 {
+            f.server.tick();
+        }
+        assert_eq!(engine.scripts_run(), settled, "an idle tick runs no script");
+
+        // A person gives the first card a label: its script runs again, the other one's too, since the store changed.
+        let card = f.card(1).unwrap();
+        app.store
+            .set_card_moved_at(card.id, crate::store::now())
+            .unwrap();
+        f.server.tick();
+        assert!(engine.scripts_run() > settled);
+        let settled = engine.scripts_run();
+        f.server.tick();
+        f.server.tick();
+        assert_eq!(engine.scripts_run(), settled);
+
+        // A change of the limits scripts see runs them again.
+        engine.set_limits(9, 9, None);
+        f.server.tick();
+        assert!(engine.scripts_run() > settled);
+    }
+
+    #[tokio::test]
     async fn a_card_deleted_during_a_tick_is_skipped_without_a_waiting_reason_or_a_board_error() {
         use crate::decide::Actor;
         use crate::server::fake_github::IdleRuns;
@@ -426,7 +494,7 @@ mod tests {
         let mut events = app.bus.subscribe();
 
         // The tick had listed the card before it was deleted.
-        f.server.settle_card(card.id);
+        f.server.settle_card(&card);
         assert!(app.waiting(std::slice::from_ref(&card)).is_empty());
         while let Ok(event) = events.try_recv() {
             assert_ne!(event.kind, "board_error");

@@ -6,6 +6,8 @@
 //! - `attempts`: the functions for a card with several attempts, and the `card` fields that show them.
 //! - `card`: the `card` table, what a script knows of its card, and the verdict of its review.
 //! - `review`: the review along two axes, Standards and Spec, read from the summaries of its runs.
+//! - `cache`: what the engine remembers between script calls: compiled scripts, the cards a tick can leave alone and the
+//!   project scripts of the tick.
 //! - `sandbox`: the Luau sandbox every script runs in, with its memory and time limits.
 //! - `limits`: the run, round and token limits scripts see.
 //! - `kanban`: the columns and the default Kanban's scripts built into the server, and a repository's overrides.
@@ -15,6 +17,7 @@
 
 mod api;
 mod attempts;
+mod cache;
 mod card;
 mod dry_run;
 mod engine;
@@ -27,6 +30,7 @@ pub mod scripts;
 #[cfg(test)]
 pub(crate) mod testing;
 
+pub use cache::RECHECK;
 pub use card::{Review, latest_review};
 pub use dry_run::check_script;
 pub use engine::{BoardError, Engine, Step};

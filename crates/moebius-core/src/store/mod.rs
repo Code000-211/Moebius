@@ -557,6 +557,12 @@ impl Store {
         })
     }
 
+    /// How many rows the store has changed since it was opened: it differs from an earlier reading when anything was
+    /// written in between, which is all the board needs to know to leave cards whose script did nothing alone.
+    pub fn writes(&self) -> u64 {
+        self.conn().total_changes()
+    }
+
     fn conn(&self) -> MutexGuard<'_, Connection> {
         self.conn
             .lock()

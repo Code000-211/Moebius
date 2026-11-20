@@ -4,8 +4,10 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
+use super::cache::{Compiled, Quiet, ScriptMemo, Stamp};
 use super::sandbox::run_sandboxed;
 use super::{CardRuns, Column, Kanban, Limits, built_in_script, project_script};
 use crate::app::{App, AppError, columns};
@@ -39,6 +41,11 @@ pub struct Engine {
     pub(super) kanban: Kanban,
     /// Replaced when the limits are edited while the server runs (see `set_limits`).
     limits: RwLock<Limits>,
+    compiled: Compiled,
+    quiet: Quiet,
+    memo: ScriptMemo,
+    /// How many scripts have run, for tests and for the tick's figures.
+    scripts_run: AtomicU64,
 }
 
 /// What a script call did through the `moebius` table, applied when it returns.
@@ -66,6 +73,10 @@ impl Engine {
             runs,
             kanban,
             limits: RwLock::new(limits),
+            compiled: Compiled::default(),
+            quiet: Quiet::default(),
+            memo: ScriptMemo::default(),
+            scripts_run: AtomicU64::new(0),
         }
     }
 
@@ -88,10 +99,15 @@ impl Engine {
 
     /// The script for `column`: the override of the card's project, or the built-in one.
     fn script(&self, card: &Card, column: &Column) -> Result<String, BoardError> {
-        let project = self.app.project(card.project_id)?;
-        if let Some(source) = project_script(&self.app, &project, &column.script) {
+        let overridden = self.memo.get(card.project_id, &column.script, || {
+            let project = self.app.project(card.project_id).ok()?;
+            project_script(&self.app, &project, &column.script)
+        });
+        if let Some(source) = overridden {
             return Ok(source);
         }
+        // A project that does not exist is an error, as it was before the scripts were kept for the tick.
+        self.app.project(card.project_id)?;
         built_in_script(&column.script)
             .map(String::from)
             .ok_or_else(|| BoardError::Script {
@@ -116,6 +132,7 @@ impl Engine {
             .ok_or_else(|| BoardError::NoColumn(card.column.clone()))?;
         let source = self.script(&card, column)?;
         let effects = Rc::new(RefCell::new(Effects::default()));
+        self.scripts_run.fetch_add(1, Ordering::Relaxed);
         self.run_script(&column.script, &source, &card, effects.clone())
             .map_err(|e| BoardError::Script {
                 script: column.script.clone(),
@@ -203,6 +220,67 @@ impl Engine {
         })
     }
 
+    /// What the store and the limits are now: a card whose script did nothing in this state need not run again.
+    pub fn stamp(&self) -> Stamp {
+        let limits = format!("{:?}", self.limits());
+        Stamp {
+            writes: self.app.store.writes(),
+            limits: limits.bytes().fold(0xcbf29ce484222325, |h, b| {
+                (h ^ u64::from(b)).wrapping_mul(0x100000001b3)
+            }),
+        }
+    }
+
+    /// How many column scripts the engine has run since it was made.
+    pub fn scripts_run(&self) -> u64 {
+        self.scripts_run.load(Ordering::Relaxed)
+    }
+
+    /// Starts a tick of the whole board: the project scripts read from now on are kept until [`Engine::end_tick`].
+    pub fn begin_tick(&self) {
+        self.memo.begin();
+    }
+
+    pub fn end_tick(&self) {
+        self.memo.end();
+    }
+
+    /// Whether the tick can leave `card` alone: it was settled with nothing to do in the state `now` is, less than
+    /// [`RECHECK`](super::RECHECK) ago, and it has no open change, whose checks and conflicts come from git and the forge.
+    pub fn is_quiet(&self, card: &Card, now: Stamp) -> bool {
+        card.held.is_none() && self.quiet.is_quiet(card.id, now, super::RECHECK)
+    }
+
+    /// Settles `card` like [`Engine::settle`] and remembers that the tick can leave it alone while nothing is written
+    /// to the store, if its script did nothing: `before` is the state read before the script ran, so that a write
+    /// made meanwhile runs the script again.
+    pub fn settle_card(&self, card: &Card, before: Stamp) -> Result<Step, BoardError> {
+        let step = self.settle(card.id);
+        match &step {
+            Ok(step)
+                if step.moved.is_none()
+                    && step.started_run.is_none()
+                    && !self.has_open_change(card) =>
+            {
+                self.quiet.remember(card.id, before)
+            }
+            _ => self.quiet.forget(card.id),
+        }
+        step
+    }
+
+    /// Forgets the quiet cards that are no longer on the board.
+    pub fn keep_quiet_only(&self, alive: &std::collections::HashSet<i64>) {
+        self.quiet.keep_only(alive);
+    }
+
+    fn has_open_change(&self, card: &Card) -> bool {
+        self.app
+            .open_changes(card)
+            .map(|changes| !changes.is_empty())
+            .unwrap_or(true)
+    }
+
     /// Ticks the card until its script leaves it where it is; returns the last step.
     pub fn settle(&self, card_id: i64) -> Result<Step, BoardError> {
         let mut step = self.tick(card_id)?;
@@ -222,9 +300,13 @@ impl Engine {
         card: &Card,
         effects: Rc<RefCell<Effects>>,
     ) -> mlua::Result<()> {
+        // A script that does not compile is loaded as text, for its error to name the script and the line.
+        let bytecode = self.compiled.bytecode(source);
         run_sandboxed(
             name,
-            source,
+            bytecode
+                .as_ref()
+                .map_or(source.as_bytes(), |b| b.as_slice()),
             &self.limits(),
             |lua, deadline| self.api(lua, card, effects, deadline.clone()),
             |lua| self.card_table(lua, card),
