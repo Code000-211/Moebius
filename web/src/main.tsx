@@ -10,10 +10,12 @@ import { router } from "./app/routes";
 import { makeQueryClient } from "./app/shell/queryClient";
 import { startLogin } from "./auth/login";
 import "./styles/tailwind.css";
+import { start as startMotion } from "./motion";
 import { start as startTheme } from "./theme";
 
 void startLogin(window);
 startTheme();
+startMotion();
 
 const queryClient = makeQueryClient();
 

@@ -1,6 +1,6 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/Dialog.tsx (Apache-2.0), changed to this app's design standard:
 // glass at the window radius of 12 with the raised shadow and no border, the overlay the canvas behind it dimmed, the close control a
-// 32px square, and the routine transition at 180ms. React 19 ComponentRef in place of ElementRef.
+// 32px square, and the routine transition at 120ms. React 19 ComponentRef in place of ElementRef.
 //
 // The sheet is as tall as what is in it: `inset-0` with `margin: auto` centres a box whose height is set, so it is
 // `h-fit` against a maximum, not a box stretched to the window with its content parked at the top.

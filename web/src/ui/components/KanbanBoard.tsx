@@ -1,4 +1,4 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: the sensors' options keep their identity, so that a render of the page does not draw every card; no i18n; the header takes actions, the column's "+"; a column is a lane of the canvas with no border, and its header counts the cards in it; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); a card has a quiet line and a short soft shadow that grows as it lifts on hover, and the chosen one glows in the accent, and it is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); the card is a group and not a named button, and its title is the button that opens it, so the issue link and the pull-request badge inside it stay in the accessibility tree; dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
+// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: the sensors' options keep their identity, so that a render of the page does not draw every card; no i18n; the header takes actions, the column's "+"; a column is a lane of the canvas with no border, and its header counts the cards in it; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); a card has a quiet line and no lift and no shadow on hover, and the chosen one glows in the accent, and it is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); the card is a group and not a named button, and its title is the button that opens it, so the issue link and the pull-request badge inside it stay in the accessibility tree; dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
 import {
   type Announcements,
   type CollisionDetection,
@@ -76,7 +76,7 @@ export type KanbanCardFaceProps = {
 
 const faceClass = ({ isLive, isSelected, isOpen, className }: KanbanCardFaceProps) =>
   cn(
-    "group lift rounded-card bg-surface px-3 py-2 outline outline-1 -outline-offset-1",
+    "group rounded-card bg-surface px-3 py-2 outline outline-1 -outline-offset-1",
     isSelected
       ? "shadow-glow outline-accent hover:shadow-glow"
       : isOpen
