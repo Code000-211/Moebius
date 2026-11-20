@@ -402,6 +402,26 @@ describe("live data", () => {
     await properties(3).getByText("In review", { exact: true }).waitFor();
   });
 
+  it.skipIf(!usesRealServer)("opens the card of an issue clicked on the Issues page", async () => {
+    await fresh();
+    await openBoard();
+    const ids: number[] = [];
+    for (const title of ["First issue", "Second issue"]) {
+      const made = await context.request.post(`${server.url}/v1/repositories/${demo}/issues`, {
+        headers: { "X-Moebius": "1" },
+        data: { title },
+      });
+      expect(made.ok(), await made.text()).toBe(true);
+      ids.push(((await made.json()) as { id: number }).id);
+    }
+    await page.goto(`${server.url}/issues`);
+    await page.getByTestId(`issue-${ids[0]}`).getByRole("link", { name: "First issue" }).click();
+    await page.waitForURL(`**/board/${demo}?card=${ids[0]}`);
+    await dock().getByText("First issue").first().waitFor();
+    await page.goBack();
+    await page.getByTestId("issues-page").waitFor();
+  });
+
   it.skipIf(usesRealServer)("links the pull request of a card from the dock", async () => {
     await fresh();
     await openBoard();
