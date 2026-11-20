@@ -1,36 +1,36 @@
 /**
- * The rules of one rules file as cards: each with its name, its text, what it refused this week and a control that
- * grows the card in place into an editor of the rule's name and text with Save, Cancel and Delete (which asks first).
- * Under the last rule an "Add a rule" control adds one. A save puts the rule's section back into the file's text
- * (`file.ts`) and hands the whole file to `onSave`, which the server checks; a refusal stays in the card, beside the
- * rule it refuses.
+ * The rules of one rules file as 36px rows: the rule's name in mono, its text cut to one line, and at the right how
+ * often it refused this week. A row opens the rule in the editor window (`EditorWindow`) with its name and text, Save,
+ * Cancel and Delete (which asks first); a last row, "Add a rule", opens the same window empty. A save puts the rule's
+ * section back into the file's text (`file.ts`) and hands the whole file to `onSave`, which the server checks; a
+ * refusal stays in the window, beside the buttons, and a save is confirmed by a toast.
  */
-import { PencilSimpleIcon, PlusIcon } from "@phosphor-icons/react";
+
 import { useState } from "react";
 import { sayError } from "../../api/errorText";
 import type { Rule } from "../../api/types/rules";
-import { Tag, type TagTone } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
-import { IconButton } from "../../ui/components/IconButton";
+import { EditorWindow } from "../../ui/components/EditorWindow";
 import { Input } from "../../ui/components/Input";
+import { AddIcon } from "../../ui/icons";
+import { cn } from "../../ui/lib/cn";
+import { plural } from "../../ui/lib/format";
+import { ConfirmDelete } from "../../ui/page/ConfirmDelete";
 import { Field, TextArea } from "../../ui/page/Field";
-import { Notice } from "../../ui/page/Notice";
-import { Body } from "../../ui/page/PageHeader";
-import { appendRule, refusalsLabel, replaceRule, section, validName } from "./file";
+import { useToast } from "../../ui/page/Toast";
+import { appendRule, replaceRule, section, validName } from "./file";
 
-/** A rule being edited: the one called `rule` of the file, or a new one. */
+/** A rule being edited: the one called `rule` of the file, or a new one (`null`). */
 interface Editing {
   rule: string | null;
   name: string;
   text: string;
-  deleting: boolean;
-  saving: boolean;
-  error: string | null;
 }
 
-/** The hue of a rule's refusals: a rule that refused is worth a look, one that did not is not. */
-function refusalTone(refusals: Record<string, number>, name: string): TagTone {
-  return (refusals[name] ?? 0) > 0 ? "attention" : "plain";
+/** What a row says on its right: how often the rule refused this week, and nothing when it did not. */
+export function refused(refusals: Record<string, number>, name: string): string {
+  const n = refusals[name] ?? 0;
+  return n === 0 ? "" : plural(n, "refusal", "refusals");
 }
 
 export function RuleList({
@@ -52,195 +52,166 @@ export function RuleList({
   /** Saves the whole file; resolves with the short id of the commit when the server says one. */
   onSave: (file: string) => Promise<string | undefined>;
 }) {
+  const toast = useToast();
   const [editing, setEditing] = useState<Editing | null>(null);
-  const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  const edit = (rule: Rule | null) => {
-    setNotice(null);
-    setEditing({
-      rule: rule?.name ?? null,
-      name: rule?.name ?? "",
-      text: rule?.text ?? "",
-      deleting: false,
-      saving: false,
-      error: null,
-    });
+  const open = (rule: Rule | null) => {
+    setError(null);
+    setEditing({ rule: rule?.name ?? null, name: rule?.name ?? "", text: rule?.text ?? "" });
   };
+  const original = rules.find((each) => each.name === editing?.rule);
+  const dirty =
+    editing !== null &&
+    (editing.rule === null
+      ? editing.name !== "" || editing.text !== ""
+      : editing.name !== original?.name || editing.text !== original?.text);
 
-  async function save(current: Editing, drop: boolean) {
+  /** Puts the edited section back (or drops it) and saves the file; throws what the server or the file refuses. */
+  async function persist(current: Editing, drop: boolean) {
     const edited = drop ? "" : section(current.name, current.text);
     const whole =
       current.rule === null ? appendRule(file, edited) : replaceRule(file, current.rule, edited);
-    if (whole === null) {
-      setEditing({ ...current, error: `The rule ${current.rule} is no longer in the file.` });
-      return;
-    }
-    setEditing({ ...current, saving: true, error: null });
+    if (whole === null) throw new Error(`The rule ${current.rule} is no longer in the file.`);
+    const commit = await onSave(whole);
+    toast({ kind: "confirmation", text: commit ? `Committed: ${commit}` : "Saved." });
+  }
+
+  async function save(current: Editing) {
+    setSaving(true);
+    setError(null);
     try {
-      const commit = await onSave(whole);
+      await persist(current, false);
       setEditing(null);
-      setNotice({ tone: "ok", text: commit ? `Committed: ${commit}` : "Saved." });
-    } catch (error) {
-      setEditing({
-        ...current,
-        saving: false,
-        deleting: false,
-        error: sayError(error, "Could not save the rules. Try again."),
-      });
+    } catch (failure) {
+      setError(sayError(failure, "Could not save the rules. Try again."));
     }
+    setSaving(false);
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      {rules.length === 0 && <Body>{empty}</Body>}
-      {rules.map((rule) =>
-        editing?.rule === rule.name ? (
-          <RuleEditor
-            key={rule.name}
-            current={editing}
-            onChange={setEditing}
-            onSave={(drop) => void save(editing, drop)}
-            onCancel={() => setEditing(null)}
-          />
-        ) : (
-          <RuleCard
-            key={rule.name}
-            rule={rule}
-            refusals={refusals}
-            editable={editable}
-            onEdit={() => edit(rule)}
-          />
-        ),
+    <div className="flex flex-col">
+      {rules.length === 0 && <p className="m-0 px-4 py-2 text-base text-muted">{empty}</p>}
+      {rules.map((rule) => (
+        <RuleRow
+          key={rule.name}
+          name={rule.name}
+          text={rule.text}
+          state={refused(refusals, rule.name)}
+          onOpen={editable ? () => open(rule) : undefined}
+        />
+      ))}
+      {editable && (
+        <RuleRow
+          name="Add a rule"
+          icon={<AddIcon className="size-4 shrink-0 text-muted" aria-hidden="true" />}
+          onOpen={() => open(null)}
+        />
       )}
-      {editable &&
-        (editing && editing.rule === null ? (
-          <RuleEditor
-            current={editing}
-            onChange={setEditing}
-            onSave={(drop) => void save(editing, drop)}
-            onCancel={() => setEditing(null)}
-          />
-        ) : (
-          <Button size="sm" variant="secondary" onClick={() => edit(null)}>
-            <PlusIcon className="size-4" aria-hidden="true" />
-            Add a rule
-          </Button>
-        ))}
-      {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
-    </div>
-  );
-}
-
-/** One rule as it stands: its name, what it says, how often it refused, and the control that opens it. */
-function RuleCard({
-  rule,
-  refusals,
-  editable,
-  onEdit,
-}: {
-  rule: Rule;
-  refusals: Record<string, number>;
-  editable: boolean;
-  onEdit: () => void;
-}) {
-  return (
-    <article className="flex flex-col gap-4 rounded-card bg-sunken p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="m-0 min-w-0 flex-1 break-words font-mono text-sm font-semibold text-text">
-          {rule.name}
-        </h3>
-        <Tag tone={refusalTone(refusals, rule.name)} className="tabular-nums">
-          {refusalsLabel(refusals, rule.name)}
-        </Tag>
-        {editable && (
-          <IconButton
-            icon={PencilSimpleIcon}
-            aria-label={`Edit rule ${rule.name}`}
-            onClick={onEdit}
-          />
-        )}
-      </div>
-      <p className="m-0 min-w-0 break-words text-base leading-normal text-text">{rule.text}</p>
-    </article>
-  );
-}
-
-/** A rule grown into its editor: its name and text, and what a save or a delete would do. */
-function RuleEditor({
-  current,
-  onChange,
-  onSave,
-  onCancel,
-}: {
-  current: Editing;
-  onChange: (next: Editing) => void;
-  onSave: (drop: boolean) => void;
-  onCancel: () => void;
-}) {
-  const busy = current.saving;
-  return (
-    <div className="flex flex-col gap-4 rounded-card bg-sunken p-4">
-      <Field
-        label="Rule name"
-        hint="The name a refusal says. It cannot hold spaces."
-        error={
-          current.name.trim() !== "" && !validName(current.name)
-            ? "Remove the spaces from the name."
-            : undefined
-        }
-      >
-        <Input
-          placeholder="name-without-spaces"
-          value={current.name}
-          onChange={(event) => onChange({ ...current, name: event.target.value })}
-          className="font-mono text-sm"
-        />
-      </Field>
-      <Field label="Rule text">
-        <TextArea
-          placeholder="What a run must not do."
-          rows={4}
-          value={current.text}
-          onChange={(event) => onChange({ ...current, text: event.target.value })}
-        />
-      </Field>
-      {current.error && <Notice tone="error">{current.error}</Notice>}
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" disabled={busy || !validName(current.name)} onClick={() => onSave(false)}>
-          {busy ? "Saving" : "Save"}
-        </Button>
-        <Button size="sm" variant="secondary" onClick={onCancel}>
-          Cancel
-        </Button>
-        {current.rule !== null && !current.deleting && (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => onChange({ ...current, deleting: true })}
+      {editing && (
+        <EditorWindow
+          open
+          title={editing.rule === null ? "New rule" : `Edit rule ${editing.rule}`}
+          dirty={dirty}
+          saving={saving}
+          canSave={validName(editing.name)}
+          error={error}
+          actions={
+            editing.rule !== null && (
+              <Button variant="danger" size="sm" onClick={() => setDeleting(true)}>
+                Delete rule
+              </Button>
+            )
+          }
+          onSave={() => void save(editing)}
+          onClose={() => setEditing(null)}
+        >
+          <Field
+            label="Rule name"
+            hint="The name a refusal says. It cannot hold spaces."
+            error={
+              editing.name.trim() !== "" && !validName(editing.name)
+                ? "Remove the spaces from the name."
+                : undefined
+            }
           >
-            Delete rule
-          </Button>
-        )}
-      </div>
-      {current.deleting && (
-        <div className="flex flex-col gap-4 rounded-control bg-surface p-4 sm:flex-row sm:items-center">
-          <p className="m-0 flex min-h-8 min-w-0 flex-1 items-center break-words text-base text-text">
-            Delete this rule?
-          </p>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              onClick={() => onChange({ ...current, deleting: false })}
-            >
-              Keep it
-            </Button>
-            <Button size="sm" variant="danger" disabled={busy} onClick={() => onSave(true)}>
-              Delete
-            </Button>
-          </div>
-        </div>
+            <Input
+              placeholder="name-without-spaces"
+              value={editing.name}
+              onChange={(event) => setEditing({ ...editing, name: event.target.value })}
+              className="font-mono text-sm"
+            />
+          </Field>
+          <Field label="Rule text">
+            <TextArea
+              placeholder="What a run must not do."
+              rows={5}
+              value={editing.text}
+              onChange={(event) => setEditing({ ...editing, text: event.target.value })}
+            />
+          </Field>
+          <ConfirmDelete
+            open={deleting}
+            onOpenChange={setDeleting}
+            title="Delete this rule?"
+            confirmLabel="Delete rule"
+            onConfirm={async () => {
+              await persist(editing, true);
+              setEditing(null);
+            }}
+          >
+            The rule {editing.rule} is removed from the file.
+          </ConfirmDelete>
+        </EditorWindow>
       )}
     </div>
+  );
+}
+
+/** One rule as a row of 36px; without `onOpen` it is read only. */
+export function RuleRow({
+  name,
+  text,
+  state,
+  icon,
+  onOpen,
+}: {
+  name: string;
+  text?: string;
+  /** What is said at the right: how often it refused, or that it is always on. */
+  state?: string;
+  icon?: React.ReactNode;
+  onOpen?: () => void;
+}) {
+  const body = (
+    <>
+      {icon}
+      <span
+        className={cn("shrink-0 truncate", text ? "font-mono text-sm font-medium" : "text-muted")}
+        style={text ? { maxWidth: "14rem" } : undefined}
+      >
+        {name}
+      </span>
+      {text && <span className="min-w-0 flex-1 truncate text-muted">{text}</span>}
+      {state && (
+        <span className="ml-auto shrink-0 text-xs tabular-nums text-attention-text">{state}</span>
+      )}
+    </>
+  );
+  const row =
+    "flex h-9 w-full items-center gap-2.5 border-b border-hairline px-4 text-left text-base text-text";
+  return onOpen ? (
+    <button
+      type="button"
+      aria-label={text ? `Edit rule ${name}` : name}
+      onClick={onOpen}
+      className={cn(row, "cursor-pointer hover:bg-row-hover")}
+    >
+      {body}
+    </button>
+  ) : (
+    <div className={row}>{body}</div>
   );
 }
