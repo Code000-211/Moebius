@@ -137,7 +137,7 @@ describe("a card named by its key", () => {
       await page.goto(`${server.url}/card/demo-31`);
       await page.waitForURL(/\/board\/1\?card=7$/);
       await dock().getByText("DEMO-31 · #7").first().waitFor();
-      await card(7).getByText("DEMO-31 · #7").waitFor();
+      await card(7).getByText("DEMO-31").waitFor();
       await page.goto(`${server.url}/card/DEMO-99`);
       await page.getByText("There is no such card").waitFor();
     },
@@ -160,7 +160,7 @@ describe("the board page", () => {
     if (usesRealServer) return;
     await fresh();
     await openBoard();
-    const notice = page.getByRole("alert").filter({ hasText: "still has a .moebius folder" });
+    const notice = page.getByRole("status").filter({ hasText: "still has a .moebius folder" });
     await notice.waitFor();
     expect(await notice.textContent()).toContain(".moebius/old.luau");
     await notice.getByRole("link", { name: "Project settings" }).waitFor();
@@ -285,40 +285,39 @@ describe("the board page", () => {
   });
 
   it.skipIf(usesRealServer)(
-    "shows each card with its issue, status, agent, attempts, change and pull request",
+    "shows each card flat: status icon, id and title, and a pale line only when it runs or needs you",
     async () => {
       await fresh();
       await openBoard();
-      // Columns: Backlog is always there; the counts follow the cards.
+      // Columns: Backlog is always there; its name stands alone, with no count.
       await column("Backlog").waitFor();
       expect(
         await column("Not started")
-          .getByTestId(/^card-/)
+          .getByTestId(/^card-\d+$/)
           .count(),
       ).toBe(2);
+      expect(await column("Not started").getByRole("heading").textContent()).toBe("Not started");
 
       const running = card(1);
       await running.waitFor();
-      expect(
-        await running.getByRole("link", { name: "Issue #1 on its forge" }).getAttribute("href"),
-      ).toBe("https://github.com/acme/demo/issues/1");
       await running.getByTestId("status-running").waitFor();
-      await running.getByText("Live", { exact: true }).waitFor();
-      await running.getByText("Coder · round 1 of 5").waitFor();
-      await running.getByRole("img", { name: "Round 1 of 5" }).waitFor();
+      expect(await running.getByTestId("card-activity").textContent()).toContain("Coder");
+      // A running card has no outline of progress and casts no shadow.
+      expect(await running.evaluate((el) => getComputedStyle(el).boxShadow)).toBe("none");
 
-      const ready = card(5);
-      const pull = ready.getByRole("link", { name: "Pull request #11, open" });
-      expect(await pull.getAttribute("href")).toBe("https://github.com/acme/demo/pull/11");
-      await ready.getByText("Green").waitFor();
-      await ready.getByText("Your turn").waitFor();
-      await ready.getByText("2 rounds", { exact: true }).waitFor();
+      // A card that needs a person says so in the orange line.
+      const needs = card(2);
+      await needs.getByTestId("status-needsYou").waitFor();
+      expect(await needs.getByTestId("card-activity").textContent()).toBe("Plan ready");
 
-      await card(4).getByText("Waiting on #3").waitFor();
-      await card(3).getByText("Next").waitFor();
-      await card(6).getByText("Stuck").waitFor();
-      await card(2).getByText("Your turn").waitFor();
-      await card(7).getByRole("link", { name: "Pull request #9, merged" }).waitFor();
+      // An idle card is its id and its title, and nothing else.
+      const idle = card(3);
+      expect(await idle.getByTestId("card-activity").count()).toBe(0);
+      expect(await idle.evaluate((el) => getComputedStyle(el).boxShadow)).toBe("none");
+      expect(await idle.evaluate((el) => el.firstElementChild?.children.length)).toBe(2);
+
+      await card(6).getByTestId("card-activity").getByText("Stuck").waitFor();
+      await card(7).getByTestId("status-done").waitFor();
     },
   );
 
@@ -700,7 +699,7 @@ describe("the decisions", () => {
     await dock().getByRole("button", { name: "Retry" }).click();
     await status("Retrying #6.").waitFor();
     expect(fake().requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/cards/6/retry" });
-    await card(6).getByText("Live", { exact: true }).waitFor();
+    await card(6).getByTestId("card-activity").waitFor();
   });
 
   it.skipIf(usesRealServer)("tells why the server refused a decision", async () => {
@@ -729,7 +728,7 @@ describe("blocking, unblocking and deleting a card", () => {
       await fresh();
       await openBoard();
       // A card that waits on an issue says so in its own words, apart from the one a person blocks.
-      await card(4).getByText("Waiting on #3").waitFor();
+      await card(4).getByTestId("card-activity").getByText("Waiting on #3").waitFor();
       await menuOf(card(3), 3).click();
       await item("Block…").click();
       const dialog = asking("Block #3");
@@ -742,15 +741,10 @@ describe("blocking, unblocking and deleting a card", () => {
         path: "/v1/cards/3/block",
         body: { reason: "wait for the design" },
       });
-      // It stays in its column, tagged, and its reason is in the tag's tooltip.
+      // It stays in its column, its line says Blocked, and its reason is the line's tooltip.
       const tag = column("Not started").getByTestId("card-3").getByText("Blocked", { exact: true });
       await tag.waitFor();
-      await tag.hover();
-      await page
-        .getByRole("tooltip")
-        .filter({ hasText: "wait for the design (blocked by a person)" })
-        .first()
-        .waitFor();
+      expect(await tag.getAttribute("title")).toBe("wait for the design (blocked by a person)");
       // The card that waits on issues is a different state: it is not called blocked.
       expect(await card(4).getByText("Blocked", { exact: true }).count()).toBe(0);
 
@@ -785,27 +779,31 @@ describe("blocking, unblocking and deleting a card", () => {
   it.skipIf(usesRealServer)("stops the run of a card that is blocked", async () => {
     await fresh();
     await openBoard();
-    await card(1).getByText("Live", { exact: true }).waitFor();
+    await card(1).getByTestId("card-activity").waitFor();
     await menuOf(card(1), 1).click();
     await item("Block…").click();
     await asking("Block #1").getByRole("button", { name: "Block", exact: true }).click();
     await status("Blocked #1").waitFor();
     await card(1).getByText("Blocked", { exact: true }).waitFor();
     // The run was stopped, so the card is no longer live.
-    await card(1).getByText("Live", { exact: true }).waitFor({ state: "detached" });
+    await card(1)
+      .getByText(/^Coder · code/)
+      .waitFor({ state: "detached" });
     expect(fake().requests.at(-1)).toMatchObject({ body: { reason: "" } });
   });
 
   it.skipIf(usesRealServer)("stops the run of a card from its menu and from the dock", async () => {
     await fresh();
     await openBoard();
-    await card(1).getByText("Live", { exact: true }).waitFor();
+    await card(1).getByTestId("card-activity").waitFor();
     await menuOf(card(1), 1).click();
     await item("Stop run").click();
     await status("Stopping #1.").waitFor();
     expect(fake().requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/runs/1/stop" });
     // The card is no longer live and is not blocked, and the menu offers no second stop.
-    await card(1).getByText("Live", { exact: true }).waitFor({ state: "detached" });
+    await card(1)
+      .getByText(/^Coder · code/)
+      .waitFor({ state: "detached" });
     expect(await card(1).getByText("Blocked", { exact: true }).count()).toBe(0);
     await menuOf(card(1), 1).click();
     expect(await item("Stop run").count()).toBe(0);
@@ -814,7 +812,7 @@ describe("blocking, unblocking and deleting a card", () => {
     // A card with a live run has the button in its dock too: retrying the stuck card 6 starts one.
     await card(6).click();
     await dock().getByRole("button", { name: "Retry" }).click();
-    await card(6).getByText("Live", { exact: true }).waitFor();
+    await card(6).getByTestId("card-activity").waitFor();
     await dock().getByRole("button", { name: "Stop run" }).click();
     await status("Stopping #6.").waitFor();
     await dock().getByRole("button", { name: "Stop run" }).waitFor({ state: "detached" });
@@ -896,7 +894,7 @@ describe("blocking, unblocking and deleting a card", () => {
       await card(3).waitFor({ state: "detached" });
       expect(fake().requests.at(-1)).toMatchObject({ method: "DELETE", path: "/v1/cards/3" });
       // The card that waited on it is left waiting, as for any issue that has no card.
-      await card(4).getByText("Waiting on #3").waitFor();
+      await card(4).getByTestId("card-activity").getByText("Waiting on #3").waitFor();
     },
   );
 
@@ -957,7 +955,7 @@ describe("blocking, unblocking and deleting a card", () => {
     await page.waitForURL("**status=held");
     await card(3).waitFor();
     // The address changes before the board is drawn again with the filter.
-    await expect.poll(() => page.getByTestId(/^card-/).count()).toBe(1);
+    await expect.poll(() => page.getByTestId(/^card-\d+$/).count()).toBe(1);
   });
 });
 
@@ -1197,7 +1195,10 @@ describe("the dock", () => {
  * by a route before the columns follow it; counting at once can read the board as it was. */
 const shownIs = (count: number) =>
   expect
-    .poll(() => page.getByTestId(/^card-/).count(), { timeout: 10_000, message: `${count} cards` })
+    .poll(() => page.getByTestId(/^card-\d+$/).count(), {
+      timeout: 10_000,
+      message: `${count} cards`,
+    })
     .toBe(count);
 
 const bar = () => page.getByRole("search", { name: "Filter the cards" });
@@ -1212,7 +1213,7 @@ describe("the filters", () => {
     async () => {
       await fresh();
       await openBoard();
-      expect(await page.getByTestId(/^card-/).count()).toBe(7);
+      expect(await page.getByTestId(/^card-\d+$/).count()).toBe(7);
 
       await addFilter(page, bar(), "Column", "Done");
       await shownIs(1);
@@ -1359,7 +1360,7 @@ describe("Display", () => {
       expect(
         await page
           .getByRole("list")
-          .getByTestId(/^card-/)
+          .getByTestId(/^card-\d+$/)
           .count(),
       ).toBe(7);
       await shownIs(7);
@@ -1368,7 +1369,7 @@ describe("Display", () => {
       expect(
         await page
           .getByRole("list")
-          .getByTestId(/^card-/)
+          .getByTestId(/^card-\d+$/)
           .count(),
       ).toBe(7);
 
@@ -1386,7 +1387,7 @@ describe("Display", () => {
       expect(
         await page
           .getByRole("list")
-          .getByTestId(/^card-/)
+          .getByTestId(/^card-\d+$/)
           .count(),
       ).toBe(0);
       await card(6).waitFor();
@@ -1413,7 +1414,7 @@ describe("Display", () => {
     await page.reload();
     await shownIs(7);
     const titles = await page
-      .getByTestId(/^card-/)
+      .getByTestId(/^card-\d+$/)
       .evaluateAll((rows) => rows.map((row) => row.querySelectorAll("span")[1]?.textContent ?? ""));
     expect(titles).toHaveLength(7);
     expect(titles).toEqual([...titles].sort((x, y) => x.localeCompare(y)));
@@ -1422,22 +1423,25 @@ describe("Display", () => {
   it.skipIf(usesRealServer)("switches off the fields a card shows", async () => {
     await fresh();
     await openBoard();
-    const detail = card(2).getByText(/round/);
-    const had = await detail.count();
+    await page.getByRole("button", { name: "List layout" }).click();
+    await card(1).waitFor();
+    const agent = card(1).getByText("Coder", { exact: true });
+    await agent.waitFor();
     await bar().getByRole("button", { name: "Display" }).click();
-    await display("Agent and round", "menuitemcheckbox").click();
+    await display("Agent", "menuitemcheckbox").click();
     // The menu stays open for the next field.
     await display("Labels", "menuitemcheckbox").click();
     await page.keyboard.press("Escape");
     await page.waitForURL("**hide=detail%2Clabels");
-    await expect.poll(() => card(2).getByText(/round/).count()).toBeLessThanOrEqual(had);
-    expect(await card(2).getByText("Coder · round").count()).toBe(0);
+    await expect.poll(() => agent.count()).toBe(0);
     await page.reload();
     await bar().getByRole("button", { name: "Display" }).click();
     expect(await display("Labels", "menuitemcheckbox").getAttribute("aria-checked")).toBe("false");
-    expect(await display("Description", "menuitemcheckbox").getAttribute("aria-checked")).toBe(
+    expect(await display("Claimed by", "menuitemcheckbox").getAttribute("aria-checked")).toBe(
       "true",
     );
+    // The choices only the card of the board used are gone.
+    expect(await display("Description", "menuitemcheckbox").count()).toBe(0);
   });
 });
 

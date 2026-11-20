@@ -57,16 +57,15 @@ export const SORTS: Array<[string, string]> = [
   ["due", "Due date"],
 ];
 
-/** The parts of a card that can be switched off. */
+/**
+ * The parts of a row of the list layout that can be switched off. The card of the board has a fixed face, so a choice
+ * that only the card used (description, round limit, pull request, priority, due date) is gone; a saved address that
+ * names one still opens, because `?hide=` drops the keys it does not know.
+ */
 export const CARD_FIELDS: Array<[string, string]> = [
   ["labels", "Labels"],
-  ["description", "Description"],
-  ["detail", "Agent and round"],
-  ["rounds", "Round limit"],
-  ["pullRequest", "Pull request"],
+  ["detail", "Agent"],
   ["claim", "Claimed by"],
-  ["priority", "Priority"],
-  ["due", "Due date"],
 ];
 
 export const DISPLAY_CHOICES: DisplayChoices = {

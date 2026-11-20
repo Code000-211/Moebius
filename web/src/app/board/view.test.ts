@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Board, Card } from "../../api/types/board";
+import { readDisplay } from "../../ui/filters/model";
 import { groupByColumn, matchesCard, NO_FILTERS, orderCards } from "./model";
-import { filterFields, listGroups } from "./view";
+import { DISPLAY_CHOICES, filterFields, listGroups } from "./view";
 
 function card(id: number, extra: Partial<Card> = {}): Card {
   return {
@@ -196,5 +197,17 @@ describe("the list layout", () => {
 
   it("sorts inside the groups", () => {
     expect(names("none", "title")).toEqual([["Cards", [2, 4, 3, 1]]]);
+  });
+});
+
+describe("a saved view with ?hide", () => {
+  it("opens with the fields the board still offers and drops the ones that went with the card face", () => {
+    const display = readDisplay(
+      new URLSearchParams(
+        "layout=list&hide=description,labels,rounds,pullRequest,priority,due,claim",
+      ),
+      DISPLAY_CHOICES,
+    );
+    expect(display).toEqual({ layout: "list", group: "", sort: "", hidden: ["claim", "labels"] });
   });
 });

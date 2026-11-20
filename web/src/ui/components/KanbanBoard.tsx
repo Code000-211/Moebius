@@ -1,4 +1,4 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: the sensors' options keep their identity, so that a render of the page does not draw every card; no i18n; the header takes actions, the column's "+"; a column is a lane of the canvas with no border, and its header counts the cards in it; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); a card has a quiet line and no lift and no shadow on hover, and the chosen one glows in the accent, and it is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); the card is a group and not a named button, and its title is the button that opens it, so the issue link and the pull-request badge inside it stay in the accessibility tree; dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
+// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: the sensors' options keep their identity, so that a render of the page does not draw every card; no i18n; the header takes actions, the column's "+"; a column is a lane of the canvas with no border, and its header is the column's name alone; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); a card is flat: a hairline, no shadow and no outline of progress, and the chosen one has an accent line, and it is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); the card is a group and not a named button, and its title is the button that opens it, so the issue link and the pull-request badge inside it stay in the accessibility tree; dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
 import {
   type Announcements,
   type CollisionDetection,
@@ -70,20 +70,12 @@ export type KanbanCardFaceProps = {
   className?: string;
   isSelected?: boolean;
   isOpen?: boolean;
-  /** The card's run is working: a hairline of the colour of work in progress. */
-  isLive?: boolean;
 };
 
-const faceClass = ({ isLive, isSelected, isOpen, className }: KanbanCardFaceProps) =>
+const faceClass = ({ isSelected, isOpen, className }: KanbanCardFaceProps) =>
   cn(
     "group rounded-card bg-surface px-3 py-2 outline outline-1 -outline-offset-1",
-    isSelected
-      ? "shadow-glow outline-accent hover:shadow-glow"
-      : isOpen
-        ? "outline-hairline-strong"
-        : isLive
-          ? "outline-progress-border"
-          : "outline-hairline",
+    isSelected ? "outline-accent" : isOpen ? "outline-hairline-strong" : "outline-hairline",
     className,
   );
 
@@ -129,7 +121,6 @@ export const KanbanCard = ({
   isOpen,
   isSelected,
   dragDisabled = false,
-  isLive,
   testId,
 }: KanbanCardProps) => {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -162,7 +153,6 @@ export const KanbanCard = ({
       aria-label={name}
       className={faceClass({
         name,
-        isLive,
         isSelected,
         isOpen,
         className: cn(isDragging && "opacity-40", className),
@@ -198,28 +188,12 @@ export const KanbanCards = ({ children, className }: KanbanCardsProps) => (
 
 export type KanbanHeaderProps = {
   name: string;
-  /** How many cards the column shows. */
-  count: number;
-  /** How many cards the column holds, when it shows fewer than that. */
-  total?: number;
-  /**
-   * The mark beside the column's name: the shape and colour of the state it holds. It never carries the meaning on its
-   * own — the name is beside it — and says nothing to the person hearing the page, so it is hidden from them.
-   */
-  mark?: ReactNode;
-  /** What stands after the count: the column's "+". */
+  /** What stands after the name: the column's "+". */
   actions?: ReactNode;
   className?: string;
 };
 
-export const KanbanHeader = ({
-  name,
-  count,
-  total,
-  mark,
-  actions,
-  className,
-}: KanbanHeaderProps) => (
+export const KanbanHeader = ({ name, actions, className }: KanbanHeaderProps) => (
   <header
     className={cn(
       "mb-2 flex min-h-7 shrink-0 flex-wrap items-center justify-between gap-2",
@@ -227,15 +201,9 @@ export const KanbanHeader = ({
     )}
   >
     <h2 className="m-0 flex min-w-0 items-center gap-2 text-base font-medium tracking-tight text-text">
-      {mark}
       {name}
     </h2>
-    <div className="flex min-w-0 items-center gap-2">
-      <span className="text-sm text-secondary tabular-nums">
-        {total !== undefined && total > count ? `${count} of ${total}` : count}
-      </span>
-      {actions}
-    </div>
+    {actions && <div className="flex min-w-0 items-center gap-2">{actions}</div>}
   </header>
 );
 
