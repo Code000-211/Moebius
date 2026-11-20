@@ -240,7 +240,6 @@ function Row({
         className={cn(
           "grid min-h-9 w-full cursor-pointer appearance-none grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 bg-transparent px-3 py-2 text-left hover:bg-row-hover",
           "sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_13rem]",
-          current && "shadow-[inset_2px_0_0_var(--accent)] bg-accent-tint hover:bg-accent-tint",
         )}
       >
         <span className="min-w-0 truncate text-base font-medium text-text">{cycle.name}</span>

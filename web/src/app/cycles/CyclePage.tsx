@@ -65,7 +65,7 @@ export function CyclePage({
             </>
           )}
           {mayChange && (
-            <Button size="sm" variant="ghost" onClick={() => setDeleting(true)}>
+            <Button size="sm" variant="danger" onClick={() => setDeleting(true)}>
               <TrashIcon className="size-4" aria-hidden="true" />
               Delete
             </Button>
@@ -88,8 +88,7 @@ export function CyclePage({
         emphasis={state === "running"}
       />
       <p className="mt-0 mb-4 text-sm text-secondary">
-        {periodWords(cycle, now)} · {state === "running" ? "Current" : STATE_WORDS[state]} ·{" "}
-        {progressWords(cycle)}
+        {periodWords(cycle, now)} · {state === "running" ? "Current" : STATE_WORDS[state]}
       </p>
       {detail.isPending ? (
         <SkeletonList rows={3} message="Reading the cycle" />
@@ -157,7 +156,7 @@ function Body({ detail }: { detail: CycleDetail }) {
         {detail.cards.map((card) => (
           <li
             key={card.id}
-            className="flex min-h-9 min-w-0 items-baseline gap-2 border-b border-hairline px-1 py-2 text-sm"
+            className="flex min-h-9 min-w-0 items-baseline gap-2 border-b border-hairline py-2 text-sm"
           >
             <span className="min-w-0 flex-1 truncate text-text">{card.title}</span>
             <span className="shrink-0 text-secondary tabular-nums">
