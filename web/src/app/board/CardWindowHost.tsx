@@ -7,18 +7,15 @@
  * blocking, deleting and moving to another parent, the form of a sub-issue, and the card in the palette's focus.
  */
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocation, useSearchParams } from "react-router";
+import { useCallback } from "react";
+import { useSearchParams } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { keys } from "../../api/keys";
 import type { Card } from "../../api/types/board";
-import { BlockDialog, DeleteDialog, ParentDialog } from "./CardDialogs";
-import { CardFocus } from "./CardFocus";
 import { CardWindow } from "./CardWindow";
 import { withCard } from "./cardAddress";
-import { useDecisions } from "./decisions";
 import { inboxOf, mergeStoppedOf } from "./model";
-import { useNewIssue } from "./NewIssueHost";
+import { useCardActions } from "./useCardActions";
 
 /**
  * Opens a card as the window over the page on screen: a new history entry, so Back closes it. With `askToReject` the
@@ -39,21 +36,14 @@ export function useOpenCard(): (id: number, options?: { askToReject?: boolean })
 export function CardWindowHost() {
   const [params, setParams] = useSearchParams();
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
-  const { decide, pending, notify } = useDecisions();
-  const newIssue = useNewIssue();
   const open = useOpenCard();
-  // The card a send-back needs a reason for; the window asks for it, for that card alone.
-  const [rejectFor, setRejectFor] = useState<number | null>(null);
-  // The card a menu asked to block, delete or move below another, until the question is answered.
-  const [blocking, setBlocking] = useState<Card | null>(null);
-  const [deleting, setDeleting] = useState<Card | null>(null);
-  const [moving, setMoving] = useState<Card | null>(null);
-
-  // A drop that needs a reason opened the card with the question: it is asked once the card is on screen.
-  const rejectCard = (useLocation().state as { rejectCard?: number } | null)?.rejectCard ?? null;
-  useEffect(() => {
-    if (rejectCard !== null) setRejectFor(rejectCard);
-  }, [rejectCard]);
+  // The actions ask for the window to close when a card they deleted was the one shown.
+  const actions = useCardActions(() => close());
+  const { resetReject } = actions;
+  const close = useCallback(() => {
+    setParams((now) => withCard(now, null), { replace: true });
+    resetReject();
+  }, [setParams, resetReject]);
 
   const asked = params.get("card");
   const id = asked === null ? null : Number(asked);
@@ -61,34 +51,6 @@ export function CardWindowHost() {
   const inbox = data.data?.inbox;
   const board = boards?.find((b) => b.cards.some((c) => c.id === id));
   const card = board?.cards.find((c) => c.id === id);
-
-  const close = useCallback(() => {
-    setParams((now) => withCard(now, null), { replace: true });
-    setRejectFor(null);
-  }, [setParams]);
-  const clearReject = useCallback(() => setRejectFor(null), []);
-  const addSubIssue = useCallback(
-    (parent: Card) =>
-      newIssue({
-        repository: parent.repository_id,
-        parent: parent.number,
-        onCreated: (made) => notify({ tone: "ok", text: `Created "${made.title}"` }),
-      }),
-    [newIssue, notify],
-  );
-  const menu = useMemo(
-    () => ({
-      onBlock: setBlocking,
-      onUnblock: (c: Card) => decide({ kind: "unblock", card: c.id, number: c.number }),
-      onStop: (c: Card) => {
-        if (c.run) decide({ kind: "stop", run: c.run.id, number: c.number });
-      },
-      onDelete: setDeleting,
-      onAddSubIssue: addSubIssue,
-      onMoveParent: setMoving,
-    }),
-    [decide, addSubIssue],
-  );
   const onOpenCard = useCallback((next: Card) => open(next.id), [open]);
 
   return (
@@ -102,49 +64,18 @@ export function CardWindowHost() {
             item={inboxOf(inbox, card)}
             stopped={mergeStoppedOf(inbox, card)}
             boards={boards}
-            busy={pending}
-            askFor={rejectFor}
-            onAskAnswered={clearReject}
-            onDecide={decide}
-            menu={menu}
+            busy={actions.busy}
+            askFor={actions.askFor}
+            onAskAnswered={actions.clearReject}
+            onDecide={actions.decide}
+            menu={actions.menu}
             onOpenCard={onOpenCard}
             onClose={close}
           />
-          <CardFocus
-            card={card}
-            item={inboxOf(inbox, card)}
-            decide={decide}
-            onNotice={notify}
-            onBlock={setBlocking}
-            onAddSubIssue={addSubIssue}
-            onReject={(c) => setRejectFor(c.id)}
-          />
+          {actions.focus(card, inboxOf(inbox, card))}
         </>
       )}
-      {board && (
-        <>
-          <BlockDialog
-            card={blocking}
-            onClose={() => setBlocking(null)}
-            onDone={(text, undo) => notify({ tone: "ok", text, undo })}
-          />
-          <DeleteDialog
-            card={deleting}
-            repository={board.repository}
-            onClose={() => setDeleting(null)}
-            onDone={(_, text) => {
-              close();
-              notify({ tone: "ok", text });
-            }}
-          />
-          <ParentDialog
-            board={board}
-            card={moving}
-            onClose={() => setMoving(null)}
-            onDone={(text) => notify({ tone: "ok", text })}
-          />
-        </>
-      )}
+      {board && actions.dialogs(board)}
     </>
   );
 }

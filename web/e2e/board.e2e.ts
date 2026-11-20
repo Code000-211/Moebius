@@ -131,13 +131,14 @@ async function drag(target: Locator, steps: number) {
 
 describe("a card named by its key", () => {
   it.skipIf(usesRealServer)(
-    "is opened from its address, and a forge's card shows its key beside its number",
+    "is shown as a page at its address, and a forge's card shows its key beside its number",
     async () => {
       await fresh();
       await page.goto(`${server.url}/card/demo-31`);
-      await page.waitForURL(/\/board\/1\?card=7$/);
-      await dock().getByText("DEMO-31 · #7").first().waitFor();
-      await card(7).getByText("DEMO-31 · #7").waitFor();
+      await page.getByText("DEMO-31 · #7").first().waitFor();
+      expect(new URL(page.url()).pathname).toBe("/card/demo-31");
+      expect(await dock().count()).toBe(0);
+      await page.getByRole("button", { name: "Edit issue" }).first().waitFor();
       await page.goto(`${server.url}/card/DEMO-99`);
       await page.getByText("There is no such card").waitFor();
     },
