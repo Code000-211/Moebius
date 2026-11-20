@@ -9,13 +9,12 @@ import { notices as readNotices } from "../../api/calls/notices";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
 import { FieldRow, Rows } from "../../ui/page/Field";
-import { unreadCount } from "../inbox/notices";
-import { AreaTitle, ValueRow } from "./parts";
+import { AreaTitle } from "./parts";
 
 const KINDS = [
-  { label: "Assigned", note: "A card is given to you" },
-  { label: "Mentions", note: "Someone names you in a comment" },
-  { label: "Following", note: "A card you follow changes" },
+  { kind: "assigned", label: "Assigned", note: "A card is given to you" },
+  { kind: "mentioned", label: "Mentions", note: "Someone names you in a comment" },
+  { kind: "changed", label: "Following", note: "A card you follow changes" },
 ] as const;
 
 export function NotificationsPage() {
@@ -31,12 +30,15 @@ export function NotificationsPage() {
         }
       />
       <Rows>
-        {KINDS.map((kind) => (
-          <FieldRow key={kind.label} label={kind.label} description={kind.note}>
-            {null}
+        {KINDS.map((each) => (
+          <FieldRow key={each.kind} label={each.label} description={each.note}>
+            <span className="text-sm text-secondary tabular-nums">
+              {notices.data
+                ? `${notices.data.filter((n) => n.kind === each.kind && !n.read).length} unread`
+                : "…"}
+            </span>
           </FieldRow>
         ))}
-        <ValueRow label="Unread notices" value={notices.data ? unreadCount(notices.data) : "…"} />
       </Rows>
     </div>
   );

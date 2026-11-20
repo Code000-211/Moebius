@@ -40,9 +40,9 @@ export function RepositoriesPage() {
       ) : withRepositories.length === 0 ? (
         <p className="m-0 text-base text-secondary">No repository yet.</p>
       ) : (
-        withRepositories.map((project) => (
-          <Section key={project.id} title={project.name}>
-            <Rows>
+        withRepositories.map((project) => {
+          const rows = (
+            <Rows key={project.id}>
               {project.repositories.map((repository) => (
                 <FieldRow
                   key={repository.id}
@@ -60,8 +60,16 @@ export function RepositoriesPage() {
                 </FieldRow>
               ))}
             </Rows>
-          </Section>
-        ))
+          );
+          // The project is named only where there is more than one to tell apart.
+          return withRepositories.length > 1 ? (
+            <Section key={project.id} title={project.name}>
+              {rows}
+            </Section>
+          ) : (
+            <div key={project.id}>{rows}</div>
+          );
+        })
       )}
     </div>
   );

@@ -69,7 +69,8 @@ describe("Notifications", () => {
     show(<NotificationsPage />, [[keys.notices, [notice(1, false), notice(2, true)]]]);
     for (const kind of ["Assigned", "Mentions", "Following"])
       expect(screen.getByText(kind)).toBeTruthy();
-    expect(screen.getByText("1")).toBeTruthy();
+    expect(screen.getByText("1 unread")).toBeTruthy();
+    expect(screen.getAllByText("0 unread")).toHaveLength(2);
     expect(screen.getByRole("link", { name: "Open Inbox" }).getAttribute("href")).toBe("/inbox");
   });
 });
