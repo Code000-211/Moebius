@@ -3,12 +3,12 @@
  * agent is working, which is the opposite of what the person needs to know.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../api/keys";
-import type { Card } from "../../api/types/board";
-import { watchRenders } from "../../test-renders";
+import type { Card, CardRun, InboxItem } from "../../api/types/board";
+import { mockViewport } from "../../ui/page/virtualListTest";
 import { card, board as makeBoard, running } from "../board/model/fixtures";
 import { FleetPage } from "./FleetPage";
 
@@ -47,23 +47,30 @@ describe("a fleet that could not be read", () => {
 });
 
 describe("a fleet with many runs", () => {
-  it("draws only the row of the run that changed", async () => {
-    const at = (cards: Card[]) => ({ boards: [makeBoard(cards)], inbox: [] });
-    const runs = Array.from({ length: 30 }, (_, at) =>
-      card(at + 1, { column: "In progress", run: { ...running, id: at + 1 } }),
-    );
+  let restore: () => void;
+  beforeEach(() => {
+    restore = mockViewport({ height: 600 });
+  });
+  afterEach(() => restore());
+
+  const at = (cards: Card[], inbox: InboxItem[] = []) => ({
+    boards: [makeBoard(cards)],
+    inbox,
+    harness_changes: [],
+  });
+  function show(snapshot: ReturnType<typeof at>) {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => ({
         ok: true,
         status: 200,
-        text: async () => JSON.stringify(String(url).endsWith("/snapshot") ? at(runs) : []),
+        text: async () => JSON.stringify(String(url).endsWith("/snapshot") ? snapshot : []),
       })),
     );
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
     });
-    client.setQueryData(keys.snapshot, at(runs));
+    client.setQueryData(keys.snapshot, snapshot);
     client.setQueryData(keys.chats, []);
     render(
       <QueryClientProvider client={client}>
@@ -72,19 +79,64 @@ describe("a fleet with many runs", () => {
         </MemoryRouter>
       </QueryClientProvider>,
     );
-    expect(await screen.findAllByTestId("fleet-row")).toHaveLength(30);
-    await act(() => new Promise((done) => setTimeout(done, 100)));
+    return client;
+  }
+  const runs = (n: number, status: CardRun["status"] = "running") =>
+    Array.from({ length: n }, (_, i) =>
+      card(i + 1, { column: "In progress", run: { ...running, id: i + 1, status } }),
+    );
 
-    const watch = watchRenders();
-    const changed = runs.map((each) => (each.id === 5 ? { ...each, tokens: 900 } : each));
-    await act(async () => {
-      client.setQueryData(keys.snapshot, at(changed));
-      await new Promise((done) => setTimeout(done, 100));
-    });
-    const seen = watch.stop();
-    // A memoised row shows as two components, the memo and the row inside it.
-    expect(seen.byName.Row).toBe(2);
-    expect(screen.getAllByTestId("fleet-row")[4]?.textContent).toContain("900");
+  it("draws only the rows in view of 500 runs", async () => {
+    show(at(runs(500)));
+    const rows = await screen.findAllByTestId("list-row");
+    expect(rows.length).toBeGreaterThan(5);
+    expect(rows.length).toBeLessThan(60);
+  });
+
+  it("has Stop only on the row that is hovered or selected", async () => {
+    show(at(runs(3)));
+    const rows = await screen.findAllByTestId("list-row");
+    expect(screen.queryByRole("button", { name: /^Stop/ })).toBeNull();
+    fireEvent.pointerOver(rows[1] as HTMLElement);
+    expect(await screen.findByRole("button", { name: "Stop Card 2" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /^Stop/ })).toHaveLength(1);
+    fireEvent.pointerLeave(screen.getByTestId("virtual-list").parentElement as HTMLElement);
+    expect(screen.queryByRole("button", { name: /^Stop/ })).toBeNull();
+    // The selected row keeps it with the pointer away.
+    fireEvent.click(rows[2] as HTMLElement);
+    expect(await screen.findByRole("button", { name: "Stop Card 3" })).toBeTruthy();
+  });
+
+  it("puts the run that waits for you first, with its Approve plan, and no avatar", async () => {
+    const waiting = card(7, { run: { ...running, id: 7, status: "waiting" } });
+    const item: InboxItem = {
+      id: 1,
+      kind: "approve_issue",
+      card_id: 7,
+      title: "",
+      data: {},
+      resolved_at: null,
+      at: 1,
+      assignees: [],
+    };
+    show(at([...runs(3), waiting], [item]));
+    const rows = await screen.findAllByTestId("list-row");
+    expect(screen.getAllByTestId("group-row").map((row) => row.textContent)).toEqual([
+      "Needs you",
+      "Running",
+    ]);
+    expect(rows[0]?.textContent).toContain("Card 7");
+    expect(rows[0]?.textContent).toContain("Plan ready");
+    expect(
+      within(rows[0] as HTMLElement).getByRole("button", { name: "Approve plan" }),
+    ).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Approve plan" })).toHaveLength(1);
+  });
+
+  it("says what is empty with an icon, one line and one action", async () => {
+    show(at([]));
+    expect(await screen.findByText("No agent is working")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Start a chat" })).toBeTruthy();
   });
 });
 
