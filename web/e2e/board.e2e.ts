@@ -1461,7 +1461,7 @@ describe("the card open in the dock and its address", () => {
         await opener().click();
         // Whatever opened is the only thing the key may close.
         await page.keyboard.press("Escape");
-        await page.waitForTimeout(200);
+        await page.getByRole("menu").waitFor({ state: "detached" });
         expect(page.url(), name).toContain("card=3");
         await dock().waitFor();
       }
