@@ -11,8 +11,8 @@ import { searchWiki } from "../../api/calls/wiki";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import { Input } from "../../ui/components/Input";
-import { Notice } from "../../ui/page/Notice";
 import { SkeletonList } from "../../ui/page/Skeleton";
+import { useToast } from "../../ui/page/Toast";
 
 /** How long the box waits after a key before it asks the server. */
 const WAIT_MS = 250;
@@ -37,7 +37,7 @@ export function WikiSearchBox({
   return (
     <div className="relative">
       <MagnifyingGlassIcon
-        className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-secondary"
+        className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted"
         aria-hidden
       />
       <Input
@@ -60,6 +60,7 @@ export function WikiSearchResults({
   query: string;
   onOpen: (path: string) => void;
 }) {
+  const toast = useToast();
   const settled = useSettled(query.trim());
   const found = useQuery({
     queryKey: keys.wikiSearch(settled),
@@ -67,36 +68,38 @@ export function WikiSearchResults({
     enabled: settled !== "",
     retry: false,
   });
-  if (found.isError) {
-    return <Notice tone="error">{sayError(found.error, "Could not search the wiki.")}</Notice>;
-  }
+  const failed = found.error;
+  useEffect(() => {
+    if (failed) toast({ kind: "error", text: sayError(failed, "Could not search the wiki.") });
+  }, [failed, toast]);
+  if (found.isError) return null;
   if (settled !== query.trim() || found.isPending) {
     return <SkeletonList rows={3} message="Searching the wiki" />;
   }
   if (found.data.length === 0) {
-    return <p className="m-0 px-3 text-sm text-secondary">No page matches “{settled}”.</p>;
+    return <p className="m-0 px-3 text-sm text-muted">No page matches “{settled}”.</p>;
   }
   return (
     <nav aria-label="Search results" className="flex flex-col gap-0.5">
-      <p role="status" className="m-0 px-3 pb-1 text-xs font-semibold text-secondary">
+      <p role="status" className="m-0 px-3 pb-1 text-xs font-medium text-muted">
         {found.data.length === 1 ? "1 page" : `${found.data.length} pages`}
       </p>
       {/* biome-ignore lint/a11y/noRedundantRoles: preflight takes the bullets off, and WebKit then drops the list */}
-      <ul role="list" className="m-0 flex flex-col gap-0.5 p-0">
+      <ul role="list" className="m-0 flex flex-col p-0">
         {found.data.map((hit) => (
           <li key={hit.path}>
             <button
               type="button"
               onClick={() => onOpen(hit.path)}
-              className="flex w-full cursor-pointer flex-col gap-0.5 rounded-control bg-transparent px-3 py-1.5 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
+              className="flex min-h-9 w-full cursor-pointer flex-col gap-0.5 rounded-control bg-transparent px-3 py-1.5 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
             >
               <span className="truncate text-base text-text">{hit.name}</span>
-              <span className="truncate text-xs text-secondary">
+              <span className="truncate text-xs text-muted">
                 {hit.project ? `Project ${hit.project}` : "Organisation"}
                 {hit.path !== hit.name && ` · ${hit.path}`}
               </span>
               {hit.snippet !== "" && (
-                <span className="line-clamp-2 text-sm text-secondary">{hit.snippet}</span>
+                <span className="line-clamp-2 text-sm text-muted">{hit.snippet}</span>
               )}
             </button>
           </li>
