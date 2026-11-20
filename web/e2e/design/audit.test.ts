@@ -158,10 +158,9 @@ const routes: Route[] = [
   // The layers that only exist once a person opens them.
   { path: "/inbox", name: "inbox-search", open: "search" },
   { path: "/inbox", name: "inbox-chat", open: "chat" },
-  // A card open takes a column of the page for a drawer, and its change opens a sheet of its own.
-  { path: "/board/1?card=1", name: "board-dock" },
-  // The card and the Moebius agent together: the card's text stays in its own pane, clear of the sheet.
-  { path: "/board/1?card=1", name: "board-dock-chat", open: "chat" },
+  // A card open is a centred window over the dimmed page, and its change opens a sheet of its own.
+  { path: "/board/1?card=1", name: "board-card-window" },
+  { path: "/inbox?card=3", name: "inbox-card-window" },
   { path: "/board/1", name: "board-new-issue", open: "new issue" },
   { path: "/board/1", name: "board-terminal", open: "terminal" },
   { path: "/board/1?card=5", name: "board-diff", open: "diff" },
@@ -866,34 +865,6 @@ it("audits every page in both themes and both widths", async () => {
       expect(row.page.clipped, row.page.path).toEqual([]);
       expect(row.page.spilled, row.page.path).toEqual([]);
       expect(row.page.pills, row.page.path).toEqual([]);
-    }
-  }
-});
-
-// The card's drawer beside the Moebius agent's sheet: the head bar's controls stay under the pointer. A control is
-// reached when the topmost thing at its centre is the control itself, and the real click is what proves it.
-it("keeps every control of the board's head bar clickable with the agent sheet and a card open", async () => {
-  for (const theme of themes) {
-    for (const width of [1280, 1440, 1920]) {
-      const page = await openPage({ width, height: 900 }, theme);
-      await page.goto(`${base}/board/1?card=1`);
-      await page.getByRole("dialog", { name: "Card inspector" }).waitFor({ timeout: 10_000 });
-      await open(page, "chat");
-      await page.waitForTimeout(400);
-      const covered = await page.evaluate(() =>
-        Array.from(document.querySelector("main header")?.querySelectorAll("button") ?? []).flatMap(
-          (button) => {
-            const box = button.getBoundingClientRect();
-            if (box.width < 1) return [];
-            const top = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
-            return top && button.contains(top) ? [] : [button.textContent?.trim() ?? "a button"];
-          },
-        ),
-      );
-      expect(covered, `${theme} ${width}`).toEqual([]);
-      await page.getByRole("button", { name: "New issue" }).click({ timeout: 5_000 });
-      await page.getByRole("dialog", { name: "New issue" }).waitFor({ timeout: 5_000 });
-      await page.context().close();
     }
   }
 });

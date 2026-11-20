@@ -272,7 +272,7 @@ function WindowFrame({ onClose, children }: { onClose: () => void; children: Rea
         data-state="open"
         data-card-window=""
         tabIndex={-1}
-        className="fixed inset-0 z-sheet m-auto flex h-[calc(100%-4rem)] max-h-[56rem] w-full max-w-3xl flex-col overflow-hidden rounded-sheet bg-panel shadow-raised outline-none"
+        className="fixed inset-0 z-sheet m-auto flex h-[calc(100%-7rem)] max-h-[56rem] w-full max-w-3xl flex-col overflow-hidden rounded-sheet bg-panel shadow-raised outline-none"
       >
         {children}
       </div>
@@ -371,7 +371,12 @@ function CardWindowView({
               Open as page
             </Link>
           </Button>
-          <IconButton icon={XIcon} aria-label="Close the inspector" onClick={onClose} />
+          <IconButton
+            icon={XIcon}
+            iconWeight="regular"
+            aria-label="Close the inspector"
+            onClick={onClose}
+          />
         </div>
       </div>
 
@@ -381,7 +386,7 @@ function CardWindowView({
           <h2 className="m-0 min-w-0 text-2xl font-semibold tracking-tight text-text [overflow-wrap:anywhere]">
             {card.title}
           </h2>
-          <div className="flex shrink-0 items-center gap-3 pt-1.5">
+          <div className="flex shrink-0 items-center gap-3">
             <StatusIcon state={iconOf(card, status)} />
             {owner && <Avatar handle={owner} className="size-6" />}
             {changes[0] && <ChangeDelta change={changes[0].id} className="text-sm" />}
@@ -400,21 +405,33 @@ function CardWindowView({
 
         {/* The issue is what the card asks for, and the card is only its title: without the body a person decides
               about a sentence they were never given. */}
-        <KanbanIssueSection title="The issue">
-          {card.body.trim() !== "" && (
+        {/* A card with no text has no section to head: only the way to write some. */}
+        {card.body.trim() !== "" ? (
+          <KanbanIssueSection title="The issue">
             <CardText content={card.body} projectKey={card.project_key} className="max-w-prose" />
-          )}
-          <Button
-            variant="secondary"
-            size="sm"
-            className="mt-4 w-fit"
-            onClick={() => setEditing(true)}
-          >
-            Edit issue
-          </Button>
-          {/* Drawn only while it is open, so a closed one leaves nothing in the stack of layers. */}
-          {editing && <EditIssueDialog key={card.id} card={card} open onOpenChange={setEditing} />}
-        </KanbanIssueSection>
+            <Button
+              variant="secondary"
+              size="sm"
+              className="mt-4 w-fit"
+              onClick={() => setEditing(true)}
+            >
+              Edit issue
+            </Button>
+          </KanbanIssueSection>
+        ) : (
+          <div className="px-6 pt-2 pb-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              className="w-fit"
+              onClick={() => setEditing(true)}
+            >
+              Edit issue
+            </Button>
+          </div>
+        )}
+        {/* Drawn only while it is open, so a closed one leaves nothing in the stack of layers. */}
+        {editing && <EditIssueDialog key={card.id} card={card} open onOpenChange={setEditing} />}
 
         {/* A change is what a person came to the card to weigh, so it follows the issue it answers instead of
               waiting behind the runs that made it. */}
