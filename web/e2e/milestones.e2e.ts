@@ -82,37 +82,23 @@ describe.skipIf(usesRealServer)("the Milestones page", () => {
     expect(await cards.getByRole("listitem").count()).toBe(4);
   });
 
-  it("shows the milestones as a timeline in Display and keeps the choice in the address", async () => {
+  it("shows the milestones as bars on one axis, each as far as its target date", async () => {
     await open("/milestones");
     await rows().first().waitFor();
-    await page.getByRole("button", { name: "Display" }).click();
-    await page.getByRole("menuitemradio", { name: "Timeline" }).click();
-    const table = page.getByRole("table", { name: "Milestones on a timeline" });
-    await table.waitFor();
-    expect(new URL(page.url()).searchParams.get("layout")).toBe("timeline");
-    expect(await rows().count()).toBe(0);
-    expect(await table.getByRole("row").count()).toBe(4);
-    await table.getByRole("rowheader", { name: /Launch 2.0/ }).waitFor();
-    const launch = table.getByRole("button", {
-      name: /^Launch 2.0: 2 of 4 cards, due 2030-12-12$/,
-    });
-    await launch.waitFor();
-    // The bars follow the dates: the milestone due first starts no later and ends before the one due last.
-    const box = async (name: RegExp) => {
-      const found = await table.getByRole("button", { name }).boundingBox();
-      if (!found) throw new Error(`no bar named ${name}`);
+    expect(await page.getByTestId("time-bar").count()).toBe(3);
+    // The bars follow the dates: the milestone due first ends before the one due last.
+    const box = async (name: string) => {
+      const found = await row(name).getByTestId("time-bar-span").boundingBox();
+      if (!found) throw new Error(`no bar for ${name}`);
       return found;
     };
-    const first = await box(/^Launch 2.0/);
-    const last = await box(/^Annual report/);
+    const first = await box("Launch 2.0");
+    const last = await box("Annual report");
     expect(first.x + first.width).toBeLessThan(last.x + last.width);
-    // A reload keeps the timeline.
-    await page.reload();
-    await table.waitFor();
-    // Back to the list.
+    // No layout choice is left in Display.
     await page.getByRole("button", { name: "Display" }).click();
-    await page.getByRole("menuitemradio", { name: "List" }).click();
-    await rows().first().waitFor();
+    expect(await page.getByRole("menuitemradio", { name: "Timeline" }).count()).toBe(0);
+    await page.keyboard.press("Escape");
   });
 
   it("sorts by name and filters to the milestones that hold cards of a project", async () => {

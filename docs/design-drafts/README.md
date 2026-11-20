@@ -24,7 +24,7 @@ that trackers share are fair to use; no tracker's look, text or icons are copied
 | 12 | Command palette | The commands of the card in focus first, with their keys, and recent places below (12B) |
 | 13 | A link to a card (`#18`) | A preview card after a short hover or on focus, with project, kind, column, priority, estimate, people and a running run; a click opens the dock ([round 4](round-4.html), 13A) |
 | 14 | A card's history | One timeline of comments, runs, moves and field changes, small changes folded together (14A) |
-| 15 | Milestones | A list with progress by default, and a timeline as a layout in Display (15A and 15B) |
+| 15 | Milestones | A list with progress by default, and a timeline as a layout in Display (15A and 15B); the redesign shows only the timeline, as rows |
 | 16 | Notifications | Only the inbox: assignments and mentions are its items, its count in the sidebar; no bell (16A) |
 | 17 | The whole sidebar | Inbox, My work, Chat and Fleet at the top; the project switcher with the project's Board, Cycles, Wiki, Intake and Files; then Plan (Views, Milestones, Wiki) and Automate (Automations, Workflows, and Improve as one row with Retro, Experiments and Decisions under it); Setup stays behind the gear ([round 5](round-5.html), 17B) |
 | 18 | The board | Two lines: the title with the layout switch, Terminal and New issue; under it the filter chips, Display and Save view, which replace the four selects (18A) |
