@@ -56,3 +56,13 @@ describe("TimeBar", () => {
     expect(screen.queryByTestId("time-bar-today")).toBeNull();
   });
 });
+
+describe("TimeBar marks", () => {
+  it("draws a tick at each mark inside the bar", () => {
+    render(
+      <TimeBar start="2026-11-01" end="2026-11-10" axis={axis} progress={100} marks={[25, 150]} />,
+    );
+    const ticks = screen.getAllByTestId("time-bar-mark");
+    expect(ticks.map((t) => (t as HTMLElement).style.left)).toEqual(["25%", "100%"]);
+  });
+});
