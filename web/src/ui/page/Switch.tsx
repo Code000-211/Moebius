@@ -49,8 +49,8 @@ export function Switch({
         <span
           aria-hidden="true"
           className={cn(
-            "inline-flex h-5 w-9 items-center rounded-full px-0.5 transition-colors duration-(--motion-routine) ease-out",
-            checked ? "bg-status-done" : "bg-track",
+            "inline-flex h-5 w-9 items-center rounded-full px-0.5 ring-1 ring-inset ring-hairline transition-colors duration-(--motion-routine) ease-out",
+            checked ? "bg-accent-fill" : "bg-track",
           )}
         >
           <span

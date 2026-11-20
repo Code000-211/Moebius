@@ -165,7 +165,7 @@ describe("signing in", () => {
     await page.goto(server.loginUrl);
     await pages().waitFor();
     await pages().getByRole("link", { name: "Settings" }).click();
-    await page.getByRole("heading", { name: "General", level: 1 }).waitFor();
+    await page.getByRole("heading", { name: "General", level: 2 }).waitFor();
     await page.getByRole("button", { name: "Sign out" }).click();
     // The way back in: the sign-in form's own field, named exactly, since Settings has several that say Token.
     await page.getByLabel("Token", { exact: true }).waitFor();

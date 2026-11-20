@@ -70,6 +70,81 @@ export function Field({
   );
 }
 
+/** The rows of a settings page: a hairline above the first and between each. */
+export function Rows({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      className={cn(
+        "flex min-w-0 flex-col divide-y divide-hairline border-t border-hairline",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * One row of a settings page: the label at the left, the control at the right, and a description under the label only
+ * where it adds a fact. The control is named by the label and explained by the description, as in `Field`. `wide`
+ * gives the control the room of a text field; without it the control is as wide as it is.
+ */
+export function FieldRow({
+  label,
+  description,
+  error,
+  wide,
+  children,
+  className,
+}: {
+  label: string;
+  description?: ReactNode;
+  /** What went wrong with this row's value, under the control, with what to do next. */
+  error?: string;
+  wide?: boolean;
+  children: ReactNode;
+  className?: string;
+}) {
+  const id = useId();
+  const labelId = `${id}-label`;
+  const noteId = `${id}-note`;
+  const note = error ?? description;
+  return (
+    <div
+      className={cn(
+        "flex min-h-12 min-w-0 flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3",
+        className,
+      )}
+    >
+      <FieldIds value={{ label: labelId, note: note ? noteId : undefined }}>
+        <div className="flex min-w-0 flex-1 basis-48 flex-col gap-0.5">
+          <span id={labelId} className="text-base font-medium text-text">
+            {label}
+          </span>
+          {description && !error && (
+            <span id={noteId} className="text-sm text-muted">
+              {description}
+            </span>
+          )}
+        </div>
+        <div
+          className={cn(
+            "flex min-w-0 flex-col items-end gap-1",
+            wide ? "w-72 max-w-full" : "shrink-0",
+          )}
+        >
+          {children}
+          {error && (
+            <span id={noteId} className="self-stretch text-sm text-error-text">
+              {error}
+            </span>
+          )}
+        </div>
+      </FieldIds>
+    </div>
+  );
+}
+
 /** A multi-line field, which grows when the content needs it. `mono` is for a script, a path or a diff. */
 export function TextArea({
   mono,

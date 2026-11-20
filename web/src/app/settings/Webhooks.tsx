@@ -3,8 +3,8 @@
  * is shown only when asked for. A forge that can reach the server tells it at once that something changed. Only a
  * person may read the secrets, so the server's refusal of an agent's token is shown as it came.
  *
- * Each forge is an inset card of its own: its name and whether webhooks are on for it, then the address and the secret
- * it signs with, then the controls, all at the height of every other control on the page.
+ * Each forge is a group of rows: its name and whether webhooks are on for it, then the address and the secret it signs
+ * with as label-left rows, then the controls, all at the height of every other control on the page.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -13,10 +13,9 @@ import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { Webhook } from "../../api/types/settings";
 import { Button } from "../../ui/components/Button";
-import { Box } from "../../ui/page/Box";
+import { FieldRow, Rows } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
-import { Body } from "../../ui/page/PageHeader";
-import { Code, CopyValue, KeyValue, KeyValueGrid } from "./parts";
+import { Code, CopyValue, Section, ValueRow } from "./parts";
 
 /** The name a forge is called by on the page. */
 const FORGES: Record<string, string> = { github: "GitHub", gitlab: "GitLab", forgejo: "Forgejo" };
@@ -43,11 +42,11 @@ export function WebhooksBox() {
   });
   if (list.isError) {
     return (
-      <Box title="Webhooks">
+      <Section title="Webhooks">
         <Notice tone="error">
           {sayError(list.error, "Could not read the webhooks. Try again.")}
         </Notice>
-      </Box>
+      </Section>
     );
   }
   if (!list.data || list.data.length === 0) return null;
@@ -58,13 +57,13 @@ export function WebhooksBox() {
       return next;
     });
   return (
-    <Box title="Webhooks">
+    <Section title="Webhooks">
       <div className="flex flex-col gap-6">
-        <Body>
+        <p className="m-0 max-w-prose text-sm text-secondary">
           A forge that can reach the server tells it at once that something changed. Set the URL and
           the secret in the forge's webhook settings, with JSON content; the server still polls.
-        </Body>
-        <div className="flex flex-col gap-4">
+        </p>
+        <div className="flex flex-col gap-8">
           {list.data.map((webhook) => (
             <ForgeCard
               key={webhook.forge}
@@ -84,7 +83,7 @@ export function WebhooksBox() {
           ))}
         </div>
       </div>
-    </Box>
+    </Section>
   );
 }
 
@@ -107,34 +106,42 @@ function ForgeCard({
   const name = forgeName(webhook.forge);
   const secret = `${window.location.origin}${webhook.path}`;
   return (
-    <section
-      data-testid={`webhook-${webhook.forge}`}
-      className="flex flex-col gap-4 rounded-card bg-sunken p-4"
-    >
+    <section data-testid={`webhook-${webhook.forge}`} className="flex min-w-0 flex-col gap-3">
       <header className="flex flex-wrap items-baseline gap-2">
-        <h3 className="m-0 min-w-0 flex-1 break-words text-base font-semibold text-text">{name}</h3>
+        <h4 className="m-0 min-w-0 flex-1 break-words text-base font-medium text-text">{name}</h4>
         <span className="shrink-0 text-sm text-secondary">
           {webhook.secret === null ? "Webhooks off" : "Webhooks on"}
         </span>
       </header>
-      <KeyValueGrid>
-        <KeyValue label="Sends to" value={<Code>{secret}</Code>} />
-        <KeyValue label="Secret" value={<Code>{secretText(webhook, shown)}</Code>} />
-        <KeyValue label="Sent in" value={webhook.header} />
-      </KeyValueGrid>
-      <div className="flex flex-wrap items-center gap-2">
-        {webhook.secret !== null && (
-          <>
-            <Button size="sm" variant="secondary" onClick={onToggle}>
-              {shown ? "Hide" : "Show"}
+      <Rows>
+        <ValueRow label="Sends to" value={<Code>{secret}</Code>} />
+        <ValueRow
+          label="Secret"
+          value={
+            webhook.secret === null ? (
+              secretText(webhook, shown)
+            ) : (
+              <Code>{secretText(webhook, shown)}</Code>
+            )
+          }
+        />
+        <ValueRow label="Sent in" value={<Code>{webhook.header}</Code>} />
+        <FieldRow label="Secret actions">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {webhook.secret !== null && (
+              <>
+                <Button size="sm" variant="secondary" onClick={onToggle}>
+                  {shown ? "Hide" : "Show"}
+                </Button>
+                <CopyValue text={webhook.secret} label={`Copy the secret of ${webhook.forge}`} />
+              </>
+            )}
+            <Button size="sm" variant="secondary" disabled={busy} onClick={onMake}>
+              {webhook.secret !== null ? "Make a new secret" : "Make a secret"}
             </Button>
-            <CopyValue text={webhook.secret} label={`Copy the secret of ${webhook.forge}`} />
-          </>
-        )}
-        <Button size="sm" variant="secondary" disabled={busy} onClick={onMake}>
-          {webhook.secret !== null ? "Make a new secret" : "Make a secret"}
-        </Button>
-      </div>
+          </div>
+        </FieldRow>
+      </Rows>
       {error && <Notice tone="error">{error}</Notice>}
     </section>
   );
