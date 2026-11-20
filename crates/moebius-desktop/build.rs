@@ -11,6 +11,7 @@ fn main() {
         "servers",
         "switch_server",
         "remove_server",
+        "rename_server",
         "local_state",
         "local_connect",
         "quick_shortcut",

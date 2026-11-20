@@ -84,7 +84,12 @@ impl Figures {
             1 => "1 agent working".to_string(),
             n => format!("{n} agents working"),
         };
-        let inbox = format!("Inbox: {}", self.inbox);
+        // The sidebar and the rail count the items and the unread notices together; the tray says which is which.
+        let inbox = match self.unread {
+            0 => format!("Inbox: {}", self.inbox),
+            1 => format!("Inbox: {}, 1 unread notice", self.inbox),
+            n => format!("Inbox: {}, {n} unread notices", self.inbox),
+        };
         let tokens = match self.budget {
             Some(budget) => format!("Tokens today: {} of {}", short(self.tokens), short(budget)),
             None => format!("Tokens today: {}", short(self.tokens)),
@@ -287,6 +292,22 @@ mod tests {
         // The rail counts what the sidebar of the web app counts.
         assert_eq!(figures.rail_count(), 3);
         assert_eq!(Figures::read(&json!({})), None);
+    }
+
+    #[test]
+    fn the_tray_says_what_its_inbox_line_counts() {
+        let lines = |inbox, unread| {
+            Figures {
+                inbox,
+                unread,
+                ..Figures::default()
+            }
+            .lines()
+            .inbox
+        };
+        assert_eq!(lines(61, 0), "Inbox: 61");
+        assert_eq!(lines(61, 1), "Inbox: 61, 1 unread notice");
+        assert_eq!(lines(61, 200), "Inbox: 61, 200 unread notices");
     }
 
     #[test]

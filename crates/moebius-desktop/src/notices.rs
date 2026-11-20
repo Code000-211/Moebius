@@ -58,8 +58,89 @@ impl Notice {
 pub enum Effect {
     /// Show a native notification of this notice.
     Notify(Notice),
+    /// Show one notification for these notices (two or more), which [`coalesce`] held back while a burst of them came.
+    Digest(Vec<Notice>),
     /// The count of unread notices is now this, for the icon.
     Count(usize),
+}
+
+/// How long [`coalesce`] holds back the notices that follow one that was shown.
+pub const BURST: Duration = Duration::from_secs(5);
+
+/// The title, the text and the path of the notification of `notices` taken together, from the server `server`.
+pub fn digest_text(notices: &[Notice], server: &str) -> (String, String, String) {
+    (
+        "Moebius".to_string(),
+        format!("{} new notices on {server}", notices.len()),
+        "/inbox?kind=mentions".to_string(),
+    )
+}
+
+/// Keeps a busy server from becoming a notification for every notice: the first notice of a burst is passed on at once,
+/// and those that follow within `window` of the last one shown are held and passed on together, as one
+/// [`Effect::Notify`] when there is one of them and one [`Effect::Digest`] when there are more. Counts are passed on
+/// at once. The returned stream ends when `effects` does.
+pub fn coalesce(
+    mut effects: mpsc::UnboundedReceiver<Effect>,
+    window: Duration,
+) -> mpsc::UnboundedReceiver<Effect> {
+    let (send, out) = mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        let mut held: Vec<Notice> = Vec::new();
+        // When the notices held are passed on; none while nothing is held and nothing was shown within the window.
+        let mut quiet_until: Option<tokio::time::Instant> = None;
+        loop {
+            let wait = async {
+                match quiet_until {
+                    Some(at) => tokio::time::sleep_until(at).await,
+                    None => std::future::pending().await,
+                }
+            };
+            tokio::select! {
+                () = wait => {
+                    let sent = match held.len() {
+                        0 => None,
+                        1 => held.pop().map(Effect::Notify),
+                        _ => Some(Effect::Digest(std::mem::take(&mut held))),
+                    };
+                    // A burst that goes on is held again for another window; a quiet one ends here.
+                    quiet_until = sent.is_some().then(|| tokio::time::Instant::now() + window);
+                    if let Some(effect) = sent && send.send(effect).is_err() {
+                        return;
+                    }
+                }
+                next = effects.recv() => {
+                    let Some(effect) = next else {
+                        // The stream ended: what is held is still told.
+                        let rest = match held.len() {
+                            0 => None,
+                            1 => held.pop().map(Effect::Notify),
+                            _ => Some(Effect::Digest(held)),
+                        };
+                        if let Some(effect) = rest {
+                            let _ = send.send(effect);
+                        }
+                        return;
+                    };
+                    match effect {
+                        Effect::Notify(notice) if quiet_until.is_some() => held.push(notice),
+                        Effect::Notify(notice) => {
+                            quiet_until = Some(tokio::time::Instant::now() + window);
+                            if send.send(Effect::Notify(notice)).is_err() {
+                                return;
+                            }
+                        }
+                        other => {
+                            if send.send(other).is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+    out
 }
 
 /// What the app knows of the notices: which it has told the person of, and which are unread.
@@ -303,6 +384,62 @@ mod tests {
             []
         );
         assert_eq!(tally.event(&event("notice_added", &notice(5, true))), []);
+    }
+
+    fn pass(effects: Vec<Effect>, window: Duration) -> mpsc::UnboundedReceiver<Effect> {
+        let (send, receive) = mpsc::unbounded_channel();
+        for effect in effects {
+            send.send(effect).unwrap();
+        }
+        coalesce(receive, window)
+    }
+
+    #[tokio::test]
+    async fn a_burst_of_notices_is_one_notification_after_the_first() {
+        // Seven notices at once: the first is shown at once, the six after it as one digest; counts are not held.
+        let mut effects = vec![];
+        for id in 1..=7 {
+            effects.push(Effect::Notify(notice(id, false)));
+            effects.push(Effect::Count(id as usize));
+        }
+        let mut out = pass(effects, Duration::from_millis(300));
+        let mut got = Vec::new();
+        while let Some(effect) = out.recv().await {
+            got.push(effect);
+        }
+        let notices: Vec<_> = got
+            .iter()
+            .filter(|e| !matches!(e, Effect::Count(_)))
+            .collect();
+        assert_eq!(notices.len(), 2, "{got:?}");
+        assert_eq!(notices[0], &Effect::Notify(notice(1, false)));
+        let Effect::Digest(rest) = notices[1] else {
+            panic!("{got:?}")
+        };
+        assert_eq!(
+            rest.iter().map(|n| n.id).collect::<Vec<_>>(),
+            [2, 3, 4, 5, 6, 7]
+        );
+        assert_eq!(
+            got.iter().filter(|e| matches!(e, Effect::Count(_))).count(),
+            7
+        );
+        assert_eq!(digest_text(rest, "laptop").1, "6 new notices on laptop");
+    }
+
+    #[tokio::test]
+    async fn a_lone_notice_is_shown_at_once_and_a_second_alone_stays_a_notice() {
+        let (send, receive) = mpsc::unbounded_channel();
+        let mut out = coalesce(receive, Duration::from_millis(100));
+        send.send(Effect::Notify(notice(1, false))).unwrap();
+        assert_eq!(out.recv().await, Some(Effect::Notify(notice(1, false))));
+        send.send(Effect::Notify(notice(2, false))).unwrap();
+        assert_eq!(out.recv().await, Some(Effect::Notify(notice(2, false))));
+        // Quiet again: the next is shown at once, not held.
+        send.send(Effect::Notify(notice(3, false))).unwrap();
+        assert_eq!(out.recv().await, Some(Effect::Notify(notice(3, false))));
+        drop(send);
+        assert_eq!(out.recv().await, None);
     }
 
     #[test]

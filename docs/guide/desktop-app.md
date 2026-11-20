@@ -61,8 +61,12 @@ x86_64 only, so another system gets no offer. On Windows, WSL 2 has to be instal
 
 ## Several servers
 
-The rail at the far left of the window holds a square for every server the app knows: the first letter of its address,
-the count of its Inbox in a badge, and a grey dot when it does not answer. The open one is raised. The app asks each server for these few figures
+The rail at the far left of the window holds a square for every server the app knows. A square is named after the server: the name of the computer it
+reports (`GET /v1/server`), or its address without `http://`, and with its address added when two servers have the same
+name. It shows the first letters of that name, or, for a server named by an address, the end of its port, so that servers
+on one host differ (`…7171` and `…7172` show 171 and 172); hovering gives the whole name and address. The count of its
+Inbox is in a badge (the items of the Inbox and the unread notices together, as the sidebar counts them; hovering says
+both figures), and a grey dot shows when it does not answer. The open one is raised, ringed and has a bar at its left. The app asks each server for these few figures
 with one small request (`GET /v1/status`) every ten seconds, and takes the open server's from the tray, which follows
 it by its events, so a busy server is not read as a whole to draw a badge. Click a square to
 open that server. The app keeps the page of every server you opened, so switching back to one shows it at once, as you
@@ -77,7 +81,8 @@ server opens again on the page you left it on. **+** connects another one:
   server there is not changed until you say **Yes, set it up**, which runs `moebius connect --yes` for you; that needs
   `moebius` on this machine.
 
-A right click on a square offers **Remove server**, which forgets it and deletes its token. That is also how you
+A right click on a square offers **Rename server**, which gives the square a name of your own (an empty name gives the
+server's own back), and **Remove server**, which forgets it and deletes its token. That is also how you
 disconnect: signing out in the web app does nothing inside the app, since the app signs every request itself. The app
 opens the server that was open when you closed it, and shows the connect page, with the list of the servers it knows,
 when none answers.
@@ -104,7 +109,9 @@ directory; it is released when the app ends, however it ended.
 ### Notifications
 
 What reaches the Mentions tab of your Inbox (a card given to you, a mention, a change to a card you
-follow, which includes a change that is ready to merge) is also a notification of your system, once. Choosing it brings
+follow, which includes a change that is ready to merge) is also a notification of your system, once. The first of a burst is shown at once; those that follow within five
+seconds of it are shown together as one, "6 new notices on <server>", which opens the Mentions tab. The app does not hold
+a thread for each notification: it waits for your answer to one for two minutes at most. Choosing it brings
 the window forward and opens the card or item, and reads the notice. The count of unread notices is on the app's icon
 (the launcher's badge on Linux where it shows one, the red number over the taskbar icon on Windows) and in the
 window's title, `(3) Moebius`, for the server that is open; reading a notice, here or in a browser, lowers it. What was unread when the app started
@@ -114,7 +121,7 @@ is counted and not announced.
 
 Once the app is running, its icon sits in the tray (the notification area of Windows, the
 status area of a Linux desktop that shows tray icons, which GNOME needs an extension for). Its menu shows the
-server's state: **the agents working**, **the Inbox**, and **today's tokens** against the day's budget. These
+server's state: **the agents working**, **the Inbox** (its items, and its unread notices when there are some, since the rail and the sidebar count both), and **today's tokens** against the day's budget. These
 figures follow the server's events. Under them: **New issue** and **Ask Moebius** bring the window up and open the
 form of a new issue or a new chat, **Open Moebius** brings the window up, also when it was minimized, and **Pause all
 agents** holds every run of the server and starts none until you choose **Resume all agents**, which the same item

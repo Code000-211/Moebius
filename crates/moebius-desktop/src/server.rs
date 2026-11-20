@@ -111,6 +111,25 @@ pub async fn check_against(server: &Server, app: &str) -> Result<String, Connect
     Ok(health.version)
 }
 
+/// The name of the computer a server runs on, as it reports it (`GET /v1/server`), or none: a server that does not say
+/// is not an error, the rail names it by its address. It waits three seconds at most.
+pub async fn host_of(server: &Server) -> Option<String> {
+    #[derive(Deserialize)]
+    struct Where {
+        host: String,
+    }
+    let response = http()
+        .get(format!("{}/v1/server", server.url))
+        .bearer_auth(&server.token)
+        .timeout(Duration::from_secs(3))
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?;
+    Some(response.json::<Where>().await.ok()?.host)
+}
+
 /// The major and minor version of `version` (`0.13` of `0.13.2`), which a server and the app must share.
 pub fn release_line(version: &str) -> Option<String> {
     let mut parts = version.trim().split('.');
@@ -179,5 +198,22 @@ mod tests {
                 Err(ConnectError::Missing)
             );
         }
+    }
+
+    #[tokio::test]
+    async fn a_server_that_reports_its_host_names_itself_and_one_that_does_not_is_nameless() {
+        use axum::{Json, Router, routing::get};
+        let app = Router::new().route(
+            "/v1/server",
+            get(|| async { Json(serde_json::json!({"host": "build-box", "os": "linux"})) }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let named = Server::new(&address.to_string(), "t");
+        assert_eq!(host_of(&named).await.as_deref(), Some("build-box"));
+        // A port nobody listens on answers nothing.
+        let nameless = Server::new("127.0.0.1:1", "t");
+        assert_eq!(host_of(&nameless).await, None);
     }
 }

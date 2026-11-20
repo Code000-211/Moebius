@@ -196,6 +196,14 @@ pub async fn remove_server(app: tauri::AppHandle, id: String) -> Result<(), Stri
     show_connect_page(&app)
 }
 
+/// Names the server `id` `name`, which the rail shows from then on; an empty name takes the server's own back.
+#[tauri::command]
+pub async fn rename_server(app: tauri::AppHandle, id: String, name: String) -> Result<(), String> {
+    let servers = app.state::<Servers>();
+    let mut rail = servers.rail.lock().await;
+    rail.rename(&id, &name).map_err(say)
+}
+
 /// What this machine has of a server of its own, for the connect page's offer: `not-set-up`, `stopped`, `running`, or
 /// `unavailable: <why>`. It only looks.
 #[tauri::command]

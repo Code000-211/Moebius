@@ -12,8 +12,26 @@ import { initial, Rail, SHOWN_EVENT } from "./Rail";
 afterEach(cleanup);
 
 const SERVERS: RailServer[] = [
-  { id: "a", name: "127.0.0.1:7171", open: true, reachable: true, inbox: 3 },
-  { id: "b", name: "devbox", open: false, reachable: false, inbox: 0 },
+  {
+    id: "a",
+    name: "127.0.0.1:7171",
+    address: "http://127.0.0.1:7171",
+    open: true,
+    reachable: true,
+    inbox: 3,
+    items: 2,
+    unread: 1,
+  },
+  {
+    id: "b",
+    name: "devbox",
+    address: "http://devbox:7171",
+    open: false,
+    reachable: false,
+    inbox: 0,
+    items: 0,
+    unread: 0,
+  },
 ];
 
 function draw(bridge = fakeBridge()) {
@@ -36,16 +54,27 @@ describe("Rail", () => {
     expect(screen.queryByTestId("rail")).toBeNull();
   });
 
-  it("names a square after the first letter of its address", () => {
-    expect(initial("https://moebius.example")).toBe("M");
-    expect(initial("devbox")).toBe("D");
+  it("tells squares apart: words by their first letters, addresses by the end of their port", () => {
+    expect(initial("https://moebius.example")).toBe("ME");
+    expect(initial("devbox")).toBe("DE");
+    expect(initial("Build box")).toBe("BB");
     expect(initial("::")).toBe("?");
+    // Three servers on one host are not three squares showing the same character.
+    const three = ["127.0.0.1:7171", "127.0.0.1:7172", "127.0.0.1:7180"].map(initial);
+    expect(new Set(three).size).toBe(3);
+    expect(initial("laptop · 127.0.0.1:7172")).toBe("172");
+    expect(initial("laptop · 127.0.0.1:7171")).not.toBe(initial("laptop · 127.0.0.1:7172"));
   });
 
   it("marks the open server, counts its Inbox and greys the one it cannot reach", async () => {
     draw({ ...fakeBridge(), servers: async () => SERVERS });
-    const open = await screen.findByRole("button", { name: /127\.0\.0\.1:7171, 3 in the Inbox/ });
+    const open = await screen.findByRole("button", {
+      name: /127\.0\.0\.1:7171, 2 items and 1 unread notice in the Inbox/,
+    });
     expect(open.getAttribute("aria-current")).toBe("true");
+    // The open server carries a mark of its own, which the other does not.
+    expect(open.querySelector("[data-testid=rail-open]")).not.toBeNull();
+    expect(screen.getAllByTestId("rail-open")).toHaveLength(1);
     expect(screen.getByTestId("rail-count").textContent).toBe("3");
     const grey = screen.getByRole("button", { name: "devbox (cannot be reached)" });
     expect(grey.querySelector("[data-testid=rail-unreachable]")).not.toBeNull();
@@ -92,6 +121,27 @@ describe("Rail", () => {
     fireEvent.contextMenu(await screen.findByRole("button", { name: /devbox/ }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Remove server" }));
     await waitFor(() => expect(removeServer).toHaveBeenCalledWith("b"));
+  });
+
+  it("renames a server from its menu, and an empty name gives its own back", async () => {
+    const renameServer = vi.fn(async () => {});
+    draw({ ...fakeBridge(), servers: async () => SERVERS, renameServer });
+    fireEvent.contextMenu(await screen.findByRole("button", { name: /devbox/ }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename server" }));
+    const field = await screen.findByLabelText("Name");
+    expect((field as HTMLInputElement).value).toBe("devbox");
+    fireEvent.change(field, { target: { value: "Build box" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(renameServer).toHaveBeenCalledWith("b", "Build box"));
+  });
+
+  it("labels the fields of the dialog, as the first-start page does", async () => {
+    draw({ ...fakeBridge() });
+    fireEvent.click(await screen.findByRole("button", { name: "Connect a server" }));
+    expect(await screen.findByText("Address", { selector: "label span" })).toBeTruthy();
+    expect(screen.getByText("Access token", { selector: "label span" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Over SSH" }));
+    expect(screen.getByText("SSH host", { selector: "label span" })).toBeTruthy();
   });
 
   it("connects a server by its address and token, and says why one is refused", async () => {

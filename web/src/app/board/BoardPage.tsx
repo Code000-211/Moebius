@@ -551,19 +551,23 @@ export function BoardPage() {
           // The column holds the drawer's width so the board keeps the room it has; the drawer itself runs the whole
           // height of the page's surface and is flush to its top, right and bottom edges, inside its rounded corners —
           // it is the page's own card inspector rather than a sheet laid over it — and scrolls its sections rather
-          // than the page scrolling them. It lies above the slim right column it covers, under the sheets over it;
-          // while the column stands unfolded with the card's properties, the drawer stands beside it instead.
+          // than the page scrolling them. It is placed in the page's surface (`data-surface="page"`, which is
+          // positioned), not in the window: in the desktop app the window has a strip of its own above the page and a
+          // rail beside it, which a position in the window would not know. It lies above the slim right column it
+          // covers, under the sheets over it; while the column stands unfolded with the card's properties, the drawer
+          // stands beside it instead.
           <div className="w-full shrink-0 lg:w-96">
             <div
+              data-testid="card-drawer"
               className={cn(
-                "lg:fixed lg:inset-y-1.5 lg:z-10 lg:w-96 lg:overflow-hidden",
+                "lg:absolute lg:inset-y-0 lg:z-10 lg:w-96 lg:overflow-hidden",
                 // A sheet (the Moebius agent) lies over the column and a strip of the page, so the drawer stands
                 // beside it: the board gives way, and the card's text is not under the sheet.
                 sheetShown
-                  ? "lg:right-[calc(var(--sheet-width)+0.375rem)] lg:rounded-r-sheet"
+                  ? "lg:right-[var(--sheet-width)] lg:rounded-r-sheet"
                   : propertiesShown
-                    ? "lg:right-[calc(var(--column-width)+0.375rem)]"
-                    : "lg:right-1.5 lg:rounded-r-sheet",
+                    ? "lg:right-[var(--column-width)]"
+                    : "lg:right-0 lg:rounded-r-sheet",
               )}
             >
               <Dock

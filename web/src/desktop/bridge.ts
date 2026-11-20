@@ -11,13 +11,21 @@
 /** One server of the rail, as the app reports it. */
 export interface RailServer {
   id: string;
+  /** What the square is called: the server's own name or its address, and with the address added when another server
+   * has the same name; the person can change it. */
   name: string;
+  /** The address the server is reached at (of one over SSH, the host). */
+  address: string;
   /** The server shown in the window. */
   open: boolean;
   /** False when it did not answer with its token: the rail draws a grey dot. */
   reachable: boolean;
-  /** The count of its Inbox. */
+  /** The count of its Inbox as the sidebar counts it: `items` and `unread` together. */
   inbox: number;
+  /** The items of its inbox that are not resolved. */
+  items: number;
+  /** Its notices that are not read. */
+  unread: number;
 }
 
 /** What an error of `connectSsh` starts with when the host has no server set up, so the rail can ask to set one up. */
@@ -35,6 +43,8 @@ export interface DesktopBridge {
   servers(): Promise<RailServer[]>;
   switchServer(id: string): Promise<void>;
   removeServer(id: string): Promise<void>;
+  /** Names a server; an empty name gives back the server's own. */
+  renameServer(id: string, name: string): Promise<void>;
   /** Adds the server at `address` with its access token, and opens it. */
   connect(address: string, token: string): Promise<void>;
   /** Adds the server of an SSH host and opens it, setting it up there first when `setUp`. */
