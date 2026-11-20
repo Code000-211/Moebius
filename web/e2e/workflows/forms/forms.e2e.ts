@@ -107,7 +107,7 @@ function card(id: string): Locator {
 }
 
 const state = () => page.getByTestId("canvas-state");
-const inspector = () => page.getByTestId("canvas-inspector");
+const inspector = () => page.getByTestId("editor-window");
 const preview = () => inspector().getByTestId("params-preview");
 
 async function shows(locator: Locator, ...phrases: string[]): Promise<void> {
@@ -123,7 +123,13 @@ async function shows(locator: Locator, ...phrases: string[]): Promise<void> {
   }
 }
 
+/** Gives the window's edits to the graph, then saves the graph. */
 async function save(): Promise<void> {
+  const window = page.getByTestId("editor-window");
+  if ((await window.count()) > 0) {
+    await window.getByRole("button", { name: "Save", exact: true }).click();
+    await window.waitFor({ state: "detached" });
+  }
   await page.getByTestId("canvas-save").click();
 }
 
@@ -139,6 +145,8 @@ describe.skipIf(usesRealServer)("the forms of the nodes that shape a graph", () 
     const refusal = 'node "shape": invalid parameters for node kind "code": "source" is required';
     await shows(card("shape"), refusal);
     await shows(state(), "Unsaved changes");
+    // The window closed with its Save; the step opens again to give it what it asks for.
+    await card("shape").click();
 
     const typed = "return { tag = input.tag }";
     await source.fill(typed);
@@ -164,6 +172,8 @@ describe.skipIf(usesRealServer)("the forms of the nodes that shape a graph", () 
       'node "route": invalid parameters for node kind "condition": port "pass" needs an expression';
     await shows(card("route"), refusal);
     await shows(state(), "Unsaved changes");
+    // The window closed with its Save; the step opens again to give it what it asks for.
+    await card("route").click();
 
     await when.fill('input.status == "ok"');
     await expect
@@ -204,6 +214,7 @@ describe.skipIf(usesRealServer)("the forms of the nodes that shape a graph", () 
     await expect.poll(() => name.inputValue()).toBe("pass");
 
     // The condition form keeps its rows as state, so it must be built again for another node rather than reused.
+    await inspector().getByRole("button", { name: "Cancel" }).click();
     await card("audit").click();
     await expect.poll(() => name.inputValue()).toBe("flag");
     await expect.poll(() => when.inputValue()).toBe("input.flagged");
@@ -221,6 +232,8 @@ describe.skipIf(usesRealServer)("the forms of the nodes that shape a graph", () 
       'node "join": invalid parameters for node kind "merge": "a" must name the node whose value arrives by port "a"';
     await shows(card("join"), refusal);
     await shows(state(), "Unsaved changes");
+    // The window closed with its Save; the step opens again to give it what it asks for.
+    await card("join").click();
 
     await pickOption(page, page.getByRole("button", { name: "Side A" }), "shape");
     await pickOption(page, page.getByRole("button", { name: "Side B" }), "test");
@@ -250,6 +263,8 @@ describe.skipIf(usesRealServer)("the forms of the nodes that shape a graph", () 
       'node "per-file": invalid parameters for node kind "for_each": "rejoin" must name the node where the sub-path rejoins';
     await shows(card("per-file"), refusal);
     await shows(state(), "Unsaved changes");
+    // The window closed with its Save; the step opens again to give it what it asks for.
+    await card("per-file").click();
 
     await pickOption(page, page.getByRole("button", { name: "Rejoins at" }), "test");
     await inspector().getByRole("spinbutton", { name: "Most elements" }).fill("3");
