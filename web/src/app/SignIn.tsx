@@ -9,7 +9,6 @@ import { lastLoginOutcome } from "../auth/login";
 import { Button } from "../ui/components/Button";
 import { Input } from "../ui/components/Input";
 import { Field } from "../ui/page/Field";
-import { Notice } from "../ui/page/Notice";
 import { StayCheckbox } from "../ui/page/StayCheckbox";
 
 /** The sentence for a refused or failed sign-in. */
@@ -60,11 +59,7 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
         <div className="flex flex-col gap-2">
           <h1 className="m-0 text-xl font-semibold tracking-tight text-text">Moebius</h1>
           <p className="m-0 text-base leading-relaxed text-secondary">
-            Sign in with your access token, or the content of{" "}
-            <code className="rounded-small bg-sunken px-2 py-0.5 font-mono text-sm text-text">
-              .moebius/token
-            </code>
-            .
+            Sign in with your access token.
           </p>
         </div>
         <Field label="Token">
@@ -82,7 +77,11 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
           )}
         </Field>
         <StayCheckbox checked={stay} onChange={setStay} />
-        {error && <Notice tone="error">{error}</Notice>}
+        {error && (
+          <p role="alert" className="m-0 text-sm text-error-text">
+            {error}
+          </p>
+        )}
         <Button type="submit" size="md" disabled={busy || token.trim() === ""}>
           {busy ? "Signing in" : "Sign in"}
         </Button>
