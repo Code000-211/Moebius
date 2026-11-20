@@ -368,8 +368,8 @@ The day a card should be done by, as `YYYY-MM-DD`; kept as the card's `due:<date
 _Avoid_: deadline, target date (a milestone has a target date)
 
 **Notice**:
-One line of a person's Inbox under Mentions: a card or item given to them, a comment that mentions them with
-`@handle`, or a change to a card they follow. It has a read mark that is theirs alone.
+One line of a person's Inbox: a card or item given to them (tab Assigned), a comment that mentions them with
+`@handle` (tab Mentions), or a change to a card they follow (tab Following). It has a read mark that is theirs alone.
 _Avoid_: notification, alert, bell
 
 **Estimate**:

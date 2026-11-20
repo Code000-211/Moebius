@@ -6,16 +6,18 @@
  * which the event stream keeps current, so an item arrives and leaves on its own. What is chosen is in the address
  * (`?kind=`, `?repository=`, `?change=`, `?item=`), so a reload keeps it. The Mentions tab (`?kind=mentions`) is the
  * person's own notices — what was given to them, where they were mentioned, what changed on a card they follow — with
- * a read mark the server keeps for them (`MentionsList`); there is no bell.
+ * a read mark the server keeps for them (`MentionsList`), split into tabs by kind: Mentions, Assigned and Following; there
+ * is no bell.
  */
 import { CheckCircleIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId } from "react";
 import { snapshot as readSnapshot } from "../../api/calls/board";
 import { changeInboxAssignees } from "../../api/calls/inbox";
-import { notices as readNotices } from "../../api/calls/notices";
+import { readNotice, notices as readNotices } from "../../api/calls/notices";
 import { keys } from "../../api/keys";
 import type { Snapshot } from "../../api/types/board";
+import type { Notice } from "../../api/types/notices";
 import { Button } from "../../ui/components/Button";
 import { FilterBar } from "../../ui/filters/FilterBar";
 import type { FilterField } from "../../ui/filters/model";
@@ -32,7 +34,7 @@ import { Decision } from "./Decision";
 import { InboxRow } from "./InboxRow";
 import { MentionsList } from "./MentionsList";
 import { changeOf, chipName, count, type Filters, kindsOf, shown, summary } from "./model";
-import { MENTIONS, unreadCount } from "./notices";
+import { CAP, inTab, isNoticeTab, NOTICE_TABS, rows, waiting } from "./notices";
 import { useRead } from "./read";
 
 /** The fields of the bar: the repository, while there is more than one, and the change an item is about. */
@@ -102,9 +104,12 @@ export function InboxPage() {
     kind: params.get("kind"),
     repository: repository !== null && /^\d+$/.test(repository) ? Number(repository) : null,
   };
-  const onMentions = filters.kind === MENTIONS;
+  const onMentions = isNoticeTab(filters.kind);
+  const noticeList = mentions.data ?? [];
+  const capped = noticeList.length >= CAP;
   const items = onMentions ? [] : shown(snapshot, filters);
   const total = snapshot.inbox.length;
+  const waits = waiting(total, noticeList);
   const choice = params.get("item");
   const chosen = items.find((each) => String(each.id) === choice) ?? null;
 
@@ -113,8 +118,10 @@ export function InboxPage() {
       <PageHeader
         title="Inbox"
         context={
-          total === 0 ? undefined : (
-            <span className="tabular-nums">{summary(total, items.length)}</span>
+          waits === 0 ? undefined : (
+            <span className="tabular-nums">
+              {summary(waits, waits - (total - (onMentions ? total : items.length)))}
+            </span>
           )
         }
       />
@@ -125,7 +132,10 @@ export function InboxPage() {
         onChange={(kind) => setQuery({ kind })}
         tabs={[
           { value: "", label: `All ${count(snapshot, null, filters.repository)}` },
-          { value: MENTIONS, label: `Mentions ${unreadCount(mentions.data ?? [])}` },
+          ...NOTICE_TABS.map((tab) => ({
+            value: tab.value,
+            label: `${tab.label} ${rows(inTab(noticeList, tab.value).length, capped)}`,
+          })),
           ...kindsOf(snapshot).map((kind) => ({
             value: kind,
             label: `${chipName(kind)} ${count(snapshot, kind, filters.repository)}`,
@@ -147,7 +157,7 @@ export function InboxPage() {
       )}
       <TabPanel idBase={tabs} value={filters.kind ?? ""} className="flex flex-col gap-4">
         {onMentions ? (
-          <MentionsList snapshot={snapshot} now={now} />
+          <MentionsList snapshot={snapshot} now={now} tab={filters.kind ?? ""} />
         ) : items.length === 0 ? (
           total === 0 ? (
             <Empty
@@ -191,6 +201,25 @@ export function InboxPage() {
         )}
       </TabPanel>
       {chosen && <ReadOnShow id={chosen.id} markRead={markRead} />}
+      <Settled
+        choice={choice}
+        gone={choice !== null && !snapshot.inbox.some((each) => String(each.id) === choice)}
+        onGone={() => setQuery({ item: "" })}
+      />
+      {chosen && (
+        <ReadNoticesOf
+          item={chosen.id}
+          notices={noticeList}
+          onRead={(id) => {
+            queryClient.setQueryData<Notice[]>(keys.notices, (before) =>
+              before?.map((each) => (each.id === id ? { ...each, read: true } : each)),
+            );
+            void readNotice(id).finally(() =>
+              queryClient.invalidateQueries({ queryKey: keys.notices }),
+            );
+          }}
+        />
+      )}
       {chosen && (
         <PageProperties label="Decide">
           <AssigneesProperty
@@ -209,6 +238,41 @@ export function InboxPage() {
       )}
     </>
   );
+}
+
+/** An item that is resolved (or never was) leaves the address, so it does not name what is gone. */
+function Settled({
+  choice,
+  gone,
+  onGone,
+}: {
+  choice: string | null;
+  gone: boolean;
+  onGone: () => void;
+}) {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the address changes only when the choice does
+  useEffect(() => {
+    if (choice !== null && gone) onGone();
+  }, [choice, gone]);
+  return null;
+}
+
+/** Opening an item reads the notices about it, which the server keeps for the person. */
+function ReadNoticesOf({
+  item,
+  notices,
+  onRead,
+}: {
+  item: number;
+  notices: readonly Notice[];
+  onRead: (id: number) => void;
+}) {
+  const unread = notices.filter((each) => each.inbox_item_id === item && !each.read);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a notice is read once; the list changes as it is
+  useEffect(() => {
+    for (const each of unread) onRead(each.id);
+  }, [unread.map((each) => each.id).join(",")]);
+  return null;
 }
 
 /** What is chosen is read, whether a person chose it or the address did. */
