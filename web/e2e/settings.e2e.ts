@@ -38,7 +38,8 @@ describe("Settings", () => {
     ] as const) {
       await nav(page).getByRole("link", { name: label, exact: true }).click();
       await page.waitForURL(`**/${path}`);
-      await page.getByRole("heading", { level: 1, name: label }).waitFor();
+      // An area titles itself as a heading of its own (a level 1 until it is flattened, a level 2 under "Settings" after).
+      await page.getByRole("heading", { name: label, exact: true }).first().waitFor();
       await nav(page).waitFor();
     }
     await page.reload();

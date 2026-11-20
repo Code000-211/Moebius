@@ -1,6 +1,7 @@
 /**
- * The Retro page: the Retros of the days, the errors of the one chosen grouped by kind, the proposals the Retro
- * analyst made with their status and what their trials found, and under them the lessons it learned (`Lessons`).
+ * The Retro area of Settings: the Retros of the days, the errors of the one chosen grouped by kind and the proposals
+ * the Retro analyst made with their status and what their trials found (the lessons it learned are the Lessons area).
+ * It has no page header of its own, only the area's title with "Run now" at its right; a refusal is a toast.
  * "Run now" is `POST /v1/retros`, and a day whose analysis failed is made again from the banner that says so
  * (`POST /v1/retros/{date}/retry`); the server says when a Retro ends with `retro_done` and when a trial or a
  * proposal changes with `trial_done` and `proposal_status`, which `live/invalidation.ts` answers by reading again.
@@ -10,7 +11,7 @@
  * because a day of errors is long and the list of days should stay where it was left. `?day=` names the day to open on
  * and `?proposal=` the one to land on, which is how the Inbox leads here from a proposal it cannot show all of.
  */
-import { ArrowClockwiseIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { ArrowClockwiseIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { useSearchParams } from "react-router";
@@ -25,11 +26,12 @@ import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
 import { ListCard, ListDetail } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
-import { Body, PageHeader } from "../../ui/page/PageHeader";
+import { Body } from "../../ui/page/PageHeader";
 import { PageProperties, Property } from "../../ui/page/Properties";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonCard, SkeletonList } from "../../ui/page/Skeleton";
-import { Lessons } from "./Lessons";
+import { useToast } from "../../ui/page/Toast";
+import { AreaTitle } from "../settings/parts";
 import {
   cardsLine,
   groupErrors,
@@ -41,10 +43,11 @@ import {
   type TagSpec,
   trialLine,
 } from "./model";
-import { Diff, Region } from "./parts";
+import { Diff } from "./parts";
 
 export function RetroPage() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const list = useQuery({ queryKey: keys.retros, queryFn: retros });
   const [params, setParams] = useSearchParams();
   // The day is in the address, so a reload and a link keep it; with none the latest is read.
@@ -72,13 +75,13 @@ export function RetroPage() {
       setPicked(view.date);
       await queryClient.invalidateQueries({ queryKey: keys.retros });
     },
+    onError: (error) => toast({ kind: "error", text: sayError(error, "The Retro did not start.") }),
   });
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PageHeader
+      <AreaTitle
         title="Retro"
-        context="Help Moebius self-improve."
         actions={
           <Button size="sm" disabled={run.isPending} onClick={() => run.mutate()}>
             {run.isPending ? "Running" : "Run now"}
@@ -121,35 +124,27 @@ export function RetroPage() {
             )
           }
           detail={
-            <>
-              {run.error && (
-                <Region label="The Retro did not start">
-                  <Notice tone="error">{sayError(run.error, "The Retro did not start.")}</Notice>
-                </Region>
-              )}
-              {opened.data ? (
-                <Day view={opened.data} wanted={wanted} />
-              ) : date === null ? (
-                <Empty
-                  title="No Retro yet"
-                  body={
-                    <>
-                      The first comes at <span className="font-mono">retro_at</span>, or start one
-                      now.
-                    </>
-                  }
-                />
-              ) : opened.isPending ? (
-                <SkeletonCard lines={5} message="Reading the Retro" />
-              ) : opened.error ? (
-                <Notice tone="error">
-                  {sayError(opened.error, "Could not read the Retro. Try again.")}
-                </Notice>
-              ) : (
-                <Empty title="Nothing came back" body="The Retro answered without a report." />
-              )}
-              <Lessons />
-            </>
+            opened.data ? (
+              <Day view={opened.data} wanted={wanted} />
+            ) : date === null ? (
+              <Empty
+                title="No Retro yet"
+                body={
+                  <>
+                    The first comes at <span className="font-mono">retro_at</span>, or start one
+                    now.
+                  </>
+                }
+              />
+            ) : opened.isPending ? (
+              <SkeletonCard lines={5} message="Reading the Retro" />
+            ) : opened.error ? (
+              <Notice tone="error">
+                {sayError(opened.error, "Could not read the Retro. Try again.")}
+              </Notice>
+            ) : (
+              <Empty title="Nothing came back" body="The Retro answered without a report." />
+            )
           }
         />
       )}
@@ -157,10 +152,10 @@ export function RetroPage() {
   );
 }
 
-/** One day: what was left out, its errors by kind and its proposals. */
 /** The day a person is reading. `wanted` is the proposal a link came in for. */
 function Day({ view, wanted }: { view: RetroView; wanted: string | null }) {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const groups = groupErrors(view.report.errors);
   const proposals = view.proposals ?? [];
   const estimates = view.report.estimates ?? [];
@@ -171,6 +166,8 @@ function Day({ view, wanted }: { view: RetroView; wanted: string | null }) {
       await queryClient.invalidateQueries({ queryKey: keys.retros });
       await queryClient.invalidateQueries({ queryKey: keys.retro(view.date) });
     },
+    onError: (error) =>
+      toast({ kind: "error", text: sayError(error, "Could not run the Retro again. Try again.") }),
   });
   return (
     <>
@@ -182,43 +179,27 @@ function Day({ view, wanted }: { view: RetroView; wanted: string | null }) {
         <Property name="Left out">{String(warnings.length)}</Property>
       </PageProperties>
       {warnings.length > 0 && (
-        <Box
-          title="Left out"
-          aside={
-            <span className="tabular-nums">
-              {`${plural(warnings.length, "part", "parts")} of the day`}
-            </span>
-          }
-          className="min-w-0"
-        >
-          <div className="flex flex-col gap-4">
-            {/* One banner for what was left out, with the one Retry beside it: the retry runs the whole day, not a warning. */}
-            <div className="flex items-center gap-4 rounded-control bg-attention-fill p-4 text-attention-text">
-              <WarningCircleIcon className="size-4 shrink-0" aria-hidden="true" />
-              <div className="flex min-w-0 flex-1 flex-col gap-2">
-                {warnings.map((warning) => (
-                  <p key={warning} className="m-0 min-w-0 break-words text-base">
-                    {warning}
-                  </p>
-                ))}
-              </div>
-              {view.status === "failed" ? (
-                <Button
-                  size="sm"
-                  variant="attention"
-                  disabled={retry.isPending}
-                  onClick={() => retry.mutate(view.date)}
-                >
-                  <ArrowClockwiseIcon className="size-4" aria-hidden="true" />
-                  {retry.isPending ? "Running" : "Retry"}
-                </Button>
-              ) : null}
+        <Box title="Left out" className="min-w-0">
+          {/* One row for what was left out, with the one Retry beside it: the retry runs the whole day, not a warning. */}
+          <div className="flex flex-col items-start gap-3">
+            <div className="flex min-w-0 flex-col gap-2 text-secondary">
+              {warnings.map((warning) => (
+                <p key={warning} className="m-0 min-w-0 break-words text-base">
+                  {warning}
+                </p>
+              ))}
             </div>
-            {retry.error && (
-              <Notice tone="error">
-                {sayError(retry.error, "Could not run the Retro again. Try again.")}
-              </Notice>
-            )}
+            {view.status === "failed" ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={retry.isPending}
+                onClick={() => retry.mutate(view.date)}
+              >
+                <ArrowClockwiseIcon className="size-4" aria-hidden="true" />
+                {retry.isPending ? "Running" : "Retry"}
+              </Button>
+            ) : null}
           </div>
         </Box>
       )}
@@ -226,7 +207,7 @@ function Day({ view, wanted }: { view: RetroView; wanted: string | null }) {
         {groups.length === 0 ? (
           <Body>No errors that day.</Body>
         ) : (
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-4">
             {groups.map((group) => (
               <ErrorGroup key={group.kind} label={group.label} errors={group.errors} />
             ))}
@@ -256,7 +237,7 @@ function Day({ view, wanted }: { view: RetroView; wanted: string | null }) {
         {proposals.length === 0 ? (
           <Body>None yet.</Body>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col divide-y divide-hairline">
             {proposals.map((proposal) => (
               <ProposalCard
                 key={proposal.id}
@@ -274,16 +255,16 @@ function Day({ view, wanted }: { view: RetroView; wanted: string | null }) {
 /** The errors of one kind: how many, then each with where it happened. */
 function ErrorGroup({ label, errors }: { label: string; errors: ReportError[] }) {
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    <div className="flex min-w-0 flex-col gap-1">
       <h3 className="m-0 break-words text-base font-semibold text-text tabular-nums">
         {`${label} · ${errors.length}`}
       </h3>
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col divide-y divide-hairline">
         {errors.map((error, index) => (
           <div
             // biome-ignore lint/suspicious/noArrayIndexKey: the errors are a fixed report, in order
             key={index}
-            className="flex min-w-0 flex-col gap-4 rounded-card bg-sunken p-4"
+            className="flex min-w-0 flex-col gap-1 py-2"
           >
             {origin(error) !== "" && (
               <span className="break-words font-mono text-sm text-secondary tabular-nums">
@@ -311,14 +292,14 @@ function ProposalCard({ proposal, aimed }: { proposal: Proposal; aimed?: boolean
     if (aimed) box.current?.scrollIntoView({ behavior: "instant", block: "start" });
   }, [aimed]);
   return (
-    <article ref={box} className="flex min-w-0 flex-col gap-4 rounded-card bg-sunken p-4">
+    <article ref={box} className="flex min-w-0 flex-col gap-3 py-4 first:pt-0 last:pb-0">
       <h3 className="m-0 min-w-0 break-words text-base font-semibold text-text">
         {proposal.title}
       </h3>
       <div className="flex flex-wrap gap-2">
         <Tag tone={status.tone}>{status.label}</Tag>
         {own && (
-          <code className="break-words rounded-full bg-code px-2 py-1 font-mono text-xs text-text">
+          <code className="break-words rounded-control bg-code px-2 py-1 font-mono text-xs text-text">
             {own}
           </code>
         )}
@@ -359,7 +340,7 @@ function ProposalCard({ proposal, aimed }: { proposal: Proposal; aimed?: boolean
 /** One trial: what came of it, the card it was tried on, and why. */
 function TrialRow({ outcome, card, reason }: { outcome: TagSpec; card: string; reason: string }) {
   return (
-    <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center">
+    <div className="flex min-w-0 flex-col gap-2 sm:min-h-9 sm:flex-row sm:items-center sm:gap-4">
       <Tag tone={outcome.tone}>{outcome.label}</Tag>
       <span className="shrink-0 break-words text-sm text-secondary tabular-nums">{card}</span>
       <p className="m-0 min-w-0 flex-1 break-words text-base text-text">{reason}</p>

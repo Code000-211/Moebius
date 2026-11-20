@@ -65,6 +65,11 @@ async function open(path: string, title: string) {
   await page.getByRole("heading", { name: title, level: 1 }).waitFor();
 }
 /** How the page names a day of the fake: "Today", "Yesterday", or the day and month, as every page does. */
+/** Opens an area of Settings by its address and waits for the title of the area, under the page's "Settings". */
+async function openArea(path: string, title: string) {
+  await page.goto(`${server.url}${path}`);
+  await page.getByRole("heading", { name: title, level: 2, exact: true }).first().waitFor();
+}
 const dayOf = (date: string) => new RegExp(dayName(date).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 const region = (name: string) => page.getByRole("region", { name, exact: true });
 const alert = (text: string | RegExp) => page.getByRole("alert").filter({ hasText: text });
@@ -405,7 +410,7 @@ describe("the Automations page", () => {
 describe("the Retro page", () => {
   it("loads, and runs the Retro of today", async () => {
     await fresh();
-    await open("/retro", "Retro");
+    await openArea("/retro", "Retro");
     await page.getByRole("button", { name: "Run now" }).click();
     await page.getByText("No errors that day.").waitFor();
     await page
@@ -414,14 +419,14 @@ describe("the Retro page", () => {
       .waitFor();
     // The day has its Retro now: a second run is refused, and the page says so.
     await page.getByRole("button", { name: "Run now" }).click();
-    await region("The Retro did not start").waitFor();
+    await alert(/exists already/).waitFor();
   });
 
   it.skipIf(usesRealServer)(
     "lists the days and shows the errors and proposals of one",
     async () => {
       await fresh();
-      await open("/retro", "Retro");
+      await openArea("/retro", "Retro");
       const latest = page.getByRole("button", { name: dayOf("2026-10-28") });
       await latest.getByText("Proposed").waitFor();
       await latest.getByText("6 errors · 3 proposals").waitFor();
@@ -472,7 +477,7 @@ describe("the Retro page", () => {
           proposals: 0,
         });
       }
-      await open("/retro", "Retro");
+      await openArea("/retro", "Retro");
       const frame = page.locator("main");
       const list = page.getByTestId("list-column");
       const detail = page.getByTestId("detail-column");
@@ -515,7 +520,7 @@ describe("the Retro page", () => {
 
   it.skipIf(usesRealServer)("says why a second Retro of a day did not start", async () => {
     await fresh();
-    await open("/retro", "Retro");
+    await openArea("/retro", "Retro");
     await page.getByRole("button", { name: "Run now" }).click();
     await page
       .getByRole("button", { name: /Reported/ })
@@ -529,7 +534,7 @@ describe("the Retro page", () => {
     "analyses a day whose Retro failed again from the banner that says why",
     async () => {
       await fresh();
-      await open("/retro?day=2026-10-26", "Retro");
+      await openArea("/retro?day=2026-10-26", "Retro");
       await region("Left out")
         .getByText(/the server stopped while the analyst was going/)
         .waitFor();
@@ -549,7 +554,7 @@ describe("the Retro page", () => {
 
   it.skipIf(usesRealServer)("edits a lesson in place and deletes one after asking", async () => {
     await fresh();
-    await open("/retro", "Retro");
+    await openArea("/lessons", "Lessons");
     const lessons = region("Lessons");
     await lessons.getByText("Do: Add a test with emoji before you change the tokenizer.").waitFor();
     await lessons.getByText("Cards 48, 50 · given 4 times").waitFor();
@@ -733,7 +738,7 @@ describe("the Experiments page", () => {
     await open("/experiments", "Experiments");
     fake().refuseNext("POST", "/v1/research/2/confirm", 409, "the research is running");
     await region("Brief").getByRole("button", { name: "Confirm" }).click();
-    await region("The request was refused").getByText("the research is running").waitFor();
+    await alert("the research is running").waitFor();
   });
 });
 
@@ -748,7 +753,7 @@ describe("the Experiments page with no research", () => {
     await page.getByLabel("What should get better").fill("Make the tests faster");
     await page.getByLabel("Measurement").fill("echo 12");
     await page.getByRole("button", { name: "Store the brief" }).click();
-    await region("The request was refused").getByText("the measurement prints nothing").waitFor();
+    await alert("the measurement prints nothing").waitFor();
   });
 });
 
@@ -845,7 +850,7 @@ describe("the Decisions page", () => {
     await open("/decision-model", "Decisions");
     fake().refuseNext("POST", "/v1/exports", 422, 'no judgements of kind "x"');
     await page.getByRole("button", { name: "Export training set" }).click();
-    await region("The export was refused").getByText('no judgements of kind "x"').waitFor();
+    await alert('no judgements of kind "x"').waitFor();
   });
 
   it.skipIf(usesRealServer)(
