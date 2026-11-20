@@ -9,7 +9,7 @@ import { notices as readNotices } from "../../api/calls/notices";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
 import { FieldRow, Rows } from "../../ui/page/Field";
-import { AreaTitle } from "./parts";
+import { AreaColumn, AreaTitle } from "./parts";
 
 const KINDS = [
   { kind: "assigned", label: "Assigned", note: "A card is given to you" },
@@ -20,7 +20,7 @@ const KINDS = [
 export function NotificationsPage() {
   const notices = useQuery({ queryKey: keys.notices, queryFn: readNotices });
   return (
-    <div className="max-w-3xl">
+    <AreaColumn>
       <AreaTitle
         title="Notifications"
         actions={
@@ -40,6 +40,6 @@ export function NotificationsPage() {
           </FieldRow>
         ))}
       </Rows>
-    </div>
+    </AreaColumn>
   );
 }

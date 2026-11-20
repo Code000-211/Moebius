@@ -4,9 +4,13 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../api/keys";
+import { ColumnScriptsPage } from "./ColumnScriptsPage";
+import { ExportPage } from "./ExportPage";
 import { NotificationsPage } from "./NotificationsPage";
 import { ProfilePage } from "./ProfilePage";
 import { RepositoriesPage } from "./RepositoriesPage";
+import { RunnersPage } from "./RunnersPage";
+import { SchedulesPage } from "./SchedulesPage";
 
 afterEach(() => {
   cleanup();
@@ -97,6 +101,119 @@ describe("Repositories", () => {
     );
     expect(screen.getByRole("link", { name: /Add a repository/ }).getAttribute("href")).toBe(
       "/projects/new",
+    );
+  });
+});
+
+describe("Column scripts", () => {
+  it("lists the columns of a board and links each to its editor", async () => {
+    const project = {
+      id: 4,
+      name: "Shop",
+      repositories: [{ id: 9, name: "shop", home: true }],
+    };
+    show(<ColumnScriptsPage />, [
+      [keys.projects, [project]],
+      [
+        keys.projectScripts(4),
+        [
+          { column: "Backlog", path: "p/backlog.luau", source: "built-in", text: "" },
+          { column: "In progress", path: "p/progress.luau", source: "project", text: "" },
+        ],
+      ],
+    ]);
+    expect(screen.getByText("Backlog")).toBeTruthy();
+    expect(screen.getByText("This project's own")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Script of In progress" }).getAttribute("href")).toBe(
+      "/board/9/scripts/In%20progress?project=4",
+    );
+  });
+});
+
+describe("Schedules", () => {
+  it("shows the nightly times and the automations with their next firing", async () => {
+    const value = (v: string) => ({ value: v, default: true });
+    show(<SchedulesPage />, [
+      [
+        keys.settings,
+        {
+          file: "moebius.toml",
+          values: {
+            retro_at: value("03:00"),
+            "trial_window.start": value("00:00"),
+            "trial_window.end": value("06:00"),
+          },
+          secrets: [],
+          restart_needed: false,
+          restart_keys: [],
+        },
+      ],
+      [
+        keys.automations,
+        [
+          {
+            id: 3,
+            name: "Weekly digest",
+            schedule: "0 9 * * 1",
+            agent: "moebius",
+            prompt: "",
+            repository_id: null,
+            harness_repository: false,
+            enabled: true,
+            next_firing: Math.floor(Date.now() / 1000) + 7200,
+            last_firing: null,
+          },
+        ],
+      ],
+    ]);
+    expect(screen.getByText("03:00")).toBeTruthy();
+    expect(screen.getByText("00:00 – 06:00")).toBeTruthy();
+    expect(screen.getByText("Weekly digest")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open Weekly digest" }).getAttribute("href")).toBe(
+      "/automations?automation=3",
+    );
+  });
+});
+
+describe("Runners", () => {
+  it("lists the remote runners with their load, and says when there is none", async () => {
+    const view = show(<RunnersPage />, [
+      [
+        keys.runners,
+        [{ name: "box", host: "build.example.com", user: "ci", max_runs: 2, busy: 1 }],
+      ],
+    ]);
+    expect(screen.getByText("box")).toBeTruthy();
+    expect(screen.getByText("ci@build.example.com")).toBeTruthy();
+    expect(screen.getByText("1 of 2 running")).toBeTruthy();
+    view.unmount();
+    show(<RunnersPage />, [[keys.runners, []]]);
+    expect(screen.getByText(/No runner/)).toBeTruthy();
+  });
+});
+
+describe("Export", () => {
+  it("lists the exports with their judgements, and leads to the Decisions page", async () => {
+    show(<ExportPage />, [
+      [
+        keys.exports,
+        [
+          {
+            id: 2,
+            at: Math.floor(Date.now() / 1000) - 7200,
+            kinds: [
+              { kind: "merge", count: 5, with_outcome: 5, by_person: 1, held_out: 0 },
+              { kind: "tool_call", count: 3, with_outcome: 0, by_person: 0, held_out: 0 },
+            ],
+          },
+        ],
+      ],
+    ]);
+    expect(screen.getByText("Export 2")).toBeTruthy();
+    expect(screen.getByText("2 decision types")).toBeTruthy();
+    expect(screen.getByText(/8 judgements/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open Decisions" }).getAttribute("href")).toBe(
+      "/decision-model",
     );
   });
 });

@@ -11,13 +11,13 @@ import { Button } from "../../ui/components/Button";
 import { FieldRow, Rows } from "../../ui/page/Field";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
-import { AreaTitle, Section } from "./parts";
+import { AreaColumn, AreaTitle, Section } from "./parts";
 
 export function RepositoriesPage() {
   const data = useQuery({ queryKey: keys.projects, queryFn: listProjects });
   const withRepositories = (data.data ?? []).filter((project) => project.repositories.length > 0);
   return (
-    <div className="max-w-3xl">
+    <AreaColumn>
       <AreaTitle
         title="Repositories"
         actions={
@@ -71,6 +71,6 @@ export function RepositoriesPage() {
           );
         })
       )}
-    </div>
+    </AreaColumn>
   );
 }

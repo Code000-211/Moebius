@@ -14,17 +14,12 @@ describe("settings entries", () => {
     expect(new Set(SETTINGS_ENTRIES.map((e) => e.path)).size).toBe(20);
   });
 
-  it("lists the entries that still have no page, which later tickets must remove", () => {
-    expect(SETTINGS_ENTRIES.filter((e) => !e.page).map((e) => e.label)).toEqual([
-      "Column scripts",
-      "Schedules",
-      "Export",
-      "Runners",
-    ]);
+  it("has a page for every entry", () => {
+    expect(SETTINGS_ENTRIES.filter((e) => !e.page)).toEqual([]);
   });
 
   it("shows registered entries only, and the owner's entries to an owner only", () => {
-    expect(shownEntries("owner")).toHaveLength(16);
+    expect(shownEntries("owner")).toHaveLength(20);
     expect(shownEntries("member").map((e) => e.label)).not.toContain("Members");
     expect(shownEntries(undefined).map((e) => e.label)).not.toContain("Members");
   });
@@ -39,6 +34,7 @@ describe("settings entries", () => {
       "Analytics",
       "Retro",
       "Lessons",
+      "Export",
     ]);
     expect(searchEntries(all, "zzz")).toEqual([]);
   });
@@ -50,6 +46,10 @@ describe("settings entries", () => {
       "/repositories",
       "/appearance",
       "/settings",
+      "/column-scripts",
+      "/schedules",
+      "/runners",
+      "/export",
     ]) {
       expect(inSettingsArea(path), path).toBe(true);
     }
