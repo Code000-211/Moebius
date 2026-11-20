@@ -144,22 +144,24 @@ function PluginForm({
       }}
     >
       {plugin.ui && pageFailed === null ? (
-        <PluginPage
-          key={drawn}
-          host={{
-            plugin: plugin.plugin,
-            version: plugin.version,
-            scope: scope.kind,
-            repository: scope.repository,
-            settings: plugin.settings,
-            values: saved,
-            change: (next) => {
-              setValues(next);
-              setNotice(null);
-            },
-          }}
-          onFailed={setPageFailed}
-        />
+        <div className="border-t border-hairline py-3">
+          <PluginPage
+            key={drawn}
+            host={{
+              plugin: plugin.plugin,
+              version: plugin.version,
+              scope: scope.kind,
+              repository: scope.repository,
+              settings: plugin.settings,
+              values: saved,
+              change: (next) => {
+                setValues(next);
+                setNotice(null);
+              },
+            }}
+            onFailed={setPageFailed}
+          />
+        </div>
       ) : (
         <>
           {pageFailed !== null && (

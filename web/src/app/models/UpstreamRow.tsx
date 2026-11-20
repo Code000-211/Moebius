@@ -74,8 +74,8 @@ export function UpstreamRow({
           ? { tone: "neutral" as const, text: "No models yet" }
           : { tone: "neutral" as const, text: "Not asked yet" };
   return (
-    <div data-testid="upstream" className="divide-y divide-hairline">
-      <FieldRow label={`Provider ${place + 1}`}>
+    <div data-testid="upstream" className="mt-6 divide-y divide-hairline first:mt-0">
+      <FieldRow label={`Provider ${place + 1}`} className="font-semibold">
         <div className="flex flex-wrap items-center justify-end gap-3">
           <StateLabel tone={answer.tone}>{answer.text}</StateLabel>
           {oauth?.needs && <StateLabel tone="attention">Needs {oauth.needs}</StateLabel>}
@@ -97,7 +97,7 @@ export function UpstreamRow({
           onChange={(protocol) => onPatch({ protocol })}
         />
       </FieldRow>
-      <FieldRow label="Base URL" description="The address Moebius sends the requests to." wide>
+      <FieldRow label="Base URL" wide>
         <Input
           mono
           aria-label="Base URL"
