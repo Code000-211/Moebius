@@ -1317,7 +1317,7 @@ describe("settings", () => {
 
   it("loads for a real server and for the fake", async () => {
     await open("/settings");
-    await page.getByRole("heading", { name: "General", level: 1 }).waitFor();
+    await page.getByRole("heading", { name: "General", level: 2 }).waitFor();
     for (const box of [
       "Server",
       "Board and budgets",
@@ -1329,7 +1329,7 @@ describe("settings", () => {
       "Forgejo",
     ]) {
       // The level keeps the box of a key apart from a webhook of the same forge further down the page.
-      await page.getByRole("heading", { name: box, exact: true, level: 2 }).waitFor();
+      await page.getByRole("heading", { name: box, exact: true, level: 3 }).waitFor();
     }
     await page.getByRole("button", { name: "Save", exact: true }).waitFor();
     await page.getByRole("heading", { name: "This server" }).waitFor();
@@ -1339,10 +1339,10 @@ describe("settings", () => {
       .getByRole("link", { name: "Appearance" })
       .click();
     await page.waitForURL("**/appearance");
-    await page.getByRole("heading", { name: "Appearance", exact: true, level: 1 }).waitFor();
+    await page.getByRole("heading", { name: "Appearance", exact: true, level: 2 }).waitFor();
     await page.getByRole("radio", { name: "Light" }).check();
     await expect(page.locator("html").getAttribute("data-theme")).resolves.toBe("light");
-    await page.getByRole("radio", { name: "Follow the system" }).check();
+    await page.getByRole("radio", { name: "System" }).check();
   });
 
   it("saves a key to the file of a real server and reads it back", async () => {

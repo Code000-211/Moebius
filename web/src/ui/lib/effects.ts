@@ -4,6 +4,7 @@
  * opaque panel. `start` decides once at launch from the graphics renderer's name and writes the answer on the root as
  * `data-blur="on"` or `"off"`, where `tailwind.css` reads it.
  */
+import { useCallback, useSyncExternalStore } from "react";
 
 const SOFTWARE =
   /llvmpipe|swiftshader|softpipe|software|basic render|microsoft basic|mesa offscreen|lavapipe/i;
@@ -28,7 +29,53 @@ export function rendererName(doc: Document = document): string | null {
   }
 }
 
-/** Sets `data-blur` on the root from the renderer. */
+const KEY = "moebius.blur";
+
+/** Whether the machine can blur, from the renderer; `start` reads it once. */
+let gpu = false;
+/** What the person chose in this page, kept in memory in case storage refuses it. */
+let chosen: boolean | null = null;
+
+function savedChoice(): boolean {
+  if (chosen !== null) return chosen;
+  try {
+    return localStorage.getItem(KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+function apply(doc: Document): void {
+  doc.documentElement.dataset.blur = gpu && savedChoice() ? "on" : "off";
+}
+
+/** Sets `data-blur` on the root from the renderer and from the person's choice (on unless switched off). */
 export function start(doc: Document = document): void {
-  doc.documentElement.dataset.blur = blurAllowed(rendererName(doc)) ? "on" : "off";
+  gpu = blurAllowed(rendererName(doc));
+  apply(doc);
+}
+
+const listeners = new Set<() => void>();
+
+/** Blur on menus as the Appearance switch shows it: on only with a GPU and while the person has not switched it off. */
+export function useBlur(): { on: boolean; gpu: boolean; setOn: (on: boolean) => void } {
+  const on = useSyncExternalStore(
+    (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    () => gpu && savedChoice(),
+    () => false,
+  );
+  const setOn = useCallback((next: boolean) => {
+    chosen = next;
+    try {
+      localStorage.setItem(KEY, next ? "on" : "off");
+    } catch {
+      // The switch is in effect and simply not remembered for the next visit.
+    }
+    apply(document);
+    for (const listener of listeners) listener();
+  }, []);
+  return { on, gpu, setOn };
 }

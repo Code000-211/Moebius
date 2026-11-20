@@ -138,13 +138,13 @@ describe("motion", () => {
   it("leaves no transition when the switch is on, also after a reload", async () => {
     const page = await board("no-preference");
     await page.goto(`${server.url}/appearance`);
-    await page.getByRole("checkbox", { name: "Reduce motion" }).check();
+    await page.getByRole("switch", { name: "Reduce motion" }).click();
     expect(await page.evaluate(moving)).toEqual([]);
     await page.reload();
-    await page.getByRole("checkbox", { name: "Reduce motion" }).waitFor();
+    await page.getByRole("switch", { name: "Reduce motion" }).waitFor();
     expect(await page.evaluate(() => document.documentElement.dataset.reduceMotion)).toBe("true");
     expect(await page.evaluate(moving)).toEqual([]);
-    await page.getByRole("checkbox", { name: "Reduce motion" }).uncheck();
+    await page.getByRole("switch", { name: "Reduce motion" }).click();
     expect(
       await page.evaluate(() => document.documentElement.dataset.reduceMotion),
     ).toBeUndefined();
