@@ -1,11 +1,10 @@
 /**
- * Adding a card in place, at the foot of a column and from the "+" in its head. Both open one line to type in at the
- * foot of the column: Enter makes the card (`POST /v1/repositories/{id}/issues`, the same call as the dialog's), Escape
+ * Adding a card in place. A column has no button for it: the column's context menu (a right click on its name, or the
+ * menu key and Enter on it) has "Add a card", and opens one line to type in under the name: Enter makes the card (`POST /v1/repositories/{id}/issues`, the same call as the dialog's), Escape
  * leaves, and what the server refused stays under the line. The server puts every new issue in the Backlog, so in any
  * other column the page says where the card went. The longer form, with a description and a parent, is the dialog on
  * `C`.
  */
-import { PlusIcon } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { createIssue } from "../../api/calls/board";
@@ -15,33 +14,17 @@ import type { Card } from "../../api/types/board";
 import { Input } from "../../ui/components/Input";
 import { Notice } from "../../ui/page/Notice";
 
-/** The "+" in a column's head: it opens the line at the foot. */
-export function ColumnAddButton({ column, onClick }: { column: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      aria-label={`Add a card to ${column}`}
-      onClick={onClick}
-      className="flex size-6 cursor-pointer appearance-none items-center justify-center rounded-control bg-transparent text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
-    >
-      <PlusIcon className="size-4" aria-hidden="true" />
-    </button>
-  );
-}
-
-/** The foot of a column: "+ Add", or the line it turns into while `open`. */
+/** The line for a new card under a column's name, while `open`; nothing while it is closed. */
 export function ColumnAdd({
   repository,
   column,
   open,
-  onOpen,
   onClose,
   onCreated,
 }: {
   repository: number;
   column: string;
   open: boolean;
-  onOpen: () => void;
   onClose: () => void;
   onCreated: (card: Card, column: string) => void;
 }) {
@@ -65,21 +48,9 @@ export function ColumnAdd({
     setTitle("");
     onClose();
   };
-  if (!open) {
-    return (
-      <button
-        type="button"
-        aria-label={`Add a card to ${column}, at the foot`}
-        onClick={onOpen}
-        className="mt-2 flex min-h-8 w-full shrink-0 cursor-pointer appearance-none items-center gap-2 rounded-control bg-transparent px-2 text-left text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
-      >
-        <PlusIcon className="size-4 shrink-0" aria-hidden="true" />
-        Add
-      </button>
-    );
-  }
+  if (!open) return null;
   return (
-    <div className="mt-2 flex shrink-0 flex-col gap-2">
+    <div className="mb-3 flex shrink-0 flex-col gap-2">
       <Input
         ref={field}
         aria-label={`Title of the new card in ${column}`}

@@ -80,6 +80,11 @@ const broadcast = (event: { kind: string; data: unknown }) => {
   server.broadcast(event);
 };
 // By the label, not the role: a card window over the board is modal and hides the board from the accessibility tree.
+/** Opens the line for a new card in a column from its context menu: the column has no button for it. */
+async function addFromMenu(name: string): Promise<void> {
+  await column(name).getByRole("heading", { name }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Add a card" }).click();
+}
 const column = (name: string) => page.locator(`section[aria-label="${name}"]`);
 const card = (number: number) => page.getByTestId(`card-${number}`);
 const dock = () => page.getByRole("dialog", { name: "Card inspector" });
@@ -205,15 +210,16 @@ describe("the board page", () => {
     await fresh();
     await openBoard();
     const backlog = column("Backlog");
-    await backlog.getByRole("button", { name: "Add a card to Backlog, at the foot" }).click();
+    await addFromMenu("Backlog");
     const line = backlog.getByLabel("Title of the new card in Backlog");
     await line.fill("Never made");
     await line.press("Escape");
     await line.waitFor({ state: "detached" });
     expect(await page.getByText("Never made").count()).toBe(0);
 
-    // The "+" in the head opens the same line.
-    await backlog.getByRole("button", { name: "Add a card to Backlog", exact: true }).click();
+    // The keyboard reaches it too: Enter on the column's name opens the same menu.
+    await backlog.getByRole("heading", { name: "Backlog" }).press("Enter");
+    await page.getByRole("menuitem", { name: "Add a card" }).click();
     await line.fill("Made in place");
     await line.press("Enter");
     await status('Created "Made in place"').waitFor();
@@ -233,7 +239,7 @@ describe("the board page", () => {
     await openBoard();
     fake().refuseNext("POST", "/v1/repositories/1/issues", 500, "the forge refused the issue");
     const backlog = column("Backlog");
-    await backlog.getByRole("button", { name: "Add a card to Backlog, at the foot" }).click();
+    await addFromMenu("Backlog");
     const line = backlog.getByLabel("Title of the new card in Backlog");
     await line.fill("Doomed");
     await line.press("Enter");
@@ -372,9 +378,72 @@ describe("the board page", () => {
         "the sentence is not in the middle of the room it was given",
       ).toBeLessThanOrEqual(2);
       expect(face.shadow, "the empty state lifts itself off the column").toBe("none");
-      // The column keeps its own fill, which is what the sentence rests on.
+      // The column is plain: no fill, and no "+" or "+ Add" in it.
       const lane = await column("In review").evaluate((el) => getComputedStyle(el).backgroundColor);
-      expect(lane, "the column has no fill of its own to sit on").not.toBe("rgba(0, 0, 0, 0)");
+      expect(lane, "the column has a box of its own").toBe("rgba(0, 0, 0, 0)");
+      expect(
+        await column("In review")
+          .getByRole("button", { name: /Add a card/ })
+          .count(),
+      ).toBe(0);
+    },
+  );
+});
+
+describe("column scrolling", () => {
+  it.skipIf(usesRealServer)(
+    "scrolls a column with many cards on its own, and nothing on the board masks",
+    async () => {
+      await fresh();
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await openBoard();
+      // 60 more cards, all in the Backlog.
+      await page.evaluate(async () => {
+        for (let at = 0; at < 60; at += 1) {
+          await fetch("/v1/repositories/1/issues", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Moebius": "1" },
+            body: JSON.stringify({ title: `Filler ${at}`, body: "" }),
+          });
+        }
+      });
+      await column("Backlog").getByText("Filler 59").waitFor({ state: "attached" });
+      const read = () =>
+        page.evaluate(() => {
+          const scrollOf = (el: Element) => el.scrollTop;
+          const section = (name: string) =>
+            document.querySelector(`section[aria-label="${name}"]`) as HTMLElement;
+          const cards = (name: string) => section(name).querySelector("div") as HTMLElement;
+          const doc = document.scrollingElement as Element;
+          const main = document.querySelector("main") as HTMLElement;
+          return {
+            document: doc.scrollHeight - doc.clientHeight,
+            main: main.scrollHeight - main.clientHeight,
+            overflow: cards("Backlog").scrollHeight - cards("Backlog").clientHeight,
+            backlog: scrollOf(cards("Backlog")),
+            other: scrollOf(cards("In progress")),
+            masked: [...main.querySelectorAll("*"), main].filter((el) => {
+              const style = getComputedStyle(el);
+              return (
+                (style.maskImage !== "none" && style.maskImage !== "") ||
+                (style.webkitMaskImage !== "none" && style.webkitMaskImage !== "")
+              );
+            }).length,
+          };
+        });
+      const before = await read();
+      expect(before.document, "the document scrolls").toBe(0);
+      expect(before.main, "the page scrolls as one sheet").toBeLessThan(8);
+      expect(before.overflow, "the column has nothing to scroll").toBeGreaterThan(200);
+      expect(before.masked, "something on the board masks its scroll").toBe(0);
+      const box = await column("Backlog").boundingBox();
+      if (!box) throw new Error("no box");
+      await page.mouse.move(box.x + box.width / 2, box.y + 200);
+      await page.mouse.wheel(0, 600);
+      await expect.poll(async () => (await read()).backlog).toBeGreaterThan(0);
+      const after = await read();
+      expect(after.other, "another column scrolled with it").toBe(0);
+      expect(after.main, "the page scrolled with the column").toBeLessThan(8);
     },
   );
 });
