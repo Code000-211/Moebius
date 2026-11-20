@@ -1,17 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { UsageReport } from "../../api/types/usage";
 import { dayNumber } from "./figures";
-import {
-  dayMeter,
-  doings,
-  heat,
-  modelColours,
-  span,
-  tiles,
-  todayOf,
-  tokenFigure,
-  WEEKS,
-} from "./model";
+import { dayMeter, doings, heat, modelColours, tiles, todayOf, tokenFigure, WEEKS } from "./model";
 
 const report = (extra: Partial<UsageReport> = {}): UsageReport => ({
   today: "2026-10-28",
@@ -82,9 +72,7 @@ describe("the tiles", () => {
     });
   });
 
-  it("tell the span of a window and the tokens used today", () => {
-    expect(span(1)).toBe("today");
-    expect(span(7)).toBe("in the last 7 days");
+  it("tell the tokens used today", () => {
     expect(todayOf(report())).toEqual({ tokens: 500_000, budget: 8_000_000 });
     expect(todayOf(report({ days: [] }))).toEqual({ tokens: 0, budget: 8_000_000 });
   });

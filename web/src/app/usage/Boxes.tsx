@@ -6,7 +6,7 @@
 import type { ReactNode } from "react";
 import type { UsageReport } from "../../api/types/usage";
 import { cn } from "../../ui/lib/cn";
-import { noun, plural } from "../../ui/lib/format";
+import { noun } from "../../ui/lib/format";
 import { Box } from "../../ui/page/Box";
 import { CELL, Table } from "../../ui/page/List";
 import { duration, grouped, share, short } from "./figures";
@@ -34,14 +34,11 @@ const figure = (content: ReactNode) => (
 );
 
 /** The stacked bar of the models' shares; the table under it names every share in words. */
-export function ModelsBox({ report, span }: { report: UsageReport; span: string }) {
+export function ModelsBox({ report }: { report: UsageReport }) {
   const colour = modelColours(report);
   const total = report.models.reduce((sum, model) => sum + model.tokens, 0);
   return (
-    <Box
-      title="Tokens by model"
-      aside={`${short(total)} ${span} across ${plural(report.models.length, "model", "models")}`}
-    >
+    <Box title="Tokens by model">
       {report.models.length === 0 ? (
         <p className="m-0 text-base text-secondary">{NOTHING_ONCE}</p>
       ) : (
@@ -57,7 +54,10 @@ export function ModelsBox({ report, span }: { report: UsageReport; span: string 
               />
             ))}
           </div>
-          <Table head={["Model", "Tokens", "Share", "Calls", "Tokens per call", "From cache"]}>
+          <Table
+            figures
+            head={["Model", "Tokens", "Share", "Calls", "Tokens per call", "From cache"]}
+          >
             {report.models.map((model) => (
               <tr key={model.model}>
                 {word(
@@ -84,14 +84,11 @@ export function ModelsBox({ report, span }: { report: UsageReport; span: string 
 }
 
 /** What the model did with its time, as a bar for each activity against the one that took longest. */
-export function TimeBox({ report, span }: { report: UsageReport; span: string }) {
+export function TimeBox({ report }: { report: UsageReport }) {
   const list = doings(report.activities);
   const longest = Math.max(1, ...list.map((each) => each.modelMs));
   return (
-    <Box
-      title="Where the model time goes"
-      aside={`${duration(report.totals.model_ms / 1000)} ${span}`}
-    >
+    <Box title="Where the model time goes">
       {list.length === 0 ? (
         <p className="m-0 text-base text-secondary">{NOTHING}</p>
       ) : (
@@ -133,7 +130,7 @@ export function WaitsBox({ report }: { report: UsageReport }) {
           No tool call waited long enough to be worth naming.
         </p>
       ) : (
-        <Table head={["Tool call", "Calls", "Waited"]}>
+        <Table figures head={["Tool call", "Calls", "Waited"]}>
           {report.tool_waits.map((wait) => (
             <tr key={wait.tool}>
               {word(code(wait.tool))}
@@ -150,14 +147,11 @@ export function WaitsBox({ report }: { report: UsageReport }) {
 /** What each agent used, so a person can see where the tokens came from. */
 export function AgentsBox({ report }: { report: UsageReport }) {
   return (
-    <Box
-      title="By agent"
-      aside={report.agents.length > 0 ? plural(report.agents.length, "agent", "agents") : undefined}
-    >
+    <Box title="By agent">
       {report.agents.length === 0 ? (
         <p className="m-0 text-base text-secondary">{NOTHING}</p>
       ) : (
-        <Table head={["Agent", "Calls", "Tokens", "From cache", "Model time"]}>
+        <Table figures head={["Agent", "Calls", "Tokens", "From cache", "Model time"]}>
           {report.agents.map((agent) => (
             <tr key={agent.agent}>
               {word(agent.agent)}
