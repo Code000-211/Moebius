@@ -42,6 +42,7 @@ impl Engine {
             card.clone(),
             deadline.clone(),
         );
+        let run_limit = self.limits().run_limit;
         m.set(
             "start_runs",
             lua.create_function(move |_, (agent, n, opts): (String, i64, Option<Table>)| {
@@ -62,6 +63,7 @@ impl Engine {
                 };
                 let mut started = Vec::new();
                 let mut failure = None;
+                let mut limited = false;
                 outside_script(&clock, || {
                     for index in 0..n {
                         let variant = Variant {
@@ -69,6 +71,17 @@ impl Engine {
                                 .then(|| models[index % models.len()].as_str()),
                             runner: runner.as_deref(),
                         };
+                        match super::free_run_slots(&app, run_limit) {
+                            Ok(0) => {
+                                limited = true;
+                                break;
+                            }
+                            Ok(_) => {}
+                            Err(e) => {
+                                failure = Some(e.to_string());
+                                break;
+                            }
+                        }
                         let run = super::may_start(&app, &card_copy)
                             .and_then(|()| {
                                 runs.start(
@@ -98,6 +111,13 @@ impl Engine {
                 });
                 if let Some(first) = started.first() {
                     fx.borrow_mut().started_run = Some(*first);
+                }
+                if limited && failure.is_none() {
+                    // As many attempts as there are free slots start; the card waits when none does.
+                    if started.is_empty() {
+                        fx.borrow_mut().waiting = Some(super::api::RUN_LIMIT_REACHED.to_string());
+                    }
+                    return Ok(started);
                 }
                 match failure {
                     // What did start stays: the next tick sees those attempts.
@@ -317,6 +337,30 @@ mod tests {
             assert!(error.contains("held"), "{error}");
         }
         assert!(app.store.runs_for_card(card.id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn start_runs_starts_no_attempt_while_the_run_limit_is_reached() {
+        let (_dir, app, _, repo) = setup_with_harness(None, Arc::new(FakeHarness::default()));
+        let engine = crate::board::testing::engine_with(
+            &app,
+            crate::board::limits::Limits {
+                run_limit: 1,
+                ..Default::default()
+            },
+        );
+        let card = app.create_issue(repo, "Hard", "", OWNER_AUTHOR).unwrap();
+        let other = app.create_issue(repo, "Busy", "", OWNER_AUTHOR).unwrap();
+        let busy = app
+            .store
+            .add_run(Some(other.id), "Coder", "fake", "code")
+            .unwrap();
+        let effects = run(&engine, &card, r#"moebius.start_runs("Coder", 3)"#).unwrap();
+        assert_eq!(effects.waiting.as_deref(), Some("the run limit is reached"));
+        assert!(app.store.runs_for_card(card.id).unwrap().is_empty());
+        app.store.set_run_status(busy.id, "succeeded").unwrap();
+        run(&engine, &card, r#"moebius.start_runs("Coder", 1)"#).unwrap();
+        assert_eq!(app.store.runs_for_card(card.id).unwrap().len(), 1);
     }
 
     #[test]
