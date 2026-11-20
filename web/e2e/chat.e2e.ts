@@ -128,7 +128,7 @@ describe("the chat page", () => {
       const title = page.getByTestId("chat-title");
       await title.waitFor();
       await page.getByTestId("chat-chip").click();
-      await page.getByRole("button", { name: "Rename" }).click();
+      await page.getByTestId("chat-chip-panel").getByRole("button", { name: "Rename" }).click();
       const field = page.getByTestId("chat-title-field");
       await field.fill("Where the login screen went wrong");
       await field.press("Enter");
@@ -738,10 +738,10 @@ describe("an open chat", () => {
       const run = fake().chats[0]?.id as number;
       fake().agentStart(run);
       await page.getByTestId("chat-chip").click();
-      await page.getByRole("button", { name: "Stop" }).click();
+      await page.getByTestId("chat-chip-panel").getByRole("button", { name: "Stop" }).click();
       await page.getByText("Stop this chat?").waitFor();
       await page.getByRole("button", { name: "Keep going" }).click();
-      await page.getByRole("button", { name: "Stop" }).click();
+      await page.getByTestId("chat-chip-panel").getByRole("button", { name: "Stop" }).click();
       await page.getByRole("button", { name: "Stop chat" }).click();
       // The panel stays only while it is used; with the chat stopped it is closed again.
       await page.getByTestId("chat-chip").click();

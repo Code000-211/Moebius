@@ -24,3 +24,20 @@ export function changeDiff(id: number): Promise<Diff> {
 export function ports(): Promise<Port[]> {
   return get<Port[]>("/v1/ports");
 }
+
+/** Whether all agents are paused, as `POST /v1/runs/pause` and `/resume` answer. */
+export interface PauseState {
+  paused: boolean;
+  by?: string;
+  at?: number;
+}
+
+/** Holds every run and starts none until the agents are resumed. */
+export function pauseRuns(): Promise<PauseState> {
+  return post<PauseState>("/v1/runs/pause", {});
+}
+
+/** Lets the agents work again. */
+export function resumeRuns(): Promise<PauseState> {
+  return post<PauseState>("/v1/runs/resume", {});
+}
