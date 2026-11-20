@@ -327,9 +327,7 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
   }
   if (what === "terminal") {
     // The shell is the reason the board's terminal is a sheet, so the sheet is measured like one.
-    await page
-      .getByRole("button", { name: "Terminal" })
-      .evaluate((button) => (button as HTMLElement).click());
+    await page.getByRole("button", { name: "Terminal" }).click();
     await page.getByRole("dialog").first().waitFor({ timeout: 5_000 });
     return;
   }
@@ -344,11 +342,9 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
     await page.getByTestId("diff").waitFor({ timeout: 5_000 });
     return;
   }
-  // Below 1024px the card's dock lies over the board's head bar, so a pointer click would land on the dock; the
-  // button is pressed by the page instead, because what is measured is the dialog it opens.
-  await page
-    .getByRole("button", { name: "New issue" })
-    .evaluate((button) => (button as HTMLElement).click());
+  // A real pointer click: Playwright waits for the button to receive it, so a dock lying over the head bar fails the
+  // audit instead of being stepped around.
+  await page.getByRole("button", { name: "New issue" }).click();
   await page.getByRole("dialog").first().waitFor({ timeout: 5_000 });
 }
 

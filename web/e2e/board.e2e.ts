@@ -1212,10 +1212,10 @@ describe("the dock", () => {
     expect(tile.x + tile.width).toBeLessThanOrEqual(lane.x + lane.width);
   });
 
-  it.skipIf(usesRealServer)("gives the card drawer a column of its own from 1024px", async () => {
+  it.skipIf(usesRealServer)("gives the card drawer a column of its own from 1280px", async () => {
     await fresh();
     await openBoard();
-    await page.setViewportSize({ width: 1024, height: 800 });
+    await page.setViewportSize({ width: 1280, height: 800 });
     await card(3).click();
     await page.waitForURL("**/board/1?card=3");
     await dock().getByRole("heading", { name: "Document the API" }).waitFor();
@@ -1223,12 +1223,34 @@ describe("the dock", () => {
     expect(box, "the drawer is drawn").not.toBeNull();
     // Beside the board, against the right column that holds the card's properties (272px, then 6px of air from the
     // window's edge), rather than stacked under the whole board.
-    expect(box?.x).toBeGreaterThanOrEqual(1024 - 6 - 272 - 384 - 1);
+    expect(box?.x).toBeGreaterThanOrEqual(1280 - 6 - 272 - 384 - 1);
     expect(box?.y).toBeLessThan(100);
-    // Below 1024px it stacks again.
-    await page.setViewportSize({ width: 900, height: 800 });
-    await expect.poll(async () => (await dock().boundingBox())?.x ?? 9999).toBeLessThan(900 - 384);
+    // Below 1280px it stacks again.
+    await page.setViewportSize({ width: 1100, height: 800 });
+    await expect.poll(async () => (await dock().boundingBox())?.x ?? 9999).toBeLessThan(1100 - 384);
   });
+
+  it.skipIf(usesRealServer)(
+    "leaves the head bar's buttons to the pointer with a card open, at 800px and 1024px",
+    async () => {
+      await fresh();
+      for (const width of [800, 1024]) {
+        await page.setViewportSize({ width, height: 800 });
+        await page.goto(`${server.url}/board/1?card=1`);
+        await dock().getByRole("heading", { name: "Add a feature" }).waitFor();
+        // A pointer click lands where the button is drawn: Playwright waits for the button to receive it, so a dock
+        // lying over the head bar times the click out.
+        await page.getByRole("button", { name: "Terminal" }).click({ timeout: 5_000 });
+        await page.getByRole("dialog").waitFor();
+        await page.keyboard.press("Escape");
+        await page.getByRole("dialog").waitFor({ state: "detached" });
+        await page.getByRole("button", { name: "New issue" }).click({ timeout: 5_000 });
+        await page.getByRole("dialog").waitFor();
+        await page.keyboard.press("Escape");
+        await page.getByRole("dialog").waitFor({ state: "detached" });
+      }
+    },
+  );
 
   it.skipIf(usesRealServer)("keeps the chosen card in the address, and closes", async () => {
     await fresh();

@@ -254,6 +254,15 @@ export function Decision({ item, snapshot }: { item: InboxItem; snapshot: Snapsh
           {typeof item.data.report === "string" ? item.data.report : ""}
         </div>
       )}
+      {href !== null && item.card_id !== null && (
+        <Link
+          to={href}
+          className="w-fit text-sm text-accent no-underline hover:underline"
+          data-testid="open-card"
+        >
+          Open card
+        </Link>
+      )}
       {footer()}
       {notice && <Notice tone="error">{notice}</Notice>}
     </div>

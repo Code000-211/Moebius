@@ -60,21 +60,26 @@ describe.skipIf(usesRealServer)("mentions", () => {
       title: "Ship the first release",
       body: "@owner can you look?",
     });
-    await page.getByRole("tab", { name: /^Mentions 2/ }).click();
+    // The mention is under Mentions alone; the assignment has a tab of its own; the sidebar counts both.
+    await page.getByRole("tab", { name: /^Mentions 1/ }).click();
     const notices = page.getByTestId("notice");
-    await notices.nth(1).waitFor();
-    // Newest first: the mention, then the assignment; both unread, and the sidebar counts them.
+    await notices.first().waitFor();
+    expect(await notices.count()).toBe(1);
     expect(await notices.first().getAttribute("data-kind")).toBe("mentioned");
     await notices.first().getByText("@lea mentioned you: @owner can you look?").waitFor();
-    expect(await page.locator("[data-unread]").count()).toBe(2);
     await inbox.getByText(String(waiting + 2), { exact: true }).waitFor();
+    await page.getByRole("tab", { name: /^Assigned 1/ }).click();
+    await page.locator('[data-testid="notice"][data-kind="assigned"]').waitFor();
+    expect(await notices.count()).toBe(1);
+    expect(await page.locator("[data-unread]").count()).toBe(1);
 
-    // Choosing the assignment reads it and opens the card.
-    await notices.nth(1).click();
+    // Choosing the assignment reads it without a reload and opens the card.
+    await notices.first().click();
     await page.waitForURL(/\/board\/1\?card=\d+/);
     await page.goBack();
-    await page.getByRole("tab", { name: /^Mentions 1/ }).waitFor();
-    expect(await page.locator("[data-unread]").count()).toBe(1);
+    await page.getByRole("tab", { name: /^Assigned 1/ }).waitFor();
+    expect(await page.locator("[data-unread]").count()).toBe(0);
+    await inbox.getByText(String(waiting + 1), { exact: true }).waitFor();
   });
 
   it("says when nothing mentions the person", async () => {

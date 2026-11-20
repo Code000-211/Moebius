@@ -20,6 +20,13 @@
 @import "@xyflow/react/dist/style.css";
 @import "./canvas.css";
 
+/* The width from which the board's card drawer stands beside the board. Below it the drawer lies under the board: the
+ * window holds the sidebar and the right column (272px each side) and the drawer is 384px, and under about 1280px
+ * that leaves the board and the head bar's buttons no room, so the drawer would cover them. */
+@theme {
+  --breakpoint-dock: 80rem;
+}
+
 @theme inline {
   --color-*: initial;
   --color-transparent: transparent;

@@ -712,6 +712,32 @@ fn a_merged_card(server: &Server, repo: i64, title: &str, reproduce: bool) -> i6
 }
 
 #[tokio::test]
+async fn the_answer_to_starting_a_trial_is_trying_even_when_the_trial_is_over_at_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let origin = harness_origin(dir.path());
+    let server = server(dir.path(), &origin);
+    a_card_that_failed(&server, dir.path());
+    // Proposals that name no cards end the moment their thread runs; the answer must still be the status written.
+    let ids: Vec<i64> = (0..40)
+        .map(|n| {
+            propose(
+                &server,
+                dir.path(),
+                &format!("p{n}"),
+                ("rules.md", &format!("## p{n}\nBe plain.\n")),
+                &[],
+            )
+        })
+        .collect();
+    let api = Api::start(&server).await;
+    let mut events = server.app.bus.subscribe();
+    for id in ids {
+        // `try_now` asserts that the answer is `trying`.
+        assert_eq!(api.try_now(&server, id, &mut events).await.0, "untried");
+    }
+}
+
+#[tokio::test]
 async fn a_proposal_that_fixes_its_card_but_breaks_a_regression_card_is_not_offered() {
     let dir = tempfile::tempdir().unwrap();
     let origin = harness_origin(dir.path());
