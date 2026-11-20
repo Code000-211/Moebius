@@ -23,17 +23,16 @@ import {
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
-import { Field, Select, TextArea } from "../../ui/page/Field";
+import { FieldRow, Rows, Select, TextArea } from "../../ui/page/Field";
 import { chosenOrFirst, ListCard, ListDetail } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
-import { PropertyFields } from "../../ui/page/Properties";
 import { SkeletonCard, SkeletonList } from "../../ui/page/Skeleton";
 import { Committed, EditorHead, useDraft, useDrafts } from "../harness/form";
 import { HarnessSetup, WHY_MUTED } from "../harness/HarnessSetup";
 import { ImportPanel } from "../harness/ImportPanel";
+import { Section } from "../settings/parts";
 import { blankForm, formOf, type McpForm, mcpRequest } from "./model";
 
 // biome-ignore lint/suspicious/noTemplateCurlyInString: a value may be a ${NAME} reference, which the server resolves
@@ -353,8 +352,8 @@ function ServerEditor({
   const values = remote ? "headers" : "variables";
 
   return (
-    <div className="flex flex-col gap-8">
-      <Box className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4">
         <EditorHead
           name={form.name}
           naming={naming}
@@ -375,116 +374,112 @@ function ServerEditor({
           ) : (
             <Committed commit={notice.commit} />
           ))}
-      </Box>
+      </div>
 
-      <PropertyFields label={`Properties of ${form.name || "the new server"}`}>
-        <Field label="Kind" className="max-w-xs">
-          {(id) => (
+      <Section title={`Properties of ${form.name || "the new server"}`}>
+        <Rows>
+          <FieldRow label="Kind" wide>
             <Select
-              id={id}
               options={[COMMAND, URL]}
               value={remote ? URL : COMMAND}
               onChange={(kind) => change({ remote: kind === URL })}
             />
-          )}
-        </Field>
-        {remote ? (
-          <Field
-            label="URL"
-            hint="The address the server answers at, such as https://search.example.com/mcp."
-          >
-            {(id) => (
+          </FieldRow>
+          {remote ? (
+            <FieldRow
+              label="URL"
+              description="The address the server answers at, such as https://search.example.com/mcp."
+              wide
+            >
               <Input
-                id={id}
                 mono
                 value={form.url}
                 placeholder="https://search.example.com/mcp"
                 onChange={(event) => change({ url: event.target.value })}
               />
-            )}
-          </Field>
-        ) : (
-          <>
-            <Field label="Command" hint="The program the server starts.">
-              {(id) => (
+            </FieldRow>
+          ) : (
+            <>
+              <FieldRow label="Command" description="The program the server starts." wide>
                 <Input
-                  id={id}
                   mono
                   value={form.command}
                   placeholder="docs-server"
                   onChange={(event) => change({ command: event.target.value })}
                 />
-              )}
-            </Field>
-            <Field label="Arguments, one per line" hint="Blank lines are left out.">
-              {(id) => (
+              </FieldRow>
+              <FieldRow
+                label="Arguments, one per line"
+                description="Blank lines are left out."
+                wide
+              >
                 <TextArea
-                  id={id}
                   mono
                   rows={4}
                   value={form.args}
                   placeholder={"--root\n/srv/docs"}
                   onChange={(event) => change({ args: event.target.value })}
                 />
-              )}
-            </Field>
-          </>
-        )}
-      </PropertyFields>
+              </FieldRow>
+            </>
+          )}
+        </Rows>
+      </Section>
 
-      <Box
+      <Section
         title={remote ? "Headers" : "Environment"}
         aside={
           <>
             Values may be <span className="font-mono text-sm">{REFERENCE}</span>
           </>
         }
-        className="flex flex-col gap-4"
       >
-        {form.rows.length === 0 && (
-          <p className="m-0 text-base text-secondary">
-            {`No ${values} yet. A ${remote ? "header" : "variable"} the server needs from the machine it runs on goes here.`}
-          </p>
-        )}
-        {form.rows.map((row, at) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: the rows have no identity but their place
-          <div key={at} className="flex flex-wrap items-center gap-3">
-            <Input
-              mono
-              className="min-w-40 flex-1"
-              aria-label={`Name ${at + 1}`}
-              value={row[0]}
-              placeholder="NAME"
-              onChange={(event) => setRow(at, 0, event.target.value)}
-            />
-            <Input
-              mono
-              className="min-w-40 flex-1"
-              aria-label={`Value ${at + 1}`}
-              value={row[1]}
-              placeholder={VALUE_HINT}
-              onChange={(event) => setRow(at, 1, event.target.value)}
-            />
+        <Rows>
+          {form.rows.length === 0 && (
+            <p className="m-0 py-3 text-sm text-secondary">
+              {`No ${values} yet. A ${remote ? "header" : "variable"} the server needs from the machine it runs on goes here.`}
+            </p>
+          )}
+          {form.rows.map((row, at) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: the rows have no identity but their place
+            <div key={at} className="flex min-h-12 flex-wrap items-center gap-3 py-2">
+              <Input
+                mono
+                className="min-w-40 flex-1"
+                aria-label={`Name ${at + 1}`}
+                value={row[0]}
+                placeholder="NAME"
+                onChange={(event) => setRow(at, 0, event.target.value)}
+              />
+              <Input
+                mono
+                className="min-w-40 flex-1"
+                aria-label={`Value ${at + 1}`}
+                value={row[1]}
+                placeholder={VALUE_HINT}
+                onChange={(event) => setRow(at, 1, event.target.value)}
+              />
+              <Button
+                variant="danger"
+                size="sm"
+                aria-label={`Remove row ${at + 1}`}
+                onClick={() => change({ rows: form.rows.filter((_, place) => place !== at) })}
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+          <div className="py-3">
             <Button
-              variant="danger"
+              variant="secondary"
               size="sm"
-              aria-label={`Remove row ${at + 1}`}
-              onClick={() => change({ rows: form.rows.filter((_, place) => place !== at) })}
+              onClick={() => change({ rows: [...form.rows, ["", ""]] })}
             >
-              Remove
+              {remote ? "Add header" : "Add variable"}
             </Button>
           </div>
-        ))}
-        <div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => change({ rows: [...form.rows, ["", ""]] })}
-          >
-            {remote ? "Add header" : "Add variable"}
-          </Button>
-        </div>
-      </Box>
+        </Rows>
+      </Section>
     </div>
   );
 }

@@ -54,6 +54,10 @@ export interface FakeServer {
   stop(): Promise<void>;
   /** Listens again on the same port after `stop`. */
   restart(): Promise<void>;
+  /** How many event streams are open now: counted up when one connects and down when it closes. */
+  openStreams(): number;
+  /** How many runs the open event streams have asked for the events of, each counted once. */
+  watchedRuns(): number;
   /** Sends an event to every connected event stream. */
   broadcast(event: { kind: string; data: unknown }): void;
   /** Tells the person with `handle` something, as the server does for a mention: the notice and its event. */
@@ -125,6 +129,8 @@ function json(response: ServerResponse, value: unknown): void {
 
 export async function startFakeServer(): Promise<FakeServer> {
   /** Each session's person, by id. */
+  /** What each person chose for themselves (`/v1/preferences`), by person id. */
+  const preferences = new Map<number, boolean>();
   const sessions = new Map<string, number>();
   const people = [
     { id: 1, handle: "owner", name: "Owner", role: "owner", disabled: false, created_at: 0 },
@@ -168,6 +174,8 @@ export async function startFakeServer(): Promise<FakeServer> {
   };
   const codes = new Set<string>([LOGIN_CODE]);
   const sockets = new Set<WebSocket>();
+  /** The runs each open event stream has asked for. */
+  const watching = new Map<WebSocket, Set<number>>();
   const guardLog: Array<string | undefined> = [];
   const events = new WebSocketServer({ noServer: true });
   const broadcast = (event: { kind: string; data: unknown }) => {
@@ -240,6 +248,13 @@ export async function startFakeServer(): Promise<FakeServer> {
     const asker = sessions.get(cookieOf(request) as string) as number;
     const askerRole = people.find((p) => p.id === asker)?.role;
     const mine = (id: number) => [...accessTokens.entries()].filter(([, t]) => t.person_id === id);
+    if (path === "/v1/preferences") {
+      if (method === "PUT") {
+        const body = JSON.parse(await readBody(request)) as { show_thinking_expanded: boolean };
+        preferences.set(asker, body.show_thinking_expanded);
+      }
+      return json(response, { show_thinking_expanded: preferences.get(asker) ?? false });
+    }
     if (path === "/v1/people" && method === "GET") return json(response, people);
     if (path === "/v1/people" && method === "POST") {
       if (askerRole !== "owner") return text(response, 403, "only an owner can do this");
@@ -403,7 +418,24 @@ export async function startFakeServer(): Promise<FakeServer> {
     }
     events.handleUpgrade(request, socket, head, (ws) => {
       sockets.add(ws);
-      ws.on("close", () => sockets.delete(ws));
+      const asked = new Set<number>();
+      watching.set(ws, asked);
+      ws.on("message", (data) => {
+        try {
+          const request = JSON.parse(String(data)) as {
+            subscribe?: number[];
+            unsubscribe?: number[];
+          };
+          for (const id of request.subscribe ?? []) asked.add(id);
+          for (const id of request.unsubscribe ?? []) asked.delete(id);
+        } catch {
+          // Not a request of the stream; nothing to count.
+        }
+      });
+      ws.on("close", () => {
+        sockets.delete(ws);
+        watching.delete(ws);
+      });
     });
   });
 
@@ -422,6 +454,8 @@ export async function startFakeServer(): Promise<FakeServer> {
     loginUrl: `${url}/?login=${LOGIN_CODE}`,
     token: TOKEN,
     guardLog,
+    openStreams: () => sockets.size,
+    watchedRuns: () => new Set([...watching.values()].flatMap((asked) => [...asked])).size,
     board,
     chat,
     runs,

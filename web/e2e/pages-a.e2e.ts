@@ -80,7 +80,8 @@ function lastBody(
 }
 
 const alert = (text: string | RegExp) => page.getByRole("alert").filter({ hasText: text });
-const items = () => page.getByTestId("inbox-item");
+/** The rows of the items of the inbox; the cards of the Running and Earlier groups are rows too, and are not these. */
+const items = () => page.locator('[data-testid="inbox-item"]:not([data-kind="card"])');
 const item = (title: string | RegExp) => items().filter({ hasText: title });
 /** What to decide about the item chosen, in the right sidebar. */
 const decision = () => page.getByTestId("inbox-decision");
@@ -89,6 +90,13 @@ async function choose(title: string | RegExp) {
   await item(title).click();
   await decision().waitFor();
   return decision();
+}
+const cardWindow = () => page.getByRole("dialog", { name: "Card inspector" });
+/** Clicks the row of an item about a card, which opens the card window (not the sidebar). */
+async function openCard(title: string | RegExp) {
+  await item(title).click();
+  await cardWindow().waitFor();
+  return cardWindow();
 }
 const path = () => new URL(page.url()).pathname + new URL(page.url()).search;
 
@@ -104,10 +112,11 @@ describe("the inbox", () => {
     await open("/inbox");
     await page.getByRole("heading", { name: "Inbox", level: 1 }).waitFor();
     if (usesRealServer) {
-      await page.getByRole("heading", { name: "All caught up" }).waitFor();
-      await page.getByText(/Nothing is waiting on you\./).waitFor();
+      await page.getByText("Nothing needs you", { exact: true }).waitFor();
+      await page.getByRole("link", { name: "Open Fleet" }).waitFor();
     } else {
-      await page.getByRole("tab", { name: /^All \d+/ }).waitFor();
+      await page.getByRole("tab", { name: "All", exact: true }).waitFor();
+      await page.getByTestId("group-row").filter({ hasText: "Needs you" }).waitFor();
     }
   });
 
@@ -132,54 +141,39 @@ describe("the inbox", () => {
       server.broadcast?.({ kind: "card_updated", data: {} });
       await expect.poll(() => items().count()).toBe(11);
       expect(await items().count()).toBe(11);
-      const kinds = [
+      // The row says the one reason; an item about a card opens the card window, the others show the sidebar.
+      const reasons = [
+        ["Plan ready", "Fix the login redirect"],
+        ["Ready to merge", "Speed up the build is ready to merge"],
+        ["Stuck: reached the round limit", "Stop the flaky test is stuck"],
+        ["Retro proposal", "Let the Coder read the tests first"],
+        ["Retro proposal", "Raise the round limit to 7"],
+        ["Decision model", "The decision model can take over tool_call"],
+        ["Issues from a grilling", "3 issues from a grilling"],
+        ["Report from a grilling", "A report from a grilling"],
+        ["Change from a chat", "Add a retry helper"],
+        ["Closed without a merge", "Ship the first release"],
+        ["Needs design", "Needs a mockup"],
+      ] as const;
+      for (const [reason, title] of reasons) {
+        await item(title).getByText(reason, { exact: true }).waitFor();
+      }
+      const sidebars = [
         [
-          "Outside issue",
-          "Fix the login redirect",
-          "A person has to approve this issue: An outside author opened it.",
-        ],
-        ["Ready to merge", "Speed up the build is ready to merge", "CI green"],
-        ["Stuck", "Stop the flaky test is stuck", "Stopped: reached the round limit."],
-        [
-          "Retro proposal",
           "Let the Coder read the tests first",
           "Regression set: past merged cards it must not break",
         ],
-        [
-          "Retro proposal",
-          "Raise the round limit to 7",
-          "The Retro proposes this change to moebius.toml.",
-        ],
-        ["Decision model", "The decision model can take over tool_call", "95% of 120 judgements"],
-        [
-          "Issues from a grilling",
-          "3 issues from a grilling",
-          "The Grilling partner ended in these issues.",
-        ],
-        [
-          "Report from a grilling",
-          "A report from a grilling",
-          "The export is slow because of the join.",
-        ],
-        ["Change from a chat", "Add a retry helper", "Harness configuration · chat"],
-        [
-          "Closed without a merge",
-          "Ship the first release",
-          "Pull request #18 was closed without a merge.",
-        ],
-        ["Needs design", "Needs a mockup", "no mockup yet"],
+        ["Raise the round limit to 7", "The Retro proposes this change to moebius.toml."],
+        ["The decision model can take over tool_call", "95% of 120 judgements"],
+        ["3 issues from a grilling", "The Grilling partner ended in these issues."],
+        ["A report from a grilling", "The export is slow because of the join."],
+        ["Add a retry helper", "Harness configuration · chat"],
       ] as const;
-      for (const [tag, title, words] of kinds) {
-        // The row says the kind and the title; what it is about is read in the sidebar, once it is chosen.
-        await item(title).getByText(tag, { exact: true }).waitFor();
+      for (const [title, words] of sidebars) {
         const sidebar = await choose(title);
         await sidebar.getByText(words).first().waitFor();
       }
-      // The facts of a change that waits, the diff of a proposal for the configuration and the trials of one for the harness.
-      const merge = await choose("Speed up the build");
-      await merge.getByText("2", { exact: true }).waitFor();
-      await merge.getByText("96k tok").waitFor();
-      await merge.getByText("moebius/card-5").waitFor();
+      // The diff of a proposal for the configuration and the trials of one for the harness.
       await (await choose("Raise the round limit")).getByText("+round_limit = 7").waitFor();
       await (await choose("Let the Coder read")).getByText("It passed in one round.").waitFor();
       // Newest first.
@@ -217,83 +211,64 @@ describe("the inbox", () => {
   );
 
   it.skipIf(usesRealServer)(
-    "filters by kind with its tabs and by repository with the bar, and keeps both across a reload",
+    "has the tabs All and Mentions, and shows the filter bar only for a filter the address holds",
     async () => {
       await open("/inbox");
       await items().first().waitFor();
+      const tabs = page.getByRole("tablist", { name: "Kind" });
+      expect(await tabs.getByRole("tab").allTextContents()).toEqual(["All", "Mentions"]);
+      const bar = page.getByRole("search", { name: "Filter the inbox" });
+      expect(await bar.count()).toBe(0);
       const made = await context.request.post(`${server.url}/v1/repositories`, {
         headers: { "X-Moebius": "1" },
         data: { name: "second", url: "/srv/git/second" },
       });
       expect(made.ok()).toBe(true);
-      const kinds = page.getByRole("tablist", { name: "Kind" });
-      const bar = page.getByRole("search", { name: "Filter the inbox" });
-      await kinds.getByRole("tab", { name: "All 9" }).waitFor();
+      const { id } = (await made.json()) as { id: number };
 
-      await kinds.getByRole("tab", { name: "Stuck 1" }).click();
-      // Counted once the list has been filtered, so the count is not of the list before the click.
-      await expect.poll(() => items().count()).toBe(1);
-      expect(await kinds.getByRole("tab", { name: "Stuck 1" }).getAttribute("aria-selected")).toBe(
-        "true",
-      );
-      expect(path()).toBe("/inbox?kind=stuck");
-
-      await addFilter(page, bar, "Repository", "second");
-      await page.getByText("No item matches the filter.").waitFor();
-      expect(path()).toMatch(/^\/inbox\?kind=stuck&repository=\d+$/);
-      await bar.getByRole("button", { name: "Repository is second", exact: true }).click();
-      await page.getByRole("menuitemradio", { name: "demo", exact: true }).click();
-      await page.getByText("No item matches the filter.").waitFor({ state: "detached" });
-      await expect.poll(() => items().count()).toBe(1);
-      expect(await items().count()).toBe(1);
-
-      // The address holds both, so a reload shows the same page.
-      await page.reload();
-      await bar.getByRole("button", { name: "Repository is demo", exact: true }).waitFor();
-      await expect.poll(() => items().count()).toBe(1);
-      expect(await kinds.getByRole("tab", { name: "Stuck 1" }).getAttribute("aria-selected")).toBe(
-        "true",
-      );
-
-      await bar.getByRole("button", { name: "Clear filters" }).click();
-      await kinds.getByRole("tab", { name: /^All \d+$/ }).click();
+      await page.goto(`${server.url}/inbox?repository=${id}`);
+      await bar.waitFor();
+      await page.getByText("Nothing here with those filters").waitFor();
+      await page.getByRole("button", { name: "Show everything" }).click();
+      expect(path()).toBe("/inbox");
       await expect.poll(() => items().count()).toBe(9);
+      expect(await bar.count()).toBe(0);
     },
   );
 
-  it.skipIf(usesRealServer)("approves an outside issue and the item leaves", async () => {
-    await open("/inbox");
-    await (await choose("Fix the login redirect")).getByRole("button", { name: "Approve" }).click();
-    await items().filter({ hasText: "Fix the login redirect" }).waitFor({ state: "detached" });
-    expect(board().requests.some((r) => r.path === "/v1/cards/2/approve")).toBe(true);
-  });
+  it.skipIf(usesRealServer)(
+    "approves an outside issue from its row without opening the card, and the item leaves",
+    async () => {
+      await open("/inbox");
+      await item("Fix the login redirect").getByRole("button", { name: "Approve plan" }).click();
+      await items().filter({ hasText: "Fix the login redirect" }).waitFor({ state: "detached" });
+      expect(board().requests.some((r) => r.path === "/v1/cards/2/approve")).toBe(true);
+      expect(await cardWindow().count()).toBe(0);
+      expect(path()).toBe("/inbox");
+    },
+  );
 
   it.skipIf(usesRealServer)(
-    "merges a change, and shows the sentence of the server when it refuses",
+    "merges a change from its card window, and shows the sentence of the server when it refuses",
     async () => {
       await open("/inbox");
       board().refuseNext("POST", "/v1/changes/1/merge", 422, "the branch does not merge cleanly");
-      const merge = await choose("Speed up the build");
+      const merge = await openCard("Speed up the build");
       await merge.getByRole("button", { name: "Merge" }).click();
-      await merge
-        .getByRole("alert")
-        .filter({ hasText: "the branch does not merge cleanly" })
-        .waitFor();
-      // The buttons are back and the item stays; the second try goes through.
+      await alert("the branch does not merge cleanly").waitFor();
+      // The item stays; the second try goes through.
       await merge.getByRole("button", { name: "Merge" }).click();
       await item("Speed up the build").waitFor({ state: "detached" });
-      await decision().waitFor({ state: "detached" });
       expect(board().requests.filter((r) => r.path === "/v1/changes/1/merge")).toHaveLength(2);
     },
   );
 
   it.skipIf(usesRealServer)("asks for a reason before it sends a change back", async () => {
     await open("/inbox");
-    const merge = await choose("Speed up the build");
+    const merge = await openCard("Speed up the build");
     await merge.getByRole("button", { name: "Reject with a reason" }).click();
     expect(await merge.getByRole("button", { name: "Send back" }).isDisabled()).toBe(true);
     await merge.getByRole("button", { name: "Cancel" }).click();
-    await merge.getByRole("button", { name: "Reject with a reason" }).waitFor();
     await merge.getByRole("button", { name: "Reject with a reason" }).click();
     await merge.getByLabel("Why? The next round is told").fill("Add a test for the cache.");
     await merge.getByRole("button", { name: "Send back" }).click();
@@ -303,9 +278,9 @@ describe("the inbox", () => {
     });
   });
 
-  it.skipIf(usesRealServer)("retries a stuck card", async () => {
+  it.skipIf(usesRealServer)("retries a stuck card from its card window", async () => {
     await open("/inbox");
-    await (await choose("Stop the flaky test")).getByRole("button", { name: "Retry" }).click();
+    await (await openCard("Stop the flaky test")).getByRole("button", { name: "Retry" }).click();
     await items().filter({ hasText: "Stop the flaky test" }).waitFor({ state: "detached" });
     expect(board().requests.some((r) => r.path === "/v1/cards/6/retry")).toBe(true);
   });
@@ -391,20 +366,20 @@ describe("the inbox", () => {
     },
   );
 
-  it.skipIf(usesRealServer)("opens the live view of a card and the chat of a change", async () => {
-    await open("/inbox");
-    await (await choose("Speed up the build"))
-      .getByRole("button", { name: "Open live view" })
-      .click();
-    // The card opens as a window over the Inbox, which stays where it is.
-    await page.getByRole("dialog", { name: "Card inspector" }).waitFor();
-    expect(new URL(page.url()).pathname).toBe("/inbox");
-    expect(new URL(page.url()).searchParams.get("card")).toBe("5");
-    await page.keyboard.press("Escape");
-    await page.getByRole("dialog", { name: "Card inspector" }).waitFor({ state: "detached" });
-    await (await choose("Add a retry helper")).getByRole("button", { name: "Open chat" }).click();
-    await page.waitForURL("**/chat/9");
-  });
+  it.skipIf(usesRealServer)(
+    "opens the card of a row as a window, and the chat of a change",
+    async () => {
+      await open("/inbox");
+      await openCard("Speed up the build");
+      // The card opens as a window over the Inbox, which stays where it is.
+      expect(new URL(page.url()).pathname).toBe("/inbox");
+      expect(new URL(page.url()).searchParams.get("card")).toBe("5");
+      await page.keyboard.press("Escape");
+      await cardWindow().waitFor({ state: "detached" });
+      await (await choose("Add a retry helper")).getByRole("button", { name: "Open chat" }).click();
+      await page.waitForURL("**/chat/9");
+    },
+  );
 
   it.skipIf(usesRealServer)("merges the change of a chat", async () => {
     await open("/inbox");
@@ -414,21 +389,18 @@ describe("the inbox", () => {
   });
 
   it.skipIf(usesRealServer)(
-    "shows quiet rows with an unread dot that goes once the item is read, and counts the tabs by kind",
+    "shows rows with an unread dot that goes once the item is read",
     async () => {
       await open("/inbox");
       await items().first().waitFor();
-      // A row has no button of its own, and every item starts unread.
-      const rows = page.getByTestId("inbox-item");
-      expect(await rows.getByRole("button").count()).toBe(0);
+      // A row has no button but the one action of the row that waits for a plan, and every item starts unread.
+      const rows = items();
+      expect(await rows.getByRole("button").count()).toBe(1);
       const dots = page.getByTestId("unread-dot");
       expect(await dots.count()).toBe(await rows.count());
-      const kinds = page.getByRole("tablist", { name: "Kind" });
-      await kinds.getByRole("tab", { name: "Stuck 1" }).waitFor();
-      await kinds.getByRole("tab", { name: "Proposals 2" }).waitFor();
 
-      await choose("Stop the flaky test");
-      const stuck = item("Stop the flaky test");
+      await choose("Let the Coder read the tests first");
+      const stuck = item("Let the Coder read the tests first");
       expect(await stuck.getByTestId("unread-dot").count()).toBe(0);
       expect(await dots.count()).toBe((await rows.count()) - 1);
       expect(path()).toMatch(/^\/inbox\?item=\d+$/);
@@ -436,10 +408,36 @@ describe("the inbox", () => {
       // The reading is kept for this browser, and the choice by the address.
       await page.reload();
       await decision().waitFor();
-      expect(await item("Stop the flaky test").getByTestId("unread-dot").count()).toBe(0);
+      expect(
+        await item("Let the Coder read the tests first").getByTestId("unread-dot").count(),
+      ).toBe(0);
       expect(await dots.count()).toBe((await rows.count()) - 1);
     },
   );
+
+  it.skipIf(usesRealServer)("draws few rows of 2000 items, and the last is reachable", async () => {
+    await open("/inbox");
+    await items().first().waitFor();
+    for (let n = 0; n < 2000; n++) {
+      fake().addInboxItem({ kind: "stuck", card_id: null, title: `Seeded item ${n}`, data: {} });
+    }
+    server.broadcast?.({ kind: "card_updated", data: {} });
+    await item("Seeded item 1999").waitFor();
+    expect(await page.getByTestId("inbox-item").count()).toBeLessThan(100);
+    const list = page.getByRole("list", { name: "Inbox" });
+    await list.focus();
+    await page.keyboard.press("End");
+    // The last row of the whole list is drawn: its place is the size of the list.
+    await expect
+      .poll(async () => {
+        const rows = page.getByRole("listitem");
+        const last = rows.last();
+        return (
+          (await last.getAttribute("aria-posinset")) === (await last.getAttribute("aria-setsize"))
+        );
+      })
+      .toBe(true);
+  });
 
   it.skipIf(usesRealServer)("shows an item that arrives while the page is open", async () => {
     await open("/inbox");
@@ -452,7 +450,6 @@ describe("the inbox", () => {
     });
     server.broadcast?.({ kind: "card_updated", data: {} });
     await item("A new stuck card").waitFor();
-    await page.getByRole("tab", { name: "Stuck 2" }).waitFor();
   });
 });
 
@@ -916,7 +913,7 @@ describe("the fleet", () => {
     await open("/fleet");
     await page.getByRole("heading", { name: "Fleet", level: 1 }).waitFor();
     if (usesRealServer) await page.getByText("Nothing is working.").first().waitFor();
-    else await page.getByTestId("fleet-row").first().waitFor();
+    else await page.getByTestId("list-row").first().waitFor();
   });
 
   it.skipIf(usesRealServer)(
@@ -954,19 +951,20 @@ describe("the fleet", () => {
       server.broadcast?.({ kind: "run_started", data: { run: chat } });
       server.broadcast?.({ kind: "lagged", data: { missed: 1 } });
 
-      await expect.poll(() => page.getByTestId("fleet-row").count()).toBe(2);
-      const tiles = page.getByTestId("fleet-row");
-      const card = tiles.filter({ hasText: "#1 Add a feature" });
-      // The rows are grouped by their agent, whose name heads the group.
-      await page.getByRole("heading", { name: "Coder 1" }).waitFor();
-      await page.getByRole("heading", { name: "Moebius 1" }).waitFor();
-      await card.getByText("code", { exact: true }).waitFor();
-      await card.getByText("demo · 12k tokens").waitFor();
+      await expect.poll(() => page.getByTestId("list-row").count()).toBe(2);
+      const tiles = page.getByTestId("list-row");
+      const card = tiles.filter({ hasText: "Add a feature" });
+      // The runs are one list under "Running", not grouped by agent.
+      await page.getByTestId("group-row").getByText("Running").waitFor();
+      await card.getByText("Code ·").waitFor();
       await card.getByText("cargo test").waitFor();
       const talk = tiles.filter({ hasText: "Write a ready.luau" });
-      await talk.getByText("chat", { exact: true }).waitFor();
-      await talk.getByText("demo", { exact: false }).waitFor();
       await talk.getByText("ready.luau", { exact: false }).first().waitFor();
+      // Stop and the tokens are on a row only while the pointer is on it.
+      expect(await page.getByRole("button", { name: /^Stop/ }).count()).toBe(0);
+      await card.hover();
+      await card.getByText("12k tokens").waitFor();
+      await card.getByRole("button", { name: /^Stop/ }).waitFor();
       // A card that is done is not there.
       expect(await tiles.filter({ hasText: "Ship the first release" }).count()).toBe(0);
 
@@ -992,32 +990,19 @@ describe("the fleet", () => {
     },
   );
 
-  /**
-   * A step of a run is one line in a tile, the way a conversation shows it: a long command is read by its end, so the
-   * line keeps that end and fades the beginning it has no room for, rather than turning the step into a paragraph.
-   */
-  it.skipIf(usesRealServer)(
-    "keeps a long command on one line and fades the part that is out of view",
-    async () => {
-      await open("/fleet");
-      const command = `grep -rn "review_conflicts" ${"crates/moebius-core/src/board/".repeat(8)} | head -12`;
-      const chat = server.chat?.seed({
-        status: "running",
-        title: "Look for the review gate",
-      }) as number;
-      server.chat?.toolCall(chat, { id: "c1", tool: "bash", args: { command }, output: "" });
-      const tile = page.getByTestId("fleet-row").filter({ hasText: "Look for the review gate" });
-      const line = tile.getByText("bash", { exact: true }).locator("xpath=following-sibling::*[1]");
-      await line.getByText(command, { exact: true }).waitFor();
-
-      // One line of words, faded where it ran out, and the whole command still reachable.
-      expect((await line.boundingBox())?.height ?? 0).toBeLessThan(30);
-      expect(await line.evaluate((el) => getComputedStyle(el).maskImage)).toContain(
-        "linear-gradient",
-      );
-      expect(await line.getAttribute("title")).toBe(command);
-    },
-  );
+  /** A step of a run is one line of a 36px row: a long command is cut with an ellipsis and the row keeps its height. */
+  it.skipIf(usesRealServer)("keeps a long command on one line of a 36px row", async () => {
+    await open("/fleet");
+    const command = `grep -rn "review_conflicts" ${"crates/moebius-core/src/board/".repeat(8)} | head -12`;
+    const chat = server.chat?.seed({
+      status: "running",
+      title: "Look for the review gate",
+    }) as number;
+    server.chat?.toolCall(chat, { id: "c1", tool: "bash", args: { command }, output: "" });
+    const tile = page.getByTestId("list-row").filter({ hasText: "Look for the review gate" });
+    await tile.getByText("bash", { exact: false }).waitFor();
+    expect((await tile.boundingBox())?.height ?? 0).toBeLessThanOrEqual(37);
+  });
 
   it.skipIf(usesRealServer)(
     "shows that a question waits for the person, and drops a chat that ended",
@@ -1030,8 +1015,10 @@ describe("the fleet", () => {
         asks: true,
       }) as number;
       server.broadcast?.({ kind: "lagged", data: { missed: 1 } });
-      const tile = page.getByTestId("fleet-row").filter({ hasText: "Which branch?" });
-      await tile.getByText("asks you").waitFor();
+      const tile = page.getByTestId("list-row").filter({ hasText: "Which branch?" });
+      await tile.getByText("Asks you").waitFor();
+      // The run that waits for the person is under its own group.
+      await page.getByTestId("group-row").getByText("Needs you").waitFor();
       const chat = server.chat?.chats.find((each) => each.id === asking);
       if (chat) chat.status = "succeeded";
       server.broadcast?.({ kind: "run_ended", data: { run: asking, status: "succeeded" } });
@@ -1049,25 +1036,25 @@ describe("the fleet", () => {
         repository_id: 1,
       }) as number;
       server.broadcast?.({ kind: "run_started", data: { run: chat } });
-      await expect.poll(() => page.getByTestId("fleet-row").count()).toBe(2);
-      const tiles = page.getByTestId("fleet-row");
+      await expect.poll(() => page.getByTestId("list-row").count()).toBe(2);
+      const tiles = page.getByTestId("list-row");
       const bar = page.getByRole("search", { name: "Filter the runs" });
 
       await addFilter(page, bar, "Agent", "Coder");
       await expect.poll(() => tiles.count()).toBe(1);
-      await tiles.filter({ hasText: "#1 Add a feature" }).waitFor();
+      await tiles.filter({ hasText: "Add a feature" }).waitFor();
       expect(path()).toBe("/fleet?agent=Coder");
 
       await page.reload();
       await bar.getByRole("button", { name: "Agent is Coder", exact: true }).waitFor();
-      await tiles.filter({ hasText: "#1 Add a feature" }).waitFor();
+      await tiles.filter({ hasText: "Add a feature" }).waitFor();
       expect(await tiles.count()).toBe(1);
 
       // A second filter narrows further: no run of the Coder is a chat.
       await addFilter(page, bar, "Kind", "chat");
       await page.getByText("No run matches").waitFor();
       await bar.getByRole("button", { name: "Clear filters" }).click();
-      await expect.poll(() => page.getByTestId("fleet-row").count()).toBe(2);
+      await expect.poll(() => page.getByTestId("list-row").count()).toBe(2);
       expect(await tiles.count()).toBe(2);
       expect(path()).toBe("/fleet");
     },
@@ -1203,7 +1190,6 @@ describe("get started", () => {
   it("loads for a real server and for the fake", async () => {
     await open("/start");
     await page.getByRole("heading", { name: "Get started", level: 1 }).waitFor();
-    await page.getByRole("heading", { name: "Before the first card" }).waitFor();
     expect(await page.getByTestId("start-step").count()).toBe(5);
   });
 
@@ -1213,12 +1199,9 @@ describe("get started", () => {
     const steps = page.getByTestId("start-step");
     await steps
       .filter({ hasText: "Connect a model provider" })
-      .getByText("Done", { exact: true })
+      .getByTestId("status-done")
       .waitFor();
-    await steps
-      .filter({ hasText: "Install Pi-Bolt" })
-      .getByText("To do", { exact: true })
-      .waitFor();
+    await steps.filter({ hasText: "Install Pi-Bolt" }).getByTestId("status-notStarted").waitFor();
     await page
       .getByText("Could not run pi-bolt: it was not found. Set the program on the Settings page.")
       .waitFor();
@@ -1246,7 +1229,7 @@ describe("get started", () => {
     await page
       .getByTestId("start-step")
       .filter({ hasText: "Keep agents, skills and MCP servers in a repository" })
-      .getByText("Done", { exact: true })
+      .getByTestId("status-done")
       .waitFor();
   });
 
@@ -1278,7 +1261,6 @@ describe("get started", () => {
       await page.getByRole("link", { name }).click();
       await page.waitForURL(`**${target}`);
       await page.goBack();
-      await page.getByRole("heading", { name: "Before the first card" }).waitFor();
     }
   });
 });

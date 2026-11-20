@@ -15,13 +15,12 @@ import type { PluginProcess } from "../../api/types/models";
 import { usePackageSheet } from "../../packages/PackageSheetContext";
 import { Button } from "../../ui/components/Button";
 import { plural } from "../../ui/lib/format";
-import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
 import { Notice } from "../../ui/page/Notice";
-import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import type { Tone } from "../../ui/page/StateLabel";
 import { StateLabel } from "../../ui/page/StateLabel";
+import { AreaTitle, Section } from "../settings/parts";
 import { InstalledPackages } from "./InstalledPackages";
 import { PluginSwitch, SWITCHED_BUILT_INS } from "./PluginSwitch";
 
@@ -53,21 +52,7 @@ export function restartsLabel(restarts: number): string {
   return restarts === 0 ? "Never" : restarts === 1 ? "Once" : `${restarts} times`;
 }
 
-/** One fact of a plugin: its name above, its value under, monospace only where a character matters. */
-function Fact({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
-  return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <span className="text-sm font-semibold text-secondary">{label}</span>
-      <span
-        className={`min-w-0 break-words text-base text-text tabular-nums ${mono ? "font-mono text-sm" : ""}`}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-/** A plugin, with the state it is in at its right and its facts under. */
+/** A plugin: its name with the state it is in and its switch on one row, its facts under it as rows. */
 function PluginRow({
   name,
   state,
@@ -84,8 +69,8 @@ function PluginRow({
   control?: ReactNode;
 }) {
   return (
-    <div data-testid="plugin-row" data-off={off || undefined} className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+    <div data-testid="plugin-row" data-off={off || undefined} className="border-t border-hairline">
+      <div className="flex min-h-9 flex-wrap items-center justify-between gap-x-6 gap-y-1 pt-2">
         <h3
           className={`m-0 min-w-0 break-all font-mono text-sm font-semibold ${off ? "text-secondary" : "text-text"}`}
         >
@@ -96,7 +81,21 @@ function PluginRow({
           {control}
         </div>
       </div>
-      <div className={`grid gap-4 sm:grid-cols-3 ${off ? "opacity-60" : ""}`}>{facts}</div>
+      <dl className={`m-0 flex flex-col pb-2 ${off ? "opacity-60" : ""}`}>{facts}</dl>
+    </div>
+  );
+}
+
+/** One fact of a plugin: its name at the left, its value at the right, monospace only where a character matters. */
+function Fact({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
+  return (
+    <div className="flex min-h-7 flex-wrap items-baseline justify-between gap-x-6">
+      <dt className="text-sm text-muted">{label}</dt>
+      <dd
+        className={`m-0 min-w-0 break-words text-right text-sm text-text tabular-nums ${mono ? "font-mono" : ""}`}
+      >
+        {value}
+      </dd>
     </div>
   );
 }
@@ -112,7 +111,7 @@ export function PluginsPage() {
   if (plugins.isPending) {
     return (
       <>
-        <PageHeader title="Plugins" actions={browse} />
+        <AreaTitle title="Plugins" actions={browse} />
         <SkeletonCard lines={4} message="Reading the plugins" />
       </>
     );
@@ -120,7 +119,7 @@ export function PluginsPage() {
   if (plugins.isError) {
     return (
       <>
-        <PageHeader title="Plugins" actions={browse} />
+        <AreaTitle title="Plugins" actions={browse} />
         <Notice
           tone="error"
           action={
@@ -145,14 +144,13 @@ export function PluginsPage() {
   );
   return (
     <>
-      <PageHeader
-        title="Plugins"
-        actions={browse}
-        context={`${plural(loaded.length, "plugin", "plugins")} loaded; a call into one is refused after ${limit} s.`}
-      />
-      <div className="flex flex-col gap-8">
+      <AreaTitle title="Plugins" actions={browse} />
+      <div className="flex flex-col">
         <InstalledPackages onBrowse={() => sheet.open("moebius")} />
-        <Box title="Loaded plugins" className="flex flex-col gap-6">
+        <Section
+          title="Loaded plugins"
+          aside={`${plural(loaded.length, "plugin", "plugins")}; a call into one is refused after ${limit} s.`}
+        >
           {loaded.length === 0 ? (
             <Empty
               plain
@@ -197,12 +195,11 @@ export function PluginsPage() {
               />
             ))
           )}
-        </Box>
+        </Section>
         {processes.length > 0 && (
-          <Box
+          <Section
             title="Plugins in their own process"
             aside="Started with the server; a refusal or a stop is written to its log."
-            className="flex flex-col gap-6"
           >
             {processes.map(({ plugin, process }) => {
               const runs = runsLabel(process);
@@ -225,7 +222,7 @@ export function PluginsPage() {
                 />
               );
             })}
-          </Box>
+          </Section>
         )}
       </div>
     </>

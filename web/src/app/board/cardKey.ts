@@ -15,6 +15,13 @@ export function cardKey(card: Pick<Card, "number" | "project_key" | "project_num
     : `#${card.number}`;
 }
 
+/** The address of the card's own page; a card whose project has no key is shown on its board. */
+export function cardPagePath(card: Card): string {
+  return card.project_key
+    ? `/card/${cardKey(card)}`
+    : `/board/${card.repository_id}?card=${card.id}`;
+}
+
 /** The card's name, with the number of its issue on the forge beside the key when `forge` says it has one. */
 export function cardName(
   card: Pick<Card, "number" | "project_key" | "project_number">,

@@ -14,6 +14,7 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
 import { TimeBar } from "../../ui/page/TimeBar";
+import { CardRows } from "../board/CardRows";
 import { CloseDialog } from "./CycleDialogs";
 import { STATE_WORDS } from "./CycleProgress";
 import { chart, percent, periodWords, perPointWords, progressWords, stateOf } from "./model";
@@ -152,23 +153,18 @@ function Body({ detail }: { detail: CycleDetail }) {
         ))}
       </dl>
       <BurnUp detail={detail} />
-      <ul className="m-0 mt-6 flex list-none flex-col p-0" aria-label={`Cards of ${detail.name}`}>
-        {detail.cards.map((card) => (
-          <li
-            key={card.id}
-            className="flex min-h-9 min-w-0 items-baseline gap-2 border-b border-hairline py-2 text-sm"
-          >
-            <span className="min-w-0 flex-1 truncate text-text">{card.title}</span>
-            <span className="shrink-0 text-secondary tabular-nums">
-              {card.estimate === null ? "No estimate" : `${card.estimate} pt`}
-            </span>
-            <span className="shrink-0 text-secondary">{card.done ? "Done" : card.column}</span>
-          </li>
-        ))}
+      <div className="mt-6">
+        <CardRows
+          label={`Cards of ${detail.name}`}
+          cards={detail.cards.map((card) => ({
+            ...card,
+            note: card.estimate === null ? "No estimate" : `${card.estimate} pt`,
+          }))}
+        />
         {detail.cards.length === 0 && (
-          <li className="text-sm text-secondary">No card yet. Put one in from its properties.</li>
+          <p className="m-0 text-sm text-secondary">No card yet. Put one in from its properties.</p>
         )}
-      </ul>
+      </div>
     </>
   );
 }

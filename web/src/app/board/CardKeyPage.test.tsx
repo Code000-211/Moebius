@@ -1,18 +1,37 @@
 // @vitest-environment jsdom
-/** `/card/WEB-24` opens the card on its board, whatever the case of the key; a key no card has says so. */
+/** `/card/WEB-24` shows the card as a page, whatever the case of the key; a key no card has says so. */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Board } from "../../api/types/board";
 import { CardKeyPage } from "./CardKeyPage";
+import { card } from "./cardPropertiesFixtures";
+import { NewIssueProvider } from "./NewIssueHost";
 
-const CARD = { id: 42, number: 13, project_id: 7, repository_id: 3, column: "Backlog" };
+const CARD = card(42, {
+  number: 13,
+  project_key: "WEB",
+  project_number: 24,
+  title: "Fix the login redirect",
+});
+const board: Board = {
+  repository: {
+    id: 1,
+    name: "demo",
+    path: "/r",
+    forge: "none",
+    default_branch: "main",
+    home_project_id: 1,
+    github: null,
+    trusted: [],
+  },
+  cards: [CARD],
+  round_limit: 5,
+  waiting: {},
+  changes: [],
+};
 const requested: string[] = [];
-
-function Where() {
-  const at = useLocation();
-  return <p>{`at ${at.pathname}${at.search}`}</p>;
-}
 
 function open(path: string) {
   render(
@@ -20,10 +39,11 @@ function open(path: string) {
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
       <MemoryRouter initialEntries={[path]}>
-        <Routes>
-          <Route path="/card/:key" element={<CardKeyPage />} />
-          <Route path="*" element={<Where />} />
-        </Routes>
+        <NewIssueProvider>
+          <Routes>
+            <Route path="/card/:key" element={<CardKeyPage />} />
+          </Routes>
+        </NewIssueProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -36,16 +56,17 @@ beforeEach(() => {
     vi.fn(async (input: string) => {
       const path = String(input);
       requested.push(path);
-      // Only the snapshot is slow to answer: the card's page must not wait for it.
-      if (path === "/v1/snapshot") return new Promise(() => {});
       const byKey = path.startsWith("/v1/cards/by-key/");
       const found = path === "/v1/cards/by-key/WEB-24";
       const ok = !byKey || found;
-      return {
-        ok,
-        status: ok ? 200 : 404,
-        text: async () => JSON.stringify(found ? CARD : byKey ? { error: "no such card" } : []),
-      };
+      const body = found
+        ? CARD
+        : byKey
+          ? { error: "no such card" }
+          : path === "/v1/snapshot"
+            ? { boards: [board], inbox: [] }
+            : [];
+      return { ok, status: ok ? 200 : 404, text: async () => JSON.stringify(body) };
     }),
   );
 });
@@ -54,20 +75,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("the address of a card by its key", () => {
-  it("opens the card on its board", async () => {
+describe("the page of a card by its key", () => {
+  it("shows the card as a page: no window, no scrim, and the card's actions", async () => {
     open("/card/web-24");
-    expect(await screen.findByText("at /board/3?card=42")).toBeTruthy();
-  });
-
-  it("asks for the card by its key and starts the card's reads while the snapshot is still on its way", async () => {
-    open("/card/web-24");
-    await screen.findByText("at /board/3?card=42");
-    await vi.waitFor(() => expect(requested).toContain("/v1/cards/42/comments"));
+    expect(await screen.findByText("Fix the login redirect")).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Card inspector" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Close the inspector" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Edit issue" })).toBeTruthy();
     expect(requested).toContain("/v1/cards/by-key/WEB-24");
-    expect(requested).toContain("/v1/cards/42/history");
-    expect(requested).toContain("/v1/projects/7/scripts/Backlog");
-    expect(requested.filter((path) => path === "/v1/snapshot")).toHaveLength(1);
   });
 
   it("says so when no card has the key", async () => {

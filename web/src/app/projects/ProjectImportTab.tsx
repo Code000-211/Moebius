@@ -10,14 +10,14 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { storeSecret } from "../../api/calls/models";
 import { importJira } from "../../api/calls/templates";
-import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { Project } from "../../api/types/projects";
 import type { JiraImport, JiraReport } from "../../api/types/templates";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
+import { useErrorToast } from "../../ui/lib/useErrorToast";
 import { Box } from "../../ui/page/Box";
-import { Field, Select, TextArea } from "../../ui/page/Field";
+import { FieldRow, Rows, Select, TextArea } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 
 /** `Jira user = handle` on each line, as the map the route takes; a line that is not one is named. */
@@ -66,6 +66,7 @@ export function ProjectImportTab({ project, canEdit }: { project: Project; canEd
       }
     },
   });
+  useErrorToast(run.error, "The import failed.");
   if (!canEdit) {
     return (
       <Box title="Import from Jira">
@@ -80,10 +81,10 @@ export function ProjectImportTab({ project, canEdit }: { project: Project; canEd
     url.trim() !== "" && jira.trim() !== "" && secretOk && bad === null && !run.isPending;
   return (
     <div className="flex flex-col gap-6">
-      <Box title="Import from Jira">
+      <Box>
         <form
           aria-label="Import from Jira"
-          className="flex max-w-xl flex-col gap-4"
+          className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
             if (ready) run.mutate();
@@ -95,89 +96,98 @@ export function ProjectImportTab({ project, canEdit }: { project: Project; canEd
             links, sprints as cycles and epics as milestones. It can be run again and makes nothing
             twice; there is no preview, so a first run on a small project shows what it does.
           </p>
-          <Field label="Jira address" hint="Such as https://your-site.atlassian.net.">
-            <Input
-              value={url}
-              placeholder="https://your-site.atlassian.net"
-              autoComplete="off"
-              onChange={(event) => setUrl(event.target.value)}
-            />
-          </Field>
-          <Field label="Jira project key" hint="Letters, digits and _, such as WEB.">
-            <Input
-              value={jira}
-              mono
-              autoComplete="off"
-              onChange={(event) => setJira(event.target.value)}
-            />
-          </Field>
-          <Field
-            label="Email"
-            hint="For Jira Cloud, whose API token goes with an email. Leave empty for a personal access token of Jira Server or Data Center."
-          >
-            <Input
-              value={email}
-              type="email"
-              autoComplete="off"
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </Field>
-          <Field
-            label="Secret name"
-            hint="The name the token is kept under on the server; it starts with jira-."
-            error={secret.trim() !== "" && !secretOk ? "The name starts with jira-." : undefined}
-          >
-            <Input
-              value={secret}
-              mono
-              autoComplete="off"
-              onChange={(event) => setSecret(event.target.value)}
-            />
-          </Field>
-          <Field
-            label="API token"
-            hint="Stored on the server under the secret name and never sent with the import. Leave empty to use the one already stored."
-          >
-            <Input
-              value={token}
-              type="password"
-              autoComplete="new-password"
-              onChange={(event) => setToken(event.target.value)}
-            />
-          </Field>
-          <Field
-            label="People"
-            hint="“People” makes a disabled person for each Jira user; “Names” makes none and writes the name into what they wrote."
-          >
-            <Select
-              aria-label="People"
-              options={[
-                ["people", "Make people"],
-                ["names", "Keep names only"],
-              ]}
-              value={users}
-              onChange={(next) => setUsers(next as "people" | "names")}
-            />
-          </Field>
-          <Field
-            label="Users who exist already"
-            hint="One per line, Jira account id, email or name, then = and the handle of a person here."
-            error={bad ? `“${bad}” is not Jira user = handle.` : undefined}
-          >
-            <TextArea
-              mono
-              rows={3}
-              value={mapText}
-              placeholder="ada@example.com = ada"
-              onChange={(event) => setMapText(event.target.value)}
-            />
-          </Field>
-          {run.isError && (
-            <Notice tone="error">
-              <span className="font-semibold">The import failed. </span>
-              {sayError(run.error, "Try again.")}
-            </Notice>
-          )}
+          <Rows>
+            <FieldRow
+              wide
+              label="Jira address"
+              description="Such as https://your-site.atlassian.net."
+            >
+              <Input
+                value={url}
+                placeholder="https://your-site.atlassian.net"
+                autoComplete="off"
+                onChange={(event) => setUrl(event.target.value)}
+              />
+            </FieldRow>
+            <FieldRow
+              wide
+              label="Jira project key"
+              description="Letters, digits and _, such as WEB."
+            >
+              <Input
+                value={jira}
+                mono
+                autoComplete="off"
+                onChange={(event) => setJira(event.target.value)}
+              />
+            </FieldRow>
+            <FieldRow
+              wide
+              label="Email"
+              description="For Jira Cloud, whose API token goes with an email. Leave empty for a personal access token of Jira Server or Data Center."
+            >
+              <Input
+                value={email}
+                type="email"
+                autoComplete="off"
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            </FieldRow>
+            <FieldRow
+              wide
+              label="Secret name"
+              description="The name the token is kept under on the server; it starts with jira-."
+              error={secret.trim() !== "" && !secretOk ? "The name starts with jira-." : undefined}
+            >
+              <Input
+                value={secret}
+                mono
+                autoComplete="off"
+                onChange={(event) => setSecret(event.target.value)}
+              />
+            </FieldRow>
+            <FieldRow
+              wide
+              label="API token"
+              description="Stored on the server under the secret name and never sent with the import. Leave empty to use the one already stored."
+            >
+              <Input
+                value={token}
+                type="password"
+                autoComplete="new-password"
+                onChange={(event) => setToken(event.target.value)}
+              />
+            </FieldRow>
+            <FieldRow
+              wide
+              label="People"
+              description="“People” makes a disabled person for each Jira user; “Names” makes none and writes the name into what they wrote."
+            >
+              <Select
+                aria-label="People"
+                options={[
+                  ["people", "Make people"],
+                  ["names", "Keep names only"],
+                ]}
+                value={users}
+                onChange={(next) => setUsers(next as "people" | "names")}
+              />
+            </FieldRow>
+            <FieldRow
+              wide
+              label="Users who exist already"
+              description="One per line, Jira account id, email or name, then = and the handle of a person here."
+              error={bad ? `“${bad}” is not Jira user = handle.` : undefined}
+            >
+              <TextArea
+                mono
+                rows={3}
+                value={mapText}
+                placeholder="ada@example.com = ada"
+                onChange={(event) => setMapText(event.target.value)}
+              />
+            </FieldRow>
+          </Rows>
           <div>
             <Button type="submit" size="sm" disabled={!ready}>
               {run.isPending ? "Importing" : "Import"}

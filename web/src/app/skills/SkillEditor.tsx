@@ -15,7 +15,7 @@ import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { SkillDetail, SkillSource } from "../../api/types/harness";
 import { Button } from "../../ui/components/Button";
-import { EditorWindow } from "../../ui/components/EditorWindow";
+import { DeleteButton, EditorWindow } from "../../ui/components/EditorWindow";
 import { Input } from "../../ui/components/Input";
 import { ConfirmDelete } from "../../ui/page/ConfirmDelete";
 import { Field } from "../../ui/page/Field";
@@ -110,9 +110,7 @@ export function SkillEditor({
       error={error}
       actions={
         exists ? (
-          <Button variant="danger" size="sm" onClick={() => setDeleting(true)}>
-            Delete skill
-          </Button>
+          <DeleteButton onClick={() => setDeleting(true)}>Delete skill</DeleteButton>
         ) : undefined
       }
       onSave={() => {

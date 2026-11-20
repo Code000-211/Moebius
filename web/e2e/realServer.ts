@@ -27,6 +27,8 @@ export type RunningServer = Pick<FakeServer, "url" | "loginUrl" | "token"> & {
   stop(): Promise<void>;
   /** A real server is not restarted by the tests. */
   restart?: undefined;
+  openStreams?: undefined;
+  watchedRuns?: undefined;
   broadcast?: undefined;
   notify?: undefined;
   board?: undefined;

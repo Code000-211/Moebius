@@ -18,9 +18,9 @@ import { Tooltip } from "./Tooltip";
  * One implementation of a button, for every page.
  *
  * `primary` is the one clear action of a screen and fills with the indigo accent, a white label on it; `secondary` and `ghost` are quieter
- * alternatives beside it; `danger` is the destructive one, which says what it does in its label or, when it is only a
+ * alternatives beside it; `danger` is the destructive one, outlined with its label in `--danger-text` and never filled, which says what it does in its label or, when it is only a
  * trashcan, in its `aria-label`, and `attention` is the action of a warning, which wears the warning's own colours.
- * Both hover to a token of their own (`--error-hover`, `--attention-hover`), opaque and checked for contrast in
+ * The attention one hovers to a token of its own (`--attention-hover`), opaque and checked for contrast in
  * `styles/tokens.test.ts`, so the text stays readable under the pointer. The sizes are the rows of the quiet
  * standard: 28px for `sm`, 32 for `md` and 36 for `lg`, at a radius of 6.
  */
@@ -34,7 +34,8 @@ const buttonVariants = cva(
         secondary:
           "bg-transparent text-text outline outline-1 -outline-offset-1 outline-hairline-strong hover:bg-hover",
         ghost: "bg-transparent text-secondary hover:bg-hover hover:text-text",
-        danger: "bg-error-fill text-error-text hover:bg-error-hover",
+        danger:
+          "bg-transparent text-danger-text outline outline-1 -outline-offset-1 outline-hairline-strong hover:bg-hover",
         attention:
           "bg-attention-fill text-attention-text outline outline-1 -outline-offset-1 outline-attention-border hover:bg-attention-hover",
         icon: "bg-transparent text-secondary hover:bg-hover hover:text-text",

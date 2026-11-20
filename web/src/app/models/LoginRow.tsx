@@ -17,7 +17,7 @@ import { keys } from "../../api/keys";
 import type { Login, UpstreamOAuth } from "../../api/types/models";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { Field } from "../../ui/page/Field";
+import { FieldRow } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { StateLabel } from "../../ui/page/StateLabel";
 
@@ -116,54 +116,57 @@ export function LoginRow({
 
   const busy = step?.kind === "confirming" || step?.kind === "starting";
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
+    <>
+      <FieldRow
+        label="Login"
+        description={`Logs in with OAuth: ${
+          oauth.flow === "device"
+            ? "a code you enter at the provider."
+            : "the provider's page in your browser."
+        }`}
+      >
+        <div className="flex flex-wrap items-center justify-end gap-3">
           <StateLabel tone={oauth.logged_in ? "complete" : "attention"}>
             {oauth.logged_in ? "A login is kept." : "Not logged in."}
           </StateLabel>
-          <span className="min-w-0 break-words text-sm text-secondary">
-            Logs in with OAuth:{" "}
-            {oauth.flow === "device"
-              ? "a code you enter at the provider."
-              : "the provider's page in your browser."}
-          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            title={busy ? "The login is already starting" : undefined}
+            onClick={() => onStep({ kind: "confirming" })}
+          >
+            {oauth.logged_in ? "Log in again" : "Log in"}
+          </Button>
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={busy}
-          title={busy ? "The login is already starting" : undefined}
-          onClick={() => onStep({ kind: "confirming" })}
+      </FieldRow>
+      <div className="flex flex-col gap-3 py-3">
+        <p
+          data-testid="oauth-warning"
+          className="m-0 max-w-prose break-words text-sm text-attention-text"
         >
-          {oauth.logged_in ? "Log in again" : "Log in"}
-        </Button>
+          {oauth.warning}
+        </p>
+        {oauth.needs && (
+          <Notice tone="error">
+            Requests to this provider fail: they need {oauth.needs}, which is not served yet.
+          </Notice>
+        )}
+        {step?.kind === "confirming" && (
+          <div className="flex flex-wrap gap-3">
+            <Button size="sm" onClick={confirm}>
+              I understand, log in
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => onStep(undefined)}>
+              Cancel
+            </Button>
+          </div>
+        )}
+        {step?.kind === "starting" && (
+          <p className="m-0 text-sm text-secondary">Starting the login</p>
+        )}
+        {step?.kind === "failed" && <Notice tone="error">{step.message}</Notice>}
       </div>
-      <p
-        data-testid="oauth-warning"
-        className="m-0 max-w-prose break-words rounded-control bg-attention-fill px-3 py-2 text-sm text-attention-text"
-      >
-        {oauth.warning}
-      </p>
-      {oauth.needs && (
-        <Notice tone="error">
-          Requests to this provider fail: they need {oauth.needs}, which is not served yet.
-        </Notice>
-      )}
-      {step?.kind === "confirming" && (
-        <div className="flex flex-wrap gap-3">
-          <Button size="sm" onClick={confirm}>
-            I understand, log in
-          </Button>
-          <Button variant="secondary" size="sm" onClick={() => onStep(undefined)}>
-            Cancel
-          </Button>
-        </div>
-      )}
-      {step?.kind === "starting" && (
-        <p className="m-0 text-sm text-secondary">Starting the login</p>
-      )}
-      {step?.kind === "failed" && <Notice tone="error">{step.message}</Notice>}
       {step?.kind === "answered" && (
         <Answer
           login={step.login}
@@ -180,7 +183,7 @@ export function LoginRow({
           }}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -200,55 +203,69 @@ function Answer({
   onFinish: () => void;
   onCancel: () => void;
 }) {
-  if (login.state === "logged_in") return <Notice tone="ok">{login.message}</Notice>;
-  if (login.state !== "waiting") return <Notice tone="error">{login.message}</Notice>;
+  if (login.state === "logged_in")
+    return (
+      <div className="py-3">
+        <Notice tone="ok">{login.message}</Notice>
+      </div>
+    );
+  if (login.state !== "waiting")
+    return (
+      <div className="py-3">
+        <Notice tone="error">{login.message}</Notice>
+      </div>
+    );
   const page = login.verification_uri_complete ?? login.verification_uri ?? login.authorize_url;
+  const pasting = !login.user_code && login.authorize_url;
   return (
-    <div className="flex flex-col gap-3">
-      {login.user_code ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <span
-            data-testid="user-code"
-            className="rounded-control bg-code px-3 py-2 font-mono text-sm font-semibold tracking-widest text-text"
-          >
-            {login.user_code}
-          </span>
-          <span className="min-w-0 flex-1 break-words text-sm text-secondary">
-            Enter this code at {login.verification_uri}
-          </span>
+    <>
+      <FieldRow
+        label={login.user_code ? "Code" : "The provider's page"}
+        description={
+          login.user_code
+            ? `Enter this code at ${login.verification_uri}`
+            : "The provider's page opened in a new tab. Log in there."
+        }
+      >
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {login.user_code && (
+            <span
+              data-testid="user-code"
+              className="font-mono text-sm font-semibold tracking-widest text-text"
+            >
+              {login.user_code}
+            </span>
+          )}
+          {page && (
+            <Button asChild variant="secondary" size="sm">
+              <a href={page} target="_blank" rel="noopener noreferrer">
+                {login.user_code ? "Open the page" : "Open the page again"}
+              </a>
+            </Button>
+          )}
         </div>
-      ) : (
-        <p className="m-0 text-base text-text">
-          The provider's page opened in a new tab. Log in there.
-        </p>
-      )}
-      {page && (
-        <div>
-          <Button asChild variant="secondary" size="sm">
-            <a href={page} target="_blank" rel="noopener noreferrer">
-              {login.user_code ? "Open the page" : "Open the page again"}
-            </a>
-          </Button>
-        </div>
-      )}
-      {!login.user_code && login.authorize_url && (
-        <div className="flex flex-col gap-3">
-          <Field
+      </FieldRow>
+      {pasting && (
+        <>
+          <FieldRow
             label="Paste the code or the address you ended on"
-            hint="If the browser cannot reach this machine, copy the address from its address bar after you log in."
+            description="If the browser cannot reach this machine, copy the address from its address bar after you log in."
+            wide
           >
-            {(id) => (
-              <Input
-                id={id}
-                mono
-                value={pasted}
-                placeholder="Code, or http://localhost:1455/auth/callback?code=abc"
-                onChange={(event) => onPasted(event.target.value)}
-                onCommandEnter={onFinish}
-              />
-            )}
-          </Field>
-          <div className="flex flex-wrap items-center gap-3">
+            <Input
+              mono
+              value={pasted}
+              placeholder="Code, or http://localhost:1455/auth/callback?code=abc"
+              onChange={(event) => onPasted(event.target.value)}
+              onCommandEnter={onFinish}
+            />
+          </FieldRow>
+          {problem && (
+            <div className="py-3">
+              <Notice tone="error">{problem}</Notice>
+            </div>
+          )}
+          <FieldRow label="Finish the login">
             <Button
               size="sm"
               disabled={pasted.trim() === ""}
@@ -257,16 +274,17 @@ function Answer({
             >
               Finish login
             </Button>
-            {problem && <Notice tone="error">{problem}</Notice>}
-          </div>
-        </div>
+          </FieldRow>
+        </>
       )}
-      <div className="flex flex-wrap items-center gap-3">
-        <StateLabel tone="progress">Waiting for the login</StateLabel>
-        <Button variant="secondary" size="sm" onClick={onCancel}>
-          Cancel
-        </Button>
-      </div>
-    </div>
+      <FieldRow label="Progress">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <StateLabel tone="progress">Waiting for the login</StateLabel>
+          <Button variant="secondary" size="sm" onClick={onCancel}>
+            Cancel
+          </Button>
+        </div>
+      </FieldRow>
+    </>
   );
 }

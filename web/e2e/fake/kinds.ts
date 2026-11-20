@@ -56,7 +56,8 @@ const CARDS = [
   closed: false,
   labels: [],
   claimed_by: null,
-  assignees: [],
+  // The first owner has the first and the third; someone else the second (the My issues page tells them apart).
+  assignees: [c.id === 2 ? "tom" : "owner"],
   kind: "Bug",
   fields: { Severity: c.severity, Estimate: c.estimate },
 }));
@@ -101,7 +102,11 @@ export function createKindsFake(send: Send): KindsFake {
     let found = CARDS.filter(
       (card) =>
         (!query.has("project") || String(card.project_id) === query.get("project")) &&
-        (!query.has("kind") || card.kind.toLowerCase() === query.get("kind")?.toLowerCase()),
+        (!query.has("kind") || card.kind.toLowerCase() === query.get("kind")?.toLowerCase()) &&
+        (!query.has("assignee") ||
+          card.assignees.some(
+            (handle) => handle === query.get("assignee")?.replace(/^@/, "").toLowerCase(),
+          )),
     );
     for (const [key, value] of query) {
       if (!key.startsWith("field.")) continue;

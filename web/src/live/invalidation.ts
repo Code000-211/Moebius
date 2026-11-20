@@ -81,6 +81,8 @@ export function invalidates(event: ServerEvent): QueryKey[] {
     stale.push(
       keys.snapshot,
       keys.cards,
+      // The issue lists (Issues, My issues) show a card's column, its assignees and whether it is closed.
+      keys.issues,
       keys.projects,
       keys.milestones,
       keys.cycles,

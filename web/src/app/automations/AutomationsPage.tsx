@@ -1,49 +1,41 @@
 /**
- * The Automations page: recurring work that runs on its own. The automations are the list on the left; the one chosen
- * is the detail on the right, where its name, its schedule with a picker of common ones and its next firing, its
- * agent, where its chats work, its prompt and a switch for whether it runs are edited, and its past runs are listed, each of
- * which opens its chat. A save is `POST /v1/automations` or `PUT /v1/automations/{id}`, "Run now" is
- * `POST /v1/automations/{id}/run` and a delete `DELETE /v1/automations/{id}`. The event stream keeps the list and the
- * past runs current, so "in 3 h" and the next firing move on their own.
- *
- * The editor of the one chosen is `AutomationEditor.tsx`, its properties `AutomationProperties.tsx` and a past run
- * `FiringRow.tsx`.
- *
- * The page fills the window and each column scrolls on its own: the past runs of an automation grow without limit, and
- * reading them should not carry the list of automations away with it.
+ * The Automations page: recurring work that runs on its own, as one list of 36px rows: the name, when it fires next
+ * (or why its last firing did not work), and at the right a word where something is off. A row opens the automation in
+ * the editor window (`AutomationEditor.tsx`): its name, its schedule with a picker of common ones, its agent, where its
+ * chats work, its prompt and a switch for whether it runs, and its past runs, each of which opens its chat. "New
+ * automation" opens the same window empty. The chosen automation is in the address (`?automation=<id>`, or `new`), so a
+ * reload and a link keep it open; closing the window takes it out. The event stream keeps the list current, so "in 3 h"
+ * moves on its own.
  */
 import { PlusIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { automations } from "../../api/calls/automations";
-import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { Automation } from "../../api/types/automations";
-import type { TagTone } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
+import { cn } from "../../ui/lib/cn";
 import { useNow } from "../../ui/lib/useNow";
 import { Empty } from "../../ui/page/Empty";
-import { ListCard, ListDetail } from "../../ui/page/List";
-import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
-import { SkeletonCard, SkeletonList } from "../../ui/page/Skeleton";
+import { ReadFailed } from "../../ui/page/ReadFailed";
+import { SkeletonList } from "../../ui/page/Skeleton";
 import { Editor } from "./AutomationEditor";
 import { type Form, newForm, SUGGESTED_AUTOMATIONS, scheduleName, until } from "./model";
 
 const NEW = "new";
 
-/** Whether it will fire. Only a firing that went wrong or was passed over takes a hue of its own. */
-function statusWord(automation: Automation): { label: string; tone: TagTone } {
+/** The one word at the right of a row, where the automation is not simply on. */
+function statusWord(automation: Automation): { text: string; className: string } | null {
   const last = automation.last_firing;
-  if (last?.status === "failed") return { label: "Failed", tone: "error" };
-  if (last?.status === "skipped" && automation.enabled) {
-    return { label: "Skipped", tone: "attention" };
-  }
-  return automation.enabled ? { label: "On", tone: "plain" } : { label: "Off", tone: "plain" };
+  if (last?.status === "failed") return { text: "Failed", className: "text-error-text" };
+  if (last?.status === "skipped" && automation.enabled)
+    return { text: "Skipped", className: "text-attention-text" };
+  return automation.enabled ? null : { text: "Off", className: "text-muted" };
 }
 
-/** The line under a name: when it fires next, or why the last firing did not work. */
+/** The line after a name: when it fires next, or why the last firing did not work. */
 function listLine(automation: Automation, now: number): string {
   const last = automation.last_firing;
   if (last?.status === "failed") return last.reason;
@@ -53,10 +45,45 @@ function listLine(automation: Automation, now: number): string {
   return scheduleName(automation.schedule);
 }
 
+function AutomationRow({
+  automation,
+  now,
+  onOpen,
+}: {
+  automation: Automation;
+  now: number;
+  onOpen: () => void;
+}) {
+  const state = statusWord(automation);
+  return (
+    <button
+      type="button"
+      data-testid="automation-row"
+      aria-label={`Edit automation ${automation.name}`}
+      onClick={onOpen}
+      className="flex h-9 w-full cursor-pointer items-center gap-2.5 border-b border-hairline px-4 text-left text-base text-text hover:bg-row-hover"
+    >
+      <span className="shrink-0 truncate font-medium" style={{ maxWidth: "16rem" }}>
+        {automation.name}
+      </span>
+      <span
+        className={cn(
+          "min-w-0 flex-1 truncate",
+          automation.last_firing?.status === "failed" ? "text-error-text" : "text-muted",
+        )}
+      >
+        {listLine(automation, now)}
+      </span>
+      {state && (
+        <span className={cn("ml-auto shrink-0 text-xs", state.className)}>{state.text}</span>
+      )}
+    </button>
+  );
+}
+
 export function AutomationsPage() {
   const now = useNow();
   const list = useQuery({ queryKey: keys.automations, queryFn: automations });
-  // The automation is in the address (`?automation=<id>`, or `new`), so a reload and a link keep it.
   const [params, setParams] = useSearchParams();
   const asked = params.get("automation");
   const chosen: number | typeof NEW | null =
@@ -77,68 +104,35 @@ export function AutomationsPage() {
     );
   /** The automation the form starts from, when the page offered one. */
   const [starting, setStarting] = useState<Form | null>(null);
-  const [notice, setNotice] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
-  const choose = (next: number | typeof NEW) => {
-    setNotice(null);
-    setChosen(next);
+  const startNew = (from: Form | null) => {
+    setStarting(from);
+    setChosen(NEW);
   };
-
-  const header = (
-    <PageHeader
-      title="Automations"
-      context="Chats that start on a schedule."
-      actions={
-        <Button
-          size="sm"
-          onClick={() => {
-            setStarting(null);
-            choose(NEW);
-          }}
-        >
-          <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
-          New automation
-        </Button>
-      }
-    />
-  );
-  if (list.isPending) {
-    return (
-      <>
-        {header}
-        <ListDetail
-          list={<SkeletonList rows={4} message="Reading the automations" />}
-          detail={<SkeletonCard lines={4} />}
-        />
-      </>
-    );
-  }
-  if (list.error || !list.data) {
-    return (
-      <>
-        {header}
-        <Notice tone="error">{sayError(list.error, "Could not read the automations.")}</Notice>
-      </>
-    );
-  }
   const saved =
-    typeof chosen === "number" ? list.data.find((each) => each.id === chosen) : undefined;
+    typeof chosen === "number" ? list.data?.find((each) => each.id === chosen) : undefined;
 
-  // With none saved there is nothing to list beside the page, so the page is one card that offers a place to start.
-  if (list.data.length === 0) {
-    return (
-      <>
-        {header}
-        {chosen === NEW ? (
-          <Editor
-            key={NEW}
-            now={now}
-            notice={notice}
-            setNotice={setNotice}
-            starting={starting}
-            onCreated={(id) => setChosen(id)}
-            onDeleted={() => setChosen(null)}
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <PageHeader
+        title="Automations"
+        actions={
+          <Button size="sm" onClick={() => startNew(null)}>
+            <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
+            New automation
+          </Button>
+        }
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {list.isPending ? (
+          <SkeletonList rows={4} message="Reading the automations" />
+        ) : list.isError ? (
+          <ReadFailed
+            error={list.error}
+            fallback="Could not read the automations."
+            busy={list.isFetching}
+            onRetry={() => void list.refetch()}
           />
-        ) : (
+        ) : list.data.length === 0 ? (
           <Empty
             title="No automation yet"
             body="An automation starts a chat on a schedule. Pick a starting point, or write your own."
@@ -149,10 +143,7 @@ export function AutomationsPage() {
                     key={each.name}
                     size="sm"
                     variant="secondary"
-                    onClick={() => {
-                      setStarting({ ...newForm(), ...each });
-                      choose(NEW);
-                    }}
+                    onClick={() => startNew({ ...newForm(), ...each })}
                   >
                     {each.name}
                   </Button>
@@ -160,40 +151,26 @@ export function AutomationsPage() {
               </div>
             }
           />
-        )}
-      </>
-    );
-  }
-
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      {header}
-      <ListDetail
-        list={list.data.map((automation) => (
-          <ListCard
-            key={automation.id}
-            title={automation.name}
-            tags={[statusWord(automation)]}
-            line={listLine(automation, now)}
-            alert={automation.last_firing?.status === "failed"}
-            selected={chosen === automation.id}
-            onClick={() => choose(automation.id)}
-          />
-        ))}
-        detail={
-          chosen === NEW || saved ? (
-            <Editor
-              key={saved?.id ?? NEW}
-              saved={saved}
+        ) : (
+          list.data.map((automation) => (
+            <AutomationRow
+              key={automation.id}
+              automation={automation}
               now={now}
-              notice={notice}
-              setNotice={setNotice}
-              onCreated={(id) => setChosen(id)}
-              onDeleted={() => setChosen(null)}
+              onOpen={() => setChosen(automation.id)}
             />
-          ) : null
-        }
-      />
+          ))
+        )}
+      </div>
+      {chosen === NEW || saved ? (
+        <Editor
+          key={saved?.id ?? NEW}
+          saved={saved}
+          starting={starting}
+          now={now}
+          onClose={() => setChosen(null)}
+        />
+      ) : null}
     </div>
   );
 }

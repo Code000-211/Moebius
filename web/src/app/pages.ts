@@ -34,6 +34,7 @@ import {
   TrayArrowDownIcon,
   TrayIcon,
   TreeStructureIcon,
+  UserIcon,
   UsersIcon,
   UsersThreeIcon,
 } from "@phosphor-icons/react";
@@ -53,6 +54,7 @@ export interface PageDef {
 
 export const PAGES: readonly PageDef[] = [
   { path: "inbox", title: "Inbox", group: "", icon: TrayIcon },
+  { path: "my-issues", title: "My issues", group: "", icon: UserIcon },
   { path: "chat", title: "Chat", group: "", icon: ChatCircleIcon },
   { path: "fleet", title: "Fleet", group: "", icon: UsersThreeIcon },
   { path: "automations", title: "Automations", group: "", icon: ClockIcon },

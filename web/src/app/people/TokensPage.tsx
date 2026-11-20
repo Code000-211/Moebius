@@ -5,14 +5,13 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { newOwnToken, ownTokens } from "../../api/calls/people";
-import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { IssuedToken } from "../../api/types/server";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
+import { useErrorToast } from "../../ui/lib/useErrorToast";
 import { Box } from "../../ui/page/Box";
-import { Field } from "../../ui/page/Field";
-import { Notice } from "../../ui/page/Notice";
+import { FieldRow, Rows } from "../../ui/page/Field";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { IssuedNotice, TokensList } from "./TokensList";
 
@@ -28,12 +27,10 @@ export function TokensPage() {
       await queryClient.invalidateQueries({ queryKey: keys.ownTokens });
     },
   });
+  useErrorToast(make.error, "Could not make the token.");
   return (
     <div data-testid="tokens-page" className="flex flex-col gap-6">
-      <PageHeader
-        title="My tokens"
-        context="The tokens you sign in with from the command line and other machines. Revoke one you no longer use."
-      />
+      <PageHeader title="My tokens" />
       <Box title="Make a token">
         <form
           className="flex flex-col gap-3"
@@ -42,16 +39,18 @@ export function TokensPage() {
             make.mutate(name.trim());
           }}
         >
-          <Field label="Name" hint="Where it is used, such as laptop.">
-            <Input value={name} onChange={(event) => setName(event.target.value)} />
-          </Field>
-          {make.isError && (
-            <Notice tone="error">
-              {sayError(make.error, "Could not make the token. Try again.")}
-            </Notice>
-          )}
+          <Rows className="border-t-0">
+            <FieldRow wide label="Name" description="Where it is used, such as laptop.">
+              <Input value={name} onChange={(event) => setName(event.target.value)} />
+            </FieldRow>
+          </Rows>
           {issued && <IssuedNotice issued={issued} />}
-          <Button type="submit" disabled={name.trim() === "" || make.isPending}>
+          <Button
+            type="submit"
+            size="sm"
+            className="self-start"
+            disabled={name.trim() === "" || make.isPending}
+          >
             Make token
           </Button>
         </form>

@@ -47,7 +47,6 @@ export function ProjectsPage() {
   const header = (
     <PageHeader
       title="Projects"
-      context="Every project is a board with its repositories. Its key names its cards."
       actions={
         <>
           <Button asChild size="sm" variant="secondary">
@@ -102,9 +101,9 @@ export function ProjectsPage() {
           }
         />
       ) : (
-        <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3 p-0">
+        <ul className="m-0 list-none border-t border-hairline p-0" aria-label="Projects">
           {projects.map((project) => (
-            <Tile key={project.id} project={project} />
+            <Row key={project.id} project={project} />
           ))}
         </ul>
       )}
@@ -113,43 +112,29 @@ export function ProjectsPage() {
   );
 }
 
-/** One project's tile; it opens the project's settings. */
-function Tile({ project }: { project: Project }) {
-  const body = (
-    <>
-      <span className="flex min-w-0 items-center gap-2">
-        <span
-          aria-hidden
-          className={cn(
-            "inline-grid size-4 shrink-0 place-items-center rounded-control text-xs font-semibold text-on-ink",
-            hue(project.id),
-          )}
-        >
-          {project.key[0]}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-base font-semibold text-text">
-          {project.name}
-        </span>
-        <span className="shrink-0 font-mono text-sm text-secondary">{project.key}</span>
-      </span>
-      <span className="block truncate text-sm text-secondary">{repositoriesText(project)}</span>
-      <span className="flex min-w-0 items-center gap-1">
-        <Members project={project} />
-        <span className="min-w-0 flex-1" />
-        <span className="shrink-0 text-sm text-secondary tabular-nums">{`${project.open_cards} open`}</span>
-      </span>
-    </>
-  );
-  const tile =
-    "flex min-w-0 flex-col gap-3 rounded-card bg-surface p-4 no-underline outline outline-1 -outline-offset-1 outline-hairline";
+/** One project as a row of 36px: its mark, name and key, its repositories, its members and its open cards. It opens the project's settings. */
+function Row({ project }: { project: Project }) {
   return (
     <li data-testid="project" className="min-w-0">
       <Link
         to={`/projects/${project.id}/settings`}
         aria-label={`${project.name}, ${project.key}`}
-        className={tile}
+        className="flex h-9 min-w-0 items-center gap-2.5 border-b border-hairline px-4 text-base text-text no-underline hover:bg-row-hover"
       >
-        {body}
+        <span
+          aria-hidden
+          className={cn(
+            "inline-grid size-4 shrink-0 place-items-center rounded-control text-2xs font-semibold text-on-ink",
+            hue(project.id),
+          )}
+        >
+          {project.key[0]}
+        </span>
+        <span className="min-w-0 shrink truncate font-medium">{project.name}</span>
+        <span className="shrink-0 font-mono text-xs text-muted">{project.key}</span>
+        <span className="min-w-0 flex-1 truncate text-muted">{repositoriesText(project)}</span>
+        <Members project={project} />
+        <span className="w-16 shrink-0 text-right text-xs text-muted tabular-nums">{`${project.open_cards} open`}</span>
       </Link>
     </li>
   );

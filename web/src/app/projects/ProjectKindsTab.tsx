@@ -6,11 +6,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { listKinds, setProjectKinds } from "../../api/calls/kinds";
-import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { Project } from "../../api/types/projects";
-import { Box } from "../../ui/page/Box";
-import { Notice } from "../../ui/page/Notice";
+import { useErrorToast } from "../../ui/lib/useErrorToast";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 
@@ -25,26 +23,20 @@ export function ProjectKindsTab({ project, canEdit }: { project: Project; canEdi
         queryClient.invalidateQueries({ queryKey: keys.issueKinds }),
       ]),
   });
-  if (kinds.isPending)
-    return (
-      <Box title="Kinds">
-        <SkeletonLines lines={3} message="Reading the kinds" />
-      </Box>
-    );
+  useErrorToast(offer.error, "Couldn't change the kinds.");
+  if (kinds.isPending) return <SkeletonLines lines={3} message="Reading the kinds" />;
   if (kinds.isError)
     return (
-      <Box title="Kinds">
-        <ReadFailed
-          error={kinds.error}
-          fallback="The kinds could not be read. Try again."
-          busy={kinds.isFetching}
-          onRetry={() => void kinds.refetch()}
-        />
-      </Box>
+      <ReadFailed
+        error={kinds.error}
+        fallback="The kinds could not be read. Try again."
+        busy={kinds.isFetching}
+        onRetry={() => void kinds.refetch()}
+      />
     );
   const offered = (kind: { projects: number[] }) => kind.projects.includes(project.id);
   return (
-    <Box title="Kinds">
+    <div>
       <div className="flex flex-col gap-3">
         <p className="m-0 max-w-prose text-base text-secondary">
           The kinds of issues this project offers on its cards.{" "}
@@ -61,10 +53,13 @@ export function ProjectKindsTab({ project, canEdit }: { project: Project; canEdi
         {kinds.data.length === 0 ? (
           <p className="m-0 text-base text-secondary">No kind has been made yet.</p>
         ) : (
-          <fieldset className="m-0 flex flex-col gap-1 border-0 p-0">
+          <fieldset className="m-0 border-0 border-t border-hairline p-0">
             <legend className="sr-only">Kinds this project offers</legend>
             {kinds.data.map((kind) => (
-              <label key={kind.id} className="flex min-h-7 items-center gap-2 text-base">
+              <label
+                key={kind.id}
+                className="flex h-9 items-center gap-2 border-b border-hairline text-base"
+              >
                 <input
                   type="checkbox"
                   checked={offered(kind)}
@@ -84,13 +79,7 @@ export function ProjectKindsTab({ project, canEdit }: { project: Project; canEdi
             ))}
           </fieldset>
         )}
-        {offer.isError && (
-          <Notice tone="error">
-            <span className="font-semibold">Couldn't change the kinds. </span>
-            {sayError(offer.error, "Try again.")}
-          </Notice>
-        )}
       </div>
-    </Box>
+    </div>
   );
 }

@@ -13,13 +13,11 @@ import {
   listProjects,
   removeProjectRepository,
 } from "../../api/calls/projects";
-import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { Project } from "../../api/types/projects";
 import { Button } from "../../ui/components/Button";
-import { Box } from "../../ui/page/Box";
+import { useErrorToast } from "../../ui/lib/useErrorToast";
 import { Select } from "../../ui/page/Field";
-import { Notice } from "../../ui/page/Notice";
 
 export function ProjectRepositoriesTab({
   project,
@@ -47,6 +45,7 @@ export function ProjectRepositoriesTab({
     mutationFn: (repository: number) => removeProjectRepository(project.id, repository),
     onSuccess: done,
   });
+  useErrorToast(remove.error ?? add.error, "Couldn't change the repositories.");
   const repositories = (snapshot.data?.boards ?? [])
     .map((board) => board.repository)
     // The repositories that hold a project's own files are no one else's to share.
@@ -59,9 +58,9 @@ export function ProjectRepositoriesTab({
     return projects.data?.find((each) => each.id === home)?.name;
   };
   return (
-    <Box title="Repositories" padded={false}>
+    <div>
       {project.repositories.length === 0 ? (
-        <p className="m-0 p-4 text-base text-secondary">
+        <p className="m-0 border-t border-hairline py-3 text-base text-secondary">
           {project.files != null ? (
             <>
               No repository: this project works on its own files until it has one.{" "}
@@ -74,17 +73,17 @@ export function ProjectRepositoriesTab({
           )}
         </p>
       ) : (
-        <ul className="m-0 list-none p-0" aria-label="Repositories">
+        <ul className="m-0 list-none border-t border-hairline p-0" aria-label="Repositories">
           {project.repositories.map((repository) => (
             <li
               key={repository.id}
               data-testid="project-repository"
-              className="flex min-h-11 flex-wrap items-center gap-3 px-4 py-2"
+              className="flex h-9 items-center gap-2.5 border-b border-hairline text-base"
             >
-              <span className="min-w-0 flex-1 truncate text-base font-semibold text-text">
+              <span className="min-w-0 flex-1 truncate font-medium text-text">
                 {repository.name}
               </span>
-              <span className="text-sm text-secondary">
+              <span className="shrink-0 text-xs text-muted">
                 {repository.home
                   ? "home project"
                   : `home: ${homeName(repository.id) ?? "another project"}`}
@@ -112,16 +111,8 @@ export function ProjectRepositoriesTab({
           ))}
         </ul>
       )}
-      {(remove.isError || add.isError) && (
-        <div className="px-4 pb-4">
-          <Notice tone="error">
-            <span className="font-semibold">Couldn't change the repositories. </span>
-            {sayError(remove.error ?? add.error, "Try again.")}
-          </Notice>
-        </div>
-      )}
       {canEdit && (
-        <div className="flex flex-wrap items-center gap-3 border-t border-hairline p-4">
+        <div className="flex flex-wrap items-center gap-3 py-3">
           {offered.length > 0 && (
             <>
               <Select
@@ -148,6 +139,6 @@ export function ProjectRepositoriesTab({
           </Button>
         </div>
       )}
-    </Box>
+    </div>
   );
 }

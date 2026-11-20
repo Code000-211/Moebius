@@ -83,6 +83,8 @@ export const keys = {
   chats: ["chats"] as const,
   /** The person's pins and recent places. */
   places: ["places"] as const,
+  /** What the person chose for themselves in the app. */
+  preferences: ["preferences"] as const,
   agents: ["agents"] as const,
   models: ["models"] as const,
   skills: ["skills"] as const,

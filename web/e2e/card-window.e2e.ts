@@ -44,10 +44,6 @@ describe.skipIf(usesRealServer)("the card window", () => {
     const list = page.getByTestId("inbox-item").first();
     await list.waitFor();
     await page.getByTestId("inbox-item").filter({ hasText: "Speed up the build" }).click();
-    await page
-      .getByTestId("inbox-decision")
-      .getByRole("button", { name: "Open live view" })
-      .click();
     await window().waitFor();
     expect(new URL(page.url()).pathname).toBe("/inbox");
     expect(new URLSearchParams(search()).get("card")).toBe("5");
@@ -66,8 +62,8 @@ describe.skipIf(usesRealServer)("the card window", () => {
 
   it("opens over Fleet from a running card", async () => {
     await open("/fleet");
-    await page.getByTestId("fleet-row").first().waitFor();
-    await page.getByTestId("fleet-row").filter({ hasText: "Add a feature" }).first().click();
+    await page.getByTestId("list-row").first().waitFor();
+    await page.getByTestId("list-row").filter({ hasText: "Add a feature" }).first().click();
     await window().waitFor();
     expect(new URL(page.url()).pathname).toBe("/fleet");
     expect(search()).toMatch(/^\?card=\d+$/);

@@ -83,7 +83,7 @@ export function MentionTextArea({ value, onValueChange, onKeyDown, onBlur, ...pr
           id={list}
           role="listbox"
           aria-label="People"
-          className="absolute left-0 z-10 mt-1 w-64 max-w-full overflow-hidden rounded-control bg-surface py-1 shadow-card outline outline-1 -outline-offset-1 outline-hairline-strong"
+          className="absolute left-0 z-10 mt-1 w-64 max-w-full overflow-hidden rounded-control bg-surface py-1 shadow-raised outline outline-1 -outline-offset-1 outline-hairline-strong"
         >
           {options.map((person, index) => (
             // biome-ignore lint/a11y/useKeyWithClickEvents: the text area has the focus and takes the keys

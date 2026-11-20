@@ -12,11 +12,11 @@ import { isApiError } from "../../api/http";
 import type { PluginSettings as Plugin, PluginSetting } from "../../api/types/projects";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { Box } from "../../ui/page/Box";
-import { Field } from "../../ui/page/Field";
+import { FieldRow, Rows } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
+import { Section } from "../settings/parts";
 import { PluginPage } from "./PluginPage";
 
 const CodeEditor = lazy(() => import("../../ui/CodeEditor"));
@@ -38,28 +38,28 @@ export function PluginSettingsBoxes({ scope }: { scope: SettingsScope }) {
   const read = useQuery({ queryKey: scope.queryKey, queryFn: scope.read });
   if (read.isPending) {
     return (
-      <Box title="Plugin settings">
+      <Section title="Plugin settings">
         <SkeletonLines lines={3} message="Reading the plugins' settings" />
-      </Box>
+      </Section>
     );
   }
   if (read.isError) {
     return (
-      <Box title="Plugin settings">
+      <Section title="Plugin settings">
         <ReadFailed
           error={read.error}
           fallback="The plugins' settings could not be read. Try again."
           busy={read.isFetching}
           onRetry={() => void read.refetch()}
         />
-      </Box>
+      </Section>
     );
   }
   if (read.data.plugins.length === 0) {
     return (
-      <Box title="Plugin settings">
+      <Section title="Plugin settings">
         <p className="m-0 max-w-prose text-base text-secondary">{scope.empty}</p>
-      </Box>
+      </Section>
     );
   }
   return (
@@ -77,19 +77,20 @@ type Saved = { tone: "ok" | "error"; text: string };
 function PluginBox({ scope, plugin }: { scope: SettingsScope; plugin: Plugin }) {
   const [notice, setNotice] = useState<Saved | null>(null);
   return (
-    <Box
-      title={plugin.plugin}
-      aside={`Plugin settings · ${plugin.version}${plugin.enabled ? "" : " · Off"}`}
-      testId="plugin-settings"
-    >
-      <PluginForm
-        key={plugin.settings.map((setting) => setting.value).join("\u0000")}
-        scope={scope}
-        plugin={plugin}
-        notice={notice}
-        setNotice={setNotice}
-      />
-    </Box>
+    <div data-testid="plugin-settings" className="mt-6 first:mt-0">
+      <Section
+        title={plugin.plugin}
+        aside={`Plugin settings · ${plugin.version}${plugin.enabled ? "" : " · Off"}`}
+      >
+        <PluginForm
+          key={plugin.settings.map((setting) => setting.value).join("\u0000")}
+          scope={scope}
+          plugin={plugin}
+          notice={notice}
+          setNotice={setNotice}
+        />
+      </Section>
+    </div>
   );
 }
 
@@ -136,29 +137,31 @@ function PluginForm({
   };
   return (
     <form
-      className="flex flex-col gap-4"
+      className="flex flex-col"
       onSubmit={(e) => {
         e.preventDefault();
         if (changed && !save.isPending) save.mutate();
       }}
     >
       {plugin.ui && pageFailed === null ? (
-        <PluginPage
-          key={drawn}
-          host={{
-            plugin: plugin.plugin,
-            version: plugin.version,
-            scope: scope.kind,
-            repository: scope.repository,
-            settings: plugin.settings,
-            values: saved,
-            change: (next) => {
-              setValues(next);
-              setNotice(null);
-            },
-          }}
-          onFailed={setPageFailed}
-        />
+        <div className="border-t border-hairline py-3">
+          <PluginPage
+            key={drawn}
+            host={{
+              plugin: plugin.plugin,
+              version: plugin.version,
+              scope: scope.kind,
+              repository: scope.repository,
+              settings: plugin.settings,
+              values: saved,
+              change: (next) => {
+                setValues(next);
+                setNotice(null);
+              },
+            }}
+            onFailed={setPageFailed}
+          />
+        </div>
       ) : (
         <>
           {pageFailed !== null && (
@@ -167,29 +170,35 @@ function PluginForm({
               {pageFailed}. Its settings are shown as fields.
             </Notice>
           )}
-          {plugin.settings.map((setting) => (
-            <SettingControl
-              key={setting.key}
-              setting={setting}
-              value={values[setting.key] ?? ""}
-              onChange={(value) => edit(setting.key, value)}
-            />
-          ))}
+          <Rows>
+            {plugin.settings.map((setting) => (
+              <SettingControl
+                key={setting.key}
+                setting={setting}
+                value={values[setting.key] ?? ""}
+                onChange={(value) => edit(setting.key, value)}
+              />
+            ))}
+          </Rows>
         </>
       )}
-      <p className="m-0 max-w-prose text-sm text-secondary">
-        {scope.kind === "project"
-          ? "Saved as plain text in a file of the harness configuration repository, and so in its git history."
-          : "Saved as plain text in the server's database."}{" "}
-        Do not put a key, a token or a password here.
-      </p>
+      <div className="border-t border-hairline py-3">
+        <p className="m-0 max-w-prose text-sm text-secondary">
+          {scope.kind === "project"
+            ? "Saved as plain text in a file of the harness configuration repository, and so in its git history."
+            : "Saved as plain text in the server's database."}{" "}
+          Do not put a key, a token or a password here.
+        </p>
+      </div>
       {notice && (
-        <Notice tone={notice.tone}>
-          {notice.tone === "error" && (
-            <span className="font-semibold">Couldn't save. The settings stay as they were. </span>
-          )}
-          {notice.text}
-        </Notice>
+        <div className="pb-3">
+          <Notice tone={notice.tone}>
+            {notice.tone === "error" && (
+              <span className="font-semibold">Couldn't save. The settings stay as they were. </span>
+            )}
+            {notice.text}
+          </Notice>
+        </div>
       )}
       <div className="flex flex-wrap gap-2">
         <Button type="submit" size="sm" disabled={!changed || save.isPending}>
@@ -225,17 +234,18 @@ function SettingControl({
 }) {
   if (setting.input === "line") {
     return (
-      <Field label={setting.label} hint={setting.description || undefined} className="max-w-xl">
+      <FieldRow label={setting.label} description={setting.description || undefined} wide>
         <Input value={value} autoComplete="off" onChange={(e) => onChange(e.target.value)} />
-      </Field>
+      </FieldRow>
     );
   }
-  // The editor is not a control a <label> can name, so it carries its own name and the label is only shown.
+  // The editor is not a control a <label> can name, so it carries its own name and the label is only shown. It needs
+  // the width of the area, so it sits under its label rather than beside it.
   return (
-    <div className="flex min-w-0 flex-col gap-2">
-      <span className="text-sm font-semibold text-secondary">{setting.label}</span>
+    <div className="flex min-w-0 flex-col gap-2 py-3">
+      <span className="text-base font-medium text-text">{setting.label}</span>
       {setting.description && (
-        <span className="max-w-prose text-sm text-secondary">{setting.description}</span>
+        <span className="max-w-prose text-sm text-muted">{setting.description}</span>
       )}
       <Suspense fallback={<SkeletonLines lines={6} message="Opening the editor" />}>
         <CodeEditor

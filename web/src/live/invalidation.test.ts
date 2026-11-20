@@ -103,6 +103,8 @@ describe("invalidates", () => {
 
   it("makes what is read about a card stale with the snapshot, and the scripts with their own event", () => {
     expect(invalidates({ kind: "card_moved", data: {} })).toContainEqual(keys.cards);
+    // The lists of issues follow a card's move and its assignees, so My issues stays right.
+    expect(invalidates({ kind: "card_assignees_changed", data: {} })).toContainEqual(keys.issues);
     // Comments are read per card under `keys.cards`, so a comment written elsewhere shows at once.
     expect(invalidates({ kind: "card_commented", data: {} })).toContainEqual(keys.cards);
     expect(keys.comments(7).slice(0, keys.cards.length)).toEqual([...keys.cards]);

@@ -6,7 +6,7 @@
  * with a right click; xterm brackets a paste when the program asked for it. Closing the page or leaving it closes the
  * socket, which kills the shell. The pane itself is exempt from the app's type scale, since it shows characters at a
  * fixed size; the status line and the controls around it are not, and take their colours from the tokens of whichever
- * theme is on, as the pane does.
+ * theme is on, as the pane does. On the Terminal page (`variant="page"`) the status line is hidden while the shell is up.
  */
 import "@xterm/xterm/css/xterm.css";
 import { FitAddon } from "@xterm/addon-fit";
@@ -55,10 +55,19 @@ interface TerminalProps {
   focused?: boolean;
   /** Called once when the shell has ended or could not be opened. */
   onEnded?: (opened: boolean) => void;
+  /** `page` is the Terminal page: the whole box is the dark of the terminal, status line included, with no radius. */
+  variant?: "pane" | "page";
   className?: string;
 }
 
-export function Terminal({ path, autoFocus, focused, onEnded, className }: TerminalProps) {
+export function Terminal({
+  path,
+  autoFocus,
+  focused,
+  onEnded,
+  variant = "pane",
+  className,
+}: TerminalProps) {
   const host = useRef<HTMLDivElement>(null);
   const pane = useRef<XTerm | null>(null);
   const [status, setStatus] = useState<Status>("connecting");
@@ -191,9 +200,19 @@ export function Terminal({ path, autoFocus, focused, onEnded, className }: Termi
     if (term) term.options.theme = themeOf();
   }, [theme]);
 
+  const page = variant === "page";
+  const dim = page ? "text-terminal-dim" : "text-secondary";
   return (
-    <div className={cn("flex min-h-0 flex-col gap-3", className)}>
+    <div
+      className={cn(
+        "flex min-h-0 flex-col",
+        page ? "gap-0 bg-terminal px-4 pt-2 text-terminal-text" : "gap-3",
+        className,
+      )}
+    >
+      {/* On the Terminal page a shell that is up has nothing to say: the line shows only while it connects or after it ended. */}
       <div
+        hidden={page && status === "open"}
         role={status === "ended" ? (opened ? "status" : "alert") : "status"}
         data-testid={status === "ended" ? "terminal-ended" : undefined}
         className="flex min-h-8 flex-wrap items-center gap-3"
@@ -201,10 +220,7 @@ export function Terminal({ path, autoFocus, focused, onEnded, className }: Termi
         {status === "ended" ? (
           <>
             <span
-              className={cn(
-                "min-w-0 flex-1 break-words text-sm",
-                opened ? "text-secondary" : "text-error-text",
-              )}
+              className={cn("min-w-0 flex-1 break-words text-sm", opened ? dim : "text-error-text")}
             >
               {endMessage(opened)}
             </span>
@@ -225,13 +241,17 @@ export function Terminal({ path, autoFocus, focused, onEnded, className }: Termi
               <span
                 className={cn(
                   "text-sm font-semibold",
-                  status === "connecting" ? "text-progress-text" : "text-complete-text",
+                  page
+                    ? "text-terminal-dim"
+                    : status === "connecting"
+                      ? "text-progress-text"
+                      : "text-complete-text",
                 )}
               >
                 {status === "connecting" ? "Connecting" : "Ready"}
               </span>
             </span>
-            <span className="ml-auto text-xs text-secondary">
+            <span className={cn("ml-auto text-xs", dim)}>
               Ctrl+Shift+C copies a selection, Ctrl+Shift+V pastes
             </span>
           </>
@@ -241,7 +261,10 @@ export function Terminal({ path, autoFocus, focused, onEnded, className }: Termi
         ref={host}
         data-testid="terminal"
         data-status={status}
-        className="min-h-0 flex-1 overflow-hidden rounded-card bg-terminal p-3"
+        className={cn(
+          "min-h-0 flex-1 overflow-hidden bg-terminal",
+          page ? "py-2" : "rounded-card p-3",
+        )}
       />
     </div>
   );
