@@ -1,18 +1,16 @@
 /*
  * The classes the shared highlighting of code (`ui/code/highlight.ts`, Lezer) puts on the tokens of a block of code,
- * in the editor and in the chat. Every colour is a token of theme.css, so a theme change carries the code with it,
- * and every one holds 4.5 to 1 on the code ground — `--code-keyword`, `--code-string` and `--code-number` exist for
- * that reason, since the category hues are the colour of a swatch rather than of text. Comments take the secondary
- * text colour and are italic as well, so they read as a note without depending on their hue. Keywords, strings and
- * numbers are decoration on code that is already legible in `--text`; titles stand out by weight rather than hue.
- * Additions and deletions say which they are by the sign in the line as well as the colour.
+ * in the editor and in the chat. Every colour is a `--code-*` token of theme.css, the same in both themes because the
+ * code ground is the same, and every one holds 4.5 to 1 on it. Strings keep the plain code colour; comments are
+ * italic as well as their own colour, so they read as a note without depending on the hue. Additions and deletions
+ * say which they are by the sign in the line as well as the colour.
  */
 .tok-keyword {
   color: var(--code-keyword);
 }
 
 .tok-string {
-  color: var(--code-string);
+  color: var(--code-text);
 }
 
 .tok-number {
@@ -20,20 +18,17 @@
 }
 
 .tok-comment {
-  color: var(--text-secondary);
+  color: var(--code-comment);
   font-style: italic;
 }
 
-.tok-title {
-  color: var(--text);
-  font-weight: 600;
-}
-
+.tok-title,
 .tok-add {
-  color: var(--complete-text);
+  color: var(--code-function);
 }
 
+.tok-operator,
 .tok-del,
 .tok-invalid {
-  color: var(--error-text);
+  color: var(--code-operator);
 }

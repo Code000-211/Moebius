@@ -7,7 +7,7 @@
  */
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { CodeBlock } from "./CodeBlock";
+import { CodeBlock, fileOf } from "./CodeBlock";
 
 afterEach(cleanup);
 
@@ -41,5 +41,32 @@ describe("CodeBlock", () => {
     const { getByText, getByRole } = render(<CodeBlock code="const x = 1" />);
     expect(getByText("Plain text").tagName).toBe("SPAN");
     expect(getByRole("button", { name: "Copy code" }).tagName).toBe("BUTTON");
+  });
+
+  it("shows the file a fence names after the language, and only the language without one", () => {
+    const named = render(<CodeBlock language="rust" file="src/engine.rs" code="fn main() {}" />);
+    expect(named.getByText("rust").tagName).toBe("SPAN");
+    expect(named.getByText("src/engine.rs").tagName).toBe("SPAN");
+    named.unmount();
+    const bare = render(<CodeBlock language="rust" code="fn main() {}" />);
+    expect(bare.queryByText("·")).toBeNull();
+    expect(bare.getByRole("button", { name: "Copy code" })).toBeTruthy();
+  });
+
+  it("sits on the code ground with a 30px header in mono", () => {
+    const { container } = render(<CodeBlock language="rust" code="let x = 1;" />);
+    expect(container.firstElementChild?.className).toContain("bg-code-bg");
+    expect(container.firstElementChild?.className).toContain("rounded-card");
+    expect(container.querySelector(".h-\\[30px\\]")?.className).toContain("font-mono");
+  });
+});
+
+describe("fileOf", () => {
+  it("reads the file from the info string of a fence", () => {
+    expect(fileOf("path=src/engine.rs")).toBe("src/engine.rs");
+    expect(fileOf('title="a b.rs" extra')).toBe("a b.rs");
+    expect(fileOf("highlight file=x.ts")).toBe("x.ts");
+    expect(fileOf("nopath=x")).toBeUndefined();
+    expect(fileOf(undefined)).toBeUndefined();
   });
 });

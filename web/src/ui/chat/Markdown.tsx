@@ -15,7 +15,7 @@ import { Link, useInRouterContext } from "react-router";
 import remarkGfm from "remark-gfm";
 import { cn } from "../lib/cn";
 import { linkCards } from "./CardLinks";
-import { CodeBlock } from "./CodeBlock";
+import { CodeBlock, fileOf } from "./CodeBlock";
 
 /** The plain text under a node of the syntax tree. */
 export function textOf(node: Element | ElementContent): string {
@@ -58,13 +58,21 @@ const components: Components = {
       (child): child is Element => child.type === "element" && child.tagName === "code",
     );
     return (
-      <CodeBlock language={languageOf(code)} code={code ? textOf(code).replace(/\n$/, "") : ""} />
+      <CodeBlock
+        language={languageOf(code)}
+        file={fileOf(typeof code?.data?.meta === "string" ? code.data.meta : undefined)}
+        code={code ? textOf(code).replace(/\n$/, "") : ""}
+      />
     );
   },
   code({ className, children }) {
     // A block's `code` is drawn by `pre` above; `children` is built and dropped, so it renders only inline.
     if (typeof className === "string" && className.includes("language-")) return null;
-    return <code className="rounded-small bg-code px-2 font-mono text-sm">{children}</code>;
+    return (
+      <code className="rounded-small bg-code-bg px-2 text-code-text font-mono text-sm">
+        {children}
+      </code>
+    );
   },
   a: ({ href, children }) => <TextLink href={href}>{children}</TextLink>,
   p: ({ children }) => <p className="my-4 first:mt-0 last:mb-0">{linkCards(children)}</p>,

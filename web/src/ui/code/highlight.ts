@@ -46,7 +46,7 @@ interface TokenStyle {
 
 /**
  * The palette, once: what the editor draws with `editHighlight` and a block of code with `codeHighlighter`, the same
- * five inks (keyword, string, number, secondary comment, semibold ink) the theme's code tokens carry.
+ * inks (keyword, function, operator, number, comment, and plain code text for strings) the theme's code tokens carry.
  */
 const TOKENS: readonly TokenStyle[] = [
   {
@@ -65,14 +65,14 @@ const TOKENS: readonly TokenStyle[] = [
   {
     tags: [tags.string, tags.special(tags.string), tags.character],
     class: "tok-string",
-    color: "var(--code-string)",
+    color: "var(--code-text)",
   },
   {
     tags: [tags.number, tags.bool, tags.null, tags.atom, tags.unit, tags.propertyName],
     class: "tok-number",
     color: "var(--code-number)",
   },
-  { tags: tags.comment, class: "tok-comment", color: "var(--text-secondary)", italic: true },
+  { tags: tags.comment, class: "tok-comment", color: "var(--code-comment)", italic: true },
   {
     tags: [
       tags.function(tags.variableName),
@@ -83,12 +83,24 @@ const TOKENS: readonly TokenStyle[] = [
       tags.macroName,
     ],
     class: "tok-title",
-    color: "var(--text)",
-    weight: 600,
+    color: "var(--code-function)",
   },
-  { tags: tags.inserted, class: "tok-add", color: "var(--complete-text)" },
-  { tags: tags.deleted, class: "tok-del", color: "var(--error-text)" },
-  { tags: tags.invalid, class: "tok-invalid", color: "var(--error-text)" },
+  {
+    tags: [
+      tags.operator,
+      tags.compareOperator,
+      tags.arithmeticOperator,
+      tags.logicOperator,
+      tags.bitwiseOperator,
+      tags.updateOperator,
+      tags.definitionOperator,
+    ],
+    class: "tok-operator",
+    color: "var(--code-operator)",
+  },
+  { tags: tags.inserted, class: "tok-add", color: "var(--code-function)" },
+  { tags: tags.deleted, class: "tok-del", color: "var(--code-operator)" },
+  { tags: tags.invalid, class: "tok-invalid", color: "var(--code-operator)" },
 ];
 
 /** The palette for the editor, as a `HighlightStyle` over the tags whose text it colours directly. */
