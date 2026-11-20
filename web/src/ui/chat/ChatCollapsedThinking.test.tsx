@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * The row of folded thinking says it opens. The caret that says so is drawn whatever the pointer is doing — a person at
- * the keyboard sees the same affordance — and it turns from the state the row is in.
+ * The row of folded thinking is one line: an icon and the words. It says it opens with aria-expanded, whatever the
+ * pointer is doing.
  */
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -23,21 +23,21 @@ function drawn(expanded: boolean) {
 }
 
 describe("the row of folded thinking", () => {
-  it("draws its caret with no pointer over it", () => {
+  it("draws its icon with no pointer over it", () => {
     const { container } = render(drawn(false));
     const row = container.querySelector("button");
     expect(row?.getAttribute("aria-expanded")).toBe("false");
     expect(row?.querySelector("svg")).not.toBeNull();
   });
 
-  it("turns the caret with the state, not with the pointer", () => {
+  it("says the state in aria-expanded, and the icon in front of it does not move", () => {
     const { container, rerender } = render(drawn(false));
-    const caret = () => container.querySelector("button svg")?.getAttribute("class") ?? "";
-    expect(caret()).toContain("transition-transform");
-    expect(caret()).not.toContain("rotate-90");
+    const icon = () => container.querySelector("button svg")?.getAttribute("class") ?? "";
+    expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
+    expect(icon()).not.toContain("rotate");
     rerender(drawn(true));
     expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
-    expect(caret()).toContain("rotate-90");
+    expect(icon()).not.toContain("rotate");
   });
 });
 

@@ -1,6 +1,6 @@
 // From BloopAI/vibe-kanban packages/ui/src/components/ChatToolSummary.tsx (Apache-2.0), changed: the icon is picked
 // from the tool's name (read, edit, write, bash, search, web) instead of Vibe Kanban's action types; the row is 32px
-// tall, the tool is named in a label rather than small monospace, a file is named by its name with its whole path kept
+// tall, the tool is named in a plain label rather than a tag, a file is named by its name with its whole path kept
 // as the tooltip, what it was given is one line whose end is kept in view and whose beginning fades when the line runs
 // out, and its state is a word with a hue.
 import {
@@ -12,7 +12,6 @@ import {
 } from "@phosphor-icons/react";
 import { cn } from "../lib/cn";
 import { FadedLine } from "../page/FadedLine";
-import { Tag } from "./Tag";
 import { ToolStatusDot, type ToolStatusLike } from "./ToolStatusDot";
 
 interface ChatToolSummaryProps {
@@ -66,7 +65,7 @@ export function ChatToolSummary({
     <Root
       type={canExpand ? "button" : undefined}
       className={cn(
-        "flex min-h-8 w-full flex-wrap items-center gap-3 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out",
+        "flex min-h-8 w-full flex-wrap items-center gap-2 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out",
         canExpand && "cursor-pointer hover:bg-hover",
         className,
       )}
@@ -75,7 +74,7 @@ export function ChatToolSummary({
       title={detail || undefined}
     >
       <Icon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
-      {toolName && <Tag className="shrink-0">{toolName}</Tag>}
+      {toolName && <span className="shrink-0 text-base text-secondary">{toolName}</span>}
       <FadedLine text={summary} className="flex-1 font-mono text-sm text-text" />
       {status && <ToolStatusDot status={status} />}
     </Root>

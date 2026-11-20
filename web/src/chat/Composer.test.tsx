@@ -174,3 +174,23 @@ describe("Composer", () => {
     expect(classes.filter((name) => name.startsWith("outline-"))).toEqual([]);
   });
 });
+
+describe("Composer, compact", () => {
+  it("sends with a chip inside one bordered field, and sends with Enter and the chip", () => {
+    const send = vi.fn();
+    const { container } = render(
+      <Composer value="hi" onChange={() => {}} onSend={send} canSend compact />,
+    );
+    const field = container.querySelector("textarea")?.parentElement;
+    expect(field?.className).toContain("border-hairline-strong");
+    expect(field?.className).toContain("focus-within:outline-accent");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(send).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the chip quiet while there is nothing to send", () => {
+    render(<Composer value="" onChange={() => {}} onSend={() => {}} canSend={false} compact />);
+    const chip = screen.getByRole("button", { name: "Send" });
+    expect(chip.className).not.toContain("bg-accent-fill");
+  });
+});

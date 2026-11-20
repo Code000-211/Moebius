@@ -16,6 +16,7 @@ import { markSeen, chats as readChats, say, startChat } from "../api/calls/chat"
 import { keys } from "../api/keys";
 import type { Chat } from "../api/types/chat";
 import { AgentFrame } from "../ui/chat/AgentFrame";
+import { Button } from "../ui/components/Button";
 import { Notice } from "../ui/page/Notice";
 import { ASSISTANT_AGENT } from "./assistant";
 import { Composer } from "./Composer";
@@ -194,6 +195,24 @@ export function AgentChat({
           />
         )}
       </div>
+      {/* The header only closes the panel, so the way to start over is at the end of what was said, once it has a
+          message and the agent is not at work: one quiet action, not a control that is always there. */}
+      {chatId !== null && thread.entries.length > 0 && !working && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="self-start"
+          data-testid="new-conversation"
+          onClick={() => {
+            setChatId(null);
+            setError(null);
+            write("");
+          }}
+        >
+          New conversation
+        </Button>
+      )}
       <Composer
         value={message}
         onChange={write}

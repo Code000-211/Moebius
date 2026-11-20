@@ -86,12 +86,12 @@ export function ChatAggregatedToolEntries({
     <div className={cn("flex flex-col", className)}>
       <button
         type="button"
-        className="flex min-h-8 w-full cursor-pointer items-center gap-3 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
+        className="flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
         onClick={onToggle}
         aria-expanded={expanded}
       >
         <Icon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
-        <span className="min-w-0 flex-1 break-words text-base text-text">
+        <span className="min-w-0 flex-1 break-words text-base text-secondary">
           {label} · <span className="tabular-nums">{plural(entries.length, unit, `${unit}s`)}</span>
         </span>
         {aggregateStatus && <ToolStatusDot status={aggregateStatus} />}

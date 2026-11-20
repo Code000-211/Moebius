@@ -39,7 +39,7 @@ export function ChatFileEntry({
   const FileIcon = fileIcon ?? DefaultFileIcon;
 
   return (
-    <div className={cn("overflow-hidden rounded-control bg-sunken", className)}>
+    <div className={cn("overflow-hidden rounded-control", className)}>
       <button
         type="button"
         className="flex min-h-8 w-full flex-wrap items-center gap-3 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
