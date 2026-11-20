@@ -280,6 +280,8 @@ any route to any role that is not what its row says.
 | `PUT /v1/workflows/{name}` | owner | yes |
 | `DELETE /v1/workflows/{name}` | owner | yes |
 | `GET /v1/workflows/{name}/run-inputs` | viewer | yes |
+| `GET /v1/workflow-runs` | viewer | yes |
+| `GET /v1/workflow-runs/{id}` | viewer | yes |
 | `POST /v1/workflows/{name}/runs` | member | yes |
 | `POST /v1/workflows/runs/{id}/cancel` | member | yes |
 | `POST /v1/workflows/runs/{run_id}/resume` | member | yes |
@@ -2768,15 +2770,17 @@ commit (left out when the text changed nothing, and always for a `rules_file`). 
 
 The workflows of the harness configuration repository, in name order. A workflow is a file `workflows/<name>.toml` in
 that repository (see [workflows](workflows.md)). Response: an array of
-`{"name": string, "description": string, "trigger_kind": string, "node_count": number}`; `trigger_kind` is the `kind` of
-the first trigger, empty for a workflow with none. Errors: `409` the server has no `[harness]`; `422` a workflow file
+`{"name": string, "description": string, "trigger_kind": string, "node_count": number, "last_run": object or null}`;
+`trigger_kind` is the `kind` of the first trigger, empty for a workflow with none, and `last_run` is the newest run of
+the workflow that the person sees, `{"id": number, "status": string, "created_at": number, "started_at": number or null,
+"finished_at": number or null}`, or null when it never ran. Errors: `409` the server has no `[harness]`; `422` a workflow file
 that cannot be used (the message names its file).
 
 ### `GET /v1/workflows/{name}`
 
 One workflow. Response: `{"name": string, "file": string, "definition": object}`, the text of the file exactly as it is
-saved and the definition parsed from it. Errors: `422` the name or the file cannot be used (there is no such workflow, or
-it is not valid); `409` the server has no `[harness]`.
+saved and the definition parsed from it. Errors: `404` there is no such workflow; `422` the name or the file cannot be used
+(the name is not one a file can have, or the file is not valid); `409` the server has no `[harness]`.
 
 ### `PUT /v1/workflows/{name}`
 
@@ -2808,6 +2812,22 @@ and a run waiting on a person leaves its inbox item withdrawn. The run's worktre
 "worktree": string or null}`, its
 `status` `cancelled` and its `error` `cancelled by a person`. Errors: `404` no such run; `409` the run has ended
 already, and the message names the status it ended as.
+
+### `GET /v1/workflow-runs`
+
+The runs of the workflows, newest first, leaving out the runs of a repository the person does not see. Query:
+`workflow` (only the runs of this workflow) and `limit` (the most runs to answer, 50 when left out, at most 200).
+Response: an array of `{"id": number, "workflow": string, "repository_id": number, "trigger": string, "status": string,
+"value": any, "created_at": number, "started_at": number or null, "finished_at": number or null, "error": string or null}`;
+`trigger` is the kind of the trigger that started the run.
+
+### `GET /v1/workflow-runs/{id}`
+
+One run with what each of its nodes was given and answered: the fields of the list's run, and `nodes`, an array of
+`{"node": string, "kind": string, "attempt": number, "status": string, "input": any, "output": any or null,
+"started_at": number or null, "finished_at": number or null, "error": string or null}` in the order the nodes ran
+(`kind` is empty when the workflow no longer has the node), and `waiting`, `{"node": string, "asks": any}` for the node a
+run in status `waiting` stopped at, or null. Errors: `404` no such run, or a run of a repository the person does not see.
 
 ### `POST /api/hooks/{path}`
 

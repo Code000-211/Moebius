@@ -123,6 +123,24 @@ impl Store {
             .optional()?)
     }
 
+    /// The runs of `workflow` (of every workflow with none named) older than run `before` (the newest with none
+    /// given), newest first, at most `limit`.
+    pub fn workflow_runs(
+        &self,
+        workflow: Option<&str>,
+        before: Option<i64>,
+        limit: i64,
+    ) -> Result<Vec<WorkflowRun>> {
+        let conn = self.conn();
+        let mut statement = conn.prepare(
+            "SELECT * FROM workflow_runs
+             WHERE (?1 IS NULL OR workflow = ?1) AND (?2 IS NULL OR id < ?2)
+             ORDER BY id DESC LIMIT ?3",
+        )?;
+        let rows = statement.query_map(params![workflow, before, limit], run_from_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     /// The runs that are still `waiting` (for a person's decision), in the order they were stored.
     pub fn waiting_workflow_runs(&self) -> Result<Vec<WorkflowRun>> {
         let conn = self.read();

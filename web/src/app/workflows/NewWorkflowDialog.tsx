@@ -11,8 +11,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import { workflows } from "../../api/calls/workflows";
 import { keys } from "../../api/keys";
-import { workflows } from "../../api/workflows";
 import { Button } from "../../ui/components/Button";
 import {
   Dialog,

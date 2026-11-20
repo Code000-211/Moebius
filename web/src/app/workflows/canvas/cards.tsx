@@ -1,7 +1,6 @@
 /** The cards on the canvas: a node, and the start of the graph. */
 import { Handle, type NodeProps, Position } from "@xyflow/react";
-import type { Trigger } from "../../../api/types/workflows";
-import type { WorkflowNodeRun } from "../../../api/workflows";
+import type { Trigger, WorkflowNodeRun } from "../../../api/types/workflows";
 import { Tag } from "../../../ui/chat/Tag";
 import { cn } from "../../../ui/lib/cn";
 import { runStatus } from "../model";

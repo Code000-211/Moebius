@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { scopeQuery } from "../api/calls/usage";
 import type { RulesView } from "../api/types/rules";
-import type { WorkflowSummary } from "../api/workflows";
+import type { WorkflowSummary } from "../api/types/workflows";
 import { filterFields as fleetFields, filtered as fleetFiltered, type Work } from "./fleet/model";
 import { filterFields as ruleFields, visible } from "./rules/filters";
 import { repositoryOf } from "./scope";
@@ -60,9 +60,10 @@ describe("the workflows' filters", () => {
   const summary = (name: string, trigger: string, last: string | null): WorkflowSummary => ({
     name,
     description: "",
-    trigger: { kind: trigger, detail: null },
+    trigger_kind: trigger,
     node_count: 1,
-    last_run: last === null ? null : { id: 1, status: last, started_at: 1, finished_at: 2 },
+    last_run:
+      last === null ? null : { id: 1, status: last, created_at: 0, started_at: 1, finished_at: 2 },
   });
   const list = [
     summary("a", "manual", null),

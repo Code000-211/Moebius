@@ -134,7 +134,7 @@ export function invalidates(event: ServerEvent): QueryKey[] {
 function workflowPages(event: ServerEvent): QueryKey[] {
   if (!event.kind.startsWith("workflow_")) return [];
   const run = event.data.run;
-  const stale: QueryKey[] = [keys.workflows, keys.workflowDefinitions];
+  const stale: QueryKey[] = [keys.workflows, keys.workflowDefinitions, keys.allWorkflowRuns];
   if (typeof run === "number") stale.push(keys.workflowRun(run));
   return stale;
 }

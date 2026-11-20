@@ -1,6 +1,9 @@
-//! Starting runs of the workflows by hand: the `manual` trigger names its inputs, and a person starts each run giving
-//! them — through this door or the `moebius workflow run` command.
+//! The runs of the workflows: reading them, and starting them by hand — the `manual` trigger names its inputs, and a
+//! person starts each run giving them, through this door or the `moebius workflow run` command.
 //!
+//! - `GET /v1/workflow-runs?workflow=&limit=`: the runs, newest first (of one workflow when it is named), leaving out
+//!   the runs of a repository the person does not see.
+//! - `GET /v1/workflow-runs/{id}`: one run with what each of its nodes was given, answered and failed with.
 //! - `GET /v1/workflows/{name}/run-inputs`: the inputs of the workflow's manual trigger, so a form can be built from
 //!   them; a conflict when the trigger is not manual.
 //! - `POST /v1/workflows/{name}/runs` `{repository?, inputs?}`: starts a run of the workflow, checked against the
@@ -19,6 +22,7 @@ use serde_json::{Map, Value};
 use super::{ApiError, ApiState, blocking};
 use crate::app::AppError;
 use crate::decide::Actor;
+use crate::store::WorkflowRun;
 use crate::workflows::trigger::manual;
 
 /// The routes that start runs of workflows by hand.
@@ -26,6 +30,191 @@ pub(super) fn routes() -> Router<ApiState> {
     Router::new()
         .route("/v1/workflows/{name}/run-inputs", get(run_inputs))
         .route("/v1/workflows/{name}/runs", post(start))
+        .route("/v1/workflow-runs", get(list_runs))
+        .route("/v1/workflow-runs/{id}", get(show_run))
+}
+
+/// The most runs one list answers when the request names no limit.
+const DEFAULT_RUNS: i64 = 50;
+
+/// The most runs one list answers at all.
+const MOST_RUNS: i64 = 200;
+
+/// A run as the web app lists it: its place in the queue and its ends, without the worktree of the server's disk.
+#[derive(Debug, Serialize)]
+pub(super) struct RunView {
+    id: i64,
+    workflow: String,
+    repository_id: i64,
+    trigger: String,
+    status: String,
+    value: Value,
+    created_at: i64,
+    started_at: Option<i64>,
+    finished_at: Option<i64>,
+    error: Option<String>,
+}
+
+impl From<WorkflowRun> for RunView {
+    fn from(run: WorkflowRun) -> Self {
+        Self {
+            id: run.id,
+            workflow: run.workflow,
+            repository_id: run.repository_id,
+            trigger: run.trigger,
+            status: run.status,
+            value: run.value,
+            created_at: run.created_at,
+            started_at: run.started_at,
+            finished_at: run.finished_at,
+            error: run.error,
+        }
+    }
+}
+
+/// One node of a run at one attempt.
+#[derive(Debug, Serialize)]
+struct NodeView {
+    /// The id the node has in the workflow.
+    node: String,
+    /// What the node does; empty when the workflow no longer has the node.
+    kind: String,
+    attempt: i64,
+    status: String,
+    input: Value,
+    output: Option<Value>,
+    started_at: Option<i64>,
+    finished_at: Option<i64>,
+    error: Option<String>,
+}
+
+/// A run that stopped on a node and asks for a person.
+#[derive(Debug, Serialize)]
+struct Waiting {
+    node: String,
+    /// What the node was given, which is what it asks about.
+    asks: Value,
+}
+
+/// What `GET /v1/workflow-runs/{id}` answers.
+#[derive(Debug, Serialize)]
+struct RunDetail {
+    #[serde(flatten)]
+    run: RunView,
+    nodes: Vec<NodeView>,
+    /// Where and on what the run waits, when its status is `waiting`.
+    waiting: Option<Waiting>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RunsQuery {
+    #[serde(default)]
+    workflow: Option<String>,
+    #[serde(default)]
+    limit: Option<i64>,
+}
+
+async fn list_runs(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    axum::extract::Query(query): axum::extract::Query<RunsQuery>,
+) -> Result<axum::Json<Vec<RunView>>, ApiError> {
+    blocking(&state.app, move |app| {
+        let sight = app.sight(&by)?;
+        let limit = query.limit.unwrap_or(DEFAULT_RUNS).clamp(1, MOST_RUNS);
+        Ok(visible_runs(app, &sight, query.workflow.as_deref(), limit)?
+            .into_iter()
+            .map(RunView::from)
+            .collect())
+    })
+    .await
+}
+
+/// The newest runs of `workflow` (of all with none) in repositories `sight` sees, at most `limit`.
+pub(super) fn visible_runs(
+    app: &crate::app::App,
+    sight: &crate::app::Sight,
+    workflow: Option<&str>,
+    limit: i64,
+) -> Result<Vec<WorkflowRun>, AppError> {
+    // A run of a repository the person does not see is skipped, so the store is read page by page until `limit`
+    // visible runs are found or the runs are all read.
+    let wanted = limit as usize;
+    let mut found = Vec::new();
+    let mut before = None;
+    while found.len() < wanted {
+        let page = app.store.workflow_runs(workflow, before, MOST_RUNS)?;
+        let Some(last) = page.last() else { break };
+        before = Some(last.id);
+        let full = page.len() as i64 == MOST_RUNS;
+        found.extend(
+            page.into_iter()
+                .filter(|run| sight.repository(run.repository_id)),
+        );
+        if !full {
+            break;
+        }
+    }
+    found.truncate(wanted);
+    Ok(found)
+}
+
+async fn show_run(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(id): UrlPath<i64>,
+) -> Result<axum::Json<RunDetail>, ApiError> {
+    let repo = harness(&state).ok();
+    blocking(&state.app, move |app| {
+        let sight = app.sight(&by)?;
+        let run = app
+            .store
+            .workflow_run(id)?
+            .filter(|run| sight.repository(run.repository_id))
+            .ok_or_else(|| AppError::NotFound(format!("workflow run {id}")))?;
+        let kinds: std::collections::HashMap<String, String> = repo
+            .and_then(|repo| repo.workflow(&run.workflow).ok())
+            .map(|definition| {
+                definition
+                    .nodes
+                    .into_iter()
+                    .map(|node| (node.id, node.kind))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let rows = app.store.workflow_node_runs(id)?;
+        let waiting = if run.status == "waiting" {
+            rows.iter()
+                .rev()
+                .find(|row| row.status == "waiting")
+                .map(|row| Waiting {
+                    node: row.node_id.clone(),
+                    asks: row.input.clone(),
+                })
+        } else {
+            None
+        };
+        let nodes = rows
+            .into_iter()
+            .map(|row| NodeView {
+                kind: kinds.get(&row.node_id).cloned().unwrap_or_default(),
+                node: row.node_id,
+                attempt: row.attempt,
+                status: row.status,
+                input: row.input,
+                output: row.output,
+                started_at: row.started_at,
+                finished_at: row.finished_at,
+                error: row.error,
+            })
+            .collect();
+        Ok(RunDetail {
+            run: run.into(),
+            nodes,
+            waiting,
+        })
+    })
+    .await
 }
 
 /// What `GET /v1/workflows/{name}/run-inputs` answers: the inputs a form builds itself from.

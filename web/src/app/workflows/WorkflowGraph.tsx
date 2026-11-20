@@ -7,7 +7,7 @@
  * both directions when the saved positions reach past the page, rather than shrinking every card until the words are
  * unreadable.
  */
-import type { WorkflowDefinition, WorkflowNode } from "../../api/workflows";
+import type { WorkflowDefinition, WorkflowNode } from "../../api/types/workflows";
 import { JsonValue } from "../../ui/page/JsonValue";
 
 /** The width one node card takes, so a line can end at the middle of it. */
@@ -87,7 +87,7 @@ function NodeCard({ node }: { node: WorkflowNode }) {
         <h3 className="m-0 truncate text-sm font-semibold text-text">{node.id}</h3>
         <span className="truncate text-xs text-secondary">{node.kind}</span>
       </div>
-      <JsonValue value={node.parameters} name={`${node.id}-parameters`} />
+      <JsonValue value={node.params ?? {}} name={`${node.id}-parameters`} />
     </article>
   );
 }

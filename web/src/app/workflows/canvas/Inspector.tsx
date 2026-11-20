@@ -6,8 +6,8 @@ import type {
   WorkflowDefinition,
   WorkflowEdge,
   WorkflowNode,
+  WorkflowNodeRun,
 } from "../../../api/types/workflows";
-import type { WorkflowNodeRun } from "../../../api/workflows";
 import { Button } from "../../../ui/components/Button";
 import { Input } from "../../../ui/components/Input";
 import { Field } from "../../../ui/page/Field";
