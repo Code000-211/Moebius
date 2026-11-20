@@ -12,8 +12,6 @@ use tauri::menu::{Menu, MenuBuilder, MenuItem, MenuItemBuilder, PredefinedMenuIt
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager};
 
-use crate::window::MAIN;
-
 const NEW_ISSUE: &str = "new-issue";
 const ASK: &str = "ask-moebius";
 const OPEN: &str = "open-moebius";
@@ -135,10 +133,11 @@ fn chosen(app: &AppHandle, id: &str) {
 
 /// Shows the main window and runs `script` in it, when it shows a server's web app, which the script is for.
 fn bring_up_and(app: &AppHandle, script: &str) {
-    if let Some(window) = bring_up(app)
+    if bring_up(app).is_some()
         && connected(app)
+        && let Some(webview) = crate::pages::front(app)
     {
-        let _ = window.eval(script);
+        let _ = webview.eval(script);
     }
 }
 
@@ -148,8 +147,8 @@ fn connected(app: &AppHandle) -> bool {
 }
 
 /// Shows the main window in front, also when it was minimized.
-pub fn bring_up(app: &AppHandle) -> Option<tauri::WebviewWindow> {
-    let window = app.get_webview_window(MAIN)?;
+pub fn bring_up(app: &AppHandle) -> Option<tauri::Window> {
+    let window = crate::pages::main_window(app)?;
     let _ = window.unminimize();
     let _ = window.show();
     let _ = window.set_focus();

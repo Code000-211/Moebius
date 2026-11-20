@@ -80,6 +80,11 @@ on Linux (an AppImage and a `.deb`) and Windows (an installer):
    not asked while the tray follows it, whose last figures the rail shows), and one that does not answer is drawn with a grey dot. The web app draws the rail (`desktop/Rail.tsx`)
    and calls the commands of `servers.rs` through the bridge; removing a server there is also how a person disconnects,
    since sign-out in the web app does nothing in the app. At its start the app opens the server that was open last.
+   The window (`pages.rs`) holds a webview for the connect page and one for every server that was opened, all of its
+   size, and shows one: switching to a server opened before shows its webview with the page as it was left, and a
+   server opened for the first time loads out of sight and is shown once it has drawn its rail, so the window is never
+   blank. `views::Views` decides which webviews exist and lets go of those left for half an hour and of all but three
+   hidden ones (their page is noted by the rail).
 5. The window opens that address, and keeps only its own pages: a link to anywhere else, such as a pull request on a
    forge, opens in the system's browser (`links::target`). Every page of the window gets `window.moebiusDesktop` first, which the web app's
    `desktop/WindowControls.tsx` calls to minimize, maximize and close the window from a strip on the textured ground.
@@ -530,6 +535,8 @@ part. Every module starts with a doc comment saying what it is for; a folder's `
 | `rail/secrets.rs` | Where the tokens are kept: the system's keychain (`Keychain`), or `Memory` in tests. |
 | `rail/ssh.rs` | A server over SSH: the `ssh` tunnel that forwards a port and prints the host's token, and setting a host up with `moebius connect --yes`. |
 | `rail/status.rs` | What the rail shows of a server: whether it answers and its Inbox's count (`Entry`). |
+| `views.rs` | Which servers have a webview of their own in the window, and which to let go of (the ones left for long, or beyond three): the bookkeeping, tested without a window. |
+| `pages.rs` | The Tauri side of the window's webviews, in the program: one for the connect page and one per opened server, one shown at a time, a new one shown once it has drawn its rail. |
 | `servers.rs` | The rail's commands on the Tauri side (`connect`, `connect_ssh`, `servers`, `switch_server`, `remove_server`, and the local server's `local_state` and `local_connect`): showing a server's web app in the window, the connect page when none is left, and opening the server that was open last at the start. |
 | `server.rs` | A server the app connects to (`Server`: its address and the access token), and `check`: the token and the server's version with `GET /v1/health`, refusing a server of another minor version with the release that matches. |
 | `quick.rs` | The global shortcut without a window: which key combinations are accepted and how they are written, the file that keeps the chosen one across restarts, and the script that asks the main window to open a page of the web app. |

@@ -1,5 +1,5 @@
 //! The Tauri side of the app: the one window, without a system frame, that shows the connect page and then the web app
-//! through a server's proxy (the rail of servers is in `servers`). It is part of the program rather than of the
+//! through a server's proxy (the rail of servers is in `servers`, the window's webviews in `pages`). It is part of the program rather than of the
 //! library, so that the library's tests do not link Tauri (on Windows a test executable without the program's
 //! manifest cannot load what Tauri needs from the system).
 //!
@@ -12,10 +12,10 @@
 use std::sync::{Arc, Mutex};
 
 use moebius_desktop::instance::{self, Start};
-use moebius_desktop::links::{self, Target};
-use tauri::webview::NewWindowResponse;
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::Manager;
+use tauri::window::WindowBuilder;
 
+use crate::pages;
 use crate::quick_window;
 use crate::servers::{self, Servers};
 
@@ -68,7 +68,8 @@ pub(crate) fn open_in_browser(url: &str) {
 pub fn run() {
     let connected = Connected::default();
     tauri::Builder::default()
-        .manage(connected.clone())
+        .manage(connected)
+        .manage(pages::Pages::default())
         .manage(crate::notifications::Watching::default())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
@@ -84,9 +85,6 @@ pub fn run() {
             quick_window::quick_finish
         ])
         .setup(move |app| {
-            let navigating = connected.clone();
-            let opening = connected.clone();
-            let handle = app.handle().clone();
             // The app runs once: a later start has asked the first to show its window, and ends before it makes a
             // tray icon or takes the shortcut. A lock that cannot be made does not keep the app from starting.
             let dir = app.path().app_config_dir()?;
@@ -104,40 +102,16 @@ pub fn run() {
             }
             crate::tray_icon::create(app)?;
             quick_window::setup(app);
-            let window = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
+            let window = WindowBuilder::new(app, MAIN)
                 .title("Moebius")
                 .inner_size(1280.0, 800.0)
                 .min_inner_size(720.0, 480.0)
                 .decorations(false)
-                .initialization_script(BRIDGE)
-                .on_navigation(move |url| {
-                    match links::target(url.as_str(), navigating.origin().as_deref()) {
-                        Target::Window => true,
-                        Target::Browser => {
-                            open_in_browser(url.as_str());
-                            false
-                        }
-                        Target::Nowhere => false,
-                    }
-                })
-                .on_new_window(move |url, _| {
-                    match links::target(url.as_str(), opening.origin().as_deref()) {
-                        // A page of the web app asked for a window of its own: the one window shows it.
-                        Target::Window => {
-                            if let Some(window) = handle.get_webview_window(MAIN) {
-                                let _ = window.navigate(url);
-                            }
-                        }
-                        Target::Browser => open_in_browser(url.as_str()),
-                        Target::Nowhere => {}
-                    }
-                    NewWindowResponse::Deny
-                })
                 .build()?;
-            // The rail of servers: the window's first page is the connect page, until a remembered server opens.
-            let servers = Servers::new(app.handle());
-            servers.note_connect_page(window.url()?);
-            app.manage(servers);
+            // The window's first page is the connect page, until a remembered server opens; each server opened gets a
+            // webview of its own (`pages`).
+            pages::make_connect(app.handle(), &window)?;
+            app.manage(Servers::new(app.handle()));
             // The app ends with its main window, though the small window of the shortcut is only ever hidden.
             let exiting = app.handle().clone();
             window.on_window_event(move |event| {

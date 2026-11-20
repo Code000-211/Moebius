@@ -19,10 +19,12 @@ app is in [`docs/architecture.md`](../../docs/architecture.md#the-desktop-app).
 | `src/tray_icon.rs` | The Tauri side of the tray, in the program: the icon, its menu and what its items do. |
 | `src/rail/` | The rail of servers: `mod.rs` (the remembered servers, a proxy and a page of each, adding, opening, removing, `poll`), `records.rs` (`servers.json`, no token), `secrets.rs` (the system's keychain), `ssh.rs` (a server over an SSH tunnel) and `status.rs` (whether a server answers and its Inbox's count). |
 | `src/servers.rs` | The rail's commands on the Tauri side: `connect`, `connect_ssh`, `servers`, `switch_server` and `remove_server`, and `local_state` and `local_connect` for the server of this machine. |
+| `src/views.rs` | `Views`: which servers have a webview of their own in the window and which to let go of (those left for half an hour, and all but three hidden ones). |
+| `src/pages.rs` | The Tauri side of the window's webviews, a module of the program: the connect page's and one per opened server, all of the window's size, one shown at a time; switching shows the webview of a server opened before, and a new one is shown once it has drawn its rail. |
 | `src/render.rs` | Linux only: turns WebKitGTK's accelerated compositing off when the machine has no GPU render node (`MOEBIUS_RENDERING` overrides), set before the first webview. |
 | `src/quick.rs` | The global shortcut tested without a window: `normalize` (which key combinations are accepted, written as `Ctrl+Shift+Space`), `Store` (the choice kept in `quick.json` in the configuration directory) and the script that asks the main window to open a path. |
 | `src/quick_window.rs` | The Tauri side of the global shortcut, a module of the program: registering it, the small window over everything (the web app's `/quick` page) and its commands. |
-| `src/window.rs` | The Tauri side, a module of the program so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, and links that leave the app opened in the browser. |
+| `src/window.rs` | The Tauri side, a module of the program so that the library's tests do not link Tauri: the window without a system frame (a window with several webviews, so `get_webview_window` does not find it: use `pages::main_window` and `pages::front`), the bridge `window.moebiusDesktop` every page gets, and links that leave the app opened in the browser. |
 | `src/notices.rs` | `watch`: the notices of the person on a server, from `/v1/events` and `GET /v1/notices`, as `Effect`s (notify once, the count of unread). |
 | `src/badge.rs` | The count as a title and as the overlay image Windows draws over the taskbar icon. |
 | `src/notifications.rs` | The Tauri side of notices, a module of the program: native notifications that open their notice, the icon's count. |
@@ -72,7 +74,7 @@ The later parts of ADR 0021 build on these names:
   (`AppManifest::commands`) and allowed per page in `capabilities/`: the web app on the loopback gets a command only
   when `web-app.json` names it.
 - **A server** is `server::Server`, checked with `server::check` before anything opens, and shown through a
-  `proxy::Proxy` (`proxy::start`, then `Proxy::entry_url` in the window). Several servers (the rail) keep one `Proxy`
-  each (each has its own port, cookie and origin, `Proxy::origin`), and dropping one stops everything it relays; the
+  `proxy::Proxy` (`proxy::start`, then `Proxy::entry_url` in a webview of the window). Several servers (the rail) keep one `Proxy`
+  each (each has its own port, cookie and origin, `Proxy::origin`) and, in the window, one webview each (`pages`), and dropping a proxy stops everything it relays; the
   keychain holds their `Server::token`, which the app never writes to a file.
 - The main window's label is `window::MAIN`.
