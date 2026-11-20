@@ -10,7 +10,7 @@
 //! WSL 2 on Windows) for the connect page's first-start offer. [`rail`] keeps the servers the app remembers (their tokens
 //! in the system's keychain) and the page of each, for the rail at the window's left. [`tray`] reads the figures the tray icon shows and pauses and
 //! resumes all agents. [`instance`] decides which start of the app is the first: a later start shows the first one's window
-//! and ends.
+//! and ends. [`render`] turns WebKitGTK's accelerated compositing off on a Linux machine without a GPU.
 
 pub mod badge;
 pub mod instance;
@@ -20,5 +20,6 @@ pub mod notices;
 pub mod proxy;
 pub mod quick;
 pub mod rail;
+pub mod render;
 pub mod server;
 pub mod tray;
