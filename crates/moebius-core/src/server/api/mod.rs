@@ -9,6 +9,7 @@
 //! - `assignees`: giving a card or an inbox item to people.
 //! - `planning`: a card's priority and due date.
 //! - `notices`: what concerns a person (given, mentioned, a followed card changed), and following cards.
+//! - `status`: the few figures the tray and the rail of the desktop app show, without the snapshot.
 //! - `kinds`: kinds of issues and their fields, the kinds a project offers, a card's kind and fields, and the cards of every project by them.
 //! - `templates`: templates for issues and wiki pages, and making a page from one.
 //! - `repositories`: adding and editing repositories, and their settings and files.
@@ -91,6 +92,7 @@ mod runs;
 mod scope;
 mod session;
 mod settings;
+mod status;
 mod templates;
 mod terminals;
 mod uploads;
@@ -250,6 +252,7 @@ pub fn router(state: ApiState) -> Router {
         .merge(card_repositories::routes())
         .merge(planning::routes())
         .merge(notices::routes())
+        .merge(status::routes())
         .merge(kinds::routes())
         .merge(repositories::routes())
         .merge(projects::routes())
@@ -288,7 +291,22 @@ pub fn router(state: ApiState) -> Router {
         .merge(webhooks::public_routes())
         .merge(workflow_hooks::public_routes())
         .merge(session::public_routes())
+        .layer(compression())
         .with_state(state)
+}
+
+/// Compresses an answer of 1 KiB or more with gzip or brotli, when the request accepts it. An event stream is not
+/// compressed (it would be held back until a buffer fills), nor are images, and a WebSocket upgrade has no body.
+fn compression()
+-> tower_http::compression::CompressionLayer<impl tower_http::compression::predicate::Predicate> {
+    use tower_http::compression::predicate::{NotForContentType, Predicate, SizeAbove};
+    tower_http::compression::CompressionLayer::new().compress_when(
+        SizeAbove::new(1024)
+            .and(NotForContentType::IMAGES)
+            .and(NotForContentType::SSE)
+            .and(NotForContentType::const_new("font/"))
+            .and(NotForContentType::const_new("application/zip")),
+    )
 }
 
 /// Serves the API on `listener` until the future is dropped.
@@ -511,6 +529,111 @@ fn harness_repo(state: &ApiState) -> Result<Arc<HarnessRepo>, AppError> {
 mod tests {
     use super::testing::start;
     use super::*;
+
+    /// Starts routes that stand for the kinds of answer there are, behind the layer of the real router.
+    async fn compressed_routes() -> (String, std::sync::Arc<tokio::sync::Notify>) {
+        use axum::response::IntoResponse;
+        let release = std::sync::Arc::new(tokio::sync::Notify::new());
+        let gate = release.clone();
+        let big = "export const a = 1;\n".repeat(200);
+        let app = Router::new()
+            .route(
+                "/app.js",
+                get({
+                    let big = big.clone();
+                    move || async move {
+                        (
+                            [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+                            big,
+                        )
+                    }
+                }),
+            )
+            .route(
+                "/export.jsonl",
+                get(move || async move { ([(header::CONTENT_TYPE, "application/x-ndjson")], big) }),
+            )
+            .route(
+                "/small.js",
+                get(|| async { ([(header::CONTENT_TYPE, "text/javascript")], "export {}") }),
+            )
+            .route(
+                "/stream",
+                get(move || {
+                    let gate = gate.clone();
+                    async move {
+                        let chunks = futures_util::stream::unfold(0, move |step| {
+                            let gate = gate.clone();
+                            async move {
+                                match step {
+                                    0 => Some((Ok::<_, std::io::Error>("first;".repeat(300)), 1)),
+                                    1 => {
+                                        gate.notified().await;
+                                        Some((Ok("second".into()), 2))
+                                    }
+                                    _ => None,
+                                }
+                            }
+                        });
+                        (
+                            [(header::CONTENT_TYPE, "text/event-stream")],
+                            axum::body::Body::from_stream(chunks),
+                        )
+                            .into_response()
+                    }
+                }),
+            )
+            .layer(compression());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (base, release)
+    }
+
+    #[tokio::test]
+    async fn files_and_downloads_of_a_kilobyte_or_more_are_compressed_and_smaller_ones_are_not() {
+        let (base, _release) = compressed_routes().await;
+        let client = reqwest::Client::new();
+        let get = |path: &str, encoding: &'static str| {
+            client
+                .get(format!("{base}{path}"))
+                .header(header::ACCEPT_ENCODING, encoding)
+                .send()
+        };
+        for path in ["/app.js", "/export.jsonl"] {
+            let answer = get(path, "gzip, br").await.unwrap();
+            let encoding = answer.headers()[header::CONTENT_ENCODING].to_str().unwrap();
+            assert!(matches!(encoding, "gzip" | "br"), "{path}: {encoding}");
+            assert!(answer.bytes().await.unwrap().len() < 400, "{path}");
+            assert_eq!(
+                get(path, "identity")
+                    .await
+                    .unwrap()
+                    .headers()
+                    .get(header::CONTENT_ENCODING),
+                None,
+                "{path}"
+            );
+        }
+        let small = get("/small.js", "gzip, br").await.unwrap();
+        assert!(small.headers().get(header::CONTENT_ENCODING).is_none());
+    }
+
+    #[tokio::test]
+    async fn an_event_stream_is_not_compressed_and_arrives_chunk_by_chunk() {
+        let (base, release) = compressed_routes().await;
+        let mut answer = reqwest::Client::new()
+            .get(format!("{base}/stream"))
+            .header(header::ACCEPT_ENCODING, "gzip, br")
+            .send()
+            .await
+            .unwrap();
+        assert!(answer.headers().get(header::CONTENT_ENCODING).is_none());
+        // The first chunk is read while the server holds the rest back.
+        assert_eq!(answer.chunk().await.unwrap().unwrap(), "first;".repeat(300));
+        release.notify_one();
+        assert_eq!(answer.chunk().await.unwrap().unwrap(), "second");
+    }
 
     #[tokio::test]
     async fn a_client_reads_health_and_a_snapshot() {

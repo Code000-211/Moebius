@@ -7,12 +7,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { addPerson, changePerson, people, type Role, tokensOf } from "../../api/calls/people";
+import { getSession } from "../../api/calls/session";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { AddedPerson, Person } from "../../api/types/server";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { Box } from "../../ui/page/Box";
+import { ConfirmDelete } from "../../ui/page/ConfirmDelete";
 import { Field, Select } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
@@ -123,6 +125,8 @@ function AddPerson({ onAdded }: { onAdded: (added: AddedPerson) => void }) {
 function PersonRow({ person }: { person: Person }) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [asking, setAsking] = useState(false);
+  const me = useQuery({ queryKey: keys.session, queryFn: getSession, enabled: false }).data?.person;
   const change = useMutation({
     mutationFn: (what: { role?: Role; disabled?: boolean }) => changePerson(person.id, what),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.people }),
@@ -148,7 +152,11 @@ function PersonRow({ person }: { person: Person }) {
         <Button
           variant="secondary"
           size="sm"
-          onClick={() => change.mutate({ disabled: !person.disabled })}
+          onClick={() =>
+            person.id === me?.id && !person.disabled
+              ? setAsking(true)
+              : change.mutate({ disabled: !person.disabled })
+          }
         >
           {person.disabled ? "Enable" : "Disable"}
         </Button>
@@ -156,6 +164,17 @@ function PersonRow({ person }: { person: Person }) {
           Tokens
         </Button>
       </div>
+      <ConfirmDelete
+        open={asking}
+        onOpenChange={setAsking}
+        title="Disable yourself?"
+        confirmLabel="Disable me"
+        pendingLabel="Disabling"
+        onConfirm={() => change.mutateAsync({ disabled: true }).then(() => undefined)}
+      >
+        This is your own row: you are signed out at once and cannot sign in again until another
+        owner enables you.
+      </ConfirmDelete>
       {change.isError && (
         <Notice tone="error" className="mt-2">
           {sayError(change.error, "Could not change the person. Try again.")}

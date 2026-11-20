@@ -13,12 +13,13 @@ app is in [`docs/architecture.md`](../../docs/architecture.md#the-desktop-app).
 | `src/lib.rs` | The parts of the app that are tested without a window. |
 | `src/links.rs` | Which addresses the window shows (its own pages) and which open in the system's browser. |
 | `src/local/` | The server of this machine the app sets up and starts: `mod.rs` (state, `start`), `host.rs` (the shell: `sh`, or `wsl.exe` on Windows), `release.rs` (downloading `moebius` and checking it against `SHA256SUMS`). |
-| `src/server.rs` | `Server` (an address and an access token) and `check`, which asks `GET /v1/health` and refuses a server of another minor version, naming the release that matches. |
+| `src/server.rs` | `Server` (an address and an access token) and `http`, the one client of the app, and `check`, which asks `GET /v1/health` and refuses a server of another minor version, naming the release that matches. |
 | `src/proxy/` | The app's own address on the loopback: `assets.rs` serves the web app embedded from `web/dist`, `forward.rs` forwards `/v1/` to the server with the token (HTTP and WebSockets), `mod.rs` lets only the window use it. |
-| `src/tray.rs` | What the tray shows of a server and asks of it: the figures, their lines, `follow` (reads them again after every burst of the server's events) and the routes that pause and resume all agents. |
+| `src/tray.rs` | What the tray shows of a server and asks of it: the figures, their lines, `follow` (reads `GET /v1/status` again after a burst of the server's events, and for the steps of runs only every ten seconds) and the routes that pause and resume all agents. |
 | `src/tray_icon.rs` | The Tauri side of the tray, in the program: the icon, its menu and what its items do. |
 | `src/rail/` | The rail of servers: `mod.rs` (the remembered servers, a proxy and a page of each, adding, opening, removing, `poll`), `records.rs` (`servers.json`, no token), `secrets.rs` (the system's keychain), `ssh.rs` (a server over an SSH tunnel) and `status.rs` (whether a server answers and its Inbox's count). |
 | `src/servers.rs` | The rail's commands on the Tauri side: `connect`, `connect_ssh`, `servers`, `switch_server` and `remove_server`, and `local_state` and `local_connect` for the server of this machine. |
+| `src/render.rs` | Linux only: turns WebKitGTK's accelerated compositing off when the machine has no GPU render node (`MOEBIUS_RENDERING` overrides), set before the first webview. |
 | `src/quick.rs` | The global shortcut tested without a window: `normalize` (which key combinations are accepted, written as `Ctrl+Shift+Space`), `Store` (the choice kept in `quick.json` in the configuration directory) and the script that asks the main window to open a path. |
 | `src/quick_window.rs` | The Tauri side of the global shortcut, a module of the program: registering it, the small window over everything (the web app's `/quick` page) and its commands. |
 | `src/window.rs` | The Tauri side, a module of the program so that the library's tests do not link Tauri: the window without a system frame, the bridge `window.moebiusDesktop` every page gets, and links that leave the app opened in the browser. |

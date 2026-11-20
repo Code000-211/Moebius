@@ -767,7 +767,8 @@ describe("an open chat", () => {
       await page.getByTestId("chat-chip").click();
       const terminal = page.getByRole("button", { name: "Terminal" });
       await terminal.waitFor();
-      expect(await terminal.isEnabled()).toBe(true);
+      // The chat's state is read again within a second of the event that changed it, so the button turns on then.
+      await expect.poll(() => terminal.isEnabled()).toBe(true);
     },
   );
 

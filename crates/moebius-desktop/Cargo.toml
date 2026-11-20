@@ -45,6 +45,7 @@ tauri-build = "2.7.6"
 [dev-dependencies]
 moebius-core = { path = "../moebius-core" }
 tempfile = "3.27.0"
+flate2 = "1.1.9"
 
 [lints]
 workspace = true

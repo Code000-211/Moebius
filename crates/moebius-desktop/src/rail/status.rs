@@ -3,9 +3,10 @@
 
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::server::Server;
+use crate::tray;
 
 /// How long a server has to answer before the rail draws it grey.
 const TIMEOUT: Duration = Duration::from_secs(3);
@@ -23,42 +24,11 @@ pub struct Entry {
     pub inbox: u32,
 }
 
-#[derive(Deserialize)]
-struct Snapshot {
-    #[serde(default)]
-    inbox: Vec<serde_json::Value>,
-}
-
-#[derive(Deserialize)]
-struct Notice {
-    #[serde(default)]
-    read: bool,
-}
-
-/// The count of the Inbox of `server`, or none when it does not answer (or does not accept its token).
-pub async fn inbox_count(http: &reqwest::Client, server: &Server) -> Option<u32> {
-    let get = |path: &str| {
-        http.get(format!("{}{path}", server.url))
-            .bearer_auth(&server.token)
-            .timeout(TIMEOUT)
-            .send()
-    };
-    let snapshot: Snapshot = get("/v1/snapshot")
+/// The count of the Inbox of `server`, or none when it does not answer (or does not accept its token). It is one
+/// small read of `GET /v1/status`, not the snapshot.
+pub async fn inbox_count(server: &Server) -> Option<u32> {
+    tray::read_within(server, TIMEOUT)
         .await
-        .ok()?
-        .error_for_status()
-        .ok()?
-        .json()
-        .await
-        .ok()?;
-    // The server answers, so a count of the notices it cannot give leaves the items of the inbox alone.
-    let unread = match get("/v1/notices").await {
-        Ok(response) => response
-            .json::<Vec<Notice>>()
-            .await
-            .map(|notices| notices.iter().filter(|n| !n.read).count())
-            .unwrap_or(0),
-        Err(_) => 0,
-    };
-    u32::try_from(snapshot.inbox.len() + unread).ok()
+        .ok()
+        .map(|figures| figures.rail_count())
 }
