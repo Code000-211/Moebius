@@ -309,7 +309,7 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
     return;
   }
   if (what === "chat") {
-    await page.getByRole("button", { name: "Ask Moebius" }).click();
+    await page.keyboard.press("Control+j");
     await page.waitForTimeout(400);
     return;
   }

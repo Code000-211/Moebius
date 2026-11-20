@@ -820,13 +820,9 @@ describe("the Moebius agent", () => {
     "opens over another page and tells the agent where the person is",
     async () => {
       await open("/inbox");
-      await page.getByRole("button", { name: "Ask Moebius" }).click();
-      const window = page.getByRole("dialog", { name: "Moebius agent" });
+      await page.keyboard.press("Control+j");
+      const window = page.getByRole("complementary", { name: "Moebius agent" });
       await window.waitFor();
-      // The sheet says which page it is looking at, and offers nothing to leave when this is already a new
-      // conversation.
-      await window.getByText("viewing Inbox").waitFor();
-      expect(await window.getByRole("button", { name: "New conversation" }).count()).toBe(0);
       await window.getByRole("textbox", { name: "Message" }).fill("What is this page?");
       await window.getByRole("textbox", { name: "Message" }).press("Enter");
       await window.getByText("You said: What is this page?").first().waitFor();
@@ -851,9 +847,6 @@ describe("the Moebius agent", () => {
       await page.waitForURL("**/retro");
       // The address changes before the page is drawn; a person writes once the Retro is on the screen.
       await page.getByRole("heading", { name: "Retro", level: 1 }).waitFor();
-      // What it is looking at follows the person, and once a conversation exists there is a way out of it.
-      await window.getByText("viewing Retro").waitFor();
-      expect(await window.getByRole("button", { name: "New conversation" }).count()).toBe(1);
       await window.getByText("You said: What is this page?").first().waitFor();
       await window.getByRole("textbox", { name: "Message" }).fill("And this one?");
       await window.getByRole("textbox", { name: "Message" }).press("Enter");
@@ -874,16 +867,15 @@ describe("the Moebius agent", () => {
   );
 
   /**
-   * Closing the sheet is not reading: an answer that arrives while it is closed is still unread, and
-   * opening the sheet is what reads it.
+   * An answer that arrives while the panel is closed opens it, and reading it there is what marks it read.
    */
   it.skipIf(usesRealServer)(
-    "does not mark a chat read for an answer that arrived while it was closed",
+    "opens itself for an answer that arrived while it was closed, and marks it read there",
     async () => {
       await open("/inbox");
       fake().autoAnswer = false;
-      await page.getByRole("button", { name: "Ask Moebius" }).click();
-      const window = page.getByRole("dialog", { name: "Moebius agent" });
+      await page.keyboard.press("Control+j");
+      const window = page.getByRole("complementary", { name: "Moebius agent" });
       await window.getByRole("textbox", { name: "Message" }).fill("Look at this");
       await window.getByRole("textbox", { name: "Message" }).press("Enter");
       await window.getByTestId("person-message").filter({ hasText: "Look at this" }).waitFor();
@@ -891,19 +883,10 @@ describe("the Moebius agent", () => {
 
       await window.getByRole("button", { name: "Close the Moebius agent" }).click();
       await window.waitFor({ state: "detached" });
+      expect(fake().seen).toHaveLength(0);
       fake().agentStart(run);
       fake().delta(run, "The answer came late.");
       fake().settle(run, "The answer came late.");
-      // The count's only home now is the rail's Chat icon, so the sidebar is closed to read it there: one chat
-      // waits with an answer nobody read.
-      await page.getByRole("button", { name: "Collapse the sidebar" }).click();
-      await page
-        .getByRole("navigation", { name: "Pages" })
-        .getByRole("link", { name: "Chat. 1" })
-        .waitFor();
-      expect(fake().seen).toHaveLength(0);
-
-      await page.getByRole("button", { name: "Ask Moebius" }).click();
       await window.getByText("The answer came late.").waitFor();
       await expect.poll(() => fake().seen.at(-1)?.seq ?? 0).toBeGreaterThan(0);
     },
@@ -913,8 +896,8 @@ describe("the Moebius agent", () => {
     "says why a conversation could not be read instead of drawing bars for ever",
     async () => {
       await open("/inbox");
-      await page.getByRole("button", { name: "Ask Moebius" }).click();
-      const window = page.getByRole("dialog", { name: "Moebius agent" });
+      await page.keyboard.press("Control+j");
+      const window = page.getByRole("complementary", { name: "Moebius agent" });
       // Reading the events of the chat fails; starting it and saying things to it does not.
       await page.route(/\/v1\/runs\/\d+\/events/, (route) =>
         route.fulfill({ status: 500, contentType: "text/plain", body: "the store is unavailable" }),
@@ -932,10 +915,10 @@ describe("the Moebius agent", () => {
 
   it.skipIf(usesRealServer)("starts in the repository of the board it is opened on", async () => {
     await open("/board/1");
-    await page.getByRole("button", { name: "Ask Moebius" }).click();
-    const window = page.getByRole("dialog", { name: "Moebius agent" });
-    await window.getByRole("textbox", { name: "Message" }).fill("Look at this board");
-    await window.getByRole("textbox", { name: "Message" }).press("Enter");
+    // The docked field sends it, which opens the panel with the message.
+    await page.getByRole("textbox", { name: "Ask Moebius" }).fill("Look at this board");
+    await page.keyboard.press("Enter");
+    const window = page.getByRole("complementary", { name: "Moebius agent" });
     await window.getByText("You said: Look at this board").first().waitFor();
     expect(fake().started[0]).toMatchObject({ repository: 1 });
     expect(String(fake().started[0]?.context)).toContain("Repository: demo (id 1)");
@@ -949,8 +932,8 @@ describe("the Moebius agent", () => {
     "takes a chat whose agent went away up again instead of starting a new one",
     async () => {
       await open("/inbox");
-      await page.getByRole("button", { name: "Ask Moebius" }).click();
-      const window = page.getByRole("dialog", { name: "Moebius agent" });
+      await page.keyboard.press("Control+j");
+      const window = page.getByRole("complementary", { name: "Moebius agent" });
       const field = window.getByRole("textbox", { name: "Message" });
       await field.fill("First question");
       await field.press("Enter");
@@ -984,8 +967,8 @@ describe("the Moebius agent", () => {
     "starts fresh when its chat is deleted elsewhere, and the next message starts a new chat",
     async () => {
       await open("/inbox");
-      await page.getByRole("button", { name: "Ask Moebius" }).click();
-      const window = page.getByRole("dialog", { name: "Moebius agent" });
+      await page.keyboard.press("Control+j");
+      const window = page.getByRole("complementary", { name: "Moebius agent" });
       const field = window.getByRole("textbox", { name: "Message" });
       await field.fill("First question");
       await field.press("Enter");
@@ -996,8 +979,7 @@ describe("the Moebius agent", () => {
         headers: { "X-Moebius": "1" },
       });
       expect(deleted.ok(), await deleted.text()).toBe(true);
-      // The sheet forgets the conversation: nothing to leave or open any more.
-      await window.getByRole("button", { name: "New conversation" }).waitFor({ state: "detached" });
+      // The panel forgets the conversation.
       await window.getByText("You said: First question").waitFor({ state: "detached" });
 
       await field.fill("Second question");
@@ -1010,8 +992,8 @@ describe("the Moebius agent", () => {
 
   it("opens in the real server too, with the page's text", async () => {
     await open("/inbox");
-    await page.getByRole("button", { name: "Ask Moebius" }).click();
-    await page.getByRole("dialog", { name: "Moebius agent" }).waitFor();
+    await page.keyboard.press("Control+j");
+    await page.getByRole("complementary", { name: "Moebius agent" }).waitFor();
     await page.getByText("Ask the agent about this page").waitFor();
   });
 
@@ -1021,8 +1003,8 @@ describe("the Moebius agent", () => {
    */
   it("offers a way to begin, and the ask lands in the field", async () => {
     await open("/inbox");
-    await page.getByRole("button", { name: "Ask Moebius" }).click();
-    const window = page.getByRole("dialog", { name: "Moebius agent" });
+    await page.keyboard.press("Control+j");
+    const window = page.getByRole("complementary", { name: "Moebius agent" });
     const starters = window.getByTestId("chat-starters");
     await starters.getByRole("button", { name: "What is on the board right now?" }).click();
     expect(await window.getByRole("textbox", { name: "Message" }).inputValue()).toBe(

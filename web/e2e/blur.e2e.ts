@@ -74,8 +74,9 @@ describe.skipIf(usesRealServer)("blur", () => {
     await bar.waitFor();
 
     // The sheet; the tooltip is the one of the blocked tag.
-    await page.getByRole("button", { name: "Ask Moebius" }).click();
-    const sheet = page.getByRole("dialog", { name: "Moebius agent" });
+    await page.getByRole("textbox", { name: "Ask Moebius" }).fill("Hello");
+    await page.keyboard.press("Enter");
+    const sheet = page.getByRole("complementary", { name: "Moebius agent" });
     await sheet.waitFor();
 
     for (const state of ["on", "off"] as const) {

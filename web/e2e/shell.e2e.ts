@@ -177,12 +177,15 @@ async function signedIn(path: string): Promise<Page> {
 const COLUMN = '[data-surface="right-column"]';
 
 /**
- * The properties pane with a page's properties in it, and the Moebius agent lying over it: a workflow's definition has
- * properties (what starts it, its nodes, its last run), the Inbox has none and shows no pane. The properties are marked
- * before the agent opens, so a pane drawn again from nothing would be told by the mark being gone.
+ * The properties pane with a page's properties in it, and the Moebius agent's panel taking its place: a workflow's
+ * definition has properties (what starts it, its nodes, its last run), the Inbox has none and shows no pane. The
+ * properties are marked before the agent opens, so a pane drawn again from nothing would be told by the mark being gone.
  */
 describe.skipIf(usesRealServer)("the properties pane and the Moebius agent", () => {
-  it("opens and closes the agent over a page with properties, which keep their state", async () => {
+  const FIELD = { name: "Ask Moebius" } as const;
+  const PANEL = { name: "Moebius agent" } as const;
+
+  it("takes the pane's place when the agent opens, and gives it back, the properties kept", async () => {
     const page = await signedIn("/workflows/release");
     const properties = page.locator(COLUMN).getByRole("region", { name: "Definition" });
     await properties.getByText("3 nodes").waitFor();
@@ -197,32 +200,21 @@ describe.skipIf(usesRealServer)("the properties pane and the Moebius agent", () 
     await properties.evaluate((element) => {
       element.dataset.kept = "yes";
     });
-    const main = await box(page, "main");
 
     await page.keyboard.press("Control+j");
-    const agent = page.getByRole("dialog", { name: "Moebius agent" });
+    const agent = page.getByRole("complementary", PANEL);
     await agent.waitFor();
-    // It lies over the pane, wider than it, flush with the panel's inside; the page keeps its width. The boxes are
-    // read together, once the layout the sheet opened has settled.
-    const layout = async () => {
-      const surface = await box(page, '[data-surface="page"]');
-      const over = await box(page, '[role="dialog"][aria-label="Moebius agent"]');
-      return {
-        overLeftOfColumn: over.x < (await box(page, COLUMN)).x,
-        right: over.x + over.width - (surface.x + surface.width),
-        top: over.y - surface.y,
-        height: over.height - surface.height,
-        main: await box(page, "main"),
-      };
-    };
-    // Inside the panel's 1px edge.
-    await expect
-      .poll(layout)
-      .toEqual({ overLeftOfColumn: true, right: -1, top: 1, height: -2, main });
+    // The pane is hidden; the agent's panel is in the same place, in flow beside the page.
+    await page.locator(COLUMN).waitFor({ state: "hidden" });
+    const over = await box(page, '[data-surface="agent-panel"]');
+    expect(over.y).toBe(panel.y + 1);
+    expect(over.x + over.width).toBe(panel.x + panel.width - 1);
+    expect(over.y + over.height).toBe(panel.y + panel.height - 1);
 
-    // "Properties" gives the place back, and they are as they were.
-    await agent.getByRole("button", { name: "Properties" }).click();
+    // Closing gives the pane back, as it was.
+    await agent.getByRole("button", { name: "Close the Moebius agent" }).click();
     await agent.waitFor({ state: "hidden" });
+    await page.locator(COLUMN).waitFor();
     expect(await properties.getAttribute("data-kept")).toBe("yes");
     await properties.getByText("3 nodes").waitFor();
 
@@ -235,24 +227,41 @@ describe.skipIf(usesRealServer)("the properties pane and the Moebius agent", () 
     await page.context().close();
   });
 
-  it("shows no right column on a page without properties, and still opens the agent", async () => {
+  it("sends from the field, which opens the panel with the message, and the field is back when it closes", async () => {
     const page = await signedIn("/inbox");
     expect(await page.locator(COLUMN).isVisible()).toBe(false);
-    expect(await page.locator(COLUMN).boundingBox()).toBeNull();
-    // Nothing on the page offers to fold, show or ask: there is no rail and no row for the agent.
+    // Nothing on the page offers to fold or show; the agent is a quiet field at the bottom of the panel.
     expect(await page.getByRole("button", { name: "Show the properties" }).count()).toBe(0);
-    expect(await page.getByRole("button", { name: "Ask Moebius" }).count()).toBe(0);
-    await page.keyboard.press("Control+j");
-    const agent = page.getByRole("dialog", { name: "Moebius agent" });
+    const field = page.getByRole("textbox", FIELD);
+    await field.waitFor();
+    expect(await page.getByRole("button", FIELD).count()).toBe(0);
+    expect(await page.locator('[data-surface="agent-dock"] kbd').count()).toBe(0);
+    const surface = await box(page, '[data-surface="page"]');
+    const dock = await box(page, '[data-surface="agent-dock"]');
+    expect(dock.y + dock.height).toBeLessThanOrEqual(surface.y + surface.height);
+    await field.fill("What is this page?");
+    await field.press("Enter");
+    const agent = page.getByRole("complementary", PANEL);
     await agent.waitFor();
-    expect((await box(page, '[role="dialog"][aria-label="Moebius agent"]')).width).toBe(400);
-    // Nothing to go back to here.
-    expect(await agent.getByRole("button", { name: "Properties" }).count()).toBe(0);
+    await agent.getByText("You said: What is this page?").first().waitFor();
+    expect((await box(page, '[data-surface="agent-panel"]')).width).toBe(344);
+    // While the panel is open there is no field with that name, and no key hint in the panel.
+    expect(await page.getByRole("textbox", FIELD).count()).toBe(0);
+    expect(await page.getByRole("button", FIELD).count()).toBe(0);
+    expect(await agent.locator("kbd").count()).toBe(0);
     await agent.getByRole("button", { name: "Close the Moebius agent" }).click();
     await agent.waitFor({ state: "hidden" });
+    await field.waitFor();
     expect(await page.locator(COLUMN).isVisible()).toBe(false);
-    // No round button floats at the bottom right any more.
-    expect(await page.getByRole("button", { name: "Open the floating chat" }).count()).toBe(0);
+    await page.context().close();
+  });
+
+  it("has no field on Settings, and the shortcut still opens the agent there", async () => {
+    const page = await signedIn("/settings");
+    await page.getByRole("navigation", { name: "Pages" }).waitFor();
+    expect(await page.getByRole("textbox", FIELD).count()).toBe(0);
+    await page.keyboard.press("Control+j");
+    await page.getByRole("complementary", PANEL).waitFor();
     await page.context().close();
   });
 

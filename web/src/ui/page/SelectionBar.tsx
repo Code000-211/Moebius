@@ -72,7 +72,7 @@ export function SelectionBar({
     <div
       role="toolbar"
       aria-label="Chosen"
-      className="fixed bottom-4 left-1/2 z-sheet flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-1.5 rounded-card bg-panel py-1.5 pr-1.5 pl-4 shadow-raised"
+      className="fixed bottom-20 left-1/2 z-sheet flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-1.5 rounded-card bg-panel py-1.5 pr-1.5 pl-4 shadow-raised"
     >
       <b role="status" className="whitespace-nowrap pr-1 text-base font-medium text-text">
         {count} {noun}

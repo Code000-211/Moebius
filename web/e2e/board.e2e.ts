@@ -477,7 +477,7 @@ describe("live data", () => {
   );
 
   it.skipIf(usesRealServer)(
-    "keeps the dock clear of the Moebius agent, and the Following row inside the column",
+    "keeps the dock clear of the Moebius agent's panel, and the Following row inside the column",
     async () => {
       for (const width of [1280, 1440, 1600, 1920]) {
         await fresh();
@@ -495,7 +495,7 @@ describe("live data", () => {
           }
         }
         await page.keyboard.press("Control+j");
-        const chat = page.getByRole("dialog", { name: /Moebius/ });
+        const chat = page.getByRole("complementary", { name: /Moebius/ });
         await chat.waitFor();
         const sheet = (await chat.boundingBox()) as { x: number };
         const drawer = (await dock().boundingBox()) as { x: number; width: number };

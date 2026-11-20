@@ -1,8 +1,8 @@
 /**
  * Where the package sheet is pointed and whether it is showing. The shell holds one of these, so there is one sheet at
  * a time: a page opens it on a catalog (`open("moebius")` from the Plugins page, `open("pi", agent)` from an agent's
- * Extensions), and opening it from elsewhere switches the catalog it shows. It shares its place over the page's right
- * column with the Moebius agent (`ui/page/SheetSlot.tsx`): opening one hides the other.
+ * Extensions), and opening it from elsewhere switches the catalog it shows. It lies over the page's right column
+ * (`ui/page/SheetSlot.tsx`).
  */
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
 import { useSheetSlot } from "../ui/page/SheetSlot";
