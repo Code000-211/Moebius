@@ -1,6 +1,6 @@
 /**
- * The editor of a wiki page: the Markdown at the left and how it reads at the right, side by side on a wide screen,
- * with an optional line for the commit. A new page also takes its path, in the folder it was started in. Saving is
+ * The editor of a wiki page: the Markdown, and how it reads under it, with an optional line for the commit. A new
+ * page also takes its path, in the folder it was started in. Saving is
  * `PUT /v1/wiki/pages/{path}`, a commit by the person pushed to the wiki's origin; when the push fails the server says
  * why and nothing is lost from the editor. The save carries `base`, the commit of the page as the editor loaded it, so
  * a page someone else saved meanwhile is refused (409) rather than overwritten: the editor says so (before saving too,
@@ -152,12 +152,12 @@ export function PageEditor({
           />
         </Field>
       )}
-      <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+      <div className="grid min-w-0 gap-4">
         <div className="min-w-0">
           <Field label="Text">
             <TextArea
               ref={field}
-              rows={22}
+              rows={14}
               value={draft}
               mono
               placeholder={"# On call\n\nWho answers at night."}
@@ -211,7 +211,7 @@ export function PageEditor({
         </div>
         <section
           aria-label="Preview"
-          className="flex min-w-0 flex-col border-hairline xl:border-l xl:pl-4"
+          className="flex min-w-0 flex-col border-t border-hairline pt-4"
         >
           <div className="min-h-24">
             {draft.trim() === "" ? (

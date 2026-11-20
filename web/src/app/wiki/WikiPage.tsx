@@ -357,7 +357,7 @@ function ChosenPage({
                     <Button size="sm" variant="ghost" onClick={() => setDeleting(true)}>
                       Delete
                     </Button>
-                    <Button size="sm" onClick={() => onView("edit")}>
+                    <Button size="sm" variant="secondary" onClick={() => onView("edit")}>
                       <PencilSimpleIcon className="size-4" aria-hidden />
                       Edit
                     </Button>
@@ -414,7 +414,7 @@ function ChosenPage({
         </article>
       </TextColumn>
 
-      {!editing && (contents.length > 0 || hasLinks) && (
+      {(contents.length > 0 || hasLinks) && (
         <aside
           data-testid="outline-column"
           className="hidden w-56 shrink-0 flex-col gap-4 overflow-y-auto border-l border-hairline px-3 py-4 lg:flex"
