@@ -158,6 +158,7 @@ fn card_query(pairs: Vec<(String, String)>) -> Result<CardQuery, AppError> {
             }
             "kind" => query.kind = Some(value),
             "state" => query.state = Some(value),
+            "assignee" => query.assignee = Some(value),
             "sort" => query.sort = Some(value),
             "order" => match value.as_str() {
                 "asc" => query.descending = false,
@@ -172,7 +173,7 @@ fn card_query(pairs: Vec<(String, String)>) -> Result<CardQuery, AppError> {
                 Some(name) => query.fields.push((name.to_string(), value)),
                 None => {
                     return Err(AppError::Invalid(format!(
-                        "{other} is not a filter: project, kind, state, field.<name>, sort or order"
+                        "{other} is not a filter: project, kind, state, assignee, field.<name>, sort or order"
                     )));
                 }
             },
@@ -370,5 +371,29 @@ mod tests {
         )
         .await;
         assert_eq!(status, Status::CONFLICT, "cards have it");
+    }
+
+    #[tokio::test]
+    async fn the_issues_of_one_person_are_asked_for_by_assignee() {
+        let (_d, state, addr) = start().await;
+        let token = state.token.to_string();
+        let card = state.app.store.cards(1).unwrap()[0].clone();
+        state
+            .app
+            .store
+            .add_person("lea", "Lea", crate::store::Role::Member)
+            .unwrap();
+        state.app.set_assignees(card.id, &["lea".into()]).unwrap();
+        let (status, mine) = call("GET", &addr, &token, "/v1/issues?assignee=@Lea", None).await;
+        assert_eq!(status, Status::OK, "{mine}");
+        let ids: Vec<i64> = mine
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c["id"].as_i64().unwrap())
+            .collect();
+        assert_eq!(ids, [card.id]);
+        let (_, nobody) = call("GET", &addr, &token, "/v1/issues?assignee=tom", None).await;
+        assert_eq!(nobody, json!([]));
     }
 }

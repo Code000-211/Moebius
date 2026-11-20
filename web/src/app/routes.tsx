@@ -42,6 +42,9 @@ const InboxPage = lazy(() =>
 const IssuesPage = lazy(() =>
   import("./issues/IssuesPage").then((all) => ({ default: all.IssuesPage })),
 );
+const MyIssuesPage = lazy(() =>
+  import("./issues/MyIssuesPage").then((all) => ({ default: all.MyIssuesPage })),
+);
 const KindsPage = lazy(() =>
   import("./kinds/KindsPage").then((all) => ({ default: all.KindsPage })),
 );
@@ -137,6 +140,7 @@ const PAGES_BUILT = new Set([
   "workflows",
   "people",
   "issues",
+  "my-issues",
   "kinds",
   "tokens",
   "wiki",
@@ -186,6 +190,7 @@ export const routes = [
       { path: "usage", element: <UsagePage /> },
       { path: "start", element: <StartPage /> },
       { path: "issues", element: <IssuesPage /> },
+      { path: "my-issues", element: <MyIssuesPage /> },
       { path: "kinds", element: <KindsPage /> },
       { path: "tokens", element: <TokensPage /> },
       { path: "plugin-settings", element: <PluginSettingsPage /> },

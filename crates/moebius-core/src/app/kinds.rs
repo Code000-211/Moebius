@@ -48,6 +48,8 @@ pub struct CardQuery {
     pub kind: Option<String>,
     /// `open` or `closed`.
     pub state: Option<String>,
+    /// Only the cards given to this person (a handle, with or without the `@`, in any case).
+    pub assignee: Option<String>,
     /// Only the cards whose field of this name has this value, all of them.
     pub fields: Vec<(String, String)>,
     /// The name of a field the cards are ordered by; without it they are in the order they were made.
@@ -527,6 +529,14 @@ impl App {
                 _ => true,
             })
             .filter(|card| {
+                query.assignee.as_deref().is_none_or(|who| {
+                    let who = who.trim_start_matches('@');
+                    card.assignees
+                        .iter()
+                        .any(|each| each.trim_start_matches('@').eq_ignore_ascii_case(who))
+                })
+            })
+            .filter(|card| {
                 wanted.iter().all(|(name, want)| {
                     value_of(card, name).is_some_and(|have| compare(&have, want).is_eq())
                 })
@@ -614,6 +624,28 @@ mod tests {
     fn set(app: &App, card: i64, fields: Value) -> Result<Card> {
         let changes = serde_json::from_value(fields).unwrap();
         app.set_card_fields(card, &changes)
+    }
+
+    #[test]
+    fn the_issues_given_to_a_person_are_found_by_their_handle_in_any_case_and_across_projects() {
+        let (_dir, app, a, b) = two_projects();
+        app.store.add_person("tom", "Tom", Role::Member).unwrap();
+        app.set_assignees(a.id, &["lea".into()]).unwrap();
+        app.set_assignees(b.id, &["Tom".into(), "lea".into()])
+            .unwrap();
+        let titles = |who: &str| -> Vec<String> {
+            app.issues_across(&CardQuery {
+                assignee: Some(who.into()),
+                ..Default::default()
+            })
+            .unwrap()
+            .into_iter()
+            .map(|card| card.title)
+            .collect()
+        };
+        assert_eq!(titles("lea"), ["a", "b"]);
+        assert_eq!(titles("@TOM"), ["b"]);
+        assert!(titles("nobody").is_empty());
     }
 
     #[test]
