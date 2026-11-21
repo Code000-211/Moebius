@@ -347,88 +347,90 @@ describe("the issue in the dock", () => {
     await dock().getByText("FIFO or priority.").waitFor();
   });
 
-  it("assigns the card in the dock from the palette, which lists the commands of the card first", async () => {
-    await openBoard();
-    await newIssue("Palette card");
-    await openCard("Palette card");
-    await dock().getByRole("heading", { name: "Palette card" }).waitFor();
+  for (const n of Array.from({ length: 25 }, (_, i) => i))
+    it(`assigns the card in the dock from the palette, which lists the commands of the card first ${n}`, async () => {
+      await openBoard();
+      await newIssue("Palette card");
+      await openCard("Palette card");
+      await dock().getByRole("heading", { name: "Palette card" }).waitFor();
 
-    await page.evaluate(() => {
-      const log: string[] = [];
-      (window as unknown as { LOG: string[] }).LOG = log;
-      const t0 = performance.now();
-      const stamp = (m: string) => log.push(`${Math.round(performance.now() - t0)} ${m}`);
-      const orig = Event.prototype.preventDefault;
-      Event.prototype.preventDefault = function (this: Event) {
-        if ((this as KeyboardEvent).key === "k")
-          log.push(`PD ${new Error().stack?.split("\n").slice(2, 5).join("|")}`);
-        return orig.call(this);
-      };
-      window.addEventListener(
-        "keydown",
-        (e) => stamp(`key ${e.key} ctrl=${e.ctrlKey} target=${(e.target as HTMLElement).tagName}`),
-        true,
-      );
-      window.addEventListener("keydown", (e) =>
-        stamp(`key-bubble ${e.key} prevented=${e.defaultPrevented}`),
-      );
-      new MutationObserver(() => {
-        const d = [...document.querySelectorAll('[role="dialog"]')]
-          .map(
-            (x) =>
-              `${x.getAttribute("aria-label") ?? x.querySelector("h2")?.textContent}:${x.getAttribute("data-state")}`,
-          )
-          .join(",");
-        if (log[log.length - 1]?.endsWith(`D ${d}`)) return;
-        stamp(`D ${d}`);
-      }).observe(document.body, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ["data-state"],
+      await page.evaluate(() => {
+        const log: string[] = [];
+        (window as unknown as { LOG: string[] }).LOG = log;
+        const t0 = performance.now();
+        const stamp = (m: string) => log.push(`${Math.round(performance.now() - t0)} ${m}`);
+        const orig = Event.prototype.preventDefault;
+        Event.prototype.preventDefault = function (this: Event) {
+          if ((this as KeyboardEvent).key === "k")
+            log.push(`PD ${new Error().stack?.split("\n").slice(2, 5).join("|")}`);
+          return orig.call(this);
+        };
+        window.addEventListener(
+          "keydown",
+          (e) =>
+            stamp(`key ${e.key} ctrl=${e.ctrlKey} target=${(e.target as HTMLElement).tagName}`),
+          true,
+        );
+        window.addEventListener("keydown", (e) =>
+          stamp(`key-bubble ${e.key} prevented=${e.defaultPrevented}`),
+        );
+        new MutationObserver(() => {
+          const d = [...document.querySelectorAll('[role="dialog"]')]
+            .map(
+              (x) =>
+                `${x.getAttribute("aria-label") ?? x.querySelector("h2")?.textContent}:${x.getAttribute("data-state")}`,
+            )
+            .join(",");
+          if (log[log.length - 1]?.endsWith(`D ${d}`)) return;
+          stamp(`D ${d}`);
+        }).observe(document.body, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ["data-state"],
+        });
       });
+      await page.keyboard.press("Control+k");
+      const first = page.getByRole("option").first();
+      await first.waitFor();
+      expect(await first.textContent()).toContain("Assign to me");
+      await page.keyboard.press("Enter");
+      await openProps();
+      await value(/^Claim person/).waitFor();
+      await closeProps();
+      // The palette closed, and the card is still the one in focus: its key does the next thing.
+      await page.getByRole("option").first().waitFor({ state: "detached" });
+      await page.keyboard.press("Control+k");
+      try {
+        await page.getByRole("option", { name: /Unassign/ }).waitFor({ timeout: 8000 });
+      } catch (e) {
+        console.log(
+          "DBG",
+          JSON.stringify(
+            await page.evaluate(() => ({
+              dialogs: [...document.querySelectorAll('[role="dialog"]')].map((d) => [
+                d.getAttribute("aria-label"),
+                d.getAttribute("data-state"),
+              ]),
+              options: [...document.querySelectorAll('[role="option"]')]
+                .map((o) => o.textContent)
+                .slice(0, 4),
+              active: document.activeElement?.outerHTML.slice(0, 100),
+              hidden: [...document.querySelectorAll('[role="option"]')]
+                .slice(0, 2)
+                .map((o) => o.closest('[aria-hidden="true"]')?.outerHTML.slice(0, 80) ?? "none"),
+              bodyKids: [...document.body.children].map(
+                (c) => `${c.tagName}:${c.getAttribute("aria-hidden")}:${c.getAttribute("role")}`,
+              ),
+              log: (window as unknown as { LOG: string[] }).LOG,
+            })),
+          ),
+        );
+        throw e;
+      }
+      await page.keyboard.press("Escape");
+      await page.getByRole("option").first().waitFor({ state: "detached" });
     });
-    await page.keyboard.press("Control+k");
-    const first = page.getByRole("option").first();
-    await first.waitFor();
-    expect(await first.textContent()).toContain("Assign to me");
-    await page.keyboard.press("Enter");
-    await openProps();
-    await value(/^Claim person/).waitFor();
-    await closeProps();
-    // The palette closed, and the card is still the one in focus: its key does the next thing.
-    await page.getByRole("option").first().waitFor({ state: "detached" });
-    await page.keyboard.press("Control+k");
-    try {
-      await page.getByRole("option", { name: /Unassign/ }).waitFor({ timeout: 8000 });
-    } catch (e) {
-      console.log(
-        "DBG",
-        JSON.stringify(
-          await page.evaluate(() => ({
-            dialogs: [...document.querySelectorAll('[role="dialog"]')].map((d) => [
-              d.getAttribute("aria-label"),
-              d.getAttribute("data-state"),
-            ]),
-            options: [...document.querySelectorAll('[role="option"]')]
-              .map((o) => o.textContent)
-              .slice(0, 4),
-            active: document.activeElement?.outerHTML.slice(0, 100),
-            hidden: [...document.querySelectorAll('[role="option"]')]
-              .slice(0, 2)
-              .map((o) => o.closest('[aria-hidden="true"]')?.outerHTML.slice(0, 80) ?? "none"),
-            bodyKids: [...document.body.children].map(
-              (c) => `${c.tagName}:${c.getAttribute("aria-hidden")}:${c.getAttribute("role")}`,
-            ),
-            log: (window as unknown as { LOG: string[] }).LOG,
-          })),
-        ),
-      );
-      throw e;
-    }
-    await page.keyboard.press("Escape");
-    await page.getByRole("option").first().waitFor({ state: "detached" });
-  });
 
   it("gives the card to a person from the right column and takes it back, and the card shows an avatar", async () => {
     await openBoard();
