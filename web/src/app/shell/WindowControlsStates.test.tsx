@@ -35,7 +35,7 @@ function open(snapshot: () => Promise<Response>) {
       const path = new URL(String(input), "http://localhost").pathname;
       if (path === "/v1/session") return Response.json({ signed_in: true });
       if (path === "/v1/snapshot") return snapshot();
-      if (path === "/v1/notices") return Response.json([]);
+      if (path === "/v1/notices" || path === "/v1/projects") return Response.json([]);
       return Response.json({});
     }),
   );

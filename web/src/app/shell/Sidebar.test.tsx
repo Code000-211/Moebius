@@ -130,7 +130,7 @@ describe("the list of places", () => {
     const href = (name: string | RegExp) => screen.getByRole("link", { name }).getAttribute("href");
     await screen.findByRole("link", { name: "notes" });
     expect(href("Projects")).toBe("/projects");
-    expect(href("moebius-platform")).toBe("/projects/1?repository=1");
+    expect(href("moebius-platform")).toBe("/projects/1");
     expect(href("Chat")).toBe("/chat");
     expect(href("Settings")).toBe("/settings");
     expect(href(/^Inbox/)).toBe("/inbox");
@@ -217,6 +217,8 @@ describe("where an entry leads", () => {
     expect(await current("/projects/2/list")).toEqual(["notes"]);
     expect(await current("/projects/2/settings/columns/Backlog")).toEqual(["notes"]);
     expect(await current("/projects/2?repository=2")).toEqual(["notes"]);
+    expect(await current("/projects/2/cycles")).toEqual(["notes"]);
+    expect(await current("/projects/2/workflows")).toEqual(["notes"]);
     expect(await current("/projects/2/settings")).toEqual([]);
     expect(await current("/projects/2/repositories/2")).toEqual([]);
   });

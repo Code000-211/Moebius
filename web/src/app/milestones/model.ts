@@ -1,6 +1,6 @@
 /**
  * What the Milestones page works out from the milestones the server answered: their progress in whole percent, their
- * target dates in words, the sorting and the one filter (a project), and the span of each milestone on the timeline, from
+ * target dates in words, the sorting, the milestones of one project, and the span of each milestone on the timeline, from
  * the day it was made to its target date.
  */
 import type { MilestoneView } from "../../api/types/milestones";
@@ -60,10 +60,22 @@ export function sorted(list: MilestoneView[], sort: string): MilestoneView[] {
   return [...list].sort(order[sort] ?? byDate);
 }
 
-/** The milestones that hold cards of the project `project` (its id as text), or all of them when it is empty. */
-export function inProject(list: MilestoneView[], project: string): MilestoneView[] {
-  if (project === "") return list;
-  return list.filter((m) => m.projects.some((p) => String(p.id) === project));
+/**
+ * The milestones a project's tab lists, each counted for that project alone: the ones that hold cards of the project,
+ * and the ones in `madeHere` (ids), which are made from the tab and so have no card yet. A milestone with no card in any
+ * project is listed nowhere else; it stays in the store and returns once a card is put in it. `projects` stays whole,
+ * so a row can still say that the milestone spans several projects.
+ */
+export function inProject(
+  list: MilestoneView[],
+  project: number,
+  madeHere: ReadonlySet<number> = new Set(),
+): MilestoneView[] {
+  return list.flatMap((milestone) => {
+    const share = milestone.projects.find((p) => p.id === project);
+    if (share) return [{ ...milestone, cards: share.cards, done: share.done }];
+    return madeHere.has(milestone.id) ? [{ ...milestone, cards: 0, done: 0 }] : [];
+  });
 }
 
 /** The first and last day of a milestone on the axis: the day it was made to its target date, a day when made late. */

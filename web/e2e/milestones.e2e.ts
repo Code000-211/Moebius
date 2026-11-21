@@ -1,5 +1,5 @@
 /**
- * The Milestones page in a real browser: the list with each milestone's progress, opened to its cards of two projects,
+ * The Milestones tab of a project in a real browser: the milestones that hold cards of the project with its progress, opened to its cards,
  * the timeline Display chooses, the filter by project, making, editing and deleting one, the numbers that leave out a
  * project the person may not see, and a card's Milestone property. They run against the fake server of
  * `fake/milestones.ts`; the rules of what a person may see are the server's own and tested there. Every wait is on
@@ -61,46 +61,47 @@ const rows = () => page.getByTestId("milestone");
 const row = (name: string) => rows().filter({ hasText: name });
 const bar = (name: string) => page.getByRole("progressbar", { name }).first();
 
-describe.skipIf(usesRealServer)("the Milestones page", () => {
-  it("is reached from the command bar and lists the milestones by target date with their progress", async () => {
-    await open("/inbox");
-    await page.getByRole("navigation", { name: "Pages", exact: true }).waitFor();
-    await page.keyboard.press("Control+k");
-    await page.getByPlaceholder("Search…").fill("Milestones");
-    await page.getByRole("option", { name: "Milestones" }).click();
-    await page.getByRole("heading", { name: "Milestones", level: 1 }).waitFor();
+describe.skipIf(usesRealServer)("the Milestones tab", () => {
+  it("is a tab of the project and lists its milestones by target date with the project's progress", async () => {
+    await open("/projects/1");
+    await page
+      .getByRole("tablist", { name: "Project" })
+      .getByRole("tab", { name: "Milestones" })
+      .click();
+    await page.waitForURL("**/projects/1/milestones");
+    await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
     await rows().first().waitFor();
-    await expect.poll(() => rows().count()).toBe(3);
+    // Payments v2 holds only Storefront's cards, so it is not in this project's tab.
+    await expect.poll(() => rows().count()).toBe(2);
     const names = await rows()
       .getByRole("button")
       .evaluateAll((buttons) =>
         buttons.map((button) => button.querySelector("span span")?.textContent),
       );
-    expect(names).toEqual(["Launch 2.0", "Payments v2", "Annual report"]);
-    // Launch 2.0 holds two cards of the board's project and two of Storefront; two are done.
+    expect(names).toEqual(["Launch 2.0", "Annual report"]);
+    // Launch 2.0 holds two cards of this project and two of Storefront; the tab counts this project's two.
     await row("Launch 2.0").getByText("2 projects").waitFor();
-    await row("Launch 2.0").getByText("2 of 4 cards").waitFor();
-    expect(await bar("2 of 4 cards").getAttribute("aria-valuenow")).toBe("50");
-    await row("Payments v2").getByText("2 of 3 cards").waitFor();
+    await row("Launch 2.0").getByText("0 of 2 cards").waitFor();
+    expect(await bar("0 of 2 cards").getAttribute("aria-valuenow")).toBe("0");
     await row("Annual report").getByText("0 of 1 card").waitFor();
   });
 
-  it("opens a milestone to its description, its share in each project and its cards of both", async () => {
-    await open("/milestones");
+  it("opens a milestone to its description, its share in this project and this project's cards", async () => {
+    await open("/projects/1/milestones");
     await row("Launch 2.0").getByRole("button").first().click();
     await row("Launch 2.0").getByText("Everything for the launch.").waitFor();
     await row("Launch 2.0").getByText("DEMO 0 of 2 cards").waitFor();
-    await row("Launch 2.0").getByText("SHOP 2 of 2 cards").waitFor();
     const cards = row("Launch 2.0").getByRole("list", { name: "Cards of Launch 2.0" });
     await cards.getByText("Add a feature").waitFor();
-    await cards.getByText("Take payments").waitFor();
-    await expect.poll(() => cards.getByRole("listitem").count()).toBe(4);
+    await cards.getByText("Fix the login redirect").waitFor();
+    await expect.poll(() => cards.getByRole("listitem").count()).toBe(2);
+    await expect.poll(() => cards.getByText("Take payments").count()).toBe(0);
   });
 
   it("shows the milestones as bars on one axis, each as far as its target date", async () => {
-    await open("/milestones");
+    await open("/projects/1/milestones");
     await rows().first().waitFor();
-    await expect.poll(() => page.getByTestId("time-bar").count()).toBe(3);
+    await expect.poll(() => page.getByTestId("time-bar").count()).toBe(2);
     // The bars follow the dates: the milestone due first ends before the one due last.
     const box = async (name: string) => {
       const found = await row(name).getByTestId("time-bar-span").boundingBox();
@@ -116,25 +117,20 @@ describe.skipIf(usesRealServer)("the Milestones page", () => {
     await page.keyboard.press("Escape");
   });
 
-  it("sorts by name and filters to the milestones that hold cards of a project", async () => {
-    await open("/milestones");
+  it("sorts by name and has no project filter", async () => {
+    await open("/projects/1/milestones");
     await rows().first().waitFor();
     await page.getByRole("button", { name: "Display" }).click();
     await page.getByRole("menuitemradio", { name: "Name" }).click();
     await page.keyboard.press("Escape");
     await expect.poll(async () => (await rows().first().textContent())?.slice(0, 6)).toBe("Annual");
-
-    await page.getByRole("button", { name: "Filter", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Project", exact: true }).click();
-    await page.getByRole("menuitemradio", { name: "demo", exact: true }).click();
-    // Payments v2 holds only Storefront's cards.
-    await row("Launch 2.0").waitFor();
-    await row("Payments v2").waitFor({ state: "detached" });
-    await expect.poll(() => rows().count()).toBe(2);
+    await expect
+      .poll(() => page.getByRole("button", { name: "Filter", exact: true }).count())
+      .toBe(0);
   });
 
   it("makes, edits and deletes a milestone, and says what the server refuses", async () => {
-    await open("/milestones");
+    await open("/projects/1/milestones");
     await rows().first().waitFor();
     await page.getByRole("button", { name: "New milestone" }).first().click();
     const dialog = page.getByRole("dialog", { name: "New milestone" });
@@ -169,19 +165,23 @@ describe.skipIf(usesRealServer)("the Milestones page", () => {
     await row("Beta 2").getByRole("button", { name: "Delete" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
     await row("Beta 2").waitFor({ state: "detached" });
-    await expect.poll(() => rows().count()).toBe(3);
+    await expect.poll(() => rows().count()).toBe(2);
   });
 
-  it("counts only the cards of the projects the person may see, and says so after the server changes", async () => {
-    await open("/milestones");
-    await row("Launch 2.0").getByText("2 of 4 cards").waitFor();
+  it("counts only the cards of the projects the person may see, and drops a milestone nothing visible holds", async () => {
+    await open("/projects/1/milestones");
+    await row("Launch 2.0").getByText("2 projects").waitFor();
     fake().hide(100);
     await page.reload();
     await row("Launch 2.0").getByText("0 of 2 cards").waitFor();
-    await row("Launch 2.0").getByText("Storefront").waitFor({ state: "detached" });
-    // Payments v2 held only Storefront's cards: it is still listed, with none counted.
-    await row("Payments v2").getByText("0 of 0 cards").waitFor();
-    await row("Payments v2").getByText("No cards yet").waitFor();
+    await row("Launch 2.0").getByText("2 projects").waitFor({ state: "detached" });
+    await expect.poll(() => rows().count()).toBe(2);
+  });
+
+  it("sends the old Milestones address to the project's tab", async () => {
+    await open("/milestones?project=1");
+    await rows().first().waitFor();
+    expect(new URL(page.url()).pathname).toBe("/projects/1/milestones");
   });
 
   it("shows a card's milestones in its properties and puts it in another", async () => {
@@ -199,8 +199,8 @@ describe.skipIf(usesRealServer)("the Milestones page", () => {
       path: "/v1/cards/1/milestones",
       body: { milestones: [1, 3] },
     });
-    // The page of milestones counts it now.
-    await page.goto(`${server.url}/milestones`);
+    // The tab of milestones counts it now.
+    await page.goto(`${server.url}/projects/1/milestones`);
     await row("Annual report").getByText("0 of 2 cards").waitFor();
   });
 });

@@ -20,6 +20,7 @@ import { useLocation, useNavigate } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { notices as readNotices } from "../../api/calls/notices";
 import { seen } from "../../api/calls/places";
+import { listProjects } from "../../api/calls/projects";
 import { serverInfo, start } from "../../api/calls/server";
 import { keys } from "../../api/keys";
 import { liveRuns } from "../../api/types/board";
@@ -36,7 +37,7 @@ import { SearchIcon } from "../../ui/icons";
 import { cn } from "../../ui/lib/cn";
 import { waiting } from "../inbox/notices";
 import { entryByPath, inSettingsArea, type NavEntry, type SidebarGroup, sidebarRows } from "../nav";
-import { repositoryBoardPath } from "../pages";
+import { boardPath } from "../pages";
 import { placeAt } from "./places";
 import { Entry, type Trailing } from "./SidebarEntry";
 import { SettingsFoot } from "./SidebarFoot";
@@ -57,14 +58,13 @@ export function Sidebar({ onSearch, narrow = false, open = false, onClose }: Sid
   const boards = data.data?.boards ?? [];
   const location = useLocation();
   const at = location.pathname;
-  // The board a project address shows: the repository `?repository=` names, else the project's first.
-  // Only its board pages: the list and the editor of a column's script, as before; not the settings or a repository.
-  const projectAt = /^\/projects\/(\d+)(?:\/list|\/settings\/columns\/.*)?$/.exec(at)?.[1];
-  const shownRepository =
-    projectAt === undefined
-      ? undefined
-      : Number(new URLSearchParams(location.search).get("repository")) ||
-        boards.find((b) => b.repository.home_project_id === Number(projectAt))?.repository.id;
+  // The project an address shows: its board, the list, a tab of it, and the editor of a column's script; not its
+  // settings or a repository page.
+  const projectAt =
+    /^\/projects\/(\d+)(?:\/list|\/workflows|\/cycles|\/milestones|\/intake|\/settings\/columns\/.*)?$/.exec(
+      at,
+    )?.[1];
+  const projectList = useQuery({ queryKey: keys.projects, queryFn: listProjects });
   const here = at.replace(/^\/+|\/+$/g, "").split("/")[0] ?? "";
   // What waits for you: the items of the inbox and the unread notices given to you or naming you.
   const notices = useQuery({ queryKey: keys.notices, queryFn: readNotices });
@@ -133,7 +133,7 @@ export function Sidebar({ onSearch, narrow = false, open = false, onClose }: Sid
     />
   );
   const rowsOf = (group: SidebarGroup) => sidebarRows(group, role).map(entryOf);
-  const projectList = entryByPath("projects");
+  const projectsEntry = entryByPath("projects");
   // Get started is a row only while a step is missing; the page itself stays reachable from the command bar.
   const steps = useQuery({ queryKey: keys.start, queryFn: () => start() });
   const missing = steps.data?.steps?.some((step) => !step.done) ?? false;
@@ -178,7 +178,7 @@ export function Sidebar({ onSearch, narrow = false, open = false, onClose }: Sid
         <Section>{rowsOf("")}</Section>
         <Section
           title="Projects"
-          to={projectList ? `/${projectList.path}` : undefined}
+          to={projectsEntry ? `/${projectsEntry.path}` : undefined}
           action={
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -199,18 +199,15 @@ export function Sidebar({ onSearch, narrow = false, open = false, onClose }: Sid
             </DropdownMenu>
           }
         >
-          {boards.map((board) => {
-            const to = repositoryBoardPath(board.repository);
-            return (
-              <Entry
-                key={board.repository.id}
-                to={to}
-                icon={HashIcon}
-                label={board.repository.name}
-                current={projectAt !== undefined && shownRepository === board.repository.id}
-              />
-            );
-          })}
+          {(projectList.data ?? []).map((project) => (
+            <Entry
+              key={project.id}
+              to={boardPath(project.id)}
+              icon={HashIcon}
+              label={project.name}
+              current={projectAt === String(project.id)}
+            />
+          ))}
         </Section>
         <Section title="Workspace">{rowsOf("Workspace")}</Section>
         {sidebarRows("Build", role).length > 0 && (

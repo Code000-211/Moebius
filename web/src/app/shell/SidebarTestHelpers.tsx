@@ -37,6 +37,10 @@ export const ROUTES: Record<string, unknown> = {
     harness_changes: [],
     inbox: [],
   },
+  "/v1/projects": [
+    { id: 1, name: "moebius-platform", key: "MP" },
+    { id: 2, name: "notes", key: "NO" },
+  ],
   "/v1/health": { version: "0.9.0" },
   "/v1/start": { done: true, steps: [], warnings: [] },
 };

@@ -1,5 +1,5 @@
 /**
- * The Cycles page in a real browser: a project's cycles with their progress, a cycle's own page with the burn-up and
+ * The Cycles tab of a project in a real browser: a project's cycles with their progress, a cycle's own page with the burn-up and
  * the figures above its cards, planning a cycle (making one, editing it, putting a card in it from the card's
  * properties) and closing one so its unfinished cards go on to the next, or out. They run against the fake server of
  * `fake/cycles.ts`; the rules (one open cycle, the same project) are the server's own and tested there. Every wait
@@ -60,14 +60,15 @@ const fake = () => {
 const rows = () => page.getByTestId("cycle");
 const row = (name: string) => rows().filter({ hasText: name });
 
-describe.skipIf(usesRealServer)("the Cycles page", () => {
-  it("is reached from the command bar and lists the project's cycles with their progress", async () => {
-    await open("/inbox");
-    await page.getByRole("navigation", { name: "Pages", exact: true }).waitFor();
-    await page.keyboard.press("Control+k");
-    await page.getByPlaceholder("Search…").fill("Cycles");
-    await page.getByRole("option", { name: "Cycles" }).click();
-    await page.getByRole("heading", { name: "Cycles", level: 1 }).waitFor();
+describe.skipIf(usesRealServer)("the Cycles tab", () => {
+  it("is a tab of the project and lists the project's cycles with their progress", async () => {
+    await open("/projects/1");
+    await page
+      .getByRole("tablist", { name: "Project" })
+      .getByRole("tab", { name: "Cycles" })
+      .click();
+    await page.waitForURL("**/projects/1/cycles");
+    await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
     await rows().first().waitFor();
     await expect.poll(() => rows().count()).toBe(2);
     // Cycle 1 holds a done card of 5 points and an open one of 3.
@@ -79,9 +80,9 @@ describe.skipIf(usesRealServer)("the Cycles page", () => {
   });
 
   it("opens a cycle to its figures, its burn-up and its cards", async () => {
-    await open("/cycles");
+    await open("/projects/1/cycles");
     await row("Cycle 1").getByRole("button").click();
-    await page.getByRole("heading", { name: "Cycle 1", level: 1 }).waitFor();
+    await page.getByRole("heading", { name: "Cycle 1", level: 2 }).waitFor();
     const figure = (name: string) => page.locator("dt", { hasText: name }).locator("xpath=..");
     await figure("Points done").getByText("5 of 8").waitFor();
     await figure("Cards by agents").getByText("1", { exact: true }).waitFor();
@@ -92,13 +93,13 @@ describe.skipIf(usesRealServer)("the Cycles page", () => {
     await cards.getByText("Fix the login redirect").waitFor();
     await expect.poll(() => cards.getByRole("listitem").count()).toBe(2);
     // The address keeps the cycle; the way back lists them again.
-    expect(new URL(page.url()).searchParams.get("cycle")).toBe("1");
+    expect(new URL(page.url()).pathname).toBe("/projects/1/cycles/1");
     await page.getByRole("button", { name: "All cycles" }).click();
     await rows().first().waitFor();
   });
 
   it("makes a cycle, says what the server refuses, and edits it", async () => {
-    await open("/cycles");
+    await open("/projects/1/cycles");
     await rows().first().waitFor();
     await page.getByRole("button", { name: "New cycle" }).first().click();
     const dialog = page.getByRole("dialog", { name: "New cycle" });
@@ -132,12 +133,12 @@ describe.skipIf(usesRealServer)("the Cycles page", () => {
     await edit.getByLabel("Name").fill("Cycle three");
     await edit.getByRole("button", { name: "Save" }).click();
     await edit.waitFor({ state: "detached" });
-    await page.getByRole("heading", { name: "Cycle three", level: 1 }).waitFor();
+    await page.getByRole("heading", { name: "Cycle three", level: 2 }).waitFor();
   });
 
   it("closes a cycle and carries its unfinished card to the next one", async () => {
-    await open("/cycles?cycle=1");
-    await page.getByRole("heading", { name: "Cycle 1", level: 1 }).waitFor();
+    await open("/projects/1/cycles/1");
+    await page.getByRole("heading", { name: "Cycle 1", level: 2 }).waitFor();
     await page.getByRole("button", { name: "Close cycle" }).click();
     const dialog = page.getByRole("dialog", { name: "Close Cycle 1" });
     await dialog.getByText(/1 card is not done/).waitFor();
@@ -158,7 +159,7 @@ describe.skipIf(usesRealServer)("the Cycles page", () => {
   });
 
   it("closes a cycle and takes its unfinished card out of any cycle", async () => {
-    await open("/cycles?cycle=1");
+    await open("/projects/1/cycles/1");
     await page.getByRole("button", { name: "Close cycle" }).click();
     const dialog = page.getByRole("dialog", { name: "Close Cycle 1" });
     await dialog.getByRole("radio", { name: "Take them out of any cycle" }).check();
@@ -182,14 +183,23 @@ describe.skipIf(usesRealServer)("the Cycles page", () => {
       body: { cycle: 2 },
     });
     // The page of cycles counts it now: one card of 5 points moved over.
-    await page.goto(`${server.url}/cycles`);
+    await page.goto(`${server.url}/projects/1/cycles`);
     await row("Cycle 2").getByLabel("5 of 5 points · 1 of 1 card").waitFor();
     await row("Cycle 1").getByLabel("0 of 3 points · 0 of 1 card").waitFor();
   });
 
+  it("sends the old Cycles address to the project's tab and its cycle page", async () => {
+    await open("/cycles?project=1&cycle=1");
+    await page.getByRole("heading", { name: "Cycle 1", level: 2 }).waitFor();
+    expect(new URL(page.url()).pathname).toBe("/projects/1/cycles/1");
+    await page.goto(`${server.url}/cycles`);
+    await rows().first().waitFor();
+    expect(new URL(page.url()).pathname).toBe("/projects/1/cycles");
+  });
+
   it("deletes a cycle and leaves its cards", async () => {
-    await open("/cycles?cycle=2");
-    await page.getByRole("heading", { name: "Cycle 2", level: 1 }).waitFor();
+    await open("/projects/1/cycles/2");
+    await page.getByRole("heading", { name: "Cycle 2", level: 2 }).waitFor();
     await page.getByRole("button", { name: "Delete" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
     await rows().first().waitFor();
