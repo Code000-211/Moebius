@@ -103,6 +103,19 @@ pnpm build   # into web/dist
 pnpm e2e     # Playwright; needs the build, and Chromium (pnpm exec playwright install chromium)
 ```
 
+A pull request runs only the CI jobs its changed files need; a push to `main` runs all of them. The first job,
+`changes`, lists the files and the rest start from it (`.github/workflows/ci.yml` has the full mapping). In short:
+
+| The pull request changes | Jobs that run |
+| --- | --- |
+| `web/` | `web`, and `desktop`, which embeds `web/dist` |
+| `crates/` | `check`, `windows`, `msrv`, `desktop`, and `web` (its last step builds `moebius`) |
+| `docs/`, `examples/` or any `*.md` | `check`, `windows`, `msrv` (the tests read the documentation and the examples) |
+| `.github/`, `Cargo.toml`, `Cargo.lock`, `rust-toolchain` | every job |
+
+A job that does not run shows as skipped, which a protected branch counts as passing. A picture or mockup under
+`docs/design/` runs nothing. If you add a test that reads a file outside `crates/`, add its path to `changes`.
+
 ## Commits
 
 One commit per issue:

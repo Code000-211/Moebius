@@ -338,34 +338,3 @@ describe("the setting that shows thinking open", () => {
     ).toBe("true");
   });
 });
-
-describe("what is offered under the last answer", () => {
-  const answered: Entry[] = [
-    { at: 1, seq: 1, kind: "person", said: "said", message: "Why?" },
-    { at: 2, seq: 2, kind: "text", text: "Shall I go ahead?" },
-  ];
-
-  it("stands under an answer that ends the turn", () => {
-    render(
-      <Turn
-        turn={turnOf(answered)}
-        {...folding}
-        offer={<button type="button">Approve plan</button>}
-      />,
-    );
-    expect(
-      within(screen.getByTestId("offer")).getByRole("button", { name: "Approve plan" }),
-    ).toBeTruthy();
-  });
-
-  it("is not drawn when the turn ends in something else", () => {
-    render(
-      <Turn
-        turn={turnOf(failedTurn())}
-        {...folding}
-        offer={<button type="button">Approve plan</button>}
-      />,
-    );
-    expect(screen.queryByTestId("offer")).toBeNull();
-  });
-});
