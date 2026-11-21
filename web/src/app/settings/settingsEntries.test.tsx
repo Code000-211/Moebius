@@ -8,10 +8,10 @@ import {
 } from "./settingsEntries";
 
 describe("settings entries", () => {
-  it("holds the twenty decided entries, in five groups", () => {
-    expect(SETTINGS_ENTRIES).toHaveLength(20);
+  it("holds the twenty-one entries, in five groups", () => {
+    expect(SETTINGS_ENTRIES).toHaveLength(21);
     expect(SETTINGS_GROUPS).toEqual(["You", "Agents", "Automation", "Insight", "Server"]);
-    expect(new Set(SETTINGS_ENTRIES.map((e) => e.path)).size).toBe(20);
+    expect(new Set(SETTINGS_ENTRIES.map((e) => e.path)).size).toBe(21);
   });
 
   it("has a page for every entry", () => {
@@ -19,7 +19,7 @@ describe("settings entries", () => {
   });
 
   it("shows registered entries only, and the owner's entries to an owner only", () => {
-    expect(shownEntries("owner")).toHaveLength(20);
+    expect(shownEntries("owner")).toHaveLength(21);
     expect(shownEntries("member").map((e) => e.label)).not.toContain("Members");
     expect(shownEntries(undefined).map((e) => e.label)).not.toContain("Members");
   });

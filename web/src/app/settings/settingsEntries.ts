@@ -1,5 +1,5 @@
 /**
- * The entries of the Settings navigation, as data: the complete decided list of twenty (`docs/design/web-redesign/DECISIONS.md`),
+ * The entries of the Settings navigation, as data: the decided list of twenty plus MCP servers (`docs/design/web-redesign/DECISIONS.md`),
  * in five groups. An entry has the group it stands in, the name it shows, the path of its page, whether only an
  * owner is shown it, and the page it opens once one is registered. The navigation (`SettingsNav`) and the routes
  * (`routes.tsx`) both read this list, so a later issue that builds a page adds it by writing its `page` on one line
@@ -31,6 +31,7 @@ const Appearance = named(() => import("./AppearancePage"), "AppearancePage");
 const General = named(() => import("./SettingsPage"), "SettingsPage");
 const Shortcuts = named(() => import("../shortcuts/ShortcutsPage"), "ShortcutsPage");
 const Agents = named(() => import("../agents/AgentsPage"), "AgentsPage");
+const Mcp = named(() => import("../mcp/McpPage"), "McpPage");
 const Models = named(() => import("../models/ModelsPage"), "ModelsPage");
 const Skills = named(() => import("../skills/SkillsPage"), "SkillsPage");
 const Plugins = named(() => import("../plugins/PluginsPage"), "PluginsPage");
@@ -54,6 +55,7 @@ export const SETTINGS_ENTRIES: readonly SettingsEntry[] = [
   { group: "Agents", label: "Models", path: "models", page: Models },
   { group: "Agents", label: "Skills", path: "skills", page: Skills },
   { group: "Agents", label: "Plugins", path: "plugins", page: Plugins },
+  { group: "Agents", label: "MCP servers", path: "mcp-servers", page: Mcp },
   { group: "Automation", label: "Rules", path: "rules", page: Rules },
   { group: "Automation", label: "Workflows", path: "workflows", page: Workflows },
   { group: "Automation", label: "Column scripts", path: "column-scripts", page: ColumnScripts },
