@@ -45,7 +45,13 @@ export function show({
   session,
   snapshot,
   onSearch = () => {},
+  narrow,
+  open,
+  onClose,
 }: {
+  narrow?: boolean;
+  open?: boolean;
+  onClose?: () => void;
   /** The session the app holds, as App.tsx keeps it. */
   session?: unknown;
   /** The page the sidebar is opened on. */
@@ -69,7 +75,7 @@ export function show({
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[at]}>
-        <Sidebar onSearch={onSearch} />
+        <Sidebar onSearch={onSearch} narrow={narrow} open={open} onClose={onClose} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
