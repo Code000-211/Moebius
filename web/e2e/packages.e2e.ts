@@ -237,22 +237,21 @@ describe.skipIf(usesRealServer)("the Plugins page and the Moebius registries", (
     return right;
   };
 
-  it("lies over the right column and the page on a window under 1536px, which keeps its width", async () => {
+  it("lies over the right of the page on a window under 1536px, which keeps its width", async () => {
     await open("/plugins", 1280);
     const before = await contentRight();
     await openRegistries();
     const box = await sheet().boundingBox();
     expect(await contentRight()).toBe(before);
     expect(before).toBeGreaterThan(box?.x ?? 0);
-    // It lies in the right column's place: flush with the page's top, right and bottom, wider than the column.
-    const column = await page.locator('[data-surface="right-column"]').boundingBox();
+    // It is flush with the page's top, right and bottom, and wider than the 272px column the pages once had.
     expect(await place(sheet())).toEqual({
       top: 0,
       right: 0,
       bottom: 0,
       width: expect.any(Number),
     });
-    expect((await place(sheet())).width).toBeGreaterThan(column?.width ?? 0);
+    expect((await place(sheet())).width).toBeGreaterThan(272);
     // No round button floats over the page.
     expect(await page.getByRole("button", { name: "Open the package sheet" }).count()).toBe(0);
 

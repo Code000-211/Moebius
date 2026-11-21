@@ -62,7 +62,7 @@ export function MyIssuesPage() {
       {header}
       <VirtualList<MyIssue>
         label="My issues"
-        className="-mx-6 -mb-6 -mt-6 min-h-0 flex-1 outline-none"
+        className="-mx-4 -mb-4 -mt-4 min-h-0 flex-1 outline-none"
         items={myIssueItems(issues.data ?? [], now)}
         loading={session.isPending || (handle !== null && issues.isPending)}
         loadingMessage="Reading your issues"

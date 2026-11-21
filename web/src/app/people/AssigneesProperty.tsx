@@ -1,5 +1,5 @@
 /**
- * The Assignee property of a card or an inbox item, in the page's right column: the avatars and handles of the people
+ * The Assignee property of a card or an inbox item,: the avatars and handles of the people
  * it is given to, and a menu that adds or takes off a person, saved at once (`ui/page/EditableProperty.tsx`). The
  * people on offer are those of the organisation who are not disabled; a person who was disabled after being assigned
  * stays on the list until someone takes them off.

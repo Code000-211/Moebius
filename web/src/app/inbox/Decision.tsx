@@ -1,5 +1,5 @@
 /**
- * What to decide about the item chosen in the Inbox, drawn in the right sidebar: why it is here in a word and a
+ * What to decide about the item chosen in the Inbox, drawn in the window the Inbox opens for it: why it is here in a word and a
  * sentence, what it shows (the facts of a change, the change a proposal offers with the trials it was put through, the
  * issues of a grilling to edit, a report) and the buttons that act on it (merge, approve, send back). While a request
  * is on its way the buttons give way to what it does; a refusal of the server stays under them in the server's own

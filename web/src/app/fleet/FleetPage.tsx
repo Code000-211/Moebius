@@ -145,7 +145,7 @@ export function FleetPage() {
       <TabPanel
         idBase={base}
         value={tab}
-        className="-mx-6 -mt-6 -mb-6 flex h-full min-h-40 flex-col outline-none"
+        className="-mx-4 -mt-4 -mb-4 flex h-full min-h-40 flex-col outline-none"
       >
         {pause.paused && (
           <p className="shrink-0 border-b border-hairline px-4 py-2 text-sm text-muted">

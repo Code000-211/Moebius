@@ -27,7 +27,7 @@ import { Empty } from "../../ui/page/Empty";
 import { ListCard, ListDetail } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { Body } from "../../ui/page/PageHeader";
-import { PageProperties, Property } from "../../ui/page/Properties";
+import { Property } from "../../ui/page/Property";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonCard, SkeletonList } from "../../ui/page/Skeleton";
 import { useToast } from "../../ui/page/Toast";
@@ -171,13 +171,16 @@ function Day({ view, wanted }: { view: RetroView; wanted: string | null }) {
   });
   return (
     <>
-      <PageProperties label={`Properties of the Retro of ${dayName(view.date)}`}>
+      <section
+        aria-label={`Properties of the Retro of ${dayName(view.date)}`}
+        className="flex flex-col gap-1"
+      >
         <Property name="Day">{dayName(view.date)}</Property>
         <Property name="Status">{retroTag(view.status).label}</Property>
         <Property name="Errors">{String(view.report.errors.length)}</Property>
         <Property name="Proposals">{String(proposals.length)}</Property>
         <Property name="Left out">{String(warnings.length)}</Property>
-      </PageProperties>
+      </section>
       {warnings.length > 0 && (
         <Box title="Left out" className="min-w-0">
           {/* One row for what was left out, with the one Retry beside it: the retry runs the whole day, not a warning. */}

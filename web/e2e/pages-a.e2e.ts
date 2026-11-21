@@ -83,9 +83,9 @@ const alert = (text: string | RegExp) => page.getByRole("alert").filter({ hasTex
 /** The rows of the items of the inbox; the cards of the Running and Earlier groups are rows too, and are not these. */
 const items = () => page.locator('[data-testid="inbox-item"]:not([data-kind="card"])');
 const item = (title: string | RegExp) => items().filter({ hasText: title });
-/** What to decide about the item chosen, in the right sidebar. */
+/** What to decide about the item chosen, in the window it opens. */
 const decision = () => page.getByTestId("inbox-decision");
-/** Chooses the row of an item, which shows what to decide about it in the right sidebar. */
+/** Chooses the row of an item, which shows what to decide about it in the window it opens. */
 async function choose(title: string | RegExp) {
   await item(title).click();
   await decision().waitFor();

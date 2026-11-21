@@ -1,7 +1,7 @@
 /**
  * One workflow's definition: the graph saved in its file, read-only and at the positions the canvas saved, each node
  * with its kind and parameters, and the raw file beside it for copying. What starts it, how many nodes it has and how
- * its last run went are its properties, in the page's right column. The file is shown exactly as it is stored, so
+ * its last run went are its properties, in the column beside the graph. The file is shown exactly as it is stored, so
  * what a person copies is what the harness configuration will read back.
  *
  * It reads `GET /v1/workflows/{name}`. A definition that could not be read says so and offers to read it again; a
@@ -43,7 +43,7 @@ import { ago, plural } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
-import { PageProperties, Property } from "../../ui/page/Properties";
+import { Property } from "../../ui/page/Property";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { lastRunLine, looksLikeAutomation, runStatus, triggerName } from "./model";
@@ -189,17 +189,17 @@ export function WorkflowPage() {
           </DialogContent>
         </Dialog>
       )}
+      <section aria-label="Definition" className="mb-4 flex shrink-0 flex-col gap-1">
+        <Property name="Trigger">{triggerName(saved.trigger[0]?.kind)}</Property>
+        <Property name="Nodes">{plural(saved.nodes.length, "node", "nodes")}</Property>
+        <Property name="Last run">
+          {last
+            ? `${lastRunLine(last)}${last.started_at === null ? "" : ` · ${ago(now, last.started_at)}`}.`
+            : "This workflow has not run."}
+        </Property>
+      </section>
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <WorkflowGraph definition={saved} />
-        <PageProperties label="Definition">
-          <Property name="Trigger">{triggerName(saved.trigger[0]?.kind)}</Property>
-          <Property name="Nodes">{plural(saved.nodes.length, "node", "nodes")}</Property>
-          <Property name="Last run">
-            {last
-              ? `${lastRunLine(last)}${last.started_at === null ? "" : ` · ${ago(now, last.started_at)}`}.`
-              : "This workflow has not run."}
-          </Property>
-        </PageProperties>
         <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto">
           <section
             aria-labelledby="workflow-file-title"

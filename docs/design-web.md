@@ -12,10 +12,6 @@ single source: [`web/src/styles/theme.css`](../web/src/styles/theme.css) holds t
 `web/src/styles/tokens.test.ts` holds the tokens to it, and `web/e2e/design/audit.test.ts` (`pnpm audit:design`)
 measures every page against it in both themes. `web/README.md` maps the modules the app is built from.
 
-> **Transition.** The web app is being moved to this standard in steps (see [Transition](#transition) at the end), so
-> until the last step lands the code still does some of what this page no longer allows. Where the two differ, this
-> page is right and the code is behind.
-
 ## The guiding rule
 
 Nothing is on screen that helps nobody. A fairly minimal design: dense but not full, nearly monochrome, quiet. The
@@ -370,11 +366,3 @@ The desktop window renders with WebKitGTK, where paint costs show as stutter. So
 
 ## Docs
 Shared principles, voice, visual language, interaction patterns, and the shared component contract live in this page. Feature behavior goes in the doc comments of the feature's own modules and in the layout of `web/README.md`, which link here instead of repeating these rules.
-
-## Transition
-
-*This section goes when the last thing it lists is gone.* The code was moved to this standard in steps; one thing is left that this page no longer allows.
-
-| What the code still does | Removed by |
-| --- | --- |
-| The right Properties column (`ui/page/Properties.tsx`, `app/shell/RightColumn.tsx`), which Inbox, Retro, a workflow and an experiment's brief still draw their properties into | Not yet assigned: it is a change of those pages' layout, so it is not a clean-up |

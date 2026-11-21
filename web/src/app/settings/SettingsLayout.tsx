@@ -15,8 +15,8 @@ import { shownEntries } from "./settingsEntries";
 export function SettingsLayout() {
   const role = useRole();
   return (
-    <div className="-m-6 flex h-[calc(100%+3rem)] flex-col">
-      <div className="shrink-0 px-6 pt-6 [&>header]:mb-0 [&>header]:static">
+    <div className="-m-4 flex h-[calc(100%+2rem)] flex-col">
+      <div className="shrink-0 px-4 pt-4 [&>header]:mb-0 [&>header]:static">
         <PageHeader title="Settings" />
       </div>
       <div className="flex min-h-0 flex-1 items-stretch">

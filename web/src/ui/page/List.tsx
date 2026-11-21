@@ -136,7 +136,7 @@ function Rows({ children }: { children: ReactNode }) {
  * A column is `relative`, because what it scrolls is its own: an absolutely placed thing inside it — the hidden hint
  * of a field, for one — otherwise stands where its static position falls inside the scrolled content but belongs to
  * the page, and stretches the document past the window, which is a second scrollbar under the one the column already
- * has. A column also takes back the page's bottom padding (`-mb-6` against the 24 `main` keeps), so its last row ends
+ * has. A column also takes back the page's bottom padding (`-mb-4` against the 16 `main` keeps), so its last row ends
  * at the edge of the window rather than a band of nothing above it.
  */
 export function ListDetail({ list, detail }: { list: ReactNode; detail: ReactNode }) {
@@ -151,14 +151,14 @@ export function ListDetail({ list, detail }: { list: ReactNode; detail: ReactNod
       {!nothingToList && (
         <div
           data-testid="list-column"
-          className="relative flex w-full shrink-0 flex-col gap-2 lg:-mb-6 lg:min-h-0 lg:w-72 lg:overflow-y-auto"
+          className="relative flex w-full shrink-0 flex-col gap-2 lg:-mb-4 lg:min-h-0 lg:w-72 lg:overflow-y-auto"
         >
           <Rows>{list}</Rows>
         </div>
       )}
       <div
         data-testid="detail-column"
-        className="relative flex min-w-0 flex-1 flex-col gap-6 lg:-mb-6 lg:min-h-0 lg:overflow-y-auto"
+        className="relative flex min-w-0 flex-1 flex-col gap-6 lg:-mb-4 lg:min-h-0 lg:overflow-y-auto"
       >
         {detail}
       </div>

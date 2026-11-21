@@ -174,29 +174,19 @@ async function signedIn(path: string): Promise<Page> {
   return page;
 }
 
-const COLUMN = '[data-surface="right-column"]';
-
 /**
- * The properties pane with a page's properties in it, and the Moebius agent's panel taking its place: a workflow's
- * definition has properties (what starts it, its nodes, its last run), the Inbox has none and shows no pane. The
- * properties are marked before the agent opens, so a pane drawn again from nothing would be told by the mark being gone.
+ * The Moebius agent's panel: it opens at the panel's right over the same page, which keeps its state, and closes again.
+ * The page's own facts (a workflow's definition) are in the page, so there is no pane of properties beside it.
  */
-describe.skipIf(usesRealServer)("the properties pane and the Moebius agent", () => {
+describe.skipIf(usesRealServer)("the Moebius agent", () => {
   const FIELD = { name: "Ask Moebius" } as const;
   const PANEL = { name: "Moebius agent" } as const;
 
-  it("takes the pane's place when the agent opens, and gives it back, the properties kept", async () => {
+  it("opens at the panel's right and closes again, the page kept", async () => {
     const page = await signedIn("/workflows/release");
-    const properties = page.locator(COLUMN).getByRole("region", { name: "Definition" });
+    const properties = page.getByRole("region", { name: "Definition" });
     await properties.getByText("3 nodes").waitFor();
-    // The pane lies inside the panel, flush with its top, right and bottom (the 1px edge of the panel apart).
     const panel = await box(page, '[data-surface="page"]');
-    const pane = await box(page, COLUMN);
-    expect(pane.width).toBe(272);
-    expect(pane.y).toBe(panel.y + 1);
-    expect(pane.x + pane.width).toBe(panel.x + panel.width - 1);
-    expect(pane.y + pane.height).toBe(panel.y + panel.height - 1);
-    await page.locator(COLUMN).getByRole("heading", { name: "Properties" }).waitFor();
     await properties.evaluate((element) => {
       element.dataset.kept = "yes";
     });
@@ -204,17 +194,14 @@ describe.skipIf(usesRealServer)("the properties pane and the Moebius agent", () 
     await page.keyboard.press("Control+j");
     const agent = page.getByRole("complementary", PANEL);
     await agent.waitFor();
-    // The pane is hidden; the agent's panel is in the same place, in flow beside the page.
-    await page.locator(COLUMN).waitFor({ state: "hidden" });
+    // The agent's panel lies inside the panel, flush with its top, right and bottom (the 1px edge apart).
     const over = await box(page, '[data-surface="agent-panel"]');
     expect(over.y).toBe(panel.y + 1);
     expect(over.x + over.width).toBe(panel.x + panel.width - 1);
     expect(over.y + over.height).toBe(panel.y + panel.height - 1);
 
-    // Closing gives the pane back, as it was.
     await agent.getByRole("button", { name: "Close the Moebius agent" }).click();
     await agent.waitFor({ state: "hidden" });
-    await page.locator(COLUMN).waitFor();
     expect(await properties.getAttribute("data-kept")).toBe("yes");
     await properties.getByText("3 nodes").waitFor();
 
@@ -229,9 +216,7 @@ describe.skipIf(usesRealServer)("the properties pane and the Moebius agent", () 
 
   it("sends from the field, which opens the panel with the message, and the field is back when it closes", async () => {
     const page = await signedIn("/inbox");
-    expect(await page.locator(COLUMN).isVisible()).toBe(false);
-    // Nothing on the page offers to fold or show; the agent is a quiet field at the bottom of the panel.
-    expect(await page.getByRole("button", { name: "Show the properties" }).count()).toBe(0);
+    // The agent is a quiet field at the bottom of the panel.
     const field = page.getByRole("textbox", FIELD);
     await field.waitFor();
     expect(await page.getByRole("button", FIELD).count()).toBe(0);
@@ -252,7 +237,6 @@ describe.skipIf(usesRealServer)("the properties pane and the Moebius agent", () 
     await agent.getByRole("button", { name: "Close the Moebius agent" }).click();
     await agent.waitFor({ state: "hidden" });
     await field.waitFor();
-    expect(await page.locator(COLUMN).isVisible()).toBe(false);
     await page.context().close();
   });
 
@@ -262,21 +246,6 @@ describe.skipIf(usesRealServer)("the properties pane and the Moebius agent", () 
     expect(await page.getByRole("textbox", FIELD).count()).toBe(0);
     await page.keyboard.press("Control+j");
     await page.getByRole("complementary", PANEL).waitFor();
-    await page.context().close();
-  });
-
-  it("has the pane without a fold button, and keeps it from page to page", async () => {
-    const page = await signedIn("/workflows/release");
-    const column = page.locator(COLUMN);
-    await column.getByRole("region", { name: "Definition" }).getByText("3 nodes").waitFor();
-    expect(await column.getByRole("button", { name: "Fold the properties" }).count()).toBe(0);
-    // Away to the list, which has none, and back.
-    await page.locator("main").getByRole("link", { name: "Workflows" }).click();
-    await page.getByRole("heading", { name: "Workflows", level: 1 }).waitFor();
-    await column.waitFor({ state: "hidden" });
-    await page.getByRole("link", { name: "release" }).click();
-    await page.getByRole("heading", { name: "release", level: 1 }).waitFor();
-    expect((await box(page, COLUMN)).width).toBe(272);
     await page.context().close();
   });
 });
@@ -407,10 +376,9 @@ describe("windows of 800 and 1280 px", () => {
   );
 
   it.skipIf(usesRealServer)(
-    "keeps the description of a built-in pattern readable beside the Properties column",
+    "keeps the description of a built-in pattern readable at the width of a laptop window",
     async () => {
-      // Settings now holds its own navigation beside the page, so the window is wide enough for it, the sidebar and the column.
-      const page = await signedInAt("/rules", 1600);
+      const page = await signedInAt("/rules", 1280);
       const description = page
         .getByRole("region", { name: "Built-in patterns" })
         .getByText("git push --force rewrites history on the remote");

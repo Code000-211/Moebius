@@ -235,10 +235,10 @@ export function WikiPage() {
 /** The tree at the left and, after it, the columns of the page; they fill the panel from edge to edge. */
 function Columns({ tree, text }: { tree: ReactNode; text: ReactNode }) {
   return (
-    <div className="-mx-6 -mt-6 -mb-6 flex min-h-0 flex-1 flex-col lg:flex-row">
+    <div className="-mx-4 -mt-4 -mb-4 flex min-h-0 flex-1 flex-col lg:flex-row">
       <div
         data-testid="list-column"
-        className="flex w-full shrink-0 flex-col gap-2 border-b border-hairline p-3 lg:min-h-0 lg:w-60 lg:overflow-y-auto lg:border-r lg:border-b-0"
+        className="flex w-full shrink-0 flex-col gap-2 border-b border-hairline px-4 py-3 lg:min-h-0 lg:w-60 lg:overflow-y-auto lg:border-r lg:border-b-0"
       >
         {tree}
       </div>

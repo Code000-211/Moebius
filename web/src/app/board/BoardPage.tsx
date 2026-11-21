@@ -480,8 +480,7 @@ export function BoardPage() {
     // up and down. The list layout is a page like the others and scrolls as one sheet.
     <div className={cn("flex min-w-0 flex-col", boardLayout && "h-full min-h-0")}>
       {header}
-      {/* The shell's body is 24px in from the panel; the board lines up with the head, which is 16px. */}
-      <div className={cn("-mx-2 flex min-w-0 flex-col", boardLayout && "min-h-0 flex-1")}>
+      <div className={cn("flex min-w-0 flex-col", boardLayout && "min-h-0 flex-1")}>
         <div className={cn("flex min-w-0 flex-1 flex-col", boardLayout && "min-h-0")}>
           {openView && (
             <p
@@ -532,7 +531,7 @@ export function BoardPage() {
           ) : (
             <div
               data-testid="board-lanes"
-              className="-mx-4 -mb-6 -mt-2.5 min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-4"
+              className="-mx-4 -mb-4 -mt-2.5 min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-4"
             >
               <KanbanProvider onDragEnd={onDragEnd} renderOverlay={renderOverlay}>
                 {groups.map(({ column, cards, stacks }) => (

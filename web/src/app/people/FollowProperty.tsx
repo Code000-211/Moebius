@@ -9,7 +9,7 @@ import { getSession } from "../../api/calls/session";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
 import { cn } from "../../ui/lib/cn";
-import { Property } from "../../ui/page/Properties";
+import { Property } from "../../ui/page/Property";
 
 export function FollowProperty({ card }: { card: number }) {
   const queryClient = useQueryClient();

@@ -1,8 +1,8 @@
 /**
  * The Inbox: what needs the person, what an agent is working on and what is done, as one virtualised list of 36px rows
  * under group rows (`VirtualList`, `InboxRow`, `listOf` in `model.ts`). The tabs are Needs you (with how many wait), Mentions and Following; the header carries New issue.
- * The row that waits for a plan has Approve plan on it, which approves without opening anything. Choosing a row opens its card in the card window; an item that is about no card shows what to decide in
- * the right column (`Decision`). It reads the snapshot, which the event stream keeps current, so an item arrives and
+ * The row that waits for a plan has Approve plan on it, which approves without opening anything. Choosing a row opens its card in the card window; an item that is about no card opens what to decide in a
+ * centred window like the card's (`Decision`). It reads the snapshot, which the event stream keeps current, so an item arrives and
  * leaves on its own. What is chosen is in the address (`?kind=mentions`, `?repository=`, `?change=`, `?item=`), so a
  * reload keeps it; a repository or change in the address shows the filter bar so it can be taken off. The Mentions
  * tab is the person's own notices, with a read mark the server keeps for them (`MentionsList`); there is no bell.
@@ -20,13 +20,13 @@ import { keys } from "../../api/keys";
 import type { Snapshot } from "../../api/types/board";
 import type { Notice } from "../../api/types/notices";
 import { Button } from "../../ui/components/Button";
+import { EditorWindow } from "../../ui/components/EditorWindow";
 import { FilterBar } from "../../ui/filters/FilterBar";
 import type { FilterField } from "../../ui/filters/model";
 import { useQueryParams } from "../../ui/filters/useQueryParams";
 import { useNow } from "../../ui/lib/useNow";
 import { Empty } from "../../ui/page/Empty";
 import { PageHeader } from "../../ui/page/PageHeader";
-import { PageProperties } from "../../ui/page/Properties";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { TabPanel, Tabs } from "../../ui/page/Tabs";
 import { useToast } from "../../ui/page/Toast";
@@ -123,7 +123,7 @@ export function InboxPage() {
   const list = snapshot === undefined ? [] : listOf(snapshot, items, filters);
   const filtered = filters.repository !== null || filters.change != null;
 
-  /** Opens a row: its card in the window, or what to decide about it in the right column. */
+  /** Opens a row: its card in the window, or what to decide about it in a window. */
   const open = (key: string) => {
     const entry = list.find((each) => each.key === key);
     if (entry?.type !== "row") return;
@@ -174,7 +174,7 @@ export function InboxPage() {
         ) : (
           <VirtualList
             label="Inbox"
-            className="-mx-6 -mb-6 min-h-0 flex-1 outline-none"
+            className="-mx-4 -mb-4 min-h-0 flex-1 outline-none"
             items={list}
             loading={data.isPending}
             loadingMessage="Reading the inbox"
@@ -248,20 +248,28 @@ export function InboxPage() {
         />
       )}
       {snapshot && chosen && (
-        <PageProperties label="Decide">
-          <AssigneesProperty
-            key={`assignees-${chosen.id}`}
-            assignees={chosen.assignees}
-            onSave={async (next) => {
-              try {
-                await changeInboxAssignees(chosen.id, chosen.assignees, next);
-              } finally {
-                void queryClient.invalidateQueries({ queryKey: keys.snapshot });
-              }
-            }}
-          />
-          <Decision key={chosen.id} item={chosen} snapshot={snapshot} />
-        </PageProperties>
+        <EditorWindow
+          open
+          title="Decide"
+          dirty={false}
+          height="fit"
+          onClose={() => setQuery({ item: "" })}
+        >
+          <section aria-label="Decide" className="flex flex-col gap-4">
+            <AssigneesProperty
+              key={`assignees-${chosen.id}`}
+              assignees={chosen.assignees}
+              onSave={async (next) => {
+                try {
+                  await changeInboxAssignees(chosen.id, chosen.assignees, next);
+                } finally {
+                  void queryClient.invalidateQueries({ queryKey: keys.snapshot });
+                }
+              }}
+            />
+            <Decision key={chosen.id} item={chosen} snapshot={snapshot} />
+          </section>
+        </EditorWindow>
       )}
     </div>
   );

@@ -3,10 +3,10 @@
  * lying on it without a surface of its own, and the page as one panel floating on it — 6px of air above, below and at
  * the right, all four corners round, a hairline for its edge and no shadow (`docs/design-web.md`). There is no strip
  * above it and no texture under it. The panel holds the banner while the server cannot be reached, what the route
- * draws, and, only on a page that supplies properties, the pane for them (`RightColumn.tsx`). The Moebius agent has a
+ * draws. The Moebius agent has a
  * panel of its own at the right, opened from the dock, the quiet field at the bottom of the page (`AgentDock.tsx`), and
  * by `Ctrl+J`; the package sheet, which pages open from where a person meets plugins and extensions, lies over the
- * properties pane's place in the same panel. It
+ * right of the same panel. It
  * in a window narrower than 1000px the sidebar is an overlay opened from the page header (`narrow.ts`, `SidebarToggle.tsx`). It
  * owns the command palette and its shortcut, the form of a new issue and `C` (`board/NewIssueHost.tsx`), the card window for `?card=` on any page (`board/CardWindowHost.tsx`), holds what is
  * in focus for it (`palette/focus.tsx`), and . In the desktop app the panel carries the window's controls once at its top right
@@ -24,7 +24,6 @@ import { PackageSheetProvider, usePackageSheet } from "../../packages/PackageShe
 import { cn } from "../../ui/lib/cn";
 import { isShortcut, modalIsOpen } from "../../ui/lib/shortcuts";
 import { PageBoundary } from "../../ui/page/PageBoundary";
-import { PropertiesProvider, useProperties } from "../../ui/page/Properties";
 import { SheetSlotProvider } from "../../ui/page/SheetSlot";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import { CardWindowHost } from "../board/CardWindowHost";
@@ -40,7 +39,6 @@ import { useNarrow } from "./narrow";
 import { PaletteFocusProvider } from "./palette/focus";
 import { noteRecent } from "./palette/model";
 import { SHORTCUTS_KEY } from "./palette/shortcuts";
-import { RightColumn } from "./RightColumn";
 import { Sidebar } from "./Sidebar";
 import { SidebarToggleContext } from "./SidebarToggle";
 
@@ -48,17 +46,15 @@ export function Shell(props: { unreachable: boolean; onRetry: () => void }) {
   return (
     <SheetSlotProvider>
       <PackageSheetProvider>
-        <PropertiesProvider>
-          <PaletteFocusProvider>
-            <NewIssueProvider>
-              <AgentProvider>
-                <ThinkingSetting>
-                  <Frame {...props} />
-                </ThinkingSetting>
-              </AgentProvider>
-            </NewIssueProvider>
-          </PaletteFocusProvider>
-        </PropertiesProvider>
+        <PaletteFocusProvider>
+          <NewIssueProvider>
+            <AgentProvider>
+              <ThinkingSetting>
+                <Frame {...props} />
+              </ThinkingSetting>
+            </AgentProvider>
+          </NewIssueProvider>
+        </PaletteFocusProvider>
       </PackageSheetProvider>
     </SheetSlotProvider>
   );
@@ -66,10 +62,9 @@ export function Shell(props: { unreachable: boolean; onRetry: () => void }) {
 
 function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => void }) {
   const packages = usePackageSheet();
-  const { present: hasProperties } = useProperties();
   const agent = useAgent();
-  // The pane at the panel's right, the properties or the agent, owns the head's right end, with the window's controls.
-  const paneShown = hasProperties || agent.open;
+  // The agent's panel at the panel's right owns the head's right end, with the window's controls.
+  const paneShown = agent.open;
   const connection = useConnection();
   const location = useLocation();
   // A card named in the address the page opened at (`?card=`, on any page) is read now, while the board's code and the snapshot are on their way.
@@ -134,10 +129,10 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
           }}
         />
         {/* The page: one panel, rounded at all four corners, that clips what scrolls inside it to those corners. The
-          sheets lie in it, over the place of its properties pane, so they share its corners and its height. It clips
+          sheets lie in it, at its right, so they share its corners and its height. It clips
           rather than hides, so a sheet that takes the focus while it slides in cannot scroll the whole page sideways.
           The window's controls are in it once; the header reserves their room (`--window-buttons`) unless the
-          properties pane lies at the panel's right, which then leaves it to its own head. */}
+          agent's panel lies at the panel's right, which then leaves it to its own head. */}
         <div
           data-surface="page"
           className="relative mr-1.5 flex min-w-0 flex-1 overflow-clip rounded-sheet border border-hairline bg-panel"
@@ -158,14 +153,14 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
                 }}
               />
             )}
-            {/* The package sheet lies over the right column and a strip of the page beside it. Only on a very wide
+            {/* The package sheet lies over the right of the page and a strip of the page beside it. Only on a very wide
               window (2xl) does the page leave it that strip, so what it was opened from is not covered; below that the
               page keeps its width and the sheet lies over it, since an editor squeezed beside it is worse than one
               covered until the sheet is closed. */}
             <main
               className={cn(
-                "min-h-0 flex-1 overflow-y-auto p-6",
-                packages.shown && "2xl:pr-[calc(var(--sheet-width)+1.5rem)]",
+                "min-h-0 flex-1 overflow-y-auto p-4",
+                packages.shown && "2xl:pr-[calc(var(--sheet-width)+1rem)]",
               )}
             >
               {/* A page is fetched when it opens, so the shell holds the space it needs while it arrives, and says so
@@ -180,7 +175,6 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
             {!agent.open && !inSettingsArea(location.pathname) && <AgentDock />}
           </div>
           <AgentPanel />
-          <RightColumn />
           <PackageSheet />
           <WindowControls />
         </div>
