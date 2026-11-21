@@ -463,7 +463,7 @@ describe("the list of the page", () => {
     ]);
     const rows = list.flatMap((each) => (each.type === "row" ? [each.data] : []));
     expect(rows.map((each) => [each.status, each.reason])).toEqual([
-      ["needsYou", "Plan ready"],
+      ["needsYou", "Waiting for approval"],
       ["running", "Coding, round 2"],
       ["done", "Done"],
     ]);
@@ -490,7 +490,7 @@ describe("the list of the page", () => {
     const row = listOf(snap, shown(snap, none), none).find((each) => each.type === "row");
     expect(row?.type === "row" && [row.data.title, row.data.reason]).toEqual([
       "Cart saves",
-      "Plan ready",
+      "Waiting for approval",
     ]);
   });
 
@@ -515,10 +515,14 @@ describe("the list of the page", () => {
     expect(listOf(snap, [], none).map((each) => each.key)).toEqual(["group-earlier", "card-2"]);
   });
 
-  it("offers Approve plan only for an issue that waits for approval and has a card", () => {
+  it("offers Approve only for an issue that waits for approval and has a card", () => {
     expect(approvable(waiting(1, "approve_issue", 4))).toBe(true);
     expect(approvable(waiting(1, "approve_issue", null))).toBe(false);
     expect(approvable(waiting(1, "stuck", 4))).toBe(false);
+    // No kind says "Plan ready": nothing on the server proposes a plan and waits for it.
+    expect(rowReason(waiting(1, "approve_issue", 4))).toBe("Waiting for approval");
+    expect(rowReason(waiting(1, "ready_to_merge", 4))).toBe("Ready to merge");
+    expect(rowReason(waiting(1, "change_closed", 4))).toBe("Closed without a merge");
     expect(rowReason(waiting(1, "stuck", 4))).toBe("Stuck");
     expect(rowReason({ ...waiting(1, "stuck", 4), data: { reason: "no progress" } })).toBe(
       "Stuck: no progress",

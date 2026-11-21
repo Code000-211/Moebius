@@ -111,7 +111,7 @@ export function NeedsYouBlock({
               disabled={busy}
               onClick={() => onDecide({ kind: "approve", card: card.id, number })}
             >
-              Approve plan
+              Approve
             </Button>
           )}
           {item.kind === "ready_to_merge" && change !== null && (

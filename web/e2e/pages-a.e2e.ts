@@ -149,7 +149,7 @@ describe("the inbox", () => {
       expect(await items().count()).toBe(11);
       // The row says the one reason; an item about a card opens the card window, the others show the sidebar.
       const reasons = [
-        ["Plan ready", "Fix the login redirect"],
+        ["Waiting for approval", "Fix the login redirect"],
         ["Ready to merge", "Speed up the build"],
         ["Stuck: reached the round limit", "Stop the flaky test"],
         ["Retro proposal", "Let the Coder read the tests first"],
@@ -250,7 +250,7 @@ describe("the inbox", () => {
     "approves an outside issue from its row without opening the card, and the item leaves",
     async () => {
       await open("/inbox");
-      await item("Fix the login redirect").getByRole("button", { name: "Approve plan" }).click();
+      await item("Fix the login redirect").getByRole("button", { name: "Approve" }).click();
       await items().filter({ hasText: "Fix the login redirect" }).waitFor({ state: "detached" });
       expect(board().requests.some((r) => r.path === "/v1/cards/2/approve")).toBe(true);
       expect(await cardWindow().count()).toBe(0);

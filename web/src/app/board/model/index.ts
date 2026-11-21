@@ -30,7 +30,14 @@ export {
   priorityRank,
   todayIso,
 } from "./filters";
-export { inboxOf, MERGE_STOPPED, mergeStopped, mergeStoppedOf } from "./inbox";
+export {
+  inboxOf,
+  MERGE_STOPPED,
+  mergeStopped,
+  mergeStoppedOf,
+  WAITING_FOR_APPROVAL,
+  waitingWords,
+} from "./inbox";
 export type { Stack } from "./stacks";
 export {
   descendants,

@@ -98,12 +98,12 @@ Inter, with its optical sizes (`font-optical-sizing: auto`) and its plainer lett
 Nearly monochrome. The light theme is primary and the dark theme is neutral, without a tint. Both follow the system theme, with an explicit choice in Settings.
 
 - **Grey steps** carry everything that is not a signal: canvas, panel, hairline, text, muted text. Status of a column that is not a signal is a grey mark: not started is a dashed grey ring, done is a grey disc with a check.
-- **Indigo accent** is for exactly these: the primary button (`--accent-fill`), a switch that is on (its track, `--accent-fill`), the active tab (its text and a 2px underline, never a pill), counts beside a tab, the edge of the selected row (a 2px bar on its left, with the row tinted `--accent-tint`), the chosen item of the Settings list, the label of the quiet "Approve plan" button, links, focus, and the in-review mark. Nothing else is indigo. Words in indigo use `--accent-text`; the underline, the edge, the focus ring and the in-review mark use `--accent`.
-- **Orange** means "needs you" and nothing else: the needs-you status icon, "Plan ready" and other reasons that wait for a person, the "Moebius needs you" block in a card.
+- **Indigo accent** is for exactly these: the primary button (`--accent-fill`), a switch that is on (its track, `--accent-fill`), the active tab (its text and a 2px underline, never a pill), counts beside a tab, the edge of the selected row (a 2px bar on its left, with the row tinted `--accent-tint`), the chosen item of the Settings list, the label of the quiet "Approve" button, links, focus, and the in-review mark. Nothing else is indigo. Words in indigo use `--accent-text`; the underline, the edge, the focus ring and the in-review mark use `--accent`.
+- **Orange** means "needs you" and nothing else: the needs-you status icon, "Waiting for approval" and other reasons that wait for a person, the "Moebius needs you" block in a card.
 - **Green** means "running" and nothing else: the running ring, the dot and "n running" beside Fleet, and `+` figures of a diff.
 - **Red** exists for failures, destructive actions and removed lines of a diff (the card window shows `+84` in green and `−12` in red). It is restrained: a small mark, a word, or the label of the Delete button; never a filled banner, never decoration, and never the colour of something that is merely old, blocked or unfinished.
 - Pair colour with text, shape or position. A status is always a shape as well as a hue, and an icon-only control has an accessible name. Check contrast in both themes: any text colour is at least 4.5:1 on the surface it is drawn on, so each signal colour has a text form (the `-text` rows of the table) for words, and the brighter mark form is used only for icons, dots and fills, where 3:1 is enough.
-- Words that carry a state use the matching text colour only when they are about that state ("Plan ready" in orange text); a state that nearly every row is in is a quiet mark and not a word in colour, so the eye lands on the rare row.
+- Words that carry a state use the matching text colour only when they are about that state ("Waiting for approval" in orange text); a state that nearly every row is in is a quiet mark and not a word in colour, so the eye lands on the rare row.
 
 ### Token table
 One table, every colour as a hex value in both themes. The code follows it; if code and table differ, the table is right. Names are the CSS custom properties of `theme.css`; a name not listed here is not a colour of the app.
@@ -119,7 +119,7 @@ One table, every colour as a hex value in both themes. The code follows it; if c
 | `--text-muted` | #6B6B76 | #8B8B93 | Reasons, ages, inactive tabs, placeholders; text of at least 4.5:1 |
 | `--text-faint` | #8B8B96 | #6E6E77 | Icons and the dashes of a timeline; never text, because it is below 4.5:1 |
 | `--accent` | #5E6AD2 | #7C85E0 | Active tab underline, selected-row edge, focus, in-review mark |
-| `--accent-text` | #5460C8 | #7C85E0 | Indigo words, at least 4.5:1 on every surface of the table: active tab text, counts, links, the chosen Settings item, "Approve plan" |
+| `--accent-text` | #5460C8 | #7C85E0 | Indigo words, at least 4.5:1 on every surface of the table: active tab text, counts, links, the chosen Settings item, "Approve" |
 | `--accent-fill` | #5E6AD2 | #6068D0 | The primary button and a switch that is on (white label, at least 4.5:1) |
 | `--accent-border` | #5560C4 | #7C85E0 | The primary button's edge |
 | `--accent-tint` | #ECEEFB | #1C1D32 | The selected row, a selected item in a list |
@@ -128,7 +128,7 @@ One table, every colour as a hex value in both themes. The code follows it; if c
 | `--control-fill` | #F1F1F4 | #222226 | A send button, a segmented control's track, the user's bubble |
 | `--nav-selected` | #FFFFFF | #1C1C1E | The chosen row of the sidebar (with `--hairline-strong` as its edge in light) |
 | `--needs-you` | #D9690A | #F29442 | The needs-you status icon |
-| `--needs-you-text` | #A85A0C | #F29442 | "Plan ready" and other orange words |
+| `--needs-you-text` | #A85A0C | #F29442 | "Waiting for approval" and other orange words |
 | `--needs-you-tint` | #FFF8F0 | #2A1F16 | The "Moebius needs you" block |
 | `--needs-you-edge` | #F4D8B8 | #4A3523 | The edge of that block |
 | `--running` | #1F9D62 | #3EC586 | The running ring, the dot beside Fleet |
@@ -232,7 +232,7 @@ Inbox, My issues, the project list and Fleet are one kind of list. Lists are vir
 
 - **Row (36px):** the status icon, the id in mono (12px, `--text-muted`), the full title (medium weight; one line, cut with an ellipsis at the end), one pale reason or activity (`--text-muted`), then, pushed to the right: the person's avatar, only where a person owns the item (an agent's run has none), then the age (12px, tabular, `--text-muted`, right-aligned in a column of fixed width).
 - **Group rows** carry a name only ("Needs you", "Running", "Earlier"), 12px medium in `--text-secondary` on `--group-fill`, 30px high. No count, because the rows are the count.
-- **The one action a row needs is on the row.** A row that needs you carries a quiet "Approve plan" button (a 24px outlined button: a 1px `--hairline-strong` border, label in `--accent-text`; the filled form drawn on one Fleet row of the mockup z3 is not the standard); on Fleet, "Stop" and the cost appear on the selected or hovered row only. The run waiting for you is the first row of Fleet. A row opens the card in a centred window.
+- **The one action a row needs is on the row.** A row that needs you carries a quiet "Approve" button (a 24px outlined button: a 1px `--hairline-strong` border, label in `--accent-text`; the filled form drawn on one Fleet row of the mockup z3 is not the standard); on Fleet, "Stop" and the cost appear on the selected or hovered row only. The run waiting for you is the first row of Fleet. A row opens the card in a centred window.
 - **Fleet** has the tabs Active and Finished and, on the right of the header, "Pause all": a 28px button with a pause icon and a 1px `--hairline-strong` border, the one header button with a border, because it stops work.
 - **Loading** is skeleton rows in `--hairline` in the layout the rows will have; nothing is written in them. **Empty** is an icon, one very short line ("Nothing needs you") and one action ("Open Fleet").
 - The selected row has the indigo edge and tint; a row under the pointer has `--row-hover`.
@@ -247,7 +247,7 @@ Inbox, My issues, the project list and Fleet are one kind of list. Lists are vir
 
 ## Board and card
 
-- **Board.** Columns are named by their plain name, with no count and no header box. Each column scrolls on its own and is virtualised. A card is flat: `--panel` with a hairline border, `--radius-card`, the status icon, the id in mono, the full title (wrapped), and the avatar of the person who owns it, where one does. A second pale line appears only when an agent is running on it ("editing engine.rs") or it needs you ("Plan ready", in `--needs-you-text`).
+- **Board.** Columns are named by their plain name, with no count and no header box. Each column scrolls on its own and is virtualised. A card is flat: `--panel` with a hairline border, `--radius-card`, the status icon, the id in mono, the full title (wrapped), and the avatar of the person who owns it, where one does. A second pale line appears only when an agent is running on it ("editing engine.rs") or it needs you ("Waiting for approval", in `--needs-you-text`).
 - **Card window.** A card opens as a centred window over the dimmed board: `--scrim` (the board is dimmed, not blurred), `--radius-panel`, `--shadow-window`, about 800px wide. Its header row has the id (mono), "Open as page" and a close icon. Under it, on the title row: the title, then the status icon, the owner's avatar, the diff (`+84` in `--running-text`, `−12` in `--danger-text`) and a "…" menu. Then the thread as a timeline: comments, moves ("Moebius moved this to In progress") and "Code run" and "Review" as one collapsible line each, and one tinted "Moebius needs you" block (`--needs-you-tint`, a 1px `--needs-you-edge`, `--radius-card`) with its buttons. A reply field is at the bottom. A row of the Inbox or of Fleet opens the same window, and so do New issue and the editing of a rule, an agent or a skill.
 
 ## Settings

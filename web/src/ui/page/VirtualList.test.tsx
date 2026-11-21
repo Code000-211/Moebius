@@ -188,16 +188,16 @@ describe("a row", () => {
         status="needsYou"
         id="MOE-1"
         title="A title"
-        reason="Plan ready"
+        reason="Waiting for approval"
         age="2m"
-        action={<button type="button">Approve plan</button>}
+        action={<button type="button">Approve</button>}
         owner="leon"
       />,
     );
     expect(screen.getByText("MOE-1")).toBeTruthy();
-    expect(screen.getByText("Plan ready")).toBeTruthy();
+    expect(screen.getByText("Waiting for approval")).toBeTruthy();
     expect(screen.getByText("2m")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Approve plan" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Approve" })).toBeTruthy();
     expect(screen.getByTitle("@leon")).toBeTruthy();
     expect(screen.getByTestId("list-row").className).not.toContain("before:bg-accent");
     rerender(<ListRow status="running" id="MOE-2" title="Run" selected />);

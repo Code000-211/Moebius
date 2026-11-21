@@ -175,7 +175,7 @@ describe("the list the page draws", () => {
   });
 
   it("says why a run waits", () => {
-    expect(waitingWord(run(1, "waiting", false, 1))).toBe("Plan ready");
+    expect(waitingWord(run(1, "waiting", false, 1))).toBe("Waiting for approval");
     expect(waitingWord(run(1, "waiting", true))).toBe("Asks you");
     expect(waitingWord(run(1, "waiting"))).toBe("Your turn");
   });

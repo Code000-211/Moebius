@@ -344,7 +344,7 @@ describe("the board page", () => {
       // A card that needs a person says so in the orange line.
       const needs = card(2);
       await needs.getByTestId("status-needsYou").waitFor();
-      expect(await needs.getByTestId("card-activity").textContent()).toBe("Plan ready");
+      expect(await needs.getByTestId("card-activity").textContent()).toBe("Waiting for approval");
 
       // An idle card is its id and its title, and nothing else.
       const idle = card(3);
