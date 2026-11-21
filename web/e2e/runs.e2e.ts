@@ -203,14 +203,23 @@ describe("the run view", () => {
   });
 });
 
+/** Opens the window of the card's properties from its menu, where its change and the headline of its diff are. */
+async function openProperties() {
+  await page
+    .locator("[data-card-window]")
+    .getByRole("button", { name: /^More actions for #/ })
+    .click();
+  await page.getByRole("menuitem", { name: "Properties…" }).click();
+}
+
 describe("the diff of a card", () => {
   it.skipIf(usesRealServer)(
     "shows the headline of a change in the dock and its lines in a sheet",
     async () => {
       await open("/board/1?card=5");
-      const dock = page.getByRole("dialog", { name: "Card inspector" });
-      await dock.getByText("Changes", { exact: true }).waitFor();
-      // The dock has room for one line about a change: what it touches, and what it costs.
+      await openProperties();
+      const dock = page.getByRole("dialog", { name: /^Properties of #/ });
+      // The properties window has room for one line about a change: what it touches, and what it costs.
       const headline = dock.getByTestId("diff-card");
       await headline.waitFor();
       expect((await headline.textContent()) ?? "").toMatch(/\+\d+ added -\d+ removed/);
@@ -235,9 +244,8 @@ describe("the diff of a card", () => {
       expect(share).toBeGreaterThan(0.85);
       await page.keyboard.press("Escape");
       await sheet.waitFor({ state: "detached" });
-      // Escape closed the sheet alone; the card is still open behind where it was.
+      // Escape closed the sheet alone; the properties are still open behind where it was.
       await headline.waitFor();
-      expect(await dock.getByText("Changes", { exact: true }).count()).toBe(1);
     },
   );
 
@@ -245,8 +253,8 @@ describe("the diff of a card", () => {
     "spells what each file costs, and keeps no key to the colours",
     async () => {
       await open("/board/1?card=5");
-      const dock = page.getByRole("dialog", { name: "Card inspector" });
-      await dock.getByTestId("diff-card").click();
+      await openProperties();
+      await page.getByTestId("diff-card").click();
       const sheet = page.getByRole("dialog", { name: "Changes" });
       await sheet.getByTestId("diff-summary").waitFor();
       // The count of a file is `+14 -4`, and there is no key to the colours beside it.
@@ -262,8 +270,8 @@ describe("the diff of a card", () => {
     "ends where the diff ends, with no band of nothing under the last line",
     async () => {
       await open("/board/1?card=5");
-      const dock = page.getByRole("dialog", { name: "Card inspector" });
-      await dock.getByTestId("diff-card").click();
+      await openProperties();
+      await page.getByTestId("diff-card").click();
       const sheet = page.getByRole("dialog", { name: "Changes" });
       const lastLine = sheet.locator('[data-testid="diff-line"]').last();
       await lastLine.waitFor();
@@ -287,6 +295,7 @@ describe("the diff of a card", () => {
       await open("/board/1?card=5");
       fake().changeDiff = MANY_FILE_CHANGE_DIFF;
       await page.reload();
+      await openProperties();
       await page.getByTestId("diff-card").click();
       const sheet = page.getByRole("dialog", { name: "Changes" });
       const lastLine = sheet.locator('[data-testid="diff-line"]').last();
@@ -310,6 +319,7 @@ describe("the diff of a card", () => {
       await open("/board/1?card=5");
       fake().changeDiff = LONG_CHANGE_DIFF;
       await page.reload();
+      await openProperties();
       await page.getByTestId("diff-card").click();
       const sheet = page.getByRole("dialog", { name: "Changes" });
       const lines = sheet.getByTestId("diff-lines");

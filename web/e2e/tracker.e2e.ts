@@ -63,6 +63,22 @@ async function openBoard(): Promise<void> {
 const dock = () => page.getByRole("dialog", { name: "Card inspector" });
 /** The properties of the card in the dock, in the right column. */
 const properties = () => page.getByRole("region", { name: /^Properties of #/ });
+/** Opens the window of the card's properties from its menu, with the fold of the rest open. */
+async function openProps() {
+  if (!(await properties().isVisible())) {
+    await dock()
+      .getByRole("button", { name: /^More actions for #/ })
+      .click();
+    await item("Properties…").click();
+    await properties().waitFor();
+  }
+  await unfold(properties());
+}
+/** Closes the window of the properties, so the card window is the top layer again. */
+async function closeProps() {
+  await page.keyboard.press("Escape");
+  await properties().waitFor({ state: "detached" });
+}
 /** The value of a property, a button named by the property and what it says. */
 const value = (name: string | RegExp) => properties().getByRole("button", { name });
 
@@ -183,7 +199,7 @@ describe("sub-issues on the board", () => {
     await openCard("Pick the format");
     const parent = await numberOf("Plan the export");
     await dock().getByRole("heading", { name: "Pick the format" }).waitFor();
-    await unfold(properties());
+    await openProps();
     await value(`Parent #${parent} Plan the export`).waitFor();
 
     // Closing it counts it done, and the card goes to Done.
@@ -280,7 +296,7 @@ describe("the issue in the dock", () => {
     await newIssue("Decide the queue");
     await openCard("Decide the queue");
     await dock().getByRole("heading", { name: "Decide the queue" }).waitFor();
-    await unfold(properties());
+    await openProps();
 
     await pickOption(page, value("Claim No one"), "Me");
     await cardTitled("Decide the queue").getByText("Claimed by person").waitFor();
@@ -293,20 +309,24 @@ describe("the issue in the dock", () => {
     await addTo("Add a label", "wayfinder:decision");
     await cardTitled("Decide the queue").getByText("wayfinder:decision").waitFor();
     await properties().getByRole("button", { name: "Remove label wayfinder:decision" }).waitFor();
+    await closeProps();
 
     await dock().getByLabel("Write a comment").fill("A queue keeps the order.");
     await dock().getByRole("button", { name: "Comment", exact: true }).click();
     await dock().getByText("A queue keeps the order.").waitFor();
     await expect.poll(() => dock().getByLabel("Write a comment").inputValue()).toBe("");
 
-    await dock().getByRole("button", { name: "Edit issue" }).click();
+    await dock()
+      .getByRole("button", { name: /^More actions for #/ })
+      .click();
+    await item("Edit issue…").click();
     const form = page.getByRole("dialog", { name: /^Edit #\d+$/ });
     expect(await form.getByLabel("Title").inputValue()).toBe("Decide the queue");
     await form.getByLabel("Title").fill("Decide the queue type");
     await form.getByLabel("Description").fill("FIFO or priority.");
     await form.getByRole("button", { name: "Save", exact: true }).click();
     await dock().getByRole("heading", { name: "Decide the queue type" }).waitFor();
-    await unfold(properties());
+    // The text of the issue is the first entry of the thread.
     await dock().getByText("FIFO or priority.").waitFor();
   });
 
@@ -315,7 +335,7 @@ describe("the issue in the dock", () => {
     await newIssue("Palette card");
     await openCard("Palette card");
     await dock().getByRole("heading", { name: "Palette card" }).waitFor();
-    await unfold(properties());
+    await openProps();
 
     await page.keyboard.press("Control+k");
     const first = page.getByRole("option").first();
@@ -336,7 +356,7 @@ describe("the issue in the dock", () => {
     await newIssue("Give it away");
     await openCard("Give it away");
     await dock().getByRole("heading", { name: "Give it away" }).waitFor();
-    await unfold(properties());
+    await openProps();
 
     await value("Assignee No one").click();
     await page.getByRole("menuitemcheckbox", { name: "Owner (@owner)" }).click();
@@ -358,7 +378,7 @@ describe("the issue in the dock", () => {
     await newIssue("Palette gift");
     await openCard("Palette gift");
     await dock().getByRole("heading", { name: "Palette gift" }).waitFor();
-    await unfold(properties());
+    await openProps();
 
     await page.keyboard.press("Control+k");
     await page.getByRole("option", { name: /Assign to @owner/ }).click();
@@ -375,7 +395,7 @@ describe("the issue in the dock", () => {
     await newIssue("Later");
     await openCard("Rush it");
     await dock().getByRole("heading", { name: "Rush it" }).waitFor();
-    await unfold(properties());
+    await openProps();
 
     await value("Priority No priority").click();
     await page.getByRole("menuitemradio", { name: "Urgent" }).click();
@@ -410,7 +430,7 @@ describe("the issue in the dock", () => {
     await newIssue("Two gifts");
     await openCard("Two gifts");
     await dock().getByRole("heading", { name: "Two gifts" }).waitFor();
-    await unfold(properties());
+    await openProps();
 
     // The second command is chosen before the page has the card as the first one left it.
     await page.keyboard.press("Control+k");
@@ -444,7 +464,7 @@ describe("the issue in the dock", () => {
     await toggleOf("Plan").click();
     await openCard("Spike it");
     await dock().getByRole("heading", { name: "Spike it" }).waitFor();
-    await unfold(properties());
+    await openProps();
     await addTo("Add a label", "spike");
     await cardTitled("Spike it").getByText("spike", { exact: true }).waitFor();
 
@@ -471,7 +491,7 @@ describe("the issue in the dock", () => {
     // The address names the card before the dock shows it: typed into the dock of the card it showed before, the number
     // would go with that dock.
     await dock().getByRole("heading", { name: "Build" }).waitFor();
-    await unfold(properties());
+    await openProps();
     await addTo("Add a blocker by its number", String(ship));
     await properties()
       .getByRole("button", { name: `Remove blocker #${ship}` })
@@ -481,7 +501,7 @@ describe("the issue in the dock", () => {
 
     await openCard("Ship");
     await dock().getByRole("heading", { name: "Ship" }).waitFor();
-    await unfold(properties());
+    await openProps();
     await addTo("Add a blocker by its number", String(build));
     // The refusal is said under the property that asked.
     await properties().getByRole("alert").filter({ hasText: "cannot block it" }).waitFor();
