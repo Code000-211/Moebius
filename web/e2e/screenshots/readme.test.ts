@@ -208,7 +208,7 @@ async function answer(page: Page) {
     const path = url.pathname;
     if (route.request().method() !== "GET") return route.fallback();
     if (path === "/v1/snapshot") return json(route, snapshot());
-    const run = /^\/v1\/runs\/(10[123])(\/events)?$/.exec(path);
+    const run = /^\/v1\/runs\/(10[1234])(\/events)?$/.exec(path);
     if (run) {
       const id = Number(run[1]);
       if (run[2]) {
@@ -218,14 +218,16 @@ async function answer(page: Page) {
           events(runSteps[id] ?? []).filter((event) => event.seq > after),
         );
       }
-      const started = Math.floor(Date.now() / 1000) - (id === 101 ? 410 : id === 102 ? 1_130 : 250);
+      const started =
+        Math.floor(Date.now() / 1000) -
+        (id === 101 ? 410 : id === 102 ? 1_130 : id === 104 ? 1_860 : 250);
       return json(route, {
         id,
-        card_id: id === 101 ? 24 : id === 102 ? 26 : 22,
-        agent: id === 103 ? "Reviewer" : "Coder",
+        card_id: id === 101 ? 24 : id === 102 ? 26 : id === 104 ? 34 : 22,
+        agent: id === 103 ? "Reviewer" : id === 104 ? "Planner" : "Coder",
         harness: "pi-bolt",
-        purpose: id === 103 ? "review" : "code",
-        status: "running",
+        purpose: id === 103 ? "review" : id === 104 ? "plan" : "code",
+        status: id === 104 ? "waiting" : "running",
         worktree: `/srv/.moebius/runs/${id}/worktree`,
         started_at: started,
         ended_at: null,
