@@ -248,3 +248,22 @@ describe("the worktree a card's change was made in", () => {
     expect(changeWorktree(card(1), [])).toBeNull();
   });
 });
+
+describe("what a card that needs a person waits for", () => {
+  it("says it by the kind of the open item, and never as a plan", async () => {
+    const { waitingWords } = await import("./inbox");
+    expect(waitingWords("approve_issue")).toBe("Waiting for approval");
+    expect(waitingWords("ready_to_merge")).toBe("Ready to merge");
+    expect(waitingWords("change_closed")).toBe("Closed without a merge");
+    expect(waitingWords(undefined)).toBe("Your turn");
+  });
+});
+
+describe("the second line of a card that needs a person", () => {
+  it("uses the words it is given, and 'Your turn' when it is given none", () => {
+    expect(cardActivity(card(1), "needs-you", "Waiting for approval")?.text).toBe(
+      "Waiting for approval",
+    );
+    expect(cardActivity(card(1), "needs-you")?.text).toBe("Your turn");
+  });
+});

@@ -1,7 +1,7 @@
 /**
  * One row of the Inbox list: the shared 36px `ListRow` drawn from an `Entry` of `model.ts`. The status icon, the key,
- * the title, one pale reason, and on the right the owner's avatar (a person only) and the age. A row that waits for a
- * plan to be approved carries the one action, Approve plan, which approves without opening the card. Choosing the row
+ * the title, one pale reason, and on the right the owner's avatar (a person only) and the age. A row that waits for an
+ * issue to be approved carries the one action, Approve, which approves without opening the card. Choosing the row
  * is the list's: it selects it, and the page opens the card window or shows what to decide.
  */
 import type { MouseEvent } from "react";
@@ -12,6 +12,7 @@ import type { Entry } from "./model";
 
 export function InboxRow({
   entry,
+  idChars,
   now,
   at,
   selected,
@@ -20,6 +21,8 @@ export function InboxRow({
   onApprove,
 }: {
   entry: Entry;
+  /** The width of the list's id column, from `idChars`. */
+  idChars?: number;
   now: number;
   at: RowPosition;
   selected: boolean;
@@ -37,6 +40,7 @@ export function InboxRow({
       onClick={onClick}
       status={entry.status}
       id={entry.id}
+      idChars={idChars}
       title={entry.title}
       reason={entry.reason}
       owner={entry.owner}
@@ -53,7 +57,7 @@ export function InboxRow({
               onApprove(card);
             }}
           >
-            Approve plan
+            Approve
           </Button>
         )
       }

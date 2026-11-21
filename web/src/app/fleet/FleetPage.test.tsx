@@ -111,7 +111,7 @@ describe("a fleet with many runs", () => {
     expect(await screen.findByRole("button", { name: "Stop Card 3" })).toBeTruthy();
   });
 
-  it("puts the run that waits for you first, with its Approve plan, and no avatar", async () => {
+  it("puts the run that waits for you first, with its Approve, and no avatar", async () => {
     const waiting = card(7, { run: { ...running, id: 7, status: "waiting" } });
     const item: InboxItem = {
       id: 1,
@@ -127,11 +127,9 @@ describe("a fleet with many runs", () => {
     const rows = await screen.findAllByTestId("list-row");
     expect(screen.queryAllByTestId("group-row")).toHaveLength(0);
     expect(rows[0]?.textContent).toContain("Card 7");
-    expect(rows[0]?.textContent).toContain("Plan ready");
-    expect(
-      within(rows[0] as HTMLElement).getByRole("button", { name: "Approve plan" }),
-    ).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "Approve plan" })).toHaveLength(1);
+    expect(rows[0]?.textContent).toContain("Waiting for approval");
+    expect(within(rows[0] as HTMLElement).getByRole("button", { name: "Approve" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Approve" })).toHaveLength(1);
   });
 
   it("says what is empty with an icon, one line and one action", async () => {
@@ -298,7 +296,7 @@ describe("the tabs of the fleet", () => {
     expect(last.textContent).toContain("WEB-1");
     expect(last.textContent).toContain("48k tokens");
     expect(last.textContent).toContain("2m");
-    // No Stop and no Approve plan on a run that is over.
+    // No Stop and no Approve on a run that is over.
     expect(screen.queryByRole("button", { name: /^Stop/ })).toBeNull();
   });
 

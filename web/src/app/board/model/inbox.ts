@@ -9,6 +9,23 @@ export const STUCK = "stuck";
 export const CHANGE_CLOSED = "change_closed";
 export const READY_TO_MERGE = "ready_to_merge";
 export const APPROVE_ISSUE = "approve_issue";
+/** What an outside issue that waits for a person's approval is called, on every row, card and button of the app. */
+export const WAITING_FOR_APPROVAL = "Waiting for approval";
+
+/** The pale words of a card that waits for a person, by the kind of its open item; "Your turn" for a kind with no word of its own. */
+export function waitingWords(kind: string | undefined): string {
+  switch (kind) {
+    case APPROVE_ISSUE:
+      return WAITING_FOR_APPROVAL;
+    case READY_TO_MERGE:
+      return "Ready to merge";
+    case CHANGE_CLOSED:
+      return "Closed without a merge";
+    default:
+      return "Your turn";
+  }
+}
+
 /** A merge of a card's changes stopped after another change of the card was merged; it informs, and is no turn. */
 export const MERGE_STOPPED = "merge_stopped";
 

@@ -7,6 +7,7 @@ import type { HistoryEntry, Run } from "../../../api/types/cards";
 import { plural } from "../../../ui/lib/format";
 import type { StateMark } from "../../../ui/page/MarkLabel";
 import type { StatusState } from "../../../ui/page/StatusIcon";
+import { waitingWords } from "./inbox";
 import { type CardStatus, changesOfCard, heldLine, inRepository } from "./status";
 
 /** A number of tokens as the board writes it: `96k tok`, `1.2M tok`. */
@@ -266,7 +267,11 @@ export type CardActivity = {
  * since nothing else on the card would say it — that a person blocked it or that it waits on other issues. A card that
  * is none of these has no line.
  */
-export function cardActivity(card: Card, status: CardStatus): CardActivity | null {
+export function cardActivity(
+  card: Card,
+  status: CardStatus,
+  waiting = waitingWords(undefined),
+): CardActivity | null {
   if (status === "held" && card.held) {
     return { text: "Blocked", tone: "quiet", hint: heldLine(card.held) };
   }
@@ -279,7 +284,7 @@ export function cardActivity(card: Card, status: CardStatus): CardActivity | nul
     };
   }
   if (status === "stuck") return { text: "Stuck", tone: "needs-you" };
-  if (status === "needs-you") return { text: "Plan ready", tone: "needs-you" };
+  if (status === "needs-you") return { text: waiting, tone: "needs-you" };
   if (status === "blocked") {
     const numbers = card.blocked_by.map((n) => `#${n}`);
     return {

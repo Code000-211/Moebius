@@ -160,8 +160,8 @@ describe("the inbox page", () => {
     it("is approved from its row without opening the card", async () => {
       open("/inbox", [waiting], [], boards);
       const row = await screen.findByTestId("inbox-item");
-      expect(within(row).getByText("Plan ready")).toBeTruthy();
-      fireEvent.click(within(row).getByRole("button", { name: "Approve plan" }));
+      expect(within(row).getByText("Waiting for approval")).toBeTruthy();
+      fireEvent.click(within(row).getByRole("button", { name: "Approve" }));
       await waitFor(() => expect(requests).toContain("POST /v1/cards/1/approve"));
       expect(screen.getByTestId("where").textContent).toBe("/inbox");
     });
