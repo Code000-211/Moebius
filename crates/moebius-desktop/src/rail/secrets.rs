@@ -179,10 +179,10 @@ mod tests {
     #[test]
     fn the_error_names_the_remedy_and_the_phrase_the_connect_page_looks_for() {
         let text = SecretError("x".into()).to_string();
-        // connect/connect.js offers "Connect for this session only" when the error has this phrase.
+        // connect/connect.js clears "Stay signed in" when the error has this phrase.
         assert!(text.contains("keychain does not answer"), "{text}");
         assert!(text.contains("gnome-keyring or KWallet"), "{text}");
-        assert!(text.contains("this session only"), "{text}");
+        assert!(text.contains("clear Stay signed in"), "{text}");
     }
 
     #[tokio::test]
