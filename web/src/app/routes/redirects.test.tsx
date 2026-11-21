@@ -75,6 +75,13 @@ async function open(address: string) {
   return router;
 }
 
+/** Opens `address` and waits for the redirect to land on the page of no particular route, which shows its address. */
+async function landed(address: string) {
+  const router = await open(address);
+  await screen.findByTestId("where");
+  return at(router);
+}
+
 const at = (router: Awaited<ReturnType<typeof open>>) =>
   router.state.location.pathname + router.state.location.search;
 
@@ -162,5 +169,41 @@ describe("the legacy table", () => {
     const router = await open("/projects/77");
     await screen.findByText("No such project");
     expect(at(router)).toBe("/projects/77");
+  });
+
+  describe("the old Cycles, Milestones and Intake addresses", () => {
+    beforeEach(() => window.localStorage.clear());
+
+    it("lead to the tab of the project named in the query, keeping the rest of it", async () => {
+      projects = [project(1, [5]), project(2, [6])];
+      const router = await open("/milestones?project=2&milestone=4");
+      await screen.findByTestId("where");
+      expect(at(router)).toBe("/projects/2/milestones?milestone=4");
+      expect(router.state.historyAction).toBe("REPLACE");
+    });
+
+    it("lead to the page of the cycle that was open", async () => {
+      projects = [project(1, [5]), project(2, [6])];
+      expect(await landed("/cycles?project=2&cycle=9")).toBe("/projects/2/cycles/9");
+      cleanup();
+      expect(await landed("/cycles/9?project=1")).toBe("/projects/1/cycles/9");
+    });
+
+    it("lead to the only project, or to the one opened last when there are several", async () => {
+      projects = [project(3, [5])];
+      expect(await landed("/intake")).toBe("/projects/3/intake");
+      cleanup();
+      projects = [project(3, [5]), project(4, [6])];
+      window.localStorage.setItem("moebius.lastProject", "4");
+      expect(await landed("/cycles")).toBe("/projects/4/cycles");
+    });
+
+    it("lead to the list of projects when no project can be told", async () => {
+      projects = [project(3, [5]), project(4, [6])];
+      expect(await landed("/milestones")).toBe("/projects");
+      cleanup();
+      window.localStorage.setItem("moebius.lastProject", "99");
+      expect(await landed("/intake")).toBe("/projects");
+    });
   });
 });

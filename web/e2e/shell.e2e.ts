@@ -289,7 +289,7 @@ describe.skipIf(usesRealServer)("the Moebius agent", () => {
       "/fleet",
       "/projects/1",
       "/wiki",
-      "/cycles",
+      "/projects/1/cycles",
       "/views",
       "/settings",
     ]) {
@@ -463,7 +463,7 @@ describe("windows of 800 and 1280 px", () => {
   it.skipIf(usesRealServer)(
     "insets a dialog of a page that did not set its own padding",
     async () => {
-      const page = await signedInAt("/cycles", 1280);
+      const page = await signedInAt("/projects/1/cycles", 1280);
       await page.getByRole("button", { name: "New cycle", exact: true }).first().click();
       const dialog = page.getByRole("dialog");
       await dialog.waitFor();

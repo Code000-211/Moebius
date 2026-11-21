@@ -7,7 +7,7 @@ import { useState } from "react";
 import { addMilestone, editMilestone } from "../../api/calls/milestones";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
-import type { MilestoneFields, MilestoneView } from "../../api/types/milestones";
+import type { Milestone, MilestoneFields, MilestoneView } from "../../api/types/milestones";
 import { Button } from "../../ui/components/Button";
 import {
   Dialog,
@@ -24,9 +24,12 @@ import { Notice } from "../../ui/page/Notice";
 export function MilestoneDialog({
   editing,
   onClose,
+  onMade,
 }: {
   editing: MilestoneView | "new" | null;
   onClose: () => void;
+  /** Called with a milestone just made, before the dialog closes. */
+  onMade?: (milestone: Milestone) => void;
 }) {
   const queryClient = useQueryClient();
   const initial: MilestoneFields =
@@ -41,7 +44,8 @@ export function MilestoneDialog({
             key={editing === "new" ? "new" : editing.id}
             initial={initial}
             id={editing === "new" ? null : editing.id}
-            onDone={() => {
+            onDone={(saved) => {
+              if (editing === "new") onMade?.(saved);
               void queryClient.invalidateQueries({ queryKey: keys.milestones });
               void queryClient.invalidateQueries({ queryKey: keys.cards });
               onClose();
@@ -62,7 +66,7 @@ function MilestoneForm({
 }: {
   initial: MilestoneFields;
   id: number | null;
-  onDone: () => void;
+  onDone: (saved: Milestone) => void;
   onCancel: () => void;
 }) {
   const [fields, setFields] = useState(initial);

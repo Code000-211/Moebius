@@ -7,7 +7,7 @@
  */
 import { DotsThreeIcon, GearIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useId } from "react";
+import { type ReactNode, useEffect, useId } from "react";
 import { Link, useNavigate } from "react-router";
 import { listRequests } from "../../api/calls/intake";
 import { keys } from "../../api/keys";
@@ -22,6 +22,7 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { Tabs } from "../../ui/page/Tabs";
 import { type ProjectTab, projectTabPath, settingsPath } from "../pages";
 import { useRole } from "../shell/session";
+import { rememberProject } from "./model";
 
 const LABELS: Record<ProjectTab, string> = {
   workflows: "Workflows",
@@ -56,6 +57,8 @@ export function ProjectHeader({
   const base = useId();
   const navigate = useNavigate();
   const role = useRole();
+  // The old Cycles, Milestones and Intake addresses lead to the project opened last.
+  useEffect(() => rememberProject(project.id), [project.id]);
   // Only a project that takes requests has the tab, and then the count of those a member has yet to decide.
   const requests = useQuery({
     queryKey: keys.requests(project.id),
