@@ -145,7 +145,10 @@ describe.skipIf(usesRealServer)("the card window", () => {
   it("leaves the card open when Escape closes a dialog over it, and C opens the new issue window over it", async () => {
     await open("/board/1?card=3");
     await window().waitFor();
-    await window().getByRole("button", { name: "Edit issue" }).click();
+    await window()
+      .getByRole("button", { name: /More actions for/ })
+      .click();
+    await page.getByRole("menuitem", { name: "Edit issue…" }).click();
     const edit = page.getByRole("dialog", { name: "Edit #3" });
     await edit.waitFor();
     await page.keyboard.press("Escape");
@@ -206,7 +209,7 @@ describe.skipIf(usesRealServer)("the card window", () => {
     await window()
       .getByTestId("thread")
       .evaluate((el) => {
-        for (let node: HTMLElement | null = el; node; node = node.parentElement) node.scrollTop = 0;
+        for (let node: Element | null = el; node; node = node.parentElement) node.scrollTop = 0;
       });
     const frame = (await window().boundingBox()) as {
       x: number;
