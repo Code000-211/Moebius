@@ -8,9 +8,9 @@ import { ago, dayName, elapsed, noun, plural } from "./format";
 describe("how long ago", () => {
   it("is the unit a person reads, in the one shape every list uses", () => {
     expect(ago(100, 90)).toBe("just now");
-    expect(ago(1000, 700)).toBe("5 min ago");
-    expect(ago(10_000, 0)).toBe("2 h ago");
-    expect(ago(200_000, 0)).toBe("2 d ago");
+    expect(ago(1000, 700)).toBe("5m ago");
+    expect(ago(10_000, 0)).toBe("2h ago");
+    expect(ago(200_000, 0)).toBe("2d ago");
     expect(ago(1000, 2000)).toBe("just now");
   });
 });

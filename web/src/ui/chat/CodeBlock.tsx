@@ -30,7 +30,7 @@ export function CodeBlock({
 }) {
   return (
     <div className="reveal-copy my-4 overflow-hidden rounded-card bg-code-bg">
-      <div className="flex h-[30px] items-center justify-between gap-4 border-b border-code-head/15 pr-1 pl-3 font-mono text-[12px] text-code-head">
+      <div className="flex h-[30px] items-center justify-between gap-4 pr-1 pl-3 font-mono text-[12px] text-code-head">
         <span className="flex min-w-0 items-center gap-2">
           <span>{language ?? "Plain text"}</span>
           {file && (
@@ -43,7 +43,7 @@ export function CodeBlock({
         <CopyButton
           text={code}
           label="Copy code"
-          className="font-mono text-[12px] text-code-head hover:bg-code-head/15 hover:text-code-text"
+          className="font-mono text-[12px] text-code-head opacity-100! hover:bg-code-head/15 hover:text-code-text"
         />
       </div>
       <pre className="m-0 overflow-x-auto px-3 py-3 font-mono text-[12px] leading-[1.65] text-code-text">

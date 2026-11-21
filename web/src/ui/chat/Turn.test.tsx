@@ -105,7 +105,8 @@ describe("what the agent did", () => {
     expect(screen.queryByRole("button", { name: /^Worked/ })).toBeNull();
     const steps = screen.getByTestId("steps");
     expect(steps.textContent).toContain("Thought");
-    expect(steps.textContent).toContain("bash");
+    expect(steps.textContent).toContain("Listed the files");
+    expect(steps.textContent).not.toContain("ls");
   });
 
   describe("a long run of steps", () => {
@@ -140,7 +141,7 @@ describe("what the agent did", () => {
       const turn = turnOf(many);
       const key = turn.blocks[0]?.key as string;
       render(<Turn turn={turn} unfolded={new Set([key])} onToggle={() => {}} />);
-      expect(screen.getByTestId("steps").textContent).toContain("ls 3");
+      expect(screen.getByTestId("steps").textContent).toContain("Listed the files");
     });
   });
 
@@ -335,5 +336,36 @@ describe("the setting that shows thinking open", () => {
     expect(
       screen.getByRole("button", { name: "Worked · 5 steps" }).getAttribute("aria-expanded"),
     ).toBe("true");
+  });
+});
+
+describe("what is offered under the last answer", () => {
+  const answered: Entry[] = [
+    { at: 1, seq: 1, kind: "person", said: "said", message: "Why?" },
+    { at: 2, seq: 2, kind: "text", text: "Shall I go ahead?" },
+  ];
+
+  it("stands under an answer that ends the turn", () => {
+    render(
+      <Turn
+        turn={turnOf(answered)}
+        {...folding}
+        offer={<button type="button">Approve plan</button>}
+      />,
+    );
+    expect(
+      within(screen.getByTestId("offer")).getByRole("button", { name: "Approve plan" }),
+    ).toBeTruthy();
+  });
+
+  it("is not drawn when the turn ends in something else", () => {
+    render(
+      <Turn
+        turn={turnOf(failedTurn())}
+        {...folding}
+        offer={<button type="button">Approve plan</button>}
+      />,
+    );
+    expect(screen.queryByTestId("offer")).toBeNull();
   });
 });

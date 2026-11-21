@@ -70,16 +70,16 @@ export function ChatCollapsedThinking({
     <div className={cn("flex flex-col", className)}>
       <button
         type="button"
-        className="flex min-h-7 cursor-pointer items-center gap-2 self-start rounded-control px-3 text-left text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
+        className="flex min-h-5 cursor-pointer items-center gap-2.5 self-start text-left text-sm text-muted transition-colors duration-(--motion-routine) ease-out hover:text-secondary"
         onClick={onToggle}
         aria-expanded={expanded}
       >
-        <LightbulbIcon aria-hidden="true" className="size-4 shrink-0" />
+        <LightbulbIcon aria-hidden="true" className="step-mark size-4 shrink-0" />
         <ThoughtLabel label={thinkingLabel(seconds, ongoing)} />
       </button>
 
       {expanded && (
-        <div className="flex flex-col gap-4 py-2 pl-4">
+        <div className="flex flex-col gap-4 py-2 pl-[26px]">
           {entries.map((entry) => (
             <div key={entry.expansionKey} className="border-l-2 border-hairline pl-4">
               {renderMarkdown({ content: entry.content, className: "text-secondary" })}

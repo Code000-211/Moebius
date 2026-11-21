@@ -3,7 +3,7 @@
 // VSCode, no "open in changes" and no i18n; the header is a real button 32px tall; the file is named by its name, with
 // the whole path kept as a tooltip — a row of the same folder over and over says nothing — its state is a word with a
 // hue, and the counts of changed lines are figures that do not shift.
-import { CaretDownIcon, FileIcon as DefaultFileIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, NotePencilIcon } from "@phosphor-icons/react";
 import type { ElementType, ReactNode } from "react";
 import { cn } from "../lib/cn";
 import { fileName, plural } from "../lib/format";
@@ -35,20 +35,21 @@ export function ChatFileEntry({
   children,
 }: ChatFileEntryProps) {
   const hasStats = additions !== undefined || deletions !== undefined;
-  const FileIcon = fileIcon ?? DefaultFileIcon;
+  const FileIcon = fileIcon ?? NotePencilIcon;
 
   return (
     <div className={cn("overflow-hidden rounded-control", className)}>
       <button
         type="button"
-        className="flex min-h-7 w-full flex-wrap items-center gap-2 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
+        className="group flex min-h-5 w-full items-center gap-2.5 text-left text-muted transition-colors duration-(--motion-routine) ease-out hover:text-secondary"
         onClick={onToggle}
         aria-expanded={onToggle ? expanded : undefined}
       >
-        <FileIcon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
-        <span title={filename} className="min-w-0 flex-1 truncate font-mono text-sm text-secondary">
-          {fileName(filename)}
+        <FileIcon aria-hidden="true" className="step-mark size-4 shrink-0" />
+        <span className="min-w-0 truncate text-sm" title={filename}>
+          Edited <span className="ml-0.5 font-mono text-[12px]">{fileName(filename)}</span>
         </span>
+        <span className="flex-1" />
         {hasStats && (
           <span className="shrink-0 text-sm tabular-nums">
             {additions !== undefined && additions > 0 && (
@@ -75,7 +76,7 @@ export function ChatFileEntry({
           <CaretDownIcon
             aria-hidden="true"
             className={cn(
-              "size-4 shrink-0 text-secondary transition-transform duration-(--motion-routine) ease-out",
+              "size-4 shrink-0 opacity-0 transition-[opacity,transform] duration-(--motion-routine) ease-out group-hover:opacity-100 group-focus-visible:opacity-100",
               !expanded && "-rotate-90",
             )}
           />

@@ -61,16 +61,16 @@ export function today(): string {
 }
 
 /**
- * How long ago `then` was, the one way the app says a gap: "just now", then minutes, hours, days. `now` and `then`
+ * How long ago `then` was, the one way the app says a gap: "just now", then `2m ago`, `3h ago`, `1d ago`. `now` and `then`
  * are Unix seconds, and every list that stamps a row passes the same `now` it stamps its other rows with, so a page
  * does not call one row "just now" and its neighbour "1 min ago" for want of a shared clock.
  */
 export function ago(now: number, then: number): string {
   const seconds = Math.max(0, now - then);
   if (seconds < 60) return "just now";
-  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
-  if (seconds < 86_400) return `${Math.floor(seconds / 3600)} h ago`;
-  return `${Math.floor(seconds / 86_400)} d ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86_400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86_400)}d ago`;
 }
 
 /**

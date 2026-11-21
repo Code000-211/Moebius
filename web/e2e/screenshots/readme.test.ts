@@ -9,7 +9,17 @@ import { join, resolve } from "node:path";
 import { type Browser, chromium, type Page, type Route } from "playwright";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { type FakeServer, startFakeServer } from "../fakeServer";
-import { diff, events, repository, runSteps, snapshot } from "./showcase";
+import {
+  agentQuestion,
+  agentSteps,
+  diff,
+  diff21,
+  events,
+  repository,
+  runSteps,
+  snapshot,
+  threadOf21,
+} from "./showcase";
 
 const OUT = resolve(import.meta.dirname, "../../../docs/assets/screenshots");
 const THEMES = ["dark", "light"] as const;
@@ -151,6 +161,31 @@ function seedChats() {
     const made = fake.chat.chats.find((chat) => chat.id === id);
     if (made) made.status = status;
   }
+  // The Moebius agent's earlier conversation: its answer has a code block and a plan that waits to be approved.
+  const plan = events(agentSteps, 400).map((event): [string, Record<string, unknown>] => [
+    event.kind,
+    event.data,
+  ]);
+  const asked = fake.chat.seed({
+    agent: "Moebius",
+    title: agentQuestion,
+    status: "stopped",
+    repository_id: 1,
+    origin: "assistant",
+    model: null,
+    started_at: Math.floor(Date.now() / 1000) - 600,
+    events: [
+      said(agentQuestion),
+      ...plan,
+      ["agent_end", { type: "agent_end", messages: [] }],
+      ["agent_settled", { type: "agent_settled", aborted: false }],
+    ],
+  });
+  const waiting = fake.chat.chats.find((chat) => chat.id === asked);
+  if (waiting) {
+    waiting.status = "waiting";
+    waiting.asks = true;
+  }
   const prompt =
     "The CSV export of orders times out for the bigger shops. Find out why and fix it.";
   const list = events(
@@ -239,6 +274,9 @@ async function answer(page: Page) {
       });
     }
     if (path === "/v1/changes/1/diff") return json(route, { diff, truncated: false });
+    if (path === "/v1/changes/2/diff") return json(route, { diff: diff21, truncated: false });
+    if (path === "/v1/cards/21/comments") return json(route, threadOf21.comments);
+    if (path === "/v1/cards/21/history") return json(route, threadOf21.history);
     // A card of the showcase is read from the snapshot; what the fake keeps of its own cards is left out.
     const card = /^\/v1\/cards\/(\d+)(?:\/([a-z]+))?$/.exec(path);
     if (card) {
