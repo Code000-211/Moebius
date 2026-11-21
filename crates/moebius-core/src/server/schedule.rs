@@ -174,6 +174,71 @@ pub(crate) fn on_workflow_schedules(
             }
         }
     }
+    started.extend(on_project_workflow_schedules(app, harness, now)?);
+    Ok(started)
+}
+
+/// The same for the workflows the projects own (ADR 0025), project by project and in name order. A project's workflow
+/// remembers the minute it fired at under its project and its name, so two projects may have a schedule of the same
+/// name. The trigger's `repository` is checked against the project's repositories and, left out, is the project's only
+/// one (see `App::workflow_run_repository`); a firing the project cannot place starts no run and is logged.
+fn on_project_workflow_schedules(
+    app: &Arc<App>,
+    harness: &HarnessRepo,
+    now: PrimitiveDateTime,
+) -> crate::app::Result<Vec<WorkflowRun>> {
+    let mut started = Vec::new();
+    for project in app.store.projects()? {
+        let names = match definition::names_in_project(harness.path(), &project.name) {
+            Ok(names) => names,
+            Err(error) => {
+                app.bus.publish(Event::RetroError {
+                    message: error.to_string(),
+                });
+                continue;
+            }
+        };
+        for name in names {
+            let definition = match definition::read_in_project(harness.path(), &project.name, &name)
+            {
+                Ok(definition) => definition,
+                Err(error) => {
+                    app.bus.publish(Event::RetroError {
+                        message: error.to_string(),
+                    });
+                    continue;
+                }
+            };
+            let Some(trigger) = schedule::of(&definition) else {
+                continue;
+            };
+            let fired_at = app
+                .store
+                .project_schedule_firing(project.id, &name)?
+                .as_deref()
+                .and_then(cron::parse_minute);
+            let Some(at) = trigger.due(fired_at, now) else {
+                continue;
+            };
+            app.store.record_project_schedule_firing(
+                project.id,
+                &name,
+                &cron::format_minute(at),
+            )?;
+            match app.start_project_workflow_run(
+                project.id,
+                &name,
+                trigger.repository.as_deref(),
+                trigger.firing_value(at),
+            ) {
+                Ok(run) => started.push(run),
+                Err(why) => eprintln!(
+                    "moebius: workflow {name} of the project {} fires on its schedule and starts no run: {why}",
+                    project.name
+                ),
+            }
+        }
+    }
     Ok(started)
 }
 
@@ -406,6 +471,53 @@ port = "out"
                 .as_deref(),
             Some("2026-11-09 03:30")
         );
+    }
+
+    #[test]
+    fn the_scheduled_workflows_of_two_projects_fire_apart_with_the_repository_rule() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = app_with_workflows(dir.path(), &[]);
+        // `demo` has a home project of its own; a second project has two repositories, so a schedule that names
+        // none cannot be placed there, and one that names a repository of another project cannot either.
+        let demo = app.store.project_by_name("demo").unwrap().unwrap();
+        let other = app.add_project("Other", "OTH").unwrap();
+        let harness = app.harness_repo().unwrap();
+        let save = |project: &str, name: &str, text: &str| {
+            let definition = definition::parse(name, text).unwrap();
+            harness
+                .save_project_workflow(
+                    &app,
+                    &crate::decide::Actor::first_owner(),
+                    project,
+                    name,
+                    &definition,
+                )
+                .unwrap();
+        };
+        let without_repository = NIGHTLY.replace(", repository = \"demo\"", "");
+        save("demo", "nightly-triage", &without_repository);
+        save("Other", "nightly-triage", NIGHTLY);
+
+        let started = wake(&app, datetime!(2026-11-09 03:30:00));
+        // The project with one repository places the run without a name; the other's names a repository it lacks.
+        assert_eq!(started.len(), 1);
+        assert_eq!(started[0].project_id, Some(demo.id));
+        assert_eq!(
+            app.store
+                .project_schedule_firing(demo.id, "nightly-triage")
+                .unwrap()
+                .as_deref(),
+            Some("2026-11-09 03:30")
+        );
+        // Each project's schedule keeps its own minute; the refused firing is recorded and does not repeat.
+        assert_eq!(
+            app.store
+                .project_schedule_firing(other.id, "nightly-triage")
+                .unwrap()
+                .as_deref(),
+            Some("2026-11-09 03:30")
+        );
+        assert!(wake(&app, datetime!(2026-11-09 03:30:00)).is_empty());
     }
 
     #[test]

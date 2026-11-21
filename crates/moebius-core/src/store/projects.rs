@@ -54,6 +54,16 @@ UPDATE repositories SET home_project_id = id;
 UPDATE cards SET project_id = repository_id;
 "#;
 
+/// The ids of the projects that were deleted, so that a new project never takes one over (ADR 0025): the rows kept
+/// under a project's id as plain values, such as the finished workflow runs, must not turn up under another project.
+pub(super) const DELETED: &str = r#"
+CREATE TABLE deleted_projects (id INTEGER PRIMARY KEY);
+"#;
+
+/// The id the next project gets: above every id in use and every id that was deleted.
+pub(super) const NEXT_ID: &str = "(SELECT MAX(COALESCE((SELECT MAX(id) FROM projects), 0), \
+     COALESCE((SELECT MAX(id) FROM deleted_projects), 0)) + 1)";
+
 /// The repository that holds a project's own files names the project; a project has at most one.
 pub(super) const FILES: &str = r#"
 ALTER TABLE repositories ADD COLUMN files_of INTEGER REFERENCES projects(id);
@@ -194,7 +204,7 @@ pub(super) fn insert_home_project(conn: &Connection, name: &str) -> rusqlite::Re
     let taken = taken_keys(conn)?;
     let key = key_for(name, |key| taken.contains(key));
     conn.execute(
-        "INSERT INTO projects (name, key, created_at) VALUES (?1, ?2, ?3)",
+        &format!("INSERT INTO projects (id, name, key, created_at) VALUES ({NEXT_ID}, ?1, ?2, ?3)"),
         params![name, key, now()],
     )?;
     Ok(conn.last_insert_rowid())
@@ -230,13 +240,31 @@ fn project(row: &Row) -> rusqlite::Result<Project> {
 }
 
 impl Store {
+    /// The project that goes with the repository `id` when it is removed, if one does: its home project, when no other
+    /// repository, card or home repository keeps it (the same rule `delete_repository` applies).
+    pub fn project_removed_with_repository(&self, id: i64) -> Result<Option<i64>> {
+        Ok(self
+            .read()
+            .query_row(
+                "SELECT home_project_id FROM repositories AS r WHERE r.id = ?1
+                   AND NOT EXISTS (SELECT 1 FROM project_repositories WHERE project_id = r.home_project_id AND repository_id <> r.id)
+                   AND NOT EXISTS (SELECT 1 FROM cards WHERE project_id = r.home_project_id AND repository_id <> r.id)
+                   AND NOT EXISTS (SELECT 1 FROM repositories WHERE home_project_id = r.home_project_id AND id <> r.id)",
+                [id],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
     /// Adds a project with `name` and `key` and no repository. A name taken in any case, or a key taken, is an error;
     /// the caller checks both first and that the key is one (see [`is_key`]).
     pub fn add_project(&self, name: &str, key: &str) -> Result<Project> {
         let id = {
             let conn = self.conn();
             conn.execute(
-                "INSERT INTO projects (name, key, created_at) VALUES (?1, ?2, ?3)",
+                &format!(
+                    "INSERT INTO projects (id, name, key, created_at) VALUES ({NEXT_ID}, ?1, ?2, ?3)"
+                ),
                 params![name, key, now()],
             )?;
             conn.last_insert_rowid()

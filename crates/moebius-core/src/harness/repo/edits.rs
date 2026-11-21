@@ -17,6 +17,14 @@ use crate::harness::skill;
 use crate::repos::{git, kept};
 use crate::workflows::definition::{self, WorkflowDefinition};
 
+/// The id of the project called `name`, or `NotFound`: workflows are kept for projects the server has.
+fn known_project(app: &App, name: &str) -> Result<i64> {
+    app.store
+        .project_by_name(name)?
+        .map(|project| project.id)
+        .ok_or_else(|| AppError::NotFound(format!("project {name}")))
+}
+
 impl HarnessRepo {
     /// A person adds or changes the agent `name`: the definition is validated as a file read is, committed on the
     /// default branch and pushed to `origin`. An edit that changes nothing commits nothing.
@@ -172,6 +180,85 @@ impl HarnessRepo {
         }
         let message = format!("Delete the workflow {name}");
         let context = BTreeMap::from([("workflow".to_string(), name.to_string())]);
+        let write = || Ok(std::fs::remove_file(&path)?);
+        let edit = Edit {
+            kind: "edit_workflow",
+            files: &file,
+            message: &message,
+        };
+        self.commit(app, by, &mut read_at, &edit, context, write)
+    }
+
+    /// A person adds or changes the workflow `name` of the project `project` (ADR 0025), at
+    /// `projects/<project>/workflows/<name>.toml`: validated as a file read is, committed on the default branch and
+    /// pushed to `origin`. A project the server does not have is refused with `NotFound`; an edit that changes nothing
+    /// commits nothing. Another project's workflow of the same name is a file of its own and stays as it is.
+    pub fn save_project_workflow(
+        &self,
+        app: &App,
+        by: &Actor,
+        project: &str,
+        name: &str,
+        definition: &WorkflowDefinition,
+    ) -> Result<Option<String>> {
+        let mut read_at = self.lock();
+        known_project(app, project)?;
+        let file = definition::project_file_for(project, name)
+            .map_err(|error| AppError::Invalid(error.to_string()))?;
+        let text = definition::render(name, definition)
+            .map_err(|error| AppError::Invalid(error.to_string()))?;
+        let path = self.path.join(&file);
+        let verb = if path.exists() { "Update" } else { "Add" };
+        let message = format!("{verb} the workflow {name} of the project {project}");
+        let context = BTreeMap::from([
+            ("project".to_string(), project.to_string()),
+            ("workflow".to_string(), name.to_string()),
+        ]);
+        let write = || {
+            // A link in the clone (which `origin` may have added) must not lead the write out of it.
+            let target = crate::repos::files::writable(&self.path, &file)?;
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            Ok(std::fs::write(&target, &text)?)
+        };
+        let edit = Edit {
+            kind: "edit_workflow",
+            files: &file,
+            message: &message,
+        };
+        self.commit(app, by, &mut read_at, &edit, context, write)
+    }
+
+    /// A person deletes the workflow `name` of the project `project`, the same way. A workflow of the project with a
+    /// run queued, running or waiting is refused with `Conflict`, and one the project does not have with `NotFound`.
+    pub fn delete_project_workflow(
+        &self,
+        app: &App,
+        by: &Actor,
+        project: &str,
+        name: &str,
+    ) -> Result<Option<String>> {
+        let mut read_at = self.lock();
+        let id = known_project(app, project)?;
+        let file = definition::project_file_for(project, name)
+            .map_err(|error| AppError::Invalid(error.to_string()))?;
+        let path = self.path.join(&file);
+        if !path.is_file() {
+            return Err(AppError::NotFound(format!(
+                "workflow {name} of the project {project}"
+            )));
+        }
+        if app.store.active_project_workflow_runs(id, name)? > 0 {
+            return Err(AppError::Conflict(format!(
+                "workflow {name} of the project {project} has a run queued or running"
+            )));
+        }
+        let message = format!("Delete the workflow {name} of the project {project}");
+        let context = BTreeMap::from([
+            ("project".to_string(), project.to_string()),
+            ("workflow".to_string(), name.to_string()),
+        ]);
         let write = || Ok(std::fs::remove_file(&path)?);
         let edit = Edit {
             kind: "edit_workflow",

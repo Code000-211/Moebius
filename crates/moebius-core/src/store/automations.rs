@@ -6,6 +6,13 @@ use serde::{Deserialize, Serialize};
 
 use super::{Result, Store, now};
 
+/// The project an automation belongs to (ADR 0025), with its workflow file: `NULL` for one still kept server-wide, from
+/// before workflows belonged to projects, until the migration of the files gives it one.
+pub(super) const BY_PROJECT: &str = r#"
+ALTER TABLE automations ADD COLUMN project_id INTEGER REFERENCES projects(id);
+CREATE INDEX automations_by_project ON automations (project_id, workflow);
+"#;
+
 /// The hour, in seconds.
 const HOUR: i64 = 3600;
 
@@ -192,6 +199,45 @@ impl Store {
                 automation,
             )
             .optional()?)
+    }
+
+    /// The automation of the project `project_id` whose row keeps the workflow file `key` of that project.
+    pub fn automation_with_project_workflow_key(
+        &self,
+        project_id: i64,
+        key: &str,
+    ) -> Result<Option<Automation>> {
+        Ok(self
+            .read()
+            .query_row(
+                &format!("SELECT {AUTOMATION_COLUMNS} FROM automations WHERE project_id = ?1 AND workflow = ?2 ORDER BY id LIMIT 1"),
+                params![project_id, key],
+                automation,
+            )
+            .optional()?)
+    }
+
+    /// The project the automation `id` belongs to; none while it is still kept server-wide.
+    pub fn automation_project(&self, id: i64) -> Result<Option<i64>> {
+        Ok(self
+            .read()
+            .query_row(
+                "SELECT project_id FROM automations WHERE id = ?1",
+                [id],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .optional()?
+            .flatten())
+    }
+
+    /// Gives the server-wide automation whose row keeps the workflow file `key` to the project `project_id`, the file
+    /// with it. True when a server-wide row was found; run again, it finds none and changes nothing.
+    pub fn move_automation_to_project(&self, key: &str, project_id: i64) -> Result<bool> {
+        let moved = self.conn().execute(
+            "UPDATE automations SET project_id = ?2 WHERE workflow = ?1 AND project_id IS NULL",
+            params![key, project_id],
+        )?;
+        Ok(moved > 0)
     }
 
     /// The first automation called `name` that has no workflow file of its own yet.
@@ -423,6 +469,28 @@ mod tests {
             harness: false,
             enabled: true,
         }
+    }
+
+    #[test]
+    fn an_automation_moves_to_a_project_with_its_workflow_file() {
+        let (_dir, s) = test_store();
+        let project = s.add_project("Pricing", "PRC").unwrap();
+        let a = s.add_automation(&nightly(), "2026-10-29 08:00").unwrap();
+        s.set_automation_workflow_key(a.id, "nightly").unwrap();
+        assert_eq!(s.automation_project(a.id).unwrap(), None);
+        assert!(
+            s.automation_with_project_workflow_key(project.id, "nightly")
+                .unwrap()
+                .is_none()
+        );
+        assert!(s.move_automation_to_project("nightly", project.id).unwrap());
+        assert_eq!(s.automation_project(a.id).unwrap(), Some(project.id));
+        let found = s
+            .automation_with_project_workflow_key(project.id, "nightly")
+            .unwrap();
+        assert_eq!(found.map(|found| found.id), Some(a.id));
+        // Moved once: a second move finds no server-wide row.
+        assert!(!s.move_automation_to_project("nightly", project.id).unwrap());
     }
 
     #[test]

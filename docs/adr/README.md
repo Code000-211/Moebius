@@ -27,3 +27,4 @@ One record per decision, numbered in the order they were taken. Where the spec a
 - [0022](0022-the-wiki-is-a-git-repository.md) the wiki is a git repository
 - [0023](0023-a-quieter-light-first-standard.md) a quieter, light-first standard
 - [0024](0024-navigation-by-what-you-do.md) navigation by what you do
+- [0025](0025-workflows-belong-to-a-project.md) workflows belong to a project

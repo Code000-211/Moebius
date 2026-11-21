@@ -50,7 +50,7 @@ impl App {
         repository_id: i64,
         value: Value,
     ) -> Result<WorkflowRun> {
-        self.start_workflow_run_with(source, repository_id, value, None)
+        self.start_workflow_run_with(source, repository_id, value, (None, None))
     }
 
     /// Starts a run for the firing `firing`, linked to it before the run's thread starts so that its first node
@@ -62,15 +62,18 @@ impl App {
         value: Value,
         firing: i64,
     ) -> Result<WorkflowRun> {
-        self.start_workflow_run_with(source, repository_id, value, Some(firing))
+        self.start_workflow_run_with(source, repository_id, value, (Some(firing), None))
     }
 
-    fn start_workflow_run_with<S: WorkflowSource>(
+    /// `(firing, project)` are the firing the run carries and the project that owns its workflow with the workflow's
+    /// file name, when there are any. A run of a project's workflow is stored under that file name, which is how
+    /// every lookup names it, and not under the `name` written inside the file; the two need not match.
+    pub(super) fn start_workflow_run_with<S: WorkflowSource>(
         self: &Arc<Self>,
         source: S,
         repository_id: i64,
         value: Value,
-        firing: Option<i64>,
+        (firing, project): (Option<i64>, Option<(i64, &str)>),
     ) -> Result<WorkflowRun> {
         let definition = source.definition(self)?;
         definition
@@ -81,9 +84,19 @@ impl App {
             .first()
             .map(|trigger| trigger.kind.clone())
             .unwrap_or_default();
-        let run = self
-            .store
-            .add_workflow_run(&definition.name, repository_id, &trigger, &value)?;
+        let run = match project {
+            Some((project, file)) => self.store.add_project_workflow_run(
+                project,
+                file,
+                repository_id,
+                &trigger,
+                &value,
+            )?,
+            None => {
+                self.store
+                    .add_workflow_run(&definition.name, repository_id, &trigger, &value)?
+            }
+        };
         if let Some(firing) = firing {
             self.store.set_firing_workflow_run(firing, run.id)?;
         }

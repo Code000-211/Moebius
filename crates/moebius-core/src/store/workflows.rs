@@ -31,6 +31,11 @@ pub struct WorkflowRun {
     pub error: Option<String>,
     /// The worktree in which the run's agents work on the branch named for the run; none before its first agent node.
     pub worktree: Option<String>,
+    /// The project that owns the workflow the run is of (ADR 0025); none for a run of a workflow still kept
+    /// server-wide, from before workflows belonged to projects. Kept as a plain value, so a run of a project that is
+    /// deleted keeps it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<i64>,
 }
 
 /// One node of a workflow run at one attempt: the input it was given and the output it left.
@@ -47,6 +52,13 @@ pub struct WorkflowNodeRun {
     pub finished_at: Option<i64>,
     pub error: Option<String>,
 }
+
+/// The project a run belongs to (ADR 0025), added after the table: a plain value, not a reference, so that a project
+/// can go while its finished runs stay. Runs from before it have none until the migration of the workflow files.
+pub(super) const PROJECT_COLUMN: &str = r#"
+ALTER TABLE workflow_runs ADD COLUMN project_id INTEGER;
+CREATE INDEX workflow_runs_by_project ON workflow_runs (project_id, workflow, created_at);
+"#;
 
 pub(super) const SCHEMA: &str = r#"
 CREATE TABLE workflow_runs (
@@ -95,6 +107,29 @@ impl Store {
                 "INSERT INTO workflow_runs (workflow, repository_id, trigger, status, value, created_at)
                  VALUES (?1, ?2, ?3, 'queued', ?4, ?5)",
                 params![workflow, repository_id, trigger, value, now()],
+            )?;
+            conn.last_insert_rowid()
+        };
+        Ok(self.workflow_run(id)?.expect("the run was just stored"))
+    }
+
+    /// Stores a queued run of the workflow `workflow` of the project `project_id`, as [`Self::add_workflow_run`] does,
+    /// with the project in the same statement: a run is never stored without it and given it afterwards.
+    pub fn add_project_workflow_run(
+        &self,
+        project_id: i64,
+        workflow: &str,
+        repository_id: i64,
+        trigger: &str,
+        value: &Value,
+    ) -> Result<WorkflowRun> {
+        let value = json_text(value);
+        let id = {
+            let conn = self.conn();
+            conn.execute(
+                "INSERT INTO workflow_runs (workflow, repository_id, trigger, status, value, created_at, project_id)
+                 VALUES (?1, ?2, ?3, 'queued', ?4, ?5, ?6)",
+                params![workflow, repository_id, trigger, value, now(), project_id],
             )?;
             conn.last_insert_rowid()
         };
@@ -156,6 +191,26 @@ impl Store {
             "SELECT COUNT(*) FROM workflow_runs
              WHERE workflow = ?1 AND status NOT IN ('succeeded', 'failed', 'cancelled')",
             [workflow],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// How many runs of the workflow `workflow` of the project `project_id` are queued, running or waiting.
+    pub fn active_project_workflow_runs(&self, project_id: i64, workflow: &str) -> Result<i64> {
+        Ok(self.read().query_row(
+            "SELECT COUNT(*) FROM workflow_runs
+             WHERE project_id = ?1 AND workflow = ?2 AND status NOT IN ('succeeded', 'failed', 'cancelled')",
+            params![project_id, workflow],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// How many runs of any workflow of the project `project_id` are queued, running or waiting.
+    pub fn active_runs_of_project(&self, project_id: i64) -> Result<i64> {
+        Ok(self.read().query_row(
+            "SELECT COUNT(*) FROM workflow_runs
+             WHERE project_id = ?1 AND status NOT IN ('succeeded', 'failed', 'cancelled')",
+            [project_id],
             |row| row.get(0),
         )?)
     }
@@ -362,6 +417,7 @@ fn run_from_row(row: &Row<'_>) -> rusqlite::Result<WorkflowRun> {
         finished_at: row.get(8)?,
         error: row.get(9)?,
         worktree: row.get(10)?,
+        project_id: row.get(11)?,
     })
 }
 
@@ -391,6 +447,28 @@ fn node_from_row(row: &Row<'_>) -> rusqlite::Result<WorkflowNodeRun> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_project_run_is_stored_with_its_project_in_one_statement() {
+        let (_dir, store) = crate::store::test_store();
+        let repository = store
+            .add_repository("demo", "/tmp/demo", "none", "main")
+            .map(|r| r.id)
+            .unwrap();
+        // A later update of the row fails, as a crash between two statements would: the run still has its project.
+        store
+            .conn()
+            .execute_batch(
+                "CREATE TRIGGER no_updates BEFORE UPDATE ON workflow_runs
+                 BEGIN SELECT RAISE(ABORT, 'no updates'); END;",
+            )
+            .unwrap();
+        let run = store
+            .add_project_workflow_run(7, "release", repository, "manual", &serde_json::json!({}))
+            .unwrap();
+        assert_eq!(run.project_id, Some(7));
+        assert_eq!(store.active_runs_of_project(7).unwrap(), 1);
+    }
     use super::*;
     use crate::bus::{Bus, Event};
     use crate::store::test_store;

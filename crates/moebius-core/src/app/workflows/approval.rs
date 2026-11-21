@@ -168,6 +168,22 @@ impl App {
         Ok(())
     }
 
+    /// The definition a stored run is driven again from: the workflow `name` of the project `project` when the run
+    /// records one (ADR 0025), else the server-wide file of that name.
+    fn stored_run_definition(
+        &self,
+        project: Option<i64>,
+        name: &str,
+    ) -> Result<crate::workflows::definition::WorkflowDefinition> {
+        match project {
+            Some(id) => {
+                let project = self.project(id)?;
+                self.harness_repo()?.project_workflow(&project.name, name)
+            }
+            None => name.definition(self),
+        }
+    }
+
     /// Drives the waiting run `run` again on a thread of its own, from the workflow its row names. The wait takes
     /// what its rows left behind: a decision a person made, or the deadline their inbox item fixed. A run whose
     /// definition can no longer be read fails closed, saying so.
@@ -180,12 +196,13 @@ impl App {
             .workflow_run(run)?
             .ok_or_else(|| AppError::NotFound(format!("workflow run {run}")))?;
         let name = stored.workflow;
+        let project = stored.project_id;
         let trigger = stored.value;
         let app = Arc::clone(self);
         let spawned = thread::Builder::new()
             .name(format!("workflow run {run}"))
             .spawn(move || {
-                let definition = match name.as_str().definition(&app) {
+                let definition = match app.stored_run_definition(project, &name) {
                     Ok(definition) => definition,
                     Err(error) => {
                         let message = format!("the workflow could no longer be read: {error}");
@@ -704,10 +721,26 @@ to = "after"
 
     /// The run and its wait as a server that stopped mid-wait leaves them, waiting on `value`.
     fn left_waiting_with(app: &App, repository_id: i64, value: &Value) -> WorkflowRun {
-        let run = app
-            .store
-            .add_workflow_run("asking", repository_id, "test", value)
-            .unwrap();
+        left_waiting_of(app, repository_id, None, value)
+    }
+
+    /// The same for a run of the workflow `asking` of the project `project`, when it is one.
+    fn left_waiting_of(
+        app: &App,
+        repository_id: i64,
+        project: Option<i64>,
+        value: &Value,
+    ) -> WorkflowRun {
+        let run = match project {
+            Some(project) => {
+                app.store
+                    .add_project_workflow_run(project, "asking", repository_id, "test", value)
+            }
+            None => app
+                .store
+                .add_workflow_run("asking", repository_id, "test", value),
+        }
+        .unwrap();
         let row = app
             .store
             .add_workflow_node_run(run.id, "ask", 1, value)
@@ -1021,6 +1054,42 @@ to = "after"
         let ended = wait_for_end(&app, &mut events, run.id);
         assert_eq!(ended.status, "succeeded");
         assert_eq!(left_the_wait(&app, run.id), value());
+    }
+
+    #[test]
+    fn a_waiting_run_of_a_project_is_driven_again_from_the_workflow_of_its_project() {
+        let (_dir, app, repository) = setup(&asking(None));
+        let harness = app.harness_repo().unwrap();
+        // The server-wide workflow of the same name is another graph, and goes away altogether: the run must not
+        // read it, and must not fail for lack of it.
+        std::fs::remove_file(harness.path().join("workflows/asking.toml")).unwrap();
+        let project = app.store.project_by_name("demo").unwrap().unwrap();
+        let definition = crate::workflows::definition::WorkflowDefinition::parse(
+            &asking(None),
+            "workflows/asking.toml",
+        )
+        .unwrap();
+        harness
+            .save_project_workflow(
+                &app,
+                &crate::decide::Actor::first_owner(),
+                "demo",
+                "asking",
+                &definition,
+            )
+            .unwrap();
+        let run = left_waiting_of(&app, repository.id, Some(project.id), &value());
+        let mut events = app.bus.subscribe();
+
+        app.resume_waiting_workflow_runs().unwrap();
+
+        let waiting = wait_for_status(&app, &mut events, run.id, "waiting");
+        assert_eq!(waiting.project_id, Some(project.id));
+        assert_eq!(
+            nodes(&app, run.id),
+            vec!["ask:cancelled", "ask:waiting"],
+            "the run waits again instead of failing for want of a server-wide file"
+        );
     }
 
     #[test]

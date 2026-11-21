@@ -180,6 +180,32 @@ impl App {
         self.project_view(renamed, &sight)
     }
 
+    /// Whether the project `id` may be deleted (ADR 0025): `Conflict` while it owns workflow files or any of its
+    /// workflow runs is queued, running or waiting, `Ok` otherwise. The finished runs of a project are no reason to
+    /// keep it: they keep its id as a plain value, no cascade removes them, and show the project as deleted.
+    pub fn check_project_deletable(&self, id: i64) -> Result<()> {
+        let project = self.project(id)?;
+        let active = self.store.active_runs_of_project(id)?;
+        if active > 0 {
+            return Err(AppError::Conflict(format!(
+                "the project {} has {active} workflow run{} queued, running or waiting; wait for {} or cancel {}",
+                project.name,
+                if active == 1 { "" } else { "s" },
+                if active == 1 { "it" } else { "them" },
+                if active == 1 { "it" } else { "them" },
+            )));
+        }
+        if let Some(harness) = self.harness_repo.get()
+            && harness.project_owns_workflows(&project.name)?
+        {
+            return Err(AppError::Conflict(format!(
+                "the project {} owns workflows; delete them first",
+                project.name
+            )));
+        }
+        Ok(())
+    }
+
     /// An owner makes the project `id` private or public and names its members, by their handles (with or without the
     /// `@`), each once. A private project is seen only by its members, the owner who sets it included only when they
     /// name themselves. Recorded as an `edit_project_access` decision and announced as `project_changed`.
