@@ -63,7 +63,7 @@ describe("an inbox row", () => {
 
   it("approves from its own button without choosing the row", () => {
     const { onClick, onApprove } = row({ entry: { ...entry, approves: 3 } });
-    fireEvent.click(screen.getByRole("button", { name: "Approve plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     expect(onApprove).toHaveBeenCalledWith(3);
     expect(onClick).not.toHaveBeenCalled();
   });

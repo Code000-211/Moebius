@@ -71,7 +71,9 @@ describe("a board card", () => {
   });
 
   it("shows an orange line when it needs a person", () => {
-    render(<Card onOpen={() => {}} activity={{ text: "Plan ready", tone: "needs-you" }} />);
+    render(
+      <Card onOpen={() => {}} activity={{ text: "Waiting for approval", tone: "needs-you" }} />,
+    );
     expect(screen.getByTestId("card-activity").className).toContain("text-needs-you-text");
   });
 

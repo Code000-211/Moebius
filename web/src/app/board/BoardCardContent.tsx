@@ -28,6 +28,7 @@ export type CardMenuActions = {
 export function CardContent({
   card,
   status,
+  waiting,
   onOpen,
   menu,
   stack,
@@ -38,6 +39,8 @@ export function CardContent({
   card: Card;
   /** What the card is doing (`cardStatus`). */
   status: CardStatus;
+  /** What a card that needs a person waits for, in words (`waitingWords`). */
+  waiting?: string;
   /** The box that chooses the card, in its corner; left out on the drag overlay. */
   select?: ReactNode;
   /** Opens the card; left out on the drag overlay, where the card is only a picture of itself. */
@@ -54,7 +57,7 @@ export function CardContent({
       displayId={cardKey(card)}
       title={card.title}
       status={cardIcon(card, status)}
-      activity={cardActivity(card, status)}
+      activity={cardActivity(card, status, waiting)}
       assignees={card.assignees}
       stack={
         stack && onToggleStack ? (

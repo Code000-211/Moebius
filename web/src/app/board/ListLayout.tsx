@@ -8,7 +8,7 @@
 import { type MouseEvent, type ReactNode, useMemo, useState } from "react";
 import type { Board, Card, InboxItem } from "../../api/types/board";
 import { Empty } from "../../ui/page/Empty";
-import { ListRow } from "../../ui/page/ListRow";
+import { idChars, ListRow } from "../../ui/page/ListRow";
 import { useFillHeight } from "../../ui/page/useFillHeight";
 import { firstRowKey, type ListItem, VirtualList } from "../../ui/page/VirtualList";
 import { iconOf } from "./CardWindow";
@@ -56,6 +56,7 @@ export function ListLayout({
     }
     return { items: list, byKey: cards };
   }, [groups]);
+  const idWidth = idChars(items.flatMap((row) => (row.type === "row" ? [cardKey(row.data)] : [])));
   if (groups.length === 0) {
     return <Empty plain centered body="No card passes the filters." />;
   }
@@ -96,6 +97,7 @@ export function ListLayout({
               data-key={key}
               status={iconOf(card, status)}
               id={cardKey(card)}
+              idChars={idWidth}
               title={card.title}
               reason={reason}
               action={select?.(card)}

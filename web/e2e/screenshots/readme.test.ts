@@ -346,10 +346,9 @@ async function visit(page: Page, path: string) {
 async function askAssistant(page: Page, text?: string) {
   const before = fake.chat.chats.length;
   fake.chat.autoAnswer = false;
-  // The docked field sends it, which opens the panel with the message.
-  await page
-    .getByRole("textbox", { name: "Ask Moebius" })
-    .fill("What is waiting on the discount fix?");
+  // The header's button opens the panel, and the reply field sends the message.
+  await page.getByRole("button", { name: "Moebius", exact: true }).click();
+  await page.getByPlaceholder("Reply to Moebius…").fill("What is waiting on the discount fix?");
   await page.keyboard.press("Enter");
   await expect.poll(() => fake.chat.chats.length).toBe(before + 1);
   const id = (fake.chat.chats[0] as { id: number }).id;

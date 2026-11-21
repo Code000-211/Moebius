@@ -42,7 +42,7 @@ describe("the Moebius needs you block", () => {
     const { onDecide, onReply } = show(item("approve_issue"));
     expect(screen.getByText("Moebius needs you")).toBeTruthy();
     expect(screen.getByText("The review found a data loss")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Approve plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     expect(onDecide).toHaveBeenCalledWith({ kind: "approve", card: 5, number: 5 });
     fireEvent.click(screen.getByRole("button", { name: "Reply" }));
     expect(onReply).toHaveBeenCalled();
