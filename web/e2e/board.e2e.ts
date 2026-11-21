@@ -537,7 +537,7 @@ describe("live data", () => {
       await page.keyboard.type("7");
       await page.keyboard.press("Escape");
       await renamed.waitFor();
-      await dock().waitFor();
+      await page.locator("[data-card-window]").waitFor();
       // The focus comes back to the value a frame later; the next keys wait for it rather than race it.
       await expect.poll(() => renamed.evaluate((el) => el === document.activeElement)).toBe(true);
 
@@ -856,7 +856,8 @@ describe("blocking, unblocking and deleting a card", () => {
     await status("Blocked #3").waitFor();
     await (await unfolded(3)).getByText("needs a design (blocked by a person)").waitFor();
     await closeProperties(3);
-    await dock().getByText("Blocked", { exact: true }).first().waitFor();
+    // The card says it needs a person by the icon beside its title.
+    await dock().getByTestId("status-needsYou").waitFor();
     await menuOf(dock(), 3).click();
     await item("Unblock").click();
     await status("Unblocked #3.").waitFor();
