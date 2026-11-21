@@ -5,7 +5,7 @@
  * counts and the first findings of each kind.
  *
  * What it measures, per page: sideways overflow and who causes it; text clipped by its own box, where a line that
- * fades out where it runs short is saying there is more rather than being cut; border radii outside
+ * ends in an ellipsis is saying there is more rather than being cut; border radii outside
  * the scale (6, 8, 12); padding, margin and gap that are not on the grid; type sizes and weights outside the scale
  * (11 to 20); interactive rows under the 28px of the quiet standard's smallest row; the contrast of text against what
  * is really behind it; children of a centred row whose middle is
@@ -389,17 +389,6 @@ function measure(input: {
     }
     return false;
   };
-  /**
-   * True when an ancestor fades its own edge. The words of a line kept to one line hang over on the side the fade
-   * hides — that is how the line says it runs on — and none of that overhang reaches the screen, so it is not a spill.
-   */
-  const underAFade = (el: Element) => {
-    for (let node = el.parentElement; node && node !== document.body; node = node.parentElement) {
-      const style = getComputedStyle(node);
-      if (style.maskImage !== "none" || style.webkitMaskImage !== "none") return true;
-    }
-    return false;
-  };
   const name = (el: Element, detail: string) => {
     const node = el as HTMLElement;
     const classes = Array.from(node.classList).slice(0, 3).join(".");
@@ -488,17 +477,17 @@ function measure(input: {
     const box = el.getBoundingClientRect();
     const text = ownText(el);
 
-    if ((box.right > edge + 1 || box.left < -1) && !scrolled(el) && !underAFade(el)) {
+    if ((box.right > edge + 1 || box.left < -1) && !scrolled(el)) {
       found.overflow.push(name(el, `${Math.round(box.right - edge)}px past the edge`));
     }
     // Only a box that hides what does not fit is clipped. A box that answers with a scrollbar — `auto`, `scroll` — is
     // doing the thing it was built to do, which is why the script editor and a wide table are not defects. A box that
-    // fades its own edge says there is more behind it in the same way, which is why a command kept to one line and a
-    // name that runs past its bar are not defects either.
-    const faded = style.maskImage !== "none" || style.webkitMaskImage !== "none";
-    if (text && !faded && (style.overflowX === "hidden" || style.overflowX === "clip")) {
+    // ends in an ellipsis says there is more behind it, which is why a command kept to one line and a name that runs
+    // past its bar are not defects either; they still need a title to read the whole.
+    const ellipsis = style.textOverflow === "ellipsis";
+    if (text && (style.overflowX === "hidden" || style.overflowX === "clip")) {
       if ((el as HTMLElement).scrollWidth > (el as HTMLElement).clientWidth + 1) {
-        found.clipped.push(name(el, `cut at ${el.clientWidth}px`));
+        if (!ellipsis) found.clipped.push(name(el, `cut at ${el.clientWidth}px`));
         // Cut text a person can still read is one with a title, which the browser shows on hover.
         if (el.closest("[title]") === null) {
           found.unreachable.push(name(el, `cut at ${el.clientWidth}px with no title`));

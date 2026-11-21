@@ -7,7 +7,7 @@ export function Unreachable({ retrying, onRetry }: { retrying: boolean; onRetry:
     <main className="flex min-h-full items-center justify-center bg-background p-6">
       <div
         role="alert"
-        className="flex w-full max-w-(--connect-width) flex-col gap-4 rounded-card bg-surface p-8 shadow-card"
+        className="flex w-full max-w-(--connect-width) flex-col gap-4 rounded-card bg-panel p-8 shadow-card"
       >
         <h1 className="m-0 text-xl font-semibold tracking-tight text-text">
           Cannot reach the server

@@ -27,7 +27,7 @@ export function AgentDock() {
 
   return (
     <div data-surface="agent-dock" className="shrink-0 p-4">
-      <div className="flex h-10 items-center gap-2 rounded-card border border-hairline-strong bg-page pl-3 pr-1 focus-within:border-accent">
+      <div className="flex h-10 items-center gap-2 rounded-card border border-hairline-strong bg-panel pl-3 pr-1 focus-within:border-accent">
         <input
           ref={field}
           type="text"

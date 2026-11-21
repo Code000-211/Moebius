@@ -373,19 +373,8 @@ Shared principles, voice, visual language, interaction patterns, and the shared 
 
 ## Transition
 
-*This section goes when the last step of the redesign has landed; the clean-up issue (#613) deletes it.* The code is moved to this standard in steps. Until each lands, it still does the following, which this page no longer allows. The numbers are the issues of the redesign.
+*This section goes when the last thing it lists is gone.* The code was moved to this standard in steps; one thing is left that this page no longer allows.
 
 | What the code still does | Removed by |
 | --- | --- |
-| Warm greys, dark as the default theme, and the old token names (`--ground`, `--page`, `--surface`, `--glass`, `--glow`, `--wash`, `--grain`) | #565 replaces the tokens; #613 deletes the old names |
-| Grain and a light from above on the ground, and the accent wash at the top of the content | #565 (tokens), #571 (shell) |
-| A glow on the chosen card | #584 |
-| Glass sheets and dialogs with a 24px blur, and glass on the head bar | #570 (blur only on small menus, tooltips and the palette; dimmed solid windows) |
-| Cards and tiles that lift on hover, and per-element animations | #569 |
-| Edge fades on scrollers (`ScrollFades`, `useScrollFades`, `FadedLine`, `FadedClamp`) | #585 (board), #587, #590, #594 (pages); #613 deletes the components and any use left |
-| The right Properties column with its slim rail, and the card's inspector docked beside the board | #571 (shell), #581 and #583 (card window and thread) |
-| The agent and the package panel as glass sheets over the right column, and "Ask Moebius" as the column's last row | #593 |
-| A spinning ring on every running card, and coloured state pills | #566 (status icons), #569 |
-| A sentence under the title of a page | #567 (header); #608 to #611 (pages) |
-| Windows of radius 12, sidebar rows of 28px | #565, #571, #577 |
-| Settings as many pages in the sidebar | #572 to #575 |
+| The right Properties column (`ui/page/Properties.tsx`, `app/shell/RightColumn.tsx`), which Inbox, Retro, a workflow and an experiment's brief still draw their properties into | Not yet assigned: it is a change of those pages' layout, so it is not a clean-up |

@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 /**
  * The question before a delete: it is asked once, Keep sends nothing, Delete makes the request and closes, and a
- * refusal stays in the dialog in the server's words.
+ * refusal is a toast in the server's words, with the dialog left open.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConfirmDelete } from "./ConfirmDelete";
+import { ToastProvider } from "./Toast";
 
 afterEach(cleanup);
 
@@ -15,14 +16,16 @@ function Harness({ onConfirm }: { onConfirm: () => Promise<void> }) {
   return (
     <>
       <span data-testid="state">{open ? "open" : "closed"}</span>
-      <ConfirmDelete
-        open={open}
-        onOpenChange={setOpen}
-        title="Delete this chat?"
-        onConfirm={onConfirm}
-      >
-        The chat is removed.
-      </ConfirmDelete>
+      <ToastProvider>
+        <ConfirmDelete
+          open={open}
+          onOpenChange={setOpen}
+          title="Delete this chat?"
+          onConfirm={onConfirm}
+        >
+          The chat is removed.
+        </ConfirmDelete>
+      </ToastProvider>
     </>
   );
 }

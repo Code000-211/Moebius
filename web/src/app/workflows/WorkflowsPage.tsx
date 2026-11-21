@@ -29,8 +29,6 @@ import { SkeletonList } from "../../ui/page/Skeleton";
 import { FILTER_KEYS, filtered, filterFields, lastRunLine, runStatus, triggerName } from "./model";
 import { NewWorkflowDialog } from "./NewWorkflowDialog";
 
-const CTX = "Graphs of nodes that run on their own, what starts them, and how their last run went.";
-
 export function WorkflowsPage() {
   const now = useNow();
   const list = useQuery({ queryKey: keys.workflows, queryFn: workflows });
@@ -47,7 +45,7 @@ export function WorkflowsPage() {
   if (list.isPending) {
     return (
       <>
-        <PageHeader title="Workflows" context={CTX} actions={newButton} />
+        <PageHeader title="Workflows" actions={newButton} />
         <SkeletonList rows={3} message="Reading the workflows" />
         <NewWorkflowDialog open={creating} onOpenChange={setCreating} />
       </>
@@ -56,7 +54,7 @@ export function WorkflowsPage() {
   if (list.isError) {
     return (
       <>
-        <PageHeader title="Workflows" context={CTX} actions={newButton} />
+        <PageHeader title="Workflows" actions={newButton} />
         <ReadFailed
           error={list.error}
           fallback="Could not read the workflows. Try again."
@@ -81,7 +79,7 @@ export function WorkflowsPage() {
   const shown = filtered(everything, values);
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PageHeader title="Workflows" context={CTX} actions={newButton} />
+      <PageHeader title="Workflows" actions={newButton} />
       {everything.length > 0 && (
         <FilterBar
           label="Filter the workflows"

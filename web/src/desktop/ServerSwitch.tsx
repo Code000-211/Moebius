@@ -73,7 +73,7 @@ function Mark({ name }: { name: string }) {
 }
 
 const FIELD =
-  "flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control border border-hairline bg-surface px-2 text-left text-base font-semibold text-text";
+  "flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control border border-hairline bg-panel px-2 text-left text-base font-semibold text-text";
 
 export function ServerSwitch({ bridge, name }: { bridge?: DesktopBridge; name: string }) {
   const servers = useQuery({
