@@ -57,7 +57,7 @@ async function atRest(cards = 4, edges = 3): Promise<void> {
       { message: "the graph never came to rest", timeout: 20_000, interval: 100 },
     )
     .toBe(true);
-  expect(await page.locator('[data-testid="canvas-node"]').count()).toBe(cards);
+  await expect.poll(() => page.locator('[data-testid="canvas-node"]').count()).toBe(cards);
 }
 
 async function resting(): Promise<string> {
@@ -268,11 +268,11 @@ describe.skipIf(usesRealServer)("the workflow canvas", () => {
 
     // Nothing changes on the graph until Save is pressed.
     await id.fill("check");
-    expect(await card("test").count()).toBe(1);
+    await expect.poll(() => card("test").count()).toBe(1);
     await windowSave().click();
     await inspector().waitFor({ state: "detached" });
     await expect.poll(() => card("check").count(), { timeout: 20_000, interval: 100 }).toBe(1);
-    expect(await card("test").count()).toBe(0);
+    await expect.poll(() => card("test").count()).toBe(0);
     await shows(state(), "Unsaved changes");
   });
 
@@ -289,7 +289,7 @@ describe.skipIf(usesRealServer)("the workflow canvas", () => {
     await ask.waitFor();
     await ask.getByRole("button", { name: "Discard" }).click();
     await inspector().waitFor({ state: "detached" });
-    expect(await card("test").count()).toBe(1);
+    await expect.poll(() => card("test").count()).toBe(1);
     await shows(state(), "Saved");
 
     // An untouched window closes at once.

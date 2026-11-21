@@ -69,7 +69,7 @@ describe.skipIf(usesRealServer)("the Cycles page", () => {
       .click();
     await page.getByRole("heading", { name: "Cycles", level: 1 }).waitFor();
     await rows().first().waitFor();
-    expect(await rows().count()).toBe(2);
+    await expect.poll(() => rows().count()).toBe(2);
     // Cycle 1 holds a done card of 5 points and an open one of 3.
     const bar = (name: string) => row(name).getByRole("progressbar");
     await bar("Cycle 1").waitFor();
@@ -90,7 +90,7 @@ describe.skipIf(usesRealServer)("the Cycles page", () => {
     const cards = page.getByRole("list", { name: "Cards of Cycle 1" });
     await cards.getByText("Add a feature").waitFor();
     await cards.getByText("Fix the login redirect").waitFor();
-    expect(await cards.getByRole("listitem").count()).toBe(2);
+    await expect.poll(() => cards.getByRole("listitem").count()).toBe(2);
     // The address keeps the cycle; the way back lists them again.
     expect(new URL(page.url()).searchParams.get("cycle")).toBe("1");
     await page.getByRole("button", { name: "All cycles" }).click();
@@ -194,6 +194,6 @@ describe.skipIf(usesRealServer)("the Cycles page", () => {
     await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
     await rows().first().waitFor();
     await row("Cycle 2").waitFor({ state: "detached" });
-    expect(await rows().count()).toBe(1);
+    await expect.poll(() => rows().count()).toBe(1);
   });
 });

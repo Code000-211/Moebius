@@ -54,8 +54,8 @@ describe.skipIf(usesRealServer)("the Views page", () => {
     await page.getByTestId("view").waitFor();
     await page.getByText("Shows column In progress").waitFor();
     await page.getByTestId("view-card-1").waitFor();
-    expect(await page.getByTestId("view-card-2").count()).toBe(0);
-    expect(await page.getByTestId("view-group").count()).toBe(1);
+    await expect.poll(() => page.getByTestId("view-card-2").count()).toBe(0);
+    await expect.poll(() => page.getByTestId("view-group").count()).toBe(1);
   });
 
   it("edits a view into a timeline, and the cards are set against their cycle", async () => {
@@ -90,8 +90,8 @@ describe.skipIf(usesRealServer)("the Views page", () => {
   it("offers Edit and Delete only for a view the person may change", async () => {
     await open("/views/2");
     await page.getByTestId("view").waitFor();
-    expect(await page.getByRole("button", { name: "Edit" }).count()).toBe(0);
-    expect(await page.getByRole("button", { name: "Delete" }).count()).toBe(0);
+    await expect.poll(() => page.getByRole("button", { name: "Edit" }).count()).toBe(0);
+    await expect.poll(() => page.getByRole("button", { name: "Delete" }).count()).toBe(0);
     await page.getByRole("link", { name: /Team board/ }).click();
     await page.getByRole("button", { name: "Edit" }).waitFor();
   });

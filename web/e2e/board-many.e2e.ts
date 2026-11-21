@@ -64,7 +64,7 @@ describe("a column of 1500 cards", () => {
     const last = seeded[seeded.length - 1] as number;
     expect(await drawn("Backlog")).toBeLessThan(100);
     expect(await drawn("Backlog")).toBeGreaterThan(3);
-    expect(await card(last).count()).toBe(0);
+    await expect.poll(() => card(last).count()).toBe(0);
     await scrollToEnd("Backlog");
     await card(last).waitFor();
     expect(await drawn("Backlog")).toBeLessThan(100);
@@ -101,7 +101,7 @@ describe("a column of 1500 cards", () => {
     const chosen = page.getByRole("toolbar", { name: "Chosen" }).getByRole("status");
     // Every Backlog card from the first to the last, whether it is drawn or not.
     await chosen.filter({ hasText: /1,?501 cards chosen/ }).waitFor();
-    expect(await drawn("Backlog")).toBeLessThan(100);
+    await expect.poll(() => drawn("Backlog")).toBeLessThan(100);
   });
 
   it.skipIf(usesRealServer)(
@@ -120,7 +120,7 @@ describe("a column of 1500 cards", () => {
         node.scrollTop = 0;
       });
       await column("Backlog").getByTestId("card-2").waitFor();
-      expect(await dragged.count()).toBe(1);
+      await expect.poll(() => dragged.count()).toBe(1);
     },
   );
 });
