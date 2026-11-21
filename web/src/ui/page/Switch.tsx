@@ -45,14 +45,17 @@ export function Switch({
         className={cn(
           "inline-flex h-5 w-9 items-center rounded-full px-0.5 ring-1 ring-inset transition-colors duration-(--motion-routine) ease-out",
           // A switch that cannot be moved keeps its track and knob readable: only the track softens, with a firmer edge.
-          disabled ? "ring-muted/60" : "ring-hairline",
+          // One that can be moved and is off has the control fill for its track and the muted text colour for its edge and knob,
+          // at least 3:1 against the panel in both themes.
+          disabled ? "ring-muted/60" : checked ? "ring-hairline" : "ring-muted",
           checked ? "bg-accent-fill" : "bg-track",
           disabled && (checked ? "opacity-60" : "bg-muted/40"),
         )}
       >
         <span
           className={cn(
-            "size-4 shrink-0 rounded-full bg-panel transition-transform duration-(--motion-routine) ease-out",
+            "size-4 shrink-0 rounded-full transition-transform duration-(--motion-routine) ease-out",
+            checked || disabled ? "bg-panel" : "bg-muted",
             checked ? "translate-x-4" : "translate-x-0",
           )}
         />

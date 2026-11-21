@@ -49,12 +49,12 @@ export function AgentDock() {
           type="button"
           variant="ghost"
           size="icon"
-          className="size-7 bg-hairline-strong!"
+          className="size-7 bg-control-fill! text-text disabled:text-secondary disabled:opacity-100"
           aria-label="Send"
           disabled={message.trim() === ""}
           onClick={send}
         >
-          <ArrowBendDownLeftIcon aria-hidden="true" className="size-4" />
+          <ArrowBendDownLeftIcon aria-hidden="true" className="size-4" weight="bold" />
         </Button>
       </div>
     </div>

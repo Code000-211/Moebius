@@ -120,11 +120,11 @@ export function Composer({
             aria-label={sendLabel}
             title={canSend ? sendLabel : sendHint}
             className={cn(
-              "shrink-0 bg-hairline-strong!",
+              "shrink-0 bg-control-fill! text-text disabled:opacity-100 disabled:text-secondary aria-disabled:opacity-100 aria-disabled:text-secondary",
               canSend && "bg-accent-fill! text-white hover:text-white",
             )}
           >
-            <ArrowElbowDownLeftIcon aria-hidden="true" className="size-4" />
+            <ArrowElbowDownLeftIcon aria-hidden="true" className="size-4" weight="bold" />
           </Button>
         </div>
       </div>

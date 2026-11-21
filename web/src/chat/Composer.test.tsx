@@ -44,6 +44,18 @@ describe("Composer", () => {
     expect(send).toHaveBeenCalledOnce();
   });
 
+  it("draws the disabled send arrow in the muted text colour on the control fill", () => {
+    render(<Composer value="" onChange={() => {}} onSend={() => {}} canSend={false} compact />);
+    const send = screen.getByRole("button", { name: "Send" });
+    for (const name of [
+      "bg-control-fill!",
+      "text-text",
+      "disabled:text-secondary",
+      "disabled:opacity-100",
+    ])
+      expect(send.className).toContain(name);
+  });
+
   it("makes a new line with Shift+Enter instead of sending", () => {
     const send = vi.fn();
     render(<Harness onSend={send} />);
