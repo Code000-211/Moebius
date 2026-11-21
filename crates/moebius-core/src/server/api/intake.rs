@@ -69,10 +69,14 @@ pub struct Declining {
 
 async fn set_intake(
     State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
     UrlPath(id): UrlPath<i64>,
     Json(intake): Json<NewIntake>,
 ) -> Result<Json<ProjectView>, ApiError> {
-    blocking(&state.app, move |app| app.set_intake(id, intake.enabled)).await
+    blocking(&state.app, move |app| {
+        app.set_intake(&by, id, intake.enabled)
+    })
+    .await
 }
 
 async fn submit(

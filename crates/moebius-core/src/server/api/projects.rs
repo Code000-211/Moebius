@@ -400,4 +400,74 @@ mod tests {
         let (status, _) = call("DELETE", &addr, &token, &format!("{path}/1"), None).await;
         assert_eq!(status, Status::NOT_FOUND);
     }
+
+    /// A person of `role` with a token of their own.
+    fn person(
+        state: &crate::server::api::ApiState,
+        handle: &str,
+        role: crate::store::Role,
+    ) -> String {
+        let person = state.app.store.add_person(handle, handle, role).unwrap();
+        let token = format!("moebius-access-{:064}", person.id);
+        state
+            .app
+            .store
+            .add_access_token(person.id, "test", &token)
+            .unwrap();
+        token
+    }
+
+    #[tokio::test]
+    async fn an_owner_turns_intake_on_and_off_and_a_viewer_cannot() {
+        use crate::store::Role;
+        let (_d, state, addr) = start().await;
+        let owner = state.token.to_string();
+        let viewer = person(&state, "kim", Role::Viewer);
+        let path = "/v1/projects/1/intake";
+        let (status, _) = call("PUT", &addr, &viewer, path, Some(json!({"enabled": true}))).await;
+        assert_eq!(status, Status::FORBIDDEN);
+        let (_, kept) = call("GET", &addr, &owner, "/v1/projects/1", None).await;
+        assert_eq!(kept["intake"], false);
+        let (status, on) = call("PUT", &addr, &owner, path, Some(json!({"enabled": true}))).await;
+        assert_eq!((status, &on["intake"]), (Status::OK, &json!(true)), "{on}");
+        let (_, read) = call("GET", &addr, &viewer, "/v1/projects/1", None).await;
+        assert_eq!(read["intake"], true);
+        let (status, off) = call("PUT", &addr, &owner, path, Some(json!({"enabled": false}))).await;
+        assert_eq!(
+            (status, &off["intake"]),
+            (Status::OK, &json!(false)),
+            "{off}"
+        );
+        let (status, _) = call(
+            "PUT",
+            &addr,
+            &owner,
+            "/v1/projects/99/intake",
+            Some(json!({"enabled": true})),
+        )
+        .await;
+        assert_eq!(status, Status::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn a_private_project_s_intake_is_not_changed_by_someone_who_may_not_see_it() {
+        use crate::store::Role;
+        let (_d, state, addr) = start().await;
+        let owner = state.token.to_string();
+        let maintainer = person(&state, "max", Role::Member);
+        let path = "/v1/projects/1/intake";
+        state.app.store.set_project_access(1, true, &[]).unwrap();
+        // A member who is no member of the private project: the role table already refuses a non-owner.
+        let (status, _) = call(
+            "PUT",
+            &addr,
+            &maintainer,
+            path,
+            Some(json!({"enabled": true})),
+        )
+        .await;
+        assert_eq!(status, Status::FORBIDDEN);
+        let (_, kept) = call("GET", &addr, &owner, "/v1/projects/1", None).await;
+        assert_eq!(kept["intake"], false);
+    }
 }

@@ -581,6 +581,7 @@ export function BoardPage({ project, list = false }: { project: Project; list?: 
                   <BoardColumn
                     key={column}
                     board={board}
+                    projectId={project.id}
                     inbox={inbox}
                     name={column}
                     cards={cards}

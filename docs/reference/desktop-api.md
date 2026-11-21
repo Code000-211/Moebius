@@ -1195,8 +1195,11 @@ and no text. Accepting and declining are recorded as `accept_request` and `decli
 
 #### `PUT /v1/projects/{id}/intake`
 
-An owner turns intake on or off. Request: `{"enabled": bool}`. Requests already made stay. Response: the `ProjectView`.
-Errors: `404` for no such project.
+An owner turns intake on or off; this is the switch in the General tab of a project's settings, and the project's header
+shows or drops its Intake tab at once (the route sends `project_changed`). Request: `{"enabled": bool}`. Requests already
+made stay. Response: the `ProjectView` as the person asking sees it. Errors: `403` for anyone but an owner, `404` for no
+such project and for a private project the person may not see (an owner sees the record of every project, see
+[Projects](#projects)).
 
 #### `POST /v1/projects/{id}/requests`
 

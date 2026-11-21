@@ -100,7 +100,7 @@ export function ProjectHeader({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {role === "owner" && (
-                <DropdownMenuItem onSelect={() => navigate(settingsPath(project.id, "import"))}>
+                <DropdownMenuItem onSelect={() => navigate(`${settingsPath(project.id)}#import`)}>
                   Import from Jira
                 </DropdownMenuItem>
               )}

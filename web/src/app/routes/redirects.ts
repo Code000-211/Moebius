@@ -9,7 +9,7 @@
  * This is the one place that may name `/board/`: components use the path helpers of `pages.ts`.
  */
 import type { Project } from "../../api/types/projects";
-import { boardPath, repositoryPath, scriptPath } from "../pages";
+import { boardPath, repositoryPath, scriptPath, settingsPath } from "../pages";
 import { holdsRepository, homeProjectOf } from "../projects/model";
 
 export interface LegacyRoute {
@@ -84,4 +84,24 @@ export const LEGACY_ROUTES: readonly LegacyRoute[] = [
       ]);
     },
   },
+  // The tabs of a project's settings that are gone: Workflow became Columns, Kinds went into General, Plugins into
+  // the page of each repository (Repositories), and Import into General.
+  ...(
+    [
+      ["workflow", "columns"],
+      ["kinds", "general"],
+      ["plugins", "repositories"],
+      ["import", "general"],
+    ] as const
+  ).map(
+    ([old, tab]): LegacyRoute => ({
+      path: `projects/:projectId/settings/${old}`,
+      resolve: ({ projectId }, projects, search) => {
+        const project = projects.find((each) => String(each.id) === projectId);
+        if (!project) return null;
+        const where = withQuery(settingsPath(project.id, tab), {}, search);
+        return old === "import" ? `${where}#import` : where;
+      },
+    }),
+  ),
 ];

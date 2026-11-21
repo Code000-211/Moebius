@@ -101,6 +101,7 @@ export default function CodeEditor({
   problem,
   label,
   language = "lua",
+  readOnly = false,
 }: {
   value: string;
   onChange: (text: string) => void;
@@ -109,12 +110,14 @@ export default function CodeEditor({
   label: string;
   /** What to highlight the text as: `lua`, `dockerfile`, `shell`, `toml` or `yaml`; any other is plain text. */
   language?: string;
+  /** The text can be read and selected but not changed; set when the editor is made. */
+  readOnly?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   // The editor is made once, with the text it is first given; `value` after that is applied by the effect below.
-  const first = useRef({ value, label, language });
+  const first = useRef({ value, label, language, readOnly });
   onChangeRef.current = onChange;
 
   useEffect(() => {
@@ -138,6 +141,7 @@ export default function CodeEditor({
           syntaxHighlighting(editHighlight),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           theme,
+          EditorState.readOnly.of(first.current.readOnly),
           EditorView.contentAttributes.of({
             "aria-label": first.current.label,
             "aria-multiline": "true",

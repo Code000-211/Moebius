@@ -532,7 +532,7 @@ describe("projects", () => {
     // Its tile opens the project's settings; the repository's own page, where it is deleted, is one click from its row.
     await tile.getByRole("link").click();
     await page.getByRole("heading", { name: "fresh", level: 1 }).waitFor();
-    await page.getByRole("tab", { name: "Repositories 1" }).click();
+    await page.getByRole("tab", { name: "Repositories" }).click();
     await page.getByRole("link", { name: "Settings of fresh" }).click();
     await page.getByRole("heading", { name: "fresh", level: 1 }).waitFor();
     await page.getByRole("button", { name: "Delete repository" }).click();
@@ -578,7 +578,7 @@ describe("projects", () => {
       await shop.getByRole("link").click();
       await page.waitForURL("**/projects/100/settings");
       await page.getByRole("heading", { name: "Storefront", level: 1 }).waitFor();
-      await page.getByRole("tab", { name: "Repositories 0" }).click();
+      await page.getByRole("tab", { name: "Repositories" }).click();
       await page.getByText("No repository: this project works on its own files").waitFor();
       await page.goto(`${server.url}/projects/200`);
       await page.getByRole("heading", { name: "Storefront", level: 1 }).waitFor();

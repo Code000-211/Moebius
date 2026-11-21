@@ -45,9 +45,16 @@ and settings they draw on, and the settings of each project), kept in a git repo
 _Avoid_: harness config, setup, profile
 
 **Project settings**:
-How one project's board works: the scripts of its columns, the files of `projects/<project name>/` in the harness
-configuration. Two projects that share a repository can work differently.
-_Avoid_: workflow (that is a graph of nodes), board config
+What one project is and how its board works, reached from the gear of its header, in four tabs: General (name, key,
+private, intake, the kinds of issues it offers), Members, Repositories (each opens the repository's own page) and
+Columns. The scripts of its columns are the files of `projects/<project name>/` in the harness configuration. Two
+projects that share a repository can work differently.
+_Avoid_: workflow (that is a graph of nodes), board config, Settings (that is the server's and one's own, in the sidebar)
+
+**Columns**:
+The tab of a project's settings that holds the script of each column of its board, the one place where they are edited;
+the board's column menu opens it at that column (`settings/columns/:column`).
+_Avoid_: workflow, column scripts page
 
 **Repository settings**:
 What Moebius keeps for one repository's code, the same in every project it is in: its rules, review notes, checks,
@@ -149,8 +156,8 @@ where a card goes next.
 _Avoid_: status, lane, state
 
 **Column scripts**:
-The scripts behind the columns of a project's board, in the language built into Moebius; they are what a project's
-settings hold, and they are not a workflow.
+The scripts behind the columns of a project's board, in the language built into Moebius; they are edited in the Columns
+tab of the project's settings, and they are not a workflow.
 _Avoid_: workflow, hook, plugin
 
 **Script**:

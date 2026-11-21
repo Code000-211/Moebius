@@ -1,7 +1,8 @@
 /**
- * A project's settings in tabs, in a real browser: General (its name and whether it is private), Repositories (a
- * repository put in the project and taken out again), Members (a private project's, named by an owner), Workflow (a
- * column's script saved from the tab), Kinds and Plugins. Every wait is on something the page shows. The routes are the
+ * A project's settings in four tabs, in a real browser: General (its name, whether it is private, intake and the
+ * kinds it offers), Repositories (a repository put in the project and taken out again), Members (a private project's,
+ * named by an owner) and Columns (a column's script saved from the tab, reached from the board's column menu). The old
+ * tabs lead to their new places. Every wait is on something the page shows. The routes are the
  * fake server's own (e2e/fake/pages-a.ts, pages-c.ts and kinds.ts).
  */
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
@@ -56,19 +57,50 @@ describe.skipIf(usesRealServer)("a project's settings", () => {
     await page.getByTestId("project").filter({ hasText: "demo" }).getByRole("link").click();
     await page.waitForURL("**/projects/1/settings");
     await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
-    for (const name of ["General", "Repositories 1", "Members 1", "Workflow", "Kinds", "Plugins"]) {
+    for (const name of ["General", "Members", "Repositories", "Columns"]) {
       await tab(name).waitFor();
     }
+    expect(await page.getByRole("tab").count()).toBe(4);
     // A tab is part of the address.
-    await tab("Kinds").click();
-    await page.waitForURL("**/projects/1/settings/kinds");
-    await page.getByText("The kinds of issues this project offers").waitFor();
-    await page.goto(`${server.url}/projects/1/settings/workflow`);
-    await tab("Workflow").waitFor();
-    expect(await tab("Workflow").getAttribute("aria-selected")).toBe("true");
+    await tab("Repositories").click();
+    await page.waitForURL("**/projects/1/settings/repositories");
+    await page.goto(`${server.url}/projects/1/settings/columns`);
+    await tab("Columns").waitFor();
+    expect(await tab("Columns").getAttribute("aria-selected")).toBe("true");
   });
 
-  it("adds a repository to a project, takes it out again and changes its workflow", async () => {
+  it("sends the tabs that are gone to their new places", async () => {
+    await open("/projects/1/settings/workflow");
+    await page.waitForURL("**/projects/1/settings/columns");
+    await page.goto(`${server.url}/projects/1/settings/plugins`);
+    await page.waitForURL("**/projects/1/settings/repositories");
+    await page.goto(`${server.url}/projects/1/settings/kinds`);
+    await page.waitForURL("**/projects/1/settings");
+    await page.goto(`${server.url}/projects/1/settings/import`);
+    await page.waitForURL("**/projects/1/settings#import");
+    await page.getByRole("form", { name: "Import from Jira" }).waitFor();
+  });
+
+  it("opens the script of a column from the board's column menu", async () => {
+    await open("/projects/1");
+    await page.getByRole("heading", { name: "Backlog" }).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Edit the script" }).click();
+    await page.waitForURL("**/projects/1/settings/columns/Backlog?repository=1");
+    await tab("Columns").waitFor();
+    expect(await tab("Columns").getAttribute("aria-selected")).toBe("true");
+    await page.getByRole("textbox", { name: "Script of Backlog" }).waitFor();
+  });
+
+  it("turns intake on from General and the project's header gets its Intake tab", async () => {
+    await open("/projects/1/settings");
+    await page.getByRole("switch", { name: "Intake" }).click();
+    await page.getByRole("switch", { name: "Intake", checked: true }).waitFor();
+    expect(lastBody("PUT", "/v1/projects/1/intake")).toEqual({ enabled: true });
+    await page.getByRole("link", { name: "Open board" }).click();
+    await page.getByRole("tab", { name: /^Intake/ }).waitFor();
+  });
+
+  it("adds a repository to a project, takes it out again and changes the script of a column", async () => {
     await open("/projects");
     await page.getByRole("button", { name: "New project" }).click();
     const dialog = page.getByRole("dialog");
@@ -79,13 +111,12 @@ describe.skipIf(usesRealServer)("a project's settings", () => {
     await page.getByTestId("project").filter({ hasText: "Storefront" }).getByRole("link").click();
     await page.waitForURL("**/projects/100/settings");
 
-    await tab("Repositories 0").click();
+    await tab("Repositories").click();
     await page.getByText("No repository: this project works on its own files").waitFor();
     await pickOption(page, page.getByRole("button", { name: "Repository to add" }), "demo");
     await page.getByRole("button", { name: "Add to project" }).click();
     const row = page.getByTestId("project-repository").filter({ hasText: "demo" });
     await row.getByText("home: demo").waitFor();
-    await tab("Repositories 1").waitFor();
     expect(lastBody("POST", "/v1/projects/100/repositories")).toEqual({ repository: 1 });
 
     // Its code settings are on the repository's page.
@@ -96,11 +127,12 @@ describe.skipIf(usesRealServer)("a project's settings", () => {
     await page.goto(`${server.url}/projects/100/settings/repositories`);
     await page.getByRole("button", { name: "Take demo out" }).click();
     await row.waitFor({ state: "detached" });
-    await tab("Repositories 0").waitFor();
+    await page.getByText("No repository: this project works on its own files").waitFor();
 
-    // The workflow: the script of a column is saved from the tab.
-    await page.goto(`${server.url}/projects/1/settings/workflow`);
+    // The Columns tab: the script of a column is saved from the tab.
+    await page.goto(`${server.url}/projects/1/settings/columns`);
     await pickOption(page, page.getByRole("button", { name: "Column" }), "Not started · its own");
+    await page.waitForURL("**/projects/1/settings/columns/Not%20started");
     const editor = page.getByRole("textbox", { name: "Script of Not started" });
     await editor.waitFor();
     await editor.click();
@@ -117,7 +149,7 @@ describe.skipIf(usesRealServer)("a project's settings", () => {
       headers: { "x-moebius": "1" },
       data: { handle: "lea", name: "Lea", role: "member" },
     });
-    await page.getByRole("textbox", { name: "Name" }).fill("Shop");
+    await page.getByRole("textbox", { name: "Name", exact: true }).fill("Shop");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.getByRole("heading", { name: "Shop", level: 1 }).waitFor();
     expect(lastBody("PATCH", "/v1/projects/1")).toEqual({ name: "Shop" });
@@ -129,22 +161,22 @@ describe.skipIf(usesRealServer)("a project's settings", () => {
       members: ["owner"],
     });
 
-    await tab("Members 1").click();
+    await tab("Members").click();
     await page.getByLabel("Lea (@lea)").check();
     await page.getByRole("button", { name: "Save members" }).click();
-    await tab("Members 2").waitFor();
+    await page.getByLabel("Lea (@lea)", { exact: false }).waitFor();
     expect(lastBody("PUT", "/v1/projects/1/access")).toEqual({
       private: true,
       members: ["owner", "lea"],
     });
   });
 
-  it("lets a project offer a kind from its Kinds tab", async () => {
+  it("lets a project offer a kind from General", async () => {
     await open("/kinds");
     await page.getByLabel("Name", { exact: true }).fill("Bug");
     await page.getByRole("button", { name: "Add kind" }).click();
     await page.getByTestId("kind-Bug").waitFor();
-    await page.goto(`${server.url}/projects/1/settings/kinds`);
+    await page.goto(`${server.url}/projects/1/settings`);
     // A box is controlled, so it flips when the server has answered.
     await page.getByLabel("Bug").click();
     await page.waitForFunction(
@@ -152,17 +184,5 @@ describe.skipIf(usesRealServer)("a project's settings", () => {
     );
     await page.reload();
     expect(await page.getByLabel("Bug").isChecked()).toBe(true);
-  });
-
-  it("says plugins ask nothing of a project with no repository", async () => {
-    await open("/projects");
-    await page.getByRole("button", { name: "New project" }).click();
-    const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Name").fill("Docs");
-    await dialog.getByLabel("Key").fill("DOCS");
-    await dialog.getByRole("button", { name: "Make project" }).click();
-    await dialog.waitFor({ state: "detached" });
-    await page.goto(`${server.url}/projects/100/settings/plugins`);
-    await page.getByText("Plugins ask their settings of a repository").waitFor();
   });
 });

@@ -28,15 +28,16 @@ use crate::store::{CHANGED, IntakeRequest, NewNotice, Repository, Role};
 pub const REQUEST_LIMIT: usize = 8000;
 
 impl App {
-    /// Turns intake on or off for the project `id`; requests made stay either way. Announces `project_changed`.
-    pub fn set_intake(&self, id: i64, enabled: bool) -> Result<super::ProjectView> {
-        let project = self.project(id)?;
+    /// `by` turns intake on or off for the project `id`; requests made stay either way. A project `by` does not see is
+    /// not found, and the answer is the project as `by` sees it. Announces `project_changed`.
+    pub fn set_intake(&self, by: &Actor, id: i64, enabled: bool) -> Result<super::ProjectView> {
+        let sight = self.sight(by)?;
+        let project = self.project_seen(id, &sight)?;
         if project.intake != enabled {
             self.store.set_project_intake(id, enabled)?;
             self.bus.publish(Event::ProjectChanged(self.project(id)?));
         }
-        // Only a member reaches this (the route of a project's board is guarded), so the view hides nothing.
-        self.project_view_of(id, &super::Sight::everything())
+        self.project_view_of(id, &sight)
     }
 
     /// The repository the cards of the project's requests are made in: its first repository, else its own files.
