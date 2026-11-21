@@ -426,16 +426,9 @@ async fn run_inputs(
     .await
 }
 
-/// Starts the run a person asked for in `project`: a repository the request names is checked first, as is every one the
-/// workflow's inputs name once they are read (`start_manual`).
-fn start_in(
-    app: &std::sync::Arc<App>,
-    repo: &HarnessRepo,
-    sight: &Sight,
-    project: &Project,
-    name: &str,
-    request: &StartRequest,
-) -> Result<Started, AppError> {
+/// Refuses, as if it did not exist, a repository the request names that `sight` does not see. It is asked before
+/// anything about the workflow is, so that nothing says whether a workflow of a private project exists.
+fn check_named(app: &App, sight: &Sight, request: &StartRequest) -> Result<(), AppError> {
     let named = [
         request.repository.as_deref(),
         request.inputs.get("repository").and_then(Value::as_str),
@@ -450,6 +443,19 @@ fn start_in(
             return Err(AppError::NotFound(format!("repository {named}")));
         }
     }
+    Ok(())
+}
+
+/// Starts the run a person asked for in `project`; every repository an input names is checked once the inputs are
+/// read (`start_manual`).
+fn start_in(
+    app: &std::sync::Arc<App>,
+    repo: &HarnessRepo,
+    sight: &Sight,
+    project: &Project,
+    name: &str,
+    request: &StartRequest,
+) -> Result<Started, AppError> {
     start_manual(app, repo, project, name, request, sight)
 }
 
@@ -459,10 +465,12 @@ async fn project_start(
     UrlPath((project, name)): UrlPath<(i64, String)>,
     axum::Json(request): axum::Json<StartRequest>,
 ) -> Result<axum::Json<Started>, ApiError> {
-    let repo = harness(&state)?;
+    let repo = harness(&state);
     blocking(&state.app, move |app| {
         let sight = app.sight(&by)?;
+        check_named(app, &sight, &request)?;
         let project = app.project(project)?;
+        let repo = repo.map_err(|error| AppError::Conflict(error.1))?;
         start_in(app, &repo, &sight, &project, &name, &request)
     })
     .await
@@ -475,9 +483,11 @@ async fn start(
     UrlPath(name): UrlPath<String>,
     axum::Json(request): axum::Json<StartRequest>,
 ) -> Result<axum::Json<Started>, ApiError> {
-    let repo = harness(&state)?;
+    let repo = harness(&state);
     blocking(&state.app, move |app| {
         let sight = app.sight(&by)?;
+        check_named(app, &sight, &request)?;
+        let repo = repo.map_err(|error| AppError::Conflict(error.1))?;
         let project = owner_of(app, &sight, &repo, &name)?;
         start_in(app, &repo, &sight, &project, &name, &request)
     })

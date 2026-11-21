@@ -177,6 +177,7 @@ port = "out"
 "#
         )
     };
+    let project = private.project;
     let save = |file: String| {
         let addr = addr.clone();
         let token = state.token.to_string();
@@ -186,7 +187,7 @@ port = "out"
                 &token,
                 "PUT",
                 "/v1/workflows/peek",
-                json!({ "file": file }),
+                json!({ "file": file, "project": project }),
             )
             .await;
             assert_eq!(status, 200, "{body}");
