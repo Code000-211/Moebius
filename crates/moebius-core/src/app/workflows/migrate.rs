@@ -36,35 +36,7 @@ impl App {
     /// said as `harness_error`. Nothing here stops the server from starting, and everything is tried again at the next
     /// start.
     pub fn migrate_workflows_to_projects(&self) {
-        let Some(harness) = self.harness_repo.get() else {
-            return;
-        };
-        let moved = self.plan_workflow_migration().and_then(|plan| {
-            let moves: Vec<(String, String)> = plan
-                .iter()
-                .filter_map(|(workflow, project)| {
-                    Some((workflow.clone(), project.as_ref().ok()?.name.clone()))
-                })
-                .collect();
-            if moves.is_empty() {
-                return Ok(plan);
-            }
-            if let Some((commit, made)) = harness.move_workflows_to_projects(self, &moves)? {
-                eprintln!(
-                    "moebius: moved the workflows to their projects ({commit}): {}",
-                    made.iter()
-                        .map(|(workflow, project)| format!("{workflow} -> {project}"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-                self.bus.publish(Event::WorkflowsMigrated {
-                    commit,
-                    moved: made.len(),
-                });
-            }
-            Ok(plan)
-        });
-        if let Err(error) = moved {
+        if let Err(error) = self.move_workflow_files() {
             self.report_workflow_migration_error(&error);
         }
         // Whatever the files did, the rows follow the files that are in the projects now.
@@ -76,6 +48,44 @@ impl App {
             self.bus
                 .publish(Event::WorkflowsMigrationDeferred { workflow, reason });
         }
+    }
+
+    /// The first step: remembers where each file goes, then moves them all in one commit. Where a file went is what the
+    /// second step ([`Self::settle_workflow_rows`]) gives its rows to, so that the step does not have to guess it from
+    /// what the projects hold afterwards.
+    fn move_workflow_files(&self) -> Result<()> {
+        let Some(harness) = self.harness_repo.get() else {
+            return Ok(());
+        };
+        let moves: Vec<(String, Project)> = self
+            .plan_workflow_migration()?
+            .into_iter()
+            .filter_map(|(workflow, project)| Some((workflow, project.ok()?)))
+            .collect();
+        if moves.is_empty() {
+            return Ok(());
+        }
+        for (workflow, project) in &moves {
+            self.store.record_workflow_move(workflow, project.id)?;
+        }
+        let names: Vec<(String, String)> = moves
+            .iter()
+            .map(|(workflow, project)| (workflow.clone(), project.name.clone()))
+            .collect();
+        if let Some((commit, made)) = harness.move_workflows_to_projects(self, &names)? {
+            eprintln!(
+                "moebius: moved the workflows to their projects ({commit}): {}",
+                made.iter()
+                    .map(|(workflow, project)| format!("{workflow} -> {project}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            self.bus.publish(Event::WorkflowsMigrated {
+                commit,
+                moved: made.len(),
+            });
+        }
+        Ok(())
     }
 
     /// The server-wide workflow files that stay where they are, each with why, for Get started to show as pending. A
@@ -160,6 +170,7 @@ impl App {
         let mut names = self.store.workflows_with_unplaced_runs()?;
         names.extend(self.store.server_wide_schedule_names()?);
         names.extend(self.store.server_wide_automation_keys()?);
+        names.extend(self.store.workflow_move_names()?);
         names.sort();
         names.dedup();
         for name in names {
@@ -169,6 +180,7 @@ impl App {
             self.store.place_workflow_runs(&name, project.id)?;
             self.store.move_schedule_to_project(&name, project.id)?;
             self.store.move_automation_to_project(&name, project.id)?;
+            self.store.forget_workflow_move(&name)?;
         }
         Ok(())
     }
@@ -187,6 +199,14 @@ impl App {
             return Ok(None);
         }
         let projects = oldest_first(self.store.projects()?);
+        // The project the file was moved to is the owner, whatever else other projects hold under the name.
+        if let Some(moved_to) = self.store.workflow_move(name)?
+            && let Some(project) = projects.iter().find(|project| project.id == moved_to)
+            && definition::project_file_for(&project.name, name)
+                .is_ok_and(|file| root.join(file).is_file())
+        {
+            return Ok(Some(project.clone()));
+        }
         let holders: Vec<&Project> = projects
             .iter()
             .filter(|project| {
@@ -778,6 +798,63 @@ mod tests {
         let _ = docs;
     }
 
+    #[test]
+    fn the_rows_of_a_moved_file_go_to_the_project_it_moved_to_not_to_an_older_one_with_the_same_name()
+     {
+        let (dir, app) = app();
+        repositories(&app, dir.path());
+        // `api` is the oldest project and has a workflow `x` of its own; the server-wide `x` names `docs`, a newer one.
+        let own = app
+            .harness_repo()
+            .unwrap()
+            .path()
+            .join("projects/api/workflows");
+        std::fs::create_dir_all(&own).unwrap();
+        std::fs::write(own.join("x.toml"), workflow(MANUAL, "")).unwrap();
+        put(&app, "x", &workflow(SCHEDULE_DOCS, ""));
+        app.store
+            .record_schedule_firing("x", "2026-11-09 03:30")
+            .unwrap();
+        let docs_repository = app
+            .store
+            .repositories()
+            .unwrap()
+            .into_iter()
+            .find(|repository| repository.name == "docs")
+            .unwrap();
+        let run = app
+            .store
+            .add_workflow_run("x", docs_repository.id, "manual", &serde_json::json!({}))
+            .unwrap();
+        app.migrate_workflows_to_projects();
+        let docs = project(&app, "docs");
+        let api = project(&app, "api");
+        assert!(
+            app.harness_repo()
+                .unwrap()
+                .path()
+                .join("projects/docs/workflows/x.toml")
+                .is_file()
+        );
+        assert_eq!(
+            app.store.workflow_run(run.id).unwrap().unwrap().project_id,
+            Some(docs.id)
+        );
+        assert_eq!(
+            app.store
+                .project_schedule_firing(docs.id, "x")
+                .unwrap()
+                .as_deref(),
+            Some("2026-11-09 03:30")
+        );
+        assert_eq!(
+            app.store.project_schedule_firing(api.id, "x").unwrap(),
+            None
+        );
+        // What was remembered of the move is forgotten with the rows placed.
+        assert_eq!(app.store.workflow_move("x").unwrap(), None);
+    }
+
     /// Everything the migration changes, as text: where each file is, the runs' projects, the schedule rows and the
     /// automations' projects.
     fn snapshot(app: &App, names: &[&str]) -> String {
@@ -878,18 +955,9 @@ mod tests {
 
         // The run that stops after the commit.
         let (_dir, app, _) = old_server();
-        let moves: Vec<(String, String)> = app
-            .plan_workflow_migration()
-            .unwrap()
-            .into_iter()
-            .map(|(name, placement)| (name, placement.unwrap().name))
-            .collect();
-        assert_eq!(moves.len(), 3);
-        app.harness_repo()
-            .unwrap()
-            .move_workflows_to_projects(&app, &moves)
-            .unwrap()
-            .expect("the commit");
+        // The first step, with the second not done.
+        assert_eq!(app.plan_workflow_migration().unwrap().len(), 3);
+        app.move_workflow_files().unwrap();
         // The files are moved and the rows are not.
         assert_ne!(snapshot(&app, &names), expected);
         assert!(app.store.server_wide_schedule_names().unwrap().len() >= 2);
