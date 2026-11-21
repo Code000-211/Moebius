@@ -87,6 +87,12 @@ const item = (title: string | RegExp) => items().filter({ hasText: title });
 const decision = () => page.getByTestId("inbox-decision");
 /** Chooses the row of an item, which shows what to decide about it in the window it opens. */
 async function choose(title: string | RegExp) {
+  // The window of an earlier choice lies over the list until it is closed.
+  const open = page.getByTestId("editor-window");
+  if ((await open.count()) > 0) {
+    await page.keyboard.press("Escape");
+    await open.waitFor({ state: "detached" });
+  }
   await item(title).click();
   await decision().waitFor();
   return decision();
@@ -343,6 +349,29 @@ describe("the inbox", () => {
           { title: "Document the export, renamed", body: "In the guide.", blocked_by: [0] },
         ],
       });
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "asks before an edited grilling is closed, and closes a clean one at once",
+    async () => {
+      await open("/inbox");
+      const grilling = await choose("3 issues from a grilling");
+      const window = page.getByTestId("editor-window");
+      // Nothing typed: Escape closes the window.
+      await page.keyboard.press("Escape");
+      await window.waitFor({ state: "detached" });
+      await choose("3 issues from a grilling");
+      await grilling.getByLabel("Title of issue 3").fill("Document the export, renamed");
+      await window.getByRole("button", { name: "Close", exact: true }).first().click();
+      await page.getByRole("alertdialog", { name: "Discard changes?" }).waitFor();
+      await page.getByRole("button", { name: "Keep editing" }).click();
+      expect(await grilling.getByLabel("Title of issue 3").inputValue()).toBe(
+        "Document the export, renamed",
+      );
+      await window.getByRole("button", { name: "Close", exact: true }).first().click();
+      await page.getByRole("button", { name: "Discard", exact: true }).click();
+      await window.waitFor({ state: "detached" });
     },
   );
 

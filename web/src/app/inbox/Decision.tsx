@@ -6,7 +6,7 @@
  * words. The item leaves the list when the snapshot is read again, which the answer and the event cause.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { proposals } from "../../api/calls/improve";
 import { isApiError } from "../../api/http";
@@ -58,7 +58,16 @@ import {
   wikiProposalOf,
 } from "./model";
 
-export function Decision({ item, snapshot }: { item: InboxItem; snapshot: Snapshot }) {
+export function Decision({
+  item,
+  snapshot,
+  onDirty,
+}: {
+  item: InboxItem;
+  snapshot: Snapshot;
+  /** Told whether the person has typed something that is not sent yet (an edited issue, a reason), so the window guards it. */
+  onDirty?: (dirty: boolean) => void;
+}) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const openCard = useOpenCard();
@@ -82,6 +91,14 @@ export function Decision({ item, snapshot }: { item: InboxItem; snapshot: Snapsh
       void queryClient.invalidateQueries({ queryKey: keys.cards });
     },
   });
+  const unsent =
+    (item.kind === GRILLING_ISSUES && JSON.stringify(drafts) !== JSON.stringify(draftsOf(item))) ||
+    (rejecting !== null && rejecting.trim() !== "");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: told when it changes; the callback is the page's setter
+  useEffect(() => {
+    onDirty?.(unsent);
+    return () => onDirty?.(false);
+  }, [unsent]);
   const act = (action: Action) => {
     if (mutation.isPending) return;
     setNotice(null);

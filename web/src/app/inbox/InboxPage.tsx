@@ -82,6 +82,7 @@ export function InboxPage() {
   const openCard = useOpenCard();
   const mentions = useQuery({ queryKey: keys.notices, queryFn: readNotices });
   const [picked, setPicked] = useState<string | null>(null);
+  const [unsent, setUnsent] = useState(false);
   const approving = useMutation({
     mutationFn: (card: number) => perform({ kind: "approve", card }),
     onError: (error) =>
@@ -251,7 +252,7 @@ export function InboxPage() {
         <EditorWindow
           open
           title="Decide"
-          dirty={false}
+          dirty={unsent}
           height="fit"
           onClose={() => setQuery({ item: "" })}
         >
@@ -267,7 +268,7 @@ export function InboxPage() {
                 }
               }}
             />
-            <Decision key={chosen.id} item={chosen} snapshot={snapshot} />
+            <Decision key={chosen.id} item={chosen} snapshot={snapshot} onDirty={setUnsent} />
           </section>
         </EditorWindow>
       )}
