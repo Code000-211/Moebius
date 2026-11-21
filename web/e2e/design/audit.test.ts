@@ -163,8 +163,9 @@ const routes: Route[] = [
   { path: "/inbox?card=3", name: "inbox-card-window" },
   { path: "/board/1", name: "board-new-issue", open: "new issue" },
   { path: "/board/1", name: "board-terminal", open: "terminal" },
-  { path: "/board/1?card=5", name: "board-diff", open: "diff" },
-  // The same diff read on its own page, where it fills the page instead of a sheet.
+  // The diff, read on its own page, where it fills the page. The card window no longer holds the card that opened it
+  // in a sheet (`diff-card` left the thread, and #667 brings a click on the size of the change back), so the route
+  // that opened it from `?card=5` is gone until then.
   { path: "/runs/1000", name: "run-changes", open: "changes" },
   { path: "/chat", name: "chat-menu", open: "menu" },
   // A conversation with a block of steps, folded and opened, which is the one place the log's 32px row is measured.
@@ -222,7 +223,8 @@ async function openPage(width: { width: number; height: number }, theme: string)
     throw new Error(`signing in answered ${answer.status()}: ${await answer.text()}`);
   }
   await page.goto(base);
-  await page.getByRole("navigation", { name: "Pages" }).waitFor();
+  // Below about 1000px the sidebar is hidden (docs/design-web.md), so the page is waited for by its main region.
+  await page.getByRole("main").waitFor();
   return page;
 }
 

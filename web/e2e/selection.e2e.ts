@@ -88,12 +88,12 @@ describe.skipIf(usesRealServer)("choosing cards on the board", () => {
     await box(`Choose #${c}`).click({ modifiers: ["Shift"] });
     await says("3 cards chosen").waitFor();
     expect(await box(`Choose #${b}`).isChecked()).toBe(true);
-    // The key of the command, which the move menu of the bar also shows.
+    // The key of the command is kept for a screen reader; no key box is drawn (only the Shortcuts page has them).
     await bar().getByRole("button", { name: "Move" }).click();
-    await page
-      .getByRole("menuitem", { name: /Move to Not started/ })
-      .getByText("N", { exact: true })
-      .waitFor();
+    const move = page.getByRole("menuitem", { name: /Move to Not started/ });
+    await move.waitFor();
+    expect(await move.getAttribute("aria-keyshortcuts")).toBe("n");
+    expect(await page.locator("kbd").count()).toBe(0);
     await page.keyboard.press("Escape");
     await says("3 cards chosen").waitFor();
     await box(`Choose #${a}`).focus();

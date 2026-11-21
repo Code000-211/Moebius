@@ -90,7 +90,6 @@ export function SelectionBar({
             aria-keyshortcuts={c.key}
           >
             {c.label}
-            {c.key && <kbd className="font-mono text-xs text-secondary">{c.key.toUpperCase()}</kbd>}
           </Button>
         ))}
       {groups.map((group) => (
@@ -105,11 +104,13 @@ export function SelectionBar({
             {commands
               .filter((c) => c.group === group)
               .map((c) => (
-                <DropdownMenuItem key={c.id} disabled={c.disabled} onSelect={c.run}>
+                <DropdownMenuItem
+                  key={c.id}
+                  disabled={c.disabled}
+                  onSelect={c.run}
+                  aria-keyshortcuts={c.key}
+                >
                   <span className="flex-1">{c.label}</span>
-                  {c.key && (
-                    <kbd className="font-mono text-xs text-secondary">{c.key.toUpperCase()}</kbd>
-                  )}
                 </DropdownMenuItem>
               ))}
           </DropdownMenuContent>
