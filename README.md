@@ -307,6 +307,10 @@ MOEBIUS_E2E_SERVER=$PWD/../target/debug/moebius pnpm e2e   # the same against a 
 CI runs the end-to-end tests against both. A test that needs data creates it through the API, so that it passes on a
 real server too.
 
+A pull request runs only the CI jobs its changed files need (a web-only change skips the Rust jobs, a change to a page
+of the documentation skips the web and desktop jobs); a push to `main` runs all of them.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) has the mapping.
+
 The pictures of this README are made by `pnpm screenshots` (after `pnpm build`): it opens the web app against the fake
 server of the end-to-end tests and writes `docs/assets/screenshots/`, each in the dark and the light theme. [`CONTRIBUTING.md`](CONTRIBUTING.md) says
 how to work in the repository; [`CLAUDE.md`](CLAUDE.md) (also [`AGENTS.md`](AGENTS.md)) says the same for coding
