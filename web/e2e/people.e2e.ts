@@ -72,12 +72,14 @@ describe("the People page", () => {
       .getByRole("navigation", { name: "Settings" })
       .getByRole("link", { name: "General" })
       .waitFor();
-    expect(
-      await member
-        .getByRole("navigation", { name: "Settings" })
-        .getByRole("link", { name: "Members" })
-        .count(),
-    ).toBe(0);
+    await expect
+      .poll(() =>
+        member
+          .getByRole("navigation", { name: "Settings" })
+          .getByRole("link", { name: "Members" })
+          .count(),
+      )
+      .toBe(0);
     await member.goto(`${server.url}/people`);
     await member.getByText("There is no such page").waitFor();
 

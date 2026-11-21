@@ -75,12 +75,14 @@ describe.skipIf(usesRealServer)("the Plugins page and the Moebius registries", (
     expect(await rows.nth(0).textContent()).toContain("Installed 1.0.0");
     expect(await rows.nth(0).textContent()).toContain("Update to 1.1.0");
     expect(await rows.nth(1).textContent()).toContain("guard-pack");
-    expect(
-      await rows
-        .nth(1)
-        .getByRole("button", { name: /^Update/ })
-        .count(),
-    ).toBe(0);
+    await expect
+      .poll(() =>
+        rows
+          .nth(1)
+          .getByRole("button", { name: /^Update/ })
+          .count(),
+      )
+      .toBe(0);
 
     // The update is made from the page itself, and the page reads the list again.
     await rows.nth(0).getByRole("button", { name: "Update gate" }).click();
@@ -100,7 +102,7 @@ describe.skipIf(usesRealServer)("the Plugins page and the Moebius registries", (
     expect(await gate.textContent()).toContain("Update to 1.1.0");
     await sheet().getByRole("button", { name: "Rules", exact: true }).click();
     await sheet().getByTestId("list-card").filter({ hasText: "house-rules" }).waitFor();
-    expect(await sheet().getByTestId("list-card").count()).toBe(1);
+    await expect.poll(() => sheet().getByTestId("list-card").count()).toBe(1);
     await sheet().getByRole("button", { name: "All", exact: true }).click();
     await openPackage("pad", "pad-launcher");
     const versions = await sheet().getByRole("list", { name: "Versions" }).textContent();
@@ -168,11 +170,13 @@ describe.skipIf(usesRealServer)("the Plugins page and the Moebius registries", (
     await page.waitForURL(/\/inbox\?change=41$/);
     const item = page.getByTestId("inbox-item");
     await item.waitFor();
-    expect(await item.count()).toBe(1);
+    await expect.poll(() => item.count()).toBe(1);
     expect(await item.textContent()).toContain("Install review-flow");
     // The sheet gave way to the Inbox, and leaves no button floating over it.
     await sheet().waitFor({ state: "hidden" });
-    expect(await page.getByRole("button", { name: "Open the package sheet" }).count()).toBe(0);
+    await expect
+      .poll(() => page.getByRole("button", { name: "Open the package sheet" }).count())
+      .toBe(0);
   });
 
   it("says a registry that cannot be read beside the results of the others", async () => {
@@ -253,7 +257,9 @@ describe.skipIf(usesRealServer)("the Plugins page and the Moebius registries", (
     });
     expect((await place(sheet())).width).toBeGreaterThan(272);
     // No round button floats over the page.
-    expect(await page.getByRole("button", { name: "Open the package sheet" }).count()).toBe(0);
+    await expect
+      .poll(() => page.getByRole("button", { name: "Open the package sheet" }).count())
+      .toBe(0);
 
     await page.keyboard.press("Escape");
     await sheet().waitFor({ state: "hidden" });
@@ -307,7 +313,7 @@ describe.skipIf(usesRealServer)("an agent's Extensions and the pi.dev catalog", 
     expect(await row.textContent()).toContain("12.4k a week");
     await sheet().getByRole("button", { name: "Skill", exact: true }).click();
     await sheet().getByTestId("list-card").filter({ hasText: "@acme/pi-notes" }).waitFor();
-    expect(await sheet().getByTestId("list-card").count()).toBe(1);
+    await expect.poll(() => sheet().getByTestId("list-card").count()).toBe(1);
     await sheet().getByRole("button", { name: "All", exact: true }).click();
 
     await row.click();

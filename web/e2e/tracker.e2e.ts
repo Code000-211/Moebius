@@ -209,7 +209,7 @@ describe("sub-issues on the board", () => {
     expect(await toggle.textContent()).toBe("0 of 2 sub-issues done");
     // The dock opens on a card of its own choosing, and the stack of the card it shows is open; any other starts shut.
     if ((await toggle.getAttribute("aria-expanded")) === "false") {
-      expect(await cardTitled("Pick the format").count()).toBe(0);
+      await expect.poll(() => cardTitled("Pick the format").count()).toBe(0);
       await toggle.click();
     }
     await stackOf("Plan the export")
@@ -218,7 +218,7 @@ describe("sub-issues on the board", () => {
     await stackOf("Plan the export")
       .getByRole("group", { name: /Write the exporter$/ })
       .waitFor();
-    expect(await toggle.getAttribute("aria-expanded")).toBe("true");
+    await expect.poll(() => toggle.getAttribute("aria-expanded")).toBe("true");
 
     // A sub-issue is a card of its own: it opens, and its dock names its parent.
     await openCard("Pick the format");
@@ -282,8 +282,8 @@ describe("sub-issues on the board", () => {
 
       // The server says it does not count, so it is no stack: the parent has none and the issue is on the board.
       await cardTitled(outsider).waitFor();
-      expect(await toggleOf(parent).count()).toBe(0);
-      expect(await stackOf(parent).count()).toBe(0);
+      await expect.poll(() => toggleOf(parent).count()).toBe(0);
+      await expect.poll(() => stackOf(parent).count()).toBe(0);
 
       // A person approves it, and it is a sub-issue.
       const approved = server.board?.handle("POST", "/v1/cards/2/approve", {});
@@ -362,11 +362,11 @@ describe("the issue in the dock", () => {
     await value(/^Claim person/).waitFor();
     await closeProps();
     // The palette closed, and the card is still the one in focus: its key does the next thing.
-    await page.getByRole("option").first().waitFor({ state: "detached" });
+    await page.locator("[cmdk-root]").waitFor({ state: "detached" });
     await page.keyboard.press("Control+k");
     await page.getByRole("option", { name: /Unassign/ }).waitFor();
     await page.keyboard.press("Escape");
-    await page.getByRole("option").first().waitFor({ state: "detached" });
+    await page.locator("[cmdk-root]").waitFor({ state: "detached" });
   });
 
   it("gives the card to a person from the right column and takes it back, and the card shows an avatar", async () => {
@@ -401,7 +401,7 @@ describe("the issue in the dock", () => {
     await page.keyboard.press("Control+k");
     await page.getByRole("option", { name: /Assign to @owner/ }).click();
     await value("Assignee @owner").waitFor();
-    await page.getByRole("option").first().waitFor({ state: "detached" });
+    await page.locator("[cmdk-root]").waitFor({ state: "detached" });
     await page.keyboard.press("Control+k");
     await page.getByRole("option", { name: /Take off @owner/ }).click();
     await value("Assignee No one").waitFor();
@@ -424,7 +424,7 @@ describe("the issue in the dock", () => {
     await page.keyboard.press("Enter");
     await value("Due date 2026-12-01").waitFor();
     // The labels that hold them are not shown as labels.
-    expect(await properties().getByText("priority:urgent").count()).toBe(0);
+    await expect.poll(() => properties().getByText("priority:urgent").count()).toBe(0);
 
     await closeCard();
     const filters = page.getByRole("search", { name: "Filter the cards" });

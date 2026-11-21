@@ -64,11 +64,11 @@ describe.skipIf(usesRealServer)("mentions", () => {
     await page.getByRole("tab", { name: "Mentions", exact: true }).click();
     const notices = page.getByTestId("notice");
     await notices.first().waitFor();
-    expect(await notices.count()).toBe(2);
+    await expect.poll(() => notices.count()).toBe(2);
     await notices.filter({ hasText: "@lea mentioned you: @owner can you look?" }).waitFor();
     await inbox.getByText(String(waiting + 2), { exact: true }).waitFor();
     // Unread, a notice has the needs-you icon.
-    expect(await notices.getByTestId("status-needsYou").count()).toBe(2);
+    await expect.poll(() => notices.getByTestId("status-needsYou").count()).toBe(2);
 
     // Choosing the assignment reads it without a reload and opens the card.
     await page.locator('[data-testid="notice"][data-kind="assigned"]').click();

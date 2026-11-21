@@ -63,7 +63,7 @@ describe("the wiki's search and templates", () => {
     await results.getByText("Refunds", { exact: true }).waitFor();
     await results.getByText(/paid back within five days/).waitFor();
     // The tree makes room for the matches.
-    expect(await tree.count()).toBe(0);
+    await expect.poll(() => tree.count()).toBe(0);
 
     await results.getByRole("button", { name: /Refunds/ }).click();
     await page.getByRole("article", { name: "Refunds" }).waitFor();

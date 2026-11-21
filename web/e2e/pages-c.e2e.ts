@@ -109,19 +109,19 @@ describe("the Rules page", () => {
     await addFilter(page, bar, "Scope", "Server rules");
     await region("Rules in prose").waitFor();
     await region("Built-in patterns").waitFor({ state: "detached" });
-    expect(await region("demo").count()).toBe(0);
+    await expect.poll(() => region("demo").count()).toBe(0);
     expect(new URL(page.url()).search).toBe("?scope=server");
 
     await page.reload();
     await bar.getByRole("button", { name: "Scope is Server rules", exact: true }).waitFor();
     await region("Rules in prose").waitFor();
-    expect(await region("Built-in patterns").count()).toBe(0);
+    await expect.poll(() => region("Built-in patterns").count()).toBe(0);
 
     await bar.getByRole("button", { name: "Clear filters" }).click();
     await addFilter(page, bar, "Project", "demo");
     await region("demo").waitFor();
     await region("Rules in prose").waitFor({ state: "detached" });
-    expect(await region("Built-in patterns").count()).toBe(0);
+    await expect.poll(() => region("Built-in patterns").count()).toBe(0);
   });
 
   it.skipIf(usesRealServer)("lists the patterns, the rules and what each refused", async () => {
@@ -196,7 +196,7 @@ describe("the Rules page", () => {
     await open("/rules", "Rules");
     const prose = region("Rules in prose");
     await prose.getByRole("button", { name: "Add a rule" }).click();
-    expect(await editor().getByRole("button", { name: "Delete rule" }).count()).toBe(0);
+    await expect.poll(() => editor().getByRole("button", { name: "Delete rule" }).count()).toBe(0);
     await editor().getByLabel("Rule name").fill("ask-first");
     await editor().getByLabel("Rule text").fill("Ask before deleting a branch.");
     await editor().getByRole("button", { name: "Save", exact: true }).click();
@@ -538,7 +538,9 @@ describe("the Retro page", () => {
     await lessons.getByText("Retired", { exact: true }).waitFor();
     await lessons.getByText("Cards 41 · given 0 times · not retrieved for 60 days").waitFor();
     // A retired lesson cannot be edited.
-    expect(await lessons.getByRole("button", { name: /Edit the lesson Running/ }).count()).toBe(0);
+    await expect
+      .poll(() => lessons.getByRole("button", { name: /Edit the lesson Running/ }).count())
+      .toBe(0);
 
     await lessons.getByRole("button", { name: "Edit the lesson Changing the tokenizer" }).click();
     await lessons.getByLabel("What to do").fill("");
@@ -637,7 +639,7 @@ describe("the Experiments page", () => {
     await brief.getByRole("button", { name: "Confirm" }).click();
     await facts(brief).getByText("Confirmed", { exact: true }).waitFor();
     expect(lastRequest()).toMatchObject({ method: "POST", path: "/v1/research/2/confirm" });
-    expect(await brief.getByRole("button", { name: "Confirm" }).count()).toBe(0);
+    await expect.poll(() => brief.getByRole("button", { name: "Confirm" }).count()).toBe(0);
     await brief.getByRole("button", { name: "Start now" }).click();
     await facts(brief).getByText("Running", { exact: true }).waitFor();
     expect(lastRequest()).toMatchObject({ method: "POST", path: "/v1/research/2/start" });
@@ -799,7 +801,9 @@ describe("the Decisions page", () => {
       await expect.poll(() => region("Decision types").getByRole("row").count()).toBeLessThan(3);
       const kinds = region("Decision types");
       await kinds.getByRole("row").filter({ hasText: "merge" }).waitFor();
-      expect(await kinds.getByRole("row").filter({ hasText: "tool_call" }).count()).toBe(0);
+      await expect
+        .poll(() => kinds.getByRole("row").filter({ hasText: "tool_call" }).count())
+        .toBe(0);
       expect(new URL(page.url()).search).toBe("?agent=Coder");
 
       await page.reload();
@@ -819,7 +823,7 @@ describe("the Decisions page", () => {
     expect(lastRequest()).toMatchObject({ method: "POST", path: "/v1/exports" });
     // Every kind has a file now.
     await region("Decision types").getByText("GET /v1/exports/2/tool_call.jsonl").waitFor();
-    expect(await page.getByText("Not exported yet").count()).toBe(0);
+    await expect.poll(() => page.getByText("Not exported yet").count()).toBe(0);
   });
 
   it.skipIf(usesRealServer)("says that an export was refused", async () => {
@@ -872,7 +876,9 @@ describe("the script editor", () => {
     await fresh();
     const { editor } = await openScript("Not started");
     await page.getByText("built in", { exact: false }).first().waitFor();
-    expect(await page.getByRole("button", { name: "Use the built-in script" }).count()).toBe(0);
+    await expect
+      .poll(() => page.getByRole("button", { name: "Use the built-in script" }).count())
+      .toBe(0);
     const save = page.getByRole("button", { name: "Save", exact: true });
 
     await type(editor, '-- my own\nfunction on_card(card)\n  moebius.wait("nothing to do")\nend\n');
@@ -892,7 +898,7 @@ describe("the script editor", () => {
     await page.getByRole("button", { name: "Use the built-in script" }).last().click();
     await status("The column runs the built-in script again.").waitFor();
     await page.getByText("built in", { exact: false }).first().waitFor();
-    expect(await page.getByText("-- my own").count()).toBe(0);
+    await expect.poll(() => page.getByText("-- my own").count()).toBe(0);
   });
 
   it("refuses a bad script and shows the check's error at its line", async () => {
@@ -911,7 +917,7 @@ describe("the script editor", () => {
     await page.reload();
     await page.getByText("built in", { exact: false }).first().waitFor();
     await page.getByRole("textbox", { name: "Script of Not started" }).waitFor();
-    expect(await page.getByText("moebius.move(card.id,").count()).toBe(0);
+    await expect.poll(() => page.getByText("moebius.move(card.id,").count()).toBe(0);
   });
 
   it.skipIf(usesRealServer)(
@@ -945,7 +951,7 @@ describe("the script editor", () => {
     );
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await alert("the push was refused: not a fast-forward").waitFor();
-    expect(await page.getByTestId("script-problem").count()).toBe(0);
+    await expect.poll(() => page.getByTestId("script-problem").count()).toBe(0);
   });
 });
 
@@ -989,7 +995,7 @@ describe("deleting a research brief and an export", () => {
       await region("Brief").getByRole("button", { name: "Delete" }).click();
       const dialog = page.getByRole("dialog", { name: "Delete this brief?" });
       await dialog.getByText(/removed with its experiments/).waitFor();
-      expect(await dialog.getByText(/stopped first/).count()).toBe(0);
+      await expect.poll(() => dialog.getByText(/stopped first/).count()).toBe(0);
       await dialog.getByRole("button", { name: "Keep" }).click();
       await dialog.waitFor({ state: "detached" });
       expect(fake().requests.filter((r) => r.method === "DELETE")).toEqual([]);

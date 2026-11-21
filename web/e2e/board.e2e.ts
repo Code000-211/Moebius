@@ -166,7 +166,7 @@ describe("a card named by its key", () => {
       await page.goto(`${server.url}/card/demo-31`);
       await page.getByText("DEMO-31 · #7").first().waitFor();
       expect(new URL(page.url()).pathname).toBe("/card/demo-31");
-      expect(await dock().count()).toBe(0);
+      await expect.poll(() => dock().count()).toBe(0);
       await page.getByRole("button", { name: "More actions for #7" }).first().waitFor();
       // A page inside a page has its way back at the left of its title.
       await page.getByRole("link", { name: "Back to the board" }).waitFor();
@@ -241,7 +241,7 @@ describe("the board page", () => {
     await line.fill("Never made");
     await line.press("Escape");
     await line.waitFor({ state: "detached" });
-    expect(await page.getByText("Never made").count()).toBe(0);
+    await expect.poll(() => page.getByText("Never made").count()).toBe(0);
 
     // The keyboard reaches it too: Enter on the column's name opens the same menu.
     await backlog.getByRole("heading", { name: "Backlog" }).press("Enter");
@@ -327,11 +327,13 @@ describe("the board page", () => {
       await openBoard();
       // Columns: Backlog is always there; its name stands alone, with no count.
       await column("Backlog").waitFor();
-      expect(
-        await column("Not started")
-          .getByTestId(/^card-\d+$/)
-          .count(),
-      ).toBe(2);
+      await expect
+        .poll(() =>
+          column("Not started")
+            .getByTestId(/^card-\d+$/)
+            .count(),
+        )
+        .toBe(2);
       expect(await column("Not started").getByRole("heading").textContent()).toBe("Not started");
 
       const running = card(1);
@@ -348,7 +350,7 @@ describe("the board page", () => {
 
       // An idle card is its id and its title, and nothing else.
       const idle = card(3);
-      expect(await idle.getByTestId("card-activity").count()).toBe(0);
+      await expect.poll(() => idle.getByTestId("card-activity").count()).toBe(0);
       expect(await idle.evaluate((el) => getComputedStyle(el).boxShadow)).toBe("none");
       expect(await idle.evaluate((el) => el.firstElementChild?.children.length)).toBe(2);
 
@@ -410,11 +412,13 @@ describe("the board page", () => {
       // The column is plain: no fill, and no "+" or "+ Add" in it.
       const lane = await column("In review").evaluate((el) => getComputedStyle(el).backgroundColor);
       expect(lane, "the column has a box of its own").toBe("rgba(0, 0, 0, 0)");
-      expect(
-        await column("In review")
-          .getByRole("button", { name: /Add a card/ })
-          .count(),
-      ).toBe(0);
+      await expect
+        .poll(() =>
+          column("In review")
+            .getByRole("button", { name: /Add a card/ })
+            .count(),
+        )
+        .toBe(0);
     },
   );
 });
@@ -525,7 +529,7 @@ describe("live data", () => {
     await column("Not started").getByTestId("card-3").waitFor();
     broadcast(fake().moveCard(3, "In progress"));
     await column("In progress").getByTestId("card-3").waitFor();
-    expect(await column("Not started").getByTestId("card-3").count()).toBe(0);
+    await expect.poll(() => column("Not started").getByTestId("card-3").count()).toBe(0);
   });
 
   it.skipIf(usesRealServer)("shows a card that the server adds", async () => {
@@ -586,7 +590,9 @@ describe("live data", () => {
       await page.goto(`${server.url}/board/1?card=4`);
       await (await unfolded(4)).getByText("Why it waits", { exact: true }).waitFor();
       await (await unfolded(4)).getByText("Waiting on", { exact: true }).waitFor();
-      expect(await (await unfolded(4)).getByText("Waiting", { exact: true }).count()).toBe(0);
+      await expect
+        .poll(async () => (await unfolded(4)).getByText("Waiting", { exact: true }).count())
+        .toBe(0);
     },
   );
 
@@ -880,10 +886,10 @@ describe("blocking, unblocking and deleting a card", () => {
       await tag.waitFor();
       expect(await tag.getAttribute("title")).toBe("wait for the design (blocked by a person)");
       // The card that waits on issues is a different state: it is not called blocked.
-      expect(await card(4).getByText("Blocked", { exact: true }).count()).toBe(0);
+      await expect.poll(() => card(4).getByText("Blocked", { exact: true }).count()).toBe(0);
 
       await menuOf(card(3), 3).click();
-      expect(await item("Block…").count()).toBe(0);
+      await expect.poll(() => item("Block…").count()).toBe(0);
       await item("Unblock").click();
       await status("Unblocked #3.").waitFor();
       await tag.waitFor({ state: "detached" });
@@ -938,9 +944,9 @@ describe("blocking, unblocking and deleting a card", () => {
     await card(1)
       .getByText(/^coding/)
       .waitFor({ state: "detached" });
-    expect(await card(1).getByText("Blocked", { exact: true }).count()).toBe(0);
+    await expect.poll(() => card(1).getByText("Blocked", { exact: true }).count()).toBe(0);
     await menuOf(card(1), 1).click();
-    expect(await item("Stop run").count()).toBe(0);
+    await expect.poll(() => item("Stop run").count()).toBe(0);
     await page.keyboard.press("Escape");
 
     // The window has the stop on the line of its run, which opens to it.
@@ -1342,7 +1348,7 @@ describe("the dock", () => {
     await dock().waitFor({ state: "detached" });
     await page.reload();
     await column("Not started").waitFor();
-    expect(await dock().count()).toBe(0);
+    await expect.poll(() => dock().count()).toBe(0);
   });
 });
 
@@ -1371,19 +1377,19 @@ describe("the filters", () => {
     async () => {
       await fresh();
       await openBoard();
-      expect(await page.getByTestId(/^card-\d+$/).count()).toBe(7);
+      await expect.poll(() => page.getByTestId(/^card-\d+$/).count()).toBe(7);
 
       await addFilter(page, bar(), "Column", "Done");
       await shownIs(1);
       await card(7).waitFor();
-      expect(await column("Not started").count()).toBe(0);
+      await expect.poll(() => column("Not started").count()).toBe(0);
       await page.waitForURL("**column=Done");
       await chip("Column is Done").waitFor();
 
       await page.getByRole("button", { name: "Clear filters" }).click();
       await shownIs(7);
       await card(3).waitFor();
-      expect(await chip("Column is Done").count()).toBe(0);
+      await expect.poll(() => chip("Column is Done").count()).toBe(0);
 
       await addFilter(page, bar(), "Agent", "Reviewer");
       await shownIs(1);
@@ -1446,7 +1452,7 @@ describe("the filters", () => {
       .focus();
     await page.keyboard.press("Enter");
     await shownIs(7);
-    expect(await chip("Agent is Reviewer").count()).toBe(0);
+    await expect.poll(() => chip("Agent is Reviewer").count()).toBe(0);
   });
 
   it.skipIf(usesRealServer)(
@@ -1457,7 +1463,7 @@ describe("the filters", () => {
       // Save view is in Display's menu, and there only once something is set.
       const save = page.getByRole("menuitem", { name: "Save view" });
       await bar().getByRole("button", { name: "Display" }).click();
-      expect(await save.count()).toBe(0);
+      await expect.poll(() => save.count()).toBe(0);
       await page.keyboard.press("Escape");
       await addFilter(page, bar(), "Column", "Backlog");
       await bar().getByRole("button", { name: "Display" }).click();
@@ -1485,7 +1491,7 @@ describe("the filters", () => {
       await page.getByRole("menuitem", { name: "Save view" }).click();
       await status(/Saved this view as "View 3"/).waitFor();
       // The notice no longer says a filter was left out, and the view carries the agent.
-      expect(await status(/without/).count()).toBe(0);
+      await expect.poll(() => status(/without/).count()).toBe(0);
       if (!("views" in server)) throw new Error("this test needs the fake server");
       expect(server.views.requests.at(-1)).toMatchObject({
         method: "POST",
@@ -1499,7 +1505,7 @@ describe("the filters", () => {
       await page.waitForURL(/\/board\/1\?.*view=3/);
       await chip("Agent is Reviewer").waitFor();
       await shownIs(1);
-      expect(await page.getByTestId("board-view").textContent()).toContain("View 3");
+      await expect.poll(() => page.getByTestId("board-view").textContent()).toContain("View 3");
       // Changing the filter says the view is no longer what is shown, and closing it leaves the filter alone.
       await page
         .getByRole("search", { name: "Filters set" })
@@ -1547,7 +1553,7 @@ describe("Display", () => {
       await display("Board").click();
       await page.waitForURL((url) => !url.search.includes("layout="));
       await card(6).waitFor();
-      expect(await page.getByTestId("list-row").count()).toBe(0);
+      await expect.poll(() => page.getByTestId("list-row").count()).toBe(0);
     },
   );
 
@@ -1560,7 +1566,9 @@ describe("Display", () => {
     await display("Status").click();
     await page.waitForURL("**group=status");
     await page.getByTestId("group-row").filter({ hasText: "Your turn" }).waitFor();
-    expect(await page.getByTestId("group-row").filter({ hasText: "Not started" }).count()).toBe(0);
+    await expect
+      .poll(() => page.getByTestId("group-row").filter({ hasText: "Not started" }).count())
+      .toBe(0);
 
     await bar().getByRole("button", { name: "Display" }).click();
     await display("None").click();
@@ -1600,7 +1608,7 @@ describe("Display", () => {
     );
     // The choices only the card of the board used, and the ones the list no longer shows, are gone.
     for (const gone of ["Description", "Labels", "Claimed by", "Round limit"]) {
-      expect(await display(gone, "menuitemcheckbox").count()).toBe(0);
+      await expect.poll(() => display(gone, "menuitemcheckbox").count()).toBe(0);
     }
   });
 });
@@ -1650,7 +1658,7 @@ describe("the card open in the dock and its address", () => {
     await page.reload();
     await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
     await card(3).waitFor();
-    expect(await dock().count()).toBe(0);
+    await expect.poll(() => dock().count()).toBe(0);
   });
 });
 
