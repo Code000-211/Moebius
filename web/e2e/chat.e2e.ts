@@ -1029,28 +1029,25 @@ describe("deleting a chat", () => {
     },
   );
 
-  it.skipIf(usesRealServer)(
-    "says the server's refusal as a toast and keeps the chat",
-    async () => {
-      await open("/chat");
-      const id = fake().seed({ status: "waiting", title: "Refused" });
-      await page.goto(`${server.url}/chat/${id}`);
-      await page.route("**/v1/chats/*", (route) =>
-        route.request().method() === "DELETE"
-          ? route.fulfill({
-              status: 409,
-              contentType: "text/plain",
-              body: "chat is still stopping",
-            })
-          : route.continue(),
-      );
-      await page.getByTestId("chat-chip").click();
-      await page.getByRole("button", { name: "Delete this chat", exact: true }).click();
-      await dialog().getByRole("button", { name: "Delete" }).click();
-      await page.getByRole("alert").filter({ hasText: "chat is still stopping" }).waitFor();
-      expect(new URL(page.url()).pathname).toBe(`/chat/${id}`);
-    },
-  );
+  it.skipIf(usesRealServer)("says the server's refusal as a toast and keeps the chat", async () => {
+    await open("/chat");
+    const id = fake().seed({ status: "waiting", title: "Refused" });
+    await page.goto(`${server.url}/chat/${id}`);
+    await page.route("**/v1/chats/*", (route) =>
+      route.request().method() === "DELETE"
+        ? route.fulfill({
+            status: 409,
+            contentType: "text/plain",
+            body: "chat is still stopping",
+          })
+        : route.continue(),
+    );
+    await page.getByTestId("chat-chip").click();
+    await page.getByRole("button", { name: "Delete this chat", exact: true }).click();
+    await dialog().getByRole("button", { name: "Delete" }).click();
+    await page.getByRole("alert").filter({ hasText: "chat is still stopping" }).waitFor();
+    expect(new URL(page.url()).pathname).toBe(`/chat/${id}`);
+  });
 });
 
 /** Signs a new context in with `options`, runs `init` in every page of it before the app does, and goes to `path`. */
