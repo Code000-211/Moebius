@@ -20,7 +20,72 @@ env:
   PIBOLT_VERSION: bolt-v1.0.5
 
 jobs:
+  # What the pull request changes decides which of the jobs below run, so a change to the web app does not wait for the
+  # Rust jobs, nor a change to a page of the documentation for the bundles of the desktop app. A job that does not run is
+  # reported as skipped, which counts as passing for a protected branch. A push to main runs every job.
+  #
+  # Every job runs when `.github/`, `Cargo.toml`, `Cargo.lock` or a `rust-toolchain` file changes, and so does a run
+  # whose list of changed files cannot be read. Otherwise a job runs when a path it builds or tests changes:
+  #
+  #   rust     (check, windows, msrv)  `crates/`, `examples/` and `docs/`, which the tests of moebius-core read (the
+  #            reference, the guide, the links, the module map, the examples) and the built-in skill embeds; every
+  #            `*.md` in the repository, which the test of links reads; and the three files of `web/` that the crates
+  #            read: `web/csp.json`, `web/src/api/fixtures/` and `web/src/desktop/`. The end-to-end test of the server
+  #            and the plugin examples are part of `check`. The column scripts are in `crates/moebius-core/kanban/`.
+  #   web      `web/`, `docs/design-web.md` (the test of the tokens reads it), and `crates/` and `examples/`, because the
+  #            last step of the job builds `moebius` and runs the end-to-end tests against it.
+  #   desktop  `crates/` and `web/`: the app is built from the crates and embeds `web/dist`.
+  #
+  # A path that matches none of these (`docs/design/` pictures and mockups, `dist/`, `LICENSE`, `NOTICE`) changes
+  # nothing a test reads; the Markdown beside them is covered by `rust`. When a test starts to read a new place, add it
+  # here.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.paths.outputs.rust }}
+      web: ${{ steps.paths.outputs.web }}
+      desktop: ${{ steps.paths.outputs.desktop }}
+    steps:
+      # The commit of a pull request's run is the merge of its head into the base; its first parent is the base.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: paths
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          all=false
+          files=""
+          if [ "$EVENT" != pull_request ]; then
+            all=true
+          elif ! changed=$(git diff --name-only --no-renames HEAD^1 HEAD) || [ -z "$changed" ]; then
+            all=true
+          elif echo "$changed" | grep -qE '^(\.github/|Cargo\.toml$|Cargo\.lock$|rust-toolchain)'; then
+            all=true
+          else
+            # A picture or mockup under docs/design changes nothing a test reads, unless it is deleted: a page can link to it.
+            quiet='^docs/design(-drafts)?/'
+            {
+              echo "$changed" | grep -vE "$quiet" || true
+              echo "$changed" | grep -E "$quiet" | grep -E '\.md$' || true
+              git diff --name-only --no-renames --diff-filter=D HEAD^1 HEAD | grep -E "$quiet" || true
+            } > "$RUNNER_TEMP/files"
+            files=$(cat "$RUNNER_TEMP/files")
+          fi
+          # Whether any changed file matches the pattern; true for every job when `all` is.
+          any() {
+            if [ "$all" = true ] || echo "$files" | grep -qE "$1"; then echo true; else echo false; fi
+          }
+          {
+            echo "rust=$(any '^(crates/|examples/|docs/|web/csp\.json$|web/src/api/fixtures/|web/src/desktop/)|\.md$')"
+            echo "web=$(any '^(web/|docs/design-web\.md$|crates/|examples/)')"
+            echo "desktop=$(any '^(crates/|web/)')"
+          } | tee -a "$GITHUB_OUTPUT"
+          echo "$files"
+
   check:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +118,8 @@ jobs:
   # tests that need no Unix program (the others are `#[cfg(unix)]`, each saying why). The server is documented and
   # tested on Linux and WSL 2; on Windows it builds and starts.
   windows:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: windows-latest
     env:
       # aws-lc-sys uses its prebuilt NASM objects on Windows, which has no NASM.
@@ -70,6 +137,8 @@ jobs:
   # The code builds with the Rust version that `rust-version` in Cargo.toml names, and that is the version the README
   # tells people to install.
   msrv:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     env:
       # Older compilers do not warn about the same things as the current one.
@@ -89,6 +158,8 @@ jobs:
   # The desktop app's bundles, as the release makes them: the AppImage and the `.deb` on Linux, the installer on
   # Windows. The Linux bundles are built on the oldest Ubuntu the release uses, so they run on the systems of today.
   desktop:
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -143,6 +214,8 @@ jobs:
   # The web app (`web/`): type check, lint, unit tests and the build on Linux and Windows. The end-to-end tests run on
   # Linux only: Playwright's Chromium is installed there with its system libraries in one step.
   web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
     strategy:
       fail-fast: false
       matrix:
