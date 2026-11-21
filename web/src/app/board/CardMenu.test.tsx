@@ -155,3 +155,25 @@ describe("the menu of a card", () => {
     expect(reached).not.toHaveBeenCalled();
   });
 });
+
+describe("the keys of the menu", () => {
+  it("keeps an ordinary key from the card and the dock, but lets a Ctrl or ⌘ chord through to the page", () => {
+    const { trigger, reached } = shown(card());
+    open(trigger);
+    reached.mockClear();
+    const item = screen.getByRole("menuitem", { name: "Delete…" });
+    fireEvent.keyDown(item, { key: "ArrowDown" });
+    expect(reached).not.toHaveBeenCalled();
+    fireEvent.keyDown(item, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(item, { key: "k", metaKey: true });
+    expect(reached).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(item, { key: "Escape" });
+    expect(reached).toHaveBeenCalledTimes(2);
+  });
+
+  it("lets Ctrl+K from the trigger reach the page too", () => {
+    const { trigger, reached } = shown(card());
+    fireEvent.keyDown(trigger, { key: "k", ctrlKey: true });
+    expect(reached).toHaveBeenCalledTimes(1);
+  });
+});

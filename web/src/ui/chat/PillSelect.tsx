@@ -20,6 +20,7 @@ import {
 } from "../components/DropdownMenu";
 import { Input } from "../components/Input";
 import { cn } from "../lib/cn";
+import { keepKey } from "../lib/shortcuts";
 
 export interface PillOption {
   value: string;
@@ -114,7 +115,7 @@ export function PillSelect({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             // Menus choose an item by typing; the field keeps its own keys.
-            onKeyDown={(event) => event.stopPropagation()}
+            onKeyDown={keepKey}
             placeholder="Filter by name"
             aria-label={filterName}
             className="mb-2"

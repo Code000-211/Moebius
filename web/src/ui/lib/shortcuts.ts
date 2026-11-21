@@ -30,6 +30,19 @@ export function isShortcut(
   return (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === key;
 }
 
+/**
+ * For the `onKeyDown` of a control that keeps its keys from the card or dock around it: stops the key unless it is a
+ * `Ctrl` or `⌘` chord. A chord is a page shortcut (`Ctrl+K`, `Ctrl+J`) and no control means it, so it goes on up.
+ */
+export function keepKey(event: {
+  ctrlKey: boolean;
+  metaKey: boolean;
+  stopPropagation: () => void;
+}) {
+  if (event.ctrlKey || event.metaKey) return;
+  event.stopPropagation();
+}
+
 /** True when a key typed at `target` belongs to it (a field, a menu) and not to the page. */
 export function fieldHasKeys(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;

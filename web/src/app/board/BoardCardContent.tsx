@@ -6,6 +6,7 @@ import { CaretDownIcon, CaretRightIcon } from "@phosphor-icons/react";
 import type { ReactNode, SyntheticEvent } from "react";
 import type { Card } from "../../api/types/board";
 import { KanbanCardContent } from "../../ui/components/KanbanCardContent";
+import { keepKey } from "../../ui/lib/shortcuts";
 import { CardMenu } from "./CardMenu";
 import { cardKey } from "./cardKey";
 import { type CardStatus, cardActivity, cardIcon, type Stack, stackWords } from "./model";
@@ -95,7 +96,7 @@ function StackToggle({
       aria-expanded={open}
       aria-label={`Sub-issues of #${card.number}`}
       onPointerDown={keep}
-      onKeyDown={keep}
+      onKeyDown={keepKey}
       onClick={(event) => {
         event.stopPropagation();
         onToggle();

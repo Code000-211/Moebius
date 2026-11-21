@@ -102,8 +102,9 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
       event.preventDefault();
       setCommandOpen((open) => !open);
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // In the capture phase, so no control that keeps its keys from the page can swallow the shortcut.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
   // The places the palette offers again; the page a person left is the one worth going back to.
