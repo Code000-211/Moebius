@@ -85,7 +85,12 @@ impl App {
             .harness_repo()?
             .project_workflow(&project.name, workflow)?;
         let repository = self.workflow_run_repository(&project, repository)?;
-        self.start_workflow_run_with(definition, repository.id, value, (None, Some(project.id)))
+        self.start_workflow_run_with(
+            definition,
+            repository.id,
+            value,
+            (None, Some((project.id, workflow))),
+        )
     }
 }
 
@@ -392,5 +397,87 @@ to = "build"
             app.store.workflow_run(run.id).unwrap().unwrap().project_id,
             Some(docs.id)
         );
+    }
+
+    #[test]
+    fn a_run_is_stored_under_the_file_name_even_when_the_file_names_the_workflow_otherwise() {
+        let (dir, app) = app();
+        let [_, docs, ..] = projects(&app, dir.path());
+        let mut definition = release("Build docs.");
+        definition.name = "other".into();
+        app.harness_repo()
+            .unwrap()
+            .save_project_workflow(
+                &app,
+                &Actor::first_owner(),
+                &docs.name,
+                "nightly",
+                &definition,
+            )
+            .unwrap();
+        let run = app
+            .start_project_workflow_run(docs.id, "nightly", None, json!({}))
+            .unwrap();
+        // Every lookup of the project's workflows (the delete guard, the schedule's minute) names it by its file.
+        assert_eq!(run.workflow, "nightly");
+    }
+
+    #[test]
+    fn removing_the_last_repository_of_a_project_is_refused_while_the_project_could_not_be_deleted()
+    {
+        let (dir, app) = app();
+        let [_, docs, ..] = projects(&app, dir.path());
+        let repository = docs.repositories[0];
+        // The runs below belong to another repository, so that removing this one is not stopped by them (a run of the
+        // repository itself is a separate matter of `delete_repository`).
+        let elsewhere = app.store.repositories().unwrap()[1].id;
+        save(&app, &docs.name, &release("Build docs."));
+        let refused = app.remove_repository(&Actor::first_owner(), repository, "no");
+        assert!(matches!(refused, Err(AppError::Conflict(_))), "{refused:?}");
+        assert!(app.store.project(docs.id).unwrap().is_some());
+
+        // With the workflow gone but a run still going, the project stays as well.
+        app.harness_repo()
+            .unwrap()
+            .delete_project_workflow(&app, &Actor::first_owner(), &docs.name, "release")
+            .unwrap();
+        let run = app
+            .store
+            .add_project_workflow_run(docs.id, "release", elsewhere, "test", &json!({}))
+            .unwrap();
+        assert!(matches!(
+            app.remove_repository(&Actor::first_owner(), repository, "no"),
+            Err(AppError::Conflict(_))
+        ));
+        assert!(app.store.repository(repository).unwrap().is_some());
+
+        // Finished, it no longer holds the project, which goes with the repository, with what it kept under its id.
+        app.store
+            .finish_workflow_run(run.id, "succeeded", None)
+            .unwrap();
+        app.store
+            .record_project_schedule_firing(docs.id, "release", "2026-11-09 03:30")
+            .unwrap();
+        app.remove_repository(&Actor::first_owner(), repository, "done")
+            .unwrap();
+        assert!(app.store.project(docs.id).unwrap().is_none());
+        assert_eq!(
+            app.store
+                .project_schedule_firing(docs.id, "release")
+                .unwrap(),
+            None
+        );
+        // The finished run keeps the project as a plain value.
+        assert_eq!(
+            app.store.workflow_run(run.id).unwrap().unwrap().project_id,
+            Some(docs.id)
+        );
+        // A project made later does not take the id over, so it inherits neither the run nor a minute.
+        let later = app.add_project("Later", "LTR").unwrap();
+        assert_ne!(later.id, docs.id);
+        let again = app
+            .add_repository("again", &dir.path().join("again").to_string_lossy())
+            .unwrap();
+        assert_ne!(again.home_project_id, docs.id);
     }
 }

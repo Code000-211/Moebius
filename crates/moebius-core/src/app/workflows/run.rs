@@ -65,13 +65,15 @@ impl App {
         self.start_workflow_run_with(source, repository_id, value, (Some(firing), None))
     }
 
-    /// `(firing, project)` are the firing the run carries and the project that owns its workflow, when there are any.
+    /// `(firing, project)` are the firing the run carries and the project that owns its workflow with the workflow's
+    /// file name, when there are any. A run of a project's workflow is stored under that file name, which is how
+    /// every lookup names it, and not under the `name` written inside the file; the two need not match.
     pub(super) fn start_workflow_run_with<S: WorkflowSource>(
         self: &Arc<Self>,
         source: S,
         repository_id: i64,
         value: Value,
-        (firing, project): (Option<i64>, Option<i64>),
+        (firing, project): (Option<i64>, Option<(i64, &str)>),
     ) -> Result<WorkflowRun> {
         let definition = source.definition(self)?;
         definition
@@ -83,9 +85,9 @@ impl App {
             .map(|trigger| trigger.kind.clone())
             .unwrap_or_default();
         let run = match project {
-            Some(project) => self.store.add_project_workflow_run(
+            Some((project, file)) => self.store.add_project_workflow_run(
                 project,
-                &definition.name,
+                file,
                 repository_id,
                 &trigger,
                 &value,

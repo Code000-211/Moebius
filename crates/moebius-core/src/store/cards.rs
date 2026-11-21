@@ -413,6 +413,17 @@ impl Store {
             &format!("DELETE FROM imports WHERE project_id = ?1 AND {unused}"),
             [home],
         )?;
+        // What a project owns under its id, apart from the finished runs of its workflows, which keep it as a plain
+        // value, goes with it: the minutes its schedules fired at and its automations with their firings. The id is
+        // kept in `deleted_projects`, so no later project takes it over.
+        for statement in [
+            "DELETE FROM workflow_schedules WHERE project_id = ?1",
+            "DELETE FROM firings WHERE automation_id IN (SELECT id FROM automations WHERE project_id = ?1)",
+            "DELETE FROM automations WHERE project_id = ?1",
+            "INSERT OR IGNORE INTO deleted_projects (id) SELECT id FROM projects WHERE id = ?1",
+        ] {
+            tx.execute(&format!("{statement} AND {unused}"), [home])?;
+        }
         tx.execute(
             &format!("DELETE FROM projects WHERE id = ?1 AND {unused}"),
             [home],

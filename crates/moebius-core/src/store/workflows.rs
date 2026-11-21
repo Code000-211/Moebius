@@ -113,7 +113,8 @@ impl Store {
         Ok(self.workflow_run(id)?.expect("the run was just stored"))
     }
 
-    /// Stores a queued run of the workflow `workflow` of the project `project_id`, as [`Self::add_workflow_run`] does.
+    /// Stores a queued run of the workflow `workflow` of the project `project_id`, as [`Self::add_workflow_run`] does,
+    /// with the project in the same statement: a run is never stored without it and given it afterwards.
     pub fn add_project_workflow_run(
         &self,
         project_id: i64,
@@ -122,12 +123,17 @@ impl Store {
         trigger: &str,
         value: &Value,
     ) -> Result<WorkflowRun> {
-        let run = self.add_workflow_run(workflow, repository_id, trigger, value)?;
-        self.conn().execute(
-            "UPDATE workflow_runs SET project_id = ?1 WHERE id = ?2",
-            params![project_id, run.id],
-        )?;
-        Ok(self.workflow_run(run.id)?.expect("the run was just stored"))
+        let value = json_text(value);
+        let id = {
+            let conn = self.conn();
+            conn.execute(
+                "INSERT INTO workflow_runs (workflow, repository_id, trigger, status, value, created_at, project_id)
+                 VALUES (?1, ?2, ?3, 'queued', ?4, ?5, ?6)",
+                params![workflow, repository_id, trigger, value, now(), project_id],
+            )?;
+            conn.last_insert_rowid()
+        };
+        Ok(self.workflow_run(id)?.expect("the run was just stored"))
     }
 
     /// Records the worktree of the run `id`, in which the run's agents work on the branch named for the run, so its
@@ -441,6 +447,28 @@ fn node_from_row(row: &Row<'_>) -> rusqlite::Result<WorkflowNodeRun> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_project_run_is_stored_with_its_project_in_one_statement() {
+        let (_dir, store) = crate::store::test_store();
+        let repository = store
+            .add_repository("demo", "/tmp/demo", "none", "main")
+            .map(|r| r.id)
+            .unwrap();
+        // A later update of the row fails, as a crash between two statements would: the run still has its project.
+        store
+            .conn()
+            .execute_batch(
+                "CREATE TRIGGER no_updates BEFORE UPDATE ON workflow_runs
+                 BEGIN SELECT RAISE(ABORT, 'no updates'); END;",
+            )
+            .unwrap();
+        let run = store
+            .add_project_workflow_run(7, "release", repository, "manual", &serde_json::json!({}))
+            .unwrap();
+        assert_eq!(run.project_id, Some(7));
+        assert_eq!(store.active_runs_of_project(7).unwrap(), 1);
+    }
     use super::*;
     use crate::bus::{Bus, Event};
     use crate::store::test_store;

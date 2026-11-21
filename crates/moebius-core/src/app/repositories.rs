@@ -264,6 +264,10 @@ impl App {
                 repository.name
             )));
         }
+        // The home project goes with its last repository, so what keeps a project from being deleted keeps this too.
+        if let Some(project) = self.store.project_removed_with_repository(id)? {
+            self.check_project_deletable(project)?;
+        }
         if !self.store.delete_repository(id)? {
             return Err(AppError::NotFound(format!("repository {id}")));
         }

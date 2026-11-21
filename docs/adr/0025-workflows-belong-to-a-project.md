@@ -39,10 +39,19 @@ column scripts and its workflows. It is one step of the restructure of the web a
   is kept in its project's folder and its store row (`automations.project_id`, with its workflow file name) says which
   project it belongs to. A schedule remembers the minute it last fired at under (project, workflow), by the project's
   id, so renaming a project leaves it alone.
+- **A workflow is named by its file name.** A run of a project's workflow is stored under the file's name, the one the
+  API, the schedule's minute, the delete guard and a restart's replay all use; the `name` written inside the file is
+  for people and may differ (an automation's file is `automation-<id>.toml` with the automation's name inside).
+- **A resumed run reads its own project's file.** A run with a `project_id` that was left waiting is driven again from
+  `projects/<project>/workflows/<name>.toml`, never from a server-wide file of the same name.
 - **`run_limit` and `round_limit` stay global** in `moebius.toml`.
 - **Deleting a project is refused while it owns workflows or has a workflow run queued, running or waiting.** Finished
   runs keep `project_id` as a plain value; no cascade removes them, and a run whose project is gone shows it as
-  deleted. **Renaming a project moves its workflows** with the rest of its folder, in the one commit that moves it.
+  deleted. **Renaming a project moves its workflows** with the rest of its folder, in the one commit that moves it. The one path
+  that removes a project today is removing its last repository (its home project goes with it): that is refused by the
+  same rule, and when the project does go, the minutes its schedules fired at and its automations with their firings
+  go with it. Its id is remembered in `deleted_projects`, and a new project takes an id above every one in use or
+  deleted, so a deleted project's finished runs never show under another.
 
 ## Consequences
 
