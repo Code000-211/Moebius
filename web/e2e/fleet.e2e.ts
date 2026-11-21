@@ -53,12 +53,13 @@ describe.skipIf(usesRealServer)("the fleet with 500 runs", () => {
     await rows.first().getByText("Which branch?").waitFor();
     await rows.first().getByText("Asks you").waitFor();
 
-    // Stop is not in the page until a row is hovered or selected.
-    expect(await page.getByRole("button", { name: /^Stop/ }).count()).toBe(0);
-    await rows.nth(1).hover();
+    // Stop is only on the selected row (the first, until one is chosen) and on the hovered one.
+    expect(await rows.first().getAttribute("data-selected")).toBe("true");
     expect(await page.getByRole("button", { name: /^Stop/ }).count()).toBe(1);
+    await rows.nth(1).hover();
+    expect(await page.getByRole("button", { name: /^Stop/ }).count()).toBe(2);
     await page.mouse.move(700, 5);
-    await expect.poll(() => page.getByRole("button", { name: /^Stop/ }).count()).toBe(0);
+    await expect.poll(() => page.getByRole("button", { name: /^Stop/ }).count()).toBe(1);
   });
 });
 

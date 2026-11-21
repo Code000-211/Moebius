@@ -120,7 +120,7 @@ export function Composer({
             aria-label={sendLabel}
             title={canSend ? sendLabel : sendHint}
             className={cn(
-              "shrink-0 bg-control-fill!",
+              "shrink-0 bg-hairline-strong!",
               canSend && "bg-accent-fill! text-white hover:text-white",
             )}
           >

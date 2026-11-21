@@ -41,4 +41,11 @@ describe("a switch", () => {
     render(<Switch checked={false} onChange={() => {}} label="Runs on its schedule" />);
     expect(screen.getByRole("switch").getAttribute("class")).toContain("min-h-7");
   });
+
+  it("keeps the whole control readable when it cannot be moved", () => {
+    render(<Switch checked={false} onChange={() => {}} label="Blur" disabled />);
+    const control = screen.getByRole("switch");
+    expect(control.className).not.toMatch(/opacity-/);
+    expect(control.firstElementChild?.className).toContain("bg-muted/40");
+  });
 });

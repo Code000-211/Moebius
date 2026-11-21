@@ -531,9 +531,15 @@ export function BoardPage() {
           ) : (
             <div
               data-testid="board-lanes"
-              className="-mx-4 -mb-4 -mt-2.5 min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-4"
+              className="-mx-4 -mb-4 -mt-2.5 min-h-0 flex-1 overflow-x-auto overflow-y-hidden pl-4"
             >
-              <KanbanProvider onDragEnd={onDragEnd} renderOverlay={renderOverlay}>
+              <KanbanProvider
+                // The scroller has no padding at its right, which a scroller would not count: a hairline-wide end of the row, one gap
+                // after the last column, is the gutter the row keeps when it scrolls and is where the panel's padding ends when it fits.
+                className="w-full after:block after:w-px after:shrink-0"
+                onDragEnd={onDragEnd}
+                renderOverlay={renderOverlay}
+              >
                 {groups.map(({ column, cards, stacks }) => (
                   <BoardColumn
                     key={column}

@@ -421,6 +421,38 @@ describe("the board page", () => {
 
 describe("column scrolling", () => {
   it.skipIf(usesRealServer)(
+    "shares the width among the columns, and scrolls sideways with a gutter only below their minimum",
+    async () => {
+      await fresh();
+      await page.setViewportSize({ width: 1920, height: 720 });
+      await openBoard();
+      const lanes = page.getByTestId("board-lanes");
+      const columns = page.locator('[data-testid="board-lanes"] section');
+      await expect.poll(() => columns.count()).toBeGreaterThanOrEqual(5);
+      // Wide enough for the seven columns of the default workflow at their minimum: every column is in view, none clipped at the right edge, and there is nothing to scroll.
+      const fit = await lanes.evaluate((node) => ({
+        scrolls: node.scrollWidth > node.clientWidth,
+        right: node.getBoundingClientRect().right,
+      }));
+      expect(fit.scrolls).toBe(false);
+      const last = await columns.last().boundingBox();
+      expect((last?.x ?? 0) + (last?.width ?? 0)).toBeLessThanOrEqual(fit.right);
+      // Too narrow for the minimum: the row scrolls, and at the end the last column has air to its right.
+      await page.setViewportSize({ width: 900, height: 720 });
+      await lanes.evaluate((node) => {
+        node.scrollLeft = node.scrollWidth;
+      });
+      const end = await lanes.evaluate((node) => ({
+        scrolls: node.scrollWidth > node.clientWidth,
+        right: node.getBoundingClientRect().right,
+      }));
+      expect(end.scrolls).toBe(true);
+      const edge = await columns.last().boundingBox();
+      expect(end.right - ((edge?.x ?? 0) + (edge?.width ?? 0))).toBeGreaterThanOrEqual(8);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
     "scrolls a column with many cards on its own, and nothing on the board masks",
     async () => {
       await fresh();
@@ -1116,6 +1148,8 @@ describe("dragging cards", () => {
     "keyboard-drags a card to a column that starts out of view and scrolls it into view",
     async () => {
       await fresh();
+      // Columns share the width down to a minimum, so the window is narrow enough for Done to start out of view.
+      await page.setViewportSize({ width: 1000, height: 900 });
       await openBoard();
       const last = column("Done");
       const inView = () =>

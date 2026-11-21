@@ -55,7 +55,7 @@ export const KanbanBoard = ({ children, name, className }: KanbanBoardProps) => 
       ref={setNodeRef}
       aria-label={name}
       className={cn(
-        "flex min-h-0 min-w-52 flex-1 flex-col rounded-card",
+        "flex min-h-0 min-w-44 flex-1 flex-col rounded-card",
         isOver && "ring-2 ring-accent ring-inset",
         className,
       )}

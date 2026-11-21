@@ -7,7 +7,13 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { createRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ListRow } from "./ListRow";
-import { type ListItem, VirtualList, type VirtualListHandle } from "./VirtualList";
+import {
+  firstRowKey,
+  type ListItem,
+  openedKey,
+  VirtualList,
+  type VirtualListHandle,
+} from "./VirtualList";
 import { mockViewport } from "./virtualListTest";
 
 let restore: () => void;
@@ -197,5 +203,38 @@ describe("a row", () => {
     rerender(<ListRow status="running" id="MOE-2" title="Run" selected />);
     expect(screen.queryByTitle("@leon")).toBeNull();
     expect(screen.getByTestId("list-row").className).toContain("before:bg-accent");
+  });
+});
+
+describe("the keys a list marks", () => {
+  const items: ListItem<number>[] = [
+    { type: "group", key: "g", name: "Group" },
+    { type: "row", key: "a", data: 1 },
+    { type: "row", key: "b", data: 2 },
+  ];
+  it("takes a chosen key, else the row whose card is open, else the first row for the mark alone", () => {
+    expect(openedKey(items, "a", (data) => data === 2)).toBe("a");
+    expect(openedKey(items, null, (data) => data === 2)).toBe("b");
+    expect(openedKey(items, null, () => false)).toBeNull();
+    expect(firstRowKey(items)).toBe("a");
+    expect(firstRowKey([])).toBeNull();
+  });
+
+  it("marks the first row at rest without moving the arrows from it", () => {
+    render(
+      <VirtualList
+        label="Rows"
+        items={items}
+        initialItemCount={3}
+        restKey="a"
+        onSelect={() => {}}
+        renderRow={(data, { selected }) => (
+          <ListRow id="" title={`Row ${data}`} selected={selected} />
+        )}
+      />,
+    );
+    const rows = screen.getAllByTestId("list-row");
+    expect(rows[0]?.getAttribute("data-selected")).toBe("true");
+    expect(rows[1]?.getAttribute("data-selected")).toBeNull();
   });
 });

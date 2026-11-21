@@ -7,6 +7,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 import { listIssues } from "../../api/calls/kinds";
 import { getSession } from "../../api/calls/session";
 import { keys } from "../../api/keys";
@@ -16,7 +17,7 @@ import { Empty } from "../../ui/page/Empty";
 import { ListRow } from "../../ui/page/ListRow";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
-import { VirtualList } from "../../ui/page/VirtualList";
+import { firstRowKey, openedKey, VirtualList } from "../../ui/page/VirtualList";
 import { useOpenCard } from "../board/CardWindowHost";
 import { type MyIssue, myIssueItems } from "./model";
 import { NewIssueButton } from "./NewIssueButton";
@@ -32,7 +33,8 @@ export function MyIssuesPage() {
   });
   const openCard = useOpenCard();
   const now = useNow();
-  const [chosen, setChosen] = useState<string | null>(null);
+  const [picked, setChosen] = useState<string | null>(null);
+  const [params] = useSearchParams();
 
   const header = <PageHeader title="My issues" actions={<NewIssueButton />} />;
   const empty = (
@@ -57,16 +59,19 @@ export function MyIssuesPage() {
     );
   }
   const open = (key: string) => openCard(Number(key));
+  const list = myIssueItems(issues.data ?? [], now);
+  const chosen = openedKey(list, picked, (_, key) => key === params.get("card"));
   return (
     <div data-testid="my-issues-page" className="flex h-full min-h-0 flex-col">
       {header}
       <VirtualList<MyIssue>
         label="My issues"
         className="-mx-4 -mb-4 -mt-4 min-h-0 flex-1 outline-none"
-        items={myIssueItems(issues.data ?? [], now)}
+        items={list}
         loading={session.isPending || (handle !== null && issues.isPending)}
         loadingMessage="Reading your issues"
         selectedKey={chosen}
+        restKey={firstRowKey(list)}
         onSelect={setChosen}
         onOpen={open}
         empty={empty}

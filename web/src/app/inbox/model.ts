@@ -418,7 +418,8 @@ export const approvable = (item: InboxItem): boolean =>
 
 /**
  * The title of an item as the row draws it. The server words some titles with their reason ("… is ready to merge",
- * "Approve: …"); the reason belongs to the pale text only, so the row's title is the card's.
+ * "Approve: …"); the reason belongs to the pale text only, so the row's title is the card's. A card in the snapshot gives its own
+ * title, whatever sentence the server worded the item with.
  */
 export function titleOf(item: InboxItem): string {
   const plain = item.title.replace(/^Approve: /, "").replace(/ is ready to merge$/, "");
@@ -476,7 +477,7 @@ export function listOf(
         key: `item-${item.id}`,
         status: item.kind === READY_TO_MERGE ? "readyToMerge" : "needsYou",
         id: key,
-        title: titleOf(item),
+        title: about.card?.title ?? titleOf(item),
         reason: rowReason(item),
         owner: item.assignees[0],
         at: item.at,

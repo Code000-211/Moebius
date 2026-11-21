@@ -87,6 +87,17 @@ describe("the list of places", () => {
     );
   });
 
+  it("shows only the green dot on Fleet's row while the Fleet page is open", async () => {
+    show({ at: "/fleet" });
+    const row = await screen.findByRole("link", { name: /^Fleet/ });
+    await waitFor(() => expect(row.querySelector(".sr-only")?.textContent).toBe("2 running"));
+    // The words are for a screen reader only; the dot is the one thing drawn.
+    expect(row.querySelector("[aria-hidden=true]")).not.toBeNull();
+    expect(
+      row.querySelector(".text-progress-text > span:not(.sr-only):not([aria-hidden])"),
+    ).toBeNull();
+  });
+
   it("leaves Fleet's work unsaid when nothing runs", async () => {
     show({
       snapshot: { boards: [board(1, "notes", 0)], harness_changes: [], inbox: [] },

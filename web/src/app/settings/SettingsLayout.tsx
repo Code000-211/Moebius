@@ -6,7 +6,7 @@
  */
 import { Suspense } from "react";
 import { Outlet } from "react-router";
-import { PageHeader } from "../../ui/page/PageHeader";
+import { InSettingsArea, PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import { useRole } from "../shell/session";
 import { SettingsNav } from "./SettingsNav";
@@ -22,9 +22,11 @@ export function SettingsLayout() {
       <div className="flex min-h-0 flex-1 items-stretch">
         <SettingsNav entries={shownEntries(role)} />
         <div className="min-w-0 flex-1 overflow-y-auto px-10 pb-6 pt-5">
-          <Suspense fallback={<SkeletonCard lines={4} />}>
-            <Outlet />
-          </Suspense>
+          <InSettingsArea.Provider value>
+            <Suspense fallback={<SkeletonCard lines={4} />}>
+              <Outlet />
+            </Suspense>
+          </InSettingsArea.Provider>
         </div>
       </div>
     </div>
