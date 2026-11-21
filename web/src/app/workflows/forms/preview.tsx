@@ -12,7 +12,7 @@ export function ParamsPreview({ params }: { params: Record<string, unknown> }) {
       </h3>
       <pre
         data-testid="params-preview"
-        className="m-0 overflow-x-auto whitespace-pre-wrap break-words rounded-control bg-code-bg px-3 py-2 font-mono text-xs leading-5 text-code-text"
+        className="m-0 overflow-x-auto whitespace-pre-wrap break-words rounded-panel bg-code-bg px-3 py-2 font-mono text-xs leading-5 text-code-text"
       >
         {asJson(params)}
       </pre>

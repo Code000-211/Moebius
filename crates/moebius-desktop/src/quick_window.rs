@@ -147,6 +147,7 @@ async fn show(app: &AppHandle) -> tauri::Result<()> {
                 .inner_size(640.0, 230.0)
                 .resizable(false)
                 .decorations(false)
+                .transparent(true)
                 .always_on_top(true)
                 .skip_taskbar(true)
                 .center()

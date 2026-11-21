@@ -20,7 +20,7 @@
 :root {
   color-scheme: light;
 
-  --canvas: #f6f6f8;
+  --canvas: #f9f9fa;
   --panel: #ffffff;
   --on-accent: #ffffff;
   --hairline: #ebebef;
@@ -37,7 +37,7 @@
   --row-hover: #f4f4f7;
   --group-fill: #fafafb;
   --control-fill: #f1f1f4;
-  --nav-selected: #ffffff;
+  --nav-selected: #ececf0;
   --needs-you: #d9690a;
   --needs-you-text: #a85a0c;
   --needs-you-tint: #fff8f0;
@@ -62,7 +62,8 @@
   --avatar-3: #7a6a9a;
   --avatar-agent: #2a2c4f;
   --scrim: rgb(0 0 0 / 32%);
-  --shadow-window: 0 8px 32px rgb(0 0 0 / 14%), 0 0 0 1px var(--hairline-strong);
+  --shadow-window: 0 0 0 1px var(--hairline), 0 20px 60px rgb(0 0 0 / 16%);
+  --shadow-menu: 0 8px 32px rgb(0 0 0 / 14%), 0 0 0 1px var(--hairline-strong);
 
   /*
    * The marks and the words of what happens. A run going is green and a thing waiting for a person is orange; a thing
@@ -142,15 +143,20 @@
    * surface are one hairline, and nothing lifts.
    */
   --shadow-card: 0 0 0 1px var(--hairline-strong);
-  --shadow-raised: var(--shadow-window);
+  --shadow-raised: var(--shadow-menu);
 
-  /* Radii: 6 for controls and rows, 8 for cards, 10 for the panel and windows, round for dots, avatars and switches. */
-  --radius-control: 6px;
+  /*
+   * Radii: 6 for a chip or a key, 8 for controls, menus and cards, 10 for a code block and the frame of the desktop
+   * window, 16 for a centred window, round for dots, avatars and switches.
+   */
+  --radius-control: 8px;
   --radius-small: 6px;
   --radius-card: 8px;
   --radius-composer: 8px;
   --radius-panel: 10px;
-  --radius-sheet: var(--radius-panel);
+  --radius-window: 16px;
+  --radius-frame: 10px;
+  --radius-sheet: var(--radius-window);
   --radius-round: 9999px;
 
   /* The layers a screen is stacked from, so a component never invents a number of its own. */
@@ -262,5 +268,6 @@
   --avatar-3: #7a6a9a;
   --avatar-agent: #2a2c4f;
   --scrim: rgb(0 0 0 / 56%);
-  --shadow-window: 0 8px 32px rgb(0 0 0 / 50%), 0 0 0 1px var(--hairline-strong);
+  --shadow-window: 0 0 0 1px var(--hairline-strong), 0 20px 60px rgb(0 0 0 / 55%);
+  --shadow-menu: 0 8px 32px rgb(0 0 0 / 50%), 0 0 0 1px var(--hairline-strong);
 }

@@ -1,16 +1,15 @@
 /**
- * The frame of a signed-in person's page: the canvas under the whole window, flat and faintly tinted, with the sidebar
- * lying on it without a surface of its own, and the page as one panel floating on it — 6px of air above, below and at
- * the right, all four corners round, a hairline for its edge and no shadow (`docs/design-web.md`). There is no strip
- * above it and no texture under it. The panel holds the banner while the server cannot be reached, what the route
- * draws. The Moebius agent has a
- * panel of its own at the right, opened from the dock, the quiet field at the bottom of the page (`AgentDock.tsx`), and
- * by `Ctrl+J`; the package sheet, which pages open from where a person meets plugins and extensions, lies over the
- * right of the same panel. It
- * in a window narrower than 1000px the sidebar is an overlay opened from the page header (`narrow.ts`, `SidebarToggle.tsx`). It
- * owns the command palette and its shortcut, the form of a new issue and `C` (`board/NewIssueHost.tsx`), the card window for `?card=` on any page (`board/CardWindowHost.tsx`), holds what is
- * in focus for it (`palette/focus.tsx`), and . In the desktop app the panel carries the window's controls once at its top right
- * (`desktop/WindowControls.tsx`), and the server switch stands in the sidebar's head (`desktop/ServerSwitch.tsx`).
+ * The frame of a signed-in person's page: the sidebar, faintly tinted, and the page, white, meeting at one hairline and
+ * filling the window to its edges, with no canvas showing round either (`docs/design-web.md`). There is no strip above
+ * it and no texture under it. The page holds the banner while the server cannot be reached, what the route draws. The
+ * Moebius agent has a panel of its own at the right, opened from the dock, the quiet field at the bottom of the page
+ * (`AgentDock.tsx`), and by `Ctrl+J`; the package sheet, which pages open from where a person meets plugins and
+ * extensions, lies over the right of the same page. In a window narrower than 1000px the sidebar is an overlay opened
+ * from the page header (`narrow.ts`, `SidebarToggle.tsx`). It owns the command palette and its shortcut, the form of a
+ * new issue and `C` (`board/NewIssueHost.tsx`), the card window for `?card=` on any page (`board/CardWindowHost.tsx`),
+ * and holds what is in focus for it (`palette/focus.tsx`). In the desktop app the page carries the window's controls
+ * once at its top right (`desktop/WindowControls.tsx`), and the server switch stands in the sidebar's head
+ * (`desktop/ServerSwitch.tsx`). The window's round corners are the root's (`tailwind.css`, `data-desktop`).
  */
 import { useQueryClient } from "@tanstack/react-query";
 import { type CSSProperties, Suspense, useEffect, useState } from "react";
@@ -118,7 +117,7 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
 
   return (
     <SidebarToggleContext.Provider value={{ narrow, open: sidebarOpen, setOpen: setSidebarOpen }}>
-      <div className="flex h-full bg-canvas py-1.5">
+      <div className="flex h-full bg-sidebar">
         <Sidebar
           narrow={narrow}
           open={sidebarOpen}
@@ -128,15 +127,12 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
             setCommandOpen(true);
           }}
         />
-        {/* The page: one panel, rounded at all four corners, that clips what scrolls inside it to those corners. The
-          sheets lie in it, at its right, so they share its corners and its height. It clips
+        {/* The page: the white ground that fills the window to its edges, meeting the sidebar at one hairline (the
+          sidebar's right edge). The sheets lie in it, at its right, so they share its height. It clips
           rather than hides, so a sheet that takes the focus while it slides in cannot scroll the whole page sideways.
           The window's controls are in it once; the header reserves their room (`--window-buttons`) unless the
           agent's panel lies at the panel's right, which then leaves it to its own head. */}
-        <div
-          data-surface="page"
-          className="relative mr-1.5 flex min-w-0 flex-1 overflow-clip rounded-sheet border border-hairline bg-panel"
-        >
+        <div data-surface="page" className="relative flex min-w-0 flex-1 overflow-clip bg-panel">
           <div
             className="flex min-w-0 flex-1 flex-col"
             style={

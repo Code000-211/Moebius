@@ -10,12 +10,14 @@ import { router } from "./app/routes";
 import { makeQueryClient } from "./app/shell/queryClient";
 import { startLogin } from "./auth/login";
 import "./styles/tailwind.css";
+import { start as startFrame } from "./desktop/frame";
 import { start as startMotion } from "./motion";
 import { start as startTheme } from "./theme";
 import { start as startEffects } from "./ui/lib/effects";
 
 void startLogin(window);
 startTheme();
+startFrame();
 startMotion();
 startEffects();
 

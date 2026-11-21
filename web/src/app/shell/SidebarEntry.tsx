@@ -18,13 +18,12 @@ export interface Trailing {
 }
 
 /** The classes every row of the sidebar shares: its height, its radius and the edge a chosen row shows. */
-export const ROW =
-  "flex h-(--row-list) items-center gap-2 rounded-control border border-transparent px-2.5 text-base";
+export const ROW = "flex h-(--row-list) items-center gap-2 rounded-control px-2.5 text-base";
 
 /** The fill of a chosen row, and the text of one that waits. */
 export function rowTone(current: boolean): string {
   return current
-    ? "border-hairline-strong bg-nav-selected font-medium text-text in-data-[theme=dark]:border-transparent"
+    ? "bg-nav-selected font-medium text-text"
     : "text-sidebar-text hover:bg-row-hover hover:text-text";
 }
 

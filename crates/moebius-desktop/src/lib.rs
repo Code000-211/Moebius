@@ -14,6 +14,7 @@
 
 pub mod badge;
 pub mod edges;
+pub mod frame;
 pub mod instance;
 pub mod links;
 pub mod local;

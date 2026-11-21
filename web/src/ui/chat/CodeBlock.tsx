@@ -29,7 +29,7 @@ export function CodeBlock({
   code: string;
 }) {
   return (
-    <div className="reveal-copy my-4 overflow-hidden rounded-card bg-code-bg">
+    <div className="reveal-copy my-4 overflow-hidden rounded-panel bg-code-bg">
       <div className="flex h-[30px] items-center justify-between gap-4 pr-1 pl-3 font-mono text-[12px] text-code-head">
         <span className="flex min-w-0 items-center gap-2">
           <span>{language ?? "Plain text"}</span>
