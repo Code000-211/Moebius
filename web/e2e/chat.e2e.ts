@@ -1080,7 +1080,12 @@ async function openWith(
   context = await browser.newContext(options);
   page = await context.newPage();
   await page.goto(server.loginUrl);
-  await page.getByRole("navigation", { name: "Pages", exact: true }).waitFor();
+  // The signed-in shell: the sidebar beside the page, or in a narrow window the button of the page header that opens it.
+  await page
+    .getByRole("navigation", { name: "Pages", exact: true })
+    .or(page.getByRole("button", { name: "Show the sidebar" }))
+    .first()
+    .waitFor();
   if (init) await context.addInitScript(init);
   await page.goto(`${server.url}${path}`);
 }
@@ -1127,11 +1132,15 @@ describe("the chat page on a phone", () => {
   });
 
   it.skipIf(usesRealServer)(
-    "fills the screen beside the sidebar and the composer stays usable",
+    "fills the screen, the sidebar closed behind its button, and the composer stays usable",
     async () => {
       await openWith("/chat", { viewport: { width: 390, height: 844 } });
       await page.getByTestId("chat-page").waitFor();
       await field().waitFor();
+      expect(
+        await page.getByRole("navigation", { name: "Pages", exact: true }).count(),
+        "the sidebar is closed on a phone",
+      ).toBe(0);
       const sideways = await page.evaluate(
         () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
       );

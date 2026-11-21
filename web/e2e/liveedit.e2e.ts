@@ -39,6 +39,12 @@ async function open(card: number): Promise<Page> {
   const page = await contexts[0]?.newPage();
   if (!page) throw new Error("no browser context");
   await page.goto(`${server.url}/board/1?card=${card}`);
+  // The properties are in a window of their own, opened from the menu of the card window.
+  await page
+    .locator("[data-card-window]")
+    .getByRole("button", { name: `More actions for #${card}`, exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Properties…" }).click();
   await page.getByRole("region", { name: `Properties of #${card}`, exact: true }).waitFor();
   return page;
 }

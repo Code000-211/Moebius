@@ -7,6 +7,7 @@
  */
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { unfold } from "./controls";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
 let browser: Browser;
@@ -36,6 +37,20 @@ async function open(path: string) {
   await page.goto(server.loginUrl);
   await page.getByRole("navigation", { name: "Pages", exact: true }).waitFor();
   await page.goto(`${server.url}${path}`);
+}
+
+/** The properties of card #1 in the window its menu opens, with the fold "More properties" open. */
+async function openProperties() {
+  await page.getByTestId("card-1").click();
+  await page
+    .locator("[data-card-window]")
+    .getByRole("button", { name: "More actions for #1", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Properties…" }).click();
+  const properties = page.getByRole("region", { name: "Properties of #1", exact: true });
+  await properties.waitFor();
+  await unfold(properties);
+  return properties;
 }
 
 const fake = () => {
@@ -176,8 +191,7 @@ describe.skipIf(usesRealServer)("the Milestones page", () => {
   it("shows a card's milestones in its properties and puts it in another", async () => {
     await open("/board/1");
     await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
-    await page.getByRole("group", { name: /^#1 Add a feature$/ }).click();
-    const properties = page.getByRole("region", { name: /^Properties of #/ });
+    const properties = await openProperties();
     await properties.getByRole("button", { name: "Milestone Launch 2.0" }).waitFor();
     await properties.getByRole("button", { name: "Milestone Launch 2.0" }).click();
     await page.getByRole("menuitemcheckbox", { name: "Annual report" }).click();

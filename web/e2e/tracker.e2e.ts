@@ -169,6 +169,29 @@ async function addSubIssue(parent: string, title: string) {
   await status(`Created "${title}"`).waitFor();
 }
 
+/** Opens "Move to another parent…" from the menu of a card. While the board settles after a change (a card moves on, a
+ * stack opens) the card is redrawn and shuts or detaches the menu, so the menu is opened again until the dialog is up. */
+async function openMoveDialog(card: Locator) {
+  const dialog = page.getByRole("dialog", { name: /^Move #\d+ to another parent$/ });
+  await expect
+    .poll(
+      async () => {
+        try {
+          await menuOf(card).click({ timeout: 2000 });
+          await item("Move to another parent…").click({ timeout: 2000 });
+          await dialog.waitFor({ timeout: 2000 });
+          return true;
+        } catch {
+          await page.keyboard.press("Escape");
+          return false;
+        }
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+  return dialog;
+}
+
 /** The control that opens or shuts the stack of the card titled `title`. */
 const toggleOf = (title: string) =>
   cardTitled(title).first().locator('button[aria-label^="Sub-issues of #"]');
@@ -225,9 +248,7 @@ describe("sub-issues on the board", () => {
     await cardTitled("A step").waitFor();
 
     const second = await numberOf("Second plan");
-    await menuOf(cardTitled("A step")).click();
-    await item("Move to another parent…").click();
-    const dialog = page.getByRole("dialog", { name: /^Move #\d+ to another parent$/ });
+    const dialog = await openMoveDialog(cardTitled("A step"));
     await pickOption(page, dialog.getByLabel("Parent"), `#${second} Second plan`);
     await dialog.getByRole("button", { name: "Move", exact: true }).click();
     await status(new RegExp(`is a sub-issue of #${second}\\.`)).waitFor();
@@ -240,8 +261,7 @@ describe("sub-issues on the board", () => {
 
     // And it can be made an issue of its own again.
     await toggleOf("Second plan").click();
-    await menuOf(cardTitled("A step")).click();
-    await item("Move to another parent…").click();
+    await openMoveDialog(cardTitled("A step"));
     await pickOption(page, dialog.getByLabel("Parent"), "No parent");
     await dialog.getByRole("button", { name: "Move", exact: true }).click();
     await status(/is not a sub-issue any more\./).waitFor();
@@ -255,9 +275,7 @@ describe("sub-issues on the board", () => {
       const outsider = "Fix the login redirect";
       const parent = "Document the API";
       const parentNumber = await numberOf(parent);
-      await menuOf(cardTitled(outsider)).click();
-      await item("Move to another parent…").click();
-      const dialog = page.getByRole("dialog", { name: /^Move #\d+ to another parent$/ });
+      const dialog = await openMoveDialog(cardTitled(outsider));
       await pickOption(page, dialog.getByLabel("Parent"), `#${parentNumber} ${parent}`);
       await dialog.getByRole("button", { name: "Move", exact: true }).click();
       await status(/is a sub-issue of #\d+\./).waitFor();
@@ -293,23 +311,20 @@ describe("sub-issues on the board", () => {
 });
 
 describe("the issue in the dock", () => {
-  it("claims and releases, labels, comments and edits an issue, and the card shows what it is given", async () => {
+  it("claims and releases, labels, comments and edits an issue, and the properties show what it is given", async () => {
     await openBoard();
     await newIssue("Decide the queue");
     await openCard("Decide the queue");
     await dock().getByRole("heading", { name: "Decide the queue" }).waitFor();
     await openProps();
 
+    // The card on the board no longer carries the claim or its labels; the properties are where they are read.
     await pickOption(page, value("Claim No one"), "Me");
-    await cardTitled("Decide the queue").getByText("Claimed by person").waitFor();
     await value(/^Claim person/).waitFor();
     await pickOption(page, value(/^Claim person/), "No one");
-    await cardTitled("Decide the queue")
-      .getByText("Claimed by person")
-      .waitFor({ state: "detached" });
+    await value("Claim No one").waitFor();
 
     await addTo("Add a label", "wayfinder:decision");
-    await cardTitled("Decide the queue").getByText("wayfinder:decision").waitFor();
     await properties().getByRole("button", { name: "Remove label wayfinder:decision" }).waitFor();
     await closeProps();
 
@@ -403,22 +418,23 @@ describe("the issue in the dock", () => {
     await value("Priority No priority").click();
     await page.getByRole("menuitemradio", { name: "Urgent" }).click();
     await value("Priority Urgent").waitFor();
-    await cardTitled("Rush it").locator('[role="img"][aria-label="Urgent"]').waitFor();
 
     await value("Due date No date").click();
     await page.locator('input[type="date"]').fill("2026-12-01");
     await page.keyboard.press("Enter");
     await value("Due date 2026-12-01").waitFor();
-    await cardTitled("Rush it").getByText("Due 2026-12-01").waitFor();
     // The labels that hold them are not shown as labels.
-    await cardTitled("Rush it").getByText("priority:urgent").waitFor({ state: "detached" });
+    expect(await properties().getByText("priority:urgent").count()).toBe(0);
 
     await closeCard();
     const filters = page.getByRole("search", { name: "Filter the cards" });
     await addFilter(page, filters, "Priority", "Urgent");
     await cardTitled("Rush it").waitFor();
     await cardTitled("Later").waitFor({ state: "detached" });
-    await filters.getByRole("button", { name: "Clear filters" }).click();
+    await page
+      .getByRole("search", { name: "Filters set" })
+      .getByRole("button", { name: "Clear filters" })
+      .click();
     await cardTitled("Later").waitFor();
   });
 
@@ -469,7 +485,7 @@ describe("the issue in the dock", () => {
     await dock().getByRole("heading", { name: "Spike it" }).waitFor();
     await openProps();
     await addTo("Add a label", "spike");
-    await cardTitled("Spike it").getByText("spike", { exact: true }).waitFor();
+    await properties().getByRole("button", { name: "Remove label spike" }).waitFor();
 
     await closeCard();
     const filters = page.getByRole("search", { name: "Filter the cards" });
@@ -479,7 +495,10 @@ describe("the issue in the dock", () => {
     await cardTitled("Write it").waitFor({ state: "detached" });
     await cardTitled("Unrelated").waitFor({ state: "detached" });
     expect(await toggleOf("Plan").textContent()).toBe("0 of 2 sub-issues done");
-    await filters.getByRole("button", { name: "Clear filters" }).click();
+    await page
+      .getByRole("search", { name: "Filters set" })
+      .getByRole("button", { name: "Clear filters" })
+      .click();
     await cardTitled("Unrelated").waitFor();
     await cardTitled("Write it").waitFor();
   });

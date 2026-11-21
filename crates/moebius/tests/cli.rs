@@ -640,7 +640,8 @@ async fn connect_holds_a_tunnel_that_the_following_commands_use() {
     let s = start().await;
     let config = fake_remote(&s);
     let mut connect = std::process::Command::new(env!("CARGO_BIN_EXE_moebius"))
-        .args(["connect", "fakehost"])
+        // No window: a runner with a browser would otherwise open it, and a window that closes ends the connection.
+        .args(["connect", "fakehost", "--no-window"])
         .env_remove("MOEBIUS_URL")
         .env_remove("MOEBIUS_TOKEN")
         .env("XDG_CONFIG_HOME", &config)

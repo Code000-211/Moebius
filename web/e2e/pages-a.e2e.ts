@@ -151,7 +151,7 @@ describe("the inbox", () => {
       const reasons = [
         ["Plan ready", "Fix the login redirect"],
         ["Ready to merge", "Speed up the build"],
-        ["Stuck: reached the round limit", "Stop the flaky test is stuck"],
+        ["Stuck: reached the round limit", "Stop the flaky test"],
         ["Retro proposal", "Let the Coder read the tests first"],
         ["Retro proposal", "Raise the round limit to 7"],
         ["Decision model", "The decision model can take over tool_call"],
@@ -159,7 +159,7 @@ describe("the inbox", () => {
         ["Report from a grilling", "A report from a grilling"],
         ["Change from a chat", "Add a retry helper"],
         ["Closed without a merge", "Ship the first release"],
-        ["Needs design", "Needs a mockup"],
+        ["Needs design", "Document the API"],
       ] as const;
       for (const [reason, title] of reasons) {
         await item(title).getByText(reason, { exact: true }).waitFor();
@@ -465,6 +465,8 @@ describe("the inbox", () => {
   it.skipIf(usesRealServer)("shows an item that arrives while the page is open", async () => {
     await open("/inbox");
     await items().first().waitFor();
+    const before = await items().count();
+    // A row about a card is worded with the card's own title, whatever title the server gave the item.
     fake().addInboxItem({
       kind: "stuck",
       card_id: 1,
@@ -472,7 +474,8 @@ describe("the inbox", () => {
       data: { reason: "no model" },
     });
     server.broadcast?.({ kind: "card_updated", data: {} });
-    await item("A new stuck card").waitFor();
+    await expect.poll(() => items().count()).toBe(before + 1);
+    await items().getByText("Stuck: no model", { exact: true }).waitFor();
   });
 });
 
@@ -577,7 +580,9 @@ describe("projects", () => {
       // A run that goes on keeps the repository, and the server says so in the dialog.
       await page.getByRole("button", { name: "Delete repository" }).click();
       await dialog.getByRole("button", { name: "Delete" }).click();
-      await dialog.getByText("run 1 of demo is still going").waitFor();
+      // The server's own words are a toast, and the dialog stays open to try again.
+      await page.getByRole("alert").filter({ hasText: "run 1 of demo is still going" }).waitFor();
+      await dialog.waitFor();
       expect(fake().requests.filter((r) => r.method === "DELETE")).toHaveLength(1);
     },
   );
@@ -934,7 +939,7 @@ describe("the fleet", () => {
   it("loads for a real server and for the fake", async () => {
     await open("/fleet");
     await page.getByRole("heading", { name: "Fleet", level: 1 }).waitFor();
-    if (usesRealServer) await page.getByText("Nothing is working.").first().waitFor();
+    if (usesRealServer) await page.getByText("No agent is working").first().waitFor();
     else await page.getByTestId("list-row").first().waitFor();
   });
 
@@ -976,14 +981,16 @@ describe("the fleet", () => {
       await expect.poll(() => page.getByTestId("list-row").count()).toBe(2);
       const tiles = page.getByTestId("list-row");
       const card = tiles.filter({ hasText: "Add a feature" });
-      // The runs are one list under "Running", not grouped by agent.
-      await page.getByTestId("group-row").getByText("Running").waitFor();
+      // The runs are one list of rows with no group rows; a row says what the step is in plain words, not the command.
+      expect(await page.getByTestId("group-row").count()).toBe(0);
       await card.getByText("Code ·").waitFor();
-      await card.getByText("cargo test").waitFor();
+      await card.getByText("running the tests").waitFor();
       const talk = tiles.filter({ hasText: "Write a ready.luau" });
       await talk.getByText("ready.luau", { exact: false }).first().waitFor();
-      // Stop and the tokens are on a row only while the pointer is on it.
-      expect(await page.getByRole("button", { name: /^Stop/ }).count()).toBe(0);
+      // Stop and the tokens are on the selected row (the first, until another is chosen) and on the row the pointer
+      // is on, and on no other: with the pointer away from every row, one row has them.
+      await page.mouse.move(0, 0);
+      await expect.poll(() => page.getByRole("button", { name: /^Stop/ }).count()).toBe(1);
       await card.hover();
       await card.getByText("12k tokens").waitFor();
       await card.getByRole("button", { name: /^Stop/ }).waitFor();
@@ -991,15 +998,15 @@ describe("the fleet", () => {
       expect(await tiles.filter({ hasText: "Ship the first release" }).count()).toBe(0);
 
       // The row says the step its run is at, and a run event moves it on.
-      expect(await card.getByText("cargo clippy").count()).toBe(0);
+      expect(await card.getByText("checking the code").count()).toBe(0);
       server.chat?.emit(1, "tool_execution_start", {
         type: "tool_execution_start",
         toolCallId: "t2",
         toolName: "bash",
         args: { command: "cargo clippy" },
       });
-      await card.getByText("cargo clippy").waitFor();
-      await card.getByText("cargo test").waitFor({ state: "detached" });
+      await card.getByText("checking the code").waitFor();
+      await card.getByText("running the tests").waitFor({ state: "detached" });
 
       // A click opens the live view of the card or the chat.
       await card.click();
@@ -1012,7 +1019,7 @@ describe("the fleet", () => {
     },
   );
 
-  /** A step of a run is one line of a 36px row: a long command is cut with an ellipsis and the row keeps its height. */
+  /** A step of a run is one line of a 36px row: a long command is said in a few words and the row keeps its height. */
   it.skipIf(usesRealServer)("keeps a long command on one line of a 36px row", async () => {
     await open("/fleet");
     const command = `grep -rn "review_conflicts" ${"crates/moebius-core/src/board/".repeat(8)} | head -12`;
@@ -1022,7 +1029,7 @@ describe("the fleet", () => {
     }) as number;
     server.chat?.toolCall(chat, { id: "c1", tool: "bash", args: { command }, output: "" });
     const tile = page.getByTestId("list-row").filter({ hasText: "Look for the review gate" });
-    await tile.getByText("bash", { exact: false }).waitFor();
+    await tile.getByText("searching the code").waitFor();
     expect((await tile.boundingBox())?.height ?? 0).toBeLessThanOrEqual(37);
   });
 
@@ -1039,8 +1046,9 @@ describe("the fleet", () => {
       server.broadcast?.({ kind: "lagged", data: { missed: 1 } });
       const tile = page.getByTestId("list-row").filter({ hasText: "Which branch?" });
       await tile.getByText("Asks you").waitFor();
-      // The run that waits for the person is under its own group.
-      await page.getByTestId("group-row").getByText("Needs you").waitFor();
+      // The run that waits for the person is the first row with no group row above it.
+      expect(await page.getByTestId("group-row").count()).toBe(0);
+      expect(await page.getByTestId("list-row").first().textContent()).toContain("Which branch?");
       const chat = server.chat?.chats.find((each) => each.id === asking);
       if (chat) chat.status = "succeeded";
       server.broadcast?.({ kind: "run_ended", data: { run: asking, status: "succeeded" } });
@@ -1073,7 +1081,7 @@ describe("the fleet", () => {
 
       await page.reload();
       await page.getByRole("button", { name: "Filter · 1" }).waitFor();
-      expect(await tiles.count()).toBe(1);
+      await expect.poll(() => tiles.count()).toBe(1);
 
       // A second filter narrows further: no run of the Coder is a chat.
       await page.goto(`${server.url}/fleet?agent=Coder&kind=chat`);

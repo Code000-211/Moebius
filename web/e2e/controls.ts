@@ -45,7 +45,7 @@ export async function offers(page: Page, trigger: Locator): Promise<string[]> {
  * detail really has more behind its edge than fits, and then: neither the page nor the document scrolls — a column
  * that leaks past the window, as an absolutely placed thing inside a scroller can, gives the whole UI a second
  * scrollbar; the detail scrolls where it stands and leaves the list where it was; and each column ends at the bottom
- * edge of the page's surface rather than a band of padding above it.
+ * edge of the pane that scrolls the page rather than a band of padding above it.
  */
 export async function columnsScrollEach(page: Page): Promise<void> {
   await page.setViewportSize({ width: 1280, height: 320 });
@@ -58,11 +58,17 @@ export async function columnsScrollEach(page: Page): Promise<void> {
   const edges = () =>
     page.evaluate(() => {
       const doc = document.scrollingElement;
+      // A column takes back 16px of the bottom padding of the pane that scrolls the page (`-mb-4`); a pane that keeps
+      // more (the settings pages keep 24) leaves that much more between the column and its edge, and no more.
       const read = (testId: string) => {
         const el = document.querySelector(`[data-testid="${testId}"]`);
-        const surface = document.querySelector('[data-surface="page"]');
-        const bottom = surface ? surface.getBoundingClientRect().bottom : window.innerHeight;
-        return el ? Math.round(bottom - el.getBoundingClientRect().bottom) : null;
+        if (!el) return null;
+        let pane = el.parentElement;
+        while (pane && !/^(auto|scroll)$/.test(getComputedStyle(pane).overflowY))
+          pane = pane.parentElement;
+        const bottom = pane ? pane.getBoundingClientRect().bottom : window.innerHeight;
+        const kept = pane ? Number.parseFloat(getComputedStyle(pane).paddingBottom) : 0;
+        return Math.round(bottom - el.getBoundingClientRect().bottom - Math.max(0, kept - 16));
       };
       return {
         document: doc ? doc.scrollHeight - doc.clientHeight : 0,
@@ -86,12 +92,57 @@ export async function columnsScrollEach(page: Page): Promise<void> {
   await expect.poll(() => top(detail), { message: "the detail did not scroll" }).toBeGreaterThan(0);
   expect(await top(frame), "the page scrolled with the detail").toBe(0);
   expect(await top(list), "the list scrolled with the detail").toBe(0);
-  // Each column runs to the bottom edge of the page: no band of padding under it.
+  // Each column runs to the bottom edge of the page's pane: no band of padding under it.
   const reached = await edges();
   expect(Math.abs(reached.list ?? 0), "the list stops short of the page's edge").toBeLessThan(2);
   expect(Math.abs(reached.detail ?? 0), "the detail stops short of the page's edge").toBeLessThan(
     2,
   );
+}
+
+/**
+ * Checks how an open editor window holds in a short browser window: the window lies inside the window of the browser,
+ * the document does not scroll, and the window's body scrolls between its head and foot, which stay where they are.
+ */
+export async function editorWindowFits(page: Page): Promise<void> {
+  await page.setViewportSize({ width: 1280, height: 320 });
+  const win = page.getByTestId("editor-window");
+  await win.waitFor();
+  const body = win
+    .locator("> div")
+    .filter({ has: page.locator("input, textarea, [role=combobox]") });
+  const scroller = body.first();
+  await expect
+    .poll(() => scroller.evaluate((el) => el.scrollHeight - el.clientHeight), {
+      message: "the body of the window has nothing to scroll",
+    })
+    .toBeGreaterThan(0);
+  const placed = async () => {
+    const box = await win.boundingBox();
+    if (!box) throw new Error("the editor window drew no box");
+    return box;
+  };
+  const box = await placed();
+  const view = page.viewportSize() ?? { width: 1280, height: 320 };
+  expect(box.y, "the window starts above the browser window").toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height, "the window reaches past the browser window").toBeLessThanOrEqual(
+    view.height,
+  );
+  const reach = () =>
+    page.evaluate(() => {
+      const doc = document.scrollingElement;
+      return doc ? doc.scrollHeight - doc.clientHeight : 0;
+    });
+  expect(await reach(), "the document scrolls").toBe(0);
+  const inner = await scroller.boundingBox();
+  if (!inner) throw new Error("the body of the window drew no box");
+  await page.mouse.move(inner.x + inner.width / 2, inner.y + Math.min(inner.height / 2, 60));
+  await page.mouse.wheel(0, 400);
+  await expect
+    .poll(() => scroller.evaluate((el) => el.scrollTop), { message: "the body did not scroll" })
+    .toBeGreaterThan(0);
+  expect(await placed(), "the window moved while its body scrolled").toEqual(box);
+  expect(await reach(), "the document scrolls").toBe(0);
 }
 
 /** A point for the pointer to wait at that is outside `box`, so nothing of that pane is hovered. */
@@ -119,12 +170,13 @@ function parkOutside(
  * edge than fits is read twice: once with the pointer parked outside it and once with the pointer in it. What has to
  * differ between the readings is the eight-wide strip along the pane's right edge, where its own bar is drawn and no
  * row of content reaches; what has not to differ is the width the pane has to lay its content in and where the pane
- * and its first row stand.
+ * and its first row stand. `within` is a selector to look inside, for a window over the page: the panes of the page
+ * behind its scrim are out of the pointer's reach.
  */
-export async function scrollbarsAreQuiet(page: Page): Promise<void> {
-  const marks = await page.evaluate(() => {
+export async function scrollbarsAreQuiet(page: Page, within = "body"): Promise<void> {
+  const marks = await page.evaluate((scope) => {
     const found: string[] = [];
-    for (const el of Array.from(document.querySelectorAll<HTMLElement>("body *"))) {
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>(`${scope} *`))) {
       const style = getComputedStyle(el);
       const scrolls = style.overflowY === "auto" || style.overflowY === "scroll";
       if (!scrolls || el.scrollHeight - el.clientHeight < 24) continue;
@@ -132,7 +184,7 @@ export async function scrollbarsAreQuiet(page: Page): Promise<void> {
       found.push(el.dataset.scrollbarPane);
     }
     return found;
-  });
+  }, within);
   expect(marks.length, "the page has no pane that runs off to scroll").toBeGreaterThan(0);
   const view = page.viewportSize() ?? { width: 1280, height: 720 };
 
@@ -158,7 +210,12 @@ export async function scrollbarsAreQuiet(page: Page): Promise<void> {
         };
         return {
           thumb: getComputedStyle(el).scrollbarColor,
-          bar: el.offsetWidth - el.clientWidth,
+          // What a border takes is not a bar: a pane with one (the settings navigation) would else look as if it had one.
+          bar:
+            el.offsetWidth -
+            el.clientWidth -
+            el.clientLeft -
+            Number.parseFloat(getComputedStyle(el).borderRightWidth),
           room: `${el.clientWidth}x${el.clientHeight}`,
           pane: place(el),
           row: el.firstElementChild ? place(el.firstElementChild) : "",

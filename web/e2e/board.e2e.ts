@@ -1193,17 +1193,23 @@ describe("dragging cards", () => {
       width: number;
       height: number;
     };
-    const to = (await column("Not started").boundingBox()) as {
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-    };
     await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
     await page.mouse.down();
     // A few steps, so that the drag starts and the card is over the column before it is let go.
     await page.mouse.move(from.x + from.width / 2 + 20, from.y + 20, { steps: 5 });
-    await page.mouse.move(to.x + to.width / 2, to.y + 120, { steps: 20 });
+    // The board may scroll under the pointer while the card is carried, so the column is measured again until the
+    // library says the card is over it, and the card is let go only then.
+    await expect
+      .poll(async () => {
+        const to = (await column("Not started").boundingBox()) as {
+          x: number;
+          y: number;
+          width: number;
+        };
+        await page.mouse.move(to.x + to.width / 2, to.y + 120, { steps: 10 });
+        return spoken();
+      })
+      .toMatch(/over the column Not started/);
     await page.mouse.up();
     await status("Approved #2").waitFor();
     await column("Not started").getByTestId("card-2").waitFor();
@@ -1523,11 +1529,11 @@ describe("Display", () => {
       await page.waitForURL("**layout=list");
       // The lanes are gone and every card is a row under the heading of its column.
       await page.getByTestId("group-row").filter({ hasText: "Done" }).waitFor();
-      expect(await page.getByTestId("list-row").count()).toBe(7);
+      await expect.poll(() => page.getByTestId("list-row").count()).toBe(7);
       await shownIs(7);
       await page.reload();
       await shownIs(7);
-      expect(await page.getByTestId("list-row").count()).toBe(7);
+      await expect.poll(() => page.getByTestId("list-row").count()).toBe(7);
 
       // A row opens the card, and a filter still applies.
       await addFilter(page, bar(), "Agent", "Reviewer");
