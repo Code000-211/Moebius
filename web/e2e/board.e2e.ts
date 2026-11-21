@@ -91,10 +91,34 @@ const dock = () => page.getByRole("dialog", { name: "Card inspector" });
 /** The properties of the card numbered `number`, which the dock puts in the right column. */
 const properties = (number: number) =>
   page.getByRole("region", { name: `Properties of #${number}`, exact: true });
+/** Opens the window of every property of the card from its menu, unless it is open. */
+const openProperties = async (number: number) => {
+  const region = properties(number);
+  if (await region.isVisible()) return;
+  const window = page.locator("[data-card-window]");
+  // The card's own page has no window: its menu is in the page.
+  const inWindow = await window
+    .first()
+    .waitFor({ timeout: 3000 })
+    .then(() => true)
+    .catch(() => false);
+  const scope = inWindow ? window : page.getByRole("main");
+  await scope
+    .getByRole("button", { name: `More actions for #${number}`, exact: true })
+    .first()
+    .click();
+  await page.getByRole("menuitem", { name: "Properties…" }).click();
+  await region.waitFor();
+};
+/** Closes the window of the properties, so the card window is the top layer again. */
+const closeProperties = async (number: number) => {
+  await page.keyboard.press("Escape");
+  await properties(number).waitFor({ state: "detached" });
+};
 /** The properties of the card numbered `number`, with the fold "More properties" open, once they are drawn. */
 const unfolded = async (number: number) => {
   const region = properties(number);
-  await region.waitFor();
+  await openProperties(number);
   await unfold(region);
   return region;
 };
@@ -143,7 +167,9 @@ describe("a card named by its key", () => {
       await page.getByText("DEMO-31 · #7").first().waitFor();
       expect(new URL(page.url()).pathname).toBe("/card/demo-31");
       expect(await dock().count()).toBe(0);
-      await page.getByRole("button", { name: "Edit issue" }).first().waitFor();
+      await page.getByRole("button", { name: "More actions for #7" }).first().waitFor();
+      // A page inside a page has its way back at the left of its title.
+      await page.getByRole("link", { name: "Back to the board" }).waitFor();
       await page.goto(`${server.url}/card/DEMO-99`);
       await page.getByText("There is no such card").waitFor();
     },
@@ -512,7 +538,8 @@ describe("live data", () => {
     await fresh();
     await openBoard();
     await card(5).click();
-    const pull = dock().getByRole("link", { name: "Pull request #11, open" });
+    await openProperties(5);
+    const pull = page.getByRole("link", { name: "Pull request #11, open" });
     expect(await pull.getAttribute("href")).toBe("https://github.com/acme/demo/pull/11");
   });
 
@@ -587,7 +614,7 @@ describe("live data", () => {
       await page.keyboard.type("7");
       await page.keyboard.press("Escape");
       await renamed.waitFor();
-      await dock().waitFor();
+      await page.locator("[data-card-window]").waitFor();
       // The focus comes back to the value a frame later; the next keys wait for it rather than race it.
       await expect.poll(() => renamed.evaluate((el) => el === document.activeElement)).toBe(true);
 
@@ -758,16 +785,9 @@ describe("the decisions", () => {
       path: "/v1/changes/1/reject",
       body: { reason: "The tests are missing" },
     });
-    // The move that carries the reason is a small change, folded with the one beside it.
+    // The move that carries the reason is a line of the thread, with the reason beside it.
     await dock()
-      .getByRole("button", { name: /\d+ changes/ })
-      .last()
-      .click();
-    // The note property under "More properties" says it too, folded away.
-    await dock()
-      .getByText(/The tests are missing/)
-      .locator("visible=true")
-      .first()
+      .getByText(/Moved to .*In progress.*The tests are missing/)
       .waitFor();
   });
 
@@ -888,12 +908,17 @@ describe("blocking, unblocking and deleting a card", () => {
     expect(await item("Stop run").count()).toBe(0);
     await page.keyboard.press("Escape");
 
-    // A card with a live run has the button in its dock too: retrying the stuck card 6 starts one.
-    await card(6).click();
-    await dock().getByRole("button", { name: "Retry" }).click();
-    await card(6).getByTestId("card-activity").waitFor();
+    // The window has the stop on the line of its run, which opens to it.
+    await fresh();
+    await openBoard();
+    await card(1)
+      .getByText(/^Coder · code/)
+      .waitFor();
+    await card(1).click();
+    await dock().getByRole("button", { name: "Code run" }).click();
+    await dock().getByRole("link", { name: "Open live view" }).waitFor();
     await dock().getByRole("button", { name: "Stop run" }).click();
-    await status("Stopping #6.").waitFor();
+    await status("Stopping #1.").waitFor();
     await dock().getByRole("button", { name: "Stop run" }).waitFor({ state: "detached" });
   });
 
@@ -901,14 +926,16 @@ describe("blocking, unblocking and deleting a card", () => {
     await fresh();
     await openBoard();
     await card(3).click();
-    await (await unfolded(3)).getByText("Not started", { exact: true }).waitFor();
+    await dock().getByRole("heading", { name: "Document the API" }).waitFor();
     await menuOf(dock(), 3).click();
     await item("Block…").click();
     await asking("Block #3").getByLabel("Reason").fill("needs a design");
     await asking("Block #3").getByRole("button", { name: "Block", exact: true }).click();
     await status("Blocked #3").waitFor();
     await (await unfolded(3)).getByText("needs a design (blocked by a person)").waitFor();
-    await dock().getByText("Blocked", { exact: true }).first().waitFor();
+    await closeProperties(3);
+    // The card says it needs a person by the icon beside its title.
+    await dock().getByTestId("status-needsYou").waitFor();
     await menuOf(dock(), 3).click();
     await item("Unblock").click();
     await status("Unblocked #3.").waitFor();
@@ -981,7 +1008,7 @@ describe("blocking, unblocking and deleting a card", () => {
     await fresh();
     await openBoard();
     await card(3).click();
-    await (await unfolded(3)).getByText("Not started", { exact: true }).waitFor();
+    await dock().getByRole("heading", { name: "Document the API" }).waitFor();
     await menuOf(dock(), 3).click();
     await item("Delete…").click();
     await asking("Delete #3").getByRole("button", { name: "Delete card" }).click();
@@ -1008,7 +1035,7 @@ describe("blocking, unblocking and deleting a card", () => {
       await fresh();
       await openBoard();
       await card(3).click();
-      await (await unfolded(3)).getByText("Not started", { exact: true }).waitFor();
+      await dock().getByRole("heading", { name: "Document the API" }).waitFor();
       const removed = await context.request.delete(`${server.url}/v1/cards/3`, {
         headers: { "X-Moebius": "1" },
       });
@@ -1197,23 +1224,28 @@ describe("the dock", () => {
       await openBoard();
       await card(1).click();
       await dock().getByRole("heading", { name: "Add a feature" }).waitFor();
-      // The two moves are folded into one line, which opens to them.
+      // The two moves are small lines of the thread; the run is one collapsed line that opens to its details.
       await dock()
-        .getByRole("button", { name: /2 changes/ })
-        .click();
-      await dock().getByText("Moved from Backlog to Not started", { exact: true }).waitFor();
-      await dock().getByText("Run 1 started: Coder, code").waitFor();
-      const run = dock().getByRole("link", { name: "View run 1", exact: true });
+        .getByText(/Moved to\s*Not started/)
+        .waitFor();
+      await dock()
+        .getByText(/Moved to\s*In progress/)
+        .waitFor();
+      const line = dock().getByRole("button", { name: "Code run" });
+      expect(await line.getAttribute("aria-expanded")).toBe("false");
+      await line.click();
+      expect(await line.getAttribute("aria-expanded")).toBe("true");
+      const run = dock().getByRole("link", { name: "Open live view", exact: true });
       expect(await run.getAttribute("href")).toBe("/runs/1");
-      await dock().getByText("projects/demo/code.luau · built in").waitFor();
-      await dock().getByText('moebius.wait("nothing to do in In progress")').waitFor();
-      const facts = page.getByRole("region", { name: /^Properties of #/ });
-      await unfold(facts);
-      await facts.getByRole("link", { name: "Coder · code", exact: true }).waitFor();
-      // The state is said once, by the pill beside the title — the run line does not repeat it.
-      await dock().getByText("Live", { exact: true }).waitFor();
+      // The state is said once, by the icon beside the title.
+      await dock().getByText("Coder · running").waitFor();
 
-      await dock().getByRole("link", { name: "Open the script" }).click();
+      // The rest is in the window of the card's properties: its run, and the script of its column.
+      const facts = await unfolded(1);
+      await facts.getByRole("link", { name: "Coder · code", exact: true }).waitFor();
+      await page.getByText("projects/demo/code.luau · built in").waitFor();
+      await page.getByText('moebius.wait("nothing to do in In progress")').waitFor();
+      await page.getByRole("link", { name: "Open the script" }).click();
       await page.waitForURL("**/board/1/scripts/In%20progress?project=1");
       await page.getByRole("heading", { name: "Script of In progress" }).waitFor();
       await page.getByText("built in").waitFor();
@@ -1225,7 +1257,8 @@ describe("the dock", () => {
     await fresh();
     await openBoard();
     await card(1).click();
-    await dock().getByRole("link", { name: "View run 1", exact: true }).click();
+    await dock().getByRole("button", { name: "Code run" }).click();
+    await dock().getByRole("link", { name: "Open live view", exact: true }).click();
     await page.waitForURL("**/runs/1");
     await page.getByRole("heading", { name: "Run 1" }).waitFor();
   });
@@ -1533,8 +1566,13 @@ describe("the card open in the dock and its address", () => {
         await page.keyboard.press("Escape");
         await page.getByRole("menu").waitFor({ state: "detached" });
         expect(page.url(), name).toContain("card=3");
-        await dock().waitFor();
+        await page.locator("[data-card-window]").waitFor();
+        await properties(3).waitFor();
       }
+      // The first Escape closes the window of the properties, the next one the card.
+      await page.keyboard.press("Escape");
+      await properties(3).waitFor({ state: "detached" });
+      expect(page.url()).toContain("card=3");
       await dock().focus();
       await page.keyboard.press("Escape");
       await dock().waitFor({ state: "detached" });

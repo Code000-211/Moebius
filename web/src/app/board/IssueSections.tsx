@@ -1,15 +1,16 @@
 /**
- * The issue in the dock besides what the right column says of it (`CardProperties.tsx`): its activity (comments and history as one timeline), and the edit of
- * its title and body. Each is a request to the server (`api/calls/board.ts`); the card shows it when the event of the
- * change makes the snapshot read again, and what the server refuses is said beside the control that asked.
+ * The issue in the card window besides what its menu says of it (`CardProperties.tsx`): its thread (the text of the
+ * issue, comments, runs, moves and refusals as one timeline), the field to reply in, and the edit of its title and
+ * body. Each is a request to the server (`api/calls/board.ts`); the card shows it when the event of the change makes
+ * the snapshot read again, and what the server refuses is said as a toast.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, type RefObject, useEffect, useState } from "react";
 import { Link } from "react-router";
 import { comment, comments, editCard, history } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
-import type { Card } from "../../api/types/board";
+import type { Card, InboxItem } from "../../api/types/board";
 import { putCard } from "../../live/cardCache";
 import { CardScope } from "../../ui/chat/CardLinks";
 import { Button } from "../../ui/components/Button";
@@ -22,98 +23,290 @@ import {
   DialogTitle,
 } from "../../ui/components/Dialog";
 import { Input } from "../../ui/components/Input";
-import { KanbanIssueSection } from "../../ui/components/KanbanIssuePanel";
+import { CaretRightIcon, ReturnIcon } from "../../ui/icons";
 import { ago } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
+import { Avatar } from "../../ui/page/Avatar";
 import { Field, TextArea } from "../../ui/page/Field";
-import { Notice } from "../../ui/page/Notice";
 import { SkeletonLines } from "../../ui/page/Skeleton";
+import { useToast } from "../../ui/page/Toast";
 import { MentionTextArea } from "../people/MentionTextArea";
 import { CardText } from "./CardText";
-import { foldLabel, type TimelineEvent, timelineOf } from "./timeline";
+import { MoebiusMark } from "./NeedsYou";
+import {
+  foldLabel,
+  runDuration,
+  runLabel,
+  type TimelineEvent,
+  type TimelineRun,
+  timelineOf,
+} from "./timeline";
 
 /** What the server said when it refused, or a sentence for a failure that said nothing. */
 const said = (error: unknown, fallback: string) => (isApiError(error) ? error.message : fallback);
 
-/** A refusal, under the control that asked, or nothing. */
-function Refusal({ text }: { text: string | null }): ReactNode {
-  return text ? <Notice tone="error">{text}</Notice> : null;
-}
+/** The line down the left of the thread, and the mark each of its items hangs on. */
+const MARK = "relative z-[1] flex size-6 shrink-0 items-center justify-center bg-panel";
 
-/** One line of the timeline: a run opens its page, a refusal is marked, a change is plain. */
-function EventLine({ event, now }: { event: TimelineEvent; now: number }) {
+/** The list of the thread: a line runs down behind the marks of its items. */
+const LINE =
+  "relative m-0 flex list-none flex-col gap-4 p-0 before:absolute before:top-3 before:bottom-3 before:left-3 before:w-px before:bg-hairline";
+
+/** A small dot on the line of the thread. */
+function Dot({ tone = "quiet" }: { tone?: "quiet" | "refusal" | "live" }) {
   return (
-    <div className="flex min-w-0 items-baseline gap-3 text-sm text-secondary">
+    <span className={MARK}>
       <span
         aria-hidden="true"
-        className={`mt-1.5 size-1.5 shrink-0 rounded-full ${event.tone === "refusal" ? "bg-error" : event.tone === "run" ? "bg-text" : "bg-hairline-strong"}`}
+        className={`size-2 rounded-full ${tone === "refusal" ? "bg-error" : tone === "live" ? "bg-running" : "bg-hairline-strong"}`}
       />
-      <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
-        {event.text}
-        {event.run !== null && (
+    </span>
+  );
+}
+
+/** One line of the thread that is not a comment: a refusal of a rule, a change, or a move. */
+function EventLine({ event }: { event: TimelineEvent }) {
+  return (
+    <div className="flex min-w-0 items-start gap-3 text-md text-secondary">
+      <Dot tone={event.tone === "refusal" ? "refusal" : "quiet"} />
+      <span className="min-w-0 flex-1 py-px [overflow-wrap:anywhere]">
+        {event.tone === "move" ? (
           <>
-            {" · "}
-            <Link
-              to={`/runs/${event.run}`}
-              className="text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
-            >
-              {`View run ${event.run}`}
-            </Link>
+            {"Moved to "}
+            <span className="text-text">{event.to}</span>
+            {event.note ? `: ${event.note}` : ""}
           </>
+        ) : (
+          event.text
         )}
       </span>
-      <span className="shrink-0 tabular-nums">{ago(now, event.at)}</span>
     </div>
   );
 }
 
-/** The changes a fold holds, one line each. */
-function FoldList({ events, now }: { events: TimelineEvent[]; now: number }) {
+/** A line that opens to what it holds: the chevron, its name, and what it holds below. */
+function Collapsible({
+  label,
+  mark,
+  children,
+}: {
+  label: string;
+  mark: ReactNode;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
   return (
-    // biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none; WebKit then drops the list
-    <ol role="list" className="m-0 ml-6 flex list-none flex-col gap-1 p-0">
-      {events.map((event, index) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: the changes of a fold are a fixed, ordered list
-        <li key={index} className="min-w-0">
-          <EventLine event={event} now={now} />
-        </li>
-      ))}
-    </ol>
+    <div className="flex min-w-0 flex-col">
+      <div className="flex items-start gap-3">
+        {mark}
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+          className="-ml-1 inline-flex min-h-6 cursor-pointer items-center gap-1 rounded-control bg-transparent px-1 text-md text-text hover:bg-hover"
+        >
+          <CaretRightIcon
+            aria-hidden="true"
+            className={`size-3.5 text-secondary transition-transform duration-(--motion-routine) ${open ? "rotate-90" : ""}`}
+          />
+          {label}
+        </button>
+      </div>
+      {open && <div className="ml-9 flex min-w-0 flex-col gap-2 pt-1 pb-1">{children}</div>}
+    </div>
   );
 }
 
 /** Small changes folded into one line that opens to the changes it holds. */
-function Fold({ events, now }: { events: TimelineEvent[]; now: number }) {
-  const [open, setOpen] = useState(false);
-  const last = events[events.length - 1] as TimelineEvent;
+function Fold({ events }: { events: TimelineEvent[] }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        className="flex min-h-7 w-full items-baseline gap-3 rounded-control text-left text-sm text-secondary hover:text-text"
-      >
-        <span aria-hidden="true" className="w-1.5 shrink-0 text-center">
-          {open ? "−" : "+"}
+    <Collapsible label={foldLabel(events.length)} mark={<Dot />}>
+      {events.map((event, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: the changes of a fold are a fixed, ordered list
+        <p key={index} className="m-0 text-sm text-secondary [overflow-wrap:anywhere]">
+          {event.text}
+        </p>
+      ))}
+    </Collapsible>
+  );
+}
+
+/** A run as one collapsed line, "Code run" or "Review"; open, it says who ran, how it ended and for how long, and leads to the run. */
+function RunLine({
+  run,
+  current,
+  live,
+  busy,
+  onStop,
+}: {
+  run: TimelineRun;
+  /** Whether this is the card's own current run, which can be watched and stopped. */
+  current: boolean;
+  live: boolean;
+  busy: boolean;
+  onStop: () => void;
+}) {
+  const running = run.endedAt === null;
+  const duration = runDuration(run);
+  const summary = [run.agent, running ? "running" : run.status, duration]
+    .filter((part) => part !== null && part !== "")
+    .join(" · ");
+  return (
+    <Collapsible label={runLabel(run)} mark={<Dot tone={running ? "live" : "quiet"} />}>
+      <p className="m-0 text-sm text-secondary">{summary}</p>
+      <div className="flex flex-wrap gap-2">
+        <Button asChild variant="secondary" size="sm" className="w-fit">
+          <Link to={`/runs/${run.run}`}>{current ? "Open live view" : `View run ${run.run}`}</Link>
+        </Button>
+        {current && live && (
+          <Button variant="secondary" size="sm" className="w-fit" disabled={busy} onClick={onStop}>
+            Stop run
+          </Button>
+        )}
+      </div>
+    </Collapsible>
+  );
+}
+
+/** A comment of the thread: who, when, and the text below. */
+function CommentItem({
+  card,
+  author,
+  at,
+  body,
+  now,
+}: {
+  card: Card;
+  author: string;
+  at: number | null;
+  body: string;
+  now: number;
+}) {
+  return (
+    <div className="flex min-w-0 items-start gap-3">
+      <span className={MARK}>
+        <Avatar handle={author.replace(/^agent:/, "")} className="size-6 text-xs" />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="flex items-baseline gap-2 text-md">
+          <span className="font-semibold text-text">{author}</span>
+          {at !== null && <span className="text-secondary">{ago(now, at)}</span>}
         </span>
-        <span className="min-w-0 flex-1">{foldLabel(events.length)}</span>
-        <span className="shrink-0 tabular-nums">{ago(now, last.at)}</span>
-      </button>
-      {open && <FoldList events={events} now={now} />}
+        <CardScope.Provider value={card.repository_id}>
+          <CardText content={body} projectKey={card.project_key} className="max-w-prose" />
+        </CardScope.Provider>
+      </div>
     </div>
   );
 }
 
 /**
- * What happened to the issue, in order: the comments of people in a frame of their own, between the runs, refusals
- * and small changes of the card, and the form that writes a comment.
+ * What happened to the issue, in order, as a timeline with a line down its left: the issue's own text as the first
+ * entry, the comments of people, the moves as small dots, a coding run and a review as one collapsed line each, the
+ * refusals and small changes, and last the block of what waits for a person (`needsYou`, drawn by the card).
  */
-export function ActivitySection({ card }: { card: Card }) {
+export function CardThread({
+  card,
+  item,
+  live,
+  busy,
+  onStop,
+  needsYou,
+}: {
+  card: Card;
+  /** What the card waits for from a person; the thread ends with its block. */
+  item?: InboxItem;
+  /** Whether the card's run is live: it can be stopped from its line. */
+  live: boolean;
+  busy: boolean;
+  onStop: () => void;
+  needsYou: (item: InboxItem) => ReactNode;
+}) {
   const now = useNow();
-  const [text, setText] = useState("");
+  const toast = useToast();
   const list = useQuery({ queryKey: keys.comments(card.id), queryFn: () => comments(card.id) });
   const entries = useQuery({ queryKey: keys.history(card.id), queryFn: () => history(card.id) });
+  const items = timelineOf(entries.data ?? [], list.data ?? [], item);
+  const reading = list.isPending || entries.isPending;
+  const failed = list.error ?? entries.error;
+  // A failed read is said once, as a toast; the thread keeps what it has.
+  useEffect(() => {
+    if (failed) toast({ kind: "error", text: said(failed, "Could not read the activity.") });
+  }, [failed, toast]);
+  const hasBody = card.body.trim() !== "";
+  return (
+    <>
+      {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with
+        no marker from the accessibility tree entirely */}
+      <ol role="list" data-testid="thread" className={LINE}>
+        {hasBody && (
+          <li className="min-w-0">
+            <CommentItem
+              card={card}
+              author={card.author}
+              at={card.created_at > 0 ? card.created_at : null}
+              body={card.body}
+              now={now}
+            />
+          </li>
+        )}
+        {reading && (
+          <li className="min-w-0">
+            <SkeletonLines lines={1} message="Reading" />
+          </li>
+        )}
+        {items.map((each, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: the timeline is rebuilt whole, in order, from what was read
+          <li key={index} className="min-w-0">
+            {each.type === "comment" ? (
+              <CommentItem
+                card={card}
+                author={each.comment.author}
+                at={each.comment.at}
+                body={each.comment.body}
+                now={now}
+              />
+            ) : each.type === "run" ? (
+              <RunLine
+                run={each.run}
+                current={card.run?.id === each.run.run}
+                live={live}
+                busy={busy}
+                onStop={onStop}
+              />
+            ) : each.type === "fold" ? (
+              <Fold events={each.events} />
+            ) : each.type === "needs-you" ? (
+              <div className="flex min-w-0 items-start gap-3">
+                {/* The line of the thread ends at Moebius's mark: its column is the panel's colour, down to the block's foot. */}
+                <span className="relative z-[1] flex shrink-0 items-start self-stretch bg-panel">
+                  <MoebiusMark />
+                </span>
+                <div className="min-w-0 flex-1">{needsYou(each.item)}</div>
+              </div>
+            ) : (
+              <EventLine event={each.event} />
+            )}
+          </li>
+        ))}
+      </ol>
+    </>
+  );
+}
+
+/**
+ * The field a person replies in, pinned at the foot of the window: Enter sends it as a comment, Shift+Enter starts
+ * a new line, and the arrow at its end sends it too. What the server refuses is said as a toast and the text stays.
+ */
+export function ReplyField({
+  card,
+  fieldRef,
+}: {
+  card: Card;
+  fieldRef: RefObject<HTMLFormElement | null>;
+}) {
+  const [text, setText] = useState("");
+  const toast = useToast();
   const queryClient = useQueryClient();
   const write = useMutation({
     mutationFn: (body: string) => comment(card.id, body),
@@ -121,61 +314,51 @@ export function ActivitySection({ card }: { card: Card }) {
       setText("");
       void queryClient.invalidateQueries({ queryKey: keys.comments(card.id) });
     },
+    onError: (error) => toast({ kind: "error", text: said(error, "Could not write the comment.") }),
   });
   const ready = text.trim() !== "" && !write.isPending;
-  const items = timelineOf(entries.data ?? [], list.data ?? []);
-  const reading = list.isPending || entries.isPending;
-  const failed = list.error ?? entries.error;
+  const send = () => {
+    if (ready) write.mutate(text.trim());
+  };
   return (
-    <KanbanIssueSection title="Activity">
-      {reading && <SkeletonLines lines={1} message="Reading" />}
-      {failed && <Notice tone="error">{said(failed, "Could not read the activity.")}</Notice>}
-      {!reading && !failed && items.length === 0 && (
-        <p className="m-0 mb-4 text-sm text-secondary">Nothing has happened yet.</p>
-      )}
-      {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with
-          no marker from the accessibility tree entirely */}
-      <ol role="list" className="m-0 mb-4 flex list-none flex-col gap-2 p-0">
-        {items.map((item, index) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: the timeline is rebuilt whole, in order, from what was read
-          <li key={index} className="min-w-0">
-            {item.type === "comment" ? (
-              <div className="flex min-w-0 flex-col gap-1 rounded-control border border-hairline p-3">
-                <span className="text-sm text-secondary">
-                  {item.comment.author} · {ago(now, item.comment.at)}
-                </span>
-                <CardScope.Provider value={card.repository_id}>
-                  <CardText
-                    content={item.comment.body}
-                    projectKey={card.project_key}
-                    className="max-w-prose"
-                  />
-                </CardScope.Provider>
-              </div>
-            ) : item.type === "fold" ? (
-              <Fold events={item.events} now={now} />
-            ) : (
-              <EventLine event={item.event} now={now} />
-            )}
-          </li>
-        ))}
-      </ol>
-      <form
-        className="flex flex-col gap-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (ready) write.mutate(text.trim());
+    <form
+      ref={fieldRef}
+      className="relative"
+      onSubmit={(e) => {
+        e.preventDefault();
+        send();
+      }}
+    >
+      <MentionTextArea
+        aria-label="Write a comment"
+        placeholder="Reply to Moebius…"
+        rows={1}
+        value={text}
+        onValueChange={setText}
+        onKeyDown={(e) => {
+          // Enter that picks a person from the list is the list's.
+          if (
+            e.key === "Enter" &&
+            !e.shiftKey &&
+            e.currentTarget.getAttribute("aria-expanded") !== "true"
+          ) {
+            e.preventDefault();
+            send();
+          }
         }}
+        className="min-h-12 resize-none py-3 pr-14"
+      />
+      <Button
+        type="submit"
+        variant="icon"
+        size="sm"
+        aria-label="Comment"
+        disabled={!ready}
+        className="absolute top-1/2 right-2 -translate-y-1/2"
       >
-        <Field label="Write a comment">
-          {(id) => <MentionTextArea id={id} value={text} onValueChange={setText} rows={3} />}
-        </Field>
-        <Refusal text={write.isError ? said(write.error, "Could not write the comment.") : null} />
-        <Button type="submit" size="sm" className="w-fit" disabled={!ready}>
-          {write.isPending ? "Commenting" : "Comment"}
-        </Button>
-      </form>
-    </KanbanIssueSection>
+        <ReturnIcon className="size-4" aria-hidden="true" />
+      </Button>
+    </form>
   );
 }
 
@@ -190,6 +373,7 @@ export function EditIssueDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [title, setTitle] = useState(card.title);
   const [body, setBody] = useState(card.body);
   const save = useMutation({
@@ -198,6 +382,7 @@ export function EditIssueDialog({
       putCard(queryClient, saved);
       onOpenChange(false);
     },
+    onError: (error) => toast({ kind: "error", text: said(error, "Could not save the issue.") }),
   });
   // Opened again: what the card says now — its title may have been changed in its properties since — not what was
   // typed and left.
@@ -237,7 +422,6 @@ export function EditIssueDialog({
               <TextArea id={id} value={body} onChange={(e) => setBody(e.target.value)} rows={6} />
             )}
           </Field>
-          <Refusal text={save.isError ? said(save.error, "Could not save the issue.") : null} />
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => leave(false)}>
               Cancel

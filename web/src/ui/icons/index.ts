@@ -8,6 +8,7 @@
 export {
   ArrowClockwiseIcon as RefreshIcon,
   ArrowDownIcon,
+  ArrowElbowDownLeftIcon as ReturnIcon,
   ArrowLeftIcon as BackIcon,
   ArrowSquareOutIcon as OpenExternalIcon,
   ArrowsOutIcon as ExpandIcon,

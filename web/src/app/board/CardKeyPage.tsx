@@ -1,14 +1,17 @@
 /**
  * The page of a card by its key, `/card/WEB-24`: "Open as page" of the card window, and the address a link in a
  * comment, the palette and the command line name. It shows the same content as the window (`CardContent`) at full width
- * with the same actions, without a window or a scrim. It asks the server for the card by its key, not the snapshot, and
+ * with the same actions, without a window or a scrim, and the way back to its board at the left of its title. It asks the server for the card by its key, not the snapshot, and
  * reads the snapshot and what the card shows at the same time. A key no card has shows a not-found page.
  */
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { cardByKey, snapshot } from "../../api/calls/board";
 import { keys } from "../../api/keys";
+import { Button } from "../../ui/components/Button";
+import { Tooltip } from "../../ui/components/Tooltip";
+import { BackIcon } from "../../ui/icons";
 import { Empty } from "../../ui/page/Empty";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { boardPath } from "../pages";
@@ -58,6 +61,15 @@ export function CardKeyPage() {
           onDecide={actions.decide}
           menu={actions.menu}
           onOpenCard={(next) => navigate(cardPagePath(next))}
+          back={
+            <Tooltip content="Back to the board" side="bottom">
+              <Button asChild variant="icon" aria-label="Back to the board">
+                <Link to={boardPath(card.repository_id)}>
+                  <BackIcon className="size-5" />
+                </Link>
+              </Button>
+            </Tooltip>
+          }
           scrolls={false}
         />
         {actions.focus(card, inboxOf(inbox, card))}

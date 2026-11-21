@@ -4,11 +4,12 @@
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createRef } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../api/keys";
 import type { Card } from "../../api/types/board";
-import { ActivitySection } from "./IssueSections";
+import { CardThread, ReplyField } from "./IssueSections";
 
 afterEach(() => {
   cleanup();
@@ -76,7 +77,24 @@ function inClient(
   );
 }
 
-describe("the activity of an issue", () => {
+/** The thread and the reply field of a card, as the card window draws them. */
+function Card_({ card: c, ...rest }: { card: Card } & Partial<Parameters<typeof CardThread>[0]>) {
+  return (
+    <>
+      <CardThread
+        card={c}
+        live={false}
+        busy={false}
+        onStop={() => {}}
+        needsYou={() => null}
+        {...rest}
+      />
+      <ReplyField card={c} fieldRef={createRef()} />
+    </>
+  );
+}
+
+describe("the thread of an issue", () => {
   it("lists them oldest first and writes a new one", async () => {
     const sent = server({
       "GET /v1/cards/5/comments": {
@@ -87,10 +105,10 @@ describe("the activity of an issue", () => {
         ],
       },
     });
-    inClient(<ActivitySection card={card(5)} />);
+    inClient(<Card_ card={card(5)} />);
     expect(await screen.findByText("Why a queue?")).toBeTruthy();
     expect(screen.getByText("Because it is ordered.")).toBeTruthy();
-    expect(screen.getByText(/agent:Moebius/)).toBeTruthy();
+    expect(screen.getByText("agent:Moebius")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("Write a comment"), { target: { value: " Decided. " } });
     fireEvent.click(screen.getByRole("button", { name: "Comment" }));
@@ -100,6 +118,24 @@ describe("the activity of an issue", () => {
       "/v1/cards/5/comments",
       { body: "Decided." },
     ]);
+  });
+
+  it("sends the reply on Enter, and keeps a new line for Shift+Enter", async () => {
+    const sent = server();
+    inClient(<Card_ card={card(5)} />);
+    const box = (await screen.findByLabelText("Write a comment")) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "Looks right" } });
+    fireEvent.keyDown(box, { key: "Enter", shiftKey: true });
+    expect(sent.some(([method]) => method === "POST")).toBe(false);
+    fireEvent.keyDown(box, { key: "Enter" });
+    await waitFor(() => expect(sent.some(([method]) => method === "POST")).toBe(true));
+  });
+
+  it("shows the text of the issue as the first entry, with its author", async () => {
+    server();
+    inClient(<Card_ card={card(5, { body: "Keep it small.", author: "lea" })} />);
+    expect(await screen.findByText("Keep it small.")).toBeTruthy();
+    expect(screen.getByText("lea")).toBeTruthy();
   });
 
   it("keeps a comment being typed and its list of people while the card's data is read again", async () => {
@@ -112,7 +148,7 @@ describe("the activity of an issue", () => {
       },
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    inClient(<ActivitySection card={card(5)} />, client);
+    inClient(<Card_ card={card(5)} />, client);
     const box = (await screen.findByRole("combobox", {
       name: "Write a comment",
     })) as HTMLTextAreaElement;
@@ -131,10 +167,9 @@ describe("the activity of an issue", () => {
     expect(screen.getByRole("combobox", { name: "Write a comment" })).toBe(box);
   });
 
-  it("says there are none, and does not send an empty comment", async () => {
+  it("does not send an empty comment", async () => {
     const sent = server({ "GET /v1/cards/5/comments": { status: 200, body: [] } });
-    inClient(<ActivitySection card={card(5)} />);
-    expect(await screen.findByText("Nothing has happened yet.")).toBeTruthy();
+    inClient(<Card_ card={card(5)} />);
     expect((screen.getByRole("button", { name: "Comment" }) as HTMLButtonElement).disabled).toBe(
       true,
     );
@@ -152,7 +187,10 @@ describe("the timeline of an issue", () => {
         entry(2, "inbox_added", { item: 1, kind: "approve_issue", title: "Approve the issue" }),
         entry(3, "inbox_resolved", { item: 1, kind: "approve_issue", title: "Approve the issue" }),
         entry(4, "run_started", { run: 9, agent: "Coder", purpose: "code" }),
-        entry(6, "decided", {
+        entry(5, "run_ended", { run: 9, status: "done" }),
+        entry(6, "run_started", { run: 10, agent: "Reviewer", purpose: "review" }),
+        entry(7, "run_ended", { run: 10, status: "done" }),
+        entry(8, "decided", {
           judgement: 1,
           kind: "tool_call",
           choice: "deny",
@@ -168,14 +206,62 @@ describe("the timeline of an issue", () => {
     },
   };
 
-  it("shows comments, runs and refusals in order, with the small changes folded", async () => {
+  it("shows a run and a review as two collapsed lines that open to their details", async () => {
     server(made);
-    inClient(<ActivitySection card={card(5)} />);
-    const fold = await screen.findByRole("button", { name: /3 changes/ });
+    inClient(<Card_ card={card(5)} />);
+    const code = await screen.findByRole("button", { name: "Code run" });
+    const review = screen.getByRole("button", { name: "Review" });
+    expect(code.getAttribute("aria-expanded")).toBe("false");
+    expect(review.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("link", { name: "View run 9" })).toBeNull();
+    fireEvent.click(code);
+    expect(code.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("Coder · done · 1s")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View run 9" }).getAttribute("href")).toBe("/runs/9");
+    expect(review.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("opens the live run to its live view and its stop, which stops it", async () => {
+    server({
+      "GET /v1/cards/5/history": {
+        status: 200,
+        body: [entry(4, "run_started", { run: 9, agent: "Coder", purpose: "code" })],
+      },
+    });
+    const stopped: number[] = [];
+    inClient(
+      <Card_
+        card={card(5, { run: { id: 9, agent: "Coder", purpose: "code" } as Card["run"] })}
+        live
+        onStop={() => stopped.push(1)}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Code run" }));
+    expect(screen.getByRole("link", { name: "Open live view" }).getAttribute("href")).toBe(
+      "/runs/9",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Stop run" }));
+    expect(stopped).toEqual([1]);
+  });
+
+  it("shows moves as small lines and opens a fold to the changes it holds", async () => {
+    server(made);
+    inClient(<Card_ card={card(5)} />);
+    expect(await screen.findByText("In progress")).toBeTruthy();
+    const fold = screen.getByRole("button", { name: /2 changes/ });
+    expect(fold.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Asked you: Approve the issue")).toBeNull();
+    fireEvent.click(fold);
+    expect(screen.getByText("Asked you: Approve the issue")).toBeTruthy();
+    expect(screen.getByText("Answered: Approve the issue")).toBeTruthy();
+  });
+
+  it("shows comments and refusals in order", async () => {
+    server(made);
+    inClient(<Card_ card={card(5)} />);
     const order = [
-      fold,
-      screen.getByText(/Run 9 started/),
-      screen.getByText("Happens on iOS too."),
+      await screen.findByText("Happens on iOS too."),
+      screen.getByRole("button", { name: "Review" }),
       screen.getByText(/no-force-push refused a tool call/),
     ];
     for (let i = 1; i < order.length; i++) {
@@ -185,23 +271,29 @@ describe("the timeline of an issue", () => {
     }
   });
 
-  it("opens a fold to the changes it holds", async () => {
+  it("ends with the needs-you block of the card that waits for a person, and has none otherwise", async () => {
     server(made);
-    inClient(<ActivitySection card={card(5)} />);
-    const fold = await screen.findByRole("button", { name: /3 changes/ });
-    expect(fold.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByText("Moved from Not started to In progress")).toBeNull();
-    fireEvent.click(fold);
-    expect(fold.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText("Moved from Not started to In progress")).toBeTruthy();
-    expect(screen.getByText("Asked you: Approve the issue")).toBeTruthy();
-    expect(screen.getByText("Answered: Approve the issue")).toBeTruthy();
-  });
-
-  it("links a run to its page", async () => {
-    server(made);
-    inClient(<ActivitySection card={card(5)} />);
-    const link = await screen.findByRole("link", { name: "View run 9" });
-    expect(link.getAttribute("href")).toBe("/runs/9");
+    const waiting = {
+      id: 3,
+      kind: "approve_issue",
+      card_id: 5,
+      title: "Plan ready",
+      data: {},
+      resolved_at: null,
+      at: 9,
+      assignees: [],
+    };
+    const { unmount } = inClient(
+      <Card_
+        card={card(5)}
+        item={waiting}
+        needsYou={(item) => <div data-testid="needs-you-block">{item.title}</div>}
+      />,
+    );
+    expect(await screen.findAllByTestId("needs-you-block")).toHaveLength(1);
+    unmount();
+    inClient(<Card_ card={card(5)} />);
+    await screen.findByRole("button", { name: "Review" });
+    expect(screen.queryAllByTestId("needs-you-block")).toHaveLength(0);
   });
 });

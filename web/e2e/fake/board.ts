@@ -244,6 +244,7 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
     card(4, { title: LONG_TITLE, column: "Not started", blocked_by: [3] }),
     card(5, {
       title: "Speed up the build",
+      body: "Keep it small: cache the compiled assets and fail the build when the cache is stale.",
       column: "Ready to merge",
       rounds: 2,
       tokens: 96_000,
@@ -306,6 +307,24 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
     },
   ];
   const history = new Map<number, HistoryEntry[]>([
+    [
+      5,
+      [
+        {
+          at: NOW - 3000,
+          kind: "moved",
+          data: { from: "Not started", to: "In progress", note: null },
+        },
+        { at: NOW - 2900, kind: "run_started", data: { run: 11, agent: "Coder", purpose: "code" } },
+        { at: NOW - 2600, kind: "run_ended", data: { run: 11, status: "done" } },
+        {
+          at: NOW - 2500,
+          kind: "run_started",
+          data: { run: 12, agent: "Reviewer", purpose: "review" },
+        },
+        { at: NOW - 2400, kind: "run_ended", data: { run: 12, status: "done" } },
+      ],
+    ],
     [
       1,
       [
