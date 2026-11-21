@@ -274,13 +274,13 @@
 
 /*
  * The icon of a step of a conversation. The steps hang on one thin line (`StepsGroup` in `ui/chat/Turn.tsx`), and the
- * icon is drawn over it on the colour of the page, so the line breaks around the icon instead of running through it.
+ * icon is drawn over it on the colour of the panel, so the line breaks around the icon instead of running through it.
  */
 @utility step-mark {
   position: relative;
   box-sizing: content-box;
   padding-block: 1px;
-  background: var(--page);
+  background: var(--panel);
 }
 
 @utility reveal-copy {

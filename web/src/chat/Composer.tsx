@@ -105,11 +105,11 @@ export function Composer({
 
   if (compact) {
     // A quiet field with the edge of a field, one row, and a small chip inside it that sends. The focus is said by the
-    // edge of the whole field darkening, not by a ring round it.
+    // edge of the whole field thickening to a second hairline, not by a ring round it.
     return (
       <div className="flex w-full flex-col gap-2">
         {error && <Notice tone="error">{error}</Notice>}
-        <div className="flex items-end gap-2 rounded-card border border-hairline-strong bg-panel py-1.5 pr-1.5 pl-3 transition-colors duration-(--motion-routine) ease-out has-[textarea:focus-visible]:border-muted">
+        <div className="flex items-end gap-2 rounded-card border border-hairline-strong bg-panel py-1.5 pr-1.5 pl-3 transition-colors duration-(--motion-routine) ease-out has-[textarea:focus-visible]:shadow-[0_0_0_1px_var(--hairline-strong)]">
           {editor}
           {actions}
           <Button
