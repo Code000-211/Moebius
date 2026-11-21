@@ -153,8 +153,21 @@ describe.skipIf(usesRealServer)("a run that waits", () => {
   });
 });
 
+/** A server with no project has nowhere to keep a workflow (ADR 0025): makes one when there is none. */
+async function ensureProject(): Promise<void> {
+  const headers = { "X-Moebius": "1", Authorization: `Bearer ${server.token}` };
+  const listed = await context.request.get(`${server.url}/v1/projects`, { headers });
+  if (((await listed.json()) as unknown[]).length > 0) return;
+  const made = await context.request.post(`${server.url}/v1/projects`, {
+    headers,
+    data: { name: "E2E", key: "E2E" },
+  });
+  expect(made.ok(), await made.text()).toBe(true);
+}
+
 /** Saves a workflow the way the command line does, so a real server and the fake both hold it. */
 async function saveWorkflow(name: string): Promise<void> {
+  await ensureProject();
   const response = await context.request.put(`${server.url}/v1/workflows/${name}`, {
     headers: { "X-Moebius": "1", Authorization: `Bearer ${server.token}` },
     data: {

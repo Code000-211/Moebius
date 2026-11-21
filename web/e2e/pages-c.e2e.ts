@@ -90,6 +90,18 @@ async function repository(): Promise<number> {
   return ((await response.json()) as { id: number }).id;
 }
 
+/** A server with no project has nowhere to keep a workflow (ADR 0025): makes one when there is none. */
+async function ensureProject(): Promise<void> {
+  const headers = { "X-Moebius": "1", Authorization: `Bearer ${server.token}` };
+  const listed = await context.request.get(`${server.url}/v1/projects`, { headers });
+  if (((await listed.json()) as unknown[]).length > 0) return;
+  const made = await context.request.post(`${server.url}/v1/projects`, {
+    headers,
+    data: { name: "E2E", key: "E2E" },
+  });
+  expect(made.ok(), await made.text()).toBe(true);
+}
+
 const editor = () => page.getByRole("dialog", { name: /^(Edit rule|New rule)/ });
 
 describe("the Rules page", () => {
@@ -260,6 +272,7 @@ describe("the Automations page", () => {
   const editor = () => page.getByTestId("editor-window");
   it("loads, and saves a new automation that can be deleted again", async () => {
     await fresh();
+    await ensureProject();
     await open("/automations", "Automations");
     await page.getByRole("button", { name: "New automation" }).click();
     await editor().getByLabel("Name", { exact: true }).fill("Weekly cleanup");
