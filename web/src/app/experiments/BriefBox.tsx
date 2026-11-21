@@ -13,7 +13,7 @@ import { IconButton } from "../../ui/components/IconButton";
 import { Box } from "../../ui/page/Box";
 import { EditableProperty } from "../../ui/page/EditableProperty";
 import { Body } from "../../ui/page/PageHeader";
-import { PageProperties, Property } from "../../ui/page/Properties";
+import { Property } from "../../ui/page/Property";
 import { DeleteBrief } from "./DeleteBrief";
 import { actions, limitReached, statusTag, usage } from "./model";
 
@@ -68,7 +68,7 @@ export function BriefBox({
             {repository} · {direction} · {usage(research)}
           </span>
         </div>
-        <PageProperties label={`Properties of ${research.goal}`}>
+        <section aria-label={`Properties of ${research.goal}`} className="flex flex-col gap-1">
           <Property name="Status">
             <Tag tone={status.tone}>{status.label}</Tag>
           </Property>
@@ -92,7 +92,7 @@ export function BriefBox({
             <Property name="Direction">{direction}</Property>
           )}
           <Property name="Budget">{usage(research)}</Property>
-        </PageProperties>
+        </section>
         <span className="min-w-0 break-words font-mono text-sm text-secondary">
           {research.measure}
         </span>

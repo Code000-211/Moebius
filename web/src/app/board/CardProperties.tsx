@@ -30,7 +30,7 @@ import type { Board, Card, InboxItem, Priority } from "../../api/types/board";
 import { patchCard, putCards } from "../../live/cardCache";
 import { EditableProperty, ListProperty } from "../../ui/page/EditableProperty";
 import { MarkLabel, type StateMark } from "../../ui/page/MarkLabel";
-import { Property } from "../../ui/page/Properties";
+import { Property } from "../../ui/page/Property";
 import { PriorityBars } from "../../ui/page/StatusIcon";
 import { CycleProperty } from "../cycles/CycleProperty";
 import { KindProperties } from "../kinds/KindProperties";

@@ -15,7 +15,7 @@ export function TerminalPage() {
         path="/v1/terminal"
         autoFocus
         variant="page"
-        className="-mx-6 -mt-6 -mb-6 min-h-0 flex-1"
+        className="-mx-4 -mt-4 -mb-4 min-h-0 flex-1"
       />
     </div>
   );

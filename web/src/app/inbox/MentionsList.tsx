@@ -102,7 +102,7 @@ export function MentionsList({
   return (
     <VirtualList
       label={following ? "Following" : "Mentions"}
-      className="-mx-6 -mb-6 min-h-0 flex-1 outline-none"
+      className="-mx-4 -mb-4 min-h-0 flex-1 outline-none"
       items={items}
       loading={data.isPending}
       loadingMessage={following ? "Reading what you follow" : "Reading your mentions"}

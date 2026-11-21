@@ -9,7 +9,7 @@ import { Link } from "react-router";
 import { wikiCardPages } from "../../api/calls/wiki";
 import { keys } from "../../api/keys";
 import type { PageLinks } from "../../api/types/wiki";
-import { Property } from "../../ui/page/Properties";
+import { Property } from "../../ui/page/Property";
 import { wikiAddress } from "./links";
 
 const LINK =
