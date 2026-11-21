@@ -13,7 +13,7 @@ import { keys } from "../../api/keys";
 import type { MilestoneView } from "../../api/types/milestones";
 import type { Project } from "../../api/types/projects";
 import { Button } from "../../ui/components/Button";
-import { FilterBar } from "../../ui/filters/FilterBar";
+import { DisplayMenu } from "../../ui/filters/FilterBar";
 import { displayQuery, readDisplay } from "../../ui/filters/model";
 import { useQueryParams } from "../../ui/filters/useQueryParams";
 import { ConfirmDelete } from "../../ui/page/ConfirmDelete";
@@ -49,7 +49,7 @@ export function MilestonesTab({
 }) {
   const data = useQuery({ queryKey: keys.milestones, queryFn: listMilestones });
   const [params, setQuery] = useQueryParams();
-  const display = useMemo(() => readDisplay(params, CHOICES), [params]);
+  const displayValue = useMemo(() => readDisplay(params, CHOICES), [params]);
   // The milestone that is opened is in the address, so a reload and a link keep it open.
   const opened = Number(params.get("milestone")) || null;
   const [editing, setEditing] = useState<MilestoneView | "new" | null>(null);
@@ -65,8 +65,22 @@ export function MilestonesTab({
       New milestone
     </Button>
   );
+  const display = (
+    <DisplayMenu
+      plain
+      choices={CHOICES}
+      value={displayValue}
+      onChange={(next) => setQuery(displayQuery(next))}
+    />
+  );
   const header = (
-    <ProjectHeader project={project} tab="milestones" actions={newButton} onTerminal={onTerminal} />
+    <ProjectHeader
+      project={project}
+      tab="milestones"
+      actions={display}
+      primary={newButton}
+      onTerminal={onTerminal}
+    />
   );
   if (data.isPending)
     return (
@@ -88,7 +102,7 @@ export function MilestonesTab({
       </>
     );
   }
-  const shown = sorted(inProject(data.data, project.id, madeHere), display.sort);
+  const shown = sorted(inProject(data.data, project.id, madeHere), displayValue.sort);
 
   return (
     <>
@@ -105,18 +119,6 @@ export function MilestonesTab({
         />
       ) : (
         <>
-          <FilterBar
-            label="Sort the milestones"
-            fields={[]}
-            values={{}}
-            onFilter={() => {}}
-            onClear={() => setQuery(displayQuery({ ...display, layout: "board", sort: "" }))}
-            display={{
-              choices: CHOICES,
-              value: display,
-              onChange: (next) => setQuery(displayQuery(next)),
-            }}
-          />
           <Timeline
             list={shown}
             project={project.id}

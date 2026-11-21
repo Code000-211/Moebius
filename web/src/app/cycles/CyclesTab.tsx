@@ -59,8 +59,8 @@ export function CyclesTab({
     void queryClient.invalidateQueries({ queryKey: keys.cycles });
     void queryClient.invalidateQueries({ queryKey: keys.cards });
   };
-  const header = (actions?: React.ReactNode) => (
-    <ProjectHeader project={project} tab="cycles" actions={actions} onTerminal={onTerminal} />
+  const header = (primary?: React.ReactNode) => (
+    <ProjectHeader project={project} tab="cycles" primary={primary} onTerminal={onTerminal} />
   );
 
   if (cycles.isPending) {

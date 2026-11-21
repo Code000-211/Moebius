@@ -46,35 +46,39 @@ export function CyclePage({
   const [closing, setClosing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const state = stateOf(cycle, now);
-  const actions = (
-    <>
-      {mayChange && cycle.closed_at === null && (
-        <>
-          <Button size="sm" variant="secondary" onClick={onEdit}>
-            <PencilSimpleIcon className="size-4" aria-hidden="true" />
-            Edit
-          </Button>
-          <Button size="sm" onClick={() => setClosing(true)}>
-            Close cycle
-          </Button>
-        </>
-      )}
-      {mayChange && (
-        <Button size="sm" variant="danger" onClick={() => setDeleting(true)}>
-          <TrashIcon className="size-4" aria-hidden="true" />
-          Delete
-        </Button>
-      )}
-    </>
+  const close = mayChange && cycle.closed_at === null && (
+    <Button size="sm" onClick={() => setClosing(true)}>
+      Close cycle
+    </Button>
   );
   return (
     <>
-      <ProjectHeader project={project} tab="cycles" actions={actions} onTerminal={onTerminal} />
+      <ProjectHeader project={project} tab="cycles" primary={close} onTerminal={onTerminal} />
       <div className="mb-3 flex items-center gap-1">
-        <Button size="icon" variant="ghost" aria-label="All cycles" onClick={onBack}>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="-ml-2"
+          aria-label="All cycles"
+          onClick={onBack}
+        >
           <ArrowLeftIcon className="size-4" aria-hidden="true" />
         </Button>
         <h2 className="m-0 min-w-0 truncate text-lg font-semibold text-text">{cycle.name}</h2>
+        {mayChange && (
+          <span className="ml-auto flex items-center gap-2">
+            {cycle.closed_at === null && (
+              <Button size="sm" variant="ghost" onClick={onEdit}>
+                <PencilSimpleIcon className="size-4" aria-hidden="true" />
+                Edit
+              </Button>
+            )}
+            <Button size="sm" variant="ghost" onClick={() => setDeleting(true)}>
+              <TrashIcon className="size-4" aria-hidden="true" />
+              Delete
+            </Button>
+          </span>
+        )}
       </div>
       <TimeBar
         className="mt-3 mb-2"
