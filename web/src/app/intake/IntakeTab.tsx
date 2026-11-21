@@ -1,10 +1,9 @@
 /**
- * The Intake page: a project's way in for requests. A project without intake has no form, only (for an owner) the
- * switch that turns it on. With intake, anyone who may see the project, a viewer too, writes a request in their own
+ * The Intake tab of a project: its way in for requests. A project without intake has no tab (and its address says so);
+ * the switch that turns it on is in the project's settings. With intake, anyone who may see the project, a viewer too, writes a request in their own
  * words; a grilling drafts it into an issue, and a member reads the draft, edits it, accepts it into a card the
  * requester follows, or declines it with a reason the requester is told. A viewer sees only their own requests.
  */
-import { TrayArrowDownIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router";
@@ -14,74 +13,28 @@ import {
   declineRequest,
   editRequest,
   listRequests,
-  setIntake,
   submitRequest,
 } from "../../api/calls/intake";
-import { listProjects } from "../../api/calls/projects";
 import { keys } from "../../api/keys";
 import type { IntakeRequest } from "../../api/types/intake";
 import type { Project } from "../../api/types/projects";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
-import { useQueryParams } from "../../ui/filters/useQueryParams";
 import { useErrorToast } from "../../ui/lib/useErrorToast";
 import { Empty } from "../../ui/page/Empty";
-import { FieldRow, Rows, Select, TextArea } from "../../ui/page/Field";
-import { PageHeader } from "../../ui/page/PageHeader";
+import { FieldRow, Rows, TextArea } from "../../ui/page/Field";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
 import { repositoryBoardPath } from "../pages";
+import { ProjectHeader } from "../projects/ProjectHeader";
 import { useRole } from "../shell/session";
 import { decides, open, ordered, statusWords } from "./model";
 
-export function IntakePage() {
-  const projects = useQuery({ queryKey: keys.projects, queryFn: listProjects });
-  const [params, setQuery] = useQueryParams();
-  if (projects.isPending) {
-    return (
-      <>
-        <PageHeader title="Intake" />
-        <SkeletonList rows={3} message="Reading the projects" />
-      </>
-    );
-  }
-  if (projects.isError) {
-    return (
-      <>
-        <PageHeader title="Intake" />
-        <ReadFailed
-          error={projects.error}
-          fallback="The projects could not be read. Try again."
-          busy={projects.isFetching}
-          onRetry={() => void projects.refetch()}
-        />
-      </>
-    );
-  }
-  const chosen = Number(params.get("project"));
-  const project = projects.data.find((each) => each.id === chosen) ?? projects.data[0];
-  if (project === undefined) {
-    return (
-      <>
-        <PageHeader title="Intake" />
-        <Empty title="No project yet" body="Add a project, and it can take requests." />
-      </>
-    );
-  }
+/** The Intake tab of a project: the form and the requests. A project that takes no requests has no such tab. */
+export function IntakeTab({ project, onTerminal }: { project: Project; onTerminal: () => void }) {
   return (
     <>
-      <PageHeader
-        title="Intake"
-        actions={
-          <Select
-            aria-label="Project"
-            className="w-48"
-            options={projects.data.map((each): [string, string] => [String(each.id), each.name])}
-            value={String(project.id)}
-            onChange={(value) => setQuery({ project: value })}
-          />
-        }
-      />
+      <ProjectHeader project={project} tab="intake" onTerminal={onTerminal} />
       <Requests project={project} />
     </>
   );
@@ -89,34 +42,12 @@ export function IntakePage() {
 
 function Requests({ project }: { project: Project }) {
   const role = useRole();
-  const queryClient = useQueryClient();
-  const turn = useMutation({
-    mutationFn: (enabled: boolean) => setIntake(project.id, enabled),
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: keys.projects }),
-  });
   const requests = useQuery({
     queryKey: keys.requests(project.id),
     queryFn: () => listRequests(project.id),
-    enabled: project.intake || decides(role),
+    enabled: project.intake,
   });
 
-  useErrorToast(turn.error, "Intake could not be changed.");
-  if (!project.intake) {
-    return (
-      <Empty
-        title={`${project.name} takes no requests`}
-        icon={<TrayArrowDownIcon className="size-6 text-secondary" />}
-        body="Intake is off for this project, so it has no form."
-        action={
-          role === "owner" ? (
-            <Button size="sm" onClick={() => turn.mutate(true)} disabled={turn.isPending}>
-              Turn on intake
-            </Button>
-          ) : undefined
-        }
-      />
-    );
-  }
   return (
     <div className="flex flex-col gap-6">
       <RequestForm project={project} />
@@ -140,13 +71,6 @@ function Requests({ project }: { project: Project }) {
             </li>
           ))}
         </ul>
-      )}
-      {role === "owner" && (
-        <div>
-          <Button variant="secondary" onClick={() => turn.mutate(false)} disabled={turn.isPending}>
-            Turn off intake
-          </Button>
-        </div>
       )}
     </div>
   );

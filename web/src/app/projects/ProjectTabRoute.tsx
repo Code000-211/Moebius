@@ -1,6 +1,7 @@
 /**
- * `/projects/:projectId/workflows|cycles|milestones|intake`: a tab of a project. Each shows the project's header and,
- * until the tab's own page is built, says so. An id that is no project says so too.
+ * `/projects/:projectId/workflows|cycles|milestones|intake` (and `cycles/:cycleId`): a tab of a project. Cycles,
+ * Milestones and Intake are the tabs' own pages, each drawing the project's header; Workflows says it is not built yet.
+ * An id that is no project says so too, and so does the Intake address of a project that takes no requests.
  */
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -13,6 +14,9 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import { RepositoryTerminal } from "../board/RepositoryTerminal";
+import { CyclesTab } from "../cycles/CyclesTab";
+import { IntakeTab } from "../intake/IntakeTab";
+import { MilestonesTab } from "../milestones/MilestonesTab";
 import type { ProjectTab } from "../pages";
 import { Placeholder } from "../shell/Placeholder";
 import { boardRepositoryOf } from "./model";
@@ -26,7 +30,7 @@ const TITLES: Record<ProjectTab, string> = {
 };
 
 export function ProjectTabRoute({ tab }: { tab: ProjectTab }) {
-  const { projectId } = useParams();
+  const { projectId, cycleId } = useParams();
   const [terminalOpen, setTerminalOpen] = useState(false);
   const projects = useQuery({ queryKey: keys.projects, queryFn: listProjects });
   if (projects.isError)
@@ -67,20 +71,33 @@ export function ProjectTabRoute({ tab }: { tab: ProjectTab }) {
   // A project that takes no requests has no Intake tab, so its address is no page either.
   const off = tab === "intake" && !project.intake;
   const repository = boardRepositoryOf(project);
+  const onTerminal = () => setTerminalOpen(true);
   return (
     <>
-      <ProjectHeader
-        project={project}
-        tab={off ? "board" : tab}
-        onTerminal={() => setTerminalOpen(true)}
-      />
       {off ? (
-        <Empty
-          title="Intake is off"
-          body="This project takes no requests. An owner turns intake on in the project's settings."
+        <>
+          <ProjectHeader project={project} tab="board" onTerminal={onTerminal} />
+          <Empty
+            title="Intake is off"
+            body="This project takes no requests. An owner turns intake on in the project's settings."
+          />
+        </>
+      ) : tab === "cycles" ? (
+        <CyclesTab
+          key={project.id}
+          project={project}
+          cycleId={cycleId === undefined ? null : Number(cycleId)}
+          onTerminal={onTerminal}
         />
+      ) : tab === "milestones" ? (
+        <MilestonesTab key={project.id} project={project} onTerminal={onTerminal} />
+      ) : tab === "intake" ? (
+        <IntakeTab key={project.id} project={project} onTerminal={onTerminal} />
       ) : (
-        <Placeholder title={TITLES[tab]} />
+        <>
+          <ProjectHeader project={project} tab={tab} onTerminal={onTerminal} />
+          <Placeholder title={TITLES[tab]} />
+        </>
       )}
       {repository !== null && (
         <RepositoryTerminal

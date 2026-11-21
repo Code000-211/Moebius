@@ -1,26 +1,27 @@
 /**
- * The Cycles page (pattern 8 of the design drafts): the time boxes of one project, chosen at the top as on Intake. The
- * list shows each cycle with how far its cards are; a cycle opens to its own page, with the burn-up and the figures
- * (done points, cards done by agents, tokens per point) above the list of its cards. A member makes, edits, closes and
+ * The Cycles tab of a project (pattern 8 of the design drafts): its time boxes. The list shows each cycle with how far
+ * its cards are; a cycle opens to its own page (`/projects/:id/cycles/:cycleId`), with the burn-up and the figures (done
+ * points, cards done by agents, tokens per point) above the list of its cards. A member makes, edits, closes and
  * deletes cycles; closing asks where the cards that are not done go, to the next cycle or out, and a closed cycle keeps
  * its cards. A project need not use cycles: it simply has none. A card is put in a cycle from its properties.
  */
 import { PlusIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link, useNavigate } from "react-router";
 import { listCycles } from "../../api/calls/cycles";
-import { listProjects } from "../../api/calls/projects";
 import { keys } from "../../api/keys";
 import type { CycleView } from "../../api/types/cycles";
+import type { Project } from "../../api/types/projects";
 import { Button } from "../../ui/components/Button";
-import { useQueryParams } from "../../ui/filters/useQueryParams";
 import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
-import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
 import { axisOf, TimeBar } from "../../ui/page/TimeBar";
 import { decides } from "../intake/model";
+import { cyclePath, projectTabPath } from "../pages";
+import { ProjectHeader } from "../projects/ProjectHeader";
 import { useRole } from "../shell/session";
 import { CycleDialog } from "./CycleDialogs";
 import { CyclePage } from "./CyclePage";
@@ -34,81 +35,22 @@ function today(): string {
   return `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
 }
 
-export function CyclesPage() {
-  const projects = useQuery({ queryKey: keys.projects, queryFn: listProjects });
-  const [params, setQuery] = useQueryParams();
-  if (projects.isPending) {
-    return (
-      <>
-        <PageHeader title="Cycles" />
-        <SkeletonList rows={3} message="Reading the projects" />
-      </>
-    );
-  }
-  if (projects.isError) {
-    return (
-      <>
-        <PageHeader title="Cycles" />
-        <ReadFailed
-          error={projects.error}
-          fallback="The projects could not be read. Try again."
-          busy={projects.isFetching}
-          onRetry={() => void projects.refetch()}
-        />
-      </>
-    );
-  }
-  const chosen = Number(params.get("project"));
-  const project = projects.data.find((each) => each.id === chosen) ?? projects.data[0];
-  if (project === undefined) {
-    return (
-      <>
-        <PageHeader title="Cycles" />
-        <Empty title="No project yet" body="Add a project, and it can plan its work in cycles." />
-      </>
-    );
-  }
-  const opened = Number(params.get("cycle")) || null;
-  return (
-    <ProjectCycles
-      key={project.id}
-      project={project.id}
-      opened={opened}
-      onOpen={(cycle) => setQuery({ cycle: cycle === null ? "" : String(cycle) })}
-      chooser={
-        <select
-          aria-label="Project"
-          className="h-8 rounded-control bg-field px-2 text-base text-text"
-          value={project.id}
-          onChange={(event) => setQuery({ project: event.target.value, cycle: "" })}
-        >
-          {projects.data.map((each) => (
-            <option key={each.id} value={each.id}>
-              {each.name}
-            </option>
-          ))}
-        </select>
-      }
-    />
-  );
-}
-
-function ProjectCycles({
+export function CyclesTab({
   project,
-  opened,
-  onOpen,
-  chooser,
+  cycleId,
+  onTerminal,
 }: {
-  project: number;
-  opened: number | null;
-  onOpen: (cycle: number | null) => void;
-  chooser: React.ReactNode;
+  project: Project;
+  /** The cycle whose page is open (`/projects/:id/cycles/:cycleId`), if any. */
+  cycleId: number | null;
+  onTerminal: () => void;
 }) {
+  const navigate = useNavigate();
   const role = useRole();
   const queryClient = useQueryClient();
   const cycles = useQuery({
-    queryKey: keys.projectCycles(project),
-    queryFn: () => listCycles(project),
+    queryKey: keys.projectCycles(project.id),
+    queryFn: () => listCycles(project.id),
   });
   const [editing, setEditing] = useState<CycleView | "new" | null>(null);
   const now = today();
@@ -117,11 +59,14 @@ function ProjectCycles({
     void queryClient.invalidateQueries({ queryKey: keys.cycles });
     void queryClient.invalidateQueries({ queryKey: keys.cards });
   };
+  const header = (primary?: React.ReactNode) => (
+    <ProjectHeader project={project} tab="cycles" primary={primary} onTerminal={onTerminal} />
+  );
 
   if (cycles.isPending) {
     return (
       <>
-        <PageHeader title="Cycles" actions={chooser} />
+        {header()}
         <SkeletonList rows={3} message="Reading the cycles" />
       </>
     );
@@ -129,7 +74,7 @@ function ProjectCycles({
   if (cycles.isError) {
     return (
       <>
-        <PageHeader title="Cycles" actions={chooser} />
+        {header()}
         <ReadFailed
           error={cycles.error}
           fallback="The cycles could not be read. Try again."
@@ -139,7 +84,8 @@ function ProjectCycles({
       </>
     );
   }
-  const open = opened === null ? undefined : cycles.data.find((c) => c.id === opened);
+  const open = cycleId === null ? undefined : cycles.data.find((c) => c.id === cycleId);
+  const back = () => navigate(projectTabPath(project.id, "cycles"));
   const newButton = mayChange && (
     <Button size="sm" onClick={() => setEditing("new")}>
       <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
@@ -148,28 +94,34 @@ function ProjectCycles({
   );
   return (
     <>
-      {open ? (
+      {cycleId !== null && !open ? (
+        <>
+          {header()}
+          <Empty
+            title="No such cycle"
+            body="This project has no cycle with that address. It may have been deleted, or belong to another project."
+            action={
+              <Button asChild size="sm">
+                <Link to={projectTabPath(project.id, "cycles")}>All cycles</Link>
+              </Button>
+            }
+          />
+        </>
+      ) : open ? (
         <CyclePage
+          project={project}
           cycle={open}
           all={cycles.data}
           now={now}
           mayChange={mayChange}
-          chooser={chooser}
-          onBack={() => onOpen(null)}
+          onBack={back}
           onEdit={() => setEditing(open)}
           onChanged={refresh}
+          onTerminal={onTerminal}
         />
       ) : (
         <>
-          <PageHeader
-            title="Cycles"
-            actions={
-              <>
-                {chooser}
-                {newButton}
-              </>
-            }
-          />
+          {header(newButton)}
           {cycles.data.length === 0 ? (
             <Empty
               title="No cycle yet"
@@ -177,13 +129,17 @@ function ProjectCycles({
               action={mayChange ? newButton : undefined}
             />
           ) : (
-            <Timeline cycles={cycles.data} now={now} onOpen={onOpen} />
+            <Timeline
+              cycles={cycles.data}
+              now={now}
+              onOpen={(id) => navigate(cyclePath(project.id, id))}
+            />
           )}
         </>
       )}
       <CycleDialog
         editing={editing}
-        project={project}
+        project={project.id}
         onClose={() => setEditing(null)}
         onDone={refresh}
       />

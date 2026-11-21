@@ -488,6 +488,19 @@ to say. See the [desktop API](desktop-api.md) for a script that does all of this
 
 On GitHub a person can also merge the pull request there; the poll notices and the card moves to `Done`.
 
+## Cycles, milestones and intake of a project
+
+In the web app they are tabs of the project (`/projects/<id>/cycles`, `.../milestones`, `.../intake`), under its header;
+there is no page for them across projects, and the old `/cycles`, `/milestones` and `/intake` addresses lead to the
+project last opened (or the only one), else to the list of projects.
+
+- **Cycles** are a project's own: the tab lists its cycles, and a cycle's page is `.../cycles/<id>`.
+- **Milestones** belong to the organisation (ADR 0019), so one goal can hold cards of several projects. A project's tab
+  lists the milestones that hold cards of that project, each counted for the project alone, and the ones made from the
+  tab. A milestone with no card in any project is listed nowhere (a reload of the tab forgets one made there and still
+  empty); it stays in the store and reappears as soon as a card is put in it from the card's milestone picker.
+- **Intake** is a tab only while the project takes requests; accepting and declining are unchanged.
+
 ## How you see what is going on
 
 - `GET /v1/snapshot`: every card's column, the changes, the inbox, and `waiting`, the reason each waiting card waits.

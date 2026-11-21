@@ -1,6 +1,6 @@
 /**
- * The rows of the Milestones page: every milestone is a row on one time axis, its bar running from the day it was made
- * to its target date and filled as far as its cards are done, as the cycles are on the Cycles page. A click on a row
+ * The rows of the Milestones tab: every milestone is a row on one time axis, its bar running from the day it was made
+ * to its target date and filled as far as its cards are done, as the cycles are on the Cycles tab. A click on a row
  * opens what the milestone holds under it: its description, its share in each project and its cards.
  */
 import { PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
@@ -18,6 +18,7 @@ import { dateWords, overdue, percent, progressWords, projectsWords, spanOf } fro
 /** The milestones as rows on one time axis, in the order given. */
 export function Timeline({
   list,
+  project,
   now,
   opened,
   onToggle,
@@ -25,6 +26,8 @@ export function Timeline({
   onDelete,
 }: {
   list: MilestoneView[];
+  /** The project whose tab this is: only its cards are listed under an opened milestone. */
+  project: number;
   now: string;
   /** The id of the milestone that is open, if any. */
   opened: number | null;
@@ -40,6 +43,7 @@ export function Timeline({
         <Row
           key={milestone.id}
           milestone={milestone}
+          project={project}
           now={now}
           axis={axis}
           open={milestone.id === opened}
@@ -55,6 +59,7 @@ export function Timeline({
 /** One milestone: its name and projects, its bar on the axis, its date; once opened, its detail below. */
 function Row({
   milestone,
+  project,
   now,
   axis,
   open,
@@ -63,6 +68,7 @@ function Row({
   onDelete,
 }: {
   milestone: MilestoneView;
+  project: number;
   now: string;
   axis: { start: string; end: string };
   open: boolean;
@@ -114,7 +120,9 @@ function Row({
           </span>
         </span>
       </button>
-      {open && <Detail milestone={milestone} onEdit={onEdit} onDelete={onDelete} />}
+      {open && (
+        <Detail milestone={milestone} project={project} onEdit={onEdit} onDelete={onDelete} />
+      )}
     </li>
   );
 }
@@ -122,10 +130,12 @@ function Row({
 /** What a milestone holds: its description, its share in each project and its cards, read when it is opened. */
 export function Detail({
   milestone,
+  project,
   onEdit,
   onDelete,
 }: {
   milestone: MilestoneView;
+  project: number;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -133,6 +143,8 @@ export function Detail({
     queryKey: keys.milestone(milestone.id),
     queryFn: () => readMilestone(milestone.id),
   });
+  // The server lists the cards of every project the person sees; this tab lists this project's.
+  const cards = (detail.data?.cards ?? []).filter((card) => card.project_id === project);
   return (
     <div className="flex flex-col gap-3 px-3 pb-3 pt-1">
       <div className="flex gap-2">
@@ -161,10 +173,10 @@ export function Detail({
         <p className="m-0 text-sm text-secondary">The cards could not be read.</p>
       ) : (
         <div className="-mx-3">
-          <CardRows label={`Cards of ${milestone.name}`} cards={detail.data?.cards ?? []} />
-          {detail.data?.cards.length === 0 && (
+          <CardRows label={`Cards of ${milestone.name}`} cards={cards} />
+          {detail.data !== undefined && cards.length === 0 && (
             <p className="m-0 text-sm text-secondary">
-              No card yet. Put one in from its properties.
+              No card of this project yet. Put one in from its properties.
             </p>
           )}
         </div>

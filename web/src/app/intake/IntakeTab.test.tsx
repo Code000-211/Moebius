@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../api/keys";
 import type { IntakeRequest } from "../../api/types/intake";
-import { IntakePage } from "./IntakePage";
+import { IntakeTab } from "./IntakeTab";
 
 afterEach(() => {
   cleanup();
@@ -13,6 +13,9 @@ afterEach(() => {
 });
 
 const project = (intake: boolean) => ({
+  private: false,
+  member: true,
+  kinds: [],
   id: 1,
   name: "Shop",
   key: "SHOP",
@@ -76,20 +79,27 @@ function show(role: string) {
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter>
-        <IntakePage />
+        <IntakeTab project={project(true)} onTerminal={() => {}} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 
-describe("the Intake page", () => {
-  it("has no form for a project without intake, and lets an owner turn it on", async () => {
-    const sent = server(false, []);
-    show("owner");
-    await screen.findByText("Shop takes no requests");
-    expect(screen.queryByRole("form", { name: "Ask for something" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Turn on intake" }));
-    await waitFor(() => expect(sent).toEqual([["PUT /v1/projects/1/intake", { enabled: true }]]));
+describe("the Intake tab", () => {
+  it("lists the requests of its own project only", async () => {
+    const asked: string[] = [];
+    server(true, [drafted]);
+    const base = globalThis.fetch;
+    vi.stubGlobal("fetch", (url: string, init?: unknown) => {
+      asked.push(url);
+      return (base as (u: string, i?: unknown) => Promise<Response>)(url, init);
+    });
+    show("member");
+    await screen.findByText("Please add a dark mode.");
+    expect(asked).toContain("/v1/projects/1/requests");
+    expect(asked.filter((url) => /\/v1\/projects\/\d+\/requests/.test(url))).not.toContain(
+      "/v1/projects/2/requests",
+    );
   });
 
   it("shows a viewer the form and their own requests, without a way to decide", async () => {
@@ -121,7 +131,7 @@ describe("the Intake page", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <IntakePage />
+          <IntakeTab project={project(true)} onTerminal={() => {}} />
         </MemoryRouter>
       </QueryClientProvider>,
     );

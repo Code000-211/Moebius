@@ -9,8 +9,15 @@
  * This is the one place that may name `/board/`: components use the path helpers of `pages.ts`.
  */
 import type { Project } from "../../api/types/projects";
-import { boardPath, repositoryPath, scriptPath, settingsPath } from "../pages";
-import { holdsRepository, homeProjectOf } from "../projects/model";
+import {
+  boardPath,
+  cyclePath,
+  projectTabPath,
+  repositoryPath,
+  scriptPath,
+  settingsPath,
+} from "../pages";
+import { holdsRepository, homeProjectOf, projectForOldAddress } from "../projects/model";
 
 export interface LegacyRoute {
   /** The pattern of the old path, without the leading slash, in the syntax of the router. */
@@ -55,6 +62,22 @@ export function oldRepositoryPage(
   if (repository === null) return null;
   const home = homeProjectOf(projects, repository);
   return home ? withQuery(repositoryPath(home.id, repository), {}, search) : null;
+}
+
+/**
+ * Where the old project-less Cycles, Milestones and Intake addresses lead: the tab of the project named by `?project=`,
+ * else of the one opened last or the only one, else the list of projects. `drop` is what the query no longer carries.
+ */
+function oldTab(
+  tab: "cycles" | "milestones" | "intake",
+  projects: Project[],
+  search: URLSearchParams,
+  cycle?: number | null,
+): string {
+  const project = projectForOldAddress(projects, search);
+  if (!project) return "/projects";
+  const path = cycle ? cyclePath(project.id, cycle) : projectTabPath(project.id, tab);
+  return withQuery(path, {}, search, ["project", "cycle"]);
 }
 
 export const LEGACY_ROUTES: readonly LegacyRoute[] = [
@@ -104,4 +127,19 @@ export const LEGACY_ROUTES: readonly LegacyRoute[] = [
       },
     }),
   ),
+  {
+    // The cycle that was open (`?cycle=`) is the cycle page of the project.
+    path: "cycles",
+    resolve: (_params, projects, search) =>
+      oldTab("cycles", projects, search, idOf(search.get("cycle") ?? undefined)),
+  },
+  {
+    path: "cycles/:cycleId",
+    resolve: ({ cycleId }, projects, search) => oldTab("cycles", projects, search, idOf(cycleId)),
+  },
+  {
+    path: "milestones",
+    resolve: (_params, projects, search) => oldTab("milestones", projects, search),
+  },
+  { path: "intake", resolve: (_params, projects, search) => oldTab("intake", projects, search) },
 ];

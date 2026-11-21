@@ -170,17 +170,23 @@ const routes: Route[] = [
   { path: "/chat", name: "chat-menu", open: "menu" },
   // A conversation with a block of steps, folded and opened, which is the one place the log's 32px row is measured.
   { path: "/chat", name: "chat-steps", open: "steps" },
-  { path: "/cycles", name: "cycles" },
-  { path: "/milestones", name: "milestones" },
+  { path: "/projects/1/cycles", name: "cycles" },
+  { path: "/projects/1/milestones", name: "milestones" },
   // The sheets of the pages that kept their form without an inset of their own.
-  { path: "/cycles", name: "cycles-new", open: "new cycle" },
-  { path: "/milestones", name: "milestones-new", open: "new milestone" },
+  { path: "/projects/1/cycles", name: "cycles-new", open: "new cycle" },
+  { path: "/projects/1/milestones", name: "milestones-new", open: "new milestone" },
   { path: "/projects", name: "projects-new-sheet", open: "new project" },
   { path: "/chat", name: "chat-steps-trouble", open: "steps" },
 ];
 
 /** The pages the issue about narrow widths named: their panes sit between the sidebar and the Properties column. */
-const SQUEEZED = new Set(["/decision-model", "/cycles", "/milestones", "/rules", "/wiki"]);
+const SQUEEZED = new Set([
+  "/decision-model",
+  "/projects/1/cycles",
+  "/projects/1/milestones",
+  "/rules",
+  "/wiki",
+]);
 
 let browser: Browser;
 let fake: FakeServer | undefined;

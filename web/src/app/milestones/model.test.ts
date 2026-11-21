@@ -67,13 +67,25 @@ describe("sorting and filtering", () => {
     expect(sorted(list, "name").map((m) => m.id)).toEqual([2, 1]);
     expect(sorted(list, "progress").map((m) => m.id)).toEqual([1, 2]);
   });
-  it("keeps the milestones that hold cards of a project", () => {
-    const withCards = [
-      milestone({ id: 1, projects: [{ id: 7, name: "Web", key: "WEB", cards: 1, done: 0 }] }),
-      milestone({ id: 2 }),
+  it("lists only the milestones that hold cards of the project, counted for that project alone", () => {
+    const web = { id: 7, name: "Web", key: "WEB", cards: 1, done: 0 };
+    const api = { id: 8, name: "Api", key: "API", cards: 4, done: 3 };
+    const all = [
+      milestone({ id: 1, cards: 5, done: 3, projects: [web, api] }),
+      milestone({ id: 2, cards: 4, done: 3, projects: [api] }),
+      milestone({ id: 3 }),
     ];
-    expect(inProject(withCards, "7").map((m) => m.id)).toEqual([1]);
-    expect(inProject(withCards, "").length).toBe(2);
+    expect(inProject(all, 7).map((m) => [m.id, m.cards, m.done])).toEqual([[1, 1, 0]]);
+    expect(inProject(all, 8).map((m) => [m.id, m.cards, m.done])).toEqual([
+      [1, 4, 3],
+      [2, 4, 3],
+    ]);
+    expect(inProject(all, 9)).toEqual([]);
+  });
+  it("lists a milestone made from the tab until a card is in it", () => {
+    const all = [milestone({ id: 3 })];
+    expect(inProject(all, 7, new Set([3])).map((m) => [m.id, m.cards])).toEqual([[3, 0]]);
+    expect(inProject(all, 7, new Set([4]))).toEqual([]);
   });
 });
 
