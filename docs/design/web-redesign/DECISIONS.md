@@ -43,10 +43,13 @@ Reference feel: Linear. Dense but not full; nearly monochrome; light theme is pr
 - Lists are virtualised; each board column scrolls on its own.
 
 ## Agent (Moebius)
-- Default: one quiet "Ask Moebius…" field docked at the bottom of the main panel.
-- When the user asks or Moebius answers, a right panel opens (z2): user bubble, timeline of small steps with icons
+- Default: a quiet "Moebius" button (sparkles icon + word) in the page header, at the right, left of the page's primary
+  button and the window buttons. There is no docked "Ask Moebius…" field on any page. While the panel is open the button
+  is pressed (indigo tint, indigo text); clicking it again closes the panel. Ctrl+J toggles, Esc closes; focus goes to the
+  reply field on open and back to the button on close.
+- The button opens a right panel beside the content (z2; the content gets narrower; under ~1000px it overlays from the right): user bubble, timeline of small steps with icons
   (Thought 6s, Read wiki.rs), answer as free text, dark indigo code block (#1e2038) with header row (language · file · Copy)
-  and syntax colours, action buttons, reply field. One close icon. While open, the docked field is gone.
+  and syntax colours, action buttons, reply field. One close icon.
 - Chat setting, per person: "Show thinking expanded" (default off; while streaming always open, then collapses). Code open.
 
 ## Board and card

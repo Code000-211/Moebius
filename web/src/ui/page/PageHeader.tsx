@@ -5,6 +5,8 @@
  * no breadcrumb: the sidebar already says where a page lives. A page reached by drilling down can carry the way back
  * on the left of its name, which is where it is looked for.
  *
+ * At the right, before the page's actions, is the "Moebius" button that opens the agent's panel (`app/shell/AgentButton.tsx`).
+ *
  * In a narrow window (under 1000px) the sidebar is hidden and a button at the left of the header brings it back over
  * the page.
  *
@@ -17,6 +19,7 @@
  * ```
  */
 import { createContext, type ReactNode, useContext } from "react";
+import { AgentButton } from "../../app/shell/AgentButton";
 import { useSidebarToggle } from "../../app/shell/SidebarToggle";
 import { IconButton } from "../components/IconButton";
 import { SidebarIcon } from "../icons";
@@ -85,11 +88,10 @@ export function PageHeader({
           {tabs}
         </div>
       )}
-      {actions && (
-        <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2">
-          {actions}
-        </div>
-      )}
+      <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2">
+        <AgentButton />
+        {actions}
+      </div>
     </header>
   );
 }

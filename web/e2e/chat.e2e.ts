@@ -896,8 +896,9 @@ describe("the Moebius agent", () => {
 
   it.skipIf(usesRealServer)("starts in the repository of the board it is opened on", async () => {
     await open("/board/1");
-    // The docked field sends it, which opens the panel with the message.
-    await page.getByRole("textbox", { name: "Ask Moebius" }).fill("Look at this board");
+    // The header's button opens the panel, and the reply field sends the message.
+    await page.getByRole("button", { name: "Moebius", exact: true }).click();
+    await page.getByPlaceholder("Reply to Moebius…").fill("Look at this board");
     await page.keyboard.press("Enter");
     const window = page.getByRole("complementary", { name: "Moebius agent" });
     await window.getByText("You said: Look at this board").first().waitFor();
