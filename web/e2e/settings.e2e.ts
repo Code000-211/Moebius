@@ -86,7 +86,7 @@ describe("Settings", () => {
     await page.getByRole("link", { name: /Add a repository/ }).waitFor();
   });
 
-  it("lists the twenty decided entries in their groups, and opens the four added ones with content", async () => {
+  it("lists the decided entries in their groups, and opens the four added ones with content", async () => {
     server = await startServer();
     const page = await (await browser.newContext()).newPage();
     page.setDefaultTimeout(8000);
@@ -113,6 +113,7 @@ describe("Settings", () => {
       ["Agents", "Models"],
       ["Agents", "Skills"],
       ["Agents", "Plugins"],
+      ["Agents", "MCP servers"],
       ["Automation", "Rules"],
       ["Automation", "Workflows"],
       ["Automation", "Column scripts"],
