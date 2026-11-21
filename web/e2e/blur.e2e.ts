@@ -114,7 +114,7 @@ describe.skipIf(usesRealServer)("blur", () => {
 
     // A tooltip, on the back button of a page header (the board has none of its own).
     await page.keyboard.press("Escape");
-    await page.goto(`${server.url}/projects/1`);
+    await page.goto(`${server.url}/projects/1/repositories/1`);
     const backButton = page.getByRole("link", { name: "All projects", exact: true });
     await backButton.waitFor();
     for (const state of ["on", "off"] as const) {

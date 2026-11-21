@@ -89,7 +89,7 @@ describe.skipIf(usesRealServer)("mentions", () => {
     await page.getByTestId("card-7").click();
     // The dock first shows the card the board picked and is drawn again for the one clicked: a draft typed before
     // that goes with the first card's box. Wait for the dock of card 7 (its address and its number).
-    await page.waitForURL(/\/projects\/1\?repository=1&card=7$/);
+    await page.waitForURL(/\/projects\/1\?card=7$/);
     await page
       .getByRole("dialog", { name: "Card inspector" })
       .getByText("DEMO-31 · #7")
