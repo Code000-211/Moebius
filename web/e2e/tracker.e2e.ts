@@ -78,6 +78,8 @@ async function openProps() {
 async function closeProps() {
   await page.keyboard.press("Escape");
   await properties().waitFor({ state: "detached" });
+  // The card menu that opened it plays its exit animation with the focus still on its item; wait for it to be gone.
+  await page.getByRole("menu").waitFor({ state: "detached" });
 }
 /** The value of a property, a button named by the property and what it says. */
 const value = (name: string | RegExp) => properties().getByRole("button", { name });
@@ -405,6 +407,27 @@ describe("the issue in the dock", () => {
     await page.keyboard.press("Control+k");
     await page.getByRole("option", { name: /Take off @owner/ }).click();
     await value("Assignee No one").waitFor();
+  });
+
+  it("opens the palette with Ctrl+K right after Properties closes, while the card menu is still leaving", async () => {
+    await openBoard();
+    await newIssue("Shortcut after menu");
+    await openCard("Shortcut after menu");
+    await dock().getByRole("heading", { name: "Shortcut after menu" }).waitFor();
+    // Slow every animation, so the menu is still mounted, with the focus on its item, when the shortcut is pressed.
+    await page.addStyleTag({
+      content:
+        "*,*::before,*::after{animation-duration:800ms !important;transition-duration:800ms !important}",
+    });
+    await dock()
+      .getByRole("button", { name: /^More actions for #/ })
+      .click();
+    await item("Properties…").click();
+    await properties().waitFor();
+    await page.keyboard.press("Escape");
+    await properties().waitFor({ state: "detached" });
+    await page.keyboard.press("Control+k");
+    await page.locator("[cmdk-root]").waitFor();
   });
 
   it("sets the priority and the due date of a card, and filters the board by them", async () => {

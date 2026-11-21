@@ -114,6 +114,8 @@ const openProperties = async (number: number) => {
 const closeProperties = async (number: number) => {
   await page.keyboard.press("Escape");
   await properties(number).waitFor({ state: "detached" });
+  // The card menu that opened it plays its exit animation with the focus still on its item; wait for it to be gone.
+  await page.getByRole("menu").waitFor({ state: "detached" });
 };
 /** The properties of the card numbered `number`, with the fold "More properties" open, once they are drawn. */
 const unfolded = async (number: number) => {
