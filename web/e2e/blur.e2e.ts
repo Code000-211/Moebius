@@ -74,7 +74,8 @@ describe.skipIf(usesRealServer)("blur", () => {
     await bar.waitFor();
 
     // The sheet.
-    await page.getByRole("textbox", { name: "Ask Moebius" }).fill("Hello");
+    await page.getByRole("button", { name: "Moebius", exact: true }).click();
+    await page.getByPlaceholder("Reply to Moebius…").fill("Hello");
     await page.keyboard.press("Enter");
     const sheet = page.getByRole("complementary", { name: "Moebius agent" });
     await sheet.waitFor();

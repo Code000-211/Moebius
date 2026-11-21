@@ -1,7 +1,7 @@
 /**
  * What a cold load asks of the server: no URL twice on a quiet server (the event stream's first connect does not read
  * again what was just read), a card's requests that do not wait for the snapshot, and the chat and its Markdown that
- * are fetched when "Ask Moebius" is first used, not with the page. The fake server (`fake/board.ts`) has the data, so
+ * are fetched when the Moebius agent is first opened, not with the page. The fake server (`fake/board.ts`) has the data, so
  * the tests are skipped against a real server. Every wait is on something the page shows, never on time.
  */
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
@@ -90,7 +90,7 @@ describe.skipIf(usesRealServer)("a cold load", () => {
     expect(comments).toHaveLength(1);
   });
 
-  it("loads the chat when Ask Moebius is first used", async () => {
+  it("loads the chat when the Moebius agent is first opened", async () => {
     await fresh();
     const seen = record();
     await page.goto(`${server.url}/board/1`);
