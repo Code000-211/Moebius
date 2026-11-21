@@ -407,13 +407,22 @@ describe("column scrolling", () => {
           });
         }
       });
-      await column("Backlog").getByText("Filler 59").waitFor({ state: "attached" });
+      // Only the cards in view are drawn, so the 60 are known by the column having something to scroll.
+      await expect
+        .poll(() =>
+          column("Backlog").evaluate((node) => {
+            const scroller = node.querySelector("[data-virtuoso-scroller]") as HTMLElement;
+            return scroller.scrollHeight - scroller.clientHeight;
+          }),
+        )
+        .toBeGreaterThan(200);
       const read = () =>
         page.evaluate(() => {
           const scrollOf = (el: Element) => el.scrollTop;
           const section = (name: string) =>
             document.querySelector(`section[aria-label="${name}"]`) as HTMLElement;
-          const cards = (name: string) => section(name).querySelector("div") as HTMLElement;
+          const cards = (name: string) =>
+            section(name).querySelector("[data-virtuoso-scroller]") as HTMLElement;
           const doc = document.scrollingElement as Element;
           const main = document.querySelector("main") as HTMLElement;
           return {
@@ -1444,8 +1453,8 @@ describe("Display", () => {
       await bar().getByRole("button", { name: "Display" }).click();
       await display("Board").click();
       await page.waitForURL((url) => !url.search.includes("layout="));
-      expect(await page.getByTestId("list-row").count()).toBe(0);
       await card(6).waitFor();
+      expect(await page.getByTestId("list-row").count()).toBe(0);
     },
   );
 

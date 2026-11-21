@@ -7,7 +7,7 @@
  * - `mockViewport({ height, rowHeight })` makes every element report `height` (default 600px) for `offsetHeight`,
  *   `clientHeight` and `getBoundingClientRect`, a width of 800px, and makes `ResizeObserver` report those sizes when
  *   an element is observed, and `rowHeight` (default 36px) for an element that is a row or a group row
- *   (`data-testid` of `list-row` or `group-row`; a group row is 30px). A list then draws the rows that fit in
+ *   (`data-testid` of `list-row`, `group-row`, or a board card or stack, `card-<n>` and `stack-<n>`; a group row is 30px). A list then draws the rows that fit in
  *   `height`, plus the screenful it keeps around them.
  * - `requestAnimationFrame` runs its callback at once, so what a list measures on the next frame is measured now.
  * - It returns a function that puts everything back; call it in `afterEach`.
@@ -30,6 +30,8 @@ interface Sizes {
 }
 
 const GROUP_HEIGHT = 30;
+/** A card of a board column, or the stack with its sub-issues: a row as well. */
+const CARD = /^(?:card|stack)-\d+$/;
 
 export function mockViewport({
   height = 600,
@@ -58,13 +60,16 @@ export function mockViewport({
 
   const heightOf = (el: Element) => {
     const id = el.getAttribute("data-testid");
-    if (id === "list-row") return rowHeight;
+    if (id === "list-row" || (id && CARD.test(id))) return rowHeight;
     if (id === "group-row") return GROUP_HEIGHT;
-    // The wrapper Virtuoso puts round an item is as tall as the item in it.
-    const only = el.children.length === 1 ? el.children[0] : null;
-    const inner = only?.getAttribute("data-testid");
-    if (inner === "list-row") return rowHeight;
-    if (inner === "group-row") return GROUP_HEIGHT;
+    // The wrappers Virtuoso and a caller put round an item are as tall as the item in them.
+    let inner: Element | null = el;
+    while (inner && inner.children.length === 1) {
+      inner = inner.children[0] ?? null;
+      const innerId = inner?.getAttribute("data-testid");
+      if (innerId === "list-row" || (innerId && CARD.test(innerId))) return rowHeight;
+      if (innerId === "group-row") return GROUP_HEIGHT;
+    }
     return height;
   };
 

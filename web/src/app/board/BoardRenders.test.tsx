@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../api/keys";
 import type { Board, Card } from "../../api/types/board";
 import { type Renders, watchRenders } from "../../test-renders";
+import { mockViewport } from "../../ui/page/virtualListTest";
 import { BoardPage } from "./BoardPage";
 import { NewIssueProvider } from "./NewIssueHost";
 
@@ -82,7 +83,11 @@ function Where() {
 
 let client: QueryClient;
 
+let restore: () => void;
+
 beforeEach(async () => {
+  // The columns draw only the cards in view, and a DOM without layout has none.
+  restore = mockViewport();
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => ({
@@ -114,6 +119,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  restore();
   cleanup();
   vi.unstubAllGlobals();
 });
@@ -132,8 +138,11 @@ async function measure(work: () => unknown): Promise<Renders> {
 }
 
 describe("the board of 120 cards", () => {
-  it("draws every card", () => {
-    expect(document.querySelectorAll('[aria-roledescription="card"]').length).toBeGreaterThan(100);
+  it("draws the cards in view of each column and not all of them", () => {
+    // 20 cards a column of 36px, in a column 600px high with a screenful kept around it.
+    const drawn = document.querySelectorAll('[aria-roledescription="card"]').length;
+    expect(drawn).toBeGreaterThan(COLUMNS.length);
+    expect(drawn).toBeLessThanOrEqual(CARDS);
   });
 
   it("draws only the changed card when one card changes in the snapshot", async () => {
@@ -142,7 +151,8 @@ describe("the board of 120 cards", () => {
     expect(screen.getByTestId("card-7").textContent).toContain("Renamed");
     // A memoised card shows as two components, the memo and the card inside it.
     expect(seen.byName.BoardCard).toBe(2);
-    expect(seen.rendered).toBeLessThan(100);
+    // The six columns draw again, each with the list that windows its cards (about ten components of its own).
+    expect(seen.rendered).toBeLessThan(160);
   });
 
   it("draws only the two cards whose choice changes when another card is opened", async () => {

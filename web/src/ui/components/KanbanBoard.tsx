@@ -1,4 +1,4 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: the sensors' options keep their identity, so that a render of the page does not draw every card; no i18n; the header is the name alone, with a context menu; a column has no box, no border and no fill; it scrolls its cards on its own, and its header is the column's name alone; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); a card is flat: a hairline, no shadow and no outline of progress, and the chosen one has an accent line, and it is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); the card is a group and not a named button, and its title is the button that opens it, so the issue link and the pull-request badge inside it stay in the accessibility tree; dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
+// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: the sensors' options keep their identity, so that a render of the page does not draw every card; no i18n; the header is the name alone, with a context menu; a column has no box, no border and no fill; it scrolls its cards on its own and draws only those in view (the card being dragged stays drawn), and its header is the column's name alone; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); a card is flat: a hairline, no shadow and no outline of progress, and the chosen one has an accent line, and it is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); the card is a group and not a named button, and its title is the button that opens it, so the issue link and the pull-request badge inside it stay in the accessibility tree; dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
 import {
   type Announcements,
   type CollisionDetection,
@@ -15,16 +15,23 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import {
+  createContext,
   type MouseEvent,
   type ReactNode,
   type Ref,
   type RefObject,
   useCallback,
+  useContext,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { cn } from "../lib/cn";
+
+const DraggedCard = createContext<string | null>(null);
+
+/** The id of the card being dragged, none when no drag is on: a column that windows its cards keeps that one drawn. */
+export const useDraggedCardId = () => useContext(DraggedCard);
 
 /** What a drag ends with: the card (its id) and the column it was let go over, none when it was let go elsewhere or cancelled. */
 export type DropResult = { cardId: string; column: string | null };
@@ -367,7 +374,9 @@ export const KanbanProvider = ({
       }}
       onDragCancel={() => setActiveId(null)}
     >
-      <div className={cn("flex h-full items-stretch gap-4", className)}>{children}</div>
+      <DraggedCard value={activeId}>
+        <div className={cn("flex h-full items-stretch gap-4", className)}>{children}</div>
+      </DraggedCard>
       <DragOverlay dropAnimation={null}>
         {activeId ? <div {...{ [OVERLAY_ATTRIBUTE]: "" }}>{renderOverlay(activeId)}</div> : null}
       </DragOverlay>
