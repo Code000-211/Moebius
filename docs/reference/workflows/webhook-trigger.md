@@ -10,7 +10,7 @@ the path and, when the trigger names a secret, the key that secret holds.
 | --- | --- | --- |
 | `path` | string | Required. The one URL segment the hook answers on: letters, digits, `-` and `_`, at most 64 of them. |
 | `secret` | string | The name of a key in the server's secret store (`secrets.toml` of the data directory, which `PUT /v1/secrets/{name}` writes) whose value a delivery must carry. The name must itself be one URL segment: letters, digits, `-` and `_`, at most 64 of them. Optional; without it anyone who knows the path can start a run. |
-| `repository` | string | The name of the repository a run belongs to, for a delivery whose address names none. Optional. |
+| `repository` | string | The name of the repository a run belongs to, for a delivery whose address names none; it must be one of the repositories of the workflow's project. Optional when the project has only one. |
 
 Any other key is refused. A workflow file is validated when it is read, so a trigger with no `path`, or a `path` or
 `secret` that is not one URL segment of letters, digits, `-` and `_`, at most 64 of them, is refused then, with the
@@ -25,12 +25,17 @@ The trigger has no input and one output, `out`, the port an edge leaves the trig
 
 ## Routes
 
-- `POST /api/hooks/{path}` starts a run of the workflow whose trigger has this `path`, in the repository its
-  `repository` names.
-- `POST /api/hooks/{repository}/{path}` the same, for a delivery that names which repository the run belongs to. The
-  repository in the address wins; a workflow whose trigger names no repository can be run this way.
+- `POST /api/hooks/projects/{project}/{path}` starts a run of the workflow of that project (its numeric id) whose trigger
+  has this `path`, in the repository its `repository` names, or the project's only repository.
+- `POST /api/hooks/projects/{project}/{repository}/{path}` the same, for a delivery that names which repository the run
+  belongs to. The repository in the address wins; it must be one of the project's repositories, and a workflow whose
+  trigger names no repository can be run this way.
+- Deprecated: `POST /api/hooks/{path}` and `POST /api/hooks/{repository}/{path}` answer by the `path` across all
+  projects. A path that one workflow has starts its run; a path that workflows of several projects have is answered `409`
+  with the project-scoped URLs to use, once the credential opens at least one of the hooks that claim it; a path no
+  hook has is the usual uniform `404`. Existing URLs keep working while only one project uses the path.
 
-Neither route is under `/v1/` and neither needs the server's token (see the [desktop API's
+No route is under `/v1/` and none needs the server's token (see the [desktop API's
 authentication](../desktop-api.md#authentication)). A delivery carries its credential as `Authorization: Bearer <key>`.
 
 ## Behaviour
@@ -79,7 +84,7 @@ and CI opens the door with it:
 
 ```sh
 curl -X POST -H "Authorization: Bearer 7f7c…" \
-  -d '{"tag":"v0.9.5","commit":"4a1c9f2"}' http://localhost:7171/api/hooks/ci-ready
+  -d '{"tag":"v0.9.5","commit":"4a1c9f2"}' http://localhost:7171/api/hooks/projects/3/ci-ready
 ```
 
 ## Where the code is

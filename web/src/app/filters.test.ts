@@ -60,6 +60,8 @@ describe("the fleet's filters", () => {
 
 describe("the workflows' filters", () => {
   const summary = (name: string, trigger: string, last: string | null): WorkflowSummary => ({
+    project: 1,
+    project_name: "demo",
     name,
     description: "",
     trigger_kind: trigger,

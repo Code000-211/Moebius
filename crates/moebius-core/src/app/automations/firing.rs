@@ -11,7 +11,7 @@ use crate::app::{App, AppError, Result};
 use crate::blobs::redact;
 use crate::board::Runs;
 use crate::bus::Event;
-use crate::store::{Automation, Firing, Run};
+use crate::store::{Automation, Firing, Project, Run};
 use crate::workflows::definition::WorkflowDefinition;
 use crate::workflows::trigger::schedule as schedule_trigger;
 
@@ -40,10 +40,12 @@ impl App {
         fire(self, runs, &automation, &definition, None, true)
     }
 
-    /// Fires the automation-shaped workflow `definition` because its schedule came due at `at`.
+    /// Fires the automation-shaped workflow `definition`, the file `key` of the project `project`, because its schedule
+    /// came due at `at`.
     pub fn fire_automation_definition(
         self: &Arc<Self>,
         runs: &dyn Runs,
+        project: &Project,
         key: &str,
         definition: &WorkflowDefinition,
         at: PrimitiveDateTime,
@@ -54,7 +56,7 @@ impl App {
                 definition.name
             )));
         }
-        let row = self.ensure_automation(key, definition)?;
+        let row = self.ensure_automation(project, key, definition)?;
         let automation = self.automation_from_workflow(row.clone(), definition)?;
         // The row is the shortcut's copy: what the file now says is what the next firing, the page and the CLI see.
         self.store.update_automation(
@@ -119,12 +121,27 @@ fn fire(
         let started = app
             .store
             .add_firing(automation.id, "started", None, None, manual, "")?;
-        match app.start_workflow_run_for_firing(
-            definition.clone(),
-            repository_id,
-            value,
-            started.id,
-        ) {
+        let started_run = match app.automation_home(automation.id)? {
+            Some(project) => {
+                let key = app.workflow_key(&project, automation.id, &automation.name)?;
+                let repository = app.repository(repository_id)?;
+                app.start_project_workflow_run_with(
+                    &project,
+                    &key,
+                    definition.clone(),
+                    Some(&repository.name),
+                    value,
+                    Some(started.id),
+                )
+            }
+            None => app.start_workflow_run_for_firing(
+                definition.clone(),
+                repository_id,
+                value,
+                started.id,
+            ),
+        };
+        match started_run {
             Ok(_) => app
                 .store
                 .firing(started.id)?

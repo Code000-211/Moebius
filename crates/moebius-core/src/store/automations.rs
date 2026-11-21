@@ -48,6 +48,9 @@ pub struct Automation {
     pub harness_repository: bool,
     pub enabled: bool,
     pub created_at: i64,
+    /// The project that owns it (ADR 0025); none while it is still kept server-wide, or on a server with no harness
+    /// configuration repository.
+    pub project_id: Option<i64>,
 }
 
 /// What an automation is made of, as a person saves it.
@@ -90,8 +93,7 @@ pub struct Firing {
     pub at: i64,
 }
 
-const AUTOMATION_COLUMNS: &str =
-    "id, name, schedule, agent, prompt, repository_id, harness_repository, enabled, created_at";
+const AUTOMATION_COLUMNS: &str = "id, name, schedule, agent, prompt, repository_id, harness_repository, enabled, created_at, project_id";
 
 fn automation(r: &Row) -> rusqlite::Result<Automation> {
     Ok(Automation {
@@ -104,6 +106,7 @@ fn automation(r: &Row) -> rusqlite::Result<Automation> {
         harness_repository: r.get(6)?,
         enabled: r.get(7)?,
         created_at: r.get(8)?,
+        project_id: r.get(9)?,
     })
 }
 
@@ -126,14 +129,20 @@ fn firing(r: &Row) -> rusqlite::Result<Firing> {
 }
 
 impl Store {
-    /// Stores a new automation, checked up to the local minute `checked`, so that it first fires after it.
-    pub fn add_automation(&self, new: &NewAutomation, checked: &str) -> Result<Automation> {
+    /// Stores a new automation of the project `project_id` (none on a server with nowhere to keep a file), checked up
+    /// to the local minute `checked`, so that it first fires after it.
+    pub fn add_automation(
+        &self,
+        new: &NewAutomation,
+        checked: &str,
+        project_id: Option<i64>,
+    ) -> Result<Automation> {
         let id = {
             let conn = self.conn();
             conn.execute(
                 "INSERT INTO automations
-                   (name, schedule, agent, prompt, repository_id, harness_repository, enabled, checked_at, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                   (name, schedule, agent, prompt, repository_id, harness_repository, enabled, checked_at, created_at, project_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 params![
                     new.name,
                     new.schedule,
@@ -143,7 +152,8 @@ impl Store {
                     new.harness,
                     new.enabled,
                     checked,
-                    now()
+                    now(),
+                    project_id
                 ],
             )?;
             conn.last_insert_rowid()
@@ -248,21 +258,6 @@ impl Store {
         )?;
         let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
-    }
-
-    /// The first automation called `name` that has no workflow file of its own yet.
-    pub fn automation_without_workflow_named(&self, name: &str) -> Result<Option<Automation>> {
-        Ok(self
-            .conn()
-            .query_row(
-                &format!(
-                    "SELECT {AUTOMATION_COLUMNS} FROM automations WHERE name = ?1 AND workflow IS NULL \
-                     ORDER BY id LIMIT 1"
-                ),
-                [name],
-                automation,
-            )
-            .optional()?)
     }
 
     /// The automations, by name.
@@ -485,7 +480,9 @@ mod tests {
     fn an_automation_moves_to_a_project_with_its_workflow_file() {
         let (_dir, s) = test_store();
         let project = s.add_project("Pricing", "PRC").unwrap();
-        let a = s.add_automation(&nightly(), "2026-10-29 08:00").unwrap();
+        let a = s
+            .add_automation(&nightly(), "2026-10-29 08:00", None)
+            .unwrap();
         s.set_automation_workflow_key(a.id, "nightly").unwrap();
         assert_eq!(s.automation_project(a.id).unwrap(), None);
         assert!(
@@ -506,7 +503,9 @@ mod tests {
     #[test]
     fn an_automation_is_stored_changed_and_deleted_with_its_firings() {
         let (_dir, s) = test_store();
-        let a = s.add_automation(&nightly(), "2026-10-29 08:00").unwrap();
+        let a = s
+            .add_automation(&nightly(), "2026-10-29 08:00", None)
+            .unwrap();
         assert_eq!((a.name.as_str(), a.enabled), ("Nightly summary", true));
         assert_eq!(
             s.automation_checked(a.id).unwrap().as_deref(),

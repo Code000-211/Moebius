@@ -1,6 +1,6 @@
 //! Workflow, rules and skills packages: nothing is installed at once, the files are proposed as a change that a person
-//! merges, always as a change of the harness configuration repository. Workflows go to the settings of the named
-//! repository's home project, `projects/<project name>/`, rules are added to the repository's
+//! merges, always as a change of the harness configuration repository. Workflows go to the settings of the project
+//! the request names, `projects/<project name>/`, rules are added to the repository's
 //! `repos/<repository name>/rules.md`, and skills go to `skills/`. An update proposes the new
 //! files and the deletion of those the new version no longer has; a removal proposes deleting what the lock says was
 //! proposed.
@@ -16,9 +16,12 @@ use crate::decide::{Actor, rules};
 use crate::store::{Change, Repository};
 
 /// Where the files of a package go in the harness configuration repository: skills at its root, rules in the settings
-/// of a repository, a Kanban in the settings of that repository's home project.
+/// of a repository, a Kanban in the settings of a project.
 struct Target {
-    project: Option<Repository>,
+    /// The repository of a rules package.
+    repository: Option<Repository>,
+    /// The name of the project of a workflow package.
+    project: Option<String>,
     /// The folder of the settings the files go to, from the root of the harness configuration repository.
     folder: String,
 }
@@ -46,37 +49,82 @@ impl Packages<'_> {
         }
     }
 
-    fn target(&self, kind: &str, repository: Option<&str>) -> Result<Target> {
+    /// The project a workflow package goes to: `name` is its name or its id, and it is required.
+    fn project_for(&self, name: Option<&str>) -> Result<String> {
+        let projects = self.app.store.projects().map_err(AppError::from)?;
+        let names = projects
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let Some(name) = name.map(str::trim).filter(|n| !n.is_empty()) else {
+            return Err(PackageError::Refused(format!(
+                "a workflow package is installed into a project: name it (--project); the projects are {names}"
+            )));
+        };
+        let found = projects
+            .iter()
+            .find(|p| p.name.eq_ignore_ascii_case(name))
+            .or_else(|| {
+                let id = name.parse::<i64>().ok()?;
+                projects.iter().find(|p| p.id == id)
+            });
+        found.map(|p| p.name.clone()).ok_or_else(|| {
+            PackageError::Refused(format!(
+                "there is no project {name}; the projects are {names}"
+            ))
+        })
+    }
+
+    /// The project of the home repository of a workflow package locked before it recorded its project.
+    pub(super) fn legacy_project(&self, repository: &str) -> Result<String> {
+        let repository = self.repository_for(Some(repository))?;
+        let home = self
+            .app
+            .store
+            .project(repository.home_project_id)
+            .map_err(AppError::from)?
+            .ok_or_else(|| {
+                PackageError::Refused(format!("{} has no home project", repository.name))
+            })?;
+        Ok(home.name)
+    }
+
+    fn target(
+        &self,
+        kind: &str,
+        repository: Option<&str>,
+        project: Option<&str>,
+    ) -> Result<Target> {
         if self.harness.is_none() {
             return Err(PackageError::Refused(
                 "the files of a package go to the harness configuration repository, and this server has none"
                     .into(),
             ));
         }
-        if kind == "skills" {
-            return Ok(Target {
+        match kind {
+            "skills" => Ok(Target {
+                repository: None,
                 project: None,
                 folder: "skills".into(),
-            });
+            }),
+            "rules" => {
+                let repository = self.repository_for(repository)?;
+                Ok(Target {
+                    folder: format!("repos/{}", repository.name),
+                    repository: Some(repository),
+                    project: None,
+                })
+            }
+            _ => {
+                let name = self.project_for(project)?;
+                Ok(Target {
+                    folder: format!("projects/{name}"),
+                    repository: None,
+                    project: Some(name),
+                })
+            }
         }
-        let repository = self.repository_for(repository)?;
-        let folder = if kind == "rules" {
-            format!("repos/{}", repository.name)
-        } else {
-            let home = self
-                .app
-                .store
-                .project(repository.home_project_id)
-                .map_err(AppError::from)?
-                .ok_or_else(|| {
-                    PackageError::Refused(format!("{} has no home project", repository.name))
-                })?;
-            format!("projects/{}", home.name)
-        };
-        Ok(Target {
-            project: Some(repository),
-            folder,
-        })
     }
 
     /// Offers `write`, a change to a worktree of the harness configuration repository's default branch, as the change
@@ -103,10 +151,11 @@ impl Packages<'_> {
         by: &Actor,
         chosen: &Chosen,
         repository: Option<&str>,
+        project: Option<&str>,
         previous: Option<&Locked>,
     ) -> Result<Outcome> {
         let package = &chosen.package;
-        let target = self.target(&package.kind, repository)?;
+        let target = self.target(&package.kind, repository, project)?;
         let mut files = Vec::new();
         for file in &package.files {
             let bytes = download::fetch(&file.url, &file.sha256)?;
@@ -168,7 +217,8 @@ impl Packages<'_> {
             url,
             sha256,
             program: None,
-            repository: target.project.as_ref().map(|r| r.name.clone()),
+            repository: target.repository.as_ref().map(|r| r.name.clone()),
+            project: target.project.clone(),
             change: Some(change.id),
             files: package.files.iter().map(locked_file).collect(),
             rules: names,
@@ -188,7 +238,16 @@ impl Packages<'_> {
 
     /// Proposes deleting what the lock says was proposed for `locked`.
     pub(super) fn propose_removal(&self, by: &Actor, locked: &Locked) -> Result<Outcome> {
-        let target = self.target(&locked.kind, locked.repository.as_deref())?;
+        let legacy;
+        let project = match (&locked.project, &locked.repository) {
+            (Some(project), _) => Some(project.as_str()),
+            (None, Some(repository)) if locked.kind == "workflow" => {
+                legacy = self.legacy_project(repository)?;
+                Some(legacy.as_str())
+            }
+            _ => None,
+        };
+        let target = self.target(&locked.kind, locked.repository.as_deref(), project)?;
         let write = |worktree: &Path| -> Result<()> {
             if locked.kind == "rules" {
                 let file = worktree.join(target.path("rules.md"));

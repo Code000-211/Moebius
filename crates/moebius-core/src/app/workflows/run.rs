@@ -13,69 +13,48 @@ use crate::app::{App, AppError, Result};
 use crate::bus::Event;
 use crate::store::WorkflowRun;
 use crate::workflows::decorate::Scope;
-use crate::workflows::definition::{self, NodeDefinition, WorkflowDefinition};
+use crate::workflows::definition::{NodeDefinition, WorkflowDefinition};
 use crate::workflows::nodes::{NodeError, Routed};
 pub(super) use crate::workflows::run::Resume;
 use crate::workflows::run::{
     Error as RunError, Limits, Observer, Runner, StepResult, execute, execute_from_node,
 };
 
-/// A definition a trigger asks a run for: either the definition itself or the name of its file in the harness
-/// configuration repository.
-pub trait WorkflowSource {
-    /// The definition this source names, read and validated.
-    fn definition(self, app: &App) -> Result<WorkflowDefinition>;
-}
-
-impl WorkflowSource for &str {
-    fn definition(self, app: &App) -> Result<WorkflowDefinition> {
-        definition::read(app.harness_repo()?.path(), self)
-            .map_err(|error| AppError::Invalid(error.to_string()))
-    }
-}
-
-impl WorkflowSource for WorkflowDefinition {
-    fn definition(self, _app: &App) -> Result<WorkflowDefinition> {
-        Ok(self)
-    }
-}
-
 impl App {
-    /// Stores a run of `source` for `repository_id`, started with `value`, and drives it on its own thread. This is the
-    /// one door a trigger has into a run. The run is in the store before this returns, and an unreadable definition is
-    /// refused before anything is stored.
-    pub fn start_workflow_run<S: WorkflowSource>(
+    /// Stores a run of `definition` for `repository_id`, started with `value`, and drives it on its own thread. The run
+    /// belongs to no project: a run of a project's workflow starts through [`Self::start_project_workflow_run`]. The
+    /// run is in the store before this returns, and an invalid definition is refused before anything is stored.
+    pub fn start_workflow_run(
         self: &Arc<Self>,
-        source: S,
+        definition: WorkflowDefinition,
         repository_id: i64,
         value: Value,
     ) -> Result<WorkflowRun> {
-        self.start_workflow_run_with(source, repository_id, value, (None, None))
+        self.start_workflow_run_with(definition, repository_id, value, (None, None))
     }
 
     /// Starts a run for the firing `firing`, linked to it before the run's thread starts so that its first node
     /// already finds the firing; a start with no firing is [`Self::start_workflow_run`].
-    pub fn start_workflow_run_for_firing<S: WorkflowSource>(
+    pub fn start_workflow_run_for_firing(
         self: &Arc<Self>,
-        source: S,
+        definition: WorkflowDefinition,
         repository_id: i64,
         value: Value,
         firing: i64,
     ) -> Result<WorkflowRun> {
-        self.start_workflow_run_with(source, repository_id, value, (Some(firing), None))
+        self.start_workflow_run_with(definition, repository_id, value, (Some(firing), None))
     }
 
     /// `(firing, project)` are the firing the run carries and the project that owns its workflow with the workflow's
     /// file name, when there are any. A run of a project's workflow is stored under that file name, which is how
     /// every lookup names it, and not under the `name` written inside the file; the two need not match.
-    pub(super) fn start_workflow_run_with<S: WorkflowSource>(
+    pub(super) fn start_workflow_run_with(
         self: &Arc<Self>,
-        source: S,
+        definition: WorkflowDefinition,
         repository_id: i64,
         value: Value,
         (firing, project): (Option<i64>, Option<(i64, &str)>),
     ) -> Result<WorkflowRun> {
-        let definition = source.definition(self)?;
         definition
             .validate(&format!("workflows/{}.toml", definition.name))
             .map_err(|error| AppError::Invalid(error.to_string()))?;
@@ -460,6 +439,11 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    /// The workflow written to the test's configuration repository as `name`, read from its file.
+    fn named(app: &App, name: &str) -> crate::workflows::definition::WorkflowDefinition {
+        crate::workflows::definition::read(app.harness_repo().unwrap().path(), name).unwrap()
+    }
     use crate::board::{AgentInfo, CardRuns, StartError, Variant};
     use crate::harness::repo::testing;
     use crate::repos::git;
@@ -846,7 +830,7 @@ to = "two"
 
         let mut events = app.bus.subscribe();
         let run = app
-            .start_workflow_run("broken", repository.id, json!(1))
+            .start_workflow_run(named(&app, "broken"), repository.id, json!(1))
             .unwrap();
         let ended = wait_for_end(&app, &mut events, run.id);
 
@@ -887,7 +871,7 @@ to = "one"
 
         let mut events = app.bus.subscribe();
         let run = app
-            .start_workflow_run("slow", repository.id, json!(1))
+            .start_workflow_run(named(&app, "slow"), repository.id, json!(1))
             .unwrap();
         let ended = wait_for_end(&app, &mut events, run.id);
 
@@ -958,7 +942,7 @@ to = "one"
 
         let mut events = app.bus.subscribe();
         let run = app
-            .start_workflow_run("stored", repository.id, json!({"a": true}))
+            .start_workflow_run(named(&app, "stored"), repository.id, json!({"a": true}))
             .unwrap();
         let ended = wait_for_end(&app, &mut events, run.id);
 

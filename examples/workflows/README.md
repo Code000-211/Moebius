@@ -1,7 +1,8 @@
 # Workflow examples
 
-Each file is a workflow of the harness configuration repository, kept under its `workflows/` folder as
-`workflows/<name>.toml`. Save one with `moebius workflow save <name> <file>`, or through the app.
+Each file is a workflow of a project, kept in the harness configuration repository as
+`projects/<project>/workflows/<name>.toml`. Save one into a project with
+`moebius workflow save --project <project> <name> <file>`, or through the app.
 
 | File | What it shows |
 | --- | --- |

@@ -1,17 +1,23 @@
 //! The runs of the workflows: reading them, and starting them by hand — the `manual` trigger names its inputs, and a
 //! person starts each run giving them, through this door or the `moebius workflow run` command.
 //!
-//! - `GET /v1/workflow-runs?workflow=&limit=`: the runs, newest first (of one workflow when it is named), leaving out
-//!   the runs of a repository the person does not see.
+//! - `GET /v1/workflow-runs?project=&workflow=&limit=`: the runs, newest first (of one project and one workflow when
+//!   they are named), leaving out the runs of a repository or a project the person does not see. A run says which
+//!   project it belongs to (`project`, `project_name`).
 //! - `GET /v1/workflow-runs/{id}`: one run with what each of its nodes was given, answered and failed with.
-//! - `GET /v1/workflows/{name}/run-inputs`: the inputs of the workflow's manual trigger, so a form can be built from
-//!   them; a conflict when the trigger is not manual.
-//! - `POST /v1/workflows/{name}/runs` `{repository?, inputs?}`: starts a run of the workflow, checked against the
-//!   trigger's inputs — a refusal names the input it refused, a default stands in for an input that was not given,
-//!   and an input the trigger does not name is refused. The run belongs to the repository `repository` names, or to
-//!   the one the trigger's `repository` input names when it has one.
+//! - `GET /v1/projects/{id}/workflows/{name}/run-inputs`: the inputs of the workflow's manual trigger, so a form can be
+//!   built from them; a conflict when the trigger is not manual.
+//! - `POST /v1/projects/{id}/workflows/{name}/runs` `{repository?, inputs?}`: starts a run of the workflow, checked
+//!   against the trigger's inputs — a refusal names the input it refused, a default stands in for an input that was not
+//!   given, and an input the trigger does not name is refused. The run belongs to the repository `repository` names, or
+//!   to the one the trigger's `repository` input names when it has one; it must be one of the project's repositories
+//!   and, left out, is the project's only one (see `App::workflow_run_repository`).
+//!
+//! The same two routes without the project, `GET /v1/workflows/{name}/run-inputs` and `POST
+//! /v1/workflows/{name}/runs`, are deprecated: they find the one project that has a workflow of that name (`409` with
+//! the choices when several do, see `workflows::owner_of`).
 
-use std::sync::Arc;
+use std::collections::HashMap;
 
 use axum::extract::{Path as UrlPath, State};
 use axum::routing::{get, post};
@@ -19,15 +25,25 @@ use axum::{Extension, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use super::workflows::{harness, owner_of};
 use super::{ApiError, ApiState, blocking};
-use crate::app::AppError;
+use crate::app::{App, AppError, Sight};
 use crate::decide::Actor;
-use crate::store::WorkflowRun;
+use crate::harness::repo::HarnessRepo;
+use crate::store::{Project, WorkflowRun};
 use crate::workflows::trigger::manual;
 
 /// The routes that start runs of workflows by hand.
 pub(super) fn routes() -> Router<ApiState> {
     Router::new()
+        .route(
+            "/v1/projects/{id}/workflows/{name}/run-inputs",
+            get(project_run_inputs),
+        )
+        .route(
+            "/v1/projects/{id}/workflows/{name}/runs",
+            post(project_start),
+        )
         .route("/v1/workflows/{name}/run-inputs", get(run_inputs))
         .route("/v1/workflows/{name}/runs", post(start))
         .route("/v1/workflow-runs", get(list_runs))
@@ -45,6 +61,10 @@ const MOST_RUNS: i64 = 200;
 pub(super) struct RunView {
     id: i64,
     workflow: String,
+    /// The project that owns the workflow; none for a run from before workflows belonged to projects.
+    project: Option<i64>,
+    /// Its name; none when the run has no project or the project has been deleted.
+    project_name: Option<String>,
     repository_id: i64,
     trigger: String,
     status: String,
@@ -55,11 +75,14 @@ pub(super) struct RunView {
     error: Option<String>,
 }
 
-impl From<WorkflowRun> for RunView {
-    fn from(run: WorkflowRun) -> Self {
+impl RunView {
+    /// `run`, with the name of its project taken from `names`, the projects by id.
+    fn new(run: WorkflowRun, names: &HashMap<i64, String>) -> Self {
         Self {
             id: run.id,
             workflow: run.workflow,
+            project_name: run.project_id.and_then(|id| names.get(&id).cloned()),
+            project: run.project_id,
             repository_id: run.repository_id,
             trigger: run.trigger,
             status: run.status,
@@ -70,6 +93,16 @@ impl From<WorkflowRun> for RunView {
             error: run.error,
         }
     }
+}
+
+/// The names of the projects the server has, by id.
+fn project_names(app: &App) -> Result<HashMap<i64, String>, AppError> {
+    Ok(app
+        .store
+        .projects()?
+        .into_iter()
+        .map(|project| (project.id, project.name))
+        .collect())
 }
 
 /// One node of a run at one attempt.
@@ -109,6 +142,8 @@ struct RunDetail {
 #[derive(Debug, Deserialize)]
 struct RunsQuery {
     #[serde(default)]
+    project: Option<i64>,
+    #[serde(default)]
     workflow: Option<String>,
     #[serde(default)]
     limit: Option<i64>,
@@ -122,41 +157,51 @@ async fn list_runs(
     blocking(&state.app, move |app| {
         let sight = app.sight(&by)?;
         let limit = query.limit.unwrap_or(DEFAULT_RUNS).clamp(1, MOST_RUNS);
-        Ok(visible_runs(app, &sight, query.workflow.as_deref(), limit)?
-            .into_iter()
-            .map(RunView::from)
-            .collect())
+        let names = project_names(app)?;
+        Ok(
+            visible_runs(app, &sight, query.project, query.workflow.as_deref(), limit)?
+                .into_iter()
+                .map(|run| RunView::new(run, &names))
+                .collect(),
+        )
     })
     .await
 }
 
-/// The newest runs of `workflow` (of all with none) in repositories `sight` sees, at most `limit`.
+/// The newest runs of `workflow` of `project` (of all with none) in repositories and projects `sight` sees, at most
+/// `limit`.
 pub(super) fn visible_runs(
-    app: &crate::app::App,
-    sight: &crate::app::Sight,
+    app: &App,
+    sight: &Sight,
+    project: Option<i64>,
     workflow: Option<&str>,
     limit: i64,
 ) -> Result<Vec<WorkflowRun>, AppError> {
-    // A run of a repository the person does not see is skipped, so the store is read page by page until `limit`
-    // visible runs are found or the runs are all read.
+    // A run of a repository or a project the person does not see is skipped, so the store is read page by page until
+    // `limit` visible runs are found or the runs are all read.
     let wanted = limit as usize;
     let mut found = Vec::new();
     let mut before = None;
     while found.len() < wanted {
-        let page = app.store.workflow_runs(workflow, before, MOST_RUNS)?;
+        let page = app
+            .store
+            .project_workflow_runs(project, workflow, before, MOST_RUNS)?;
         let Some(last) = page.last() else { break };
         before = Some(last.id);
         let full = page.len() as i64 == MOST_RUNS;
-        found.extend(
-            page.into_iter()
-                .filter(|run| sight.repository(run.repository_id)),
-        );
+        found.extend(page.into_iter().filter(|run| sees_run(sight, run)));
         if !full {
             break;
         }
     }
     found.truncate(wanted);
     Ok(found)
+}
+
+/// Whether `sight` sees `run`: its repository, and its project when it has one.
+pub(super) fn sees_run(sight: &Sight, run: &WorkflowRun) -> bool {
+    sight.repository(run.repository_id)
+        && run.project_id.is_none_or(|project| sight.project(project))
 }
 
 async fn show_run(
@@ -170,10 +215,15 @@ async fn show_run(
         let run = app
             .store
             .workflow_run(id)?
-            .filter(|run| sight.repository(run.repository_id))
+            .filter(|run| sees_run(&sight, run))
             .ok_or_else(|| AppError::NotFound(format!("workflow run {id}")))?;
-        let kinds: std::collections::HashMap<String, String> = repo
-            .and_then(|repo| repo.workflow(&run.workflow).ok())
+        // The definition is the one in the folder of the run's own project; a run from before the migration has none.
+        let kinds: HashMap<String, String> = repo
+            .zip(
+                run.project_id
+                    .and_then(|project| app.store.project(project).ok().flatten()),
+            )
+            .and_then(|(repo, project)| repo.project_workflow(&project.name, &run.workflow).ok())
             .map(|definition| {
                 definition
                     .nodes
@@ -209,7 +259,7 @@ async fn show_run(
             })
             .collect();
         Ok(RunDetail {
-            run: run.into(),
+            run: RunView::new(run, &project_names(app)?),
             nodes,
             waiting,
         })
@@ -217,7 +267,7 @@ async fn show_run(
     .await
 }
 
-/// What `GET /v1/workflows/{name}/run-inputs` answers: the inputs a form builds itself from.
+/// What `GET .../run-inputs` answers: the inputs a form builds itself from.
 #[derive(Debug, Serialize)]
 struct RunInputs {
     /// Always `manual`, the trigger of the workflow.
@@ -226,7 +276,7 @@ struct RunInputs {
     inputs: Vec<manual::Input>,
 }
 
-/// What `POST /v1/workflows/{name}/runs` takes.
+/// What `POST .../runs` takes.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StartRequest {
@@ -243,6 +293,8 @@ struct StartRequest {
 struct Started {
     id: i64,
     workflow: String,
+    project: i64,
+    project_name: String,
     /// The name of the repository the run belongs to.
     repository: String,
     /// The kind of the trigger that started the run, `manual` through this door.
@@ -252,16 +304,13 @@ struct Started {
     value: Value,
 }
 
-/// The inputs a person gave, checked against the trigger of the workflow, the repository the run belongs to, and the
-/// run as it was recorded.
-fn start_manual(
-    app: &std::sync::Arc<crate::app::App>,
-    repo: &crate::harness::repo::HarnessRepo,
+/// The manual trigger of the workflow `name` of `project`, read from its file.
+fn manual_trigger(
+    repo: &HarnessRepo,
+    project: &Project,
     name: &str,
-    request: &StartRequest,
-    sight: &crate::app::Sight,
-) -> Result<Started, AppError> {
-    let definition = repo.workflow(name)?;
+) -> Result<(String, manual::ManualTrigger), AppError> {
+    let definition = repo.project_workflow(&project.name, name)?;
     let trigger = definition
         .trigger
         .first()
@@ -275,6 +324,20 @@ fn start_manual(
     }
     let manual = manual::ManualTrigger::parse(&trigger.params)
         .map_err(|message| AppError::Invalid(format!("trigger: {message}")))?;
+    Ok((trigger.kind, manual))
+}
+
+/// The inputs a person gave, checked against the trigger of the workflow, the repository the run belongs to, and the
+/// run as it was recorded.
+fn start_manual(
+    app: &std::sync::Arc<App>,
+    repo: &HarnessRepo,
+    project: &Project,
+    name: &str,
+    request: &StartRequest,
+    sight: &Sight,
+) -> Result<Started, AppError> {
+    let (_, manual) = manual_trigger(repo, project, name)?;
     let value = manual.resolve(&request.inputs).map_err(AppError::Invalid)?;
     // A run works only in repositories the person sees (see `app::projects::sight`): neither the one it belongs to nor
     // one any other input names, with its default, may be of a private project they are no member of. Such a
@@ -295,8 +358,9 @@ fn start_manual(
         }
     }
 
-    // The run belongs to the repository the person named, or to the one the trigger's `repository` input named.
-    let (repository_name, via_input) = match manual
+    // The run belongs to the repository the person named, or to the one the trigger's `repository` input named; left
+    // out, to the project's only repository (see `App::workflow_run_repository`).
+    let requested = match manual
         .inputs
         .iter()
         .find(|input| input.ty == manual::InputType::Repository)
@@ -308,42 +372,20 @@ fn start_manual(
                     input.name
                 )));
             }
-            let repository_name = value
+            value
                 .get(&input.name)
                 .and_then(Value::as_str)
                 .map(str::to_string)
-                .ok_or_else(|| AppError::Invalid(format!(
-                    "the trigger's input {:?} names the run's repository, but no value was given for it",
-                    input.name
-                )))?;
-            (repository_name, Some(input.name.clone()))
         }
-        None => (
-            request
-                .repository
-                .clone()
-                .filter(|repository| !repository.is_empty())
-                .ok_or_else(|| AppError::Invalid(
-                    "the trigger has no repository input, so \"repository\" names the run's repository".to_string(),
-                ))?,
-            None,
-        ),
+        None => request.repository.clone(),
     };
-    let repository = repositories
-        .iter()
-        .find(|repository| repository.name == repository_name)
-        .cloned()
-        .ok_or_else(|| {
-            AppError::Invalid(match &via_input {
-                Some(input) => format!("input {input:?}: no repository named {repository_name:?}"),
-                None => format!("no repository named {repository_name:?}"),
-            })
-        })?;
-
-    let run = app.start_workflow_run(name, repository.id, value)?;
+    let run = app.start_project_workflow_run(project.id, name, requested.as_deref(), value)?;
+    let repository = app.repository(run.repository_id)?;
     Ok(Started {
         id: run.id,
         workflow: run.workflow,
+        project: project.id,
+        project_name: project.name.clone(),
         repository: repository.name,
         trigger: run.trigger,
         status: run.status,
@@ -351,71 +393,95 @@ fn start_manual(
     })
 }
 
-async fn run_inputs(
+fn inputs_of(repo: &HarnessRepo, project: &Project, name: &str) -> Result<RunInputs, AppError> {
+    let (trigger_kind, manual) = manual_trigger(repo, project, name)?;
+    Ok(RunInputs {
+        trigger_kind,
+        inputs: manual.inputs,
+    })
+}
+
+async fn project_run_inputs(
     State(state): State<ApiState>,
-    UrlPath(name): UrlPath<String>,
+    UrlPath((project, name)): UrlPath<(i64, String)>,
 ) -> Result<axum::Json<RunInputs>, ApiError> {
     let repo = harness(&state)?;
-    blocking(&state.app, move |_| {
-        let definition = repo.workflow(&name)?;
-        let trigger =
-            definition.trigger.first().cloned().ok_or_else(|| {
-                AppError::Conflict(format!("the workflow {name:?} has no trigger"))
-            })?;
-        if trigger.kind != manual::KIND {
-            return Err(AppError::Conflict(format!(
-                "the workflow's trigger is {:?}, not manual",
-                trigger.kind
-            )));
-        }
-        let manual = manual::ManualTrigger::parse(&trigger.params)
-            .map_err(|message| AppError::Invalid(format!("trigger: {message}")))?;
-        Ok(RunInputs {
-            trigger_kind: trigger.kind,
-            inputs: manual.inputs,
-        })
+    blocking(&state.app, move |app| {
+        inputs_of(&repo, &app.project(project)?, &name)
     })
     .await
 }
 
+/// Deprecated: the inputs of the workflow `name` of the one project that has it.
+async fn run_inputs(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath(name): UrlPath<String>,
+) -> Result<axum::Json<RunInputs>, ApiError> {
+    let repo = harness(&state)?;
+    blocking(&state.app, move |app| {
+        let project = owner_of(app, &app.sight(&by)?, &repo, &name)?;
+        inputs_of(&repo, &project, &name)
+    })
+    .await
+}
+
+/// Starts the run a person asked for in `project`: a repository the request names is checked first, as is every one the
+/// workflow's inputs name once they are read (`start_manual`).
+fn start_in(
+    app: &std::sync::Arc<App>,
+    repo: &HarnessRepo,
+    sight: &Sight,
+    project: &Project,
+    name: &str,
+    request: &StartRequest,
+) -> Result<Started, AppError> {
+    let named = [
+        request.repository.as_deref(),
+        request.inputs.get("repository").and_then(Value::as_str),
+    ];
+    for named in named.into_iter().flatten() {
+        if app
+            .store
+            .repositories()?
+            .iter()
+            .any(|r| r.name == named && !sight.repository(r.id))
+        {
+            return Err(AppError::NotFound(format!("repository {named}")));
+        }
+    }
+    start_manual(app, repo, project, name, request, sight)
+}
+
+async fn project_start(
+    State(state): State<ApiState>,
+    Extension(by): Extension<Actor>,
+    UrlPath((project, name)): UrlPath<(i64, String)>,
+    axum::Json(request): axum::Json<StartRequest>,
+) -> Result<axum::Json<Started>, ApiError> {
+    let repo = harness(&state)?;
+    blocking(&state.app, move |app| {
+        let sight = app.sight(&by)?;
+        let project = app.project(project)?;
+        start_in(app, &repo, &sight, &project, &name, &request)
+    })
+    .await
+}
+
+/// Deprecated: starts a run of the workflow `name` of the one project that has it.
 async fn start(
     State(state): State<ApiState>,
     Extension(by): Extension<Actor>,
     UrlPath(name): UrlPath<String>,
     axum::Json(request): axum::Json<StartRequest>,
 ) -> Result<axum::Json<Started>, ApiError> {
-    let repo = harness(&state);
+    let repo = harness(&state)?;
     blocking(&state.app, move |app| {
-        // A run works only in a repository the person sees (see `app::projects::sight`): the one the request names
-        // is checked first, and every one the workflow's inputs name once they are read (`start_manual`).
         let sight = app.sight(&by)?;
-        let named = [
-            request.repository.as_deref(),
-            request.inputs.get("repository").and_then(Value::as_str),
-        ];
-        for name in named.into_iter().flatten() {
-            if app
-                .store
-                .repositories()?
-                .iter()
-                .any(|r| r.name == name && !sight.repository(r.id))
-            {
-                return Err(AppError::NotFound(format!("repository {name}")));
-            }
-        }
-        let repo = repo?;
-        start_manual(app, &repo, &name, &request, &sight)
+        let project = owner_of(app, &sight, &repo, &name)?;
+        start_in(app, &repo, &sight, &project, &name, &request)
     })
     .await
-}
-
-fn harness(state: &ApiState) -> Result<Arc<crate::harness::repo::HarnessRepo>, AppError> {
-    if let Some(repo) = state.harness_repo.clone() {
-        return Ok(repo);
-    }
-    state.app.harness_repo().cloned().map_err(|_| {
-        AppError::Conflict("the server has no harness configuration repository".into())
-    })
 }
 
 #[cfg(test)]
@@ -653,13 +719,15 @@ port = "out"
         let (_dir, state, addr, _harness) = started().await;
         save(&state, &addr, WORKFLOW).await;
 
-        // Without a repository, when the trigger has no input of its kind.
+        // Without a repository, the run belongs to the only repository of its project.
         let (status, body) =
             start_run(&state, &addr, json!({ "inputs": { "version": "1.2.3" } })).await;
-        assert_eq!(status, 422, "{body}");
-        assert!(body.contains("repository"), "{body}");
+        assert_eq!(status, 200, "{body}");
+        let started: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(started["repository"], "radiance");
+        assert_eq!(started["project_name"], "radiance");
 
-        // With a repository the server does not know.
+        // With a repository that is not one of the project's, the refusal lists the choices.
         let (status, body) = start_run(
             &state,
             &addr,
@@ -667,7 +735,11 @@ port = "out"
         )
         .await;
         assert_eq!(status, 422, "{body}");
-        assert!(body.contains("nobody"), "{body}");
+        assert!(
+            body.contains("\"nobody\" is not one of the repositories of the project radiance")
+                && body.contains("one of: radiance"),
+            "{body}"
+        );
     }
 
     #[tokio::test]
@@ -695,7 +767,6 @@ port = "out"
         )
         .await;
         assert_eq!(status, 422, "{body}");
-        assert!(body.contains("\"repository\""), "{body}");
         assert!(body.contains("nobody"), "{body}");
 
         // And the "repository" key is not taken at the same time.
@@ -730,5 +801,121 @@ port = "out"
             .await
             .unwrap();
         assert_eq!(response.status(), 409, "{}", response.text().await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn a_run_is_started_in_its_project_and_its_history_keeps_the_definition() {
+        let (_dir, state, addr, _harness) = started().await;
+        save(&state, &addr, WORKFLOW).await;
+        let radiance = state
+            .app
+            .store
+            .project_by_name("radiance")
+            .unwrap()
+            .unwrap()
+            .id;
+        let other = state.app.add_project("Other", "OTH").unwrap().id;
+        let client = reqwest::Client::new();
+        let call = |method: &str, path: String, body: Value| {
+            client
+                .request(method.parse().unwrap(), format!("http://{addr}{path}"))
+                .bearer_auth(&*state.token)
+                .json(&body)
+                .send()
+        };
+
+        // The inputs are those of the workflow of the project that is named; another project has none of that name.
+        let inputs = call(
+            "GET",
+            format!("/v1/projects/{radiance}/workflows/release/run-inputs"),
+            json!({}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(inputs.status(), 200);
+        let missing = call(
+            "GET",
+            format!("/v1/projects/{other}/workflows/release/run-inputs"),
+            json!({}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            missing.status(),
+            422,
+            "a workflow the project does not have cannot be read"
+        );
+
+        let started = call(
+            "POST",
+            format!("/v1/projects/{radiance}/workflows/release/runs"),
+            json!({ "inputs": { "version": "1.0.0" } }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(started.status(), 200);
+        let started: Value = started.json().await.unwrap();
+        assert_eq!(
+            (
+                started["project"].as_i64(),
+                started["project_name"].as_str()
+            ),
+            (Some(radiance), Some("radiance"))
+        );
+        let run = started["id"].as_i64().unwrap();
+
+        // Its detail names the kind of each node of the definition in its project, and the list filters by project.
+        testing::until("the run ends", || {
+            state
+                .app
+                .store
+                .workflow_run(run)
+                .unwrap()
+                .unwrap()
+                .finished_at
+                .is_some()
+        })
+        .await;
+        let detail: Value = testing::get(&state, &addr, &format!("/v1/workflow-runs/{run}")).await;
+        assert_eq!(detail["project"], radiance);
+        assert_eq!(detail["project_name"], "radiance");
+        assert_eq!(detail["nodes"][0]["kind"], "test");
+        let listed: Value = testing::get(
+            &state,
+            &addr,
+            &format!("/v1/workflow-runs?project={radiance}&workflow=release"),
+        )
+        .await;
+        assert_eq!(listed.as_array().unwrap().len(), 1);
+        assert_eq!(listed[0]["project"], radiance);
+        let none: Value =
+            testing::get(&state, &addr, &format!("/v1/workflow-runs?project={other}")).await;
+        assert!(none.as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_old_run_route_resolves_the_project_and_refuses_a_name_two_projects_have() {
+        let (_dir, state, addr, _harness) = started().await;
+        save(&state, &addr, WORKFLOW).await;
+        let (status, body) =
+            start_run(&state, &addr, json!({ "inputs": { "version": "1.0.0" } })).await;
+        assert_eq!(status, 200, "{body}");
+        let started: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(started["project_name"], "radiance");
+
+        let other = state.app.add_project("Other", "OTH").unwrap().id;
+        let saved = reqwest::Client::new()
+            .put(format!(
+                "http://{addr}/v1/projects/{other}/workflows/release"
+            ))
+            .bearer_auth(&*state.token)
+            .json(&json!({ "file": WORKFLOW }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(saved.status(), 200);
+        let (status, body) = start_run(&state, &addr, json!({})).await;
+        assert_eq!(status, 409, "{body}");
+        assert!(body.contains("Other (id"), "{body}");
     }
 }

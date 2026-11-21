@@ -34,10 +34,12 @@ pub struct Locked {
     /// The program of a plugin, where it is installed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub program: Option<String>,
-    /// The repository a workflow or rules package was proposed to; none for skills, which go to the harness
-    /// configuration repository.
+    /// The repository a rules package was proposed to; none for the others.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repository: Option<String>,
+    /// The project a workflow package was proposed to, by name; none for the others.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
     /// The change that proposed it, for the packages that are proposed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub change: Option<i64>,
@@ -114,6 +116,7 @@ mod tests {
             sha256: "ab".repeat(32),
             program: Some("/data/packages/p".into()),
             repository: None,
+            project: None,
             change: None,
             files: vec![],
             rules: vec![],

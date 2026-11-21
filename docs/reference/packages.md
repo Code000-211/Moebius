@@ -6,7 +6,7 @@ A package is one of:
 | Kind | What it is | Where it goes |
 |---|---|---|
 | `plugin` | A program speaking the [process plugin protocol](plugin-api.md#plugins-in-their-own-process): a decider, or a [launcher](plugin-api.md#launchers). | `<data_dir>/packages/<name>/<version>/`, with a `[[plugins]]` entry written for it. |
-| `workflow` | Kanban column scripts (`.luau`). | Proposed as a change to the [harness configuration repository](harness-configuration.md), under `projects/<project name>/`, the settings of the named repository's home project. |
+| `workflow` | Kanban column scripts (`.luau`). | Proposed as a change to the [harness configuration repository](harness-configuration.md), under `projects/<project name>/`, the settings of the project the install names. |
 | `rules` | A fragment of a `rules.md`. | Its rules are proposed to be added to a repository's `repos/<repository name>/rules.md` of the harness configuration repository. |
 | `skills` | Skills. | Proposed as a change to the [harness configuration repository](harness-configuration.md), under `skills/`. |
 
@@ -49,8 +49,8 @@ fields plus the downloads. Keys not listed are ignored.
 | `[[plugin.settings]]` | array of tables | The settings it takes, for a form: `name`, `flag`, `type`, `choices`, `repeatable`, `default`, `description`. Informative. |
 
 `[[files]]`: `to` is a plain relative path (no `..`, no empty parts, nothing in `.git`). For a `workflow` package (a Kanban) it ends in
-`.luau` and lands at `projects/<project name>/<to>` of the harness configuration repository, the settings of the named
-repository's home project. For `skills` it lands at `skills/<to>` of the harness
+`.luau` and lands at `projects/<project name>/<to>` of the harness configuration repository, the settings of the project the install
+names. For `skills` it lands at `skills/<to>` of the harness
 configuration repository, so `to = "tdd/SKILL.md"` is the skill `tdd`. A `rules` package has exactly one file, a
 `rules.md` fragment; its `to` is not used.
 
@@ -147,9 +147,12 @@ that are flags go in the entry's `args` (the Settings page, or `moebius settings
 
 **A Kanban (`workflow`), rules or skills package** is proposed: the files are committed on the branch `moebius/package-<name>`
 from the default branch of the harness configuration repository, and offered as a change with a `ready_to_merge` item
-in the inbox. A Kanban (`workflow`) or rules package names the repository it is for (`--repository`; the only repository when there
-is one): a rules package's file goes to `repos/<repository name>/` there, a Kanban's files to
-`projects/<project name>/` of the repository's home project. Nothing is installed until a person merges it. The change has
+in the inbox. A Kanban (`workflow`) package names the project it is for (`--project`, in the request `project`: a name or an id), and
+the install is refused without one, or with one that does not exist, with a message that lists the project names; its
+files go to `projects/<project name>/`. A rules package names the repository it is for (`--repository`; the only
+repository when there is one) and its file goes to `repos/<repository name>/`. A `project` given for a rules or skills
+package is ignored, and so is a `repository` given for a workflow or skills package. An update and a removal use the
+project (or repository) the lock records. Nothing is installed until a person merges it. The change has
 no repository (`repository_id` null). A rules package adds its rules, the `## name` sections of the fragment (text
 before the first is not added), at the end of the repository's `rules.md`; a rule named like one that is there is refused,
 and the result must pass the rules check. Every kind needs a harness configuration repository, else it is refused.
@@ -202,7 +205,8 @@ program = "/srv/.moebius/packages/gate/1.1.0/gate"
 | `name`, `version`, `kind`, `registry` | What is installed and where from. |
 | `url`, `sha256` | The program (plugins), or the first file (others), as downloaded. |
 | `program` | A plugin: where its program is. |
-| `repository` | A Kanban (`workflow`) or rules package: the repository it was proposed to, by name. Not for skills. |
+| `project` | A Kanban (`workflow`) package: the project it was proposed to, by name. |
+| `repository` | A rules package: the repository it was proposed to, by name. |
 | `change` | The change that proposed the files. The lock records what was proposed, not what was merged. |
 | `[[package.files]]` | The proposed files: `to`, `url`, `sha256`. |
 | `rules` | A rules package: the names of the rules it added. |

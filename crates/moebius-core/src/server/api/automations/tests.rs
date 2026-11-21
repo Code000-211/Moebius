@@ -16,18 +16,70 @@ fn triage(prompt: &str) -> serde_json::Value {
     json!({ "name": "Triage", "schedule": "*/5 * * * *", "agent": "Coder", "prompt": prompt })
 }
 
-/// The harness configuration repository of `dir`, in a server whose workflows are still kept server-wide: these tests
-/// are about the upgrade of the automations to workflow files, before the migration to projects (which has its own
-/// tests, in `app::workflows::migrate`) moves them. The migration leaves a workflow that names no repository where it
-/// is when every project is private.
+/// The harness configuration repository of `dir`, on a server that has a project to keep workflows in. Automations
+/// added before it was there are rows without a project, which the migration gives one.
 fn server_wide_harness(
     app: &App,
     dir: &std::path::Path,
 ) -> std::sync::Arc<crate::harness::repo::HarnessRepo> {
-    for project in app.store.projects().unwrap() {
-        app.store.set_project_access(project.id, true, &[]).unwrap();
+    if app.store.projects().unwrap().is_empty() {
+        app.add_project("Home", "HOM").unwrap();
     }
     crate::harness::repo::testing::use_harness(app, dir)
+}
+
+/// What a start does to the rows of an older server: writes them to workflow files and moves the files to projects.
+fn migrate(app: &App) {
+    app.migrate_automations().unwrap();
+    app.migrate_workflows_to_projects();
+}
+
+/// The project that holds the workflow file `key`.
+fn holder(app: &App, key: &str) -> Option<crate::store::Project> {
+    let root = app.harness_repo().unwrap().path().to_path_buf();
+    app.store.projects().unwrap().into_iter().find(|project| {
+        crate::workflows::definition::project_file_for(&project.name, key)
+            .is_ok_and(|file| root.join(file).is_file())
+    })
+}
+
+/// The workflow file `key`, read from the project that holds it.
+fn file(app: &App, key: &str) -> crate::workflows::definition::WorkflowDefinition {
+    let project = holder(app, key).unwrap_or_else(|| panic!("no project holds {key}"));
+    crate::workflows::definition::read_in_project(
+        app.harness_repo().unwrap().path(),
+        &project.name,
+        key,
+    )
+    .unwrap()
+}
+
+/// Where the file `key` is.
+fn file_path(app: &App, key: &str) -> std::path::PathBuf {
+    let project = holder(app, key).unwrap_or_else(|| panic!("no project holds {key}"));
+    app.harness_repo()
+        .unwrap()
+        .path()
+        .join(crate::workflows::definition::project_file_for(&project.name, key).unwrap())
+}
+
+/// Saves the file `key` in the project that holds it, else in the oldest project.
+fn save(app: &App, key: &str, definition: &crate::workflows::definition::WorkflowDefinition) {
+    let project = holder(app, key).unwrap_or_else(|| {
+        let mut projects = app.store.projects().unwrap();
+        projects.sort_by_key(|project| (project.created_at, project.id));
+        projects.remove(0)
+    });
+    app.harness_repo()
+        .unwrap()
+        .save_project_workflow(
+            app,
+            &crate::decide::Actor::first_owner(),
+            &project.name,
+            key,
+            definition,
+        )
+        .unwrap();
 }
 
 /// The local minute a minute after it is on the server.
@@ -250,9 +302,9 @@ async fn an_upgraded_automation_is_edited_as_a_workflow_file() {
         .unwrap();
     let id = added.automation.id;
 
-    let harness = server_wide_harness(app, dir.path());
-    app.migrate_automations().unwrap();
-    let definition = crate::workflows::definition::read(harness.path(), "Triage").unwrap();
+    let _harness = server_wide_harness(app, dir.path());
+    migrate(app);
+    let definition = file(app, "Triage");
     assert_eq!(definition.name, "Triage");
     assert_eq!(definition.trigger[0].kind, "schedule");
     assert_eq!(definition.trigger[0].params["cron"], "*/5 * * * *");
@@ -274,7 +326,7 @@ async fn an_upgraded_automation_is_edited_as_a_workflow_file() {
         .await
         .unwrap();
     assert_eq!(put.status(), 200);
-    let definition = crate::workflows::definition::read(harness.path(), "Triage").unwrap();
+    let definition = file(app, "Triage");
     assert_eq!(
         definition.nodes[0].params["prompt"],
         "Triage the next issues."
@@ -293,7 +345,7 @@ async fn an_upgraded_automation_is_edited_as_a_workflow_file() {
         .await
         .unwrap();
     assert_eq!(deleted.status(), 200);
-    assert!(!harness.path().join("workflows/Triage.toml").exists());
+    assert!(holder(app, "Triage").is_none());
 }
 
 // Unix only: the fake Pi is a Python script started by its `#!` line.
@@ -359,16 +411,9 @@ async fn a_repository_automation_fires_as_a_workflow_run() {
     })
     .await;
     // The workflow file is what fires it, so a change to its chat node reaches the next chat.
-    let mut definition = crate::workflows::definition::read(harness.path(), "Triage").unwrap();
+    let mut definition = file(app, "Triage");
     definition.nodes[0].params["prompt"] = json!("Triage the next issues.");
-    harness
-        .save_workflow(
-            app,
-            &crate::decide::Actor::first_owner(),
-            "Triage",
-            &definition,
-        )
-        .unwrap();
+    save(app, "Triage", &definition);
     let more_due = due + time::Duration::minutes(5);
     crate::server::schedule::on_workflow_schedules(
         app,
@@ -417,20 +462,13 @@ async fn a_repository_automation_whose_chat_cannot_start_is_a_failed_firing() {
     body["repository"] = json!(repo.id);
     let added: AutomationView = add(&state, &addr, body).await.json().await.unwrap();
     let id = added.automation.id;
-    app.migrate_automations().unwrap();
+    migrate(app);
 
     // The chat node now asks for both a repository and the harness configuration repository, so the run
     // reaches it and cannot start the chat.
-    let mut definition = crate::workflows::definition::read(harness.path(), "Triage").unwrap();
+    let mut definition = file(app, "Triage");
     definition.nodes[0].params["harness"] = json!(true);
-    harness
-        .save_workflow(
-            app,
-            &crate::decide::Actor::first_owner(),
-            "Triage",
-            &definition,
-        )
-        .unwrap();
+    save(app, "Triage", &definition);
 
     let due = a_minute_from_now(app) + time::Duration::minutes(5);
     crate::server::schedule::on_workflow_schedules(app, Some(&harness), Some(&*state.runs), due)
@@ -470,12 +508,13 @@ async fn a_repository_automation_whose_repository_is_gone_is_a_failed_firing() {
     let mut body = triage("Triage the new issues.");
     body["repository"] = json!(repo.id);
     add(&state, &addr, body).await;
-    app.migrate_automations().unwrap();
+    migrate(app);
 
-    // The file still names the repository, but the server no longer has it: the firing fails rather than
-    // starting a chat in a directory that belongs to no repository.
-    app.remove_repository(&crate::decide::Actor::first_owner(), repo.id, "not wanted")
-        .unwrap();
+    // The file names a repository that the server does not have: the firing fails rather than starting a chat in a
+    // directory that belongs to no repository.
+    let mut definition = file(app, "Triage");
+    definition.trigger[0].params["repository"] = json!("gone");
+    save(app, "Triage", &definition);
     let due = a_minute_from_now(app) + time::Duration::minutes(5);
     crate::server::schedule::on_workflow_schedules(app, Some(&harness), Some(&*state.runs), due)
         .unwrap();
@@ -485,7 +524,7 @@ async fn a_repository_automation_whose_repository_is_gone_is_a_failed_firing() {
     assert_eq!(firing.run_id, None);
     assert_eq!(firing.workflow_run_id, None);
     assert!(
-        firing.reason.contains("demo") && firing.reason.contains("repository"),
+        firing.reason.contains("gone") && firing.reason.contains("repository"),
         "{}",
         firing.reason
     );
@@ -504,7 +543,7 @@ async fn an_upgraded_automation_still_fires_once() {
         .unwrap();
     let id = added.automation.id;
     server_wide_harness(app, dir.path());
-    app.migrate_automations().unwrap();
+    migrate(app);
 
     let due = a_minute_from_now(app) + time::Duration::minutes(5);
     // The row's own clock says a firing came due long ago, and the workflow file holds the automation: only the
@@ -537,20 +576,18 @@ async fn an_automation_edited_into_an_ordinary_workflow_does_not_also_fire_from_
     body["schedule"] = json!("* * * * *");
     let added: AutomationView = add(&state, &addr, body).await.json().await.unwrap();
     let id = added.automation.id;
-    let harness = server_wide_harness(app, dir.path());
-    app.migrate_automations().unwrap();
+    let _harness = server_wide_harness(app, dir.path());
+    migrate(app);
 
     // A person edits the file into an ordinary workflow by adding a node to it.
-    let path = harness.path().join("workflows/Triage.toml");
+    let path = file_path(app, "Triage");
     let mut text = std::fs::read_to_string(&path).unwrap();
     text.push_str(
         "\n[[nodes]]\nid = \"after\"\nkind = \"chat\"\nparams = { prompt = \"Ask again.\" }\n\
          \n[[edges]]\nfrom = \"chat\"\nto = \"after\"\nport = \"out\"\n",
     );
     std::fs::write(&path, text).unwrap();
-    assert!(!crate::app::is_automation(
-        &crate::workflows::definition::read(harness.path(), "Triage").unwrap()
-    ));
+    assert!(!crate::app::is_automation(&file(app, "Triage")));
 
     app.store
         .set_automations_checked("2000-01-01 00:00")
@@ -571,9 +608,9 @@ async fn an_upgraded_automation_with_a_name_that_is_not_a_file_name_keeps_firing
     let id = added.automation.id;
 
     let harness = server_wide_harness(app, dir.path());
-    app.migrate_automations().unwrap();
+    migrate(app);
     let key = format!("automation-{id}");
-    let definition = crate::workflows::definition::read(harness.path(), &key).unwrap();
+    let definition = file(app, &key);
     assert_eq!(definition.name, "Nightly triage");
     assert_eq!(definition.trigger[0].kind, "schedule");
     assert_eq!(definition.nodes[0].kind, "chat");
@@ -590,7 +627,7 @@ async fn an_upgraded_automation_with_a_name_that_is_not_a_file_name_keeps_firing
         .await
         .unwrap();
     assert_eq!(put.status(), 200);
-    let definition = crate::workflows::definition::read(harness.path(), &key).unwrap();
+    let definition = file(app, &key);
     assert_eq!(
         definition.nodes[0].params["prompt"],
         "Triage the next issues."
@@ -612,7 +649,7 @@ async fn an_upgraded_automation_with_a_name_that_is_not_a_file_name_keeps_firing
 // Unix only: the fake Pi is a Python script started by its `#!` line.
 #[cfg(unix)]
 #[tokio::test]
-async fn an_automation_whose_workflow_file_is_deleted_stops_until_the_next_start() {
+async fn an_automation_whose_workflow_file_is_deleted_stops_firing() {
     let (dir, state, addr) = start().await;
     let app = &state.app;
     let mut body = triage("Triage the new issues.");
@@ -620,26 +657,14 @@ async fn an_automation_whose_workflow_file_is_deleted_stops_until_the_next_start
     let added: AutomationView = add(&state, &addr, body).await.json().await.unwrap();
     let id = added.automation.id;
     let harness = server_wide_harness(app, dir.path());
-    app.migrate_automations().unwrap();
+    migrate(app);
 
     // A person deletes the workflow's file: the automation no longer fires, from its row or anywhere else.
-    std::fs::remove_file(harness.path().join("workflows/Triage.toml")).unwrap();
+    std::fs::remove_file(file_path(app, "Triage")).unwrap();
     app.store
         .set_automations_checked("2000-01-01 00:00")
         .unwrap();
     on_automation_schedule(app, &*state.runs).unwrap();
-    assert!(app.firings(id).unwrap().is_empty());
-
-    // The next start writes the file again, and the schedule fires the automation once, not once from the row too.
-    app.migrate_automations().unwrap();
-    assert!(
-        app.harness_repo()
-            .unwrap()
-            .path()
-            .join("workflows/Triage.toml")
-            .exists(),
-        "the file is written again"
-    );
     let due = a_minute_from_now(app) + time::Duration::minutes(5);
     crate::server::schedule::on_workflow_schedules(
         app,
@@ -648,12 +673,7 @@ async fn an_automation_whose_workflow_file_is_deleted_stops_until_the_next_start
         due,
     )
     .unwrap();
-    on_automation_schedule(app, &*state.runs).unwrap();
-    let firings = app.firings(id).unwrap();
-    assert_eq!(firings.len(), 1);
-    assert_eq!(firings[0].status, "started");
-    app.end_chat(&*state.runs, firings[0].run_id.unwrap())
-        .unwrap();
+    assert!(app.firings(id).unwrap().is_empty());
 }
 
 // Unix only: the fake Pi is a Python script started by its `#!` line.
@@ -693,9 +713,12 @@ async fn an_upgrade_does_not_fire_the_minute_it_happens_in_again() {
         .unwrap();
 
     let harness = server_wide_harness(app, dir.path());
-    app.migrate_automations().unwrap();
+    migrate(app);
     assert_eq!(
-        app.store.schedule_firing("Triage").unwrap().as_deref(),
+        app.store
+            .project_schedule_firing(holder(app, "Triage").unwrap().id, "Triage")
+            .unwrap()
+            .as_deref(),
         Some("2026-11-09 03:30")
     );
     // The upgrade happens at 03:31, a minute after that firing; it is not fired again.
@@ -749,14 +772,13 @@ port = "out"
 "#,
     )
     .unwrap();
-    harness
-        .save_workflow(
-            app,
-            &crate::decide::Actor::first_owner(),
-            "Nightly",
-            &ordinary,
-        )
-        .unwrap();
+    // As an older server kept it: a file of the server-wide folder, which the migration moves with the automation's.
+    std::fs::create_dir_all(harness.path().join("workflows")).unwrap();
+    std::fs::write(
+        harness.path().join("workflows/Nightly.toml"),
+        crate::workflows::definition::render("Nightly", &ordinary).unwrap(),
+    )
+    .unwrap();
 
     // A row saved before the upgrade, with no workflow file of its own.
     let row = app
@@ -772,16 +794,17 @@ port = "out"
                 enabled: true,
             },
             &app.store.local_minute().unwrap(),
+            None,
         )
         .unwrap();
-    app.migrate_automations().unwrap();
+    migrate(app);
 
     // The person's workflow keeps its file, and the automation has one of its own beside it.
-    let kept = crate::workflows::definition::read(harness.path(), "Nightly").unwrap();
+    let kept = file(app, "Nightly");
     assert!(!crate::app::is_automation(&kept));
     assert_eq!(kept.trigger[0].kind, "manual");
     let key = format!("automation-{}", row.id);
-    let own = crate::workflows::definition::read(harness.path(), &key).unwrap();
+    let own = file(app, &key);
     assert_eq!(own.name, "Nightly");
     assert!(crate::app::is_automation(&own));
 
@@ -830,6 +853,7 @@ async fn two_automations_of_the_same_name_keep_a_file_each_and_both_fire_once() 
                 enabled: true,
             },
             &app.store.local_minute().unwrap(),
+            None,
         )
         .unwrap();
     let second = app
@@ -845,19 +869,20 @@ async fn two_automations_of_the_same_name_keep_a_file_each_and_both_fire_once() 
                 enabled: true,
             },
             &app.store.local_minute().unwrap(),
+            None,
         )
         .unwrap();
     let harness = server_wide_harness(app, dir.path());
-    app.migrate_automations().unwrap();
+    migrate(app);
 
     // Each row keeps its own file, with its own prompt.
-    let first_file = crate::workflows::definition::read(harness.path(), "Triage").unwrap();
+    let first_file = file(app, "Triage");
     assert_eq!(
         first_file.nodes[0].params["prompt"],
         "Triage the first issues."
     );
     let second_key = format!("automation-{}", second.id);
-    let second_file = crate::workflows::definition::read(harness.path(), &second_key).unwrap();
+    let second_file = file(app, &second_key);
     assert_eq!(
         second_file.nodes[0].params["prompt"],
         "Triage the second issues."
@@ -904,7 +929,7 @@ async fn two_automations_of_the_same_name_keep_a_file_each_and_both_fire_once() 
 async fn an_automation_added_with_a_name_another_keeps_does_not_replace_its_file() {
     let (dir, state, addr) = start().await;
     let app = &state.app;
-    let harness = server_wide_harness(app, dir.path());
+    let _harness = server_wide_harness(app, dir.path());
 
     let first: AutomationView = add(&state, &addr, triage("Triage the first issues."))
         .await
@@ -916,14 +941,14 @@ async fn an_automation_added_with_a_name_another_keeps_does_not_replace_its_file
     let second: AutomationView = add(&state, &addr, other).await.json().await.unwrap();
     assert_ne!(first.automation.id, second.automation.id);
 
-    let first_file = crate::workflows::definition::read(harness.path(), "Triage").unwrap();
+    let first_file = file(app, "Triage");
     assert_eq!(
         first_file.nodes[0].params["prompt"],
         "Triage the first issues."
     );
     assert_eq!(first_file.trigger[0].params["cron"], "*/5 * * * *");
     let second_key = format!("automation-{}", second.automation.id);
-    let second_file = crate::workflows::definition::read(harness.path(), &second_key).unwrap();
+    let second_file = file(app, &second_key);
     assert_eq!(
         second_file.nodes[0].params["prompt"],
         "Triage the second issues."
@@ -945,12 +970,12 @@ async fn an_automation_added_with_a_name_another_keeps_does_not_replace_its_file
         .await
         .unwrap();
     assert_eq!(changed.status(), 200);
-    let first_file = crate::workflows::definition::read(harness.path(), "Triage").unwrap();
+    let first_file = file(app, "Triage");
     assert_eq!(
         first_file.nodes[0].params["prompt"],
         "Triage the changed issues."
     );
-    let second_file = crate::workflows::definition::read(harness.path(), &second_key).unwrap();
+    let second_file = file(app, &second_key);
     assert_eq!(
         second_file.nodes[0].params["prompt"],
         "Triage the second issues."
@@ -967,11 +992,269 @@ async fn an_automation_added_with_a_name_another_keeps_does_not_replace_its_file
         .await
         .unwrap();
     assert_eq!(deleted.status(), 200);
+    assert!(holder(app, &second_key).is_none());
+    assert!(file_path(app, "Triage").exists());
+}
+
+/// An automation of the repository `demo` as an older server stored it, migrated to the project that owns the
+/// repository: its row has the project, and its file is in the project's folder.
+async fn migrated(
+    dir: &std::path::Path,
+    state: &ApiState,
+    addr: &str,
+    prompt: &str,
+) -> (i64, std::sync::Arc<crate::harness::repo::HarnessRepo>) {
+    let app = &state.app;
+    let repo = app
+        .store
+        .add_repository(
+            "demo",
+            crate::server::api::testing::origin(dir).to_str().unwrap(),
+            "none",
+            "main",
+        )
+        .unwrap();
+    let mut body = triage(prompt);
+    body["repository"] = json!(repo.id);
+    let added: AutomationView = add(state, addr, body).await.json().await.unwrap();
+    let id = added.automation.id;
+    let harness = server_wide_harness(app, dir);
+    migrate(app);
+    let project = holder(app, "Triage").expect("the migration moved the file to a project");
+    assert_eq!(app.store.automation_project(id).unwrap(), Some(project.id));
+    (id, harness)
+}
+
+/// The project copy of a migrated automation is the only one: saving it writes no server-wide file, no second
+/// schedule row, and the next start has nothing left to migrate, so each occurrence fires once with the saved prompt.
+#[cfg(unix)]
+#[tokio::test]
+async fn saving_a_migrated_automation_changes_its_project_file_and_nothing_server_wide() {
+    let (dir, state, addr) = start().await;
+    let app = &state.app;
+    let (id, harness) = migrated(dir.path(), &state, &addr, "Triage the old issues.").await;
+    let project = holder(app, "Triage").unwrap();
+
+    let mut changed = triage("Triage the new issues.");
+    changed["repository"] = json!(app.automation(id).unwrap().automation.repository_id);
+    let put = reqwest::Client::new()
+        .put(format!("http://{addr}/v1/automations/{id}"))
+        .bearer_auth(&*state.token)
+        .json(&changed)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(put.status(), 200, "{}", put.text().await.unwrap());
+
     assert!(
         !harness
             .path()
-            .join(format!("workflows/{second_key}.toml"))
+            .join("workflows")
+            .join("Triage.toml")
             .exists()
     );
-    assert!(harness.path().join("workflows/Triage.toml").exists());
+    assert!(app.store.server_wide_schedule_names().unwrap().is_empty());
+    assert_eq!(
+        file(app, "Triage").nodes[0].params["prompt"],
+        "Triage the new issues."
+    );
+    assert!(app.workflows_awaiting_a_project().is_empty());
+    // A start again has nothing to defer, and the file stays where it is.
+    migrate(app);
+    assert!(app.workflows_awaiting_a_project().is_empty());
+    assert!(
+        !harness.path().join("workflows").exists()
+            || !harness.path().join("workflows/Triage.toml").exists()
+    );
+
+    // One occurrence fires once, with the saved prompt, as a run of the project.
+    let due = a_minute_from_now(app) + time::Duration::minutes(5);
+    for _ in 0..2 {
+        crate::server::schedule::on_workflow_schedules(
+            app,
+            Some(&harness),
+            Some(&*state.runs),
+            due,
+        )
+        .unwrap();
+    }
+    let firings = app.firings(id).unwrap();
+    assert_eq!(firings.len(), 1);
+    let run = app
+        .store
+        .workflow_run(firings[0].workflow_run_id.unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(run.project_id, Some(project.id));
+    assert_eq!(app.store.workflow_runs(None, None, 10).unwrap().len(), 1);
+    until("the chat starts", || {
+        app.firings(id).unwrap()[0].run_id.is_some()
+    })
+    .await;
+    app.end_chat(&*state.runs, app.firings(id).unwrap()[0].run_id.unwrap())
+        .unwrap();
+}
+
+/// Deleting a migrated automation removes its project file, so that nothing keeps firing without a row.
+#[tokio::test]
+async fn deleting_a_migrated_automation_removes_its_project_file() {
+    let (dir, state, addr) = start().await;
+    let app = &state.app;
+    let (id, harness) = migrated(dir.path(), &state, &addr, "Triage the old issues.").await;
+
+    let deleted = reqwest::Client::new()
+        .delete(format!("http://{addr}/v1/automations/{id}"))
+        .bearer_auth(&*state.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), 200);
+    assert!(holder(app, "Triage").is_none(), "the project file is gone");
+
+    let due = a_minute_from_now(app) + time::Duration::minutes(5);
+    let started = crate::server::schedule::on_workflow_schedules(
+        app,
+        Some(&harness),
+        Some(&*state.runs),
+        due,
+    )
+    .unwrap();
+    assert!(started.is_empty());
+    assert!(app.store.workflow_runs(None, None, 10).unwrap().is_empty());
+}
+
+/// The project file is what the list shows, what a scheduled firing and "Run now" run, and a firing records its
+/// row, its event and its project; a firing due while the chat before still runs is skipped.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_migrated_automation_is_read_and_fired_from_its_project_file() {
+    let (dir, state, addr) = start().await;
+    let app = &state.app;
+    let (id, harness) = migrated(dir.path(), &state, &addr, "Take your time [hang]").await;
+    let project = holder(app, "Triage").unwrap();
+
+    // A person edits the file in the project: the page, the list and the next firing all follow it.
+    let mut definition = file(app, "Triage");
+    definition.nodes[0].params["prompt"] = json!("Triage the edited issues. [hang]");
+    save(app, "Triage", &definition);
+    let shown: AutomationView = get(&state, &addr, &format!("/v1/automations/{id}")).await;
+    assert_eq!(shown.automation.prompt, "Triage the edited issues. [hang]");
+    assert_eq!(shown.automation.project_id, Some(project.id));
+    let listed: Vec<AutomationView> = get(&state, &addr, "/v1/automations").await;
+    assert_eq!(listed.len(), 1);
+    assert_eq!(
+        listed[0].automation.prompt,
+        "Triage the edited issues. [hang]"
+    );
+    let in_project: Vec<AutomationView> = get(
+        &state,
+        &addr,
+        &format!("/v1/automations?project={}", project.id),
+    )
+    .await;
+    assert_eq!(in_project.len(), 1);
+    let elsewhere: Vec<AutomationView> = get(
+        &state,
+        &addr,
+        &format!("/v1/automations?project={}", project.id + 99),
+    )
+    .await;
+    assert!(elsewhere.is_empty());
+
+    // A scheduled firing records a firing row, the event and the project of its run.
+    let mut events = app.bus.subscribe();
+    let due = a_minute_from_now(app) + time::Duration::minutes(5);
+    crate::server::schedule::on_workflow_schedules(app, Some(&harness), Some(&*state.runs), due)
+        .unwrap();
+    let firing = app.firings(id).unwrap().remove(0);
+    assert_eq!(firing.status, "started");
+    let run = app
+        .store
+        .workflow_run(firing.workflow_run_id.unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(run.project_id, Some(project.id));
+    let fired = loop {
+        let event = events.recv().await.unwrap();
+        if event.kind == "automation_fired" {
+            break event;
+        }
+    };
+    assert_eq!(fired.data["workflow_run"], run.id);
+    until("the chat starts", || {
+        app.firings(id).unwrap()[0].run_id.is_some()
+    })
+    .await;
+    let chat = app.firings(id).unwrap()[0].run_id.unwrap();
+    until("the agent works", || status(app, chat) == "running").await;
+    assert_eq!(
+        app.store.events(chat).unwrap()[0].data["message"],
+        "Triage the edited issues. [hang]"
+    );
+
+    // The next occurrence is due while that chat still runs: skipped, not started.
+    let later = due + time::Duration::minutes(5);
+    crate::server::schedule::on_workflow_schedules(app, Some(&harness), Some(&*state.runs), later)
+        .unwrap();
+    let skipped = app.firings(id).unwrap().remove(0);
+    assert_eq!(skipped.status, "skipped");
+    assert!(skipped.reason.contains("still runs"), "{}", skipped.reason);
+
+    // "Run now" reads the project file too, and is skipped for the same reason.
+    let now = app.run_automation(&*state.runs, id).unwrap();
+    assert_eq!(now.status, "skipped");
+    app.end_chat(&*state.runs, chat).unwrap();
+    until("the chat has ended", || {
+        app.run(chat).unwrap().ended_at.is_some()
+    })
+    .await;
+    let manual = app.run_automation(&*state.runs, id).unwrap();
+    assert_eq!(manual.status, "started");
+    let manual_run = app
+        .store
+        .workflow_run(manual.workflow_run_id.unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(manual_run.project_id, Some(project.id));
+    until("the chat starts", || {
+        app.firings(id).unwrap()[0].run_id.is_some()
+    })
+    .await;
+    app.end_chat(&*state.runs, app.firings(id).unwrap()[0].run_id.unwrap())
+        .unwrap();
+}
+
+/// An automation is added to the project that is named, which the person must see, and a different project is
+/// refused when it is changed.
+#[tokio::test]
+async fn an_automation_belongs_to_the_project_it_is_added_to() {
+    let (dir, state, addr) = start().await;
+    let app = &state.app;
+    server_wide_harness(app, dir.path());
+    let other = app.add_project("Other", "OTH").unwrap();
+    let mut body = triage("Triage the new issues.");
+    body["project"] = json!(other.id);
+    let added: AutomationView = add(&state, &addr, body).await.json().await.unwrap();
+    assert_eq!(added.automation.project_id, Some(other.id));
+    assert!(holder(app, "Triage").is_some_and(|project| project.id == other.id));
+
+    let mut moved = triage("Triage the new issues.");
+    moved["project"] = json!(other.id + 1);
+    let refused = reqwest::Client::new()
+        .put(format!(
+            "http://{addr}/v1/automations/{}",
+            added.automation.id
+        ))
+        .bearer_auth(&*state.token)
+        .json(&moved)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refused.status(), 422);
+    assert!(refused.text().await.unwrap().contains("another project"));
+
+    // A project that does not exist is not found.
+    let mut missing = triage("Another.");
+    missing["project"] = json!(other.id + 50);
+    assert_eq!(add(&state, &addr, missing).await.status(), 404);
 }

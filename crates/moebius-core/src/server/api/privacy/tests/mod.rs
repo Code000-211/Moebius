@@ -117,6 +117,7 @@ fn private(state: &ApiState) -> Private {
                 enabled: false,
             },
             "",
+            None,
         )
         .unwrap();
     let research = store
@@ -541,6 +542,70 @@ async fn the_runs_of_a_workflow_of_a_private_project_are_left_out_for_a_non_memb
         let (status, body) = call(&addr, token, "GET", &detail).await;
         assert_eq!(status, 404, "{body}");
         assert!(!body.to_string().contains("secret"), "{body}");
+    }
+}
+
+/// The workflows of a private project are 404 to someone who is no member, and the lists that span projects leave
+/// them out.
+#[tokio::test]
+async fn the_workflows_of_a_private_project_are_invisible_to_a_non_member() {
+    let (dir, state, addr) = start().await;
+    let private = private(&state);
+    let harness = crate::harness::repo::testing::use_harness(&state.app, dir.path());
+    let project = state.app.store.project(private.project).unwrap().unwrap();
+    let folder = harness
+        .path()
+        .join(format!("projects/{}/workflows", project.name));
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(
+        folder.join("secret.toml"),
+        "name = \"secret\"\ndescription = \"Hidden.\"\n\n[[trigger]]\nkind = \"manual\"\n",
+    )
+    .unwrap();
+    let base = format!("/v1/projects/{}/workflows", private.project);
+
+    for path in [
+        base.clone(),
+        format!("{base}/secret"),
+        format!("{base}/secret/run-inputs"),
+    ] {
+        assert_eq!(
+            call(&addr, &private.lea, "GET", &path).await.0,
+            200,
+            "{path}"
+        );
+        for token in [&private.ben, &private.olga] {
+            assert_eq!(call(&addr, token, "GET", &path).await.0, 404, "{path}");
+        }
+    }
+    for token in [&private.ben, &private.olga] {
+        let (status, _) = call(&addr, token, "POST", &format!("{base}/secret/runs")).await;
+        assert_eq!(status, 404);
+    }
+    assert_eq!(
+        call(&addr, &private.olga, "PUT", &format!("{base}/secret"))
+            .await
+            .0,
+        404
+    );
+    assert_eq!(
+        call(&addr, &private.olga, "DELETE", &format!("{base}/secret"))
+            .await
+            .0,
+        404
+    );
+
+    // The deprecated list and the lookup by name leave it out for a non-member.
+    let (_, seen) = call(&addr, &private.lea, "GET", "/v1/workflows").await;
+    assert!(seen.to_string().contains("secret"), "{seen}");
+    for token in [&private.ben, &private.olga] {
+        let (status, hidden) = call(&addr, token, "GET", "/v1/workflows").await;
+        assert_eq!(status, 200);
+        assert!(hidden.as_array().unwrap().is_empty(), "{hidden}");
+        assert_eq!(
+            call(&addr, token, "GET", "/v1/workflows/secret").await.0,
+            404
+        );
     }
 }
 

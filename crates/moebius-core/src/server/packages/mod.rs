@@ -4,7 +4,7 @@
 //! A package is a `plugin` (a program speaking the process plugin protocol, installed to
 //! `<data_dir>/packages/<name>/<version>/` after its sha256 is checked, with a `[[plugins]]` entry written through the
 //! live settings and the plugin started), or a `workflow`, `rules` or `skills` package (files proposed as a change that a
-//! person merges: to a repository's `.moebius/`, or to the harness configuration repository). `<data_dir>/packages.lock`
+//! person merges, always to the harness configuration repository: a workflow into the folder of the project it names). `<data_dir>/packages.lock`
 //! records what is installed. Nothing of a package runs while it is installed, and a download whose sha256 differs
 //! from the index, or a package that does not work with the running Moebius, is refused before anything changes.
 //!
@@ -205,9 +205,13 @@ pub struct Request {
     /// The registry to install from; the first that has the package without one.
     #[serde(default)]
     pub registry: Option<String>,
-    /// The repository a workflow or rules package is proposed to, by name; the only repository without one.
+    /// The repository a rules package is proposed to, by name; the only repository without one.
     #[serde(default)]
     pub repository: Option<String>,
+    /// The project a workflow package is installed into, by name or id; required for a workflow package and ignored
+    /// for the other kinds.
+    #[serde(default)]
+    pub project: Option<String>,
 }
 
 /// The packages of one registry.
@@ -411,7 +415,13 @@ impl Packages<'_> {
             }
             return self.install_plugin(by, &chosen);
         }
-        self.propose(by, &chosen, request.repository.as_deref(), None)
+        self.propose(
+            by,
+            &chosen,
+            request.repository.as_deref(),
+            request.project.as_deref(),
+            None,
+        )
     }
 
     /// Updates the package `name` to the newest version of its registry that works with this Moebius; nothing
@@ -441,7 +451,20 @@ impl Packages<'_> {
             self.update_plugin(by, &locked, &chosen)
         } else {
             let repository = locked.repository.clone();
-            self.propose(by, &chosen, repository.as_deref(), Some(&locked))
+            let project = match (&locked.project, &locked.repository) {
+                (Some(project), _) => Some(project.clone()),
+                (None, Some(repository)) if locked.kind == "workflow" => {
+                    Some(self.legacy_project(repository)?)
+                }
+                _ => None,
+            };
+            self.propose(
+                by,
+                &chosen,
+                repository.as_deref(),
+                project.as_deref(),
+                Some(&locked),
+            )
         }
     }
 

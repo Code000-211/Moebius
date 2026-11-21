@@ -155,6 +155,7 @@ export function createPagesCFake(
       prompt:
         "Triage the issues opened since yesterday: label them and say which are ready to start.",
       repository_id: 1,
+      project_id: 1,
       harness_repository: false,
       enabled: true,
       next_firing: IN(3),
@@ -167,6 +168,7 @@ export function createPagesCFake(
       agent: "Coder",
       prompt: "Look for outdated dependencies and offer an upgrade.",
       repository_id: null,
+      project_id: 1,
       harness_repository: false,
       enabled: true,
       next_firing: IN(48),
@@ -645,6 +647,7 @@ export function createPagesCFake(
         agent: body.agent,
         prompt: String(body.prompt).trim(),
         repository_id: body.repository ?? null,
+        project_id: body.project ?? 1,
         harness_repository: body.harness === true,
         enabled: body.enabled !== false,
         next_firing: body.enabled === false ? null : IN(8),

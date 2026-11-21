@@ -140,7 +140,8 @@ pub(super) fn sees(app: &App, sight: &Sight, kind: &str, route: &str, id: i64) -
             .find(|e| e.id == id)
             .is_none_or(|e| export::seen(&e, sight))),
         "automations" => match store.automation(id)? {
-            Some(a) => Ok(a.repository_id.is_none_or(|r| sight.repository(r))),
+            Some(a) => Ok(a.repository_id.is_none_or(|r| sight.repository(r))
+                && a.project_id.is_none_or(|p| sight.project(p))),
             None => Ok(true),
         },
         "research" => match store.research(id)? {
@@ -156,7 +157,7 @@ pub(super) fn sees(app: &App, sight: &Sight, kind: &str, route: &str, id: i64) -
             None => Ok(true),
         },
         WORKFLOW_RUNS => match store.workflow_run(id)? {
-            Some(run) => Ok(sight.repository(run.repository_id)),
+            Some(run) => Ok(super::workflow_runs::sees_run(sight, &run)),
             None => Ok(true),
         },
         _ => Ok(false),

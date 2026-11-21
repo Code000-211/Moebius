@@ -60,15 +60,21 @@ first on, `DELETE` turns it off) and `localize`. A repository's own `.moebius/` 
 
 ## Workflows
 
-A workflow is a file `workflows/<name>.toml` of the harness configuration repository: a trigger, nodes with a
-`position` and the edges between them. List what exists, read one, save one from a file, and delete one:
+A workflow belongs to one project: it is a file `projects/<project name>/workflows/<name>.toml` of the harness
+configuration repository, with a trigger, nodes with a `position` and the edges between them. A project's id and name
+are in `"$MOEBIUS" api GET /v1/projects`. List what a project has, read one, save one from a file, and delete one; give
+the project with `--project` (its name or id):
 
 ```sh
-"$MOEBIUS" workflow list
-"$MOEBIUS" workflow show release
-"$MOEBIUS" workflow save release release.toml
-"$MOEBIUS" workflow delete release
+"$MOEBIUS" workflow list --project Web
+"$MOEBIUS" workflow show release --project Web
+"$MOEBIUS" workflow save release release.toml --project Web
+"$MOEBIUS" workflow delete release --project Web
 ```
+
+Without `--project` the commands look in every project you can see: a name only one project has is found, one that
+several have is refused with the list of them, and `workflow list` lists them all. Always give the project when you
+save a new workflow.
 
 `save` replaces the whole file and commits it, so read it first (`workflow show`) and keep every node's `position`;
 an invalid definition is refused with the message and the file stays as it was. `delete` is refused while a run of the

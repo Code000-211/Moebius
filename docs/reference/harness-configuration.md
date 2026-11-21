@@ -67,7 +67,7 @@ extensions/...         any files an agent's extensions name
 packages/<name>/       a vendored Pi package with its production dependencies (see Packages)
 packages.lock          what each vendored package was fetched as
 repos/<repository>/... the settings of one repository (see Repository settings)
-projects/<project>/... the settings of one project, its column scripts (see Project settings)
+projects/<project>/... the settings of one project: its column scripts and its workflows (see Project settings)
 templates/...          templates for issues and wiki pages (see Templates)
 ```
 
@@ -416,8 +416,15 @@ project whose board the card is on, from the clone's default branch, and a symbo
 
 | File | Meaning |
 |---|---|
+| `workflows/<name>.toml` | A workflow the project owns (see [workflows](workflows.md); ADR 0025). Names are unique within a project, and two projects may each have a `release`. A person saves one with [`PUT /v1/projects/{id}/workflows/{name}`](desktop-api.md#put-v1projectsidworkflowsname); a run of it belongs to one of the project's repositories. |
 | `<file>.luau` | The script of a column in place of the built-in one: `backlog`, `ready` (for `Not started`), `code`, `review`, `merge` and `done` (see [column scripts](column-scripts.md#project-overrides)). A person saves one with [`PUT /v1/projects/{id}/scripts/{column}`](desktop-api.md#put-v1projectsidscriptscolumn) or the board. |
 
+- **Workflows are a project's, in `workflows/` of its folder**, next to its column scripts. A project's `workflows/`
+  folder is read for the schedule and for a run's file; renaming a project moves it with the rest of the folder, and a
+  project cannot be deleted while it owns workflows. The server-wide folder `workflows/` at the root of the repository
+  (the place before ADR 0025) is read only by the one-time migration when the server starts, which moves each file into a
+  project; no other code reads it. **Downgrading** to a version from before ADR 0025 leaves the files where they are but
+  the older server reads only `workflows/` at the root, so after a downgrade it sees no workflows.
 - **A project's name is its folder** on every system, so a name is refused (`422`) when it ends with a dot or a space or
   holds one of `<>:"|?*`, besides what the [desktop API](desktop-api.md#post-v1projects) refuses anyway.
 - **Renaming a project** (`PATCH /v1/projects/{id}`) moves `projects/<old name>/` to `projects/<new name>/` in one commit,
@@ -520,8 +527,8 @@ as they are.
 - A skill or an MCP server that an agent names is not deleted (`409`, naming the agents).
 - `PUT /v1/rules` takes `{"text": "..."}`, writes it to `rules.md` and commits and pushes it the same way, with the
   message `Update the rules` and the decision kind `edit_rules`.
-- `PUT /v1/workflows/{name}` takes a workflow as the whole TOML file or as its parsed definition, checks it as reading
-  checks it, and writes it to `workflows/<name>.toml`; the message is `Add the workflow <name>` or `Update the workflow
+- `PUT /v1/projects/{id}/workflows/{name}` takes a workflow as the whole TOML file or as its parsed definition, checks it as reading
+  checks it, and writes it to `projects/<project name>/workflows/<name>.toml`; the message is `Add the workflow <name>` or `Update the workflow
   <name>`, the decision kind `edit_workflow`. `DELETE` removes the file (`Delete the workflow <name>`), and is refused
   while a run of the workflow is queued or running.
 

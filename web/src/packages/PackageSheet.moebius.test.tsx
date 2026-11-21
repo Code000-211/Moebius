@@ -17,6 +17,16 @@ import {
 
 stubServer();
 
+const project = (name: string) => ({
+  id: 1,
+  name,
+  key: name.toUpperCase(),
+  created_at: 0,
+  repositories: [],
+  members: [],
+  open_cards: 0,
+});
+
 describe("a Moebius package", () => {
   async function openGate(kind = "plugin") {
     answers["GET /v1/packages/search?q="] = {
@@ -120,6 +130,7 @@ describe("a Moebius package", () => {
         change: 12,
       },
     };
+    answers["GET /v1/projects"] = { body: [project("demo")] };
     await openGate("workflow");
     expect(inSheet().getByText(/Nothing is written until a person merges it/)).toBeTruthy();
     fireEvent.click(inSheet().getByRole("button", { name: "Propose install" }));
@@ -129,6 +140,44 @@ describe("a Moebius package", () => {
     expect(screen.getByTestId("where").textContent).toBe("/inbox?change=12");
     // The sheet makes room for the Inbox.
     expect(screen.queryByRole("dialog", { name: "Package sheet" })).toBeNull();
+    expect(requests.find((each) => each.method === "POST")?.body).toEqual({
+      name: "gate",
+      registry: "moebius-plugins",
+      project: "demo",
+    });
+  });
+
+  it("needs a project chosen before a workflow is proposed, and sends its name", async () => {
+    answers["GET /v1/projects"] = { body: [project("demo"), project("site")] };
+    answers["POST /v1/packages"] = {
+      body: {
+        name: "gate",
+        version: "1.1.0",
+        kind: "workflow",
+        action: "installed",
+        restart_needed: false,
+        change: 13,
+      },
+    };
+    await openGate("workflow");
+    const propose = inSheet().getByRole("button", { name: "Propose install" });
+    await vi.waitFor(() => expect(inSheet().getByLabelText("Project")).toBeTruthy());
+    expect((propose as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.pointerDown(inSheet().getByLabelText("Project"), { button: 0, ctrlKey: false });
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "site" }));
+    expect((propose as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(propose);
+    await inSheet().findByTestId("package-report");
+    expect(requests.find((each) => each.method === "POST")?.body).toEqual({
+      name: "gate",
+      registry: "moebius-plugins",
+      project: "site",
+    });
+  });
+
+  it("asks for no project when a plugin is installed", async () => {
+    await openGate();
+    expect(inSheet().queryByLabelText("Project")).toBeNull();
   });
 
   it("shows a refusal with its sentence", async () => {

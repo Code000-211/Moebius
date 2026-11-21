@@ -1,6 +1,8 @@
 {
   "list": [
     {
+      "project": 1,
+      "project_name": "demo",
       "name": "release",
       "description": "Build and publish a release.",
       "trigger_kind": "manual",
@@ -15,6 +17,8 @@
     }
   ],
   "show": {
+    "project": 1,
+    "project_name": "demo",
     "name": "release",
     "file": "name = \"release\"\ndescription = \"Build and publish a release.\"\n",
     "definition": {
@@ -35,6 +39,8 @@
   "runs": [
     {
       "id": 7,
+      "project": 1,
+      "project_name": "demo",
       "workflow": "release",
       "repository_id": 1,
       "trigger": "manual",
@@ -48,6 +54,8 @@
   ],
   "run": {
     "id": 7,
+    "project": 1,
+    "project_name": "demo",
     "workflow": "release",
     "repository_id": 1,
     "trigger": "manual",

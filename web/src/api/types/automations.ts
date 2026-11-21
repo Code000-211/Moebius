@@ -21,6 +21,8 @@ export interface Automation {
   agent: string;
   prompt: string;
   repository_id: number | null;
+  /** The project it belongs to; null on a server with no harness configuration repository. */
+  project_id: number | null;
   /** Whether its chats work in the harness configuration repository. */
   harness_repository: boolean;
   enabled: boolean;
@@ -36,6 +38,8 @@ export interface AutomationSettings {
   agent: string;
   prompt: string;
   repository: number | null;
+  /** The project (id) it belongs to; the server picks one when it is left out. */
+  project?: number;
   harness: boolean;
   enabled: boolean;
 }

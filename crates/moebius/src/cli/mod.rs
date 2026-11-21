@@ -252,7 +252,7 @@ impl Operate {
             Chat { command } => chats::chat(command),
             Grillings => chats::grillings(),
             Grilling { command } => chats::grilling(command, get),
-            Automation { command } => automations::automation(command),
+            Automation { command } => automations::automation(command, get),
             Runners => agents::runners(),
             Pause { reason } => agents::pause("pause", reason),
             Resume { reason } => agents::pause("resume", reason),

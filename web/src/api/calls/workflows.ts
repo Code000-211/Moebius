@@ -62,3 +62,63 @@ export function startWorkflowRun(
 export function cancelWorkflowRun(id: number): Promise<WorkflowRunSummary> {
   return post<WorkflowRunSummary>(`/v1/workflows/runs/${id}/cancel`, {});
 }
+
+const inProject = (project: number, name: string): string =>
+  `/v1/projects/${project}/workflows/${encodeURIComponent(name)}`;
+
+/** The workflows of one project. */
+export function projectWorkflows(project: number): Promise<WorkflowSummary[]> {
+  return get<WorkflowSummary[]>(`/v1/projects/${project}/workflows`);
+}
+
+export function projectWorkflow(project: number, name: string): Promise<WorkflowView> {
+  return get<WorkflowView>(inProject(project, name));
+}
+
+/** Saves a canvas's parsed form into a project's workflow. */
+export function saveProjectWorkflow(
+  project: number,
+  name: string,
+  definition: WorkflowDefinition,
+): Promise<SavedWorkflow> {
+  return put<SavedWorkflow>(inProject(project, name), { definition });
+}
+
+/** Saves a whole TOML file into a project's workflow. */
+export function saveProjectWorkflowFile(
+  project: number,
+  name: string,
+  file: string,
+): Promise<SavedWorkflow> {
+  return put<SavedWorkflow>(inProject(project, name), { file });
+}
+
+export function deleteProjectWorkflow(project: number, name: string): Promise<DeletedWorkflow> {
+  return del<DeletedWorkflow>(inProject(project, name));
+}
+
+export function projectRunInputs(
+  project: number,
+  name: string,
+): Promise<{ trigger_kind: string; inputs: RunInput[] }> {
+  return get(`${inProject(project, name)}/run-inputs`);
+}
+
+/** Starts a run of a project's workflow; the repository must be one of the project's. */
+export function startProjectWorkflowRun(
+  project: number,
+  name: string,
+  body: { repository?: string; inputs: Record<string, unknown> },
+): Promise<StartedRun> {
+  return post<StartedRun>(`${inProject(project, name)}/runs`, body);
+}
+
+/** The runs of a project, newest first, of one workflow when `workflow` is given. */
+export function projectWorkflowRuns(
+  project: number,
+  workflow?: string,
+): Promise<WorkflowRunSummary[]> {
+  const query = new URLSearchParams({ project: String(project) });
+  if (workflow !== undefined) query.set("workflow", workflow);
+  return get<WorkflowRunSummary[]>(`/v1/workflow-runs?${query}`);
+}
