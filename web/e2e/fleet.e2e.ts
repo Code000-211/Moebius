@@ -48,9 +48,8 @@ describe.skipIf(usesRealServer)("the fleet with 500 runs", () => {
     expect(server.openStreams?.() ?? 0).toBeLessThanOrEqual(drawn);
     expect(server.watchedRuns?.() ?? 0).toBeLessThanOrEqual(drawn);
 
-    // The run that waits for the person is first, under its own group.
-    expect(await page.getByTestId("group-row").first().textContent()).toBe("Needs you");
-    expect(await page.getByTestId("group-row").first().getAttribute("aria-posinset")).toBe("1");
+    // The run that waits for the person is first; the list has no group rows.
+    expect(await page.getByTestId("group-row").count()).toBe(0);
     await rows.first().getByText("Which branch?").waitFor();
     await rows.first().getByText("Asks you").waitFor();
 
