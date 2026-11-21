@@ -49,6 +49,7 @@ export function AgentDock() {
           type="button"
           variant="ghost"
           size="icon"
+          className="size-7 bg-hairline-strong!"
           aria-label="Send"
           disabled={message.trim() === ""}
           onClick={send}

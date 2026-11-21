@@ -7,7 +7,7 @@
  * `aria-posinset` and `aria-setsize` counted over the whole list, so a screen reader hears "3 of 2000" although only
  * a few are drawn.
  *
- * The selection is kept by key, not by place in the DOM: `selectedKey` is the row with the edge, and the arrow keys
+ * The selection is kept by key, not by place in the DOM: `selectedKey` is the row with the edge (`restKey` stands in for it while none is chosen), and the arrow keys
  * move it to the next row (group rows are skipped), Home and End to the first and the last, Enter opens it
  * (`onOpen`). With Shift an arrow, or a click, chooses the range from the anchor to the row, worked out from the
  * ordered keys and not from what is drawn, so it reaches rows that are not on the screen (`onSelectRange`). The list
@@ -65,6 +65,22 @@ export interface VirtualListHandle {
   scrollToKey: (key: string) => void;
 }
 
+/** The key of the first row, which carries the mark while nothing has been chosen (`restKey`). */
+export function firstRowKey<T>(items: ReadonlyArray<ListItem<T>>): string | null {
+  return items.find((item) => item.type === "row")?.key ?? null;
+}
+
+/** The key of the row whose card window is open, by `open`; `chosen` wins when the person has chosen one. */
+export function openedKey<T>(
+  items: ReadonlyArray<ListItem<T>>,
+  chosen: string | null,
+  open: (data: T, key: string) => boolean,
+): string | null {
+  if (chosen !== null) return chosen;
+  for (const item of items) if (item.type === "row" && open(item.data, item.key)) return item.key;
+  return null;
+}
+
 /** How many skeleton rows a loading list draws: enough to fill a tall window. */
 const SKELETON_ROWS = 12;
 
@@ -73,6 +89,7 @@ export function VirtualList<T>({
   renderRow,
   label,
   selectedKey = null,
+  restKey = null,
   onSelect,
   onSelectRange,
   onOpen,
@@ -88,6 +105,11 @@ export function VirtualList<T>({
   /** The list's accessible name. */
   label: string;
   selectedKey?: string | null;
+  /**
+   * The row marked while `selectedKey` is none, so that a list always shows where it starts. It is only a mark: the
+   * arrows still begin from the top, and Enter opens nothing, until a row is chosen.
+   */
+  restKey?: string | null;
   onSelect?: (key: string) => void;
   /** The keys from the anchor to the row, in page order, when Shift is held. */
   onSelectRange?: (keys: string[]) => void;
@@ -179,7 +201,7 @@ export function VirtualList<T>({
         return renderRow(item.data, {
           key: item.key,
           at,
-          selected: item.key === selectedKey,
+          selected: item.key === (selectedKey ?? restKey),
           onClick: (event) => choose(item.key, event.shiftKey),
         });
       }}

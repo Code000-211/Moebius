@@ -48,7 +48,7 @@ import { SelectionBar, type SelectionCommand } from "../../ui/page/SelectionBar"
 import { StatusIcon } from "../../ui/page/StatusIcon";
 import { TabPanel, Tabs } from "../../ui/page/Tabs";
 import { useToast } from "../../ui/page/Toast";
-import { VirtualList } from "../../ui/page/VirtualList";
+import { firstRowKey, openedKey, VirtualList } from "../../ui/page/VirtualList";
 import { useOpenCard } from "../board/CardWindowHost";
 import {
   afterSteps,
@@ -282,7 +282,7 @@ function ActiveRuns() {
 function FinishedRuns() {
   const finished = useQuery({ queryKey: keys.finishedRuns, queryFn: () => readFinished() });
   const openCard = useOpenCard();
-  const [selected, setSelected] = useState<string | null>(null);
+  const [picked, setSelected] = useState<string | null>(null);
   const names = useProjectNames();
   const [params] = useQueryParams();
   const values = readFilters(
@@ -298,6 +298,12 @@ function FinishedRuns() {
   const byKey = useMemo(
     () => new Map((finished.data ?? []).map((one) => [finishedKey(one), one])),
     [finished.data],
+  );
+  const asked = params.get("card");
+  const selected = openedKey(
+    rows,
+    picked,
+    (one) => asked !== null && String(one.card.id) === asked,
   );
   if (finished.isPending) {
     return (
@@ -328,6 +334,7 @@ function FinishedRuns() {
       label="Finished runs"
       items={rows}
       selectedKey={selected}
+      restKey={firstRowKey(rows)}
       onSelect={setSelected}
       onOpen={(key) => {
         const one = byKey.get(key);
@@ -402,9 +409,16 @@ function RunList({ list, now }: { list: Work[]; now: number }) {
   const toast = useToast();
   const openWork = useOpenWork();
   const menu = useContextMenu();
-  const [selected, setSelected] = useState<string | null>(null);
+  const [picked, setSelected] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
+  const [params] = useQueryParams();
   const rows = useMemo(() => items(list), [list]);
+  const asked = params.get("card");
+  const selected = openedKey(
+    rows,
+    picked,
+    (work) => asked !== null && work.open.kind === "card" && String(work.open.card) === asked,
+  );
   const order = useMemo(() => list.map(choiceKey), [list]);
   const byKey = useMemo(() => new Map(list.map((work) => [choiceKey(work), work])), [list]);
   const choice = useSelection(order);
@@ -467,6 +481,7 @@ function RunList({ list, now }: { list: Work[]; now: number }) {
         label="Runs"
         items={rows}
         selectedKey={selected}
+        restKey={firstRowKey(rows)}
         onSelect={(key) => {
           clear();
           setSelected(key);

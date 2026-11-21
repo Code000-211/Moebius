@@ -93,7 +93,8 @@ export function Sidebar({ onSearch, narrow = false, open = false, onClose }: Sid
   // something is.
   const trailingOf = (path: string): Trailing | undefined => {
     if (path === "inbox") return { text: `${inbox}`, tone: "count" };
-    if (path === "fleet" && working > 0) return { text: `${working} running`, tone: "running" };
+    if (path === "fleet" && working > 0)
+      return { text: `${working} running`, tone: "running", dotOnly: here === "fleet" };
     return undefined;
   };
 
@@ -131,7 +132,8 @@ export function Sidebar({ onSearch, narrow = false, open = false, onClose }: Sid
       tabIndex={overlay ? -1 : undefined}
       className={cn(
         "flex h-full w-(--sidebar-width) shrink-0 flex-col",
-        overlay && "relative rounded-r-sheet border-r border-hairline bg-panel py-1.5 outline-none",
+        overlay &&
+          "relative rounded-r-sheet border-r border-hairline-strong bg-panel py-1.5 outline-none",
       )}
     >
       <div className="flex h-12 shrink-0 items-center gap-1 px-2">
