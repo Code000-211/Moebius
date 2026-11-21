@@ -157,6 +157,15 @@ export function boardPath(projectId: number, repositoryId?: number): string {
   return repositoryId === undefined ? base : `${base}?repository=${repositoryId}`;
 }
 
+/** The tabs of a project after its Board, in the order the header shows them. */
+export const PROJECT_TABS = ["workflows", "cycles", "milestones", "intake"] as const;
+export type ProjectTab = (typeof PROJECT_TABS)[number];
+
+/** The path of a tab of a project: its board for `board`, else `/projects/:id/<tab>`. */
+export function projectTabPath(projectId: number, tab: "board" | ProjectTab): string {
+  return tab === "board" ? boardPath(projectId) : `${boardPath(projectId)}/${tab}`;
+}
+
 /** The path of the board of a repository: at the project that is its home, naming the repository. */
 export function repositoryBoardPath(
   repository: { id: number; home_project_id: number },
