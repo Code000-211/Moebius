@@ -91,7 +91,7 @@ export function ListRow({
       {...position(at)}
       {...data}
       className={cn(
-        "group/row relative flex h-9 w-full items-center gap-2.5 border-b border-hairline px-6 text-base",
+        "group/row relative flex h-9 w-full items-center gap-2.5 border-b border-hairline px-4 text-base",
         onClick && "cursor-pointer",
         selected
           ? "bg-accent-tint before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent"
@@ -141,7 +141,7 @@ export function GroupRow({
       data-testid="group-row"
       {...position(at)}
       className={cn(
-        "flex h-[30px] w-full items-center border-b border-hairline bg-group-fill px-6 text-xs font-medium text-secondary",
+        "flex h-[30px] w-full items-center border-b border-hairline bg-group-fill px-4 text-xs font-medium text-secondary",
         className,
       )}
     >

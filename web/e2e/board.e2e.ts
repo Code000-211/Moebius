@@ -260,18 +260,21 @@ describe("the board page", () => {
     }
   });
 
-  it.skipIf(usesRealServer)("keeps a refusal of the line in a column under it", async () => {
-    await fresh();
-    await openBoard();
-    fake().refuseNext("POST", "/v1/repositories/1/issues", 500, "the forge refused the issue");
-    const backlog = column("Backlog");
-    await addFromMenu("Backlog");
-    const line = backlog.getByLabel("Title of the new card in Backlog");
-    await line.fill("Doomed");
-    await line.press("Enter");
-    await backlog.getByRole("alert").filter({ hasText: "the forge refused the issue" }).waitFor();
-    expect(await line.inputValue()).toBe("Doomed");
-  });
+  it.skipIf(usesRealServer)(
+    "says a refusal of the line as a toast and keeps the line",
+    async () => {
+      await fresh();
+      await openBoard();
+      fake().refuseNext("POST", "/v1/repositories/1/issues", 500, "the forge refused the issue");
+      const backlog = column("Backlog");
+      await addFromMenu("Backlog");
+      const line = backlog.getByLabel("Title of the new card in Backlog");
+      await line.fill("Doomed");
+      await line.press("Enter");
+      await page.getByRole("alert").filter({ hasText: "the forge refused the issue" }).waitFor();
+      expect(await line.inputValue()).toBe("Doomed");
+    },
+  );
 
   it("opens the form of a new issue on C from another page, and keeps it for the next with Create more", async () => {
     await fresh();

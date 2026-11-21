@@ -12,9 +12,8 @@
  * for dark gets light. Components never carry a colour literal, a radius or a size of their own: they use these
  * variables through the Tailwind names in `tailwind.css`.
  *
- * The names of the former palette stay, so that no `var()` dangles while the pages are moved to the new standard one
- * by one; each is an alias of a token of the table, and the new standard has no depth of its own for them to carry:
- * the shadows are one hairline or nothing, and there is no grain, no glow and no wash.
+ * The names of the former palette that a page still uses stay as aliases of a token of the table, and the standard has
+ * no depth of its own for them to carry: the shadows are one hairline or nothing.
  */
 
 /* Light, the base. The table's names, first. */
@@ -94,10 +93,7 @@
   --status-error: var(--danger);
 
   /* The old names of the surfaces, as aliases of the table's. */
-  --ground: var(--canvas);
-  --page: var(--panel);
   --background: var(--panel);
-  --surface: var(--panel);
   --surface-raised: var(--panel);
   --surface-sunken: var(--group-fill);
   --field: var(--panel);
@@ -106,9 +102,6 @@
   --selected: var(--accent-tint);
   --track: var(--control-fill);
   --heat-empty: var(--hairline);
-  /* Glass is a translucent panel where blur is on (`glass` in tailwind.css), and the opaque panel otherwise. */
-  --glass: color-mix(in srgb, var(--panel) 82%, transparent);
-  --glass-solid: var(--panel);
   --sidebar: var(--canvas);
   --sidebar-text: var(--text-secondary);
   --sidebar-group: var(--text-muted);
@@ -118,7 +111,6 @@
   --online-text: var(--running-text);
   --scrollbar-thumb: var(--hairline-strong);
   --focus: var(--accent);
-  --wash: transparent;
   --selection: color-mix(in srgb, var(--accent) 35%, transparent);
   --code-background: var(--code-bg);
   --code-string: var(--code-text);
@@ -147,17 +139,10 @@
 
   /*
    * Depth is one level: the canvas, the panel, and a window above a dimmed panel. A card and the edge of a large
-   * surface are one hairline, nothing lifts, and there is no relief, glow or grain.
+   * surface are one hairline, and nothing lifts.
    */
-  --edge: 0 0 0 1px var(--hairline-strong);
   --shadow-card: 0 0 0 1px var(--hairline-strong);
-  --shadow-card-hover: 0 0 0 1px var(--hairline-strong);
   --shadow-raised: var(--shadow-window);
-  --shadow-relief: 0 0 0 0 transparent;
-  --glow: 0 0 0 0 transparent;
-  --grain: 0;
-  --grain-blend: normal;
-  --grain-filter: none;
 
   /* Radii: 6 for controls and rows, 8 for cards, 10 for the panel and windows, round for dots, avatars and switches. */
   --radius-control: 6px;

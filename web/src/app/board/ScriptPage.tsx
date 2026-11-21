@@ -45,7 +45,6 @@ export function ScriptPage() {
     <>
       <PageHeader
         title={`Script of ${name}`}
-        context="What the column does with a card: when it starts a run, when it waits, and when it moves on."
         actions={
           <Button asChild variant="ghost">
             <Link to={boardPath(repository)}>Back to the board</Link>

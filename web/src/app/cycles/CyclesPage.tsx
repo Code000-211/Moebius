@@ -118,7 +118,6 @@ function ProjectCycles({
     void queryClient.invalidateQueries({ queryKey: keys.cards });
   };
 
-  const context = "A cycle is a time box of the project, with the cards it means to finish in it.";
   if (cycles.isPending) {
     return (
       <>
@@ -164,7 +163,6 @@ function ProjectCycles({
         <>
           <PageHeader
             title="Cycles"
-            context={context}
             actions={
               <>
                 {chooser}

@@ -14,7 +14,7 @@ describe("shared page parts", () => {
     const { container } = render(<Box title="Repositories">x</Box>);
     const cls = (container.firstElementChild as HTMLElement).className;
     expect(cls).toContain("border-t");
-    expect(cls).not.toMatch(/shadow|outline|bg-surface|rounded/);
+    expect(cls).not.toMatch(/shadow|outline|bg-panel|rounded/);
   });
 
   it("draws an empty state without a card or shadow", () => {
@@ -22,7 +22,7 @@ describe("shared page parts", () => {
       <Empty icon={<i />} title="Nothing needs you" action={<b>Go</b>} />,
     );
     const cls = (container.firstElementChild as HTMLElement).className;
-    expect(cls).not.toMatch(/shadow|outline|bg-surface|rounded/);
+    expect(cls).not.toMatch(/shadow|outline|bg-panel|rounded/);
   });
 
   it("draws a skeleton without any animation, rows of 36px", () => {
@@ -38,14 +38,9 @@ describe("shared page parts", () => {
     expect((rows[0] as HTMLElement).className).toContain("h-row-list");
   });
 
-  it("draws the header as one sticky 48px line, tabs and actions in slots, and no subtitle", () => {
-    const { container, queryByText, getByText } = render(
-      <PageHeader
-        title="Fleet"
-        context="a sentence"
-        tabs={<span>tabs</span>}
-        actions={<span>acts</span>}
-      />,
+  it("draws the header as one sticky 48px line, tabs and actions in slots", () => {
+    const { container, getByText } = render(
+      <PageHeader title="Fleet" tabs={<span>tabs</span>} actions={<span>acts</span>} />,
     );
     const header = container.querySelector("header") as HTMLElement;
     expect(header.className).toContain("sticky");
@@ -54,6 +49,5 @@ describe("shared page parts", () => {
     expect(header.hasAttribute("data-tauri-drag-region")).toBe(true);
     expect(getByText("tabs")).toBeTruthy();
     expect(getByText("acts")).toBeTruthy();
-    expect(queryByText("a sentence")).toBeNull();
   });
 });

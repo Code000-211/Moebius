@@ -138,6 +138,16 @@ export const runSteps: Record<number, Step[]> = {
       output: "Finished dev profile",
     },
   ],
+  104: [
+    {
+      tool: "read",
+      args: { path: `${ROOT}/104/worktree/src/checkout/payment.rs` },
+      output: "pub async fn pay(order: &Order, method: Method) -> Result<Receipt> {",
+    },
+    {
+      say: "Apple Pay needs a merchant session and a domain check. I will add a payment method behind a flag and test it against the sandbox.",
+    },
+  ],
   103: [
     {
       tool: "bash",
@@ -222,6 +232,8 @@ export const snapshot = () => ({
           title: "Support Apple Pay at checkout",
           author: "kfrost",
           created_at: ago(7_200),
+          // Its plan is written and waits for a person: the first row of the Fleet, with "Approve plan".
+          run: { id: 104, agent: "Planner", purpose: "plan", status: "waiting" },
         }),
         card(28, { title: "Return 404 instead of 500 for an unknown SKU", column: "Not started" }),
         card(29, { title: "Cache the product catalogue for 60 seconds", column: "Not started" }),

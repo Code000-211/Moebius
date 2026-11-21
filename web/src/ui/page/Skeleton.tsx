@@ -119,7 +119,7 @@ export function SkeletonCard({
 }) {
   return (
     <Reading message={message} className={className}>
-      <div className="flex flex-col gap-3 rounded-card bg-surface p-4 shadow-card">
+      <div className="flex flex-col gap-3 rounded-card bg-panel p-4 shadow-card">
         <Skeleton className="h-4 w-1/4" />
         <Lines lines={lines} />
       </div>
@@ -205,11 +205,11 @@ export function SkeletonBoard({
           className="flex min-h-40 min-w-0 flex-1 flex-col gap-3 rounded-card bg-lane p-3"
         >
           <Skeleton className="h-4 w-1/3" />
-          <div className="flex flex-col gap-3 rounded-card bg-surface p-4 shadow-card">
+          <div className="flex flex-col gap-3 rounded-card bg-panel p-4 shadow-card">
             <Skeleton className="h-4 w-2/3" />
             <Lines lines={2} />
           </div>
-          <div className="flex flex-col gap-3 rounded-card bg-surface p-4 shadow-card">
+          <div className="flex flex-col gap-3 rounded-card bg-panel p-4 shadow-card">
             <Skeleton className="h-4 w-1/2" />
             <Lines lines={1} />
           </div>
