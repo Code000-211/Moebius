@@ -26,7 +26,7 @@ the reference for layout; where a mockup and this record differ, this record win
 - **Build and Insight as one entry with tabs.** Rejected: building (Agents, Rules) and reading (Insights, Improve) are
   different activities and two short groups read faster than one entry with tabs behind it.
 - **Keep workflows server-wide and show a filtered run view in each project.** Rejected: a project would show things it
-  does not own and the filter would be the only link. Workflows belong to a project (ADR 0025, written with the change that
+  does not own and the filter would be the only link. Workflows belong to a project ([ADR 0025](0025-workflows-belong-to-a-project.md), written with the change that
   implements it).
 - **A cross-project timeline of Cycles and Milestones.** Rejected: a cycle belongs to one project's board; a second place
   for the same thing, and Fleet already answers what runs now.
@@ -63,5 +63,5 @@ the reference for layout; where a mockup and this record differ, this record win
 - `design/web-redesign/DECISIONS.md` (Shell, Settings) and `design-web.md` are edited by the issues that change the matching
   screen; those files say where they changed and point here. Until then the code and those files still show 0023's sidebar.
 - The web app's routes split into the app's own and the project's; the board is addressed by project.
-- Workflows moving into projects, with the migration of existing ones, is a separate record (ADR 0025).
+- Workflows moving into projects, with the migration of existing ones, is a separate record ([ADR 0025](0025-workflows-belong-to-a-project.md)).
 - The screenshots of the guide are taken again when the pages have moved.
