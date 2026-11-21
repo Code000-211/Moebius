@@ -346,7 +346,7 @@ export function BoardPage() {
                 }
               />
             </search>
-            <Button size="sm" onClick={() => openForm(null)}>
+            <Button size="sm" className="ml-2" onClick={() => openForm(null)}>
               <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
               New issue
             </Button>
@@ -531,7 +531,7 @@ export function BoardPage() {
           ) : (
             <div
               data-testid="board-lanes"
-              className="-mx-6 -mb-6 -mt-2 min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-6"
+              className="-mx-6 -mb-6 -mt-2.5 min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-6"
             >
               <KanbanProvider onDragEnd={onDragEnd} renderOverlay={renderOverlay}>
                 {groups.map(({ column, cards, stacks }) => (

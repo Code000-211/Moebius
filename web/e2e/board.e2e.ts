@@ -334,7 +334,7 @@ describe("the board page", () => {
       const running = card(1);
       await running.waitFor();
       await running.getByTestId("status-running").waitFor();
-      expect(await running.getByTestId("card-activity").textContent()).toContain("Coder");
+      expect(await running.getByTestId("card-activity").textContent()).toContain("coding");
       // A running card has no outline of progress and casts no shadow.
       expect(await running.evaluate((el) => getComputedStyle(el).boxShadow)).toBe("none");
 
@@ -1346,7 +1346,10 @@ describe("the filters", () => {
       await shownIs(1);
       await card(6).waitFor();
       // A chip is removed by its own button.
-      await bar().getByRole("button", { name: "Remove filter Agent is Reviewer" }).click();
+      await page
+        .getByRole("search", { name: "Filters set" })
+        .getByRole("button", { name: "Remove filter Agent is Reviewer" })
+        .click();
       await shownIs(7);
 
       await addFilter(page, bar(), "Status", "Your turn");
@@ -1394,7 +1397,10 @@ describe("the filters", () => {
     await shownIs(1);
     await card(6).waitFor();
     // The chip's own button is reached with the keyboard too.
-    await bar().getByRole("button", { name: "Remove filter Agent is Reviewer" }).focus();
+    await page
+      .getByRole("search", { name: "Filters set" })
+      .getByRole("button", { name: "Remove filter Agent is Reviewer" })
+      .focus();
     await page.keyboard.press("Enter");
     await shownIs(7);
     expect(await chip("Agent is Reviewer").count()).toBe(0);
@@ -1452,7 +1458,10 @@ describe("the filters", () => {
       await shownIs(1);
       expect(await page.getByTestId("board-view").textContent()).toContain("View 3");
       // Changing the filter says the view is no longer what is shown, and closing it leaves the filter alone.
-      await bar().getByRole("button", { name: "Remove filter Agent is Reviewer" }).click();
+      await page
+        .getByRole("search", { name: "Filters set" })
+        .getByRole("button", { name: "Remove filter Agent is Reviewer" })
+        .click();
       await shownIs(7);
       await page.getByTestId("board-view").getByText("(filters changed)").waitFor();
       await page.getByRole("button", { name: "Close view" }).click();
