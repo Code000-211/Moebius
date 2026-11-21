@@ -14,7 +14,7 @@
  * has the layout switch and the notice for a leftover `.moebius` folder, `BoardColumn.tsx` a column and its cards, and
  * `BoardCardContent.tsx` what a card shows.
  */
-import { BookmarkSimpleIcon, PlusIcon, TerminalWindowIcon } from "@phosphor-icons/react";
+import { BookmarkSimpleIcon, PlusIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
@@ -24,12 +24,26 @@ import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { Card, InboxItem } from "../../api/types/board";
 import { Button } from "../../ui/components/Button";
+import {
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+} from "../../ui/components/DropdownMenu";
 import { type DropResult, KanbanCardFace, KanbanProvider } from "../../ui/components/KanbanBoard";
-import { FilterBar } from "../../ui/filters/FilterBar";
-import { type Display, displayQuery, readDisplay } from "../../ui/filters/model";
+import { DisplayMenu, FilterChip, FilterMenu } from "../../ui/filters/FilterBar";
+import {
+  activeFilters,
+  type Display,
+  displayQuery,
+  hasDisplay,
+  readDisplay,
+} from "../../ui/filters/model";
 import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
-import { Select } from "../../ui/page/Field";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
@@ -37,7 +51,7 @@ import { boardPath } from "../pages";
 import { boardFiltersOf, viewOfBoard } from "../views/model";
 import { CardContent } from "./BoardCardContent";
 import { BoardColumn } from "./BoardColumn";
-import { LayoutSwitch, LeftoverNotice } from "./BoardHead";
+import { LayoutTabs, LeftoverNotice } from "./BoardHead";
 import { useBulk } from "./bulk";
 import { BlockDialog, DeleteDialog, ParentDialog } from "./CardDialogs";
 import { useOpenCard } from "./CardWindowHost";
@@ -232,15 +246,26 @@ export function BoardPage() {
     data.data?.boards.map((b): [string, string] => [String(b.repository.id), b.repository.name]) ??
       [],
   );
-  const leading = useMemo(
+  // The choice of repository is the first submenu of the head's Filter.
+  const repositoryMenu = useMemo(
     () => (
-      <Select
-        aria-label="Repository"
-        value={repositoryId === undefined ? "" : String(repositoryId)}
-        options={repositories}
-        onChange={onRepository}
-        className="w-auto min-w-36"
-      />
+      <>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>Repository</DropdownMenuSubTrigger>
+          <DropdownMenuSubContent aria-label="Repository">
+            <DropdownMenuRadioGroup
+              value={repositoryId === undefined ? "" : String(repositoryId)}
+              onValueChange={onRepository}
+            >
+              {repositories.map(([value, name]) => (
+                <DropdownMenuRadioItem key={value} value={value} className="text-sm">
+                  {name}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+      </>
     ),
     [repositoryId, repositories, onRepository],
   );
@@ -283,6 +308,7 @@ export function BoardPage() {
       }
     })();
   }, [repositoryId, filters, display.layout, display.sort, queryClient, notify]);
+  const anySet = activeFilters(fields, filterValues).length > 0 || hasDisplay(display);
   // The head of the page, drawn again only when its title, the layout or the handlers change: a read of the snapshot
   // leaves it as it is.
   const repositoryName = board?.repository.name;
@@ -290,17 +316,37 @@ export function BoardPage() {
     () => (
       <PageHeader
         title={repositoryName ?? ""}
+        tabs={
+          <LayoutTabs
+            layout={display.layout === "list" ? "list" : "board"}
+            onChange={(layout) => setQuery(displayQuery({ ...display, layout }))}
+          />
+        }
         actions={
           <>
-            <LayoutSwitch
-              layout={display.layout === "list" ? "list" : "board"}
-              onChange={(layout) => setQuery(displayQuery({ ...display, layout }))}
-            />
-            <Button variant="secondary" onClick={() => setTerminalOpen(true)}>
-              <TerminalWindowIcon className="size-4" aria-hidden="true" />
-              Terminal
-            </Button>
-            <Button onClick={() => openForm(null)}>
+            <search aria-label="Filter the cards" className="flex items-center gap-2">
+              <FilterMenu
+                plain
+                fields={fields}
+                values={filterValues}
+                onFilter={onFilter}
+                before={repositoryMenu}
+              />
+              <DisplayMenu
+                {...displayProps}
+                plain
+                extra={
+                  <>
+                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                    <DropdownMenuItem onSelect={() => setTerminalOpen(true)}>
+                      Terminal
+                    </DropdownMenuItem>
+                    {anySet && <DropdownMenuItem onSelect={saveView}>Save view</DropdownMenuItem>}
+                  </>
+                }
+              />
+            </search>
+            <Button size="sm" className="ml-2" onClick={() => openForm(null)}>
               <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
               New issue
             </Button>
@@ -308,7 +354,19 @@ export function BoardPage() {
         }
       />
     ),
-    [repositoryName, display, setQuery, openForm],
+    [
+      repositoryName,
+      display,
+      setQuery,
+      openForm,
+      fields,
+      filterValues,
+      onFilter,
+      repositoryMenu,
+      displayProps,
+      anySet,
+      saveView,
+    ],
   );
   const clearChoice = bulk.choice.clear;
   const closeBlock = useCallback(() => {
@@ -422,7 +480,8 @@ export function BoardPage() {
     // up and down. The list layout is a page like the others and scrolls as one sheet.
     <div className={cn("flex min-w-0 flex-col", boardLayout && "h-full min-h-0")}>
       {header}
-      <div className={cn("flex min-w-0 flex-col", boardLayout && "min-h-0 flex-1")}>
+      {/* The shell's body is 24px in from the panel; the board lines up with the head, which is 16px. */}
+      <div className={cn("-mx-2 flex min-w-0 flex-col", boardLayout && "min-h-0 flex-1")}>
         <div className={cn("flex min-w-0 flex-1 flex-col", boardLayout && "min-h-0")}>
           {openView && (
             <p
@@ -444,16 +503,20 @@ export function BoardPage() {
               </button>
             </p>
           )}
-          <FilterBar
-            label="Filter the cards"
-            leading={leading}
-            fields={fields}
-            values={filterValues}
-            onFilter={onFilter}
-            onClear={onClear}
-            display={displayProps}
-            onSaveView={saveView}
-          />
+          {activeFilters(fields, filterValues).length > 0 && (
+            <search aria-label="Filters set" className="mb-3 flex flex-wrap items-center gap-2">
+              {activeFilters(fields, filterValues).map((each) => (
+                <FilterChip
+                  key={each.field.key}
+                  active={each}
+                  onChange={(value) => onFilter(each.field.key, value)}
+                />
+              ))}
+              <Button variant="ghost" size="sm" onClick={onClear}>
+                Clear filters
+              </Button>
+            </search>
+          )}
           <LeftoverNotice repository={board.repository.id} />
           {display.layout === "list" ? (
             <ListLayout
@@ -469,7 +532,7 @@ export function BoardPage() {
           ) : (
             <div
               data-testid="board-lanes"
-              className="-mx-6 -mb-6 min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-6"
+              className="-mx-4 -mb-6 -mt-2.5 min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-4"
             >
               <KanbanProvider onDragEnd={onDragEnd} renderOverlay={renderOverlay}>
                 {groups.map(({ column, cards, stacks }) => (

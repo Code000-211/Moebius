@@ -91,7 +91,7 @@ export function KanbanCardContent({
           title={activity.hint}
           className={cn(
             "text-sm [overflow-wrap:anywhere]",
-            activity.tone === "needs-you" ? "text-needs-you-text" : "text-secondary",
+            activity.tone === "needs-you" ? "text-needs-you-text" : "text-muted",
           )}
         >
           {activity.text}
