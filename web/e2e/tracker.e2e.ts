@@ -169,6 +169,29 @@ async function addSubIssue(parent: string, title: string) {
   await status(`Created "${title}"`).waitFor();
 }
 
+/** Opens "Move to another parent…" from the menu of a card. While the board settles after a change (a card moves on, a
+ * stack opens) the card is redrawn and shuts or detaches the menu, so the menu is opened again until the dialog is up. */
+async function openMoveDialog(card: Locator) {
+  const dialog = page.getByRole("dialog", { name: /^Move #\d+ to another parent$/ });
+  await expect
+    .poll(
+      async () => {
+        try {
+          await menuOf(card).click({ timeout: 2000 });
+          await item("Move to another parent…").click({ timeout: 2000 });
+          await dialog.waitFor({ timeout: 2000 });
+          return true;
+        } catch {
+          await page.keyboard.press("Escape");
+          return false;
+        }
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+  return dialog;
+}
+
 /** The control that opens or shuts the stack of the card titled `title`. */
 const toggleOf = (title: string) =>
   cardTitled(title).first().locator('button[aria-label^="Sub-issues of #"]');
@@ -225,9 +248,7 @@ describe("sub-issues on the board", () => {
     await cardTitled("A step").waitFor();
 
     const second = await numberOf("Second plan");
-    await menuOf(cardTitled("A step")).click();
-    await item("Move to another parent…").click();
-    const dialog = page.getByRole("dialog", { name: /^Move #\d+ to another parent$/ });
+    const dialog = await openMoveDialog(cardTitled("A step"));
     await pickOption(page, dialog.getByLabel("Parent"), `#${second} Second plan`);
     await dialog.getByRole("button", { name: "Move", exact: true }).click();
     await status(new RegExp(`is a sub-issue of #${second}\\.`)).waitFor();
@@ -240,8 +261,7 @@ describe("sub-issues on the board", () => {
 
     // And it can be made an issue of its own again.
     await toggleOf("Second plan").click();
-    await menuOf(cardTitled("A step")).click();
-    await item("Move to another parent…").click();
+    await openMoveDialog(cardTitled("A step"));
     await pickOption(page, dialog.getByLabel("Parent"), "No parent");
     await dialog.getByRole("button", { name: "Move", exact: true }).click();
     await status(/is not a sub-issue any more\./).waitFor();
@@ -255,9 +275,7 @@ describe("sub-issues on the board", () => {
       const outsider = "Fix the login redirect";
       const parent = "Document the API";
       const parentNumber = await numberOf(parent);
-      await menuOf(cardTitled(outsider)).click();
-      await item("Move to another parent…").click();
-      const dialog = page.getByRole("dialog", { name: /^Move #\d+ to another parent$/ });
+      const dialog = await openMoveDialog(cardTitled(outsider));
       await pickOption(page, dialog.getByLabel("Parent"), `#${parentNumber} ${parent}`);
       await dialog.getByRole("button", { name: "Move", exact: true }).click();
       await status(/is a sub-issue of #\d+\./).waitFor();
