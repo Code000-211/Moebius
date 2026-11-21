@@ -14,7 +14,7 @@ import { keys } from "../../api/keys";
 import { ListChecksIcon } from "../../ui/icons";
 import { useNow } from "../../ui/lib/useNow";
 import { Empty } from "../../ui/page/Empty";
-import { ListRow } from "../../ui/page/ListRow";
+import { idChars, ListRow } from "../../ui/page/ListRow";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { firstRowKey, openedKey, VirtualList } from "../../ui/page/VirtualList";
@@ -60,6 +60,7 @@ export function MyIssuesPage() {
   }
   const open = (key: string) => openCard(Number(key));
   const list = myIssueItems(issues.data ?? [], now);
+  const idWidth = idChars(list.flatMap((row) => (row.type === "row" ? [row.data.key] : [])));
   const chosen = openedKey(list, picked, (_, key) => key === params.get("card"));
   return (
     <div data-testid="my-issues-page" className="flex h-full min-h-0 flex-col">
@@ -81,6 +82,7 @@ export function MyIssuesPage() {
             selected={row.selected}
             status={status}
             id={key}
+            idChars={idWidth}
             title={card.title}
             reason={reason}
             age={age}

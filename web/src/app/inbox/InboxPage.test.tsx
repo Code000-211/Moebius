@@ -49,6 +49,7 @@ function open(
   items: unknown[] | number[],
   notices: unknown[],
   boards: unknown[] = [],
+  proposals: unknown[] = [],
 ) {
   vi.stubGlobal(
     "fetch",
@@ -56,13 +57,17 @@ function open(
       requests.push(`${init?.method ?? "GET"} ${path}`);
       return new Response(
         JSON.stringify(
-          path === "/v1/notices"
-            ? notices
-            : {
-                boards,
-                harness_changes: [],
-                inbox: items.map((each) => (typeof each === "number" ? item(each) : each)),
-              },
+          path === "/v1/notices" || path === "/v1/people"
+            ? path === "/v1/people"
+              ? []
+              : notices
+            : path === "/v1/proposals"
+              ? proposals
+              : {
+                  boards,
+                  harness_changes: [],
+                  inbox: items.map((each) => (typeof each === "number" ? item(each) : each)),
+                },
         ),
       );
     }),
@@ -160,8 +165,8 @@ describe("the inbox page", () => {
     it("is approved from its row without opening the card", async () => {
       open("/inbox", [waiting], [], boards);
       const row = await screen.findByTestId("inbox-item");
-      expect(within(row).getByText("Plan ready")).toBeTruthy();
-      fireEvent.click(within(row).getByRole("button", { name: "Approve plan" }));
+      expect(within(row).getByText("Waiting for approval")).toBeTruthy();
+      fireEvent.click(within(row).getByRole("button", { name: "Approve" }));
       await waitFor(() => expect(requests).toContain("POST /v1/cards/1/approve"));
       expect(screen.getByTestId("where").textContent).toBe("/inbox");
     });
@@ -182,5 +187,75 @@ describe("the inbox page", () => {
     open("/inbox?item=1", [1], []);
     await screen.findByTestId("inbox-decision");
     expect(screen.getByTestId("where").textContent).toBe("/inbox?item=1");
+  });
+
+  describe("a Retro proposal", () => {
+    const diff =
+      "--- a/agents/Moebius.md\n+++ b/agents/Moebius.md\n@@ -1 +1 @@\n-old line\n+a probe with quotes goes in a file\n";
+    const proposal = (data: Record<string, unknown>) => ({
+      id: 7,
+      kind: "proposal",
+      card_id: null,
+      title: "agents/Moebius.md: a probe with quotes inside quotes goes in a file",
+      data,
+      resolved_at: null,
+      at: 1,
+      assignees: [],
+    });
+
+    it("opens in a window that shows the kind and file in its bar, the reason, the diff and the actions", async () => {
+      open(
+        "/inbox?item=7",
+        [proposal({ proposal: 3, reason: "A quoted probe broke twice.", diff })],
+        [],
+        [],
+        [],
+      );
+      const window = await screen.findByTestId("editor-window");
+      const bar = within(window).getByTestId("window-header");
+      expect(bar.textContent).toContain("Retro proposal");
+      expect(bar.textContent).toContain("agents/Moebius.md");
+      expect(within(window).getByRole("heading", { name: /a probe with quotes/ })).toBeTruthy();
+      expect(within(window).getByText("A quoted probe broke twice.")).toBeTruthy();
+      expect(within(window).getByText(/a probe with quotes goes in a file/)).toBeTruthy();
+      expect(within(window).getByRole("button", { name: "Merge" })).toBeTruthy();
+      expect(within(window).getByRole("button", { name: "Dismiss" })).toBeTruthy();
+      // The actions come before the assignee, and the foot has no second Close.
+      const merge = within(window).getByRole("button", { name: "Merge" });
+      const assignee = within(window).getByText("Assignee");
+      expect(
+        merge.compareDocumentPosition(assignee) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(within(window).getAllByRole("button", { name: "Close" })).toHaveLength(1);
+    });
+
+    it("shows what the proposal offers for the item a trial ends with, which names only its proposal", async () => {
+      open(
+        "/inbox?item=7",
+        [proposal({ proposal: 3 })],
+        [],
+        [],
+        [
+          {
+            id: 3,
+            retro_date: "2026-10-25",
+            branch: "proposal/x",
+            title: "x",
+            body: "Read back from the proposal.",
+            agents: ["Moebius"],
+            status: "untried",
+            diff,
+          },
+        ],
+      );
+      const window = await screen.findByTestId("editor-window");
+      expect(await within(window).findByText("Read back from the proposal.")).toBeTruthy();
+      expect(within(window).getByText(/a probe with quotes goes in a file/)).toBeTruthy();
+      expect(within(window).getByRole("button", { name: "Merge" })).toBeTruthy();
+      expect(within(window).getByRole("button", { name: "Dismiss" })).toBeTruthy();
+      expect(within(window).getByRole("link", { name: "Open as page" }).getAttribute("href")).toBe(
+        "/retro?day=2026-10-25&proposal=3",
+      );
+    });
   });
 });

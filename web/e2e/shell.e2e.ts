@@ -196,7 +196,6 @@ async function signedIn(path: string): Promise<Page> {
  * The page's own facts (a workflow's definition) are in the page, so there is no pane of properties beside it.
  */
 describe.skipIf(usesRealServer)("the Moebius agent", () => {
-  const FIELD = { name: "Ask Moebius" } as const;
   const PANEL = { name: "Moebius agent" } as const;
 
   it("opens at the panel's right and closes again, the page kept", async () => {
@@ -231,44 +230,99 @@ describe.skipIf(usesRealServer)("the Moebius agent", () => {
     await page.context().close();
   });
 
-  it("sends from the field, which opens the panel with the message, and the field is back when it closes", async () => {
+  const BUTTON = { name: "Moebius", exact: true } as const;
+
+  it("opens from the header's button beside the page, and closes by the button, the close icon and Escape", async () => {
     const page = await signedIn("/inbox");
-    // The agent is a quiet field at the bottom of the panel.
-    const field = page.getByRole("textbox", FIELD);
-    await field.waitFor();
-    expect(await page.getByRole("button", FIELD).count()).toBe(0);
-    expect(await page.locator('[data-surface="agent-dock"] kbd').count()).toBe(0);
-    const surface = await box(page, '[data-surface="page"]');
-    const dock = await box(page, '[data-surface="agent-dock"]');
-    expect(dock.y + dock.height).toBeLessThanOrEqual(surface.y + surface.height);
-    await field.fill("What is this page?");
-    await field.press("Enter");
+    const button = page.getByRole("button", BUTTON);
+    await button.waitFor();
+    expect(await button.getAttribute("aria-pressed")).toBe("false");
     const agent = page.getByRole("complementary", PANEL);
+    const wide = await box(page, "main");
+    await button.click();
     await agent.waitFor();
-    await agent.getByText("You said: What is this page?").first().waitFor();
+    expect(await button.getAttribute("aria-pressed")).toBe("true");
+    // The panel is 344px wide beside the content, which is narrower by as much.
     expect((await box(page, '[data-surface="agent-panel"]')).width).toBe(344);
-    // While the panel is open there is no field with that name, and no key hint in the panel.
-    expect(await page.getByRole("textbox", FIELD).count()).toBe(0);
-    expect(await page.getByRole("button", FIELD).count()).toBe(0);
+    expect((await box(page, "main")).width).toBe(wide.width - 344);
+    // The focus is in the reply field.
+    await page.getByPlaceholder("Reply to Moebius…").waitFor();
+    expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("TEXTAREA");
     expect(await agent.locator("kbd").count()).toBe(0);
+
+    await button.click();
+    await agent.waitFor({ state: "hidden" });
+    expect(await button.getAttribute("aria-pressed")).toBe("false");
+    expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Moebius");
+
+    await button.click();
+    await agent.waitFor();
     await agent.getByRole("button", { name: "Close the Moebius agent" }).click();
     await agent.waitFor({ state: "hidden" });
-    await field.waitFor();
+
+    await button.click();
+    await agent.waitFor();
+    await page.keyboard.press("Escape");
+    await agent.waitFor({ state: "hidden" });
+    expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Moebius");
     await page.context().close();
   });
 
-  it("has no field on Settings, and the shortcut still opens the agent there", async () => {
-    const page = await signedIn("/settings");
-    await page.getByRole("navigation", { name: "Pages" }).waitFor();
-    expect(await page.getByRole("textbox", FIELD).count()).toBe(0);
+  it("opens and closes with Ctrl+J, and the button follows", async () => {
+    const page = await signedIn("/inbox");
+    const button = page.getByRole("button", BUTTON);
+    const agent = page.getByRole("complementary", PANEL);
     await page.keyboard.press("Control+j");
+    await agent.waitFor();
+    expect(await button.getAttribute("aria-pressed")).toBe("true");
+    await page.keyboard.press("Control+j");
+    await agent.waitFor({ state: "hidden" });
+    expect(await button.getAttribute("aria-pressed")).toBe("false");
+    await page.context().close();
+  });
+
+  it("has the button in the header of pages, Settings among them, and no Ask Moebius field on any", async () => {
+    const page = await signedIn("/inbox");
+    for (const path of [
+      "/inbox",
+      "/my-issues",
+      "/fleet",
+      "/board/1",
+      "/wiki",
+      "/cycles",
+      "/views",
+      "/settings",
+    ]) {
+      await page.goto(`${server.url}${path}`);
+      await page.locator('[data-surface="page"] h1').first().waitFor();
+      await page.locator("header").getByRole("button", BUTTON).waitFor();
+      expect(await page.getByLabel("Ask Moebius").count()).toBe(0);
+      expect(await page.getByPlaceholder("Ask Moebius…").count()).toBe(0);
+      expect(await page.locator('[data-surface="agent-dock"]').count()).toBe(0);
+    }
+    await page.context().close();
+  });
+
+  it("lies over the page from the right in a window under 1000px, the button staying in the header", async () => {
+    const page = await signedIn("/inbox");
+    await page.setViewportSize({ width: 900, height: 700 });
+    const button = page.getByRole("button", BUTTON);
+    await button.waitFor();
+    const before = await box(page, "main");
+    await button.click();
     await page.getByRole("complementary", PANEL).waitFor();
+    expect((await box(page, "main")).width).toBe(before.width);
+    const over = await box(page, '[data-surface="agent-panel"]');
+    const surface = await box(page, '[data-surface="page"]');
+    expect(over.x + over.width).toBe(surface.x + surface.width);
+    expect(await button.isVisible()).toBe(true);
+    expect(await button.getAttribute("aria-pressed")).toBe("true");
     await page.context().close();
   });
 });
 
 /**
- * The desktop app's window has no system frame, so the web app draws the window's buttons: once, inside the panel,
+ * The desktop app's window has no system frame, so the web app draws the window's buttons: once, inside the page,
  * when the app's bridge is there; and a strip that moves and closes the window on the screens outside the shell.
  */
 describe.skipIf(usesRealServer)("the window buttons in the desktop app", () => {

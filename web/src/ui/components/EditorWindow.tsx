@@ -13,19 +13,11 @@
  * foot has Close and no Save. `DeleteButton` is the Delete of the standard: outlined, the label in `--danger-text`.
  */
 
-import { XIcon } from "@phosphor-icons/react";
 import { type ComponentProps, type ReactNode, useRef, useState } from "react";
 import { cn } from "../lib/cn";
 import { Button } from "./Button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "./Dialog";
-import { IconButton } from "./IconButton";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "./Dialog";
+import { WindowHeader } from "./WindowHeader";
 
 /** The Delete of an editor window: an outlined button with the label in `--danger-text`, never a filled one. */
 export function DeleteButton(props: ComponentProps<typeof Button>) {
@@ -53,6 +45,9 @@ export function EditorWindow({
   onSave,
   onClose,
   height = "fixed",
+  leading,
+  trailing,
+  footer = true,
   children,
 }: {
   open: boolean;
@@ -73,6 +68,12 @@ export function EditorWindow({
   onClose: () => void;
   /** `fixed` (the default) is the editor's height; `fit` is as tall as a short body, for read-only content. */
   height?: "fixed" | "fit";
+  /** What the window is about at the left of the top bar (a kind and a file); the title is then only the dialog's name. */
+  leading?: ReactNode;
+  /** Controls in the top bar before the close icon, such as "Open as page". */
+  trailing?: ReactNode;
+  /** False when the body has its own actions: a read-only window then has no foot with a second Close. */
+  footer?: boolean;
   children: ReactNode;
 }) {
   const [asking, setAsking] = useState(false);
@@ -111,15 +112,30 @@ export function EditorWindow({
         data-testid="editor-window"
         hideCloseButton
       >
-        <DialogHeader className="h-12 shrink-0 flex-row items-center gap-2 border-b border-hairline pr-2 pl-6">
-          <DialogTitle className="min-w-0 flex-1 truncate text-md font-semibold">
-            {title}
+        <WindowHeader
+          leading={leading}
+          title={
+            leading === undefined ? (
+              <DialogTitle className="truncate text-md font-semibold">{title}</DialogTitle>
+            ) : undefined
+          }
+          trailing={trailing}
+          onClose={close}
+        />
+        {leading !== undefined && (
+          // Not a heading: the body shows the title as one.
+          <DialogTitle asChild>
+            <span className="sr-only">{title}</span>
           </DialogTitle>
-          <IconButton icon={XIcon} aria-label="Close" onClick={close} />
-        </DialogHeader>
+        )}
         <div
           ref={body}
-          className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-6 [&_label>span:first-child]:font-medium [&_textarea]:resize-none"
+          className={cn(
+            "flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto p-6",
+            // A basis of zero in a window as tall as its body makes WebKit draw the body one row high.
+            height === "fit" ? "flex-initial" : "flex-1",
+            "[&_label>span:first-child]:font-medium [&_textarea]:resize-none",
+          )}
         >
           {description ? (
             <DialogDescription>{description}</DialogDescription>
@@ -147,7 +163,7 @@ export function EditorWindow({
             </Button>
             <DeleteButton onClick={leave}>Discard</DeleteButton>
           </div>
-        ) : (
+        ) : footer || onSave ? (
           <DialogFooter className="h-14 shrink-0 items-center border-t border-hairline px-6">
             {actions && <div className="flex gap-2 sm:mr-auto">{actions}</div>}
             {onSave ? (
@@ -165,7 +181,7 @@ export function EditorWindow({
               </Button>
             )}
           </DialogFooter>
-        )}
+        ) : null}
       </DialogContent>
     </Dialog>
   );

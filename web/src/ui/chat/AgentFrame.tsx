@@ -1,5 +1,5 @@
 /**
- * The right panel the Moebius agent lies in: a solid column of the page's panel, beside the page and behind a hairline,
+ * The right panel the Moebius agent lies in: a solid column of the page's panel, beside the page and behind a hairline (under 1000px it lies over the page from the right, below the header, whose Moebius button stays),
  * with the agent's name and one control, the one that closes it. In the desktop app the head leaves the window's
  * controls their place at the panel's top right. The conversation and the reply field are its children.
  */
@@ -30,7 +30,7 @@ export function AgentFrame({
     <aside
       aria-label="Moebius agent"
       data-surface="agent-panel"
-      className="flex w-(--agent-width) max-w-[45%] shrink-0 animate-in flex-col border-l border-hairline bg-panel fade-in-0 duration-(--motion-fast) ease-(--motion-ease)"
+      className="flex w-(--agent-width) max-w-[45%] shrink-0 max-[999px]:absolute max-[999px]:top-12 max-[999px]:right-0 max-[999px]:bottom-0 max-[999px]:z-sheet max-[999px]:max-w-full animate-in flex-col border-l border-hairline bg-panel fade-in-0 duration-(--motion-fast) ease-(--motion-ease)"
     >
       <header
         className="flex h-12 shrink-0 items-center gap-2 border-b border-hairline pl-4"

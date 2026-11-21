@@ -17,7 +17,7 @@
  *   id="MOE-209"
  *   title="Wiki save overwrites a newer version"
  *   reason="Review found a data loss"
- *   action={<Button variant="quiet">Approve plan</Button>}
+ *   action={<Button variant="quiet">Approve</Button>}
  *   owner="leon"
  *   age="2m"
  *   selected
@@ -36,6 +36,27 @@ export interface RowPosition {
   size: number;
 }
 
+/** The narrowest id column, in characters: `MOE-123` fits. */
+const ID_MIN = 8;
+/** The widest, so one long project key cannot take the title's room. */
+const ID_MAX = 16;
+
+/** How many characters the id column of a list needs: its longest id, between the narrowest and the widest. */
+export function idChars(ids: readonly string[]): number {
+  const longest = ids.reduce((most, id) => Math.max(most, id.length), 0);
+  return Math.min(ID_MAX, Math.max(ID_MIN, longest));
+}
+
+/** An id cut to `chars`: when too long, the project part is cut with an ellipsis and the number stays whole. */
+export function fitId(id: string, chars: number): string {
+  if (id.length <= chars) return id;
+  const dash = id.lastIndexOf("-");
+  if (dash <= 0) return id;
+  const number = id.slice(dash);
+  const room = chars - number.length - 1;
+  return room >= 1 ? `${id.slice(0, room)}…${number}` : `…${number}`;
+}
+
 function position(at: RowPosition | undefined) {
   return at ? { "aria-posinset": at.index, "aria-setsize": at.size } : {};
 }
@@ -44,6 +65,7 @@ export function ListRow({
   status = "notStarted",
   mark,
   id,
+  idChars: chars = ID_MIN,
   title,
   reason,
   action,
@@ -61,8 +83,10 @@ export function ListRow({
   mark?: ReactNode;
   /** The issue's id, drawn in mono; a row with none (a Retro proposal) leaves no gap for it. */
   id: string;
+  /** The width of the id column in characters, from `idChars` of the list; keeps a long key's number readable. */
+  idChars?: number;
   title: string;
-  /** The one pale reason or activity ("Plan ready", "editing engine.rs"). */
+  /** The one pale reason or activity ("Waiting for approval", "editing engine.rs"). */
   reason?: ReactNode;
   /** The one action the row needs, on the row. */
   action?: ReactNode;
@@ -101,7 +125,13 @@ export function ListRow({
     >
       {mark ?? <StatusIcon state={status} />}
       {id !== "" && (
-        <span className="w-16 shrink-0 truncate font-mono text-xs text-muted">{id}</span>
+        <span
+          className="shrink-0 truncate font-mono text-xs text-muted"
+          style={{ width: `${chars}ch` }}
+          title={id}
+        >
+          {fitId(id, chars)}
+        </span>
       )}
       {/* The title and the reason are a line that wraps and is clipped: a reason that does not fit after the title
           goes away whole, instead of shrinking to a letter. */}

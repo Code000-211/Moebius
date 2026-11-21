@@ -252,7 +252,7 @@ export const snapshot = () => ({
           title: "Support Apple Pay at checkout",
           author: "kfrost",
           created_at: ago(7_200),
-          // Its plan is written and waits for a person: the first row of the Fleet, with "Approve plan".
+          // An outside issue that waits for a person to approve it: the first row of the Fleet, with "Approve".
           run: { id: 104, agent: "Planner", purpose: "plan", status: "waiting" },
         }),
         card(28, { title: "Return 404 instead of 500 for an unknown SKU", column: "Not started" }),
@@ -377,11 +377,10 @@ export const snapshot = () => ({
     },
     {
       id: 4,
-      kind: "approve_issue",
+      kind: "stuck",
       card_id: 21,
-      title:
-        "The review found a data loss: a save built on an older cart replaces the newer one. I propose a check that rejects stale saves and shows the current cart, plus a test.",
-      data: { reason: "The review asked for a change" },
+      title: "A save built on an older cart replaces the newer one",
+      data: { reason: "the review asked for a change" },
       resolved_at: null,
       assignees: [],
       at: ago(120),

@@ -4,7 +4,6 @@
  * for itself). A copy has all the settings and instructions of the agent it starts from under a name still to be
  * typed, and is saved as any new agent is, with `PUT /v1/agents/{name}`, from the editor window.
  */
-import { XIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { agent as readAgent } from "../../api/calls/harness";
@@ -16,11 +15,10 @@ import {
   DialogContent,
   DialogDescription,
   DialogFooter,
-  DialogHeader,
   DialogTitle,
 } from "../../ui/components/Dialog";
 import { EditorWindow } from "../../ui/components/EditorWindow";
-import { IconButton } from "../../ui/components/IconButton";
+import { WindowHeader } from "../../ui/components/WindowHeader";
 import { Chip } from "../../ui/page/Chip";
 import { Field, Select } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
@@ -57,12 +55,10 @@ export function NewAgentChoice({
         data-testid="editor-window"
         hideCloseButton
       >
-        <DialogHeader className="h-12 shrink-0 flex-row items-center gap-2 border-b border-hairline pr-2 pl-6">
-          <DialogTitle className="min-w-0 flex-1 truncate text-md font-semibold">
-            New agent
-          </DialogTitle>
-          <IconButton icon={XIcon} aria-label="Close" onClick={onClose} />
-        </DialogHeader>
+        <WindowHeader
+          title={<DialogTitle className="truncate text-md font-semibold">New agent</DialogTitle>}
+          onClose={onClose}
+        />
         <div className="flex min-w-0 flex-col gap-4 p-6">
           <DialogDescription>
             Start from nothing, or from an agent that exists: its model, instructions, skills and

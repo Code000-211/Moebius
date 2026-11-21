@@ -2,8 +2,8 @@
  * The frame of a signed-in person's page: the sidebar, faintly tinted, and the page, white, meeting at one hairline and
  * filling the window to its edges, with no canvas showing round either (`docs/design-web.md`). There is no strip above
  * it and no texture under it. The page holds the banner while the server cannot be reached, what the route draws. The
- * Moebius agent has a panel of its own at the right, opened from the dock, the quiet field at the bottom of the page
- * (`AgentDock.tsx`), and by `Ctrl+J`; the package sheet, which pages open from where a person meets plugins and
+ * Moebius agent has a panel of its own at the right, opened from the Moebius button in the page header
+ * (`AgentButton.tsx`) and by `Ctrl+J`, over the page instead of beside it in a window narrower than 1000px; the package sheet, which pages open from where a person meets plugins and
  * extensions, lies over the right of the same page. In a window narrower than 1000px the sidebar is an overlay opened
  * from the page header (`narrow.ts`, `SidebarToggle.tsx`). It owns the command palette and its shortcut, the form of a
  * new issue and `C` (`board/NewIssueHost.tsx`), the card window for `?card=` on any page (`board/CardWindowHost.tsx`),
@@ -28,9 +28,7 @@ import { SkeletonCard } from "../../ui/page/Skeleton";
 import { CardWindowHost } from "../board/CardWindowHost";
 import { isTyping, NewIssueProvider } from "../board/NewIssueHost";
 import { prefetchCard } from "../board/prefetchCard";
-import { inSettingsArea } from "../settings/settingsEntries";
 import { AgentProvider, useAgent } from "./AgentContext";
-import { AgentDock } from "./AgentDock";
 import { AgentPanel } from "./AgentPanel";
 import { CommandBar } from "./CommandBar";
 import { ConnectionBanner } from "./ConnectionBanner";
@@ -63,7 +61,8 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
   const packages = usePackageSheet();
   const agent = useAgent();
   // The agent's panel at the panel's right owns the head's right end, with the window's controls.
-  const paneShown = agent.open;
+  const narrow = useNarrow();
+  const paneShown = agent.open && !narrow;
   const connection = useConnection();
   const location = useLocation();
   // A card named in the address the page opened at (`?card=`, on any page) is read now, while the board's code and the snapshot are on their way.
@@ -76,7 +75,6 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
   const [commandOpen, setCommandOpen] = useState(false);
   // In a narrow window the sidebar is an overlay that a page's header opens; choosing a page closes it, and so does
   // growing the window, so it is not found open after a narrow spell.
-  const narrow = useNarrow();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = location.pathname;
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new address is the reason to close
@@ -167,8 +165,6 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
                 </Suspense>
               </PageBoundary>
             </main>
-            {/* The quiet field for the agent; not while the agent's panel is open, and not on Settings, which has none. */}
-            {!agent.open && !inSettingsArea(location.pathname) && <AgentDock />}
           </div>
           <AgentPanel />
           <PackageSheet />

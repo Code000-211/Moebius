@@ -27,10 +27,10 @@ import {
   DialogContent,
   DialogDescription,
   DialogFooter,
-  DialogHeader,
   DialogTitle,
 } from "../../ui/components/Dialog";
 import { Input } from "../../ui/components/Input";
+import { WindowHeader } from "../../ui/components/WindowHeader";
 import { Field, Select, TextArea } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { forgeNamed } from "../projects/model";
@@ -208,20 +208,25 @@ export function NewIssueDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent>
+      <DialogContent
+        className="max-h-[calc(100%_-_2rem)] gap-0 overflow-hidden p-0"
+        data-audit="flush"
+        hideCloseButton
+      >
+        <WindowHeader
+          title={<DialogTitle className="truncate text-md font-semibold">New issue</DialogTitle>}
+          onClose={close}
+        />
         <form
-          className="flex flex-col gap-4"
+          className="flex min-h-0 flex-col gap-4 overflow-y-auto p-6"
           onSubmit={(e) => {
             e.preventDefault();
             submit();
           }}
         >
-          <DialogHeader>
-            <DialogTitle>New issue</DialogTitle>
-            <DialogDescription>
-              Makes a card in the Backlog of {name}. On a forge the issue is opened there too.
-            </DialogDescription>
-          </DialogHeader>
+          <DialogDescription>
+            Makes a card in the Backlog of {name}. On a forge the issue is opened there too.
+          </DialogDescription>
           {(repositories.length > 1 || board.cards.length > 0 || offered.length > 0) && (
             <div className="flex flex-wrap items-center gap-2">
               {repositories.length > 1 && onRepository && (

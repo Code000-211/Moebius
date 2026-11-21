@@ -3,8 +3,8 @@
  * it). Active is the work that is going on, as one virtual list of 36px rows; Finished is the runs that ended, newest
  * first under the day they ended on, with the outcome, the card's id, the tokens and how long they went on. The runs that wait for the person come
  * first, then the others, with no group rows. A row has the status icon, the issue's id, the title, one
- * pale line (the kind of run and the step it is at; "Plan ready" for a run that waits) and how long it has gone on. A run
- * that waits for a plan carries a quiet "Approve plan". Stop and the tokens are on the hovered or the selected row only,
+ * pale line (the kind of run and the step it is at; "Waiting for approval" for an outside issue that waits) and how long it has gone on. A run
+ * that waits for approval carries a quiet "Approve". Stop and the tokens are on the hovered or the selected row only,
  * and are not in the page otherwise. The rows that are drawn read their run's events and follow the stream's
  * `run_event`s, so the step moves on its own; a row opens the card in its window, or the chat. The arrows move the
  * selection, Shift chooses a range, and a bar at the foot, or a right click, stops every chosen run at once; Escape lets
@@ -41,7 +41,7 @@ import { elapsed as age, today } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import { useSelection } from "../../ui/lib/useSelection";
 import { Empty } from "../../ui/page/Empty";
-import { ListRow, type RowPosition } from "../../ui/page/ListRow";
+import { idChars, ListRow, type RowPosition } from "../../ui/page/ListRow";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SelectionBar, type SelectionCommand } from "../../ui/page/SelectionBar";
@@ -299,6 +299,9 @@ function FinishedRuns() {
     () => new Map((finished.data ?? []).map((one) => [finishedKey(one), one])),
     [finished.data],
   );
+  const idWidth = idChars(
+    rows.flatMap((row) => (row.type === "row" ? [finishedId(row.data)] : [])),
+  );
   const asked = params.get("card");
   const selected = openedKey(
     rows,
@@ -343,6 +346,7 @@ function FinishedRuns() {
       renderRow={(one, state) => (
         <FinishedRow
           one={one}
+          idChars={idWidth}
           at={state.at}
           selected={state.selected}
           onClick={(event) => {
@@ -369,11 +373,13 @@ const OUTCOMES: Record<string, { name: string; mark: ReactNode }> = {
 
 function FinishedRow({
   one,
+  idChars,
   at,
   selected,
   onClick,
 }: {
   one: FinishedRun;
+  idChars: number;
   at: RowPosition;
   selected: boolean;
   onClick: (event: ReactMouseEvent<HTMLElement>) => void;
@@ -387,6 +393,7 @@ function FinishedRow({
         </span>
       }
       id={finishedId(one)}
+      idChars={idChars}
       title={one.card.title}
       reason={capital(one.run.purpose)}
       action={
@@ -454,6 +461,7 @@ function RunList({ list, now }: { list: Work[]; now: number }) {
     [queryClient, clear, toast],
   );
   const stop = useCallback((work: Work) => void stopRuns([work]), [stopRuns]);
+  const idWidth = idChars(rows.map((row) => row.data.id));
   const commands: SelectionCommand[] =
     chosen.length === 0
       ? []
@@ -497,6 +505,7 @@ function RunList({ list, now }: { list: Work[]; now: number }) {
         renderRow={(work, state) => (
           <Row
             work={work}
+            idChars={idWidth}
             now={now}
             at={state.at}
             selected={state.selected || choice.has(state.key)}
@@ -535,6 +544,7 @@ const capital = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
 
 function Row({
   work,
+  idChars,
   now,
   at,
   selected,
@@ -543,6 +553,7 @@ function Row({
   onStop,
 }: {
   work: Work;
+  idChars: number;
   now: number;
   at: RowPosition;
   selected: boolean;
@@ -591,7 +602,7 @@ function Row({
     } catch (error) {
       toast({
         kind: "error",
-        text: isApiError(error) ? error.message : "Could not approve the plan.",
+        text: isApiError(error) ? error.message : "Could not approve the issue.",
       });
     }
   };
@@ -599,6 +610,7 @@ function Row({
     <ListRow
       status={waits ? "needsYou" : "running"}
       id={work.id}
+      idChars={idChars}
       title={work.title}
       reason={reason}
       action={
@@ -629,7 +641,7 @@ function Row({
               onClick={approving}
               className="min-h-6 px-2.5 text-xs"
             >
-              Approve plan
+              Approve
             </Button>
           )}
         </>

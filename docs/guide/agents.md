@@ -91,8 +91,8 @@ every start, so a change to the guide arrives with the server.
 
 ### Asking it from any page
 
-In the web app "Ask Moebius", the last row of the right column of every page (`Ctrl+J`), opens a chat with the
-Moebius agent over that column. The agent is told where you are with each message (the page, the repository, the card or chat that is open, and
+In the web app the **Moebius** button in the header of every page (`Ctrl+J`) opens a chat with the
+Moebius agent in a panel beside the page (over the page in a window narrower than 1000px); the button closes it again, and so does `Esc`. The agent is told where you are with each message (the page, the repository, the card or chat that is open, and
 the script, rules or agent being edited with its text), so "why does this column wait?" on a column's script means that
 script. A chat started on a board works in that repository; elsewhere it works in none. The chat stays while you move
 between pages; "Open in Chat" shows it on the Chat page, and "New conversation" starts over. A client does the same with
