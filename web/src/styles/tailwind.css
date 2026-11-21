@@ -34,7 +34,6 @@
 
   /* The tokens, by their own name. */
   --color-background: var(--background);
-  --color-surface: var(--surface);
   --color-raised: var(--surface-raised);
   --color-sunken: var(--surface-sunken);
   --color-field: var(--field);
@@ -87,14 +86,9 @@
   --color-sidebar-text: var(--sidebar-text);
   --color-sidebar-group: var(--sidebar-group);
   --color-scrollbar-thumb: var(--scrollbar-thumb);
-  --color-ground: var(--ground);
-  --color-page: var(--page);
-  --color-glass: var(--glass);
-  --color-glass-solid: var(--glass-solid);
   --color-accent: var(--accent);
   --color-accent-text: var(--accent-text);
   --color-accent-fill: var(--accent-fill);
-  --color-wash: var(--wash);
   --color-selection: var(--selection);
   --color-focus: var(--focus);
   --color-status-todo: var(--status-todo);
@@ -164,12 +158,8 @@
   --radius-composer: var(--radius-composer);
 
   /* Depth is one hairline or nothing: the edge of a large surface, a card, a window above a dimmed panel. */
-  --shadow-edge: var(--edge);
   --shadow-card: var(--shadow-card);
-  --shadow-card-hover: var(--shadow-card-hover);
   --shadow-raised: var(--shadow-raised);
-  --shadow-relief: var(--shadow-relief);
-  --shadow-glow: var(--glow);
 
   /* Heights of the standard: a row of the sidebar, a control, a row of a list, the head bar of a page. */
   --spacing-row-sidebar: var(--row-sidebar);
@@ -227,17 +217,12 @@
  * off), and then it is a translucent `--panel` over a blur of 16px at most. Windows, sheets and bars are never glass.
  */
 @utility glass {
-  background-color: var(--glass-solid);
+  background-color: var(--panel);
 
   :root[data-blur="on"] & {
-    background-color: var(--glass);
+    background-color: color-mix(in srgb, var(--panel) 82%, transparent);
     backdrop-filter: blur(16px) saturate(1.2);
   }
-}
-
-/* The faint wash of the accent at the top of the content. */
-@utility wash {
-  background-image: radial-gradient(900px 220px at 30% -80px, var(--wash), transparent);
 }
 
 @utility z-scrim {
@@ -266,49 +251,6 @@
   -webkit-line-clamp: --value(integer);
   line-clamp: --value(integer);
   overflow: hidden;
-}
-
-/*
- * The ramp over the last of `n` lines: what is above it is whole, and the last line fades out as it goes down, which is
- * the sign that the writing does not stop where the box does. The ramp starts a little above the last line so the fade
- * is seen to be a fade and not a line that happened to be pale. The mask is of `currentColor` because a mask reads
- * alpha, not colour. Put it on a box only while there is something behind the cut — `FadedClamp` measures first.
- */
-@utility fade-last-* {
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    currentColor 0 calc(100% - 100% / --value(integer) - 8%),
-    transparent 100%
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    currentColor 0 calc(100% - 100% / --value(integer) - 8%),
-    transparent 100%
-  );
-}
-
-/*
- * One line that says where it ran out by fading out there, instead of being cut mid-word: what is on the screen still
- * reads as words, and the fade is the sign that the line goes on. `FadedLine` puts one of these on a line only when its
- * words are wider than its box, so a line that fits is never dimmed for nothing.
- *
- * `fade-end` keeps the beginning, which is what the name of a thing wants. `fade-tail` keeps the end, which is what a
- * command and a path want, because the last part is the one that says which command or which file it was.
- */
-@utility fade-end {
-  overflow: hidden;
-  white-space: nowrap;
-  -webkit-mask-image: linear-gradient(to left, transparent 0, currentColor var(--space-24));
-  mask-image: linear-gradient(to left, transparent 0, currentColor var(--space-24));
-}
-
-@utility fade-tail {
-  display: flex;
-  justify-content: flex-end;
-  overflow: hidden;
-  white-space: nowrap;
-  -webkit-mask-image: linear-gradient(to right, transparent 0, currentColor var(--space-24));
-  mask-image: linear-gradient(to right, transparent 0, currentColor var(--space-24));
 }
 
 /*
@@ -366,19 +308,6 @@
     pointer-events: none;
     position: absolute;
     right: 0;
-  }
-}
-
-/*
- * A scroller with no scrollbar of its own, for a column too narrow to spare one: the sidebar's rail is 64 wide and a
- * bar would take 8 of them and pull every icon off the middle. What is still below is said by a fade instead
- * (`ui/page/ScrollFades.tsx`), and the wheel and the arrow keys still work.
- */
-@utility scroll-none {
-  scrollbar-width: none;
-
-  &::-webkit-scrollbar {
-    display: none;
   }
 }
 

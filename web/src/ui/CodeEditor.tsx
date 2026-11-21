@@ -87,7 +87,7 @@ const theme = EditorView.theme(
       textDecoration: "underline wavy var(--error)",
     },
     ".cm-tooltip": {
-      backgroundColor: "var(--surface)",
+      backgroundColor: "var(--panel)",
       color: "var(--text)",
       border: "1px solid var(--hairline-strong)",
     },

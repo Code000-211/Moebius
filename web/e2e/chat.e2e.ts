@@ -1030,7 +1030,7 @@ describe("deleting a chat", () => {
   );
 
   it.skipIf(usesRealServer)(
-    "says the server's refusal in the dialog and keeps the chat",
+    "says the server's refusal as a toast and keeps the chat",
     async () => {
       await open("/chat");
       const id = fake().seed({ status: "waiting", title: "Refused" });
@@ -1047,7 +1047,7 @@ describe("deleting a chat", () => {
       await page.getByTestId("chat-chip").click();
       await page.getByRole("button", { name: "Delete this chat", exact: true }).click();
       await dialog().getByRole("button", { name: "Delete" }).click();
-      await dialog().getByRole("alert").filter({ hasText: "chat is still stopping" }).waitFor();
+      await page.getByRole("alert").filter({ hasText: "chat is still stopping" }).waitFor();
       expect(new URL(page.url()).pathname).toBe(`/chat/${id}`);
     },
   );

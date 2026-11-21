@@ -61,10 +61,7 @@ export function IssuesPage() {
   const values = readFilters(params, fields);
   return (
     <div data-testid="issues-page" className="flex flex-col gap-4">
-      <PageHeader
-        title="Issues"
-        context="The cards of every project. Filter by a kind's fields, whichever project a card is in."
-      />
+      <PageHeader title="Issues" />
       <FilterBar
         label="Filter the issues"
         fields={fields}

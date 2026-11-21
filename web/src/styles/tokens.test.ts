@@ -47,14 +47,23 @@ const HEIGHTS: [string, string][] = [
   ["row-list", "36px"],
   ["head-bar", "44px"],
 ];
-/** The depth tokens of the former palette, which the new standard flattens rather than deletes. */
-const DEPTH = [
-  "edge",
-  "shadow-card",
-  "shadow-card-hover",
-  "shadow-raised",
-  "shadow-relief",
+/** The depth tokens: a card's hairline and the raised layer of a menu, which are flat in the standard. */
+const DEPTH = ["shadow-card", "shadow-raised"];
+/** Tokens of the former design that no theme defines any more: decoration, depth and the old names of the surfaces. */
+const GONE = [
+  "grain",
+  "grain-blend",
+  "grain-filter",
+  "wash",
   "glow",
+  "edge",
+  "shadow-card-hover",
+  "shadow-relief",
+  "ground",
+  "page",
+  "surface",
+  "glass",
+  "glass-solid",
 ];
 
 type Tokens = Map<string, string>;
@@ -268,7 +277,7 @@ describe("the tokens", () => {
       expect(only, `--${row.name} in the dark block`).toContain(row.name);
   });
 
-  it("flattens depth: a shadow is one hairline or nothing, and there is no grain and no glow", () => {
+  it("flattens depth: a shadow is one hairline or nothing, and there is no grain, glow or wash", () => {
     const flat =
       /^(?:0 0 0 0 transparent|0 0 0 1px var\(--hairline(?:-strong)?\)|var\(--shadow-window\))$/;
     for (const name of DEPTH) {
@@ -276,11 +285,8 @@ describe("the tokens", () => {
         expect(theme.get(name), `--${name} in ${label}`).toMatch(flat);
       }
     }
-    for (const [theme, label] of bothThemes) {
-      expect(theme.get("grain"), `--grain in ${label}`).toBe("0");
-      expect(theme.get("glow"), `--glow in ${label}`).toBe("0 0 0 0 transparent");
-      expect(theme.get("wash"), `--wash in ${label}`).toBe("transparent");
-    }
+    for (const [theme, label] of bothThemes)
+      for (const name of GONE) expect(theme.has(name), `--${name} in ${label}`).toBe(false);
     // The one real shadow is the window's, and it has one blur.
     for (const [theme, label] of bothThemes) {
       const blurs = (theme.get("shadow-window") ?? "").match(/\d+px 32px/g) ?? [];
@@ -348,8 +354,12 @@ describe("the tokens", () => {
     expect(attribute).toContain("animation-duration: 1ms;");
   });
 
-  it("has no lift utility, no running-dot keyframes and no motion over 120ms", () => {
-    expect(tailwind).not.toContain("@utility lift");
+  it("has no lift, wash or fade utility, no running-dot keyframes and no motion over 120ms", () => {
+    for (const name of ["lift", "wash", "fade-end", "fade-tail", "fade-last-*", "scroll-none"])
+      expect(tailwind).not.toContain(`@utility ${name}`);
+    for (const name of GONE)
+      expect(`${css}${tailwind}`, `var(--${name})`).not.toContain(`var(--${name})`);
+    expect(tailwind).not.toMatch(/mask-image/);
     expect(tailwind).not.toContain("running-dot");
     for (const [, ms] of css.matchAll(/--motion-[a-z]+: (\d+)ms/g))
       expect(Number(ms)).toBeLessThanOrEqual(120);

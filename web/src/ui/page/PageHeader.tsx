@@ -33,8 +33,6 @@ export function PageHeader({
   tabs?: ReactNode;
   actions?: ReactNode;
   back?: ReactNode;
-  /** Accepted so today's callers compile; the sentence under a title is no longer drawn. */
-  context?: ReactNode;
 }) {
   const sidebar = useSidebarToggle();
   return (

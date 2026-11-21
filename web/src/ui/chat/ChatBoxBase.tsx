@@ -37,7 +37,7 @@ export function ChatBoxBase({
     <div
       className={cn(
         "relative flex w-full gap-3",
-        inline ? "items-end" : "flex-col rounded-card bg-surface p-3 shadow-card",
+        inline ? "items-end" : "flex-col rounded-card bg-panel p-3 shadow-card",
         className,
       )}
     >

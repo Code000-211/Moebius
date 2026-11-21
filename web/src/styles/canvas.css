@@ -39,7 +39,7 @@
   --xy-selection-border-default: 1px dashed var(--hairline-strong);
 
   /* The corner controls. */
-  --xy-controls-button-background-color-default: var(--surface);
+  --xy-controls-button-background-color-default: var(--panel);
   --xy-controls-button-background-color-hover-default: var(--hover);
   --xy-controls-button-color-default: var(--text-secondary);
   --xy-controls-button-color-hover-default: var(--text);
@@ -54,7 +54,7 @@
 .canvas-handle {
   width: 12px;
   height: 12px;
-  border: 2px solid var(--surface);
+  border: 2px solid var(--panel);
   border-radius: var(--radius-small);
   background: var(--hairline-strong);
 }
@@ -126,7 +126,7 @@
   height: 40px;
   padding: 8px;
   border-bottom: 1px solid var(--hairline);
-  background: var(--surface);
+  background: var(--panel);
   color: var(--text-secondary);
 }
 
