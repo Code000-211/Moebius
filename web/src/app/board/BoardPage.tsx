@@ -50,6 +50,7 @@ import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
 import { boardRepositoryOf } from "../projects/model";
+import { ProjectHeader } from "../projects/ProjectHeader";
 import { boardFiltersOf, viewOfBoard } from "../views/model";
 import { CardContent } from "./BoardCardContent";
 import { BoardColumn } from "./BoardColumn";
@@ -336,12 +337,13 @@ export function BoardPage({ project, list = false }: { project: Project; list?: 
   const anySet = activeFilters(fields, filterValues).length > 0 || hasDisplay(display);
   // The head of the page, drawn again only when its title, the layout or the handlers change: a read of the snapshot
   // leaves it as it is.
-  const repositoryName = board?.repository.name;
   const header = useMemo(
     () => (
-      <PageHeader
-        title={repositoryName ?? ""}
-        tabs={
+      <ProjectHeader
+        project={project}
+        tab="board"
+        onTerminal={() => setTerminalOpen(true)}
+        layout={
           <LayoutTabs
             layout={display.layout === "list" ? "list" : "board"}
             onChange={(layout) => {
@@ -358,39 +360,36 @@ export function BoardPage({ project, list = false }: { project: Project; list?: 
           />
         }
         actions={
-          <>
-            <search aria-label="Filter the cards" className="flex items-center gap-2">
-              <FilterMenu
-                plain
-                fields={fields}
-                values={filterValues}
-                onFilter={onFilter}
-                before={repositoryMenu}
-              />
-              <DisplayMenu
-                {...displayProps}
-                plain
-                extra={
-                  <>
-                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                    <DropdownMenuItem onSelect={() => setTerminalOpen(true)}>
-                      Terminal
-                    </DropdownMenuItem>
-                    {anySet && <DropdownMenuItem onSelect={saveView}>Save view</DropdownMenuItem>}
-                  </>
-                }
-              />
-            </search>
-            <Button size="sm" className="ml-2" onClick={() => openForm(null)}>
-              <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
-              New issue
-            </Button>
-          </>
+          <search aria-label="Filter the cards" className="flex items-center gap-2">
+            <FilterMenu
+              plain
+              fields={fields}
+              values={filterValues}
+              onFilter={onFilter}
+              before={repositoryMenu}
+            />
+            <DisplayMenu
+              {...displayProps}
+              plain
+              extra={
+                <>
+                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                  {anySet && <DropdownMenuItem onSelect={saveView}>Save view</DropdownMenuItem>}
+                </>
+              }
+            />
+          </search>
+        }
+        primary={
+          <Button size="sm" onClick={() => openForm(null)}>
+            <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
+            New issue
+          </Button>
         }
       />
     ),
     [
-      repositoryName,
+      project,
       display,
       list,
       project.id,
@@ -554,7 +553,7 @@ export function BoardPage({ project, list = false }: { project: Project; list?: 
               </Button>
             </search>
           )}
-          <LeftoverNotice project={project.id} repository={board.repository.id} />
+          <LeftoverNotice repository={board.repository.id} />
           {display.layout === "list" ? (
             <ListLayout
               board={board}
