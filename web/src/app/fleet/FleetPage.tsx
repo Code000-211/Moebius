@@ -148,7 +148,7 @@ export function FleetPage() {
         className="-mx-6 -mt-6 -mb-6 flex h-full min-h-40 flex-col outline-none"
       >
         {pause.paused && (
-          <p className="shrink-0 border-b border-hairline px-6 py-2 text-sm text-muted">
+          <p className="shrink-0 border-b border-hairline px-4 py-2 text-sm text-muted">
             {`Paused by ${pause.paused.by.replace(/^person:/, "@")}`}
           </p>
         )}
