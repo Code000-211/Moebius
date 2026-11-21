@@ -296,4 +296,12 @@ describe("the timeline of an issue", () => {
     await screen.findByRole("button", { name: "Review" });
     expect(screen.queryAllByTestId("needs-you-block")).toHaveLength(0);
   });
+
+  it("draws the comment arrow in the text colour on the control fill, muted while it is disabled", () => {
+    server({ "GET /v1/cards/5/comments": { status: 200, body: [] } });
+    inClient(<Card_ card={card(5)} />);
+    const send = screen.getByRole("button", { name: "Comment" });
+    for (const name of ["bg-control-fill!", "text-text", "disabled:text-secondary"])
+      expect(send.className).toContain(name);
+  });
 });

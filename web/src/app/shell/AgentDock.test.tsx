@@ -51,6 +51,18 @@ describe("the Ask Moebius dock", () => {
     expect(state()).toBe("open|Hello");
   });
 
+  it("draws the send arrow in the text colour on the control fill, muted while it is disabled", () => {
+    mount();
+    const send = screen.getByRole("button", { name: "Send" });
+    for (const name of [
+      "bg-control-fill!",
+      "text-text",
+      "disabled:text-secondary",
+      "disabled:opacity-100",
+    ])
+      expect(send.className).toContain(name);
+  });
+
   it("shows no key hint", () => {
     const { container } = mount();
     expect(container.querySelector("kbd")).toBeNull();

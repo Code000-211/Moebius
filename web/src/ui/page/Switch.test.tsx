@@ -48,4 +48,19 @@ describe("a switch", () => {
     expect(control.className).not.toMatch(/opacity-/);
     expect(control.firstElementChild?.className).toContain("bg-muted/40");
   });
+
+  it("draws an enabled off switch with the control fill and a muted edge, apart from disabled and on", () => {
+    const { rerender } = render(
+      <Switch checked={false} onChange={() => {}} label="Reduce motion" />,
+    );
+    const track = () => screen.getByRole("switch").firstElementChild?.className ?? "";
+    expect(track()).toContain("bg-track");
+    expect(track()).toContain("ring-muted");
+    rerender(<Switch checked={false} onChange={() => {}} label="Reduce motion" disabled />);
+    expect(track()).not.toMatch(/ring-muted(?!\/)/);
+    expect(track()).toContain("bg-muted/40");
+    rerender(<Switch checked onChange={() => {}} label="Reduce motion" />);
+    expect(track()).toContain("bg-accent-fill");
+    expect(track()).not.toMatch(/ring-muted(?!\/)/);
+  });
 });

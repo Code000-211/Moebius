@@ -377,6 +377,24 @@ describe("the tokens", () => {
     }
   });
 
+  it("keeps an off switch's edge and the send arrow readable, in both themes", () => {
+    for (const [theme, name] of bothThemes) {
+      const panel = theme.get("panel") ?? "";
+      const fill = theme.get("control-fill") ?? "";
+      // The edge of an enabled off switch (`ring-muted`, and the knob) against the panel it lies on.
+      expect(
+        contrast(theme.get("text-faint") ?? "", panel),
+        `switch edge in ${name}`,
+      ).toBeGreaterThanOrEqual(3);
+      // The send arrow, enabled (`text-text`) and disabled (`text-secondary`), on its control-fill square.
+      for (const arrow of ["text", "text-secondary"])
+        expect(
+          contrast(theme.get(arrow) ?? "", fill),
+          `--${arrow} on the send square in ${name}`,
+        ).toBeGreaterThanOrEqual(3);
+    }
+  });
+
   it("holds the muted range: muted is text at 4.5 to 1, faint is a mark that never carries words", () => {
     for (const [theme, label] of bothThemes) {
       for (const surface of SURFACES) {

@@ -354,7 +354,7 @@ export function ReplyField({
         size="sm"
         aria-label="Comment"
         disabled={!ready}
-        className="absolute top-1/2 right-2 -translate-y-1/2 bg-hairline-strong!"
+        className="absolute top-1/2 right-2 -translate-y-1/2 bg-control-fill! text-text disabled:text-secondary disabled:opacity-100"
       >
         <ReturnIcon className="size-4" aria-hidden="true" />
       </Button>
