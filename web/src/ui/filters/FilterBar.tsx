@@ -256,7 +256,7 @@ export const FilterBar = memo(function FilterBar({
           onChange={(value) => onFilter(each.field.key, value)}
         />
       ))}
-      <FilterMenu fields={fields} values={values} onFilter={onFilter} />
+      {fields.length > 0 && <FilterMenu fields={fields} values={values} onFilter={onFilter} />}
       {active.length > 0 && (
         <Button variant="ghost" size="sm" onClick={onClear}>
           Clear filters

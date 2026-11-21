@@ -166,6 +166,11 @@ export function projectTabPath(projectId: number, tab: "board" | ProjectTab): st
   return tab === "board" ? boardPath(projectId) : `${boardPath(projectId)}/${tab}`;
 }
 
+/** The path of one cycle's page, under the Cycles tab of its project. */
+export function cyclePath(projectId: number, cycleId: number): string {
+  return `${projectTabPath(projectId, "cycles")}/${cycleId}`;
+}
+
 /** The path of the board of a repository: at the project that is its home, naming the repository. */
 export function repositoryBoardPath(
   repository: { id: number; home_project_id: number },

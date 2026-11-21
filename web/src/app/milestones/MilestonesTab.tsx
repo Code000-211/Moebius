@@ -1,25 +1,26 @@
 /**
- * The Milestones page (pattern 15 of the design drafts): the goals of the organisation, each a row on a time axis
- * with its target date and how far its cards are. A milestone holds cards of any projects; the
- * server counts and lists only the cards of the projects the person may see, so every number here is theirs. A row opens
- * to its description, its share in each project and its cards; a card is put in a milestone from its properties.
+ * The Milestones tab of a project (pattern 15 of the design drafts): the goals of the organisation that hold cards of
+ * this project, plus the ones made from here, each a row on a time axis with its target date and how far this project's
+ * cards are. A milestone holds cards of any projects (ADR 0019), so the same goal can be in the tab of several; one with
+ * no card in any project is listed nowhere. A row opens to its description and this project's cards; a card is put in
+ * a milestone from its properties.
  */
 import { PlusIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { deleteMilestone, listMilestones } from "../../api/calls/milestones";
-import { listProjects } from "../../api/calls/projects";
 import { keys } from "../../api/keys";
 import type { MilestoneView } from "../../api/types/milestones";
+import type { Project } from "../../api/types/projects";
 import { Button } from "../../ui/components/Button";
 import { FilterBar } from "../../ui/filters/FilterBar";
 import { displayQuery, readDisplay } from "../../ui/filters/model";
 import { useQueryParams } from "../../ui/filters/useQueryParams";
 import { ConfirmDelete } from "../../ui/page/ConfirmDelete";
 import { Empty } from "../../ui/page/Empty";
-import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
+import { ProjectHeader } from "../projects/ProjectHeader";
 import { MilestoneDialog } from "./MilestoneDialogs";
 import { Timeline } from "./MilestoneRows";
 import { inProject, SORTS, sorted } from "./model";
@@ -39,41 +40,45 @@ function today(): string {
   return `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
 }
 
-export function MilestonesPage() {
+export function MilestonesTab({
+  project,
+  onTerminal,
+}: {
+  project: Project;
+  onTerminal: () => void;
+}) {
   const data = useQuery({ queryKey: keys.milestones, queryFn: listMilestones });
-  const projects = useQuery({ queryKey: keys.projects, queryFn: listProjects });
   const [params, setQuery] = useQueryParams();
   const display = useMemo(() => readDisplay(params, CHOICES), [params]);
-  const project = params.get("project") ?? "";
   // The milestone that is opened is in the address, so a reload and a link keep it open.
   const opened = Number(params.get("milestone")) || null;
   const [editing, setEditing] = useState<MilestoneView | "new" | null>(null);
   const [deleting, setDeleting] = useState<MilestoneView | null>(null);
+  // A milestone made here has no card yet, so only this list remembers it until a card is put in it.
+  const [madeHere, setMadeHere] = useState<ReadonlySet<number>>(new Set());
   const queryClient = useQueryClient();
   const now = today();
 
+  const newButton = (
+    <Button size="sm" onClick={() => setEditing("new")}>
+      <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
+      New milestone
+    </Button>
+  );
   const header = (
-    <PageHeader
-      title="Milestones"
-      actions={
-        <Button size="sm" onClick={() => setEditing("new")}>
-          <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
-          New milestone
-        </Button>
-      }
-    />
+    <ProjectHeader project={project} tab="milestones" actions={newButton} onTerminal={onTerminal} />
   );
   if (data.isPending)
     return (
       <>
-        <PageHeader title="Milestones" />
+        {header}
         <SkeletonList rows={3} message="Reading the milestones" />
       </>
     );
   if (data.isError) {
     return (
       <>
-        <PageHeader title="Milestones" />
+        {header}
         <ReadFailed
           error={data.error}
           fallback="The milestones could not be read. Try again."
@@ -83,15 +88,15 @@ export function MilestonesPage() {
       </>
     );
   }
-  const shown = sorted(inProject(data.data, project), display.sort);
+  const shown = sorted(inProject(data.data, project.id, madeHere), display.sort);
 
   return (
     <>
       {header}
-      {data.data.length === 0 ? (
+      {shown.length === 0 ? (
         <Empty
           title="No milestone yet"
-          body="A milestone is a goal with a target date. Make one, then put cards of any project in it from the card's properties."
+          body="A milestone is a goal with a target date, shared by the organisation. Make one here, or put a card of this project in one from the card's properties."
           action={
             <Button size="sm" onClick={() => setEditing("new")}>
               New milestone
@@ -101,42 +106,35 @@ export function MilestonesPage() {
       ) : (
         <>
           <FilterBar
-            label="Filter the milestones"
-            fields={[
-              {
-                key: "project",
-                label: "Project",
-                options: (projects.data ?? []).map((p) => [String(p.id), p.name]),
-              },
-            ]}
-            values={{ project }}
-            onFilter={(key, value) => setQuery({ [key]: value })}
-            onClear={() =>
-              setQuery({ project: "", ...displayQuery({ ...display, layout: "board", sort: "" }) })
-            }
+            label="Sort the milestones"
+            fields={[]}
+            values={{}}
+            onFilter={() => {}}
+            onClear={() => setQuery(displayQuery({ ...display, layout: "board", sort: "" }))}
             display={{
               choices: CHOICES,
               value: display,
               onChange: (next) => setQuery(displayQuery(next)),
             }}
           />
-          {shown.length === 0 ? (
-            <Empty title="No milestone matches" body="No milestone holds a card of that project." />
-          ) : (
-            <Timeline
-              list={shown}
-              now={now}
-              opened={opened}
-              onToggle={(milestone) =>
-                setQuery({ milestone: milestone.id === opened ? "" : String(milestone.id) })
-              }
-              onEdit={setEditing}
-              onDelete={setDeleting}
-            />
-          )}
+          <Timeline
+            list={shown}
+            project={project.id}
+            now={now}
+            opened={opened}
+            onToggle={(milestone) =>
+              setQuery({ milestone: milestone.id === opened ? "" : String(milestone.id) })
+            }
+            onEdit={setEditing}
+            onDelete={setDeleting}
+          />
         </>
       )}
-      <MilestoneDialog editing={editing} onClose={() => setEditing(null)} />
+      <MilestoneDialog
+        editing={editing}
+        onClose={() => setEditing(null)}
+        onMade={(made) => setMadeHere((ids) => new Set(ids).add(made.id))}
+      />
       {deleting && (
         <ConfirmDelete
           open

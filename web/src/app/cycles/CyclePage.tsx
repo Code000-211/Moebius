@@ -1,5 +1,5 @@
 /**
- * A cycle's own page on the Cycles page: its figures and burn-up above the list of its cards, and what a member does
+ * A cycle's own page under the Cycles tab of its project: its figures and burn-up above the list of its cards, and what a member does
  * with it (edit, close, delete).
  */
 import { ArrowLeftIcon, PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
@@ -8,76 +8,74 @@ import { useState } from "react";
 import { deleteCycle, readCycle } from "../../api/calls/cycles";
 import { keys } from "../../api/keys";
 import type { CycleDetail, CycleView } from "../../api/types/cycles";
+import type { Project } from "../../api/types/projects";
 import { Button } from "../../ui/components/Button";
 import { ConfirmDelete } from "../../ui/page/ConfirmDelete";
-import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
 import { TimeBar } from "../../ui/page/TimeBar";
 import { CardRows } from "../board/CardRows";
+import { ProjectHeader } from "../projects/ProjectHeader";
 import { CloseDialog } from "./CycleDialogs";
 import { STATE_WORDS } from "./CycleProgress";
 import { chart, percent, periodWords, perPointWords, progressWords, stateOf } from "./model";
 
 /** A cycle's page: its figures and burn-up above the list of its cards, and what a member does with it. */
 export function CyclePage({
+  project,
   cycle,
   all,
   now,
   mayChange,
-  chooser,
   onBack,
   onEdit,
   onChanged,
+  onTerminal,
 }: {
+  project: Project;
   cycle: CycleView;
   all: CycleView[];
   now: string;
   mayChange: boolean;
-  chooser: React.ReactNode;
   onBack: () => void;
   onEdit: () => void;
   onChanged: () => void;
+  onTerminal: () => void;
 }) {
   const detail = useQuery({ queryKey: keys.cycle(cycle.id), queryFn: () => readCycle(cycle.id) });
   const [closing, setClosing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const state = stateOf(cycle, now);
-  const header = (
-    <PageHeader
-      title={cycle.name}
-      back={
-        <Button size="icon" variant="ghost" aria-label="All cycles" onClick={onBack}>
-          <ArrowLeftIcon className="size-4" aria-hidden="true" />
-        </Button>
-      }
-      actions={
+  const actions = (
+    <>
+      {mayChange && cycle.closed_at === null && (
         <>
-          {chooser}
-          {mayChange && cycle.closed_at === null && (
-            <>
-              <Button size="sm" variant="secondary" onClick={onEdit}>
-                <PencilSimpleIcon className="size-4" aria-hidden="true" />
-                Edit
-              </Button>
-              <Button size="sm" onClick={() => setClosing(true)}>
-                Close cycle
-              </Button>
-            </>
-          )}
-          {mayChange && (
-            <Button size="sm" variant="danger" onClick={() => setDeleting(true)}>
-              <TrashIcon className="size-4" aria-hidden="true" />
-              Delete
-            </Button>
-          )}
+          <Button size="sm" variant="secondary" onClick={onEdit}>
+            <PencilSimpleIcon className="size-4" aria-hidden="true" />
+            Edit
+          </Button>
+          <Button size="sm" onClick={() => setClosing(true)}>
+            Close cycle
+          </Button>
         </>
-      }
-    />
+      )}
+      {mayChange && (
+        <Button size="sm" variant="danger" onClick={() => setDeleting(true)}>
+          <TrashIcon className="size-4" aria-hidden="true" />
+          Delete
+        </Button>
+      )}
+    </>
   );
   return (
     <>
-      {header}
+      <ProjectHeader project={project} tab="cycles" actions={actions} onTerminal={onTerminal} />
+      <div className="mb-3 flex items-center gap-1">
+        <Button size="icon" variant="ghost" aria-label="All cycles" onClick={onBack}>
+          <ArrowLeftIcon className="size-4" aria-hidden="true" />
+        </Button>
+        <h2 className="m-0 min-w-0 truncate text-lg font-semibold text-text">{cycle.name}</h2>
+      </div>
       <TimeBar
         className="mt-3 mb-2"
         start={cycle.starts_on}
