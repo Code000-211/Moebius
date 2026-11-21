@@ -79,8 +79,8 @@ describe("2000 rows in a virtual list", () => {
   it("draws few of them, 36px high, without a shadow", async () => {
     const page = await open();
     const rows = page.getByTestId("list-row");
-    expect(await rows.count()).toBeGreaterThan(0);
-    expect(await rows.count()).toBeLessThan(100);
+    await expect.poll(() => rows.count()).toBeGreaterThan(0);
+    await expect.poll(() => rows.count()).toBeLessThan(100);
     const first = rows.first();
     const box = await first.boundingBox();
     expect(box?.height).toBe(36);
@@ -98,7 +98,7 @@ describe("2000 rows in a virtual list", () => {
     await page.getByRole("list", { name: "Rows" }).focus();
     await page.keyboard.press("End");
     await page.getByText("Row number 1999 with").waitFor();
-    expect(await page.getByTestId("list-row").count()).toBeLessThan(100);
+    await expect.poll(() => page.getByTestId("list-row").count()).toBeLessThan(100);
     await page.close();
   });
 

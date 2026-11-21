@@ -124,6 +124,18 @@ describe("the palette", () => {
     within(dialog).getByRole("listbox", { name: "Commands and places" });
   });
 
+  it("leaves Ctrl+K and Ctrl+J to the shell, which opens and closes the palette and the agent with them", async () => {
+    // The list would take them as "previous" and "next" and mark them handled, so the shell would not hear them: a
+    // Ctrl+K typed while the palette is still fading out would be lost.
+    open();
+    const field = within(await screen.findByRole("dialog", { name: "Search" })).getByRole(
+      "combobox",
+    );
+    for (const key of ["k", "j", "n", "p"]) {
+      expect(fireEvent.keyDown(field, { key, ctrlKey: true }), `Ctrl+${key}`).toBe(true);
+    }
+  });
+
   it("lists the commands of the focus first", async () => {
     const run = vi.fn();
     open([{ id: "assign", label: "Assign to me", key: "a", run }]);

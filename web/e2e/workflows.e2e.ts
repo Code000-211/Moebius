@@ -103,7 +103,7 @@ describe.skipIf(usesRealServer)("filtering the workflows list", () => {
     await page.reload();
     await bar.getByRole("button", { name: "Last run is Failed", exact: true }).waitFor();
     await link("release").waitFor();
-    expect(await link("tidy").count()).toBe(0);
+    await expect.poll(() => link("tidy").count()).toBe(0);
 
     await bar.getByRole("button", { name: "Clear filters" }).click();
     await link("deploy").waitFor();

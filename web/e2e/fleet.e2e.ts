@@ -49,15 +49,15 @@ describe.skipIf(usesRealServer)("the fleet with 500 runs", () => {
     expect(server.watchedRuns?.() ?? 0).toBeLessThanOrEqual(drawn);
 
     // The run that waits for the person is first; the list has no group rows.
-    expect(await page.getByTestId("group-row").count()).toBe(0);
+    await expect.poll(() => page.getByTestId("group-row").count()).toBe(0);
     await rows.first().getByText("Which branch?").waitFor();
     await rows.first().getByText("Asks you").waitFor();
 
     // Stop is only on the selected row (the first, until one is chosen) and on the hovered one.
     expect(await rows.first().getAttribute("data-selected")).toBe("true");
-    expect(await page.getByRole("button", { name: /^Stop/ }).count()).toBe(1);
+    await expect.poll(() => page.getByRole("button", { name: /^Stop/ }).count()).toBe(1);
     await rows.nth(1).hover();
-    expect(await page.getByRole("button", { name: /^Stop/ }).count()).toBe(2);
+    await expect.poll(() => page.getByRole("button", { name: /^Stop/ }).count()).toBe(2);
     await page.mouse.move(700, 5);
     await expect.poll(() => page.getByRole("button", { name: /^Stop/ }).count()).toBe(1);
   });
@@ -73,17 +73,17 @@ describe.skipIf(usesRealServer)("the Finished tab", () => {
     await rows.first().waitFor();
     // Three runs of the fake have ended (a failed, a succeeded, a stopped one); the two going on are not among them.
     await expect.poll(() => rows.count()).toBe(3);
-    expect(await page.getByTestId("outcome-failed").count()).toBe(1);
-    expect(await page.getByTestId("outcome-succeeded").count()).toBe(1);
-    expect(await page.getByTestId("outcome-stopped").count()).toBe(1);
+    await expect.poll(() => page.getByTestId("outcome-failed").count()).toBe(1);
+    await expect.poll(() => page.getByTestId("outcome-succeeded").count()).toBe(1);
+    await expect.poll(() => page.getByTestId("outcome-stopped").count()).toBe(1);
     await page.getByTestId("group-row").first().getByText("Today").waitFor();
 
     await page.reload();
     await rows.first().waitFor();
     expect(page.url()).toMatch(/\/fleet\?tab=finished$/);
-    expect(await page.getByRole("tab", { name: "Finished" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
+    await expect
+      .poll(() => page.getByRole("tab", { name: "Finished" }).getAttribute("aria-selected"))
+      .toBe("true");
     await expect.poll(() => rows.count()).toBe(3);
 
     await page.getByRole("tab", { name: "Active" }).click();

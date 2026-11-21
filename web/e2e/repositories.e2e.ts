@@ -108,7 +108,7 @@ describe.skipIf(usesRealServer)("the repositories of a card", () => {
     await openProperties(5);
     const changes = page.getByTestId("card-change");
     await changes.nth(1).waitFor();
-    expect(await changes.count()).toBe(2);
+    await expect.poll(() => changes.count()).toBe(2);
     expect(await changes.nth(0).textContent()).toContain("demo");
     expect(await changes.nth(0).textContent()).toContain("Checks: Green");
     expect(await changes.nth(1).textContent()).toContain("web");

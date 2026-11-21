@@ -77,7 +77,7 @@ describe("the run view", () => {
     await info.getByText("Coder · code").waitFor();
     // The run is a bar on a timeline, with a tick for each step of the thread.
     await page.getByTestId("time-bar").waitFor();
-    expect(await page.getByRole("tab", { name: "Conversation" }).count()).toBe(1);
+    await expect.poll(() => page.getByRole("tab", { name: "Conversation" }).count()).toBe(1);
     const card = info.getByRole("link", { name: /#1 Add a feature/ });
     expect(await card.getAttribute("href")).toBe("/board/1?card=1");
 
@@ -141,9 +141,9 @@ describe("the run view", () => {
     await open("/runs/1001");
     // Nothing under the conversation says the run is over: its own tag in the title row does, as it does for every run.
     await page.getByTestId("run-info").getByText("Ended", { exact: true }).waitFor();
-    expect(await page.getByTestId("run-hint").count()).toBe(0);
-    expect(await tab("Terminal").count()).toBe(0);
-    expect(await page.getByRole("textbox", { name: "Message" }).count()).toBe(0);
+    await expect.poll(() => page.getByTestId("run-hint").count()).toBe(0);
+    await expect.poll(() => tab("Terminal").count()).toBe(0);
+    await expect.poll(() => page.getByRole("textbox", { name: "Message" }).count()).toBe(0);
   });
 
   it.skipIf(usesRealServer)("explains why a run between turns cannot be steered", async () => {
@@ -153,7 +153,7 @@ describe("the run view", () => {
       .getByTestId("run-hint")
       .getByText("The run is not working now, so it cannot be steered.")
       .waitFor();
-    expect(await page.getByRole("textbox", { name: "Message" }).count()).toBe(0);
+    await expect.poll(() => page.getByRole("textbox", { name: "Message" }).count()).toBe(0);
   });
 
   it.skipIf(usesRealServer)(
@@ -190,7 +190,7 @@ describe("the run view", () => {
     expect(await page.getByTestId("diff-path").textContent()).toBe("src/lib.rs");
     await page.getByTestId("diff-file").filter({ hasText: "notes.txt" }).click();
     await added.filter({ hasText: "a note for the reviewer" }).waitFor();
-    expect(await removed.count()).toBe(0);
+    await expect.poll(() => removed.count()).toBe(0);
 
     // Side by side: the old line is left of the new one in the same row.
     await page.getByTestId("diff-file").filter({ hasText: "lib.rs" }).click();
@@ -262,7 +262,9 @@ describe("the diff of a card", () => {
       expect((await summary.textContent()) ?? "").toMatch(/\+\d+ added -\d+ removed/);
       const row = sheet.getByTestId("diff-file").first();
       expect((await row.textContent()) ?? "").toMatch(/\+\d+ added -\d+ removed/);
-      expect(await sheet.getByRole("list", { name: "What the colours mean" }).count()).toBe(0);
+      await expect
+        .poll(() => sheet.getByRole("list", { name: "What the colours mean" }).count())
+        .toBe(0);
     },
   );
 
@@ -515,12 +517,12 @@ describe("the Ports page", () => {
       await open("/ports");
       const rows = page.getByTestId("port-row");
       await rows.first().waitFor();
-      expect(await rows.count()).toBe(2);
+      await expect.poll(() => rows.count()).toBe(2);
       const first = rows.filter({ hasText: "3000" });
       await first.getByText("node").waitFor();
-      expect(await first.getByRole("link", { name: "run 1000" }).getAttribute("href")).toBe(
-        "/runs/1000",
-      );
+      await expect
+        .poll(() => first.getByRole("link", { name: "run 1000" }).getAttribute("href"))
+        .toBe("/runs/1000");
       await first.getByText("ssh -N -L 3000:127.0.0.1:3000").waitFor();
       await rows.filter({ hasText: "8080" }).getByText("server terminal").waitFor();
 
@@ -531,7 +533,7 @@ describe("the Ports page", () => {
       fake().ports.splice(0, 1);
       server.broadcast?.({ kind: "port_closed", data: { port: 3000 } });
       await expect.poll(() => rows.count()).toBe(2);
-      expect(await rows.filter({ hasText: "3000" }).count()).toBe(0);
+      await expect.poll(() => rows.filter({ hasText: "3000" }).count()).toBe(0);
     },
   );
 

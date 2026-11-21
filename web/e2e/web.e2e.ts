@@ -270,8 +270,8 @@ describe("the shell", () => {
     await expect
       .poll(() => pages().getByRole("link", { name: "Settings" }).getAttribute("aria-current"))
       .toBe("page");
-    expect(await pages().getByRole("link", { name: "Back" }).count()).toBe(0);
-    expect(await pages().getByRole("link", { name: "Models" }).count()).toBe(0);
+    await expect.poll(() => pages().getByRole("link", { name: "Back" }).count()).toBe(0);
+    await expect.poll(() => pages().getByRole("link", { name: "Models" }).count()).toBe(0);
     if (!usesRealServer) {
       await pages().getByRole("link", { name: "demo", exact: true }).click();
       await page.waitForURL("**/board/1");
@@ -335,8 +335,8 @@ describe("a page that is still being read", () => {
       const shape = page.getByRole("status").filter({ hasText: "Reading the inbox" });
       await shape.waitFor();
       // The state is still said, in words nobody has to look at, and the rows are drawn rather than written.
-      expect(await shape.locator("[aria-hidden='true']").count()).toBeGreaterThan(3);
-      expect(await page.locator(".animate-spin").count()).toBe(0);
+      await expect.poll(() => shape.locator("[aria-hidden='true']").count()).toBeGreaterThan(3);
+      await expect.poll(() => page.locator(".animate-spin").count()).toBe(0);
     } finally {
       release();
     }
@@ -366,7 +366,7 @@ describe("the command bar", () => {
     expect(list.y + list.height).toBeLessThanOrEqual(sheet.y + sheet.height + 1);
     await input.fill("retro");
     await page.getByRole("option", { name: "Retro" }).waitFor();
-    expect(await page.getByRole("option").count()).toBe(1);
+    await expect.poll(() => page.getByRole("option").count()).toBe(1);
     await page.keyboard.press("Enter");
     await page.waitForURL("**/retro");
     await input.waitFor({ state: "detached" });
@@ -380,11 +380,11 @@ describe("the command bar", () => {
     await page.keyboard.press("Control+k");
     const dialog = page.getByRole("dialog", { name: "Search" });
     await dialog.getByRole("option").first().waitFor();
-    expect(await dialog.locator("kbd").count()).toBe(0);
+    await expect.poll(() => dialog.locator("kbd").count()).toBe(0);
     const row = await dialog.getByRole("option").first().boundingBox();
     expect(row?.height).toBe(36);
     for (const option of await dialog.getByRole("option").all()) {
-      expect(await option.locator("svg").count()).toBeGreaterThan(0);
+      await expect.poll(() => option.locator("svg").count()).toBeGreaterThan(0);
     }
   });
 
@@ -397,8 +397,8 @@ describe("the command bar", () => {
     const input = page.getByPlaceholder("Search…");
     await input.waitFor();
     await page.keyboard.press("Tab");
-    expect(await input.isVisible()).toBe(true);
-    expect(await agent.count()).toBe(0);
+    await expect.poll(() => input.isVisible()).toBe(true);
+    await expect.poll(() => agent.count()).toBe(0);
     await input.fill("What is this page?");
     await page.keyboard.press("Tab");
     await input.waitFor({ state: "detached" });
@@ -406,7 +406,7 @@ describe("the command bar", () => {
     if (usesRealServer) {
       // A new real server has no model for the agent: it says so in its own sentence, and no message is shown as said.
       await agent.getByText("the Moebius agent needs a model", { exact: false }).waitFor();
-      expect(await agent.getByText("Nothing said yet").count()).toBe(1);
+      await expect.poll(() => agent.getByText("Nothing said yet").count()).toBe(1);
     } else {
       await agent.getByText("You said: What is this page?").first().waitFor();
     }
@@ -421,7 +421,7 @@ describe("the command bar", () => {
     await page.getByPlaceholder("Search…").fill("new conversation");
     await page.getByRole("option", { name: "New conversation" }).click();
     await agent.waitFor();
-    expect(await agent.getByText("You said:").count()).toBe(0);
+    await expect.poll(() => agent.getByText("You said:").count()).toBe(0);
   });
 
   it("opens from the sidebar's search and closes with Escape", async () => {

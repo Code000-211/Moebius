@@ -77,7 +77,7 @@ describe("Settings", () => {
     const search = nav(page).getByRole("searchbox", { name: "Search settings" });
     await search.fill("mod");
     await nav(page).getByRole("link", { name: "Models" }).waitFor();
-    expect(await nav(page).getByRole("link").count()).toBe(1);
+    await expect.poll(() => nav(page).getByRole("link").count()).toBe(1);
     await search.fill("zzz");
     await nav(page).getByText("No settings match.").waitFor();
   });
@@ -97,7 +97,7 @@ describe("Settings", () => {
       await nav(page).getByRole("link", { name: label, exact: true }).click();
       await page.waitForURL(`**/${path}`);
       await page.getByRole("heading", { level: 2, name: label }).waitFor();
-      expect(await page.getByLabel("Ask Moebius").count()).toBe(0);
+      await expect.poll(() => page.getByLabel("Ask Moebius").count()).toBe(0);
       await page.reload();
       await page.getByRole("heading", { level: 2, name: label }).waitFor();
     }
@@ -157,7 +157,7 @@ describe("Settings", () => {
       await page.waitForURL(`**/${path}`);
       await page.getByRole("heading", { level: 2, name: label }).waitFor();
       await page.getByText(content, { exact: false }).first().waitFor();
-      expect(await page.getByLabel("Ask Moebius").count()).toBe(0);
+      await expect.poll(() => page.getByLabel("Ask Moebius").count()).toBe(0);
     }
   });
 

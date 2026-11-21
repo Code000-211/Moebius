@@ -48,7 +48,7 @@ describe.skipIf(usesRealServer)("the card window", () => {
     expect(new URL(page.url()).pathname).toBe("/inbox");
     expect(new URLSearchParams(search()).get("card")).toBe("5");
     // The Inbox is still there behind it, dimmed by a scrim that does not blur.
-    expect(await list.isVisible()).toBe(true);
+    await expect.poll(() => list.isVisible()).toBe(true);
     const scrim = page.locator('[data-state="open"].bg-scrim');
     await scrim.waitFor();
     expect(await scrim.evaluate((el) => getComputedStyle(el).backdropFilter)).toBe("none");
@@ -180,7 +180,7 @@ describe.skipIf(usesRealServer)("the card window", () => {
     await window().getByRole("heading", { name: "Speed up the build" }).waitFor();
     const blocks = window().getByTestId("needs-you-block");
     await blocks.first().waitFor();
-    expect(await blocks.count()).toBe(1);
+    await expect.poll(() => blocks.count()).toBe(1);
     // Its background is the resolved needs-you tint.
     const [shown, token] = await blocks.first().evaluate((el) => {
       const probe = document.createElement("div");
@@ -225,13 +225,13 @@ describe.skipIf(usesRealServer)("the card window", () => {
   it("has no needs-you block for a card that waits for nobody", async () => {
     await open("/board/1?card=3");
     await window().getByRole("heading", { name: "Document the API" }).waitFor();
-    expect(await window().getByTestId("needs-you-block").count()).toBe(0);
+    await expect.poll(() => window().getByTestId("needs-you-block").count()).toBe(0);
   });
 
   it("keeps every property and Edit issue in the menu, not in the window", async () => {
     await open("/board/1?card=3");
     await window().getByRole("heading", { name: "Document the API" }).waitFor();
-    expect(await window().getByText("Due date").count()).toBe(0);
+    await expect.poll(() => window().getByText("Due date").count()).toBe(0);
     await window()
       .getByRole("button", { name: /More actions for/ })
       .click();
