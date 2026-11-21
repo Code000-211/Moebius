@@ -381,8 +381,6 @@ for (const theme of THEMES) {
   it(`takes the pictures in the ${theme} theme`, async () => {
     const hero = await open(theme, 1.44, 1132, 2012);
     await visit(hero, "/board/1?card=none");
-    // The sidebar is a rail, so that the board and the Moebius agent both fit.
-    await hero.getByRole("button", { name: "Collapse the sidebar" }).click();
     await askAssistant(hero);
     await hero.screenshot({ path: join(OUT, `hero-${theme}.png`) });
     // The Moebius agent's conversation is the hero's alone: the lists of the other pages do not hold it.
@@ -394,7 +392,7 @@ for (const theme of THEMES) {
     // The chat at work is the chat page's picture; the Fleet shows the cards' runs.
     const chatAtWork = fake.chat.chats.find((chat) => chat.status === "running");
     if (chatAtWork) chatAtWork.status = "stopped";
-    // A card of the board with its properties in the right column.
+    // A card of the board in its window.
     await visit(page, "/board/1?card=24");
     await shoot(page, "card", theme);
     await visit(page, "/wiki?page=runbooks/deploy");
