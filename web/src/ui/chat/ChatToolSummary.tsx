@@ -11,7 +11,6 @@ import {
   TerminalWindowIcon,
 } from "@phosphor-icons/react";
 import { cn } from "../lib/cn";
-import { FadedLine } from "../page/FadedLine";
 import { ToolStatusDot, type ToolStatusLike } from "./ToolStatusDot";
 
 interface ChatToolSummaryProps {
@@ -75,7 +74,9 @@ export function ChatToolSummary({
     >
       <Icon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
       {toolName && <span className="shrink-0 text-sm text-secondary">{toolName}</span>}
-      <FadedLine text={summary} className="flex-1 font-mono text-sm text-secondary" />
+      <span title={summary} className="min-w-0 flex-1 truncate font-mono text-sm text-secondary">
+        {summary}
+      </span>
       {status && <ToolStatusDot status={status} />}
     </Root>
   );

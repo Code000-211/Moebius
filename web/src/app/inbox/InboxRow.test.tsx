@@ -23,7 +23,6 @@ function row(extra: Partial<Parameters<typeof InboxRow>[0]> = {}) {
     now: 220,
     at: { index: 1, size: 1 },
     selected: false,
-    unread: false,
     approving: false,
     onClick: vi.fn(),
     onApprove: vi.fn(),
@@ -46,12 +45,14 @@ describe("an inbox row", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
-  it("has a dot while unread and none when read", () => {
-    row({ unread: true });
-    expect(screen.getByTestId("unread-dot")).toBeTruthy();
-    cleanup();
-    row({ unread: false });
+  it("has no unread dot", () => {
+    row();
     expect(screen.queryByTestId("unread-dot")).toBeNull();
+  });
+
+  it("leaves no gap for the id of a row that has none", () => {
+    row({ entry: { ...entry, id: "" } });
+    expect(document.querySelector(".font-mono")).toBeNull();
   });
 
   it("is chosen with a click", () => {

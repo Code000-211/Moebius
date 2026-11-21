@@ -61,7 +61,7 @@ export function Appearance() {
                   "inline-flex min-h-7 cursor-pointer items-center rounded-control px-3 text-base font-medium",
                   "transition-colors duration-(--motion-routine) ease-out",
                   chosen
-                    ? "bg-surface text-text ring-1 ring-inset ring-hairline"
+                    ? "bg-panel text-text ring-1 ring-inset ring-hairline"
                     : "text-secondary hover:text-text",
                 )}
               >

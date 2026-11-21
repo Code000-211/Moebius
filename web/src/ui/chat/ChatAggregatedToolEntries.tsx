@@ -6,7 +6,6 @@ import { CaretDownIcon, FileTextIcon } from "@phosphor-icons/react";
 import type { ElementType } from "react";
 import { cn } from "../lib/cn";
 import { plural } from "../lib/format";
-import { FadedLine } from "../page/FadedLine";
 import { ToolStatusDot, type ToolStatusLike } from "./ToolStatusDot";
 
 export interface AggregatedEntry {
@@ -74,7 +73,12 @@ export function ChatAggregatedToolEntries({
         title={only.detail ?? only.summary}
       >
         <Icon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
-        <FadedLine text={only.summary} className="flex-1 font-mono text-sm text-secondary" />
+        <span
+          title={only.summary}
+          className="min-w-0 flex-1 truncate font-mono text-sm text-secondary"
+        >
+          {only.summary}
+        </span>
         {only.status && <ToolStatusDot status={only.status} />}
       </div>
     );
@@ -113,7 +117,12 @@ export function ChatAggregatedToolEntries({
               className="flex min-h-7 flex-wrap items-center gap-2 px-3"
             >
               <Icon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
-              <FadedLine text={entry.summary} className="flex-1 font-mono text-sm text-secondary" />
+              <span
+                title={entry.summary}
+                className="min-w-0 flex-1 truncate font-mono text-sm text-secondary"
+              >
+                {entry.summary}
+              </span>
               {entry.status && <ToolStatusDot status={entry.status} />}
             </div>
           ))}

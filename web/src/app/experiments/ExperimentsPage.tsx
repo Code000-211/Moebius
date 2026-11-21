@@ -77,7 +77,6 @@ export function ExperimentsPage() {
   const header = (
     <PageHeader
       title="Experiments"
-      context="Try one change at a time against a reference point."
       actions={
         <Button
           size="sm"

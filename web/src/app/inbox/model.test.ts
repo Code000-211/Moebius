@@ -18,6 +18,7 @@ import {
   removeIssue,
   rowReason,
   shown,
+  titleOf,
   trialsOf,
   why,
 } from "./model";
@@ -468,6 +469,19 @@ describe("the list of the page", () => {
     ]);
     expect(rows[0]?.approves).toBe(1);
     expect(rows[1]?.approves).toBeNull();
+    // Only a card in Earlier has an age (the card's own); one at work has none.
+    expect(rows.map((each) => each.at)).toEqual([expect.any(Number), null, 0]);
+  });
+
+  it("says the reason in the pale text only, not in the title", () => {
+    const item = (title: string) => ({ ...waiting(1, "ready_to_merge", 4), title });
+    expect(titleOf(item("Add an index is ready to merge"))).toBe("Add an index");
+    expect(titleOf({ ...item("Approve: Support Apple Pay"), kind: "approve_issue" })).toBe(
+      "Support Apple Pay",
+    );
+    expect(titleOf(item("Tell the Coder to run the tests first"))).toBe(
+      "Tell the Coder to run the tests first",
+    );
   });
 
   it("draws only the items under a change filter, and no group for nothing", () => {

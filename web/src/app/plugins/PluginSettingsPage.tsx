@@ -22,10 +22,7 @@ const APP_SCOPE: SettingsScope = {
 export function PluginSettingsPage() {
   return (
     <>
-      <PageHeader
-        title="Plugin settings"
-        context="What the plugins ask of the whole server. What a plugin asks of one repository is on that repository's page, under Projects."
-      />
+      <PageHeader title="Plugin settings" />
       <div className="flex flex-col gap-6">
         <PluginSettingsBoxes scope={APP_SCOPE} />
       </div>

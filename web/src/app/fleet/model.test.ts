@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { Card, CardRun, Snapshot } from "../../api/types/board";
 import type { Chat } from "../../api/types/chat";
 import type { FinishedRun } from "../../api/types/runs";
-import type { Entry } from "../../chat/conversation";
+import { type Entry, type ToolCall, toolInput } from "../../chat/conversation";
 import {
   afterSteps,
+  doingWords,
   elapsed,
   finishedId,
   finishedItems,
@@ -167,20 +168,9 @@ describe("the list the page draws", () => {
   const run = (at: number, status: string, asks = false, approve: number | null = null) =>
     ({ run: at, status, asks, approve, open: { kind: "card", card: at } }) as Work;
 
-  it("puts the runs that wait for the person first, under their own group", () => {
+  it("puts the runs that wait for the person first, with no group rows", () => {
     const list = [run(1, "running"), run(2, "waiting"), run(3, "starting"), run(4, "waiting")];
-    expect(items(list).map((item) => (item.type === "group" ? item.name : item.data.run))).toEqual([
-      "Needs you",
-      2,
-      4,
-      "Running",
-      1,
-      3,
-    ]);
-  });
-
-  it("leaves out a group that has no run", () => {
-    expect(items([run(1, "running")]).map((item) => item.type)).toEqual(["group", "row"]);
+    expect(items(list).map((item) => item.data.run)).toEqual([2, 4, 1, 3]);
     expect(items([])).toEqual([]);
   });
 
@@ -322,5 +312,27 @@ describe("the finished runs", () => {
     expect(finishedId(one)).toBe("WEB-24");
     expect(lasted(one)).toBe(432);
     expect(finishedKey(one)).toBe("finished:1");
+  });
+});
+
+describe("what a step says in words", () => {
+  const call = (tool: string, args: unknown) =>
+    ({ tool, input: toolInput(tool, args), mcp: null }) as ToolCall;
+  it("names the work, not the command", () => {
+    expect(doingWords(call("read", { path: "/w/src/engine.rs" }))).toBe("reading engine.rs");
+    expect(doingWords(call("edit", { path: "/w/src/engine.rs" }))).toBe("editing engine.rs");
+    expect(doingWords(call("bash", { command: "cargo test -p cart discount" }))).toBe(
+      "running the tests",
+    );
+    expect(doingWords(call("bash", { command: "cargo clippy -- -D warnings" }))).toBe(
+      "checking the code",
+    );
+    expect(doingWords(call("bash", { command: 'rg -n "fn deliver" src' }))).toBe(
+      "searching the code",
+    );
+    expect(doingWords(call("bash", { command: "git diff main...HEAD --stat" }))).toBe(
+      "looking at the changes",
+    );
+    expect(doingWords(call("bash", { command: "make deploy" }))).toBe("running a command");
   });
 });

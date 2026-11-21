@@ -8,12 +8,16 @@ import type { Snapshot } from "../../api/types/board";
 import type { Notice } from "../../api/types/notices";
 import { boardPath } from "../pages";
 
-/** The value of the tab's `?kind=`. */
+/** The values of the tabs' `?kind=`: the notices of what was given to the person or names them, and of what they follow. */
 export const MENTIONS = "mentions";
+export const FOLLOWING = "following";
 
-/** Whether `kind` (a `?kind=`) is the Mentions tab; the older `assigned` and `following` addresses lead there too. */
+/** Whether `kind` (a `?kind=`) is a tab of notices; the older `assigned` address leads to Mentions. */
 export const isNoticeTab = (kind: string | null): boolean =>
-  kind === MENTIONS || kind === "assigned" || kind === "following";
+  kind === MENTIONS || kind === FOLLOWING || kind === "assigned";
+
+/** Whether a notice belongs under Following (a change on a card the person follows) rather than Mentions. */
+export const isFollowing = (notice: Notice): boolean => notice.kind === "changed";
 
 /**
  * How many things wait for the person: the open items of the inbox and the unread notices that were given to them

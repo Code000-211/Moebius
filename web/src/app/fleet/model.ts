@@ -6,10 +6,10 @@
 import type { Snapshot } from "../../api/types/board";
 import type { Chat } from "../../api/types/chat";
 import type { FinishedRun } from "../../api/types/runs";
-import type { Entry } from "../../chat/conversation";
+import type { Entry, ToolCall } from "../../chat/conversation";
 import { HARNESS_PLACE } from "../../chat/places";
 import type { FilterField } from "../../ui/filters/model";
-import { dayName } from "../../ui/lib/format";
+import { dayName, fileName } from "../../ui/lib/format";
 import { cardKey } from "../board/cardKey";
 
 /** Where a click on a tile goes. */
@@ -97,15 +97,25 @@ export function working(snapshot: Snapshot, chats: readonly Chat[]): Work[] {
 
 import { plural } from "../../ui/lib/format";
 
+/** What the filters look at in a run, working or finished. */
+export type Facets = Pick<Work, "repository" | "agent" | "kind">;
+
+/** A finished run as the filters see it; `names` says the project of a repository's number. */
+export const finishedFacets = (one: FinishedRun, names: ReadonlyMap<number, string>): Facets => ({
+  repository: names.get(one.card.repository_id) ?? "",
+  agent: one.run.agent,
+  kind: one.run.purpose,
+});
+
 /** The keys of the Fleet's filters in the address, in the order the bar offers them. */
 export const FILTER_KEYS = ["project", "agent", "kind"] as const;
 
 /** The fields the Fleet can be filtered by, each offering what the working runs have in it, and the value being filtered by. */
 export function filterFields(
-  list: readonly Work[],
+  list: readonly Facets[],
   values: Readonly<Record<string, string>>,
 ): FilterField[] {
-  const of = (key: string, pick: (work: Work) => string): FilterField["options"] => {
+  const of = (key: string, pick: (work: Facets) => string): FilterField["options"] => {
     const names = new Set(list.map(pick).filter((name) => name !== ""));
     if ((values[key] ?? "") !== "") names.add(values[key] as string);
     return [...names].sort((a, b) => a.localeCompare(b)).map((name) => [name, name]);
@@ -118,7 +128,10 @@ export function filterFields(
 }
 
 /** The runs that pass the filters; a filter that is not set lets everything through. */
-export function filtered(list: readonly Work[], values: Readonly<Record<string, string>>): Work[] {
+export function filtered<T extends Facets>(
+  list: readonly T[],
+  values: Readonly<Record<string, string>>,
+): T[] {
   const is = (value: string | undefined, of: string) => !value || value === of;
   return list.filter(
     (work) =>
@@ -131,10 +144,8 @@ export function filtered(list: readonly Work[], values: Readonly<Record<string, 
 /** Whether a run is at work: starting or running. A run that waits for the person is not working, it is waiting. */
 export const atWork = (work: Work) => work.status === "starting" || work.status === "running";
 
-/** One line of the list: a group's name, or a run. */
-export type FleetItem =
-  | { type: "group"; key: string; name: string }
-  | { type: "row"; key: string; data: Work };
+/** One line of the Active list: a run. The list has no group rows; the runs that wait for the person come first. */
+export type FleetItem = { type: "row"; key: string; data: Work };
 
 /** What a row is chosen and kept by: a card's run and a chat can share a number. */
 export const choiceKey = (work: Work) => `${work.open.kind}:${work.run}`;
@@ -142,22 +153,13 @@ export const choiceKey = (work: Work) => `${work.open.kind}:${work.run}`;
 /** Whether a run waits for the person. */
 export const needsYou = (work: Work) => work.status === "waiting";
 
-/**
- * The flat list the page draws: the group "Needs you" with the runs that wait for the person, then "Running" with the
- * others. A group with no run is left out, and the runs keep the order they were given in.
- */
+/** The list the page draws: the runs that wait for the person first, then the others, each in the order given. */
 export function items(list: readonly Work[]): FleetItem[] {
-  const out: FleetItem[] = [];
-  for (const [key, name, pick] of [
-    ["needs", "Needs you", true],
-    ["running", "Running", false],
-  ] as const) {
-    const runs = list.filter((work) => needsYou(work) === pick);
-    if (runs.length === 0) continue;
-    out.push({ type: "group", key, name });
-    for (const work of runs) out.push({ type: "row", key: choiceKey(work), data: work });
-  }
-  return out;
+  return [...list.filter(needsYou), ...list.filter((work) => !needsYou(work))].map((work) => ({
+    type: "row",
+    key: choiceKey(work),
+    data: work,
+  }));
 }
 
 /** The pale words of a run that waits for the person. */
@@ -294,3 +296,42 @@ export const lasted = (one: FinishedRun) =>
 
 /** The card's id the way the rest of the app names it (`WEB-24`, or `#17` for a project without a key). */
 export const finishedId = (one: FinishedRun) => cardKey(one.card);
+
+const TESTS = /\b(test|tests|pytest|vitest|jest|nextest)\b/;
+const CHECKS = /\b(clippy|lint|fmt|format|biome|eslint|tsc|check|typecheck)\b/;
+const BUILDS = /\b(build|compile)\b/;
+const SEARCHES = /^(rg|grep|find|fd|ls|tree)\b/;
+const DIFFS = /^git (diff|log|show|status|blame)\b/;
+
+/**
+ * What a step is, in a few plain words: "reading engine.rs", "running the tests". The raw command stays in the run's
+ * own page; a row says what the agent is doing, not how.
+ */
+export function doingWords(call: ToolCall): string {
+  const input = call.input;
+  switch (input.type) {
+    case "read":
+      return `reading ${fileName(input.path)}`;
+    case "edit":
+      return `editing ${fileName(input.path)}`;
+    case "write":
+      return `writing ${fileName(input.path)}`;
+    case "command": {
+      const line = (input.command.split("\n")[0] ?? "").trim();
+      const word = line.replace(/^(\S+=\S+\s+)*/, "");
+      if (DIFFS.test(word)) return "looking at the changes";
+      if (TESTS.test(word)) return "running the tests";
+      if (CHECKS.test(word)) return "checking the code";
+      if (BUILDS.test(word)) return "building";
+      if (SEARCHES.test(word)) return "searching the code";
+      if (word.startsWith("git ")) return "using git";
+      return "running a command";
+    }
+    case "todos":
+      return "planning the work";
+    case "questions":
+      return "asking a question";
+    default:
+      return call.mcp ? `using ${call.mcp.server}` : "working";
+  }
+}

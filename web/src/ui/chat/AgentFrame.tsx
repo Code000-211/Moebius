@@ -15,7 +15,7 @@ export function AgentFrame({ onClose, children }: { onClose: () => void; childre
     <aside
       aria-label="Moebius agent"
       data-surface="agent-panel"
-      className="flex w-(--agent-width) max-w-[45%] shrink-0 animate-in flex-col border-l border-hairline bg-page fade-in-0 duration-(--motion-fast) ease-(--motion-ease)"
+      className="flex w-(--agent-width) max-w-[45%] shrink-0 animate-in flex-col border-l border-hairline bg-panel fade-in-0 duration-(--motion-fast) ease-(--motion-ease)"
     >
       <header
         className="flex h-12 shrink-0 items-center gap-2 border-b border-hairline pl-4"

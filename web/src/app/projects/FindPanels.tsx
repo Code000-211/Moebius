@@ -152,7 +152,7 @@ export function GoToFile({
       {listing && (
         <div
           ref={dropdown}
-          className="absolute top-full left-0 z-menu mt-2 w-full rounded-card bg-surface p-1 text-text shadow-raised"
+          className="absolute top-full left-0 z-menu mt-2 w-full rounded-card bg-panel p-1 text-text shadow-raised"
         >
           {paths.isPending && (
             <p className="m-0 px-3 py-2 text-sm text-secondary" role="status">

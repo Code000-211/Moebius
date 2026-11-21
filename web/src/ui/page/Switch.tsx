@@ -49,7 +49,7 @@ export function Switch({
       >
         <span
           className={cn(
-            "size-4 shrink-0 rounded-full bg-surface transition-transform duration-(--motion-routine) ease-out",
+            "size-4 shrink-0 rounded-full bg-panel transition-transform duration-(--motion-routine) ease-out",
             checked ? "translate-x-4" : "translate-x-0",
           )}
         />

@@ -183,7 +183,7 @@ describe("the chip's place", () => {
     const chip = screen.getByTestId("chat-chip");
     const classes = chip.className.split(/\s+/);
     expect(classes, classes.join(" ")).toContain("text-text");
-    expect(classes).toContain("bg-surface");
+    expect(classes).toContain("bg-panel");
     expect(classes).not.toContain("text-on-ink");
     expect(classes).not.toContain("hover:bg-text/85");
   });

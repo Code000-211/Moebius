@@ -123,7 +123,7 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
 
   return (
     <SidebarToggleContext.Provider value={{ narrow, open: sidebarOpen, setOpen: setSidebarOpen }}>
-      <div className="flex h-full bg-ground py-1.5">
+      <div className="flex h-full bg-canvas py-1.5">
         <Sidebar
           narrow={narrow}
           open={sidebarOpen}
@@ -140,7 +140,7 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
           properties pane lies at the panel's right, which then leaves it to its own head. */}
         <div
           data-surface="page"
-          className="relative mr-1.5 flex min-w-0 flex-1 overflow-clip rounded-sheet border border-hairline bg-page"
+          className="relative mr-1.5 flex min-w-0 flex-1 overflow-clip rounded-sheet border border-hairline bg-panel"
         >
           <div
             className="flex min-w-0 flex-1 flex-col"

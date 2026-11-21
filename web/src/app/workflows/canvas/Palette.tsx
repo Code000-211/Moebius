@@ -19,7 +19,7 @@ export function Palette({
   const [dragged, setDragged] = useState<string | null>(null);
   const kinds = paletteKinds(graph);
   return (
-    <div className="flex w-52 shrink-0 flex-col gap-2 overflow-y-auto border-r border-hairline bg-surface p-3">
+    <div className="flex w-52 shrink-0 flex-col gap-2 overflow-y-auto border-r border-hairline bg-panel p-3">
       <p className="m-0 text-xs font-semibold uppercase tracking-wide text-secondary">Node kinds</p>
       {kinds.map((kind) => (
         <button
