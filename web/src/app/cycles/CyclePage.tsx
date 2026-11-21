@@ -66,7 +66,7 @@ export function CyclePage({
         </Button>
         <h2 className="m-0 min-w-0 truncate text-lg font-semibold text-text">{cycle.name}</h2>
         {mayChange && (
-          <span className="ml-auto flex items-center gap-2">
+          <span className="-mr-3 ml-auto flex items-center gap-2">
             {cycle.closed_at === null && (
               <Button size="sm" variant="ghost" onClick={onEdit}>
                 <PencilSimpleIcon className="size-4" aria-hidden="true" />
