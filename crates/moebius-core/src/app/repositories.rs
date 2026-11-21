@@ -264,6 +264,18 @@ impl App {
                 repository.name
             )));
         }
+        let active = self.store.active_workflow_runs_of_repository(id)?;
+        if let Some(run) = active.first() {
+            return Err(AppError::Conflict(format!(
+                "{} has workflow run {run} queued, running or waiting{}; cancel or wait for it before removing the repository",
+                repository.name,
+                if active.len() > 1 {
+                    format!(" (and {} more)", active.len() - 1)
+                } else {
+                    String::new()
+                }
+            )));
+        }
         // The home project goes with its last repository, so what keeps a project from being deleted keeps this too.
         if let Some(project) = self.store.project_removed_with_repository(id)? {
             self.check_project_deletable(project)?;
@@ -450,6 +462,51 @@ mod tests {
             app.remove_repository(&Actor::first_owner(), repository.id, "not wanted")
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn removing_a_repository_is_refused_while_a_workflow_run_of_it_is_going_and_takes_finished_ones()
+     {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(Store::in_memory(&dir.path().join("blobs")).unwrap());
+        let app = App::new(
+            store.clone(),
+            Arc::new(Host::new(std::time::Duration::from_secs(1))),
+            &dir.path().join("data"),
+        );
+        let path = |name: &str| dir.path().join(name).to_string_lossy().into_owned();
+        let repository = app.add_repository("mine", &path("mine")).unwrap();
+        let finished = store
+            .add_workflow_run("release", repository.id, "manual", &serde_json::json!({}))
+            .unwrap();
+        store
+            .finish_workflow_run(finished.id, "succeeded", None)
+            .unwrap();
+        let going = store
+            .add_workflow_run("release", repository.id, "manual", &serde_json::json!({}))
+            .unwrap();
+
+        let refused = app
+            .remove_repository(&Actor::first_owner(), repository.id, "not wanted")
+            .unwrap_err();
+        let AppError::Conflict(message) = refused else {
+            panic!("a repository with a workflow run going is refused: {refused}");
+        };
+        assert!(
+            message.contains(&format!("workflow run {}", going.id)),
+            "{message}"
+        );
+        assert!(store.repository(repository.id).unwrap().is_some());
+        assert!(store.workflow_run(finished.id).unwrap().is_some());
+
+        // Once that run has ended too, the repository goes with all its workflow runs.
+        store
+            .finish_workflow_run(going.id, "cancelled", None)
+            .unwrap();
+        app.remove_repository(&Actor::first_owner(), repository.id, "not wanted")
+            .unwrap();
+        assert!(store.workflow_run(finished.id).unwrap().is_none());
+        assert!(store.workflow_run(going.id).unwrap().is_none());
     }
 
     #[test]

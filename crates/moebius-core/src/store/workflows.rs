@@ -205,6 +205,17 @@ impl Store {
         )?)
     }
 
+    /// The ids of the runs of repository `id` that are queued, running or waiting, oldest first.
+    pub fn active_workflow_runs_of_repository(&self, id: i64) -> Result<Vec<i64>> {
+        let conn = self.read();
+        let mut statement = conn.prepare(
+            "SELECT id FROM workflow_runs
+             WHERE repository_id = ?1 AND status NOT IN ('succeeded', 'failed', 'cancelled') ORDER BY id",
+        )?;
+        let ids = statement.query_map([id], |row| row.get(0))?;
+        Ok(ids.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     /// How many runs of any workflow of the project `project_id` are queued, running or waiting.
     pub fn active_runs_of_project(&self, project_id: i64) -> Result<i64> {
         Ok(self.read().query_row(

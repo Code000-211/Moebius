@@ -55,6 +55,9 @@ column scripts and its workflows. It is one step of the restructure of the web a
 
 ## Consequences
 
+- A run's `repository_id` is a reference, so unlike `project_id` it cannot outlive its repository: removing a repository
+  is refused while a workflow run of it is queued, running or waiting (the message names the run), and otherwise
+  deletes its finished runs with their node rows and approvals.
 - The store change is additive: a nullable column and an index on `workflow_runs`; `workflow_schedules` is keyed by
   (project, workflow) and `automations` gets a nullable `project_id`. Rows from before are server-wide (project 0 for a
   schedule, none for the rest) until the migration of the workflow files (a later issue) moves each file and re-keys its
