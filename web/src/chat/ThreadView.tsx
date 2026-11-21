@@ -130,8 +130,6 @@ interface ThreadViewProps {
   onAnswer?: (message: string) => void;
   /** Whether a message is on its way. */
   sending?: boolean;
-  /** What stands under the last answer while the agent is not working: the buttons that go on from it. */
-  offer?: ReactNode;
 }
 
 export function ThreadView({
@@ -151,7 +149,6 @@ export function ThreadView({
   retryAction,
   onAnswer,
   sending,
-  offer,
 }: ThreadViewProps) {
   // An answer arrives piece by piece, and the person may be typing while it does: the words shown trail the events by
   // a render rather than cutting the keystroke off, and a long conversation groups once per batch instead of per piece.
@@ -337,7 +334,6 @@ export function ThreadView({
             retry={turn.key === lastKey ? retryAction : undefined}
             onAnswer={turn.key === lastKey && !working ? onAnswer : undefined}
             sending={sending}
-            offer={turn.key === lastKey && !working ? offer : undefined}
           />
         </div>
       )}
