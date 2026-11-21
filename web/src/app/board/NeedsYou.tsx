@@ -108,7 +108,6 @@ export function NeedsYouBlock({
         <div className="flex flex-wrap gap-2">
           {item.kind === "approve_issue" && (
             <Button
-              size="sm"
               disabled={busy}
               onClick={() => onDecide({ kind: "approve", card: card.id, number })}
             >
@@ -117,33 +116,23 @@ export function NeedsYouBlock({
           )}
           {item.kind === "ready_to_merge" && change !== null && (
             <>
-              <Button
-                size="sm"
-                disabled={busy}
-                onClick={() => onDecide({ kind: "merge", change, number })}
-              >
+              <Button disabled={busy} onClick={() => onDecide({ kind: "merge", change, number })}>
                 Merge
               </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={busy}
-                onClick={() => setRejecting(true)}
-              >
+              <Button variant="secondary" disabled={busy} onClick={() => setRejecting(true)}>
                 Reject with a reason
               </Button>
             </>
           )}
           {(item.kind === "stuck" || item.kind === "change_closed") && (
             <Button
-              size="sm"
               disabled={busy}
               onClick={() => onDecide({ kind: "retry", card: card.id, number })}
             >
               Retry
             </Button>
           )}
-          <Button size="sm" variant="secondary" onClick={onReply}>
+          <Button variant="secondary" onClick={onReply}>
             Reply
           </Button>
         </div>

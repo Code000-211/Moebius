@@ -8,6 +8,8 @@
  * unread until it is read in one place or the other. A chat whose agent went away is taken up again with what was
  * said in it, as on the Chat page; one the agent ended is left behind, and the next message starts a new conversation.
  */
+
+import { ClockCounterClockwiseIcon, PencilSimpleLineIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router";
@@ -20,6 +22,7 @@ import { Button } from "../ui/components/Button";
 import { Notice } from "../ui/page/Notice";
 import { ASSISTANT_AGENT } from "./assistant";
 import { Composer } from "./Composer";
+import { EarlierConversations, earlier } from "./EarlierConversations";
 import { isOpen, isWorking, takesMessage } from "./format";
 import { pageContext } from "./pageContext";
 import { seqToMark } from "./readMarkers";
@@ -58,12 +61,15 @@ export function AgentChat({
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // Whether the panel shows the list of earlier conversations instead of the one at hand.
+  const [listing, setListing] = useState(false);
   // The thread is read for as long as the chat it belongs to is remembered, not only while the sheet is shown:
   // closing it and opening it again finds the conversation where it was, not an empty box refilled from the server.
   const thread = useThread(chatId);
   // What the composer holds right now, which the closure of a send cannot see: what is typed while an answer is on its
   // way is the next question, not something to clear away with the one that was sent.
   const held = useRef(message);
+  const reply = useRef<HTMLDivElement>(null);
   /** How far the chat open in the sheet has been marked read; 0 again for the next conversation. */
   const marked = useRef({ id: 0, seq: 0 });
   const write = (value: string) => {
@@ -163,16 +169,22 @@ export function AgentChat({
     setSending(false);
   }
 
+  /** Starts over: the next message opens a conversation of its own. */
+  const startOver = () => {
+    setChatId(null);
+    setError(null);
+    setSent(0);
+    setListing(false);
+    write("");
+  };
+
   // A new conversation was asked for: the next message starts a chat of its own, and nothing typed is carried over.
   const seenFresh = useRef(fresh);
   // biome-ignore lint/correctness/useExhaustiveDependencies: it runs when a new conversation is asked for
   useEffect(() => {
     if (seenFresh.current === fresh) return;
     seenFresh.current = fresh;
-    setChatId(null);
-    setError(null);
-    setSent(0);
-    write("");
+    startOver();
   }, [fresh]);
 
   // A message from the docked field is sent once, as soon as the panel is built.
@@ -185,8 +197,61 @@ export function AgentChat({
 
   if (!shown) return null;
 
+  const past = earlier(chats.data);
+  // The one action of a conversation that has begun is to start another; before that there is nothing to start over.
+  const started = chatId !== null && thread.entries.length > 0;
+  // The agent's last answer ends in a question: the person goes on with the plan or replies.
+  const asking = chat?.asks === true && !working && chat.id === chatId;
+  const approve = () => void send("Approve the plan. Go ahead.");
+
+  const actions = (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label="New conversation"
+        title="New conversation"
+        data-testid="new-conversation"
+        disabled={!started && !listing}
+        onClick={startOver}
+      >
+        <PencilSimpleLineIcon aria-hidden="true" className="size-4" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label="Earlier conversations"
+        title="Earlier conversations"
+        data-testid="earlier-conversations"
+        onClick={() => setListing(true)}
+      >
+        <ClockCounterClockwiseIcon aria-hidden="true" className="size-4" />
+      </Button>
+    </>
+  );
+
+  if (listing) {
+    return (
+      <AgentFrame onClose={onClose} title="Earlier conversations" back={() => setListing(false)}>
+        <EarlierConversations
+          chats={past}
+          current={chatId}
+          onOpen={(each) => {
+            setChatId(each.id);
+            setError(null);
+            setSent(0);
+            setListing(false);
+            write("");
+          }}
+        />
+      </AgentFrame>
+    );
+  }
+
   return (
-    <AgentFrame onClose={onClose}>
+    <AgentFrame onClose={onClose} actions={actions}>
       <div className="min-h-0 flex-1" data-testid="agent-conversation">
         {/* A conversation already read stays on screen: a failed read shows its reason above it, not instead of it,
             and a read that never succeeded shows the reason where the bars would have been. */}
@@ -206,38 +271,38 @@ export function AgentChat({
             empty="Ask the agent about this page, or start from one of these. It is told where you are."
             // The starters are for the moment before anything is written; once a message is on its way they are in the way.
             emptyAction={message.trim() === "" ? <Starters onPick={write} /> : undefined}
+            offer={
+              asking ? (
+                <>
+                  <Button type="button" disabled={sending} onClick={approve}>
+                    Approve plan
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => reply.current?.querySelector("textarea")?.focus()}
+                  >
+                    Reply
+                  </Button>
+                </>
+              ) : undefined
+            }
             compact
           />
         )}
       </div>
-      {/* The header only closes the panel, so the way to start over is at the end of what was said, once it has a
-          message and the agent is not at work: one quiet action, not a control that is always there. */}
-      {chatId !== null && thread.entries.length > 0 && !working && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="-ml-2 self-start text-sm text-secondary"
-          data-testid="new-conversation"
-          onClick={() => {
-            setChatId(null);
-            setError(null);
-            write("");
-          }}
-        >
-          New conversation
-        </Button>
-      )}
-      <Composer
-        value={message}
-        onChange={write}
-        onSend={() => void send()}
-        canSend={message.trim() !== "" && !sending}
-        error={error}
-        placeholder="Reply to Moebius…"
-        autoFocus
-        compact
-      />
+      <div ref={reply}>
+        <Composer
+          value={message}
+          onChange={write}
+          onSend={() => void send()}
+          canSend={message.trim() !== "" && !sending}
+          error={error}
+          placeholder="Reply to Moebius…"
+          autoFocus
+          compact
+        />
+      </div>
     </AgentFrame>
   );
 }

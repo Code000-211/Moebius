@@ -328,7 +328,8 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
   }
   if (what === "terminal") {
     // The shell is the reason the board's terminal is a sheet, so the sheet is measured like one.
-    await page.getByRole("button", { name: "Terminal" }).click();
+    await page.getByRole("button", { name: "Display" }).click();
+    await page.getByRole("menuitem", { name: "Terminal" }).click();
     await page.getByRole("dialog").first().waitFor({ timeout: 5_000 });
     return;
   }

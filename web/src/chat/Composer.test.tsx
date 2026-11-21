@@ -183,7 +183,8 @@ describe("Composer, compact", () => {
     );
     const field = container.querySelector("textarea")?.parentElement;
     expect(field?.className).toContain("border-hairline-strong");
-    expect(field?.className).toContain("focus-within:outline-accent");
+    expect(field?.className).toContain("has-[textarea:focus-visible]:shadow-");
+    expect(field?.className).not.toContain("outline");
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(send).toHaveBeenCalledOnce();
   });

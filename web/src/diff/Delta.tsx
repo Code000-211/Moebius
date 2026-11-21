@@ -15,7 +15,7 @@ export function Delta({
 }) {
   return (
     <span className={cn("shrink-0 tabular-nums", className)}>
-      <span className="text-complete-text">
+      <span className="text-running-text">
         +{additions}
         <span className="sr-only"> added</span>
       </span>

@@ -6,6 +6,7 @@ import type { Card, Change } from "../../../api/types/board";
 import type { Run } from "../../../api/types/cards";
 import { board, card, held, run } from "./fixtures";
 import {
+  cardActivity,
   cardBadges,
   cardDetail,
   changeOf,
@@ -19,6 +20,19 @@ import {
   tokens,
   waitingLine,
 } from "./index";
+
+describe("what a running card says", () => {
+  const running = (purpose: string, rounds: number) =>
+    card(1, { run: { id: 1, agent: "Coder", purpose, status: "running" }, rounds });
+  it("says in a few words what the agent is doing, with its round", () => {
+    expect(cardActivity(running("code", 1), "live")).toMatchObject({ text: "coding, round 1" });
+    expect(cardActivity(running("review", 2), "live")).toMatchObject({
+      text: "reviewing, round 2",
+    });
+    expect(cardActivity(running("plan", 0), "live")).toMatchObject({ text: "planning" });
+    expect(cardActivity(running("code", 1), "live")?.hint).toBe("Coder");
+  });
+});
 
 describe("the words and links of a card", () => {
   it("writes tokens as the desktop board does", () => {

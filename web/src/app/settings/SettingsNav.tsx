@@ -14,9 +14,9 @@ export function SettingsNav({ entries }: { entries: readonly SettingsEntry[] }) 
   return (
     <nav
       aria-label="Settings"
-      className="flex w-50 shrink-0 flex-col gap-4 overflow-y-auto border-r border-hairline p-3"
+      className="flex w-50 shrink-0 flex-col gap-3 overflow-y-auto border-r border-hairline px-2 py-2"
     >
-      <label className="flex h-8 items-center gap-2 rounded-control border border-hairline px-2 text-secondary focus-within:border-accent-border">
+      <label className="flex h-7 shrink-0 items-center gap-2 rounded-control border border-hairline px-2 text-secondary focus-within:border-accent-border">
         <SearchIcon className="size-4 shrink-0" />
         <input
           type="search"
@@ -31,15 +31,15 @@ export function SettingsNav({ entries }: { entries: readonly SettingsEntry[] }) 
         <p className="m-0 px-2 text-base text-secondary">No settings match.</p>
       )}
       {groups.map(({ group, entries: inGroup }) => (
-        <div key={group} className="flex flex-col gap-0.5">
-          <span className="px-2 pb-1 text-sm text-secondary">{group}</span>
+        <div key={group} className="flex flex-col">
+          <span className="px-2 pb-0.5 text-sm leading-5 text-secondary">{group}</span>
           {inGroup.map((entry) => (
             <NavLink
               key={entry.path}
               to={`/${entry.path}`}
               className={({ isActive }) =>
                 cn(
-                  "flex min-h-8 items-center rounded-control px-2 text-base",
+                  "flex h-5 items-center rounded-control px-2 text-base",
                   isActive
                     ? "bg-selected font-medium text-accent-text"
                     : "text-text hover:bg-hover",

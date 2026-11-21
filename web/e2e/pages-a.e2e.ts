@@ -115,7 +115,7 @@ describe("the inbox", () => {
       await page.getByText("Nothing needs you", { exact: true }).waitFor();
       await page.getByRole("link", { name: "Open Fleet" }).waitFor();
     } else {
-      await page.getByRole("tab", { name: "All", exact: true }).waitFor();
+      await page.getByRole("tab", { name: /^Needs you/ }).waitFor();
       await page.getByTestId("group-row").filter({ hasText: "Needs you" }).waitFor();
     }
   });
@@ -144,7 +144,7 @@ describe("the inbox", () => {
       // The row says the one reason; an item about a card opens the card window, the others show the sidebar.
       const reasons = [
         ["Plan ready", "Fix the login redirect"],
-        ["Ready to merge", "Speed up the build is ready to merge"],
+        ["Ready to merge", "Speed up the build"],
         ["Stuck: reached the round limit", "Stop the flaky test is stuck"],
         ["Retro proposal", "Let the Coder read the tests first"],
         ["Retro proposal", "Raise the round limit to 7"],
@@ -211,12 +211,16 @@ describe("the inbox", () => {
   );
 
   it.skipIf(usesRealServer)(
-    "has the tabs All and Mentions, and shows the filter bar only for a filter the address holds",
+    "has the tabs Needs you, Mentions and Following, and shows the filter bar only for a filter the address holds",
     async () => {
       await open("/inbox");
       await items().first().waitFor();
       const tabs = page.getByRole("tablist", { name: "Kind" });
-      expect(await tabs.getByRole("tab").allTextContents()).toEqual(["All", "Mentions"]);
+      expect(await tabs.getByRole("tab").allTextContents()).toEqual([
+        "Needs you9",
+        "Mentions",
+        "Following",
+      ]);
       const bar = page.getByRole("search", { name: "Filter the inbox" });
       expect(await bar.count()).toBe(0);
       const made = await context.request.post(`${server.url}/v1/repositories`, {
@@ -389,29 +393,19 @@ describe("the inbox", () => {
   });
 
   it.skipIf(usesRealServer)(
-    "shows rows with an unread dot that goes once the item is read",
+    "has no unread dot, and the address keeps the choice of a row",
     async () => {
       await open("/inbox");
       await items().first().waitFor();
-      // A row has no button but the one action of the row that waits for a plan, and every item starts unread.
-      const rows = items();
-      expect(await rows.getByRole("button").count()).toBe(1);
-      const dots = page.getByTestId("unread-dot");
-      expect(await dots.count()).toBe(await rows.count());
+      // A row has no button but the one action of the row that waits for a plan.
+      expect(await items().getByRole("button").count()).toBe(1);
+      expect(await page.getByTestId("unread-dot").count()).toBe(0);
 
       await choose("Let the Coder read the tests first");
-      const stuck = item("Let the Coder read the tests first");
-      expect(await stuck.getByTestId("unread-dot").count()).toBe(0);
-      expect(await dots.count()).toBe((await rows.count()) - 1);
       expect(path()).toMatch(/^\/inbox\?item=\d+$/);
-
-      // The reading is kept for this browser, and the choice by the address.
       await page.reload();
       await decision().waitFor();
-      expect(
-        await item("Let the Coder read the tests first").getByTestId("unread-dot").count(),
-      ).toBe(0);
-      expect(await dots.count()).toBe((await rows.count()) - 1);
+      expect(await page.getByTestId("unread-dot").count()).toBe(0);
     },
   );
 

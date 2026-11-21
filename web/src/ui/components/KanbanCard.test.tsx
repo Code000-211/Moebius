@@ -67,7 +67,7 @@ describe("a board card", () => {
     render(<Card onOpen={() => {}} activity={{ text: "Coder · code", tone: "quiet" }} />);
     const line = screen.getByTestId("card-activity");
     expect(line.textContent).toBe("Coder · code");
-    expect(line.className).toContain("text-secondary");
+    expect(line.className).toContain("text-muted");
   });
 
   it("shows an orange line when it needs a person", () => {

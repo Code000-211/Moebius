@@ -43,11 +43,11 @@ export function ChatTodoList({ todos, expanded, onToggle }: ChatTodoListProps) {
     <div>
       <button
         type="button"
-        className="flex min-h-8 w-full cursor-pointer items-center gap-3 rounded-control px-3 text-left text-base font-semibold text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
+        className="flex min-h-5 w-full cursor-pointer items-center gap-2.5 text-left text-sm text-muted transition-colors duration-(--motion-routine) ease-out hover:text-secondary"
         onClick={onToggle}
         aria-expanded={expanded}
       >
-        <ListChecksIcon aria-hidden="true" className="size-4 shrink-0" />
+        <ListChecksIcon aria-hidden="true" className="step-mark size-4 shrink-0" />
         <span className="flex-1 break-words">Todos</span>
         <span className="shrink-0 font-normal tabular-nums">
           {done} of {todos.length} done
@@ -61,7 +61,7 @@ export function ChatTodoList({ todos, expanded, onToggle }: ChatTodoListProps) {
         />
       </button>
       {expanded && todos.length > 0 && (
-        <ul className="flex flex-col gap-2 px-3 pb-2">
+        <ul className="flex flex-col gap-2 py-2 pl-[26px]">
           {todos.map((todo, index) => {
             const state = stateOf(todo.status);
             const dropped = todo.status?.toLowerCase() === "cancelled";

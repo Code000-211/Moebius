@@ -4,7 +4,7 @@
  * or deleted has nothing left to show, and a "try again" for it could never succeed.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({ diff: "" }));
@@ -13,7 +13,7 @@ vi.mock("../api/calls/runs", () => ({
   runDiff: async () => ({ diff: api.diff, truncated: false }),
 }));
 
-const { ChangesCard } = await import("./Changes");
+const { ChangeDelta, ChangesCard } = await import("./Changes");
 
 afterEach(cleanup);
 
@@ -53,5 +53,25 @@ describe("the changes of a card", () => {
     show();
     await screen.findByTestId("diff-card");
     expect(screen.queryByText("run-28")).toBeNull();
+  });
+});
+
+describe("the size of a change in a card's title row", () => {
+  it("is a button with the plus and the minus apart, and a click opens the diff", async () => {
+    api.diff =
+      "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1,1 +1,2 @@\n-a\n+b\n+c\n";
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <ChangeDelta change={3} />
+      </QueryClientProvider>,
+    );
+    const button = await screen.findByRole("button", { name: "Open the changes" });
+    expect(button.textContent).toContain("+2");
+    expect(button.querySelector(".text-running-text")?.textContent).toContain("+2");
+    expect(button.querySelector(".text-error-text")?.textContent).toContain("-1");
+    fireEvent.click(button);
+    expect(await screen.findByTestId("change-diff")).toBeTruthy();
   });
 });

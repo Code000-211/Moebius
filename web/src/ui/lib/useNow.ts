@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 /**
- * The epoch in seconds, read again every `everyMs`. Ages are said in words ("4 min ago"), which go stale on a page
+ * The epoch in seconds, read again every `everyMs`. Ages are said in words ("4m ago"), which go stale on a page
  * nobody touches, so a page that says them keeps a timer of its own: half a minute where the ages are in minutes,
  * a few seconds where they are in seconds.
  */

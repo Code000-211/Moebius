@@ -416,6 +416,15 @@ export function cardKey(card: Card): string {
 export const approvable = (item: InboxItem): boolean =>
   item.kind === APPROVE_ISSUE && item.card_id !== null;
 
+/**
+ * The title of an item as the row draws it. The server words some titles with their reason ("… is ready to merge",
+ * "Approve: …"); the reason belongs to the pale text only, so the row's title is the card's.
+ */
+export function titleOf(item: InboxItem): string {
+  const plain = item.title.replace(/^Approve: /, "").replace(/ is ready to merge$/, "");
+  return plain === "" ? item.title : plain;
+}
+
 /** The one pale reason a row of the inbox gives: "Plan ready", or the kind's word with why it stopped. */
 export function rowReason(item: InboxItem): string {
   if (approvable(item)) return "Plan ready";
@@ -467,7 +476,7 @@ export function listOf(
         key: `item-${item.id}`,
         status: item.kind === READY_TO_MERGE ? "readyToMerge" : "needsYou",
         id: key,
-        title: item.title,
+        title: titleOf(item),
         reason: rowReason(item),
         owner: item.assignees[0],
         at: item.at,
@@ -492,7 +501,8 @@ export function listOf(
       title: card.title,
       reason,
       owner: card.assignees[0],
-      at: null,
+      // A card in Earlier says how long ago it was made, the only age the snapshot gives it; one at work has none.
+      at: status === "done" ? card.created_at : null,
       item: null,
       card: card.id,
       approves: null,

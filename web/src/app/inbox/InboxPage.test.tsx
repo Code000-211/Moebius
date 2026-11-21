@@ -88,15 +88,32 @@ afterEach(() => {
 });
 
 describe("the inbox page", () => {
-  it("has the tabs All and Mentions with no counts, and no sentence or column headers", async () => {
+  it("has the tabs Needs you with its count, Mentions and Following, and the one primary button New issue", async () => {
     open("/inbox", [1, 2], [notice(1, "mentioned")]);
-    await screen.findByRole("tab", { name: "All" });
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /Needs you/ }).textContent).toBe("Needs you3"),
+    );
     await screen.findByRole("tab", { name: "Mentions" });
-    expect(screen.queryByRole("tab", { name: /\d/ })).toBeNull();
+    await screen.findByRole("tab", { name: "Following" });
+    expect(screen.queryByRole("tab", { name: "All" })).toBeNull();
+    expect(screen.getByRole("button", { name: "New issue" })).toBeTruthy();
     expect(screen.queryByRole("columnheader")).toBeNull();
     expect(document.querySelector("kbd")).toBeNull();
     await screen.findAllByTestId("inbox-item");
     expect(screen.getByTestId("group-row").textContent).toBe("Needs you");
+  });
+
+  it("shows a followed card's change under Following and not under Mentions", async () => {
+    open("/inbox?kind=following", [], [notice(1, "mentioned"), notice(2, "changed")]);
+    await screen.findAllByTestId("notice");
+    expect(screen.getAllByTestId("notice")).toHaveLength(1);
+    expect(screen.getByTestId("notice").getAttribute("data-kind")).toBe("changed");
+  });
+
+  it("draws no unread dot", async () => {
+    open("/inbox", [1], []);
+    await screen.findAllByTestId("inbox-item");
+    expect(screen.queryByTestId("unread-dot")).toBeNull();
   });
 
   it("draws a few of 2000 items, and End scrolls to the end of them", async () => {

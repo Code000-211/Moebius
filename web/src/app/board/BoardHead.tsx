@@ -1,14 +1,14 @@
 /**
- * The head of the board page and what stands under it: the layout switch, and the notice for a repository that still has a
+ * The head of the board page and what stands under it: the layout tabs, and the notice for a repository that still has a
  * `.moebius` folder. Both are drawn by `BoardPage.tsx`.
  */
-import { InfoIcon, KanbanIcon, ListBulletsIcon } from "@phosphor-icons/react";
+import { InfoIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { memo } from "react";
+import { memo, useId } from "react";
 import { Link } from "react-router";
 import { readSettings } from "../../api/calls/projects";
 import { keys } from "../../api/keys";
-import { Button } from "../../ui/components/Button";
+import { Tabs } from "../../ui/page/Tabs";
 
 /**
  * Said on the board of a repository whose default branch still has a `.moebius/` folder: nothing in it is read any
@@ -43,33 +43,25 @@ export const LeftoverNotice = memo(function LeftoverNotice({ repository }: { rep
   );
 });
 
-/** The two layouts as two buttons in the head of the page; Display holds the same choice among the rest. */
-export function LayoutSwitch({
+/** The two layouts as the tabs of the page's head, Board and List. */
+export function LayoutTabs({
   layout,
   onChange,
 }: {
   layout: "board" | "list";
   onChange: (layout: "board" | "list") => void;
 }) {
-  const choices = [
-    ["board", "Board", KanbanIcon],
-    ["list", "List", ListBulletsIcon],
-  ] as const;
+  const base = useId();
   return (
-    <fieldset aria-label="Layout" className="m-0 flex min-w-0 items-center gap-0.5 border-0 p-0">
-      {choices.map(([value, label, Icon]) => (
-        <Button
-          key={value}
-          variant={layout === value ? "secondary" : "ghost"}
-          size="sm"
-          aria-pressed={layout === value}
-          aria-label={`${label} layout`}
-          title={`${label} layout`}
-          onClick={() => onChange(value)}
-        >
-          <Icon className="size-4" aria-hidden="true" />
-        </Button>
-      ))}
-    </fieldset>
+    <Tabs
+      tabs={[
+        { value: "board", label: "Board" },
+        { value: "list", label: "List" },
+      ]}
+      value={layout}
+      onChange={onChange}
+      label="Layout"
+      idBase={base}
+    />
   );
 }

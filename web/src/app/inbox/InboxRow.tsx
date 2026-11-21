@@ -15,7 +15,6 @@ export function InboxRow({
   now,
   at,
   selected,
-  unread,
   approving,
   onClick,
   onApprove,
@@ -24,7 +23,6 @@ export function InboxRow({
   now: number;
   at: RowPosition;
   selected: boolean;
-  unread: boolean;
   approving: boolean;
   onClick: (event: MouseEvent<HTMLElement>) => void;
   onApprove: (card: number) => void;
@@ -36,7 +34,6 @@ export function InboxRow({
       data-kind={entry.item?.kind ?? "card"}
       at={at}
       selected={selected}
-      unread={unread}
       onClick={onClick}
       status={entry.status}
       id={entry.id}

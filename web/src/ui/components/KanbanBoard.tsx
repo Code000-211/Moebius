@@ -82,7 +82,7 @@ export type KanbanCardFaceProps = {
 const faceClass = ({ isSelected, isOpen, className }: KanbanCardFaceProps) =>
   cn(
     "group rounded-card bg-panel px-3 py-2 outline outline-1 -outline-offset-1",
-    isSelected ? "outline-accent" : isOpen ? "outline-hairline-strong" : "outline-hairline",
+    isSelected ? "outline-accent" : isOpen ? "outline-hairline-strong" : "outline-hairline-strong",
     className,
   );
 
@@ -214,7 +214,7 @@ export const KanbanHeader = ({
   onActivate,
   className,
 }: KanbanHeaderProps) => (
-  <header className={cn("mb-3 flex min-h-7 shrink-0 items-center", className)}>
+  <header className={cn("mb-1 flex min-h-7 shrink-0 items-center", className)}>
     <h2
       onContextMenu={onContextMenu}
       tabIndex={focusable ? 0 : undefined}
@@ -228,7 +228,7 @@ export const KanbanHeader = ({
             }
           : undefined
       }
-      className="m-0 flex min-w-0 items-center gap-2 rounded-control text-base font-medium tracking-tight text-text"
+      className="m-0 flex min-w-0 items-center gap-2 rounded-control text-base font-normal tracking-tight text-secondary"
     >
       {name}
     </h2>

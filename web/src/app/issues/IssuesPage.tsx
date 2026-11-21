@@ -27,6 +27,7 @@ import { cardKey } from "../board/cardKey";
 import { isHeld, isLive } from "../board/model";
 import { rowAge } from "../board/rowAge";
 import { fieldsLine, issueDisplayChoices, issueFilterFields, issueQuery } from "../kinds/model";
+import { NewIssueButton } from "./NewIssueButton";
 
 export function IssuesPage() {
   const [params, setQuery] = useQueryParams();
@@ -61,7 +62,7 @@ export function IssuesPage() {
   const values = readFilters(params, fields);
   return (
     <div data-testid="issues-page" className="flex flex-col gap-4">
-      <PageHeader title="Issues" />
+      <PageHeader title="Issues" actions={<NewIssueButton />} />
       <FilterBar
         label="Filter the issues"
         fields={fields}

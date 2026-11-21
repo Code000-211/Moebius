@@ -38,7 +38,7 @@ export function PageHeader({
   return (
     <header
       data-tauri-drag-region
-      className="sticky -top-6 z-10 -mx-6 -mt-6 mb-6 flex min-h-12 shrink-0 flex-wrap items-center gap-x-4 gap-y-1 py-1 border-b border-hairline bg-panel pl-6 pr-[calc(1.5rem+var(--window-buttons))]"
+      className="sticky -top-6 z-10 -mx-6 -mt-6 mb-6 flex min-h-12 shrink-0 flex-wrap items-center gap-x-4 gap-y-1 py-1 border-b border-hairline bg-panel pl-4 pr-[calc(1rem+var(--window-buttons))]"
     >
       <div className="flex min-w-0 items-center gap-1">
         {sidebar?.narrow && (
