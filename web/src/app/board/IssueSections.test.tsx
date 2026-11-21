@@ -247,13 +247,50 @@ describe("the timeline of an issue", () => {
   it("shows moves as small lines and opens a fold to the changes it holds", async () => {
     server(made);
     inClient(<Card_ card={card(5)} />);
-    expect(await screen.findByText("In progress")).toBeTruthy();
+    expect(await screen.findByText("Moved to In progress")).toBeTruthy();
     const fold = screen.getByRole("button", { name: /2 changes/ });
     expect(fold.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("Asked you: Approve the issue")).toBeNull();
     fireEvent.click(fold);
     expect(screen.getByText("Asked you: Approve the issue")).toBeTruthy();
     expect(screen.getByText("Answered: Approve the issue")).toBeTruthy();
+  });
+
+  it("keeps a long Markdown reason of a move closed, and draws it as Markdown when opened", async () => {
+    const reason =
+      "- The `retry` loop never stops.\n  Evidence: `src/queue.rs:42`\n- **Missing test** for the empty queue.\n\nSee [the spec](https://example.test/spec).";
+    server({
+      "GET /v1/cards/5/history": {
+        status: 200,
+        body: [entry(1, "moved", { from: "In review", to: "In progress", note: reason })],
+      },
+    });
+    const { container } = inClient(<Card_ card={card(5)} />);
+    const line = await screen.findByRole("button", { name: "Sent back to In progress" });
+    expect(line.getAttribute("aria-expanded")).toBe("false");
+    expect(container.querySelector("li code")).toBeNull();
+    fireEvent.click(line);
+    expect(line.getAttribute("aria-expanded")).toBe("true");
+    const thread = screen.getByTestId("thread");
+    expect(thread.querySelectorAll("ul li")).toHaveLength(2);
+    const code = [...thread.querySelectorAll("code")].map((each) => each.textContent);
+    expect(code).toEqual(["retry", "src/queue.rs:42"]);
+    expect(thread.textContent).not.toContain("`");
+    expect(thread.textContent).not.toContain("**");
+    expect(screen.getByRole("link", { name: "the spec" })).toBeTruthy();
+  });
+
+  it("keeps a short reason of a move on its line", async () => {
+    server({
+      "GET /v1/cards/5/history": {
+        status: 200,
+        body: [entry(1, "moved", { from: "Not started", to: "In progress", note: "Try again" })],
+      },
+    });
+    inClient(<Card_ card={card(5)} />);
+    expect(await screen.findByText("Moved to In progress")).toBeTruthy();
+    expect(screen.getByText(/: Try again/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Moved to/ })).toBeNull();
   });
 
   it("shows comments and refusals in order", async () => {

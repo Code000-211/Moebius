@@ -13,6 +13,7 @@ import { keys } from "../../api/keys";
 import type { Card, InboxItem } from "../../api/types/board";
 import { putCard } from "../../live/cardCache";
 import { CardScope } from "../../ui/chat/CardLinks";
+import { Markdown } from "../../ui/chat/Markdown";
 import { Button } from "../../ui/components/Button";
 import {
   Dialog,
@@ -35,6 +36,8 @@ import { CardText } from "./CardText";
 import { MoebiusMark } from "./NeedsYou";
 import {
   foldLabel,
+  isShortNote,
+  moveLabel,
   runDuration,
   runLabel,
   type TimelineEvent,
@@ -64,23 +67,37 @@ function Dot({ tone = "quiet" }: { tone?: "quiet" | "refusal" | "live" }) {
   );
 }
 
-/** One line of the thread that is not a comment: a refusal of a rule, a change, or a move. */
+/** One line of the thread that is not a comment: a refusal of a rule or a change. */
 function EventLine({ event }: { event: TimelineEvent }) {
   return (
     <div className="flex min-w-0 items-start gap-3 text-md text-secondary">
       <Dot tone={event.tone === "refusal" ? "refusal" : "quiet"} />
-      <span className="min-w-0 flex-1 py-px [overflow-wrap:anywhere]">
-        {event.tone === "move" ? (
-          <>
-            {"Moved to "}
-            <span className="text-text">{event.to}</span>
-            {event.note ? `: ${event.note}` : ""}
-          </>
-        ) : (
-          event.text
-        )}
-      </span>
+      <span className="min-w-0 flex-1 py-px [overflow-wrap:anywhere]">{event.text}</span>
     </div>
+  );
+}
+
+/**
+ * A move: "Moved to In progress". A short reason stands on the line; a long one, which is Markdown (a review's
+ * findings, a list of files), is a part of the line that opens, closed at first, and is drawn as Markdown.
+ */
+function MoveLine({ event }: { event: TimelineEvent }) {
+  const note = event.note ?? "";
+  if (note === "" || isShortNote(note)) {
+    return (
+      <div className="flex min-w-0 items-start gap-3 text-md text-secondary">
+        <Dot />
+        <span className="min-w-0 flex-1 py-px [overflow-wrap:anywhere]">
+          <span className="text-text">{moveLabel(event)}</span>
+          {note === "" ? "" : `: ${note}`}
+        </span>
+      </div>
+    );
+  }
+  return (
+    <Collapsible label={moveLabel(event)} mark={<Dot />}>
+      <Markdown content={note} keepNewlines className="max-w-prose text-md" />
+    </Collapsible>
   );
 }
 
@@ -274,6 +291,8 @@ export function CardThread({
                 busy={busy}
                 onStop={onStop}
               />
+            ) : each.type === "move" ? (
+              <MoveLine event={each.event} />
             ) : each.type === "fold" ? (
               <Fold events={each.events} />
             ) : each.type === "needs-you" ? (

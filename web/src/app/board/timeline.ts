@@ -15,6 +15,8 @@ export interface TimelineEvent {
   text: string;
   /** How it is marked: a refusal of a rule, a move to a column, or a plain change. */
   tone: "refusal" | "move" | "change";
+  /** The column a move left. */
+  from?: string;
   /** The column a move went to. */
   to?: string;
   /** What was said about the move. */
@@ -76,6 +78,7 @@ export function eventOf(entry: HistoryEntry): TimelineEvent {
       at: entry.at,
       text: describeHistory(entry),
       tone: "move",
+      from: text(entry.data.from),
       to: text(entry.data.to),
       note: text(entry.data.note),
     };
@@ -165,4 +168,23 @@ export function runDuration(run: TimelineRun): string | null {
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3_600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
   return `${Math.floor(seconds / 3_600)}h ${Math.floor((seconds % 3_600) / 60)}m`;
+}
+
+/** The columns a card is sent back from when its review or its merge asks for more work. */
+const SENT_BACK_FROM = ["In review", "Ready to merge"];
+const SENT_BACK_TO = ["In progress", "Not started"];
+
+/** What a move says of itself: "Moved to In progress", or "Sent back to In progress" when a review turned it back. */
+export function moveLabel(event: TimelineEvent): string {
+  const back =
+    event.note !== undefined &&
+    event.note !== "" &&
+    SENT_BACK_FROM.includes(event.from ?? "") &&
+    SENT_BACK_TO.includes(event.to ?? "");
+  return `${back ? "Sent back" : "Moved"} to ${event.to ?? ""}`;
+}
+
+/** A reason that fits on the line of the move: one short line with no Markdown in it. */
+export function isShortNote(note: string): boolean {
+  return note.length <= 80 && !/[\n`*_#>[\]|]|^\s*[-+\d]/.test(note);
 }

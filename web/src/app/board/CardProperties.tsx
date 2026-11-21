@@ -7,6 +7,7 @@
  * server (`api/calls/board.ts`) that reads the board again once answered, and what the server refuses is said under
  * the property that asked. The window keeps the issue's text, its change and what a person decides.
  */
+
 import { ArrowUpRightIcon } from "@phosphor-icons/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
@@ -28,6 +29,7 @@ import {
 import { keys } from "../../api/keys";
 import type { Board, Card, InboxItem, Priority } from "../../api/types/board";
 import { patchCard, putCards } from "../../live/cardCache";
+import { Markdown } from "../../ui/chat/Markdown";
 import { EditableProperty, ListProperty } from "../../ui/page/EditableProperty";
 import { MarkLabel, type StateMark } from "../../ui/page/MarkLabel";
 import { Property } from "../../ui/page/Property";
@@ -396,7 +398,11 @@ export function CardProperties({
           <Property name="Cost">
             <span className="tabular-nums">{tokens(card.tokens)}</span>
           </Property>
-          {card.note && <Property name="Note">{card.note}</Property>}
+          {card.note && (
+            <Property name="Note">
+              <Markdown content={card.note} keepNewlines className="max-w-prose text-base" />
+            </Property>
+          )}
         </div>
       </details>
     </section>
