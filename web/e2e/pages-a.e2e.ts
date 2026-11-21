@@ -955,7 +955,15 @@ describe("projects", () => {
     });
     expect(made.ok(), await made.text()).toBe(true);
     const { id } = (await made.json()) as { id: number };
-    await page.goto(`${server.url}/projects/${id}`);
+    // The repository has a project of its own, and its page is under it.
+    const listed = await context.request.get(`${server.url}/v1/projects`, {
+      headers: { "X-Moebius": "1" },
+    });
+    const holder = (
+      (await listed.json()) as Array<{ id: number; repositories: Array<{ id: number }> }>
+    ).find((each) => each.repositories.some((r) => r.id === id));
+    expect(holder, "a project that holds the new repository").toBeDefined();
+    await page.goto(`${server.url}/projects/${holder?.id}/repositories/${id}`);
     await page.getByRole("heading", { name: "browse", level: 1 }).waitFor();
     await page.getByRole("heading", { name: "Files" }).waitFor();
     await page.getByRole("textbox", { name: "Go to file" }).waitFor();
