@@ -1,6 +1,6 @@
 /**
  * The sidebar on every page, as the standard draws it (`docs/design-web.md`, Sidebar): 224px of quiet rows on the
- * canvas. At the top the search button (the server switch of a later issue stands beside it); then Inbox with the
+ * canvas. At the top the server switch (`desktop/ServerSwitch.tsx`) with the search button beside it; then Inbox with the
  * count of what needs you, My issues and Fleet, which says "n running" beside a green dot only while anything runs;
  * Projects — its name leads to the project list, a row for each project leads to its board; Workspace with Wiki,
  * Cycles, Views and More; and at the foot Settings, alone. The sidebar never changes its contents: on a Settings page
@@ -18,8 +18,11 @@ import { useLocation } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { notices as readNotices } from "../../api/calls/notices";
 import { seen } from "../../api/calls/places";
+import { serverInfo } from "../../api/calls/server";
 import { keys } from "../../api/keys";
 import { liveRuns } from "../../api/types/board";
+import { desktopBridge } from "../../desktop/bridge";
+import { ServerSwitch } from "../../desktop/ServerSwitch";
 import { IconButton } from "../../ui/components/IconButton";
 import { SearchIcon } from "../../ui/icons";
 import { cn } from "../../ui/lib/cn";
@@ -50,6 +53,8 @@ export function Sidebar({ onSearch, narrow = false, open = false, onClose }: Sid
   // What waits for you: the items of the inbox and the unread notices given to you or naming you.
   const notices = useQuery({ queryKey: keys.notices, queryFn: readNotices });
   const inbox = waiting(data.data?.inbox.length ?? 0, notices.data ?? []);
+  // What the switch calls this server when the app does not say: the host the server runs on.
+  const info = useQuery({ queryKey: keys.server, queryFn: () => serverInfo() });
   const working = boards.reduce((sum, board) => sum + liveRuns(board), 0);
 
   // What a person opens is kept for them on the server: a project's board or a card open on it. A place is noted
@@ -129,7 +134,8 @@ export function Sidebar({ onSearch, narrow = false, open = false, onClose }: Sid
         overlay && "relative rounded-r-sheet border-r border-hairline bg-panel py-1.5 outline-none",
       )}
     >
-      <div className="flex h-12 shrink-0 items-center justify-end px-2">
+      <div className="flex h-12 shrink-0 items-center gap-1 px-2">
+        <ServerSwitch bridge={desktopBridge()} name={info.data?.host || "Moebius"} />
         <IconButton
           icon={SearchIcon}
           iconWeight="regular"

@@ -1,18 +1,18 @@
 /**
- * The rail of servers at the far left of the desktop app, on the canvas: a rounded square per
- * server with the one open marked, the count of its Inbox, a grey dot for one that cannot be reached, and "+" to connect
- * one by its address and access token or over SSH. A right click on a square offers to remove the server, which also
- * deletes its token. The app answers `servers()` with every server's state (it asks each, so it is read every few
- * seconds); opening one shows that server's web app, on the page it was left on (the app keeps a page of every server
- * it opened, so this page stays where it is, hidden). The square asked for is marked at once and pulses until the app
- * has shown the server, and a page that is shown again reads the servers again (the app says so with
- * `moebius:shown`). In a browser nothing is drawn.
+ * The server switch at the top of the sidebar, as the mockup draws it: a small square mark, the name of the server
+ * and a chevron on a bordered field. In the desktop app the field opens a menu of the app's servers (the open one
+ * ticked, the count of each one's Inbox, "cannot be reached" for one that does not answer), and of connecting a server
+ * by its address and access token or over SSH, renaming one and removing one, which also deletes its token. The app
+ * answers `servers()` with every server's state (it asks each, so it is read every few seconds); opening one shows
+ * that server's web app, on the page it was left on (the app keeps a page of every server it opened, so this page
+ * stays where it is, hidden). The server asked for is marked at once and pulses until the app has shown it, and a page
+ * that is shown again reads the servers again (the app says so with `moebius:shown`). In a browser there is no menu:
+ * the field only says which server this is, by the `name` it is given.
  */
-import { PlusIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, CheckIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Button } from "../ui/components/Button";
-import { ContextMenu, useContextMenu } from "../ui/components/ContextMenu";
 import {
   Dialog,
   DialogContent,
@@ -20,14 +20,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../ui/components/Dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "../ui/components/DropdownMenu";
 import { Input } from "../ui/components/Input";
-import { Tooltip } from "../ui/components/Tooltip";
 import { cn } from "../ui/lib/cn";
 import { Field } from "../ui/page/Field";
 import { StayCheckbox } from "../ui/page/StayCheckbox";
 import { type DesktopBridge, NO_SERVER, type RailServer } from "./bridge";
 
-/** How often the rail asks the app how each server is. */
+/** How often the switch asks the app how each server is. */
 const REFRESH_MS = 10_000;
 
 const KEY = ["desktop", "servers"] as const;
@@ -35,30 +43,14 @@ const KEY = ["desktop", "servers"] as const;
 /** What the app tells a page when it shows it again after the page was hidden behind another server's. */
 export const SHOWN_EVENT = "moebius:shown";
 
-/**
- * The few characters a server's square shows. A name made of words shows their first letters (`Build box` is BB). A
- * server named by an address, or by a name and an address when another has the same name, shows the end of the
- * address's port, which is what tells servers on one host apart (`127.0.0.1:7172` is 172).
- */
+/** The character on a server's mark: the first letter or digit of its name. */
 export function initial(name: string): string {
-  const address = name.includes(" · ") ? (name.split(" · ").pop() ?? name) : name;
-  const bare = address.replace(/^[a-z]+:\/\//i, "");
-  const port = bare.match(/^[\d.]+:(\d+)$/) ?? bare.match(/:(\d+)$/);
-  if (/^[\d.]+(:\d+)?$/.test(bare) || (name.includes(" · ") && port)) {
-    const digits = (port ? port[1] : bare.split(".").pop()) ?? "";
-    return digits.slice(-3) || "?";
-  }
-  const words = name.replace(/^[a-z]+:\/\//i, "").match(/[\p{L}\p{N}]+/gu) ?? [];
-  if (words.length === 0) return "?";
-  const letters = (word: string | undefined, n: number) =>
-    Array.from(word ?? "")
-      .slice(0, n)
-      .join("");
-  if (words.length === 1) return letters(words[0], 2).toUpperCase();
-  return (letters(words[0], 1) + letters(words[1], 1)).toUpperCase();
+  const bare = name.replace(/^[a-z]+:\/\//i, "");
+  const first = bare.match(/[\p{L}\p{N}]/u)?.[0];
+  return first ? first.toUpperCase() : "?";
 }
 
-/** What the badge on a square counts, in words: the sidebar counts the items and the unread notices together. */
+/** What the badge of a server counts, in words: the sidebar counts the items and the unread notices together. */
 export function countWords(server: RailServer): string {
   const part = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
   const parts = [
@@ -68,7 +60,22 @@ export function countWords(server: RailServer): string {
   return parts.length > 0 ? `${parts.join(" and ")} in the Inbox` : "";
 }
 
-export function Rail({ bridge }: { bridge?: DesktopBridge }) {
+/** The small square with the first letter of a server's name. */
+function Mark({ name }: { name: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="flex size-5 shrink-0 items-center justify-center rounded-[5px] bg-accent text-xs font-semibold leading-none text-on-accent"
+    >
+      {initial(name)}
+    </span>
+  );
+}
+
+const FIELD =
+  "flex h-9 min-w-0 flex-1 items-center gap-2 rounded-control border border-hairline bg-surface px-2 text-left text-base font-semibold text-text";
+
+export function ServerSwitch({ bridge, name }: { bridge?: DesktopBridge; name: string }) {
   const servers = useQuery({
     queryKey: KEY,
     queryFn: () => bridge?.servers() ?? Promise.resolve([]),
@@ -76,8 +83,6 @@ export function Rail({ bridge }: { bridge?: DesktopBridge }) {
     refetchInterval: REFRESH_MS,
   });
   const client = useQueryClient();
-  const menu = useContextMenu();
-  const [target, setTarget] = useState<RailServer | null>(null);
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState<RailServer | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -87,7 +92,19 @@ export function Rail({ bridge }: { bridge?: DesktopBridge }) {
     window.addEventListener(SHOWN_EVENT, read);
     return () => window.removeEventListener(SHOWN_EVENT, read);
   }, [client]);
-  if (!bridge) return null;
+
+  if (!bridge) {
+    return (
+      <div data-testid="server-switch" className={FIELD}>
+        <Mark name={name} />
+        <span className="min-w-0 truncate">{name}</span>
+      </div>
+    );
+  }
+
+  const list = servers.data ?? [];
+  const current = pending !== null ? list.find((s) => s.id === pending) : list.find((s) => s.open);
+  const shown = current?.name ?? name;
 
   function open(server: RailServer) {
     setPending(server.id);
@@ -104,132 +121,105 @@ export function Rail({ bridge }: { bridge?: DesktopBridge }) {
     try {
       await bridge?.removeServer(server.id);
     } catch {
-      // The server is gone even when its token could not be deleted; the rail shows what is left.
+      // The server is gone even when its token could not be deleted; the menu shows what is left.
     }
     await client.invalidateQueries({ queryKey: KEY });
   }
 
   return (
-    <nav
-      aria-label="Servers"
-      data-testid="rail"
-      className="flex w-12 shrink-0 flex-col items-center gap-2 px-1.5 pt-1"
-    >
-      {(servers.data ?? []).map((server) => (
-        <ServerSquare
-          key={server.id}
-          server={server}
-          pending={pending}
-          onOpen={() => open(server)}
-          onMenu={(event) => {
-            setTarget(server);
-            menu.open(event);
-          }}
-        />
-      ))}
-      <Tooltip content="Connect a server" side="right">
-        <button
-          type="button"
-          aria-label="Connect a server"
-          onClick={() => setAdding(true)}
-          className="flex size-9 cursor-pointer items-center justify-center rounded-control text-secondary transition-colors hover:bg-hover hover:text-text"
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            data-testid="server-switch"
+            aria-label={`Server: ${shown}`}
+            aria-busy={pending !== null ? "true" : undefined}
+            className={cn(
+              FIELD,
+              "cursor-pointer transition-colors hover:bg-hover",
+              pending !== null && "animate-pulse",
+            )}
+          >
+            <Mark name={shown} />
+            <span className="min-w-0 flex-1 truncate">{shown}</span>
+            <CaretDownIcon size={14} className="shrink-0 text-secondary" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          className="w-(--radix-dropdown-menu-trigger-width) min-w-0"
         >
-          <PlusIcon size={18} />
-        </button>
-      </Tooltip>
-      <ContextMenu
-        point={menu.point}
-        onClose={menu.close}
-        title={target?.name ?? "Server"}
-        commands={[
-          {
-            id: "rename",
-            label: "Rename server",
-            run: () => setRenaming(target),
-          },
-          {
-            id: "remove",
-            label: "Remove server",
-            run: () => {
-              if (target) void remove(target);
-            },
-          },
-        ]}
-      />
+          {list.map((server) => (
+            <DropdownMenuItem
+              key={server.id}
+              aria-current={server.open ? "true" : undefined}
+              data-reachable={server.reachable}
+              onSelect={() => !server.open && open(server)}
+            >
+              <Mark name={server.name} />
+              <span className="min-w-0 flex-1 truncate">{server.name}</span>
+              {!server.reachable && (
+                <span
+                  data-testid="server-unreachable"
+                  role="img"
+                  aria-label="cannot be reached"
+                  title="Cannot be reached"
+                  className="size-2 shrink-0 rounded-full bg-muted"
+                />
+              )}
+              {server.inbox > 0 && (
+                <span
+                  data-testid="server-count"
+                  title={countWords(server)}
+                  className="shrink-0 text-sm text-secondary tabular-nums"
+                >
+                  {server.inbox > 99 ? "99+" : server.inbox}
+                </span>
+              )}
+              <CheckIcon aria-hidden="true" className={server.open ? "" : "invisible"} />
+            </DropdownMenuItem>
+          ))}
+          {list.length > 0 && <hr className="my-1 border-hairline" />}
+          <DropdownMenuItem onSelect={() => setAdding(true)}>Connect a server</DropdownMenuItem>
+          {list.length > 0 && (
+            <>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>Rename server</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  {list.map((server) => (
+                    <DropdownMenuItem key={server.id} onSelect={() => setRenaming(server)}>
+                      {server.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>Remove server</DropdownMenuSubTrigger>
+                <DropdownMenuSubContent>
+                  {list.map((server) => (
+                    <DropdownMenuItem key={server.id} onSelect={() => void remove(server)}>
+                      {server.name}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
       <AddServer bridge={bridge} open={adding} onOpenChange={setAdding} />
       <RenameServer
         key={renaming?.id ?? "none"}
         server={renaming}
         onClose={() => setRenaming(null)}
-        onRename={async (name) => {
+        onRename={async (next) => {
           if (!renaming) return;
-          await bridge.renameServer(renaming.id, name);
+          await bridge.renameServer(renaming.id, next);
           await client.invalidateQueries({ queryKey: KEY });
         }}
       />
-    </nav>
-  );
-}
-
-function ServerSquare({
-  server,
-  pending,
-  onOpen,
-  onMenu,
-}: {
-  server: RailServer;
-  /** The server being opened, which is marked before the app has shown it. */
-  pending: string | null;
-  onOpen: () => void;
-  onMenu: (event: React.MouseEvent) => void;
-}) {
-  const open = pending === null ? server.open : pending === server.id;
-  const loading = pending === server.id;
-  const state = server.reachable ? "" : " (cannot be reached)";
-  const words = countWords(server);
-  const count = words ? `, ${words}` : "";
-  const tip = [server.name !== server.address ? server.address : "", words].filter(Boolean);
-  return (
-    <Tooltip content={[`${server.name}${state}`, ...tip].join(" · ")} side="right">
-      <button
-        type="button"
-        aria-label={`${server.name}${state}${count}`}
-        aria-current={open ? "true" : undefined}
-        aria-busy={loading ? "true" : undefined}
-        data-reachable={server.reachable}
-        onClick={open ? undefined : onOpen}
-        onContextMenu={onMenu}
-        className={cn(
-          "relative flex size-9 cursor-pointer items-center justify-center rounded-control font-medium text-secondary transition-colors hover:bg-hover hover:text-text",
-          open ? "bg-raised text-text shadow-edge ring-1 ring-accent" : "bg-surface",
-          loading && "animate-pulse",
-        )}
-      >
-        {open && (
-          <span
-            data-testid="rail-open"
-            aria-hidden="true"
-            className="absolute top-1/2 -left-1.5 h-5 w-1 -translate-y-1/2 rounded-full bg-accent"
-          />
-        )}
-        <span className="text-sm leading-none">{initial(server.name)}</span>
-        {server.inbox > 0 && (
-          <span
-            data-testid="rail-count"
-            className="absolute -top-1 -right-1 min-w-4 rounded-full bg-attention-fill px-1 text-center text-xs leading-4 text-attention-text"
-          >
-            {server.inbox > 99 ? "99+" : server.inbox}
-          </span>
-        )}
-        {!server.reachable && (
-          <span
-            data-testid="rail-unreachable"
-            aria-hidden="true"
-            className="absolute right-0.5 bottom-0.5 size-2 rounded-full bg-muted"
-          />
-        )}
-      </button>
-    </Tooltip>
+    </>
   );
 }
 
@@ -250,8 +240,8 @@ function RenameServer({
         <DialogHeader>
           <DialogTitle>Rename server</DialogTitle>
           <DialogDescription>
-            The name on the server's square and in the tray. Leave it empty to use the server's own
-            name.
+            The name of the server in the switch and in the tray. Leave it empty to use the server's
+            own name.
           </DialogDescription>
         </DialogHeader>
         <form

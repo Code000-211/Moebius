@@ -10,14 +10,13 @@
  * in a window narrower than 1000px the sidebar is an overlay opened from the page header (`narrow.ts`, `SidebarToggle.tsx`). It
  * owns the command palette and its shortcut, the form of a new issue and `C` (`board/NewIssueHost.tsx`), the card window for `?card=` on any page (`board/CardWindowHost.tsx`), holds what is
  * in focus for it (`palette/focus.tsx`), and . In the desktop app the panel carries the window's controls once at its top right
- * (`desktop/WindowControls.tsx`), and the rail of servers lies at the window's far left (`desktop/Rail.tsx`).
+ * (`desktop/WindowControls.tsx`), and the server switch stands in the sidebar's head (`desktop/ServerSwitch.tsx`).
  */
 import { useQueryClient } from "@tanstack/react-query";
 import { type CSSProperties, Suspense, useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { ThinkingSetting } from "../../chat/thinking";
 import { desktopBridge } from "../../desktop/bridge";
-import { Rail } from "../../desktop/Rail";
 import { WINDOW_BUTTONS_WIDTH, WindowControls } from "../../desktop/WindowControls";
 import { useConnection, useReconnect } from "../../live/LiveProvider";
 import { PackageSheet } from "../../packages/PackageSheet";
@@ -125,7 +124,6 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
   return (
     <SidebarToggleContext.Provider value={{ narrow, open: sidebarOpen, setOpen: setSidebarOpen }}>
       <div className="flex h-full bg-ground py-1.5">
-        <Rail bridge={desktopBridge()} />
         <Sidebar
           narrow={narrow}
           open={sidebarOpen}

@@ -27,11 +27,11 @@ import { Button } from "../../ui/components/Button";
 import { type DropResult, KanbanCardFace, KanbanProvider } from "../../ui/components/KanbanBoard";
 import { FilterBar } from "../../ui/filters/FilterBar";
 import { type Display, displayQuery, readDisplay } from "../../ui/filters/model";
+import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
 import { Select } from "../../ui/page/Field";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
-import { ScrollFades } from "../../ui/page/ScrollFades";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
 import { boardFiltersOf, viewOfBoard } from "../views/model";
@@ -416,11 +416,14 @@ export function BoardPage() {
     );
   }
 
+  const boardLayout = display.layout !== "list";
   return (
-    <>
+    // The board fills the panel: the page does not scroll, the lanes row scrolls sideways and each column's cards scroll
+    // up and down. The list layout is a page like the others and scrolls as one sheet.
+    <div className={cn("flex min-w-0 flex-col", boardLayout && "h-full min-h-0")}>
       {header}
-      <div className="flex min-w-0 flex-col">
-        <div className="flex min-w-0 flex-1 flex-col">
+      <div className={cn("flex min-w-0 flex-col", boardLayout && "min-h-0 flex-1")}>
+        <div className={cn("flex min-w-0 flex-1 flex-col", boardLayout && "min-h-0")}>
           {openView && (
             <p
               className="m-0 mb-2 flex flex-wrap items-center gap-x-3 text-sm text-secondary"
@@ -464,7 +467,10 @@ export function BoardPage() {
               onContextMenu={bulk.onContextMenu}
             />
           ) : (
-            <ScrollFades className="flex-1 pb-3">
+            <div
+              data-testid="board-lanes"
+              className="-mx-6 -mb-6 min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-6"
+            >
               <KanbanProvider onDragEnd={onDragEnd} renderOverlay={renderOverlay}>
                 {groups.map(({ column, cards, stacks }) => (
                   <BoardColumn
@@ -488,7 +494,7 @@ export function BoardPage() {
                   />
                 ))}
               </KanbanProvider>
-            </ScrollFades>
+            </div>
           )}
         </div>
       </div>
@@ -506,6 +512,6 @@ export function BoardPage() {
         onDone={doneDelete}
       />
       <ParentDialog board={board} card={moving} onClose={closeParent} onDone={doneParent} />
-    </>
+    </div>
   );
 }
