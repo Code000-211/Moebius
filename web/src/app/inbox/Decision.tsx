@@ -5,6 +5,7 @@
  * is on its way the buttons give way to what it does; a refusal of the server stays under them in the server's own
  * words. The item leaves the list when the snapshot is read again, which the answer and the event cause.
  */
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
@@ -14,13 +15,16 @@ import { keys } from "../../api/keys";
 import type { InboxItem, Snapshot } from "../../api/types/board";
 import type { Proposal } from "../../api/types/improve";
 import { CodeBlock } from "../../ui/chat/CodeBlock";
+import { Markdown } from "../../ui/chat/Markdown";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { PrBadge } from "../../ui/components/PrBadge";
 import { cn } from "../../ui/lib/cn";
+import { ago } from "../../ui/lib/format";
+import { useNow } from "../../ui/lib/useNow";
 import { Field, TextArea } from "../../ui/page/Field";
-import { MarkLabel } from "../../ui/page/MarkLabel";
 import { Notice } from "../../ui/page/Notice";
+import { SkeletonCard } from "../../ui/page/Skeleton";
 import { useOpenCard } from "../board/CardWindowHost";
 import { pullRequestOf } from "../board/model";
 import { useRole } from "../shell/session";
@@ -58,6 +62,53 @@ import {
   wikiProposalOf,
 } from "./model";
 
+/** The proposals the Retro stored, read once and shared by the window's bar and what it shows. */
+function useProposal(item: InboxItem) {
+  const proposal = proposalOf(item);
+  const record = useQuery({
+    queryKey: keys.proposals,
+    queryFn: proposals,
+    enabled: item.kind === PROPOSAL && proposal !== null,
+  });
+  return {
+    pending: record.isPending && item.kind === PROPOSAL && proposal !== null,
+    proposed: record.data?.find((each) => each.id === proposal) ?? null,
+  };
+}
+
+/** The file a proposal changes: the one its diff names, or the agent's file for a change to instructions. */
+export function fileOf(item: InboxItem, proposed: Proposal | null): string | null {
+  const diff = proposedOf(item, proposed).diff;
+  const named = /^\+\+\+ (?:b\/)?(\S+)/m.exec(diff)?.[1];
+  if (named && named !== "/dev/null") return named;
+  const agent = proposed?.agents?.[0];
+  return agent ? `agents/${agent}.md` : null;
+}
+
+/**
+ * What the Decide window's top bar says: the item's kind and, where it has one, the file it concerns, and the page
+ * the item opens as (the Retro's day for a proposal, the card, the chat) for "Open as page".
+ */
+export function useDecisionBar(item: InboxItem, snapshot: Snapshot) {
+  const { proposed } = useProposal(item);
+  const { label } = kindTag(item);
+  const file = item.kind === PROPOSAL ? fileOf(item, proposed) : null;
+  return {
+    leading: (
+      <>
+        <span className="shrink-0 font-medium text-text">{label}</span>
+        {file && (
+          <>
+            <span aria-hidden="true">·</span>
+            <span className="truncate font-mono">{file}</span>
+          </>
+        )}
+      </>
+    ),
+    href: linkOf(item, found(snapshot, item).board?.repository.id ?? null, proposed),
+  };
+}
+
 export function Decision({
   item,
   snapshot,
@@ -72,7 +123,7 @@ export function Decision({
   const navigate = useNavigate();
   const openCard = useOpenCard();
   const about = found(snapshot, item);
-  const { label, mark } = kindTag(item);
+  const now = useNow();
   const [rejecting, setRejecting] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Draft[]>(() =>
     item.kind === GRILLING_ISSUES ? draftsOf(item) : [],
@@ -114,14 +165,10 @@ export function Decision({
   // What a proposal offers lives on the proposal rather than on the item: the one made when the Retro stores it
   // carries the change itself, and the one a trial ends with names its proposal and nothing else. The card reads the
   // list once and looks for the one it is about, which is the thing it is asked to show.
-  const record = useQuery({
-    queryKey: keys.proposals,
-    queryFn: proposals,
-    enabled: item.kind === PROPOSAL && proposal !== null,
-  });
-  const proposed = record.data?.find((each) => each.id === proposal) ?? null;
+  const { proposed, pending: reading } = useProposal(item);
   const sentence = why(item, about, proposed?.kind);
   const href = linkOf(item, about.board?.repository.id ?? null, proposed);
+  const from = item.kind === PROPOSAL ? fromRetro(item, proposed, now) : meta(item, about);
   const reasonReady = rejecting !== null && rejecting.trim() !== "";
 
   const footer = () => {
@@ -195,11 +242,8 @@ export function Decision({
     } else if ((item.kind === STUCK || item.kind === CHANGE_CLOSED) && item.card_id !== null) {
       buttons.push(primary("Retry", { kind: "retry", card: item.card_id }));
     } else if (item.kind === PROPOSAL && proposal !== null) {
-      buttons.push(primary("Merge", { kind: "mergeProposal", proposal }));
       buttons.push(plain("Dismiss", () => act({ kind: "dismissProposal", proposal })));
-      if (proposed) {
-        buttons.push(plain("Open in Retro", () => navigate(retroLink(proposed))));
-      }
+      buttons.push(primary("Merge", { kind: "mergeProposal", proposal }));
     } else if (item.kind === TAKEOVER && takeover !== null) {
       buttons.push(primary("Merge", { kind: "mergeTakeover", takeover }));
       buttons.push(plain("Dismiss", () => act({ kind: "dismissTakeover", takeover })));
@@ -220,18 +264,11 @@ export function Decision({
       buttons.push(primary("Dismiss", { kind: "dismissGrilling", grilling }));
       buttons.push(<DeleteGrilling key="delete" grilling={grilling} />);
     }
-    return <div className="flex flex-wrap gap-2">{buttons}</div>;
+    return <div className="flex flex-wrap justify-end gap-2">{buttons}</div>;
   };
 
   return (
     <div data-testid="inbox-decision" data-kind={item.kind} className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <MarkLabel mark={mark} word={label} />
-        {meta(item, about) !== "" && (
-          <span className="min-w-0 break-words text-sm text-secondary">{meta(item, about)}</span>
-        )}
-      </div>
-
       <div className="flex flex-col gap-2">
         <h2 className="m-0 break-words text-base font-semibold tracking-tight text-text">
           {href ? (
@@ -245,6 +282,7 @@ export function Decision({
             item.title
           )}
         </h2>
+        {from !== "" && <p className="m-0 text-sm text-secondary">{from}</p>}
         {sentence && (
           <p className="m-0 max-w-prose text-base text-secondary [overflow-wrap:anywhere]">
             {sentence}
@@ -253,15 +291,24 @@ export function Decision({
       </div>
 
       {item.kind === READY_TO_MERGE && <Facts item={item} snapshot={snapshot} />}
-      {item.kind === PROPOSAL && <OwnChange item={item} proposed={proposed} />}
+      {item.kind === PROPOSAL &&
+        (reading && proposedOf(item, null).reason === "" ? (
+          <SkeletonCard lines={2} message="Reading the proposal" />
+        ) : (
+          <OwnChange item={item} proposed={proposed} />
+        ))}
       {item.kind === PROPOSAL && <Trials item={item} />}
       {item.kind === WIKI_PROPOSAL && wikiProposalOf(item).diff !== "" && (
         <CodeBlock language="diff" code={wikiProposalOf(item).diff} />
       )}
       {item.kind === GRILLING_ISSUES && <Issues drafts={drafts} onChange={setDrafts} />}
       {item.kind === GRILLING_REPORT && (
-        <div className="whitespace-pre-wrap break-words rounded-control bg-sunken p-4 text-base text-text">
-          {typeof item.data.report === "string" ? item.data.report : ""}
+        <div className="rounded-control bg-sunken p-4">
+          <Markdown
+            content={typeof item.data.report === "string" ? item.data.report : ""}
+            keepNewlines
+            className="max-w-prose"
+          />
         </div>
       )}
       {href !== null && item.card_id !== null && (
@@ -331,6 +378,13 @@ function linkOf(item: InboxItem, board: number | null, proposed: Proposal | null
   if (proposed) return retroLink(proposed);
   if (grillingOf(item) !== null && board !== null) return `/board/${board}`;
   return null;
+}
+
+/** Where a proposal comes from: the Retro of its day and how long ago the item was made. */
+function fromRetro(item: InboxItem, proposed: Proposal | null, now: number): string {
+  const day = proposed?.retro_date;
+  const age = item.at > 0 ? ago(now, item.at) : "";
+  return [day ? `From the Retro of ${day}` : "From the Retro", age].filter(Boolean).join(" · ");
 }
 
 /** Where a proposal is read in full: the day of the Retro that made it, opened on the proposal itself. */

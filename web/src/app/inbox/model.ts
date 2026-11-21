@@ -9,7 +9,7 @@ import type { GrillingIssue } from "../../api/types/inbox";
 import type { StateMark } from "../../ui/page/MarkLabel";
 import type { StatusState } from "../../ui/page/StatusIcon";
 import type { ListItem } from "../../ui/page/VirtualList";
-import { mergeStopped, tokens } from "../board/model";
+import { mergeStopped, tokens, WAITING_FOR_APPROVAL } from "../board/model";
 
 export const READY_TO_MERGE = "ready_to_merge";
 export const APPROVE_ISSUE = "approve_issue";
@@ -401,7 +401,7 @@ export interface Entry {
   item: InboxItem | null;
   /** The card a click on the row opens in the card window; null for an item that is about none. */
   card: number | null;
-  /** The card the one action of the row, Approve plan, approves; null when the row needs no approval. */
+  /** The card the one action of the row, Approve, approves; null when the row needs no approval. */
   approves: number | null;
 }
 
@@ -412,7 +412,7 @@ export function cardKey(card: Card): string {
     : `#${card.number}`;
 }
 
-/** An item that is an outsider's issue waiting for approval is a plan ready: the one thing the row can approve. */
+/** An item that is an outsider's issue waiting for approval: the one thing the row can approve. */
 export const approvable = (item: InboxItem): boolean =>
   item.kind === APPROVE_ISSUE && item.card_id !== null;
 
@@ -426,9 +426,9 @@ export function titleOf(item: InboxItem): string {
   return plain === "" ? item.title : plain;
 }
 
-/** The one pale reason a row of the inbox gives: "Plan ready", or the kind's word with why it stopped. */
+/** The one pale reason a row of the inbox gives: "Waiting for approval", or the kind's word with why it stopped. */
 export function rowReason(item: InboxItem): string {
-  if (approvable(item)) return "Plan ready";
+  if (approvable(item)) return WAITING_FOR_APPROVAL;
   const { label } = kindTag(item);
   const reason = text(item.data.reason);
   return reason !== "" && (item.kind === STUCK || item.kind === MERGE_STOPPED)

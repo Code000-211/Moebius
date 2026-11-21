@@ -53,7 +53,7 @@ function Fixture() {
                   type="button"
                   className="h-6 rounded-control px-2.5 text-base text-accent-text outline outline-1 -outline-offset-1 outline-hairline-strong"
                 >
-                  Approve plan
+                  Approve
                 </button>
               ) : undefined
             }

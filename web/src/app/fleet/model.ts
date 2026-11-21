@@ -11,6 +11,7 @@ import { HARNESS_PLACE } from "../../chat/places";
 import type { FilterField } from "../../ui/filters/model";
 import { dayName, fileName } from "../../ui/lib/format";
 import { cardKey } from "../board/cardKey";
+import { WAITING_FOR_APPROVAL } from "../board/model";
 
 /** Where a click on a tile goes. */
 export type OpenTarget =
@@ -164,7 +165,7 @@ export function items(list: readonly Work[]): FleetItem[] {
 
 /** The pale words of a run that waits for the person. */
 export function waitingWord(work: Work): string {
-  if (work.approve !== null) return "Plan ready";
+  if (work.approve !== null) return WAITING_FOR_APPROVAL;
   return work.asks ? "Asks you" : "Your turn";
 }
 

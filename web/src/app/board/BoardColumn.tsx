@@ -23,7 +23,7 @@ import { SelectBox } from "../../ui/page/SelectBox";
 import { CardContent, type CardMenuActions } from "./BoardCardContent";
 import { ColumnAdd } from "./ColumnAdd";
 import { cardKey } from "./cardKey";
-import { type CardStatus, cardStatus, inboxOf, type Stack } from "./model";
+import { type CardStatus, cardStatus, inboxOf, type Stack, waitingWords } from "./model";
 
 /**
  * What a column holds when it is empty: one sentence for how a card comes to it. There is no title, because the
@@ -94,7 +94,10 @@ export const BoardColumn = memo(function BoardColumn({
 }) {
   const shared = { busy, onSelect, menu };
   /** What a card of this column shows that depends on the board. */
-  const derived = (card: Card) => ({ status: cardStatus(card, inboxOf(inbox, card), board) });
+  const derived = (card: Card) => {
+    const item = inboxOf(inbox, card);
+    return { status: cardStatus(card, item, board), waiting: waitingWords(item?.kind) };
+  };
   /** A card of the column with the stack of its sub-issues under it when that is open: one row of the column. */
   const renderCard = (card: Card) => {
     const stack = stacks.get(card.id);
@@ -280,6 +283,8 @@ type BoardCardProps = {
   card: Card;
   /** What the card is doing: worked out by the column from the board. */
   status: CardStatus;
+  /** What the card waits for when it needs a person, in words. */
+  waiting: string;
   /** What chooses the card: left out for a sub-issue in a stack, which is not chosen with the cards of the column. */
   bulk?: ColumnBulk;
   /** Whether the card is chosen; only a card the column can choose says. */
@@ -331,6 +336,7 @@ function sameCard(was: BoardCardProps, now: BoardCardProps): boolean {
 const BoardCard = memo(function BoardCard({
   card,
   status,
+  waiting,
   column,
   busy,
   selected,
@@ -356,6 +362,7 @@ const BoardCard = memo(function BoardCard({
       <CardContent
         card={card}
         status={status}
+        waiting={waiting}
         onOpen={() => onSelect(card)}
         menu={menu}
         select={

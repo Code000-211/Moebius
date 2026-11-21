@@ -252,7 +252,7 @@ export const snapshot = () => ({
           title: "Support Apple Pay at checkout",
           author: "kfrost",
           created_at: ago(7_200),
-          // Its plan is written and waits for a person: the first row of the Fleet, with "Approve plan".
+          // An outside issue that waits for a person to approve it: the first row of the Fleet, with "Approve".
           run: { id: 104, agent: "Planner", purpose: "plan", status: "waiting" },
         }),
         card(28, { title: "Return 404 instead of 500 for an unknown SKU", column: "Not started" }),
@@ -377,17 +377,47 @@ export const snapshot = () => ({
     },
     {
       id: 4,
-      kind: "approve_issue",
+      kind: "stuck",
       card_id: 21,
-      title:
-        "The review found a data loss: a save built on an older cart replaces the newer one. I propose a check that rejects stale saves and shows the current cart, plus a test.",
-      data: { reason: "The review asked for a change" },
+      title: "A save built on an older cart replaces the newer one",
+      data: { reason: "the review asked for a change" },
       resolved_at: null,
       assignees: [],
       at: ago(120),
     },
   ],
 });
+
+/**
+ * What a review sends a card back with: several hundred words of Markdown, as the Reviewer writes them (a list of
+ * findings, each with its evidence, inline code, a diff fragment, a link). The long-text pictures show it in the card
+ * window, closed and opened.
+ */
+export const longReason = `The change does not hold yet. Three findings block it; the rest are judgements.
+
+- The save still replaces a newer cart. \`save()\` compares \`base\` with \`current.version\` only when \`base\` is set, so a client that omits the version overwrites silently.
+  Evidence: \`src/cart/save.rs:41\` reads \`if let Some(base) = req.base { ... }\` and falls through to \`store.put(cart)\` otherwise.
+- **The 409 carries no body.** The client cannot show what changed, because \`stale(current)\` returns only the status. The spec asks for the current cart in the answer.
+  Evidence: \`src/cart/save.rs:47\` \`return Err(Stale)\`, and \`src/cart/api.rs:112\` maps \`Stale\` to \`StatusCode::CONFLICT\` with an empty body.
+- **No test for the retry.** The reproduction test passes on the change, but nothing covers a second save after a 409.
+  Evidence: \`tests/cart_save.rs\` has \`stale_save_is_refused\` and no test that saves again with the new version.
+
+The fix is small:
+
+\`\`\`diff
+-    if let Some(base) = req.base {
+-        if base != current.version { return Err(Stale); }
+-    }
++    let base = req.base.ok_or(Invalid("base version is required"))?;
++    if base != current.version { return Err(Stale(current)); }
+\`\`\`
+
+Judgements, not blocking:
+
+- The name \`src/cart/save_with_a_version_check_and_a_fallback_for_old_clients.rs\` says two things; consider splitting it.
+- The comment above \`save()\` still describes the last-write-wins behaviour (see [the cart spec](https://example.test/specs/cart#saving)).
+
+Run \`cargo test -p cart\` after the change; it passes today only because the new test does not exist.`;
 
 /** What `GET /v1/cards/21/comments` and `/history` answer: a comment, a move, a code run and a review. */
 export const threadOf21 = {
@@ -415,6 +445,11 @@ export const threadOf21 = {
       data: { run: 112, agent: "Reviewer", purpose: "review" },
     },
     { at: ago(7_100), kind: "run_ended", data: { run: 112, status: "done" } },
+    {
+      at: ago(7_000),
+      kind: "moved",
+      data: { from: "In review", to: "In progress", note: longReason },
+    },
   ],
 };
 
@@ -468,6 +503,27 @@ if base != current.version {
     return stale(current); // 409
 }
 \`\`\``;
+/** A long answer of the Moebius agent, as Markdown: what the long-text picture of the agent panel shows. */
+export const longAnswer = `Card #21 stopped because its review found three blocking problems.
+
+1. **The save can still replace a newer cart.** \`save()\` only compares versions when \`base\` is set (\`src/cart/save.rs:41\`).
+2. **The 409 has no body**, so the client cannot show what changed.
+3. **No test covers a second save** after a 409.
+
+What I would do:
+
+- Send the card back to the Coder with the three findings.
+- Ask for \`base\` to be required, which closes the first problem and makes the second easy.
+
+\`\`\`rust path=cart/save.rs
+let base = req.base.ok_or(Invalid("base version is required"))?;
+if base != current.version {
+    return Err(Stale(current));
+}
+\`\`\`
+
+A path such as \`crates/storefront-cart/src/versioned/save_with_a_version_check.rs\` stays in the line and wraps; see [the review](https://example.test/reviews/112) for the whole list.`;
+
 export const agentSteps: Step[] = [
   {
     think: "The review of card #21 found a data loss. I want to see the save code and the review.",

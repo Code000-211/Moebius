@@ -15,7 +15,7 @@ import { FilterBar } from "../../ui/filters/FilterBar";
 import { readDisplay, readFilters } from "../../ui/filters/model";
 import { useQueryParams } from "../../ui/filters/useQueryParams";
 import { Empty } from "../../ui/page/Empty";
-import { ListRow } from "../../ui/page/ListRow";
+import { idChars, ListRow } from "../../ui/page/ListRow";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonList } from "../../ui/page/Skeleton";
@@ -48,6 +48,7 @@ export function IssuesPage() {
     placeholderData: keepPreviousData,
   });
 
+  const idWidth = idChars((shown.data ?? []).map(cardKey));
   const kindList = kinds.data ?? [];
   const projectList = projects.data ?? [];
   const choices = issueDisplayChoices(kindList);
@@ -102,6 +103,7 @@ export function IssuesPage() {
                 at={at}
                 status={iconOf(card, isHeld(card) ? "held" : isLive(card) ? "live" : "idle")}
                 id={cardKey(card)}
+                idChars={idWidth}
                 title={card.title}
                 reason={card.kind ? `${card.kind} ${fieldsLine(card)}`.trim() : fieldsLine(card)}
                 age={rowAge(card.created_at, now)}

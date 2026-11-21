@@ -69,7 +69,7 @@ const components: Components = {
     // A block's `code` is drawn by `pre` above; `children` is built and dropped, so it renders only inline.
     if (typeof className === "string" && className.includes("language-")) return null;
     return (
-      <code className="rounded-small bg-code-bg px-2 text-code-text font-mono text-sm">
+      <code className="break-words rounded-small bg-code-bg px-2 font-mono text-sm text-code-text">
         {children}
       </code>
     );
@@ -164,7 +164,7 @@ function MarkdownText({
   return (
     <div
       className={cn(
-        "text-base leading-relaxed text-text",
+        "min-w-0 text-base leading-relaxed text-text [overflow-wrap:anywhere]",
         keepNewlines && "[&_li]:whitespace-pre-wrap [&_p]:whitespace-pre-wrap",
         className,
       )}

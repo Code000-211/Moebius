@@ -15,13 +15,15 @@ import {
   diff,
   diff21,
   events,
+  longAnswer,
   repository,
   runSteps,
   snapshot,
   threadOf21,
 } from "./showcase";
 
-const OUT = resolve(import.meta.dirname, "../../../docs/assets/screenshots");
+const OUT =
+  process.env.MOEBIUS_SHOT_DIR ?? resolve(import.meta.dirname, "../../../docs/assets/screenshots");
 const THEMES = ["dark", "light"] as const;
 const CODER_MODEL = "local-coder";
 
@@ -341,13 +343,12 @@ async function visit(page: Page, path: string) {
 }
 
 /** Asks the Moebius agent something and plays the Moebius agent's answer, with the calls it makes, by hand. */
-async function askAssistant(page: Page) {
+async function askAssistant(page: Page, text?: string) {
   const before = fake.chat.chats.length;
   fake.chat.autoAnswer = false;
-  // The docked field sends it, which opens the panel with the message.
-  await page
-    .getByRole("textbox", { name: "Ask Moebius" })
-    .fill("What is waiting on the discount fix?");
+  // The header's button opens the panel, and the reply field sends the message.
+  await page.getByRole("button", { name: "Moebius", exact: true }).click();
+  await page.getByPlaceholder("Reply to Moebius…").fill("What is waiting on the discount fix?");
   await page.keyboard.press("Enter");
   await expect.poll(() => fake.chat.chats.length).toBe(before + 1);
   const id = (fake.chat.chats[0] as { id: number }).id;
@@ -365,6 +366,13 @@ async function askAssistant(page: Page) {
     args: { command: '"$MOEBIUS" card 30' },
     output: "SHOP-30 Add the refunds endpoint: waiting on SHOP-24",
   });
+  if (text) {
+    fake.chat.delta(id, `\n\n${text}`);
+    fake.chat.settle(id, "Done.");
+    await page.waitForTimeout(1200);
+    fake.chat.autoAnswer = true;
+    return;
+  }
   fake.chat.delta(
     id,
     "\n\nOne card: SHOP-30, the refunds endpoint. It waits for SHOP-24, the discount fix, which the Coder is testing now. SHOP-24 is in its first round, so SHOP-30 should start within the hour.",
@@ -420,4 +428,32 @@ for (const theme of THEMES) {
     await shoot(inbox, "inbox", theme);
     await inbox.context().close();
   });
+}
+
+/**
+ * The pictures of long text from agents, 1280x720 at twice the size, in both themes: the card window with a long
+ * review reason closed and opened, and the agent panel with a long Markdown answer. They go to the folder
+ * `MOEBIUS_SHOT_DIR` names, and only when it is set.
+ */
+for (const theme of THEMES) {
+  it.skipIf(!process.env.MOEBIUS_SHOT_DIR)(
+    `takes the pictures of long text in the ${theme} theme`,
+    async () => {
+      const page = await open(theme, 2, 720, 1280);
+      await visit(page, "/board/1?card=21");
+      const reason = page.getByRole("button", { name: "Sent back to In progress" });
+      await reason.scrollIntoViewIfNeeded();
+      await shoot(page, "thread-closed", theme);
+      await reason.click();
+      await page.waitForTimeout(300);
+      await shoot(page, "thread-opened", theme);
+      await page.context().close();
+
+      const panel = await open(theme, 2, 720, 1280);
+      await visit(panel, "/board/1?card=none");
+      await askAssistant(panel, longAnswer);
+      await shoot(panel, "agent-panel", theme);
+      await panel.context().close();
+    },
+  );
 }
