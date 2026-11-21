@@ -140,8 +140,8 @@
   --color-diff-removed-mark: var(--diff-removed-mark);
   --color-diff-added-mark: var(--diff-added-mark);
 
-  /* Radii: 6 for controls and rows, 8 for cards, 10 for the panel and windows, full for dots and avatars. Tailwind's
-   * own steps land on the same three, so a copied `rounded-lg` is still one of them. */
+  /* Radii: 6 for a chip, 8 for controls, menus and cards, 10 for a code block and the desktop window's frame, 16 for a
+   * centred window, full for dots and avatars. Tailwind's own steps land on these, so a copied `rounded-lg` is still one of them. */
   --radius-none: 0;
   --radius-xs: var(--radius-small);
   --radius-sm: var(--radius-small);
@@ -154,12 +154,16 @@
   --radius-card: var(--radius-card);
   --radius-sheet: var(--radius-sheet);
   --radius-panel: var(--radius-panel);
+  --radius-window: var(--radius-window);
+  --radius-frame: var(--radius-frame);
   --radius-control: var(--radius-control);
   --radius-composer: var(--radius-composer);
 
-  /* Depth is one hairline or nothing: the edge of a large surface, a card, a window above a dimmed panel. */
+  /* Depth is one hairline or nothing, but for a centred window above a dimmed page, which has a soft shadow. */
   --shadow-card: var(--shadow-card);
   --shadow-raised: var(--shadow-raised);
+  --shadow-menu: var(--shadow-menu);
+  --shadow-window: var(--shadow-window);
 
   /* Heights of the standard: a row of the sidebar, a control, a row of a list, the head bar of a page. */
   --spacing-row-sidebar: var(--row-sidebar);
@@ -353,6 +357,41 @@
     letter-spacing: -0.003em;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+  }
+
+  /*
+   * In the desktop app the window has no frame of the system and is transparent, so the web app draws its corners: the
+   * root is the window, round and clipped, with a hairline round its edge. A maximised or full-screen window
+   * (`data-maximized`, set by the app) has square corners, since it meets the screen's. In a browser none of it applies.
+   */
+  html[data-desktop],
+  html[data-desktop] body {
+    background: transparent;
+  }
+
+  html[data-desktop] #root {
+    position: relative;
+    overflow: clip;
+    border-radius: var(--radius-frame);
+    background: var(--background);
+  }
+
+  html[data-desktop] #root::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: var(--z-tip);
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px var(--hairline-strong);
+    pointer-events: none;
+  }
+
+  html[data-desktop][data-maximized] #root {
+    border-radius: 0;
+  }
+
+  html[data-desktop][data-maximized] #root::after {
+    content: none;
   }
 
   /* Titles are tighter than the text under them, and wrap evenly rather than leave one word on a line. */

@@ -25,12 +25,12 @@ describe("the sidebar of a narrow window", () => {
     expect(onClose).toHaveBeenCalledTimes(2);
   });
 
-  it("has the standard's firm hairline at its edge against the dimmed page", async () => {
+  it("has the standard's hairline at its edge against the dimmed page", async () => {
     show({ narrow: true, open: true });
     await screen.findByRole("link", { name: "notes" });
     const edge = screen.getByRole("navigation", { name: "Pages" }).className;
     expect(edge).toContain("border-r");
-    expect(edge).toContain("border-hairline-strong");
+    expect(edge).toContain("border-hairline");
   });
 
   it("stays beside the page in a wide window", () => {

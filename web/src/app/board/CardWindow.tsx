@@ -133,7 +133,7 @@ function WindowFrame({ onClose, children }: { onClose: () => void; children: Rea
         data-card-window=""
         data-audit="flush"
         tabIndex={-1}
-        className="fixed inset-0 z-sheet m-auto flex h-[calc(100%-7rem)] max-h-[56rem] w-full max-w-3xl flex-col overflow-hidden rounded-sheet bg-panel shadow-raised outline-none"
+        className="fixed inset-0 z-sheet m-auto flex h-[calc(100%-7rem)] max-h-[56rem] w-full max-w-3xl flex-col overflow-hidden rounded-window bg-panel shadow-window outline-none"
       >
         {children}
       </div>

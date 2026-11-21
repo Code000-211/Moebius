@@ -17,8 +17,11 @@ const tailwind = readFileSync(new URL("./tailwind.css", import.meta.url), "utf8"
 const srcRoot = fileURLToPath(new URL("..", import.meta.url));
 const standard = readFileSync(new URL("../../../docs/design-web.md", import.meta.url), "utf8");
 
-/** The radii the standard allows: 6 for controls and rows, 8 for cards, 10 for the panel and windows, round for dots. */
-const RADII = new Set(["6px", "8px", "10px", "9999px"]);
+/**
+ * The radii the standard allows: 6 for a chip, 8 for controls, menus and cards, 10 for a code block and the desktop
+ * window's frame, 16 for a centred window, round for dots.
+ */
+const RADII = new Set(["6px", "8px", "10px", "16px", "9999px"]);
 /**
  * The type scale: 11 for keys and small capitals, 12 for captions and metadata, 13 body, 14 the text of an issue or a
  * page, and titles of 15, 17 and 20.
@@ -49,6 +52,11 @@ const HEIGHTS: [string, string][] = [
 ];
 /** The depth tokens: a card's hairline and the raised layer of a menu, which are flat in the standard. */
 const DEPTH = ["shadow-card", "shadow-raised"];
+/** The two real shadows: a centred window's, with one soft blur, and a menu's. */
+const SHADOWS: [string, string][] = [
+  ["shadow-window", "60px"],
+  ["shadow-menu", "32px"],
+];
 /** Tokens of the former design that no theme defines any more: decoration, depth and the old names of the surfaces. */
 const GONE = [
   "grain",
@@ -267,7 +275,7 @@ describe("the tokens", () => {
     const overrides = css.indexOf(':root[data-theme="dark"] {');
     expect(base, "the base block").toBeGreaterThan(-1);
     expect(overrides, "the dark block").toBeGreaterThan(base);
-    expect(light.get("canvas")).toBe("#f6f6f8");
+    expect(light.get("canvas")).toBe("#f9f9fa");
     expect(dark.get("canvas")).toBe("#0f0f10");
     const body = css.slice(overrides).replace(/\/\*[\s\S]*?\*\//g, "");
     const only = [...body.matchAll(/--([a-z0-9-]+):/g)].map(([, name]) => name ?? "");
@@ -279,7 +287,7 @@ describe("the tokens", () => {
 
   it("flattens depth: a shadow is one hairline or nothing, and there is no grain, glow or wash", () => {
     const flat =
-      /^(?:0 0 0 0 transparent|0 0 0 1px var\(--hairline(?:-strong)?\)|var\(--shadow-window\))$/;
+      /^(?:0 0 0 0 transparent|0 0 0 1px var\(--hairline(?:-strong)?\)|var\(--shadow-menu\))$/;
     for (const name of DEPTH) {
       for (const [theme, label] of bothThemes) {
         expect(theme.get(name), `--${name} in ${label}`).toMatch(flat);
@@ -287,11 +295,12 @@ describe("the tokens", () => {
     }
     for (const [theme, label] of bothThemes)
       for (const name of GONE) expect(theme.has(name), `--${name} in ${label}`).toBe(false);
-    // The one real shadow is the window's, and it has one blur.
-    for (const [theme, label] of bothThemes) {
-      const blurs = (theme.get("shadow-window") ?? "").match(/\d+px 32px/g) ?? [];
-      expect(blurs.length, `--shadow-window in ${label}`).toBe(1);
-    }
+    // The real shadows are a window's and a menu's, and each has one blur.
+    for (const [theme, label] of bothThemes)
+      for (const [name, blur] of SHADOWS) {
+        const blurs = (theme.get(name) ?? "").match(new RegExp(`\\d+px ${blur}`, "g")) ?? [];
+        expect(blurs.length, `--${name} in ${label}`).toBe(1);
+      }
   });
 
   it("sets tabular numerals on the body and follows the theme with color-scheme", () => {
@@ -306,15 +315,18 @@ describe("the tokens", () => {
     for (const [name, value] of HEIGHTS) expect(dark.get(name), `--${name}`).toBe(value);
   });
 
-  it("radii are controls, cards, the panel and dots", () => {
+  it("radii are chips, controls, cards, blocks, windows and dots", () => {
     const radii = [...css.matchAll(/--radius-[a-z0-9-]+:\s*([^;]+);/g)]
       .map((m) => (m[1] ?? "").trim())
       .filter((value) => !value.startsWith("var("));
     expect(radii.length).toBeGreaterThan(4);
     for (const radius of radii) expect(RADII.has(radius), radius).toBe(true);
-    expect(css).toContain("--radius-control: 6px;");
+    expect(css).toContain("--radius-small: 6px;");
+    expect(css).toContain("--radius-control: 8px;");
     expect(css).toContain("--radius-card: 8px;");
     expect(css).toContain("--radius-panel: 10px;");
+    expect(css).toContain("--radius-frame: 10px;");
+    expect(css).toContain("--radius-window: 16px;");
     expect(css).toContain("--radius-round: 9999px;");
   });
 

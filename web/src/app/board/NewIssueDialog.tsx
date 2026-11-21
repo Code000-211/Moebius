@@ -235,7 +235,7 @@ export function NewIssueDialog({
                   value={String(repository)}
                   options={repositories.map((r): [string, string] => [String(r.id), r.name])}
                   onChange={(value) => onRepository(Number(value))}
-                  className="w-auto min-w-32 max-w-56 rounded-full"
+                  className="w-auto min-w-32 max-w-56 rounded-control"
                 />
               )}
               {offered.length > 0 && (
@@ -250,7 +250,7 @@ export function NewIssueDialog({
                     setKindChosen(value);
                     setUseTemplate(false);
                   }}
-                  className="w-auto min-w-32 max-w-56 rounded-full"
+                  className="w-auto min-w-32 max-w-56 rounded-control"
                 />
               )}
               {board.cards.length > 0 && (
@@ -264,7 +264,7 @@ export function NewIssueDialog({
                       .map((c): [string, string] => [String(c.number), `#${c.number} ${c.title}`]),
                   ]}
                   onChange={setChosen}
-                  className="w-auto min-w-32 max-w-72 rounded-full"
+                  className="w-auto min-w-32 max-w-72 rounded-control"
                 />
               )}
             </div>

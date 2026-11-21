@@ -29,7 +29,7 @@ function mount() {
 }
 
 describe("the screens outside the shell", () => {
-  it("offer move and close on the sign-in screen in the desktop app", async () => {
+  it("offer move, minimize, maximize and close on the sign-in screen in the desktop app", async () => {
     window.moebiusDesktop = fakeBridge();
     vi.stubGlobal(
       "fetch",
@@ -38,10 +38,11 @@ describe("the screens outside the shell", () => {
     mount();
     await screen.findByRole("heading", { name: "Moebius" });
     expect(screen.getByTestId("window-bar").hasAttribute("data-tauri-drag-region")).toBe(true);
-    expect(screen.getByRole("button", { name: "Close" })).toBeTruthy();
+    for (const name of ["Minimize", "Maximize", "Close"])
+      expect(screen.getByRole("button", { name }), name).toBeTruthy();
   });
 
-  it("offer move and close on the screen for a server that does not answer", async () => {
+  it("offer move, minimize, maximize and close on the screen for a server that does not answer", async () => {
     window.moebiusDesktop = fakeBridge();
     vi.stubGlobal(
       "fetch",
@@ -52,7 +53,8 @@ describe("the screens outside the shell", () => {
     mount();
     await screen.findByRole("heading", { name: "Cannot reach the server" });
     expect(screen.getByTestId("window-bar").hasAttribute("data-tauri-drag-region")).toBe(true);
-    expect(screen.getByRole("button", { name: "Close" })).toBeTruthy();
+    for (const name of ["Minimize", "Maximize", "Close"])
+      expect(screen.getByRole("button", { name }), name).toBeTruthy();
   });
 
   it("draw no strip in a browser", async () => {

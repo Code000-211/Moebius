@@ -9,6 +9,11 @@ Two decisions made after this list was written win over the lines below: the app
 destructive actions and removed lines of a diff. The colour values are in [`../../design-web.md`](../../design-web.md),
 the standard these decisions became.
 
+Mockup note: the images above show the first look, a white panel floating on a tinted canvas with 10px corners. That is
+superseded by decision V2 (see Look): the sidebar and the page meet at one hairline, the page fills the window, centred
+windows are 16px with a soft shadow, and the desktop window has round corners of its own. The mockups are kept as they were
+signed off; where they differ from this file and `design-web.md`, the text wins.
+
 Known mockup mistakes, NOT part of the standard: Fleet shows `FLT-` ids (must be the normal issue ids), sidebar counts differ
 between images, Settings shows an "Ask Moebius…" field (Settings has none), z6 row text "Plan ready · approve?" (is "Plan ready").
 
@@ -21,9 +26,9 @@ Reference feel: Linear. Dense but not full; nearly monochrome; light theme is pr
 - Text 13 px, rows 36 px. Inter. Mono only for issue ids, code, file names. Tabular numerals.
 - Accent indigo (#5e6ad2 family): primary button, active tab (text + 2 px underline, no pill), counts, selected-row edge.
   Orange only for "needs you"; green only for "running". Everything else grey steps.
-- Hairlines, not boxes. No card-in-card. One radius family (6/8/10). Lucide icons, one stroke weight. Own status icons
+- Hairlines, not boxes. No card-in-card. One radius family (6/8/10/16). Lucide icons, one stroke weight. Own status icons
   (needs you, running ring, in review half disc, done, not started dashed ring).
-- Main content is one white panel floating on a faintly tinted canvas next to the sidebar, hairline border, no heavy shadow.
+- Surfaces (decision V2, replacing the floating panel of the first mockups): a faintly tinted sidebar (light #f9f9fa) and the white page meet at one hairline, and the page fills the window to its edges. The chosen row of the sidebar is a grey pill (radius 8, no border or shadow); the workspace switch has no box. Centred windows (dialog, editor, card window, palette) have radius 16 and a soft shadow (0 0 0 1px hairline, 0 20px 60px rgba(0,0,0,.16)); code and diff blocks in them 10; buttons, inputs and menus 8; rows stay 36px with hairline separators, no pills. The desktop window is transparent with round corners (10), square when maximised. Dark the same way with the dark canvas, panel and hairline.
 - Dark theme: neutral dark (canvas #0f0f10, panel #161617, hairline #26262a, text #ededef, muted #8b8b93, lighter indigo).
 - Motion minimal: fades ≤120 ms; reduce-motion switch. Glass/blur only on small menus, tooltips and the palette, and only with GPU.
 

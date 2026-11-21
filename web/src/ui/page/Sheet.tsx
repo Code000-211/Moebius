@@ -82,7 +82,7 @@ export function SheetFrame({
       // The attribute, not a class: preflight hides it, and a person hearing the page does not find a sheet that is away.
       hidden={hidden}
       className={cn(
-        "absolute inset-y-0 right-0 z-sheet flex w-(--sheet-width) max-w-full flex-col gap-3 rounded-sheet bg-panel p-3 shadow-raised",
+        "absolute inset-y-0 right-0 z-sheet flex w-(--sheet-width) max-w-full flex-col gap-3 rounded-l-window bg-panel p-3 shadow-menu",
         "animate-in fade-in-0 slide-in-from-right-4 duration-(--motion-fast) ease-(--motion-ease)",
       )}
     >

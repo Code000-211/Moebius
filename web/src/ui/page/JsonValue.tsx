@@ -27,7 +27,7 @@ export function JsonValue({ value, name }: { value: unknown; name?: string }) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <pre
-        className="m-0 overflow-x-auto whitespace-pre-wrap break-words rounded-control bg-code-bg px-3 py-2 font-mono text-xs leading-5 text-code-text"
+        className="m-0 overflow-x-auto whitespace-pre-wrap break-words rounded-panel bg-code-bg px-3 py-2 font-mono text-xs leading-5 text-code-text"
         data-json={name}
         data-complete={long ? String(all) : "true"}
       >
