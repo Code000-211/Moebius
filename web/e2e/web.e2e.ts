@@ -209,19 +209,23 @@ describe("the shell", () => {
       "Inbox",
       "My issues",
       "Fleet",
+      "Chat",
       "Projects",
       ...projects,
       "Wiki",
-      "Cycles",
       "Views",
-      "More",
+      "Agents",
+      "Rules",
+      "Insights",
+      "Improve",
+      "Get started",
       "Settings",
     ]);
     expect(
       await pages()
         .getByRole("button")
         .evaluateAll((all) => all.map((b) => b.ariaLabel)),
-    ).toEqual(["Search"]);
+    ).toEqual(["Search", "Add a project or a repository"]);
   });
 
   it("keeps every row 36px high and draws no key hint, mask or live box", async () => {
@@ -452,7 +456,7 @@ describe("the command bar", () => {
     expect(field.height).toBeLessThanOrEqual(56);
     expect(list.y + list.height).toBeLessThanOrEqual(sheet.y + sheet.height + 1);
     await input.fill("retro");
-    await page.getByRole("option", { name: "Retro" }).waitFor();
+    await page.getByRole("option", { name: "Improve" }).waitFor();
     await expect.poll(() => page.getByRole("option").count()).toBe(1);
     await page.keyboard.press("Enter");
     await page.waitForURL("**/retro");

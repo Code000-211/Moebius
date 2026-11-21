@@ -61,12 +61,12 @@ const rows = () => page.getByTestId("cycle");
 const row = (name: string) => rows().filter({ hasText: name });
 
 describe.skipIf(usesRealServer)("the Cycles page", () => {
-  it("is in the sidebar and lists the project's cycles with their progress", async () => {
+  it("is reached from the command bar and lists the project's cycles with their progress", async () => {
     await open("/inbox");
-    await page
-      .getByRole("navigation", { name: "Pages" })
-      .getByRole("link", { name: "Cycles" })
-      .click();
+    await page.getByRole("navigation", { name: "Pages", exact: true }).waitFor();
+    await page.keyboard.press("Control+k");
+    await page.getByPlaceholder("Search…").fill("Cycles");
+    await page.getByRole("option", { name: "Cycles" }).click();
     await page.getByRole("heading", { name: "Cycles", level: 1 }).waitFor();
     await rows().first().waitFor();
     await expect.poll(() => rows().count()).toBe(2);

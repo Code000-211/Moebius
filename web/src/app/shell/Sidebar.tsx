@@ -220,11 +220,7 @@ export function Sidebar({ onSearch, narrow = false, open = false, onClose }: Sid
           <Section title="Insight">{rowsOf("Insight")}</Section>
         )}
         <div className="mt-auto flex flex-col gap-0.5 pt-4">
-          {missing && getStarted && (
-            <ul role="list" className="flex flex-col">
-              {entryOf(getStarted)}
-            </ul>
-          )}
+          {missing && getStarted && <Section>{entryOf(getStarted)}</Section>}
           <SettingsFoot current={inSettingsArea(at)} />
         </div>
       </div>
