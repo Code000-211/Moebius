@@ -61,7 +61,7 @@ const LAYOUTS: Array<[Layout, string]> = [
 ];
 
 /** One filter that is set: the chip that opens its values, and the button that removes it. */
-function FilterChip({
+export function FilterChip({
   active,
   onChange,
 }: {
@@ -100,12 +100,22 @@ function FilterChip({
   );
 }
 
-function DisplayMenu({ choices, value, onChange }: DisplayProps) {
+/**
+ * Display's menu. `plain` draws the trigger as the quiet word of a page header, without its icon; `extra` is more items
+ * at the foot of the menu, for what a page keeps there besides the choices.
+ */
+export function DisplayMenu({
+  choices,
+  value,
+  onChange,
+  plain = false,
+  extra,
+}: DisplayProps & { plain?: boolean; extra?: ReactNode }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm">
-          <SlidersHorizontalIcon className="size-4" aria-hidden="true" />
+        <Button variant="ghost" size="sm" className={plain ? QUIET : undefined}>
+          {!plain && <SlidersHorizontalIcon className="size-4" aria-hidden="true" />}
           Display
         </Button>
       </DropdownMenuTrigger>
@@ -165,6 +175,60 @@ function DisplayMenu({ choices, value, onChange }: DisplayProps) {
             {name}
           </DropdownMenuCheckboxItem>
         ))}
+        {extra}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** The quiet word of a page header: muted, no icon, the text colour on hover. */
+const QUIET = "text-muted hover:text-text";
+
+/**
+ * The Filter menu: a submenu of values for each field that has some. `before` is submenus of the page's own, ahead of the
+ * fields; `plain` draws the trigger as the quiet word of a page header.
+ */
+export function FilterMenu({
+  fields,
+  values,
+  onFilter,
+  before,
+  plain = false,
+}: {
+  fields: FilterField[];
+  values: Readonly<Record<string, string>>;
+  onFilter: (key: string, value: string) => void;
+  before?: ReactNode;
+  plain?: boolean;
+}) {
+  const offered = fields.filter((field) => field.options.length > 0);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" className={plain ? QUIET : undefined}>
+          {!plain && <PlusIcon className="size-4" aria-hidden="true" />}
+          Filter
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align={plain ? "end" : "start"} aria-label="Filter by">
+        {before}
+        {offered.map((field) => (
+          <DropdownMenuSub key={field.key}>
+            <DropdownMenuSubTrigger>{field.label}</DropdownMenuSubTrigger>
+            <DropdownMenuSubContent aria-label={field.label}>
+              <DropdownMenuRadioGroup
+                value={values[field.key] ?? ""}
+                onValueChange={(value) => onFilter(field.key, value)}
+              >
+                {field.options.map(([each, name]) => (
+                  <DropdownMenuRadioItem key={each} value={each} className="text-sm">
+                    {name}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -181,7 +245,6 @@ export const FilterBar = memo(function FilterBar({
   onSaveView,
 }: FilterBarProps) {
   const active = activeFilters(fields, values);
-  const offered = fields.filter((field) => field.options.length > 0);
   const anySet = active.length > 0 || (display !== undefined && hasDisplay(display.value));
   return (
     <search aria-label={label} className="mb-4 flex flex-wrap items-center gap-2">
@@ -193,33 +256,7 @@ export const FilterBar = memo(function FilterBar({
           onChange={(value) => onFilter(each.field.key, value)}
         />
       ))}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm">
-            <PlusIcon className="size-4" aria-hidden="true" />
-            Filter
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" aria-label="Filter by">
-          {offered.map((field) => (
-            <DropdownMenuSub key={field.key}>
-              <DropdownMenuSubTrigger>{field.label}</DropdownMenuSubTrigger>
-              <DropdownMenuSubContent aria-label={field.label}>
-                <DropdownMenuRadioGroup
-                  value={values[field.key] ?? ""}
-                  onValueChange={(value) => onFilter(field.key, value)}
-                >
-                  {field.options.map(([each, name]) => (
-                    <DropdownMenuRadioItem key={each} value={each} className="text-sm">
-                      {name}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <FilterMenu fields={fields} values={values} onFilter={onFilter} />
       {active.length > 0 && (
         <Button variant="ghost" size="sm" onClick={onClear}>
           Clear filters

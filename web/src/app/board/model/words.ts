@@ -243,6 +243,16 @@ export function cardIcon(card: Card, status: CardStatus): StatusState {
   }
 }
 
+/** What a run is doing, in a word: "coding", "reviewing"; a purpose this does not know is said as it is. */
+function doingWords(purpose: string): string {
+  const p = purpose.toLowerCase();
+  if (p === "code" || p === "attempt") return "coding";
+  if (p.startsWith("review")) return "reviewing";
+  if (p === "plan") return "planning";
+  if (p === "research") return "researching";
+  return p;
+}
+
 /** What a card's second line is: grey while it is quiet work, orange when it needs a person. */
 export type CardActivity = {
   text: string;
@@ -263,8 +273,9 @@ export function cardActivity(card: Card, status: CardStatus): CardActivity | nul
   if (status === "live" && card.run) {
     const round = card.rounds > 0 ? `round ${card.rounds}` : null;
     return {
-      text: [card.run.agent, card.run.purpose.toLowerCase(), round].filter(Boolean).join(" · "),
+      text: [doingWords(card.run.purpose), round].filter(Boolean).join(", "),
       tone: "quiet",
+      hint: card.run.agent,
     };
   }
   if (status === "stuck") return { text: "Stuck", tone: "needs-you" };

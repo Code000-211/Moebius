@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Browser, type BrowserContext, chromium, type Locator, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { addFilter, offers, showing, unfold } from "./controls";
+import { addFilter, unfold } from "./controls";
 import { LONG_TITLE } from "./fake/board";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
@@ -886,7 +886,7 @@ describe("blocking, unblocking and deleting a card", () => {
     await card(1).getByText("Blocked", { exact: true }).waitFor();
     // The run was stopped, so the card is no longer live.
     await card(1)
-      .getByText(/^Coder · code/)
+      .getByText(/^coding/)
       .waitFor({ state: "detached" });
     expect(fake().requests.at(-1)).toMatchObject({ body: { reason: "" } });
   });
@@ -901,7 +901,7 @@ describe("blocking, unblocking and deleting a card", () => {
     expect(fake().requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/runs/1/stop" });
     // The card is no longer live and is not blocked, and the menu offers no second stop.
     await card(1)
-      .getByText(/^Coder · code/)
+      .getByText(/^coding/)
       .waitFor({ state: "detached" });
     expect(await card(1).getByText("Blocked", { exact: true }).count()).toBe(0);
     await menuOf(card(1), 1).click();
@@ -912,7 +912,7 @@ describe("blocking, unblocking and deleting a card", () => {
     await fresh();
     await openBoard();
     await card(1)
-      .getByText(/^Coder · code/)
+      .getByText(/^coding/)
       .waitFor();
     await card(1).click();
     await dock().getByRole("button", { name: "Code run" }).click();
@@ -1315,7 +1315,10 @@ const shownIs = (count: number) =>
 
 const bar = () => page.getByRole("search", { name: "Filter the cards" });
 /** The chip of a filter that is set, as its words say it. */
-const chip = (words: string) => bar().getByRole("button", { name: words, exact: true });
+const chip = (words: string) =>
+  page
+    .getByRole("search", { name: "Filters set" })
+    .getByRole("button", { name: words, exact: true });
 const display = (choice: string, kind: "menuitemradio" | "menuitemcheckbox" = "menuitemradio") =>
   page.getByRole(kind, { name: choice, exact: true });
 
@@ -1334,7 +1337,7 @@ describe("the filters", () => {
       await page.waitForURL("**column=Done");
       await chip("Column is Done").waitFor();
 
-      await bar().getByRole("button", { name: "Clear filters" }).click();
+      await page.getByRole("button", { name: "Clear filters" }).click();
       await shownIs(7);
       await card(3).waitFor();
       expect(await chip("Column is Done").count()).toBe(0);
@@ -1402,9 +1405,13 @@ describe("the filters", () => {
     async () => {
       await fresh();
       await openBoard();
-      const save = bar().getByRole("button", { name: "Save view" });
+      // Save view is in Display's menu, and there only once something is set.
+      const save = page.getByRole("menuitem", { name: "Save view" });
+      await bar().getByRole("button", { name: "Display" }).click();
       expect(await save.count()).toBe(0);
+      await page.keyboard.press("Escape");
       await addFilter(page, bar(), "Column", "Backlog");
+      await bar().getByRole("button", { name: "Display" }).click();
       await save.click();
       await status(/Saved this view as "View 3"/).waitFor();
       if (!("views" in server)) throw new Error("this test needs the fake server");
@@ -1425,7 +1432,8 @@ describe("the filters", () => {
       await addFilter(page, bar(), "Agent", "Reviewer");
       await chip("Agent is Reviewer").waitFor();
       await shownIs(1);
-      await bar().getByRole("button", { name: "Save view" }).click();
+      await bar().getByRole("button", { name: "Display" }).click();
+      await page.getByRole("menuitem", { name: "Save view" }).click();
       await status(/Saved this view as "View 3"/).waitFor();
       // The notice no longer says a filter was left out, and the view carries the agent.
       expect(await status(/without/).count()).toBe(0);
@@ -1601,9 +1609,12 @@ describe("the repositories", () => {
       await fresh();
       await openBoard();
       const filters = page.getByRole("search", { name: "Filter the cards" });
-      // The trigger shows the board's name, and its list holds the one board there is.
-      expect(await showing(filters.getByLabel("Repository"))).toBe("demo");
-      expect(await offers(page, filters.getByLabel("Repository"))).toEqual(["demo"]);
+      // The head's Filter holds the choice of repository: the one board there is, chosen.
+      await filters.getByRole("button", { name: "Filter", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Repository", exact: true }).click();
+      const rows = page.getByRole("menuitemradio");
+      expect(await rows.allTextContents()).toEqual(["demo"]);
+      expect(await rows.first().getAttribute("aria-checked")).toBe("true");
     },
   );
 
