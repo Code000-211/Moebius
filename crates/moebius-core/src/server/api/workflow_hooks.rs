@@ -466,8 +466,11 @@ mod tests {
 
     #[tokio::test]
     async fn the_repository_in_the_address_wins_over_the_one_the_trigger_names() {
-        let (_dir, state, addr) = hooked(&[("build", "repository = \"radiance\"")]).await;
-        let other = state.app.add_repository("other", "/srv/other").unwrap();
+        let (dir, state, addr) = hooked(&[("build", "repository = \"radiance\"")]).await;
+        let other = state
+            .app
+            .add_repository("other", &dir.path().join("other").to_string_lossy())
+            .unwrap();
         let radiance = state
             .app
             .store
@@ -508,8 +511,11 @@ mod tests {
 
     #[tokio::test]
     async fn a_hook_of_a_project_with_two_repositories_must_be_told_which() {
-        let (_dir, state, addr) = hooked(&[("build", "")]).await;
-        let second = state.app.add_repository("second", "/srv/second").unwrap();
+        let (dir, state, addr) = hooked(&[("build", "")]).await;
+        let second = state
+            .app
+            .add_repository("second", &dir.path().join("second").to_string_lossy())
+            .unwrap();
         let radiance = state
             .app
             .store
