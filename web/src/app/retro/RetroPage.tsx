@@ -11,6 +11,7 @@
  * because a day of errors is long and the list of days should stay where it was left. `?day=` names the day to open on
  * and `?proposal=` the one to land on, which is how the Inbox leads here from a proposal it cannot show all of.
  */
+
 import { ArrowClockwiseIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
@@ -19,6 +20,7 @@ import { retro, retros, retryRetro, startRetro } from "../../api/calls/improve";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { Proposal, ReportError, RetroView } from "../../api/types/improve";
+import { Markdown } from "../../ui/chat/Markdown";
 import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
 import { dayName } from "../../ui/lib/format";
@@ -313,11 +315,7 @@ function ProposalCard({ proposal, aimed }: { proposal: Proposal; aimed?: boolean
       <span className="min-w-0 break-words font-mono text-sm text-secondary">
         {proposal.branch}
       </span>
-      {proposal.body && (
-        <p className="m-0 min-w-0 break-words text-base leading-normal text-text whitespace-pre-wrap">
-          {proposal.body}
-        </p>
-      )}
+      {proposal.body && <Markdown content={proposal.body} keepNewlines className="max-w-prose" />}
       {proposal.cards && proposal.cards.length > 0 && (
         <span className="min-w-0 break-words text-sm text-secondary tabular-nums">
           {cardsLine(proposal.cards)}
