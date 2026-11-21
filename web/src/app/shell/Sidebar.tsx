@@ -6,6 +6,9 @@
  * Cycles, Views and More; and at the foot Settings, alone. The sidebar never changes its contents: on a Settings page
  * the same list stands, with Settings chosen. The counts come from the snapshot. The sidebar also notes the places a
  * person opens (a project's board, a card on it) for the server to keep.
+ *
+ * In a narrow window (`narrow.ts`) it is not beside the page: it is drawn only while open, as a solid panel lying over
+ * the page at the left on a scrim, and the shell closes it for a chosen page, `Escape` or a click on the scrim.
  */
 
 import { HashIcon } from "@phosphor-icons/react";
@@ -22,6 +25,7 @@ import { desktopBridge } from "../../desktop/bridge";
 import { ServerSwitch } from "../../desktop/ServerSwitch";
 import { IconButton } from "../../ui/components/IconButton";
 import { SearchIcon } from "../../ui/icons";
+import { cn } from "../../ui/lib/cn";
 import { waiting } from "../inbox/notices";
 import { boardPath, isSettingsPage, PAGES, type PageDef, pageByPath, shownTo } from "../pages";
 import { inSettingsArea } from "../settings/settingsEntries";
@@ -33,9 +37,13 @@ import { useRole } from "./session";
 
 interface SidebarProps {
   onSearch: () => void;
+  /** The window is narrow: the sidebar is an overlay that is there only while `open`. */
+  narrow?: boolean;
+  open?: boolean;
+  onClose?: () => void;
 }
 
-export function Sidebar({ onSearch }: SidebarProps) {
+export function Sidebar({ onSearch, narrow = false, open = false, onClose }: SidebarProps) {
   const role = useRole();
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
   const boards = data.data?.boards ?? [];
@@ -103,8 +111,29 @@ export function Sidebar({ onSearch }: SidebarProps) {
     PAGES.filter((page) => page.group === group && shownTo(page, role));
   const projectList = pageByPath("projects");
 
-  return (
-    <nav aria-label="Pages" className="flex h-full w-(--sidebar-width) shrink-0 flex-col">
+  const panel = useRef<HTMLElement>(null);
+  const overlay = narrow && open;
+  useEffect(() => {
+    if (!overlay) return;
+    panel.current?.focus();
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape" && !event.defaultPrevented) onClose?.();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [overlay, onClose]);
+  if (narrow && !open) return null;
+
+  const list = (
+    <nav
+      ref={panel}
+      aria-label="Pages"
+      tabIndex={overlay ? -1 : undefined}
+      className={cn(
+        "flex h-full w-(--sidebar-width) shrink-0 flex-col",
+        overlay && "relative rounded-r-sheet border-r border-hairline bg-panel py-1.5 outline-none",
+      )}
+    >
       <div className="flex h-12 shrink-0 items-center gap-1 px-2">
         <ServerSwitch bridge={desktopBridge()} name={info.data?.host || "Moebius"} />
         <IconButton
@@ -141,5 +170,18 @@ export function Sidebar({ onSearch }: SidebarProps) {
         </div>
       </div>
     </nav>
+  );
+  if (!overlay) return list;
+  return (
+    <div className="fixed inset-0 z-(--z-scrim) flex">
+      <button
+        type="button"
+        aria-label="Close the sidebar"
+        tabIndex={-1}
+        className="absolute inset-0 cursor-default bg-scrim"
+        onClick={onClose}
+      />
+      {list}
+    </div>
   );
 }
