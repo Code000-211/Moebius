@@ -5,6 +5,7 @@
  * is on its way the buttons give way to what it does; a refusal of the server stays under them in the server's own
  * words. The item leaves the list when the snapshot is read again, which the answer and the event cause.
  */
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
@@ -14,6 +15,7 @@ import { keys } from "../../api/keys";
 import type { InboxItem, Snapshot } from "../../api/types/board";
 import type { Proposal } from "../../api/types/improve";
 import { CodeBlock } from "../../ui/chat/CodeBlock";
+import { Markdown } from "../../ui/chat/Markdown";
 import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { PrBadge } from "../../ui/components/PrBadge";
@@ -260,8 +262,12 @@ export function Decision({
       )}
       {item.kind === GRILLING_ISSUES && <Issues drafts={drafts} onChange={setDrafts} />}
       {item.kind === GRILLING_REPORT && (
-        <div className="whitespace-pre-wrap break-words rounded-control bg-sunken p-4 text-base text-text">
-          {typeof item.data.report === "string" ? item.data.report : ""}
+        <div className="rounded-control bg-sunken p-4">
+          <Markdown
+            content={typeof item.data.report === "string" ? item.data.report : ""}
+            keepNewlines
+            className="max-w-prose"
+          />
         </div>
       )}
       {href !== null && item.card_id !== null && (
