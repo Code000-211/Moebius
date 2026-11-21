@@ -578,10 +578,7 @@ describe("projects", () => {
       await page.getByRole("button", { name: "Delete repository" }).click();
       await dialog.getByRole("button", { name: "Delete" }).click();
       // The server's own words are a toast, and the dialog stays open to try again.
-      await page
-        .getByRole("alert")
-        .filter({ hasText: "run 1 of demo is still going" })
-        .waitFor();
+      await page.getByRole("alert").filter({ hasText: "run 1 of demo is still going" }).waitFor();
       await dialog.waitFor();
       expect(fake().requests.filter((r) => r.method === "DELETE")).toHaveLength(1);
     },
@@ -1044,9 +1041,9 @@ describe("the fleet", () => {
       server.broadcast?.({ kind: "lagged", data: { missed: 1 } });
       const tile = page.getByTestId("list-row").filter({ hasText: "Which branch?" });
       await tile.getByText("Asks you").waitFor();
-      // The run that waits for the person is the first row, in orange, with no group row above it.
+      // The run that waits for the person is the first row with no group row above it.
       expect(await page.getByTestId("group-row").count()).toBe(0);
-      expect(await page.getByTestId("list-row").first().innerText()).toContain("Which branch?");
+      expect(await page.getByTestId("list-row").first().textContent()).toContain("Which branch?");
       const chat = server.chat?.chats.find((each) => each.id === asking);
       if (chat) chat.status = "succeeded";
       server.broadcast?.({ kind: "run_ended", data: { run: asking, status: "succeeded" } });
