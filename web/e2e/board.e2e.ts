@@ -1687,7 +1687,9 @@ describe("the repositories", () => {
   it("opens the board of the repository's home project from the old address, keeping the card", async () => {
     await fresh();
     await page.goto(`${server.url}/board/1?card=3`);
-    await page.waitForURL("**/projects/1?repository=1&card=3");
     await page.getByRole("dialog", { name: "Card inspector" }).waitFor();
+    await expect
+      .poll(() => new URL(page.url()).pathname + new URL(page.url()).search)
+      .toBe("/projects/1?repository=1&card=3");
   });
 });
