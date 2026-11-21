@@ -7,7 +7,8 @@
  * so a card draws again only when its own data, one of those or whether it is chosen or open changes: a read of the
  * snapshot that changes one card, or opening another, no longer draws every card of the board.
  */
-import { type MouseEvent, memo } from "react";
+import { type MouseEvent, memo, type ReactNode, useState } from "react";
+import { type ListRange, Virtuoso } from "react-virtuoso";
 import type { Board, Card, InboxItem } from "../../api/types/board";
 import { ContextMenu, useContextMenu } from "../../ui/components/ContextMenu";
 import {
@@ -15,6 +16,7 @@ import {
   KanbanCard,
   KanbanCards,
   KanbanHeader,
+  useDraggedCardId,
 } from "../../ui/components/KanbanBoard";
 import { Empty } from "../../ui/page/Empty";
 import { SelectBox } from "../../ui/page/SelectBox";
@@ -93,6 +95,46 @@ export const BoardColumn = memo(function BoardColumn({
   const shared = { busy, onSelect, menu };
   /** What a card of this column shows that depends on the board. */
   const derived = (card: Card) => ({ status: cardStatus(card, inboxOf(inbox, card), board) });
+  /** A card of the column with the stack of its sub-issues under it when that is open: one row of the column. */
+  const renderCard = (card: Card) => {
+    const stack = stacks.get(card.id);
+    const open = stack !== undefined && (opened.has(card.id) || inspectedTopId === card.id);
+    return (
+      <div
+        data-testid={stack ? `stack-${card.number}` : undefined}
+        className="flex min-w-0 flex-col gap-3"
+      >
+        <BoardCard
+          {...shared}
+          {...derived(card)}
+          card={card}
+          selected={inspectedId === card.id}
+          column={name}
+          bulk={bulk}
+          chosen={bulk.has(card.id)}
+          stack={stack}
+          open={open}
+          onToggleStack={onToggleStack}
+        />
+        {open && stack.shown.length > 0 && (
+          // The sub-issues lie under their parent, in a stack of their own: each is a card that moves, blocks and
+          // deletes like any other,
+          <div className="ml-3 flex min-w-0 flex-col gap-3 border-l-2 border-hairline-strong pl-3">
+            {stack.shown.map((child) => (
+              <BoardCard
+                key={child.id}
+                {...shared}
+                {...derived(child)}
+                card={child}
+                selected={inspectedId === child.id}
+                column={child.column}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
   return (
     <KanbanBoard name={name}>
       <ColumnHead name={name} onAdding={onAdding} />
@@ -103,54 +145,74 @@ export const BoardColumn = memo(function BoardColumn({
         onAdding={onAdding}
         onCreated={onCreated}
       />
-      <KanbanCards className="min-h-9">
-        {cards.map((card) => {
-          const stack = stacks.get(card.id);
-          const open = stack !== undefined && (opened.has(card.id) || inspectedTopId === card.id);
-          return (
-            <div
-              key={card.id}
-              data-testid={stack ? `stack-${card.number}` : undefined}
-              className="flex min-w-0 flex-col gap-3"
-            >
-              <BoardCard
-                {...shared}
-                {...derived(card)}
-                card={card}
-                selected={inspectedId === card.id}
-                column={name}
-                bulk={bulk}
-                chosen={bulk.has(card.id)}
-                stack={stack}
-                open={open}
-                onToggleStack={onToggleStack}
-              />
-              {open && stack.shown.length > 0 && (
-                // The sub-issues lie under their parent, in a stack of their own: each is a card that moves, blocks and
-                // deletes like any other,
-                <div className="ml-3 flex min-w-0 flex-col gap-3 border-l-2 border-hairline-strong pl-3">
-                  {stack.shown.map((child) => (
-                    <BoardCard
-                      key={child.id}
-                      {...shared}
-                      {...derived(child)}
-                      card={child}
-                      selected={inspectedId === child.id}
-                      column={child.column}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-        {/* The column is already the surface under these words; a card of its own inside it is a second one, and one
-            that reads as a card which has lost its words. */}
-        {cards.length === 0 && <Empty plain centered body={COLUMN_EMPTY[name] ?? ANY_COLUMN} />}
-      </KanbanCards>
+      {cards.length === 0 ? (
+        <KanbanCards className="min-h-9">
+          {/* The column is already the surface under these words; a card of its own inside it is a second one, and one
+              that reads as a card which has lost its words. */}
+          <Empty plain centered body={COLUMN_EMPTY[name] ?? ANY_COLUMN} />
+        </KanbanCards>
+      ) : (
+        <ColumnCards cards={cards} renderCard={renderCard} />
+      )}
     </KanbanBoard>
   );
 });
+
+/** The air under the last card, which the lanes row takes back from the page. */
+function ColumnFoot({ context }: { context?: ColumnContext }) {
+  return (
+    <div className="h-4">
+      {context?.pinned && (
+        // The card being dragged stays in the page while its row is scrolled out of the window: the drag library needs
+        // its element. It is out of sight and out of reach, and the drag overlay is what the person sees.
+        <div
+          inert
+          aria-hidden
+          className="pointer-events-none absolute top-0 -left-[9999px] w-60 opacity-0"
+        >
+          {context.pinned}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface ColumnContext {
+  pinned: ReactNode;
+}
+
+/** Only what is in view of the column's cards is drawn, rows of different heights (a card, or a card with its open stack). */
+const COLUMN_COMPONENTS = { Footer: ColumnFoot };
+
+function ColumnCards({
+  cards,
+  renderCard,
+}: {
+  cards: Card[];
+  renderCard: (card: Card) => ReactNode;
+}) {
+  const dragged = useDraggedCardId();
+  // None until the list says what it drew: until then no card is taken to be out of it.
+  const [range, setRange] = useState<ListRange | null>(null);
+  const at = dragged === null ? -1 : cards.findIndex((card) => String(card.id) === dragged);
+  const pinned =
+    at >= 0 && range !== null && (at < range.startIndex || at > range.endIndex)
+      ? renderCard(cards[at] as Card)
+      : null;
+  return (
+    <Virtuoso
+      data={cards}
+      computeItemKey={(_, card) => card.id}
+      increaseViewportBy={400}
+      rangeChanged={setRange}
+      context={{ pinned }}
+      components={COLUMN_COMPONENTS}
+      className="min-h-9 flex-1"
+      style={{ height: "auto" }}
+      itemContent={(_, card) => <div className="pb-2">{renderCard(card)}</div>}
+    />
+  );
+}
 
 /**
  * The head of a column: its name alone. Its context menu (right click, the menu key, or Enter while it has the focus)
