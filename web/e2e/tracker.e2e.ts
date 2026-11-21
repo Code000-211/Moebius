@@ -106,6 +106,7 @@ const cardTitled = (title: string) =>
   page.locator(`[aria-roledescription="card"][aria-label$=" ${title}"]`);
 /** Opens the card with this title as the window over the board, after shutting one that is open: it is modal. */
 async function openCard(title: string) {
+  if (await properties().isVisible()) await closeProps();
   if (await dock().isVisible()) {
     await page.keyboard.press("Escape");
     await dock().waitFor({ state: "detached" });
@@ -114,6 +115,7 @@ async function openCard(title: string) {
 }
 /** Shuts the card window, if one is open, so the board behind it can be used. */
 async function closeCard() {
+  if (await properties().isVisible()) await closeProps();
   if (await dock().isVisible()) {
     await page.keyboard.press("Escape");
     await dock().waitFor({ state: "detached" });
@@ -335,14 +337,15 @@ describe("the issue in the dock", () => {
     await newIssue("Palette card");
     await openCard("Palette card");
     await dock().getByRole("heading", { name: "Palette card" }).waitFor();
-    await openProps();
 
     await page.keyboard.press("Control+k");
     const first = page.getByRole("option").first();
     await first.waitFor();
     expect(await first.textContent()).toContain("Assign to me");
     await page.keyboard.press("Enter");
+    await openProps();
     await value(/^Claim person/).waitFor();
+    await closeProps();
     // The palette closed, and the card is still the one in focus: its key does the next thing.
     await page.getByRole("option").first().waitFor({ state: "detached" });
     await page.keyboard.press("Control+k");
@@ -430,13 +433,13 @@ describe("the issue in the dock", () => {
     await newIssue("Two gifts");
     await openCard("Two gifts");
     await dock().getByRole("heading", { name: "Two gifts" }).waitFor();
-    await openProps();
 
     // The second command is chosen before the page has the card as the first one left it.
     await page.keyboard.press("Control+k");
     await page.getByRole("option", { name: /Assign to @owner/ }).click();
     await page.keyboard.press("Control+k");
     await page.getByRole("option", { name: /Assign to @lea/ }).click({ force: true });
+    await openProps();
     await value(/^Assignee @owner.*@lea/).waitFor();
     await cardTitled("Two gifts")
       .locator('[role="img"][aria-label="Given to @owner, @lea"]')
