@@ -72,7 +72,7 @@ settings.
 
 ### From the board
 
-In the web app a column's context menu (right click on its name) has "Edit the script", which opens the column's script in an editor: the Columns tab of the project's settings, at `/projects/<id>/settings/columns/<column>`, where a column is also picked from a list. Only an owner edits; anyone else reads the script. Save checks the script
+In the web app a column's context menu (right click on its name) has "Edit the script", which opens the column's script in an editor: the Columns area of the project's settings, at `/projects/<id>/settings/columns/<column>`, where a column is also picked from a list. Only an owner edits; anyone else reads the script. Save checks the script
 the way `moebius check-script` does and refuses it with the check's message when it fails; otherwise it commits
 `projects/<project name>/<script>` to the harness configuration repository and pushes it (a refused push is shown and
 undone). "Use the built-in script" removes the file again. The speech bubble opens a chat with the Moebius agent about

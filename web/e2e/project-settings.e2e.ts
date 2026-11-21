@@ -49,24 +49,27 @@ function lastBody(method: string, path: string): unknown {
   return sent.at(-1)?.body;
 }
 
-const tab = (name: string | RegExp) => page.getByRole("tab", { name });
+const tab = (name: string | RegExp) =>
+  page.getByRole("navigation", { name: "Project settings" }).getByRole("link", { name });
 
 describe.skipIf(usesRealServer)("a project's settings", () => {
   it("opens from the tile, with a tab for each part of the project", async () => {
     await open("/projects");
     await page.getByTestId("project").filter({ hasText: "demo" }).getByRole("link").click();
     await page.waitForURL("**/projects/1/settings");
-    await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
+    await page.getByRole("heading", { name: "demo › Settings", level: 1 }).waitFor();
     for (const name of ["General", "Members", "Repositories", "Columns"]) {
       await tab(name).waitFor();
     }
-    expect(await page.getByRole("tab").count()).toBe(4);
+    expect(
+      await page.getByRole("navigation", { name: "Project settings" }).getByRole("link").count(),
+    ).toBe(4);
     // A tab is part of the address.
     await tab("Repositories").click();
     await page.waitForURL("**/projects/1/settings/repositories");
     await page.goto(`${server.url}/projects/1/settings/columns`);
     await tab("Columns").waitFor();
-    expect(await tab("Columns").getAttribute("aria-selected")).toBe("true");
+    expect(await tab("Columns").getAttribute("aria-current")).toBe("page");
   });
 
   it("sends the tabs that are gone to their new places", async () => {
@@ -87,7 +90,7 @@ describe.skipIf(usesRealServer)("a project's settings", () => {
     await page.getByRole("menuitem", { name: "Edit the script" }).click();
     await page.waitForURL("**/projects/1/settings/columns/Backlog?repository=1");
     await tab("Columns").waitFor();
-    expect(await tab("Columns").getAttribute("aria-selected")).toBe("true");
+    expect(await tab("Columns").getAttribute("aria-current")).toBe("page");
     await page.getByRole("textbox", { name: "Script of Backlog" }).waitFor();
   });
 
@@ -96,7 +99,7 @@ describe.skipIf(usesRealServer)("a project's settings", () => {
     await page.getByRole("switch", { name: "Intake" }).click();
     await page.getByRole("switch", { name: "Intake", checked: true }).waitFor();
     expect(lastBody("PUT", "/v1/projects/1/intake")).toEqual({ enabled: true });
-    await page.getByRole("link", { name: "Open board" }).click();
+    await page.getByRole("link", { name: "Back to the board" }).click();
     await page.getByRole("tab", { name: /^Intake/ }).waitFor();
   });
 
@@ -151,7 +154,7 @@ describe.skipIf(usesRealServer)("a project's settings", () => {
     });
     await page.getByRole("textbox", { name: "Name", exact: true }).fill("Shop");
     await page.getByRole("button", { name: "Save", exact: true }).click();
-    await page.getByRole("heading", { name: "Shop", level: 1 }).waitFor();
+    await page.getByRole("heading", { name: "Shop › Settings", level: 1 }).waitFor();
     expect(lastBody("PATCH", "/v1/projects/1")).toEqual({ name: "Shop" });
 
     await page.getByRole("switch", { name: "Private" }).click();

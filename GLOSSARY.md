@@ -45,7 +45,7 @@ and settings they draw on, and the settings of each project), kept in a git repo
 _Avoid_: harness config, setup, profile
 
 **Project settings**:
-What one project is and how its board works, reached from the gear of its header, in four tabs: General (name, key,
+What one project is and how its board works, reached from the gear of its header, in a left sub-navigation of four areas: General (name, key,
 private, intake, the kinds of issues it offers), Members, Repositories (each opens the repository's own page) and
 Columns. The scripts of its columns are the files of `projects/<project name>/` in the harness configuration. Two
 projects that share a repository can work differently.

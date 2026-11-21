@@ -110,16 +110,16 @@ describe("a project's settings", () => {
   it("has exactly the tabs General, Members, Repositories and Columns, and the tab is in the address", async () => {
     serve();
     show("/projects/7/settings", "owner");
-    await screen.findByRole("heading", { name: "Platform", level: 1 });
-    expect(screen.getAllByRole("tab").map((each) => each.textContent)).toEqual([
+    const nav = await screen.findByRole("navigation", { name: "Project settings" });
+    expect(Array.from(nav.querySelectorAll("a")).map((each) => each.textContent)).toEqual([
       "General",
       "Members",
       "Repositories",
       "Columns",
     ]);
-    fireEvent.click(screen.getByRole("tab", { name: "Repositories" }));
+    fireEvent.click(screen.getByRole("link", { name: "Repositories" }));
     expect(screen.getByTestId("where").textContent).toBe("/projects/7/settings/repositories");
-    fireEvent.click(screen.getByRole("tab", { name: "General" }));
+    fireEvent.click(screen.getByRole("link", { name: "General" }));
     expect(screen.getByTestId("where").textContent).toBe("/projects/7/settings");
   });
 
@@ -160,7 +160,7 @@ describe("a project's settings", () => {
     serve();
     show("/projects/7/settings/columns/In%20progress", "member");
     expect((await screen.findByTestId("editor")).textContent).toBe("In progress read only");
-    expect(screen.getByRole("tab", { name: "Columns" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("link", { name: "Columns" }).getAttribute("aria-current")).toBe("page");
   });
 
   it("lets an owner edit the script and changes the address with the column picked", async () => {

@@ -860,7 +860,10 @@ describe("the script editor", () => {
   async function openScript(column: string) {
     const id = await repository();
     await page.goto(`${server.url}/board/${id}/scripts/${encodeURIComponent(column)}`);
-    await page.getByRole("tab", { name: "Columns", selected: true }).waitFor();
+    await page
+      .getByRole("navigation", { name: "Project settings" })
+      .getByRole("link", { name: "Columns" })
+      .waitFor();
     const editor = page.getByRole("textbox", { name: `Script of ${column}` });
     await editor.waitFor();
     return { id, editor };
