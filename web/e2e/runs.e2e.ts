@@ -104,12 +104,12 @@ describe("the run view", () => {
       toolName: "bash",
       args: { command: "make test" },
     });
-    // A few steps are drawn as the timeline itself.
-    await page.getByText("make test").first().waitFor();
+    // The step is a small line that says what the command does while it runs; the command is in the box it opens to.
+    await page.getByText("Running the tests", { exact: true }).waitFor();
 
     await card.click();
     await page.waitForURL("**/board/1?card=1");
-    await page.getByRole("dialog", { name: "Card inspector" }).waitFor();
+    await page.locator("[data-card-window]").waitFor();
   });
 
   it.skipIf(usesRealServer)("steers a running run", async () => {
