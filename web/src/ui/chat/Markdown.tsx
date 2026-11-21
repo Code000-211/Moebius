@@ -16,6 +16,7 @@ import remarkGfm from "remark-gfm";
 import { cn } from "../lib/cn";
 import { linkCards } from "./CardLinks";
 import { CodeBlock, fileOf } from "./CodeBlock";
+import { InlineCode } from "./InlineCode";
 
 /** The plain text under a node of the syntax tree. */
 export function textOf(node: Element | ElementContent): string {
@@ -68,11 +69,7 @@ const components: Components = {
   code({ className, children }) {
     // A block's `code` is drawn by `pre` above; `children` is built and dropped, so it renders only inline.
     if (typeof className === "string" && className.includes("language-")) return null;
-    return (
-      <code className="break-words rounded-small bg-code-bg px-2 font-mono text-sm text-code-text">
-        {children}
-      </code>
-    );
+    return <InlineCode>{children}</InlineCode>;
   },
   a: ({ href, children }) => <TextLink href={href}>{children}</TextLink>,
   p: ({ children }) => <p className="my-4 first:mt-0 last:mb-0">{linkCards(children)}</p>,

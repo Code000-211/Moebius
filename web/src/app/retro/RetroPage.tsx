@@ -20,6 +20,7 @@ import { retro, retros, retryRetro, startRetro } from "../../api/calls/improve";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { Proposal, ReportError, RetroView } from "../../api/types/improve";
+import { InlineCode } from "../../ui/chat/InlineCode";
 import { Markdown } from "../../ui/chat/Markdown";
 import { Tag } from "../../ui/chat/Tag";
 import { Button } from "../../ui/components/Button";
@@ -303,11 +304,7 @@ function ProposalCard({ proposal, aimed }: { proposal: Proposal; aimed?: boolean
       </h3>
       <div className="flex flex-wrap gap-2">
         <Tag tone={status.tone}>{status.label}</Tag>
-        {own && (
-          <code className="break-words rounded-control bg-code px-2 py-1 font-mono text-xs text-text">
-            {own}
-          </code>
-        )}
+        {own && <InlineCode>{own}</InlineCode>}
         {proposal.agents?.map((agent) => (
           <Tag key={agent}>{agent}</Tag>
         ))}
