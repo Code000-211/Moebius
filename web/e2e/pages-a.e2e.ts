@@ -217,6 +217,32 @@ describe("the inbox", () => {
   );
 
   it.skipIf(usesRealServer)(
+    "opens a proposal in a window whose body has a height and holds its actions",
+    async () => {
+      await open("/inbox");
+      await items().first().waitFor();
+      await page.getByText("Raise the round limit to 7").first().click();
+      const window = page.getByTestId("editor-window");
+      await window.waitFor();
+      const body = window.getByTestId("inbox-decision");
+      await body.waitFor();
+      const bar = await window.getByTestId("window-header").boundingBox();
+      expect(bar?.height).toBe(48);
+      expect((await body.boundingBox())?.height ?? 0).toBeGreaterThan(100);
+      const frame = await window.boundingBox();
+      for (const name of ["Merge", "Dismiss"]) {
+        const box = await window.getByRole("button", { name, exact: true }).boundingBox();
+        expect(box).not.toBeNull();
+        expect(box?.y ?? 0).toBeGreaterThanOrEqual(frame?.y ?? 0);
+        expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(
+          (frame?.y ?? 0) + (frame?.height ?? 0),
+        );
+      }
+      expect(await window.getByText("Retro proposal").first().isVisible()).toBe(true);
+    },
+  );
+
+  it.skipIf(usesRealServer)(
     "has the tabs Needs you, Mentions and Following, and shows the filter bar only for a filter the address holds",
     async () => {
       await open("/inbox");

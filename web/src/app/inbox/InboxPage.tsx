@@ -8,7 +8,7 @@
  * tab is the person's own notices, with a read mark the server keeps for them (`MentionsList`); there is no bell.
  * Failures are toasts.
  */
-import { CheckCircleIcon } from "@phosphor-icons/react";
+import { ArrowsOutIcon, CheckCircleIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useState } from "react";
 import { Link } from "react-router";
@@ -17,7 +17,7 @@ import { changeInboxAssignees } from "../../api/calls/inbox";
 import { readNotice, notices as readNotices } from "../../api/calls/notices";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
-import type { Snapshot } from "../../api/types/board";
+import type { InboxItem, Snapshot } from "../../api/types/board";
 import type { Notice } from "../../api/types/notices";
 import { Button } from "../../ui/components/Button";
 import { EditorWindow } from "../../ui/components/EditorWindow";
@@ -35,7 +35,7 @@ import { useOpenCard } from "../board/CardWindowHost";
 import { NewIssueButton } from "../issues/NewIssueButton";
 import { AssigneesProperty } from "../people/AssigneesProperty";
 import { perform } from "./actions";
-import { Decision } from "./Decision";
+import { Decision, useDecisionBar } from "./Decision";
 import { InboxRow } from "./InboxRow";
 import { MentionsList } from "./MentionsList";
 import { changeOf, type Filters, listOf, shown } from "./model";
@@ -255,28 +255,13 @@ export function InboxPage() {
         />
       )}
       {snapshot && chosen && (
-        <EditorWindow
-          open
-          title="Decide"
-          dirty={unsent}
-          height="fit"
+        <DecideWindow
+          item={chosen}
+          snapshot={snapshot}
+          unsent={unsent}
+          onDirty={setUnsent}
           onClose={() => setQuery({ item: "" })}
-        >
-          <section aria-label="Decide" className="flex flex-col gap-4">
-            <AssigneesProperty
-              key={`assignees-${chosen.id}`}
-              assignees={chosen.assignees}
-              onSave={async (next) => {
-                try {
-                  await changeInboxAssignees(chosen.id, chosen.assignees, next);
-                } finally {
-                  void queryClient.invalidateQueries({ queryKey: keys.snapshot });
-                }
-              }}
-            />
-            <Decision key={chosen.id} item={chosen} snapshot={snapshot} onDirty={setUnsent} />
-          </section>
-        </EditorWindow>
+        />
       )}
     </div>
   );
@@ -315,4 +300,61 @@ function ReadNoticesOf({
     for (const each of unread) onRead(each.id);
   }, [unread.map((each) => each.id).join(",")]);
   return null;
+}
+
+/**
+ * The window of an item to decide: the item's kind and file in the top bar with the way to its own page, then what is
+ * to be decided and its buttons, and the assignee below them. The window has no foot of its own; the buttons are the item's.
+ */
+function DecideWindow({
+  item,
+  snapshot,
+  unsent,
+  onDirty,
+  onClose,
+}: {
+  item: InboxItem;
+  snapshot: Snapshot;
+  unsent: boolean;
+  onDirty: (dirty: boolean) => void;
+  onClose: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const { leading, href } = useDecisionBar(item, snapshot);
+  return (
+    <EditorWindow
+      open
+      title={item.title}
+      leading={leading}
+      trailing={
+        href ? (
+          <Button asChild variant="ghost" size="sm">
+            <Link to={href}>
+              <ArrowsOutIcon className="size-4" aria-hidden="true" />
+              Open as page
+            </Link>
+          </Button>
+        ) : undefined
+      }
+      dirty={unsent}
+      height="fit"
+      footer={false}
+      onClose={onClose}
+    >
+      <section aria-label="Decide" className="flex flex-col gap-4">
+        <Decision key={item.id} item={item} snapshot={snapshot} onDirty={onDirty} />
+        <AssigneesProperty
+          key={`assignees-${item.id}`}
+          assignees={item.assignees}
+          onSave={async (next) => {
+            try {
+              await changeInboxAssignees(item.id, item.assignees, next);
+            } finally {
+              void queryClient.invalidateQueries({ queryKey: keys.snapshot });
+            }
+          }}
+        />
+      </section>
+    </EditorWindow>
+  );
 }

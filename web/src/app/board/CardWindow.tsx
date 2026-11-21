@@ -8,14 +8,14 @@
  * menu's questions) lies over it, and Escape closes the topmost layer only; Escape in a field leaves the field first.
  * Closing hands the focus back to what opened it.
  */
-import { ArrowsOutIcon, XIcon } from "@phosphor-icons/react";
+import { ArrowsOutIcon } from "@phosphor-icons/react";
 import { memo, type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router";
 import type { Board, Card, InboxItem } from "../../api/types/board";
 import { ChangeDelta } from "../../diff/Changes";
 import { Button } from "../../ui/components/Button";
-import { IconButton } from "../../ui/components/IconButton";
+import { WindowHeader } from "../../ui/components/WindowHeader";
 import { Avatar } from "../../ui/page/Avatar";
 import { StatusIcon, type StatusState } from "../../ui/page/StatusIcon";
 import { CardDetails } from "./CardDetails";
@@ -160,6 +160,7 @@ export function CardContent({
   menu,
   onOpenCard,
   bar,
+  onClose,
   back,
   scrolls = true,
 }: {
@@ -186,8 +187,10 @@ export function CardContent({
   };
   /** Shows another issue, such as the parent or a sub-issue, in the window. */
   onOpenCard: (card: Card) => void;
-  /** The controls at the end of the bar over the card: what leads away from it, which only the window and the page know. */
+  /** The controls before the close icon in the bar over the card: what leads away from it, which only the window and the page know. */
   bar?: ReactNode;
+  /** The way out, last in the bar; the card's own page has none. */
+  onClose?: () => void;
   /** The way back, at the left of the title, for the card shown as a page inside another. */
   back?: ReactNode;
   /** Whether the card scrolls inside its own box (the window's); the page scrolls with the page. */
@@ -206,21 +209,25 @@ export function CardContent({
   return (
     <>
       {/* Where the card is, and the two ways out of the window. */}
-      <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-hairline px-6">
-        {url ? (
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="-ml-2 inline-flex min-h-7 items-center rounded-control px-2 font-mono text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
-          >
-            {id}
-          </a>
-        ) : (
-          <span className="font-mono text-sm text-secondary">{id}</span>
-        )}
-        <div className="flex items-center gap-1">{bar}</div>
-      </div>
+      <WindowHeader
+        leading={
+          url ? (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="-ml-2 inline-flex min-h-7 items-center rounded-control px-2 font-mono text-sm text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text"
+            >
+              {id}
+            </a>
+          ) : (
+            <span className="font-mono text-sm text-secondary">{id}</span>
+          )
+        }
+        trailing={bar}
+        onClose={onClose}
+        closeLabel="Close the inspector"
+      />
 
       <div className={scrolls ? "min-h-0 flex-1 overflow-y-auto" : ""}>
         {/* What the card is, and who and what it is about. The title wraps, however long. */}
@@ -292,7 +299,9 @@ export function CardContent({
 }
 
 function CardWindowView(
-  props: Omit<Parameters<typeof CardContent>[0], "bar" | "scrolls"> & { onClose: () => void },
+  props: Omit<Parameters<typeof CardContent>[0], "bar" | "onClose" | "scrolls"> & {
+    onClose: () => void;
+  },
 ) {
   const { onClose, ...rest } = props;
   return (
@@ -307,14 +316,9 @@ function CardWindowView(
                 Open as page
               </Link>
             </Button>
-            <IconButton
-              icon={XIcon}
-              iconWeight="regular"
-              aria-label="Close the inspector"
-              onClick={onClose}
-            />
           </>
         }
+        onClose={onClose}
       />
     </WindowFrame>
   );
