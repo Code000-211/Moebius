@@ -201,10 +201,7 @@ export function WorkflowPage() {
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <WorkflowGraph definition={saved} />
         <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto">
-          <section
-            aria-labelledby="workflow-file-title"
-            className="flex min-h-0 flex-col border-t border-hairline pt-4"
-          >
+          <section aria-labelledby="workflow-file-title" className="flex min-h-0 flex-col">
             <h2 id="workflow-file-title" className="m-0 mb-2 text-base font-semibold text-text">
               File
             </h2>
