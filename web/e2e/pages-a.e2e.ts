@@ -577,7 +577,12 @@ describe("projects", () => {
       // A run that goes on keeps the repository, and the server says so in the dialog.
       await page.getByRole("button", { name: "Delete repository" }).click();
       await dialog.getByRole("button", { name: "Delete" }).click();
-      await dialog.getByText("run 1 of demo is still going").waitFor();
+      // The server's own words are a toast, and the dialog stays open to try again.
+      await page
+        .getByRole("alert")
+        .filter({ hasText: "run 1 of demo is still going" })
+        .waitFor();
+      await dialog.waitFor();
       expect(fake().requests.filter((r) => r.method === "DELETE")).toHaveLength(1);
     },
   );
@@ -976,10 +981,10 @@ describe("the fleet", () => {
       await expect.poll(() => page.getByTestId("list-row").count()).toBe(2);
       const tiles = page.getByTestId("list-row");
       const card = tiles.filter({ hasText: "Add a feature" });
-      // The runs are one list under "Running", not grouped by agent.
-      await page.getByTestId("group-row").getByText("Running").waitFor();
+      // The runs are one list of rows with no group rows; a row says what the step is in plain words, not the command.
+      expect(await page.getByTestId("group-row").count()).toBe(0);
       await card.getByText("Code ·").waitFor();
-      await card.getByText("cargo test").waitFor();
+      await card.getByText("running the tests").waitFor();
       const talk = tiles.filter({ hasText: "Write a ready.luau" });
       await talk.getByText("ready.luau", { exact: false }).first().waitFor();
       // Stop and the tokens are on a row only while the pointer is on it.
@@ -991,15 +996,15 @@ describe("the fleet", () => {
       expect(await tiles.filter({ hasText: "Ship the first release" }).count()).toBe(0);
 
       // The row says the step its run is at, and a run event moves it on.
-      expect(await card.getByText("cargo clippy").count()).toBe(0);
+      expect(await card.getByText("checking the code").count()).toBe(0);
       server.chat?.emit(1, "tool_execution_start", {
         type: "tool_execution_start",
         toolCallId: "t2",
         toolName: "bash",
         args: { command: "cargo clippy" },
       });
-      await card.getByText("cargo clippy").waitFor();
-      await card.getByText("cargo test").waitFor({ state: "detached" });
+      await card.getByText("checking the code").waitFor();
+      await card.getByText("running the tests").waitFor({ state: "detached" });
 
       // A click opens the live view of the card or the chat.
       await card.click();
@@ -1012,7 +1017,7 @@ describe("the fleet", () => {
     },
   );
 
-  /** A step of a run is one line of a 36px row: a long command is cut with an ellipsis and the row keeps its height. */
+  /** A step of a run is one line of a 36px row: a long command is said in a few words and the row keeps its height. */
   it.skipIf(usesRealServer)("keeps a long command on one line of a 36px row", async () => {
     await open("/fleet");
     const command = `grep -rn "review_conflicts" ${"crates/moebius-core/src/board/".repeat(8)} | head -12`;
@@ -1022,7 +1027,7 @@ describe("the fleet", () => {
     }) as number;
     server.chat?.toolCall(chat, { id: "c1", tool: "bash", args: { command }, output: "" });
     const tile = page.getByTestId("list-row").filter({ hasText: "Look for the review gate" });
-    await tile.getByText("bash", { exact: false }).waitFor();
+    await tile.getByText("searching the code").waitFor();
     expect((await tile.boundingBox())?.height ?? 0).toBeLessThanOrEqual(37);
   });
 
@@ -1039,8 +1044,9 @@ describe("the fleet", () => {
       server.broadcast?.({ kind: "lagged", data: { missed: 1 } });
       const tile = page.getByTestId("list-row").filter({ hasText: "Which branch?" });
       await tile.getByText("Asks you").waitFor();
-      // The run that waits for the person is under its own group.
-      await page.getByTestId("group-row").getByText("Needs you").waitFor();
+      // The run that waits for the person is the first row, in orange, with no group row above it.
+      expect(await page.getByTestId("group-row").count()).toBe(0);
+      expect(await page.getByTestId("list-row").first().innerText()).toContain("Which branch?");
       const chat = server.chat?.chats.find((each) => each.id === asking);
       if (chat) chat.status = "succeeded";
       server.broadcast?.({ kind: "run_ended", data: { run: asking, status: "succeeded" } });

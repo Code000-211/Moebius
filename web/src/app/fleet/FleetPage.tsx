@@ -2,7 +2,7 @@
  * The Fleet page, with the tabs Active and Finished in its header (`?tab=finished` in the address, so a reload keeps
  * it). Active is the work that is going on, as one virtual list of 36px rows; Finished is the runs that ended, newest
  * first under the day they ended on, with the outcome, the card's id, the tokens and how long they went on. The runs that wait for the person come
- * first, under "Needs you", then the others under "Running". A row has the status icon, the issue's id, the title, one
+ * first, then the others, with no group rows. A row has the status icon, the issue's id, the title, one
  * pale line (the kind of run and the step it is at; "Plan ready" for a run that waits) and how long it has gone on. A run
  * that waits for a plan carries a quiet "Approve plan". Stop and the tokens are on the hovered or the selected row only,
  * and are not in the page otherwise. The rows that are drawn read their run's events and follow the stream's
