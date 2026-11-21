@@ -355,7 +355,6 @@ function Canvas({
             </Link>
           </Button>
         }
-        context={draft.description === "" ? undefined : draft.description}
         actions={
           <div className="flex items-center gap-2">
             <Select

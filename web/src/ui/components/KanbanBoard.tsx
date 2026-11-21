@@ -81,7 +81,7 @@ export type KanbanCardFaceProps = {
 
 const faceClass = ({ isSelected, isOpen, className }: KanbanCardFaceProps) =>
   cn(
-    "group rounded-card bg-surface px-3 py-2 outline outline-1 -outline-offset-1",
+    "group rounded-card bg-panel px-3 py-2 outline outline-1 -outline-offset-1",
     isSelected ? "outline-accent" : isOpen ? "outline-hairline-strong" : "outline-hairline-strong",
     className,
   );
@@ -92,7 +92,7 @@ export const KanbanCardFace = (props: KanbanCardFaceProps) => (
     aria-hidden
     // A picture of a card, so nothing in it is a target: the links it shows belong to the card being dragged.
     inert
-    className={faceClass({ ...props, className: cn("shadow-card-hover", props.className) })}
+    className={faceClass({ ...props, className: cn("shadow-card", props.className) })}
   >
     {props.children ?? <p className="m-0 text-base font-medium">{props.name}</p>}
   </div>

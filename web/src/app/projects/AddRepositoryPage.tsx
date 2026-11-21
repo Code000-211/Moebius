@@ -66,10 +66,7 @@ export function AddRepositoryPage() {
 
   return (
     <>
-      <PageHeader
-        title="Add a repository"
-        context="Moebius clones it on the server and opens its board."
-      />
+      <PageHeader title="Add a repository" />
       <Box className="w-full max-w-md">
         <form
           className="flex flex-col gap-4"

@@ -4,7 +4,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../api/keys";
@@ -123,10 +123,7 @@ describe("a fleet with many runs", () => {
     };
     show(at([...runs(3), waiting], [item]));
     const rows = await screen.findAllByTestId("list-row");
-    expect(screen.getAllByTestId("group-row").map((row) => row.textContent)).toEqual([
-      "Needs you",
-      "Running",
-    ]);
+    expect(screen.queryAllByTestId("group-row")).toHaveLength(0);
     expect(rows[0]?.textContent).toContain("Card 7");
     expect(rows[0]?.textContent).toContain("Plan ready");
     expect(
@@ -301,5 +298,22 @@ describe("the tabs of the fleet", () => {
     expect(last.textContent).toContain("2m");
     // No Stop and no Approve plan on a run that is over.
     expect(screen.queryByRole("button", { name: /^Stop/ })).toBeNull();
+  });
+
+  it("has the same header on both tabs, except Pause all, which means nothing for runs that are over", async () => {
+    show("/fleet");
+    expect(screen.getByRole("button", { name: "Filter" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Pause all" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Finished" }));
+    expect(screen.getByRole("button", { name: "Filter" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Pause all" })).toBeNull();
+  });
+
+  it("filters the finished runs by agent", async () => {
+    show("/fleet?tab=finished");
+    expect(await screen.findAllByTestId("list-row")).toHaveLength(3);
+    cleanup();
+    show("/fleet?tab=finished&agent=Nobody");
+    expect(await screen.findByText("No run has finished")).toBeTruthy();
   });
 });

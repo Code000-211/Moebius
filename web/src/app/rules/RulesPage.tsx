@@ -46,12 +46,7 @@ export function RulesPage() {
     },
   });
 
-  const header = (
-    <PageHeader
-      title="Rules"
-      context="What a run must not do. It lives in rules.md, and a refusal names the rule it broke."
-    />
-  );
+  const header = <PageHeader title="Rules" />;
   if (data.isPending) {
     return (
       <>

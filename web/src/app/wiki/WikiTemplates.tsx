@@ -63,7 +63,7 @@ export function FromTemplate({
   return (
     <form
       aria-label="Make a page from a template"
-      className="flex min-w-0 flex-col gap-3 rounded-card bg-surface p-4 outline outline-1 -outline-offset-1 outline-hairline"
+      className="flex min-w-0 flex-col gap-3 rounded-card bg-panel p-4 outline outline-1 -outline-offset-1 outline-hairline"
       onSubmit={(event) => {
         event.preventDefault();
         if (ready) make.mutate();

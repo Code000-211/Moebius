@@ -8,10 +8,7 @@ import { keyName, SHORTCUT_GROUPS } from "../shell/palette/shortcuts";
 export function ShortcutsPage() {
   return (
     <div data-testid="shortcuts-page">
-      <PageHeader
-        title="Keyboard shortcuts"
-        context="Single keys do the common things on the card in focus. None of them acts while you type in a field."
-      />
+      <PageHeader title="Keyboard shortcuts" />
       <div className="flex max-w-3xl flex-col gap-8">
         {SHORTCUT_GROUPS.map((group) => (
           <section key={group.title} aria-label={group.title}>

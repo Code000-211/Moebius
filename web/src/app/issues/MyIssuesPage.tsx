@@ -19,6 +19,7 @@ import { ReadFailed } from "../../ui/page/ReadFailed";
 import { VirtualList } from "../../ui/page/VirtualList";
 import { useOpenCard } from "../board/CardWindowHost";
 import { type MyIssue, myIssueItems } from "./model";
+import { NewIssueButton } from "./NewIssueButton";
 
 export function MyIssuesPage() {
   const session = useQuery({ queryKey: keys.session, queryFn: getSession });
@@ -33,7 +34,7 @@ export function MyIssuesPage() {
   const now = useNow();
   const [chosen, setChosen] = useState<string | null>(null);
 
-  const header = <PageHeader title="My issues" />;
+  const header = <PageHeader title="My issues" actions={<NewIssueButton />} />;
   const empty = (
     <Empty
       centered

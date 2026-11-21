@@ -1,6 +1,6 @@
 /**
- * The Mentions tab: the person's notices (mentions, what was given to them and what changed on a card they follow),
- * newest first, as one virtualised list. Choosing a notice marks it read on the server
+ * The Mentions and Following tabs: the person's notices, newest first, as one virtualised list each. Mentions holds
+ * the mentions and what was given to them; Following what changed on a card they follow. Choosing a notice marks it read on the server
  * (for this person alone) and opens the card or the item it is about. It reads the notices, which `notice_added` and
  * `notice_read` keep current. `?notice=<id>` opens that notice as choosing it does (the desktop app's notification
  * goes there), and then leaves the address as the tab's own.
@@ -19,9 +19,18 @@ import { useToast } from "../../ui/page/Toast";
 import { type ListItem, VirtualList } from "../../ui/page/VirtualList";
 import { cardKey } from "./model";
 import { NoticeRow } from "./NoticeRow";
-import { MENTIONS, pathOf } from "./notices";
+import { isFollowing, MENTIONS, pathOf } from "./notices";
 
-export function MentionsList({ snapshot, now }: { snapshot: Snapshot; now: number }) {
+export function MentionsList({
+  snapshot,
+  now,
+  following = false,
+}: {
+  snapshot: Snapshot;
+  now: number;
+  /** Shows the notices of the cards the person follows (the Following tab) instead of their mentions. */
+  following?: boolean;
+}) {
   const toast = useToast();
   const [chosen, setChosen] = useState<string | null>(null);
   const data = useQuery({ queryKey: keys.notices, queryFn: readNotices });
@@ -75,11 +84,13 @@ export function MentionsList({ snapshot, now }: { snapshot: Snapshot; now: numbe
       />
     );
   }
-  const items: ListItem<Notice>[] = (data.data ?? []).map((notice) => ({
-    type: "row",
-    key: String(notice.id),
-    data: notice,
-  }));
+  const items: ListItem<Notice>[] = (data.data ?? [])
+    .filter((notice) => isFollowing(notice) === following)
+    .map((notice) => ({
+      type: "row",
+      key: String(notice.id),
+      data: notice,
+    }));
   const open = (key: string) => {
     const found = items.find((each) => each.key === key);
     const notice = found?.type === "row" ? found.data : undefined;
@@ -90,11 +101,11 @@ export function MentionsList({ snapshot, now }: { snapshot: Snapshot; now: numbe
   };
   return (
     <VirtualList
-      label="Mentions"
+      label={following ? "Following" : "Mentions"}
       className="-mx-6 -mb-6 min-h-0 flex-1 outline-none"
       items={items}
       loading={data.isPending}
-      loadingMessage="Reading your mentions"
+      loadingMessage={following ? "Reading what you follow" : "Reading your mentions"}
       selectedKey={chosen}
       onSelect={setChosen}
       onOpen={open}
@@ -114,7 +125,7 @@ export function MentionsList({ snapshot, now }: { snapshot: Snapshot; now: numbe
       empty={
         <Empty
           centered
-          title="Nothing mentions you"
+          title={following ? "Nothing has changed" : "Nothing mentions you"}
           icon={<AtIcon className="size-6 text-secondary" />}
         />
       }

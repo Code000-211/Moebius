@@ -128,7 +128,6 @@ export function WorkflowPage() {
       <PageHeader
         title={saved.name}
         back={back}
-        context={saved.description}
         actions={
           <div className="flex items-center gap-2">
             <Button asChild variant="secondary" size="sm">

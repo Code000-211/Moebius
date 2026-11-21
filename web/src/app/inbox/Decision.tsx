@@ -18,7 +18,6 @@ import { Button } from "../../ui/components/Button";
 import { Input } from "../../ui/components/Input";
 import { PrBadge } from "../../ui/components/PrBadge";
 import { cn } from "../../ui/lib/cn";
-import { FadedClamp } from "../../ui/page/FadedClamp";
 import { Field, TextArea } from "../../ui/page/Field";
 import { MarkLabel } from "../../ui/page/MarkLabel";
 import { Notice } from "../../ui/page/Notice";
@@ -338,7 +337,7 @@ function OwnChange({ item, proposed }: { item: InboxItem; proposed: Proposal | n
   return (
     <div className="flex flex-col gap-3">
       {shown.reason !== "" && (
-        // Three lines at most, the last one fading: the whole of the reason is a click away on the Retro page, so a
+        // Three lines at most: the whole of the reason is a click away on the Retro page, so a
         // card that lists proposals does not have to hold all of it. With no proposal to open it stays plain text.
         <button
           type="button"
@@ -346,7 +345,7 @@ function OwnChange({ item, proposed }: { item: InboxItem; proposed: Proposal | n
           onClick={open}
           className="flex min-h-8 w-full max-w-prose cursor-pointer items-center text-left text-base text-secondary transition-colors duration-(--motion-routine) ease-out hover:text-text disabled:cursor-default disabled:hover:text-secondary"
         >
-          <FadedClamp text={shown.reason} />
+          <span className="clamp-3 break-words">{shown.reason}</span>
         </button>
       )}
       {shown.diff !== "" && <CodeBlock language="diff" code={shown.diff} />}

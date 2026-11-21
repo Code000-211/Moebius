@@ -7,7 +7,6 @@ import { CaretDownIcon, FileIcon as DefaultFileIcon } from "@phosphor-icons/reac
 import type { ElementType, ReactNode } from "react";
 import { cn } from "../lib/cn";
 import { fileName, plural } from "../lib/format";
-import { FadedLine } from "../page/FadedLine";
 import { ToolStatusDot, type ToolStatusLike } from "./ToolStatusDot";
 
 interface ChatFileEntryProps {
@@ -47,11 +46,9 @@ export function ChatFileEntry({
         aria-expanded={onToggle ? expanded : undefined}
       >
         <FileIcon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
-        <FadedLine
-          text={fileName(filename)}
-          title={filename}
-          className="flex-1 font-mono text-sm text-secondary"
-        />
+        <span title={filename} className="min-w-0 flex-1 truncate font-mono text-sm text-secondary">
+          {fileName(filename)}
+        </span>
         {hasStats && (
           <span className="shrink-0 text-sm tabular-nums">
             {additions !== undefined && additions > 0 && (

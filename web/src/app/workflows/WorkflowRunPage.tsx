@@ -77,18 +77,11 @@ export function WorkflowRunPage() {
   const shown = run.data;
   const status = runStatus(shown.status);
   const waiting = shown.waiting;
-  const length =
-    shown.started_at !== null && shown.finished_at !== null
-      ? elapsed(shown.finished_at - shown.started_at)
-      : null;
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         title={`${shown.workflow} · run ${shown.id}`}
         back={back}
-        context={`Started by ${triggerName(shown.trigger).toLowerCase()}${
-          length === null ? "" : ` · took ${length}`
-        }`}
         actions={
           <Link
             className="rounded-round text-sm underline-offset-4 hover:underline"
