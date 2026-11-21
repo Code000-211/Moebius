@@ -14,7 +14,7 @@ export function SettingsNav({ entries }: { entries: readonly SettingsEntry[] }) 
   return (
     <nav
       aria-label="Settings"
-      className="flex w-50 shrink-0 flex-col gap-3 overflow-y-auto border-r border-hairline px-3 py-2"
+      className="flex w-50 shrink-0 flex-col gap-3 overflow-y-auto border-r border-hairline px-2 py-2"
     >
       <label className="flex h-7 shrink-0 items-center gap-2 rounded-control border border-hairline px-2 text-secondary focus-within:border-accent-border">
         <SearchIcon className="size-4 shrink-0" />
