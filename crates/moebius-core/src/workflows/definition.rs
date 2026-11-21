@@ -523,8 +523,9 @@ pub fn parse(name: &str, text: &str) -> Result<WorkflowDefinition, Error> {
     Ok(definition)
 }
 
-/// Every workflow in the harness configuration repository under `root`, by file name, in name order.
-pub fn list(root: &Path) -> Result<Vec<(String, WorkflowDefinition)>, Error> {
+/// The names of the workflow files kept server-wide in the harness configuration repository under `root`, in name
+/// order; none when it has no `workflows/` folder.
+pub fn names(root: &Path) -> Result<Vec<String>, Error> {
     let dir = root.join(DIRECTORY);
     let entries = match std::fs::read_dir(&dir) {
         Ok(entries) => entries,
@@ -545,7 +546,12 @@ pub fn list(root: &Path) -> Result<Vec<(String, WorkflowDefinition)>, Error> {
         }
     }
     names.sort();
-    names
+    Ok(names)
+}
+
+/// Every workflow in the harness configuration repository under `root`, by file name, in name order.
+pub fn list(root: &Path) -> Result<Vec<(String, WorkflowDefinition)>, Error> {
+    names(root)?
         .into_iter()
         .map(|name| read(root, &name).map(|definition| (name, definition)))
         .collect()

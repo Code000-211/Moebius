@@ -16,6 +16,20 @@ fn triage(prompt: &str) -> serde_json::Value {
     json!({ "name": "Triage", "schedule": "*/5 * * * *", "agent": "Coder", "prompt": prompt })
 }
 
+/// The harness configuration repository of `dir`, in a server whose workflows are still kept server-wide: these tests
+/// are about the upgrade of the automations to workflow files, before the migration to projects (which has its own
+/// tests, in `app::workflows::migrate`) moves them. The migration leaves a workflow that names no repository where it
+/// is when every project is private.
+fn server_wide_harness(
+    app: &App,
+    dir: &std::path::Path,
+) -> std::sync::Arc<crate::harness::repo::HarnessRepo> {
+    for project in app.store.projects().unwrap() {
+        app.store.set_project_access(project.id, true, &[]).unwrap();
+    }
+    crate::harness::repo::testing::use_harness(app, dir)
+}
+
 /// The local minute a minute after it is on the server.
 fn a_minute_from_now(app: &App) -> time::PrimitiveDateTime {
     cron::parse_minute(&app.store.local_minute().unwrap()).unwrap() + time::Duration::minutes(1)
@@ -236,7 +250,7 @@ async fn an_upgraded_automation_is_edited_as_a_workflow_file() {
         .unwrap();
     let id = added.automation.id;
 
-    let harness = crate::harness::repo::testing::use_harness(app, dir.path());
+    let harness = server_wide_harness(app, dir.path());
     app.migrate_automations().unwrap();
     let definition = crate::workflows::definition::read(harness.path(), "Triage").unwrap();
     assert_eq!(definition.name, "Triage");
@@ -288,7 +302,7 @@ async fn an_upgraded_automation_is_edited_as_a_workflow_file() {
 async fn a_repository_automation_fires_as_a_workflow_run() {
     let (dir, state, addr) = start().await;
     let app = &state.app;
-    let harness = crate::harness::repo::testing::use_harness(app, dir.path());
+    let harness = server_wide_harness(app, dir.path());
     let repo = app
         .store
         .add_repository(
@@ -387,7 +401,7 @@ async fn a_repository_automation_fires_as_a_workflow_run() {
 async fn a_repository_automation_whose_chat_cannot_start_is_a_failed_firing() {
     let (dir, state, addr) = start().await;
     let app = &state.app;
-    let harness = crate::harness::repo::testing::use_harness(app, dir.path());
+    let harness = server_wide_harness(app, dir.path());
     let repo = app
         .store
         .add_repository(
@@ -441,7 +455,7 @@ async fn a_repository_automation_whose_chat_cannot_start_is_a_failed_firing() {
 async fn a_repository_automation_whose_repository_is_gone_is_a_failed_firing() {
     let (dir, state, addr) = start().await;
     let app = &state.app;
-    let harness = crate::harness::repo::testing::use_harness(app, dir.path());
+    let harness = server_wide_harness(app, dir.path());
     let repo = app
         .store
         .add_repository(
@@ -489,7 +503,7 @@ async fn an_upgraded_automation_still_fires_once() {
         .await
         .unwrap();
     let id = added.automation.id;
-    crate::harness::repo::testing::use_harness(app, dir.path());
+    server_wide_harness(app, dir.path());
     app.migrate_automations().unwrap();
 
     let due = a_minute_from_now(app) + time::Duration::minutes(5);
@@ -523,7 +537,7 @@ async fn an_automation_edited_into_an_ordinary_workflow_does_not_also_fire_from_
     body["schedule"] = json!("* * * * *");
     let added: AutomationView = add(&state, &addr, body).await.json().await.unwrap();
     let id = added.automation.id;
-    let harness = crate::harness::repo::testing::use_harness(app, dir.path());
+    let harness = server_wide_harness(app, dir.path());
     app.migrate_automations().unwrap();
 
     // A person edits the file into an ordinary workflow by adding a node to it.
@@ -556,7 +570,7 @@ async fn an_upgraded_automation_with_a_name_that_is_not_a_file_name_keeps_firing
     let added: AutomationView = add(&state, &addr, body).await.json().await.unwrap();
     let id = added.automation.id;
 
-    let harness = crate::harness::repo::testing::use_harness(app, dir.path());
+    let harness = server_wide_harness(app, dir.path());
     app.migrate_automations().unwrap();
     let key = format!("automation-{id}");
     let definition = crate::workflows::definition::read(harness.path(), &key).unwrap();
@@ -605,7 +619,7 @@ async fn an_automation_whose_workflow_file_is_deleted_stops_until_the_next_start
     body["schedule"] = json!("* * * * *");
     let added: AutomationView = add(&state, &addr, body).await.json().await.unwrap();
     let id = added.automation.id;
-    let harness = crate::harness::repo::testing::use_harness(app, dir.path());
+    let harness = server_wide_harness(app, dir.path());
     app.migrate_automations().unwrap();
 
     // A person deletes the workflow's file: the automation no longer fires, from its row or anywhere else.
@@ -678,7 +692,7 @@ async fn an_upgrade_does_not_fire_the_minute_it_happens_in_again() {
         .set_automations_checked("2026-11-09 03:30")
         .unwrap();
 
-    let harness = crate::harness::repo::testing::use_harness(app, dir.path());
+    let harness = server_wide_harness(app, dir.path());
     app.migrate_automations().unwrap();
     assert_eq!(
         app.store.schedule_firing("Triage").unwrap().as_deref(),
@@ -713,7 +727,7 @@ async fn an_upgrade_does_not_fire_the_minute_it_happens_in_again() {
 async fn an_automation_whose_name_a_workflow_holds_gets_a_file_of_its_own_and_keeps_firing() {
     let (dir, state, _addr) = start().await;
     let app = &state.app;
-    let harness = crate::harness::repo::testing::use_harness(app, dir.path());
+    let harness = server_wide_harness(app, dir.path());
     // A person's manual workflow already has the file the row of the same name would want.
     let ordinary = crate::workflows::definition::parse(
         "Nightly",
@@ -833,7 +847,7 @@ async fn two_automations_of_the_same_name_keep_a_file_each_and_both_fire_once() 
             &app.store.local_minute().unwrap(),
         )
         .unwrap();
-    let harness = crate::harness::repo::testing::use_harness(app, dir.path());
+    let harness = server_wide_harness(app, dir.path());
     app.migrate_automations().unwrap();
 
     // Each row keeps its own file, with its own prompt.
@@ -890,7 +904,7 @@ async fn two_automations_of_the_same_name_keep_a_file_each_and_both_fire_once() 
 async fn an_automation_added_with_a_name_another_keeps_does_not_replace_its_file() {
     let (dir, state, addr) = start().await;
     let app = &state.app;
-    let harness = crate::harness::repo::testing::use_harness(app, dir.path());
+    let harness = server_wide_harness(app, dir.path());
 
     let first: AutomationView = add(&state, &addr, triage("Triage the first issues."))
         .await

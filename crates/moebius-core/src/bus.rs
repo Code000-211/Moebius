@@ -180,6 +180,19 @@ pub enum Event {
     WikiError {
         message: String,
     },
+    /// The server-wide workflow files were moved to the projects that own them (ADR 0025), in one commit of the
+    /// harness configuration repository (`commit` is its short id; `moved` how many files). It names no project: the
+    /// stream sends it to everyone.
+    WorkflowsMigrated {
+        commit: String,
+        moved: usize,
+    },
+    /// A server-wide workflow file stays where it is, because no project can take it yet; it is tried again at every
+    /// start. `reason` names no project.
+    WorkflowsMigrationDeferred {
+        workflow: String,
+        reason: String,
+    },
     /// A request to a project was made, drafted, edited, accepted or declined. It carries no text: a viewer reads only
     /// their own requests, through the API.
     IntakeChanged {
@@ -831,6 +844,20 @@ mod tests {
                     message: "boom".into(),
                 },
                 json!({"kind": "wiki_error", "data": {"message": "boom"}}),
+            ),
+            (
+                Event::WorkflowsMigrated {
+                    commit: "abc123".into(),
+                    moved: 2,
+                },
+                json!({"kind": "workflows_migrated", "data": {"commit": "abc123", "moved": 2}}),
+            ),
+            (
+                Event::WorkflowsMigrationDeferred {
+                    workflow: "nightly".into(),
+                    reason: "no project exists yet".into(),
+                },
+                json!({"kind": "workflows_migration_deferred", "data": {"workflow": "nightly", "reason": "no project exists yet"}}),
             ),
             (
                 Event::IntakeChanged {

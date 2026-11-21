@@ -136,6 +136,26 @@ impl Store {
         Ok(self.workflow_run(id)?.expect("the run was just stored"))
     }
 
+    /// The names of the workflows with a run that records no project yet, from before workflows belonged to projects
+    /// (ADR 0025), in name order.
+    pub fn workflows_with_unplaced_runs(&self) -> Result<Vec<String>> {
+        let conn = self.read();
+        let mut statement = conn.prepare(
+            "SELECT DISTINCT workflow FROM workflow_runs WHERE project_id IS NULL ORDER BY workflow",
+        )?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Gives every run of `workflow` that records no project to the project `project_id`, whatever repository the run
+    /// belongs to. A run that has a project keeps it, so run again it changes nothing. The number of runs given.
+    pub fn place_workflow_runs(&self, workflow: &str, project_id: i64) -> Result<usize> {
+        Ok(self.conn().execute(
+            "UPDATE workflow_runs SET project_id = ?2 WHERE workflow = ?1 AND project_id IS NULL",
+            params![workflow, project_id],
+        )?)
+    }
+
     /// Records the worktree of the run `id`, in which the run's agents work on the branch named for the run, so its
     /// later agents reuse it.
     pub fn set_workflow_run_worktree(&self, id: i64, worktree: &Path) -> Result<()> {

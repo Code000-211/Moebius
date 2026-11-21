@@ -3284,11 +3284,12 @@ same five, in the order a person takes them. Response:
     {"key": "coder", "title": "Choose the Coder's model", "done": true, "detail": "The Coder uses qwen."},
     {"key": "repository", "title": "Add a repository", "done": false, "detail": "No repository is added yet."}
   ],
-  "warnings": []
+  "warnings": [],
+  "pending": []
 }
 ```
 
-- `done` is true when every step is.
+- `done` is true when every step is. `pending` does not count.
 - `upstream` is done when the router's upstreams list at least one model (the list `GET /v1/models/available` answers,
   without asking again if it is less than 5 minutes old). Without an upstream the detail is `Add an upstream on the
   Models page.`; when every upstream fails, it names each one as `Could not ask <url>: <message>.`
@@ -3302,6 +3303,13 @@ same five, in the order a person takes them. Response:
 - `warnings` are sentences the person should read even when every step is done: one for each upstream that logs in with
   OAuth, `<url> logs in with OAuth.` followed by the warning about the provider's terms. `moebius doctor` writes them
   after the steps.
+- `pending` lists what waits and holds nobody back from a first card, in the shape of a step with `done` false. Today
+  that is one item, with the key `workflow`, for each workflow file in the server-wide `workflows/` folder that the
+  [migration to projects](harness-configuration.md#workflows-of-a-project) could not move: the title is `Move the
+  workflow <name> to a project`, the detail says why (no project exists yet, only private projects exist for a workflow
+  that names no repository, the file cannot be read, or its project has a workflow of that name already). It is tried
+  again at every start, so the item goes when the cause does. `moebius doctor` writes the pending items after the
+  warnings.
 
 ### `GET /v1/plugins`
 
@@ -4292,6 +4300,8 @@ Errors: `403` for an agent's run token; `404` no such research; `409` as above.
 | `project_changed` | A project was made, renamed or made private or public through the API; sent only to those who see its record (see [private projects](#private-projects)). A repository's home project, made with it, comes with `repository_added`. | `{"id", "name", "key", "created_at", "repositories": [id], "files": id or null, "private": bool, "members": [person id]}` |
 | `wiki_changed` | A person edited the wiki through the API, or a refresh brought commits pushed to its `origin` from elsewhere. | `{"commit": string (the full id the pages are now read at)}` |
 | `wiki_error` | The wiki could not follow its `origin` on the server's refresh (every 30 seconds). | `{"message": string}` |
+| `workflows_migrated` | The server-wide workflow files were moved to their projects, in one commit (see [workflows of a project](harness-configuration.md#workflows-of-a-project)); sent at the start that moved them, to everyone, so it names no project. | `{"commit": string (short id), "moved": number}` |
+| `workflows_migration_deferred` | A server-wide workflow file stays where it is because no project can take it yet; sent at every start that finds it. | `{"workflow": string, "reason": string}` |
 | `intake_changed` | A request to a project was made, drafted, edited, accepted or declined. It carries no text. | `{"project": id, "request": id, "status": string}` |
 | `cycle_changed` | A cycle was made, edited or closed through the API. | `{"id", "project_id", "name", "starts_on", "ends_on", "closed_at", "created_at"}` |
 | `cycle_removed` | A cycle was deleted through the API; its cards stay. | `{"cycle": id}` |

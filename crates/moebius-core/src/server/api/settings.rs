@@ -206,9 +206,12 @@ async fn start_steps(State(state): State<ApiState>) -> Result<axum::Json<setup::
     })
     .await?
     .0;
+    let awaiting = blocking(&state.app, |app| Ok(app.workflows_awaiting_a_project()))
+        .await?
+        .0;
     let config = state.config.get();
     Ok(axum::Json(
-        setup::start(&config, available, &agents, repositories).await,
+        setup::start(&config, available, &agents, repositories, awaiting).await,
     ))
 }
 

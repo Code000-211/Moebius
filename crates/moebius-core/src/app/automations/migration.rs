@@ -14,6 +14,10 @@ impl App {
             return Ok(());
         }
         for automation in self.store.automations()? {
+            // An automation of a project (ADR 0025) has its file there, not in the server-wide folder.
+            if self.store.automation_project(automation.id)?.is_some() {
+                continue;
+            }
             // The row has been read up to its checked minute, so the workflow starts from there rather than from
             // the five minutes before now: the minute an upgrade happens in cannot fire a second time.
             let checked = self
