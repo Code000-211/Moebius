@@ -1,8 +1,7 @@
 /**
  * The Inbox: what needs the person, what an agent is working on and what is done, as one virtualised list of 36px rows
- * under group rows (`VirtualList`, `InboxRow`, `listOf` in `model.ts`). The tabs are All and Mentions, with no counts.
- * The row that waits for a plan has Approve plan on it, which approves without opening anything. Choosing a row reads
- * it (it loses its dot) and opens its card in the card window; an item that is about no card shows what to decide in
+ * under group rows (`VirtualList`, `InboxRow`, `listOf` in `model.ts`). The tabs are Needs you (with how many wait), Mentions and Following; the header carries New issue.
+ * The row that waits for a plan has Approve plan on it, which approves without opening anything. Choosing a row opens its card in the card window; an item that is about no card shows what to decide in
  * the right column (`Decision`). It reads the snapshot, which the event stream keeps current, so an item arrives and
  * leaves on its own. What is chosen is in the address (`?kind=mentions`, `?repository=`, `?change=`, `?item=`), so a
  * reload keeps it; a repository or change in the address shows the filter bar so it can be taken off. The Mentions
@@ -33,14 +32,14 @@ import { TabPanel, Tabs } from "../../ui/page/Tabs";
 import { useToast } from "../../ui/page/Toast";
 import { VirtualList } from "../../ui/page/VirtualList";
 import { useOpenCard } from "../board/CardWindowHost";
+import { NewIssueButton } from "../issues/NewIssueButton";
 import { AssigneesProperty } from "../people/AssigneesProperty";
 import { perform } from "./actions";
 import { Decision } from "./Decision";
 import { InboxRow } from "./InboxRow";
 import { MentionsList } from "./MentionsList";
 import { changeOf, type Filters, listOf, shown } from "./model";
-import { isNoticeTab, MENTIONS } from "./notices";
-import { useRead } from "./read";
+import { FOLLOWING, isNoticeTab, MENTIONS, waiting } from "./notices";
 
 /** The fields of the bar: the repository, while there is more than one, and the change an item is about. */
 function filterFields(snapshot: Snapshot, filters: Filters): FilterField[] {
@@ -81,7 +80,6 @@ export function InboxPage() {
   const now = useNow();
   const toast = useToast();
   const openCard = useOpenCard();
-  const { read, markRead } = useRead();
   const mentions = useQuery({ queryKey: keys.notices, queryFn: readNotices });
   const [picked, setPicked] = useState<string | null>(null);
   const approving = useMutation({
@@ -118,6 +116,7 @@ export function InboxPage() {
     repository: repository !== null && /^\d+$/.test(repository) ? Number(repository) : null,
   };
   const onMentions = isNoticeTab(filters.kind);
+  const tab = filters.kind === FOLLOWING ? FOLLOWING : onMentions ? MENTIONS : "";
   const items = snapshot === undefined || onMentions ? [] : shown(snapshot, filters);
   const choice = params.get("item");
   const chosen = items.find((each) => String(each.id) === choice) ?? null;
@@ -129,7 +128,6 @@ export function InboxPage() {
     const entry = list.find((each) => each.key === key);
     if (entry?.type !== "row") return;
     const { item, card } = entry.data;
-    if (item !== null) markRead(item.id);
     if (card !== null) openCard(card);
     else if (item !== null) setQuery({ item: String(item.id) });
   };
@@ -143,14 +141,20 @@ export function InboxPage() {
           <Tabs
             label="Kind"
             idBase={tabs}
-            value={onMentions ? MENTIONS : ""}
+            value={tab}
             onChange={(kind) => setQuery({ kind, item: "" })}
             tabs={[
-              { value: "", label: "All" },
+              {
+                value: "",
+                label: "Needs you",
+                count: snapshot ? waiting(snapshot.inbox.length, mentions.data ?? []) : undefined,
+              },
               { value: MENTIONS, label: "Mentions" },
+              { value: FOLLOWING, label: "Following" },
             ]}
           />
         }
+        actions={<NewIssueButton />}
       />
       {!onMentions && filtered && snapshot && (
         <FilterBar
@@ -164,13 +168,9 @@ export function InboxPage() {
           onClear={() => setQuery({ repository: "", change: "" })}
         />
       )}
-      <TabPanel
-        idBase={tabs}
-        value={onMentions ? MENTIONS : ""}
-        className="flex min-h-0 flex-1 flex-col"
-      >
+      <TabPanel idBase={tabs} value={tab} className="flex min-h-0 flex-1 flex-col">
         {onMentions ? (
-          snapshot && <MentionsList snapshot={snapshot} now={now} />
+          snapshot && <MentionsList snapshot={snapshot} now={now} following={tab === FOLLOWING} />
         ) : (
           <VirtualList
             label="Inbox"
@@ -187,7 +187,6 @@ export function InboxPage() {
                 now={now}
                 at={at}
                 selected={on}
-                unread={entry.item !== null && !read.has(entry.item.id)}
                 approving={approving.isPending}
                 onClick={(event) => {
                   onClick(event);
@@ -227,7 +226,6 @@ export function InboxPage() {
           />
         )}
       </TabPanel>
-      {snapshot && chosen && <ReadOnShow id={chosen.id} markRead={markRead} />}
       {snapshot && (
         <Settled
           choice={choice}
@@ -301,11 +299,5 @@ function ReadNoticesOf({
   useEffect(() => {
     for (const each of unread) onRead(each.id);
   }, [unread.map((each) => each.id).join(",")]);
-  return null;
-}
-
-/** What is chosen is read, whether a person chose it or the address did. */
-function ReadOnShow({ id, markRead }: { id: number; markRead: (id: number) => void }) {
-  useEffect(() => markRead(id), [id, markRead]);
   return null;
 }

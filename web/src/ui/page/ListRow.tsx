@@ -50,7 +50,6 @@ export function ListRow({
   owner,
   age,
   selected = false,
-  unread = false,
   at,
   onClick,
   className,
@@ -60,7 +59,7 @@ export function ListRow({
   status?: StatusState;
   /** What stands in the place of the status icon, for a row whose state is not one of the five (a run's outcome). */
   mark?: ReactNode;
-  /** The issue's id, drawn in mono. */
+  /** The issue's id, drawn in mono; a row with none (a Retro proposal) leaves no gap for it. */
   id: string;
   title: string;
   /** The one pale reason or activity ("Plan ready", "editing engine.rs"). */
@@ -72,8 +71,6 @@ export function ListRow({
   /** The age, already said the compact way (`2m`). */
   age?: string;
   selected?: boolean;
-  /** Draws a small accent dot after the title and until the row has been read. */
-  unread?: boolean;
   at?: RowPosition;
   onClick?: (event: MouseEvent<HTMLDivElement>) => void;
   className?: string;
@@ -89,13 +86,12 @@ export function ListRow({
       role="listitem"
       data-testid="list-row"
       data-selected={selected ? "true" : undefined}
-      data-unread={unread ? "" : undefined}
       aria-current={selected ? "true" : undefined}
       onClick={onClick}
       {...position(at)}
       {...data}
       className={cn(
-        "group/row relative flex h-9 w-full items-center gap-2.5 border-b border-hairline px-4 text-base",
+        "group/row relative flex h-9 w-full items-center gap-2.5 border-b border-hairline px-6 text-base",
         onClick && "cursor-pointer",
         selected
           ? "bg-accent-tint before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent"
@@ -104,20 +100,20 @@ export function ListRow({
       )}
     >
       {mark ?? <StatusIcon state={status} />}
-      <span className="w-16 shrink-0 truncate font-mono text-xs text-muted">{id}</span>
-      <span className="min-w-0 shrink truncate font-medium text-text">{title}</span>
-      {unread && (
-        <>
-          <span
-            aria-hidden="true"
-            data-testid="unread-dot"
-            className="absolute left-1 top-1/2 size-1.5 -translate-y-1/2 rounded-full bg-accent"
-          />
-          <span className="sr-only">Unread</span>
-        </>
+      {id !== "" && (
+        <span className="w-16 shrink-0 truncate font-mono text-xs text-muted">{id}</span>
       )}
-      {reason && <span className="min-w-0 shrink-[2] truncate text-muted">{reason}</span>}
-      <span className="ml-auto flex shrink-0 items-center gap-2.5">
+      {/* The title and the reason are a line that wraps and is clipped: a reason that does not fit after the title
+          goes away whole, instead of shrinking to a letter. */}
+      <div className="flex h-9 min-w-0 flex-1 flex-wrap gap-x-2.5 overflow-hidden">
+        <span className="max-w-full truncate font-medium leading-9 text-text">{title}</span>
+        {reason && (
+          <span className="max-w-full truncate whitespace-nowrap leading-9 text-muted">
+            {reason}
+          </span>
+        )}
+      </div>
+      <span className="flex shrink-0 items-center gap-2.5">
         {action}
         {owner && <Avatar handle={owner} className="size-[18px]" />}
         {age !== undefined && (
@@ -145,7 +141,7 @@ export function GroupRow({
       data-testid="group-row"
       {...position(at)}
       className={cn(
-        "flex h-[30px] w-full items-center border-b border-hairline bg-group-fill px-4 text-xs font-medium text-secondary",
+        "flex h-[30px] w-full items-center border-b border-hairline bg-group-fill px-6 text-xs font-medium text-secondary",
         className,
       )}
     >

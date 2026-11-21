@@ -27,6 +27,7 @@ import { cardKey } from "../board/cardKey";
 import { isHeld, isLive } from "../board/model";
 import { rowAge } from "../board/rowAge";
 import { fieldsLine, issueDisplayChoices, issueFilterFields, issueQuery } from "../kinds/model";
+import { NewIssueButton } from "./NewIssueButton";
 
 export function IssuesPage() {
   const [params, setQuery] = useQueryParams();
@@ -63,6 +64,7 @@ export function IssuesPage() {
     <div data-testid="issues-page" className="flex flex-col gap-4">
       <PageHeader
         title="Issues"
+        actions={<NewIssueButton />}
         context="The cards of every project. Filter by a kind's fields, whichever project a card is in."
       />
       <FilterBar

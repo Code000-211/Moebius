@@ -4,7 +4,7 @@
  * shown, and a notice that is gone leaves the tab as it is.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Snapshot } from "../../api/types/board";
@@ -90,8 +90,9 @@ describe("the list of notices", () => {
   it("lists every kind of notice, unread until chosen, and reads one when it is chosen", async () => {
     open("/inbox?kind=mentions");
     const row = await screen.findByTestId("notice");
-    expect(row.getAttribute("data-unread")).toBe("");
-    expect(screen.getByTestId("unread-dot")).toBeTruthy();
+    // Unread, it has the needs-you icon, and no dot.
+    expect(within(row).getByTestId("status-needsYou")).toBeTruthy();
+    expect(screen.queryByTestId("unread-dot")).toBeNull();
     row.click();
     await waitFor(() => expect(requests).toContain("POST /v1/notices/4/read"));
   });

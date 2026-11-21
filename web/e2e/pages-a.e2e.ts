@@ -115,7 +115,7 @@ describe("the inbox", () => {
       await page.getByText("Nothing needs you", { exact: true }).waitFor();
       await page.getByRole("link", { name: "Open Fleet" }).waitFor();
     } else {
-      await page.getByRole("tab", { name: "All", exact: true }).waitFor();
+      await page.getByRole("tab", { name: /^Needs you/ }).waitFor();
       await page.getByTestId("group-row").filter({ hasText: "Needs you" }).waitFor();
     }
   });
@@ -389,29 +389,19 @@ describe("the inbox", () => {
   });
 
   it.skipIf(usesRealServer)(
-    "shows rows with an unread dot that goes once the item is read",
+    "has no unread dot, and the address keeps the choice of a row",
     async () => {
       await open("/inbox");
       await items().first().waitFor();
-      // A row has no button but the one action of the row that waits for a plan, and every item starts unread.
-      const rows = items();
-      expect(await rows.getByRole("button").count()).toBe(1);
-      const dots = page.getByTestId("unread-dot");
-      expect(await dots.count()).toBe(await rows.count());
+      // A row has no button but the one action of the row that waits for a plan.
+      expect(await items().getByRole("button").count()).toBe(1);
+      expect(await page.getByTestId("unread-dot").count()).toBe(0);
 
       await choose("Let the Coder read the tests first");
-      const stuck = item("Let the Coder read the tests first");
-      expect(await stuck.getByTestId("unread-dot").count()).toBe(0);
-      expect(await dots.count()).toBe((await rows.count()) - 1);
       expect(path()).toMatch(/^\/inbox\?item=\d+$/);
-
-      // The reading is kept for this browser, and the choice by the address.
       await page.reload();
       await decision().waitFor();
-      expect(
-        await item("Let the Coder read the tests first").getByTestId("unread-dot").count(),
-      ).toBe(0);
-      expect(await dots.count()).toBe((await rows.count()) - 1);
+      expect(await page.getByTestId("unread-dot").count()).toBe(0);
     },
   );
 

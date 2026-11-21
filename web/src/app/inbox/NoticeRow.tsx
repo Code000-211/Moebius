@@ -1,7 +1,7 @@
 /**
  * One notice of the Mentions tab as a row of the shared list, like an item of the Inbox (`InboxRow.tsx`): the card
- * it is about, its title, who did what as the one pale reason, the avatar of who did it, and the age. It is unread
- * until it is chosen. Choosing it reads it.
+ * it is about, its title, who did what as the one pale reason, the avatar of who did it, and the age. One not read yet
+ * has the needs-you icon; choosing it reads it.
  */
 import type { MouseEvent } from "react";
 import type { Notice } from "../../api/types/notices";
@@ -31,7 +31,6 @@ export function NoticeRow({
       data-kind={notice.kind}
       at={at}
       selected={selected}
-      unread={!notice.read}
       onClick={onClick}
       status={notice.read ? "notStarted" : "needsYou"}
       id={id}
