@@ -13,6 +13,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use moebius_desktop::edges;
+use moebius_desktop::frame;
 use moebius_desktop::links::{self, Target};
 use moebius_desktop::rail::Rail;
 use moebius_desktop::views::{self, Views};
@@ -102,6 +103,8 @@ fn make(
         .auto_resize()
         .initialization_script(BRIDGE)
         .initialization_script(edges::SCRIPT)
+        .initialization_script(frame::SCRIPT)
+        .transparent(true)
         .on_navigation(
             move |url| match links::target(url.as_str(), navigating.as_deref()) {
                 Target::Window => true,

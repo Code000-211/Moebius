@@ -110,10 +110,10 @@ One table, every colour as a hex value in both themes. The code follows it; if c
 
 | Token | Light | Dark | Used for |
 | --- | --- | --- | --- |
-| `--canvas` | #F6F6F8 | #0F0F10 | The ground the sidebar lies on and the air around the panel |
-| `--panel` | #FFFFFF | #161617 | The one floating panel, windows, menus, cards on the board |
+| `--canvas` | #F9F9FA | #0F0F10 | The sidebar's ground, faintly tinted; there is no air of it round the page |
+| `--panel` | #FFFFFF | #161617 | The page, which fills the window, windows, menus, cards on the board |
 | `--hairline` | #EBEBEF | #26262A | Dividers, row separators, the panel's header rule |
-| `--hairline-strong` | #DCDCE2 | #303035 | The panel's border, a card's border, an input's border |
+| `--hairline-strong` | #DCDCE2 | #303035 | A card's border, an input's border, the desktop window's edge |
 | `--text` | #1B1B1F | #EDEDEF | Main content, titles |
 | `--text-secondary` | #3C3C43 | #C6C6CC | Group names, secondary labels, navigation rows |
 | `--text-muted` | #6B6B76 | #8B8B93 | Reasons, ages, inactive tabs, placeholders; text of at least 4.5:1 |
@@ -126,7 +126,7 @@ One table, every colour as a hex value in both themes. The code follows it; if c
 | `--row-hover` | #F4F4F7 | #1B1B1D | A row under the pointer |
 | `--group-fill` | #FAFAFB | #19191B | The row that names a group in a list |
 | `--control-fill` | #F1F1F4 | #222226 | A send button, a segmented control's track, the user's bubble |
-| `--nav-selected` | #FFFFFF | #1C1C1E | The chosen row of the sidebar (with `--hairline-strong` as its edge in light) |
+| `--nav-selected` | #ECECF0 | #1C1C1E | The chosen row of the sidebar, a grey pill with no border or shadow |
 | `--needs-you` | #D9690A | #F29442 | The needs-you status icon |
 | `--needs-you-text` | #A85A0C | #F29442 | "Waiting for approval" and other orange words |
 | `--needs-you-tint` | #FFF8F0 | #2A1F16 | The "Moebius needs you" block |
@@ -151,22 +151,25 @@ One table, every colour as a hex value in both themes. The code follows it; if c
 | `--avatar-3` | #7A6A9A | #7A6A9A | A fill of a person's avatar |
 | `--avatar-agent` | #2A2C4F | #2A2C4F | Moebius, drawn as a rounded square (`--radius-control`) instead of a circle |
 | `--scrim` | rgb(0 0 0 / 32%) | rgb(0 0 0 / 56%) | Behind a centred window; dims the page and does not blur it |
-| `--shadow-window` | 0 8px 32px rgb(0 0 0 / 14%), 0 0 0 1px var(--hairline-strong) | 0 8px 32px rgb(0 0 0 / 50%), 0 0 0 1px var(--hairline-strong) | A centred window, a menu |
+| `--shadow-window` | 0 0 0 1px var(--hairline), 0 20px 60px rgb(0 0 0 / 16%) | 0 0 0 1px var(--hairline-strong), 0 20px 60px rgb(0 0 0 / 55%) | A centred window |
+| `--shadow-menu` | 0 8px 32px rgb(0 0 0 / 14%), 0 0 0 1px var(--hairline-strong) | 0 8px 32px rgb(0 0 0 / 50%), 0 0 0 1px var(--hairline-strong) | A menu, a tooltip, a sheet |
 
 The size table, which follows, is the second table of this section.
 
 | Size | Value | Used for |
 | --- | --- | --- |
-| `--radius-control` | 6px | Buttons, inputs, chips, a sidebar row, a tab's hover |
-| `--radius-card` | 8px | Cards on the board, a code block, the tinted "needs you" block |
-| `--radius-panel` | 10px | The floating panel, a centred window |
+| `--radius-small` | 6px | A chip, a key, an inline code span |
+| `--radius-control` | 8px | Buttons, inputs, menus, a sidebar row (the grey pill of the chosen one), a tab's hover |
+| `--radius-card` | 8px | Cards on the board, the tinted "needs you" block |
+| `--radius-panel` | 10px | A code or diff block inside a window or a page |
+| `--radius-frame` | 10px | The desktop window's own corners, drawn by the page (square when maximised or full screen) |
+| `--radius-window` | 16px | A centred window: a dialog, an editor, the card window, the palette |
 | `--radius-round` | 9999px | Dots, avatars, switches |
 | `--row` | 36px | A row of a list, of a sidebar, of a settings list |
 | `--row-compact` | 28px | The smallest a control may be; a button in a row is 24px inside a 36px row |
 | `--header` | 48px | The page header |
 | `--font-size` | 13px | Body text |
 | `--sidebar-width` | 224px | The sidebar |
-| `--panel-gap` | 8px | Air above, below and right of the floating panel |
 | `--agent-width` | 344px | The agent's right panel |
 
 The dark values of the canvas, panel, hairline, text, muted and the lighter indigo are the ones signed off in `design/web-redesign/DECISIONS.md`; the signal colours and the primary fill are those of the approved dark mockup, adjusted only where the 4.5:1 rule needed it (`--accent-fill`, the `-text` forms). The light values are those of the approved light mockup with the same adjustments: `--text-muted` is a shade darker than the mockup's pale grey, which was 3.4:1 on white.
@@ -177,11 +180,11 @@ The old tones map to the new tokens: attention to `--needs-you*`, progress (a ru
 
 ### Shape
 - **Hairlines, not boxes.** Rows are separated by a 1px `--hairline`; a group is named by a quiet row, not boxed. There is no card inside a card, and no panel inside a panel. A box is for what is picked up or typed into: a board card, an input, a menu, a window.
-- **One radius family: 6, 8 and 10, and round.** Nothing else (not 4, not 12, not 16). A control and a row are 6, a card and a code block 8, the panel and windows 10; dots, avatars and switches are round.
+- **One radius family: 6, 8, 10 and 16, and round.** Nothing else (not 4, not 12). A chip is 6; a control, a menu and a card are 8; a code or diff block is 10; a centred window is 16; the desktop window's own corners are 10; dots, avatars and switches are round. Rows stay dense and square: 36px with a hairline between them, no pills on rows. The only pill is the grey one of the chosen row of the sidebar (8).
 - **Spacing** on a 4px grid, with 2, 6 and 10 for the tight places of a dense row. A list row has 16px at its left and right, 10px between its parts.
 - **Item rows are 36px, in lists and in the sidebar alike**, and the page header is 48px. Item rows are 36px and group rows 30px. A control is at least 28px, except a tab (26px) and a button that sits inside a row (24px, which does not make the row taller). Rows keep their height whether the sidebar is open or hidden, so nothing moves when the width changes. A conversation's step log is rows of 20 to 24px that sit 4 to 6px apart, because it is a body of small marks and not a list to choose from.
-- **One floating panel on a tinted canvas.** The window's ground is `--canvas`, under the sidebar and around the panel. The main content is one `--panel`, with `--panel-gap` of air above, below and at the right, flush with the sidebar at the left, all four corners `--radius-panel`, a 1px `--hairline-strong` border and no wide shadow. The sidebar has no surface of its own: it lies on the canvas. In dark the panel is set apart by its lightness and its border alone.
-- **Depth is one level.** The canvas, the panel, and a window above a dimmed panel. A card on the board is flat: `--panel` with a `--hairline-strong` border. A centred window has `--shadow-window` and no other line; a menu the same. No two shadows stack.
+- **Two surfaces meeting at one hairline.** The sidebar is faintly tinted (`--canvas`) and the page is white (`--panel`); they meet at one 1px `--hairline`, and the page fills the window to its edges: no floating panel, no air round it, no border or shadow of its own. In dark the same, with the dark `--canvas` and `--panel`. In the desktop app the window itself is transparent with round corners (`--radius-frame`, clipped, a 1px `--hairline-strong` edge), square while it is maximised or full screen.
+- **Depth is one level.** The canvas, the panel, and a window above a dimmed panel. A card on the board is flat: `--panel` with a `--hairline-strong` border. A centred window has `--shadow-window` (a hairline and one soft shadow); a menu has `--shadow-menu`. No two shadows stack.
 - Selection is the 2px indigo edge on the left of a row and `--accent-tint`; hover is `--row-hover`. A chosen row of the sidebar is `--nav-selected`. Two fills mean chosen: `--accent-tint` with the indigo edge in a list, `--nav-selected` in the sidebar.
 - Focus is a 2px ring in `--accent` with a 2px offset, on every interactive element, in both themes.
 
@@ -204,10 +207,10 @@ The running ring is the only one that may move, and it moves only while the run 
 
 ## Shell
 
-The window is a sidebar on the canvas and one floating panel (see Shape). In the desktop app there is no title strip: the window buttons (minimise, maximise, close) sit in the page header, on the right.
+The window is a tinted sidebar and the white page, meeting at one hairline (see Shape). In the desktop app there is no title strip: the window buttons (minimise, maximise, close) sit in the page header, on the right.
 
 ### Sidebar
-224px wide, rows of 36px, 13px text, on the canvas without a surface. From the top:
+224px wide, rows of 36px, 13px text, on its own faintly tinted ground. From the top:
 
 1. The workspace and server switch, with the search button beside it (it opens the command palette).
 2. Inbox, with the count of what needs you (a grey number, said even when it is 0), My issues, and Fleet with a green dot and "n running" while anything runs.
@@ -215,9 +218,9 @@ The window is a sidebar on the canvas and one floating panel (see Shape). In the
 4. Workspace: Wiki, Cycles, Views, More. More holds the rare pages that have no row of their own.
 5. Settings, alone at the bottom, with its word.
 
-There is no "live" box and no second heading, no repeated counts and no shortcut keys shown. The chosen row is `--nav-selected` with a 1px `--hairline-strong` edge in light, in medium weight.
+There is no "live" box and no second heading, no repeated counts and no shortcut keys shown. The chosen row is a grey pill (`--nav-selected`, radius 8, no border or shadow), in medium weight; the workspace switch has no box.
 
-Below about 1000px the sidebar is hidden and a button in the page header lays it over the panel.
+Below about 1000px the sidebar is hidden and a button in the page header lays it over the page.
 
 ### Page header
 48px, one line: the page title (14px semibold), then its tabs, then on the right at most quiet text buttons (Filter, Display) and one primary button (New issue), and, in the desktop app, the window buttons after a hairline.
@@ -248,7 +251,7 @@ Inbox, My issues, the project list and Fleet are one kind of list. Lists are vir
 ## Board and card
 
 - **Board.** Columns are named by their plain name, with no count and no header box. Each column scrolls on its own and is virtualised. A card is flat: `--panel` with a hairline border, `--radius-card`, the status icon, the id in mono, the full title (wrapped), and the avatar of the person who owns it, where one does. A second pale line appears only when an agent is running on it ("editing engine.rs") or it needs you ("Waiting for approval", in `--needs-you-text`).
-- **Card window.** A card opens as a centred window over the dimmed board: `--scrim` (the board is dimmed, not blurred), `--radius-panel`, `--shadow-window`, about 800px wide. Its header row has the id (mono), "Open as page" and a close icon. Under it, on the title row: the title, then the status icon, the owner's avatar, the diff (`+84` in `--running-text`, `−12` in `--danger-text`) and a "…" menu. Then the thread as a timeline: comments, moves ("Moebius moved this to In progress") and "Code run" and "Review" as one collapsible line each, and one tinted "Moebius needs you" block (`--needs-you-tint`, a 1px `--needs-you-edge`, `--radius-card`) with its buttons. A reply field is at the bottom. A row of the Inbox or of Fleet opens the same window, and so do New issue and the editing of a rule, an agent or a skill.
+- **Card window.** A card opens as a centred window over the dimmed board: `--scrim` (the board is dimmed, not blurred), `--radius-window`, `--shadow-window`, about 800px wide. Its header row has the id (mono), "Open as page" and a close icon. Under it, on the title row: the title, then the status icon, the owner's avatar, the diff (`+84` in `--running-text`, `−12` in `--danger-text`) and a "…" menu. Then the thread as a timeline: comments, moves ("Moebius moved this to In progress") and "Code run" and "Review" as one collapsible line each, and one tinted "Moebius needs you" block (`--needs-you-tint`, a 1px `--needs-you-edge`, `--radius-card`) with its buttons. A reply field is at the bottom. A row of the Inbox or of Fleet opens the same window, and so do New issue and the editing of a rule, an agent or a skill.
 
 ## Settings
 

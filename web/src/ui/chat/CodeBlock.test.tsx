@@ -56,7 +56,7 @@ describe("CodeBlock", () => {
   it("sits on the code ground with a 30px header in mono", () => {
     const { container } = render(<CodeBlock language="rust" code="let x = 1;" />);
     expect(container.firstElementChild?.className).toContain("bg-code-bg");
-    expect(container.firstElementChild?.className).toContain("rounded-card");
+    expect(container.firstElementChild?.className).toContain("rounded-panel");
     expect(container.querySelector(".h-\\[30px\\]")?.className).toContain("font-mono");
   });
 });

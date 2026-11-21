@@ -131,9 +131,8 @@ export function Sidebar({ onSearch, narrow = false, open = false, onClose }: Sid
       aria-label="Pages"
       tabIndex={overlay ? -1 : undefined}
       className={cn(
-        "flex h-full w-(--sidebar-width) shrink-0 flex-col",
-        overlay &&
-          "relative rounded-r-sheet border-r border-hairline-strong bg-panel py-1.5 outline-none",
+        "flex h-full w-(--sidebar-width) shrink-0 flex-col border-r border-hairline bg-sidebar",
+        overlay && "relative py-1.5 outline-none",
       )}
     >
       <div className="flex h-12 shrink-0 items-center gap-1 px-2">

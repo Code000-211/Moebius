@@ -352,14 +352,14 @@ async function open(page: Page, what: NonNullable<Route["open"]>) {
 
 /**
  * The measurements, run inside the page. The numbers it allows are the scale of the quiet standard: radii 6 for
- * controls and rows, 8 for cards, 12 for windows and dialogs and full for dots; spacing a multiple of 4, with 6 and 10
+ * a chip, 8 for controls and cards, 10 for code blocks, 16 for windows and dialogs and full for dots; spacing a multiple of 4, with 6 and 10
  * for the tight places of a dense row and anything 2 and under left alone; and 11, 12, 13, 14, 15, 17 and 20 for type.
  */
 function measure(input: {
   path: string;
   theme: string;
 }): Omit<PageAudit, "name" | "path" | "status" | "pills"> {
-  const radii = new Set([0, 6, 8, 10]);
+  const radii = new Set([0, 6, 8, 10, 16]);
   const sizes = new Set([11, 12, 13, 14, 15, 17, 20]);
   const canvas: [number, number, number, number] =
     input.theme === "light" ? [255, 255, 255, 1] : [22, 22, 23, 1];
@@ -530,7 +530,7 @@ function measure(input: {
         }
       }
       // A window or a dialog that draws a line round itself. A card has a quiet line, but the larger surfaces are set
-      // apart by their lightness, a faint edge and in light a soft shadow, which is why only a radius of 10 counts.
+      // apart by their lightness, a faint edge and in light a soft shadow, which is why only a radius of 10 or more counts.
       const edges = [
         px(style.borderTopWidth),
         px(style.borderRightWidth),

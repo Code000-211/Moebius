@@ -37,8 +37,20 @@ body {
   font: 13px/1.5 Inter, system-ui, sans-serif;
   color: var(--text);
 }
+/* The window is transparent and has no frame of the system, so the page draws its round corners; a maximized or full
+   screen window (`data-maximized`, set by the app) has square ones. */
+html {
+  background: transparent;
+}
 .ground {
   background-color: var(--ground);
+  border-radius: 10px;
+  overflow: clip;
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+}
+html[data-maximized] .ground {
+  border-radius: 0;
+  box-shadow: none;
 }
 .window-bar {
   position: fixed;

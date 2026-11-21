@@ -1,7 +1,6 @@
 /**
- * The shell in a real browser: one panel floating on the faintly tinted canvas, with the sidebar lying on the canvas
- * beside it, 6px of air above, below and at the right, round at all four corners, a hairline for its edge and no
- * shadow, and no strip above it or texture under it (`docs/design-web.md`). Then the properties pane inside the panel,
+ * The shell in a real browser: the faintly tinted sidebar and the white page meeting at one hairline, the page filling
+ * the window to its edges, and no strip above it or texture under it (`docs/design-web.md`). Then the properties pane inside the page,
  * there only on a page that has properties, with the Moebius agent opened over it and closed again; and the desktop
  * app's window buttons, which are drawn once, inside the panel.
  */
@@ -62,16 +61,18 @@ async function box(page: Page, selector: string): Promise<Box> {
 
 describe("the shell", () => {
   for (const theme of ["light", "dark"] as const) {
-    it(`floats one panel on the canvas in ${theme}, with a hairline edge and no shadow`, async () => {
+    it(`meets the tinted sidebar and the page at one hairline, filling the window, in ${theme}`, async () => {
       const page = await inbox(theme);
       const surface = await box(page, '[data-surface="page"]');
       const nav = await box(page, 'nav[aria-label="Pages"]');
-      expect(surface.y).toBe(6);
-      expect(VIEW.height - (surface.y + surface.height)).toBe(6);
-      expect(VIEW.width - (surface.x + surface.width)).toBe(6);
+      // The page fills the window to its edges: no air above, below or at the right, and it starts where the sidebar ends.
+      expect(surface.y).toBe(0);
+      expect(VIEW.height - (surface.y + surface.height)).toBe(0);
+      expect(VIEW.width - (surface.x + surface.width)).toBe(0);
       expect(surface.x).toBe(nav.x + nav.width);
       const read = await page.evaluate(() => {
         const panel = document.querySelector('[data-surface="page"]') as HTMLElement;
+        const nav = document.querySelector('nav[aria-label="Pages"]') as HTMLElement;
         const probe = (name: string) => {
           const el = document.createElement("div");
           el.style.color = `var(${name})`;
@@ -81,40 +82,56 @@ describe("the shell", () => {
           return colour;
         };
         const style = getComputedStyle(panel);
-        const canvas = getComputedStyle(panel.parentElement as HTMLElement);
+        const side = getComputedStyle(nav);
         return {
           radius: style.borderRadius,
-          line: style.borderTopColor,
           lineWidth: style.borderTopWidth,
           shadow: style.boxShadow,
           background: style.backgroundColor,
-          canvasBackground: canvas.backgroundColor,
-          canvasTexture: getComputedStyle(panel.parentElement as HTMLElement, "::after").content,
-          canvasPadding: canvas.paddingTop,
+          sidebarBackground: side.backgroundColor,
+          sidebarLine: side.borderRightColor,
+          sidebarLineWidth: side.borderRightWidth,
           hairline: probe("--hairline"),
           panelColour: probe("--panel"),
           canvasColour: probe("--canvas"),
         };
       });
-      expect(read.radius).toBe("10px");
-      expect(read.lineWidth).toBe("1px");
-      expect(read.line).toBe(read.hairline);
+      // The page is the white panel, square and with no line or shadow of its own.
+      expect(read.radius).toBe("0px");
+      expect(read.lineWidth).toBe("0px");
       expect(read.shadow).toBe("none");
       expect(read.background).toBe(read.panelColour);
-      expect(read.canvasBackground).toBe(read.canvasColour);
-      expect(read.canvasBackground).not.toBe(read.background);
-      // No texture layer under the window, and no strip of padding above the panel but the 6px of air.
-      expect(read.canvasTexture).toBe("none");
-      expect(read.canvasPadding).toBe("6px");
-      // The sidebar has no surface of its own: the canvas shows through it.
-      const sidebar = await page
-        .locator('nav[aria-label="Pages"]')
-        .evaluate((el) => getComputedStyle(el).backgroundColor);
-      expect(sidebar).toBe("rgba(0, 0, 0, 0)");
+      // The sidebar is the faintly tinted canvas, and its right edge is the one hairline between them.
+      expect(read.sidebarBackground).toBe(read.canvasColour);
+      expect(read.sidebarBackground).not.toBe(read.background);
+      expect(read.sidebarLineWidth).toBe("1px");
+      expect(read.sidebarLine).toBe(read.hairline);
       await expect.poll(() => page.locator(".pt-9").count()).toBe(0);
       await page.context().close();
     });
   }
+
+  it("draws a chosen row of the sidebar as a grey pill of 8px with no border or shadow", async () => {
+    const page = await inbox("light");
+    const row = page.locator('nav[aria-label="Pages"] a[aria-current="page"]').first();
+    await row.waitFor();
+    const read = await row.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        radius: style.borderRadius,
+        border: style.borderTopWidth,
+        shadow: style.boxShadow,
+        height: el.getBoundingClientRect().height,
+        background: style.backgroundColor,
+      };
+    });
+    expect(read.radius).toBe("8px");
+    expect(read.border).toBe("0px");
+    expect(read.shadow).toBe("none");
+    expect(read.height).toBe(36);
+    expect(read.background).not.toBe("rgba(0, 0, 0, 0)");
+    await page.context().close();
+  });
 });
 
 /**
@@ -123,7 +140,7 @@ describe("the shell", () => {
  * whose attribute is right but whose tokens are not is caught too.
  */
 describe("the theme the app starts in", () => {
-  const CANVAS = { light: "#f6f6f8", dark: "#0f0f10" } as const;
+  const CANVAS = { light: "#f9f9fa", dark: "#0f0f10" } as const;
 
   async function started(
     colorScheme: "light" | "dark",
@@ -193,11 +210,11 @@ describe.skipIf(usesRealServer)("the Moebius agent", () => {
     await page.keyboard.press("Control+j");
     const agent = page.getByRole("complementary", PANEL);
     await agent.waitFor();
-    // The agent's panel lies inside the panel, flush with its top, right and bottom (the 1px edge apart).
+    // The agent's panel lies inside the page, flush with its top, right and bottom (the page has no edge of its own).
     const over = await box(page, '[data-surface="agent-panel"]');
-    expect(over.y).toBe(panel.y + 1);
-    expect(over.x + over.width).toBe(panel.x + panel.width - 1);
-    expect(over.y + over.height).toBe(panel.y + panel.height - 1);
+    expect(over.y).toBe(panel.y);
+    expect(over.x + over.width).toBe(panel.x + panel.width);
+    expect(over.y + over.height).toBe(panel.y + panel.height);
 
     await agent.getByRole("button", { name: "Close the Moebius agent" }).click();
     await agent.waitFor({ state: "hidden" });
@@ -297,7 +314,7 @@ describe.skipIf(usesRealServer)("the Moebius agent", () => {
     expect((await box(page, "main")).width).toBe(before.width);
     const over = await box(page, '[data-surface="agent-panel"]');
     const surface = await box(page, '[data-surface="page"]');
-    expect(over.x + over.width).toBe(surface.x + surface.width - 1);
+    expect(over.x + over.width).toBe(surface.x + surface.width);
     await expect.poll(() => button.isVisible()).toBe(true);
     expect(await button.getAttribute("aria-pressed")).toBe("true");
     await page.context().close();
@@ -305,7 +322,7 @@ describe.skipIf(usesRealServer)("the Moebius agent", () => {
 });
 
 /**
- * The desktop app's window has no system frame, so the web app draws the window's buttons: once, inside the panel,
+ * The desktop app's window has no system frame, so the web app draws the window's buttons: once, inside the page,
  * when the app's bridge is there; and a strip that moves and closes the window on the screens outside the shell.
  */
 describe.skipIf(usesRealServer)("the window buttons in the desktop app", () => {

@@ -1,7 +1,8 @@
 //! The Tauri side of the app: the one window, without a system frame, that shows the connect page and then the web app
 //! through a server's proxy (the rail of servers is in `servers`, the window's webviews in `pages`). It is part of the program rather than of the
 //! library, so that the library's tests do not link Tauri (on Windows a test executable without the program's
-//! manifest cannot load what Tauri needs from the system).
+//! manifest cannot load what Tauri needs from the system). The window and its pages are transparent, and each page
+//! draws its own round corners (`frame`).
 //!
 //! Every page of the window gets [`BRIDGE`] before its own scripts: `window.moebiusDesktop`, what the web app calls to
 //! move the window, since it draws the window's controls on its own ground. The bridge calls Tauri's window commands,
@@ -111,6 +112,8 @@ pub fn run() {
                 .inner_size(1280.0, 800.0)
                 .min_inner_size(720.0, 480.0)
                 .decorations(false)
+                // Transparent, so that the corners the pages draw are the window's own (`frame`).
+                .transparent(true)
                 .build()?;
             // The window's first page is the connect page, until a remembered server opens; each server opened gets a
             // webview of its own (`pages`).
