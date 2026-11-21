@@ -157,7 +157,7 @@ to = "build"
         app.add_repository_to_project(&owner, api.home_project_id, web.id, "the api serves web")
             .unwrap();
         let by_name = |name: &str| app.store.project_by_name(name).unwrap().unwrap();
-        let empty = app.add_project("Contracts", "CON").unwrap();
+        let empty = app.add_project("Contracts", "CTR").unwrap();
         [
             by_name("api"),
             by_name("docs"),
