@@ -53,7 +53,7 @@ afterEach(async () => {
 /** The fake's board; a real server has none, so a repository is made (a new folder becomes a repository). */
 async function openBoard(): Promise<void> {
   if (!usesRealServer) {
-    await page.goto(`${server.url}/board/1`);
+    await page.goto(`${server.url}/projects/1`);
   } else {
     if (demo === null) {
       const directory = mkdtempSync(join(tmpdir(), "moebius-e2e-repo-"));
@@ -543,7 +543,7 @@ describe("live data", () => {
   it.skipIf(usesRealServer)("shows the new state of the inspected card as it moves", async () => {
     await fresh();
     await openBoard();
-    await page.goto(`${server.url}/board/1?card=3`);
+    await page.goto(`${server.url}/projects/1?card=3`);
     await (await unfolded(3)).getByText("Not started", { exact: true }).waitFor();
     broadcast(fake().moveCard(3, "In review"));
     await (await unfolded(3)).getByText("In review", { exact: true }).waitFor();
@@ -583,7 +583,7 @@ describe("live data", () => {
     async () => {
       await fresh();
       await openBoard();
-      await page.goto(`${server.url}/board/1?card=4`);
+      await page.goto(`${server.url}/projects/1?card=4`);
       await (await unfolded(4)).getByText("Why it waits", { exact: true }).waitFor();
       await (await unfolded(4)).getByText("Waiting on", { exact: true }).waitFor();
       expect(await (await unfolded(4)).getByText("Waiting", { exact: true }).count()).toBe(0);
@@ -741,7 +741,7 @@ describe("the keyboard", () => {
   it.skipIf(usesRealServer)("does not act on a key typed in a field", async () => {
     await fresh();
     await openBoard();
-    await page.goto(`${server.url}/board/1?card=2`);
+    await page.goto(`${server.url}/projects/1?card=2`);
     await dock().getByText("Approve: Fix the login redirect").waitFor();
     const before = fake().requests.length;
     await dock().getByLabel("Write a comment").fill("");
@@ -1289,7 +1289,7 @@ describe("the dock", () => {
       await page.getByText("projects/demo/code.luau · built in").waitFor();
       await page.getByText('moebius.wait("nothing to do in In progress")').waitFor();
       await page.getByRole("link", { name: "Open the script" }).click();
-      await page.waitForURL("**/board/1/scripts/In%20progress?project=1");
+      await page.waitForURL("**/projects/1/settings/columns/In%20progress?repository=1");
       await page.getByRole("heading", { name: "Script of In progress" }).waitFor();
       await page.getByText("built in").waitFor();
       await page.getByText("-- The In progress column").waitFor();
@@ -1334,7 +1334,7 @@ describe("the dock", () => {
     await fresh();
     await openBoard();
     await card(3).click();
-    await page.waitForURL("**/board/1?card=3");
+    await page.waitForURL("**/projects/1?card=3");
     await dock().getByRole("heading", { name: "Document the API" }).waitFor();
     await page.reload();
     await dock().getByRole("heading", { name: "Document the API" }).waitFor();
@@ -1496,7 +1496,7 @@ describe("the filters", () => {
       await page.goto(`${server.url}/views`);
       await page.getByRole("link", { name: /View 3/ }).click();
       await page.getByTestId("board-view").waitFor();
-      await page.waitForURL(/\/board\/1\?.*view=3/);
+      await page.waitForURL(/\/projects\/1\?.*view=3/);
       await chip("Agent is Reviewer").waitFor();
       await shownIs(1);
       expect(await page.getByTestId("board-view").textContent()).toContain("View 3");
@@ -1610,7 +1610,7 @@ describe("the card open in the dock and its address", () => {
     "closes only the menu on the first Escape and the card on the second",
     async () => {
       await fresh();
-      await page.goto(`${server.url}/board/1?card=3`);
+      await page.goto(`${server.url}/projects/1?card=3`);
       await unfolded(3);
       const openers: [string, () => Locator][] = [
         ["Priority", () => properties(3).getByRole("button", { name: /^Priority/ })],
@@ -1641,7 +1641,7 @@ describe("the card open in the dock and its address", () => {
 
   it.skipIf(usesRealServer)("takes the card out of the address when it is closed", async () => {
     await fresh();
-    await page.goto(`${server.url}/board/1?card=3`);
+    await page.goto(`${server.url}/projects/1?card=3`);
     await dock().waitFor();
     await page.getByRole("button", { name: "Close the inspector" }).click();
     await dock().waitFor({ state: "detached" });
@@ -1670,9 +1670,16 @@ describe("the repositories", () => {
     },
   );
 
-  it("says there is no such board for a repository that does not exist", async () => {
+  it("says there is no such project for a project that does not exist", async () => {
     await fresh();
-    await page.goto(`${server.url}/board/99999`);
-    await page.getByText("There is no such board").waitFor();
+    await page.goto(`${server.url}/projects/99999`);
+    await page.getByText("No such project").waitFor();
+  });
+
+  it("opens the board of the repository's home project from the old address, keeping the card", async () => {
+    await fresh();
+    await page.goto(`${server.url}/board/1?card=3`);
+    await page.waitForURL("**/projects/1?repository=1&card=3");
+    await page.getByRole("dialog", { name: "Card inspector" }).waitFor();
   });
 });

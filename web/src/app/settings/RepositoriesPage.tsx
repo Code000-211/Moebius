@@ -11,6 +11,7 @@ import { Button } from "../../ui/components/Button";
 import { FieldRow, Rows } from "../../ui/page/Field";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
+import { repositoryPath } from "../pages";
 import { AreaColumn, AreaTitle, Section } from "./parts";
 
 export function RepositoriesPage() {
@@ -51,7 +52,7 @@ export function RepositoriesPage() {
                 >
                   <Button asChild size="sm" variant="secondary">
                     <Link
-                      to={`/projects/${repository.id}`}
+                      to={repositoryPath(project.id, repository.id)}
                       aria-label={`Settings of ${repository.name}`}
                     >
                       Open

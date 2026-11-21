@@ -30,7 +30,7 @@ import { FieldRow, Rows, Select, TextArea } from "../../ui/page/Field";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
-import { boardPath } from "../pages";
+import { repositoryBoardPath } from "../pages";
 import { useRole } from "../shell/session";
 import { decides, open, ordered, statusWords } from "./model";
 
@@ -233,7 +233,7 @@ function RequestCard({ request, decider }: { request: IntakeRequest; decider: bo
         {home && (
           <>
             {" · "}
-            <Link to={`${boardPath(home.repository.id)}?card=${request.card_id}`}>
+            <Link to={repositoryBoardPath(home.repository, request.card_id ?? undefined)}>
               Open the card
             </Link>
           </>

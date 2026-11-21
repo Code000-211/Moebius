@@ -31,7 +31,7 @@ import type { Board, Card } from "../../api/types/board";
 import { ColumnMark } from "../../app/board/ColumnMark";
 import { withCard } from "../../app/board/cardAddress";
 import { cardName } from "../../app/board/cardKey";
-import { boardPath } from "../../app/pages";
+import { repositoryBoardPath } from "../../app/pages";
 import { RunningDots } from "../components/RunningDots";
 
 /** How long the pointer rests on a link before its preview opens. */
@@ -170,7 +170,7 @@ function PreviewLink({ text, board, card }: { text: string; board: Board; card: 
   const anchor = useRef<HTMLAnchorElement>(null);
   const id = useId();
   const inRouter = useInRouterContext();
-  const href = `${boardPath(board.repository.id)}?card=${card.id}`;
+  const href = repositoryBoardPath(board.repository, card.id);
 
   const show = useCallback(() => {
     clearTimeout(timer.current);

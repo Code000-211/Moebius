@@ -51,7 +51,7 @@ describe.skipIf(usesRealServer)("blur", () => {
     page = await context.newPage();
     await page.goto(server.loginUrl);
     await page.getByRole("navigation", { name: "Pages" }).waitFor();
-    await page.goto(`${server.url}/board/1`);
+    await page.goto(`${server.url}/projects/1`);
     await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
     await page.getByTestId(`card-${more[1]}`).waitFor();
 

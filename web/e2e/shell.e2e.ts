@@ -287,7 +287,7 @@ describe.skipIf(usesRealServer)("the Moebius agent", () => {
       "/inbox",
       "/my-issues",
       "/fleet",
-      "/board/1",
+      "/projects/1",
       "/wiki",
       "/cycles",
       "/views",

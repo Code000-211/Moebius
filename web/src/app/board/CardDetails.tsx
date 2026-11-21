@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../ui/compo
 import { PrBadge } from "../../ui/components/PrBadge";
 import { Notice } from "../../ui/page/Notice";
 import { SkeletonLines } from "../../ui/page/Skeleton";
+import { scriptPath } from "../pages";
 import { CardProperties, CHECKS } from "./CardProperties";
 import { changeOf, changesOfCard, changeWorktree, pullRequestOf } from "./model";
 
@@ -137,9 +138,7 @@ export function CardDetails({
                 {source.data.text}
               </pre>
               <Button asChild variant="secondary" size="sm" className="w-fit">
-                <Link
-                  to={`/board/${repository.id}/scripts/${encodeURIComponent(card.column)}?project=${card.project_id}`}
-                >
+                <Link to={scriptPath(card.project_id, card.column, repository.id)}>
                   Open the script
                 </Link>
               </Button>

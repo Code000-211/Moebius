@@ -274,7 +274,7 @@ describe("the shell", () => {
     expect(await pages().getByRole("link", { name: "Models" }).count()).toBe(0);
     if (!usesRealServer) {
       await pages().getByRole("link", { name: "demo", exact: true }).click();
-      await page.waitForURL("**/board/1");
+      await page.waitForURL("**/projects/1?repository=1");
       await page.getByRole("heading", { name: "demo" }).waitFor();
       await expect
         .poll(() =>

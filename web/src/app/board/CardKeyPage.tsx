@@ -39,7 +39,9 @@ export function CardKeyPage() {
       prefetchCard(queryClient, found_.id, { project: found_.project_id, column: found_.column });
   }, [queryClient, found_]);
   // A card deleted from its own page leaves for the board it was on.
-  const actions = useCardActions(() => navigate(boardPath(found_?.repository_id ?? 0)));
+  const actions = useCardActions(() =>
+    navigate(found_ ? boardPath(found_.project_id, found_.repository_id) : "/projects"),
+  );
 
   const boards = data.data?.boards;
   const inbox = data.data?.inbox;
@@ -64,7 +66,7 @@ export function CardKeyPage() {
           back={
             <Tooltip content="Back to the board" side="bottom">
               <Button asChild variant="icon" aria-label="Back to the board">
-                <Link to={boardPath(card.repository_id)}>
+                <Link to={boardPath(card.project_id, card.repository_id)}>
                   <BackIcon className="size-5" />
                 </Link>
               </Button>

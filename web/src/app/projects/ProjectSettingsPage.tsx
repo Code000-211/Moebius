@@ -1,5 +1,5 @@
 /**
- * A project's settings in tabs (pattern 21 of the design drafts; `/projects/:id/settings/:tab`, with the project's id):
+ * A project's settings in tabs (pattern 21 of the design drafts; `/projects/:projectId/settings/:tab`):
  * General (its name, its key, and whether it is private), Repositories (with their home project and the settings of
  * their code), Members, Workflow (the script of each column), Kinds, Plugins and Import (a Jira project copied in, for an owner). Every setting of a project is edited
  * and saved in its tab; the tile of the Projects page opens the page. Only an owner edits: anyone else who sees the
@@ -19,7 +19,7 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import { TabPanel, Tabs } from "../../ui/page/Tabs";
-import { boardPath } from "../pages";
+import { boardPath, settingsPath } from "../pages";
 import { useRole } from "../shell/session";
 import { ProjectGeneralTab } from "./ProjectGeneralTab";
 import { ProjectImportTab } from "./ProjectImportTab";
@@ -54,7 +54,7 @@ function tabLabels(project: Project): Array<{ value: Tab; label: string }> {
 }
 
 export function ProjectSettingsPage() {
-  const { id, tab } = useParams();
+  const { projectId: id, tab } = useParams();
   const navigate = useNavigate();
   const idBase = useId();
   const role = useRole();
@@ -116,15 +116,13 @@ export function ProjectSettingsPage() {
             idBase={idBase}
             value={current}
             tabs={tabLabels(project)}
-            onChange={(next) =>
-              navigate(`/projects/${project.id}/settings${next === "general" ? "" : `/${next}`}`)
-            }
+            onChange={(next) => navigate(settingsPath(project.id, next))}
           />
         }
         actions={
           board != null && (
             <Button asChild size="sm" variant="secondary">
-              <Link to={boardPath(board)}>Open board</Link>
+              <Link to={boardPath(project.id)}>Open board</Link>
             </Button>
           )
         }

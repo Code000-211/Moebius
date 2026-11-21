@@ -53,7 +53,7 @@ describe.skipIf(usesRealServer)("a cold load", () => {
   it("asks for no URL twice on a quiet server", async () => {
     await fresh();
     const seen = record();
-    await page.goto(`${server.url}/board/1`);
+    await page.goto(`${server.url}/projects/1`);
     await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
     // The event stream is up, which is the moment it used to read everything again.
     await page.waitForLoadState("networkidle");
@@ -93,7 +93,7 @@ describe.skipIf(usesRealServer)("a cold load", () => {
   it("loads the chat when the Moebius agent is first opened", async () => {
     await fresh();
     const seen = record();
-    await page.goto(`${server.url}/board/1`);
+    await page.goto(`${server.url}/projects/1`);
     await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
     await page.waitForLoadState("networkidle");
     expect(seen.files.filter((file) => /\/AgentChat-/.test(file))).toEqual([]);

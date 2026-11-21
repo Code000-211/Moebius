@@ -10,18 +10,32 @@ const pin = (id: number, kind: Place["kind"] = "project", key = ""): Place => ({
   title: "t",
 });
 
+/** Project 5 is where repository 3 lives; the first repository of project 4 is 3, and project 9 has none. */
+const home = (repository: number) => (repository === 3 ? 5 : undefined);
+const first = (project: number) => (project === 4 ? 3 : undefined);
+
 describe("kept places", () => {
   it("leads a project to its board and a card to its card on the board", () => {
-    expect(placePath(pin(1))).toBe("/board/3");
-    expect(placePath(pin(1, "card", "9"))).toBe("/board/3?card=9");
+    expect(placePath(pin(1), home)).toBe("/projects/5?repository=3");
+    expect(placePath(pin(1, "card", "9"), home)).toBe("/projects/5?repository=3&card=9");
+    expect(placePath(pin(1), () => undefined)).toBeNull();
   });
 
   it("knows a project and a card from the address", () => {
-    expect(placeAt("/board/3", "")).toEqual({ kind: "project", repository_id: 3 });
-    expect(placeAt("/projects/4/", "?x=1")).toEqual({ kind: "project", repository_id: 4 });
-    expect(placeAt("/board/3", "?card=9")).toEqual({ kind: "card", key: "9" });
-    expect(placeAt("/inbox", "")).toBeNull();
-    expect(placeAt("/board/3", "?card=none")).toEqual({ kind: "project", repository_id: 3 });
+    expect(placeAt("/projects/4", "", first)).toEqual({ kind: "project", repository_id: 3 });
+    expect(placeAt("/projects/4/list", "", first)).toEqual({ kind: "project", repository_id: 3 });
+    expect(placeAt("/projects/4/", "?repository=6", first)).toEqual({
+      kind: "project",
+      repository_id: 6,
+    });
+    expect(placeAt("/projects/4", "?card=9", first)).toEqual({ kind: "card", key: "9" });
+    expect(placeAt("/projects/4", "?card=none", first)).toEqual({
+      kind: "project",
+      repository_id: 3,
+    });
+    expect(placeAt("/projects/9", "", first)).toBeNull();
+    expect(placeAt("/projects/new", "", first)).toBeNull();
+    expect(placeAt("/inbox", "", first)).toBeNull();
   });
 
   it("compares places by kind, repository and key", () => {

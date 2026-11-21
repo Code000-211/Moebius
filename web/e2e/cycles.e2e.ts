@@ -170,7 +170,7 @@ describe.skipIf(usesRealServer)("the Cycles page", () => {
   });
 
   it("shows a card's cycle in its properties and puts it in another", async () => {
-    await open("/board/1");
+    await open("/projects/1");
     await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
     const properties = await openProperties();
     await properties.getByRole("button", { name: "Cycle Cycle 1" }).click();

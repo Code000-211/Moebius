@@ -895,7 +895,7 @@ describe("the Moebius agent", () => {
   );
 
   it.skipIf(usesRealServer)("starts in the repository of the board it is opened on", async () => {
-    await open("/board/1");
+    await open("/projects/1");
     // The header's button opens the panel, and the reply field sends the message.
     await page.getByRole("button", { name: "Moebius", exact: true }).click();
     await page.getByPlaceholder("Reply to Moebius…").fill("Look at this board");

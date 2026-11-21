@@ -1,20 +1,37 @@
 /** Where a kept place leads, which place an address is, and the order a pin moves to. */
 import type { Place, PlaceRef } from "../../api/types/places";
+import { boardPath, cardPath } from "../pages";
 
-/** The address a place leads to. Views and pages have no page of their own yet, so they lead to their project. */
-export function placePath(place: Place): string {
-  if (place.kind === "card") return `/board/${place.repository_id}?card=${place.key}`;
-  if (place.kind === "project") return `/board/${place.repository_id}`;
-  return `/projects/${place.repository_id}`;
+/**
+ * The address a place leads to, or null when `homeOf` does not know the project the place's repository is at. Views and
+ * pages have no page of their own yet, so they lead to their project's board.
+ */
+export function placePath(
+  place: Place,
+  homeOf: (repository: number) => number | undefined,
+): string | null {
+  const project = homeOf(place.repository_id);
+  if (project === undefined) return null;
+  if (place.kind === "card") return cardPath(project, Number(place.key), place.repository_id);
+  return boardPath(project, place.repository_id);
 }
 
-/** The place an address is, if it is one: a project's board or page, or a card open on a board. */
-export function placeAt(pathname: string, search: string): PlaceRef | null {
-  const match = /^\/(?:board|projects)\/(\d+)(?:\/|$)/.exec(pathname);
+/**
+ * The place an address is, if it is one: a project's board or page, or a card open on a board. The board a project
+ * address shows is the repository `?repository=` names, else the one `firstOf` gives for the project.
+ */
+export function placeAt(
+  pathname: string,
+  search: string,
+  firstOf: (project: number) => number | undefined,
+): PlaceRef | null {
+  const match = /^\/projects\/(\d+)(?:\/|$)/.exec(pathname);
   if (!match) return null;
-  const card = new URLSearchParams(search).get("card");
+  const params = new URLSearchParams(search);
+  const card = params.get("card");
   if (card !== null && /^\d+$/.test(card)) return { kind: "card", key: card };
-  return { kind: "project", repository_id: Number(match[1]) };
+  const repository = Number(params.get("repository")) || firstOf(Number(match[1]));
+  return repository === undefined ? null : { kind: "project", repository_id: repository };
 }
 
 /** Whether `place` is `ref`: the same kind, repository and key. A card is named by its key alone. */

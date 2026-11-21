@@ -15,6 +15,7 @@ import { Button } from "../../ui/components/Button";
 import { useErrorToast } from "../../ui/lib/useErrorToast";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
+import { settingsPath } from "../pages";
 import { assignable } from "../people/AssigneesProperty";
 
 export function ProjectMembersTab({ project, canEdit }: { project: Project; canEdit: boolean }) {
@@ -38,7 +39,7 @@ export function ProjectMembersTab({ project, canEdit }: { project: Project; canE
           {canEdit && (
             <>
               Make it private on the{" "}
-              <Link className="underline" to={`/projects/${project.id}/settings`}>
+              <Link className="underline" to={settingsPath(project.id)}>
                 General tab
               </Link>{" "}
               to name its members.

@@ -33,6 +33,7 @@ import type { Tone } from "../../ui/page/StateLabel";
 import { StateLabel } from "../../ui/page/StateLabel";
 import { TabPanel, Tabs } from "../../ui/page/Tabs";
 import { TimeBar } from "../../ui/page/TimeBar";
+import { repositoryBoardPath } from "../pages";
 
 type Tab = "conversation" | "terminal" | "changes";
 
@@ -211,7 +212,7 @@ function OpenRun({ id }: { id: number }) {
         </span>
         {found ? (
           <Link
-            to={`/board/${found.repository.id}?card=${found.card.id}`}
+            to={repositoryBoardPath(found.repository, found.card.id)}
             className="min-w-0 break-words text-base text-text underline underline-offset-4 hover:text-secondary"
           >
             #{found.card.number} {found.card.title} · {found.repository.name}

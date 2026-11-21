@@ -148,12 +148,43 @@ export function pageByPath(path: string): PageDef | undefined {
   return PAGES.find((page) => page.path === path);
 }
 
-/** The path of the board of a repository. */
-export function boardPath(repositoryId: number): string {
-  return `/board/${repositoryId}`;
+/**
+ * The path of the board of a project. A project with several repositories has a board for each; `repositoryId`
+ * (`?repository=`) names the one to show, and without it the board is the project's first repository's.
+ */
+export function boardPath(projectId: number, repositoryId?: number): string {
+  const base = `/projects/${projectId}`;
+  return repositoryId === undefined ? base : `${base}?repository=${repositoryId}`;
 }
 
-/** The path of the board of a repository with one card open in the dock. */
-export function cardPath(repositoryId: number, cardId: number): string {
-  return `${boardPath(repositoryId)}?card=${cardId}`;
+/** The path of the board of a repository: at the project that is its home, naming the repository. */
+export function repositoryBoardPath(
+  repository: { id: number; home_project_id: number },
+  cardId?: number,
+): string {
+  return cardId === undefined
+    ? boardPath(repository.home_project_id, repository.id)
+    : cardPath(repository.home_project_id, cardId, repository.id);
+}
+
+/** The path of the board of a project with one card open in the dock. */
+export function cardPath(projectId: number, cardId: number, repositoryId?: number): string {
+  const repository = repositoryId === undefined ? "" : `repository=${repositoryId}&`;
+  return `${boardPath(projectId)}?${repository}card=${cardId}`;
+}
+
+/** The path of the page of a repository under the project that holds it. */
+export function repositoryPath(projectId: number, repositoryId: number): string {
+  return `/projects/${projectId}/repositories/${repositoryId}`;
+}
+
+/** The path of the editor of the script a column of a project runs. */
+export function scriptPath(projectId: number, column: string, repositoryId?: number): string {
+  const query = repositoryId === undefined ? "" : `?repository=${repositoryId}`;
+  return `/projects/${projectId}/settings/columns/${encodeURIComponent(column)}${query}`;
+}
+
+/** The path of a project's settings, at `tab` when one is named. */
+export function settingsPath(projectId: number, tab?: string): string {
+  return `/projects/${projectId}/settings${tab && tab !== "general" ? `/${tab}` : ""}`;
 }

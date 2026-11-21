@@ -70,7 +70,7 @@ describe.skipIf(usesRealServer)("the card window", () => {
   });
 
   it("does not move the board: the lanes keep their width to the pixel, and the header does not wrap", async () => {
-    await open("/board/1");
+    await open("/projects/1");
     const lanes = page.getByRole("main").getByTestId("board-lanes");
     await lanes.waitFor();
     const width = () => lanes.evaluate((el) => el.getBoundingClientRect().width);
@@ -96,7 +96,7 @@ describe.skipIf(usesRealServer)("the card window", () => {
   });
 
   it("drops ?card on Escape and on the close icon, and returns the focus to the card", async () => {
-    await open("/board/1");
+    await open("/projects/1");
     const card = page.getByTestId("card-3");
     await card.click();
     await window().waitFor();
@@ -130,7 +130,7 @@ describe.skipIf(usesRealServer)("the card window", () => {
   });
 
   it("opens the same card again on reload, from any page", async () => {
-    await open("/board/1?card=3");
+    await open("/projects/1?card=3");
     await window().getByRole("heading", { name: "Document the API" }).waitFor();
     await page.reload();
     await window().getByRole("heading", { name: "Document the API" }).waitFor();
@@ -139,7 +139,7 @@ describe.skipIf(usesRealServer)("the card window", () => {
   });
 
   it("leaves the card open when Escape closes a dialog over it, and C opens the new issue window over it", async () => {
-    await open("/board/1?card=3");
+    await open("/projects/1?card=3");
     await window().waitFor();
     await window()
       .getByRole("button", { name: /More actions for/ })
@@ -159,7 +159,7 @@ describe.skipIf(usesRealServer)("the card window", () => {
   });
 
   it("draws the form of a new issue as a centred solid window over a dimmed page, without blur", async () => {
-    await open("/board/1");
+    await open("/projects/1");
     await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
     await page.keyboard.press("c");
     const form = page.getByRole("dialog", { name: "New issue" });
@@ -176,7 +176,7 @@ describe.skipIf(usesRealServer)("the card window", () => {
   });
 
   it("reads as a timeline: one needs-you block in its token's colour, two collapsed lines, the reply field inside the window", async () => {
-    await open("/board/1?card=5");
+    await open("/projects/1?card=5");
     await window().getByRole("heading", { name: "Speed up the build" }).waitFor();
     const blocks = window().getByTestId("needs-you-block");
     await blocks.first().waitFor();
@@ -223,13 +223,13 @@ describe.skipIf(usesRealServer)("the card window", () => {
   });
 
   it("has no needs-you block for a card that waits for nobody", async () => {
-    await open("/board/1?card=3");
+    await open("/projects/1?card=3");
     await window().getByRole("heading", { name: "Document the API" }).waitFor();
     expect(await window().getByTestId("needs-you-block").count()).toBe(0);
   });
 
   it("keeps every property and Edit issue in the menu, not in the window", async () => {
-    await open("/board/1?card=3");
+    await open("/projects/1?card=3");
     await window().getByRole("heading", { name: "Document the API" }).waitFor();
     expect(await window().getByText("Due date").count()).toBe(0);
     await window()

@@ -516,7 +516,7 @@ describe("projects", () => {
     await page.getByLabel("Name").fill("fresh");
     await page.getByLabel("URL or path").fill(usesRealServer ? folder() : "/srv/git/fresh");
     await add.click();
-    await page.waitForURL(/\/board\/\d+$/);
+    await page.waitForURL(/\/projects\/\d+\?repository=\d+$/);
     await page.getByRole("heading", { name: "fresh", level: 1 }).waitFor();
 
     // The list of every project is the last item of the switcher; the new repository has a project of its own.
@@ -621,7 +621,7 @@ describe("projects", () => {
       await page.waitForURL("**/projects/1/settings");
       await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
       await page.getByRole("link", { name: "Open board" }).click();
-      await page.waitForURL("**/board/1");
+      await page.waitForURL("**/projects/1");
     },
   );
 
@@ -639,7 +639,7 @@ describe("projects", () => {
       await page.getByLabel("GitHub repository").fill("acme/radiance");
       await page.getByLabel("Trusted authors").fill("leon, mona");
       await add.click();
-      await page.waitForURL(/\/board\/\d+$/);
+      await page.waitForURL(/\/projects\/\d+\?repository=\d+$/);
       expect(lastBody(fake().requests, "POST", "/v1/repositories")).toEqual({
         name: "radiance",
         url: "https://github.com/acme/radiance.git",

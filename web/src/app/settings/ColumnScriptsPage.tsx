@@ -1,6 +1,6 @@
 /**
  * The Column scripts entry of Settings: the script each column of a project's board runs, the project's own or the
- * built-in one, each leading to the editor of the board (`/board/:id/scripts/:column`). It adds no route: the lists are
+ * built-in one, each leading to the editor of the board (`/projects/:projectId/settings/columns/:column`). It adds no route: the lists are
  * `GET /v1/projects` and `GET /v1/projects/{id}/scripts`.
  */
 import { useQuery } from "@tanstack/react-query";
@@ -13,6 +13,7 @@ import { Button } from "../../ui/components/Button";
 import { FieldRow, Rows } from "../../ui/page/Field";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
+import { scriptPath } from "../pages";
 import { AreaColumn, AreaTitle, Section } from "./parts";
 
 /** The rows of one project's board: a read of its own, so the others do not wait for it. */
@@ -42,7 +43,7 @@ function ProjectScripts({ project }: { project: Project }) {
         >
           <Button asChild size="sm" variant="secondary">
             <Link
-              to={`/board/${repository?.id}/scripts/${encodeURIComponent(each.column)}?project=${project.id}`}
+              to={scriptPath(project.id, each.column, repository?.id)}
               aria-label={`Script of ${each.column}`}
             >
               Open

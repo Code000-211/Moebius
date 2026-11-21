@@ -45,12 +45,16 @@ export function ViewsPage() {
   // `?manage` opens the page of a view that would open on its board: the board links here to change or delete it.
   const managing = useSearchParams()[0].has("manage");
   const views = useQuery({ queryKey: keys.views, queryFn: listViews });
+  // Which project a repository's board is opened at.
+  const everything = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
+  const homeOf = (repository: number) =>
+    everything.data?.boards.find((b) => b.repository.id === repository)?.repository.home_project_id;
   const [editing, setEditing] = useState<View | null>(null);
   const [deleting, setDeleting] = useState<View | null>(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  if (views.isPending) {
+  if (views.isPending || everything.isPending) {
     return (
       <>
         <PageHeader title="Views" />
@@ -73,7 +77,7 @@ export function ViewsPage() {
   }
   const current = views.data.find((view) => view.id === selected) ?? null;
   // A view of the board or list layout that the board can set is opened on its board, with its filter in the bar.
-  const board = current && !managing ? boardOfView(current) : null;
+  const board = current && !managing ? boardOfView(current, homeOf) : null;
   if (board !== null) return <Navigate to={board} replace />;
   return (
     <div data-testid="views-page" className="flex flex-col gap-4">
@@ -118,6 +122,7 @@ export function ViewsPage() {
       {current && (
         <OpenView
           view={current}
+          homeOf={homeOf}
           onEdit={() => setEditing(current)}
           onDelete={() => setDeleting(current)}
         />
@@ -159,10 +164,12 @@ export function ViewsPage() {
 /** One view: what it asks, its buttons, and the cards it shows this person in its layout. */
 function OpenView({
   view,
+  homeOf,
   onEdit,
   onDelete,
 }: {
   view: View;
+  homeOf: (repository: number) => number | undefined;
   onEdit: () => void;
   onDelete: () => void;
 }) {
@@ -206,10 +213,10 @@ function OpenView({
       </div>
       <p className="m-0 text-sm text-secondary" data-testid="view-filter">
         Shows {filterWords(view.filter, names)}
-        {boardOfView(view) && (
+        {boardOfView(view, homeOf) && (
           <>
             {" · "}
-            <Link to={boardOfView(view) as string}>Open on the board</Link>
+            <Link to={boardOfView(view, homeOf) as string}>Open on the board</Link>
           </>
         )}
       </p>
@@ -249,7 +256,7 @@ function OpenView({
                     <span className="shrink-0 font-mono text-xs text-muted">{cardKey(card)}</span>
                     <Link
                       className="min-w-0 flex-1 truncate font-medium text-text no-underline hover:underline"
-                      to={cardPath(card.repository_id, card.id)}
+                      to={cardPath(card.project_id, card.id, card.repository_id)}
                     >
                       {card.title}
                     </Link>

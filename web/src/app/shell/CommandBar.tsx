@@ -42,7 +42,7 @@ import { useOpenCard } from "../board/CardWindowHost";
 import { cardKey } from "../board/cardKey";
 import { useNewIssue } from "../board/NewIssueHost";
 import { usePause } from "../fleet/usePause";
-import { boardPath, PAGES, shownTo } from "../pages";
+import { boardPath, PAGES, repositoryBoardPath, shownTo } from "../pages";
 import { useAgent } from "./AgentContext";
 import { usePaletteFocus } from "./palette/focus";
 import { matches, type PaletteCommand, ranked, readRecent } from "./palette/model";
@@ -215,7 +215,7 @@ export function CommandBar({
       icon: <page.icon className={ICON} weight="regular" />,
     });
   for (const board of boards)
-    known.set(boardPath(board.repository.id), {
+    known.set(boardPath(board.repository.home_project_id), {
       label: board.repository.name,
       icon: <FolderIcon className={ICON} />,
     });
@@ -356,7 +356,7 @@ export function CommandBar({
                 <CommandItem
                   key={board.repository.id}
                   value={`place ${board.repository.id}`}
-                  onSelect={() => go(boardPath(board.repository.id))}
+                  onSelect={() => go(repositoryBoardPath(board.repository))}
                 >
                   <FolderIcon className={ICON} />
                   <span>{board.repository.name}</span>
