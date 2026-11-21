@@ -272,6 +272,10 @@ async fn save(
     blocking(&state.app, move |app| {
         let sight = app.sight(&by)?;
         let project = match named {
+            // A project the person does not see is answered as if it did not exist, whether it does or not.
+            Some(project) if !sight.project(project) => {
+                return Err(AppError::NotFound(format!("project {project}")));
+            }
             Some(project) => app.project(project)?,
             None => match owner_of(app, &sight, &repo, &name) {
                 Ok(project) => project,
@@ -328,6 +332,14 @@ fn delete_in(
     name: String,
 ) -> Result<Deleted, AppError> {
     let commit = repo.delete_project_workflow(app, by, &project.name, &name)?;
+    // A workflow file that holds an automation is the automation: its row goes with it, so that nothing is left on the
+    // page that no file fires.
+    if let Some(automation) = app
+        .store
+        .automation_with_project_workflow_key(project.id, &name)?
+    {
+        app.store.delete_automation(automation.id)?;
+    }
     Ok(Deleted {
         project: project.id,
         name,

@@ -32,8 +32,8 @@ The trigger has no input and one output, `out`, the port an edge leaves the trig
   trigger names no repository can be run this way.
 - Deprecated: `POST /api/hooks/{path}` and `POST /api/hooks/{repository}/{path}` answer by the `path` across all
   projects. A path that one workflow has starts its run; a path that workflows of several projects have is answered `409`
-  with the project-scoped URLs to use, once the credential opens at least one of the hooks that claim it; a path no
-  hook has is the usual uniform `404`. Existing URLs keep working while only one project uses the path.
+  with the project-scoped URLs to use, but only once the credential opens every hook that claims the path; a delivery
+  that cannot open them all, and a path no hook has, get the usual uniform `404`. Existing URLs keep working while only one project uses the path.
 
 No route is under `/v1/` and none needs the server's token (see the [desktop API's
 authentication](../desktop-api.md#authentication)). A delivery carries its credential as `Authorization: Bearer <key>`.

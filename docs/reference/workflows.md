@@ -252,8 +252,10 @@ file edited into an ordinary workflow is that workflow: its own schedule starts 
 old row out and no longer fires it. An automation that works in the harness configuration repository starts its chat
 directly, because a workflow run belongs to a repository.
 
-The file is all that fires the automation where the repository exists: deleting its file stops the automation until
-the next start writes it again, and then it fires as its schedule says. On a server with no `[harness]`, where there
+The file is all that fires the automation where the repository exists. Deleting the file through the workflow routes
+(`DELETE /v1/projects/{id}/workflows/{name}`, `moebius workflow delete --project`) deletes the automation with it; a
+file removed by hand stops the automation, which the Automations page then no longer lists, and the next start does
+not write it again. On a server with no `[harness]`, where there
 is nowhere to write a file, the automation's row is what fires it, on the same minute and within the same five
 minutes. The workflow schedule starts
 from the minute the automation was last checked or saved, so the minute of an upgrade or a save cannot fire again.

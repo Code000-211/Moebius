@@ -2876,7 +2876,7 @@ definition (the message says why); `409` the server has no `[harness]`; `409` an
 A person deletes a workflow of the project: the file is removed, committed on the default branch with the message
 `Delete the workflow <name>` and pushed to `origin`, and the decision is recorded (kind `edit_workflow`, decider
 `person`). Response: `{"project": number, "name": string, "commit": string}` (`commit` is left out when there was nothing
-to commit). Errors: `404` no such project or workflow; `409` a run of the workflow is queued, running or waiting, or the
+to commit). A workflow file that holds an automation takes the automation's row with it. Errors: `404` no such project or workflow; `409` a run of the workflow is queued, running or waiting, or the
 server has no `[harness]`; `422` an invalid name; `409` and `500` as for `PUT /v1/agents/{name}`.
 
 ### `GET /v1/projects/{id}/workflows/{name}/run-inputs`
@@ -2948,7 +2948,7 @@ saved and the definition parsed from it. Errors: `404` there is no such workflow
 ### `PUT /v1/workflows/{name}`
 
 **Deprecated**; use `PUT /v1/projects/{id}/workflows/{name}`. A person adds or changes a workflow. Request: exactly one of `{"file": string}`, the whole TOML file, or
-`{"definition": object}`, the parsed form `GET /v1/workflows/{name}` answers, and optionally `"project": number`; unknown keys are refused. For a name no project has, `project` names the project that gets the new workflow, and without it the workflow goes to the oldest project the person sees (the rule the migration of the old files uses); with no project at all the answer is `400`. For a name one project has, that project's file changes; several is `409` as above. The definition is
+`{"definition": object}`, the parsed form `GET /v1/workflows/{name}` answers, and optionally `"project": number`; unknown keys are refused. For a name no project has, `project` names the project that gets the new workflow, and without it the workflow goes to the oldest project the person sees (the rule the migration of the old files uses); with no project at all the answer is `422`. A `project` the person does not see is `404`, as if it did not exist. For a name one project has, that project's file changes; several is `409` as above. The definition is
 parsed and validated before anything is written, so every node keeps its `position` and a canvas round-trips; an invalid
 definition is refused with the validation message and the file is untouched. A valid one is written as TOML to
 `projects/<project name>/workflows/<name>.toml`, committed on the default branch with the message `Add the workflow <name>` or
@@ -4001,9 +4001,9 @@ Request:
 | `repository` | number | The id of a repository its chats work in. Optional; without it and without `harness` each chat works in an empty directory. |
 | `harness` | boolean | Its chats work in the harness configuration repository (default false). Not together with `repository`. |
 | `enabled` | boolean | Whether the schedule fires it (default true). An automation that is off fires only with `POST /v1/automations/{id}/run`. |
-| `project` | number | The id of the project that owns it, whose folder keeps its workflow file. Optional; left out, the oldest project the person sees. `PUT` keeps the project: a different `project` in the body is `400`. |
+| `project` | number | The id of the project that owns it, whose folder keeps its workflow file. Optional; left out, the oldest project the person sees. `PUT` keeps the project: a different `project` in the body is `422`. |
 
-Response: the `Automation`. Errors: `400` a `project` different from the automation's on `PUT`; `404` no such repository or project; `422` the name or prompt is blank, the schedule does not
+Response: the `Automation`. Errors: `404` no such repository or project; `422` a `project` different from the automation's on `PUT`, the name or prompt is blank, the schedule does not
 parse (the message says which field is wrong), the agent does not exist, `harness` is set together with `repository`, or
 `harness` is set and the server has no `[harness]`.
 

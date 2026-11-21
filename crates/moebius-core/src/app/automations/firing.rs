@@ -197,7 +197,8 @@ fn fire(
 /// The schedule's check, once a minute: ends the chats of automations that have answered, and fires an automation
 /// that has nowhere its workflow file would be. Where a harness configuration repository is, the workflow file is
 /// what fires an automation (see `server::schedule::on_workflow_schedules`), so one automation has one clock there;
-/// deleting its file stops it until the next start writes it again.
+/// the file of a project's automation is its only clock, so an automation whose file is gone fires nowhere (deleting
+/// the file through the workflow routes drops the row with it; one removed by hand leaves a row that is not listed).
 pub fn on_schedule(app: &Arc<App>, runs: &dyn Runs) -> Result<()> {
     for run_id in app.store.waiting_automation_chats()? {
         // A chat that ended meanwhile cannot be ended again; it is left as it is.

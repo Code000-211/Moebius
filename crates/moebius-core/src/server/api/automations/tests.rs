@@ -1309,3 +1309,46 @@ async fn an_automation_belongs_to_the_project_it_is_added_to() {
     missing["project"] = json!(other.id + 50);
     assert_eq!(add(&state, &addr, missing).await.status(), 404);
 }
+
+/// Deleting the workflow file of an automation through the workflow routes takes the automation with it, and a file
+/// removed by hand leaves a row that the page does not list as live.
+#[tokio::test]
+async fn deleting_the_file_of_an_automation_through_the_workflow_routes_drops_its_row() {
+    let (dir, state, addr) = start().await;
+    let app = &state.app;
+    server_wide_harness(app, dir.path());
+    let added: AutomationView = add(&state, &addr, triage("Triage the new issues."))
+        .await
+        .json()
+        .await
+        .unwrap();
+    let id = added.automation.id;
+    let project = added.automation.project_id.unwrap();
+
+    let deleted = reqwest::Client::new()
+        .delete(format!(
+            "http://{addr}/v1/projects/{project}/workflows/Triage"
+        ))
+        .bearer_auth(&*state.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), 200);
+    assert!(
+        app.store.automation(id).unwrap().is_none(),
+        "the row goes with its file"
+    );
+    let listed: Vec<AutomationView> = get(&state, &addr, "/v1/automations").await;
+    assert!(listed.is_empty());
+
+    // A file removed by hand leaves the row, which is not listed as one that fires.
+    let again: AutomationView = add(&state, &addr, triage("Triage again."))
+        .await
+        .json()
+        .await
+        .unwrap();
+    std::fs::remove_file(file_path(app, "Triage")).unwrap();
+    assert!(app.store.automation(again.automation.id).unwrap().is_some());
+    let listed: Vec<AutomationView> = get(&state, &addr, "/v1/automations").await;
+    assert!(listed.is_empty(), "{listed:?}");
+}

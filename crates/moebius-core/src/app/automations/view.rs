@@ -214,6 +214,10 @@ impl App {
             {
                 continue;
             }
+            // A project's automation whose file is gone fires from nowhere, so it is not listed as one that does.
+            if automation.project_id.is_some() && self.harness_repo.get().is_some() {
+                continue;
+            }
             views.push(self.automation_view(self.stored_automation(automation)?)?);
         }
         views.sort_by(|left, right| left.automation.name.cmp(&right.automation.name));

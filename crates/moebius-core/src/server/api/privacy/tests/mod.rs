@@ -609,6 +609,49 @@ async fn the_workflows_of_a_private_project_are_invisible_to_a_non_member() {
     }
 }
 
+/// The deprecated save names a project in its body, which the privacy check of the address cannot see: a person who
+/// does not see the project is answered `404`, whether or not it exists, and nothing is written.
+#[tokio::test]
+async fn the_body_of_the_old_save_cannot_name_a_project_the_person_does_not_see() {
+    let (dir, state, addr) = start().await;
+    let private = private(&state);
+    let harness = crate::harness::repo::testing::use_harness(&state.app, dir.path());
+    let project = state.app.store.project(private.project).unwrap().unwrap();
+    let file = "name = \"x\"\ndescription = \"Hidden.\"\n\n[[trigger]]\nkind = \"manual\"\n\n[[nodes]]\nid = \"a\"\nkind = \"test\"\n\n[[edges]]\nfrom = \"trigger\"\nto = \"a\"\nport = \"out\"\n";
+    let put = |token: String, project: i64| {
+        let addr = addr.clone();
+        let file = file.to_string();
+        async move {
+            let response = reqwest::Client::new()
+                .put(format!("http://{addr}/v1/workflows/x"))
+                .bearer_auth(token)
+                .json(&json!({ "file": file, "project": project }))
+                .send()
+                .await
+                .unwrap();
+            (response.status().as_u16(), response.text().await.unwrap())
+        }
+    };
+    let written = harness
+        .path()
+        .join(format!("projects/{}/workflows/x.toml", project.name));
+
+    // An owner who is no member sees the same answer for the private project as for one that does not exist.
+    let (status, existing) = put(private.olga.clone(), private.project).await;
+    let (missing_status, missing) = put(private.olga.clone(), private.project + 1000).await;
+    assert_eq!(
+        (status, missing_status),
+        (404, 404),
+        "{existing} / {missing}"
+    );
+    assert!(
+        !written.exists(),
+        "nothing is written into a project the person does not see"
+    );
+    // A member who is not in the project is refused by their role before the project is looked at.
+    assert_eq!(put(private.ben.clone(), private.project).await.0, 403);
+}
+
 #[tokio::test]
 async fn an_owner_makes_a_project_private_through_the_api() {
     let (_dir, state, addr) = start().await;
