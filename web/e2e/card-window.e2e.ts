@@ -71,7 +71,7 @@ describe.skipIf(usesRealServer)("the card window", () => {
 
   it("does not move the board: the lanes keep their width to the pixel, and the header does not wrap", async () => {
     await open("/board/1");
-    const lanes = page.getByRole("main").getByTestId("scroll-fades");
+    const lanes = page.getByRole("main").getByTestId("board-lanes");
     await lanes.waitFor();
     const width = () => lanes.evaluate((el) => el.getBoundingClientRect().width);
     const before = await width();

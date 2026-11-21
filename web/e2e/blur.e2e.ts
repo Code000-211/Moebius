@@ -55,7 +55,7 @@ describe.skipIf(usesRealServer)("blur", () => {
     await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
     await page.getByTestId(`card-${more[1]}`).waitFor();
 
-    // A card a person has blocked carries a tag with a tooltip.
+    // Block a card, so that the board has a mixed state while the rest is checked.
     await page.getByTestId("card-3").getByRole("button", { name: "More actions for #3" }).click();
     await page.getByRole("menuitem", { name: "Block…", exact: true }).click();
     const asking = page.getByRole("dialog", { name: "Block #3" });
@@ -73,7 +73,7 @@ describe.skipIf(usesRealServer)("blur", () => {
     const bar = page.getByRole("toolbar", { name: "Chosen" });
     await bar.waitFor();
 
-    // The sheet; the tooltip is the one of the blocked tag.
+    // The sheet.
     await page.getByRole("textbox", { name: "Ask Moebius" }).fill("Hello");
     await page.keyboard.press("Enter");
     const sheet = page.getByRole("complementary", { name: "Moebius agent" });
@@ -95,16 +95,6 @@ describe.skipIf(usesRealServer)("blur", () => {
       }
       await page.keyboard.press("Escape");
       await menu.waitFor({ state: "detached" });
-
-      await tag.hover();
-      const tip = page.locator(".glass.z-tip").first();
-      await tip.waitFor();
-      if (state === "on") expect(await filterOf(tip)).not.toBe("none");
-      else {
-        expect(await filterOf(tip)).toBe("none");
-        expect(await alphaOf(tip)).toBe(1);
-      }
-      await page.mouse.move(5, 5);
     }
 
     // The new issue window and the scrim behind it.
@@ -119,6 +109,26 @@ describe.skipIf(usesRealServer)("blur", () => {
       expect(await filterOf(window)).toBe("none");
       expect(await alphaOf(window)).toBe(1);
       expect(await filterOf(scrim)).toBe("none");
+    }
+
+    // A tooltip, on the back button of a page header (the board has none of its own).
+    await page.keyboard.press("Escape");
+    await page.goto(`${server.url}/projects/1`);
+    const backButton = page.getByRole("link", { name: "All projects", exact: true });
+    await backButton.waitFor();
+    for (const state of ["on", "off"] as const) {
+      await setBlur(state);
+      await backButton.hover();
+      const tip = page.locator(".glass.z-tip").first();
+      await tip.waitFor();
+      if (state === "on") expect(await filterOf(tip)).not.toBe("none");
+      else {
+        expect(await filterOf(tip)).toBe("none");
+        expect(await alphaOf(tip)).toBe(1);
+      }
+      await page.keyboard.press("Escape");
+      await tip.waitFor({ state: "detached" });
+      await page.mouse.move(700, 600);
     }
   });
 });

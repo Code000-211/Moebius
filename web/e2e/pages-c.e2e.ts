@@ -9,10 +9,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
+import { type Browser, type BrowserContext, chromium, type Locator, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { dayName } from "../src/ui/lib/format";
-import { addFilter, columnsScrollEach, scrollbarsAreQuiet } from "./controls";
+import { addFilter, columnsScrollEach, editorWindowFits, scrollbarsAreQuiet } from "./controls";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
 let browser: Browser;
@@ -72,6 +72,8 @@ async function openArea(path: string, title: string) {
 }
 const dayOf = (date: string) => new RegExp(dayName(date).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 const region = (name: string) => page.getByRole("region", { name, exact: true });
+/** The rows of facts under the brief's title (status, repository, direction, budget); the tag above them says the status too. */
+const facts = (brief: Locator) => brief.getByRole("region", { name: /^Properties of / });
 const alert = (text: string | RegExp) => page.getByRole("alert").filter({ hasText: text });
 const status = (text: string | RegExp) => page.getByRole("status").filter({ hasText: text });
 
@@ -633,14 +635,14 @@ describe("the Experiments page", () => {
     const brief = region("Brief");
     await brief.getByText("Make the host build faster").waitFor();
     await brief.getByRole("button", { name: "Confirm" }).click();
-    await brief.getByText("Confirmed", { exact: true }).waitFor();
+    await facts(brief).getByText("Confirmed", { exact: true }).waitFor();
     expect(lastRequest()).toMatchObject({ method: "POST", path: "/v1/research/2/confirm" });
     expect(await brief.getByRole("button", { name: "Confirm" }).count()).toBe(0);
     await brief.getByRole("button", { name: "Start now" }).click();
-    await brief.getByText("Running", { exact: true }).waitFor();
+    await facts(brief).getByText("Running", { exact: true }).waitFor();
     expect(lastRequest()).toMatchObject({ method: "POST", path: "/v1/research/2/start" });
     await brief.getByRole("button", { name: "Stop", exact: true }).click();
-    await brief.getByText("Stopped", { exact: true }).waitFor();
+    await facts(brief).getByText("Stopped", { exact: true }).waitFor();
     expect(lastRequest()).toMatchObject({ method: "POST", path: "/v1/research/2/stop" });
     // Only the delete is left.
     expect(await brief.getByRole("button").allTextContents()).toEqual(["Delete"]);
@@ -667,7 +669,7 @@ describe("the Experiments page", () => {
         budget: { kind: "tokens", amount: 300000 },
       },
     });
-    await brief.getByText(/0 of 300k tokens/).waitFor();
+    await facts(brief).getByText("0 of 300k tokens", { exact: true }).waitFor();
   });
 
   it.skipIf(usesRealServer)(
@@ -700,7 +702,7 @@ describe("the Experiments page", () => {
       await brief.getByRole("button", { name: "Tokens", exact: true }).click();
       await brief.getByLabel("Tokens", { exact: true }).fill("90000");
       await brief.getByRole("button", { name: "Save", exact: true }).click();
-      await brief.getByText(/0 of 90k tokens/).waitFor();
+      await facts(brief).getByText("0 of 90k tokens", { exact: true }).waitFor();
       expect(lastRequest()).toMatchObject({
         method: "PUT",
         body: { budget: { kind: "tokens", amount: 90000 } },
@@ -954,16 +956,25 @@ async function read(path: string, title: string) {
   await page.getByTestId("detail-column").waitFor();
 }
 
-describe("the pages that put a list beside a detail", () => {
-  it.skipIf(usesRealServer)("keeps the list and the detail each inside the window", async () => {
+describe("the pages that put a list beside a detail, or open an editor window", () => {
+  it.skipIf(usesRealServer)("keeps an automation's editor window inside the window", async () => {
     await fresh();
-    await read("/automations", "Automations");
-    await columnsScrollEach(page);
-    await scrollbarsAreQuiet(page);
-    await read("/experiments", "Experiments");
-    await columnsScrollEach(page);
-    await scrollbarsAreQuiet(page);
+    await open("/automations", "Automations");
+    // A row opens the automation in the editor window.
+    await page.getByRole("button", { name: /Edit automation Morning triage/ }).click();
+    await editorWindowFits(page);
+    await scrollbarsAreQuiet(page, '[data-testid="editor-window"]');
   });
+
+  it.skipIf(usesRealServer)(
+    "keeps the list and the detail of Experiments each inside the window",
+    async () => {
+      await fresh();
+      await read("/experiments", "Experiments");
+      await columnsScrollEach(page);
+      await scrollbarsAreQuiet(page);
+    },
+  );
 });
 
 describe("deleting a research brief and an export", () => {

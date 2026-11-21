@@ -7,7 +7,13 @@
  */
 import { type Browser, type BrowserContext, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { columnsScrollEach, pickOption, scrollbarsAreQuiet, showing } from "./controls";
+import {
+  columnsScrollEach,
+  editorWindowFits,
+  pickOption,
+  scrollbarsAreQuiet,
+  showing,
+} from "./controls";
 import type { FakeServer } from "./fakeServer";
 import { startServer, type TestServer, usesRealServer } from "./server";
 
@@ -1070,27 +1076,41 @@ describe("the switch of a plugin", () => {
   });
 });
 
-describe("the pages that put a list beside a detail", () => {
-  it.skipIf(usesRealServer)("keeps the list and the detail each inside the window", async () => {
-    await open("/");
-    // The three lay out what the harness configuration holds the same way.
-    for (const [path, title] of [
-      ["/agents", "Agents"],
-      ["/skills", "Skills"],
-      ["/mcp-servers", "MCP servers"],
-    ] as const) {
-      await page.goto(`${server.url}${path}`);
-      await page.getByRole("heading", { name: title, level: 1 }).waitFor();
+describe("the pages that put a list beside a detail, or open an editor window", () => {
+  it.skipIf(usesRealServer)(
+    "keeps the editor window of an agent and of a skill inside the window",
+    async () => {
+      await open("/");
+      for (const [path, title] of [
+        ["/agents", "Agents"],
+        ["/skills", "Skills"],
+      ] as const) {
+        await page.goto(`${server.url}${path}`);
+        await page.getByRole("heading", { name: title, level: 1 }).waitFor();
+        // A row opens the editor in a window; the first own agent and skill are not the built-in ones.
+        await page
+          .getByTestId(path === "/agents" ? "agent-row" : "skill-row")
+          .nth(1)
+          .click();
+        await editorWindowFits(page);
+        await scrollbarsAreQuiet(page, '[data-testid="editor-window"]');
+      }
+    },
+  );
+
+  it.skipIf(usesRealServer)(
+    "keeps the list and the detail of MCP servers each inside the window",
+    async () => {
+      await open("/mcp-servers");
+      await page.getByRole("heading", { name: "MCP servers", level: 1 }).waitFor();
       await page.getByTestId("list-card").first().click();
       await page.getByTestId("detail-column").waitFor();
       // The flat editor of a server fits a window; rows of values make it long enough to scroll.
-      if (path === "/mcp-servers") {
-        for (let at = 0; at < 8; at++) {
-          await page.getByRole("button", { name: /^Add (variable|header)$/ }).click();
-        }
+      for (let at = 0; at < 8; at++) {
+        await page.getByRole("button", { name: /^Add (variable|header)$/ }).click();
       }
       await columnsScrollEach(page);
       await scrollbarsAreQuiet(page);
-    }
-  });
+    },
+  );
 });

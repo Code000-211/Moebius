@@ -82,7 +82,9 @@ describe.skipIf(usesRealServer)("a cold load", () => {
     } finally {
       release();
     }
-    await page.waitForURL(/\/board\/1\?card=\d+/);
+    // The card stays on its own page, with the way back to its board, once the snapshot arrives.
+    await page.getByRole("link", { name: "Back to the board" }).waitFor();
+    expect(new URL(page.url()).pathname).toBe("/card/DEMO-31");
     await page.waitForLoadState("networkidle");
     const comments = seen.api.filter((path) => /^\/v1\/cards\/\d+\/comments$/.test(path));
     expect(comments).toHaveLength(1);
