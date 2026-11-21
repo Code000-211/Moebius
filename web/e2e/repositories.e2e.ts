@@ -1,7 +1,7 @@
 /**
  * A card over several repositories in a real browser: a member adds a second repository to a card from its properties
  * and sees it listed, the server's reason is shown when a repository with an open change is taken off, and a card with
- * changes in two repositories shows both, each with its repository and checks, on the board and in its dock. The cards
+ * changes in two repositories shows both, each with its repository and checks, in the window of its properties. The cards
  * are the fake server's own (e2e/fake/board.ts), which has no counterpart against a real server.
  */
 
@@ -34,6 +34,17 @@ const card = (number: number) => page.getByTestId(`card-${number}`);
 const properties = (number: number) =>
   page.getByRole("region", { name: `Properties of #${number}`, exact: true });
 
+/** Opens the card's window over the board, then the window of its properties from the card's menu. */
+async function openProperties(number: number) {
+  await card(number).click();
+  await page
+    .locator("[data-card-window]")
+    .getByRole("button", { name: `More actions for #${number}`, exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Properties…" }).click();
+  await properties(number).waitFor();
+}
+
 /** A server whose project has a second repository, `web`, and the board of `demo` open. */
 async function openBoard() {
   server = await startServer();
@@ -60,7 +71,7 @@ async function openBoard() {
 describe.skipIf(usesRealServer)("the repositories of a card", () => {
   it("adds a second repository from the card's properties and lists it", async () => {
     await openBoard();
-    await card(3).click();
+    await openProperties(3);
     const repositories = properties(3).getByRole("button", { name: /^Repositories/ });
     await repositories.waitFor();
     expect(await repositories.textContent()).toContain("demo (own)");
@@ -77,7 +88,7 @@ describe.skipIf(usesRealServer)("the repositories of a card", () => {
   it("says why a repository with an open change cannot be taken off, and keeps it listed", async () => {
     await openBoard();
     server.board?.seedChange(5);
-    await card(5).click();
+    await openProperties(5);
     await properties(5)
       .getByRole("button", { name: /^Repositories.*web/ })
       .click();
@@ -91,12 +102,10 @@ describe.skipIf(usesRealServer)("the repositories of a card", () => {
       .waitFor();
   });
 
-  it("shows each change of a card with its repository and checks, on the board and in the dock", async () => {
+  it("shows each change of a card with its repository and checks, in the window of its properties", async () => {
     await openBoard();
     server.board?.seedChange(5);
-    await card(5).getByText("Green in demo").waitFor();
-    await card(5).getByText("CI failed in web").waitFor();
-    await card(5).click();
+    await openProperties(5);
     const changes = page.getByTestId("card-change");
     await changes.nth(1).waitFor();
     expect(await changes.count()).toBe(2);

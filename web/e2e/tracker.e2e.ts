@@ -293,23 +293,20 @@ describe("sub-issues on the board", () => {
 });
 
 describe("the issue in the dock", () => {
-  it("claims and releases, labels, comments and edits an issue, and the card shows what it is given", async () => {
+  it("claims and releases, labels, comments and edits an issue, and the properties show what it is given", async () => {
     await openBoard();
     await newIssue("Decide the queue");
     await openCard("Decide the queue");
     await dock().getByRole("heading", { name: "Decide the queue" }).waitFor();
     await openProps();
 
+    // The card on the board no longer carries the claim or its labels; the properties are where they are read.
     await pickOption(page, value("Claim No one"), "Me");
-    await cardTitled("Decide the queue").getByText("Claimed by person").waitFor();
     await value(/^Claim person/).waitFor();
     await pickOption(page, value(/^Claim person/), "No one");
-    await cardTitled("Decide the queue")
-      .getByText("Claimed by person")
-      .waitFor({ state: "detached" });
+    await value("Claim No one").waitFor();
 
     await addTo("Add a label", "wayfinder:decision");
-    await cardTitled("Decide the queue").getByText("wayfinder:decision").waitFor();
     await properties().getByRole("button", { name: "Remove label wayfinder:decision" }).waitFor();
     await closeProps();
 
@@ -403,22 +400,23 @@ describe("the issue in the dock", () => {
     await value("Priority No priority").click();
     await page.getByRole("menuitemradio", { name: "Urgent" }).click();
     await value("Priority Urgent").waitFor();
-    await cardTitled("Rush it").locator('[role="img"][aria-label="Urgent"]').waitFor();
 
     await value("Due date No date").click();
     await page.locator('input[type="date"]').fill("2026-12-01");
     await page.keyboard.press("Enter");
     await value("Due date 2026-12-01").waitFor();
-    await cardTitled("Rush it").getByText("Due 2026-12-01").waitFor();
     // The labels that hold them are not shown as labels.
-    await cardTitled("Rush it").getByText("priority:urgent").waitFor({ state: "detached" });
+    expect(await properties().getByText("priority:urgent").count()).toBe(0);
 
     await closeCard();
     const filters = page.getByRole("search", { name: "Filter the cards" });
     await addFilter(page, filters, "Priority", "Urgent");
     await cardTitled("Rush it").waitFor();
     await cardTitled("Later").waitFor({ state: "detached" });
-    await filters.getByRole("button", { name: "Clear filters" }).click();
+    await page
+      .getByRole("search", { name: "Filters set" })
+      .getByRole("button", { name: "Clear filters" })
+      .click();
     await cardTitled("Later").waitFor();
   });
 
@@ -469,7 +467,7 @@ describe("the issue in the dock", () => {
     await dock().getByRole("heading", { name: "Spike it" }).waitFor();
     await openProps();
     await addTo("Add a label", "spike");
-    await cardTitled("Spike it").getByText("spike", { exact: true }).waitFor();
+    await properties().getByRole("button", { name: "Remove label spike" }).waitFor();
 
     await closeCard();
     const filters = page.getByRole("search", { name: "Filter the cards" });
@@ -479,7 +477,10 @@ describe("the issue in the dock", () => {
     await cardTitled("Write it").waitFor({ state: "detached" });
     await cardTitled("Unrelated").waitFor({ state: "detached" });
     expect(await toggleOf("Plan").textContent()).toBe("0 of 2 sub-issues done");
-    await filters.getByRole("button", { name: "Clear filters" }).click();
+    await page
+      .getByRole("search", { name: "Filters set" })
+      .getByRole("button", { name: "Clear filters" })
+      .click();
     await cardTitled("Unrelated").waitFor();
     await cardTitled("Write it").waitFor();
   });
