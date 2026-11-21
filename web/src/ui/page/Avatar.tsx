@@ -1,25 +1,43 @@
 /**
  * The people a card or an inbox item is given to, as avatars: a round mark with the first letter of the person's
- * handle, in the neutral tones of the theme (a person is never told apart by colour alone: the handle is the avatar's
- * name for a screen reader and its tooltip). A stack shows the first few and counts the rest.
+ * handle in white on one of the three avatar colours of the standard (`--avatar-1` to `--avatar-3`), chosen from the
+ * handle so a person keeps theirs everywhere (a person is never told apart by colour alone: the handle is the avatar's
+ * name for a screen reader and its tooltip). Moebius and its agents (`agent:<name>`, or `Moebius`) are the dark indigo
+ * rounded square (`--avatar-agent`) instead of a circle. A stack shows the first few and counts the rest.
  */
 import { cn } from "../lib/cn";
 
 /** How many avatars a stack shows before it counts the rest. */
 const SHOWN = 3;
 
-/** One person's avatar: the letter of their handle in a round mark. */
+const PEOPLE = ["bg-avatar-1", "bg-avatar-2", "bg-avatar-3"] as const;
+
+/** Whether the handle is Moebius or one of its agents rather than a person. */
+export const isAgent = (handle: string): boolean =>
+  handle === "Moebius" || handle.startsWith("agent:");
+
+/** The colour of a person's avatar: the same handle always gets the same one. */
+function fill(handle: string): string {
+  let sum = 0;
+  for (const letter of handle.toLowerCase()) sum += letter.codePointAt(0) ?? 0;
+  return PEOPLE[sum % PEOPLE.length] ?? PEOPLE[0];
+}
+
+/** One avatar: the letter of a person's handle in a round mark, or Moebius's own square mark. */
 export function Avatar({ handle, className }: { handle: string; className?: string }) {
+  const agent = isAgent(handle);
+  const name = agent ? handle.replace(/^agent:/, "") : handle;
   return (
     <span
-      title={`@${handle}`}
+      title={agent ? name : `@${handle}`}
       aria-hidden="true"
       className={cn(
-        "inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-hairline bg-sunken text-[10px] font-semibold uppercase leading-none text-text",
+        "inline-flex size-5 shrink-0 items-center justify-center text-[10px] font-semibold uppercase leading-none text-white",
+        agent ? "rounded-control bg-avatar-agent" : cn("rounded-full", fill(handle)),
         className,
       )}
     >
-      {handle.charAt(0)}
+      {name.charAt(0)}
     </span>
   );
 }

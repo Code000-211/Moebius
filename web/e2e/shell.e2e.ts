@@ -168,7 +168,7 @@ async function signedIn(path: string): Promise<Page> {
   const context = await browser.newContext({ viewport: VIEW, reducedMotion: "reduce" });
   const page = await context.newPage();
   await page.goto(server.loginUrl);
-  await page.getByRole("navigation", { name: "Pages" }).waitFor();
+  await page.locator('[data-surface="page"]').waitFor();
   await page.goto(`${server.url}${path}`);
   await page.locator('[data-surface="page"] h1').first().waitFor();
   return page;
@@ -363,26 +363,48 @@ async function signedInAt(path: string, width: number): Promise<Page> {
   });
   const page = await context.newPage();
   await page.goto(server.loginUrl);
-  await page.getByRole("navigation", { name: "Pages" }).waitFor();
+  await page.locator('[data-surface="page"]').waitFor();
   await page.goto(`${server.url}${path}`);
   await page.locator('[data-surface="page"] h1').first().waitFor();
   return page;
 }
 
 describe("windows of 800 and 1280 px", () => {
-  it("folds the sidebar to its rail below 1024 px by itself, and opens it for the moment on a click", async () => {
-    const page = await signedInAt("/inbox", 800);
-    const left = async () => (await box(page, '[data-surface="page"]')).x;
-    expect(await left()).toBeLessThan(100);
-    await page.getByRole("button", { name: "Expand the sidebar" }).click();
-    await page.waitForFunction(
-      () => (document.querySelector('[data-surface="page"]')?.getBoundingClientRect().x ?? 0) > 250,
-    );
+  const sidebar = (page: Page) => page.getByRole("navigation", { name: "Pages" });
+
+  it.each([999, 900])("hides the sidebar at %i px until the button is pressed", async (width) => {
+    const page = await signedInAt("/inbox", width);
+    expect(await sidebar(page).count()).toBe(0);
+    expect((await box(page, '[data-surface="page"]')).x).toBeLessThan(40);
+    await page.getByRole("button", { name: "Show the sidebar" }).click();
+    await sidebar(page).waitFor();
+    // Choosing a page closes it.
+    await sidebar(page).getByRole("link", { name: "Fleet" }).click();
+    await page.waitForURL(/\/fleet/);
+    await sidebar(page).waitFor({ state: "detached" });
+    // Escape and the scrim close it too.
+    await page.getByRole("button", { name: "Show the sidebar" }).click();
+    await sidebar(page).waitFor();
+    await page.keyboard.press("Escape");
+    await sidebar(page).waitFor({ state: "detached" });
+    await page.getByRole("button", { name: "Show the sidebar" }).click();
+    await page
+      .getByRole("button", { name: "Close the sidebar" })
+      .click({ position: { x: width - 20, y: 300 } });
+    await sidebar(page).waitFor({ state: "detached" });
     await page.context().close();
-    const wide = await signedInAt("/inbox", 1280);
-    expect(await box(wide, '[data-surface="page"]').then((b) => b.x)).toBeGreaterThan(250);
-    await wide.context().close();
   });
+
+  it.each([1000, 1280])(
+    "keeps the sidebar beside the page at %i px, without a button",
+    async (width) => {
+      const page = await signedInAt("/inbox", width);
+      await sidebar(page).waitFor();
+      expect(await page.getByRole("button", { name: "Show the sidebar" }).count()).toBe(0);
+      expect((await box(page, '[data-surface="page"]')).x).toBeGreaterThan(200);
+      await page.context().close();
+    },
+  );
 
   it.skipIf(usesRealServer)(
     "keeps the description of a built-in pattern readable beside the Properties column",

@@ -211,6 +211,7 @@ pub(super) const ROUTES: &[(&str, &str, Access)] = &[
     ("POST", "/v1/changes/{id}/reject", MEMBER),
     ("GET", "/v1/changes/{id}/diff", VIEWER),
     // Runs, chats and terminals.
+    ("GET", "/v1/runs/finished", VIEWER),
     ("GET", "/v1/runs/{id}", VIEWER),
     ("GET", "/v1/runs/{id}/events", VIEWER),
     ("GET", "/v1/runs/{id}/diff", VIEWER),

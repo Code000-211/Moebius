@@ -80,6 +80,11 @@ const broadcast = (event: { kind: string; data: unknown }) => {
   server.broadcast(event);
 };
 // By the label, not the role: a card window over the board is modal and hides the board from the accessibility tree.
+/** Opens the line for a new card in a column from its context menu: the column has no button for it. */
+async function addFromMenu(name: string): Promise<void> {
+  await column(name).getByRole("heading", { name }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Add a card" }).click();
+}
 const column = (name: string) => page.locator(`section[aria-label="${name}"]`);
 const card = (number: number) => page.getByTestId(`card-${number}`);
 const dock = () => page.getByRole("dialog", { name: "Card inspector" });
@@ -187,7 +192,7 @@ describe("the board page", () => {
     if (usesRealServer) return;
     await fresh();
     await openBoard();
-    const notice = page.getByRole("alert").filter({ hasText: "still has a .moebius folder" });
+    const notice = page.getByRole("status").filter({ hasText: "still has a .moebius folder" });
     await notice.waitFor();
     expect(await notice.textContent()).toContain(".moebius/old.luau");
     await notice.getByRole("link", { name: "Project settings" }).waitFor();
@@ -231,15 +236,16 @@ describe("the board page", () => {
     await fresh();
     await openBoard();
     const backlog = column("Backlog");
-    await backlog.getByRole("button", { name: "Add a card to Backlog, at the foot" }).click();
+    await addFromMenu("Backlog");
     const line = backlog.getByLabel("Title of the new card in Backlog");
     await line.fill("Never made");
     await line.press("Escape");
     await line.waitFor({ state: "detached" });
     expect(await page.getByText("Never made").count()).toBe(0);
 
-    // The "+" in the head opens the same line.
-    await backlog.getByRole("button", { name: "Add a card to Backlog", exact: true }).click();
+    // The keyboard reaches it too: Enter on the column's name opens the same menu.
+    await backlog.getByRole("heading", { name: "Backlog" }).press("Enter");
+    await page.getByRole("menuitem", { name: "Add a card" }).click();
     await line.fill("Made in place");
     await line.press("Enter");
     await status('Created "Made in place"').waitFor();
@@ -259,7 +265,7 @@ describe("the board page", () => {
     await openBoard();
     fake().refuseNext("POST", "/v1/repositories/1/issues", 500, "the forge refused the issue");
     const backlog = column("Backlog");
-    await backlog.getByRole("button", { name: "Add a card to Backlog, at the foot" }).click();
+    await addFromMenu("Backlog");
     const line = backlog.getByLabel("Title of the new card in Backlog");
     await line.fill("Doomed");
     await line.press("Enter");
@@ -312,40 +318,39 @@ describe("the board page", () => {
   });
 
   it.skipIf(usesRealServer)(
-    "shows each card with its issue, status, agent, attempts, change and pull request",
+    "shows each card flat: status icon, id and title, and a pale line only when it runs or needs you",
     async () => {
       await fresh();
       await openBoard();
-      // Columns: Backlog is always there; the counts follow the cards.
+      // Columns: Backlog is always there; its name stands alone, with no count.
       await column("Backlog").waitFor();
       expect(
         await column("Not started")
-          .getByTestId(/^card-/)
+          .getByTestId(/^card-\d+$/)
           .count(),
       ).toBe(2);
+      expect(await column("Not started").getByRole("heading").textContent()).toBe("Not started");
 
       const running = card(1);
       await running.waitFor();
-      expect(
-        await running.getByRole("link", { name: "Issue #1 on its forge" }).getAttribute("href"),
-      ).toBe("https://github.com/acme/demo/issues/1");
       await running.getByTestId("status-running").waitFor();
-      await running.getByText("Live", { exact: true }).waitFor();
-      await running.getByText("Coder · round 1 of 5").waitFor();
-      await running.getByRole("img", { name: "Round 1 of 5" }).waitFor();
+      expect(await running.getByTestId("card-activity").textContent()).toContain("Coder");
+      // A running card has no outline of progress and casts no shadow.
+      expect(await running.evaluate((el) => getComputedStyle(el).boxShadow)).toBe("none");
 
-      const ready = card(5);
-      const pull = ready.getByRole("link", { name: "Pull request #11, open" });
-      expect(await pull.getAttribute("href")).toBe("https://github.com/acme/demo/pull/11");
-      await ready.getByText("Green").waitFor();
-      await ready.getByText("Your turn").waitFor();
-      await ready.getByText("2 rounds", { exact: true }).waitFor();
+      // A card that needs a person says so in the orange line.
+      const needs = card(2);
+      await needs.getByTestId("status-needsYou").waitFor();
+      expect(await needs.getByTestId("card-activity").textContent()).toBe("Plan ready");
 
-      await card(4).getByText("Waiting on #3").waitFor();
-      await card(3).getByText("Next").waitFor();
-      await card(6).getByText("Stuck").waitFor();
-      await card(2).getByText("Your turn").waitFor();
-      await card(7).getByRole("link", { name: "Pull request #9, merged" }).waitFor();
+      // An idle card is its id and its title, and nothing else.
+      const idle = card(3);
+      expect(await idle.getByTestId("card-activity").count()).toBe(0);
+      expect(await idle.evaluate((el) => getComputedStyle(el).boxShadow)).toBe("none");
+      expect(await idle.evaluate((el) => el.firstElementChild?.children.length)).toBe(2);
+
+      await card(6).getByTestId("card-activity").getByText("Stuck").waitFor();
+      await card(7).getByTestId("status-done").waitFor();
     },
   );
 
@@ -399,9 +404,81 @@ describe("the board page", () => {
         "the sentence is not in the middle of the room it was given",
       ).toBeLessThanOrEqual(2);
       expect(face.shadow, "the empty state lifts itself off the column").toBe("none");
-      // The column keeps its own fill, which is what the sentence rests on.
+      // The column is plain: no fill, and no "+" or "+ Add" in it.
       const lane = await column("In review").evaluate((el) => getComputedStyle(el).backgroundColor);
-      expect(lane, "the column has no fill of its own to sit on").not.toBe("rgba(0, 0, 0, 0)");
+      expect(lane, "the column has a box of its own").toBe("rgba(0, 0, 0, 0)");
+      expect(
+        await column("In review")
+          .getByRole("button", { name: /Add a card/ })
+          .count(),
+      ).toBe(0);
+    },
+  );
+});
+
+describe("column scrolling", () => {
+  it.skipIf(usesRealServer)(
+    "scrolls a column with many cards on its own, and nothing on the board masks",
+    async () => {
+      await fresh();
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await openBoard();
+      // 60 more cards, all in the Backlog.
+      await page.evaluate(async () => {
+        for (let at = 0; at < 60; at += 1) {
+          await fetch("/v1/repositories/1/issues", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Moebius": "1" },
+            body: JSON.stringify({ title: `Filler ${at}`, body: "" }),
+          });
+        }
+      });
+      // Only the cards in view are drawn, so the 60 are known by the column having something to scroll.
+      await expect
+        .poll(() =>
+          column("Backlog").evaluate((node) => {
+            const scroller = node.querySelector("[data-virtuoso-scroller]") as HTMLElement;
+            return scroller.scrollHeight - scroller.clientHeight;
+          }),
+        )
+        .toBeGreaterThan(200);
+      const read = () =>
+        page.evaluate(() => {
+          const scrollOf = (el: Element) => el.scrollTop;
+          const section = (name: string) =>
+            document.querySelector(`section[aria-label="${name}"]`) as HTMLElement;
+          const cards = (name: string) =>
+            section(name).querySelector("[data-virtuoso-scroller]") as HTMLElement;
+          const doc = document.scrollingElement as Element;
+          const main = document.querySelector("main") as HTMLElement;
+          return {
+            document: doc.scrollHeight - doc.clientHeight,
+            main: main.scrollHeight - main.clientHeight,
+            overflow: cards("Backlog").scrollHeight - cards("Backlog").clientHeight,
+            backlog: scrollOf(cards("Backlog")),
+            other: scrollOf(cards("In progress")),
+            masked: [...main.querySelectorAll("*"), main].filter((el) => {
+              const style = getComputedStyle(el);
+              return (
+                (style.maskImage !== "none" && style.maskImage !== "") ||
+                (style.webkitMaskImage !== "none" && style.webkitMaskImage !== "")
+              );
+            }).length,
+          };
+        });
+      const before = await read();
+      expect(before.document, "the document scrolls").toBe(0);
+      expect(before.main, "the page scrolls as one sheet").toBeLessThan(8);
+      expect(before.overflow, "the column has nothing to scroll").toBeGreaterThan(200);
+      expect(before.masked, "something on the board masks its scroll").toBe(0);
+      const box = await column("Backlog").boundingBox();
+      if (!box) throw new Error("no box");
+      await page.mouse.move(box.x + box.width / 2, box.y + 200);
+      await page.mouse.wheel(0, 600);
+      await expect.poll(async () => (await read()).backlog).toBeGreaterThan(0);
+      const after = await read();
+      expect(after.other, "another column scrolled with it").toBe(0);
+      expect(after.main, "the page scrolled with the column").toBeLessThan(8);
     },
   );
 });
@@ -450,8 +527,8 @@ describe("live data", () => {
       ids.push(((await made.json()) as { id: number }).id);
     }
     await page.goto(`${server.url}/issues`);
-    await page.getByTestId(`issue-${ids[0]}`).getByRole("link", { name: "First issue" }).click();
-    await page.waitForURL(`**/board/${demo}?card=${ids[0]}`);
+    await page.getByTestId("list-row").filter({ hasText: "First issue" }).click();
+    await page.waitForURL(`**/issues?**card=${ids[0]}`);
     await dock().getByText("First issue").first().waitFor();
     await page.goBack();
     await page.getByTestId("issues-page").waitFor();
@@ -721,7 +798,7 @@ describe("the decisions", () => {
     await dock().getByRole("button", { name: "Retry" }).click();
     await status("Retrying #6.").waitFor();
     expect(fake().requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/cards/6/retry" });
-    await card(6).getByText("Live", { exact: true }).waitFor();
+    await card(6).getByTestId("card-activity").waitFor();
   });
 
   it.skipIf(usesRealServer)("tells why the server refused a decision", async () => {
@@ -750,7 +827,7 @@ describe("blocking, unblocking and deleting a card", () => {
       await fresh();
       await openBoard();
       // A card that waits on an issue says so in its own words, apart from the one a person blocks.
-      await card(4).getByText("Waiting on #3").waitFor();
+      await card(4).getByTestId("card-activity").getByText("Waiting on #3").waitFor();
       await menuOf(card(3), 3).click();
       await item("Block…").click();
       const dialog = asking("Block #3");
@@ -763,15 +840,10 @@ describe("blocking, unblocking and deleting a card", () => {
         path: "/v1/cards/3/block",
         body: { reason: "wait for the design" },
       });
-      // It stays in its column, tagged, and its reason is in the tag's tooltip.
+      // It stays in its column, its line says Blocked, and its reason is the line's tooltip.
       const tag = column("Not started").getByTestId("card-3").getByText("Blocked", { exact: true });
       await tag.waitFor();
-      await tag.hover();
-      await page
-        .getByRole("tooltip")
-        .filter({ hasText: "wait for the design (blocked by a person)" })
-        .first()
-        .waitFor();
+      expect(await tag.getAttribute("title")).toBe("wait for the design (blocked by a person)");
       // The card that waits on issues is a different state: it is not called blocked.
       expect(await card(4).getByText("Blocked", { exact: true }).count()).toBe(0);
 
@@ -806,27 +878,31 @@ describe("blocking, unblocking and deleting a card", () => {
   it.skipIf(usesRealServer)("stops the run of a card that is blocked", async () => {
     await fresh();
     await openBoard();
-    await card(1).getByText("Live", { exact: true }).waitFor();
+    await card(1).getByTestId("card-activity").waitFor();
     await menuOf(card(1), 1).click();
     await item("Block…").click();
     await asking("Block #1").getByRole("button", { name: "Block", exact: true }).click();
     await status("Blocked #1").waitFor();
     await card(1).getByText("Blocked", { exact: true }).waitFor();
     // The run was stopped, so the card is no longer live.
-    await card(1).getByText("Live", { exact: true }).waitFor({ state: "detached" });
+    await card(1)
+      .getByText(/^Coder · code/)
+      .waitFor({ state: "detached" });
     expect(fake().requests.at(-1)).toMatchObject({ body: { reason: "" } });
   });
 
   it.skipIf(usesRealServer)("stops the run of a card from its menu and from the dock", async () => {
     await fresh();
     await openBoard();
-    await card(1).getByText("Live", { exact: true }).waitFor();
+    await card(1).getByTestId("card-activity").waitFor();
     await menuOf(card(1), 1).click();
     await item("Stop run").click();
     await status("Stopping #1.").waitFor();
     expect(fake().requests.at(-1)).toMatchObject({ method: "POST", path: "/v1/runs/1/stop" });
     // The card is no longer live and is not blocked, and the menu offers no second stop.
-    await card(1).getByText("Live", { exact: true }).waitFor({ state: "detached" });
+    await card(1)
+      .getByText(/^Coder · code/)
+      .waitFor({ state: "detached" });
     expect(await card(1).getByText("Blocked", { exact: true }).count()).toBe(0);
     await menuOf(card(1), 1).click();
     expect(await item("Stop run").count()).toBe(0);
@@ -835,7 +911,9 @@ describe("blocking, unblocking and deleting a card", () => {
     // The window has the stop on the line of its run, which opens to it.
     await fresh();
     await openBoard();
-    await card(1).getByText("Live", { exact: true }).waitFor();
+    await card(1)
+      .getByText(/^Coder · code/)
+      .waitFor();
     await card(1).click();
     await dock().getByRole("button", { name: "Code run" }).click();
     await dock().getByRole("link", { name: "Open live view" }).waitFor();
@@ -922,7 +1000,7 @@ describe("blocking, unblocking and deleting a card", () => {
       await card(3).waitFor({ state: "detached" });
       expect(fake().requests.at(-1)).toMatchObject({ method: "DELETE", path: "/v1/cards/3" });
       // The card that waited on it is left waiting, as for any issue that has no card.
-      await card(4).getByText("Waiting on #3").waitFor();
+      await card(4).getByTestId("card-activity").getByText("Waiting on #3").waitFor();
     },
   );
 
@@ -983,7 +1061,7 @@ describe("blocking, unblocking and deleting a card", () => {
     await page.waitForURL("**status=held");
     await card(3).waitFor();
     // The address changes before the board is drawn again with the filter.
-    await expect.poll(() => page.getByTestId(/^card-/).count()).toBe(1);
+    await expect.poll(() => page.getByTestId(/^card-\d+$/).count()).toBe(1);
   });
 });
 
@@ -1229,7 +1307,10 @@ describe("the dock", () => {
  * by a route before the columns follow it; counting at once can read the board as it was. */
 const shownIs = (count: number) =>
   expect
-    .poll(() => page.getByTestId(/^card-/).count(), { timeout: 10_000, message: `${count} cards` })
+    .poll(() => page.getByTestId(/^(card-\d+|list-row)$/).count(), {
+      timeout: 10_000,
+      message: `${count} cards`,
+    })
     .toBe(count);
 
 const bar = () => page.getByRole("search", { name: "Filter the cards" });
@@ -1244,7 +1325,7 @@ describe("the filters", () => {
     async () => {
       await fresh();
       await openBoard();
-      expect(await page.getByTestId(/^card-/).count()).toBe(7);
+      expect(await page.getByTestId(/^card-\d+$/).count()).toBe(7);
 
       await addFilter(page, bar(), "Column", "Done");
       await shownIs(1);
@@ -1387,27 +1468,17 @@ describe("Display", () => {
       await display("List").click();
       await page.waitForURL("**layout=list");
       // The lanes are gone and every card is a row under the heading of its column.
-      await column("Done").waitFor();
-      expect(
-        await page
-          .getByRole("list")
-          .getByTestId(/^card-/)
-          .count(),
-      ).toBe(7);
+      await page.getByTestId("group-row").filter({ hasText: "Done" }).waitFor();
+      expect(await page.getByTestId("list-row").count()).toBe(7);
       await shownIs(7);
       await page.reload();
       await shownIs(7);
-      expect(
-        await page
-          .getByRole("list")
-          .getByTestId(/^card-/)
-          .count(),
-      ).toBe(7);
+      expect(await page.getByTestId("list-row").count()).toBe(7);
 
       // A row opens the card, and a filter still applies.
       await addFilter(page, bar(), "Agent", "Reviewer");
       await shownIs(1);
-      await card(6).getByRole("button").click();
+      await page.getByTestId("list-row").click();
       await dock().waitFor();
       await page.keyboard.press("Escape");
       await dock().waitFor({ state: "detached" });
@@ -1415,13 +1486,8 @@ describe("Display", () => {
       await bar().getByRole("button", { name: "Display" }).click();
       await display("Board").click();
       await page.waitForURL((url) => !url.search.includes("layout="));
-      expect(
-        await page
-          .getByRole("list")
-          .getByTestId(/^card-/)
-          .count(),
-      ).toBe(0);
       await card(6).waitFor();
+      expect(await page.getByTestId("list-row").count()).toBe(0);
     },
   );
 
@@ -1433,8 +1499,8 @@ describe("Display", () => {
     await bar().getByRole("button", { name: "Display" }).click();
     await display("Status").click();
     await page.waitForURL("**group=status");
-    await page.getByRole("region", { name: "Your turn", exact: true }).waitFor();
-    expect(await page.getByRole("region", { name: "Not started" }).count()).toBe(0);
+    await page.getByTestId("group-row").filter({ hasText: "Your turn" }).waitFor();
+    expect(await page.getByTestId("group-row").filter({ hasText: "Not started" }).count()).toBe(0);
 
     await bar().getByRole("button", { name: "Display" }).click();
     await display("None").click();
@@ -1445,8 +1511,10 @@ describe("Display", () => {
     await page.reload();
     await shownIs(7);
     const titles = await page
-      .getByTestId(/^card-/)
-      .evaluateAll((rows) => rows.map((row) => row.querySelectorAll("span")[1]?.textContent ?? ""));
+      .getByTestId("list-row")
+      .evaluateAll((rows) =>
+        rows.map((row) => row.querySelector("span.font-medium")?.textContent ?? ""),
+      );
     expect(titles).toHaveLength(7);
     expect(titles).toEqual([...titles].sort((x, y) => x.localeCompare(y)));
   });
@@ -1454,22 +1522,26 @@ describe("Display", () => {
   it.skipIf(usesRealServer)("switches off the fields a card shows", async () => {
     await fresh();
     await openBoard();
-    const detail = card(2).getByText(/round/);
-    const had = await detail.count();
     await bar().getByRole("button", { name: "Display" }).click();
-    await display("Agent and round", "menuitemcheckbox").click();
-    // The menu stays open for the next field.
-    await display("Labels", "menuitemcheckbox").click();
+    await display("List").click();
+    await page.waitForURL("**layout=list");
+    const row = page.getByTestId("list-row").filter({ hasText: "Add a feature" });
+    const agent = row.getByText("Coder", { exact: true });
+    await agent.waitFor();
+    await bar().getByRole("button", { name: "Display" }).click();
+    await display("Agent and status", "menuitemcheckbox").click();
     await page.keyboard.press("Escape");
-    await page.waitForURL("**hide=detail%2Clabels");
-    await expect.poll(() => card(2).getByText(/round/).count()).toBeLessThanOrEqual(had);
-    expect(await card(2).getByText("Coder · round").count()).toBe(0);
+    await page.waitForURL("**hide=detail");
+    await expect.poll(() => agent.count()).toBe(0);
     await page.reload();
     await bar().getByRole("button", { name: "Display" }).click();
-    expect(await display("Labels", "menuitemcheckbox").getAttribute("aria-checked")).toBe("false");
-    expect(await display("Description", "menuitemcheckbox").getAttribute("aria-checked")).toBe(
-      "true",
+    expect(await display("Agent and status", "menuitemcheckbox").getAttribute("aria-checked")).toBe(
+      "false",
     );
+    // The choices only the card of the board used, and the ones the list no longer shows, are gone.
+    for (const gone of ["Description", "Labels", "Claimed by", "Round limit"]) {
+      expect(await display(gone, "menuitemcheckbox").count()).toBe(0);
+    }
   });
 });
 

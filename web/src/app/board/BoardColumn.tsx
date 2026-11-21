@@ -7,21 +7,23 @@
  * so a card draws again only when its own data, one of those or whether it is chosen or open changes: a read of the
  * snapshot that changes one card, or opening another, no longer draws every card of the board.
  */
-import { type MouseEvent, memo } from "react";
-import type { Board, Card, Change, InboxItem, Repository } from "../../api/types/board";
+import { type MouseEvent, memo, type ReactNode, useState } from "react";
+import { type ListRange, Virtuoso } from "react-virtuoso";
+import type { Board, Card, InboxItem } from "../../api/types/board";
+import { ContextMenu, useContextMenu } from "../../ui/components/ContextMenu";
 import {
   KanbanBoard,
   KanbanCard,
   KanbanCards,
   KanbanHeader,
+  useDraggedCardId,
 } from "../../ui/components/KanbanBoard";
 import { Empty } from "../../ui/page/Empty";
 import { SelectBox } from "../../ui/page/SelectBox";
 import { CardContent, type CardMenuActions } from "./BoardCardContent";
-import { ColumnAdd, ColumnAddButton } from "./ColumnAdd";
-import { ColumnMark } from "./ColumnMark";
+import { ColumnAdd } from "./ColumnAdd";
 import { cardKey } from "./cardKey";
-import { type CardStatus, cardStatus, changeOf, inboxOf, nextCard, type Stack } from "./model";
+import { type CardStatus, cardStatus, inboxOf, type Stack } from "./model";
 
 /**
  * What a column holds when it is empty: one sentence for how a card comes to it. There is no title, because the
@@ -54,7 +56,6 @@ export const BoardColumn = memo(function BoardColumn({
   inbox,
   name,
   cards,
-  total,
   stacks,
   opened,
   inspectedTopId,
@@ -64,7 +65,6 @@ export const BoardColumn = memo(function BoardColumn({
   onSelect,
   menu,
   bulk,
-  hidden,
   adding,
   onAdding,
   onCreated,
@@ -73,7 +73,6 @@ export const BoardColumn = memo(function BoardColumn({
   inbox: InboxItem[];
   name: string;
   cards: Card[];
-  total: number;
   /** The stack of each card of the board that has sub-issues, by card id. */
   stacks: Map<number, Stack>;
   /** The stacks a person opened, by the id of the card at the top. */
@@ -87,122 +86,173 @@ export const BoardColumn = memo(function BoardColumn({
   onSelect: (card: Card) => void;
   menu: CardMenuActions;
   bulk: ColumnBulk;
-  /** The fields of a card Display switched off. */
-  hidden: ReadonlySet<string>;
   /** The line for a new card is open in this column. */
   adding: boolean;
   /** Opens or closes the line for a new card in the column of this name. */
   onAdding: (column: string, open: boolean) => void;
   onCreated: (card: Card, column: string) => void;
 }) {
-  const next = name === "Not started" ? nextCard(cards, board.cards) : undefined;
-  // A sub-issue in a stack is the next to start when it is the first the whole board could start; worked out only when a
-  // stack is open.
-  let nextAnywhere: number | undefined | null = null;
-  const nextOfBoard = () => {
-    if (nextAnywhere === null) nextAnywhere = nextCard(board.cards, board.cards);
-    return nextAnywhere;
-  };
-  const shared = {
-    repository: board.repository,
-    roundLimit: board.round_limit,
-    busy,
-    onSelect,
-    menu,
-    hidden,
-  };
+  const shared = { busy, onSelect, menu };
   /** What a card of this column shows that depends on the board. */
-  const derived = (card: Card) => ({
-    status: cardStatus(card, inboxOf(inbox, card), board),
-    change: changeOf(board, card),
-  });
+  const derived = (card: Card) => ({ status: cardStatus(card, inboxOf(inbox, card), board) });
+  /** A card of the column with the stack of its sub-issues under it when that is open: one row of the column. */
+  const renderCard = (card: Card) => {
+    const stack = stacks.get(card.id);
+    const open = stack !== undefined && (opened.has(card.id) || inspectedTopId === card.id);
+    return (
+      <div
+        data-testid={stack ? `stack-${card.number}` : undefined}
+        className="flex min-w-0 flex-col gap-3"
+      >
+        <BoardCard
+          {...shared}
+          {...derived(card)}
+          card={card}
+          selected={inspectedId === card.id}
+          column={name}
+          bulk={bulk}
+          chosen={bulk.has(card.id)}
+          stack={stack}
+          open={open}
+          onToggleStack={onToggleStack}
+        />
+        {open && stack.shown.length > 0 && (
+          // The sub-issues lie under their parent, in a stack of their own: each is a card that moves, blocks and
+          // deletes like any other,
+          <div className="ml-3 flex min-w-0 flex-col gap-3 border-l-2 border-hairline-strong pl-3">
+            {stack.shown.map((child) => (
+              <BoardCard
+                key={child.id}
+                {...shared}
+                {...derived(child)}
+                card={child}
+                selected={inspectedId === child.id}
+                column={child.column}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
   return (
     <KanbanBoard name={name}>
-      <ColumnHead name={name} count={cards.length} total={total} onAdding={onAdding} />
-      <KanbanCards className="min-h-9">
-        {cards.map((card) => {
-          const stack = stacks.get(card.id);
-          const open = stack !== undefined && (opened.has(card.id) || inspectedTopId === card.id);
-          return (
-            <div
-              key={card.id}
-              data-testid={stack ? `stack-${card.number}` : undefined}
-              className="flex min-w-0 flex-col gap-3"
-            >
-              <BoardCard
-                {...shared}
-                {...derived(card)}
-                card={card}
-                selected={inspectedId === card.id}
-                column={name}
-                next={next === card.id}
-                bulk={bulk}
-                chosen={bulk.has(card.id)}
-                stack={stack}
-                open={open}
-                onToggleStack={onToggleStack}
-              />
-              {open && stack.shown.length > 0 && (
-                // The sub-issues lie under their parent, in a stack of their own: each is a card that moves, blocks and
-                // deletes like any other, and says which column it is in, since it is not in this one.
-                <div className="ml-3 flex min-w-0 flex-col gap-3 border-l-2 border-hairline-strong pl-3">
-                  {stack.shown.map((child) => (
-                    <BoardCard
-                      key={child.id}
-                      {...shared}
-                      {...derived(child)}
-                      card={child}
-                      selected={inspectedId === child.id}
-                      column={child.column}
-                      next={child.column === "Not started" && nextOfBoard() === child.id}
-                      inStack
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-        {/* The column is already the surface under these words; a card of its own inside it is a second one, and one
-            that reads as a card which has lost its words. */}
-        {cards.length === 0 && <Empty plain centered body={COLUMN_EMPTY[name] ?? ANY_COLUMN} />}
-      </KanbanCards>
-      <ColumnFoot
+      <ColumnHead name={name} onAdding={onAdding} />
+      <ColumnLine
         repository={board.repository.id}
         name={name}
         adding={adding}
         onAdding={onAdding}
         onCreated={onCreated}
       />
+      {cards.length === 0 ? (
+        <KanbanCards className="min-h-9">
+          {/* The column is already the surface under these words; a card of its own inside it is a second one, and one
+              that reads as a card which has lost its words. */}
+          <Empty plain centered body={COLUMN_EMPTY[name] ?? ANY_COLUMN} />
+        </KanbanCards>
+      ) : (
+        <ColumnCards cards={cards} renderCard={renderCard} />
+      )}
     </KanbanBoard>
   );
 });
 
-/** The head of a column, which draws again only when the column's counts change. */
+/** The air under the last card, which the lanes row takes back from the page. */
+function ColumnFoot({ context }: { context?: ColumnContext }) {
+  return (
+    <div className="h-4">
+      {context?.pinned && (
+        // The card being dragged stays in the page while its row is scrolled out of the window: the drag library needs
+        // its element. It is out of sight and out of reach, and the drag overlay is what the person sees.
+        <div
+          inert
+          aria-hidden
+          className="pointer-events-none absolute top-0 -left-[9999px] w-60 opacity-0"
+        >
+          {context.pinned}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface ColumnContext {
+  pinned: ReactNode;
+}
+
+/** Only what is in view of the column's cards is drawn, rows of different heights (a card, or a card with its open stack). */
+const COLUMN_COMPONENTS = { Footer: ColumnFoot };
+
+function ColumnCards({
+  cards,
+  renderCard,
+}: {
+  cards: Card[];
+  renderCard: (card: Card) => ReactNode;
+}) {
+  const dragged = useDraggedCardId();
+  // None until the list says what it drew: until then no card is taken to be out of it.
+  const [range, setRange] = useState<ListRange | null>(null);
+  const at = dragged === null ? -1 : cards.findIndex((card) => String(card.id) === dragged);
+  const pinned =
+    at >= 0 && range !== null && (at < range.startIndex || at > range.endIndex)
+      ? renderCard(cards[at] as Card)
+      : null;
+  return (
+    <Virtuoso
+      data={cards}
+      computeItemKey={(_, card) => card.id}
+      increaseViewportBy={400}
+      rangeChanged={setRange}
+      context={{ pinned }}
+      components={COLUMN_COMPONENTS}
+      className="min-h-9 flex-1"
+      style={{ height: "auto" }}
+      itemContent={(_, card) => <div className="pb-2">{renderCard(card)}</div>}
+    />
+  );
+}
+
+/**
+ * The head of a column: its name alone. Its context menu (right click, the menu key, or Enter while it has the focus)
+ * offers "Add a card", the one way to add to a column that is not the header's New issue button. Draws again only when
+ * the name changes.
+ */
 const ColumnHead = memo(function ColumnHead({
   name,
-  count,
-  total,
   onAdding,
 }: {
   name: string;
-  count: number;
-  total: number;
   onAdding: (column: string, open: boolean) => void;
 }) {
+  const menu = useContextMenu();
   return (
-    <KanbanHeader
-      name={name}
-      count={count}
-      total={total}
-      mark={<ColumnMark name={name} />}
-      actions={<ColumnAddButton column={name} onClick={() => onAdding(name, true)} />}
-    />
+    <>
+      <KanbanHeader
+        name={name}
+        focusable
+        onContextMenu={menu.open}
+        onActivate={(box) =>
+          menu.open({
+            preventDefault: () => {},
+            clientX: box.left,
+            clientY: box.bottom,
+          } as MouseEvent)
+        }
+      />
+      <ContextMenu
+        point={menu.point}
+        onClose={menu.close}
+        title={name}
+        commands={[{ id: "add", label: "Add a card", run: () => onAdding(name, true) }]}
+      />
+    </>
   );
 });
 
-/** The foot of a column: "+ Add", or the line it turns into while it is open. */
-const ColumnFoot = memo(function ColumnFoot({
+/** The line for a new card, under the name while it is open. */
+const ColumnLine = memo(function ColumnLine({
   repository,
   name,
   adding,
@@ -220,7 +270,6 @@ const ColumnFoot = memo(function ColumnFoot({
       repository={repository}
       column={name}
       open={adding}
-      onOpen={() => onAdding(name, true)}
       onClose={() => onAdding(name, false)}
       onCreated={onCreated}
     />
@@ -228,15 +277,9 @@ const ColumnFoot = memo(function ColumnFoot({
 });
 
 type BoardCardProps = {
-  repository: Repository;
-  roundLimit: number;
   card: Card;
-  /** What the card is doing, and its change: worked out by the column from the board. */
+  /** What the card is doing: worked out by the column from the board. */
   status: CardStatus;
-  change: Change | undefined;
-  /** The card is the one the board starts next. */
-  next: boolean;
-  hidden: ReadonlySet<string>;
   /** What chooses the card: left out for a sub-issue in a stack, which is not chosen with the cards of the column. */
   bulk?: ColumnBulk;
   /** Whether the card is chosen; only a card the column can choose says. */
@@ -251,7 +294,6 @@ type BoardCardProps = {
   stack?: Stack;
   open?: boolean;
   onToggleStack?: (card: Card) => void;
-  inStack?: boolean;
 };
 
 /** Whether a stack reads the same: the page makes a new one at every read of the board, with the same cards in it. */
@@ -287,12 +329,8 @@ function sameCard(was: BoardCardProps, now: BoardCardProps): boolean {
 
 /** One card of a column, or of the stack under its parent. */
 const BoardCard = memo(function BoardCard({
-  repository,
-  roundLimit,
   card,
   status,
-  change,
-  next,
   column,
   busy,
   selected,
@@ -303,8 +341,6 @@ const BoardCard = memo(function BoardCard({
   stack,
   open = false,
   onToggleStack,
-  inStack = false,
-  hidden,
 }: BoardCardProps) {
   return (
     <KanbanCard
@@ -314,17 +350,12 @@ const BoardCard = memo(function BoardCard({
       column={column}
       dragDisabled={busy}
       isSelected={selected}
-      isLive={status === "live"}
       onOpen={() => onSelect(card)}
       onContextMenu={bulk?.onContextMenu(card)}
     >
       <CardContent
-        repository={repository}
-        roundLimit={roundLimit}
         card={card}
         status={status}
-        change={change}
-        next={next}
         onOpen={() => onSelect(card)}
         menu={menu}
         select={
@@ -340,8 +371,6 @@ const BoardCard = memo(function BoardCard({
         stack={stack}
         open={open}
         onToggleStack={onToggleStack && (() => onToggleStack(card))}
-        inStack={inStack}
-        hidden={hidden}
       />
     </KanbanCard>
   );

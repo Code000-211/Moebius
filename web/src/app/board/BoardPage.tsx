@@ -27,11 +27,11 @@ import { Button } from "../../ui/components/Button";
 import { type DropResult, KanbanCardFace, KanbanProvider } from "../../ui/components/KanbanBoard";
 import { FilterBar } from "../../ui/filters/FilterBar";
 import { type Display, displayQuery, readDisplay } from "../../ui/filters/model";
+import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
 import { Select } from "../../ui/page/Field";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
-import { ScrollFades } from "../../ui/page/ScrollFades";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
 import { boardFiltersOf, viewOfBoard } from "../views/model";
@@ -46,13 +46,11 @@ import { type Decision, useDecisions } from "./decisions";
 import { ListLayout } from "./ListLayout";
 import {
   cardStatus,
-  changeOf,
   dropRule,
   type Filters,
   groupByColumn,
   inboxOf,
   NO_FILTERS,
-  nextCard,
   rootOf,
 } from "./model";
 import { useNewIssue } from "./NewIssueHost";
@@ -412,29 +410,20 @@ export function BoardPage() {
     if (!board || !card) return null;
     const status = cardStatus(card, inboxOf(inbox, card), board);
     return (
-      <KanbanCardFace
-        name={`${cardKey(card)} ${card.title}`}
-        isLive={status === "live"}
-        className="cursor-grabbing"
-      >
-        <CardContent
-          repository={board.repository}
-          roundLimit={board.round_limit}
-          card={card}
-          status={status}
-          change={changeOf(board, card)}
-          next={card.column === "Not started" && nextCard(board.cards, board.cards) === card.id}
-          hidden={hidden}
-        />
+      <KanbanCardFace name={`${cardKey(card)} ${card.title}`} className="cursor-grabbing">
+        <CardContent card={card} status={status} />
       </KanbanCardFace>
     );
   }
 
+  const boardLayout = display.layout !== "list";
   return (
-    <>
+    // The board fills the panel: the page does not scroll, the lanes row scrolls sideways and each column's cards scroll
+    // up and down. The list layout is a page like the others and scrolls as one sheet.
+    <div className={cn("flex min-w-0 flex-col", boardLayout && "h-full min-h-0")}>
       {header}
-      <div className="flex min-w-0 flex-col">
-        <div className="flex min-w-0 flex-1 flex-col">
+      <div className={cn("flex min-w-0 flex-col", boardLayout && "min-h-0 flex-1")}>
+        <div className={cn("flex min-w-0 flex-1 flex-col", boardLayout && "min-h-0")}>
           {openView && (
             <p
               className="m-0 mb-2 flex flex-wrap items-center gap-x-3 text-sm text-secondary"
@@ -478,16 +467,18 @@ export function BoardPage() {
               onContextMenu={bulk.onContextMenu}
             />
           ) : (
-            <ScrollFades className="flex-1 pb-3">
+            <div
+              data-testid="board-lanes"
+              className="-mx-6 -mb-6 min-h-0 flex-1 overflow-x-auto overflow-y-hidden px-6"
+            >
               <KanbanProvider onDragEnd={onDragEnd} renderOverlay={renderOverlay}>
-                {groups.map(({ column, cards, total, stacks }) => (
+                {groups.map(({ column, cards, stacks }) => (
                   <BoardColumn
                     key={column}
                     board={board}
                     inbox={inbox}
                     name={column}
                     cards={cards}
-                    total={total}
                     stacks={stacks}
                     opened={opened}
                     inspectedTopId={inspectedTopId}
@@ -497,14 +488,13 @@ export function BoardPage() {
                     onSelect={onSelect}
                     menu={menu}
                     bulk={columnBulk}
-                    hidden={hidden}
                     adding={adding === column}
                     onAdding={onAdding}
                     onCreated={onCreated}
                   />
                 ))}
               </KanbanProvider>
-            </ScrollFades>
+            </div>
           )}
         </div>
       </div>
@@ -522,6 +512,6 @@ export function BoardPage() {
         onDone={doneDelete}
       />
       <ParentDialog board={board} card={moving} onClose={closeParent} onDone={doneParent} />
-    </>
+    </div>
   );
 }

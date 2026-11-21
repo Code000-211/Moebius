@@ -5,7 +5,6 @@
  */
 import { PencilSimpleIcon, TrashIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router";
 import { readMilestone } from "../../api/calls/milestones";
 import { keys } from "../../api/keys";
 import type { MilestoneView } from "../../api/types/milestones";
@@ -13,7 +12,7 @@ import { Markdown } from "../../ui/chat/Markdown";
 import { Button } from "../../ui/components/Button";
 import { cn } from "../../ui/lib/cn";
 import { axisOf, TimeBar } from "../../ui/page/TimeBar";
-import { cardPath } from "../pages";
+import { CardRows } from "../board/CardRows";
 import { dateWords, overdue, percent, progressWords, projectsWords, spanOf } from "./model";
 
 /** The milestones as rows on one time axis, in the order given. */
@@ -161,25 +160,14 @@ export function Detail({
       {detail.isError ? (
         <p className="m-0 text-sm text-secondary">The cards could not be read.</p>
       ) : (
-        <ul
-          className="m-0 flex list-none flex-col gap-1 p-0"
-          aria-label={`Cards of ${milestone.name}`}
-        >
-          {(detail.data?.cards ?? []).map((card) => (
-            <li key={card.id} className="flex min-w-0 items-baseline gap-2 text-sm">
-              <Link
-                className="min-w-0 flex-1 truncate text-text underline decoration-hairline-strong underline-offset-4 hover:decoration-current"
-                to={cardPath(card.repository_id, card.id)}
-              >
-                {card.title}
-              </Link>
-              <span className="shrink-0 text-secondary">{card.done ? "Done" : card.column}</span>
-            </li>
-          ))}
+        <div className="-mx-3">
+          <CardRows label={`Cards of ${milestone.name}`} cards={detail.data?.cards ?? []} />
           {detail.data?.cards.length === 0 && (
-            <li className="text-sm text-secondary">No card yet. Put one in from its properties.</li>
+            <p className="m-0 text-sm text-secondary">
+              No card yet. Put one in from its properties.
+            </p>
           )}
-        </ul>
+        </div>
       )}
     </div>
   );

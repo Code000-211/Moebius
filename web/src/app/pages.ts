@@ -1,11 +1,13 @@
 /**
- * The pages of the app: the entries of the sidebar, in its groups. Pages that are not built yet
+ * The pages of the app, in groups. The sidebar draws the groups "", "Projects" (its one page, the project list),
+ * "Workspace" and "More"; the pages of "Other", "Build", "Improve" and "Setup" are reached from Settings, More or
+ * the command bar. Pages that are not built yet
  * show a placeholder; a page that is built replaces its entry's element in `routes.tsx`.
  */
 import {
   ArrowsClockwiseIcon,
-  BookmarkSimpleIcon,
-  BookOpenTextIcon,
+  BookOpenIcon,
+  CalendarDotsIcon,
   ChartLineUpIcon,
   ChatCircleIcon,
   ClockIcon,
@@ -24,22 +26,31 @@ import {
   ListChecksIcon,
   PlugIcon,
   PlugsConnectedIcon,
-  RepeatIcon,
+  PulseIcon,
+  RadioButtonIcon,
   RobotIcon,
   RocketLaunchIcon,
   ScalesIcon,
   ShapesIcon,
   SparkleIcon,
+  StackIcon,
   TerminalWindowIcon,
   TrayArrowDownIcon,
   TrayIcon,
   TreeStructureIcon,
   UsersIcon,
-  UsersThreeIcon,
 } from "@phosphor-icons/react";
 
 /** The sidebar group a page is in; the first group has no name. */
-export type Group = "" | "Projects" | "Plan" | "Build" | "Improve" | "Setup" | "More";
+export type Group =
+  | ""
+  | "Projects"
+  | "Workspace"
+  | "More"
+  | "Other"
+  | "Build"
+  | "Improve"
+  | "Setup";
 
 export interface PageDef {
   /** The path, without the leading slash. */
@@ -53,20 +64,20 @@ export interface PageDef {
 
 export const PAGES: readonly PageDef[] = [
   { path: "inbox", title: "Inbox", group: "", icon: TrayIcon },
-  { path: "chat", title: "Chat", group: "", icon: ChatCircleIcon },
-  { path: "fleet", title: "Fleet", group: "", icon: UsersThreeIcon },
-  { path: "automations", title: "Automations", group: "", icon: ClockIcon },
-  { path: "workflows", title: "Workflows", group: "", icon: TreeStructureIcon },
+  { path: "my-issues", title: "My issues", group: "", icon: RadioButtonIcon },
+  { path: "chat", title: "Chat", group: "Other", icon: ChatCircleIcon },
+  { path: "fleet", title: "Fleet", group: "", icon: PulseIcon },
+  { path: "automations", title: "Automations", group: "Other", icon: ClockIcon },
+  { path: "workflows", title: "Workflows", group: "Other", icon: TreeStructureIcon },
   { path: "projects", title: "Projects", group: "Projects", icon: FolderIcon },
-  { path: "milestones", title: "Milestones", group: "Plan", icon: FlagIcon },
-  { path: "views", title: "Views", group: "Plan", icon: BookmarkSimpleIcon },
-  { path: "wiki", title: "Wiki", group: "Plan", icon: BookOpenTextIcon },
-  { path: "issues", title: "Issues", group: "Projects", icon: ListChecksIcon },
-  { path: "cycles", title: "Cycles", group: "Plan", icon: RepeatIcon },
-  { path: "analytics", title: "Analytics", group: "Plan", icon: ChartLineUpIcon },
-  { path: "intake", title: "Intake", group: "Projects", icon: TrayArrowDownIcon },
-  // Agents, Skills, MCP servers and Rules are held by Settings, so the everyday list does not name their group;
-  // the command bar still lists them under "Build".
+  { path: "milestones", title: "Milestones", group: "Other", icon: FlagIcon },
+  { path: "wiki", title: "Wiki", group: "Workspace", icon: BookOpenIcon },
+  { path: "cycles", title: "Cycles", group: "Workspace", icon: CalendarDotsIcon },
+  { path: "issues", title: "Issues", group: "Other", icon: ListChecksIcon },
+  { path: "views", title: "Views", group: "Workspace", icon: StackIcon },
+  { path: "analytics", title: "Analytics", group: "Other", icon: ChartLineUpIcon },
+  { path: "intake", title: "Intake", group: "Other", icon: TrayArrowDownIcon },
+  // Agents, Skills, MCP servers and Rules are held by Settings; the command bar still lists them under "Build".
   { path: "agents", title: "Agents", group: "Build", icon: RobotIcon },
   { path: "skills", title: "Skills", group: "Build", icon: SparkleIcon },
   { path: "mcp-servers", title: "MCP servers", group: "Build", icon: PlugsConnectedIcon },

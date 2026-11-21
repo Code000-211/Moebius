@@ -7,17 +7,16 @@
  * panel of its own at the right, opened from the dock, the quiet field at the bottom of the page (`AgentDock.tsx`), and
  * by `Ctrl+J`; the package sheet, which pages open from where a person meets plugins and extensions, lies over the
  * properties pane's place in the same panel. It
+ * in a window narrower than 1000px the sidebar is an overlay opened from the page header (`narrow.ts`, `SidebarToggle.tsx`). It
  * owns the command palette and its shortcut, the form of a new issue and `C` (`board/NewIssueHost.tsx`), the card window for `?card=` on any page (`board/CardWindowHost.tsx`), holds what is
- * in focus for it (`palette/focus.tsx`), and notes the places seen and the sidebar's collapsed state (kept per
- * browser). In the desktop app the panel carries the window's controls once at its top right
- * (`desktop/WindowControls.tsx`), and the rail of servers lies at the window's far left (`desktop/Rail.tsx`).
+ * in focus for it (`palette/focus.tsx`), and . In the desktop app the panel carries the window's controls once at its top right
+ * (`desktop/WindowControls.tsx`), and the server switch stands in the sidebar's head (`desktop/ServerSwitch.tsx`).
  */
 import { useQueryClient } from "@tanstack/react-query";
 import { type CSSProperties, Suspense, useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 import { ThinkingSetting } from "../../chat/thinking";
 import { desktopBridge } from "../../desktop/bridge";
-import { Rail } from "../../desktop/Rail";
 import { WINDOW_BUTTONS_WIDTH, WindowControls } from "../../desktop/WindowControls";
 import { useConnection, useReconnect } from "../../live/LiveProvider";
 import { PackageSheet } from "../../packages/PackageSheet";
@@ -32,39 +31,18 @@ import { CardWindowHost } from "../board/CardWindowHost";
 import { isTyping, NewIssueProvider } from "../board/NewIssueHost";
 import { prefetchCard } from "../board/prefetchCard";
 import { inSettingsArea } from "../settings/settingsEntries";
-import { readFlag, writeFlag } from "../storage";
 import { AgentProvider, useAgent } from "./AgentContext";
 import { AgentDock } from "./AgentDock";
 import { AgentPanel } from "./AgentPanel";
 import { CommandBar } from "./CommandBar";
 import { ConnectionBanner } from "./ConnectionBanner";
+import { useNarrow } from "./narrow";
 import { PaletteFocusProvider } from "./palette/focus";
 import { noteRecent } from "./palette/model";
 import { SHORTCUTS_KEY } from "./palette/shortcuts";
 import { RightColumn } from "./RightColumn";
 import { Sidebar } from "./Sidebar";
-
-const COLLAPSED_KEY = "moebius.sidebar.collapsed";
-
-/** The window width under which the sidebar folds to its rail by itself, as the pages need the width more. */
-const NARROW_BELOW = 1024;
-
-/** Whether the window is narrower than `NARROW_BELOW`, following it as it is resized. */
-function useNarrow(): boolean {
-  const query = `(max-width: ${NARROW_BELOW - 1}px)`;
-  const [narrow, setNarrow] = useState(
-    () => typeof matchMedia === "function" && matchMedia(query).matches,
-  );
-  useEffect(() => {
-    if (typeof matchMedia !== "function") return;
-    const media = matchMedia(query);
-    const change = () => setNarrow(media.matches);
-    change();
-    media.addEventListener("change", change);
-    return () => media.removeEventListener("change", change);
-  }, [query]);
-  return narrow;
-}
+import { SidebarToggleContext } from "./SidebarToggle";
 
 export function Shell(props: { unreachable: boolean; onRetry: () => void }) {
   return (
@@ -101,12 +79,14 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
     if (Number.isInteger(id) && id > 0) prefetchCard(queryClient, id);
   }, [queryClient]);
   const reconnect = useReconnect();
-  const [collapsed, setCollapsed] = useState(() => readFlag(COLLAPSED_KEY));
-  const narrow = useNarrow();
-  // Below `NARROW_BELOW` the sidebar is the rail unless a person opened it for now; the saved choice is left as it was.
-  const [openedNarrow, setOpenedNarrow] = useState(false);
-  const folded = narrow ? !openedNarrow : collapsed;
   const [commandOpen, setCommandOpen] = useState(false);
+  // In a narrow window the sidebar is an overlay that a page's header opens; choosing a page closes it, and so does
+  // growing the window, so it is not found open after a narrow spell.
+  const narrow = useNarrow();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const pathname = location.pathname;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new address is the reason to close
+  useEffect(() => setSidebarOpen(false), [pathname, narrow]);
 
   const navigate = useNavigate();
   useEffect(() => {
@@ -142,74 +122,71 @@ function Frame({ unreachable, onRetry }: { unreachable: boolean; onRetry: () => 
   const offline = unreachable || connection === "reconnecting";
 
   return (
-    <div className="flex h-full bg-ground py-1.5">
-      <Rail bridge={desktopBridge()} />
-      <Sidebar
-        connection={connection}
-        collapsed={folded}
-        onToggle={() => {
-          if (narrow) {
-            setOpenedNarrow(!openedNarrow);
-            return;
-          }
-          writeFlag(COLLAPSED_KEY, !collapsed);
-          setCollapsed(!collapsed);
-        }}
-        onSearch={() => setCommandOpen(true)}
-      />
-      {/* The page: one panel, rounded at all four corners, that clips what scrolls inside it to those corners. The
+    <SidebarToggleContext.Provider value={{ narrow, open: sidebarOpen, setOpen: setSidebarOpen }}>
+      <div className="flex h-full bg-ground py-1.5">
+        <Sidebar
+          narrow={narrow}
+          open={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          onSearch={() => {
+            setSidebarOpen(false);
+            setCommandOpen(true);
+          }}
+        />
+        {/* The page: one panel, rounded at all four corners, that clips what scrolls inside it to those corners. The
           sheets lie in it, over the place of its properties pane, so they share its corners and its height. It clips
           rather than hides, so a sheet that takes the focus while it slides in cannot scroll the whole page sideways.
           The window's controls are in it once; the header reserves their room (`--window-buttons`) unless the
           properties pane lies at the panel's right, which then leaves it to its own head. */}
-      <div
-        data-surface="page"
-        className="relative mr-1.5 flex min-w-0 flex-1 overflow-clip rounded-sheet border border-hairline bg-page"
-      >
         <div
-          className="flex min-w-0 flex-1 flex-col"
-          style={
-            desktopBridge() && !paneShown
-              ? ({ "--window-buttons": WINDOW_BUTTONS_WIDTH } as CSSProperties)
-              : undefined
-          }
+          data-surface="page"
+          className="relative mr-1.5 flex min-w-0 flex-1 overflow-clip rounded-sheet border border-hairline bg-page"
         >
-          {offline && (
-            <ConnectionBanner
-              onRetry={() => {
-                reconnect();
-                onRetry();
-              }}
-            />
-          )}
-          {/* The package sheet lies over the right column and a strip of the page beside it. Only on a very wide
+          <div
+            className="flex min-w-0 flex-1 flex-col"
+            style={
+              desktopBridge() && !paneShown
+                ? ({ "--window-buttons": WINDOW_BUTTONS_WIDTH } as CSSProperties)
+                : undefined
+            }
+          >
+            {offline && (
+              <ConnectionBanner
+                onRetry={() => {
+                  reconnect();
+                  onRetry();
+                }}
+              />
+            )}
+            {/* The package sheet lies over the right column and a strip of the page beside it. Only on a very wide
               window (2xl) does the page leave it that strip, so what it was opened from is not covered; below that the
               page keeps its width and the sheet lies over it, since an editor squeezed beside it is worse than one
               covered until the sheet is closed. */}
-          <main
-            className={cn(
-              "min-h-0 flex-1 overflow-y-auto p-6",
-              packages.shown && "2xl:pr-[calc(var(--sheet-width)+1.5rem)]",
-            )}
-          >
-            {/* A page is fetched when it opens, so the shell holds the space it needs while it arrives, and says so
+            <main
+              className={cn(
+                "min-h-0 flex-1 overflow-y-auto p-6",
+                packages.shown && "2xl:pr-[calc(var(--sheet-width)+1.5rem)]",
+              )}
+            >
+              {/* A page is fetched when it opens, so the shell holds the space it needs while it arrives, and says so
                 when it does not: the page is the thing that is missing, not the app around it. */}
-            <PageBoundary resetKey={location.pathname}>
-              <Suspense fallback={<SkeletonCard lines={4} message="Opening the page" />}>
-                <Outlet />
-              </Suspense>
-            </PageBoundary>
-          </main>
-          {/* The quiet field for the agent; not while the agent's panel is open, and not on Settings, which has none. */}
-          {!agent.open && !inSettingsArea(location.pathname) && <AgentDock />}
+              <PageBoundary resetKey={location.pathname}>
+                <Suspense fallback={<SkeletonCard lines={4} message="Opening the page" />}>
+                  <Outlet />
+                </Suspense>
+              </PageBoundary>
+            </main>
+            {/* The quiet field for the agent; not while the agent's panel is open, and not on Settings, which has none. */}
+            {!agent.open && !inSettingsArea(location.pathname) && <AgentDock />}
+          </div>
+          <AgentPanel />
+          <RightColumn />
+          <PackageSheet />
+          <WindowControls />
         </div>
-        <AgentPanel />
-        <RightColumn />
-        <PackageSheet />
-        <WindowControls />
+        <CardWindowHost />
+        <CommandBar open={commandOpen} onOpenChange={setCommandOpen} />
       </div>
-      <CardWindowHost />
-      <CommandBar open={commandOpen} onOpenChange={setCommandOpen} />
-    </div>
+    </SidebarToggleContext.Provider>
   );
 }

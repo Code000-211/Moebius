@@ -1,25 +1,14 @@
 /**
- * What one card shows on the board, the list and the drag overlay: its words, badges and menu, and the control that opens
- * the stack of its sub-issues. `BoardColumn.tsx` draws it inside a draggable card.
+ * What one card shows on the board and the drag overlay: its icon, number, title, owner and activity, its menu, and the
+ * control that opens the stack of its sub-issues. `BoardColumn.tsx` draws it inside a draggable card.
  */
 import { CaretDownIcon, CaretRightIcon } from "@phosphor-icons/react";
 import type { ReactNode, SyntheticEvent } from "react";
-import type { Card, Change, Repository } from "../../api/types/board";
+import type { Card } from "../../api/types/board";
 import { KanbanCardContent } from "../../ui/components/KanbanCardContent";
 import { CardMenu } from "./CardMenu";
-import { cardName } from "./cardKey";
-import {
-  type CardStatus,
-  cardBadges,
-  cardDetail,
-  isClosed,
-  isPlanningLabel,
-  issueUrl,
-  pullRequestOf,
-  type Stack,
-  stackWords,
-  todayIso,
-} from "./model";
+import { cardKey } from "./cardKey";
+import { type CardStatus, cardActivity, cardIcon, type Stack, stackWords } from "./model";
 
 /** What the menus of the cards of a board do. */
 export type CardMenuActions = {
@@ -32,40 +21,25 @@ export type CardMenuActions = {
 };
 
 /**
- * What a card shows, on the board and on the drag overlay. It takes what is derived from the board (the card's status and
- * change, whether it is the next to start) rather than the board itself, so that the cards the board holds can be
- * memoised: a card draws again only when one of these changes.
+ * What a card shows, on the board and on the drag overlay: its status icon, number, title, the person it is given to,
+ * and one pale line while an agent works on it or it needs a person. It takes what is derived from the board (the
+ * card's status) rather than the board itself, so that the cards the board holds can be memoised.
  */
 export function CardContent({
-  repository,
-  roundLimit,
   card,
   status,
-  change,
-  next,
   onOpen,
   menu,
   stack,
   open = false,
   onToggleStack,
-  inStack = false,
   select,
-  hidden,
 }: {
-  repository: Repository;
-  /** How many rounds a card may take. */
-  roundLimit: number;
   card: Card;
   /** What the card is doing (`cardStatus`). */
   status: CardStatus;
-  /** The card's change, if it has one (`changeOf`). */
-  change: Change | undefined;
-  /** The card is the one the board starts next. */
-  next: boolean;
   /** The box that chooses the card, in its corner; left out on the drag overlay. */
   select?: ReactNode;
-  /** The fields Display switched off. */
-  hidden: ReadonlySet<string>;
   /** Opens the card; left out on the drag overlay, where the card is only a picture of itself. */
   onOpen?: () => void;
   /** What the card's menu does; left out on the drag overlay, with the menu itself. */
@@ -74,29 +48,13 @@ export function CardContent({
   stack?: Stack;
   open?: boolean;
   onToggleStack?: () => void;
-  /** The card lies in the stack of its parent, in a column that is not the one it is drawn in: it says which. */
-  inStack?: boolean;
 }) {
-  const coding = card.column === "In progress" || card.column === "In review";
-  const detail = cardDetail(card, roundLimit);
   return (
     <KanbanCardContent
-      displayId={cardName(card, repository.forge !== "none")}
-      issueUrl={issueUrl(repository, card)}
+      displayId={cardKey(card)}
       title={card.title}
-      preview={hidden.has("description") ? null : card.body}
-      detail={
-        hidden.has("detail")
-          ? null
-          : inStack
-            ? [card.column, detail].filter(Boolean).join(" · ")
-            : detail
-      }
-      labels={hidden.has("labels") ? [] : card.labels.filter((l) => !isPlanningLabel(l))}
-      priority={hidden.has("priority") ? "none" : card.priority}
-      due={hidden.has("due") ? null : card.due}
-      overdue={card.due !== null && card.due < todayIso() && !isClosed(card)}
-      claimedBy={hidden.has("claim") ? null : card.claimed_by}
+      status={cardIcon(card, status)}
+      activity={cardActivity(card, status)}
       assignees={card.assignees}
       stack={
         stack && onToggleStack ? (
@@ -105,9 +63,6 @@ export function CardContent({
           <p className="m-0 text-sm text-secondary">{stackWords(stack)}</p>
         ) : undefined
       }
-      badges={cardBadges(card, status, next)}
-      pullRequest={hidden.has("pullRequest") ? null : pullRequestOf(repository, change)}
-      rounds={coding && !hidden.has("rounds") ? { done: card.rounds, limit: roundLimit } : null}
       muted={card.column === "Done" || card.closed}
       onOpen={onOpen}
       menu={menu && <CardMenu card={card} {...menu} />}

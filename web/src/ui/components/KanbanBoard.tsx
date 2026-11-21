@@ -1,4 +1,4 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: the sensors' options keep their identity, so that a render of the page does not draw every card; no i18n; the header takes actions, the column's "+"; a column is a lane of the canvas with no border, and its header counts the cards in it; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); a card has a quiet line and no lift and no shadow on hover, and the chosen one glows in the accent, and it is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); the card is a group and not a named button, and its title is the button that opens it, so the issue link and the pull-request badge inside it stay in the accessibility tree; dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
+// From BloopAI/vibe-kanban packages/ui/src/components/KanbanBoard.tsx (Apache-2.0), changed: the sensors' options keep their identity, so that a render of the page does not draw every card; no i18n; the header is the name alone, with a context menu; a column has no box, no border and no fill; it scrolls its cards on its own and draws only those in view (the card being dragged stays drawn), and its header is the column's name alone; the drag context is a flex row of columns, not a divided grid; the Feature and Status types of the Gantt chart are gone; Card is a plain div (React 19 ref prop); a card is flat: a hairline, no shadow and no outline of progress, and the chosen one has an accent line, and it is dragged by its whole body, with the keyboard too (the original had a grip for phones, which the app does not need); the card is a group and not a named button, and its title is the button that opens it, so the issue link and the pull-request badge inside it stay in the accessibility tree; dragging uses dnd-kit (a pointer sensor, a keyboard sensor that moves to the next column even when it is scrolled out of view, a drag overlay and spoken announcements) instead of @hello-pangea/dnd, and a column as a whole takes a drop.
 import {
   type Announcements,
   type CollisionDetection,
@@ -15,16 +15,23 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import {
+  createContext,
   type MouseEvent,
   type ReactNode,
   type Ref,
   type RefObject,
   useCallback,
+  useContext,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { cn } from "../lib/cn";
+
+const DraggedCard = createContext<string | null>(null);
+
+/** The id of the card being dragged, none when no drag is on: a column that windows its cards keeps that one drawn. */
+export const useDraggedCardId = () => useContext(DraggedCard);
 
 /** What a drag ends with: the card (its id) and the column it was let go over, none when it was let go elsewhere or cancelled. */
 export type DropResult = { cardId: string; column: string | null };
@@ -48,7 +55,7 @@ export const KanbanBoard = ({ children, name, className }: KanbanBoardProps) => 
       ref={setNodeRef}
       aria-label={name}
       className={cn(
-        "flex min-h-40 min-w-64 flex-1 flex-col rounded-card bg-lane p-2",
+        "flex min-h-0 min-w-52 flex-1 flex-col rounded-card",
         isOver && "ring-2 ring-accent ring-inset",
         className,
       )}
@@ -70,20 +77,12 @@ export type KanbanCardFaceProps = {
   className?: string;
   isSelected?: boolean;
   isOpen?: boolean;
-  /** The card's run is working: a hairline of the colour of work in progress. */
-  isLive?: boolean;
 };
 
-const faceClass = ({ isLive, isSelected, isOpen, className }: KanbanCardFaceProps) =>
+const faceClass = ({ isSelected, isOpen, className }: KanbanCardFaceProps) =>
   cn(
     "group rounded-card bg-surface px-3 py-2 outline outline-1 -outline-offset-1",
-    isSelected
-      ? "shadow-glow outline-accent hover:shadow-glow"
-      : isOpen
-        ? "outline-hairline-strong"
-        : isLive
-          ? "outline-progress-border"
-          : "outline-hairline",
+    isSelected ? "outline-accent" : isOpen ? "outline-hairline-strong" : "outline-hairline",
     className,
   );
 
@@ -129,7 +128,6 @@ export const KanbanCard = ({
   isOpen,
   isSelected,
   dragDisabled = false,
-  isLive,
   testId,
 }: KanbanCardProps) => {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -162,7 +160,6 @@ export const KanbanCard = ({
       aria-label={name}
       className={faceClass({
         name,
-        isLive,
         isSelected,
         isOpen,
         className: cn(isDragging && "opacity-40", className),
@@ -189,7 +186,11 @@ export type KanbanCardsProps = {
 };
 
 export const KanbanCards = ({ children, className }: KanbanCardsProps) => (
-  <div className={cn("flex flex-1 flex-col gap-2", className)}>{children}</div>
+  // The column's own scroller: its cards scroll up and down while the other columns stay where they are. The bottom
+  // padding is the air under the last card, which the lanes row takes back from the page.
+  <div className={cn("flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pb-6", className)}>
+    {children}
+  </div>
 );
 
 // =============================================================================
@@ -198,44 +199,39 @@ export const KanbanCards = ({ children, className }: KanbanCardsProps) => (
 
 export type KanbanHeaderProps = {
   name: string;
-  /** How many cards the column shows. */
-  count: number;
-  /** How many cards the column holds, when it shows fewer than that. */
-  total?: number;
-  /**
-   * The mark beside the column's name: the shape and colour of the state it holds. It never carries the meaning on its
-   * own — the name is beside it — and says nothing to the person hearing the page, so it is hidden from them.
-   */
-  mark?: ReactNode;
-  /** What stands after the count: the column's "+". */
-  actions?: ReactNode;
+  /** The header can take the focus, and Enter on it calls `onActivate` with its box. */
+  focusable?: boolean;
+  /** A right click on the name. */
+  onContextMenu?: (event: MouseEvent) => void;
+  onActivate?: (box: DOMRect) => void;
   className?: string;
 };
 
 export const KanbanHeader = ({
   name,
-  count,
-  total,
-  mark,
-  actions,
+  focusable,
+  onContextMenu,
+  onActivate,
   className,
 }: KanbanHeaderProps) => (
-  <header
-    className={cn(
-      "mb-2 flex min-h-7 shrink-0 flex-wrap items-center justify-between gap-2",
-      className,
-    )}
-  >
-    <h2 className="m-0 flex min-w-0 items-center gap-2 text-base font-medium tracking-tight text-text">
-      {mark}
+  <header className={cn("mb-3 flex min-h-7 shrink-0 items-center", className)}>
+    <h2
+      onContextMenu={onContextMenu}
+      tabIndex={focusable ? 0 : undefined}
+      onKeyDown={
+        onActivate
+          ? (e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onActivate(e.currentTarget.getBoundingClientRect());
+              }
+            }
+          : undefined
+      }
+      className="m-0 flex min-w-0 items-center gap-2 rounded-control text-base font-medium tracking-tight text-text"
+    >
       {name}
     </h2>
-    <div className="flex min-w-0 items-center gap-2">
-      <span className="text-sm text-secondary tabular-nums">
-        {total !== undefined && total > count ? `${count} of ${total}` : count}
-      </span>
-      {actions}
-    </div>
   </header>
 );
 
@@ -378,7 +374,9 @@ export const KanbanProvider = ({
       }}
       onDragCancel={() => setActiveId(null)}
     >
-      <div className={cn("flex min-h-full items-stretch gap-3", className)}>{children}</div>
+      <DraggedCard value={activeId}>
+        <div className={cn("flex h-full items-stretch gap-4", className)}>{children}</div>
+      </DraggedCard>
       <DragOverlay dropAnimation={null}>
         {activeId ? <div {...{ [OVERLAY_ATTRIBUTE]: "" }}>{renderOverlay(activeId)}</div> : null}
       </DragOverlay>

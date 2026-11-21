@@ -1,8 +1,10 @@
 /**
- * The editor of one automation, the detail of the Automations page: its name, its properties (see
- * `AutomationProperties.tsx`), its prompt and its past runs, with Run now, Delete and Save. A save is
- * `POST /v1/automations` or `PUT /v1/automations/{id}`, "Run now" is `POST /v1/automations/{id}/run` and a delete
- * `DELETE /v1/automations/{id}`.
+ * The editor of one automation, in the editor window (`EditorWindow`, the one the agents and rules open in): its name,
+ * whether it runs on its schedule, the schedule with a picker of common ones and when it fires next, its agent, where
+ * its chats work and its prompt, and for one that exists its past runs. Save and Cancel are the window's; "Run now" and
+ * Delete (which asks first) are at the left of the foot. A save is `POST /v1/automations` or `PUT /v1/automations/{id}`,
+ * "Run now" is `POST /v1/automations/{id}/run` and a delete `DELETE /v1/automations/{id}`; each is told by a toast, and a
+ * refusal of a save stays in the window beside the buttons.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -18,44 +20,50 @@ import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { Automation, AutomationSettings } from "../../api/types/automations";
 import { Button } from "../../ui/components/Button";
+import { DeleteButton, EditorWindow } from "../../ui/components/EditorWindow";
 import { Input } from "../../ui/components/Input";
-import { Box } from "../../ui/page/Box";
-import { Field, TextArea } from "../../ui/page/Field";
-import { Notice } from "../../ui/page/Notice";
-import { Body } from "../../ui/page/PageHeader";
-import { PageProperties } from "../../ui/page/Properties";
+import { ConfirmDelete } from "../../ui/page/ConfirmDelete";
+import { Field, Select, TextArea } from "../../ui/page/Field";
 import { SkeletonLines } from "../../ui/page/Skeleton";
-import { NewProperties, SavedProperties } from "./AutomationProperties";
+import { Switch } from "../../ui/page/Switch";
+import { useToast } from "../../ui/page/Toast";
 import { FiringRow } from "./FiringRow";
-import { type Form, formOf, newForm, PRESETS, request } from "./model";
+import { type Form, formOf, newForm, nextLine, type Place, PRESETS, request } from "./model";
 
-/** The editor of one automation: what it is called, when it runs, what its chats are, and what came of them. */
+/** Every schedule the picker offers, and "Custom" for one it does not. */
+function repeatOptions(schedule: string): Array<[string, string]> {
+  const preset = PRESETS.find(([, cron]) => cron === schedule.trim());
+  return [
+    ...PRESETS.map(([name, cron]) => [cron, name] as [string, string]),
+    ...(preset ? [] : [["custom", "Custom"] as [string, string]]),
+  ];
+}
+
 export function Editor({
   saved,
-  now,
-  notice,
-  setNotice,
-  onCreated,
-  onDeleted,
   starting,
+  now,
+  onClose,
 }: {
+  /** The automation to edit; none for a new one. */
   saved?: Automation;
   /** The fields to open a new automation with, when the empty page offered one. */
   starting?: Form | null;
   now: number;
-  notice: { tone: "ok" | "error"; text: string } | null;
-  setNotice: (notice: { tone: "ok" | "error"; text: string } | null) => void;
-  onCreated: (id: number) => void;
-  onDeleted: () => void;
+  /** The window closes: after a save or a delete, or when the change is dropped or there is none. */
+  onClose: () => void;
 }) {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [form, setForm] = useState<Form>(() => (saved ? formOf(saved) : (starting ?? newForm())));
-  const [confirming, setConfirming] = useState(false);
-  // Set once Save was pressed, so the fields that are still empty are marked.
-  const [tried, setTried] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  // Set once the automation is deleted, so its past runs are not asked for again.
+  const [gone, setGone] = useState(false);
+  // What the server refused on the last save, shown beside the buttons until the next change.
+  const [refused, setRefused] = useState<string | null>(null);
   const id = saved?.id ?? null;
   const edit = (change: Partial<Form>) => {
-    setNotice(null);
+    setRefused(null);
     setForm({ ...form, ...change });
   };
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.automations });
@@ -63,50 +71,46 @@ export function Editor({
   const repositories = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
   const save = useMutation({
     mutationFn: (settings: AutomationSettings) => saveAutomation(id, settings),
-    onSuccess: async (automation) => {
+    onSuccess: async () => {
       await refresh();
-      setNotice({ tone: "ok", text: "Saved." });
-      if (id === null) onCreated(automation.id);
+      toast({ kind: "confirmation", text: "Saved." });
+      onClose();
     },
-    onError: (error) => setNotice({ tone: "error", text: sayError(error, "Could not save.") }),
+    onError: (error) => setRefused(sayError(error, "Could not save.")),
   });
   const run = useMutation({
     mutationFn: () => runAutomation(id as number),
     onSuccess: async (firing) => {
       await refresh();
-      setNotice(
+      await queryClient.invalidateQueries({ queryKey: keys.firings(id as number) });
+      toast(
         firing.status === "started"
-          ? { tone: "ok", text: "Started; its chat is among the past runs below." }
-          : { tone: "error", text: `Not started: ${firing.reason}` },
+          ? { kind: "confirmation", text: "Started; its chat is among the past runs." }
+          : { kind: "error", text: `Not started: ${firing.reason}` },
       );
     },
-    onError: (error) => setNotice({ tone: "error", text: sayError(error, "Could not run it.") }),
+    onError: (error) => toast({ kind: "error", text: sayError(error, "Could not run it.") }),
   });
-  const remove = useMutation({
-    mutationFn: () => deleteAutomation(id as number),
-    onSuccess: async () => {
-      // Its past runs are no longer read: the server has no list for an automation that is gone.
-      queryClient.removeQueries({ queryKey: keys.firings(id as number) });
-      await refresh();
-      onDeleted();
-    },
-    onError: (error) => {
-      setConfirming(false);
-      setNotice({ tone: "error", text: sayError(error, "Could not delete it.") });
-    },
-  });
+  const remove = async () => {
+    await deleteAutomation(id as number);
+    setGone(true);
+    // Its past runs are no longer read: the server has no list for an automation that is gone.
+    queryClient.removeQueries({ queryKey: keys.firings(id as number) });
+    await refresh();
+    toast({ kind: "confirmation", text: "Deleted." });
+    onClose();
+  };
 
   const past = useQuery({
     queryKey: keys.firings(id ?? 0),
     queryFn: () => firings(id as number),
     // Not once it is deleted: the list of a gone automation is a 404.
-    enabled: id !== null && !remove.isSuccess,
+    enabled: id !== null && !gone,
   });
 
   const submit = () => {
-    setTried(true);
     const made = request(form);
-    if ("problem" in made) setNotice({ tone: "error", text: made.problem });
+    if ("problem" in made) setRefused(made.problem);
     else save.mutate(made.ok);
   };
 
@@ -120,139 +124,136 @@ export function Editor({
     ) ?? []),
     ["harness", "Harness configuration"],
   ];
-  // An automation that exists has nothing to save until a field of it changes; a new one can be saved as it was
-  // offered, because there is no stored form to compare it with.
-  const dirty = saved === undefined || JSON.stringify(form) !== JSON.stringify(formOf(saved));
+  // What would be lost on closing: a change to the stored automation, or anything typed into a new one.
+  const dirty = JSON.stringify(form) !== JSON.stringify(saved ? formOf(saved) : newForm());
 
   return (
-    <div className="flex min-w-0 flex-col gap-6">
-      <Box
-        title="Automation"
+    <>
+      <EditorWindow
+        open
+        title={saved ? `Edit automation ${saved.name}` : "New automation"}
+        dirty={dirty}
+        saving={save.isPending}
+        error={refused}
+        onSave={submit}
+        onClose={onClose}
         actions={
-          confirming ? undefined : (
+          saved && (
             <>
               <Button
                 size="sm"
                 variant="secondary"
-                disabled={id === null || run.isPending}
-                title={id === null ? "Save it first" : undefined}
+                disabled={run.isPending}
                 onClick={() => run.mutate()}
               >
                 {run.isPending ? "Starting" : "Run now"}
               </Button>
-              {id !== null && (
-                <Button size="sm" variant="secondary" onClick={() => setConfirming(true)}>
-                  Delete automation
-                </Button>
-              )}
-              <Button size="sm" disabled={save.isPending || !dirty} onClick={submit}>
-                {save.isPending ? "Saving" : "Save"}
-              </Button>
+              <DeleteButton onClick={() => setDeleting(true)}>Delete automation</DeleteButton>
             </>
           )
         }
       >
-        <div className="flex flex-col gap-4">
-          {!saved && (
-            <Field
-              label="Name of the automation"
-              error={tried && form.name.trim() === "" ? "Give the automation a name." : undefined}
-            >
-              {(fieldId) => (
-                <Input
-                  id={fieldId}
-                  placeholder="Morning triage"
-                  value={form.name}
-                  onChange={(event) => edit({ name: event.target.value })}
-                />
-              )}
-            </Field>
+        <Field label="Name">
+          {(fieldId) => (
+            <Input
+              id={fieldId}
+              placeholder="Morning triage"
+              value={form.name}
+              onChange={(event) => edit({ name: event.target.value })}
+            />
           )}
-          {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
-          {confirming && (
-            <div className="flex flex-col gap-4 rounded-control bg-sunken p-4 sm:flex-row sm:items-center">
-              <p className="m-0 flex min-h-8 min-w-0 flex-1 items-center break-words text-base text-text">
-                Delete this automation? Its past runs stay listed.
-              </p>
-              <div className="flex gap-2">
-                <Button size="sm" variant="secondary" onClick={() => setConfirming(false)}>
-                  Keep it
-                </Button>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  disabled={remove.isPending}
-                  onClick={() => remove.mutate()}
-                >
-                  Delete
-                </Button>
-              </div>
-            </div>
+        </Field>
+        <Switch
+          checked={form.enabled}
+          onChange={(next) => edit({ enabled: next })}
+          label="Runs on its schedule"
+        />
+        <Field label="Repeats">
+          {(fieldId) => (
+            <Select
+              id={fieldId}
+              options={repeatOptions(form.schedule)}
+              value={preset ? preset[1] : "custom"}
+              onChange={(picked) => {
+                if (picked !== "custom") edit({ schedule: picked });
+              }}
+            />
           )}
-        </div>
-      </Box>
-
-      <PageProperties label={`Properties of ${saved?.name ?? "the new automation"}`}>
-        {saved ? (
-          <SavedProperties
-            saved={saved}
-            places={places}
-            agentNames={[...names]}
-            now={now}
-            onChanged={(patch) => setForm((held) => ({ ...held, ...patch }))}
-            onRefused={() => setNotice(null)}
-          />
-        ) : (
-          <NewProperties
-            form={form}
-            edit={edit}
-            places={places}
-            agentNames={[...names]}
-            preset={preset}
-            now={now}
-          />
-        )}
-      </PageProperties>
-
-      <Box title="Chat" aside="Ends once the agent has answered">
-        <div className="flex flex-col gap-4">
-          <Field
-            label="Prompt"
-            error={
-              tried && form.prompt.trim() === ""
-                ? "Write the prompt its chats start with."
-                : undefined
-            }
-          >
-            {(fieldId) => (
-              <TextArea
-                id={fieldId}
-                mono
-                rows={6}
-                placeholder="Triage the issues opened since yesterday: label them and say which are ready."
-                value={form.prompt}
-                onChange={(event) => edit({ prompt: event.target.value })}
-              />
+        </Field>
+        <Field
+          label="Cron, in the server's local time"
+          hint={nextLine(saved, form.schedule, form.enabled, now)}
+        >
+          {(fieldId) => (
+            <Input
+              id={fieldId}
+              className="font-mono text-sm"
+              placeholder="0 8 * * 1-5"
+              value={form.schedule}
+              onChange={(event) => edit({ schedule: event.target.value })}
+            />
+          )}
+        </Field>
+        <Field label="Agent">
+          {(fieldId) => (
+            <Select
+              id={fieldId}
+              options={[...names]}
+              value={form.agent}
+              onChange={(agent) => edit({ agent })}
+            />
+          )}
+        </Field>
+        <Field label="Works in">
+          {(fieldId) => (
+            <Select
+              id={fieldId}
+              options={places}
+              value={form.place}
+              onChange={(picked) => edit({ place: picked as Place })}
+            />
+          )}
+        </Field>
+        <Field label="Prompt" hint="Its chat ends once the agent has answered.">
+          {(fieldId) => (
+            <TextArea
+              id={fieldId}
+              mono
+              rows={5}
+              placeholder="Triage the issues opened since yesterday: label them and say which are ready."
+              value={form.prompt}
+              onChange={(event) => edit({ prompt: event.target.value })}
+            />
+          )}
+        </Field>
+        {id !== null && (
+          <section aria-label="Past runs" className="flex flex-col">
+            <h3 className="m-0 mb-1 text-base font-semibold text-text">Past runs</h3>
+            {past.isPending ? (
+              <SkeletonLines lines={3} message="Reading the past runs" />
+            ) : past.data && past.data.length > 0 ? (
+              <ul className="m-0 flex list-none flex-col p-0">
+                {past.data.map((firing) => (
+                  <li key={firing.id}>
+                    <FiringRow firing={firing} now={now} />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="m-0 text-sm text-muted">It has not fired yet.</p>
             )}
-          </Field>
-        </div>
-      </Box>
-
-      <Box title="Past runs" className="min-w-0">
-        {id !== null && past.isPending ? (
-          <SkeletonLines lines={3} message="Reading the past runs" />
-        ) : past.data && past.data.length > 0 ? (
-          <ul className="m-0 flex list-none flex-col gap-2 p-0">
-            {past.data.map((firing) => (
-              <li key={firing.id}>
-                <FiringRow firing={firing} now={now} />
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <Body>It has not fired yet.</Body>
+          </section>
         )}
-      </Box>
-    </div>
+      </EditorWindow>
+      <ConfirmDelete
+        open={deleting}
+        onOpenChange={setDeleting}
+        title="Delete this automation?"
+        confirmLabel="Delete automation"
+        onConfirm={remove}
+      >
+        The automation {saved?.name} is removed. Its past runs stay listed.
+      </ConfirmDelete>
+    </>
   );
 }

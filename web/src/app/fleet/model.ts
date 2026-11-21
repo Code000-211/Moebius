@@ -5,9 +5,11 @@
  */
 import type { Snapshot } from "../../api/types/board";
 import type { Chat } from "../../api/types/chat";
+import type { FinishedRun } from "../../api/types/runs";
 import type { Entry } from "../../chat/conversation";
 import { HARNESS_PLACE } from "../../chat/places";
 import type { FilterField } from "../../ui/filters/model";
+import { dayName } from "../../ui/lib/format";
 import { cardKey } from "../board/cardKey";
 
 /** Where a click on a tile goes. */
@@ -238,3 +240,57 @@ export function workStartedAt(
   const first = entries.find((entry) => entry.kind === "person" || entry.kind === "tool");
   return first?.at ?? (startedAt > 0 ? startedAt : null);
 }
+
+/** The tabs of the page: the runs that are going on, and the runs that have ended. `finished` is kept in the address. */
+export const FLEET_TABS = [
+  { value: "active", label: "Active" },
+  { value: "finished", label: "Finished" },
+] as const;
+export type FleetTab = (typeof FLEET_TABS)[number]["value"];
+
+/** The tab the address names (`?tab=finished`); anything else is the Active tab. */
+export const tabOf = (param: string | null): FleetTab =>
+  param === "finished" ? "finished" : "active";
+
+/** One line of the Finished list: a day's name, or a run that ended. */
+export type FinishedItem =
+  | { type: "group"; key: string; name: string }
+  | { type: "row"; key: string; data: FinishedRun };
+
+/** What a finished run is chosen and kept by. */
+export const finishedKey = (one: FinishedRun) => `finished:${one.run.id}`;
+
+/** The `YYYY-MM-DD` of the browser's calendar for a Unix time in seconds. */
+function dayOf(seconds: number): string {
+  const at = new Date(seconds * 1000);
+  const month = `${at.getMonth() + 1}`.padStart(2, "0");
+  return `${at.getFullYear()}-${month}-${`${at.getDate()}`.padStart(2, "0")}`;
+}
+
+/**
+ * The flat list of the Finished tab: only the runs that ended, the one that ended last first, under the name of the day
+ * they ended on (`Today`, `Yesterday`, `27 Oct`). A run whose end is not recorded is not finished and is left out.
+ */
+export function finishedItems(list: readonly FinishedRun[], today: string): FinishedItem[] {
+  const ended = list
+    .filter((one) => one.run.ended_at !== null)
+    .sort((a, b) => (b.run.ended_at ?? 0) - (a.run.ended_at ?? 0) || b.run.id - a.run.id);
+  const out: FinishedItem[] = [];
+  let day = "";
+  for (const one of ended) {
+    const of = dayOf(one.run.ended_at ?? 0);
+    if (of !== day) {
+      day = of;
+      out.push({ type: "group", key: `day:${of}`, name: dayName(of, today) });
+    }
+    out.push({ type: "row", key: finishedKey(one), data: one });
+  }
+  return out;
+}
+
+/** How long a finished run went on, in seconds. */
+export const lasted = (one: FinishedRun) =>
+  Math.max(0, (one.run.ended_at ?? 0) - one.run.started_at);
+
+/** The card's id the way the rest of the app names it (`WEB-24`, or `#17` for a project without a key). */
+export const finishedId = (one: FinishedRun) => cardKey(one.card);

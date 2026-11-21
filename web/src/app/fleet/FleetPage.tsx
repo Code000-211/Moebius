@@ -1,5 +1,7 @@
 /**
- * The Fleet page: the work that is going on, as one virtual list of 36px rows. The runs that wait for the person come
+ * The Fleet page, with the tabs Active and Finished in its header (`?tab=finished` in the address, so a reload keeps
+ * it). Active is the work that is going on, as one virtual list of 36px rows; Finished is the runs that ended, newest
+ * first under the day they ended on, with the outcome, the card's id, the tokens and how long they went on. The runs that wait for the person come
  * first, under "Needs you", then the others under "Running". A row has the status icon, the issue's id, the title, one
  * pale line (the kind of run and the step it is at; "Plan ready" for a run that waits) and how long it has gone on. A run
  * that waits for a plan carries a quiet "Approve plan". Stop and the tokens are on the hovered or the selected row only,
@@ -13,34 +15,39 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type PointerEvent,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
   useCallback,
+  useId,
   useMemo,
   useState,
 } from "react";
 import { Link, useNavigate } from "react-router";
 import { approve, snapshot as readSnapshot } from "../../api/calls/board";
 import { chats as readChats, stopRun } from "../../api/calls/chat";
-import { run as readRun } from "../../api/calls/fleet";
+import { finishedRuns as readFinished, run as readRun } from "../../api/calls/fleet";
+import { sayError } from "../../api/errorText";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
+import type { FinishedRun } from "../../api/types/runs";
 import { inputPath, inputSummary, toolTitle } from "../../chat/conversation";
 import { useThread } from "../../chat/useThread";
 import { thinkingLabel } from "../../ui/chat/ChatCollapsedThinking";
 import { Button } from "../../ui/components/Button";
 import { ContextMenu, useContextMenu } from "../../ui/components/ContextMenu";
-import { FilterBar } from "../../ui/filters/FilterBar";
+import { FilterMenu } from "../../ui/filters/FilterMenu";
 import { readFilters } from "../../ui/filters/model";
 import { useQueryParams } from "../../ui/filters/useQueryParams";
-import { AgentIcon, PauseIcon, PlayIcon } from "../../ui/icons";
-import { elapsed as age } from "../../ui/lib/format";
+import { AgentIcon, ErrorIcon, PauseIcon, PlayIcon, ProhibitIcon } from "../../ui/icons";
+import { elapsed as age, today } from "../../ui/lib/format";
 import { useNow } from "../../ui/lib/useNow";
 import { useSelection } from "../../ui/lib/useSelection";
 import { Empty } from "../../ui/page/Empty";
 import { ListRow, type RowPosition } from "../../ui/page/ListRow";
-import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SelectionBar, type SelectionCommand } from "../../ui/page/SelectionBar";
+import { StatusIcon } from "../../ui/page/StatusIcon";
+import { TabPanel, Tabs } from "../../ui/page/Tabs";
 import { useToast } from "../../ui/page/Toast";
 import { VirtualList } from "../../ui/page/VirtualList";
 import { useOpenCard } from "../board/CardWindowHost";
@@ -48,11 +55,17 @@ import {
   afterSteps,
   choiceKey,
   FILTER_KEYS,
+  FLEET_TABS,
   filtered,
   filterFields,
+  finishedId,
+  finishedItems,
+  finishedKey,
   items,
+  lasted,
   latestSteps,
   needsYou,
+  tabOf,
   thinkingNow,
   thoughtSeconds,
   tokensText,
@@ -64,42 +77,135 @@ import {
 import { usePause } from "./usePause";
 
 export function FleetPage() {
+  const [params, setQuery] = useQueryParams();
+  const tab = tabOf(params.get("tab"));
+  const pause = usePause();
+  const toast = useToast();
+  const press = async () => {
+    const pausing = !pause.paused;
+    try {
+      await pause.set(pausing);
+    } catch (error) {
+      toast({ kind: "error", text: sayError(error, "Could not change the agents. Try again.") });
+      return;
+    }
+    toast({
+      kind: "confirmation",
+      text: pausing ? "All agents paused." : "Agents resumed.",
+      undo: () =>
+        void pause.set(!pausing).catch((error) =>
+          toast({
+            kind: "error",
+            text: sayError(error, "Could not change the agents. Try again."),
+          }),
+        ),
+    });
+  };
+  const base = useId();
+  return (
+    <>
+      <PageHeader
+        title="Fleet"
+        tabs={
+          <Tabs
+            tabs={[...FLEET_TABS]}
+            value={tab}
+            onChange={(next) => setQuery({ tab: next === "active" ? "" : next })}
+            label="Fleet"
+            idBase={base}
+          />
+        }
+        actions={
+          <>
+            {tab === "active" && <FleetFilter />}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={press}
+              disabled={pause.busy}
+              data-testid="pause-all"
+            >
+              {pause.paused ? (
+                <PlayIcon className="size-4" aria-hidden="true" />
+              ) : (
+                <PauseIcon className="size-4" aria-hidden="true" />
+              )}
+              {pause.paused ? "Resume all" : "Pause all"}
+            </Button>
+          </>
+        }
+      />
+      {/* The list scrolls in the room that is left under the header; the panel itself does not. */}
+      <TabPanel
+        idBase={base}
+        value={tab}
+        className="flex h-[calc(100%-3rem)] min-h-40 flex-col outline-none"
+      >
+        {pause.paused && (
+          <p className="mb-2 shrink-0 text-sm text-muted">
+            {`Paused by ${pause.paused.by.replace(/^person:/, "@")}`}
+          </p>
+        )}
+        {tab === "finished" ? <FinishedRuns /> : <ActiveRuns />}
+      </TabPanel>
+    </>
+  );
+}
+
+/** The header's Filter: project, agent and kind, set in the address, offering what the working runs have in them. */
+function FleetFilter() {
+  const data = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
+  const chats = useQuery({ queryKey: keys.chats, queryFn: readChats });
+  const [params, setQuery] = useQueryParams();
+  const everything = data.data ? working(data.data, chats.data ?? []) : [];
+  const fields = filterFields(
+    everything,
+    readFilters(
+      params,
+      FILTER_KEYS.map((key) => ({ key, label: key, options: [] })),
+    ),
+  );
+  return (
+    <FilterMenu
+      fields={fields}
+      values={readFilters(params, fields)}
+      onFilter={(key, value) => setQuery({ [key]: value })}
+      onClear={() => setQuery(Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])))}
+    />
+  );
+}
+
+/** The runs that are going on: the filters, and the list or why it is empty. */
+function ActiveRuns() {
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
   const chats = useQuery({ queryKey: keys.chats, queryFn: readChats });
   // How long a run has been going is said in seconds, so this page's clock ticks faster than the rest.
   const now = useNow(5_000);
   const [params, setQuery] = useQueryParams();
-  const pause = usePause();
   if (data.isPending || chats.isPending) {
     return (
-      <>
-        <PageHeader title="Fleet" />
-        <VirtualList
-          label="Runs"
-          items={[]}
-          renderRow={() => null}
-          loading
-          loadingMessage="Reading the fleet"
-        />
-      </>
+      <VirtualList
+        label="Runs"
+        items={[]}
+        renderRow={() => null}
+        loading
+        loadingMessage="Reading the fleet"
+      />
     );
   }
   // A page that could not be read says so. Falling through to the empty state would claim that no agent is working,
   // which is the opposite of what happened, so the failure comes first and carries the way back.
   if (data.isError || chats.isError) {
     return (
-      <>
-        <PageHeader title="Fleet" />
-        <ReadFailed
-          error={data.isError ? data.error : chats.error}
-          fallback="Could not read what the agents are doing. Try again."
-          busy={data.isFetching || chats.isFetching}
-          onRetry={() => {
-            void data.refetch();
-            void chats.refetch();
-          }}
-        />
-      </>
+      <ReadFailed
+        error={data.isError ? data.error : chats.error}
+        fallback="Could not read what the agents are doing. Try again."
+        busy={data.isFetching || chats.isFetching}
+        onRetry={() => {
+          void data.refetch();
+          void chats.refetch();
+        }}
+      />
     );
   }
   const everything = data.data ? working(data.data, chats.data ?? []) : [];
@@ -114,70 +220,142 @@ export function FleetPage() {
   const list = filtered(everything, values);
   return (
     <>
-      <PageHeader
-        title="Fleet"
-        actions={
-          <Button
-            variant="secondary"
-            onClick={pause.toggle}
-            disabled={pause.busy}
-            data-testid="pause-all"
-          >
-            {pause.paused ? (
-              <PlayIcon className="size-4" aria-hidden="true" />
-            ) : (
-              <PauseIcon className="size-4" aria-hidden="true" />
-            )}
-            {pause.paused ? "Resume all agents" : "Pause all agents"}
-          </Button>
-        }
-      />
-      {/* The list scrolls in the room that is left under the header; the panel itself does not. */}
-      <div className="flex h-[calc(100%-3rem)] min-h-40 flex-col">
-        {pause.paused && (
-          <Notice tone="ok" className="mb-4">
-            {`All agents are paused by ${pause.paused.by.replace(/^person:/, "@")}. Runs are held and none starts until they are resumed.`}
-          </Notice>
-        )}
-        {pause.error && (
-          <Notice tone="error" className="mb-4">
-            {pause.error}
-          </Notice>
-        )}
-        <FilterBar
-          label="Filter the runs"
-          fields={fields}
-          values={values}
-          onFilter={(key, value) => setQuery({ [key]: value })}
-          onClear={() => setQuery(Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])))}
+      {list.length === 0 && everything.length > 0 ? (
+        <Empty
+          title="No run matches"
+          action={
+            <Button
+              variant="secondary"
+              onClick={() => setQuery(Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])))}
+            >
+              Clear filters
+            </Button>
+          }
         />
-        {list.length === 0 && everything.length > 0 ? (
-          <Empty
-            title="No run matches"
-            action={
-              <Button
-                variant="secondary"
-                onClick={() => setQuery(Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])))}
-              >
-                Clear filters
-              </Button>
-            }
-          />
-        ) : list.length === 0 ? (
-          <Empty
-            title="No agent is working"
-            icon={<AgentIcon size={24} />}
-            action={
-              <Button asChild variant="secondary">
-                <Link to="/chat">Start a chat</Link>
-              </Button>
-            }
-          />
-        ) : (
-          <RunList list={list} now={now} />
-        )}
-      </div>
+      ) : list.length === 0 ? (
+        <Empty
+          title="No agent is working"
+          icon={<AgentIcon size={24} />}
+          action={
+            <Button asChild variant="secondary">
+              <Link to="/chat">Start a chat</Link>
+            </Button>
+          }
+        />
+      ) : (
+        <RunList list={list} now={now} />
+      )}
     </>
+  );
+}
+
+/**
+ * The runs that have ended, the newest first under the day they ended on. A row is the outcome, the card's id and
+ * title, the pale name of the run's kind, the tokens it used and how long it went on; it opens the card in its window.
+ */
+function FinishedRuns() {
+  const finished = useQuery({ queryKey: keys.finishedRuns, queryFn: () => readFinished() });
+  const openCard = useOpenCard();
+  const [selected, setSelected] = useState<string | null>(null);
+  const rows = useMemo(() => finishedItems(finished.data ?? [], today()), [finished.data]);
+  const byKey = useMemo(
+    () => new Map((finished.data ?? []).map((one) => [finishedKey(one), one])),
+    [finished.data],
+  );
+  if (finished.isPending) {
+    return (
+      <VirtualList
+        label="Finished runs"
+        items={[]}
+        renderRow={() => null}
+        loading
+        loadingMessage="Reading the finished runs"
+      />
+    );
+  }
+  if (finished.isError) {
+    return (
+      <ReadFailed
+        error={finished.error}
+        fallback="Could not read the finished runs. Try again."
+        busy={finished.isFetching}
+        onRetry={() => void finished.refetch()}
+      />
+    );
+  }
+  if (rows.length === 0) {
+    return <Empty title="No run has finished" icon={<AgentIcon size={24} />} />;
+  }
+  return (
+    <VirtualList<FinishedRun>
+      label="Finished runs"
+      items={rows}
+      selectedKey={selected}
+      onSelect={setSelected}
+      onOpen={(key) => {
+        const one = byKey.get(key);
+        if (one) openCard(one.card.id);
+      }}
+      renderRow={(one, state) => (
+        <FinishedRow
+          one={one}
+          at={state.at}
+          selected={state.selected}
+          onClick={(event) => {
+            state.onClick(event);
+            openCard(one.card.id);
+          }}
+        />
+      )}
+    />
+  );
+}
+
+const OUTCOMES: Record<string, { name: string; mark: ReactNode }> = {
+  succeeded: { name: "Succeeded", mark: <StatusIcon state="done" /> },
+  failed: {
+    name: "Failed",
+    mark: <ErrorIcon size={16} className="shrink-0 text-danger-text" aria-label="Failed" />,
+  },
+  stopped: {
+    name: "Stopped",
+    mark: <ProhibitIcon size={16} className="shrink-0 text-muted" aria-label="Stopped" />,
+  },
+};
+
+function FinishedRow({
+  one,
+  at,
+  selected,
+  onClick,
+}: {
+  one: FinishedRun;
+  at: RowPosition;
+  selected: boolean;
+  onClick: (event: ReactMouseEvent<HTMLElement>) => void;
+}) {
+  const outcome = OUTCOMES[one.run.status];
+  return (
+    <ListRow
+      mark={
+        <span data-testid={`outcome-${one.run.status}`} className="flex shrink-0">
+          {outcome?.mark ?? <StatusIcon state="notStarted" />}
+        </span>
+      }
+      id={finishedId(one)}
+      title={one.card.title}
+      reason={capital(one.run.purpose)}
+      action={
+        one.tokens > 0 && (
+          <span className="text-xs tabular-nums text-muted">{tokensText(one.tokens)}</span>
+        )
+      }
+      age={age(lasted(one))}
+      selected={selected}
+      at={at}
+      onClick={onClick}
+      data-key={finishedKey(one)}
+    />
   );
 }
 

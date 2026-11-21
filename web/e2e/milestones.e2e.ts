@@ -34,7 +34,7 @@ async function open(path: string) {
   context = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
   page = await context.newPage();
   await page.goto(server.loginUrl);
-  await page.getByRole("navigation", { name: "Pages" }).waitFor();
+  await page.getByRole("navigation", { name: "Pages", exact: true }).waitFor();
   await page.goto(`${server.url}${path}`);
 }
 
@@ -47,10 +47,14 @@ const row = (name: string) => rows().filter({ hasText: name });
 const bar = (name: string) => page.getByRole("progressbar", { name }).first();
 
 describe.skipIf(usesRealServer)("the Milestones page", () => {
-  it("is in the sidebar under Plan and lists the milestones by target date with their progress", async () => {
+  it("is reached from More and lists the milestones by target date with their progress", async () => {
     await open("/inbox");
     await page
-      .getByRole("navigation", { name: "Pages" })
+      .getByRole("navigation", { name: "Pages", exact: true })
+      .getByRole("link", { name: "More" })
+      .click();
+    await page
+      .getByRole("navigation", { name: "More pages" })
       .getByRole("link", { name: "Milestones" })
       .click();
     await page.getByRole("heading", { name: "Milestones", level: 1 }).waitFor();

@@ -6,6 +6,7 @@ import type { Board, Card, Change, Repository } from "../../../api/types/board";
 import type { HistoryEntry, Run } from "../../../api/types/cards";
 import { plural } from "../../../ui/lib/format";
 import type { StateMark } from "../../../ui/page/MarkLabel";
+import type { StatusState } from "../../../ui/page/StatusIcon";
 import { type CardStatus, changesOfCard, heldLine, inRepository } from "./status";
 
 /** A number of tokens as the board writes it: `96k tok`, `1.2M tok`. */
@@ -218,4 +219,65 @@ export function changeWorktree(card: Card, runs: Run[]): string | null {
   const live =
     made?.status === "starting" || made?.status === "running" || made?.status === "waiting";
   return live ? (made?.worktree ?? null) : null;
+}
+
+/** The icon a card wears: what needs a person or runs wins over the column the card lies in. */
+export function cardIcon(card: Card, status: CardStatus): StatusState {
+  if (status === "needs-you" || status === "stuck") return "needsYou";
+  if (status === "live") return "running";
+  switch (card.column) {
+    case "Backlog":
+      return "backlog";
+    case "Not started":
+      return "notStarted";
+    case "In progress":
+      return "inProgress";
+    case "In review":
+      return "inReview";
+    case "Ready to merge":
+      return "readyToMerge";
+    case "Done":
+      return "done";
+    default:
+      return "notStarted";
+  }
+}
+
+/** What a card's second line is: grey while it is quiet work, orange when it needs a person. */
+export type CardActivity = {
+  text: string;
+  tone: "quiet" | "needs-you";
+  /** More about it, as the line's tooltip. */
+  hint?: string;
+};
+
+/**
+ * The one pale line under a card's title: what the agent is doing while it runs, that the card needs a person, or —
+ * since nothing else on the card would say it — that a person blocked it or that it waits on other issues. A card that
+ * is none of these has no line.
+ */
+export function cardActivity(card: Card, status: CardStatus): CardActivity | null {
+  if (status === "held" && card.held) {
+    return { text: "Blocked", tone: "quiet", hint: heldLine(card.held) };
+  }
+  if (status === "live" && card.run) {
+    const round = card.rounds > 0 ? `round ${card.rounds}` : null;
+    return {
+      text: [card.run.agent, card.run.purpose.toLowerCase(), round].filter(Boolean).join(" · "),
+      tone: "quiet",
+    };
+  }
+  if (status === "stuck") return { text: "Stuck", tone: "needs-you" };
+  if (status === "needs-you") return { text: "Plan ready", tone: "needs-you" };
+  if (status === "blocked") {
+    const numbers = card.blocked_by.map((n) => `#${n}`);
+    return {
+      text:
+        numbers.length <= 2
+          ? `Waiting on ${numbers.join(", ")}`
+          : `Waiting on ${numbers[0]} and ${numbers.length - 1} more`,
+      tone: "quiet",
+    };
+  }
+  return null;
 }

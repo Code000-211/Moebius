@@ -210,6 +210,8 @@ export interface BoardFake {
    * returns their numbers. The page reads the board again on the next event.
    */
   seedApprovals(count: number): number[];
+  /** Adds `count` plain cards to `column`, numbered after the last, and returns their numbers in order. */
+  seedCards(count: number, column: string): number[];
   /**
    * Gives card `id` an open change in a second repository `web`, which the card now works in: a failing one, as the
    * checks of that repository are its own.
@@ -747,6 +749,12 @@ export function createBoardFake(send: (event: ServerEvent) => void): BoardFake {
       const target = find(id);
       if (!target) throw new Error(`no card ${id}`);
       return move(target, column);
+    },
+    seedCards(count, column) {
+      const first = Math.max(...cards.map((c) => c.id)) + 1;
+      const made = Array.from({ length: count }, (_, at) => first + at);
+      for (const id of made) cards.push(card(id, { title: `Seeded card ${id}`, column }));
+      return made;
     },
     seedApprovals(count) {
       const made: number[] = [];

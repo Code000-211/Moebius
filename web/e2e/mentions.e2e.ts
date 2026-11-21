@@ -47,7 +47,7 @@ const tell = (notice: Parameters<FakeServer["notify"]>[1]) => {
 describe.skipIf(usesRealServer)("mentions", () => {
   it("shows what concerns the person under Mentions, reads it for them alone and opens the card", async () => {
     await open("/inbox");
-    await page.getByRole("tab", { name: /^Mentions 0/ }).waitFor();
+    await page.getByRole("tab", { name: "Mentions", exact: true }).waitFor();
     const inbox = page
       .getByRole("navigation", { name: "Pages" })
       .getByRole("link", { name: /Inbox/ });
@@ -60,25 +60,21 @@ describe.skipIf(usesRealServer)("mentions", () => {
       title: "Ship the first release",
       body: "@owner can you look?",
     });
-    // The mention is under Mentions alone; the assignment has a tab of its own; the sidebar counts both.
-    await page.getByRole("tab", { name: /^Mentions 1/ }).click();
+    // Both are under Mentions; the sidebar counts both.
+    await page.getByRole("tab", { name: "Mentions", exact: true }).click();
     const notices = page.getByTestId("notice");
     await notices.first().waitFor();
-    expect(await notices.count()).toBe(1);
-    expect(await notices.first().getAttribute("data-kind")).toBe("mentioned");
-    await notices.first().getByText("@lea mentioned you: @owner can you look?").waitFor();
+    expect(await notices.count()).toBe(2);
+    await notices.filter({ hasText: "@lea mentioned you: @owner can you look?" }).waitFor();
     await inbox.getByText(String(waiting + 2), { exact: true }).waitFor();
-    await page.getByRole("tab", { name: /^Assigned 1/ }).click();
-    await page.locator('[data-testid="notice"][data-kind="assigned"]').waitFor();
-    expect(await notices.count()).toBe(1);
-    expect(await page.locator("[data-unread]").count()).toBe(1);
+    expect(await page.locator("[data-unread]").count()).toBe(2);
 
     // Choosing the assignment reads it without a reload and opens the card.
-    await notices.first().click();
+    await page.locator('[data-testid="notice"][data-kind="assigned"]').click();
     await page.waitForURL(/\/board\/1\?card=\d+/);
     await page.goBack();
-    await page.getByRole("tab", { name: /^Assigned 1/ }).waitFor();
-    expect(await page.locator("[data-unread]").count()).toBe(0);
+    await notices.first().waitFor();
+    await expect.poll(() => page.locator("[data-unread]").count()).toBe(1);
     await inbox.getByText(String(waiting + 1), { exact: true }).waitFor();
   });
 

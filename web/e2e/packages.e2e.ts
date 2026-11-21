@@ -37,7 +37,7 @@ async function open(path: string, width = 1280) {
   context = await browser.newContext({ viewport: { width, height: 900 } });
   page = await context.newPage();
   await page.goto(server.loginUrl);
-  await page.getByRole("navigation", { name: "Pages" }).waitFor();
+  await page.getByRole("navigation", { name: "Pages", exact: true }).waitFor();
   await page.goto(`${server.url}${path}`);
 }
 
@@ -373,7 +373,11 @@ describe.skipIf(usesRealServer)("an agent's Extensions and the pi.dev catalog", 
     await sheet().getByText("pi-web-access").waitFor();
     // Moving by the sidebar keeps the page, and so the sheet, where it is.
     await page
-      .getByRole("navigation", { name: "Pages" })
+      .getByRole("navigation", { name: "Pages", exact: true })
+      .getByRole("link", { name: "Settings" })
+      .click();
+    await page
+      .getByRole("navigation", { name: "Settings" })
       .getByRole("link", { name: "Plugins" })
       .click();
     await page.getByRole("button", { name: "Browse packages" }).first().click();
