@@ -364,8 +364,9 @@ fn is_configuration(file: &str) -> bool {
 }
 
 /// Whether `file` is a file of a repository's or a project's settings that a proposal may change: a repository's rules,
-/// `repos/<name>/rules.md`, or a project's column script, `projects/<name>/<script>` (see `improve::own::files`), never
-/// `checks`, which the server runs as a command.
+/// `repos/<name>/rules.md`, a project's column script, `projects/<name>/<script>`, or a project's workflow,
+/// `projects/<name>/workflows/<workflow>.toml` (see `improve::own::files`), never `checks`, which the server runs as a
+/// command.
 fn is_project_path(file: &str) -> bool {
     let named = |dir: &str| {
         file.strip_prefix(dir)
@@ -374,7 +375,13 @@ fn is_project_path(file: &str) -> bool {
             .map(|(_, file)| file)
     };
     named("repos/").is_some_and(|file| file == "rules.md")
-        || named("projects/").is_some_and(super::is_project_file)
+        || named("projects/").is_some_and(|file| {
+            super::is_project_file(file)
+                || file
+                    .strip_prefix("workflows/")
+                    .and_then(|name| name.strip_suffix(".toml"))
+                    .is_some_and(|name| !name.is_empty() && !name.contains('/'))
+        })
 }
 
 #[cfg(test)]
@@ -392,6 +399,10 @@ mod tests {
             assert!(!is_configuration(&format!("repos/app/{file}")), "{file}");
             assert!(!is_configuration(&format!("projects/App/{file}")), "{file}");
         }
+        assert!(is_configuration("projects/App/workflows/release.toml"));
+        assert!(!is_configuration("projects/App/workflows/.toml"));
+        assert!(!is_configuration("projects/App/workflows/a/b.toml"));
+        assert!(!is_configuration("projects/App/workflows/release.md"));
         assert!(!is_configuration("projects//ready.luau"));
         assert!(!is_configuration("repos//rules.md"));
         assert!(!is_configuration("repos/rules.md"));

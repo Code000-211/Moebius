@@ -396,7 +396,7 @@ finds the server again by that directory: it answers, or it is started again wit
     schedule. Each firing is stored (`firings` table: `started` with its chat and workflow run, `skipped` or `failed`
     with the reason, also when the run's `chat` node cannot start the chat) and published as `automation_fired`, naming
     the workflow run.
-12i. **The workflow schedules.** The same minute, `server/schedule.rs` asks `schedule::on_workflow_schedules`, which reads
+12i. **The workflow schedules.** (Workflows a project owns, ADR 0025, are read the same way from `projects/<project>/workflows/` after the server-wide ones, one project at a time: the minute is kept per (project, workflow) with `Store::record_project_schedule_firing`, and the run goes through `App::start_project_workflow_run`, which applies the repository rule.) The same minute, `server/schedule.rs` asks `schedule::on_workflow_schedules`, which reads
     every workflow file the harness configuration repository holds, one at a time (`workflows::definition::read`), and
     for each one whose trigger is a `schedule` (`workflows/trigger/schedule.rs`) asks whether its cron came due after
     the minute that workflow last fired at (`Store::schedule_firing`, at most five minutes back) and up to now. A file
@@ -632,6 +632,7 @@ At the top:
 | `app/reproduce.rs` | Test first: a repository's opt-in (the project's `test-first`), what a run names in the `REPRODUCE:` lines of its summary, and the runs of that reproduction test on the change and on the commit it starts from with the test's files added. |
 | `app/workflows/mod.rs` | The wiring that turns a stored workflow into a run, recording the run and its nodes in the store and on the bus. |
 | `app/workflows/run.rs` | Starting a workflow run from its definition or its name, driving it off the request path, and recording and publishing each node and the run's end as they happen. |
+| `app/workflows/project.rs` | The workflows a project owns (ADR 0025): which repository a run of one belongs to (one of the project's repositories, its own files when it has none, the only one by default, a refusal that names the choices otherwise) and the door that starts it. |
 | `app/workflows/approval.rs` | The part of a run that waits for a person: the wait of the `approval` node, the decision coming back through the resume route, and driving again the runs a stopped server left waiting. |
 | `app/workflows/chat.rs` | The part of a run that starts the chat of a `chat` node, in the run's repository, and records that chat on the firing the run carries. |
 | `app/workflows/stopping.rs` | Cancelling a workflow run: the run's cancellation flag, what each status gives up, and ending the run `cancelled` once, whoever gets there first. |
@@ -689,7 +690,7 @@ At the top:
 | `store/attempts.rs` | Attempts: the runs a card was tried with at once, how each fared, which was picked and why, and the rounds of which none passed. |
 | `store/runs.rs` | Runs: an agent's work in a harness, from its start to its end. |
 | `store/workflows.rs` | Workflow runs and the runs of each node of them, with their value, input and output redacted before they are stored. |
-| `store/workflow_schedules.rs` | The minute each workflow on a `schedule` trigger last fired at, so one occurrence of its cron starts one run even when the server restarts in between. |
+| `store/workflow_schedules.rs` | The minute each workflow on a `schedule` trigger last fired at, per project, so one occurrence of its cron starts one run even when the server restarts in between. |
 | `store/outgoing.rs` | The outgoing webhooks (URL, event kinds, projects named) and the flag that makes a repository private. |
 | `store/wiki_search.rs` | The wiki's search index (SQLite FTS5, a title counting far more than the text): derived data, replaced whole when the wiki's head moves. |
 | `store/analytics.rs` | What the analytics need of every card (moves, start, done, estimate, tokens) read in a few passes, and the members of every cycle and milestone. |

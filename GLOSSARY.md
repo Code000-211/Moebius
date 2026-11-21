@@ -148,6 +148,11 @@ A stage on the board with its own behaviour: what happens to a card that enters 
 where a card goes next.
 _Avoid_: status, lane, state
 
+**Column scripts**:
+The scripts behind the columns of a project's board, in the language built into Moebius; they are what a project's
+settings hold, and they are not a workflow.
+_Avoid_: workflow, hook, plugin
+
 **Script**:
 A piece of behaviour behind a column, written in the script language built into Moebius.
 _Avoid_: hook, plugin, automation
@@ -158,9 +163,10 @@ back to coding while anything is still wrong, until its change is ready to merge
 _Avoid_: workflow, pipeline, process, flow
 
 **Workflow**:
-A graph kept as a file in the harness configuration repository: one trigger, the nodes that do the work, and the edges a
-value follows between their ports.
-_Avoid_: Kanban, board, pipeline
+A graph owned by one project, kept as a file at `projects/<project name>/workflows/<name>.toml` in the harness
+configuration repository: one trigger, the nodes that do the work, and the edges a value follows between their ports. Its
+name is unique within the project, and the same name may be in two projects.
+_Avoid_: Kanban, board, pipeline, column scripts
 
 **Node**:
 One piece of work in a workflow, of a kind the registry builds from the file's parameters, with named input and output

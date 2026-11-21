@@ -31,6 +31,11 @@ pub struct WorkflowRun {
     pub error: Option<String>,
     /// The worktree in which the run's agents work on the branch named for the run; none before its first agent node.
     pub worktree: Option<String>,
+    /// The project that owns the workflow the run is of (ADR 0025); none for a run of a workflow still kept
+    /// server-wide, from before workflows belonged to projects. Kept as a plain value, so a run of a project that is
+    /// deleted keeps it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<i64>,
 }
 
 /// One node of a workflow run at one attempt: the input it was given and the output it left.
@@ -47,6 +52,13 @@ pub struct WorkflowNodeRun {
     pub finished_at: Option<i64>,
     pub error: Option<String>,
 }
+
+/// The project a run belongs to (ADR 0025), added after the table: a plain value, not a reference, so that a project
+/// can go while its finished runs stay. Runs from before it have none until the migration of the workflow files.
+pub(super) const PROJECT_COLUMN: &str = r#"
+ALTER TABLE workflow_runs ADD COLUMN project_id INTEGER;
+CREATE INDEX workflow_runs_by_project ON workflow_runs (project_id, workflow, created_at);
+"#;
 
 pub(super) const SCHEMA: &str = r#"
 CREATE TABLE workflow_runs (
@@ -99,6 +111,23 @@ impl Store {
             conn.last_insert_rowid()
         };
         Ok(self.workflow_run(id)?.expect("the run was just stored"))
+    }
+
+    /// Stores a queued run of the workflow `workflow` of the project `project_id`, as [`Self::add_workflow_run`] does.
+    pub fn add_project_workflow_run(
+        &self,
+        project_id: i64,
+        workflow: &str,
+        repository_id: i64,
+        trigger: &str,
+        value: &Value,
+    ) -> Result<WorkflowRun> {
+        let run = self.add_workflow_run(workflow, repository_id, trigger, value)?;
+        self.conn().execute(
+            "UPDATE workflow_runs SET project_id = ?1 WHERE id = ?2",
+            params![project_id, run.id],
+        )?;
+        Ok(self.workflow_run(run.id)?.expect("the run was just stored"))
     }
 
     /// Records the worktree of the run `id`, in which the run's agents work on the branch named for the run, so its
@@ -156,6 +185,26 @@ impl Store {
             "SELECT COUNT(*) FROM workflow_runs
              WHERE workflow = ?1 AND status NOT IN ('succeeded', 'failed', 'cancelled')",
             [workflow],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// How many runs of the workflow `workflow` of the project `project_id` are queued, running or waiting.
+    pub fn active_project_workflow_runs(&self, project_id: i64, workflow: &str) -> Result<i64> {
+        Ok(self.read().query_row(
+            "SELECT COUNT(*) FROM workflow_runs
+             WHERE project_id = ?1 AND workflow = ?2 AND status NOT IN ('succeeded', 'failed', 'cancelled')",
+            params![project_id, workflow],
+            |row| row.get(0),
+        )?)
+    }
+
+    /// How many runs of any workflow of the project `project_id` are queued, running or waiting.
+    pub fn active_runs_of_project(&self, project_id: i64) -> Result<i64> {
+        Ok(self.read().query_row(
+            "SELECT COUNT(*) FROM workflow_runs
+             WHERE project_id = ?1 AND status NOT IN ('succeeded', 'failed', 'cancelled')",
+            [project_id],
             |row| row.get(0),
         )?)
     }
@@ -362,6 +411,7 @@ fn run_from_row(row: &Row<'_>) -> rusqlite::Result<WorkflowRun> {
         finished_at: row.get(8)?,
         error: row.get(9)?,
         worktree: row.get(10)?,
+        project_id: row.get(11)?,
     })
 }
 

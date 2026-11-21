@@ -37,7 +37,7 @@ use crate::repos::{Repos, git, kept};
 pub use branches::{OwnBranch, Proposed};
 pub use create::{SET_UP_MESSAGE, create};
 pub use packages::{PERSON_ONLY, PackageDiff, add_to_agent, remove_from_agents};
-pub use projects::{is_project_file, valid_folder as valid_project_folder};
+pub use projects::{DIR as PROJECTS_DIR, is_project_file, valid_folder as valid_project_folder};
 use read::Layout;
 pub use read::{
     AgentDefinition, AgentSettings, AgentView, McpServerInfo, McpServerView, SkillInfo,

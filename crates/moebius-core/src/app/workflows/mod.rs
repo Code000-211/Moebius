@@ -6,6 +6,7 @@
 
 pub mod approval;
 pub mod chat;
+pub mod project;
 pub mod run;
 pub mod stopping;
 

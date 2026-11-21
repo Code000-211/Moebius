@@ -418,6 +418,91 @@ pub(crate) fn file_for(name: &str) -> Result<String, Error> {
     Ok(file)
 }
 
+/// The folder, under the harness configuration repository's root, that holds the workflow files of the project
+/// `project` (ADR 0025): `projects/<project>/workflows`.
+pub fn project_directory(project: &str) -> String {
+    format!(
+        "{}/{project}/{DIRECTORY}",
+        crate::harness::repo::PROJECTS_DIR
+    )
+}
+
+/// The file the workflow `name` of the project `project` is kept in, refused when the project cannot be a folder or the
+/// name cannot be one file's name. Neither can then lead a path out of the project's folder.
+pub(crate) fn project_file_for(project: &str, name: &str) -> Result<String, Error> {
+    let file = format!("{}/{name}.toml", project_directory(project));
+    if !crate::harness::repo::valid_project_folder(project) {
+        return Err(Error::new(
+            &file,
+            "the project's name cannot be a folder on every system",
+        ));
+    }
+    file_for(name).map_err(|error| Error::new(&file, error.message()))?;
+    Ok(file)
+}
+
+/// The text of the workflow `name` of the project `project` in the harness configuration repository under `root`.
+pub fn read_project_text(root: &Path, project: &str, name: &str) -> Result<String, Error> {
+    let file = project_file_for(project, name)?;
+    std::fs::read_to_string(root.join(&file))
+        .map_err(|error| Error::new(&file, format!("cannot be read: {error}")))
+}
+
+/// Read and validate the workflow `name` of the project `project` from the harness configuration repository under
+/// `root`, where its file is `projects/<project>/workflows/<name>.toml`. Another project's workflow of the same name is
+/// not found by it.
+pub fn read_in_project(
+    root: &Path,
+    project: &str,
+    name: &str,
+) -> Result<WorkflowDefinition, Error> {
+    let file = project_file_for(project, name)?;
+    let definition = WorkflowDefinition::parse(&read_project_text(root, project, name)?, &file)?;
+    definition.validate(&file)?;
+    Ok(definition)
+}
+
+/// The names of the workflow files of the project `project`, in name order; none when the project has no folder of
+/// workflows. A file that cannot be read leaves the others alone, which is what the schedule reads one by one.
+pub fn names_in_project(root: &Path, project: &str) -> Result<Vec<String>, Error> {
+    let directory = project_directory(project);
+    if !crate::harness::repo::valid_project_folder(project) {
+        return Err(Error::new(
+            &directory,
+            "the project's name cannot be a folder on every system",
+        ));
+    }
+    let entries = match std::fs::read_dir(root.join(&directory)) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(Error::new(&directory, format!("cannot be read: {error}"))),
+    };
+    let mut names = Vec::new();
+    for entry in entries {
+        let entry =
+            entry.map_err(|error| Error::new(&directory, format!("cannot be read: {error}")))?;
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "toml")
+            && let Some(name) = path.file_stem().and_then(|name| name.to_str())
+        {
+            names.push(name.to_string());
+        }
+    }
+    names.sort();
+    Ok(names)
+}
+
+/// Every workflow of the project `project`, by file name, in name order.
+pub fn list_in_project(
+    root: &Path,
+    project: &str,
+) -> Result<Vec<(String, WorkflowDefinition)>, Error> {
+    names_in_project(root, project)?
+        .into_iter()
+        .map(|name| read_in_project(root, project, &name).map(|definition| (name, definition)))
+        .collect()
+}
+
 /// The text of one workflow's file in the harness configuration repository under `root`.
 pub fn read_text(root: &Path, name: &str) -> Result<String, Error> {
     let file = file_for(name)?;
@@ -475,6 +560,32 @@ pub(crate) fn render(name: &str, definition: &WorkflowDefinition) -> Result<Stri
 }
 
 impl crate::harness::repo::HarnessRepo {
+    /// Read and validate the workflow `name` of the project `project`.
+    pub fn project_workflow(
+        &self,
+        project: &str,
+        name: &str,
+    ) -> crate::app::Result<WorkflowDefinition> {
+        read_in_project(self.path(), project, name)
+            .map_err(|error| crate::app::AppError::Invalid(error.to_string()))
+    }
+
+    /// Every workflow of the project `project`, by name.
+    pub fn project_workflows(
+        &self,
+        project: &str,
+    ) -> crate::app::Result<Vec<(String, WorkflowDefinition)>> {
+        list_in_project(self.path(), project)
+            .map_err(|error| crate::app::AppError::Invalid(error.to_string()))
+    }
+
+    /// Whether the project `project` owns at least one workflow file.
+    pub fn project_owns_workflows(&self, project: &str) -> crate::app::Result<bool> {
+        names_in_project(self.path(), project)
+            .map(|names| !names.is_empty())
+            .map_err(|error| crate::app::AppError::Invalid(error.to_string()))
+    }
+
     /// Read and validate one workflow from this harness configuration repository.
     pub fn workflow(&self, name: &str) -> crate::app::Result<WorkflowDefinition> {
         read(self.path(), name).map_err(|error| crate::app::AppError::Invalid(error.to_string()))

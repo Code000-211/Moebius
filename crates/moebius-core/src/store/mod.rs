@@ -518,6 +518,9 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     // The snapshot looks up a card's open change in each repository it works in.
     "CREATE INDEX changes_of_a_card ON changes (card_id, repository_id, state);",
     preferences::SCHEMA,
+    workflows::PROJECT_COLUMN,
+    workflow_schedules::BY_PROJECT,
+    automations::BY_PROJECT,
 ];
 
 #[cfg(test)]
