@@ -58,15 +58,63 @@ function DiffReadFailed({
   );
 }
 
-/** What a change adds and removes, as `+84 -12`, for a line that has no room for the headline; nothing while it is read or if it cannot be. */
+/** The sheet that holds the whole diff of a change, as tall as the window allows. */
+function ChangesSheet({
+  of,
+  open,
+  onOpenChange,
+}: {
+  of: { change: number };
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {/* The sheet answers for the scroll of its two columns and nothing else, so it is clipped rather than
+          scrolled: a sheet that scrolled as well slid both columns up out of sight and left a band of nothing
+          where they were, which is what a person met when the wheel landed on the sheet instead of a column. */}
+      <DialogContent
+        data-testid="change-diff"
+        aria-describedby={undefined}
+        className="max-w-[min(90vw,1600px)] overflow-hidden"
+      >
+        <div className="flex min-h-0 flex-1 flex-col gap-4">
+          <DialogHeader>
+            <DialogTitle>Changes</DialogTitle>
+          </DialogHeader>
+          <Changes of={of} />
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * What a change adds and removes, as `+84 -12` with the plus in green and the minus in red, for a line that has no
+ * room for the headline; nothing while it is read or if it cannot be. A click opens the diff in its sheet.
+ */
 export function ChangeDelta({ change, className }: { change: number; className?: string }) {
+  const [open, setOpen] = useState(false);
   const query = useDiff({ change });
   const total = useMemo(
     () => (query.data ? totals(parseUnifiedDiff(query.data.diff)) : null),
     [query.data],
   );
   if (total === null || (total.additions === 0 && total.deletions === 0)) return null;
-  return <Delta additions={total.additions} deletions={total.deletions} className={className} />;
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="change-delta"
+        aria-label="Open the changes"
+        onClick={() => setOpen(true)}
+        className="-mx-1.5 inline-flex min-h-7 cursor-pointer items-center rounded-control px-1.5 transition-colors duration-(--motion-routine) ease-out hover:bg-hover"
+      >
+        <Delta additions={total.additions} deletions={total.deletions} className={className} />
+      </button>
+      {open && <ChangesSheet of={{ change }} open onOpenChange={setOpen} />}
+    </>
+  );
 }
 
 export function Changes({ of }: { of: DiffOf }) {
@@ -159,23 +207,7 @@ export function ChangesCard({
         )}
         <ArrowsOutIcon className="size-4 shrink-0 text-secondary" aria-hidden="true" />
       </button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        {/* The sheet answers for the scroll of its two columns and nothing else, so it is clipped rather than
-            scrolled: a sheet that scrolled as well slid both columns up out of sight and left a band of nothing
-            where they were, which is what a person met when the wheel landed on the sheet instead of a column. */}
-        <DialogContent
-          data-testid="change-diff"
-          aria-describedby={undefined}
-          className="max-w-[min(90vw,1600px)] overflow-hidden"
-        >
-          <div className="flex min-h-0 flex-1 flex-col gap-4">
-            <DialogHeader>
-              <DialogTitle>Changes</DialogTitle>
-            </DialogHeader>
-            <Changes of={of} />
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ChangesSheet of={of} open={open} onOpenChange={setOpen} />
     </>
   );
 }

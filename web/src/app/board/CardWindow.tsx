@@ -233,7 +233,7 @@ export function CardContent({
           <div className="flex shrink-0 items-center gap-3">
             <StatusIcon state={iconOf(card, status)} />
             {owner && <Avatar handle={owner} className="size-6" />}
-            {changes[0] && <ChangeDelta change={changes[0].id} className="text-md font-medium" />}
+            {changes[0] && <ChangeDelta change={changes[0].id} className="text-md" />}
             <CardMenu
               card={card}
               {...menu}

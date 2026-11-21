@@ -14,6 +14,7 @@ import {
   inputPath,
   inputSummary,
   refused,
+  stepWords,
   type ToolCall,
   toolTitle,
   verdict,
@@ -41,6 +42,13 @@ const MAX_OUTPUT_LINES = 200;
 
 /** From this many steps on, a block of steps is folded into one row; fewer are drawn as the timeline. */
 const FOLD_FROM = 5;
+
+/**
+ * The steps of a turn hang on one thin line: it runs down the middle of their icons (16px wide, so 8px in), which sit on
+ * the page's colour and break it where they are. The rows sit 6px apart, as the standard asks of a body of small marks.
+ */
+const STEP_LINE =
+  "relative flex min-w-0 flex-col gap-1.5 before:absolute before:top-3 before:bottom-3 before:left-[7.5px] before:w-px before:bg-hairline-strong";
 
 /** The status a tool call is in, told by one of the words `ToolStatusDot` knows. */
 export function toolStatus(call: ToolCall): ToolStatusLike {
@@ -147,9 +155,8 @@ function ToolLine({
   return (
     <div>
       <ChatToolSummary
-        summary={inputSummary(call.input)}
-        detail={inputPath(call.input) ?? undefined}
-        toolName={toolTitle(call)}
+        words={stepWords(call)}
+        detail={inputPath(call.input) ?? toolTitle(call)}
         status={quiet(status)}
         isTruncated={hasDetails}
         expanded={expanded}
@@ -270,11 +277,11 @@ function StepsGroup({
   // A few steps are the timeline itself, one line each; only a long run of them, or one with trouble in it, is folded.
   if (!troubled && block.steps.length < FOLD_FROM) {
     return (
-      <div className="-ml-3 flex min-w-0 flex-col gap-0.5" data-testid="steps">
+      <div className={STEP_LINE} data-testid="steps">
         {rows}
         {block.working && (
           <p
-            className="m-0 flex min-h-7 items-center px-3 text-sm text-progress-text"
+            className="m-0 flex min-h-5 items-center pl-[26px] text-sm text-progress-text"
             data-testid="working"
           >
             Working
@@ -291,12 +298,12 @@ function StepsGroup({
     trouble.failed > 0 ? `${trouble.failed} failed` : null,
   ].filter((part) => part !== null);
   return (
-    <div className="-ml-3 flex min-w-0 flex-col">
+    <div className="flex min-w-0 flex-col">
       <button
         type="button"
         className={cn(
-          "flex min-h-7 cursor-pointer items-center gap-2 self-start rounded-control px-3 text-left text-sm transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text",
-          block.working ? "text-progress-text" : "text-secondary",
+          "flex min-h-5 cursor-pointer items-center gap-2 self-start text-left text-sm transition-colors duration-(--motion-routine) ease-out hover:text-secondary",
+          block.working ? "text-progress-text" : "text-muted",
         )}
         onClick={() => onToggle(opensItself ? closedKey : block.key)}
         aria-expanded={expanded}
@@ -318,11 +325,7 @@ function StepsGroup({
         )}
       </button>
       {expanded && (
-        <div
-          id={bodyId}
-          className="ml-4 flex flex-col gap-0.5 border-l border-hairline py-1 pl-3"
-          data-testid="steps"
-        >
+        <div id={bodyId} className={cn(STEP_LINE, "mt-1.5")} data-testid="steps">
           {rows}
         </div>
       )}
@@ -415,6 +418,8 @@ interface TurnProps {
   onAnswer?: (message: string) => void;
   /** Whether a message is on its way, so an answer is not sent twice. */
   sending?: boolean;
+  /** What is offered under the answer that ends the turn, such as Approve plan and Reply; given to the last turn only. */
+  offer?: ReactNode;
 }
 
 export function Turn({
@@ -425,6 +430,7 @@ export function Turn({
   retry,
   onAnswer,
   sending,
+  offer,
 }: TurnProps) {
   const isOpen = (key: string) => unfolded.has(key);
   const head = turn.head;
@@ -462,6 +468,11 @@ export function Turn({
         />
       )}
       {turn.blocks.map(view)}
+      {offer && turn.blocks[turn.blocks.length - 1]?.kind === "text" && (
+        <div className="flex flex-wrap gap-2" data-testid="offer">
+          {offer}
+        </div>
+      )}
     </div>
   );
 }

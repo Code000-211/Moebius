@@ -35,7 +35,9 @@ export function ChatUserMessage({
             {copy}
           </div>
         )}
-        <div className="min-w-0 rounded-card bg-hover px-3 py-2">{renderMarkdown({ content })}</div>
+        <div className="min-w-0 rounded-card bg-control-fill px-3 py-2">
+          {renderMarkdown({ content })}
+        </div>
       </div>
     </div>
   );

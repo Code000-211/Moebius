@@ -19,6 +19,7 @@ export interface RunEvent {
 /** One step of an agent: some words, or a tool call that has an output, or one still running (no output). */
 export type Step =
   | { say: string }
+  | { think: string }
   | { tool: string; args: Record<string, unknown>; output?: string };
 
 /** The events Pi-Bolt and the server make for these steps, the last one ending `lastAt` seconds ago. */
@@ -28,6 +29,13 @@ export function events(steps: Step[], lastAt = 5): RunEvent[] {
     list.push({ seq: list.length + 1, kind, data, at: ago(lastAt + (steps.length - list.length)) });
   push("agent_start", { type: "agent_start" });
   steps.forEach((step, index) => {
+    if ("think" in step) {
+      push("message_update", {
+        type: "message_update",
+        assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: step.think },
+      });
+      return;
+    }
     if ("say" in step) {
       push("message_update", {
         type: "message_update",
@@ -212,6 +220,18 @@ const change = {
   check_output: null,
 };
 
+const change2 = {
+  ...change,
+  id: 2,
+  card_id: 21,
+  branch: "moebius/card-21",
+  pull_request: 218,
+  review: "changes",
+  head: "41d0be77c9a2",
+  published_at: ago(5_000),
+  checks_head: "41d0be77c9a2",
+};
+
 export const snapshot = () => ({
   boards: [
     {
@@ -256,6 +276,15 @@ export const snapshot = () => ({
           tokens: 67_000,
           run: { id: 103, agent: "Reviewer", purpose: "review", status: "running" },
         }),
+        card(21, {
+          title: "A stale cart save overwrites a newer cart",
+          column: "In review",
+          assignees: ["maya"],
+          rounds: 1,
+          tokens: 52_000,
+          created_at: ago(3 * 3_600),
+          change: { id: 2, state: "open", checks: "success", review_verdict: "changes" },
+        }),
         card(19, {
           title: "Add an index on orders.customer_id",
           column: "Ready to merge",
@@ -272,7 +301,7 @@ export const snapshot = () => ({
       ],
       round_limit: 5,
       waiting: { "30": "waiting on #24" },
-      changes: [change],
+      changes: [change, change2],
     },
   ],
   harness_changes: [],
@@ -319,8 +348,62 @@ export const snapshot = () => ({
       assignees: [],
       at: ago(40_000),
     },
+    {
+      id: 4,
+      kind: "approve_issue",
+      card_id: 21,
+      title:
+        "The review found a data loss: a save built on an older cart replaces the newer one. I propose a check that rejects stale saves and shows the current cart, plus a test.",
+      data: { reason: "The review asked for a change" },
+      resolved_at: null,
+      assignees: [],
+      at: ago(120),
+    },
   ],
 });
+
+/** What `GET /v1/cards/21/comments` and `/history` answer: a comment, a move, a code run and a review. */
+export const threadOf21 = {
+  comments: [
+    {
+      id: 1,
+      card_id: 21,
+      author: "maya",
+      body: "Keep it small: send the cart version back with the save and fail when it is stale.",
+      at: ago(3 * 3_600),
+    },
+  ],
+  history: [
+    { at: ago(3 * 3_600 - 60), kind: "moved", data: { from: "Not started", to: "In progress" } },
+    {
+      at: ago(10_200),
+      kind: "run_started",
+      data: { run: 111, agent: "Coder", purpose: "code" },
+    },
+    { at: ago(8_400), kind: "run_ended", data: { run: 111, status: "done" } },
+    { at: ago(8_300), kind: "moved", data: { from: "In progress", to: "In review" } },
+    {
+      at: ago(8_200),
+      kind: "run_started",
+      data: { run: 112, agent: "Reviewer", purpose: "review" },
+    },
+    { at: ago(7_100), kind: "run_ended", data: { run: 112, status: "done" } },
+  ],
+};
+
+/** A diff of 84 added and 12 removed lines, for the change of card 21. */
+export const diff21 = (() => {
+  const added = Array.from({ length: 84 }, (_, i) => `+    // line ${i + 1} of the version check`);
+  const removed = Array.from({ length: 12 }, (_, i) => `-    let old_${i} = save(cart);`);
+  return `diff --git a/src/cart/save.rs b/src/cart/save.rs
+index 8d21f0a..c5e7b13 100644
+--- a/src/cart/save.rs
++++ b/src/cart/save.rs
+@@ -1,12 +1,84 @@
+${removed.join("\n")}
+${added.join("\n")}
+`;
+})();
 
 export const diff = `diff --git a/migrations/0042_orders_customer_index.sql b/migrations/0042_orders_customer_index.sql
 new file mode 100644
@@ -348,3 +431,31 @@ index 8d21f0a..c5e7b13 100644
          Ok(rows.into_iter().map(Order::from).collect())
      }
 `;
+
+/** The question put to the Moebius agent and the steps of its answer: a thought, two reads, a code block and a plan. */
+export const agentQuestion = "Why did card #21 stop?";
+export const agentAnswer = `A save built on an older cart replaces the newer one. I can add a version check:
+
+\`\`\`rust path=cart/save.rs
+if base != current.version {
+    return stale(current); // 409
+}
+\`\`\`
+
+Shall I go ahead?`;
+export const agentSteps: Step[] = [
+  {
+    think: "The review of card #21 found a data loss. I want to see the save code and the review.",
+  },
+  {
+    tool: "read",
+    args: { path: `${ROOT}/111/worktree/src/cart/save.rs` },
+    output: "pub async fn save(cart: Cart) -> Result<()> {",
+  },
+  {
+    tool: "read",
+    args: { path: `${ROOT}/112/review.md` },
+    output: "The save has no version check.",
+  },
+  { say: agentAnswer },
+];

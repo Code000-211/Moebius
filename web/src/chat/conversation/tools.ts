@@ -134,6 +134,88 @@ export function inputPath(input: ToolInput): string | null {
   }
 }
 
+/** Which small icon a step of the thread carries. */
+export type StepIcon = "read" | "edit" | "terminal" | "search" | "test" | "check" | "web" | "tool";
+
+/** What a step says of itself: a few plain words, and the name of the file when it is about one (set in mono). */
+export interface StepWords {
+  icon: StepIcon;
+  text: string;
+  code?: string;
+}
+
+/** The command that is run, without a leading `cd dir &&` or environment assignments, in lower case. */
+function bareCommand(command: string): string {
+  const line = (command.split("\n")[0] ?? "").trim();
+  const last = line.split("&&").pop() ?? line;
+  return last
+    .replace(/^(\s*[A-Z_][A-Z0-9_]*=\S*\s+)+/, "")
+    .trim()
+    .toLowerCase();
+}
+
+/** What a command does, in words; `[done, going]` is how it reads once it ended and while it runs. */
+function commandWords(command: string): [StepIcon, string, string] {
+  const bare = bareCommand(command);
+  const has = (pattern: RegExp) => pattern.test(bare);
+  if (has(/\b(test|pytest|vitest|jest|nextest)\b/))
+    return ["test", "Ran the tests", "Running the tests"];
+  if (has(/^(rg|grep|ag|fd|find)\b/)) return ["search", "Searched the code", "Searching the code"];
+  if (has(/^(ls|tree)\b/)) return ["search", "Listed the files", "Listing the files"];
+  if (has(/\b(clippy|fmt|lint|check|tsc|biome|eslint|prettier)\b/))
+    return ["check", "Ran the checks", "Running the checks"];
+  if (has(/\b(build|compile)\b/)) return ["terminal", "Built the project", "Building the project"];
+  if (has(/^git\s+(diff|status|log|show)\b/))
+    return ["terminal", "Looked at the changes", "Looking at the changes"];
+  if (has(/^git\s+commit\b/))
+    return ["terminal", "Committed the changes", "Committing the changes"];
+  if (has(/^git\s+push\b/)) return ["terminal", "Pushed the branch", "Pushing the branch"];
+  if (has(/^git\b/)) return ["terminal", "Used git", "Using git"];
+  if (has(/moebius"?\s+board\b/)) return ["tool", "Looked at the board", "Looking at the board"];
+  if (has(/moebius"?\s+card\b/)) return ["tool", "Read a card", "Reading a card"];
+  if (has(/moebius"?\s/)) return ["tool", "Asked Moebius", "Asking Moebius"];
+  if (has(/^(psql|sqlite3|mysql)\b/))
+    return ["terminal", "Queried the database", "Querying the database"];
+  if (has(/^(curl|wget)\b/)) return ["web", "Fetched a page", "Fetching a page"];
+  return ["terminal", "Ran a command", "Running a command"];
+}
+
+/**
+ * What a tool call did, as the thread says it: "Read wiki.rs", "Ran the tests", "Searched the code". The raw command
+ * or the arguments are not here; the step shows them once it is opened.
+ */
+export function stepWords(call: ToolCall): StepWords {
+  const running = call.execution?.state !== "finished";
+  const { input } = call;
+  const file = inputPath(input) ?? undefined;
+  const named = file ? fileName(file) : undefined;
+  switch (input.type) {
+    case "read":
+      return { icon: "read", text: running ? "Reading" : "Read", code: named };
+    case "edit":
+      return { icon: "edit", text: running ? "Editing" : "Edited", code: named };
+    case "write":
+      return { icon: "edit", text: running ? "Writing" : "Wrote", code: named };
+    case "command": {
+      const [icon, done, going] = commandWords(input.command);
+      return { icon, text: running ? going : done };
+    }
+    default: {
+      const tool = call.tool.toLowerCase();
+      if (/^(grep|find|glob|search)/.test(tool))
+        return { icon: "search", text: running ? "Searching the code" : "Searched the code" };
+      if (tool === "ls")
+        return { icon: "search", text: running ? "Listing the files" : "Listed the files" };
+      if (/^web/.test(tool))
+        return {
+          icon: "web",
+          text: running ? "Looking it up on the web" : "Looked it up on the web",
+        };
+      return { icon: "tool", text: `${running ? "Using" : "Used"} ${toolTitle(call)}` };
+    }
+  }
+}
+
 /** The decision the call is shown with: a refusal of the check or the gateway, else the check's answer, else the gateway's. */
 export function verdict(call: ToolCall): Check | null {
   const checks = [call.check, call.mcp?.check ?? null].filter((check) => check !== null);

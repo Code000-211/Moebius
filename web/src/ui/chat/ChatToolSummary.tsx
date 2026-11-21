@@ -1,81 +1,52 @@
-// From BloopAI/vibe-kanban packages/ui/src/components/ChatToolSummary.tsx (Apache-2.0), changed: the icon is picked
-// from the tool's name (read, edit, write, bash, search, web) instead of Vibe Kanban's action types; the row is 32px
-// tall, the tool is named in a plain label rather than a tag, a file is named by its name with its whole path kept
-// as the tooltip, what it was given is one line whose end is kept in view and whose beginning fades when the line runs
-// out, and its state is a word with a hue.
-import {
-  FileTextIcon,
-  GlobeIcon,
-  ListMagnifyingGlassIcon,
-  NotePencilIcon,
-  TerminalWindowIcon,
-} from "@phosphor-icons/react";
+// From BloopAI/vibe-kanban packages/ui/src/components/ChatToolSummary.tsx (Apache-2.0), changed: the row says what the
+// tool did in a few plain words with a small icon of its own ("Read wiki.rs", "Ran the tests") instead of the raw
+// command; the command is in the box the row opens to. The row is 28px tall and hangs on the thin line of the steps;
+// its state is a word with a hue.
+
+import type { StepWords } from "../../chat/conversation";
 import { cn } from "../lib/cn";
-import { FadedLine } from "../page/FadedLine";
+import { StepGlyph, StepText } from "./StepGlyph";
 import { ToolStatusDot, type ToolStatusLike } from "./ToolStatusDot";
 
 interface ChatToolSummaryProps {
-  /** What the tool was given: the file it read, the command it ran. */
-  summary: string;
-  /** The whole path behind a summary that names only a file, kept for the tooltip. */
+  /** What the tool did, in words, with the icon that goes with them. */
+  words: StepWords;
+  /** The whole path or the tool's name, kept for the tooltip. */
   detail?: string;
   className?: string;
   expanded?: boolean;
   onToggle?: () => void;
   status?: ToolStatusLike;
-  /** The name of the tool (`read`, `bash`, an MCP tool's `server · tool`), which picks the icon. */
-  toolName?: string;
   /** Whether there is more to see, so that a click opens it. */
   isTruncated?: boolean;
 }
 
-function iconOf(toolName: string | undefined) {
-  switch (toolName?.toLowerCase()) {
-    case "bash":
-      return TerminalWindowIcon;
-    case "read":
-      return FileTextIcon;
-    case "edit":
-    case "write":
-      return NotePencilIcon;
-    case "webfetch":
-    case "websearch":
-      return GlobeIcon;
-    default:
-      return ListMagnifyingGlassIcon;
-  }
-}
-
 export function ChatToolSummary({
-  summary,
+  words,
   detail,
   className,
   expanded,
   onToggle,
   status,
-  toolName,
   isTruncated,
 }: ChatToolSummaryProps) {
   const canExpand = Boolean(isTruncated && onToggle);
-  const Icon = iconOf(toolName);
-
   const Root = canExpand ? "button" : "div";
 
   return (
     <Root
       type={canExpand ? "button" : undefined}
       className={cn(
-        "flex min-h-7 w-full flex-wrap items-center gap-2 rounded-control px-3 text-left transition-colors duration-(--motion-routine) ease-out",
-        canExpand && "cursor-pointer hover:bg-hover",
+        "flex min-h-5 w-full items-center gap-2.5 text-left text-muted transition-colors duration-(--motion-routine) ease-out",
+        canExpand && "cursor-pointer hover:text-secondary",
         className,
       )}
       onClick={canExpand ? onToggle : undefined}
       aria-expanded={canExpand ? expanded : undefined}
       title={detail || undefined}
     >
-      <Icon aria-hidden="true" className="size-4 shrink-0 text-secondary" />
-      {toolName && <span className="shrink-0 text-sm text-secondary">{toolName}</span>}
-      <FadedLine text={summary} className="flex-1 font-mono text-sm text-secondary" />
+      <StepGlyph icon={words.icon} />
+      <StepText text={words.text} code={words.code} />
       {status && <ToolStatusDot status={status} />}
     </Root>
   );

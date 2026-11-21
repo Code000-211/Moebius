@@ -340,9 +340,10 @@ describe("what the agent does", () => {
 
       // A few steps are the timeline itself, one line each, with nothing to open.
       const steps = page.getByTestId("steps");
-      await steps.getByRole("button", { name: /Read · 2 files/ }).waitFor();
-      await steps.getByText("bash", { exact: true }).waitFor();
-      await steps.getByText("cargo test --quiet").waitFor();
+      await steps.getByRole("button", { name: /Read 2 files/ }).waitFor();
+      // A step says what was done in plain words; the raw command is in the box it opens to.
+      await steps.getByText("Ran the tests").waitFor();
+      expect(await steps.getByText("cargo test --quiet").count()).toBe(0);
       // The thinking is folded until it is opened.
       expect(await page.getByText("I should read first.").count()).toBe(0);
       // A thought that has stopped is named for its length as well as what it was.
@@ -351,8 +352,9 @@ describe("what the agent does", () => {
 
       // A pill opens to show what the tool printed, and what it printed is a box of the row's own width: an inset
       // panel under a full-width row reads as a mistake rather than as the row opened up.
-      const command = steps.getByRole("button", { name: /cargo test --quiet/ });
+      const command = steps.getByRole("button", { name: /Ran the tests/ });
       await command.click();
+      await page.getByText("cargo test --quiet").waitFor();
       await page.getByText("test result: ok. 3 passed").waitFor();
       const row = await command.boundingBox();
       const panel = await page.getByTestId("tool-details").boundingBox();
@@ -364,7 +366,7 @@ describe("what the agent does", () => {
       );
 
       // The edit is a file with its added and removed lines, named by its name alone.
-      const file = steps.getByRole("button", { name: /^\s*a\.rs/ });
+      const file = steps.getByRole("button", { name: /^\s*Edited\s*a\.rs/ });
       await file.waitFor();
       await file.click();
       await page.getByText("+fn a() -> u8 { 1 }").waitFor();
@@ -806,24 +808,42 @@ describe("the Moebius agent", () => {
     },
   );
 
-  /** The header of the panel only closes it, so starting over is a quiet action at the end of the conversation. */
+  /** Starting over is an action in the head of the panel, which has nothing to start over until a conversation began. */
+  it.skipIf(usesRealServer)("starts a new conversation from the head of the panel", async () => {
+    await open("/inbox");
+    await page.keyboard.press("Control+j");
+    const window = page.getByRole("complementary", { name: "Moebius agent" });
+    expect(await window.getByTestId("new-conversation").isDisabled()).toBe(true);
+    await window.getByRole("textbox", { name: "Message" }).fill("First question");
+    await window.getByRole("textbox", { name: "Message" }).press("Enter");
+    await window.getByText("You said: First question").first().waitFor();
+    await window.getByTestId("new-conversation").click();
+    await window.getByTestId("person-message").first().waitFor({ state: "detached" });
+    expect(await window.getByTestId("new-conversation").isDisabled()).toBe(true);
+    await window.getByRole("textbox", { name: "Message" }).fill("Second question");
+    await window.getByRole("textbox", { name: "Message" }).press("Enter");
+    await window.getByText("You said: Second question").first().waitFor();
+    expect(fake().started).toHaveLength(2);
+  });
+
+  /** Past conversations have a home in the panel: a short list behind one icon, and an arrow back. */
   it.skipIf(usesRealServer)(
-    "starts a new conversation from the end of the thread in the panel",
+    "lists the earlier conversations in the panel and opens one",
     async () => {
       await open("/inbox");
       await page.keyboard.press("Control+j");
       const window = page.getByRole("complementary", { name: "Moebius agent" });
-      await window.getByTestId("new-conversation").waitFor({ state: "detached" });
       await window.getByRole("textbox", { name: "Message" }).fill("First question");
       await window.getByRole("textbox", { name: "Message" }).press("Enter");
       await window.getByText("You said: First question").first().waitFor();
       await window.getByTestId("new-conversation").click();
-      await window.getByTestId("new-conversation").waitFor({ state: "detached" });
-      await window.getByTestId("person-message").first().waitFor({ state: "detached" });
-      await window.getByRole("textbox", { name: "Message" }).fill("Second question");
-      await window.getByRole("textbox", { name: "Message" }).press("Enter");
-      await window.getByText("You said: Second question").first().waitFor();
-      expect(fake().started).toHaveLength(2);
+      await window.getByRole("button", { name: "Earlier conversations" }).click();
+      await window.getByRole("heading", { name: "Earlier conversations" }).waitFor();
+      await window.getByRole("button", { name: /First question/ }).click();
+      await window.getByText("You said: First question").first().waitFor();
+      await window.getByRole("button", { name: "Earlier conversations" }).click();
+      await window.getByRole("button", { name: "Back to the conversation" }).click();
+      await window.getByText("You said: First question").first().waitFor();
     },
   );
 
