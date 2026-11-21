@@ -569,6 +569,33 @@ describe("live data", () => {
     await page.getByTestId("issues-page").waitFor();
   });
 
+  it.skipIf(usesRealServer)(
+    "closes the card window on an Escape that comes with its first frame",
+    async () => {
+      await fresh();
+      await openBoard();
+      await page.goto(`${server.url}${new URL(page.url()).pathname}?layout=list`);
+      await shownIs(7);
+      await addFilter(page, bar(), "Agent", "Reviewer");
+      await shownIs(1);
+      // Sent from the page in the same task that adds the window to it, before any effect of React has run, which is
+      // how a key reaches a loaded page that has just opened the window.
+      await page.evaluate(() => {
+        new MutationObserver((_, observer) => {
+          if (!document.querySelector('[role="dialog"][aria-label="Card inspector"]')) return;
+          observer.disconnect();
+          (window as unknown as { opened?: boolean }).opened = true;
+          document.dispatchEvent(
+            new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+          );
+        }).observe(document.body, { childList: true, subtree: true });
+      });
+      await page.getByTestId("list-row").click();
+      await page.waitForFunction(() => (window as unknown as { opened?: boolean }).opened === true);
+      await dock().waitFor({ state: "detached" });
+    },
+  );
+
   it.skipIf(usesRealServer)("links the pull request of a card from the dock", async () => {
     await fresh();
     await openBoard();

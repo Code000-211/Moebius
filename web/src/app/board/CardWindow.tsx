@@ -9,7 +9,7 @@
  * Closing hands the focus back to what opened it.
  */
 import { ArrowsOutIcon, XIcon } from "@phosphor-icons/react";
-import { memo, type ReactNode, useEffect, useRef, useState } from "react";
+import { memo, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router";
 import type { Board, Card, InboxItem } from "../../api/types/board";
@@ -69,7 +69,9 @@ function WindowFrame({ onClose, children }: { onClose: () => void; children: Rea
   const close = useRef(onClose);
   close.current = onClose;
 
-  useEffect(() => {
+  // A layout effect, so the keys are heard from the frame the window is first on screen: a passive effect runs a
+  // moment after it, and an Escape in that moment would leave the window open.
+  useLayoutEffect(() => {
     const element = box.current;
     if (!element) return;
     // The window takes the focus, so the keys of the card in it are the page's.
