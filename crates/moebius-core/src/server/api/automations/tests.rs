@@ -701,6 +701,57 @@ async fn an_automation_without_a_harness_fires_from_its_row() {
 // Unix only: the fake Pi is a Python script started by its `#!` line.
 #[cfg(unix)]
 #[tokio::test]
+async fn a_migrated_automation_without_a_repository_still_fires_in_a_project_of_two_repositories() {
+    let (dir, state, _addr) = start().await;
+    let app = &state.app;
+    // A chat in the harness configuration repository: the automation names no repository.
+    let row = app
+        .store
+        .add_automation(
+            &crate::store::NewAutomation {
+                name: "Triage".into(),
+                schedule: "* * * * *".into(),
+                agent: "Coder".into(),
+                prompt: "Triage the new issues.".into(),
+                repository: None,
+                harness: true,
+                enabled: true,
+            },
+            "2000-01-01 00:00",
+            None,
+        )
+        .unwrap();
+    let id = row.id;
+    // The server starts again: the automation's file is written and moved to the oldest project.
+    let harness = crate::harness::repo::testing::use_harness(app, dir.path());
+    let project = app.store.projects().unwrap().remove(0);
+    assert_eq!(app.store.automation_project(id).unwrap(), Some(project.id));
+    // That project has two repositories now, so a run that names none is refused: the automation must still fire.
+    let second = app
+        .add_repository("second", dir.path().join("second").to_str().unwrap())
+        .unwrap();
+    app.add_repository_to_project(
+        &crate::decide::Actor::first_owner(),
+        project.id,
+        second.id,
+        "two",
+    )
+    .unwrap();
+
+    let due = a_minute_from_now(app) + time::Duration::minutes(5);
+    crate::server::schedule::on_workflow_schedules(app, Some(&harness), Some(&*state.runs), due)
+        .unwrap();
+    let firings = app.firings(id).unwrap();
+    assert_eq!(firings.len(), 1, "{firings:?}");
+    assert_eq!(firings[0].status, "started", "{}", firings[0].reason);
+    assert!(firings[0].run_id.is_some());
+    app.end_chat(&*state.runs, firings[0].run_id.unwrap())
+        .unwrap();
+}
+
+// Unix only: the fake Pi is a Python script started by its `#!` line.
+#[cfg(unix)]
+#[tokio::test]
 async fn an_upgrade_does_not_fire_the_minute_it_happens_in_again() {
     let (dir, state, addr) = start().await;
     let app = &state.app;

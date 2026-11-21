@@ -469,8 +469,14 @@ left to move:
   holds a file of now: every run of it that recorded no project (from before) gets the project, even when the run's
   repository belongs to another project; the schedule row of project 0 moves to the project with the minute it last fired
   at, so the schedule does not fire again for a minute it has fired for; an automation row without a project gets it.
-  Nothing is copied: a file or a row exists once, before and after. When two projects hold a file of the name, the rows
-  go to the project the migration would have chosen for it.
+  Nothing is copied: a file or a row exists once, before and after. Before the commit the server records which project
+  each file is moving to, and the rows go to exactly that project, even when another project holds a file of the same
+  name; the record is forgotten once the rows are placed.
+- **An automation that moved keeps firing as an automation.** Its firings are recorded and published as before
+  (`automation_fired`), one that names no repository starts its chat itself whatever the project's repositories are,
+  and a run it starts records the project. A scheduled run of any other workflow that the project refuses (for example
+  because the project has several repositories and the schedule names none) is said as `retro_error` with the reason,
+  in addition to the log.
 - A migration that fails (a push that is refused) is said in the log and as `harness_error`, and tried again at the
   next start.
 

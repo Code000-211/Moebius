@@ -189,10 +189,7 @@ fn on_project_workflow_schedules(
                             started.push(run);
                         }
                     }
-                    Err(why) => eprintln!(
-                        "moebius: automation {name} of the project {} fires on its schedule and starts no run: {why}",
-                        project.name
-                    ),
+                    Err(why) => report_refused_firing(app, &project.name, &name, &why),
                 }
                 continue;
             }
@@ -203,14 +200,21 @@ fn on_project_workflow_schedules(
                 trigger.firing_value(at),
             ) {
                 Ok(run) => started.push(run),
-                Err(why) => eprintln!(
-                    "moebius: workflow {name} of the project {} fires on its schedule and starts no run: {why}",
-                    project.name
-                ),
+                Err(why) => report_refused_firing(app, &project.name, &name, &why),
             }
         }
     }
     Ok(started)
+}
+
+/// Says that the scheduled firing of the workflow `workflow` of the project `project` starts no run: in the log and as
+/// an event, so that a schedule that never runs is not silent. The minute is recorded, so it is said once for it.
+fn report_refused_firing(app: &App, project: &str, workflow: &str, why: &crate::app::AppError) {
+    let message = format!(
+        "workflow {workflow} of the project {project} fires on its schedule and starts no run: {why}"
+    );
+    eprintln!("moebius: {message}");
+    app.bus.publish(Event::RetroError { message });
 }
 
 #[cfg(test)]
@@ -623,5 +627,54 @@ port = "out"
         // The occurrence is spent all the same: the workflow waits for its next minute rather than try every
         // minute it is awake.
         assert_eq!(fired(&app, "stray").as_deref(), Some("2026-11-09 03:30"));
+    }
+
+    #[test]
+    fn a_scheduled_run_a_project_refuses_is_said_as_an_event() {
+        let dir = tempfile::tempdir().unwrap();
+        let app = app_with_workflows(dir.path(), &[]);
+        let second = dir.path().join("second");
+        let repository = app
+            .add_repository("second", second.to_str().unwrap())
+            .unwrap();
+        let demo = app.store.project_by_name("demo").unwrap().unwrap();
+        app.add_repository_to_project(
+            &crate::decide::Actor::first_owner(),
+            demo.id,
+            repository.id,
+            "two repositories",
+        )
+        .unwrap();
+        // The project has two repositories and the schedule names none, so the run is refused.
+        let without_repository = NIGHTLY.replace(", repository = \"demo\"", "");
+        let definition = definition::parse("nightly-triage", &without_repository).unwrap();
+        app.harness_repo()
+            .unwrap()
+            .save_project_workflow(
+                &app,
+                &crate::decide::Actor::first_owner(),
+                "demo",
+                "nightly-triage",
+                &definition,
+            )
+            .unwrap();
+        let mut events = app.bus.subscribe();
+        assert!(wake(&app, datetime!(2026-11-09 03:30:00)).is_empty());
+        let mut said = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            said.push(event);
+        }
+        let refused: Vec<_> = said
+            .iter()
+            .filter(|event| event.kind == "retro_error")
+            .collect();
+        assert_eq!(refused.len(), 1, "{said:?}");
+        let message = refused[0].data["message"].as_str().unwrap();
+        assert!(
+            message.contains("nightly-triage")
+                && message.contains("demo")
+                && message.contains("more than one repository"),
+            "{message}"
+        );
     }
 }
