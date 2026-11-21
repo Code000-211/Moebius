@@ -1,7 +1,7 @@
 /**
  * The script a column runs for the cards of a project, in an editor (CodeMirror with Lua highlighting, loaded when this
  * page opens): where the project keeps it, whether it is the project's own or the built-in one, and its text. The
- * project is `?project=` (the dock links with the card's project), else the home project of the board's repository.
+ * project is the one in the address, `/projects/:projectId/settings/columns/:column`.
  * Save is `PUT /v1/projects/{id}/scripts/{column}`, which the server checks as `moebius check-script` does and
  * commits; a script it refuses is answered with the check's message, shown under the editor and marked at its line.
  * "Use the built-in script" (`DELETE`) gives up the project's own, after asking. The board's dock links here.
@@ -9,7 +9,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
-import { script, snapshot } from "../../api/calls/board";
+import { script } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import { Button } from "../../ui/components/Button";
@@ -20,24 +20,16 @@ import { boardPath } from "../pages";
 import { ScriptEditor, type ScriptNotice } from "./ScriptEditor";
 
 export function ScriptPage() {
-  const { id, column } = useParams();
+  const { projectId, column } = useParams();
   const [search] = useSearchParams();
-  const repository = Number(id);
+  const project = Number(projectId);
   const name = column ?? "";
-  const named = search.get("project");
-  const board = useQuery({
-    queryKey: keys.snapshot,
-    queryFn: () => snapshot(),
-    enabled: named === null,
-  });
-  const home = board.data?.boards.find((each) => each.repository.id === repository)?.repository
-    .home_project_id;
-  const project = named === null ? home : Number(named);
-  const missing = named === null && board.isSuccess && home === undefined;
+  // The board the dock came from: `?repository=` names it, else the project's own board.
+  const repository = Number(search.get("repository")) || undefined;
   const source = useQuery({
-    queryKey: keys.script(project ?? 0, name),
-    queryFn: () => script(project ?? 0, name),
-    enabled: project !== undefined,
+    queryKey: keys.script(project, name),
+    queryFn: () => script(project, name),
+    enabled: Number.isInteger(project),
   });
   // What came of the last save lives here: the editor below starts again when the script it shows changes.
   const [notice, setNotice] = useState<ScriptNotice | null>(null);
@@ -47,24 +39,19 @@ export function ScriptPage() {
         title={`Script of ${name}`}
         actions={
           <Button asChild variant="ghost">
-            <Link to={boardPath(repository)}>Back to the board</Link>
+            <Link to={boardPath(project, repository)}>Back to the board</Link>
           </Button>
         }
       />
-      {source.isPending && !board.isError && !missing && (
-        <SkeletonLines lines={8} message="Reading the script" />
-      )}
-      {missing && (
-        <NoticeLine tone="error">This server has no repository with that address.</NoticeLine>
-      )}
-      {(source.error ?? board.error) && (
+      {source.isPending && <SkeletonLines lines={8} message="Reading the script" />}
+      {source.error && (
         <NoticeLine tone="error">
-          {isApiError(source.error ?? board.error)
-            ? (source.error ?? board.error)?.message
+          {isApiError(source.error)
+            ? source.error.message
             : "Could not read the script. Try again."}
         </NoticeLine>
       )}
-      {source.data && project !== undefined && (
+      {source.data && (
         // The editor starts again from the script the server has whenever that changes under it.
         <ScriptEditor
           key={`${source.data.source}\n${source.data.text}`}

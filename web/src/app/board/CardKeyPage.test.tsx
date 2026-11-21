@@ -84,7 +84,7 @@ describe("the page of a card by its key", () => {
     expect(screen.getByRole("button", { name: "More actions for #13" })).toBeTruthy();
     // A page inside a page has the way back at the left of its title.
     const back = screen.getByRole("link", { name: "Back to the board" });
-    expect(back.getAttribute("href")).toBe("/board/1");
+    expect(back.getAttribute("href")).toBe("/projects/1?repository=1");
     expect(back.compareDocumentPosition(screen.getByText("Fix the login redirect"))).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );

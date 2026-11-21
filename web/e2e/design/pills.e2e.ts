@@ -118,7 +118,7 @@ describe("state pills", () => {
       for (const path of [
         "/inbox",
         "/fleet",
-        "/board/1",
+        "/projects/1",
         "/runs/1000",
         "/chat",
         "/retro",

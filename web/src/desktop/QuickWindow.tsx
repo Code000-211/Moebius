@@ -15,7 +15,7 @@ import { startChat } from "../api/calls/chat";
 import { listProjects } from "../api/calls/projects";
 import { keys } from "../api/keys";
 import type { Project } from "../api/types/projects";
-import { boardPath } from "../app/pages";
+import { cardPath } from "../app/pages";
 import { ASSISTANT_AGENT } from "../chat/assistant";
 import { Button } from "../ui/components/Button";
 import { Select, TextArea } from "../ui/page/Field";
@@ -100,7 +100,7 @@ export function QuickWindow() {
       if (repository === null) throw new Error("There is no project to make the issue in.");
       const { title, body } = splitIssue(text);
       const card = await createIssue(repository, title, body);
-      return `${boardPath(repository)}?card=${card.id}`;
+      return cardPath(project?.id ?? 0, card.id, repository);
     },
     onSuccess: async (path) => {
       setText("");

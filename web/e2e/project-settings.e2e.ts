@@ -90,9 +90,9 @@ describe.skipIf(usesRealServer)("a project's settings", () => {
 
     // Its code settings are on the repository's page.
     await row.getByRole("link", { name: "Settings of demo" }).click();
-    await page.waitForURL("**/projects/1");
+    await page.waitForURL("**/projects/100/repositories/1");
     await page.getByRole("link", { name: "Project settings" }).click();
-    await page.waitForURL("**/projects/1/settings");
+    await page.waitForURL("**/projects/100/settings");
     await page.goto(`${server.url}/projects/100/settings/repositories`);
     await page.getByRole("button", { name: "Take demo out" }).click();
     await row.waitFor({ state: "detached" });

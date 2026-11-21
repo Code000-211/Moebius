@@ -31,6 +31,7 @@ import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
+import { settingsPath } from "../pages";
 import { isKey, keyFor, repositoriesText } from "./model";
 
 /** The category colours a project's mark and a member's initial take, by id, so each keeps its colour. */
@@ -117,7 +118,7 @@ function Row({ project }: { project: Project }) {
   return (
     <li data-testid="project" className="min-w-0">
       <Link
-        to={`/projects/${project.id}/settings`}
+        to={settingsPath(project.id)}
         aria-label={`${project.name}, ${project.key}`}
         className="flex h-9 min-w-0 items-center gap-2.5 border-b border-hairline px-4 text-base text-text no-underline hover:bg-row-hover"
       >

@@ -64,7 +64,7 @@ async function openBoard() {
     data: { repository: id },
   });
   expect(linked.ok(), await linked.text()).toBe(true);
-  await page.goto(`${server.url}/board/1`);
+  await page.goto(`${server.url}/projects/1`);
   await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
 }
 

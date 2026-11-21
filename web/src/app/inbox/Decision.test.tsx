@@ -94,12 +94,14 @@ describe("the way to the card", () => {
   it("links an item about a card to it", () => {
     const stuck: InboxItem = { ...proposal, id: 52, kind: "stuck", card_id: 7, title: "Stuck" };
     const shot = {
-      boards: [{ repository: { id: 3 }, cards: [{ id: 7 }], changes: [] }],
+      boards: [{ repository: { id: 3, home_project_id: 2 }, cards: [{ id: 7 }], changes: [] }],
       harness_changes: [],
       inbox: [stuck],
     } as unknown as Snapshot;
     show("member", stuck, shot);
-    expect(screen.getByTestId("open-card").getAttribute("href")).toBe("/board/3?card=7");
+    expect(screen.getByTestId("open-card").getAttribute("href")).toBe(
+      "/projects/2?repository=3&card=7",
+    );
   });
 
   it("has no card link for an item that is not about a card", () => {

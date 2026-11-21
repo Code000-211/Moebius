@@ -11,6 +11,7 @@ import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-rou
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../api/keys";
 import type { Board, Card } from "../../api/types/board";
+import type { Project } from "../../api/types/projects";
 import { type Renders, watchRenders } from "../../test-renders";
 import { mockViewport } from "../../ui/page/virtualListTest";
 import { BoardPage } from "./BoardPage";
@@ -81,6 +82,13 @@ function Where() {
   return null;
 }
 
+/** The project whose board it is: the one with the repository of `makeSnapshot`. */
+const PROJECT = {
+  id: 1,
+  repositories: [{ id: 1, name: "demo", home: true }],
+  files: null,
+} as unknown as Project;
+
 let client: QueryClient;
 
 let restore: () => void;
@@ -104,11 +112,11 @@ beforeEach(async () => {
   client.setQueryData(keys.snapshot, makeSnapshot(cards));
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={["/board/1"]}>
+      <MemoryRouter initialEntries={["/projects/1"]}>
         <Where />
         <NewIssueProvider>
           <Routes>
-            <Route path="board/:id" element={<BoardPage />} />
+            <Route path="projects/:projectId" element={<BoardPage project={PROJECT} />} />
           </Routes>
         </NewIssueProvider>
       </MemoryRouter>
@@ -166,7 +174,7 @@ describe("the board of 120 cards", () => {
 
   it("draws only the two cards whose choice changes when the card is closed", async () => {
     await measure(() => screen.getByTestId("card-7").click());
-    const seen = await measure(() => where.go("/board/1"));
+    const seen = await measure(() => where.go("/projects/1"));
     expect(seen.byName.BoardCard).toBeLessThanOrEqual(4);
     expect(seen.rendered).toBeLessThan(200);
   });

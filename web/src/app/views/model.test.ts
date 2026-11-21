@@ -80,6 +80,9 @@ describe("a board saved as a view", () => {
   });
 });
 
+/** Every repository is at project 2, except 9, which no project holds. */
+const home = (repository: number) => (repository === 9 ? undefined : 2);
+
 describe("a saved view opened on the board", () => {
   const made = (changes: Partial<View>): View => ({
     id: 4,
@@ -110,10 +113,11 @@ describe("a saved view opened on the board", () => {
         due: "week",
       },
     });
-    const path = boardOfView(view) as string;
+    const path = boardOfView(view, home) as string;
     const [pathname, query] = path.split("?");
-    expect(pathname).toBe("/board/7");
+    expect(pathname).toBe("/projects/2");
     expect(Object.fromEntries(new URLSearchParams(query))).toEqual({
+      repository: "7",
       column: "Backlog",
       agent: "coder",
       status: "needs-you",
@@ -128,21 +132,27 @@ describe("a saved view opened on the board", () => {
   });
 
   it("keeps the list layout of the board, and no sort that is the default", () => {
-    expect(boardOfView(made({ layout: "list" }))).toBe("/board/7?layout=list&view=4&card=none");
+    expect(boardOfView(made({ layout: "list" }), home)).toBe(
+      "/projects/2?repository=7&layout=list&view=4&card=none",
+    );
+  });
+
+  it("stays on the Views page when no project holds the repository", () => {
+    expect(boardOfView(made({ filter: { ...NO_FILTER, repositories: [9] } }), home)).toBeNull();
   });
 
   it("stays on the Views page when the board cannot say what the view asks", () => {
     const filter = (changes: Partial<ViewFilter>) => made({ filter: { ...NO_FILTER, ...changes } });
-    expect(boardOfView(made({ layout: "calendar" }))).toBeNull();
-    expect(boardOfView(made({ layout: "timeline" }))).toBeNull();
-    expect(boardOfView(filter({ repositories: [] }))).toBeNull();
-    expect(boardOfView(filter({ repositories: [7, 8] }))).toBeNull();
-    expect(boardOfView(filter({ repositories: [7], agents: ["a", "b"] }))).toBeNull();
-    expect(boardOfView(filter({ repositories: [7], statuses: ["idle", "live"] }))).toBeNull();
-    expect(boardOfView(filter({ repositories: [7], assignees: ["lea"] }))).toBeNull();
-    expect(boardOfView(filter({ repositories: [7], authors: ["lea"] }))).toBeNull();
-    expect(boardOfView(filter({ repositories: [7], text: "login" }))).toBeNull();
-    expect(boardOfView(filter({ repositories: [7], cycles: [1] }))).toBeNull();
+    expect(boardOfView(made({ layout: "calendar" }), home)).toBeNull();
+    expect(boardOfView(made({ layout: "timeline" }), home)).toBeNull();
+    expect(boardOfView(filter({ repositories: [] }), home)).toBeNull();
+    expect(boardOfView(filter({ repositories: [7, 8] }), home)).toBeNull();
+    expect(boardOfView(filter({ repositories: [7], agents: ["a", "b"] }), home)).toBeNull();
+    expect(boardOfView(filter({ repositories: [7], statuses: ["idle", "live"] }), home)).toBeNull();
+    expect(boardOfView(filter({ repositories: [7], assignees: ["lea"] }), home)).toBeNull();
+    expect(boardOfView(filter({ repositories: [7], authors: ["lea"] }), home)).toBeNull();
+    expect(boardOfView(filter({ repositories: [7], text: "login" }), home)).toBeNull();
+    expect(boardOfView(filter({ repositories: [7], cycles: [1] }), home)).toBeNull();
   });
 });
 

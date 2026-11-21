@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Repository } from "../../api/types/board";
+import type { Project } from "../../api/types/projects";
 import { rank, score } from "./fuzzy";
 import {
   addFailure,
+  boardRepositoryOf,
   EMPTY_FORM,
   firstLine,
   forgeTag,
+  homeProjectOf,
   isKey,
   keyFor,
   lineStart,
@@ -255,5 +258,43 @@ describe("firstLine", () => {
     expect(firstLine("\n\nPrefer small functions.\nMore.\n")).toBe("Prefer small functions.");
     expect(firstLine("")).toBe("(empty)");
     expect(firstLine("x".repeat(100))).toBe(`${"x".repeat(79)}…`);
+  });
+});
+
+describe("the home project of a repository", () => {
+  const project = (id: number, created_at: number, repositories: number[], extra = {}): Project =>
+    ({
+      id,
+      created_at,
+      private: false,
+      files: null,
+      repositories: repositories.map((each) => ({ id: each, name: `r${each}`, home: false })),
+      ...extra,
+    }) as unknown as Project;
+
+  it("is the oldest project that is not private and holds it", () => {
+    const projects = [
+      project(1, 5, [7], { private: true }),
+      project(3, 30, [7]),
+      project(2, 20, [7]),
+      project(4, 10, [8]),
+    ];
+    expect(homeProjectOf(projects, 7)?.id).toBe(2);
+  });
+
+  it("is a private project only when every project that holds it is private", () => {
+    expect(homeProjectOf([project(1, 5, [7], { private: true })], 7)?.id).toBe(1);
+  });
+
+  it("counts a project's own files, and is nothing for a repository no project holds", () => {
+    expect(homeProjectOf([project(1, 1, [], { files: 9 })], 9)?.id).toBe(1);
+    expect(homeProjectOf([project(1, 1, [7])], 8)).toBeUndefined();
+  });
+
+  it("breaks a tie of age by id, and names the board a project shows", () => {
+    expect(homeProjectOf([project(5, 1, [7]), project(4, 1, [7])], 7)?.id).toBe(4);
+    expect(boardRepositoryOf(project(1, 1, [7, 8]))).toBe(7);
+    expect(boardRepositoryOf(project(1, 1, [], { files: 9 }))).toBe(9);
+    expect(boardRepositoryOf(project(1, 1, []))).toBeNull();
   });
 });

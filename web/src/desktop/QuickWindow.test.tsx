@@ -106,7 +106,9 @@ describe("QuickWindow", () => {
     await screen.findByText("Web");
     fireEvent.change(field, { target: { value: "Add dark mode\nIt is too bright." } });
     fireEvent.keyDown(field, { key: "Enter" });
-    await waitFor(() => expect(quick.finish).toHaveBeenCalledWith("/board/11?card=7"));
+    await waitFor(() =>
+      expect(quick.finish).toHaveBeenCalledWith("/projects/1?repository=11&card=7"),
+    );
     expect(createIssue).toHaveBeenCalledWith(11, "Add dark mode", "It is too bright.");
   });
 

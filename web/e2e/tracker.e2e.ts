@@ -45,7 +45,7 @@ async function openBoard(): Promise<void> {
   await page.goto(server.loginUrl);
   await page.getByRole("navigation", { name: "Pages" }).waitFor();
   if (!usesRealServer) {
-    await page.goto(`${server.url}/board/1`);
+    await page.goto(`${server.url}/projects/1`);
   } else {
     const directory = mkdtempSync(join(tmpdir(), "moebius-e2e-repo-"));
     directories.push(directory);

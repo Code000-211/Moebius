@@ -64,7 +64,7 @@ export function SettingsPanel({ repository, project }: { repository: number; pro
             Rules
           </Link>{" "}
           are edited on the Rules page. The column scripts are the project's, edited on the{" "}
-          <Link className="underline" to={boardPath(repository)}>
+          <Link className="underline" to={boardPath(project, repository)}>
             board
           </Link>
           {own.length > 0 ? ` (this project has ${own.join(", ")})` : ""}.

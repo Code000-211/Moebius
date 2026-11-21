@@ -47,7 +47,7 @@ const says = (text: string) => bar().getByRole("status").filter({ hasText: text 
 /** Opens the board with two more outside issues that wait for approval, so three cards can be approved together. */
 async function openBoard(): Promise<number[]> {
   const more = fake().seedApprovals(2);
-  await page.goto(`${server.url}/board/1`);
+  await page.goto(`${server.url}/projects/1`);
   await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
   await page.getByTestId(`card-${more[1]}`).waitFor();
   return [2, ...more];

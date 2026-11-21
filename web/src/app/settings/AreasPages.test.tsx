@@ -97,7 +97,7 @@ describe("Repositories", () => {
     expect(screen.getByText("web-app")).toBeTruthy();
     expect(screen.getByText("desktop")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Settings of design" }).getAttribute("href")).toBe(
-      "/projects/11",
+      "/projects/1/repositories/11",
     );
     expect(screen.getByRole("link", { name: /Add a repository/ }).getAttribute("href")).toBe(
       "/projects/new",
@@ -125,7 +125,7 @@ describe("Column scripts", () => {
     expect(screen.getByText("Backlog")).toBeTruthy();
     expect(screen.getByText("This project's own")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Script of In progress" }).getAttribute("href")).toBe(
-      "/board/9/scripts/In%20progress?project=4",
+      "/projects/4/settings/columns/In%20progress?repository=9",
     );
   });
 });

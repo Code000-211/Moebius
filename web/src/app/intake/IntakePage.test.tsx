@@ -56,7 +56,12 @@ function server(intake: boolean, requests: IntakeRequest[]) {
       }
       if (url === "/v1/snapshot") {
         return reply({
-          boards: [{ repository: { id: 8, name: "shop" }, cards: [{ id: 77, number: 1 }] }],
+          boards: [
+            {
+              repository: { id: 8, name: "shop", home_project_id: 1 },
+              cards: [{ id: 77, number: 1 }],
+            },
+          ],
         });
       }
       return reply(url === "/v1/projects" ? [project(intake)] : requests);
@@ -155,6 +160,6 @@ describe("the Intake page", () => {
     server(true, [{ ...drafted, status: "accepted", card_id: 77 }]);
     show("member");
     const link = await screen.findByRole("link", { name: "Open the card" });
-    expect(link.getAttribute("href")).toBe("/board/8?card=77");
+    expect(link.getAttribute("href")).toBe("/projects/1?repository=8&card=77");
   });
 });

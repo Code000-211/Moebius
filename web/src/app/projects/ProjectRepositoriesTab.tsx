@@ -18,6 +18,7 @@ import type { Project } from "../../api/types/projects";
 import { Button } from "../../ui/components/Button";
 import { useErrorToast } from "../../ui/lib/useErrorToast";
 import { Select } from "../../ui/page/Field";
+import { repositoryPath } from "../pages";
 
 export function ProjectRepositoriesTab({
   project,
@@ -64,7 +65,7 @@ export function ProjectRepositoriesTab({
           {project.files != null ? (
             <>
               No repository: this project works on its own files until it has one.{" "}
-              <Link className="underline" to={`/projects/${project.files}`}>
+              <Link className="underline" to={repositoryPath(project.id, project.files)}>
                 Project files
               </Link>
             </>
@@ -90,7 +91,7 @@ export function ProjectRepositoriesTab({
               </span>
               <Button asChild size="sm" variant="secondary">
                 <Link
-                  to={`/projects/${repository.id}`}
+                  to={repositoryPath(project.id, repository.id)}
                   aria-label={`Settings of ${repository.name}`}
                 >
                   Code settings

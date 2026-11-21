@@ -18,6 +18,7 @@ export function board(id: number, name: string, working: number) {
       path: `/srv/moebius/repos/${name}`,
       forge: "none",
       default_branch: "main",
+      home_project_id: id,
       github: null,
       trusted: [],
     },
