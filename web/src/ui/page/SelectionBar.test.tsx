@@ -47,7 +47,7 @@ describe("SelectionBar", () => {
 });
 
 describe("ContextMenu", () => {
-  it("lists the commands with their keys, runs one and closes", () => {
+  it("lists the commands, keeps their keys for a screen reader, draws none, runs one and closes", () => {
     const run = vi.fn();
     const close = vi.fn();
     render(
@@ -59,8 +59,10 @@ describe("ContextMenu", () => {
       />,
     );
     expect(screen.getByRole("menu", { name: "2 cards" })).toBeTruthy();
-    expect(screen.getByText("A")).toBeTruthy();
-    fireEvent.click(screen.getByRole("menuitem", { name: /Assign to me/ }));
+    const item = screen.getByRole("menuitem", { name: /Assign to me/ });
+    expect(item.getAttribute("aria-keyshortcuts")).toBe("a");
+    expect(document.querySelector("kbd")).toBeNull();
+    fireEvent.click(item);
     expect(run).toHaveBeenCalled();
     expect(close).toHaveBeenCalled();
   });

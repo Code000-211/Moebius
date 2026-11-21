@@ -98,6 +98,7 @@ export function ContextMenu({
           role="menuitem"
           tabIndex={-1}
           aria-disabled={command.disabled || undefined}
+          aria-keyshortcuts={command.key}
           onClick={() => {
             if (command.disabled) return;
             onClose();
@@ -113,9 +114,6 @@ export function ContextMenu({
           className="flex min-h-8 cursor-pointer select-none items-center gap-2 rounded-control px-2 text-base outline-none hover:bg-selected focus:bg-selected aria-disabled:pointer-events-none aria-disabled:opacity-45"
         >
           <span className="flex-1">{command.label}</span>
-          {command.key && (
-            <kbd className="font-mono text-xs text-secondary">{command.key.toUpperCase()}</kbd>
-          )}
         </div>
       ))}
     </div>,

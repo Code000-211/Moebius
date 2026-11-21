@@ -173,6 +173,11 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
       - if: runner.os == 'Linux'
         run: pnpm e2e
+      # The design audit, strict: what is always wrong (overflow, clipped text, words below their row, state pills) fails.
+      - if: runner.os == 'Linux'
+        run: pnpm audit:design
+        env:
+          MOEBIUS_DESIGN_STRICT: "1"
       # Once more against a real server that embeds the build, so the two cannot drift apart.
       - if: runner.os == 'Linux'
         uses: dtolnay/rust-toolchain@stable
