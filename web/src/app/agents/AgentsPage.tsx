@@ -155,11 +155,6 @@ export function AgentsPage() {
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         title="Agents"
-        context={
-          inFile
-            ? "What each run works with: model, instructions, skills and extensions. Saved in moebius.toml."
-            : "What each run works with: model, instructions, skills, MCP servers and extensions."
-        }
         actions={
           <div className="flex flex-wrap items-center gap-3">
             {whyQuiet && <span className="text-sm text-secondary">{whyQuiet}</span>}

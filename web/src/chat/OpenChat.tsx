@@ -21,7 +21,6 @@ import { Tag } from "../ui/chat/Tag";
 import { Button } from "../ui/components/Button";
 import { cn } from "../ui/lib/cn";
 import { Empty } from "../ui/page/Empty";
-import { FadedLine } from "../ui/page/FadedLine";
 import { Notice } from "../ui/page/Notice";
 import { ChatChip } from "./ChatChip";
 import { Composer } from "./Composer";
@@ -41,12 +40,9 @@ export function ChatTitle({ chat }: { chat: Chat }) {
   const name = chat.title || "New chat";
   return (
     <span data-testid="chat-title">
-      <FadedLine
-        text={name}
-        keep="head"
-        title={name}
-        className="text-base font-semibold text-text"
-      />
+      <span title={name} className="block truncate text-base font-semibold text-text">
+        {name}
+      </span>
     </span>
   );
 }
@@ -70,7 +66,7 @@ function OfferedChange({ chat, snapshot }: { chat: Chat; snapshot: Snapshot | un
   }
   return (
     <div
-      className="flex shrink-0 flex-wrap items-center gap-3 rounded-card bg-surface p-4 shadow-card"
+      className="flex shrink-0 flex-wrap items-center gap-3 rounded-card bg-panel p-4 shadow-card"
       data-testid="offered-change"
     >
       <Tag

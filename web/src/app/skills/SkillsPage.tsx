@@ -58,7 +58,6 @@ export function SkillsPage() {
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         title="Skills"
-        context="What an agent reads before it starts."
         actions={
           <div className="flex flex-wrap items-center gap-3">
             {whyQuiet && <span className="text-sm text-secondary">{whyQuiet}</span>}

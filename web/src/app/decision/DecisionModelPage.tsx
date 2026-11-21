@@ -74,18 +74,6 @@ export function DecisionModelPage() {
     <>
       <PageHeader
         title="Decisions"
-        context={
-          kinds.isPending
-            ? "Reading what the server has recorded."
-            : kinds.isError
-              ? // The counts of a page that could not be read would say the opposite of what happened.
-                "Nothing was read, so these counts are not known."
-              : `${plural(judgements(kindList), "judgement", "judgements")} in ${plural(
-                  kindList.length,
-                  "type",
-                  "types",
-                )}`
-        }
         actions={
           <Button size="sm" disabled={exporting.isPending} onClick={() => exporting.mutate()}>
             {exporting.isPending ? "Exporting" : "Export training set"}

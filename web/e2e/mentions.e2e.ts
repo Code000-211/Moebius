@@ -67,14 +67,15 @@ describe.skipIf(usesRealServer)("mentions", () => {
     expect(await notices.count()).toBe(2);
     await notices.filter({ hasText: "@lea mentioned you: @owner can you look?" }).waitFor();
     await inbox.getByText(String(waiting + 2), { exact: true }).waitFor();
-    expect(await page.locator("[data-unread]").count()).toBe(2);
+    // Unread, a notice has the needs-you icon.
+    expect(await notices.getByTestId("status-needsYou").count()).toBe(2);
 
     // Choosing the assignment reads it without a reload and opens the card.
     await page.locator('[data-testid="notice"][data-kind="assigned"]').click();
     await page.waitForURL(/\/board\/1\?card=\d+/);
     await page.goBack();
     await notices.first().waitFor();
-    await expect.poll(() => page.locator("[data-unread]").count()).toBe(1);
+    await expect.poll(() => notices.getByTestId("status-needsYou").count()).toBe(1);
     await inbox.getByText(String(waiting + 1), { exact: true }).waitFor();
   });
 

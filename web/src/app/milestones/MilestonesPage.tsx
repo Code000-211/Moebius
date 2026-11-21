@@ -55,7 +55,6 @@ export function MilestonesPage() {
   const header = (
     <PageHeader
       title="Milestones"
-      context="Goals of the organisation with a target date. A milestone holds cards of any projects, and counts the ones you may see."
       actions={
         <Button size="sm" onClick={() => setEditing("new")}>
           <PlusIcon className="size-4" weight="bold" aria-hidden="true" />

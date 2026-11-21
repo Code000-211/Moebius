@@ -91,7 +91,6 @@ export function McpPage() {
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         title="MCP servers"
-        context="The tools an agent can be given beyond its own."
         actions={
           <div className="flex flex-wrap items-center gap-3">
             {whyQuiet && <span className="text-sm text-secondary">{whyQuiet}</span>}

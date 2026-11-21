@@ -12,7 +12,6 @@ import { keys } from "../api/keys";
 import { Button } from "../ui/components/Button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/components/Dialog";
 import { fileName, plural } from "../ui/lib/format";
-import { FadedLine } from "../ui/page/FadedLine";
 import { Notice } from "../ui/page/Notice";
 import { SkeletonLines } from "../ui/page/Skeleton";
 import { Delta } from "./Delta";
@@ -199,11 +198,9 @@ export function ChangesCard({
           <Delta additions={headline.additions} deletions={headline.deletions} />
         </span>
         {worktree && (
-          <FadedLine
-            text={fileName(worktree)}
-            title={worktree}
-            className="flex-1 text-sm text-secondary"
-          />
+          <span title={worktree} className="min-w-0 flex-1 truncate text-sm text-secondary">
+            {fileName(worktree)}
+          </span>
         )}
         <ArrowsOutIcon className="size-4 shrink-0 text-secondary" aria-hidden="true" />
       </button>

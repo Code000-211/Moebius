@@ -56,11 +56,11 @@ export function ListCard({
         )}
       </span>
       {line && (
-        // Four lines at most, the last one fading: the line tells one row from the next, and the whole of it is a
+        // Four lines at most: the line tells one row from the next, and the whole of it is a
         // click away in the detail beside the list.
         <span
           className={cn(
-            "clamp-4 fade-last-4 break-words text-sm",
+            "clamp-4 break-words text-sm",
             alert ? "text-error-text" : "text-secondary",
           )}
         >

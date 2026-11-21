@@ -29,7 +29,6 @@ import { sayError } from "../../api/errorText";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { FinishedRun } from "../../api/types/runs";
-import { inputPath, inputSummary, toolTitle } from "../../chat/conversation";
 import { useThread } from "../../chat/useThread";
 import { thinkingLabel } from "../../ui/chat/ChatCollapsedThinking";
 import { Button } from "../../ui/components/Button";
@@ -54,10 +53,13 @@ import { useOpenCard } from "../board/CardWindowHost";
 import {
   afterSteps,
   choiceKey,
+  doingWords,
   FILTER_KEYS,
   FLEET_TABS,
+  type FleetTab,
   filtered,
   filterFields,
+  finishedFacets,
   finishedId,
   finishedItems,
   finishedKey,
@@ -117,32 +119,36 @@ export function FleetPage() {
         }
         actions={
           <>
-            {tab === "active" && <FleetFilter />}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={press}
-              disabled={pause.busy}
-              data-testid="pause-all"
-            >
-              {pause.paused ? (
-                <PlayIcon className="size-4" aria-hidden="true" />
-              ) : (
-                <PauseIcon className="size-4" aria-hidden="true" />
-              )}
-              {pause.paused ? "Resume all" : "Pause all"}
-            </Button>
+            <FleetFilter tab={tab} />
+            {/* Pausing the agents has no meaning for runs that are over. */}
+            {tab === "active" && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={press}
+                disabled={pause.busy}
+                data-testid="pause-all"
+              >
+                {pause.paused ? (
+                  <PlayIcon className="size-4" aria-hidden="true" />
+                ) : (
+                  <PauseIcon className="size-4" aria-hidden="true" />
+                )}
+                {pause.paused ? "Resume all" : "Pause all"}
+              </Button>
+            )}
           </>
         }
       />
-      {/* The list scrolls in the room that is left under the header; the panel itself does not. */}
+      {/* The list runs the full width of the panel, from under the header to the foot, and scrolls there; the panel
+        itself does not. The negative margins take back the padding the shell gives a page. */}
       <TabPanel
         idBase={base}
         value={tab}
-        className="flex h-[calc(100%-3rem)] min-h-40 flex-col outline-none"
+        className="-mx-6 -mt-6 -mb-6 flex h-full min-h-40 flex-col outline-none"
       >
         {pause.paused && (
-          <p className="mb-2 shrink-0 text-sm text-muted">
+          <p className="shrink-0 border-b border-hairline px-4 py-2 text-sm text-muted">
             {`Paused by ${pause.paused.by.replace(/^person:/, "@")}`}
           </p>
         )}
@@ -152,12 +158,32 @@ export function FleetPage() {
   );
 }
 
-/** The header's Filter: project, agent and kind, set in the address, offering what the working runs have in them. */
-function FleetFilter() {
+/** The names of the projects, by the number a run or a card says. */
+function useProjectNames() {
+  const data = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
+  return useMemo(
+    () => new Map((data.data?.boards ?? []).map((b) => [b.repository.id, b.repository.name])),
+    [data.data],
+  );
+}
+
+/** The header's Filter: project, agent and kind, set in the address, offering what the runs of the tab have in them. */
+function FleetFilter({ tab }: { tab: FleetTab }) {
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
   const chats = useQuery({ queryKey: keys.chats, queryFn: readChats });
+  const finished = useQuery({
+    queryKey: keys.finishedRuns,
+    queryFn: () => readFinished(),
+    enabled: tab === "finished",
+  });
+  const names = useProjectNames();
   const [params, setQuery] = useQueryParams();
-  const everything = data.data ? working(data.data, chats.data ?? []) : [];
+  const everything =
+    tab === "finished"
+      ? (finished.data ?? []).map((one) => finishedFacets(one, names))
+      : data.data
+        ? working(data.data, chats.data ?? [])
+        : [];
   const fields = filterFields(
     everything,
     readFilters(
@@ -257,7 +283,18 @@ function FinishedRuns() {
   const finished = useQuery({ queryKey: keys.finishedRuns, queryFn: () => readFinished() });
   const openCard = useOpenCard();
   const [selected, setSelected] = useState<string | null>(null);
-  const rows = useMemo(() => finishedItems(finished.data ?? [], today()), [finished.data]);
+  const names = useProjectNames();
+  const [params] = useQueryParams();
+  const values = readFilters(
+    params,
+    FILTER_KEYS.map((key) => ({ key, label: key, options: [] })),
+  );
+  const rows = finishedItems(
+    (finished.data ?? []).filter(
+      (one) => filtered([finishedFacets(one, names)], values).length === 1,
+    ),
+    today(),
+  );
   const byKey = useMemo(
     () => new Map((finished.data ?? []).map((one) => [finishedKey(one), one])),
     [finished.data],
@@ -521,7 +558,7 @@ function Row({
     step === undefined
       ? ""
       : step.kind === "tool"
-        ? `${toolTitle(step.call)} ${inputPath(step.call.input) ?? inputSummary(step.call.input)}`.trim()
+        ? doingWords(step.call)
         : thinkingLabel(thoughtSeconds(recent, recent.length - 1, ended), thinkingNow(work.status));
   const reason = waits ? (
     <span className="text-attention-text">{waitingWord(work)}</span>
@@ -553,9 +590,6 @@ function Row({
         <>
           {tools && (
             <>
-              {work.tokens !== null && (
-                <span className="text-xs tabular-nums text-muted">{tokensText(work.tokens)}</span>
-              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -568,14 +602,17 @@ function Row({
               >
                 Stop
               </Button>
+              {work.tokens !== null && (
+                <span className="text-xs tabular-nums text-muted">{tokensText(work.tokens)}</span>
+              )}
             </>
           )}
           {work.approve !== null && (
             <Button
-              variant="secondary"
+              variant="primary"
               size="sm"
               onClick={approving}
-              className="min-h-6 px-2 text-xs text-accent-text"
+              className="min-h-6 px-2.5 text-xs"
             >
               Approve plan
             </Button>

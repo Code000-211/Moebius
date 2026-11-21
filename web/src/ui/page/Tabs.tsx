@@ -1,7 +1,7 @@
 /**
  * The switch between the views of one thing — a run's events, changes and terminal. Each is a word 26px high in the
  * muted colour; the chosen one is indigo, semibold, with a 2px underline of the accent that sits on the bottom rule of
- * what holds the row. No pill, no fill. The row is a tablist with the focus on one
+ * what holds the row. No pill, no fill. A tab may carry a count after its word (not drawn at zero), small and in the accent. The row is a tablist with the focus on one
  * tab: only the chosen one is in the tab order, and an arrow key moves the choice and the focus with it, so Tab steps
  * out of the row rather than through it. `TabPanel` is the view a tab chooses; it names the tab that shows it, and the
  * chosen tab names it in turn. A page takes one id from `useId` and gives it to both, under `idBase`.
@@ -22,7 +22,7 @@ export function Tabs<T extends string>({
   className,
 }: {
   /** What may be shown, in the order they sit. */
-  tabs: Array<{ value: T; label: string }>;
+  tabs: Array<{ value: T; label: string; count?: number }>;
   value: T;
   onChange: (value: T) => void;
   /** What the row of tabs is for, for the person hearing the page read aloud. */
@@ -73,6 +73,11 @@ export function Tabs<T extends string>({
             )}
           >
             {each.label}
+            {each.count !== undefined && each.count > 0 && (
+              <span className="text-xs font-normal tabular-nums text-accent-text">
+                {each.count}
+              </span>
+            )}
           </button>
         );
       })}

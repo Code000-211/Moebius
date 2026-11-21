@@ -228,7 +228,7 @@ export function ChatChip({
         <div
           data-testid="chat-chip-panel"
           className={cn(
-            "pointer-events-auto flex w-72 flex-col gap-1 rounded-card bg-surface p-2 shadow-raised",
+            "pointer-events-auto flex w-72 flex-col gap-1 rounded-card bg-panel p-2 shadow-raised",
             // Beside Send the panel is taken out of the row, and opens upward; over the conversation it is in
             // the flow of a wrapper that already floats, so it grows upward from the chip of its own accord.
             beside && "absolute right-0 bottom-full mb-2",
@@ -325,7 +325,7 @@ export function ChatChip({
         onClick={togglePanel}
         aria-expanded={shown}
         data-testid="chat-chip"
-        className="pointer-events-auto rounded-full bg-surface px-3"
+        className="pointer-events-auto rounded-full bg-panel px-3"
       >
         {chipState(chat)}
         <CaretUpIcon className="size-4" aria-hidden="true" />
