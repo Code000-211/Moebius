@@ -2,12 +2,16 @@
  * Settings as one page in a real browser: the sub-navigation reaches Models, Rules and Retro without leaving the
  * layout, keeps the address on reload, and narrows by what is typed in its search.
  */
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { type Browser, chromium, type Page } from "playwright";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { startServer, type TestServer } from "./server";
+import { startServer, type TestServer, usesRealServer } from "./server";
 
 let browser: Browser;
 let server: TestServer;
+const directories: string[] = [];
 
 beforeAll(async () => {
   browser = await chromium.launch({
@@ -19,7 +23,21 @@ afterAll(async () => {
 });
 afterEach(async () => {
   await server.stop().catch(() => {});
+  for (const directory of directories.splice(0))
+    rmSync(directory, { recursive: true, force: true });
 });
+
+/** Gives a real server a project with a board, as the fake starts with one: Column scripts lists the board's columns. */
+async function withProject(page: Page) {
+  if (!usesRealServer) return;
+  const directory = mkdtempSync(join(tmpdir(), "moebius-e2e-repo-"));
+  directories.push(directory);
+  const response = await page.request.post(`${server.url}/v1/repositories`, {
+    headers: { "X-Moebius": "1", Authorization: `Bearer ${server.token}` },
+    data: { name: "demo", url: directory },
+  });
+  expect(response.ok(), await response.text()).toBe(true);
+}
 
 const nav = (page: Page) => page.getByRole("navigation", { name: "Settings" });
 
@@ -91,6 +109,7 @@ describe("Settings", () => {
     const page = await (await browser.newContext()).newPage();
     page.setDefaultTimeout(8000);
     await page.goto(server.loginUrl);
+    await withProject(page);
     await page.goto(`${server.url}/settings`);
     await nav(page).waitFor();
     const groups = ["You", "Agents", "Automation", "Insight", "Server"];
@@ -130,7 +149,8 @@ describe("Settings", () => {
     for (const [label, path, content] of [
       ["Column scripts", "column-scripts", "Open"],
       ["Schedules", "schedules", "Retro"],
-      ["Runners", "runners", "build.example.com"],
+      // The fake has a runner; a new real server has none and says so.
+      ["Runners", "runners", usesRealServer ? "No runner." : "build.example.com"],
       ["Export", "export", "Open Decisions"],
     ] as const) {
       await nav(page).getByRole("link", { name: label, exact: true }).click();

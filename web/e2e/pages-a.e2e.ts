@@ -939,7 +939,7 @@ describe("the fleet", () => {
   it("loads for a real server and for the fake", async () => {
     await open("/fleet");
     await page.getByRole("heading", { name: "Fleet", level: 1 }).waitFor();
-    if (usesRealServer) await page.getByText("Nothing is working.").first().waitFor();
+    if (usesRealServer) await page.getByText("No agent is working").first().waitFor();
     else await page.getByTestId("list-row").first().waitFor();
   });
 

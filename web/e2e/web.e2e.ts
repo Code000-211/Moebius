@@ -226,8 +226,10 @@ describe("the shell", () => {
 
   it("keeps every row 36px high and draws no key hint, mask or live box", async () => {
     await fresh();
+    await withProject();
     await page.goto(server.loginUrl);
     await pages().getByRole("link", { name: "Wiki" }).waitFor();
+    await pages().getByRole("link", { name: "demo", exact: true }).waitFor();
     const heights = await pages()
       .getByRole("link")
       .evaluateAll((links) =>
@@ -401,7 +403,13 @@ describe("the command bar", () => {
     await page.keyboard.press("Tab");
     await input.waitFor({ state: "detached" });
     await agent.waitFor();
-    await agent.getByText("You said: What is this page?").first().waitFor();
+    if (usesRealServer) {
+      // A new real server has no model for the agent: it says so in its own sentence, and no message is shown as said.
+      await agent.getByText("the Moebius agent needs a model", { exact: false }).waitFor();
+      expect(await agent.getByText("Nothing said yet").count()).toBe(1);
+    } else {
+      await agent.getByText("You said: What is this page?").first().waitFor();
+    }
   });
 
   it("starts a new conversation with the agent from the palette", async () => {
