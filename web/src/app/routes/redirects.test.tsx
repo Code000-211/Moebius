@@ -79,6 +79,14 @@ const at = (router: Awaited<ReturnType<typeof open>>) =>
   router.state.location.pathname + router.state.location.search;
 
 describe("the legacy table", () => {
+  it("sends /more, a list that is gone, to the Inbox", async () => {
+    projects = [];
+    const router = await open("/more");
+    await screen.findByTestId("where");
+    expect(at(router)).toBe("/inbox");
+    expect(router.state.historyAction).toBe("REPLACE");
+  });
+
   it("sends /board/:repoId to the board of the repository's home project, keeping ?card=", async () => {
     projects = [project(2, [5, 6]), project(3, [7])];
     const router = await open("/board/6?card=11");

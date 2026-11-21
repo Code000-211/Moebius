@@ -115,7 +115,7 @@ export function AutomationsPage() {
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         title="Automations"
-        actions={
+        primary={
           <Button size="sm" onClick={() => startNew(null)}>
             <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
             New automation

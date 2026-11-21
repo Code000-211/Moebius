@@ -161,15 +161,7 @@ function ProjectCycles({
         />
       ) : (
         <>
-          <PageHeader
-            title="Cycles"
-            actions={
-              <>
-                {chooser}
-                {newButton}
-              </>
-            }
-          />
+          <PageHeader title="Cycles" actions={chooser} primary={newButton} />
           {cycles.data.length === 0 ? (
             <Empty
               title="No cycle yet"

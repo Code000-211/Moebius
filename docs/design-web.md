@@ -214,16 +214,20 @@ The window is a tinted sidebar and the white page, meeting at one hairline (see 
 
 1. The workspace and server switch, with the search button beside it (it opens the command palette).
 2. Inbox, with the count of what needs you (a grey number, said even when it is 0), My issues, and Fleet with a green dot and "n running" while anything runs.
-3. Projects: one row per project.
-4. Workspace: Wiki, Cycles, Views, More. More holds the rare pages that have no row of their own.
-5. Settings, alone at the bottom, with its word.
+3. Chat, after Fleet.
+4. Projects: its name leads to the project list and a `+` at its end opens a menu (New project, Add repository); one row per project, opening its board.
+5. Workspace: Wiki, Views.
+6. Build: Agents, Rules. Insight: Insights, Improve. Both are an owner's; for anyone else the groups are not drawn. Workflows are not here: a workflow belongs to a project ([ADR 0025](adr/0025-workflows-belong-to-a-project.md)), as do Cycles, Milestones and Intake. More is gone.
+7. Get started, a row above Settings only while a step is missing, and Settings, alone at the bottom, with its word.
+
+The rows of 1, 2 and 5 to 7 are rows of one table, `web/src/app/nav.ts` (path, label, who is shown it, group, command-bar keywords), which the sidebar, the command bar and the navigation of Settings all read; a page is listed once. Terminal and the quick window are not rows: they are in the command bar and in the project's `...` menu. [ADR 0024](adr/0024-navigation-by-what-you-do.md) decides the list; the mockup is `design/navigation/ia1.png`.
 
 There is no "live" box and no second heading, no repeated counts and no shortcut keys shown. The chosen row is a grey pill (`--nav-selected`, radius 8, no border or shadow), in medium weight; the workspace switch has no box.
 
 Below about 1000px the sidebar is hidden and a button in the page header lays it over the page.
 
 ### Page header
-48px, one line: the page title (14px semibold), then its tabs, then on the right at most quiet text buttons (Filter, Display) and one primary button (New issue), and, in the desktop app, the window buttons after a hairline.
+48px, one line: the page title (14px semibold), then its tabs, then on the right, in this order on every page: at most quiet text buttons (Filter, Display), the page's gear or `...` menu, the Moebius button and one primary button (New issue), and, in the desktop app, the window buttons after a hairline. `PageHeader` takes them as `actions`, `menu` and `primary`, so the order is the component's and not each page's.
 
 - A tab is a word in `--text-muted`, 26px high; the active tab is `--accent-text` in 550 weight with a 2px underline of `--accent` that sits on the header's bottom rule. No pill, no box. A count after a tab's word is 12px in the tab's colour.
 - Text buttons (Filter, Display) have no border; the primary button is `--accent-fill` with a white label, 28px high, with a plus when it makes a new thing.
@@ -255,7 +259,7 @@ Inbox, My issues, the project list and Fleet are one kind of list. Lists are vir
 
 ## Settings
 
-One page. At its left a sub-navigation with a search field and these groups, in this order: You (Profile, Appearance, Notifications, Keyboard), Agents (Agents, Models, Skills, Plugins), Automation (Rules, Workflows, Column scripts, Schedules), Insight (Analytics, Retro, Lessons, Export), Server (General, Repositories, Runners, Members). The rarely used areas live here and not in the sidebar. A group name is a small muted label, and the chosen item is `--accent-text` on `--accent-tint`, in medium weight.
+One page. At its left a sub-navigation with a search field and these groups, in this order: You (Profile, Appearance, Notifications, Keyboard), Agents (Agents, Models, Skills, Plugins), Automation (Rules, Workflows, Column scripts, Schedules), Insight (Analytics, Retro, Lessons, Export), Server (General, Repositories, Runners, Members). The groups are read from the same table as the sidebar (`nav.ts`); until the Settings reduction of ADR 0024 lands, Agents, Rules, Analytics and Retro are entries of both, and the sidebar then chooses their own row, not Settings. A group name is a small muted label, and the chosen item is `--accent-text` on `--accent-tint`, in medium weight.
 
 Appearance has these rows: Theme (System, Light, Dark), Density (Compact or Default; Default keeps the 36px rows, and what Compact changes is settled by the issue that builds it), Show thinking expanded, Wrap long lines, Reduce motion and Blur on menus.
 
@@ -358,7 +362,7 @@ a surface rather than a list of rows. What that asks for, once:
 - **Fades only, up to 120ms**, ease-out (`--motion-fast` 80ms, `--motion-routine` 120ms; nothing is slower). A menu, a window, the palette, a toast and a tooltip fade in; a row's hover fill changes in the same time. Nothing slides, scales, lifts or springs, and nothing moves that the person did not cause. A card does not lift on hover, and a panel that opens does not push the page across.
 - **Reduce motion.** Appearance has a "Reduce motion" switch, which starts from the system's preference (the switch is kept in this browser, `src/motion.ts`, and written as `data-reduce-motion` on the root; the system's own request keeps working without it). It turns every transition off, ends every animation before it is seen, and stops the running ring, which then shows as a still ring (`src/styles/tailwind.css`, outside every layer so no utility outranks it; `e2e/motion.e2e.ts` holds it).
 - **No infinite animation** except the running ring, and none on a card that is off screen.
-- **Blur only where it is small.** A menu, a tooltip and the command palette may blur what is behind them (`backdrop-filter`, 16px at most) over a translucent `--panel`. A centred window, a panel and the page header do not: a window sits on a dimmed page, which is not blurred. Appearance has a "Blur on menus" switch, and blur is off by itself where the machine has no GPU rasterisation; the surface is then the opaque `--panel`.
+- **Blur only where it is small.** A menu, a tooltip and the command palette may blur what is behind them (`backdrop-filter`, 16px at most) over a `--panel` of 94% (never so thin that the text behind shows through; in the dark theme the layer is the opaque `--panel`). A centred window, a panel and the page header do not: a window sits on a dimmed page, which is not blurred. Appearance has a "Blur on menus" switch, and blur is off by itself where the machine has no GPU rasterisation; the surface is then the opaque `--panel`.
 - Activity indicators stay subtle and carry real status text.
 - Meaningful images get useful alternative text and room enough to inspect. No decorative symbols that imply intelligence without explaining it.
 - Skip decorative gradients, glows and grain, progress without context, unsupported time estimates, unnecessary celebration, and redundant success messages.

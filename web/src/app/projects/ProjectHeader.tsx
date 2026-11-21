@@ -1,7 +1,8 @@
 /**
  * The header every page of a project shares: the project's name, its tabs (Board, Workflows, Cycles, Milestones, and
  * Intake with the number of requests waiting only while the project takes requests), and at the right a gear to the
- * project's settings and a `...` menu with Import from Jira (an owner's) and Terminal. The tab is in the address
+ * project's settings and a `...` menu with Import from Jira (an owner's) and Terminal, then the Moebius button and the
+ * page's primary button. The tab is in the address
  * (`/projects/:id/<tab>`), so a link and a reload keep it. The board passes its own controls as `actions`, and the
  * layout switch as `layout`, which only the Board tab has.
  */
@@ -86,6 +87,10 @@ export function ProjectHeader({
         <>
           {layout}
           {actions}
+        </>
+      }
+      menu={
+        <>
           <Link
             to={settingsPath(project.id)}
             aria-label="Project settings"
@@ -107,9 +112,9 @@ export function ProjectHeader({
               <DropdownMenuItem onSelect={onTerminal}>Terminal</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          {primary}
         </>
       }
+      primary={primary}
     />
   );
 }

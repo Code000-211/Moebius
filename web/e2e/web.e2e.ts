@@ -253,16 +253,15 @@ describe("the shell", () => {
     expect(inside).toEqual({ kbd: 0, masks: 0, live: 0 });
   });
 
-  it("opens Projects, a project's board, More and Settings from the sidebar", async () => {
+  it("opens Projects, a project's board, the Wiki and Settings from the sidebar", async () => {
     await fresh();
     await withProject();
     await page.goto(server.loginUrl);
     await pages().waitFor();
     await pages().getByRole("link", { name: "Projects", exact: true }).click();
     await page.waitForURL("**/projects");
-    await pages().getByRole("link", { name: "More" }).click();
-    await page.waitForURL("**/more");
-    await page.getByRole("heading", { name: "More", level: 1 }).waitFor();
+    await pages().getByRole("link", { name: "Wiki" }).click();
+    await page.waitForURL("**/wiki");
     await pages().getByRole("link", { name: "Settings" }).click();
     await page.waitForURL("**/settings");
     // The sidebar is the same list on a Settings page, with Settings chosen and no way back to leave it.
@@ -282,6 +281,94 @@ describe("the shell", () => {
         )
         .toBe("page");
     }
+  });
+
+  /** The sidebar as the group names and rows it draws, in the order of the DOM. */
+  const sidebarLines = () =>
+    pages().evaluate((nav) =>
+      Array.from(nav.querySelectorAll("a, div")).flatMap((node) => {
+        if (node.tagName === "A") {
+          // The rows of Projects are the repositories' boards, the others are the places of the table.
+          const href = node.getAttribute("href") ?? "";
+          return href.startsWith("/projects/")
+            ? []
+            : [(node.textContent ?? "").replace(/\d+( running)?$/, "")];
+        }
+        return node.className.includes("text-sidebar-group") && !node.closest("a")
+          ? [`# ${node.textContent}`]
+          : [];
+      }),
+    );
+
+  it.skipIf(usesRealServer)(
+    "lists, for an owner, Inbox to Chat, Projects, Workspace, Build, Insight and Settings in that order",
+    async () => {
+      await fresh();
+      await page.goto(server.loginUrl);
+      await pages().waitFor();
+      await expect
+        .poll(sidebarLines)
+        .toEqual([
+          "Inbox",
+          "My issues",
+          "Fleet",
+          "Chat",
+          "Projects",
+          "# Workspace",
+          "Wiki",
+          "Views",
+          "# Build",
+          "Agents",
+          "Rules",
+          "# Insight",
+          "Insights",
+          "Improve",
+          "Get started",
+          "Settings",
+        ]);
+      await pages().getByRole("link", { name: "Get started" }).click();
+      await page.waitForURL("**/start");
+      await page.getByRole("heading", { name: "Get started", level: 1 }).waitFor();
+    },
+  );
+
+  it.skipIf(usesRealServer)("leaves Build and Insight out for a member", async () => {
+    await fresh();
+    const added = await fetch(`${server.url}/v1/people`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${server.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ handle: "lea", name: "Lea", role: "member" }),
+    });
+    const { token } = (await added.json()) as { token: { token: string } };
+    await page.goto(server.url);
+    await page.getByLabel("Token").fill(token.token);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await pages().waitFor();
+    await expect
+      .poll(sidebarLines)
+      .toEqual([
+        "Inbox",
+        "My issues",
+        "Fleet",
+        "Chat",
+        "Projects",
+        "# Workspace",
+        "Wiki",
+        "Views",
+        "Get started",
+        "Settings",
+      ]);
+  });
+
+  it("answers /more with the Inbox and /quick with the window of its own, outside the shell", async () => {
+    await fresh();
+    await page.goto(server.loginUrl);
+    await pages().waitFor();
+    await page.goto(`${server.url}/more`);
+    await page.waitForURL("**/inbox");
+    await page.goto(`${server.url}/quick`);
+    await page.getByTestId("quick-window").waitFor();
+    expect(await pages().count()).toBe(0);
   });
 
   it("opens a page by its address and keeps it on reload", async () => {

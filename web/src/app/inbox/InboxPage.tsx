@@ -162,7 +162,7 @@ export function InboxPage() {
             ]}
           />
         }
-        actions={<NewIssueButton />}
+        primary={<NewIssueButton />}
       />
       {!onMentions && filtered && snapshot && (
         <FilterBar

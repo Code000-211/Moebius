@@ -55,7 +55,7 @@ export function MilestonesPage() {
   const header = (
     <PageHeader
       title="Milestones"
-      actions={
+      primary={
         <Button size="sm" onClick={() => setEditing("new")}>
           <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
           New milestone

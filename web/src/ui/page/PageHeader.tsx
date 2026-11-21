@@ -5,7 +5,9 @@
  * no breadcrumb: the sidebar already says where a page lives. A page reached by drilling down can carry the way back
  * on the left of its name, which is where it is looked for.
  *
- * At the right, before the page's actions, is the "Moebius" button that opens the agent's panel (`app/shell/AgentButton.tsx`).
+ * At the right, in this order on every page: the page's own `actions` (quiet), then its `menu` (a gear or a `...`), then
+ * the "Moebius" button that opens the agent's panel (`app/shell/AgentButton.tsx`), and last the page's one `primary`
+ * button. So the button that does the page's main thing is always the rightmost and Moebius never moves between pages.
  *
  * In a narrow window (under 1000px) the sidebar is hidden and a button at the left of the header brings it back over
  * the page.
@@ -35,13 +37,20 @@ export function PageHeader({
   title,
   tabs,
   actions,
+  menu,
+  primary,
   /** The way back, for a page that is a thing inside another thing. */
   back,
 }: {
   title: string;
   /** The tabs of the page, after its title. A page with nothing to choose between has none. */
   tabs?: ReactNode;
+  /** The page's own quiet controls. */
   actions?: ReactNode;
+  /** The gear or the `...` menu of the page, after its actions. */
+  menu?: ReactNode;
+  /** The page's one primary button, after the Moebius button. */
+  primary?: ReactNode;
   back?: ReactNode;
 }) {
   const sidebar = useSidebarToggle();
@@ -53,9 +62,11 @@ export function PageHeader({
           {title}
         </h1>
         {tabs && <div className="flex min-w-0">{tabs}</div>}
-        {actions && (
+        {(actions || menu || primary) && (
           <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2">
             {actions}
+            {menu}
+            {primary}
           </div>
         )}
       </div>
@@ -89,8 +100,10 @@ export function PageHeader({
         </div>
       )}
       <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2">
-        <AgentButton />
         {actions}
+        {menu}
+        <AgentButton />
+        {primary}
       </div>
     </header>
   );
