@@ -6,7 +6,7 @@
  */
 import type { Snapshot } from "../../api/types/board";
 import type { Notice } from "../../api/types/notices";
-import { boardPath } from "../pages";
+import { repositoryBoardPath } from "../pages";
 
 /** The values of the tabs' `?kind=`: the notices of what was given to the person or names them, and of what they follow. */
 export const MENTIONS = "mentions";
@@ -55,7 +55,7 @@ export function pathOf(snapshot: Snapshot, notice: Notice): string | null {
     const board = snapshot.boards.find((each) =>
       each.cards.some((card) => card.id === notice.card_id),
     );
-    if (board) return `${boardPath(board.repository.id)}?card=${notice.card_id}`;
+    if (board) return repositoryBoardPath(board.repository, notice.card_id);
   }
   if (
     notice.inbox_item_id !== null &&

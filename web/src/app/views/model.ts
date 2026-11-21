@@ -125,9 +125,14 @@ export function boardFiltersOf(view: View): { repository: number; filters: Filte
  * in the filter bar. Only a view of the `board` or `list` layout (the two layouts of the board) whose filter the board
  * can set opens there; any other opens on the Views page (null).
  */
-export function boardOfView(view: View): string | null {
+export function boardOfView(
+  view: View,
+  homeOf: (repository: number) => number | undefined,
+): string | null {
   const board = view.layout === "board" || view.layout === "list" ? boardFiltersOf(view) : null;
   if (board === null) return null;
+  const home = homeOf(board.repository);
+  if (home === undefined) return null;
   const query = new URLSearchParams();
   if (view.layout === "list") query.set("layout", "list");
   for (const [key, value] of Object.entries(board.filters)) if (value !== "") query.set(key, value);
@@ -138,7 +143,7 @@ export function boardOfView(view: View): string | null {
   query.set("view", String(view.id));
   // The card that was open on this board has no say in what the view shows.
   query.set("card", "none");
-  return `${boardPath(board.repository)}?${query.toString()}`;
+  return `${boardPath(home, board.repository)}&${query.toString()}`;
 }
 
 /** The fields of an existing view, to change some of them. */

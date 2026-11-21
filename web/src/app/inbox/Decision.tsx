@@ -12,7 +12,7 @@ import { Link, useNavigate } from "react-router";
 import { proposals } from "../../api/calls/improve";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
-import type { InboxItem, Snapshot } from "../../api/types/board";
+import type { InboxItem, Repository, Snapshot } from "../../api/types/board";
 import type { Proposal } from "../../api/types/improve";
 import { CodeBlock } from "../../ui/chat/CodeBlock";
 import { Markdown } from "../../ui/chat/Markdown";
@@ -27,6 +27,7 @@ import { Notice } from "../../ui/page/Notice";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import { useOpenCard } from "../board/CardWindowHost";
 import { pullRequestOf } from "../board/model";
+import { repositoryBoardPath } from "../pages";
 import { useRole } from "../shell/session";
 import { type Action, perform, working } from "./actions";
 import { DeleteGrilling } from "./DeleteGrilling";
@@ -105,7 +106,7 @@ export function useDecisionBar(item: InboxItem, snapshot: Snapshot) {
         )}
       </>
     ),
-    href: linkOf(item, found(snapshot, item).board?.repository.id ?? null, proposed),
+    href: linkOf(item, found(snapshot, item).board?.repository ?? null, proposed),
   };
 }
 
@@ -167,7 +168,7 @@ export function Decision({
   // list once and looks for the one it is about, which is the thing it is asked to show.
   const { proposed, pending: reading } = useProposal(item);
   const sentence = why(item, about, proposed?.kind);
-  const href = linkOf(item, about.board?.repository.id ?? null, proposed);
+  const href = linkOf(item, about.board?.repository ?? null, proposed);
   const from = item.kind === PROPOSAL ? fromRetro(item, proposed, now) : meta(item, about);
   const reasonReady = rejecting !== null && rejecting.trim() !== "";
 
@@ -371,12 +372,16 @@ function FactList({ facts }: { facts: Fact[] }) {
  * Where the item itself is opened, so its title is a link: the card on its board, the chat a change came from, the
  * Retro's day for a proposal, the board of a grilling's repository. A takeover has no page of its own.
  */
-function linkOf(item: InboxItem, board: number | null, proposed: Proposal | null): string | null {
-  if (item.card_id !== null && board !== null) return `/board/${board}?card=${item.card_id}`;
+function linkOf(
+  item: InboxItem,
+  board: Repository | null,
+  proposed: Proposal | null,
+): string | null {
+  if (item.card_id !== null && board !== null) return repositoryBoardPath(board, item.card_id);
   const chat = chatOf(item);
   if (chat !== null) return `/chat/${chat}`;
   if (proposed) return retroLink(proposed);
-  if (grillingOf(item) !== null && board !== null) return `/board/${board}`;
+  if (grillingOf(item) !== null && board !== null) return repositoryBoardPath(board);
   return null;
 }
 

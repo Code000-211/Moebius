@@ -80,7 +80,7 @@ describe.skipIf(usesRealServer)("the quiet rules hold on the main pages", () => 
   });
 
   it("the board, with the card window open over it and a card running", async () => {
-    await open("/board/1");
+    await open("/projects/1");
     await page.getByTestId("card-2").waitFor();
     await quiet(page);
     await noHoverLift(page, "[data-testid^='card-']");
@@ -120,7 +120,7 @@ describe.skipIf(usesRealServer)("a long list draws only the rows in view", () =>
   it("a board column, with 1500 cards", async () => {
     const fake = await open("/inbox");
     fake.board?.seedCards(1500, "Backlog");
-    await page.goto(`${fake.url}/board/1`);
+    await page.goto(`${fake.url}/projects/1`);
     await page.getByTestId("card-2").waitFor();
     await fewRows(page, "section[aria-label='Backlog'] [data-testid^='card-']");
   });

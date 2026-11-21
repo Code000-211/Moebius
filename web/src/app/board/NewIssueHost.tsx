@@ -48,14 +48,18 @@ export function isTyping(target: EventTarget | null): boolean {
   );
 }
 
-/** The repository a path is about: `/board/3` and `/projects/3` are about 3. */
-function repositoryOf(pathname: string): number | null {
-  const [first, second] = pathname.split("/").filter(Boolean);
-  if ((first === "board" || first === "projects") && second !== undefined) {
-    const id = Number(second);
-    return Number.isInteger(id) ? id : null;
-  }
-  return null;
+/** The project and, when the address names one, the repository a path is about: `/projects/3`, `/projects/3/list` and below. */
+function projectOf(
+  pathname: string,
+  search: string,
+): { project: number; repository: number | null } | null {
+  const match = /^\/projects\/(\d+)(?:\/repositories\/(\d+))?(?:\/|$)/.exec(pathname);
+  if (!match) return null;
+  const named = Number(match[2] ?? new URLSearchParams(search).get("repository"));
+  return {
+    project: Number(match[1]),
+    repository: Number.isInteger(named) && named > 0 ? named : null,
+  };
 }
 
 export function NewIssueProvider({ children }: { children: ReactNode }) {
@@ -67,11 +71,13 @@ export function NewIssueProvider({ children }: { children: ReactNode }) {
   const [chosen, setChosen] = useState<number | null>(null);
   const [said, setSaid] = useState<string | null>(null);
   const boards = data.data?.boards ?? [];
-  // The Issues page filtered to one project is about that project's home repository.
+  // A project's pages are about the repository they name, else the project's home repository; so is the Issues page
+  // filtered to one project.
+  const at = projectOf(location.pathname, location.search);
   const filtered =
     location.pathname === "/issues"
       ? Number(new URLSearchParams(location.search).get("project")) || null
-      : null;
+      : (at?.project ?? null);
   const projects = useQuery({
     queryKey: keys.projects,
     queryFn: listProjects,
@@ -83,7 +89,7 @@ export function NewIssueProvider({ children }: { children: ReactNode }) {
       ? null
       : ((project.repositories.find((r) => r.home) ?? project.repositories[0])?.id ??
         project.files);
-  const here = repositoryOf(location.pathname) ?? homeOfProject;
+  const here = at?.repository ?? homeOfProject;
 
   const open = useCallback<Open>(
     (next = {}) => {

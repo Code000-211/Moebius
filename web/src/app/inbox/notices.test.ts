@@ -18,7 +18,12 @@ const notice = (extra: Partial<Notice> = {}): Notice => ({
 
 const snapshot = (cardIds: number[], items: number[] = []): Snapshot =>
   ({
-    boards: [{ repository: { id: 3 }, cards: cardIds.map((id) => ({ id })) } as unknown as Board],
+    boards: [
+      {
+        repository: { id: 3, home_project_id: 2 },
+        cards: cardIds.map((id) => ({ id })),
+      } as unknown as Board,
+    ],
     harness_changes: [],
     inbox: items.map((id) => ({ id })),
   }) as unknown as Snapshot;
@@ -39,7 +44,7 @@ describe("notices", () => {
   });
 
   it("leads to the card on its board, else to the inbox item, else nowhere", () => {
-    expect(pathOf(snapshot([7]), notice())).toBe("/board/3?card=7");
+    expect(pathOf(snapshot([7]), notice())).toBe("/projects/2?repository=3&card=7");
     expect(pathOf(snapshot([]), notice({ card_id: 7, inbox_item_id: 4 }))).toBeNull();
     expect(pathOf(snapshot([], [4]), notice({ card_id: null, inbox_item_id: 4 }))).toBe(
       "/inbox?item=4",

@@ -79,7 +79,7 @@ describe("the run view", () => {
     await page.getByTestId("time-bar").waitFor();
     await expect.poll(() => page.getByRole("tab", { name: "Conversation" }).count()).toBe(1);
     const card = info.getByRole("link", { name: /#1 Add a feature/ });
-    expect(await card.getAttribute("href")).toBe("/board/1?card=1");
+    expect(await card.getAttribute("href")).toBe("/projects/1?repository=1&card=1");
 
     // What the run did before the page opened, then what it does while the page is open.
     await page.getByText("I am reading the build files.").waitFor();
@@ -108,7 +108,7 @@ describe("the run view", () => {
     await page.getByText("Running the tests", { exact: true }).waitFor();
 
     await card.click();
-    await page.waitForURL("**/board/1?card=1");
+    await page.waitForURL("**/projects/1?repository=1&card=1");
     await page.locator("[data-card-window]").waitFor();
   });
 
@@ -216,7 +216,7 @@ describe("the diff of a card", () => {
   it.skipIf(usesRealServer)(
     "shows the headline of a change in the dock and its lines in a sheet",
     async () => {
-      await open("/board/1?card=5");
+      await open("/projects/1?card=5");
       await openProperties();
       const dock = page.getByRole("dialog", { name: /^Properties of #/ });
       // The properties window has room for one line about a change: what it touches, and what it costs.
@@ -252,7 +252,7 @@ describe("the diff of a card", () => {
   it.skipIf(usesRealServer)(
     "spells what each file costs, and keeps no key to the colours",
     async () => {
-      await open("/board/1?card=5");
+      await open("/projects/1?card=5");
       await openProperties();
       await page.getByTestId("diff-card").click();
       const sheet = page.getByRole("dialog", { name: "Changes" });
@@ -271,7 +271,7 @@ describe("the diff of a card", () => {
   it.skipIf(usesRealServer)(
     "ends where the diff ends, with no band of nothing under the last line",
     async () => {
-      await open("/board/1?card=5");
+      await open("/projects/1?card=5");
       await openProperties();
       await page.getByTestId("diff-card").click();
       const sheet = page.getByRole("dialog", { name: "Changes" });
@@ -294,7 +294,7 @@ describe("the diff of a card", () => {
   it.skipIf(usesRealServer)(
     "stops the code at its last line when the list of files is the taller column",
     async () => {
-      await open("/board/1?card=5");
+      await open("/projects/1?card=5");
       fake().changeDiff = MANY_FILE_CHANGE_DIFF;
       await page.reload();
       await openProperties();
@@ -318,7 +318,7 @@ describe("the diff of a card", () => {
   it.skipIf(usesRealServer)(
     "scrolls its lines where they are, and never the sheet, when a diff is taller than the window",
     async () => {
-      await open("/board/1?card=5");
+      await open("/projects/1?card=5");
       fake().changeDiff = LONG_CHANGE_DIFF;
       await page.reload();
       await openProperties();
@@ -416,7 +416,7 @@ describe("the terminals", () => {
   );
 
   it.skipIf(usesRealServer)("keeps the board's shell alive while its sheet is closed", async () => {
-    await open("/board/1");
+    await open("/projects/1");
     await page.getByRole("button", { name: "Display" }).click();
     await page.getByRole("menuitem", { name: "Terminal" }).click();
     await connected().waitFor();

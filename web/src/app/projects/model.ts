@@ -269,3 +269,27 @@ export function firstLine(text: string): string {
   const line = text.split("\n").find((each) => each.trim() !== "") ?? "(empty)";
   return line.length > 80 ? `${line.slice(0, 79)}…` : line;
 }
+
+/** Whether `project` holds the repository `repositoryId`, as one of its repositories or as its own files. */
+export function holdsRepository(project: Project, repositoryId: number): boolean {
+  return (
+    project.files === repositoryId || project.repositories.some((each) => each.id === repositoryId)
+  );
+}
+
+/**
+ * The project a repository belongs to when an old address names only the repository: the oldest project that is not
+ * private and holds it, or the oldest private one when every project that holds it is private. Undefined when no project
+ * holds it. Oldest is by creation time, then by id.
+ */
+export function homeProjectOf(projects: Project[], repositoryId: number): Project | undefined {
+  const holding = projects
+    .filter((each) => holdsRepository(each, repositoryId))
+    .sort((a, b) => a.created_at - b.created_at || a.id - b.id);
+  return holding.find((each) => !each.private) ?? holding[0];
+}
+
+/** The repository whose board a project shows when the address names none: its first, else the one with its own files. */
+export function boardRepositoryOf(project: Project): number | null {
+  return project.repositories[0]?.id ?? project.files;
+}

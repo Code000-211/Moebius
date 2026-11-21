@@ -1,5 +1,5 @@
 /**
- * The page of one repository (`/projects/:id`, the repository's id; the project's settings are `ProjectSettingsPage`): where it is and what it
+ * The page of one repository under its project (`/projects/:projectId/repositories/:repoId`; the project's settings are `ProjectSettingsPage`). A repository the project does not hold is said not to be there, and the address is left as it is: where it is and what it
  * trusts, with the logins of a repository on a forge to edit, the settings Moebius keeps for it, the settings plugins
  * ask of it, and its files on the default branch, which can be read, edited and saved as a commit. The parts are
  * borderless cards grouped by space. The board of the repository is its own page. Delete, in the header, removes the
@@ -23,65 +23,69 @@ import { Tooltip } from "../../ui/components/Tooltip";
 import { cn } from "../../ui/lib/cn";
 import { Box } from "../../ui/page/Box";
 import { ConfirmDelete } from "../../ui/page/ConfirmDelete";
-import { Empty } from "../../ui/page/Empty";
 import { Field } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonCard } from "../../ui/page/Skeleton";
-import { boardPath } from "../pages";
+import { boardPath, settingsPath } from "../pages";
 import { FilesPanel } from "./FilesPanel";
-import { forgeTag, logins, onForge } from "./model";
+import { forgeTag, holdsRepository, logins, onForge } from "./model";
 import { PluginSettings } from "./PluginSettings";
 import { SettingsPanel } from "./SettingsPanel";
 
 export function ProjectPage() {
-  const { id } = useParams();
+  const { projectId, repoId } = useParams();
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
-  if (data.isPending)
-    return (
-      <>
-        <PageHeader title="Project" />
-        <SkeletonCard lines={4} message="Reading the project" />
-      </>
-    );
-  const board = data.data?.boards.find((each) => String(each.repository.id) === id);
+  const projects = useQuery({ queryKey: keys.projects, queryFn: listProjects });
+  const failed = data.isError ? data : projects.isError ? projects : null;
   // A read that failed is not a repository that has gone: saying so comes before the page that says it is not here.
-  if (data.isError) {
+  if (failed) {
     return (
       <>
         <PageHeader title="Project" />
         <ReadFailed
-          error={data.error}
-          fallback="The project could not be read. Try again."
-          busy={data.isFetching}
-          onRetry={() => void data.refetch()}
+          error={failed.error}
+          fallback="The repository could not be read. Try again."
+          busy={failed.isFetching}
+          onRetry={() => void failed.refetch()}
         />
       </>
     );
   }
-  if (!board) {
+  if (!data.data || !projects.data)
     return (
       <>
         <PageHeader title="Project" />
-        <Empty
-          title="No such repository"
-          body="This server has no repository with that address. It may have been removed."
+        <SkeletonCard lines={4} message="Reading the repository" />
+      </>
+    );
+  const project = projects.data.find((each) => String(each.id) === projectId);
+  const board = data.data.boards.find((each) => String(each.repository.id) === repoId);
+  if (!project || !board || !holdsRepository(project, board.repository.id)) {
+    return (
+      <>
+        <PageHeader title="Project" />
+        <Notice
+          tone="error"
           action={
-            <Button asChild size="sm">
-              <Link to="/projects">Choose a repository</Link>
+            <Button asChild size="sm" variant="secondary">
+              <Link to={project ? boardPath(project.id) : "/projects"}>
+                {project ? "Open the board" : "All projects"}
+              </Link>
             </Button>
           }
-        />
+        >
+          This project has no repository with that address. It may have been removed.
+        </Notice>
       </>
     );
   }
-  const { repository } = board;
-  return <RepositoryView repository={repository} />;
+  return <RepositoryView repository={board.repository} projectId={project.id} />;
 }
 
 /** The page of `repository`, once the snapshot has it. */
-function RepositoryView({ repository }: { repository: Repository }) {
+function RepositoryView({ repository, projectId }: { repository: Repository; projectId: number }) {
   const filesOf = repository.files_of ?? null;
   const projects = useQuery({
     queryKey: keys.projects,
@@ -105,12 +109,10 @@ function RepositoryView({ repository }: { repository: Repository }) {
         actions={
           <>
             <Button asChild size="sm" variant="secondary">
-              <Link to={`/projects/${filesOf ?? repository.home_project_id}/settings`}>
-                Project settings
-              </Link>
+              <Link to={settingsPath(projectId)}>Project settings</Link>
             </Button>
             <Button asChild size="sm" variant="secondary">
-              <Link to={boardPath(repository.id)}>Open board</Link>
+              <Link to={boardPath(projectId, repository.id)}>Open board</Link>
             </Button>
             {filesOf === null && <Remove repository={repository} />}
           </>
@@ -139,7 +141,7 @@ function RepositoryView({ repository }: { repository: Repository }) {
         </Box>
         <PluginSettings repository={repository.id} />
         <FilesPanel repository={repository.id} />
-        <SettingsPanel repository={repository.id} project={repository.home_project_id} />
+        <SettingsPanel repository={repository.id} project={projectId} />
       </div>
     </>
   );

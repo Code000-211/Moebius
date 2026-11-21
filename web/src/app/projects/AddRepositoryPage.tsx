@@ -54,7 +54,8 @@ export function AddRepositoryPage() {
     onSuccess: (repository) => {
       void queryClient.invalidateQueries({ queryKey: keys.snapshot });
       void queryClient.invalidateQueries({ queryKey: keys.start });
-      navigate(boardPath(repository.id));
+      void queryClient.invalidateQueries({ queryKey: keys.projects });
+      navigate(boardPath(repository.home_project_id, repository.id));
     },
   });
   const ready = request !== null && !add.isPending;

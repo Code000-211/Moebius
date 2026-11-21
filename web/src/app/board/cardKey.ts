@@ -4,6 +4,7 @@
  * one) leaves the plain `#17`.
  */
 import type { Card } from "../../api/types/board";
+import { cardPath } from "../pages";
 
 /** The key of a project: a capital letter and one to nine capitals or digits. */
 const KEY = /^[A-Z][A-Z0-9]{1,9}$/;
@@ -19,7 +20,7 @@ export function cardKey(card: Pick<Card, "number" | "project_key" | "project_num
 export function cardPagePath(card: Card): string {
   return card.project_key
     ? `/card/${cardKey(card)}`
-    : `/board/${card.repository_id}?card=${card.id}`;
+    : cardPath(card.project_id, card.id, card.repository_id);
 }
 
 /** The card's name, with the number of its issue on the forge beside the key when `forge` says it has one. */

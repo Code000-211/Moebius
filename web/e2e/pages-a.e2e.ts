@@ -516,7 +516,7 @@ describe("projects", () => {
     await page.getByLabel("Name").fill("fresh");
     await page.getByLabel("URL or path").fill(usesRealServer ? folder() : "/srv/git/fresh");
     await add.click();
-    await page.waitForURL(/\/board\/\d+$/);
+    await page.waitForURL(/\/projects\/\d+\?repository=\d+$/);
     await page.getByRole("heading", { name: "fresh", level: 1 }).waitFor();
 
     // The list of every project is the last item of the switcher; the new repository has a project of its own.
@@ -596,7 +596,7 @@ describe("projects", () => {
   it.skipIf(usesRealServer)(
     "asks before it deletes a repository, and keeps it while a run goes on",
     async () => {
-      await open("/projects/1");
+      await open("/projects/1/repositories/1");
       await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
       await page.getByRole("button", { name: "Delete repository" }).click();
       const dialog = page.getByRole("dialog");
@@ -623,7 +623,7 @@ describe("projects", () => {
       await page.waitForURL("**/projects/1/settings");
       await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
       await page.getByRole("link", { name: "Open board" }).click();
-      await page.waitForURL("**/board/1");
+      await page.waitForURL("**/projects/1");
     },
   );
 
@@ -641,7 +641,7 @@ describe("projects", () => {
       await page.getByLabel("GitHub repository").fill("acme/radiance");
       await page.getByLabel("Trusted authors").fill("leon, mona");
       await add.click();
-      await page.waitForURL(/\/board\/\d+$/);
+      await page.waitForURL(/\/projects\/\d+\?repository=\d+$/);
       expect(lastBody(fake().requests, "POST", "/v1/repositories")).toEqual({
         name: "radiance",
         url: "https://github.com/acme/radiance.git",
@@ -680,7 +680,7 @@ describe("projects", () => {
   );
 
   it.skipIf(usesRealServer)("edits the trusted logins of a repository on a forge", async () => {
-    await open("/projects/1");
+    await open("/projects/1/repositories/1");
     await page.getByTestId("trusted").getByText("No trusted authors").waitFor();
     await page.getByRole("button", { name: "Edit trusted authors" }).click();
     await page.getByLabel("Trusted authors").fill("leon, mona");
@@ -702,7 +702,7 @@ describe("projects", () => {
   it.skipIf(usesRealServer)(
     "edits a file of the project's settings, is refused one, and turns test first on",
     async () => {
-      await open("/projects/1");
+      await open("/projects/1/repositories/1");
       await page.getByText("This repository still has a .moebius folder.").waitFor();
       // The column scripts are the home project's, and the panel says which it has of its own.
       await page.getByText("(this project has ready.luau)", { exact: false }).waitFor();
@@ -733,7 +733,7 @@ describe("projects", () => {
   );
 
   it.skipIf(usesRealServer)("saves the settings a plugin asks of a repository", async () => {
-    await open("/projects/1");
+    await open("/projects/1/repositories/1");
     const box = page.getByTestId("plugin-settings");
     await box.getByRole("heading", { name: "podman-sandbox" }).waitFor();
     const dockerfile = box.getByRole("textbox", { name: "Dockerfile" });
@@ -763,13 +763,13 @@ describe("projects", () => {
     expect(await box.getByRole("button", { name: "Save settings" }).isDisabled()).toBe(true);
 
     // What was saved is what the page shows when it is opened again.
-    await open("/projects/1");
+    await open("/projects/1/repositories/1");
     await box.getByRole("textbox", { name: "Dockerfile" }).getByText("node:24-bookworm").waitFor();
     expect(await box.getByLabel("Network").inputValue()).toBe("internet");
   });
 
   it.skipIf(usesRealServer)("browses the files, edits one and saves it as a commit", async () => {
-    await open("/projects/1");
+    await open("/projects/1/repositories/1");
     const tree = page.getByRole("list", { name: "Files" });
     await tree.getByRole("button", { name: "src" }).click();
     await tree.getByRole("button", { name: "server" }).waitFor();
@@ -809,7 +809,7 @@ describe("projects", () => {
   it.skipIf(usesRealServer)(
     "keeps the text of a tab while another is shown and asks before it drops it",
     async () => {
-      await open("/projects/1");
+      await open("/projects/1/repositories/1");
       const tree = page.getByRole("list", { name: "Files" });
       await tree.getByRole("button", { name: "README.md" }).click();
       await page.getByLabel("Text of README.md").fill("# changed\n");
@@ -832,7 +832,7 @@ describe("projects", () => {
   );
 
   it.skipIf(usesRealServer)("says that a binary file or a large one is not edited", async () => {
-    await open("/projects/1");
+    await open("/projects/1/repositories/1");
     const tree = page.getByRole("list", { name: "Files" });
     await tree.getByRole("button", { name: "logo.png" }).click();
     await page.getByText("logo.png is binary (48211 bytes), not editable here.").waitFor();
@@ -844,7 +844,7 @@ describe("projects", () => {
   it.skipIf(usesRealServer)(
     "goes to a file by what is typed, with the keyboard or the mouse",
     async () => {
-      await open("/projects/1");
+      await open("/projects/1/repositories/1");
       // The plugin's settings above the files are read and drawn first, so that the tree stays where it is measured.
       await page.getByRole("textbox", { name: "Dockerfile" }).waitFor();
       const field = page.getByRole("textbox", { name: "Go to file" });
@@ -894,7 +894,7 @@ describe("projects", () => {
   );
 
   it.skipIf(usesRealServer)("leaves Ctrl+P to the browser while a dialog is open", async () => {
-    await open("/projects/1");
+    await open("/projects/1/repositories/1");
     await page.getByRole("heading", { name: "Files" }).waitFor();
     await page.keyboard.press("Control+k");
     await page.getByRole("dialog").waitFor();
@@ -916,7 +916,7 @@ describe("projects", () => {
   });
 
   it.skipIf(usesRealServer)("searches the files and opens a hit at its line", async () => {
-    await open("/projects/1");
+    await open("/projects/1/repositories/1");
     await page.getByRole("heading", { name: "Files" }).waitFor();
     await page.keyboard.press("Control+Shift+F");
     const field = page.getByRole("textbox", { name: "Search in files" });
@@ -955,7 +955,15 @@ describe("projects", () => {
     });
     expect(made.ok(), await made.text()).toBe(true);
     const { id } = (await made.json()) as { id: number };
-    await page.goto(`${server.url}/projects/${id}`);
+    // The repository has a project of its own, and its page is under it.
+    const listed = await context.request.get(`${server.url}/v1/projects`, {
+      headers: { "X-Moebius": "1" },
+    });
+    const holder = (
+      (await listed.json()) as Array<{ id: number; repositories: Array<{ id: number }> }>
+    ).find((each) => each.repositories.some((r) => r.id === id));
+    expect(holder, "a project that holds the new repository").toBeDefined();
+    await page.goto(`${server.url}/projects/${holder?.id}/repositories/${id}`);
     await page.getByRole("heading", { name: "browse", level: 1 }).waitFor();
     await page.getByRole("heading", { name: "Files" }).waitFor();
     await page.getByRole("textbox", { name: "Go to file" }).waitFor();

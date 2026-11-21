@@ -1,6 +1,9 @@
 /**
- * The routes: every page of `pages.ts` under the shell, the board of a repository with the script editor of a column, the run a card links to, the Terminal and Ports pages, and the redirect from `/` to the
- * first page. The server answers `index.html` for these paths, so a page can be opened and reloaded by its address.
+ * The routes: every page of `pages.ts` under the shell, the redirect from `/` to the first page, and the small window
+ * of the desktop app. The pages are in one file per area under `routes/` (`projects`, `fleet`, `workflows`,
+ * `workspace`, `improve`, `settings`), each exporting its route objects; `routes/redirects.ts` is the one table of the
+ * addresses that moved. The server answers `index.html` for these paths, so a page can be opened and reloaded by its
+ * address.
  *
  * Every page is fetched when its route opens rather than with the first byte of the app, which is what lets the shell
  * stay small: a person who opens the Inbox pays nothing for xterm, the diff viewer, or the editor of a column script.
@@ -10,103 +13,19 @@ import { lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate } from "react-router";
 import { App } from "./App";
 import { DEFAULT_PAGE, PAGES } from "./pages";
-import { SettingsLayout } from "./settings/SettingsLayout";
-import { SETTINGS_ENTRIES } from "./settings/settingsEntries";
+import { fleetRoutes } from "./routes/fleet";
+import { improveRoutes } from "./routes/improve";
+import { LegacyRedirect } from "./routes/LegacyRedirect";
+import { projectsRoutes } from "./routes/projects";
+import { LEGACY_ROUTES } from "./routes/redirects";
+import { settingsRoutes } from "./routes/settings";
+import { workflowsRoutes } from "./routes/workflows";
+import { workspaceRoutes } from "./routes/workspace";
 import { NotFoundPage, PlaceholderPage } from "./shell/Page";
 
-const AutomationsPage = lazy(() =>
-  import("./automations/AutomationsPage").then((all) => ({ default: all.AutomationsPage })),
-);
-const BoardPage = lazy(() =>
-  import("./board/BoardPage").then((all) => ({ default: all.BoardPage })),
-);
-const CardKeyPage = lazy(() =>
-  import("./board/CardKeyPage").then((all) => ({ default: all.CardKeyPage })),
-);
-const ScriptPage = lazy(() =>
-  import("./board/ScriptPage").then((all) => ({ default: all.ScriptPage })),
-);
-const DecisionModelPage = lazy(() =>
-  import("./decision/DecisionModelPage").then((all) => ({ default: all.DecisionModelPage })),
-);
-const ExperimentsPage = lazy(() =>
-  import("./experiments/ExperimentsPage").then((all) => ({ default: all.ExperimentsPage })),
-);
-const FleetPage = lazy(() =>
-  import("./fleet/FleetPage").then((all) => ({ default: all.FleetPage })),
-);
-const InboxPage = lazy(() =>
-  import("./inbox/InboxPage").then((all) => ({ default: all.InboxPage })),
-);
-const IssuesPage = lazy(() =>
-  import("./issues/IssuesPage").then((all) => ({ default: all.IssuesPage })),
-);
-const MyIssuesPage = lazy(() =>
-  import("./issues/MyIssuesPage").then((all) => ({ default: all.MyIssuesPage })),
-);
-const KindsPage = lazy(() =>
-  import("./kinds/KindsPage").then((all) => ({ default: all.KindsPage })),
-);
-const TokensPage = lazy(() =>
-  import("./people/TokensPage").then((all) => ({ default: all.TokensPage })),
-);
-const PluginSettingsPage = lazy(() =>
-  import("./plugins/PluginSettingsPage").then((all) => ({ default: all.PluginSettingsPage })),
-);
-const MorePage = lazy(() => import("./more/MorePage").then((all) => ({ default: all.MorePage })));
-const PortsPage = lazy(() =>
-  import("./ports/PortsPage").then((all) => ({ default: all.PortsPage })),
-);
-const AddRepositoryPage = lazy(() =>
-  import("./projects/AddRepositoryPage").then((all) => ({ default: all.AddRepositoryPage })),
-);
-const ProjectSettingsPage = lazy(() =>
-  import("./projects/ProjectSettingsPage").then((all) => ({ default: all.ProjectSettingsPage })),
-);
-const ProjectPage = lazy(() =>
-  import("./projects/ProjectPage").then((all) => ({ default: all.ProjectPage })),
-);
-const CyclesPage = lazy(() =>
-  import("./cycles/CyclesPage").then((all) => ({ default: all.CyclesPage })),
-);
-const MilestonesPage = lazy(() =>
-  import("./milestones/MilestonesPage").then((all) => ({ default: all.MilestonesPage })),
-);
-const ViewsPage = lazy(() =>
-  import("./views/ViewsPage").then((all) => ({ default: all.ViewsPage })),
-);
-const IntakePage = lazy(() =>
-  import("./intake/IntakePage").then((all) => ({ default: all.IntakePage })),
-);
-const ProjectsPage = lazy(() =>
-  import("./projects/ProjectsPage").then((all) => ({ default: all.ProjectsPage })),
-);
-const RunPage = lazy(() => import("./runs/RunPage").then((all) => ({ default: all.RunPage })));
-const StartPage = lazy(() =>
-  import("./start/StartPage").then((all) => ({ default: all.StartPage })),
-);
-const TerminalPage = lazy(() =>
-  import("./terminal/TerminalPage").then((all) => ({ default: all.TerminalPage })),
-);
-const UsagePage = lazy(() =>
-  import("./usage/UsagePage").then((all) => ({ default: all.UsagePage })),
-);
-const WikiPage = lazy(() => import("./wiki/WikiPage").then((all) => ({ default: all.WikiPage })));
-const WorkflowPage = lazy(() =>
-  import("./workflows/WorkflowPage").then((all) => ({ default: all.WorkflowPage })),
-);
-const WorkflowCanvasPage = lazy(() =>
-  import("./workflows/canvas/WorkflowCanvasPage").then((all) => ({
-    default: all.WorkflowCanvasPage,
-  })),
-);
-const WorkflowRunPage = lazy(() =>
-  import("./workflows/WorkflowRunPage").then((all) => ({ default: all.WorkflowRunPage })),
-);
 const QuickWindow = lazy(() =>
   import("../desktop/QuickWindow").then((all) => ({ default: all.QuickWindow })),
 );
-const ChatPage = lazy(() => import("../chat/ChatPage").then((all) => ({ default: all.ChatPage })));
 
 /** The pages that have their own route below; the others show a placeholder. */
 const PAGES_BUILT = new Set([
@@ -146,14 +65,6 @@ const PAGES_BUILT = new Set([
   "more",
 ]);
 
-/** Settings: one layout route around every page `settingsEntries.ts` registers, each at the path it always had. */
-const settingsRoute = {
-  element: <SettingsLayout />,
-  children: SETTINGS_ENTRIES.flatMap((entry) =>
-    entry.page ? [{ path: entry.path, element: <entry.page /> }] : [],
-  ),
-};
-
 export const routes = [
   // The small window of the desktop app's global shortcut: outside the shell, it is a window of its own.
   {
@@ -173,41 +84,16 @@ export const routes = [
         path: page.path,
         element: <PlaceholderPage page={page} />,
       })),
-      settingsRoute,
-      { path: "inbox", element: <InboxPage /> },
-      { path: "fleet", element: <FleetPage /> },
-      { path: "milestones", element: <MilestonesPage /> },
-      { path: "cycles", element: <CyclesPage /> },
-      { path: "views", element: <ViewsPage /> },
-      { path: "views/:id", element: <ViewsPage /> },
-      { path: "intake", element: <IntakePage /> },
-      { path: "projects", element: <ProjectsPage /> },
-      { path: "projects/new", element: <AddRepositoryPage /> },
-      { path: "projects/:id", element: <ProjectPage /> },
-      { path: "projects/:id/settings/:tab?", element: <ProjectSettingsPage /> },
-      { path: "usage", element: <UsagePage /> },
-      { path: "start", element: <StartPage /> },
-      { path: "issues", element: <IssuesPage /> },
-      { path: "my-issues", element: <MyIssuesPage /> },
-      { path: "kinds", element: <KindsPage /> },
-      { path: "tokens", element: <TokensPage /> },
-      { path: "plugin-settings", element: <PluginSettingsPage /> },
-      { path: "chat", element: <ChatPage /> },
-      { path: "terminal", element: <TerminalPage /> },
-      { path: "ports", element: <PortsPage /> },
-      { path: "more", element: <MorePage /> },
-      { path: "automations", element: <AutomationsPage /> },
-      { path: "experiments", element: <ExperimentsPage /> },
-      { path: "decision-model", element: <DecisionModelPage /> },
-      { path: "wiki", element: <WikiPage /> },
-      { path: "workflows/:name", element: <WorkflowPage /> },
-      { path: "workflows/:name/canvas", element: <WorkflowCanvasPage /> },
-      { path: "workflow-runs/:id", element: <WorkflowRunPage /> },
-      { path: "chat/:id", element: <ChatPage /> },
-      { path: "board/:id", element: <BoardPage /> },
-      { path: "board/:id/scripts/:column", element: <ScriptPage /> },
-      { path: "card/:key", element: <CardKeyPage /> },
-      { path: "runs/:id", element: <RunPage /> },
+      ...settingsRoutes,
+      ...fleetRoutes,
+      ...workspaceRoutes,
+      ...projectsRoutes,
+      ...workflowsRoutes,
+      ...improveRoutes,
+      ...LEGACY_ROUTES.map((route) => ({
+        path: route.path,
+        element: <LegacyRedirect route={route} />,
+      })),
       { path: "*", element: <NotFoundPage /> },
     ],
   },

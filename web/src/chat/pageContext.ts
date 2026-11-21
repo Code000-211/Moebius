@@ -16,25 +16,34 @@ export interface PageContext {
   repository: number | null;
 }
 
-export function pageContext(pathname: string, snapshot: Snapshot | undefined): PageContext {
+export function pageContext(
+  pathname: string,
+  snapshot: Snapshot | undefined,
+  search = "",
+): PageContext {
   const parts = pathname.split("/").filter(Boolean);
-  const [first, second] = parts;
-  if (first === "board" && second !== undefined) {
-    const id = Number(second);
-    const board = snapshot?.boards.find((each) => each.repository.id === id);
-    const lines = ["Page: Projects > Board"];
-    if (board) {
-      lines.push(`Repository: ${board.repository.name} (id ${board.repository.id})`);
+  const [first, second, third, fourth] = parts;
+  const boards = snapshot?.boards ?? [];
+  if (first === "projects" && /^\d+$/.test(second ?? "")) {
+    const projectId = Number(second);
+    const repositoryNamed =
+      third === "repositories"
+        ? Number(fourth)
+        : Number(new URLSearchParams(search).get("repository"));
+    const board =
+      boards.find((each) => each.repository.id === repositoryNamed) ??
+      boards.find((each) => each.repository.home_project_id === projectId);
+    const project = board?.repository;
+    // The board of a project, its list, or a card on it.
+    if (third === undefined || third === "list") {
+      const lines = ["Page: Projects > Board"];
+      if (project) lines.push(`Repository: ${project.name} (id ${project.id})`);
+      return {
+        text: lines.join("\n"),
+        name: project ? project.name : "Board",
+        repository: project ? project.id : null,
+      };
     }
-    return {
-      text: lines.join("\n"),
-      name: board ? board.repository.name : "Board",
-      repository: board ? id : null,
-    };
-  }
-  if (first === "projects" && second !== undefined) {
-    const id = Number(second);
-    const project = snapshot?.boards.find((each) => each.repository.id === id)?.repository;
     const lines = ["Page: Projects > Project"];
     if (project) lines.push(`Repository: ${project.name} (id ${project.id})`);
     // Without this the agent takes a request on this page to be about the repository's code.

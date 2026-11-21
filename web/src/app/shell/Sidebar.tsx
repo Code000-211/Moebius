@@ -27,7 +27,14 @@ import { IconButton } from "../../ui/components/IconButton";
 import { SearchIcon } from "../../ui/icons";
 import { cn } from "../../ui/lib/cn";
 import { waiting } from "../inbox/notices";
-import { boardPath, isSettingsPage, PAGES, type PageDef, pageByPath, shownTo } from "../pages";
+import {
+  isSettingsPage,
+  PAGES,
+  type PageDef,
+  pageByPath,
+  repositoryBoardPath,
+  shownTo,
+} from "../pages";
 import { inSettingsArea } from "../settings/settingsEntries";
 import { placeAt } from "./places";
 import { Entry, type Trailing } from "./SidebarEntry";
@@ -49,6 +56,14 @@ export function Sidebar({ onSearch, narrow = false, open = false, onClose }: Sid
   const boards = data.data?.boards ?? [];
   const location = useLocation();
   const at = location.pathname;
+  // The board a project address shows: the repository `?repository=` names, else the project's first.
+  // Only its board pages: the list and the editor of a column's script, as before; not the settings or a repository.
+  const projectAt = /^\/projects\/(\d+)(?:\/list|\/settings\/columns\/.*)?$/.exec(at)?.[1];
+  const shownRepository =
+    projectAt === undefined
+      ? undefined
+      : Number(new URLSearchParams(location.search).get("repository")) ||
+        boards.find((b) => b.repository.home_project_id === Number(projectAt))?.repository.id;
   const here = at.replace(/^\/+|\/+$/g, "").split("/")[0] ?? "";
   // What waits for you: the items of the inbox and the unread notices given to you or naming you.
   const notices = useQuery({ queryKey: keys.notices, queryFn: readNotices });
@@ -67,12 +82,20 @@ export function Sidebar({ onSearch, narrow = false, open = false, onClose }: Sid
   const noted = useRef("");
   const loaded = data.data !== undefined;
   useEffect(() => {
-    const place = placeAt(pathname, search);
+    const place = placeAt(
+      pathname,
+      search,
+      (project) =>
+        boards.find((board) => board.repository.home_project_id === project)?.repository.id,
+    );
     if (!place || !loaded) return;
-    const project = Number(/^\/(?:board|projects)\/(\d+)/.exec(pathname)?.[1]);
     const address = `${pathname}${search}`;
-    if (noted.current === address || !boards.some((board) => board.repository.id === project))
-      return;
+    // A card is noted by its key alone, which the snapshot says whether it knows.
+    const known =
+      place.kind === "card"
+        ? boards.some((board) => board.cards.some((card) => String(card.id) === place.key))
+        : boards.some((board) => board.repository.id === place.repository_id);
+    if (noted.current === address || !known) return;
     noted.current = address;
     seen(place)
       .then((next) => queryClient.setQueryData(keys.places, next))
@@ -150,14 +173,14 @@ export function Sidebar({ onSearch, narrow = false, open = false, onClose }: Sid
         <Section>{pagesOf("").map(entryOf)}</Section>
         <Section title="Projects" to={projectList ? `/${projectList.path}` : undefined}>
           {boards.map((board) => {
-            const to = boardPath(board.repository.id);
+            const to = repositoryBoardPath(board.repository);
             return (
               <Entry
                 key={board.repository.id}
                 to={to}
                 icon={HashIcon}
                 label={board.repository.name}
-                current={at === to || at.startsWith(`${to}/`)}
+                current={projectAt !== undefined && shownRepository === board.repository.id}
               />
             );
           })}

@@ -388,7 +388,7 @@ const shoot = (page: Page, name: string, theme: string) =>
 for (const theme of THEMES) {
   it(`takes the pictures in the ${theme} theme`, async () => {
     const hero = await open(theme, 1.44, 1132, 2012);
-    await visit(hero, "/board/1?card=none");
+    await visit(hero, "/projects/1?card=none");
     await askAssistant(hero);
     await hero.screenshot({ path: join(OUT, `hero-${theme}.png`) });
     // The Moebius agent's conversation is the hero's alone: the lists of the other pages do not hold it.
@@ -401,7 +401,7 @@ for (const theme of THEMES) {
     const chatAtWork = fake.chat.chats.find((chat) => chat.status === "running");
     if (chatAtWork) chatAtWork.status = "stopped";
     // A card of the board in its window.
-    await visit(page, "/board/1?card=24");
+    await visit(page, "/projects/1?card=24");
     await shoot(page, "card", theme);
     await visit(page, "/wiki?page=runbooks/deploy");
     await shoot(page, "wiki", theme);
@@ -440,7 +440,7 @@ for (const theme of THEMES) {
     `takes the pictures of long text in the ${theme} theme`,
     async () => {
       const page = await open(theme, 2, 720, 1280);
-      await visit(page, "/board/1?card=21");
+      await visit(page, "/projects/1?card=21");
       const reason = page.getByRole("button", { name: "Sent back to In progress" });
       await reason.scrollIntoViewIfNeeded();
       await shoot(page, "thread-closed", theme);
@@ -450,7 +450,7 @@ for (const theme of THEMES) {
       await page.context().close();
 
       const panel = await open(theme, 2, 720, 1280);
-      await visit(panel, "/board/1?card=none");
+      await visit(panel, "/projects/1?card=none");
       await askAssistant(panel, longAnswer);
       await shoot(panel, "agent-panel", theme);
       await panel.context().close();

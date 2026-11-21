@@ -94,7 +94,7 @@ export function AgentChat({
   // Whether the agent is still up: a message to a chat whose agent went away starts that agent again on the same chat.
   const up = chat !== undefined && isOpen(chat.status);
   // Where the person is now: sent with every message.
-  const where = pageContext(location.pathname, snapshot.data);
+  const where = pageContext(location.pathname, snapshot.data, location.search);
   const working = chat !== undefined && isWorking(chat.status);
 
   // Escape closes the panel, wherever the focus is on the page, unless a control over it took the key first.

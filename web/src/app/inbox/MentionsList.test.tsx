@@ -23,7 +23,7 @@ const notice = {
   read: false,
 };
 const snapshot = {
-  boards: [{ repository: { id: 3 }, cards: [{ id: 7 }] }],
+  boards: [{ repository: { id: 3, home_project_id: 2 }, cards: [{ id: 7 }] }],
   harness_changes: [],
   inbox: [],
 } as unknown as Snapshot;
@@ -73,7 +73,9 @@ function open(address: string) {
 describe("opening a notice from the address", () => {
   it("reads the notice and shows its card", async () => {
     open("/inbox?kind=mentions&notice=4");
-    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/board/3?card=7"));
+    await waitFor(() =>
+      expect(screen.getByTestId("where").textContent).toBe("/projects/2?repository=3&card=7"),
+    );
     expect(requests).toContain("POST /v1/notices/4/read");
   });
 

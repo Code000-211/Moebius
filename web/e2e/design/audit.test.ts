@@ -118,8 +118,8 @@ const widths = [
 const routes: Route[] = [
   { path: "/inbox", name: "inbox" },
   { path: "/fleet", name: "fleet" },
-  { path: "/board/1", name: "board" },
-  { path: "/board/1/scripts/Not started", name: "script" },
+  { path: "/projects/1", name: "board" },
+  { path: "/projects/1/settings/columns/Not started", name: "script" },
   { path: "/runs/1000", name: "run" },
   { path: "/chat", name: "chat" },
   { path: "/projects", name: "projects" },
@@ -159,10 +159,10 @@ const routes: Route[] = [
   { path: "/inbox", name: "inbox-search", open: "search" },
   { path: "/inbox", name: "inbox-chat", open: "chat" },
   // A card open is a centred window over the dimmed page, and its change opens a sheet of its own.
-  { path: "/board/1?card=1", name: "board-card-window" },
+  { path: "/projects/1?card=1", name: "board-card-window" },
   { path: "/inbox?card=3", name: "inbox-card-window" },
-  { path: "/board/1", name: "board-new-issue", open: "new issue" },
-  { path: "/board/1", name: "board-terminal", open: "terminal" },
+  { path: "/projects/1", name: "board-new-issue", open: "new issue" },
+  { path: "/projects/1", name: "board-terminal", open: "terminal" },
   // The diff, read on its own page, where it fills the page. The card window no longer holds the card that opened it
   // in a sheet (`diff-card` left the thread, and #667 brings a click on the size of the change back), so the route
   // that opened it from `?card=5` is gone until then.

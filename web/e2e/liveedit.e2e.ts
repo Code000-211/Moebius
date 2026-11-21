@@ -38,7 +38,7 @@ async function open(card: number): Promise<Page> {
   }
   const page = await contexts[0]?.newPage();
   if (!page) throw new Error("no browser context");
-  await page.goto(`${server.url}/board/1?card=${card}`);
+  await page.goto(`${server.url}/projects/1?card=${card}`);
   // The properties are in a window of their own, opened from the menu of the card window.
   await page
     .locator("[data-card-window]")

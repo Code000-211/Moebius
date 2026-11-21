@@ -85,7 +85,7 @@ describe.skipIf(usesRealServer)("issue templates and the Jira import", () => {
     });
 
     // New issue: the kind, then the template.
-    await page.goto(`${server.url}/board/1`);
+    await page.goto(`${server.url}/projects/1`);
     await page.getByRole("button", { name: "New issue" }).click();
     const form = page.getByRole("dialog", { name: "New issue" });
     await pickOption(page, form.getByRole("button", { name: "Kind" }), "Bug");
@@ -109,7 +109,7 @@ describe.skipIf(usesRealServer)("issue templates and the Jira import", () => {
     await page.goto(`${server.url}/kinds`);
     await template.getByRole("button", { name: "Delete template" }).click();
     await template.getByText("(none yet)").waitFor();
-    await page.goto(`${server.url}/board/1`);
+    await page.goto(`${server.url}/projects/1`);
     await page.getByRole("button", { name: "New issue" }).click();
     await pickOption(page, form.getByRole("button", { name: "Kind" }), "Bug");
     await expect.poll(() => form.getByLabel(/Use the template/).count()).toBe(0);

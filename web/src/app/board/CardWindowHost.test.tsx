@@ -98,7 +98,7 @@ describe("the card window", () => {
     expect(screen.getByText("The page behind")).toBeTruthy();
     expect(dialog.textContent).toContain("Issue 5");
     expect(screen.getByRole("link", { name: "Open as page" }).getAttribute("href")).toBe(
-      "/board/1?card=5",
+      "/projects/1?repository=1&card=5",
     );
   });
 

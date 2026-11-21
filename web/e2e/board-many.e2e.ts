@@ -47,7 +47,7 @@ async function openBoard(): Promise<number[]> {
   page = await context.newPage();
   await page.goto(server.loginUrl);
   await page.getByRole("navigation", { name: "Pages" }).waitFor();
-  await page.goto(`${server.url}/board/1`);
+  await page.goto(`${server.url}/projects/1`);
   await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
   await card(2).waitFor();
   return seeded;

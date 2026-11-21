@@ -4,7 +4,7 @@
  * list on a Settings page with Settings chosen, and nothing the standard leaves out — no key hint, no mask, no live
  * box, no card for the app's name.
  */
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { board, show } from "./SidebarTestHelpers";
 
@@ -63,7 +63,7 @@ describe("the list of places", () => {
     const href = (name: string | RegExp) => screen.getByRole("link", { name }).getAttribute("href");
     await screen.findByRole("link", { name: "notes" });
     expect(href("Projects")).toBe("/projects");
-    expect(href("moebius-platform")).toBe("/board/1");
+    expect(href("moebius-platform")).toBe("/projects/1?repository=1");
     expect(href("More")).toBe("/more");
     expect(href("Settings")).toBe("/settings");
     expect(href(/^Inbox/)).toBe("/inbox");
@@ -129,12 +129,30 @@ describe("where an entry leads", () => {
   });
 
   it("marks a project by the address of its board, with a card open on it too", async () => {
-    show({ at: "/board/2" });
+    show({ at: "/projects/2" });
     const notes = await screen.findByRole("link", { name: "notes" });
     expect(notes.getAttribute("aria-current")).toBe("page");
     expect(
       screen.getByRole("link", { name: "moebius-platform" }).getAttribute("aria-current"),
     ).toBeNull();
+  });
+
+  it("marks a project on its list and the editor of a column's script, and not on its settings or a repository", async () => {
+    const current = async (at: string) => {
+      show({ at });
+      await screen.findByRole("link", { name: "notes" });
+      const marked = screen
+        .getAllByRole("link")
+        .filter((link) => link.getAttribute("aria-current") === "page")
+        .map((link) => link.textContent);
+      cleanup();
+      return marked;
+    };
+    expect(await current("/projects/2/list")).toEqual(["notes"]);
+    expect(await current("/projects/2/settings/columns/Backlog")).toEqual(["notes"]);
+    expect(await current("/projects/2?repository=2")).toEqual(["notes"]);
+    expect(await current("/projects/2/settings")).toEqual([]);
+    expect(await current("/projects/2/repositories/2")).toEqual([]);
   });
 
   it("keeps the same list on a Settings page, with Settings chosen and no Back row", async () => {
@@ -164,14 +182,14 @@ describe("noting the places a person opens", () => {
       .map(([, init]) => (init as RequestInit | undefined)?.body);
 
   it("notes a project's board once the snapshot has it", async () => {
-    show({ at: "/board/2" });
+    show({ at: "/projects/2" });
     await waitFor(() =>
       expect(noted()).toEqual([JSON.stringify({ kind: "project", repository_id: 2 })]),
     );
   });
 
   it("asks nothing about a board the snapshot does not hold, as a private project of someone else", async () => {
-    show({ at: "/board/12" });
+    show({ at: "/projects/12" });
     await screen.findByRole("link", { name: "notes" });
     expect(noted()).toEqual([]);
   });

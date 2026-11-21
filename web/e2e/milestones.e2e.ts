@@ -189,7 +189,7 @@ describe.skipIf(usesRealServer)("the Milestones page", () => {
   });
 
   it("shows a card's milestones in its properties and puts it in another", async () => {
-    await open("/board/1");
+    await open("/projects/1");
     await page.getByRole("heading", { name: "demo", level: 1 }).waitFor();
     const properties = await openProperties();
     await properties.getByRole("button", { name: "Milestone Launch 2.0" }).waitFor();

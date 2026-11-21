@@ -17,12 +17,13 @@
 import { BookmarkSimpleIcon, PlusIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { snapshot } from "../../api/calls/board";
 import { addView, listViews } from "../../api/calls/views";
 import { sayError } from "../../api/errorText";
 import { keys } from "../../api/keys";
 import type { Card, InboxItem } from "../../api/types/board";
+import type { Project } from "../../api/types/projects";
 import { Button } from "../../ui/components/Button";
 import {
   DropdownMenuItem,
@@ -48,6 +49,7 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
 import { boardPath } from "../pages";
+import { boardRepositoryOf } from "../projects/model";
 import { boardFiltersOf, viewOfBoard } from "../views/model";
 import { CardContent } from "./BoardCardContent";
 import { BoardColumn } from "./BoardColumn";
@@ -83,8 +85,17 @@ function useSame<T>(value: T): T {
   return kept.current;
 }
 
-export function BoardPage() {
-  const { id } = useParams();
+/**
+ * The board of `project` (the address is `/projects/:projectId`, or `/projects/:projectId/list` for `list`): the board of
+ * the repository `?repository=` names when the project holds it, else of the project's first repository.
+ */
+export function BoardPage({ project, list = false }: { project: Project; list?: boolean }) {
+  const named = Number(useSearchParams()[0].get("repository"));
+  const id = String(
+    project.repositories.some((each) => each.id === named) || project.files === named
+      ? named
+      : boardRepositoryOf(project),
+  );
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const data = useQuery({ queryKey: keys.snapshot, queryFn: () => snapshot() });
@@ -123,7 +134,13 @@ export function BoardPage() {
     priority: params.get("priority") ?? "",
     due: params.get("due") ?? "",
   });
-  const display = useSame(readDisplay(params, DISPLAY_CHOICES));
+  const shown = useSame(readDisplay(params, DISPLAY_CHOICES));
+  // `/list` is the list layout, unless the address says another.
+  const layoutNamed = params.has("layout");
+  const display = useMemo(
+    () => (list && !layoutNamed ? { ...shown, layout: "list" as const } : shown),
+    [list, layoutNamed, shown],
+  );
   const hidden = useMemo(() => new Set(display.hidden), [display]);
   // The cards are grouped once per read of the board and once per change of the filter, not once per render of the
   // dock or of a decision coming back.
@@ -159,6 +176,8 @@ export function BoardPage() {
   // The handlers the columns and their cards are given keep their identity from one render to the next: a card that
   // is memoised on them draws again only when its own data changes. They read the latest of what they need through
   // refs, or through a state setter's function form.
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
   const setParamsRef = useRef(setParams);
   setParamsRef.current = setParams;
   // The filters change the address in place; a card opens as the window over the page (`CardWindowHost.tsx`).
@@ -238,10 +257,16 @@ export function BoardPage() {
   );
   const navigateRef = useRef(navigate);
   navigateRef.current = navigate;
-  const onRepository = useCallback(
-    (value: string) => navigateRef.current(boardPath(Number(value))),
-    [],
-  );
+  // A repository this project does not hold is opened at its own home project.
+  const homeOf = useRef((_repository: number): number | undefined => undefined);
+  homeOf.current = (repository) =>
+    project.files === repository || project.repositories.some((each) => each.id === repository)
+      ? project.id
+      : data.data?.boards.find((b) => b.repository.id === repository)?.repository.home_project_id;
+  const onRepository = useCallback((value: string) => {
+    const home = homeOf.current(Number(value));
+    if (home !== undefined) navigateRef.current(boardPath(home, Number(value)));
+  }, []);
   const repositories = useSame(
     data.data?.boards.map((b): [string, string] => [String(b.repository.id), b.repository.name]) ??
       [],
@@ -319,7 +344,17 @@ export function BoardPage() {
         tabs={
           <LayoutTabs
             layout={display.layout === "list" ? "list" : "board"}
-            onChange={(layout) => setQuery(displayQuery({ ...display, layout }))}
+            onChange={(layout) => {
+              // The board is the project's address, the list its `/list`; the list is also a Display choice of the board.
+              if (list && layout === "board") {
+                const next = new URLSearchParams(paramsRef.current);
+                next.delete("layout");
+                const query = next.toString();
+                navigate(`/projects/${project.id}${query === "" ? "" : `?${query}`}`);
+              } else if (!list || layout !== "list") {
+                setQuery(displayQuery({ ...display, layout }));
+              }
+            }}
           />
         }
         actions={
@@ -357,6 +392,9 @@ export function BoardPage() {
     [
       repositoryName,
       display,
+      list,
+      project.id,
+      navigate,
       setQuery,
       openForm,
       fields,
@@ -516,7 +554,7 @@ export function BoardPage() {
               </Button>
             </search>
           )}
-          <LeftoverNotice repository={board.repository.id} />
+          <LeftoverNotice project={project.id} repository={board.repository.id} />
           {display.layout === "list" ? (
             <ListLayout
               board={board}

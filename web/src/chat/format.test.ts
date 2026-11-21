@@ -49,7 +49,7 @@ describe("endedHint", () => {
 
 describe("pageContext", () => {
   const snapshot = {
-    boards: [{ repository: { id: 4, name: "demo" } }],
+    boards: [{ repository: { id: 4, name: "demo", home_project_id: 2 } }],
     harness_changes: [],
     inbox: [],
   } as never;
@@ -66,7 +66,7 @@ describe("pageContext", () => {
   });
 
   it("names the repository of a board and starts chats there", () => {
-    const context = pageContext("/board/4", snapshot);
+    const context = pageContext("/projects/2", snapshot);
     expect(context.repository).toBe(4);
     expect(context.text).toContain("Repository: demo (id 4)");
     expect(context.name).toBe("demo");

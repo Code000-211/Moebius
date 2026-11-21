@@ -9,12 +9,19 @@ import { Link } from "react-router";
 import { readSettings } from "../../api/calls/projects";
 import { keys } from "../../api/keys";
 import { Tabs } from "../../ui/page/Tabs";
+import { repositoryPath } from "../pages";
 
 /**
  * Said on the board of a repository whose default branch still has a `.moebius/` folder: nothing in it is read any
  * more, so its rules, checks and scripts do not apply until they are moved into the project's settings.
  */
-export const LeftoverNotice = memo(function LeftoverNotice({ repository }: { repository: number }) {
+export const LeftoverNotice = memo(function LeftoverNotice({
+  project,
+  repository,
+}: {
+  project: number;
+  repository: number;
+}) {
   const settings = useQuery({
     queryKey: keys.projectSettings(repository),
     queryFn: () => readSettings(repository),
@@ -35,7 +42,7 @@ export const LeftoverNotice = memo(function LeftoverNotice({ repository }: { rep
       </span>
       <Link
         className="shrink-0 text-secondary underline hover:text-text"
-        to={`/projects/${repository}`}
+        to={repositoryPath(project, repository)}
       >
         Project settings
       </Link>

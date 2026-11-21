@@ -72,7 +72,7 @@ describe.skipIf(usesRealServer)("mentions", () => {
 
     // Choosing the assignment reads it without a reload and opens the card.
     await page.locator('[data-testid="notice"][data-kind="assigned"]').click();
-    await page.waitForURL(/\/board\/1\?card=\d+/);
+    await page.waitForURL(/\/projects\/1\?repository=1&card=\d+/);
     await page.goBack();
     await notices.first().waitFor();
     await expect.poll(() => notices.getByTestId("status-needsYou").count()).toBe(1);
@@ -85,11 +85,11 @@ describe.skipIf(usesRealServer)("mentions", () => {
   });
 
   it("completes the handle of a person after an @ in a comment", async () => {
-    await open("/board/1");
+    await open("/projects/1");
     await page.getByTestId("card-7").click();
     // The dock first shows the card the board picked and is drawn again for the one clicked: a draft typed before
     // that goes with the first card's box. Wait for the dock of card 7 (its address and its number).
-    await page.waitForURL(/\/board\/1\?card=7$/);
+    await page.waitForURL(/\/projects\/1\?card=7$/);
     await page
       .getByRole("dialog", { name: "Card inspector" })
       .getByText("DEMO-31 · #7")
