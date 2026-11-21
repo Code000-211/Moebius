@@ -418,8 +418,6 @@ interface TurnProps {
   onAnswer?: (message: string) => void;
   /** Whether a message is on its way, so an answer is not sent twice. */
   sending?: boolean;
-  /** What is offered under the answer that ends the turn, such as Approve plan and Reply; given to the last turn only. */
-  offer?: ReactNode;
 }
 
 export function Turn({
@@ -430,7 +428,6 @@ export function Turn({
   retry,
   onAnswer,
   sending,
-  offer,
 }: TurnProps) {
   const isOpen = (key: string) => unfolded.has(key);
   const head = turn.head;
@@ -468,11 +465,6 @@ export function Turn({
         />
       )}
       {turn.blocks.map(view)}
-      {offer && turn.blocks[turn.blocks.length - 1]?.kind === "text" && (
-        <div className="flex flex-wrap gap-2" data-testid="offer">
-          {offer}
-        </div>
-      )}
     </div>
   );
 }

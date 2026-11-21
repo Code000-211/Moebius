@@ -69,7 +69,6 @@ export function AgentChat({
   // What the composer holds right now, which the closure of a send cannot see: what is typed while an answer is on its
   // way is the next question, not something to clear away with the one that was sent.
   const held = useRef(message);
-  const reply = useRef<HTMLDivElement>(null);
   /** How far the chat open in the sheet has been marked read; 0 again for the next conversation. */
   const marked = useRef({ id: 0, seq: 0 });
   const write = (value: string) => {
@@ -200,9 +199,6 @@ export function AgentChat({
   const past = earlier(chats.data);
   // The one action of a conversation that has begun is to start another; before that there is nothing to start over.
   const started = chatId !== null && thread.entries.length > 0;
-  // The agent's last answer ends in a question: the person goes on with the plan or replies.
-  const asking = chat?.asks === true && !working && chat.id === chatId;
-  const approve = () => void send("Approve the plan. Go ahead.");
 
   const actions = (
     <>
@@ -271,27 +267,14 @@ export function AgentChat({
             empty="Ask the agent about this page, or start from one of these. It is told where you are."
             // The starters are for the moment before anything is written; once a message is on its way they are in the way.
             emptyAction={message.trim() === "" ? <Starters onPick={write} /> : undefined}
-            offer={
-              asking ? (
-                <>
-                  <Button type="button" disabled={sending} onClick={approve}>
-                    Approve plan
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => reply.current?.querySelector("textarea")?.focus()}
-                  >
-                    Reply
-                  </Button>
-                </>
-              ) : undefined
-            }
+            // A question of the agent's question tool is a card with its options; the answer goes back as a message.
+            onAnswer={writesHere ? (answer) => void send(answer) : undefined}
+            sending={sending}
             compact
           />
         )}
       </div>
-      <div ref={reply}>
+      <div>
         <Composer
           value={message}
           onChange={write}

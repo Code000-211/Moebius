@@ -459,7 +459,7 @@ index 8d21f0a..c5e7b13 100644
      }
 `;
 
-/** The question put to the Moebius agent and the steps of its answer: a thought, two reads, a code block and a plan. */
+/** The question put to the Moebius agent and the steps of its answer: a thought, two reads, a code block and a question with its options. */
 export const agentQuestion = "Why did card #21 stop?";
 export const agentAnswer = `A save built on an older cart replaces the newer one. I can add a version check:
 
@@ -467,9 +467,7 @@ export const agentAnswer = `A save built on an older cart replaces the newer one
 if base != current.version {
     return stale(current); // 409
 }
-\`\`\`
-
-Shall I go ahead?`;
+\`\`\``;
 export const agentSteps: Step[] = [
   {
     think: "The review of card #21 found a data loss. I want to see the save code and the review.",
@@ -485,4 +483,24 @@ export const agentSteps: Step[] = [
     output: "The save has no version check.",
   },
   { say: agentAnswer },
+  {
+    // The plan waits on a choice the agent put with its question tool: the card offers the options it gave.
+    tool: "ask_user_question",
+    args: {
+      questions: [
+        {
+          header: "Plan",
+          question: "Shall I go ahead with the version check?",
+          options: [
+            {
+              label: "Go ahead (Recommended)",
+              description: "Add the check and run the cart tests.",
+            },
+            { label: "Only show the change", description: "Leave the code as it is for now." },
+          ],
+        },
+      ],
+    },
+    output: "The questions are shown to the person.",
+  },
 ];
