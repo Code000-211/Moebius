@@ -151,7 +151,7 @@ describe("the inbox", () => {
       const reasons = [
         ["Plan ready", "Fix the login redirect"],
         ["Ready to merge", "Speed up the build"],
-        ["Stuck: reached the round limit", "Stop the flaky test is stuck"],
+        ["Stuck: reached the round limit", "Stop the flaky test"],
         ["Retro proposal", "Let the Coder read the tests first"],
         ["Retro proposal", "Raise the round limit to 7"],
         ["Decision model", "The decision model can take over tool_call"],
@@ -159,7 +159,7 @@ describe("the inbox", () => {
         ["Report from a grilling", "A report from a grilling"],
         ["Change from a chat", "Add a retry helper"],
         ["Closed without a merge", "Ship the first release"],
-        ["Needs design", "Needs a mockup"],
+        ["Needs design", "Document the API"],
       ] as const;
       for (const [reason, title] of reasons) {
         await item(title).getByText(reason, { exact: true }).waitFor();
@@ -465,6 +465,8 @@ describe("the inbox", () => {
   it.skipIf(usesRealServer)("shows an item that arrives while the page is open", async () => {
     await open("/inbox");
     await items().first().waitFor();
+    const before = await items().count();
+    // A row about a card is worded with the card's own title, whatever title the server gave the item.
     fake().addInboxItem({
       kind: "stuck",
       card_id: 1,
@@ -472,7 +474,8 @@ describe("the inbox", () => {
       data: { reason: "no model" },
     });
     server.broadcast?.({ kind: "card_updated", data: {} });
-    await item("A new stuck card").waitFor();
+    await expect.poll(() => items().count()).toBe(before + 1);
+    await items().getByText("Stuck: no model", { exact: true }).waitFor();
   });
 });
 
@@ -984,8 +987,10 @@ describe("the fleet", () => {
       await card.getByText("running the tests").waitFor();
       const talk = tiles.filter({ hasText: "Write a ready.luau" });
       await talk.getByText("ready.luau", { exact: false }).first().waitFor();
-      // Stop and the tokens are on a row only while the pointer is on it.
-      expect(await page.getByRole("button", { name: /^Stop/ }).count()).toBe(0);
+      // Stop and the tokens are on the selected row (the first, until another is chosen) and on the row the pointer
+      // is on, and on no other: with the pointer away from every row, one row has them.
+      await page.mouse.move(0, 0);
+      await expect.poll(() => page.getByRole("button", { name: /^Stop/ }).count()).toBe(1);
       await card.hover();
       await card.getByText("12k tokens").waitFor();
       await card.getByRole("button", { name: /^Stop/ }).waitFor();
@@ -1076,7 +1081,7 @@ describe("the fleet", () => {
 
       await page.reload();
       await page.getByRole("button", { name: "Filter · 1" }).waitFor();
-      expect(await tiles.count()).toBe(1);
+      await expect.poll(() => tiles.count()).toBe(1);
 
       // A second filter narrows further: no run of the Coder is a chat.
       await page.goto(`${server.url}/fleet?agent=Coder&kind=chat`);
