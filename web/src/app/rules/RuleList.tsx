@@ -191,7 +191,11 @@ export function RuleRow({
       >
         {name}
       </span>
-      {text && <span className="min-w-0 flex-1 truncate text-muted">{text}</span>}
+      {text && (
+        <span className="min-w-0 flex-1 truncate text-muted" title={text}>
+          {text}
+        </span>
+      )}
       {state && (
         <span className="ml-auto shrink-0 text-xs tabular-nums text-attention-text">{state}</span>
       )}
