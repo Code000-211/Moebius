@@ -10,7 +10,6 @@ import { lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate } from "react-router";
 import { App } from "./App";
 import { DEFAULT_PAGE, PAGES } from "./pages";
-import { harnessRoutes } from "./routesB";
 import { SettingsLayout } from "./settings/SettingsLayout";
 import { SETTINGS_ENTRIES } from "./settings/settingsEntries";
 import { NotFoundPage, PlaceholderPage } from "./shell/Page";
@@ -170,7 +169,6 @@ export const routes = [
     element: <App />,
     children: [
       { index: true, element: <Navigate to={`/${DEFAULT_PAGE}`} replace /> },
-      ...harnessRoutes,
       ...PAGES.filter((page) => !PAGES_BUILT.has(page.path)).map((page) => ({
         path: page.path,
         element: <PlaceholderPage page={page} />,

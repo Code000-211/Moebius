@@ -4,7 +4,6 @@
  * once — so it is saved as it is picked and has no Save button. The row is a radiogroup of buttons, the chosen one
  * drawn as the selected fill; an arrow key moves the choice, as it does across a row of `Tabs`.
  */
-import { type Icon, MonitorIcon, MoonIcon, SunIcon } from "@phosphor-icons/react";
 import { useRef } from "react";
 import { useShowThinking } from "../../chat/thinking";
 import { useReduceMotion } from "../../motion";
@@ -14,11 +13,11 @@ import { useBlur } from "../../ui/lib/effects";
 import { FieldRow, Rows } from "../../ui/page/Field";
 import { Switch } from "../../ui/page/Switch";
 
-/** The three appearances the standard offers. */
-const CHOICES: Array<{ value: ThemePreference; label: string; icon: Icon }> = [
-  { value: "system", label: "System", icon: MonitorIcon },
-  { value: "light", label: "Light", icon: SunIcon },
-  { value: "dark", label: "Dark", icon: MoonIcon },
+/** The three appearances the standard offers, in the mockup's order, words only. */
+const CHOICES: Array<{ value: ThemePreference; label: string }> = [
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+  { value: "system", label: "System" },
 ];
 
 export function Appearance() {
@@ -59,14 +58,13 @@ export function Appearance() {
                 tabIndex={chosen ? 0 : -1}
                 onClick={() => setPreference(each.value)}
                 className={cn(
-                  "inline-flex min-h-7 cursor-pointer items-center gap-2 rounded-control px-3 text-base font-medium",
+                  "inline-flex min-h-7 cursor-pointer items-center rounded-control px-3 text-base font-medium",
                   "transition-colors duration-(--motion-routine) ease-out",
                   chosen
                     ? "bg-panel text-text ring-1 ring-inset ring-hairline"
                     : "text-secondary hover:text-text",
                 )}
               >
-                <each.icon className="size-4 shrink-0" aria-hidden="true" />
                 {each.label}
               </button>
             );
