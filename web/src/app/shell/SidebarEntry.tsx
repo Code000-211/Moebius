@@ -13,6 +13,8 @@ import { cn } from "../../ui/lib/cn";
 export interface Trailing {
   text: string;
   tone: "count" | "running";
+  /** For work running: only the dot is drawn, and the words go to a screen reader (the page itself says what runs). */
+  dotOnly?: boolean;
 }
 
 /** The classes every row of the sidebar shares: its height, its radius and the edge a chosen row shows. */
@@ -57,7 +59,7 @@ export function Entry({
         {trailing?.tone === "running" && (
           <span className="flex shrink-0 items-center gap-1.5 text-sm text-progress-text tabular-nums">
             <StatusDot color="var(--progress)" />
-            {trailing.text}
+            <span className={trailing.dotOnly ? "sr-only" : undefined}>{trailing.text}</span>
           </span>
         )}
       </Link>

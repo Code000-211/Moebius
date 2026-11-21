@@ -16,10 +16,17 @@
  * <PageHeader title="Fleet" tabs={<Tabs … />} actions={<Button size="sm">Pause all</Button>} />
  * ```
  */
-import type { ReactNode } from "react";
+import { createContext, type ReactNode, useContext } from "react";
 import { useSidebarToggle } from "../../app/shell/SidebarToggle";
 import { IconButton } from "../components/IconButton";
 import { SidebarIcon } from "../icons";
+
+/**
+ * True inside the content of a Settings area. There a page's title is the area's title, the one every area has: in
+ * the same place and the same size as Appearance's, without the sticky bar across the panel, so the title, its rows
+ * and their edges share one column.
+ */
+export const InSettingsArea = createContext(false);
 
 export function PageHeader({
   title,
@@ -35,6 +42,22 @@ export function PageHeader({
   back?: ReactNode;
 }) {
   const sidebar = useSidebarToggle();
+  const inArea = useContext(InSettingsArea);
+  if (inArea) {
+    return (
+      <div className="mb-3 flex min-h-10 flex-wrap items-center gap-x-4 gap-y-1">
+        <h1 className="m-0 min-w-0 truncate text-xl font-semibold tracking-tight text-text">
+          {title}
+        </h1>
+        {tabs && <div className="flex min-w-0">{tabs}</div>}
+        {actions && (
+          <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2">
+            {actions}
+          </div>
+        )}
+      </div>
+    );
+  }
   return (
     <header
       data-tauri-drag-region

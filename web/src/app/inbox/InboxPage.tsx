@@ -30,7 +30,7 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { TabPanel, Tabs } from "../../ui/page/Tabs";
 import { useToast } from "../../ui/page/Toast";
-import { VirtualList } from "../../ui/page/VirtualList";
+import { firstRowKey, openedKey, VirtualList } from "../../ui/page/VirtualList";
 import { useOpenCard } from "../board/CardWindowHost";
 import { NewIssueButton } from "../issues/NewIssueButton";
 import { AssigneesProperty } from "../people/AssigneesProperty";
@@ -132,7 +132,12 @@ export function InboxPage() {
     if (card !== null) openCard(card);
     else if (item !== null) setQuery({ item: String(item.id) });
   };
-  const selected = picked ?? (chosen === null ? null : `item-${chosen.id}`);
+  const asked = params.get("card");
+  const selected = openedKey(
+    list,
+    picked ?? (chosen === null ? null : `item-${chosen.id}`),
+    (entry) => asked !== null && entry.card !== null && String(entry.card) === asked,
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col [&>header]:mb-0">
@@ -180,6 +185,7 @@ export function InboxPage() {
             loading={data.isPending}
             loadingMessage="Reading the inbox"
             selectedKey={selected}
+            restKey={firstRowKey(list)}
             onSelect={setPicked}
             onOpen={open}
             renderRow={(entry, { at, selected: on, onClick }) => (

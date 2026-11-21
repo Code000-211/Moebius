@@ -10,7 +10,7 @@ import type { Board, Card, InboxItem } from "../../api/types/board";
 import { Empty } from "../../ui/page/Empty";
 import { ListRow } from "../../ui/page/ListRow";
 import { useFillHeight } from "../../ui/page/useFillHeight";
-import { type ListItem, VirtualList } from "../../ui/page/VirtualList";
+import { firstRowKey, type ListItem, VirtualList } from "../../ui/page/VirtualList";
 import { iconOf } from "./CardWindow";
 import { cardKey } from "./cardKey";
 import { cardStatus, inboxOf, STATUS_LABELS } from "./model";
@@ -74,6 +74,7 @@ export function ListLayout({
         items={items}
         initialItemCount={initialItemCount}
         selectedKey={selectedKey}
+        restKey={inspectedId === undefined ? firstRowKey(items) : null}
         onSelect={setSelectedKey}
         className="h-full outline-none"
         onOpen={(key) => {

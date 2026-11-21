@@ -76,13 +76,16 @@ export function RulesPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       {header}
-      <FilterBar
-        label="Filter the rules"
-        fields={fields}
-        values={values}
-        onFilter={(key, value) => setQuery({ [key]: value })}
-        onClear={() => setQuery(Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])))}
-      />
+      {/* The button's own padding is taken back, so that "Filter" starts where the rows below it start. */}
+      <div className="-ml-2.5">
+        <FilterBar
+          label="Filter the rules"
+          fields={fields}
+          values={values}
+          onFilter={(key, value) => setQuery({ [key]: value })}
+          onClear={() => setQuery(Object.fromEntries(FILTER_KEYS.map((key) => [key, ""])))}
+        />
+      </div>
       {!show.patterns && !show.server && shownRepositories.length === 0 && (
         <Notice>No rule is in that scope. Clear the filters to see them all.</Notice>
       )}

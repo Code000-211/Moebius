@@ -473,6 +473,27 @@ describe("the list of the page", () => {
     expect(rows.map((each) => each.at)).toEqual([expect.any(Number), null, 0]);
   });
 
+  it("titles a row of a card with the card's title, not the sentence the server worded the item with", () => {
+    const snap = {
+      boards: [
+        { repository: { id: 1 }, cards: [card(1, 1, { title: "Cart saves" })], changes: [] },
+      ],
+      harness_changes: [],
+      inbox: [
+        {
+          ...waiting(5, "approve_issue", 1),
+          title:
+            "The review found a data loss: a save built on an older cart replaces the newer one.",
+        },
+      ],
+    } as unknown as Snapshot;
+    const row = listOf(snap, shown(snap, none), none).find((each) => each.type === "row");
+    expect(row?.type === "row" && [row.data.title, row.data.reason]).toEqual([
+      "Cart saves",
+      "Plan ready",
+    ]);
+  });
+
   it("says the reason in the pale text only, not in the title", () => {
     const item = (title: string) => ({ ...waiting(1, "ready_to_merge", 4), title });
     expect(titleOf(item("Add an index is ready to merge"))).toBe("Add an index");

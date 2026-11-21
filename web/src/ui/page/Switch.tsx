@@ -36,15 +36,18 @@ export function Switch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        "inline-flex min-h-7 w-9 shrink-0 cursor-pointer items-center rounded-control disabled:cursor-not-allowed disabled:opacity-45",
+        "inline-flex min-h-7 w-9 shrink-0 cursor-pointer items-center rounded-control disabled:cursor-not-allowed",
         className,
       )}
     >
       <span
         aria-hidden="true"
         className={cn(
-          "inline-flex h-5 w-9 items-center rounded-full px-0.5 ring-1 ring-inset ring-hairline transition-colors duration-(--motion-routine) ease-out",
+          "inline-flex h-5 w-9 items-center rounded-full px-0.5 ring-1 ring-inset transition-colors duration-(--motion-routine) ease-out",
+          // A switch that cannot be moved keeps its track and knob readable: only the track softens, with a firmer edge.
+          disabled ? "ring-muted/60" : "ring-hairline",
           checked ? "bg-accent-fill" : "bg-track",
+          disabled && (checked ? "opacity-60" : "bg-muted/40"),
         )}
       >
         <span

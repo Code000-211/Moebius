@@ -98,12 +98,14 @@ describe("a fleet with many runs", () => {
   it("has Stop only on the row that is hovered or selected", async () => {
     show(at(runs(3)));
     const rows = await screen.findAllByTestId("list-row");
-    expect(screen.queryByRole("button", { name: /^Stop/ })).toBeNull();
+    // The cursor starts on the first row, which is marked and has Stop.
+    expect(rows[0]?.getAttribute("data-selected")).toBe("true");
+    expect(screen.getAllByRole("button", { name: /^Stop/ })).toHaveLength(1);
     fireEvent.pointerOver(rows[1] as HTMLElement);
     expect(await screen.findByRole("button", { name: "Stop Card 2" })).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: /^Stop/ })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: /^Stop/ })).toHaveLength(2);
     fireEvent.pointerLeave(screen.getByTestId("virtual-list").parentElement as HTMLElement);
-    expect(screen.queryByRole("button", { name: /^Stop/ })).toBeNull();
+    expect(screen.getAllByRole("button", { name: /^Stop/ })).toHaveLength(1);
     // The selected row keeps it with the pointer away.
     fireEvent.click(rows[2] as HTMLElement);
     expect(await screen.findByRole("button", { name: "Stop Card 3" })).toBeTruthy();
