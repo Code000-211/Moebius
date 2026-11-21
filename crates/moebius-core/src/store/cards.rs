@@ -379,6 +379,22 @@ impl Store {
             "DELETE FROM forge_seen WHERE repository_id = ?1".to_string(),
         ]);
         statements.extend(card_records_last(&runs, &changes, cards));
+        // The workflow runs of the repository go with it, with their node rows (which cascade) and the approvals they
+        // asked for: `workflow_runs.repository_id` is a reference, so a run cannot outlive its repository. What else
+        // pointed at them (a firing, a change of another repository) keeps its row and loses the link. A run that has
+        // not ended is for the caller to refuse first (see `active_workflow_runs_of_repository`).
+        let workflow_runs = "SELECT id FROM workflow_runs WHERE repository_id = ?1";
+        statements.extend([
+            format!(
+                "DELETE FROM inbox_items WHERE kind = '{}' AND json_extract(data, '$.run') IN ({workflow_runs})",
+                super::inbox::WORKFLOW_APPROVAL
+            ),
+            format!(
+                "UPDATE firings SET workflow_run_id = NULL WHERE workflow_run_id IN ({workflow_runs})"
+            ),
+            format!("UPDATE changes SET run_id = NULL WHERE run_id IN ({workflow_runs})"),
+            "DELETE FROM workflow_runs WHERE repository_id = ?1".to_string(),
+        ]);
         statements.push("DELETE FROM project_repositories WHERE repository_id = ?1".to_string());
         let home: i64 = tx.query_row(
             "SELECT home_project_id FROM repositories WHERE id = ?1",
@@ -963,6 +979,50 @@ impl Store {
 mod tests {
     use super::*;
     use crate::store::test_store as store;
+
+    #[test]
+    fn deleting_a_repository_takes_its_finished_workflow_runs_with_their_nodes_and_approvals() {
+        let (_dir, s) = store();
+        let repo = s
+            .add_repository("demo", "/srv/demo", "none", "main")
+            .unwrap();
+        let other = s
+            .add_repository("other", "/srv/other", "none", "main")
+            .unwrap();
+        let value = serde_json::json!({});
+        let run = s
+            .add_workflow_run("release", repo.id, "manual", &value)
+            .unwrap();
+        s.add_workflow_node_run(run.id, "ask", 1, &value).unwrap();
+        s.add_inbox_item(
+            crate::store::WORKFLOW_APPROVAL,
+            None,
+            "Ship?",
+            &serde_json::json!({"run": run.id}),
+        )
+        .unwrap();
+        s.finish_workflow_run(run.id, "succeeded", None).unwrap();
+        let kept = s
+            .add_workflow_run("release", other.id, "manual", &value)
+            .unwrap();
+        assert!(
+            s.active_workflow_runs_of_repository(repo.id)
+                .unwrap()
+                .is_empty()
+        );
+
+        assert!(s.delete_repository(repo.id).unwrap());
+
+        assert!(s.workflow_run(run.id).unwrap().is_none());
+        assert!(s.workflow_node_runs(run.id).unwrap().is_empty());
+        assert_eq!(s.inbox_for_workflow_run(run.id).unwrap(), None);
+        // Another repository's runs are left alone, and its active ones are listed.
+        assert!(s.workflow_run(kept.id).unwrap().is_some());
+        assert_eq!(
+            s.active_workflow_runs_of_repository(other.id).unwrap(),
+            vec![kept.id]
+        );
+    }
 
     #[test]
     fn a_repository_on_another_forge_keeps_its_project_path() {
