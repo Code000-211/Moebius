@@ -93,7 +93,7 @@ describe.skipIf(usesRealServer)("choosing cards on the board", () => {
     const move = page.getByRole("menuitem", { name: /Move to Not started/ });
     await move.waitFor();
     expect(await move.getAttribute("aria-keyshortcuts")).toBe("n");
-    expect(await page.locator("kbd").count()).toBe(0);
+    await expect.poll(() => page.locator("kbd").count()).toBe(0);
     await page.keyboard.press("Escape");
     await says("3 cards chosen").waitFor();
     await box(`Choose #${a}`).focus();

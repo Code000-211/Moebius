@@ -27,7 +27,7 @@ it("opens More and reaches Usage", async () => {
     await page.goto(new URL("/more", page.url()).toString());
     const list = page.getByRole("navigation", { name: "More pages" });
     await list.getByRole("link", { name: "Usage" }).waitFor();
-    expect(await list.getByRole("link").count()).toBe(13);
+    await expect.poll(() => list.getByRole("link").count()).toBe(13);
     await list.getByRole("link", { name: "Usage" }).click();
     await page.waitForURL(/\/usage$/);
     expect(page.url()).toMatch(/\/usage$/);

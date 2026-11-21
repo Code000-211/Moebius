@@ -112,7 +112,7 @@ describe.skipIf(usesRealServer)("issue templates and the Jira import", () => {
     await page.goto(`${server.url}/projects/1`);
     await page.getByRole("button", { name: "New issue" }).click();
     await pickOption(page, form.getByRole("button", { name: "Kind" }), "Bug");
-    expect(await form.getByLabel(/Use the template/).count()).toBe(0);
+    await expect.poll(() => form.getByLabel(/Use the template/).count()).toBe(0);
   });
 
   it("imports a Jira project and shows the report with its warnings", async () => {

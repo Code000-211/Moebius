@@ -239,7 +239,7 @@ export function CommandBar({
         keepFocus.current = false;
       }}
     >
-      <Command label="Search" shouldFilter={false} onKeyDown={onKeyDown}>
+      <Command label="Search" shouldFilter={false} vimBindings={false} onKeyDown={onKeyDown}>
         <CommandInput placeholder="Search…" value={query} onValueChange={setQuery} />
         <CommandList label="Commands and places">
           <CommandEmpty>{searching ? "Searching…" : "Nothing matches."}</CommandEmpty>

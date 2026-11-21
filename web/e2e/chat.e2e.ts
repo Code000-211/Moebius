@@ -156,7 +156,7 @@ describe("a chat longer than the page opens with", () => {
     expect(history()[0]?.tail).toBe("true");
     // And the beginning is not on the page, because it was never read. Nothing says so either: the chat is simply
     // waiting to be scrolled up, with no row above its oldest turn promising anything.
-    expect(await page.getByText("Question 1", { exact: true }).count()).toBe(0);
+    await expect.poll(() => page.getByText("Question 1", { exact: true }).count()).toBe(0);
     await expect.poll(() => page.getByTestId("older").count()).toBe(0);
 
     // The person scrolls up. Reaching the top of the conversation reads what is above it, with nothing to press.
@@ -343,9 +343,9 @@ describe("what the agent does", () => {
       await steps.getByRole("button", { name: /Read 2 files/ }).waitFor();
       // A step says what was done in plain words; the raw command is in the box it opens to.
       await steps.getByText("Ran the tests").waitFor();
-      expect(await steps.getByText("cargo test --quiet").count()).toBe(0);
+      await expect.poll(() => steps.getByText("cargo test --quiet").count()).toBe(0);
       // The thinking is folded until it is opened.
-      expect(await page.getByText("I should read first.").count()).toBe(0);
+      await expect.poll(() => page.getByText("I should read first.").count()).toBe(0);
       // A thought that has stopped is named for its length as well as what it was.
       await steps.getByRole("button", { name: /^Thought/ }).click();
       await page.getByText("I should read first.").waitFor();
@@ -420,8 +420,8 @@ describe("what the agent does", () => {
       const closed = page.getByTestId("question-asked");
       await closed.waitFor();
       await closed.getByText("Yes (chosen)", { exact: true }).waitFor();
-      expect(await closed.getByText("Yes, but later (chosen)").count()).toBe(0);
-      expect(await page.getByTestId("question").count()).toBe(0);
+      await expect.poll(() => closed.getByText("Yes, but later (chosen)").count()).toBe(0);
+      await expect.poll(() => page.getByTestId("question").count()).toBe(0);
       await page
         .getByTestId("chat-page")
         .getByText("Asks you", { exact: true })
@@ -464,7 +464,7 @@ describe("what the agent does", () => {
       .getByText("OAuth token has been refused by the provider", { exact: false })
       .waitFor();
     // The error is one entry, though Pi says it twice (the message and the end of the turn).
-    expect(await alert.count()).toBe(1);
+    await expect.poll(() => alert.count()).toBe(1);
   });
 
   it.skipIf(usesRealServer)("shows the run's own error too", async () => {
@@ -661,7 +661,9 @@ describe("an open chat", () => {
     expect(await page.getByRole("textbox", { name: "Message" }).getAttribute("placeholder")).toBe(
       "Write to Moebius",
     );
-    expect(await page.getByRole("button", { name: "Moebius", exact: true }).count()).toBe(0);
+    await expect
+      .poll(() => page.getByRole("button", { name: "Moebius", exact: true }).count())
+      .toBe(0);
     expect(await page.getByRole("button", { name: "Model: fake-small" }).textContent()).toBe(
       "fake-small",
     );
@@ -722,7 +724,7 @@ describe("an open chat", () => {
       // otherwise.
       await page.getByRole("button", { name: "Terminal" }).waitFor({ state: "detached" });
       expect(await field().getAttribute("placeholder")).toBe("Write to Moebius");
-      expect(await page.getByRole("button", { name: "Continue" }).count()).toBe(0);
+      await expect.poll(() => page.getByRole("button", { name: "Continue" }).count()).toBe(0);
       expect(fake().chats[0]?.status).toBe("stopped");
 
       // Writing goes to the chat that is open: it is taken up again, on the record already on screen.
@@ -887,10 +889,10 @@ describe("the Moebius agent", () => {
       await window.getByRole("textbox", { name: "Message" }).press("Enter");
       await window.getByRole("alert").waitFor();
       // The reason replaces the bars, which are for a read that is still on its way.
-      expect(await window.getByTestId("thread-loading").count()).toBe(0);
-      expect(await window.getByRole("status").filter({ hasText: "Reading the chat" }).count()).toBe(
-        0,
-      );
+      await expect.poll(() => window.getByTestId("thread-loading").count()).toBe(0);
+      await expect
+        .poll(() => window.getByRole("status").filter({ hasText: "Reading the chat" }).count())
+        .toBe(0);
     },
   );
 
@@ -929,8 +931,8 @@ describe("the Moebius agent", () => {
       // The sheet has no word for it, and must not invent one: the agent going away is nothing to report, and the
       // field still takes a message.
       await expect.poll(() => fake().chats[0]?.status).toBe("stopped");
-      expect(await window.getByText("Agent disconnected").count()).toBe(0);
-      expect(await page.getByText("Agent disconnected").count()).toBe(0);
+      await expect.poll(() => window.getByText("Agent disconnected").count()).toBe(0);
+      await expect.poll(() => page.getByText("Agent disconnected").count()).toBe(0);
       expect(await field.isEnabled()).toBe(true);
 
       await field.fill("Carry on");
@@ -993,7 +995,7 @@ describe("the Moebius agent", () => {
       "What is on the board right now?",
     );
     // Nothing was sent, and no chat was started by pressing a suggestion.
-    expect(await window.getByText(/You said:/).count()).toBe(0);
+    await expect.poll(() => window.getByText(/You said:/).count()).toBe(0);
   });
 });
 
@@ -1138,10 +1140,9 @@ describe("the chat page on a phone", () => {
       await openWith("/chat", { viewport: { width: 390, height: 844 } });
       await page.getByTestId("chat-page").waitFor();
       await field().waitFor();
-      expect(
-        await page.getByRole("navigation", { name: "Pages", exact: true }).count(),
-        "the sidebar is closed on a phone",
-      ).toBe(0);
+      await expect
+        .poll(() => page.getByRole("navigation", { name: "Pages", exact: true }).count())
+        .toBe(0);
       const sideways = await page.evaluate(
         () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
       );

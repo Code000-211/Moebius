@@ -435,7 +435,9 @@ describe("the Skills page", () => {
         .filter({ hasText: "Use short sentences." })
         .first()
         .waitFor();
-      expect(await page.getByRole("textbox", { name: "SKILL.md", exact: true }).count()).toBe(0);
+      await expect
+        .poll(() => page.getByRole("textbox", { name: "SKILL.md", exact: true }).count())
+        .toBe(0);
     },
   );
 
@@ -445,7 +447,7 @@ describe("the Skills page", () => {
       await open("/skills?skill=house-style");
       await editor().getByRole("button", { name: "assets/logo.bin" }).click();
       await page.getByText("Not text, or too large to edit (20.0 KB).").waitFor();
-      expect(await page.getByRole("textbox", { name: "File text" }).count()).toBe(0);
+      await expect.poll(() => page.getByRole("textbox", { name: "File text" }).count()).toBe(0);
     },
   );
 
@@ -538,7 +540,7 @@ describe("the Skills page", () => {
     await server.stop();
     await (server as FakeServer).restart();
     await row("house-style").waitFor();
-    expect(await page.getByTestId("harness-setup").count()).toBe(0);
+    await expect.poll(() => page.getByTestId("harness-setup").count()).toBe(0);
   });
 });
 
@@ -631,7 +633,7 @@ describe("the Models page", () => {
       await open("/models");
       const upstreams = page.getByTestId("upstream");
       await upstreams.nth(2).waitFor();
-      expect(await upstreams.count()).toBe(3);
+      await expect.poll(() => upstreams.count()).toBe(3);
       expect(await upstreams.nth(0).getByLabel("Base URL").inputValue()).toBe(
         "http://127.0.0.1:8080",
       );
@@ -658,7 +660,7 @@ describe("the Models page", () => {
       await page.getByTestId("upstream").nth(0).waitFor();
       const mark = page.getByRole("img", { name: "Answered" });
       // Nothing is marked before the button is pressed: the count already says what the upstreams answered.
-      expect(await mark.count()).toBe(0);
+      await expect.poll(() => mark.count()).toBe(0);
       await page.getByRole("button", { name: "Refresh" }).click();
       await mark.waitFor();
     },
@@ -902,7 +904,7 @@ describe("the Models page", () => {
         },
         remove: [],
       });
-      expect(await panel.count()).toBe(0);
+      await expect.poll(() => panel.count()).toBe(0);
     },
   );
 
@@ -988,7 +990,7 @@ describe("the switch of a plugin", () => {
     await allow.waitFor();
     expect(await allow.getAttribute("aria-checked")).toBe("true");
     // The decision model is built in and has no switch; the guard and the localizer have one.
-    expect(await row("idle").first().getByRole("switch").count()).toBe(0);
+    await expect.poll(() => row("idle").first().getByRole("switch").count()).toBe(0);
     for (const name of ["guard", "localize"]) {
       expect(await toggle(name).getAttribute("aria-checked")).toBe("true");
     }
@@ -1001,7 +1003,7 @@ describe("the switch of a plugin", () => {
     expect(await off.textContent()).toContain("No kind of decision");
     expect(await allow.getAttribute("aria-checked")).toBe("false");
     // Off, it is not in the list of plugins in their own process.
-    expect(await page.getByTestId("plugin-row").count()).toBe(6);
+    await expect.poll(() => page.getByTestId("plugin-row").count()).toBe(6);
     await allow.click();
     await page.waitForFunction(
       () => document.querySelector('[data-testid="plugin-row"][data-off]') === null,

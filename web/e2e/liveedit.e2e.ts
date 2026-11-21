@@ -70,6 +70,6 @@ describe.skipIf(usesRealServer)("a change while events arrive", () => {
     await priority(mine, "Priority Medium").waitFor();
 
     await priority(theirs, "Priority Medium").waitFor({ timeout: 3000 });
-    expect(await priority(theirs, /^Priority/).count()).toBe(1);
+    await expect.poll(() => priority(theirs, /^Priority/).count()).toBe(1);
   });
 });

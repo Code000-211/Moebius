@@ -71,7 +71,7 @@ describe("the Wiki page", () => {
     const history = page.getByRole("list", { name: "History of Team/On call" });
     await history.getByText("Say who answers").waitFor();
     const rows = history.getByRole("button");
-    expect(await rows.count()).toBe(2);
+    await expect.poll(() => rows.count()).toBe(2);
     await rows.nth(1).getByText("Add Team/On call").waitFor();
     await rows.nth(1).click();
     await page.getByText(/An older version: Add Team\/On call/).waitFor();
@@ -176,8 +176,8 @@ describe("the Wiki page", () => {
     await page.getByTestId("inbox-item").filter({ hasText: "Say the new rule" }).click();
     const decision = page.getByTestId("inbox-decision");
     await decision.getByText("+New rule.").waitFor();
-    expect(await decision.getByRole("button", { name: "Merge" }).count()).toBe(0);
-    expect(await decision.getByRole("button", { name: "Dismiss" }).count()).toBe(0);
+    await expect.poll(() => decision.getByRole("button", { name: "Merge" }).count()).toBe(0);
+    await expect.poll(() => decision.getByRole("button", { name: "Dismiss" }).count()).toBe(0);
     await context.close();
     await ownerContext.close();
   });
@@ -334,9 +334,10 @@ describe("the Wiki page", () => {
     const outline = page.getByRole("navigation", { name: "On this page" });
     await article.getByText("Start.").waitFor();
     await outline.getByRole("button", { name: "Escalation" }).waitFor();
-    for (const part of [tree, article, outline]) expect(await part.isVisible()).toBe(true);
+    for (const part of [tree, article, outline])
+      await expect.poll(() => part.isVisible()).toBe(true);
     // The outline is a column of the page, and the page casts no shadow.
-    expect(await page.getByRole("region", { name: /^Properties of/ }).count()).toBe(0);
+    await expect.poll(() => page.getByRole("region", { name: /^Properties of/ }).count()).toBe(0);
     const shadows = await page.evaluate(() =>
       [...document.querySelectorAll("article, aside, [data-testid=detail-column]")].map(
         (element) => getComputedStyle(element).boxShadow,
@@ -348,7 +349,7 @@ describe("the Wiki page", () => {
     await page.goto(`${server.url}/wiki?page=Runbook&view=edit`);
     const form = page.getByRole("form", { name: "Edit Runbook" });
     await form.getByRole("button", { name: "Save" }).waitFor();
-    expect(await outline.isVisible()).toBe(true);
+    await expect.poll(() => outline.isVisible()).toBe(true);
     for (const name of ["Save", "Cancel"]) {
       const box = await form.getByRole("button", { name }).boundingBox();
       expect((box?.y ?? 9999) + (box?.height ?? 0)).toBeLessThanOrEqual(720);

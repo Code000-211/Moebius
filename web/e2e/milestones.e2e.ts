@@ -74,7 +74,7 @@ describe.skipIf(usesRealServer)("the Milestones page", () => {
       .click();
     await page.getByRole("heading", { name: "Milestones", level: 1 }).waitFor();
     await rows().first().waitFor();
-    expect(await rows().count()).toBe(3);
+    await expect.poll(() => rows().count()).toBe(3);
     const names = await rows()
       .getByRole("button")
       .evaluateAll((buttons) =>
@@ -98,13 +98,13 @@ describe.skipIf(usesRealServer)("the Milestones page", () => {
     const cards = row("Launch 2.0").getByRole("list", { name: "Cards of Launch 2.0" });
     await cards.getByText("Add a feature").waitFor();
     await cards.getByText("Take payments").waitFor();
-    expect(await cards.getByRole("listitem").count()).toBe(4);
+    await expect.poll(() => cards.getByRole("listitem").count()).toBe(4);
   });
 
   it("shows the milestones as bars on one axis, each as far as its target date", async () => {
     await open("/milestones");
     await rows().first().waitFor();
-    expect(await page.getByTestId("time-bar").count()).toBe(3);
+    await expect.poll(() => page.getByTestId("time-bar").count()).toBe(3);
     // The bars follow the dates: the milestone due first ends before the one due last.
     const box = async (name: string) => {
       const found = await row(name).getByTestId("time-bar-span").boundingBox();
@@ -116,7 +116,7 @@ describe.skipIf(usesRealServer)("the Milestones page", () => {
     expect(first.x + first.width).toBeLessThan(last.x + last.width);
     // No layout choice is left in Display.
     await page.getByRole("button", { name: "Display" }).click();
-    expect(await page.getByRole("menuitemradio", { name: "Timeline" }).count()).toBe(0);
+    await expect.poll(() => page.getByRole("menuitemradio", { name: "Timeline" }).count()).toBe(0);
     await page.keyboard.press("Escape");
   });
 
@@ -134,7 +134,7 @@ describe.skipIf(usesRealServer)("the Milestones page", () => {
     // Payments v2 holds only Storefront's cards.
     await row("Launch 2.0").waitFor();
     await row("Payments v2").waitFor({ state: "detached" });
-    expect(await rows().count()).toBe(2);
+    await expect.poll(() => rows().count()).toBe(2);
   });
 
   it("makes, edits and deletes a milestone, and says what the server refuses", async () => {
@@ -173,7 +173,7 @@ describe.skipIf(usesRealServer)("the Milestones page", () => {
     await row("Beta 2").getByRole("button", { name: "Delete" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
     await row("Beta 2").waitFor({ state: "detached" });
-    expect(await rows().count()).toBe(3);
+    await expect.poll(() => rows().count()).toBe(3);
   });
 
   it("counts only the cards of the projects the person may see, and says so after the server changes", async () => {

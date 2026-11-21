@@ -106,7 +106,7 @@ describe("the shell", () => {
       expect(read.sidebarBackground).not.toBe(read.background);
       expect(read.sidebarLineWidth).toBe("1px");
       expect(read.sidebarLine).toBe(read.hairline);
-      expect(await page.locator(".pt-9").count()).toBe(0);
+      await expect.poll(() => page.locator(".pt-9").count()).toBe(0);
       await page.context().close();
     });
   }
@@ -248,7 +248,7 @@ describe.skipIf(usesRealServer)("the Moebius agent", () => {
     // The focus is in the reply field.
     await page.getByPlaceholder("Reply to Moebius…").waitFor();
     expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("TEXTAREA");
-    expect(await agent.locator("kbd").count()).toBe(0);
+    await expect.poll(() => agent.locator("kbd").count()).toBe(0);
 
     await button.click();
     await agent.waitFor({ state: "hidden" });
@@ -296,9 +296,9 @@ describe.skipIf(usesRealServer)("the Moebius agent", () => {
       await page.goto(`${server.url}${path}`);
       await page.locator('[data-surface="page"] h1').first().waitFor();
       await page.locator("header").getByRole("button", BUTTON).waitFor();
-      expect(await page.getByLabel("Ask Moebius").count()).toBe(0);
-      expect(await page.getByPlaceholder("Ask Moebius…").count()).toBe(0);
-      expect(await page.locator('[data-surface="agent-dock"]').count()).toBe(0);
+      await expect.poll(() => page.getByLabel("Ask Moebius").count()).toBe(0);
+      await expect.poll(() => page.getByPlaceholder("Ask Moebius…").count()).toBe(0);
+      await expect.poll(() => page.locator('[data-surface="agent-dock"]').count()).toBe(0);
     }
     await page.context().close();
   });
@@ -315,7 +315,7 @@ describe.skipIf(usesRealServer)("the Moebius agent", () => {
     const over = await box(page, '[data-surface="agent-panel"]');
     const surface = await box(page, '[data-surface="page"]');
     expect(over.x + over.width).toBe(surface.x + surface.width);
-    expect(await button.isVisible()).toBe(true);
+    await expect.poll(() => button.isVisible()).toBe(true);
     expect(await button.getAttribute("aria-pressed")).toBe("true");
     await page.context().close();
   });
@@ -358,17 +358,15 @@ describe.skipIf(usesRealServer)("the window buttons in the desktop app", () => {
     await page.goto(`${server.url}/inbox`);
     await page.locator('[data-surface="page"] h1').first().waitFor();
     for (const name of ["Minimize", "Maximize", "Close"]) {
-      expect(await page.getByRole("button", { name, exact: true }).count(), name).toBe(1);
-      expect(
-        await page
-          .locator('[data-surface="page"]')
-          .getByRole("button", { name, exact: true })
-          .count(),
-        `${name} in the panel`,
-      ).toBe(1);
+      await expect.poll(() => page.getByRole("button", { name, exact: true }).count()).toBe(1);
+      await expect
+        .poll(() =>
+          page.locator('[data-surface="page"]').getByRole("button", { name, exact: true }).count(),
+        )
+        .toBe(1);
     }
-    expect(await page.locator(".pt-9").count()).toBe(0);
-    expect(await page.getByTestId("window-bar").count()).toBe(0);
+    await expect.poll(() => page.locator(".pt-9").count()).toBe(0);
+    await expect.poll(() => page.getByTestId("window-bar").count()).toBe(0);
     // At the panel's top right, level with the header, which does not run under them.
     const panel = await box(page, '[data-surface="page"]');
     const controls = await box(page, '[data-testid="window-controls"]');
@@ -414,7 +412,7 @@ describe("windows of 800 and 1280 px", () => {
 
   it.each([999, 900])("hides the sidebar at %i px until the button is pressed", async (width) => {
     const page = await signedInAt("/inbox", width);
-    expect(await sidebar(page).count()).toBe(0);
+    await expect.poll(() => sidebar(page).count()).toBe(0);
     expect((await box(page, '[data-surface="page"]')).x).toBeLessThan(40);
     await page.getByRole("button", { name: "Show the sidebar" }).click();
     await sidebar(page).waitFor();
@@ -440,7 +438,9 @@ describe("windows of 800 and 1280 px", () => {
     async (width) => {
       const page = await signedInAt("/inbox", width);
       await sidebar(page).waitFor();
-      expect(await page.getByRole("button", { name: "Show the sidebar" }).count()).toBe(0);
+      await expect
+        .poll(() => page.getByRole("button", { name: "Show the sidebar" }).count())
+        .toBe(0);
       expect((await box(page, '[data-surface="page"]')).x).toBeGreaterThan(200);
       await page.context().close();
     },

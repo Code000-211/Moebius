@@ -69,3 +69,20 @@ describe("the newlines of an answer", () => {
     );
   });
 });
+
+describe("code in an answer", () => {
+  it("draws a word of code quietly and keeps the dark surface for a fenced block", () => {
+    const { container } = render(
+      <Markdown content={"Call `GET /v1/snapshot` first.\n\n```rust\nfn main() {}\n```"} />,
+    );
+    const inline = [...container.querySelectorAll("code")].find(
+      (node) => node.textContent === "GET /v1/snapshot",
+    );
+    const drawn = inline?.getAttribute("class") ?? "";
+    expect(drawn).not.toContain("bg-code");
+    expect(drawn).not.toContain("text-code");
+    expect(drawn).toContain("bg-control-fill");
+    expect(drawn).toContain("text-text");
+    expect(container.querySelector("pre")?.closest("div")?.className).toContain("bg-code-bg");
+  });
+});

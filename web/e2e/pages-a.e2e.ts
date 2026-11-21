@@ -146,7 +146,7 @@ describe("the inbox", () => {
       });
       server.broadcast?.({ kind: "card_updated", data: {} });
       await expect.poll(() => items().count()).toBe(11);
-      expect(await items().count()).toBe(11);
+      await expect.poll(() => items().count()).toBe(11);
       // The row says the one reason; an item about a card opens the card window, the others show the sidebar.
       const reasons = [
         ["Waiting for approval", "Fix the login redirect"],
@@ -199,16 +199,16 @@ describe("the inbox", () => {
         name: /its instructions now say to read the tests/,
       });
       await reason.waitFor();
-      expect(await reason.locator(".clamp-3").count()).toBe(1);
+      await expect.poll(() => reason.locator(".clamp-3").count()).toBe(1);
       // Where the change lives is the Retro page's business, not the card's.
-      expect(await harness.getByText("proposal/2026-10-25-read-tests").count()).toBe(0);
+      await expect.poll(() => harness.getByText("proposal/2026-10-25-read-tests").count()).toBe(0);
       // A trial that names no card only says there was nothing to try it on, so it is not on the card. The trials
       // that ran are words beside the card they ran on, and the kind's word is the card's only pill.
-      expect(await harness.getByText("No card", { exact: true }).count()).toBe(0);
+      await expect.poll(() => harness.getByText("No card", { exact: true }).count()).toBe(0);
       await harness.getByText("Card 3").waitFor();
       await harness.getByText("It passed in one round.").waitFor();
-      expect(await harness.getByText("Positive", { exact: true }).count()).toBe(1);
-      expect(await harness.getByText("Retro", { exact: true }).count()).toBe(0);
+      await expect.poll(() => harness.getByText("Positive", { exact: true }).count()).toBe(1);
+      await expect.poll(() => harness.getByText("Retro", { exact: true }).count()).toBe(0);
       // The preview lands on the proposal itself, not at the top of the day.
       await reason.click();
       expect(path()).toBe("/retro?day=2026-10-25&proposal=4");
@@ -238,7 +238,7 @@ describe("the inbox", () => {
           (frame?.y ?? 0) + (frame?.height ?? 0),
         );
       }
-      expect(await window.getByText("Retro proposal").first().isVisible()).toBe(true);
+      await expect.poll(() => window.getByText("Retro proposal").first().isVisible()).toBe(true);
     },
   );
 
@@ -254,7 +254,7 @@ describe("the inbox", () => {
         "Following",
       ]);
       const bar = page.getByRole("search", { name: "Filter the inbox" });
-      expect(await bar.count()).toBe(0);
+      await expect.poll(() => bar.count()).toBe(0);
       const made = await context.request.post(`${server.url}/v1/repositories`, {
         headers: { "X-Moebius": "1" },
         data: { name: "second", url: "/srv/git/second" },
@@ -268,7 +268,7 @@ describe("the inbox", () => {
       await page.getByRole("button", { name: "Show everything" }).click();
       expect(path()).toBe("/inbox");
       await expect.poll(() => items().count()).toBe(9);
-      expect(await bar.count()).toBe(0);
+      await expect.poll(() => bar.count()).toBe(0);
     },
   );
 
@@ -279,7 +279,7 @@ describe("the inbox", () => {
       await item("Fix the login redirect").getByRole("button", { name: "Approve" }).click();
       await items().filter({ hasText: "Fix the login redirect" }).waitFor({ state: "detached" });
       expect(board().requests.some((r) => r.path === "/v1/cards/2/approve")).toBe(true);
-      expect(await cardWindow().count()).toBe(0);
+      await expect.poll(() => cardWindow().count()).toBe(0);
       expect(path()).toBe("/inbox");
     },
   );
@@ -358,7 +358,7 @@ describe("the inbox", () => {
       // Taking the first out renumbers the others, and nothing waits for it any more.
       await grilling.getByRole("button", { name: "Remove issue 1" }).click();
       await grilling.getByLabel("Title of issue 2").waitFor();
-      expect(await grilling.getByLabel("Title of issue 3").count()).toBe(0);
+      await expect.poll(() => grilling.getByLabel("Title of issue 3").count()).toBe(0);
       await grilling.getByText("Blocked by issue 1", { exact: true }).waitFor();
       await grilling.getByText("Blocked by issue 1, 2").waitFor({ state: "detached" });
       // A blank title cannot be confirmed.
@@ -453,14 +453,14 @@ describe("the inbox", () => {
       await open("/inbox");
       await items().first().waitFor();
       // A row has no button but the one action of the row that waits for a plan.
-      expect(await items().getByRole("button").count()).toBe(1);
-      expect(await page.getByTestId("unread-dot").count()).toBe(0);
+      await expect.poll(() => items().getByRole("button").count()).toBe(1);
+      await expect.poll(() => page.getByTestId("unread-dot").count()).toBe(0);
 
       await choose("Let the Coder read the tests first");
       expect(path()).toMatch(/^\/inbox\?item=\d+$/);
       await page.reload();
       await decision().waitFor();
-      expect(await page.getByTestId("unread-dot").count()).toBe(0);
+      await expect.poll(() => page.getByTestId("unread-dot").count()).toBe(0);
     },
   );
 
@@ -472,7 +472,7 @@ describe("the inbox", () => {
     }
     server.broadcast?.({ kind: "card_updated", data: {} });
     await item("Seeded item 1999").waitFor();
-    expect(await page.getByTestId("inbox-item").count()).toBeLessThan(100);
+    await expect.poll(() => page.getByTestId("inbox-item").count()).toBeLessThan(100);
     const list = page.getByRole("list", { name: "Inbox" });
     await list.focus();
     await page.keyboard.press("End");
@@ -587,7 +587,9 @@ describe("projects", () => {
         .getByRole("list", { name: "Files" })
         .getByRole("button", { name: "README.md" })
         .waitFor();
-      expect(await page.getByRole("button", { name: "Delete repository" }).count()).toBe(0);
+      await expect
+        .poll(() => page.getByRole("button", { name: "Delete repository" }).count())
+        .toBe(0);
     },
   );
 
@@ -656,9 +658,9 @@ describe("projects", () => {
     await page.getByLabel("GitLab project").waitFor();
     await page.getByRole("button", { name: "Forgejo", exact: true }).click();
     await page.getByLabel("Forgejo repository").waitFor();
-    expect(await page.getByLabel("GitLab project").count()).toBe(0);
+    await expect.poll(() => page.getByLabel("GitLab project").count()).toBe(0);
     await page.getByRole("button", { name: "None", exact: true }).click();
-    expect(await page.getByLabel("Trusted authors").count()).toBe(0);
+    await expect.poll(() => page.getByLabel("Trusted authors").count()).toBe(0);
   });
 
   it.skipIf(usesRealServer)(
@@ -799,7 +801,7 @@ describe("projects", () => {
     expect(lastBody(fake().requests, "PUT", "/v1/repositories/1/files/src/main.rs")).toEqual({
       text: "fn main() {}\n",
     });
-    expect(await page.getByText("Unsaved changes.").count()).toBe(0);
+    await expect.poll(() => page.getByText("Unsaved changes.").count()).toBe(0);
     // What was saved is what the file is now.
     expect(await text.inputValue()).toBe("fn main() {}\n");
   });
@@ -836,7 +838,7 @@ describe("projects", () => {
     await page.getByText("logo.png is binary (48211 bytes), not editable here.").waitFor();
     await tree.getByRole("button", { name: "data.bin" }).click();
     await page.getByText("data.bin is over 1 MB (2000000 bytes), not editable here.").waitFor();
-    expect(await page.getByRole("textbox", { name: /^Text of/ }).count()).toBe(0);
+    await expect.poll(() => page.getByRole("textbox", { name: /^Text of/ }).count()).toBe(0);
   });
 
   it.skipIf(usesRealServer)(
@@ -869,7 +871,7 @@ describe("projects", () => {
         .waitFor();
       // The file is chosen, so the bar empties and the tree is on its own again.
       expect(await field.inputValue()).toBe("");
-      expect(await matches.count()).toBe(0);
+      await expect.poll(() => matches.count()).toBe(0);
 
       // Ctrl+P puts the caret in the bar, and the X empties it again.
       await page.keyboard.press("Control+p");
@@ -879,7 +881,7 @@ describe("projects", () => {
       await page.keyboard.type("guide");
       await page.getByRole("button", { name: "Clear go to file" }).click();
       expect(await field.inputValue()).toBe("");
-      expect(await matches.count()).toBe(0);
+      await expect.poll(() => matches.count()).toBe(0);
 
       // Typing again and clicking a result opens the file.
       await field.fill("guide");
@@ -942,7 +944,7 @@ describe("projects", () => {
 
     // Clearing the bar puts the editor back on its own.
     await page.getByRole("button", { name: "Clear search in files" }).click();
-    expect(await hits.count()).toBe(0);
+    await expect.poll(() => hits.count()).toBe(0);
   });
 
   it("opens the page of a repository with its files for a real server", async () => {
@@ -1008,7 +1010,7 @@ describe("the fleet", () => {
       const tiles = page.getByTestId("list-row");
       const card = tiles.filter({ hasText: "Add a feature" });
       // The runs are one list of rows with no group rows; a row says what the step is in plain words, not the command.
-      expect(await page.getByTestId("group-row").count()).toBe(0);
+      await expect.poll(() => page.getByTestId("group-row").count()).toBe(0);
       await card.getByText("Code ·").waitFor();
       await card.getByText("running the tests").waitFor();
       const talk = tiles.filter({ hasText: "Write a ready.luau" });
@@ -1021,10 +1023,10 @@ describe("the fleet", () => {
       await card.getByText("12k tokens").waitFor();
       await card.getByRole("button", { name: /^Stop/ }).waitFor();
       // A card that is done is not there.
-      expect(await tiles.filter({ hasText: "Ship the first release" }).count()).toBe(0);
+      await expect.poll(() => tiles.filter({ hasText: "Ship the first release" }).count()).toBe(0);
 
       // The row says the step its run is at, and a run event moves it on.
-      expect(await card.getByText("checking the code").count()).toBe(0);
+      await expect.poll(() => card.getByText("checking the code").count()).toBe(0);
       server.chat?.emit(1, "tool_execution_start", {
         type: "tool_execution_start",
         toolCallId: "t2",
@@ -1073,8 +1075,10 @@ describe("the fleet", () => {
       const tile = page.getByTestId("list-row").filter({ hasText: "Which branch?" });
       await tile.getByText("Asks you").waitFor();
       // The run that waits for the person is the first row with no group row above it.
-      expect(await page.getByTestId("group-row").count()).toBe(0);
-      expect(await page.getByTestId("list-row").first().textContent()).toContain("Which branch?");
+      await expect.poll(() => page.getByTestId("group-row").count()).toBe(0);
+      await expect
+        .poll(() => page.getByTestId("list-row").first().textContent())
+        .toContain("Which branch?");
       const chat = server.chat?.chats.find((each) => each.id === asking);
       if (chat) chat.status = "succeeded";
       server.broadcast?.({ kind: "run_ended", data: { run: asking, status: "succeeded" } });
@@ -1094,7 +1098,9 @@ describe("the fleet", () => {
       server.broadcast?.({ kind: "run_started", data: { run: chat } });
       await expect.poll(() => page.getByTestId("list-row").count()).toBe(2);
       const tiles = page.getByTestId("list-row");
-      expect(await page.getByRole("search", { name: "Filter the runs" }).count()).toBe(0);
+      await expect
+        .poll(() => page.getByRole("search", { name: "Filter the runs" }).count())
+        .toBe(0);
       const filter = page.getByRole("button", { name: "Filter", exact: true });
 
       await filter.click();
@@ -1163,7 +1169,9 @@ describe("usage", () => {
       await page.getByText("61%", { exact: true }).first().waitFor();
       await page.getByText("3 h 12 m", { exact: true }).first().waitFor();
       // The heatmap: a cell for each day of 53 weeks, and the busiest day.
-      expect(await page.getByTestId("heatmap").locator("span[title]").count()).toBeGreaterThan(300);
+      await expect
+        .poll(() => page.getByTestId("heatmap").locator("span[title]").count())
+        .toBeGreaterThan(300);
       await page.getByText(/busiest day Sat 24 Oct with 2\.52M/).waitFor();
       await page.getByText("No tokens that day").waitFor();
       await page.getByRole("heading", { name: "Tokens by model" }).waitFor();
@@ -1249,7 +1257,7 @@ describe("get started", () => {
   it("loads for a real server and for the fake", async () => {
     await open("/start");
     await page.getByRole("heading", { name: "Get started", level: 1 }).waitFor();
-    expect(await page.getByTestId("start-step").count()).toBe(5);
+    await expect.poll(() => page.getByTestId("start-step").count()).toBe(5);
   });
 
   it.skipIf(usesRealServer)("lists the steps with a button for each that is missing", async () => {
@@ -1267,7 +1275,7 @@ describe("get started", () => {
     // Only a missing step has a button.
     await page.getByRole("link", { name: "Open Settings" }).waitFor();
     for (const name of ["Open Models", "Open Agents", "Add repository"]) {
-      expect(await page.getByRole("link", { name }).count()).toBe(0);
+      await expect.poll(() => page.getByRole("link", { name }).count()).toBe(0);
     }
     await page.getByRole("link", { name: "Open Settings" }).click();
     await page.waitForURL("**/settings");
@@ -1362,7 +1370,7 @@ describe("settings", () => {
     await inside.getByRole("button", { name: "Start from Debian" }).click();
     // The editor drawn again with the preset stays.
     await editorHolds(sandbox, "FROM debian:stable-slim\n");
-    expect(await inside.getByTestId("code-editor").count()).toBe(1);
+    await expect.poll(() => inside.getByTestId("code-editor").count()).toBe(1);
     await box.getByRole("button", { name: "Save settings" }).click();
     await box.getByText("Saved. The plugin uses it from the next run.").waitFor();
     expect(lastBody(fake().requests, "PUT", "/v1/plugins/drawn-sandbox/settings")).toEqual({
@@ -1521,14 +1529,14 @@ describe("settings", () => {
       await page.getByText("Restart the server to use: listen").waitFor();
       await page.getByRole("button", { name: "Restart" }).click();
       await page.getByText("Restarting the server. The page reconnects by itself.").waitFor();
-      expect(await page.getByRole("button", { name: "Restart" }).count()).toBe(0);
+      await expect.poll(() => page.getByRole("button", { name: "Restart" }).count()).toBe(0);
       expect(fake().requests.map((r) => r.path)).toContain("/v1/server/restart");
       // When the event stream is back everything is read again, and nothing is left to restart.
       server.broadcast?.({ kind: "lagged", data: { missed: 1 } });
       await page
         .getByText("Restarting the server. The page reconnects by itself.")
         .waitFor({ state: "detached" });
-      expect(await page.getByText(/Restart the server to use/).count()).toBe(0);
+      await expect.poll(() => page.getByText(/Restart the server to use/).count()).toBe(0);
     },
   );
 
@@ -1540,18 +1548,18 @@ describe("settings", () => {
       await github.getByText(`${server.url}/v1/webhooks/github`).waitFor();
       await github.getByText("X-Hub-Signature-256").waitFor();
       const secret = "whsec_0123456789abcdef0123456789abcdef";
-      expect(await page.getByText(secret).count()).toBe(0);
+      await expect.poll(() => page.getByText(secret).count()).toBe(0);
       await github.getByRole("button", { name: "Show" }).click();
       await github.getByText(secret).waitFor();
       await github.getByRole("button", { name: "Hide" }).click();
-      expect(await page.getByText(secret).count()).toBe(0);
+      await expect.poll(() => page.getByText(secret).count()).toBe(0);
       await github.getByRole("button", { name: /^Copy/ }).click();
       await github.getByText("Copied").waitFor();
       expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(secret);
 
       const gitlab = page.getByTestId("webhook-gitlab");
       await gitlab.getByText("No secret yet: webhooks of this forge are off").waitFor();
-      expect(await gitlab.getByRole("button", { name: "Show" }).count()).toBe(0);
+      await expect.poll(() => gitlab.getByRole("button", { name: "Show" }).count()).toBe(0);
       await gitlab.getByRole("button", { name: "Make a secret" }).click();
       await gitlab.getByRole("button", { name: "Make a new secret" }).waitFor();
       expect(fake().requests.map((r) => r.path)).toContain("/v1/webhooks/gitlab/secret");
