@@ -73,7 +73,6 @@
   --color-cat-4: var(--cat-4);
   --color-cat-5: var(--cat-5);
   --color-cat-6: var(--cat-6);
-  --color-code: var(--code-background);
   --color-code-keyword: var(--code-keyword);
   --color-code-string: var(--code-string);
   --color-code-number: var(--code-number);
@@ -124,6 +123,8 @@
   --color-code-function: var(--code-function);
   --color-code-operator: var(--code-operator);
   --color-code-comment: var(--code-comment);
+  --color-code-error: var(--code-error);
+  --color-code-added: var(--code-added);
   --color-avatar-1: var(--avatar-1);
   --color-avatar-2: var(--avatar-2);
   --color-avatar-3: var(--avatar-3);

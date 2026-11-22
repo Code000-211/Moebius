@@ -13,6 +13,10 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "../components/Button";
 import { cn } from "../lib/cn";
 
+/** The look of the button on the dark colour of code: always seen, in the quiet text of code, its hover readable. */
+export const COPY_ON_CODE =
+  "text-code-head opacity-100! hover:bg-code-head/15 hover:text-code-text";
+
 type State = "idle" | "copied" | "failed";
 
 export function CopyButton({

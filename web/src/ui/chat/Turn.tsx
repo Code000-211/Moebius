@@ -32,7 +32,7 @@ import { ChatQuestion } from "./ChatQuestion";
 import { ChatTodoList } from "./ChatTodoList";
 import { ChatToolSummary } from "./ChatToolSummary";
 import { ChatUserMessage } from "./ChatUserMessage";
-import { CopyButton } from "./CopyButton";
+import { COPY_ON_CODE, CopyButton } from "./CopyButton";
 import { DiffBody, type DiffChange, diffStats } from "./DiffBody";
 import { Markdown } from "./Markdown";
 import type { ToolStatusLike } from "./ToolStatusDot";
@@ -86,31 +86,31 @@ function Details({ call }: { call: ToolCall }) {
   return (
     <div
       data-testid="tool-details"
-      className="reveal-copy mt-1 flex flex-col gap-3 rounded-control bg-code p-3"
+      className="reveal-copy mt-1 flex flex-col gap-3 rounded-control bg-code-bg p-3"
     >
       {check && !check.allowed && (
-        <p className="break-words text-sm font-semibold text-error-text">
+        <p className="break-words text-sm font-semibold text-code-error">
           Blocked: {check.reason || "a rule refused this call"}
         </p>
       )}
       {input && (
         <div className="flex items-start gap-3">
-          <pre className="min-w-0 flex-1 break-all whitespace-pre-wrap font-mono text-sm text-text">
+          <pre className="min-w-0 flex-1 break-all whitespace-pre-wrap font-mono text-sm text-code-text">
             {input}
           </pre>
-          <CopyButton text={input} label="Copy input" />
+          <CopyButton text={input} label="Copy input" className={COPY_ON_CODE} />
         </div>
       )}
       {call.output !== "" && (
-        <div className="flex flex-col gap-2 border-t border-hairline pt-3">
+        <div className="flex flex-col gap-2 border-t border-code-head/30 pt-3">
           <div className="flex items-start gap-3">
-            <pre className="max-h-64 min-w-0 flex-1 overflow-auto break-all whitespace-pre-wrap font-mono text-sm text-text tabular-nums">
+            <pre className="max-h-64 min-w-0 flex-1 overflow-auto break-all whitespace-pre-wrap font-mono text-sm text-code-text tabular-nums">
               {shown}
             </pre>
-            <CopyButton text={call.output} label="Copy output" />
+            <CopyButton text={call.output} label="Copy output" className={COPY_ON_CODE} />
           </div>
           {output.length > MAX_OUTPUT_LINES && (
-            <p className="m-0 text-sm text-secondary tabular-nums">
+            <p className="m-0 text-sm text-code-head tabular-nums">
               {plural(output.length - MAX_OUTPUT_LINES, "more line", "more lines")} left out
             </p>
           )}

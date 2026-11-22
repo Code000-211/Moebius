@@ -108,7 +108,7 @@ export function ScriptEditor({
             {problem.line === null ? problem.message : `Line ${problem.line}: ${problem.message}`}
           </p>
           {problem.full.includes("\n") && (
-            <pre className="m-0 overflow-auto rounded-control bg-code p-4 font-mono text-sm text-text">
+            <pre className="m-0 overflow-auto rounded-control bg-code-bg p-4 font-mono text-sm text-code-text">
               {problem.full}
             </pre>
           )}
