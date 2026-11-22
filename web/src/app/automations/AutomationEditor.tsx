@@ -69,7 +69,12 @@ export function Editor({
     setRefused(null);
     setForm({ ...form, ...change });
   };
-  const refresh = () => queryClient.invalidateQueries({ queryKey: keys.automations });
+  // An automation is also a workflow of its project: a save or a delete makes, renames or removes that workflow.
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: keys.automations }),
+      queryClient.invalidateQueries({ queryKey: keys.workflows }),
+    ]);
   const agentList = useQuery({ queryKey: keys.agents, queryFn: agents });
   const save = useMutation({
     mutationFn: (settings: AutomationSettings) => saveAutomation(id, settings),

@@ -353,7 +353,7 @@ const PROJECT_NAME = "demo";
 /** The repositories of that project, by name; a run is started in one of them. */
 const PROJECT_REPOSITORIES = new Map([["demo", 1]]);
 
-/** What the automations of the fake are: each is a schedule workflow of its project, named like it. */
+/** What the automations of the fake are: each is a schedule workflow of its project, `automation-<id>`. */
 export type AutomationSource = () => Array<{ id: number; name: string; project_id: number }>;
 
 /** What `GET /v1/workflows` answers for a workflow: its row, with the newest of its runs. */
@@ -579,12 +579,12 @@ export function createWorkflowsFake(automations: AutomationSource = () => []): W
       .map((graph) => summaryOf(graph, runs.values())),
     // An automation is a schedule that starts one chat: the server keeps it as a workflow named like it.
     ...automations()
-      .filter((each) => each.project_id === PROJECT && !graphs.has(each.name))
+      .filter((each) => each.project_id === PROJECT)
       .map(
         (each): WorkflowSummary => ({
           project: PROJECT,
           project_name: PROJECT_NAME,
-          name: each.name,
+          name: `automation-${each.id}`,
           description: "A schedule that starts one chat.",
           trigger_kind: "schedule",
           node_count: 1,

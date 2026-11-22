@@ -26,7 +26,7 @@ export interface PagesCFake {
   readonly research: Array<Json & { id: number; status: string }>;
   /** What `GET /v1/retros` lists. A test that needs more days than the four writes them here. */
   readonly days: Array<{ date: string; status: string; errors: number; proposals: number }>;
-  /** The automations as the server lists them now: each is a schedule workflow of its project, named like it. */
+  /** The automations as the server lists them now: each is a schedule workflow of its project, `automation-<id>`. */
   automationList(): Array<{ id: number; name: string; project_id: number }>;
 }
 

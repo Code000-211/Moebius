@@ -56,7 +56,7 @@ describe.skipIf(usesRealServer)("the project's Workflows tab", () => {
     await release.getByRole("heading", { name: "release" }).waitFor();
     await release.getByText("Build, test and publish a release.").waitFor();
     await release.getByText("Schedule", { exact: true }).waitFor();
-    await release.getByText(/Last run: failed/).waitFor();
+    await release.getByText("Failed", { exact: true }).waitFor();
     const deploy = page.getByTestId("workflow-row").filter({ hasText: "deploy" });
     await deploy.getByRole("heading", { name: "deploy" }).waitFor();
     await deploy.getByText("Manual", { exact: true }).waitFor();

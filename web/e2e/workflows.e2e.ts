@@ -59,7 +59,7 @@ describe.skipIf(usesRealServer)("a project's Workflows tab", () => {
     await definition(page, "release").waitFor();
     await definition(page, "deploy").waitFor();
     await definition(page, "tidy").waitFor();
-    await definition(page, "release").getByText("Last run: failed").waitFor();
+    await definition(page, "release").getByText("Failed", { exact: true }).waitFor();
     await definition(page, "deploy").getByText("Manual", { exact: true }).waitFor();
     const runs = page.getByTestId("run-row");
     await runs.first().waitFor();
