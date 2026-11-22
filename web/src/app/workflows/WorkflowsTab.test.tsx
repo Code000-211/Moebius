@@ -10,6 +10,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { createMemoryRouter, RouterProvider, useLocation } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project } from "../../api/types/projects";
+import type { WorkflowSummary } from "../../api/types/workflows";
 import { WorkflowsTab } from "./WorkflowsTab";
 
 const NOW = Math.floor(Date.now() / 1000);
@@ -36,7 +37,13 @@ const PLATFORM = project(1, "Platform", [
 ]);
 const BLOG = project(2, "Blog", [{ id: 7, name: "blog", home: true }]);
 
-const summary = (projectId: number, name: string, trigger: string, last: string | null) => ({
+const summary = (
+  projectId: number,
+  name: string,
+  trigger: string,
+  last: string | null,
+  extra: Partial<WorkflowSummary> = {},
+): WorkflowSummary => ({
   project: projectId,
   project_name: projectId === 1 ? "Platform" : "Blog",
   name,
@@ -47,6 +54,7 @@ const summary = (projectId: number, name: string, trigger: string, last: string 
     last === null
       ? null
       : { id: 1, status: last, created_at: NOW, started_at: NOW, finished_at: null },
+  ...extra,
 });
 
 const run = (
@@ -72,13 +80,21 @@ const run = (
   error,
 });
 
-const WORKFLOWS: Record<number, ReturnType<typeof summary>[]> = {
+const WORKFLOWS: Record<number, WorkflowSummary[]> = {
   1: [
     summary(1, "release", "manual", "failed"),
     summary(1, "triage", "schedule", "succeeded"),
-    summary(1, "on-push", "webhook", null),
+    summary(1, "on-push", "webhook", null, { hook_address: "/api/hooks/projects/1/push" }),
+    summary(1, "nightly-sweep", "schedule", null, {
+      next_firing: NOW + 5 * 3600 + 60,
+      last_fired: NOW - 19 * 3600,
+    }),
+    summary(1, "paused-sweep", "schedule", null),
   ],
-  2: [summary(2, "blog-deploy", "manual", null)],
+  2: [
+    summary(2, "blog-deploy", "manual", null),
+    summary(2, "blog-hook", "webhook", null, { hook_address: "/api/hooks/projects/2/blog" }),
+  ],
 };
 const RUNS = [
   run(11, 1, "release", 5, "running"),
@@ -216,6 +232,8 @@ describe("the tab's lists", () => {
       "release",
       "triage",
       "on-push",
+      "nightly-sweep",
+      "paused-sweep",
     ]);
     expect(screen.queryByText("blog-deploy")).toBeNull();
     const runs = screen.getAllByTestId("run-row");
@@ -233,9 +251,11 @@ describe("the tab's lists", () => {
   it("shows the other project's own when that project is open", async () => {
     show(BLOG);
     const rows = await screen.findAllByTestId("workflow-row");
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(2);
     expect(screen.getAllByTestId("run-row")).toHaveLength(1);
     expect(screen.queryByText("release")).toBeNull();
+    // Its own hook shows, with its own project in the address, and the first project's does not.
+    expect(screen.getByTestId("hook-address").textContent).toBe("/api/hooks/projects/2/blog");
   });
 
   it("links a name to its definition under the project and a run to its page", async () => {
@@ -273,9 +293,14 @@ describe("the Scheduled filter", () => {
   it("lists the schedule-trigger workflows with when each fires next, and the scheduled runs", async () => {
     show(PLATFORM, "/projects/1/workflows?runs=scheduled");
     const rows = await screen.findAllByTestId("scheduled-row");
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(3);
     expect(rows[0]?.textContent).toContain("triage");
     expect(rows[0]?.textContent).toContain("Every morning at 8 · next in 3 h");
+    // A schedule that is not an automation says when it fires next too, as the server worked it out.
+    const sweep = rows.find((each) => each.textContent?.includes("nightly-sweep"));
+    expect(sweep?.textContent).toContain("Schedule · next in 5 h · last fired 19h ago");
+    const paused = rows.find((each) => each.textContent?.includes("paused-sweep"));
+    expect(paused?.textContent).toContain("Schedule · no next firing");
     // The other project's automation is not here.
     expect(screen.queryByText("blog-digest")).toBeNull();
     const runs = screen.getAllByTestId("run-row");
@@ -378,5 +403,31 @@ describe("Run a workflow here", () => {
     await within(dialog).findByLabelText("Repository");
     fireEvent.click(within(dialog).getByRole("button", { name: "Run" }));
     expect(await within(dialog).findByText(/is not one of the project's/)).toBeTruthy();
+  });
+});
+
+describe("the address of a webhook workflow", () => {
+  it("names the project, on the workflow's own row", async () => {
+    show(PLATFORM);
+    const rows = await screen.findAllByTestId("workflow-row");
+    const hooked = rows.find((each) => each.textContent?.includes("on-push"));
+    expect(within(hooked as HTMLElement).getByTestId("hook-address").textContent).toBe(
+      "/api/hooks/projects/1/push",
+    );
+    // Another trigger has no address, and another project's hook is not here.
+    expect(screen.getAllByTestId("hook-address")).toHaveLength(1);
+    expect(screen.queryByText("/api/hooks/projects/2/blog")).toBeNull();
+    expect(screen.queryByText("blog-hook")).toBeNull();
+  });
+
+  it("copies the address", async () => {
+    const writeText = vi.fn(async () => {});
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    show(PLATFORM);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Copy the webhook address of on-push" }),
+    );
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("/api/hooks/projects/1/push"));
+    expect(await screen.findByText("Copied")).toBeTruthy();
   });
 });

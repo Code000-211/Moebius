@@ -35,6 +35,10 @@ const INPUTS: &str = "inputs";
 /// no run for the hours it missed.
 const LOOK_BACK: time::Duration = time::Duration::minutes(5);
 
+/// How many occurrences of a schedule [`ScheduleTrigger::next_firing`] passes over for falling in a skipped hour: more
+/// than the minutes of one, so that a schedule firing every minute still finds the first minute after the gap.
+const MAX_SKIPPED: usize = 61;
+
 /// What a workflow's `schedule` trigger asks for.
 #[derive(Debug)]
 pub struct ScheduleTrigger {
@@ -143,6 +147,32 @@ impl ScheduleTrigger {
         Some(firing)
     }
 
+    /// The minute the schedule comes due next after `now`, in the server's local minutes, for showing when it fires; none
+    /// while the schedule is off or when it never comes due. `exists` says whether the local clock reads a minute at all:
+    /// the hour a spring-forward day skips has no minutes, the scheduler never sees them, so an occurrence in it is
+    /// passed over for the next one, which is when the scheduler fires. A minute the clock reads twice on a fall-back
+    /// day is one occurrence and stays as it is.
+    pub fn next_firing(
+        &self,
+        now: PrimitiveDateTime,
+        exists: impl Fn(PrimitiveDateTime) -> bool,
+    ) -> Option<PrimitiveDateTime> {
+        if !self.enabled {
+            return None;
+        }
+        let schedule = cron::parse(&self.cron).ok()?;
+        let mut after = now;
+        // One day holds at most 60 skipped minutes, so a few passes find the next one that is real.
+        for _ in 0..MAX_SKIPPED {
+            let next = schedule.next_after(after)?;
+            if exists(next) {
+                return Some(next);
+            }
+            after = next;
+        }
+        None
+    }
+
     /// The value a run started by the firing at `at` begins with: the minute it fired at and the inputs' defaults.
     pub fn firing_value(&self, at: PrimitiveDateTime) -> Value {
         Value::Object(Map::from_iter([
@@ -170,6 +200,51 @@ mod tests {
 
     fn trigger(cron: &str) -> ScheduleTrigger {
         ScheduleTrigger::parse(&json!({ "cron": cron })).unwrap()
+    }
+
+    #[test]
+    fn the_next_firing_is_the_next_minute_the_cron_comes_due() {
+        let schedule = trigger("30 3 * * *");
+        assert_eq!(
+            schedule.next_firing(datetime!(2026-11-09 03:30:00), |_| true),
+            Some(datetime!(2026-11-10 03:30:00))
+        );
+        assert_eq!(
+            schedule.next_firing(datetime!(2026-11-09 01:00:00), |_| true),
+            Some(datetime!(2026-11-09 03:30:00))
+        );
+    }
+
+    #[test]
+    fn a_switched_off_schedule_has_no_next_firing() {
+        let schedule =
+            ScheduleTrigger::parse(&json!({ "cron": "* * * * *", "enabled": false })).unwrap();
+        assert_eq!(
+            schedule.next_firing(datetime!(2026-11-09 03:30:00), |_| true),
+            None
+        );
+    }
+
+    #[test]
+    fn an_occurrence_in_the_hour_a_spring_forward_day_skips_is_passed_over() {
+        // The clock goes from 02:00 to 03:00 on the eighth of March, so 02:30 is never read that day and the scheduler
+        // never fires it: the next firing is the next day's.
+        let gap = |at: PrimitiveDateTime| {
+            at.date() != datetime!(2026-03-08 00:00:00).date() || at.hour() != 2
+        };
+        assert_eq!(
+            trigger("30 2 * * *").next_firing(datetime!(2026-03-07 12:00:00), gap),
+            Some(datetime!(2026-03-09 02:30:00))
+        );
+        // A schedule that comes due every minute finds the first minute after the gap.
+        assert_eq!(
+            trigger("* * * * *").next_firing(datetime!(2026-03-08 01:58:00), gap),
+            Some(datetime!(2026-03-08 01:59:00))
+        );
+        assert_eq!(
+            trigger("* * * * *").next_firing(datetime!(2026-03-08 01:59:00), gap),
+            Some(datetime!(2026-03-08 03:00:00))
+        );
     }
 
     #[test]

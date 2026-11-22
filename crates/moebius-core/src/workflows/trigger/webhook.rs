@@ -89,7 +89,7 @@ pub struct Hook {
 pub fn matching(workflows: &[(String, WorkflowDefinition)], path: &str) -> Vec<Hook> {
     let mut found = Vec::new();
     for (name, definition) in workflows {
-        let Some(trigger) = trigger_of(definition) else {
+        let Some(trigger) = of(definition) else {
             continue;
         };
         if trigger.path != path {
@@ -116,7 +116,7 @@ pub fn only(mut hooks: Vec<Hook>) -> Result<Option<Hook>, String> {
 }
 
 /// The webhook trigger of a workflow that has one, and none for a workflow triggered otherwise.
-fn trigger_of(definition: &WorkflowDefinition) -> Option<WebhookTrigger> {
+pub fn of(definition: &WorkflowDefinition) -> Option<WebhookTrigger> {
     let trigger = definition
         .trigger
         .first()
@@ -176,7 +176,7 @@ port = "out"
     #[test]
     fn a_workflow_file_with_a_webhook_trigger_is_valid() {
         let definition = definition::parse("w", FILE).unwrap();
-        let trigger = trigger_of(&definition).unwrap();
+        let trigger = of(&definition).unwrap();
         assert_eq!(trigger.path, "build");
         assert_eq!(trigger.secret.as_deref(), Some("build-hook"));
         assert_eq!(trigger.repository.as_deref(), Some("radiance"));
@@ -349,9 +349,9 @@ port = "out"
 
     #[test]
     fn only_a_webhook_trigger_on_a_path_is_a_hook() {
-        assert!(trigger_of(&definition("\"test\"")).is_none());
+        assert!(of(&definition("\"test\"")).is_none());
         assert!(
-            trigger_of(&definition("\"webhook\"")).is_none(),
+            of(&definition("\"webhook\"")).is_none(),
             "a webhook trigger with no path answers on no path"
         );
     }

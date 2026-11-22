@@ -1,7 +1,8 @@
 /**
  * The Workflows tab of a project: what the project's workflows are and what they have done, in one place (ADR 0025).
  * Above, the project's workflow definitions, one row each: the name, what it is for, what starts it and how its last
- * run went; the name opens the definition, which opens the canvas. Below, the runs of this project, newest first,
+ * run went; the name opens the definition, which opens the canvas. A workflow on a webhook trigger also shows the
+ * address it answers on, with the project in it and a button that copies it (`HookAddress.tsx`). Below, the runs of this project, newest first,
  * filtered All, Scheduled or Failed. The Scheduled filter first lists the project's schedule-trigger workflows with when
  * each fires next, and edits one in the editor window (`../automations/AutomationEditor.tsx`); "New scheduled
  * workflow" opens that window with the automation template. "Run a workflow here" at the far right of the header
@@ -41,8 +42,16 @@ import {
 } from "../automations/model";
 import { workflowPath, workflowRunPath } from "../pages";
 import { ProjectHeader } from "../projects/ProjectHeader";
+import { HookAddress } from "./HookAddress";
 import type { RunFilter } from "./model";
-import { lastRunLine, runFilter, runStatus, scheduledWorkflows, triggerName } from "./model";
+import {
+  lastRunLine,
+  runFilter,
+  runStatus,
+  scheduledWorkflows,
+  scheduleLine,
+  triggerName,
+} from "./model";
 import { NewWorkflowDialog } from "./NewWorkflowDialog";
 import { RunWorkflowDialog } from "./RunWorkflowDialog";
 
@@ -317,6 +326,9 @@ function DefinitionList({
                 </Link>
               </h3>
               <span className="min-w-0 truncate text-xs text-text-muted">{each.description}</span>
+              {each.hook_address !== undefined && (
+                <HookAddress workflow={each.name} address={each.hook_address} />
+              )}
             </span>
             <span className="hidden w-24 shrink-0 text-xs text-text-muted sm:block">
               {triggerName(each.trigger_kind)}
@@ -385,7 +397,7 @@ function ScheduledList({
                 )}
               >
                 {automation === undefined
-                  ? "Schedule"
+                  ? scheduleLine(workflow, now)
                   : automation.last_firing?.status === "failed"
                     ? automation.last_firing.reason
                     : automation.next_firing !== null
