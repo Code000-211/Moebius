@@ -1,17 +1,20 @@
 /**
- * The rules of one rules file as 36px rows: the rule's name in mono, its text cut to one line, and at the right how
- * often it refused this week. A row opens the rule in the editor window (`EditorWindow`) with its name and text, Save,
- * Cancel and Delete (which asks first); a last row, "Add a rule", opens the same window empty. A save puts the rule's
- * section back into the file's text (`file.ts`) and hands the whole file to `onSave`, which the server checks; a
- * refusal stays in the window, beside the buttons, and a save is confirmed by a toast.
+ * The rules of one rules file as blocks (`RuleBlock`): the rule's name and scope, its whole text as prose, and a muted
+ * line of where it applies and how often it refused this week. A block opens the rule in the editor window
+ * (`EditorWindow`) with its name and text, Save, Cancel and Delete (which asks first); a scope without a rule says so
+ * and offers "Add a rule", which opens the same window empty, as does "New rule" of the page header (`creating`). A
+ * save puts the rule's section back into the file's text (`file.ts`) and hands the whole file to `onSave`, which the
+ * server checks; a refusal stays in the window, beside the buttons, and a save is confirmed by a toast.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { sayError } from "../../api/errorText";
 import type { Rule } from "../../api/types/rules";
+import { Markdown } from "../../ui/chat/Markdown";
+import { Button } from "../../ui/components/Button";
 import { DeleteButton, EditorWindow } from "../../ui/components/EditorWindow";
 import { Input } from "../../ui/components/Input";
-import { AddIcon } from "../../ui/icons";
+import { LockIcon } from "../../ui/icons";
 import { cn } from "../../ui/lib/cn";
 import { plural } from "../../ui/lib/format";
 import { ConfirmDelete } from "../../ui/page/ConfirmDelete";
@@ -38,6 +41,10 @@ export function RuleList({
   refusals,
   editable,
   empty,
+  chip,
+  where,
+  creating,
+  onCreated,
   onSave,
 }: {
   rules: Rule[];
@@ -48,6 +55,13 @@ export function RuleList({
   editable: boolean;
   /** What the list says when there is no rule. */
   empty: string;
+  /** The scope each block names beside its rule. */
+  chip: string;
+  /** Where the rules apply, the first of each block's muted line. */
+  where: string;
+  /** True while the page asks for a new rule; `onCreated` is called once the empty editor is open. */
+  creating: boolean;
+  onCreated: () => void;
   /** Saves the whole file; resolves with the short id of the commit when the server says one. */
   onSave: (file: string) => Promise<string | undefined>;
 }) {
@@ -90,25 +104,35 @@ export function RuleList({
     setSaving(false);
   }
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new request to create opens the editor.
+  useEffect(() => {
+    if (!creating) return;
+    open(null);
+    onCreated();
+  }, [creating]);
+
   return (
     <div className="flex flex-col">
-      {rules.length === 0 && <p className="m-0 px-4 py-2 text-base text-muted">{empty}</p>}
+      {rules.length === 0 && (
+        <div className="flex flex-col items-start gap-3">
+          <p className="m-0 text-base text-muted">{empty}</p>
+          {editable && (
+            <Button size="sm" variant="secondary" onClick={() => open(null)}>
+              Add a rule
+            </Button>
+          )}
+        </div>
+      )}
       {rules.map((rule) => (
-        <RuleRow
+        <RuleBlock
           key={rule.name}
           name={rule.name}
           text={rule.text}
-          state={refused(refusals, rule.name)}
+          chip={chip}
+          meta={[where, refused(refusals, rule.name)]}
           onOpen={editable ? () => open(rule) : undefined}
         />
       ))}
-      {editable && (
-        <RuleRow
-          name="Add a rule"
-          icon={<AddIcon className="size-4 shrink-0 text-muted" aria-hidden="true" />}
-          onOpen={() => open(null)}
-        />
-      )}
       {editing && (
         <EditorWindow
           open
@@ -167,52 +191,70 @@ export function RuleList({
   );
 }
 
-/** One rule as a row of 36px; without `onOpen` it is read only. */
-export function RuleRow({
+/** The scope of a rule, a quiet tag after its name. */
+export function ScopeChip({ children }: { children: string }) {
+  return (
+    <span className="shrink-0 rounded-control bg-sunken px-1.5 py-px text-xs text-secondary">
+      {children}
+    </span>
+  );
+}
+
+/**
+ * One rule as a block: its name (not mono) with its scope, the whole text wrapped as quiet prose, and a muted line of
+ * what is known about it (empty parts are left out). Without `onOpen` it is read only and shows a lock; with it the
+ * name and the block open the rule, and a link inside the text stays a link.
+ */
+export function RuleBlock({
   name,
   text,
-  state,
-  icon,
+  chip,
+  meta,
   onOpen,
 }: {
   name: string;
-  text?: string;
-  /** What is said at the right: how often it refused, or that it is always on. */
-  state?: string;
-  icon?: React.ReactNode;
+  text: string;
+  chip: string;
+  meta: string[];
   onOpen?: () => void;
 }) {
-  const body = (
-    <>
-      {icon}
-      <span
-        className={cn("shrink-0 truncate", text ? "font-mono text-sm font-medium" : "text-muted")}
-        style={text ? { maxWidth: "14rem" } : undefined}
-      >
-        {name}
-      </span>
-      {text && (
-        <span className="min-w-0 flex-1 truncate text-muted" title={text}>
-          {text}
-        </span>
+  const said = meta.filter((part) => part !== "");
+  return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the name inside is the keyboard's way to open the block.
+    <article
+      aria-label={name}
+      onClick={
+        onOpen
+          ? (event) => {
+              if (!(event.target as HTMLElement).closest("a, button")) onOpen();
+            }
+          : undefined
+      }
+      className={cn(
+        "flex flex-col gap-1.5 border-b border-hairline py-4 first:pt-0",
+        onOpen && "cursor-pointer",
       )}
-      {state && (
-        <span className="ml-auto shrink-0 text-xs tabular-nums text-attention-text">{state}</span>
-      )}
-    </>
-  );
-  const row =
-    "flex h-9 w-full items-center gap-2.5 border-b border-hairline px-4 text-left text-base text-text";
-  return onOpen ? (
-    <button
-      type="button"
-      aria-label={text ? `Edit rule ${name}` : name}
-      onClick={onOpen}
-      className={cn(row, "cursor-pointer hover:bg-row-hover")}
     >
-      {body}
-    </button>
-  ) : (
-    <div className={row}>{body}</div>
+      <div className="flex min-w-0 items-center gap-2">
+        {onOpen ? (
+          <button
+            type="button"
+            aria-label={`Edit rule ${name}`}
+            onClick={onOpen}
+            className="m-0 min-w-0 cursor-pointer truncate bg-transparent p-0 text-left text-base font-semibold text-text hover:underline"
+          >
+            {name}
+          </button>
+        ) : (
+          <h3 className="m-0 min-w-0 truncate text-base font-semibold text-text">{name}</h3>
+        )}
+        <ScopeChip>{chip}</ScopeChip>
+        {!onOpen && (
+          <LockIcon className="size-3.5 shrink-0 text-muted" aria-label="Read only" role="img" />
+        )}
+      </div>
+      <Markdown content={text} className="text-secondary" />
+      {said.length > 0 && <p className="m-0 text-sm text-muted">{said.join(" · ")}</p>}
+    </article>
   );
 }

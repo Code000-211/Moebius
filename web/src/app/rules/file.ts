@@ -55,6 +55,11 @@ export function agentRequest(wanted: string): string {
   ].join("\n\n");
 }
 
+/** The request of "Write with Moebius": the same task, with the wish left for the agent to ask the person. */
+export function writeRequest(): string {
+  return agentRequest("Ask me what should be allowed or forbidden before you write anything.");
+}
+
 /** How often a rule refused a call in the last 7 days, as the tag says it. */
 export function refusalsLabel(refusals: Record<string, number>, name: string): string {
   const n = refusals[name] ?? 0;
