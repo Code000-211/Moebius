@@ -245,10 +245,13 @@ export function ManualTriggerForm({ trigger, onTrigger }: TriggerFormProps) {
 }
 
 /** The webhook trigger: the path it is called at, the secret that call must carry, and its repository. */
-/** The address a webhook trigger is called at: the project's own when the project is known. */
+/**
+ * The address a webhook trigger is called at: always the project's own (ADR 0025). The address without the project is
+ * deprecated, so where the project is not known the address keeps a `{project}` placeholder rather than leave it out.
+ */
 export function hookAddress(project: number | undefined, path: string): string {
   const tail = path.trim() === "" ? "{path}" : path.trim().replace(/^\/+/, "");
-  return project === undefined ? `/api/hooks/${tail}` : `/api/hooks/projects/${project}/${tail}`;
+  return `/api/hooks/projects/${project ?? "{project}"}/${tail}`;
 }
 
 export function WebhookTriggerForm({ trigger, onTrigger, project }: TriggerFormProps) {

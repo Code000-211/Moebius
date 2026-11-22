@@ -2852,16 +2852,32 @@ harness configuration repository (see [workflows](workflows.md)); the same name 
 an array of `{"project": number, "project_name": string, "name": string, "description": string, "trigger_kind": string,
 "node_count": number, "last_run": object or null}`; `trigger_kind` is the `kind` of the first trigger, empty for a workflow
 with none, and `last_run` is the newest run of the workflow that the person sees, `{"id": number, "status": string,
-"created_at": number, "started_at": number or null, "finished_at": number or null}`, or null when it never ran. Errors:
+"created_at": number, "started_at": number or null, "finished_at": number or null}`, or null when it never ran. A workflow
+on a `schedule` trigger adds `next_firing` and `last_fired` (Unix seconds) and one on a `webhook` trigger adds
+`hook_address`; each is left out where it has nothing to say ([the fields](#fields-a-trigger-adds)). Errors:
 `404` no such project, or a private project the person is not in (as for every route under `/v1/projects/{id}/`); `409`
 the server has no `[harness]`; `422` a workflow file that cannot be used (the message names its file).
 
 ### `GET /v1/projects/{id}/workflows/{name}`
 
 One workflow of the project. Response: `{"project": number, "project_name": string, "name": string, "file": string,
-"definition": object}`, the text of the file exactly as it is saved and the definition parsed from it. Errors: `404` no
+"definition": object}`, the text of the file exactly as it is saved and the definition parsed from it, with the fields a
+trigger adds ([below](#fields-a-trigger-adds)). Errors: `404` no
 such project or workflow; `422` the name or the file cannot be used (the name is not one a file can have, or the file is
 not valid); `409` the server has no `[harness]`.
+
+#### Fields a trigger adds
+
+Both routes above add these to a workflow, left out where they do not apply, so a workflow on any other trigger has none:
+
+- `next_firing` (number): on a `schedule` trigger, when it fires next as Unix seconds, found as the scheduler fires: the
+  trigger's `cron` is read in the server's local time, and an occurrence in the hour a spring-forward day skips is passed
+  over for the next one. Left out while the trigger is `enabled = false` or its cron never comes due.
+- `last_fired` (number): on a `schedule` trigger, the occurrence it last fired at, as Unix seconds; left out before it
+  first fires. An automation's own `next_firing` is the same time.
+- `hook_address` (string): on a `webhook` trigger, the address it answers on with the project in it,
+  `/api/hooks/projects/{project}/{path}` ([the trigger](workflows/webhook-trigger.md)); the address without the project is
+  deprecated and is not given.
 
 ### `PUT /v1/projects/{id}/workflows/{name}`
 

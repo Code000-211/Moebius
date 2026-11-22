@@ -7,8 +7,8 @@ describe("hookAddress", () => {
     expect(hookAddress(3, "/release")).toBe("/api/hooks/projects/3/release");
   });
 
-  it("leaves the plain address when it is not", () => {
-    expect(hookAddress(undefined, "release")).toBe("/api/hooks/release");
+  it("never gives the deprecated address without the project", () => {
+    expect(hookAddress(undefined, "release")).toBe("/api/hooks/projects/{project}/release");
   });
 
   it("shows a placeholder for an empty path", () => {

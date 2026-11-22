@@ -357,6 +357,17 @@ const PROJECT_REPOSITORIES = new Map([["demo", 1]]);
 export type AutomationSource = () => Array<{ id: number; name: string; project_id: number }>;
 
 /** What `GET /v1/workflows` answers for a workflow: its row, with the newest of its runs. */
+/** What the server adds to a workflow's row for its trigger: when a schedule fires and where a hook answers. */
+function triggerFields(graph: GraphDefinition): Partial<WorkflowSummary> {
+  const trigger = graph.trigger[0];
+  if (trigger?.kind === "schedule")
+    return { next_firing: NOW() + 7 * 3600 + 60, last_fired: NOW() - 17 * 3600 };
+  const path = trigger?.params?.path;
+  if (trigger?.kind === "webhook" && typeof path === "string")
+    return { hook_address: `/api/hooks/projects/${PROJECT}/${path}` };
+  return {};
+}
+
 function summaryOf(graph: GraphDefinition, runs: Iterable<WorkflowRun>): WorkflowSummary {
   const newest = [...runs]
     .filter((run) => run.workflow === graph.name)
@@ -368,6 +379,7 @@ function summaryOf(graph: GraphDefinition, runs: Iterable<WorkflowRun>): Workflo
     description: graph.description,
     trigger_kind: graph.trigger[0]?.kind ?? "",
     node_count: graph.nodes.length,
+    ...triggerFields(graph),
     last_run: newest
       ? {
           id: newest.id,
@@ -446,6 +458,23 @@ export function createWorkflowsFake(automations: AutomationSource = () => []): W
           { from: "trigger", to: "build", port: "out" },
           { from: "build", to: "approve", port: "out" },
         ],
+      },
+    ],
+    [
+      "notify",
+      {
+        name: "notify",
+        description: "Tell the channel when the forge pushes.",
+        trigger: [{ kind: "webhook", params: { path: "notify", secret: "notify-key" } }],
+        nodes: [
+          {
+            id: "post",
+            kind: "script",
+            params: { command: "./notify.sh" },
+            position: { x: 16, y: 16 },
+          },
+        ],
+        edges: [{ from: "trigger", to: "post", port: "out" }],
       },
     ],
     [

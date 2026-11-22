@@ -2,8 +2,10 @@
 //! belongs to one project (ADR 0025) and is addressed as (project, name):
 //!
 //! - `GET /v1/projects/{id}/workflows`: the project's workflows, named, described, with their trigger kind and how many
-//!   nodes each has.
-//! - `GET /v1/projects/{id}/workflows/{name}`: one workflow's file and its parsed form.
+//!   nodes each has. A workflow on a `schedule` trigger adds `next_firing` and `last_fired` (Unix seconds, from the
+//!   trigger's cron in the server's local time and the minute the schedule last fired at), one on a `webhook` trigger
+//!   adds `hook_address` (the project's own `/api/hooks/projects/{project}/{path}`).
+//! - `GET /v1/projects/{id}/workflows/{name}`: one workflow's file and its parsed form, with the same added fields.
 //! - `PUT /v1/projects/{id}/workflows/{name}` `{file}` or `{definition}`: validates and commits the workflow (the
 //!   canvas's save). An invalid definition is refused with the validation message and the file is untouched.
 //! - `DELETE /v1/projects/{id}/workflows/{name}`: commits the workflow's deletion, refused while a run of it is queued,
@@ -28,6 +30,7 @@ use crate::app::{App, AppError, Sight};
 use crate::harness::repo::HarnessRepo;
 use crate::store::{Project, WorkflowRun};
 use crate::workflows::definition::{self, WorkflowDefinition};
+use crate::workflows::trigger::webhook;
 
 /// The routes of workflows.
 pub(super) fn routes() -> Router<ApiState> {
@@ -71,6 +74,52 @@ struct Summary {
     node_count: usize,
     /// The newest run of the workflow the person sees; none when it never ran.
     last_run: Option<LastRun>,
+    /// When a workflow on a `schedule` trigger fires next and last fired, as Unix seconds (see [`Schedule`]).
+    #[serde(flatten)]
+    schedule: Schedule,
+    /// Where a workflow on a `webhook` trigger answers, with the project in it (see [`Hook`]).
+    #[serde(flatten)]
+    hook: Hook,
+}
+
+/// The schedule of a workflow in the list and in its page: both fields are left out of a workflow that is not on a
+/// schedule.
+#[derive(Debug, Serialize)]
+struct Schedule {
+    /// The occurrence the schedule fires at next, in the server's local time; none while it is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_firing: Option<i64>,
+    /// The occurrence it last fired at; none before it fires for the first time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_fired: Option<i64>,
+}
+
+/// The address a workflow on a `webhook` trigger answers on, left out of a workflow with another trigger.
+#[derive(Debug, Serialize)]
+struct Hook {
+    /// `/api/hooks/projects/{project}/{path}`, the project's own address (ADR 0025).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hook_address: Option<String>,
+}
+
+fn schedule_of(
+    app: &App,
+    project: i64,
+    name: &str,
+    definition: &WorkflowDefinition,
+) -> Result<Schedule, AppError> {
+    let times = app.workflow_schedule_times(project, name, definition)?;
+    Ok(Schedule {
+        next_firing: times.next_firing,
+        last_fired: times.last_fired,
+    })
+}
+
+fn hook_of(project: i64, definition: &WorkflowDefinition) -> Hook {
+    Hook {
+        hook_address: webhook::of(definition)
+            .map(|trigger| format!("/api/hooks/projects/{project}/{}", trigger.path)),
+    }
 }
 
 /// The newest run of a workflow, as its row in the list tells it.
@@ -91,6 +140,10 @@ struct View {
     name: String,
     file: String,
     definition: WorkflowDefinition,
+    #[serde(flatten)]
+    schedule: Schedule,
+    #[serde(flatten)]
+    hook: Hook,
 }
 
 /// What `PUT` takes: either the file's text or its parsed form, and for the deprecated route the project a new
@@ -148,6 +201,8 @@ fn summaries(
                         started_at: run.started_at,
                         finished_at: run.finished_at,
                     });
+            let schedule = schedule_of(app, project.id, &name, &definition)?;
+            let hook = hook_of(project.id, &definition);
             summaries.push(Summary {
                 project: project.id,
                 project_name: project.name.clone(),
@@ -160,6 +215,8 @@ fn summaries(
                     .unwrap_or_default(),
                 node_count: definition.nodes.len(),
                 last_run,
+                schedule,
+                hook,
             });
         }
     }
@@ -186,7 +243,7 @@ async fn project_show(
 ) -> Result<axum::Json<View>, ApiError> {
     let repo = harness(&state)?;
     blocking(&state.app, move |app| {
-        view(&repo, &app.project(project)?, &name)
+        view(app, &repo, &app.project(project)?, &name)
     })
     .await
 }
@@ -220,7 +277,7 @@ fn save_in(
 ) -> Result<Saved, AppError> {
     let commit = repo.save_project_workflow(app, by, &project.name, name, definition)?;
     Ok(Saved {
-        view: view(repo, project, name)?,
+        view: view(app, repo, project, name)?,
         commit,
     })
 }
@@ -340,7 +397,7 @@ pub(super) fn harness(state: &ApiState) -> Result<std::sync::Arc<HarnessRepo>, A
 }
 
 /// One workflow's file and parsed form.
-fn view(repo: &HarnessRepo, project: &Project, name: &str) -> Result<View, AppError> {
+fn view(app: &App, repo: &HarnessRepo, project: &Project, name: &str) -> Result<View, AppError> {
     // A name that is no workflow is not found, rather than a file that cannot be read.
     let file = definition::project_file_for(&project.name, name)
         .map_err(|error| AppError::Invalid(error.to_string()))?;
@@ -355,6 +412,8 @@ fn view(repo: &HarnessRepo, project: &Project, name: &str) -> Result<View, AppEr
         project_name: project.name.clone(),
         name: name.to_string(),
         file,
+        schedule: schedule_of(app, project.id, name, &definition)?,
+        hook: hook_of(project.id, &definition),
         definition,
     })
 }
@@ -652,6 +711,127 @@ port = "out"
             "{}",
             log(&harness)
         );
+    }
+
+    fn with_trigger(trigger: &str) -> String {
+        format!(
+            "name = \"wf\"\ndescription = \"A workflow.\"\n\n[[trigger]]\n{trigger}\n\n[[nodes]]\nid = \"one\"\nkind = \"test\"\n\n[[edges]]\nfrom = \"trigger\"\nport = \"out\"\nto = \"one\"\n"
+        )
+    }
+
+    #[tokio::test]
+    async fn a_scheduled_workflow_says_when_it_fires_next_and_when_it_last_fired() {
+        let (_dir, state, addr, _harness) = started().await;
+        let file = with_trigger("kind = \"schedule\"\nparams = { cron = \"30 3 * * *\" }");
+        assert_eq!(
+            put(&state, &addr, "nightly", json!({ "file": file }))
+                .await
+                .status(),
+            200
+        );
+        let off = with_trigger(
+            "kind = \"schedule\"\nparams = { cron = \"30 3 * * *\", enabled = false }",
+        );
+        assert_eq!(
+            put(&state, &addr, "paused", json!({ "file": off }))
+                .await
+                .status(),
+            200
+        );
+        let manual = with_trigger("kind = \"manual\"");
+        assert_eq!(
+            put(&state, &addr, "by-hand", json!({ "file": manual }))
+                .await
+                .status(),
+            200
+        );
+
+        let now = crate::store::now();
+        let listed: Value = testing::get(&state, &addr, "/v1/projects/1/workflows").await;
+        let row = |name: &str| {
+            listed
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["name"] == name)
+                .unwrap()
+                .clone()
+        };
+        let next = row("nightly")["next_firing"]
+            .as_i64()
+            .expect("a next firing");
+        // The next 03:30 is within a day (and a bit, for a season change) of now, and still to come.
+        assert!(
+            next > now && next <= now + 25 * 3600,
+            "{next} against {now}"
+        );
+        assert_eq!(next % 60, 0, "a firing is a whole minute");
+        assert!(
+            row("nightly").get("last_fired").is_none(),
+            "it has not fired"
+        );
+        // A switched-off schedule and a workflow on another trigger have no next firing to show.
+        assert!(row("paused").get("next_firing").is_none());
+        assert!(row("by-hand").get("next_firing").is_none());
+        assert!(row("by-hand").get("hook_address").is_none());
+
+        // The minute it last fired at is what the scheduler recorded, read as a Unix second.
+        state
+            .app
+            .store
+            .record_project_schedule_firing(1, "nightly", "2026-11-09 03:30")
+            .unwrap();
+        let shown: Value = testing::get(&state, &addr, "/v1/projects/1/workflows/nightly").await;
+        let fired = shown["last_fired"].as_i64().expect("it fired");
+        assert_eq!(
+            fired,
+            state
+                .app
+                .store
+                .unix_of_minute("2026-11-09 03:30")
+                .unwrap()
+                .unwrap()
+        );
+        assert_eq!(shown["next_firing"].as_i64(), Some(next));
+    }
+
+    #[tokio::test]
+    async fn a_webhook_workflow_says_the_address_that_names_its_project() {
+        let (_dir, state, addr, _harness) = started().await;
+        let guarded = with_trigger(
+            "kind = \"webhook\"\nparams = { path = \"deploy\", secret = \"deploy-key\" }",
+        );
+        assert_eq!(
+            put(&state, &addr, "deploy", json!({ "file": guarded }))
+                .await
+                .status(),
+            200
+        );
+        let open = with_trigger("kind = \"webhook\"\nparams = { path = \"ping\" }");
+        assert_eq!(
+            put(&state, &addr, "ping", json!({ "file": open }))
+                .await
+                .status(),
+            200
+        );
+
+        let listed: Value = testing::get(&state, &addr, "/v1/projects/1/workflows").await;
+        let row = |name: &str| {
+            listed
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["name"] == name)
+                .unwrap()
+                .clone()
+        };
+        assert_eq!(
+            row("deploy")["hook_address"],
+            "/api/hooks/projects/1/deploy"
+        );
+        assert_eq!(row("ping")["hook_address"], "/api/hooks/projects/1/ping");
+        let shown: Value = testing::get(&state, &addr, "/v1/projects/1/workflows/deploy").await;
+        assert_eq!(shown["hook_address"], "/api/hooks/projects/1/deploy");
     }
 
     #[tokio::test]

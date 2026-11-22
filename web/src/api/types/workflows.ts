@@ -46,6 +46,12 @@ export interface WorkflowSummary {
   trigger_kind: string;
   node_count: number;
   last_run: LastRun | null;
+  /** On a `schedule` trigger: when it fires next, in Unix seconds; absent while it is off or never comes due. */
+  next_firing?: number;
+  /** On a `schedule` trigger: the occurrence it last fired at; absent before it first fires. */
+  last_fired?: number;
+  /** On a `webhook` trigger: the address it answers on, with the project in it. */
+  hook_address?: string;
 }
 
 /** One workflow's file and its parsed form. */

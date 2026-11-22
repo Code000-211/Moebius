@@ -9,6 +9,7 @@ pub mod chat;
 pub mod migrate;
 pub mod project;
 pub mod run;
+pub mod schedule;
 pub mod stopping;
 
 pub use approval::DecisionRequest;
