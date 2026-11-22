@@ -182,15 +182,6 @@ export function AgentExtensions({
           </PlainList>
         )}
       </Box>
-      <Paths
-        heading="Extension files"
-        aside="Files in the repository"
-        empty="No extension file."
-        placeholder="extensions/log.ts"
-        addLabel="Add extension"
-        paths={form.extensions}
-        onChange={(extensions) => change({ extensions })}
-      />
       <Box title="Add from pi.dev" className="flex flex-col gap-3 [&>header]:mb-0">
         <div className="relative">
           <MagnifyingGlassIcon
@@ -286,6 +277,15 @@ export function AgentExtensions({
           </PlainList>
         )}
       </Box>
+      <Paths
+        heading="Extension files"
+        aside="Files in the repository"
+        empty="No extension file."
+        placeholder="extensions/log.ts"
+        addLabel="Add extension"
+        paths={form.extensions}
+        onChange={(extensions) => change({ extensions })}
+      />
     </div>
   );
 }
