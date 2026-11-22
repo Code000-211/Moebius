@@ -231,7 +231,7 @@ export function RuleBlock({
           : undefined
       }
       className={cn(
-        "flex flex-col gap-1.5 border-b border-hairline py-4 first:pt-0",
+        "flex flex-col gap-1.5 border-b border-hairline py-4 first:pt-0 last:border-b-0",
         onOpen && "cursor-pointer",
       )}
     >
@@ -250,7 +250,11 @@ export function RuleBlock({
         )}
         <ScopeChip>{chip}</ScopeChip>
         {!onOpen && (
-          <LockIcon className="size-3.5 shrink-0 text-muted" aria-label="Read only" role="img" />
+          <LockIcon
+            className="size-3.5 shrink-0 text-secondary"
+            aria-label="Read only"
+            role="img"
+          />
         )}
       </div>
       <Markdown content={text} className="text-secondary" />

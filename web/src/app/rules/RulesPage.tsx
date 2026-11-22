@@ -17,7 +17,7 @@ import { keys } from "../../api/keys";
 import type { RulesView } from "../../api/types/rules";
 import { Button } from "../../ui/components/Button";
 import { useQueryParams } from "../../ui/filters/useQueryParams";
-import { FolderIcon, LockIcon, ProhibitIcon, ServerIcon, SparkleIcon } from "../../ui/icons";
+import { FolderIcon, LockIcon, ProhibitIcon, ServerIcon } from "../../ui/icons";
 import { cn } from "../../ui/lib/cn";
 import { plural } from "../../ui/lib/format";
 import { Notice } from "../../ui/page/Notice";
@@ -76,7 +76,6 @@ export function RulesPage() {
       actions={
         canWriteServer && (
           <Button variant="secondary" size="sm" onClick={() => agent.ask(writeRequest())}>
-            <SparkleIcon className="size-4" aria-hidden="true" />
             <span className="header-word">Write with Moebius</span>
           </Button>
         )
