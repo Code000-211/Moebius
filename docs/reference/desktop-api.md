@@ -74,7 +74,8 @@ the run token of the Moebius agent may use the route (`no`: `403` with `only a p
 partner's is held to the routes of [the issue tracker](#the-issue-tracker) besides (see Authentication). A route marked
 `none` needs no token and checks its own credential. A route that is in no row is refused with `403`, and a test fails
 for a route of the code that is missing here, for a row here that the code does not name the same, and for an answer of
-any route to any role that is not what its row says.
+any route to any role that is not what its row says. The six routes that are [gone](#gone-the-routes-that-do-not-name-a-project)
+keep their rows: the role is checked before the `410`.
 
 | Route | Role | Run token |
 |---|---|---|
@@ -847,7 +848,7 @@ themselves, sees neither its board, its cards, its runs nor its files. For someo
   runs, a grilling, a Retro's proposal, an automation, a research or a workflow run (`/v1/workflows/runs/{id}/...`) of
   such a repository, a request made to the project (`/v1/requests/{id}/...`), and an export holding its judgements. On these routes an id that is not written as a plain number
   (such as `%31`) is answered `404` too, for anyone.
-- Nothing is started in it: `POST /v1/chats` with such a `repository`, and `POST /v1/workflows/{name}/runs` naming such
+- Nothing is started in it: `POST /v1/chats` with such a `repository`, and `POST /v1/projects/{id}/workflows/{name}/runs` naming such
   a repository (as `repository` or as the input `repository`), answer `404`, and a tunnel to a port a run of it opened
   (`GET /v1/ports/{port}/tunnel`) is `404`.
 - The lists leave them out: `GET /v1/snapshot` (its boards, cards, changes and inbox items), `GET /v1/events` (no event
@@ -860,7 +861,7 @@ themselves, sees neither its board, its cards, its runs nor its files. For someo
   `POST /v1/retros` and `POST /v1/retros/{date}/retry` answer with the Retro's view filtered the same way.
 - Nothing is started or saved in its repositories by a non-member, who is answered `404` as if the repository did not
   exist: `POST /v1/automations` and `PUT /v1/automations/{id}` naming it as `repository`, `POST /v1/research` naming it,
-  and `POST /v1/workflows/{name}/runs` naming it as `repository` or through any input of type `repository`, or taking it
+  and `POST /v1/projects/{id}/workflows/{name}/runs` naming it as `repository` or through any input of type `repository`, or taking it
   as such an input's default. `DELETE /v1/replays/{id}` of a replay of one of its runs is `404`, and the replay stays.
 - A Retro's proposal to the shared configuration (`harness` or `settings`) is shown to everyone without quoting the
   project: its `cards` leave out the project's cards, and in its `title`, `body` and `diff` the project's name and key
@@ -2882,20 +2883,31 @@ server has no `[harness]`; `422` an invalid name; `409` and `500` as for `PUT /v
 ### `GET /v1/projects/{id}/workflows/{name}/run-inputs`
 
 The inputs the `manual` trigger of the project's workflow names, in the order its file names them, so a form builds itself
-from them; see the [manual trigger](workflows/manual-trigger.md). Response and errors as for the deprecated
-`GET /v1/workflows/{name}/run-inputs` below, with `404` for no such project.
+from them; see the [manual trigger](workflows/manual-trigger.md).
+Response: `{"trigger_kind": "manual", "inputs": [{"name": string, "type": string, "required": boolean,
+"default": value, "choices": [string]}]}`, where `type` is `text`, `number`, `boolean`, `choice` or `repository`,
+`default` is left out when the input has none and `choices` when it is not a `choice`. Errors: `404` no such project or
+workflow; `422` the workflow file cannot be used, as for `GET /v1/projects/{id}/workflows/{name}`; `409` the workflow's
+trigger is not `manual`, or the server has no `[harness]`.
 
 ### `POST /v1/projects/{id}/workflows/{name}/runs`
 
 A person starts a run of the project's workflow by hand. Request: `{"repository": string, "inputs": object}`, both
-optional and any other key refused; `inputs` is checked as for the deprecated `POST /v1/workflows/{name}/runs` below. The
+optional and any other key refused. `inputs` gives the trigger's inputs by the names it names them; a value is checked
+against the type its input names, a default stands in for an input that was not given, and an input that was given nothing
+and has no default is left out of the value the run starts with. The
 run belongs to one of the project's repositories ([ADR 0025](../adr/0025-workflows-belong-to-a-project.md)): the one
 `repository` names, or the one an input of type `repository` names, or, when both are left out, the project's only
 repository (a project with no repository runs in its own files repository). A repository that is not one of the project's,
 and a missing one where the project has more than one, are refused `422` before anything is stored, with a message that
-lists the choices. Response: `{"id": number, "workflow": string, "repository": string, "trigger": "manual", "status":
-string, "value": object, "project": number, "project_name": string}`. Errors: as for the deprecated route, and `404` no
-such project or workflow.
+lists the choices. A run started here is recorded with `manual` as the kind of the trigger that started it, and goes on
+off the request path as any other run does. Response: `{"id": number, "workflow": string, "repository": string, "trigger":
+"manual", "status": string, "value": object, "project": number, "project_name": string}`, the run as stored and the value
+its nodes start from. Errors: `404` no such project or workflow; `422` an input the trigger does not name, a value that is
+not of the type its input names, a required input with neither a value nor a default, a repository that is not known, or a
+request giving `repository` when the trigger names an input of type `repository` — every message names the input or the
+repository it refused; `409` the workflow's trigger is not `manual`, or the server has no `[harness]`; `422` a workflow
+file that cannot be used, as for `GET /v1/projects/{id}/workflows/{name}`.
 
 ### `POST /api/hooks/projects/{project}/{path}`
 
@@ -2917,53 +2929,30 @@ ceiling. See the [`webhook` trigger](workflows/webhook-trigger.md).
 The same door for a delivery that names which repository the run belongs to. The repository in the address wins over the
 one the trigger names; a repository that is not one of the project's is refused `422`.
 
-### Deprecated: the routes that do not name a project
+### Gone: the routes that do not name a project
 
-The routes below, `GET /v1/workflows`, `GET`, `PUT` and `DELETE /v1/workflows/{name}`,
-`GET /v1/workflows/{name}/run-inputs`, `POST /v1/workflows/{name}/runs`, `POST /api/hooks/{path}` and
-`POST /api/hooks/{repository}/{path}`, and `GET /v1/workflow-runs` without `project`, are **deprecated**: they stay until a
-later release turns them into a documented `410`. Use the routes of `/v1/projects/{id}/workflows` and
-`/api/hooks/projects/{project}/...` above. A deprecated route works over the projects the person sees, and resolves a
-`{name}` when exactly one of them has a workflow of that name: none is `404`, several is `409` with the message
-`the workflow <name> exists in more than one project: <p1> (id 1), <p2> (id 2); use /v1/projects/{id}/workflows/<name>`.
-The roles are those of the routes they replace. `POST /v1/workflows/runs/{id}/cancel` and
-`POST /v1/workflows/runs/{run_id}/resume` are not deprecated: a run is addressed by its id.
+A workflow belongs to a project ([ADR 0025](../adr/0025-workflows-belong-to-a-project.md)), so the six routes that named
+a workflow by its name alone answer `410` with a plain-text message, whatever the request holds and whether or not the
+workflow exists, once the role of the route allows the call (the roles are those of the rows above, so a viewer who
+calls `PUT` is refused `403` first). Nothing is read, saved, deleted or started. The message is
+`this route is gone: workflows belong to a project; use <route>`, with the route that replaces it:
 
-### `GET /v1/workflows`
+| Gone | Use |
+| --- | --- |
+| `GET /v1/workflows` | `GET /v1/projects/{id}/workflows` |
+| `GET /v1/workflows/{name}` | `GET /v1/projects/{id}/workflows/{name}` |
+| `PUT /v1/workflows/{name}` | `PUT /v1/projects/{id}/workflows/{name}` |
+| `DELETE /v1/workflows/{name}` | `DELETE /v1/projects/{id}/workflows/{name}` |
+| `GET /v1/workflows/{name}/run-inputs` | `GET /v1/projects/{id}/workflows/{name}/run-inputs` |
+| `POST /v1/workflows/{name}/runs` | `POST /v1/projects/{id}/workflows/{name}/runs` |
 
-**Deprecated**; use `GET /v1/projects/{id}/workflows`. The workflows of every project the person sees, in name order.
-Response: an array of
-`{"project": number, "project_name": string, "name": string, "description": string, "trigger_kind": string, "node_count": number, "last_run": object or null}`;
-`trigger_kind` is the `kind` of the first trigger, empty for a workflow with none, and `last_run` is the newest run of
-the workflow that the person sees, `{"id": number, "status": string, "created_at": number, "started_at": number or null,
-"finished_at": number or null}`, or null when it never ran. Errors: `409` the server has no `[harness]`; `422` a workflow file
-that cannot be used (the message names its file).
+For example, `GET /v1/workflows` answers `410` with `this route is gone: workflows belong to a project; use GET
+/v1/projects/{id}/workflows`. `GET /v1/projects` lists the projects and their ids.
 
-### `GET /v1/workflows/{name}`
-
-**Deprecated**; use `GET /v1/projects/{id}/workflows/{name}`. One workflow. Response: `{"project": number, "project_name": string, "name": string, "file": string, "definition": object}`, the text of the file exactly as it is
-saved and the definition parsed from it. Errors: `404` there is no such workflow; `409` more than one project has it (see above); `422` the name or the file cannot be used
-(the name is not one a file can have, or the file is not valid); `409` the server has no `[harness]`.
-
-### `PUT /v1/workflows/{name}`
-
-**Deprecated**; use `PUT /v1/projects/{id}/workflows/{name}`. A person adds or changes a workflow. Request: exactly one of `{"file": string}`, the whole TOML file, or
-`{"definition": object}`, the parsed form `GET /v1/workflows/{name}` answers, and optionally `"project": number`; unknown keys are refused. For a name no project has, `project` names the project that gets the new workflow, and without it the workflow goes to the oldest project the person sees (the rule the migration of the old files uses); with no project at all the answer is `422`. A `project` the person does not see is `404`, as if it did not exist. For a name one project has, that project's file changes; several is `409` as above. The definition is
-parsed and validated before anything is written, so every node keeps its `position` and a canvas round-trips; an invalid
-definition is refused with the validation message and the file is untouched. A valid one is written as TOML to
-`projects/<project name>/workflows/<name>.toml`, committed on the default branch with the message `Add the workflow <name>` or
-`Update the workflow <name>` and pushed to `origin`; the decision is recorded (kind `edit_workflow`, decider `person`).
-Response: the workflow as `GET /v1/workflows/{name}` answers it, with `commit`, the short id of the commit (left out when
-the definition changed nothing). Errors: `422` an invalid name or definition (the message says why); `409` the server has
-no `[harness]`; `409` and `500` as for `PUT /v1/agents/{name}`.
-
-### `DELETE /v1/workflows/{name}`
-
-**Deprecated**; use `DELETE /v1/projects/{id}/workflows/{name}`. A person deletes a workflow: the file is removed, committed on the default branch with the message
-`Delete the workflow <name>` and pushed to `origin`, and the decision is recorded (kind `edit_workflow`, decider
-`person`). Response: `{"project": number, "name": string, "commit": string}` (`commit` is left out when there was nothing to commit). Errors:
-`404` no such workflow; `409` more than one project has it (see above); `409` a run of the workflow is queued, running or waiting, or the server has no `[harness]`; `422` an
-invalid name; `409` and `500` as for `PUT /v1/agents/{name}`.
+Still **deprecated**, and answered as before: `POST /api/hooks/{path}` and `POST /api/hooks/{repository}/{path}`, and
+`GET /v1/workflow-runs` without `project`. Use `/api/hooks/projects/{project}/...` above, and give `project` to the list
+of runs. `POST /v1/workflows/runs/{id}/cancel` and `POST /v1/workflows/runs/{run_id}/resume` are not deprecated: a run is
+addressed by its id.
 
 ### `POST /v1/workflows/runs/{id}/cancel`
 
@@ -3012,30 +3001,6 @@ repository, or two workflows claiming one path that the delivery opens; `429` pa
 **Deprecated**, as above. The same door for a delivery that names which repository the run belongs to. The repository in the address wins over
 the one the trigger names; a repository the server does not have is refused `422`.
 
-### `GET /v1/workflows/{name}/run-inputs`
-
-**Deprecated**; use the route of the project. The inputs the `manual` trigger of a workflow names, in the order its file names them, so a form builds itself from
-them; see the [manual trigger](workflows/manual-trigger.md).
-Response: `{"trigger_kind": "manual", "inputs": [{"name": string, "type": string, "required": boolean,
-"default": value, "choices": [string]}]}`, where `type` is `text`, `number`, `boolean`, `choice` or `repository`,
-`default` is left out when the input has none and `choices` when it is not a `choice`. Errors: `422` the workflow file
-cannot be used, as for `GET /v1/workflows/{name}`; `409` the workflow's trigger is not `manual`, or the server has no
-`[harness]`.
-
-### `POST /v1/workflows/{name}/runs`
-
-**Deprecated**; use `POST /v1/projects/{id}/workflows/{name}/runs`. A person starts a run of the workflow by hand. The run's repository must be one of its project's. Request: `{"repository": string, "inputs": object}`, both optional and
-any other key refused. `inputs` gives the trigger's inputs by the names it names them; a value is checked against the
-type its input names, a default stands in for an input that was not given, and an input that was given nothing and has
-no default is left out of the value the run starts with. The run belongs to the repository `repository` names, or, when
-the trigger names an input of type `repository`, to the repository that input names. A run started here is recorded with
-`manual` as the kind of the trigger that started it, and goes on off the request path as any other run does.
-Response: `{"id": number, "workflow": string, "repository": string, "trigger": "manual", "status": string,
-"value": object, "project": number, "project_name": string}`, the run as stored and the value its nodes start from. Errors: `422` an input the trigger does not
-name, a value that is not of the type its input names, a required input with neither a value nor a default, a
-repository that is not known, or a request giving `repository` when the trigger names an input of type `repository` —
-every message names the input or the repository it refused; `409` the workflow's trigger is not `manual`, or the server
-has no `[harness]`; `422` a workflow file that cannot be used, as for `GET /v1/workflows/{name}`.
 ### `POST /v1/workflows/runs/{run_id}/resume`
 
 A person decides on a workflow run that waits for one, which is what the `approval` node leaves (see

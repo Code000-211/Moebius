@@ -72,9 +72,8 @@ the project with `--project` (its name or id):
 "$MOEBIUS" workflow delete release --project Web
 ```
 
-Without `--project` the commands look in every project you can see: a name only one project has is found, one that
-several have is refused with the list of them, and `workflow list` lists them all. Always give the project when you
-save a new workflow.
+Without `--project` the commands use the server's only project, and fail naming the projects when there are several.
+The routes that name a workflow without its project are gone (`410`); use the routes of `/v1/projects/{id}/workflows`.
 
 `save` replaces the whole file and commits it, so read it first (`workflow show`) and keep every node's `position`;
 an invalid definition is refused with the message and the file stays as it was. `delete` is refused while a run of the
