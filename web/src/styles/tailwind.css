@@ -116,6 +116,8 @@
   --color-running-text: var(--running-text);
   --color-danger: var(--danger);
   --color-danger-text: var(--danger-text);
+  --color-editor-bg: var(--editor-bg);
+  --color-editor-text: var(--editor-text);
   --color-code-bg: var(--code-bg);
   --color-code-text: var(--code-text);
   --color-code-head: var(--code-head);

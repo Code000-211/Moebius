@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Project } from "../../api/types/projects";
 import { LegacyRedirect } from "./LegacyRedirect";
 import { ProjectBoardRoute } from "./ProjectBoardRoute";
-import { LEGACY_ROUTES } from "./redirects";
+import { LEGACY_ROUTES, oldAgentAddress } from "./redirects";
 
 // The board itself is not under test: the route only has to decide that it is the board.
 vi.mock("../board/BoardPage", () => ({
@@ -359,5 +359,21 @@ describe("the legacy table", () => {
         cleanup();
       }
     });
+  });
+});
+
+describe("the old address of the agent editor window", () => {
+  const led = (query: string) => oldAgentAddress(new URLSearchParams(query));
+
+  it("leads ?agent= to the page of that agent, its name written as an address", () => {
+    expect(led("agent=Coder")).toBe("/agents/Coder");
+    expect(led("agent=My%20agent&new=1")).toBe("/agents/My%20agent");
+  });
+
+  it("leads ?new=1 with a start to the page of a new agent, and says nothing of the bare question", () => {
+    expect(led("new=1&blank=1")).toBe("/agents/new?blank=1");
+    expect(led("new=1&from=Fast")).toBe("/agents/new?from=Fast");
+    expect(led("new=1")).toBeNull();
+    expect(led("")).toBeNull();
   });
 });

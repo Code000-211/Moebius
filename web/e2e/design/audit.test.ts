@@ -149,6 +149,10 @@ const routes: Route[] = [
   { path: "/insights", name: "analytics" },
   { path: "/insights/usage", name: "usage" },
   { path: "/agents", name: "agents" },
+  // An agent has a page of its own, with its three tabs.
+  { path: "/agents/Coder", name: "agent" },
+  { path: "/agents/Coder?tab=instructions", name: "agent-instructions" },
+  { path: "/agents/Coder?tab=extensions", name: "agent-extensions" },
   { path: "/skills", name: "skills" },
   { path: "/mcp-servers", name: "mcp" },
   { path: "/models", name: "models" },

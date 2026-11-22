@@ -193,6 +193,7 @@ const readable: [string, string][] = [
   [WHITE, "avatar-1"],
   [WHITE, "avatar-2"],
   [WHITE, "avatar-3"],
+  ["editor-text", "editor-bg"],
   ["code-text", "code-bg"],
   ["code-head", "code-bg"],
   ["code-keyword", "code-bg"],

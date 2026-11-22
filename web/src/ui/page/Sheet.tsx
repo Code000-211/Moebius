@@ -45,8 +45,9 @@ export function useSheetBehaviour(
 }
 
 /**
- * The sheet itself: the header, and the body below it. It lies over the right column of the page's surface, flush
- * with its top, right and bottom and as wide as `--sheet-width`, so it covers the column and a strip of the page beside
+ * The sheet itself: the header, and the body below it. It lies over the right column of the page's surface, from
+ * below the page header (48px, where the window's buttons are, which it never covers) to its bottom, flush with its
+ * right and as wide as `--sheet-width`, so it covers the column and a strip of the page beside
  * it; the page keeps its width under it.
  */
 export function SheetFrame({
@@ -82,7 +83,7 @@ export function SheetFrame({
       // The attribute, not a class: preflight hides it, and a person hearing the page does not find a sheet that is away.
       hidden={hidden}
       className={cn(
-        "absolute inset-y-0 right-0 z-sheet flex w-(--sheet-width) max-w-full flex-col gap-3 rounded-l-window bg-panel p-3 shadow-menu",
+        "absolute top-12 right-0 bottom-0 z-sheet flex w-(--sheet-width) max-w-full flex-col gap-3 rounded-l-window bg-panel p-3 shadow-menu",
         "animate-in fade-in-0 slide-in-from-right-4 duration-(--motion-fast) ease-(--motion-ease)",
       )}
     >

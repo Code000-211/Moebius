@@ -1,8 +1,8 @@
 /**
  * The package sheet in a real browser, against the fake server (e2e/fake/packages.ts): opened from the Plugins page on
- * the Moebius registries and from an agent's Extensions on the pi.dev catalog. A plugin is searched, installed,
+ * the Moebius registries, and the Extensions tab of an agent's page on the pi.dev catalog. A plugin is searched, installed,
  * updated and removed; a workflow is proposed and the link lands on its change in the Inbox; a Pi package is proposed
- * for the agent the sheet was opened from; a registry that cannot be read and a refused install are said in the sheet;
+ * for the agent whose page it is added from; a registry that cannot be read and a refused install are said in the sheet;
  * the sheet leaves the page it was opened from uncovered; and the events refresh what the page lists. Every wait is on
  * something the page shows, never on time.
  */
@@ -248,9 +248,10 @@ describe.skipIf(usesRealServer)("the Plugins page and the Moebius registries", (
     const box = await sheet().boundingBox();
     expect(await contentRight()).toBe(before);
     expect(before).toBeGreaterThan(box?.x ?? 0);
-    // It is flush with the page's top, right and bottom, and wider than the 272px column the pages once had.
+    // It is flush with the page's right and bottom, starts below the page header (48px, where the window's buttons
+    // are), and is wider than the 272px column the pages once had.
     expect(await place(sheet())).toEqual({
-      top: 0,
+      top: 48,
       right: 0,
       bottom: 0,
       width: expect.any(Number),
@@ -298,95 +299,110 @@ describe.skipIf(usesRealServer)("the Plugins page and the Moebius registries", (
   });
 });
 
-describe.skipIf(usesRealServer)("an agent's Extensions and the pi.dev catalog", () => {
+describe.skipIf(usesRealServer)("an agent's Extensions tab and the pi.dev catalog", () => {
+  const found = () => page.getByTestId("package-result");
+  const installed = () => page.getByTestId("installed-package");
+  const told = () => page.getByTestId("package-report");
+
+  it("lists what the agent has, and nothing of another agent's", async () => {
+    await open("/agents/Coder?tab=extensions");
+    const row = installed().filter({ hasText: "pi-notes" });
+    await row.waitFor();
+    expect(await row.textContent()).toContain("0.3.0");
+    expect(await installed().count()).toBe(1);
+    // The tab is a page, not a sheet.
+    expect(await sheet().count()).toBe(0);
+  });
+
   it("proposes a Pi package for the agent and lands on the change", async () => {
-    await open("/agents?agent=Reviewer", 1600);
-    await page.getByRole("button", { name: "Browse Pi packages" }).click();
-    await sheet().waitFor();
-    await sheet().getByText("Pi packages from pi.dev, for Reviewer").waitFor();
-
-    // The editor window steps aside for the sheet, which lies beside the page.
-    await page.getByTestId("editor-window").waitFor({ state: "detached" });
-
-    const row = sheet().getByTestId("list-card").filter({ hasText: "pi-web-access" });
+    await open("/agents/Reviewer?tab=extensions");
+    const row = found().filter({ hasText: "pi-web-access" });
     await row.waitFor();
     expect(await row.textContent()).toContain("12.4k a week");
-    await sheet().getByRole("button", { name: "Skill", exact: true }).click();
-    await sheet().getByTestId("list-card").filter({ hasText: "@acme/pi-notes" }).waitFor();
-    await expect.poll(() => sheet().getByTestId("list-card").count()).toBe(1);
-    await sheet().getByRole("button", { name: "All", exact: true }).click();
+    await page.getByRole("button", { name: "Skill", exact: true }).click();
+    await found().filter({ hasText: "@acme/pi-notes" }).waitFor();
+    await expect.poll(() => found().count()).toBe(1);
+    await page.getByRole("button", { name: "All", exact: true }).click();
 
-    await row.click();
-    await sheet().getByText("npm would run postinstall", { exact: false }).waitFor();
-    await sheet().getByRole("button", { name: "Propose install for Reviewer" }).click();
-    await report().getByText("It is named for Reviewer.").waitFor();
+    await row.getByRole("button", { name: "Add pi-web-access" }).click();
+    await told().getByText("It is named for Reviewer.").waitFor();
     expect(requests("POST", "/v1/extensions/packages")[0]?.body).toEqual({
       source: "npm:pi-web-access",
       agent: "Reviewer",
     });
-    await report().getByRole("link", { name: "See it in the Inbox" }).click();
+    await told().getByRole("link", { name: "See it in the Inbox" }).click();
     await page.waitForURL(/\/inbox\?change=41$/);
     const item = page.getByTestId("inbox-item");
     await item.waitFor();
     expect(await item.textContent()).toContain("Install pi-web-access");
   });
 
-  it("shows an update waiting, with its changelog, and updates all", async () => {
-    await open("/agents?agent=Reviewer");
+  it("shows an update waiting, with its changelog", async () => {
+    await open("/agents/Coder?tab=extensions");
     fake().waitForUpdate("pi-notes", "0.3.0", "0.4.0");
-    await page.getByRole("button", { name: "Browse Pi packages" }).click();
-    await sheet().getByRole("tab", { name: "Installed" }).click();
-    const row = sheet().getByTestId("installed-package").filter({ hasText: "pi-notes" });
-    await row.getByText("Update to 0.4.0").waitFor();
+    const row = installed().filter({ hasText: "pi-notes" });
     await row.getByRole("button", { name: "Update pi-notes" }).click();
-    await sheet()
+    await page
       .getByRole("region", { name: "Changelog of pi-notes" })
       .getByText("Notes survive a restart.")
       .waitFor();
-
-    await sheet().getByRole("button", { name: "Update all" }).click();
-    await report().getByText("pi-broken could not be updated.", { exact: false }).waitFor();
-  });
-
-  it("reads and proposes an installed package from its own source, not npm's", async () => {
-    await open("/agents?agent=Reviewer");
-    await page.getByRole("button", { name: "Browse Pi packages" }).click();
-    await sheet().getByRole("tab", { name: "Installed" }).click();
-    await sheet().getByRole("button", { name: "Details of pi-gitted" }).click();
-    await sheet()
-      .getByTestId("package-detail")
-      .getByText("git:github.com/acme/pi-gitted")
-      .waitFor();
-    expect(fake().calls.some((call) => call.path.includes("info?source=npm%3Api-gitted"))).toBe(
-      false,
-    );
   });
 
   it("proposes removing a package without asking twice, since a person merges it", async () => {
-    await open("/agents?agent=Reviewer");
-    await page.getByRole("button", { name: "Browse Pi packages" }).click();
-    await sheet().getByRole("tab", { name: "Installed" }).click();
-    await sheet().getByRole("button", { name: "Remove pi-notes" }).click();
-    await report().getByText("Proposed removing pi-notes 0.3.0.", { exact: false }).waitFor();
+    await open("/agents/Coder?tab=extensions");
+    await page.getByRole("button", { name: "Remove pi-notes" }).click();
+    await told().getByText("Proposed removing pi-notes 0.3.0.", { exact: false }).waitFor();
     expect(requests("DELETE", "/v1/extensions/packages/pi-notes")).toHaveLength(1);
   });
+});
 
-  it("switches the sheet's catalog when it is opened from the other place", async () => {
-    // A wide window, where the page leaves the sheet its strip, so the Plugins page's button is not under it.
-    await open("/agents?agent=Reviewer", 1600);
-    await page.getByRole("button", { name: "Browse Pi packages" }).click();
-    await sheet().getByText("pi-web-access").waitFor();
-    // Moving by the sidebar keeps the page, and so the sheet, where it is.
-    await page
-      .getByRole("navigation", { name: "Pages", exact: true })
-      .getByRole("link", { name: "Settings" })
-      .click();
-    await page
-      .getByRole("navigation", { name: "Settings" })
-      .getByRole("link", { name: "Plugins" })
-      .click();
+/** The desktop app's window has no system frame: its buttons are drawn in the page, at the top right. */
+describe.skipIf(usesRealServer)("a sheet at the right edge and the window's buttons", () => {
+  it("starts below the page header, so the window's buttons are not covered", async () => {
+    server = await startServer();
+    server.pagesB?.use();
+    context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    await context.addInitScript(() => {
+      const nothing = async () => {};
+      Object.defineProperty(window, "moebiusDesktop", {
+        value: {
+          minimize: () => {},
+          toggleMaximize: () => {},
+          close: () => {},
+          servers: async () => [],
+          switchServer: nothing,
+          removeServer: nothing,
+          renameServer: nothing,
+          connect: nothing,
+          connectSsh: nothing,
+        },
+      });
+    });
+    page = await context.newPage();
+    await page.goto(server.loginUrl);
+    await page.getByRole("navigation", { name: "Pages", exact: true }).waitFor();
+    await page.goto(`${server.url}/plugins`);
     await page.getByRole("button", { name: "Browse packages" }).first().click();
-    await sheet().getByText("Plugins, workflows, rules and skills from the registries").waitFor();
-    await sheet().getByText("review-flow").waitFor();
+    await sheet().waitFor();
+    const sheetBox = await sheet().boundingBox();
+    const controls = await page.getByTestId("window-controls").boundingBox();
+    if (!sheetBox || !controls) throw new Error("the sheet or the window's buttons drew no box");
+    // The sheet begins under the row of the window's buttons, at its right edge.
+    expect(sheetBox.y).toBeGreaterThanOrEqual(controls.y + controls.height);
+    expect(sheetBox.x + sheetBox.width).toBeGreaterThan(controls.x);
+    // Each of the three buttons and the sheet's own close are reachable at their own point.
+    for (const name of ["Minimize", "Maximize", "Close"]) {
+      const button = await page.getByRole("button", { name, exact: true }).boundingBox();
+      if (!button) throw new Error(`${name} drew no box`);
+      const top = await page.evaluate(
+        ([x, y]) =>
+          document
+            .elementFromPoint(x as number, y as number)
+            ?.closest("button")
+            ?.getAttribute("aria-label"),
+        [button.x + button.width / 2, button.y + button.height / 2],
+      );
+      expect(top).toBe(name);
+    }
   });
 });

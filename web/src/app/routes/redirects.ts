@@ -11,8 +11,10 @@
 import type { Project } from "../../api/types/projects";
 import {
   ALL_ISSUES_PATH,
+  agentPath,
   boardPath,
   cyclePath,
+  NEW_AGENT_PATH,
   projectTabPath,
   repositoryPath,
   scriptPath,
@@ -103,6 +105,20 @@ function oldWorkflows(
 function oldSettingsTab(tab: string, projects: Project[], search: URLSearchParams): string {
   const project = projectForOldAddress(projects, search);
   return project ? withQuery(settingsPath(project.id, tab), {}, search, ["project"]) : "/projects";
+}
+
+/**
+ * Where the old address of an agent's editor window leads: `/agents?agent=<name>` is the page of that agent, and
+ * `/agents?new=1&blank=1` or `&from=<agent>` the page of a new one. `/agents?new=1` alone is still the question the Agents
+ * page asks, so it leads nowhere (null), as does any address without the old query.
+ */
+export function oldAgentAddress(search: URLSearchParams): string | null {
+  const agent = search.get("agent");
+  if (agent !== null && agent !== "") return agentPath(agent);
+  if (search.get("new") !== "1") return null;
+  const from = search.get("from");
+  if (from !== null && from !== "") return `${NEW_AGENT_PATH}?from=${encodeURIComponent(from)}`;
+  return search.get("blank") === "1" ? `${NEW_AGENT_PATH}?blank=1` : null;
 }
 
 export const LEGACY_ROUTES: readonly LegacyRoute[] = [
