@@ -10,4 +10,14 @@ import { afterEach } from "vitest";
 
 configure({ asyncUtilTimeout: 5_000 });
 
+// jsdom has no layout and no `ResizeObserver`; the page header watches its own width with one, so a test that draws a
+// header gets one that never fires (a test of the real thing stubs its own, as `virtualListTest.ts` does).
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
 afterEach(() => cleanup());

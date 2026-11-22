@@ -10,6 +10,12 @@
  * the "Moebius" button that opens the agent's panel (`app/shell/AgentButton.tsx`), and last the page's one `primary`
  * button. So the button that does the page's main thing is always the rightmost and Moebius never moves between pages.
  *
+ * A one-row header (`oneRow`) never reaches past its right padding, which in the desktop app is the room of the window
+ * buttons. It measures itself (a `ResizeObserver` on the header) and, when its content does not fit, gives way in
+ * order: the primary button drops its label and keeps its icon (`HeaderPrimary`, the label stays as its name and
+ * tooltip), then the tabs that do not fit move from the right into a last tab "More" (`Tabs`), the chosen tab among
+ * them shown there. The title keeps a few letters; it is the last thing cut. The rules are in `fitRules.ts`.
+ *
  * In a narrow window (under 1000px) the sidebar is hidden and a button at the left of the header brings it back over
  * the page.
  *
@@ -21,12 +27,22 @@
  * <PageHeader title="Fleet" tabs={<Tabs … />} actions={<Button size="sm">Pause all</Button>} />
  * ```
  */
-import { createContext, type ReactNode, useContext } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AgentButton } from "../../app/shell/AgentButton";
 import { useSidebarToggle } from "../../app/shell/SidebarToggle";
 import { IconButton } from "../components/IconButton";
 import { SidebarIcon } from "../icons";
 import { cn } from "../lib/cn";
+import { deepestLevel, overflows, partsOfLevel } from "./fitRules";
+import { HeaderFitContext } from "./HeaderFit";
 
 /**
  * True inside the content of a Settings area. There a page's title is the area's title, the one every area has: in
@@ -63,6 +79,38 @@ export function PageHeader({
 }) {
   const sidebar = useSidebarToggle();
   const inArea = useContext(InSettingsArea);
+  const header = useRef<HTMLElement>(null);
+  const [tabCount, setTabCount] = useState(0);
+  // A fresh object on every restart, so measuring runs again even when the level was already 0.
+  const [fitting, setFitting] = useState({ level: 0 });
+  const level = fitting.level;
+  const last = deepestLevel(tabCount);
+  // Measure after every layout, before the paint: while the content reaches into the right padding, go one level
+  // deeper. A change of width (or of the tabs) starts again from the full header, so it grows back when there is room.
+  useLayoutEffect(() => {
+    const node = header.current;
+    if (!oneRow || !node || level >= last) return;
+    const end = node.lastElementChild?.getBoundingClientRect().right ?? 0;
+    const limit =
+      node.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(node).paddingRight);
+    if (overflows(end, limit)) setFitting({ level: level + 1 });
+  });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the tabs' count is what starts the measuring again
+  useLayoutEffect(() => {
+    const node = header.current;
+    if (!oneRow || !node) return;
+    let width = node.getBoundingClientRect().width;
+    const watch = new ResizeObserver(([entry]) => {
+      const next = entry?.borderBoxSize?.[0]?.inlineSize ?? node.getBoundingClientRect().width;
+      if (Math.abs(next - width) < 0.5) return;
+      width = next;
+      setFitting({ level: 0 });
+    });
+    watch.observe(node);
+    setFitting({ level: 0 });
+    return () => watch.disconnect();
+  }, [oneRow, tabCount]);
+  const fit = useMemo(() => ({ ...partsOfLevel(level, tabCount), setTabCount }), [level, tabCount]);
   if (inArea) {
     return (
       <div className="mb-3 flex min-h-10 flex-wrap items-center gap-x-4 gap-y-1">
@@ -81,57 +129,68 @@ export function PageHeader({
     );
   }
   return (
-    <header
-      data-page-header
-      data-tauri-drag-region
-      style={{ containerType: "inline-size", containerName: "header" }}
-      className={cn(
-        "sticky -top-4 z-10 -mx-4 -mt-4 mb-6 flex min-h-12 shrink-0 items-center gap-x-4 gap-y-1 py-1 border-b border-hairline bg-panel pl-4 pr-[calc(1rem+var(--window-buttons))]",
-        oneRow ? "h-12 flex-nowrap" : "flex-wrap",
-      )}
-    >
-      <div className="flex min-w-0 items-center gap-1">
-        {sidebar?.narrow && (
-          <IconButton
-            icon={SidebarIcon}
-            iconWeight="regular"
-            iconClassName="size-5"
-            aria-label="Show the sidebar"
-            title="Show the sidebar"
-            className="-ml-2"
-            onClick={() => sidebar.setOpen(true)}
-          />
-        )}
-        {back}
-        <h1 className="m-0 min-w-0 truncate text-md font-semibold tracking-tight text-text">
-          {title}
-        </h1>
-        {badge}
-      </div>
-      {tabs && (
-        <div
-          className={cn(
-            "-mb-1 flex self-stretch [&>[role=tablist]]:items-stretch [&_[role=tab]]:h-full [&_[role=tab]]:pb-1",
-            // One row: the tabs keep theirs and the title gives way (it is cut with an ellipsis), so a tab never
-            // wraps below the header.
-            oneRow ? "shrink-0 [&>[role=tablist]]:flex-nowrap [&>[role=tablist]]:gap-3" : "min-w-0",
-          )}
-        >
-          {tabs}
-        </div>
-      )}
-      <div
+    <HeaderFitContext.Provider value={oneRow ? fit : null}>
+      <header
+        ref={header}
+        data-page-header
+        data-tauri-drag-region
+        style={{ containerType: "inline-size", containerName: "header" }}
         className={cn(
-          "ml-auto flex max-w-full items-center gap-2",
-          oneRow ? "shrink-0 flex-nowrap" : "min-w-0 flex-wrap",
+          "sticky -top-4 z-10 -mx-4 -mt-4 mb-6 flex min-h-12 shrink-0 items-center gap-x-4 gap-y-1 py-1 border-b border-hairline bg-panel pl-4 pr-[calc(1rem+var(--window-buttons))]",
+          oneRow ? "h-12 flex-nowrap" : "flex-wrap",
         )}
       >
-        {actions}
-        {menu}
-        <AgentButton />
-        {primary}
-      </div>
-    </header>
+        <div className="flex min-w-0 items-center gap-1">
+          {sidebar?.narrow && (
+            <IconButton
+              icon={SidebarIcon}
+              iconWeight="regular"
+              iconClassName="size-5"
+              aria-label="Show the sidebar"
+              title="Show the sidebar"
+              className="-ml-2"
+              onClick={() => sidebar.setOpen(true)}
+            />
+          )}
+          {back}
+          <h1
+            className={cn(
+              "m-0 min-w-0 truncate text-md font-semibold tracking-tight text-text",
+              // The title gives way last: a few letters stay, and what does not fit then collapses.
+              oneRow && "min-w-16",
+            )}
+          >
+            {title}
+          </h1>
+          {badge}
+        </div>
+        {tabs && (
+          <div
+            className={cn(
+              "-mb-1 flex self-stretch [&>[role=tablist]]:items-stretch [&_[role=tab]]:h-full [&_[role=tab]]:pb-1",
+              // One row: the tabs keep theirs and the title gives way (it is cut with an ellipsis), so a tab never
+              // wraps below the header.
+              oneRow
+                ? "shrink-0 [&>[role=tablist]]:flex-nowrap [&>[role=tablist]]:gap-3"
+                : "min-w-0",
+            )}
+          >
+            {tabs}
+          </div>
+        )}
+        <div
+          className={cn(
+            "ml-auto flex max-w-full items-center gap-2",
+            oneRow ? "shrink-0 flex-nowrap" : "min-w-0 flex-wrap",
+          )}
+        >
+          {actions}
+          {menu}
+          <AgentButton />
+          {primary}
+        </div>
+      </header>
+    </HeaderFitContext.Provider>
   );
 }
 
