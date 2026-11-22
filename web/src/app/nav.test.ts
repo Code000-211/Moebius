@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  groupEntries,
   inSettingsArea,
   NAV,
   SETTINGS_GROUPS,
   SIDEBAR_GROUPS,
-  searchEntries,
   settingsEntries,
   sidebarRows,
 } from "./nav";
@@ -125,7 +125,7 @@ describe("the sidebar's rows", () => {
 describe("the Settings navigation", () => {
   it("keeps the groups in their order and Members for an owner alone", () => {
     const owner = settingsEntries("owner");
-    expect(searchEntries(owner, "").map((g) => g.group)).toEqual([...SETTINGS_GROUPS]);
+    expect(groupEntries(owner).map((g) => g.group)).toEqual([...SETTINGS_GROUPS]);
     expect(owner.map((e) => e.label)).toContain("Members");
     for (const role of ["member", "viewer", undefined])
       expect(settingsEntries(role).map((e) => e.label)).not.toContain("Members");
@@ -137,10 +137,8 @@ describe("the Settings navigation", () => {
     expect(labels.shortcuts).toBe("Keyboard shortcuts");
   });
 
-  it("finds an entry by its name or its group's", () => {
-    const owner = settingsEntries("owner");
-    expect(searchEntries(owner, " MOD ")[0]?.entries.map((e) => e.label)).toEqual(["Models"]);
-    expect(searchEntries(owner, "zzz")).toEqual([]);
+  it("gives every entry an icon", () => {
+    for (const entry of settingsEntries("owner")) expect(entry.icon, entry.label).toBeTruthy();
   });
 
   it("chooses Settings on its own pages, not on a page the sidebar has a row for", () => {

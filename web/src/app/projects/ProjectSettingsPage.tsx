@@ -6,7 +6,14 @@
  * tab. Only an owner edits: anyone else who sees the project reads it. The tab is part of the address, so a tab can be
  * linked to; the tabs that are gone (Workflow, Kinds, Plugins, Import) are in the legacy table.
  */
-import { ArrowLeftIcon } from "@phosphor-icons/react";
+import {
+  ArrowLeftIcon,
+  ColumnsIcon,
+  GitBranchIcon,
+  type Icon,
+  SlidersHorizontalIcon,
+  UsersIcon,
+} from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router";
 import { listProjects } from "../../api/calls/projects";
@@ -19,6 +26,7 @@ import { InSettingsArea, PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonCard } from "../../ui/page/Skeleton";
 import { boardPath, settingsPath } from "../pages";
+import { SUB_NAV_GROUP, SubNavLabel, subNavRow } from "../settings/SubNav";
 import { useRole } from "../shell/session";
 import { ProjectColumnsTab } from "./ProjectColumnsTab";
 import { ProjectGeneralTab } from "./ProjectGeneralTab";
@@ -33,6 +41,13 @@ const LABELS: Record<Tab, string> = {
   members: "Members",
   repositories: "Repositories",
   columns: "Columns",
+};
+
+const ICONS: Record<Tab, Icon> = {
+  general: SlidersHorizontalIcon,
+  members: UsersIcon,
+  repositories: GitBranchIcon,
+  columns: ColumnsIcon,
 };
 
 export function ProjectSettingsPage() {
@@ -101,22 +116,15 @@ export function ProjectSettingsPage() {
           aria-label="Project settings"
           className="flex w-50 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-hairline px-2 py-2"
         >
-          <span className="truncate px-2 pb-1 text-sm leading-5 text-secondary">
-            {project.name}
-          </span>
+          <span className={cn("truncate", SUB_NAV_GROUP)}>{project.name}</span>
           {TABS.map((each) => (
             <Link
               key={each}
               to={settingsPath(project.id, each)}
               aria-current={each === current ? "page" : undefined}
-              className={cn(
-                "flex h-7 items-center rounded-control px-2 text-base",
-                each === current
-                  ? "bg-selected font-medium text-accent-text"
-                  : "text-text hover:bg-hover",
-              )}
+              className={subNavRow(each === current)}
             >
-              {LABELS[each]}
+              <SubNavLabel icon={ICONS[each]} label={LABELS[each]} />
             </Link>
           ))}
         </nav>

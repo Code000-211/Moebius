@@ -70,7 +70,7 @@ Reference feel: Linear. Dense but not full; nearly monochrome; light theme is pr
   Inbox and Fleet rows open the same window. New issue, and editing a rule/agent/skill, also use a centred window.
 
 ## Settings
-- One page: sub-navigation with search and two groups, You (Profile with Sign out, Appearance, Keyboard shortcuts, My
+- One page: sub-navigation (an icon before each entry, no search field) and two groups, You (Profile with Sign out, Appearance, Keyboard shortcuts, My
   tokens) and Server (General, Models, Plugins, Kinds of issues, Members), nine entries; Server is an owner's. Only what
   one sets and leaves alone is here: Notifications (the Inbox is the place), Schedules (the nightly times are rows of
   General; a schedule is a trigger of a workflow, in its project), Repositories and Column scripts (the project's
