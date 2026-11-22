@@ -2,7 +2,8 @@
 //! person starts each run giving them, through this door or the `moebius workflow run` command.
 //!
 //! - `GET /v1/workflow-runs?project=&workflow=&limit=`: the runs, newest first (of one project and one workflow when
-//!   they are named), leaving out the runs of a repository or a project the person does not see. A run says which
+//!   they are named; without `project`, of every project the person sees), leaving out the runs of a repository or a
+//!   project the person does not see. A run says which
 //!   project it belongs to (`project`, `project_name`).
 //! - `GET /v1/workflow-runs/{id}`: one run with what each of its nodes was given, answered and failed with.
 //! - `GET /v1/projects/{id}/workflows/{name}/run-inputs`: the inputs of the workflow's manual trigger, so a form can be
@@ -927,5 +928,73 @@ port = "out"
         let (status, body) = start_run(&state, &addr, json!({})).await;
         assert_eq!(status, 409, "{body}");
         assert!(body.contains("Other (id"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn the_list_without_a_project_holds_the_runs_of_the_projects_the_caller_sees() {
+        let (_dir, state, addr) = testing::start().await;
+        let store = &state.app.store;
+        let repository = store.repositories().unwrap()[0].id;
+        let open = state.app.add_project("Open", "OPN").unwrap().id;
+        let secret = state.app.add_project("Secret", "SEC").unwrap().id;
+        let shown = store
+            .add_project_workflow_run(open, "release", repository, "manual", &json!({}))
+            .unwrap()
+            .id;
+        let hidden = store
+            .add_project_workflow_run(secret, "release", repository, "manual", &json!({}))
+            .unwrap()
+            .id;
+        // A person who is no member of the private project: the caller is not the server's own token.
+        let lea = store
+            .add_person("lea", "Lea", crate::store::Role::Member)
+            .unwrap();
+        let token = format!("{}{:064}", crate::server::api::TOKEN_PREFIX, 31);
+        store.add_access_token(lea.id, "test", &token).unwrap();
+        store.set_project_access(secret, true, &[]).unwrap();
+
+        let get = |path: String, token: String| {
+            let addr = addr.clone();
+            async move {
+                reqwest::Client::new()
+                    .get(format!("http://{addr}{path}"))
+                    .bearer_auth(token)
+                    .send()
+                    .await
+                    .unwrap()
+            }
+        };
+        let ids = |list: &Value| -> Vec<i64> {
+            list.as_array()
+                .unwrap()
+                .iter()
+                .map(|run| run["id"].as_i64().unwrap())
+                .collect()
+        };
+
+        let list = get("/v1/workflow-runs".to_string(), token.clone()).await;
+        assert_eq!(list.status(), 200);
+        let list: Value = list.json().await.unwrap();
+        assert_eq!(ids(&list), [shown], "the private project's run is left out");
+        assert_eq!(list[0]["project_name"], "Open");
+        // Named, the private project's runs are as absent as when it is not named; its run is no run for her.
+        let named = get(format!("/v1/workflow-runs?project={secret}"), token.clone()).await;
+        let named: Value = named.json().await.unwrap();
+        assert!(named.as_array().unwrap().is_empty());
+        let detail = get(format!("/v1/workflow-runs/{hidden}"), token.clone()).await;
+        assert_eq!(detail.status(), 404);
+
+        // Owners included, someone who is no member does not see a private project's runs (ADR 0018); a member does,
+        // newest first.
+        let owner: Value = testing::get(&state, &addr, "/v1/workflow-runs").await;
+        assert_eq!(ids(&owner), [shown]);
+        state
+            .app
+            .store
+            .set_project_access(secret, true, &[lea.id])
+            .unwrap();
+        let list = get("/v1/workflow-runs".to_string(), token).await;
+        let list: Value = list.json().await.unwrap();
+        assert_eq!(ids(&list), [hidden, shown]);
     }
 }

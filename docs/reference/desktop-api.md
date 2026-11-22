@@ -2921,7 +2921,7 @@ one the trigger names; a repository that is not one of the project's is refused 
 
 The routes below, `GET /v1/workflows`, `GET`, `PUT` and `DELETE /v1/workflows/{name}`,
 `GET /v1/workflows/{name}/run-inputs`, `POST /v1/workflows/{name}/runs`, `POST /api/hooks/{path}` and
-`POST /api/hooks/{repository}/{path}`, and `GET /v1/workflow-runs` without `project`, are **deprecated**: they stay until a
+`POST /api/hooks/{repository}/{path}`, and `GET /v1/workflow-runs?workflow=` without `project`, are **deprecated**: they stay until a
 later release turns them into a documented `410`. Use the routes of `/v1/projects/{id}/workflows` and
 `/api/hooks/projects/{project}/...` above. A deprecated route works over the projects the person sees, and resolves a
 `{name}` when exactly one of them has a workflow of that name: none is `404`, several is `409` with the message
@@ -2979,7 +2979,7 @@ already, and the message names the status it ended as.
 ### `GET /v1/workflow-runs`
 
 The runs of the workflows, newest first, leaving out the runs of a repository the person does not see. Query:
-`project` (a project's id: only the runs of its workflows), `workflow` (only the runs of this workflow; without `project` it matches the name in every project, which is the deprecated form) and `limit` (the most runs to answer, 50 when left out, at most 200).
+`project` (a project's id: only the runs of its workflows; left out, the runs of every project the person sees, which is what Fleet lists and is not deprecated), `workflow` (only the runs of this workflow; without `project` it matches the name in every project, which is the deprecated form) and `limit` (the most runs to answer, 50 when left out, at most 200).
 A run's `project` is null for a run from before the migration of the workflow files, and `project_name` is null when there is no project or it is gone.
 Response: an array of `{"id": number, "workflow": string, "project": number or null, "project_name": string or null, "repository_id": number, "trigger": string, "status": string,
 "value": any, "created_at": number, "started_at": number or null, "finished_at": number or null, "error": string or null}`;
