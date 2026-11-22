@@ -76,7 +76,12 @@ describe.skipIf(usesRealServer)("the Finished tab", () => {
     await expect.poll(() => page.getByTestId("outcome-failed").count()).toBe(1);
     await expect.poll(() => page.getByTestId("outcome-succeeded").count()).toBe(1);
     await expect.poll(() => page.getByTestId("outcome-stopped").count()).toBe(1);
-    await page.getByTestId("group-row").first().getByText("Today").waitFor();
+    // The fake's runs ended minutes ago, so near midnight UTC they fall under Yesterday.
+    await page
+      .getByTestId("group-row")
+      .first()
+      .getByText(/^(Today|Yesterday)$/)
+      .waitFor();
 
     await page.reload();
     await rows.first().waitFor();
