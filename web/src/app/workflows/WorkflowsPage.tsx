@@ -45,7 +45,7 @@ export function WorkflowsPage() {
   if (list.isPending) {
     return (
       <>
-        <PageHeader title="Workflows" actions={newButton} />
+        <PageHeader title="Workflows" primary={newButton} />
         <SkeletonList rows={3} message="Reading the workflows" />
         <NewWorkflowDialog open={creating} onOpenChange={setCreating} />
       </>
@@ -54,7 +54,7 @@ export function WorkflowsPage() {
   if (list.isError) {
     return (
       <>
-        <PageHeader title="Workflows" actions={newButton} />
+        <PageHeader title="Workflows" primary={newButton} />
         <ReadFailed
           error={list.error}
           fallback="Could not read the workflows. Try again."
@@ -79,7 +79,7 @@ export function WorkflowsPage() {
   const shown = filtered(everything, values);
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <PageHeader title="Workflows" actions={newButton} />
+      <PageHeader title="Workflows" primary={newButton} />
       {everything.length > 0 && (
         <FilterBar
           label="Filter the workflows"

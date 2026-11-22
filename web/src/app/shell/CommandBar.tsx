@@ -42,7 +42,8 @@ import { useOpenCard } from "../board/CardWindowHost";
 import { cardKey } from "../board/cardKey";
 import { useNewIssue } from "../board/NewIssueHost";
 import { usePause } from "../fleet/usePause";
-import { boardPath, PAGES, repositoryBoardPath, shownTo } from "../pages";
+import { NAV, shownTo } from "../nav";
+import { boardPath, repositoryBoardPath } from "../pages";
 import { useAgent } from "./AgentContext";
 import { usePaletteFocus } from "./palette/focus";
 import { matches, type PaletteCommand, ranked, readRecent } from "./palette/model";
@@ -185,8 +186,9 @@ export function CommandBar({
   );
   const pages = ranked(
     query,
-    PAGES.filter((page) => shownTo(page, role)),
-    (page) => `${page.title} page ${page.group}`,
+    NAV.filter((page) => shownTo(page, role)),
+    (page) =>
+      `${page.label} page ${page.sidebar ?? page.settings?.group ?? ""} ${page.settings?.label ?? ""} ${page.words ?? ""}`,
   );
   const places = ranked(query, boards, (board) => `${board.repository.name} place project`);
   const cards =
@@ -209,9 +211,9 @@ export function CommandBar({
 
   // What was seen lately, by name, where the name is still known; the place a person is at is not offered to go to.
   const known = new Map<string, { label: string; icon: ReactNode }>();
-  for (const page of PAGES)
+  for (const page of NAV)
     known.set(`/${page.path}`, {
-      label: page.title,
+      label: page.label,
       icon: <page.icon className={ICON} weight="regular" />,
     });
   for (const board of boards)
@@ -345,7 +347,7 @@ export function CommandBar({
                   onSelect={() => go(`/${page.path}`)}
                 >
                   <page.icon className={ICON} weight="regular" />
-                  <span>{page.title}</span>
+                  <span>{page.label}</span>
                 </CommandItem>
               ))}
             </CommandGroup>

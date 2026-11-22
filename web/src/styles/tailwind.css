@@ -218,14 +218,20 @@
 /*
  * Glass, for what is small and floats: a menu, a tooltip, the card preview and the palette. It is the solid `--panel`
  * unless the root says `data-blur="on"` (`ui/lib/effects.ts`: a machine with a GPU, a person who has not turned it
- * off), and then it is a translucent `--panel` over a blur of 16px at most. Windows, sheets and bars are never glass.
+ * off), and then it is a `--panel` of 94% over a blur of 16px at most: enough to lift the layer off the page, never
+ * enough for the text behind it to show through. In the dark theme a floating layer is the opaque `--panel`, since
+ * light text on a dark layer reads worse through even a little of the page. Windows, sheets and bars are never glass.
  */
 @utility glass {
   background-color: var(--panel);
 
   :root[data-blur="on"] & {
-    background-color: color-mix(in srgb, var(--panel) 82%, transparent);
+    background-color: color-mix(in srgb, var(--panel) 94%, transparent);
     backdrop-filter: blur(16px) saturate(1.2);
+  }
+
+  :root[data-blur="on"][data-theme="dark"] & {
+    background-color: var(--panel);
   }
 }
 

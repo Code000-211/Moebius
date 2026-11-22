@@ -63,7 +63,7 @@ export function IssuesPage() {
   const values = readFilters(params, fields);
   return (
     <div data-testid="issues-page" className="flex flex-col gap-4">
-      <PageHeader title="Issues" actions={<NewIssueButton />} />
+      <PageHeader title="Issues" primary={<NewIssueButton />} />
       <FilterBar
         label="Filter the issues"
         fields={fields}

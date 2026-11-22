@@ -13,23 +13,33 @@ const GROUP = "flex h-[30px] items-center rounded-control px-2.5 text-sm text-si
 export function Section({
   title,
   to,
+  action,
   children,
 }: {
   title?: string;
   /** Where the name leads, when the group is also a place. */
   to?: string;
+  /** A control at the end of the group's name row, such as the `+` of Projects. */
+  action?: React.ReactNode;
   children?: React.ReactNode;
 }) {
   return (
     <div className="pt-4 first:pt-0">
-      {title &&
-        (to ? (
-          <Link to={to} className={cn(GROUP, "hover:bg-row-hover hover:text-text")}>
-            {title}
-          </Link>
-        ) : (
-          <div className={GROUP}>{title}</div>
-        ))}
+      {title && (
+        <div className="flex items-center">
+          {to ? (
+            <Link
+              to={to}
+              className={cn(GROUP, "min-w-0 flex-1 hover:bg-row-hover hover:text-text")}
+            >
+              {title}
+            </Link>
+          ) : (
+            <div className={cn(GROUP, "min-w-0 flex-1")}>{title}</div>
+          )}
+          {action}
+        </div>
+      )}
       {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with
           no marker from the accessibility tree entirely */}
       <ul role="list" className="flex flex-col">

@@ -74,7 +74,7 @@ export function DecisionModelPage() {
     <>
       <PageHeader
         title="Decisions"
-        actions={
+        primary={
           <Button size="sm" disabled={exporting.isPending} onClick={() => exporting.mutate()}>
             {exporting.isPending ? "Exporting" : "Export training set"}
           </Button>
