@@ -100,24 +100,30 @@ describe("the project header", () => {
           await page.goto(`${server.url}${path}`);
           await page.locator("[data-page-header]").waitFor();
           await page.getByRole("button", { name: "Moebius" }).waitFor();
+          // Horizontally nothing leaves the header; vertically the tabs' underline may sit on its rule, so a few pixels
+          // of give there. The names of what is out are in the message when something is.
           const header = await page.evaluate(() => {
             const bar = document.querySelector("[data-page-header]") as HTMLElement;
             const area = bar.getBoundingClientRect();
-            const clipped = Array.from(bar.querySelectorAll("h1, [role=tab], button, a")).filter(
-              (each) => {
+            const clipped = Array.from(bar.querySelectorAll("h1, [role=tab], button, a"))
+              .filter((each) => {
                 const box = each.getBoundingClientRect();
                 return (
                   box.width > 0 &&
                   (box.right > area.right + 0.5 ||
                     box.left < area.left - 0.5 ||
-                    box.top < area.top - 0.5 ||
-                    box.bottom > area.bottom + 0.5)
+                    box.top < area.top - 4 ||
+                    box.bottom > area.bottom + 4)
                 );
-              },
-            ).length;
+              })
+              .map((each) => {
+                const box = each.getBoundingClientRect();
+                const name = each.textContent || each.getAttribute("aria-label") || each.tagName;
+                return `${name} [${Math.round(box.left)},${Math.round(box.top)} to ${Math.round(box.right)},${Math.round(box.bottom)}] in [${Math.round(area.left)},${Math.round(area.top)} to ${Math.round(area.right)},${Math.round(area.bottom)}]`;
+              });
             return { height: area.height, clipped, scrolls: bar.scrollWidth > bar.clientWidth };
           });
-          expect(header, `${width} ${path}`).toEqual({ height: 48, clipped: 0, scrolls: false });
+          expect(header, `${width} ${path}`).toEqual({ height: 48, clipped: [], scrolls: false });
         }
       }
     },
