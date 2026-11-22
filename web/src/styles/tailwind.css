@@ -332,6 +332,30 @@
   }
 }
 
+/* The page header ends in a rule of its own, so whatever comes first under it (a `Box`, a list, a section) starts
+   without a rule of its own (unlayered, so it wins over the `border-t` utility); two hairlines with a gap of air between them are a band, not a divider. */
+/* A page header is a container of its own: what is quiet in it gives up its words, keeping its icon, when the header is
+   narrower than `--header-roomy` (`ui/page/PageHeader.tsx`). `header-word` is the words, `header-glyph` the icon that
+   stands in for them. */
+@container header (max-width: 60rem) {
+  .header-word {
+    display: none;
+  }
+}
+
+@container header (min-width: 60rem) {
+  .header-glyph {
+    display: none;
+  }
+}
+
+[data-page-header] + .border-t,
+[data-page-header] + * > .border-t:first-child,
+[data-page-header] + * > :first-child > .border-t:first-child,
+[data-page-header] + * > :first-child > :first-child > .border-t:first-child {
+  border-top-width: 0;
+}
+
 @layer base {
   html,
   body,

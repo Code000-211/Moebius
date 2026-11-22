@@ -523,6 +523,7 @@ UPDATE cards SET moved_at = COALESCE((SELECT MAX(at) FROM card_moves WHERE card_
     automations::BY_PROJECT,
     projects::DELETED,
     workflows::MOVES,
+    "ALTER TABLE person_preferences ADD COLUMN wrap_long_lines INTEGER NOT NULL DEFAULT 0;",
 ];
 
 #[cfg(test)]

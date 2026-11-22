@@ -232,6 +232,8 @@ Below about 1000px the sidebar is hidden and a button in the page header lays it
 - A tab is a word in `--text-muted`, 26px high; the active tab is `--accent-text` in 550 weight with a 2px underline of `--accent` that sits on the header's bottom rule. No pill, no box. A count after a tab's word is 12px in the tab's colour.
 - Text buttons (Filter, Display) have no border; the primary button is `--accent-fill` with a white label, 28px high, with a plus when it makes a new thing.
 - A page with nothing to choose between has no tabs.
+- **The header's rule is the only line there.** What comes first under the header (a box, a list, a section) starts without a rule of its own: the header already ends in one, and a second hairline a gap below it reads as an empty band. One rule in `styles/tailwind.css` takes the top border off the first thing under `[data-page-header]`.
+- **A project's header stays one row of 48px** down to the narrow breakpoint, never wrapping and never clipped. The header is a container: when it is narrower than 60rem (a 1000px window with the sidebar leaves 776px) the quiet buttons give up their words and keep their icon (`header-word` and `header-glyph`: Filter, Display, Moebius), each named by its label for a screen reader. The tabs, the gear, the `...` menu and the primary button stay as they are.
 
 ## Lists
 
@@ -261,7 +263,7 @@ Inbox, My issues, the project list and Fleet are one kind of list. Lists are vir
 
 One page. At its left a sub-navigation with a search field and two groups, in this order: You (Profile, with Sign out; Appearance; Keyboard shortcuts; My tokens) and Server (General, Models, Plugins, Kinds of issues, Members), nine entries in all (`design/navigation/ia4.png`). Server is an owner's: anyone else sees only You. The groups are read from the same table as the sidebar (`nav.ts`). Nothing in Settings is a tool or a report: Notifications are the Inbox (whose empty state says what arrives there), the nightly times (the Retro and the trial window) are rows under "Nightly" in General, a schedule is a trigger of a workflow in its project, Repositories and Column scripts are tabs of the project's settings, Runners and Ports are tabs of Fleet, and Agents, Rules, Insights and Improve have rows of the sidebar. What plugins ask of the whole server is a section per plugin on the Plugins page. Every removed address redirects (`routes/redirects.ts`). A group name is a small muted label, and the chosen item is `--accent-text` on `--accent-tint`, in medium weight.
 
-Appearance has these rows: Theme (System, Light, Dark), Density (Compact or Default; Default keeps the 36px rows, and what Compact changes is settled by the issue that builds it), Show thinking expanded, Wrap long lines, Reduce motion and Blur on menus.
+Appearance has these rows: Theme (System, Light, Dark), Density (Compact or Default; Default keeps the 36px rows, and what Compact changes is settled by the issue that builds it), Show thinking expanded, Wrap long lines (off by default: a line longer than its code block scrolls sideways, and on it breaks at the block's edge in chat answers, card threads and run pages; kept per person with the other preferences), Reduce motion and Blur on menus.
 
 The content is rows of a label at the left and its control at the right, separated by hairlines. A description appears only where it adds a fact ("While an answer streams it is always open"). Settings has the same header button as every page.
 

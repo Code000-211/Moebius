@@ -675,9 +675,10 @@ Forgets a recent place. Errors: `404` for no such place, and for another person'
 ### Preferences
 
 What a person chose for themselves in the web app, kept for them on the server so it follows them to every browser. These
-routes are a person's own: a run token gets `403`. A `Preferences` is `{"show_thinking_expanded": boolean}`: whether the
-thinking of an agent's turn is shown open once it is finished (a thought still arriving is always open). It is `false` for
-a person who chose nothing.
+routes are a person's own: a run token gets `403`. A `Preferences` is `{"show_thinking_expanded": boolean, "wrap_long_lines": boolean}`:
+`show_thinking_expanded` is whether the thinking of an agent's turn is shown open once it is finished (a thought still
+arriving is always open); `wrap_long_lines` is whether code blocks and long lines in chat answers, card threads and run
+pages wrap instead of scrolling sideways. Both are `false` for a person who chose nothing.
 
 ### `GET /v1/preferences`
 
@@ -685,7 +686,7 @@ The preferences of the person asking.
 
 ### `PUT /v1/preferences`
 
-Replaces them. Request body: a `Preferences`. Response: the `Preferences` as kept.
+Replaces them. Request body: a `Preferences`; a key left out is `false`. Response: the `Preferences` as kept.
 
 ### `GET /v1/server`
 

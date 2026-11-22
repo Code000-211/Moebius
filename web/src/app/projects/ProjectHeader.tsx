@@ -76,6 +76,7 @@ export function ProjectHeader({
   ];
   return (
     <PageHeader
+      oneRow
       title={project.name}
       tabs={
         <Tabs

@@ -1,3 +1,4 @@
+import { useWrapLines } from "../../chat/wrapping";
 /**
  * The body of a changed file: the removed lines and the added ones, from the old and new text of an edit (a write is
  * all added). The stream carries the texts, not a unified diff, so no context lines are drawn. Each line carries its
@@ -44,6 +45,7 @@ export function diffStats(changes: DiffChange[]): { additions: number; deletions
 }
 
 export function DiffBody({ changes }: { changes: DiffChange[] }) {
+  const wrap = useWrapLines();
   const lines = diffLines(changes);
   const shown = lines.slice(0, MAX_LINES);
   const text = lines.map((line) => `${line.sign}${line.text}`).join("\n");
@@ -52,13 +54,18 @@ export function DiffBody({ changes }: { changes: DiffChange[] }) {
       <div className="flex justify-end px-3 pt-2">
         <CopyButton text={text} label="Copy diff" />
       </div>
-      <pre className="overflow-x-auto px-3 pb-3 font-mono text-sm leading-5 text-text">
+      <pre
+        className={cn(
+          "px-3 pb-3 font-mono text-sm leading-5 text-text",
+          wrap ? "overflow-x-hidden" : "overflow-x-auto",
+        )}
+      >
         {shown.map((line, index) => (
           <div
             // biome-ignore lint/suspicious/noArrayIndexKey: the lines are drawn once, in order
             key={index}
             className={cn(
-              "whitespace-pre",
+              wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre",
               line.sign === "+" ? "bg-diff-added" : "bg-diff-removed",
             )}
           >

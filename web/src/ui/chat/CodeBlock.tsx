@@ -5,6 +5,8 @@
  * grammar (ui/code/highlight.ts, loaded lazily — until it arrives, the plain text).
  */
 import { lazy, Suspense } from "react";
+import { useWrapLines } from "../../chat/wrapping";
+import { cn } from "../lib/cn";
 import { CopyButton } from "./CopyButton";
 
 const CodeHighlight = lazy(() => import("../code/CodeHighlight"));
@@ -19,6 +21,11 @@ export function fileOf(meta: string | undefined): string | undefined {
   return name ? name : undefined;
 }
 
+/** How the lines of code are set: as written, or broken at the edge of the block. */
+export function lines(wrap: boolean): string {
+  return wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre";
+}
+
 export function CodeBlock({
   language,
   file,
@@ -28,6 +35,7 @@ export function CodeBlock({
   file?: string;
   code: string;
 }) {
+  const wrap = useWrapLines();
   return (
     <div className="reveal-copy my-4 overflow-hidden rounded-panel bg-code-bg">
       <div className="flex h-[30px] items-center justify-between gap-4 pr-1 pl-3 font-mono text-[12px] text-code-head">
@@ -46,9 +54,14 @@ export function CodeBlock({
           className="font-mono text-[12px] text-code-head opacity-100! hover:bg-code-head/15 hover:text-code-text"
         />
       </div>
-      <pre className="m-0 overflow-x-auto px-3 py-3 font-mono text-[12px] leading-[1.65] text-code-text">
-        <Suspense fallback={<code className="whitespace-pre">{code}</code>}>
-          <CodeHighlight code={code} language={language} />
+      <pre
+        className={cn(
+          "m-0 px-3 py-3 font-mono text-[12px] leading-[1.65] text-code-text",
+          wrap ? "overflow-x-hidden" : "overflow-x-auto",
+        )}
+      >
+        <Suspense fallback={<code className={lines(wrap)}>{code}</code>}>
+          <CodeHighlight code={code} language={language} wrap={wrap} />
         </Suspense>
       </pre>
     </div>

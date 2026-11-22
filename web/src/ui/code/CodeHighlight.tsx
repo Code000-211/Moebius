@@ -6,10 +6,19 @@
 import { useMemo } from "react";
 import { highlight } from "./highlight";
 
-export default function CodeHighlight({ code, language }: { code: string; language?: string }) {
+export default function CodeHighlight({
+  code,
+  language,
+  wrap = false,
+}: {
+  code: string;
+  language?: string;
+  /** Break long lines at the edge of the block instead of letting them run on. */
+  wrap?: boolean;
+}) {
   const tokens = useMemo(() => highlight(code, language), [code, language]);
   return (
-    <code className="whitespace-pre">
+    <code className={wrap ? "whitespace-pre-wrap break-words" : "whitespace-pre"}>
       {tokens.map((token, place) =>
         token.classes ? (
           // biome-ignore lint/suspicious/noArrayIndexKey: the tokens come for one code string, are replaced wholesale when it changes, and draw in order

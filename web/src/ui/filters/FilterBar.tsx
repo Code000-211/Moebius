@@ -6,7 +6,13 @@
  * arrows move, the right arrow opens a field's values, Enter chooses, Escape closes. What is set is the page's to keep
  * (the address, by `model.ts`); the bar only says what changed.
  */
-import { BookmarkSimpleIcon, PlusIcon, SlidersHorizontalIcon, XIcon } from "@phosphor-icons/react";
+import {
+  BookmarkSimpleIcon,
+  FunnelSimpleIcon,
+  PlusIcon,
+  SlidersHorizontalIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { memo, type ReactNode } from "react";
 import { Button } from "../components/Button";
 import {
@@ -114,9 +120,18 @@ export function DisplayMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className={plain ? QUIET : undefined}>
-          {!plain && <SlidersHorizontalIcon className="size-4" aria-hidden="true" />}
-          Display
+        <Button
+          variant="ghost"
+          size="sm"
+          className={plain ? QUIET : undefined}
+          aria-label={plain ? "Display" : undefined}
+        >
+          {plain ? (
+            <SlidersHorizontalIcon className="header-glyph size-4" aria-hidden="true" />
+          ) : (
+            <SlidersHorizontalIcon className="size-4" aria-hidden="true" />
+          )}
+          {plain ? <span className="header-word">Display</span> : "Display"}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" aria-label="Display">
@@ -181,7 +196,7 @@ export function DisplayMenu({
   );
 }
 
-/** The quiet word of a page header: muted, no icon, the text colour on hover. */
+/** The quiet word of a page header: muted, the text colour on hover; in a narrow header its icon stands in for it. */
 const QUIET = "text-muted hover:text-text";
 
 /**
@@ -205,9 +220,18 @@ export function FilterMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className={plain ? QUIET : undefined}>
-          {!plain && <PlusIcon className="size-4" aria-hidden="true" />}
-          Filter
+        <Button
+          variant="ghost"
+          size="sm"
+          className={plain ? QUIET : undefined}
+          aria-label={plain ? "Filter" : undefined}
+        >
+          {plain ? (
+            <FunnelSimpleIcon className="header-glyph size-4" aria-hidden="true" />
+          ) : (
+            <PlusIcon className="size-4" aria-hidden="true" />
+          )}
+          {plain ? <span className="header-word">Filter</span> : "Filter"}
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align={plain ? "end" : "start"} aria-label="Filter by">
