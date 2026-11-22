@@ -315,14 +315,33 @@ describe("the Agents page", () => {
   );
 });
 
+describe("the tabs of the Agents page", () => {
+  it("are addresses: choosing one opens its page, and the old addresses lead to them", async () => {
+    await open("/agents");
+    await page.getByRole("tab", { name: "Skills" }).click();
+    await page.waitForURL(/\/agents\/skills$/);
+    await page.getByRole("tab", { name: "MCP servers" }).click();
+    await page.waitForURL(/\/agents\/mcp-servers$/);
+    await page.getByRole("tab", { name: "Agents" }).click();
+    await page.waitForURL(/\/agents$/);
+    await page.goto(`${server.url}/skills?skill=house-style`);
+    await page.waitForURL(/\/agents\/skills\?skill=house-style$/);
+    await page.goto(`${server.url}/settings/rules`);
+    await page.waitForURL(/\/rules$/);
+  });
+});
+
 describe("the Skills page", () => {
   const row = (name: string) => page.getByRole("button", { name: `Edit skill ${name}` });
   const editor = () => page.getByTestId("editor-window");
   const windowSave = () => editor().getByRole("button", { name: "Save", exact: true });
 
   it("loads", async () => {
-    await open("/skills");
-    await page.getByRole("heading", { name: "Skills", exact: true }).waitFor();
+    await open("/agents/skills");
+    await page.getByRole("heading", { name: "Agents", exact: true }).waitFor();
+    await expect
+      .poll(() => page.getByRole("tab", { name: "Skills" }).getAttribute("aria-selected"))
+      .toBe("true");
     // A server with a repository lists the skills; one without offers to set it up.
     await page
       .locator('[data-testid="skill-row"], [data-testid="harness-setup"]')
@@ -333,7 +352,7 @@ describe("the Skills page", () => {
   it.skipIf(usesRealServer)(
     "lists the built-in skills first and edits one of the repository in the window",
     async () => {
-      await open("/skills");
+      await open("/agents/skills");
       await row("house-style").waitFor();
       const names = await page.getByTestId("skill-row").allInnerTexts();
       expect(names[0]).toContain("moebius");
@@ -360,7 +379,7 @@ describe("the Skills page", () => {
   );
 
   it.skipIf(usesRealServer)("asks before a change is dropped", async () => {
-    await open("/skills?skill=house-style");
+    await open("/agents/skills?skill=house-style");
     await editor().getByLabel("Description").fill("Something else.");
     await page.keyboard.press("Escape");
     await page.getByRole("alertdialog", { name: "Discard changes?" }).waitFor();
@@ -370,7 +389,7 @@ describe("the Skills page", () => {
   });
 
   it.skipIf(usesRealServer)("makes a new skill and deletes it after asking", async () => {
-    await open("/skills");
+    await open("/agents/skills");
     await page.getByRole("button", { name: "New skill" }).click();
     await editor().getByLabel("Name of the new skill").fill("pdf");
     await editor().getByLabel("Description").fill("Fill PDF forms.");
@@ -384,7 +403,7 @@ describe("the Skills page", () => {
   });
 
   it.skipIf(usesRealServer)("opens, saves, adds and deletes a skill's other files", async () => {
-    await open("/skills?skill=house-style");
+    await open("/agents/skills?skill=house-style");
     await editor().getByRole("button", { name: "scripts/check.py" }).click();
     const text = page.getByRole("textbox", { name: "File text", exact: true });
     expect(await text.inputValue()).toBe("print('ok')\n");
@@ -413,7 +432,7 @@ describe("the Skills page", () => {
   it.skipIf(usesRealServer)(
     "reads every file of a skill the way the first of them was read",
     async () => {
-      await open("/skills?skill=house-style");
+      await open("/agents/skills?skill=house-style");
       await editor().getByRole("button", { name: "New file" }).click();
       await page.getByLabel("Path in the skill").fill("notes/readme.md");
       await page
@@ -444,7 +463,7 @@ describe("the Skills page", () => {
   it.skipIf(usesRealServer)(
     "lists a file that is not text with its size and does not edit it",
     async () => {
-      await open("/skills?skill=house-style");
+      await open("/agents/skills?skill=house-style");
       await editor().getByRole("button", { name: "assets/logo.bin" }).click();
       await page.getByText("Not text, or too large to edit (20.0 KB).").waitFor();
       await expect.poll(() => page.getByRole("textbox", { name: "File text" }).count()).toBe(0);
@@ -454,7 +473,7 @@ describe("the Skills page", () => {
   it.skipIf(usesRealServer)(
     "shows a built-in skill read only and updates one from its source",
     async () => {
-      await open("/skills?skill=tdd");
+      await open("/agents/skills?skill=tdd");
       await page.getByText("Built in · read only").waitFor();
       await page
         .getByText("Copied from https://github.com/acme/skills at commit 0123456789ab")
@@ -476,7 +495,7 @@ describe("the Skills page", () => {
   it.skipIf(usesRealServer)(
     "refuses to delete a skill an agent names, with the server's sentence",
     async () => {
-      await open("/skills?skill=house-style");
+      await open("/agents/skills?skill=house-style");
       await editor().getByRole("button", { name: "Delete skill" }).click();
       await page.getByRole("button", { name: "Delete skill" }).last().click();
       await page.getByRole("alert").filter({ hasText: "is named by Coder" }).waitFor();
@@ -484,7 +503,7 @@ describe("the Skills page", () => {
   );
 
   it.skipIf(usesRealServer)("imports from a link by asking the Moebius agent", async () => {
-    await open("/skills");
+    await open("/agents/skills");
     await page.getByRole("button", { name: "Import", exact: true }).click();
     const ask = page.getByRole("button", { name: "Submit" });
     expect(await ask.isDisabled()).toBe(true);
@@ -501,7 +520,7 @@ describe("the Skills page", () => {
   it.skipIf(usesRealServer)(
     "sends a zip to the server and gives the agent its path; a refused one is said",
     async () => {
-      await open("/skills");
+      await open("/agents/skills");
       await page.getByRole("button", { name: "Import", exact: true }).click();
       fake().refuseNext("POST", "/v1/uploads", 413, "too large");
       await page.getByLabel("Zip file").setInputFiles({
@@ -528,7 +547,7 @@ describe("the Skills page", () => {
   );
 
   it.skipIf(usesRealServer)("offers to set the repository up and mutes what needs it", async () => {
-    await open("/skills", (f) => f.useWithoutHarness());
+    await open("/agents/skills", (f) => f.useWithoutHarness());
     await page.getByTestId("harness-setup").waitFor();
     expect(await page.getByRole("button", { name: "Import", exact: true }).isDisabled()).toBe(true);
     expect(await page.getByRole("button", { name: "New skill" }).isDisabled()).toBe(true);
@@ -546,8 +565,11 @@ describe("the Skills page", () => {
 
 describe("the MCP servers page", () => {
   it("loads", async () => {
-    await open("/mcp-servers");
-    await page.getByRole("heading", { name: "MCP servers", exact: true }).waitFor();
+    await open("/agents/mcp-servers");
+    await page.getByRole("heading", { name: "Agents", exact: true }).waitFor();
+    await expect
+      .poll(() => page.getByRole("tab", { name: "MCP servers" }).getAttribute("aria-selected"))
+      .toBe("true");
     await page
       .locator('[data-testid="list-card"], [data-testid="harness-setup"], :text("No servers yet")')
       .first()
@@ -555,7 +577,7 @@ describe("the MCP servers page", () => {
   });
 
   it.skipIf(usesRealServer)("lists the servers, a broken one in red, and edits one", async () => {
-    await open("/mcp-servers");
+    await open("/agents/mcp-servers");
     await card("docs").waitFor();
     expect(await card("docs").textContent()).toContain("stdio");
     expect(await card("broken").textContent()).toContain("has no command or url");
@@ -575,7 +597,7 @@ describe("the MCP servers page", () => {
   });
 
   it.skipIf(usesRealServer)("adds a remote server and says what the server refuses", async () => {
-    await open("/mcp-servers");
+    await open("/agents/mcp-servers");
     await page.getByRole("button", { name: "New server" }).click();
     await page.getByLabel("Name of the new server").fill("search");
     await save().click();
@@ -600,7 +622,7 @@ describe("the MCP servers page", () => {
   });
 
   it.skipIf(usesRealServer)("does not delete a server an agent names", async () => {
-    await open("/mcp-servers?server=docs");
+    await open("/agents/mcp-servers?server=docs");
     await page.getByRole("button", { name: "Delete server" }).click();
     await page.getByRole("button", { name: "Delete server" }).last().click();
     await page.getByRole("alert").filter({ hasText: "is named by Coder" }).waitFor();
@@ -608,7 +630,7 @@ describe("the MCP servers page", () => {
   });
 
   it.skipIf(usesRealServer)("imports MCP servers by asking the Moebius agent", async () => {
-    await open("/mcp-servers");
+    await open("/agents/mcp-servers");
     await page.getByRole("button", { name: "Import", exact: true }).click();
     await page.getByRole("button", { name: "From a link" }).click();
     await page.getByLabel("A git repository or a page").fill("https://github.com/acme/docs-mcp");
@@ -1085,7 +1107,7 @@ describe("the pages that put a list beside a detail, or open an editor window", 
       await open("/");
       for (const [path, title] of [
         ["/agents", "Agents"],
-        ["/skills", "Skills"],
+        ["/agents/skills", "Agents"],
       ] as const) {
         await page.goto(`${server.url}${path}`);
         await page.getByRole("heading", { name: title, level: 1 }).waitFor();
@@ -1103,8 +1125,8 @@ describe("the pages that put a list beside a detail, or open an editor window", 
   it.skipIf(usesRealServer)(
     "keeps the list and the detail of MCP servers each inside the window",
     async () => {
-      await open("/mcp-servers");
-      await page.getByRole("heading", { name: "MCP servers", level: 1 }).waitFor();
+      await open("/agents/mcp-servers");
+      await page.getByRole("heading", { name: "Agents", level: 1 }).waitFor();
       await page.getByTestId("list-card").first().click();
       await page.getByTestId("detail-column").waitFor();
       // The flat editor of a server fits a window; rows of values make it long enough to scroll.

@@ -31,6 +31,7 @@ import { SkeletonCard, SkeletonList } from "../../ui/page/Skeleton";
 import { useDrafts } from "../harness/form";
 import { HarnessSetup } from "../harness/HarnessSetup";
 import { AgentEditor } from "./AgentEditor";
+import { AgentsTabs } from "./AgentsTabs";
 import { type AgentForm, blankForm, copyable, formOf, fromFile } from "./model";
 import { AgentWait, NewAgentChoice, NewAgentEditor } from "./NewAgent";
 
@@ -155,6 +156,7 @@ export function AgentsPage() {
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         title="Agents"
+        tabs={<AgentsTabs value="agents" />}
         actions={
           <div className="flex flex-wrap items-center gap-3">
             {whyQuiet && <span className="text-sm text-secondary">{whyQuiet}</span>}

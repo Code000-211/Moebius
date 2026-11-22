@@ -187,8 +187,7 @@ export const NAV: readonly NavEntry[] = [
     icon: RobotIcon,
     shownTo: owner,
     sidebar: "Build",
-    settings: { group: "Agents" },
-    words: "coder reviewer",
+    words: "coder reviewer skills mcp servers tools",
   },
   {
     path: "models",
@@ -199,11 +198,11 @@ export const NAV: readonly NavEntry[] = [
     words: "providers",
   },
   {
-    path: "skills",
+    path: "agents/skills",
     label: "Skills",
     icon: SparkleIcon,
-    shownTo: everyone,
-    settings: { group: "Agents" },
+    shownTo: owner,
+    words: "agents",
   },
   {
     path: "plugins",
@@ -214,12 +213,11 @@ export const NAV: readonly NavEntry[] = [
     words: "extensions",
   },
   {
-    path: "mcp-servers",
+    path: "agents/mcp-servers",
     label: "MCP servers",
     icon: PlugsConnectedIcon,
-    shownTo: everyone,
-    settings: { group: "Agents" },
-    words: "tools",
+    shownTo: owner,
+    words: "tools agents",
   },
   {
     path: "rules",
@@ -227,8 +225,7 @@ export const NAV: readonly NavEntry[] = [
     icon: ScalesIcon,
     shownTo: owner,
     sidebar: "Build",
-    settings: { group: "Automation" },
-    words: "permissions guard",
+    words: "permissions guard patterns refusals",
   },
   {
     path: "workflows",
@@ -422,7 +419,7 @@ export function searchEntries(
 
 /**
  * Whether `pathname` is a page the sidebar chooses Settings on: an entry of its navigation, or a place it reaches,
- * unless the sidebar has a row of its own for the page (Agents, Rules, Insights and Improve are entries of both).
+ * unless the sidebar has a row of its own for the page (Agents and Rules, and for now Insights and Improve, are entries of both).
  */
 export function inSettingsArea(pathname: string): boolean {
   const first = pathname.replace(/^\/+/, "").split("/")[0] ?? "";

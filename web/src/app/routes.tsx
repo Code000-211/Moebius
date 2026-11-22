@@ -1,7 +1,7 @@
 /**
  * The routes: every place of the table in `nav.ts` under the shell, the redirect from `/` to the first page, and the small window
  * of the desktop app. The pages are in one file per area under `routes/` (`projects`, `fleet`, `workflows`,
- * `workspace`, `improve`, `settings`), each exporting its route objects; `routes/redirects.ts` is the one table of the
+ * `workspace`, `build`, `improve`, `settings`), each exporting its route objects; `routes/redirects.ts` is the one table of the
  * addresses that moved. The server answers `index.html` for these paths, so a page can be opened and reloaded by its
  * address.
  *
@@ -13,6 +13,7 @@ import { lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate } from "react-router";
 import { App } from "./App";
 import { DEFAULT_PAGE } from "./nav";
+import { buildRoutes } from "./routes/build";
 import { fleetRoutes } from "./routes/fleet";
 import { improveRoutes } from "./routes/improve";
 import { LegacyRedirect } from "./routes/LegacyRedirect";
@@ -47,6 +48,7 @@ export const routes = [
       ...workspaceRoutes,
       ...projectsRoutes,
       ...workflowsRoutes,
+      ...buildRoutes,
       ...improveRoutes,
       ...LEGACY_ROUTES.map((route) => ({
         path: route.path,
