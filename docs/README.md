@@ -12,8 +12,8 @@ links to the other.
 - [The release notes](releases/): what each release holds, such as [0.1.0](releases/v0.1.0.md), [0.1.1](releases/v0.1.1.md), [0.1.2](releases/v0.1.2.md), [0.1.3](releases/v0.1.3.md), [0.1.4](releases/v0.1.4.md), [0.1.5](releases/v0.1.5.md), [0.1.6](releases/v0.1.6.md), [0.1.7](releases/v0.1.7.md), [0.1.8](releases/v0.1.8.md), [0.1.9](releases/v0.1.9.md), [0.2.0](releases/v0.2.0.md), [0.2.1](releases/v0.2.1.md), [0.3.0](releases/v0.3.0.md), [0.4.0](releases/v0.4.0.md), [0.5.0](releases/v0.5.0.md), [0.6.0](releases/v0.6.0.md), [0.7.0](releases/v0.7.0.md), [0.8.0](releases/v0.8.0.md), [0.9.0](releases/v0.9.0.md), [0.9.1](releases/v0.9.1.md) and [0.9.2](releases/v0.9.2.md), [0.9.3](releases/v0.9.3.md), [0.9.4](releases/v0.9.4.md), [0.10.0](releases/v0.10.0.md) and
 [0.10.1](releases/v0.10.1.md), [0.11.0](releases/v0.11.0.md), [0.12.0](releases/v0.12.0.md),
 [0.13.0](releases/v0.13.0.md), [0.14.0](releases/v0.14.0.md), [0.15.0](releases/v0.15.0.md), [0.15.1](releases/v0.15.1.md),
-[0.16.0](releases/v0.16.0.md), [0.16.1](releases/v0.16.1.md) and
-[0.17.0](releases/v0.17.0.md).
+[0.16.0](releases/v0.16.0.md), [0.16.1](releases/v0.16.1.md),
+[0.17.0](releases/v0.17.0.md) and [0.17.1](releases/v0.17.1.md).
 
 ## To build on Moebius
 
