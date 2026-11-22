@@ -7,7 +7,13 @@
  * shared view. A view of the board layout whose filter the board's filter bar can hold opens on that board instead,
  * with its filter set (as does a list); `?manage` keeps this page for it, to change or delete it.
  */
-import { BookmarkSimpleIcon, PencilSimpleIcon, TrashIcon, UsersIcon } from "@phosphor-icons/react";
+import {
+  BookmarkSimpleIcon,
+  ListChecksIcon,
+  PencilSimpleIcon,
+  TrashIcon,
+  UsersIcon,
+} from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router";
@@ -36,12 +42,14 @@ import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
 import { cardKey } from "../board/cardKey";
-import { cardPath } from "../pages";
+import { NewIssueButton } from "../issues/NewIssueButton";
+import { ALL_ISSUES_PATH, cardPath } from "../pages";
+import { AllIssues } from "./AllIssues";
 import { boardOfView, fieldsOf, filterWords, groupsOf, LAYOUTS, SORTS } from "./model";
 
-export function ViewsPage() {
+export function ViewsPage({ allIssues = false }: { allIssues?: boolean }) {
   const { id } = useParams();
-  const selected = id === undefined ? null : Number(id);
+  const selected = allIssues || id === undefined ? null : Number(id);
   // `?manage` opens the page of a view that would open on its board: the board links here to change or delete it.
   const managing = useSearchParams()[0].has("manage");
   const views = useQuery({ queryKey: keys.views, queryFn: listViews });
@@ -81,39 +89,54 @@ export function ViewsPage() {
   if (board !== null) return <Navigate to={board} replace />;
   return (
     <div data-testid="views-page" className="flex flex-col gap-4">
-      <PageHeader title="Views" />
-      {views.data.length === 0 ? (
+      <PageHeader title="Views" primary={allIssues ? <NewIssueButton /> : undefined} />
+      <ul className="m-0 list-none border-t border-hairline p-0" aria-label="Views">
+        <li>
+          <Link
+            to={ALL_ISSUES_PATH}
+            aria-current={allIssues ? "page" : undefined}
+            className={cn(
+              "relative flex h-9 items-center gap-2.5 border-b border-hairline px-4 text-base font-medium text-text no-underline",
+              allIssues
+                ? "bg-accent-tint before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent"
+                : "hover:bg-row-hover",
+            )}
+          >
+            <ListChecksIcon className="size-4 text-secondary" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate">All issues</span>
+          </Link>
+        </li>
+        {views.data.map((view) => (
+          <li key={view.id}>
+            <Link
+              to={`/views/${view.id}`}
+              aria-current={view.id === selected ? "page" : undefined}
+              className={cn(
+                "relative flex h-9 items-center gap-2.5 border-b border-hairline px-4 text-base font-medium text-text no-underline",
+                view.id === selected
+                  ? "bg-accent-tint before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent"
+                  : "hover:bg-row-hover",
+              )}
+            >
+              <BookmarkSimpleIcon className="size-4 text-secondary" aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate">{view.name}</span>
+              {view.shared && (
+                <span className="inline-flex shrink-0 items-center gap-1 text-xs font-normal text-muted">
+                  <UsersIcon className="size-3.5" aria-hidden="true" />
+                  Shared
+                </span>
+              )}
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {views.data.length === 0 && !allIssues && (
         <Empty
-          title="No view yet"
+          title="No saved view yet"
           body="Set filters on a board, then choose Save view. A view you make is yours until you share it."
         />
-      ) : (
-        <ul className="m-0 list-none border-t border-hairline p-0" aria-label="Views">
-          {views.data.map((view) => (
-            <li key={view.id}>
-              <Link
-                to={`/views/${view.id}`}
-                aria-current={view.id === selected ? "page" : undefined}
-                className={cn(
-                  "relative flex h-9 items-center gap-2.5 border-b border-hairline px-4 text-base font-medium text-text no-underline",
-                  view.id === selected
-                    ? "bg-accent-tint before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent"
-                    : "hover:bg-row-hover",
-                )}
-              >
-                <BookmarkSimpleIcon className="size-4 text-secondary" aria-hidden="true" />
-                <span className="min-w-0 flex-1 truncate">{view.name}</span>
-                {view.shared && (
-                  <span className="inline-flex shrink-0 items-center gap-1 text-xs font-normal text-muted">
-                    <UsersIcon className="size-3.5" aria-hidden="true" />
-                    Shared
-                  </span>
-                )}
-              </Link>
-            </li>
-          ))}
-        </ul>
       )}
+      {allIssues && <AllIssues />}
       {selected !== null && current === null && (
         <Notice tone="error">
           That view is not there. It may be personal to someone else, or deleted.
