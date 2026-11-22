@@ -124,8 +124,6 @@ export const keys = {
   piSearch: (query: string, type: string | null) =>
     ["packages", "pi", "search", query, type] as const,
   piInstalled: ["packages", "pi", "installed"] as const,
-  /** Apart from `packages`: reading a Pi package fetches it from npm, so only a change of its source reads it again. */
-  piInfo: (source: string) => ["pi-package", source] as const,
   rules: ["rules"] as const,
   automations: ["automations"] as const,
   firings: (automation: number) => ["automations", "firings", automation] as const,

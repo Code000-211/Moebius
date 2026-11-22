@@ -9,7 +9,6 @@ import {
   installsAtOnce,
   kindLabel,
   needsRepository,
-  piInKind,
   piSource,
   refusal,
   standing,
@@ -197,8 +196,6 @@ describe("the catalogs", () => {
     ] as never[];
     expect(inKind(list, "rules")).toHaveLength(1);
     expect(inKind(list, null)).toHaveLength(2);
-    const hits = [{ kinds: ["extension", "skill"] }, { kinds: ["theme"] }] as never[];
-    expect(piInKind(hits, "skill")).toHaveLength(1);
   });
 
   it("names a source, a link and a kind", () => {

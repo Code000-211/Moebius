@@ -81,11 +81,8 @@ function Openers() {
   const sheet = usePackageSheet();
   return (
     <>
-      <button type="button" onClick={() => sheet.open("moebius")}>
+      <button type="button" onClick={() => sheet.open()}>
         open registries
-      </button>
-      <button type="button" onClick={() => sheet.open("pi", "Coder")}>
-        open pi for Coder
       </button>
     </>
   );

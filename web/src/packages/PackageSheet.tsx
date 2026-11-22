@@ -1,25 +1,20 @@
 /**
- * The package sheet: a sheet like the Moebius agent's, in which a person searches a catalog, reads a package and
- * installs, updates or removes it. The shell opens it on the Moebius registries (from the Plugins page) or on the
- * pi.dev catalog (no page opens it there now: an agent's Extensions tab has the catalog in the page itself); one sheet at a time, so opening it from elsewhere switches its catalog.
- * It lies in the agent's place, over the page's right column (opening one hides the other), and keeps its state while
- * hidden, until the page opens it again. What a request told, or why it was refused, is shown in the sheet, never as a
+ * The package sheet: a sheet in which a person searches the registries of Moebius, reads a package and installs,
+ * updates or removes it. A page opens it (the Plugins page). It lies over the page's right column, below the page
+ * header, and keeps its state while hidden, until the page opens it again. The Pi packages of pi.dev are the
+ * Extensions tab of an agent's page, not this sheet. What a request told, or why it was refused, is shown in the sheet, never as a
  * broken page.
  */
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { snapshot as readSnapshot } from "../api/calls/board";
-import { installedPi } from "../api/calls/packages";
 import { keys } from "../api/keys";
-import type { PiHit } from "../api/types/packages";
 import { SheetFrame, useSheetBehaviour } from "../ui/page/Sheet";
 import { TabPanel, Tabs } from "../ui/page/Tabs";
 import { Browse, type Browsing } from "./Browse";
 import { Installed } from "./Installed";
 import { MoebiusDetail } from "./MoebiusDetail";
-import { type Catalog, piSource, waitingPiUpdates } from "./model";
 import { usePackageSheet } from "./PackageSheetContext";
-import { PiDetail } from "./PiDetail";
 import { type Report, ReportView } from "./Report";
 import { useActions } from "./useActions";
 
@@ -33,22 +28,15 @@ const TABS: Array<{ value: Tab; label: string }> = [
 /** A package the person is reading: the tab it was opened from, so Back goes there. */
 interface Reading {
   name: string;
-  hit?: PiHit;
-  /** Where an installed Pi package came from (npm, git); a package found by search is an npm package. */
-  source?: string;
   from: Tab;
 }
 
 function Body({
-  catalog,
-  agent,
   shown,
   hide,
 }: {
-  catalog: Catalog;
   /** Whether the sheet is showing: it keeps its state while hidden. */
   shown: boolean;
-  agent: string | null;
   hide: () => void;
 }) {
   const ids = useId();
@@ -64,22 +52,11 @@ function Body({
     if (shown) searchRef.current?.focus();
   }, [shown]);
   const board = useQuery({ queryKey: keys.snapshot, queryFn: () => readSnapshot() });
-  const pi = useQuery({
-    queryKey: keys.piInstalled,
-    queryFn: installedPi,
-    enabled: catalog === "pi",
-    retry: false,
-  });
-  const waiting = useMemo(() => waitingPiUpdates(board.data?.inbox ?? []), [board.data]);
-  const installed = useMemo(
-    () => new Map((pi.data ?? []).map((each) => [each.name, each.version])),
-    [pi.data],
-  );
   const repositories = (board.data?.boards ?? []).map((each) => each.repository.name);
 
-  const open = (name: string, from: Tab, extra: { hit?: PiHit; source?: string } = {}) => {
+  const open = (name: string, from: Tab) => {
     setReport(null);
-    setReading({ name, from, ...extra });
+    setReading({ name, from });
   };
   const choose = (next: Tab) => {
     setReport(null);
@@ -96,43 +73,22 @@ function Body({
         <TabPanel idBase={ids} value={tab} className="flex flex-col gap-3 pb-6">
           {report && <ReportView report={report} onLeave={hide} />}
           {reading !== null ? (
-            catalog === "moebius" ? (
-              <MoebiusDetail
-                name={reading.name}
-                actions={actions}
-                repositories={repositories}
-                back={backLabel}
-                onBack={back}
-              />
-            ) : (
-              <PiDetail
-                name={reading.name}
-                hit={reading.hit}
-                source={reading.source ?? piSource(reading.name)}
-                agent={agent}
-                actions={actions}
-                back={backLabel}
-                onBack={back}
-                waiting={waiting.get(reading.name)?.to ?? null}
-              />
-            )
+            <MoebiusDetail
+              name={reading.name}
+              actions={actions}
+              repositories={repositories}
+              back={backLabel}
+              onBack={back}
+            />
           ) : tab === "browse" ? (
             <Browse
-              catalog={catalog}
               browsing={browsing}
               onBrowsing={setBrowsing}
-              onOpen={(name, hit) => open(name, "browse", { hit })}
-              installed={installed}
-              waiting={waiting}
+              onOpen={(name) => open(name, "browse")}
               searchRef={searchRef}
             />
           ) : (
-            <Installed
-              catalog={catalog}
-              actions={actions}
-              waiting={waiting}
-              onOpen={(name, source) => open(name, "installed", { source })}
-            />
+            <Installed actions={actions} onOpen={(name) => open(name, "installed")} />
           )}
         </TabPanel>
       </div>
@@ -144,29 +100,16 @@ export function PackageSheet() {
   const sheet = usePackageSheet();
   useSheetBehaviour(sheet.shown, sheet.hide);
   if (!sheet.opened) return null;
-  const line =
-    sheet.catalog === "moebius"
-      ? "Plugins, workflows, rules and skills from the registries"
-      : sheet.agent === null
-        ? "Pi packages from pi.dev"
-        : `Pi packages from pi.dev, for ${sheet.agent}`;
   return (
     <SheetFrame
       label="Package sheet"
       title="Packages"
-      line={line}
+      line="Plugins, workflows, rules and skills from the registries"
       closeLabel="Close the package sheet"
       onClose={sheet.hide}
       hidden={!sheet.shown}
     >
-      {/* A catalog of its own is a sheet of its own: switching it starts with a clean search and its own tabs. */}
-      <Body
-        key={sheet.catalog}
-        catalog={sheet.catalog}
-        agent={sheet.agent}
-        shown={sheet.shown}
-        hide={sheet.hide}
-      />
+      <Body shown={sheet.shown} hide={sheet.hide} />
     </SheetFrame>
   );
 }
