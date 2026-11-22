@@ -6,6 +6,7 @@
 import type { Agent, AvailableClass, AvailableModel, AvailableModels } from "../../api/types/chat";
 import type { AgentDetail, AgentSettings, BuiltInAgent } from "../../api/types/harness";
 import type { ServerSettings } from "../../api/types/models";
+import { RESERVED_AGENT_NAMES } from "../pages";
 
 export const PROTOCOLS = ["openai", "anthropic"] as const;
 export const HARNESSES = ["pi-bolt", "claude-code"] as const;
@@ -180,6 +181,9 @@ const WHOLE = /^\d+$/;
 export function agentRequest(form: AgentForm): AgentRequest | string {
   const name = form.name.trim();
   if (!NAME.test(name)) return "A name is made of letters, digits, - and _.";
+  if (form.naming && RESERVED_AGENT_NAMES.includes(name.toLowerCase())) {
+    return `${name} is the address of a page of Agents. Give the new agent another name.`;
+  }
   const model = form.model.trim();
   if (model === "") return "Enter the model.";
   let tokenBudget: number | undefined;

@@ -49,6 +49,8 @@
   --status-todo: #8a8a95;
   --status-done: #8a8a95;
   --status-review: #5e6ad2;
+  --editor-bg: #fafafb;
+  --editor-text: #1b1b1f;
   --code-bg: #1e2038;
   --code-text: #d8daf0;
   --code-head: #8c90b4;
@@ -255,6 +257,8 @@
   --status-todo: #8b8b93;
   --status-done: #72727b;
   --status-review: #8e96e8;
+  --editor-bg: #121214;
+  --editor-text: #e4e4e8;
   --code-bg: #1e2038;
   --code-text: #d8daf0;
   --code-head: #8c90b4;

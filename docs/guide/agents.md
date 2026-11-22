@@ -122,7 +122,7 @@ card's issue is the spec; there is no tracker to publish to and no setup skill t
 - By default they go with these names, on both harnesses, in addition to the agent's own `skills`. Nothing is needed to
   get them.
 - To go without them, set `engineering_skills = false` on the agent (in `agents/<name>.toml` or `[agents.<name>]`; the
-  Agents page has a toggle for each skill, `"$MOEBIUS" agent save` the flag `--no-engineering-skills`).
+  agent's page has a toggle for each skill, `"$MOEBIUS" agent save` the flag `--no-engineering-skills`).
 - Any agent can be given any of them, by name: `engineering_skills = ["tdd", "diagnosing-bugs",
   "moebius-autonomous"]` gives the agent exactly those (`"$MOEBIUS" agent save --engineering-skill tdd ...`). A copy of
   the Coder under another name is written with that list, so it works the same; name `moebius-autonomous` with any
@@ -451,12 +451,23 @@ purposes is prompted like `code`. A
 fourth argument names the `[[runners]]` machine the run goes to in place of the agent's own `runner`:
 `moebius.start_run(agent, purpose, note, "gpu-box")`.
 
+## An agent's page
+
+Each agent has a page in the web app, `/agents/<name>`, reached from its row on the Agents page. Its tabs are
+**Settings** (the model, protocol, harness, runner, thinking level, token budget per card, and the skills and MCP
+servers it is given), **Instructions** (the agent's Markdown in one large editor) and **Extensions** (the Pi packages
+that name the agent, with Remove, and a search of pi.dev with an Add for each result). **Save** is enabled once something
+changed, and leaving with a change asks first. Adding or removing a Pi package is a change of the harness configuration
+repository that a person merges: the tab links to it in the Inbox. `moebius ext add ... --agent <name>` and `moebius
+ext remove` do the same from the command line (see [Extensions](extensions.md)).
+
 ## Start a new agent from an existing one
 
 The Agents page's **New agent** first asks one thing: start blank, or start from an existing agent. From an existing
 agent lists the Coder and the Reviewer, which always exist, and your own agents (not the Moebius agent, the Grilling
-partner or the other agents Moebius runs for itself). The editor opens with everything copied, model, protocol, harness,
-reasoning, skills, extensions, MCP servers and instructions, under a name you type; a name that is taken is refused. Copying
+partner or the other agents Moebius runs for itself). The page of the new agent opens with everything copied, model, protocol, harness,
+reasoning, skills, extensions, MCP servers and instructions, under a name you type in the Settings tab of the new agent's
+page; a name that is taken is refused, and Save creates the agent and opens its page. Copying
 the Coder or the Reviewer copies the settings it runs with and its built-in instructions as the new agent's own, since a
 copy is not built in. Edit the text where it names a skill the copy does not have: only the agents named `Coder`,
 `Reviewer` and `Grilling-partner` are given the engineering skills. The command line does the same:

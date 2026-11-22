@@ -1,7 +1,7 @@
 /**
  * The package sheet: a sheet like the Moebius agent's, in which a person searches a catalog, reads a package and
  * installs, updates or removes it. The shell opens it on the Moebius registries (from the Plugins page) or on the
- * pi.dev catalog (from an agent's Extensions); one sheet at a time, so opening it from elsewhere switches its catalog.
+ * pi.dev catalog (no page opens it there now: an agent's Extensions tab has the catalog in the page itself); one sheet at a time, so opening it from elsewhere switches its catalog.
  * It lies in the agent's place, over the page's right column (opening one hides the other), and keeps its state while
  * hidden, until the page opens it again. What a request told, or why it was refused, is shown in the sheet, never as a
  * broken page.

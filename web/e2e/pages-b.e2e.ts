@@ -97,7 +97,7 @@ describe("the Agents page", () => {
   it.skipIf(usesRealServer)(
     "edits an agent and says the commit; a bad edit is refused",
     async () => {
-      await open("/agents?agent=Coder");
+      await open("/agents/Coder");
       const model = page.getByLabel("Model", { exact: true });
       await model.waitFor();
       expect(await showing(model)).toBe("fake-coder");
@@ -106,14 +106,16 @@ describe("the Agents page", () => {
       expect(await showing(page.getByLabel("Protocol"))).toBe("anthropic");
       await pickOption(page, page.getByLabel("Thinking"), "high");
       await page.getByLabel("Token budget per card").fill("2000000");
-      // The card holding it is named Instructions too, so the field is asked for as what it is.
+      // The tab holding it is named Instructions too, so the field is asked for as what it is.
+      await page.getByRole("tab", { name: "Instructions" }).click();
       await page
         .getByRole("textbox", { name: "Instructions", exact: true })
         .fill("Keep changes tiny.");
       await save().click();
       await page.getByText("Saved as commit c0ffee1.").waitFor();
-      // A saved agent closes its window.
-      await page.getByTestId("editor-window").waitFor({ state: "detached" });
+      // A saved agent stays on its page, with nothing left to save.
+      await expect.poll(() => save().isDisabled()).toBe(true);
+      expect(await page.getByTestId("editor-window").count()).toBe(0);
       expect(requests("PUT", "/v1/agents/Coder")[0]?.body).toEqual({
         settings: {
           model: "claude-fake",
@@ -126,9 +128,9 @@ describe("the Agents page", () => {
         },
         instructions: "Keep changes tiny.",
       });
-      expect(page.url()).not.toContain("agent=");
+      expect(page.url()).toMatch(/\/agents\/Coder/);
 
-      await agentRow("Coder").click();
+      await page.getByRole("tab", { name: "Settings" }).click();
       await page.getByLabel("Token budget per card").fill("0");
       await save().click();
       await page.getByText("The token budget is a whole number of at least 1.").waitFor();
@@ -140,15 +142,16 @@ describe("the Agents page", () => {
   );
 
   it.skipIf(usesRealServer)("chooses skills and MCP servers and adds an extension", async () => {
-    await open("/agents?agent=Reviewer");
+    await open("/agents/Reviewer");
     await page.getByRole("button", { name: "house-style", exact: true }).click();
     await page.getByRole("button", { name: "docs", exact: true }).click();
-    await page.getByLabel("extension path").fill("extensions/log.ts");
-    await page.getByRole("button", { name: "Add extension" }).click();
     // A server that cannot be read is marked in red and cannot be chosen away silently.
     expect(await page.getByRole("button", { name: "broken", exact: true }).textContent()).toBe(
       "broken",
     );
+    await page.getByRole("tab", { name: /^Extensions/ }).click();
+    await page.getByLabel("extension path").fill("extensions/log.ts");
+    await page.getByRole("button", { name: "Add extension" }).click();
     await save().click();
     await page.getByText("Saved as commit").waitFor();
     expect(requests("PUT", "/v1/agents/Reviewer")[0]?.body).toMatchObject({
@@ -164,23 +167,25 @@ describe("the Agents page", () => {
       // One plain choice first: blank, or an existing agent.
       await page.getByRole("button", { name: "From an existing agent" }).waitFor();
       await page.getByRole("button", { name: "Continue" }).click();
-      await page.getByLabel("Name of the new agent").fill("Tester");
+      await page.getByLabel("Name", { exact: true }).fill("Tester");
       await save().click();
       await page.getByText("Enter the model.").waitFor();
       await pickOption(page, page.getByLabel("Model", { exact: true }), "fake-small");
       await save().click();
       await page.getByText("Saved as commit").waitFor();
-      await agentRow("Tester").waitFor();
+      // Saving creates the agent and opens its page.
+      await page.waitForURL(/\/agents\/Tester$/);
       expect(fake().agents.Tester?.settings.model).toBe("fake-small");
 
-      await agentRow("Tester").click();
-      await page.getByRole("button", { name: "Delete agent" }).click();
+      await page.getByRole("button", { name: "Delete", exact: true }).click();
       await page.getByText("Delete this agent?").waitFor();
       await page.getByRole("button", { name: "Keep" }).click();
       await page.getByText("Delete this agent?").waitFor({ state: "detached" });
       expect(fake().agents.Tester).toBeDefined();
+      await page.getByRole("button", { name: "Delete", exact: true }).click();
       await page.getByRole("button", { name: "Delete agent" }).click();
-      await page.getByRole("button", { name: "Delete agent" }).last().click();
+      await page.waitForURL(/\/agents$/);
+      await agentRow("Coder").waitFor();
       await agentRow("Tester").waitFor({ state: "detached" });
       expect(fake().agents.Tester).toBeUndefined();
     },
@@ -195,7 +200,7 @@ describe("the Agents page", () => {
       await pickOption(page, page.getByLabel("Start from"), "Reviewer");
       await page.getByRole("button", { name: "Continue" }).click();
       // Everything of the Reviewer is copied, with the name left to type.
-      const name = page.getByLabel("Name of the new agent");
+      const name = page.getByLabel("Name", { exact: true });
       expect(await name.inputValue()).toBe("");
       expect(await showing(page.getByLabel("Model", { exact: true }))).toBe("fake-small");
       expect(await showing(page.getByLabel("Protocol"))).toBe("anthropic");
@@ -207,12 +212,12 @@ describe("the Agents page", () => {
       await name.fill("Reviewer2");
       await save().click();
       await page.getByText("Saved as commit").waitFor();
+      await page.waitForURL(/\/agents\/Reviewer2$/);
       expect(sent("PUT", "/v1/agents/Reviewer2")).toMatchObject({
         settings: { model: "fake-small", protocol: "anthropic" },
         // The Reviewer is built in: its built-in instructions come first, and are the copy's own.
         instructions: expect.stringMatching(/^You are the Reviewer\.[\s\S]*Review kindly\.$/),
       });
-      await agentRow("Reviewer2").waitFor();
     },
   );
 
@@ -233,9 +238,11 @@ describe("the Agents page", () => {
       await page.getByRole("button", { name: "From an existing agent" }).click();
       await pickOption(page, page.getByLabel("Start from"), "Coder");
       await page.getByRole("button", { name: "Continue" }).click();
+      await page.getByRole("tab", { name: "Instructions" }).click();
       const instructions = page.getByRole("textbox", { name: "Instructions", exact: true });
       expect(await instructions.inputValue()).toContain("You are the Coder.");
-      await page.getByLabel("Name of the new agent").fill("Quick");
+      await page.getByRole("tab", { name: "Settings" }).click();
+      await page.getByLabel("Name", { exact: true }).fill("Quick");
       await save().click();
       await page.getByText("Enter the model.").waitFor();
       await pickOption(page, page.getByLabel("Model", { exact: true }), "fake-small");
@@ -253,7 +260,7 @@ describe("the Agents page", () => {
   );
 
   it.skipIf(usesRealServer)("chooses the engineering skills of any agent", async () => {
-    await open("/agents?agent=Reviewer");
+    await open("/agents/Reviewer");
     const chip = (name: string) => page.getByRole("button", { name, exact: true });
     await chip("tdd").waitFor();
     // The Reviewer has its defaults until a skill is chosen, then exactly the chosen ones.
@@ -267,21 +274,24 @@ describe("the Agents page", () => {
   });
 
   it.skipIf(usesRealServer)("shows what a built-in agent brings, read only", async () => {
-    await open("/agents?agent=Moebius");
+    await open("/agents/Moebius?tab=instructions");
     const built = page.getByTestId("built-in-instructions");
     await built.waitFor();
     expect(await built.textContent()).toContain("Moebius brings these instructions");
+    await page.getByRole("tab", { name: "Settings" }).click();
     await page.getByText("moebius-operate").waitFor();
   });
 
   it.skipIf(usesRealServer)("says why a broken agent cannot be edited and deletes it", async () => {
-    await open("/agents?agent=Broken");
+    await open("/agents/Broken");
     await page.getByRole("alert").filter({ hasText: "missing field `model`" }).waitFor();
-    expect(await save().isDisabled()).toBe(true);
+    // Nothing can be saved, and the broken agent can be deleted.
+    expect(await save().count()).toBe(0);
+    await page.getByRole("button", { name: "Delete", exact: true }).waitFor();
   });
 
   it.skipIf(usesRealServer)("asks the Moebius agent to write the instructions", async () => {
-    await open("/agents?agent=Coder");
+    await open("/agents/Coder?tab=instructions");
     await page.getByRole("button", { name: "Write with agent" }).click();
     await page.getByLabel("What this agent should do").fill("Review small changes first.");
     await page.getByRole("button", { name: "Submit" }).click();
@@ -295,7 +305,7 @@ describe("the Agents page", () => {
   it.skipIf(usesRealServer)(
     "keeps agents in moebius.toml on a server without a repository",
     async () => {
-      await open("/agents?agent=Coder", (f) => f.useWithoutHarness());
+      await open("/agents/Coder", (f) => f.useWithoutHarness());
       await page.getByTestId("harness-setup").waitFor();
       const model = page.getByLabel("Model", { exact: true });
       await model.waitFor();
@@ -313,6 +323,109 @@ describe("the Agents page", () => {
       });
     },
   );
+});
+
+describe.skipIf(usesRealServer)("the page of an agent", () => {
+  const tab = (name: string | RegExp) => page.getByRole("tab", { name });
+
+  it("has the tabs Settings, Instructions and Extensions, each in the address", async () => {
+    await open("/agents");
+    // A row is a link once the harness configuration has been read.
+    await page.getByRole("link", { name: "Open agent Coder" }).click();
+    await page.waitForURL(/\/agents\/Coder$/);
+    await page.getByRole("heading", { name: "Coder", exact: true }).waitFor();
+    await page
+      .getByRole("main")
+      .getByRole("link", { name: /^Agents/ })
+      .waitFor();
+    expect(await tab("Settings").getAttribute("aria-selected")).toBe("true");
+    await page.getByLabel("Model", { exact: true }).waitFor();
+    await tab("Instructions").click();
+    await page.waitForURL(/\/agents\/Coder\?tab=instructions$/);
+    await page.getByRole("textbox", { name: "Instructions", exact: true }).waitFor();
+    await tab(/^Extensions/).click();
+    await page.waitForURL(/\/agents\/Coder\?tab=extensions$/);
+    await page.getByTestId("agent-extensions").waitFor();
+    // Reloading keeps the tab.
+    await page.reload();
+    await page.getByTestId("agent-extensions").waitFor();
+    // The old address of the window leads to the page.
+    await page.goto(`${server.url}/agents?agent=Reviewer`);
+    await page.waitForURL(/\/agents\/Reviewer$/);
+  });
+
+  it("draws the instructions in a light editor that fills the tab", async () => {
+    await open("/agents/Coder?tab=instructions");
+    const editor = page.getByRole("textbox", { name: "Instructions", exact: true });
+    await editor.fill("A long line of instructions that wraps. ".repeat(200));
+    const style = await editor.evaluate((el) => {
+      const css = getComputedStyle(el);
+      const rgb = css.backgroundColor.match(/\d+/g)?.map(Number) ?? [];
+      return { rgb, font: css.fontFamily, size: css.fontSize, white: css.whiteSpace };
+    });
+    // Light in the light theme: no dark block behind the text.
+    expect(Math.min(...style.rgb.slice(0, 3))).toBeGreaterThan(230);
+    expect(style.size).toBe("13px");
+    expect(style.font).toMatch(/mono/i);
+    expect(style.white).toMatch(/wrap/);
+    const box = await editor.boundingBox();
+    const main = await page.locator("main").boundingBox();
+    if (!box || !main) throw new Error("no box");
+    expect(box.width).toBeGreaterThan(main.width - 64);
+    expect(box.height).toBeGreaterThan(300);
+    // The editor wraps, so there is nothing to scroll sideways.
+    expect(await editor.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  });
+
+  it("asks before a change is left, and Keep editing stays with it", async () => {
+    await open("/agents/Coder");
+    const budget = page.getByLabel("Token budget per card");
+    await budget.fill("5000");
+    expect(await save().isDisabled()).toBe(false);
+    await page.getByRole("link", { name: "Fleet" }).first().click();
+    const asked = page.getByRole("dialog");
+    await asked.getByText("not saved yet", { exact: false }).waitFor();
+    await asked.getByRole("button", { name: "Keep editing" }).click();
+    await asked.waitFor({ state: "detached" });
+    expect(await budget.inputValue()).toBe("5000");
+    await page.getByRole("link", { name: "Fleet" }).first().click();
+    await page.getByRole("button", { name: "Leave without saving" }).click();
+    await page.waitForURL(/\/fleet/);
+    expect(requests("PUT", "/v1/agents/Coder")).toHaveLength(0);
+  });
+
+  it("changing a tab does not ask, and a saved agent is left without asking", async () => {
+    await open("/agents/Coder");
+    await page.getByLabel("Token budget per card").fill("5000");
+    await tab("Instructions").click();
+    await page.getByRole("textbox", { name: "Instructions", exact: true }).waitFor();
+    expect(await page.getByRole("dialog").count()).toBe(0);
+    await save().click();
+    await page.getByText("Saved as commit").waitFor();
+    await page
+      .getByRole("main")
+      .getByRole("link", { name: /^Agents/ })
+      .click();
+    await page.waitForURL(/\/agents$/);
+  });
+
+  it("adds an extension file and removes it, which Save writes", async () => {
+    await open("/agents/Reviewer?tab=extensions");
+    await page.getByLabel("extension path").fill("extensions/log.ts");
+    await page.getByRole("button", { name: "Add extension" }).click();
+    await page.getByText("extensions/log.ts", { exact: true }).waitFor();
+    await save().click();
+    await page.getByText("Saved as commit").waitFor();
+    expect(requests("PUT", "/v1/agents/Reviewer")[0]?.body).toMatchObject({
+      settings: { extensions: ["extensions/log.ts"] },
+    });
+    await page.getByRole("button", { name: "Remove extensions/log.ts" }).click();
+    await save().click();
+    await expect.poll(() => requests("PUT", "/v1/agents/Reviewer").length).toBe(2);
+    expect(requests("PUT", "/v1/agents/Reviewer")[1]?.body).toMatchObject({
+      settings: { extensions: [] },
+    });
+  });
 });
 
 describe("the tabs of the Agents page", () => {
@@ -1105,17 +1218,12 @@ describe("the pages that put a list beside a detail, or open an editor window", 
     "keeps the editor window of an agent and of a skill inside the window",
     async () => {
       await open("/");
-      for (const [path, title] of [
-        ["/agents", "Agents"],
-        ["/agents/skills", "Agents"],
-      ] as const) {
+      // An agent has a page now, not a window; the skill's editor is the one that stays a window.
+      for (const [path, title] of [["/agents/skills", "Agents"]] as const) {
         await page.goto(`${server.url}${path}`);
         await page.getByRole("heading", { name: title, level: 1 }).waitFor();
-        // A row opens the editor in a window; the first own agent and skill are not the built-in ones.
-        await page
-          .getByTestId(path === "/agents" ? "agent-row" : "skill-row")
-          .nth(1)
-          .click();
+        // A row opens the editor in a window; the first own skill is not the built-in one.
+        await page.getByTestId("skill-row").nth(1).click();
         await editorWindowFits(page);
         await scrollbarsAreQuiet(page, '[data-testid="editor-window"]');
       }

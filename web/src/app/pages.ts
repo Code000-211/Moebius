@@ -76,3 +76,15 @@ export function scriptPath(projectId: number, column: string, repositoryId?: num
 export function settingsPath(projectId: number, tab?: string): string {
   return `/projects/${projectId}/settings${tab && tab !== "general" ? `/${tab}` : ""}`;
 }
+
+/** The path of an agent's page, at `tab` when one is named (Settings is the first and needs no mention). */
+export function agentPath(name: string, tab?: string): string {
+  const base = `/agents/${encodeURIComponent(name)}`;
+  return tab && tab !== "settings" ? `${base}?tab=${tab}` : base;
+}
+
+/** The page of a new agent, which is named there (`?blank=1`, or `?from=<agent>` to start from a copy). */
+export const NEW_AGENT_PATH = "/agents/new";
+
+/** What no agent may be called: the addresses under `/agents` that are pages of their own. */
+export const RESERVED_AGENT_NAMES = ["new", "skills", "mcp-servers"];
