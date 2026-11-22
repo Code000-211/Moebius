@@ -201,6 +201,8 @@ const readable: [string, string][] = [
   ["code-operator", "code-bg"],
   ["code-number", "code-bg"],
   ["code-comment", "code-bg"],
+  ["code-error", "code-bg"],
+  ["code-added", "code-bg"],
   // What the former names still draw, on what they are drawn on.
   ["text", "selected"],
   ["text-secondary", "sidebar"],

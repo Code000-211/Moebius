@@ -35,8 +35,8 @@ const LINE_TONE = {
 } as const;
 
 const MARK_TONE = {
-  added: "text-complete-text",
-  removed: "text-error-text",
+  added: "text-code-added",
+  removed: "text-code-error",
 } as const;
 
 const MARK_WORD = { added: "Added", removed: "Removed" } as const;
@@ -67,7 +67,7 @@ function Mark({ kind }: { kind: "added" | "removed" }) {
 /** The line numbers of one side, in a column that never moves the text. */
 function LineNumber({ value }: { value: number | null }) {
   return (
-    <span className="w-10 shrink-0 select-none text-right text-secondary tabular-nums">
+    <span className="w-10 shrink-0 select-none text-right text-code-comment tabular-nums">
       {value ?? ""}
     </span>
   );
@@ -93,21 +93,21 @@ function Cell({ line, left }: { line: DiffLine | null; left: boolean }) {
       data-kind={line.kind}
       className={cn(
         "flex min-w-0 items-start gap-2 px-3",
-        left && "border-r border-hairline",
+        left && "border-r border-code-head/30",
         line.kind !== "context" && line.kind !== "note" && LINE_TONE[line.kind],
       )}
     >
       {line.kind !== "context" && line.kind !== "note" && <Stripe kind={line.kind} />}
       <LineNumber value={line.kind === "added" ? line.newNumber : line.oldNumber} />
       {line.kind !== "context" && line.kind !== "note" && <Mark kind={line.kind} />}
-      <span className="min-w-0 break-words whitespace-pre-wrap text-text">{line.text}</span>
+      <span className="min-w-0 break-words whitespace-pre-wrap text-code-text">{line.text}</span>
     </div>
   );
 }
 
 function SideBody({ file }: { file: FileDiff }) {
   return (
-    <div className="bg-code py-2 font-mono text-sm leading-6" data-testid="diff-side">
+    <div className="bg-code-bg py-2 font-mono text-sm leading-6" data-testid="diff-side">
       {file.hunks.map((hunk) => (
         <div key={hunk.header}>
           <Header line={hunk.header} />
@@ -130,7 +130,9 @@ function SideBody({ file }: { file: FileDiff }) {
 /** The `@@ … @@` line that says where the hunk sits. */
 function Header({ line }: { line: string }) {
   return (
-    <div className="bg-sunken px-3 text-secondary break-words whitespace-pre-wrap">{line}</div>
+    <div className="bg-code-head/15 px-3 text-code-head break-words whitespace-pre-wrap">
+      {line}
+    </div>
   );
 }
 
@@ -141,11 +143,11 @@ function FileBody({ file, mode }: { file: FileDiff; mode: Mode }) {
   ]);
   const shown = lines.slice(0, MAX_LINES);
   if (file.binary) {
-    return <p className="m-0 p-4 text-sm text-secondary">A binary file has no lines to show.</p>;
+    return <p className="m-0 p-4 text-sm text-code-head">A binary file has no lines to show.</p>;
   }
   if (lines.length === 0) {
     return (
-      <p className="m-0 p-4 text-sm text-secondary">
+      <p className="m-0 p-4 text-sm text-code-head">
         {file.status === "renamed"
           ? `Renamed from ${file.oldPath}. No lines changed.`
           : "No lines changed."}
@@ -154,7 +156,7 @@ function FileBody({ file, mode }: { file: FileDiff; mode: Mode }) {
   }
   if (mode === "side") return <SideBody file={file} />;
   return (
-    <div className="bg-code py-2 font-mono text-sm leading-6">
+    <div className="bg-code-bg py-2 font-mono text-sm leading-6">
       {shown.map((entry, index) =>
         entry.line === null ? (
           <Header
@@ -183,14 +185,14 @@ function FileBody({ file, mode }: { file: FileDiff; mode: Mode }) {
             {entry.line.kind !== "context" && entry.line.kind !== "note" && (
               <Mark kind={entry.line.kind} />
             )}
-            <span className="min-w-0 flex-1 break-words whitespace-pre-wrap text-text">
+            <span className="min-w-0 flex-1 break-words whitespace-pre-wrap text-code-text">
               {entry.line.text}
             </span>
           </div>
         ),
       )}
       {lines.length > shown.length && (
-        <div className="px-3 py-2 text-sm text-secondary">
+        <div className="px-3 py-2 text-sm text-code-head">
           {`${plural(lines.length - shown.length, "more line", "more lines")} left out`}
         </div>
       )}
@@ -346,23 +348,28 @@ export function DiffView({ diff, truncated = false }: { diff: string; truncated?
             so a file with a short diff does not trail a band of empty code down to the bottom of the taller list
             beside it; the lines shrink to the column and scroll there when a diff is longer than it. */}
         <section className="flex min-w-0 flex-1 flex-col">
-          <header className="flex shrink-0 flex-wrap items-center gap-3 rounded-t-card bg-code px-3 py-1">
+          <header className="flex shrink-0 flex-wrap items-center gap-3 rounded-t-card bg-code-bg px-3 py-1">
             <p
-              className="m-0 min-w-0 flex-1 break-all font-mono text-sm font-semibold text-text"
+              className="m-0 min-w-0 flex-1 break-all font-mono text-sm font-semibold text-code-text"
               data-testid="diff-path"
               title={file.path}
             >
               {file.path}
             </p>
             {STATUS_WORD[file.status] && (
-              <span className="text-sm font-semibold text-secondary">
+              <span className="text-sm font-semibold text-code-head">
                 {STATUS_WORD[file.status]}
               </span>
             )}
-            <Delta additions={file.additions} deletions={file.deletions} className="text-sm" />
+            <Delta
+              additions={file.additions}
+              deletions={file.deletions}
+              className="text-sm"
+              onCode
+            />
             <fieldset
               aria-label="Layout"
-              className="m-0 flex gap-1 rounded-control border-0 bg-sunken p-1"
+              className="m-0 flex gap-1 rounded-control border-0 bg-code-head/15 p-1"
             >
               {(["unified", "side"] as const).map((each) => (
                 <button
@@ -372,7 +379,9 @@ export function DiffView({ diff, truncated = false }: { diff: string; truncated?
                   onClick={() => setMode(each)}
                   className={cn(
                     "min-h-8 rounded-control px-3 text-sm font-semibold transition-colors duration-(--motion-routine) ease-out",
-                    mode === each ? "bg-selected text-text" : "text-secondary hover:bg-hover",
+                    mode === each
+                      ? "bg-code-head/30 text-code-text"
+                      : "text-code-head hover:bg-code-head/15 hover:text-code-text",
                   )}
                 >
                   {each === "unified" ? "Unified" : "Side by side"}
@@ -380,7 +389,10 @@ export function DiffView({ diff, truncated = false }: { diff: string; truncated?
               ))}
             </fieldset>
           </header>
-          <div className="min-h-0 overflow-y-auto rounded-b-card bg-code" data-testid="diff-lines">
+          <div
+            className="min-h-0 overflow-y-auto rounded-b-card bg-code-bg"
+            data-testid="diff-lines"
+          >
             <FileBody file={file} mode={mode} />
           </div>
         </section>

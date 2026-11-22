@@ -7,7 +7,7 @@ import { useWrapLines } from "../../chat/wrapping";
  */
 import { cn } from "../lib/cn";
 import { plural } from "../lib/format";
-import { CopyButton } from "./CopyButton";
+import { COPY_ON_CODE, CopyButton } from "./CopyButton";
 
 export interface DiffChange {
   oldText: string;
@@ -50,13 +50,13 @@ export function DiffBody({ changes }: { changes: DiffChange[] }) {
   const shown = lines.slice(0, MAX_LINES);
   const text = lines.map((line) => `${line.sign}${line.text}`).join("\n");
   return (
-    <div className="reveal-copy bg-code">
+    <div className="reveal-copy bg-code-bg">
       <div className="flex justify-end px-3 pt-2">
-        <CopyButton text={text} label="Copy diff" />
+        <CopyButton text={text} label="Copy diff" className={COPY_ON_CODE} />
       </div>
       <pre
         className={cn(
-          "px-3 pb-3 font-mono text-sm leading-5 text-text",
+          "px-3 pb-3 font-mono text-sm leading-5 text-code-text",
           wrap ? "overflow-x-hidden" : "overflow-x-auto",
         )}
       >
@@ -75,7 +75,7 @@ export function DiffBody({ changes }: { changes: DiffChange[] }) {
         ))}
       </pre>
       {lines.length > shown.length && (
-        <p className="m-0 px-3 pb-3 text-sm text-secondary tabular-nums">
+        <p className="m-0 px-3 pb-3 text-sm text-code-head tabular-nums">
           {plural(lines.length - shown.length, "more line", "more lines")} left out
         </p>
       )}

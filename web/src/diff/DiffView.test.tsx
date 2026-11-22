@@ -67,4 +67,21 @@ describe("a diff read in two columns", () => {
     fireEvent.click(screen.getByRole("button", { name: "src" }));
     expect(names()).toEqual(["lib.rs", "notes.txt"]);
   });
+
+  it("keeps the file's header and lines on the dark colour of code, with the colours of code on it", () => {
+    render(<DiffView diff={DIFF} />);
+    expect(screen.getByTestId("diff-lines").className).toContain("bg-code-bg");
+    expect(screen.getByTestId("diff-path").className).toContain("text-code-text");
+    const header = screen.getByTestId("diff-path").parentElement as HTMLElement;
+    expect(header.className).toContain("bg-code-bg");
+    expect(header.innerHTML).not.toMatch(
+      /text-text|text-secondary|text-running-text|text-error-text/,
+    );
+    const body = screen.getByTestId("diff-lines");
+    expect(body.innerHTML).not.toMatch(
+      /text-text|text-secondary|text-complete-text|text-error-text/,
+    );
+    expect(body.querySelector("[data-kind='added'] .text-code-added")).not.toBeNull();
+    expect(body.querySelector("[data-kind='removed'] .text-code-error")).not.toBeNull();
+  });
 });

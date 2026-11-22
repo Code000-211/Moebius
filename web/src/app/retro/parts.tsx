@@ -7,7 +7,7 @@ import { cn } from "../../ui/lib/cn";
 /** A diff, every line on a line of its own, with added and removed lines tinted as well as marked. */
 export function Diff({ text }: { text: string }) {
   return (
-    <pre className="m-0 overflow-hidden rounded-control bg-code text-text">
+    <pre className="m-0 overflow-hidden rounded-control bg-code-bg text-code-text">
       {text.split("\n").map((line, index) => (
         <span
           // biome-ignore lint/suspicious/noArrayIndexKey: a diff line is only known by where it sits

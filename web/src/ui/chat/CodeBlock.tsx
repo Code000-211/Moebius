@@ -7,7 +7,7 @@
 import { lazy, Suspense } from "react";
 import { useWrapLines } from "../../chat/wrapping";
 import { cn } from "../lib/cn";
-import { CopyButton } from "./CopyButton";
+import { COPY_ON_CODE, CopyButton } from "./CopyButton";
 
 const CodeHighlight = lazy(() => import("../code/CodeHighlight"));
 
@@ -55,7 +55,7 @@ export function CodeBlock({
         <CopyButton
           text={code}
           label="Copy code"
-          className="font-mono text-[12px] text-code-head opacity-100! hover:bg-code-head/15 hover:text-code-text"
+          className={cn("font-mono text-[12px]", COPY_ON_CODE)}
         />
       </div>
       <pre

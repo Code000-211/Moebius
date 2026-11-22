@@ -137,7 +137,7 @@ export function CardDetails({
               <pre
                 data-testid="script"
                 className={cn(
-                  "m-0 max-h-48 overflow-auto rounded-control bg-code p-4 font-mono text-sm text-text",
+                  "m-0 max-h-48 overflow-auto rounded-control bg-code-bg p-4 font-mono text-sm text-code-text",
                   wrap && "whitespace-pre-wrap break-words",
                 )}
               >

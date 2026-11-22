@@ -59,6 +59,8 @@
   --code-operator: #ff9aa8;
   --code-number: #ffc27a;
   --code-comment: #858bb4;
+  --code-error: #ff8a98;
+  --code-added: #7ee0a0;
   --avatar-1: #a3563a;
   --avatar-2: #4f7a8c;
   --avatar-3: #7a6a9a;
@@ -115,7 +117,6 @@
   --scrollbar-thumb: var(--hairline-strong);
   --focus: var(--accent);
   --selection: color-mix(in srgb, var(--accent) 35%, transparent);
-  --code-background: var(--code-bg);
   --code-string: var(--code-text);
   --diff-removed: color-mix(in srgb, var(--danger) 12%, transparent);
   --diff-added: color-mix(in srgb, var(--running) 12%, transparent);
@@ -267,6 +268,8 @@
   --code-operator: #ff9aa8;
   --code-number: #ffc27a;
   --code-comment: #858bb4;
+  --code-error: #ff8a98;
+  --code-added: #7ee0a0;
   --avatar-1: #a3563a;
   --avatar-2: #4f7a8c;
   --avatar-3: #7a6a9a;

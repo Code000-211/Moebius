@@ -50,7 +50,7 @@ export interface CodeProblem {
 const theme = EditorView.theme(
   {
     "&": {
-      backgroundColor: "var(--code-background)",
+      backgroundColor: "var(--code-bg)",
       color: "var(--code-text)",
       fontSize: "var(--size-code)",
       border: "1px solid var(--hairline)",

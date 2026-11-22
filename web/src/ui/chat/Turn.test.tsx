@@ -29,6 +29,18 @@ function turnOf(entries: Entry[]) {
 
 const folding = { unfolded: new Set<string>(), onToggle: () => {} };
 
+/** A turn whose steps open when clicked, as the page keeps them. */
+function Open({ turn }: { turn: TurnData }) {
+  const [unfolded, setUnfolded] = useState(new Set<string>());
+  return (
+    <Turn
+      turn={turn}
+      unfolded={unfolded}
+      onToggle={(key) => setUnfolded((all) => new Set(all).add(key))}
+    />
+  );
+}
+
 describe("a turn that ended in a failure", () => {
   it("puts the way back beside the words that say what went wrong", () => {
     render(
@@ -336,5 +348,47 @@ describe("the setting that shows thinking open", () => {
     expect(
       screen.getByRole("button", { name: "Worked · 5 steps" }).getAttribute("aria-expanded"),
     ).toBe("true");
+  });
+
+  describe("the box a tool step opens to", () => {
+    const entries: Entry[] = [
+      { at: 1, seq: 1, kind: "person", said: "said", message: "Check" },
+      {
+        at: 2,
+        seq: 2,
+        kind: "tool",
+        call: {
+          id: "t1",
+          tool: "bash",
+          input: { type: "command", command: "cargo test" },
+          output: "test result: ok",
+          check: { allowed: false, reason: "no pushing" },
+          mcp: null,
+          execution: { state: "finished", failed: false },
+        },
+      },
+    ];
+
+    it("draws its words, rule, buttons and error on the dark colour of code, not on the page's text colour", () => {
+      const turn = turnOf(entries);
+      render(<Open turn={turn} />);
+      fireEvent.click(screen.getByRole("button", { name: /Blocked/ }));
+      const box = screen.getByTestId("tool-details");
+      expect(box.className).toContain("bg-code-bg");
+      expect(box.className).not.toMatch(/bg-code(?!-)/);
+      for (const text of ["cargo test", "test result: ok"]) {
+        const className = screen.getByText(text).className;
+        expect(className).toContain("text-code-text");
+        expect(className).not.toMatch(/text-text/);
+      }
+      expect(screen.getByText(/Blocked:/).className).toContain("text-code-error");
+      expect(box.innerHTML).not.toMatch(/border-hairline|text-secondary|text-text/);
+      for (const name of ["Copy input", "Copy output"]) {
+        const className = screen.getByRole("button", { name }).className;
+        expect(className).toContain("text-code-head");
+        expect(className).toContain("hover:text-code-text");
+        expect(className).toContain("opacity-100!");
+      }
+    });
   });
 });

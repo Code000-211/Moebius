@@ -8,19 +8,22 @@ export function Delta({
   additions,
   deletions,
   className,
+  onCode = false,
 }: {
   additions: number;
   deletions: number;
   className?: string;
+  /** Drawn on the dark colour of code, so it takes the code colours. */
+  onCode?: boolean;
 }) {
   return (
     <span className={cn("shrink-0 tabular-nums", className)}>
-      <span className="text-running-text">
+      <span className={onCode ? "text-code-added" : "text-running-text"}>
         +{additions}
         <span className="sr-only"> added</span>
       </span>
-      <span className="text-secondary"> </span>
-      <span className="text-error-text">
+      <span className={onCode ? "text-code-head" : "text-secondary"}> </span>
+      <span className={onCode ? "text-code-error" : "text-error-text"}>
         -{deletions}
         <span className="sr-only"> removed</span>
       </span>
