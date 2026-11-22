@@ -45,6 +45,7 @@ import {
 } from "../../ui/filters/model";
 import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
+import { HeaderPrimary } from "../../ui/page/HeaderFit";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonBoard } from "../../ui/page/Skeleton";
@@ -381,10 +382,11 @@ export function BoardPage({ project, list = false }: { project: Project; list?: 
           </search>
         }
         primary={
-          <Button size="sm" onClick={() => openForm(null)}>
-            <PlusIcon className="size-4" weight="bold" aria-hidden="true" />
-            New issue
-          </Button>
+          <HeaderPrimary
+            icon={<PlusIcon className="size-4" weight="bold" aria-hidden="true" />}
+            label="New issue"
+            onClick={() => openForm(null)}
+          />
         }
       />
     ),
