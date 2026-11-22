@@ -8,6 +8,7 @@
  * snapshot that changes one card, or opening another, no longer draws every card of the board.
  */
 import { type MouseEvent, memo, type ReactNode, useState } from "react";
+import { useNavigate } from "react-router";
 import { type ListRange, Virtuoso } from "react-virtuoso";
 import type { Board, Card, InboxItem } from "../../api/types/board";
 import { ContextMenu, useContextMenu } from "../../ui/components/ContextMenu";
@@ -20,6 +21,7 @@ import {
 } from "../../ui/components/KanbanBoard";
 import { Empty } from "../../ui/page/Empty";
 import { SelectBox } from "../../ui/page/SelectBox";
+import { scriptPath } from "../pages";
 import { CardContent, type CardMenuActions } from "./BoardCardContent";
 import { ColumnAdd } from "./ColumnAdd";
 import { cardKey } from "./cardKey";
@@ -53,6 +55,7 @@ const ANY_COLUMN = "A card arrives when the column's script moves one in.";
 
 export const BoardColumn = memo(function BoardColumn({
   board,
+  projectId,
   inbox,
   name,
   cards,
@@ -70,6 +73,8 @@ export const BoardColumn = memo(function BoardColumn({
   onCreated,
 }: {
   board: Board;
+  /** The project whose board this is: the column's script is the project's. */
+  projectId: number;
   inbox: InboxItem[];
   name: string;
   cards: Card[];
@@ -140,7 +145,12 @@ export const BoardColumn = memo(function BoardColumn({
   };
   return (
     <KanbanBoard name={name}>
-      <ColumnHead name={name} onAdding={onAdding} />
+      <ColumnHead
+        name={name}
+        projectId={projectId}
+        repository={board.repository.id}
+        onAdding={onAdding}
+      />
       <ColumnLine
         repository={board.repository.id}
         name={name}
@@ -219,17 +229,22 @@ function ColumnCards({
 
 /**
  * The head of a column: its name alone. Its context menu (right click, the menu key, or Enter while it has the focus)
- * offers "Add a card", the one way to add to a column that is not the header's New issue button. Draws again only when
- * the name changes.
+ * offers "Add a card", the one way to add to a column that is not the header's New issue button, and "Edit the
+ * script", which opens the column's script in the project's settings (Columns). Draws again only when the name changes.
  */
 const ColumnHead = memo(function ColumnHead({
   name,
+  projectId,
+  repository,
   onAdding,
 }: {
   name: string;
+  projectId: number;
+  repository: number;
   onAdding: (column: string, open: boolean) => void;
 }) {
   const menu = useContextMenu();
+  const navigate = useNavigate();
   return (
     <>
       <KanbanHeader
@@ -248,7 +263,14 @@ const ColumnHead = memo(function ColumnHead({
         point={menu.point}
         onClose={menu.close}
         title={name}
-        commands={[{ id: "add", label: "Add a card", run: () => onAdding(name, true) }]}
+        commands={[
+          { id: "add", label: "Add a card", run: () => onAdding(name, true) },
+          {
+            id: "script",
+            label: "Edit the script",
+            run: () => navigate(scriptPath(projectId, name, repository)),
+          },
+        ]}
       />
     </>
   );

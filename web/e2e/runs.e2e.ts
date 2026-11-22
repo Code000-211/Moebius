@@ -498,21 +498,21 @@ describe("the terminals", () => {
   );
 });
 
-describe("the Ports page", () => {
-  it("opens from the command bar", async () => {
+describe("the Ports tab of Fleet", () => {
+  it("is found from the command bar by its name, as Fleet", async () => {
     await open("/inbox");
     await page.getByRole("navigation", { name: "Pages", exact: true }).waitFor();
     await page.keyboard.press("Control+k");
     await page.getByPlaceholder("Search…").fill("Ports");
-    await page.getByRole("option", { name: "Ports" }).click();
-    await page.waitForURL("**/ports");
-    await page.getByRole("heading", { name: "Ports", level: 1 }).waitFor();
+    await page.getByRole("option", { name: "Fleet" }).click();
+    await page.waitForURL("**/fleet");
+    await page.getByRole("heading", { name: "Fleet", level: 1 }).waitFor();
   });
 
   it.skipIf(usesRealServer)(
     "lists the ports with whom they belong to, and follows the server",
     async () => {
-      await open("/ports");
+      await open("/fleet/ports");
       const rows = page.getByTestId("port-row");
       await rows.first().waitFor();
       await expect.poll(() => rows.count()).toBe(2);
@@ -536,7 +536,7 @@ describe("the Ports page", () => {
   );
 
   it.skipIf(usesRealServer)("says when no port is open", async () => {
-    await open("/ports");
+    await open("/fleet/ports");
     fake().ports.length = 0;
     await page.reload();
     await page.getByTestId("no-ports").waitFor();

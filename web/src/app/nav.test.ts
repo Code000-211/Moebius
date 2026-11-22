@@ -144,10 +144,14 @@ describe("the Settings navigation", () => {
   });
 
   it("chooses Settings on its own pages, not on a page the sidebar has a row for", () => {
-    for (const path of ["/profile", "/settings", "/runners", "/tokens", "/ports"])
+    for (const path of ["/profile", "/settings", "/tokens"])
       expect(inSettingsArea(path), path).toBe(true);
     for (const path of [
       "/inbox",
+      "/fleet",
+      "/fleet/ports",
+      "/runners",
+      "/ports",
       "/projects/3",
       "/agents",
       "/rules",

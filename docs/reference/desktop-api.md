@@ -1204,8 +1204,11 @@ and no text. Accepting and declining are recorded as `accept_request` and `decli
 
 #### `PUT /v1/projects/{id}/intake`
 
-An owner turns intake on or off. Request: `{"enabled": bool}`. Requests already made stay. Response: the `ProjectView`.
-Errors: `404` for no such project.
+An owner turns intake on or off; this is the switch in the General tab of a project's settings, and the project's header
+shows or drops its Intake tab at once (the route sends `project_changed`). Request: `{"enabled": bool}`. Requests already
+made stay. Response: the `ProjectView` as the person asking sees it. Errors: `403` for anyone but an owner, `404` for no
+such project and for a private project the person may not see (an owner sees the record of every project, see
+[Projects](#projects)).
 
 #### `POST /v1/projects/{id}/requests`
 
@@ -1340,7 +1343,7 @@ for a cycle of another project or a closed one.
 ### Importing from Jira
 
 A one-off copy of a Jira project into a Moebius project, which can be run again. Only an owner imports, never an agent,
-since it may make people. The web app has it as the Import tab of a project's settings. The Jira API token is kept like the other keys, in `secrets.toml` (`PUT /v1/secrets/{name}`,
+since it may make people. The web app has it as the Import from Jira button in the General area of a project's settings. The Jira API token is kept like the other keys, in `secrets.toml` (`PUT /v1/secrets/{name}`,
 see [Secrets](configuration.md#secrets)); the request names it and never carries it, and it is not stored, logged or
 answered.
 
@@ -2949,9 +2952,9 @@ calls `PUT` is refused `403` first). Nothing is read, saved, deleted or started.
 For example, `GET /v1/workflows` answers `410` with `this route is gone: workflows belong to a project; use GET
 /v1/projects/{id}/workflows`. `GET /v1/projects` lists the projects and their ids.
 
-Still **deprecated**, and answered as before: `POST /api/hooks/{path}` and `POST /api/hooks/{repository}/{path}`, and
-`GET /v1/workflow-runs` without `project`. Use `/api/hooks/projects/{project}/...` above, and give `project` to the list
-of runs. `POST /v1/workflows/runs/{id}/cancel` and `POST /v1/workflows/runs/{run_id}/resume` are not deprecated: a run is
+Still **deprecated**, and answered as before: `POST /api/hooks/{path}` and `POST /api/hooks/{repository}/{path}`. Use
+`/api/hooks/projects/{project}/...` above. `GET /v1/workflow-runs` without `project` is not deprecated: it lists the runs
+of every project the person sees, which is what Fleet shows. `POST /v1/workflows/runs/{id}/cancel` and `POST /v1/workflows/runs/{run_id}/resume` are not deprecated: a run is
 addressed by its id.
 
 ### `POST /v1/workflows/runs/{id}/cancel`
@@ -2968,7 +2971,7 @@ already, and the message names the status it ended as.
 ### `GET /v1/workflow-runs`
 
 The runs of the workflows, newest first, leaving out the runs of a repository the person does not see. Query:
-`project` (a project's id: only the runs of its workflows), `workflow` (only the runs of this workflow; without `project` it matches the name in every project, which is the deprecated form) and `limit` (the most runs to answer, 50 when left out, at most 200).
+`project` (a project's id: only the runs of its workflows; left out, the runs of every project the person sees, which is what Fleet lists and is not deprecated), `workflow` (only the runs of this workflow; without `project` it matches the name in every project, which is the deprecated form of a name) and `limit` (the most runs to answer, 50 when left out, at most 200).
 A run's `project` is null for a run from before the migration of the workflow files, and `project_name` is null when there is no project or it is gone.
 Response: an array of `{"id": number, "workflow": string, "project": number or null, "project_name": string or null, "repository_id": number, "trigger": string, "status": string,
 "value": any, "created_at": number, "started_at": number or null, "finished_at": number or null, "error": string or null}`;

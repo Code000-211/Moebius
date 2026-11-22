@@ -157,11 +157,12 @@ describe.skipIf(usesRealServer)("choosing runs in Fleet", () => {
     server.chat?.seed({ status: "running", title: "Write the first rule" });
     server.chat?.seed({ status: "running", title: "Write the second rule" });
     await page.goto(`${server.url}/fleet`);
-    await expect.poll(() => rows().count()).toBe(3);
+    // The card's run and the fake's workflow run that waits at a node are going too.
+    await expect.poll(() => rows().count()).toBe(4);
     // The arrows select without opening anything; Shift and a click then choose the range to the second rule.
     await page.getByTestId("virtual-list").focus();
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("ArrowDown");
+    // The run that waits comes first, then the card's run, then the first rule.
+    for (let step = 0; step < 3; step++) await page.keyboard.press("ArrowDown");
     await rows()
       .filter({ hasText: "Write the second rule" })
       .click({ modifiers: ["Shift"] });
@@ -170,14 +171,14 @@ describe.skipIf(usesRealServer)("choosing runs in Fleet", () => {
       .getByRole("button", { name: /Stop runs/ })
       .click();
     await page.getByRole("status").filter({ hasText: "Stopping 2 runs." }).waitFor();
-    await expect.poll(() => rows().count()).toBe(1);
+    await expect.poll(() => rows().count()).toBe(2);
   });
 
   it("moves the selection with the arrows and clears the choice with Escape", async () => {
     await fresh();
     server.chat?.seed({ status: "running", title: "Write the first rule" });
     await page.goto(`${server.url}/fleet`);
-    await expect.poll(() => rows().count()).toBe(2);
+    await expect.poll(() => rows().count()).toBe(3);
     await page.getByTestId("virtual-list").focus();
     await page.keyboard.press("ArrowDown");
     await expect.poll(() => rows().first().getAttribute("data-selected")).toBe("true");
@@ -192,7 +193,7 @@ describe.skipIf(usesRealServer)("choosing runs in Fleet", () => {
     await fresh();
     server.chat?.seed({ status: "running", title: "Write the first rule" });
     await page.goto(`${server.url}/fleet`);
-    await expect.poll(() => rows().count()).toBe(2);
+    await expect.poll(() => rows().count()).toBe(3);
     await rows().filter({ hasText: "Write the first rule" }).click({ button: "right" });
     await page
       .getByRole("menu", { name: "1 run" })

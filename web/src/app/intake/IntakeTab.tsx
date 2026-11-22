@@ -13,7 +13,6 @@ import {
   declineRequest,
   editRequest,
   listRequests,
-  setIntake,
   submitRequest,
 } from "../../api/calls/intake";
 import { keys } from "../../api/keys";
@@ -43,18 +42,12 @@ export function IntakeTab({ project, onTerminal }: { project: Project; onTermina
 
 function Requests({ project }: { project: Project }) {
   const role = useRole();
-  const queryClient = useQueryClient();
-  const turn = useMutation({
-    mutationFn: () => setIntake(project.id, false),
-    onSettled: () => void queryClient.invalidateQueries({ queryKey: keys.projects }),
-  });
   const requests = useQuery({
     queryKey: keys.requests(project.id),
     queryFn: () => listRequests(project.id),
     enabled: project.intake,
   });
 
-  useErrorToast(turn.error, "Intake could not be changed.");
   return (
     <div className="flex flex-col gap-6">
       <RequestForm project={project} />
@@ -78,13 +71,6 @@ function Requests({ project }: { project: Project }) {
             </li>
           ))}
         </ul>
-      )}
-      {role === "owner" && (
-        <div>
-          <Button variant="secondary" onClick={() => turn.mutate()} disabled={turn.isPending}>
-            Turn off intake
-          </Button>
-        </div>
       )}
     </div>
   );

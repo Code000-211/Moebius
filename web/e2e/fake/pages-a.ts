@@ -36,6 +36,7 @@ interface Project {
   members: Array<{ id: number; handle: string; name: string }>;
   open_cards: number;
   files: number | null;
+  intake?: boolean;
   kinds: number[];
   private: boolean;
   member: boolean;
@@ -640,6 +641,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
   const renamed = new Map<number, string>();
   const access = new Map<number, { private: boolean; members: string[] }>();
   const linked = new Map<number, number[]>();
+  const intakes = new Map<number, boolean>();
 
   /** The project with what an owner changed in its settings applied. */
   function settled(project: Project): Project {
@@ -648,6 +650,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
     return {
       ...project,
       name: renamed.get(project.id) ?? project.name,
+      intake: intakes.get(project.id) ?? project.intake ?? false,
       repositories: [
         ...project.repositories,
         ...(linked.get(project.id) ?? []).flatMap((id) => {
@@ -932,7 +935,7 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
         path === "/v1/harness/setup" ||
         path === "/v1/repositories" ||
         path === "/v1/projects" ||
-        /^\/v1\/projects\/\d+(\/access|\/repositories(\/\d+)?)?$/.test(path) ||
+        /^\/v1\/projects\/\d+(\/access|\/intake|\/repositories(\/\d+)?)?$/.test(path) ||
         /^\/v1\/projects\/\d+\/scripts$/.test(path) ||
         /^\/v1\/webhooks\/[a-z]+\/secret$/.test(path) ||
         /^\/v1\/repositories\/\d+(\/(tree|files|search|settings|plugin-settings)(\/.*)?)?$/.test(
@@ -1074,7 +1077,9 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
       }
 
       if (path === "/v1/projects" && method === "GET") return ok(response, projects());
-      const project = /^\/v1\/projects\/(\d+)(\/access|\/repositories(?:\/(\d+))?)?$/.exec(path);
+      const project = /^\/v1\/projects\/(\d+)(\/access|\/intake|\/repositories(?:\/(\d+))?)?$/.exec(
+        path,
+      );
       if (project) {
         const id = Number(project[1]);
         const found = projects().find((each) => each.id === id);
@@ -1100,6 +1105,10 @@ export function createPagesAFake(send: Send, board: BoardFake): PagesAFake {
             private: body.private === true,
             members: Array.isArray(body.members) ? (body.members as string[]) : [],
           });
+          return change(settledNow());
+        }
+        if (project[2] === "/intake" && method === "PUT") {
+          intakes.set(id, body.enabled === true);
           return change(settledNow());
         }
         if (project[2] === "/repositories" && method === "POST") {

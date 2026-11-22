@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use moebius_core::config::Config;
+use moebius_core::decide::Actor;
 use moebius_core::repos::git;
 use moebius_core::server::Server;
 use moebius_core::server::api::{self, ApiState};
@@ -201,7 +202,16 @@ async fn a_viewer_s_request_is_grilled_into_a_draft_and_a_member_s_acceptance_ma
     let kim = person(&server, "kim", Role::Viewer);
     let lou = person(&server, "lou", Role::Viewer);
     let mia = person(&server, "mia", Role::Member);
-    server.app.set_intake(project, true).unwrap();
+    server
+        .app
+        .set_intake(
+            &Actor::Script {
+                column: "test".into(),
+            },
+            project,
+            true,
+        )
+        .unwrap();
     let mut events = server.app.bus.subscribe();
 
     let (status, made) = api
@@ -375,7 +385,16 @@ async fn a_declined_request_tells_the_requester_why_and_a_chat_that_left_nothing
     let api = Api::start(&server).await;
     let kim = person(&server, "kim", Role::Viewer);
     let mia = person(&server, "mia", Role::Member);
-    server.app.set_intake(project, true).unwrap();
+    server
+        .app
+        .set_intake(
+            &Actor::Script {
+                column: "test".into(),
+            },
+            project,
+            true,
+        )
+        .unwrap();
 
     // The grilling leaves no file: ending the chat drafts the person's own words, so the request is not stranded.
     let (_, made) = api

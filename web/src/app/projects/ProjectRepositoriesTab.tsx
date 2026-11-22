@@ -1,6 +1,7 @@
 /**
  * The Repositories tab of a project's settings: its repositories, each with the project its new issues land in (its
- * home project) and a link to the repository's page, where its code settings are; an owner takes one out (not from its
+ * home project); a row opens the repository's page, where its code settings, plugin settings, rules.md, checks and
+ * files are; an owner takes one out (not from its
  * home project, which keeps it until the repository is removed) and puts another of the server's repositories in.
  * "Clone a new repository" is the Add a repository page, which makes the repository's own home project.
  */
@@ -81,22 +82,18 @@ export function ProjectRepositoriesTab({
               data-testid="project-repository"
               className="flex h-9 items-center gap-2.5 border-b border-hairline text-base"
             >
-              <span className="min-w-0 flex-1 truncate font-medium text-text">
+              <Link
+                to={repositoryPath(project.id, repository.id)}
+                aria-label={`Settings of ${repository.name}`}
+                className="min-w-0 flex-1 truncate font-medium text-text hover:underline"
+              >
                 {repository.name}
-              </span>
+              </Link>
               <span className="shrink-0 text-xs text-muted">
                 {repository.home
                   ? "home project"
                   : `home: ${homeName(repository.id) ?? "another project"}`}
               </span>
-              <Button asChild size="sm" variant="secondary">
-                <Link
-                  to={repositoryPath(project.id, repository.id)}
-                  aria-label={`Settings of ${repository.name}`}
-                >
-                  Code settings
-                </Link>
-              </Button>
               {canEdit && !repository.home && (
                 <Button
                   size="sm"

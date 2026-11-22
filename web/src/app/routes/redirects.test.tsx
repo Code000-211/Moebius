@@ -94,6 +94,16 @@ describe("the legacy table", () => {
     expect(router.state.historyAction).toBe("REPLACE");
   });
 
+  it("sends /runners and /ports, which are tabs of Fleet now, to them", async () => {
+    projects = [];
+    const router = await open("/runners");
+    await screen.findByTestId("where");
+    expect(at(router)).toBe("/fleet/runners");
+    expect(router.state.historyAction).toBe("REPLACE");
+    cleanup();
+    expect(await landed("/ports?x=1")).toBe("/fleet/ports?x=1");
+  });
+
   it("sends /board/:repoId to the board of the repository's home project, keeping ?card=", async () => {
     projects = [project(2, [5, 6]), project(3, [7])];
     const router = await open("/board/6?card=11");
@@ -177,6 +187,25 @@ describe("the legacy table", () => {
     const router = await open("/projects/77");
     await screen.findByText("No such project");
     expect(at(router)).toBe("/projects/77");
+  });
+
+  it.each([
+    ["workflow", "columns"],
+    ["kinds", ""],
+    ["plugins", "repositories"],
+    ["import", ""],
+  ])("sends the old settings tab %s of a project to its new place", async (old, tab) => {
+    projects = [project(2, [5])];
+    const router = await open(`/projects/2/settings/${old}?x=1`);
+    await screen.findByTestId("where");
+    expect(at(router)).toBe(`/projects/2/settings${tab === "" ? "" : `/${tab}`}?x=1`);
+    expect(router.state.historyAction).toBe("REPLACE");
+  });
+
+  it("shows the page for no address for an old settings tab of a project that is not there", async () => {
+    projects = [project(2, [5])];
+    await open("/projects/9/settings/workflow");
+    await screen.findByText("There is no such page");
   });
 
   describe("the old Cycles, Milestones and Intake addresses", () => {

@@ -8,7 +8,6 @@ import { ColumnScriptsPage } from "./ColumnScriptsPage";
 import { NotificationsPage } from "./NotificationsPage";
 import { ProfilePage } from "./ProfilePage";
 import { RepositoriesPage } from "./RepositoriesPage";
-import { RunnersPage } from "./RunnersPage";
 import { SchedulesPage } from "./SchedulesPage";
 
 afterEach(() => {
@@ -171,22 +170,5 @@ describe("Schedules", () => {
     expect(screen.getByRole("link", { name: "Open Weekly digest" }).getAttribute("href")).toBe(
       "/automations?automation=3",
     );
-  });
-});
-
-describe("Runners", () => {
-  it("lists the remote runners with their load, and says when there is none", async () => {
-    const view = show(<RunnersPage />, [
-      [
-        keys.runners,
-        [{ name: "box", host: "build.example.com", user: "ci", max_runs: 2, busy: 1 }],
-      ],
-    ]);
-    expect(screen.getByText("box")).toBeTruthy();
-    expect(screen.getByText("ci@build.example.com")).toBeTruthy();
-    expect(screen.getByText("1 of 2 running")).toBeTruthy();
-    view.unmount();
-    show(<RunnersPage />, [[keys.runners, []]]);
-    expect(screen.getByText(/No runner/)).toBeTruthy();
   });
 });

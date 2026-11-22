@@ -17,7 +17,6 @@ const SETTINGS_PAGES: Record<string, ComponentType> = {
   schedules: named(() => import("../settings/SchedulesPage"), "SchedulesPage"),
   settings: named(() => import("../settings/SettingsPage"), "SettingsPage"),
   repositories: named(() => import("../settings/RepositoriesPage"), "RepositoriesPage"),
-  runners: named(() => import("../settings/RunnersPage"), "RunnersPage"),
   people: named(() => import("../people/PeoplePage"), "PeoplePage"),
 };
 

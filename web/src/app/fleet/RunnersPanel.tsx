@@ -1,33 +1,33 @@
 /**
- * The Runners entry of Settings: the machines that run harnesses over SSH, as the harness configuration repository names
+ * The Runners tab of Fleet: the machines that run harnesses over SSH, as the harness configuration repository names
  * them (`GET /v1/runners`), with how many runs each has now. Read only: they are changed in that repository.
  */
 import { useQuery } from "@tanstack/react-query";
 import { runners as readRunners } from "../../api/calls/harness";
 import { keys } from "../../api/keys";
+import { Empty } from "../../ui/page/Empty";
 import { FieldRow, Rows } from "../../ui/page/Field";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonList } from "../../ui/page/Skeleton";
-import { AreaColumn, AreaTitle } from "./parts";
 
-export function RunnersPage() {
+export function RunnersPanel() {
   const list = useQuery({ queryKey: keys.runners, queryFn: readRunners });
   return (
-    <AreaColumn>
-      <AreaTitle title="Runners" />
+    <div data-testid="runners-panel">
       {list.isError ? (
         <ReadFailed
           error={list.error}
           fallback="Could not read the runners."
+          busy={list.isFetching}
           onRetry={() => void list.refetch()}
         />
       ) : list.isPending ? (
         <SkeletonList rows={2} />
       ) : list.data.length === 0 ? (
-        <p className="m-0 text-base text-secondary">
-          No runner. Runs happen on this machine; remote runners are named in the harness
-          configuration repository.
-        </p>
+        <Empty
+          title="No runner"
+          body="Runs happen on this machine. Remote runners are named in the harness configuration repository."
+        />
       ) : (
         <Rows>
           {list.data.map((each) => (
@@ -43,6 +43,6 @@ export function RunnersPage() {
           ))}
         </Rows>
       )}
-    </AreaColumn>
+    </div>
   );
 }

@@ -134,14 +134,11 @@ describe("Settings", () => {
       ["Automation", "Schedules"],
       ["Server", "General"],
       ["Server", "Repositories"],
-      ["Server", "Runners"],
       ["Server", "Members"],
     ]);
     for (const [label, path, content] of [
       ["Column scripts", "column-scripts", "Open"],
       ["Schedules", "schedules", "Retro"],
-      // The fake has a runner; a new real server has none and says so.
-      ["Runners", "runners", usesRealServer ? "No runner." : "build.example.com"],
     ] as const) {
       await nav(page).getByRole("link", { name: label, exact: true }).click();
       await page.waitForURL(`**/${path}`);
