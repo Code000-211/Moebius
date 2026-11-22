@@ -4,6 +4,7 @@ import type { Trigger, WorkflowNodeRun } from "../../../api/types/workflows";
 import { Tag } from "../../../ui/chat/Tag";
 import { cn } from "../../../ui/lib/cn";
 import { runStatus } from "../model";
+import { KindIcon } from "./kindIcons";
 
 /** What a card on the canvas is given to draw. */
 export interface CardData extends Record<string, unknown> {
@@ -26,31 +27,32 @@ export interface CardData extends Record<string, unknown> {
   run?: WorkflowNodeRun;
 }
 
+/** The width of a card is `CARD_WIDTH` of `view.ts`, which the view's readable floor is worked out from. */
 const WIDTH = "w-56";
 
-/** A node of the graph: its kind, what it is given, the ports an edge joins, and how it went in a picked run. */
+/** A node of the graph: its kind, its id, what it is given, the ports an edge joins, and how it went in a picked run. */
 export function NodeCard({ data, selected }: NodeProps) {
   const card = data as unknown as CardData;
+  const several = card.outputs.length > 1;
   return (
     <div
       data-testid="canvas-node"
       data-node-id={card.id}
       className={cn(
-        "rounded-card border border-hairline-strong bg-panel px-3 py-3",
+        "rounded-card border border-hairline-strong bg-panel px-3 py-2.5",
         WIDTH,
         // The names of the ports it leaves by sit in the right edge, one row each, so the card is as tall as they are.
-        card.outputs.length > 1 && "min-h-20",
+        several && "min-h-20",
         selected && "canvas-node--selected",
         card.problems.length > 0 && "canvas-node--problem",
       )}
     >
-      <CardHead id={card.id} kind={card.kindLabel ?? card.kind} run={card.run} />
+      <CardHead kind={card.kind} label={card.kindLabel ?? card.kind} run={card.run} />
+      <p className="m-0 mt-0.5 truncate text-sm font-semibold text-text" title={card.id}>
+        {card.id}
+      </p>
       <p
-        className={cn(
-          "m-0 mt-1 line-clamp-2 break-words text-xs text-secondary",
-          // The right edge is for the names of the ports the node leaves by.
-          card.outputs.length > 0 && "pr-14",
-        )}
+        className={cn("m-0 mt-0.5 truncate text-xs text-secondary", several && "pr-14")}
         title={card.summary}
       >
         {card.summary === "" ? "Takes no parameters" : card.summary}
@@ -71,14 +73,14 @@ export function TriggerCard({ data, selected }: NodeProps) {
       data-testid="canvas-node"
       data-node-id={card.id}
       className={cn(
-        "rounded-card border border-hairline bg-sunken px-3 py-3",
+        "rounded-card border border-hairline bg-sunken px-3 py-2.5",
         WIDTH,
         selected && "canvas-node--selected",
       )}
     >
-      <p className="m-0 text-xs font-semibold uppercase tracking-wide text-secondary">Trigger</p>
-      <p className="mt-1 m-0 truncate text-sm text-text">{card.title}</p>
-      <p className="mt-1 m-0 line-clamp-2 break-words text-xs text-secondary" title={card.summary}>
+      <CardHead kind="trigger" label="Trigger" />
+      <p className="m-0 mt-0.5 truncate text-sm font-semibold text-text">{card.title}</p>
+      <p className="m-0 mt-0.5 truncate text-xs text-secondary" title={card.summary}>
         {trigger ? card.summary || "Takes no parameters" : "This workflow has no trigger."}
       </p>
       <Problems problems={card.problems} />
@@ -92,19 +94,15 @@ export function TriggerCard({ data, selected }: NodeProps) {
   );
 }
 
-function CardHead({ id, kind, run }: { id: string; kind: string; run?: WorkflowNodeRun }) {
+/** The kind of a card, small and muted, with its mark; in a picked run the node's status takes the right edge. */
+function CardHead({ kind, label, run }: { kind: string; label: string; run?: WorkflowNodeRun }) {
   return (
-    <div className="flex min-w-0 items-center gap-2">
-      <span className="min-w-0 flex-1 truncate text-sm font-medium text-text" title={id}>
-        {id}
+    <div className="flex min-w-0 items-center gap-1.5 text-xs text-secondary">
+      <KindIcon kind={kind} className="size-3.5 shrink-0" />
+      <span className="min-w-0 flex-1 truncate" title={label}>
+        {label}
       </span>
-      {run ? (
-        <Tag tone={runStatus(run.status).tone}>{runStatus(run.status).label}</Tag>
-      ) : (
-        <span className="max-w-28 shrink-0 truncate text-xs text-secondary" title={kind}>
-          {kind}
-        </span>
-      )}
+      {run ? <Tag tone={runStatus(run.status).tone}>{runStatus(run.status).label}</Tag> : null}
     </div>
   );
 }
@@ -154,25 +152,37 @@ function Ports({ inputs, outputs }: { inputs: string[]; outputs: string[] }) {
           id={port}
           title={`Comes in by ${port}`}
           className="canvas-handle !left-[-7px]"
-          style={{ top: `${36 + index * 18}px` }}
+          style={inputs.length > 1 ? { top: `${36 + index * 18}px` } : undefined}
         />
       ))}
-      {outputs.map((port, index) => (
-        <div
-          key={port}
-          className="pointer-events-none absolute right-2 flex items-center gap-2 text-xs text-secondary"
-          style={{ top: `${28 + index * 16}px` }}
-        >
-          <span>{port}</span>
-          <Handle
-            type="source"
-            position={Position.Right}
-            id={port}
-            title={`Leaves by ${port}`}
-            className="canvas-handle pointer-events-auto !absolute !right-[-14px]"
-          />
-        </div>
-      ))}
+      {outputs.length > 1
+        ? outputs.map((port, index) => (
+            // Only a node with several ways out names them: with one, the wire says all there is to say.
+            <div
+              key={port}
+              className="pointer-events-none absolute right-2 flex items-center gap-2 text-xs text-secondary"
+              style={{ top: `${28 + index * 16}px` }}
+            >
+              <span>{port}</span>
+              <Handle
+                type="source"
+                position={Position.Right}
+                id={port}
+                title={`Leaves by ${port}`}
+                className="canvas-handle pointer-events-auto !absolute !right-[-14px]"
+              />
+            </div>
+          ))
+        : outputs.map((port) => (
+            <Handle
+              key={port}
+              type="source"
+              position={Position.Right}
+              id={port}
+              title={`Leaves by ${port}`}
+              className="canvas-handle !right-[-7px]"
+            />
+          ))}
     </>
   );
 }

@@ -10,6 +10,7 @@ import {
   nextNodeId,
   nextPosition,
   nodeOf,
+  positionAfter,
   problemFor,
   removeEdge,
   removeNode,
@@ -201,5 +202,18 @@ describe("a message the server refused a save with", () => {
     expect(
       problemFor("workflow workflows/release.toml: exactly one trigger is required, found none").on,
     ).toEqual({ nowhere: true });
+  });
+});
+
+describe("positionAfter", () => {
+  it("puts a step to the right of the one it follows", () => {
+    expect(positionAfter(graph(), { x: 1000, y: 40 })).toEqual({ x: 1324, y: 40 });
+  });
+
+  it("moves down while another step is in the way", () => {
+    // `build` sits at 200,120: a step after one at -124,120 would land on it.
+    const at = positionAfter(graph(), { x: -124, y: 120 });
+    expect(at.x).toBe(200);
+    expect(at.y).toBeGreaterThanOrEqual(240);
   });
 });

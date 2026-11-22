@@ -92,13 +92,20 @@ export function flowEdges(graph: WorkflowDefinition, marks: Marks = {}): Edge[] 
       target: edge.to,
       sourceHandle: edge.port,
       targetHandle: targetPort(graph, edge),
-      label: edge.port,
+      // A port is named on the wire only where its node has more than one way out.
+      label: leavesBySeveral(graph, edge) ? edge.port : undefined,
       labelShowBg: true,
       selected: marks.edge === id,
       data: { problem },
       style: problem ? { stroke: "var(--error)" } : undefined,
     } satisfies Edge;
   });
+}
+
+/** Whether the node an edge leaves has several out ports, so the wire has to say which one it is. */
+function leavesBySeveral(graph: WorkflowDefinition, edge: WorkflowEdge): boolean {
+  const from = nodeOf(graph, edge.from);
+  return from ? portsOf(from.kind, from.params).outputs.length > 1 : false;
 }
 
 /** Where the start goes when nobody has moved it: to the left of the nodes it leads into. */

@@ -29,9 +29,12 @@ afterAll(async () => {
   await browser.close();
 });
 
-async function openCanvas(path = "/workflows/release/canvas") {
+async function openCanvas(
+  path = "/workflows/release/canvas",
+  viewport = { width: 1600, height: 1000 },
+) {
   server = await startServer();
-  context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+  context = await browser.newContext({ viewport });
   page = await context.newPage();
   await page.goto(server.loginUrl);
   await page.getByRole("navigation", { name: "Pages" }).waitFor();
@@ -182,6 +185,62 @@ describe.skipIf(usesRealServer)("the workflow canvas", () => {
     await expect
       .poll(() => view.getAttribute("style"), { timeout: 20_000, interval: 100 })
       .not.toBe(before);
+  });
+
+  it("opens with the step boxes at a readable size, and a palette of one row per kind", async () => {
+    await openCanvas("/workflows/notify/canvas", { width: 1280, height: 720 });
+    // A box is at least 200px wide where it is shown; a graph that does not fit is panned, not shrunk.
+    for (const id of ["trigger", "triage", "approve", "post"]) {
+      const where = await box(card(id).first());
+      expect(where.width).toBeGreaterThanOrEqual(199);
+    }
+    // The start of the graph is on screen, within the board.
+    const board = await box(page.getByTestId("canvas-board"));
+    const start = await box(card("trigger"));
+    expect(start.x).toBeGreaterThanOrEqual(board.x);
+    expect(start.x + start.width).toBeLessThanOrEqual(board.x + board.width);
+
+    // The palette is a slim column, one row and one name per kind.
+    const rows = page.getByTestId("palette-kind");
+    expect(await rows.count()).toBe(9);
+    expect((await box(page.getByRole("navigation", { name: "Add a step" }))).width).toBeLessThan(
+      180,
+    );
+    expect(await rows.allTextContents()).toEqual([
+      "Agent",
+      "Code",
+      "Condition",
+      "For each",
+      "HTTP",
+      "Approval",
+      "Merge",
+      "Chat",
+      "Publish",
+    ]);
+  });
+
+  it("adds a step by dragging a kind onto the canvas, where it was dropped", async () => {
+    await openCanvas();
+    const target = await box(page.getByTestId("canvas-board"));
+    await kind("http").dragTo(page.getByTestId("canvas-board"), {
+      targetPosition: { x: target.width - 300, y: target.height - 150 },
+    });
+    await shows(card("http"), "http");
+    await shows(state(), "Unsaved changes");
+    await thereAre(wires(), 3);
+  });
+
+  it("adds a step after the chosen one when a kind is pressed", async () => {
+    await openCanvas();
+    await card("publish").click();
+    await inspector().waitFor();
+    await kind("chat").click();
+    await shows(card("chat"), "chat");
+    // It hangs off the chosen step by its way out.
+    await thereAre(wires(), 4);
+    await shows(state(), "Unsaved changes");
+    const added = fake().graphs.get("release");
+    expect(added?.nodes.map((node) => node.id)).not.toContain("chat");
   });
 
   it("takes a kind from the palette and joins two nodes by their ports", async () => {
@@ -371,7 +430,8 @@ describe.skipIf(usesRealServer)("the workflow canvas", () => {
     await thereAre(wires(), 3);
 
     // A wire chosen on the graph is taken away from the panel beside it.
-    await wires().first().click();
+    // A wire without a label has no box of its own to aim at, and may lie past the edge of a graph that is panned.
+    await wires().first().dispatchEvent("click");
     await page.getByTestId("delete-edge").click();
     await thereAre(wires(), 2);
   });

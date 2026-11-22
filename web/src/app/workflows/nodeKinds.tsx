@@ -58,7 +58,20 @@ export interface NodeKind {
   params: ParamField[];
 }
 
-/** Every kind the palette offers, in the order it offers them. */
+/** The order the palette lists the kinds in; a kind not named here comes after them, in the order of the registry. */
+const paletteOrder = [
+  "agent",
+  "code",
+  "condition",
+  "for_each",
+  "http",
+  "approval",
+  "merge",
+  "chat",
+  "publish",
+];
+
+/** Every kind of the registry. */
 export const nodeKinds: NodeKind[] = [
   {
     kind: "code",
@@ -263,6 +276,34 @@ export const nodeKinds: NodeKind[] = [
       },
     ],
   },
+  {
+    kind: "chat",
+    title: "Chat",
+    description: "Starts an agent chat from a first message.",
+    inputs: ["in"],
+    outputs: ["out"],
+    params: [
+      {
+        type: "text",
+        name: "agent",
+        label: "Agent",
+        help: "The agent the chat is with. Empty means the Moebius agent.",
+      },
+      {
+        type: "text",
+        name: "prompt",
+        label: "Prompt",
+        help: "The chat's first message.",
+        required: true,
+      },
+      {
+        type: "boolean",
+        name: "harness",
+        label: "In the harness repository",
+        help: "Work in the harness configuration repository instead of a repository of its own.",
+      },
+    ],
+  },
 ];
 
 /**
@@ -332,7 +373,12 @@ export function paletteKinds(graph: WorkflowDefinition): NodeKind[] {
     seen.add(node.kind);
     extra.push(genericKind(node.kind));
   }
-  return [...nodeKinds, ...extra];
+  const rank = (kind: string) => {
+    const at = paletteOrder.indexOf(kind);
+    return at === -1 ? paletteOrder.length : at;
+  };
+  const known = [...nodeKinds].sort((a, b) => rank(a.kind) - rank(b.kind));
+  return [...known, ...extra];
 }
 
 /** The parameters a node of a kind starts with. */

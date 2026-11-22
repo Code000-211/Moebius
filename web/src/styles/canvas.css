@@ -15,7 +15,7 @@
   --xy-background-pattern-dots-color-default: var(--hairline);
 
   /* The wires, the label of the port one leaves by, and the line being drawn. */
-  --xy-edge-stroke-default: var(--hairline-strong);
+  --xy-edge-stroke-default: var(--text-faint);
   --xy-edge-stroke-width-default: 1.5;
   --xy-edge-stroke-selected-default: var(--text-secondary);
   --xy-edge-label-background-color-default: var(--background);
