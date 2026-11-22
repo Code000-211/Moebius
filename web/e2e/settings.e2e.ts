@@ -134,7 +134,6 @@ describe("Settings", () => {
       ["Agents", "Plugins"],
       ["Agents", "MCP servers"],
       ["Automation", "Rules"],
-      ["Automation", "Workflows"],
       ["Automation", "Column scripts"],
       ["Automation", "Schedules"],
       ["Insight", "Analytics"],
