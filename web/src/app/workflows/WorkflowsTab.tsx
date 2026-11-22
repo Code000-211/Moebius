@@ -366,6 +366,7 @@ function ScheduledList({
         const state = automation ? statusWord(automation) : null;
         return (
           <li key={workflow.name} data-testid="scheduled-row" className={ROW}>
+            <TreeStructureIcon className="size-4 shrink-0 text-text-muted" aria-hidden="true" />
             <h3 className="m-0 shrink-0 truncate text-base font-medium text-text">
               <Link
                 className="rounded-round underline-offset-4 hover:underline"
