@@ -449,9 +449,9 @@ describe("windows of 800 and 1280 px", () => {
   it.skipIf(usesRealServer)(
     "keeps the description of a built-in pattern readable at the width of a laptop window",
     async () => {
-      const page = await signedInAt("/rules", 1280);
+      const page = await signedInAt("/rules?scope=builtin", 1280);
       const description = page
-        .getByRole("region", { name: "Built-in patterns" })
+        .getByRole("region", { name: "Built-in", exact: true })
         .getByText("git push --force rewrites history on the remote");
       await description.waitFor();
       // About thirty characters a line at 14px is 200px; the page once left it 40px.
