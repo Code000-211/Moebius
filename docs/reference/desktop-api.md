@@ -2949,9 +2949,9 @@ calls `PUT` is refused `403` first). Nothing is read, saved, deleted or started.
 For example, `GET /v1/workflows` answers `410` with `this route is gone: workflows belong to a project; use GET
 /v1/projects/{id}/workflows`. `GET /v1/projects` lists the projects and their ids.
 
-Still **deprecated**, and answered as before: `POST /api/hooks/{path}` and `POST /api/hooks/{repository}/{path}`, and
-`GET /v1/workflow-runs` without `project`. Use `/api/hooks/projects/{project}/...` above, and give `project` to the list
-of runs. `POST /v1/workflows/runs/{id}/cancel` and `POST /v1/workflows/runs/{run_id}/resume` are not deprecated: a run is
+Still **deprecated**, and answered as before: `POST /api/hooks/{path}` and `POST /api/hooks/{repository}/{path}`. Use
+`/api/hooks/projects/{project}/...` above. `GET /v1/workflow-runs` without `project` is not deprecated: it lists the runs
+of every project the person sees, which is what Fleet shows. `POST /v1/workflows/runs/{id}/cancel` and `POST /v1/workflows/runs/{run_id}/resume` are not deprecated: a run is
 addressed by its id.
 
 ### `POST /v1/workflows/runs/{id}/cancel`
@@ -2968,7 +2968,7 @@ already, and the message names the status it ended as.
 ### `GET /v1/workflow-runs`
 
 The runs of the workflows, newest first, leaving out the runs of a repository the person does not see. Query:
-`project` (a project's id: only the runs of its workflows), `workflow` (only the runs of this workflow; without `project` it matches the name in every project, which is the deprecated form) and `limit` (the most runs to answer, 50 when left out, at most 200).
+`project` (a project's id: only the runs of its workflows; left out, the runs of every project the person sees, which is what Fleet lists and is not deprecated), `workflow` (only the runs of this workflow; without `project` it matches the name in every project, which is the deprecated form of a name) and `limit` (the most runs to answer, 50 when left out, at most 200).
 A run's `project` is null for a run from before the migration of the workflow files, and `project_name` is null when there is no project or it is gone.
 Response: an array of `{"id": number, "workflow": string, "project": number or null, "project_name": string or null, "repository_id": number, "trigger": string, "status": string,
 "value": any, "created_at": number, "started_at": number or null, "finished_at": number or null, "error": string or null}`;

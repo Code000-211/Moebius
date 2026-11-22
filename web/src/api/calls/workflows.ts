@@ -20,6 +20,11 @@ export function workflowRun(id: number): Promise<WorkflowRun> {
   return get<WorkflowRun>(`/v1/workflow-runs/${id}`);
 }
 
+/** The runs of every project's workflows, newest first: what Fleet lists, each with the name of its project. */
+export function allWorkflowRuns(limit = 200): Promise<WorkflowRunSummary[]> {
+  return get<WorkflowRunSummary[]>(`/v1/workflow-runs?limit=${limit}`);
+}
+
 /** Cancels a run that has not ended. */
 export function cancelWorkflowRun(id: number): Promise<WorkflowRunSummary> {
   return post<WorkflowRunSummary>(`/v1/workflows/runs/${id}/cancel`, {});
