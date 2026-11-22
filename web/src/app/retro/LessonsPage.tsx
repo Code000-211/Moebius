@@ -5,9 +5,11 @@ import { Lessons } from "./Lessons";
 
 export function LessonsPage() {
   return (
-    <div className="max-w-3xl">
+    <div className="flex h-full min-h-0 flex-col">
       <PageHeader title="Improve" tabs={<ImproveTabs value="improve/lessons" />} />
-      <Lessons />
+      <div className="max-w-3xl">
+        <Lessons />
+      </div>
     </div>
   );
 }

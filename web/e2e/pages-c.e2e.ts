@@ -407,9 +407,9 @@ describe("the tabs of Improve and Insights", () => {
         await page.getByRole("tab", { name: tab }).click();
         await page.waitForURL(`**${path}`);
         await page.getByRole("heading", { name: "Improve", level: 1 }).waitFor();
-        expect(await page.getByRole("tab", { name: tab }).getAttribute("aria-selected")).toBe(
-          "true",
-        );
+        await expect
+          .poll(() => page.getByRole("tab", { name: tab }).getAttribute("aria-selected"))
+          .toBe("true");
       }
       // The training export is the last section of Decisions.
       await page.getByRole("tab", { name: "Decisions" }).click();
