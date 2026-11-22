@@ -17,6 +17,7 @@ import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { Reading, SkeletonList } from "../../ui/page/Skeleton";
 import { useToast } from "../../ui/page/Toast";
+import { AgentsTabs } from "../agents/AgentsTabs";
 import { HarnessSetup, WHY_MUTED } from "../harness/HarnessSetup";
 import { ImportPanel } from "../harness/ImportPanel";
 import { SkillEditor } from "./SkillEditor";
@@ -57,7 +58,8 @@ export function SkillsPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
-        title="Skills"
+        title="Agents"
+        tabs={<AgentsTabs value="agents/skills" />}
         actions={
           <div className="flex flex-wrap items-center gap-3">
             {whyQuiet && <span className="text-sm text-secondary">{whyQuiet}</span>}

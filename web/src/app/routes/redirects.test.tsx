@@ -227,4 +227,20 @@ describe("the legacy table", () => {
       });
     });
   });
+
+  it("sends the Skills, MCP servers and Settings addresses of Build to their tabs, keeping the query", async () => {
+    projects = [];
+    for (const [old, now] of [
+      ["/skills", "/agents/skills"],
+      ["/skills?skill=house-style", "/agents/skills?skill=house-style"],
+      ["/mcp-servers?server=docs", "/agents/mcp-servers?server=docs"],
+      ["/settings/agents?agent=Coder", "/agents?agent=Coder"],
+      ["/settings/skills", "/agents/skills"],
+      ["/settings/mcp-servers", "/agents/mcp-servers"],
+      ["/settings/rules", "/rules"],
+    ] as const) {
+      expect(await landed(old), old).toBe(now);
+      cleanup();
+    }
+  });
 });

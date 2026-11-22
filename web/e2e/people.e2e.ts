@@ -48,6 +48,9 @@ describe("the People page", () => {
     owner.setDefaultTimeout(8000);
     await owner.goto(server.loginUrl);
     await pages(owner).waitFor();
+    // The owner's sidebar has the Build group; the member's, below, does not.
+    await pages(owner).getByRole("link", { name: "Agents", exact: true }).waitFor();
+    await pages(owner).getByRole("link", { name: "Rules", exact: true }).waitFor();
     await owner.goto(`${server.url}/settings`);
     await owner
       .getByRole("navigation", { name: "Settings" })
@@ -64,6 +67,9 @@ describe("the People page", () => {
     await member.getByLabel("Token").fill(token);
     await member.getByRole("button", { name: "Sign in" }).click();
     await pages(member).waitFor();
+    await pages(member).getByRole("link", { name: "Inbox" }).waitFor();
+    for (const name of ["Agents", "Rules"])
+      expect(await pages(member).getByRole("link", { name, exact: true }).count(), name).toBe(0);
     await member.goto(`${server.url}/tokens`);
     await member.getByTestId("tokens-page").waitFor();
     // The member is shown their own tokens but not the People page, in Settings or at its address.

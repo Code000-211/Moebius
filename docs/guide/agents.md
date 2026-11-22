@@ -276,7 +276,7 @@ Without `[harness]` the three routes of an agent answer 422: the agents are in `
 
 ### Setting it up from the app
 
-On a server without `[harness]`, the Skills, MCP servers and Agents pages of the web app, and the step "Keep agents,
+On a server without `[harness]`, the Agents page of the web app (its Agents, Skills and MCP servers tabs), and the step "Keep agents,
 skills and MCP servers in a repository" of Get started, have a "Set up" button. Only a person can press it (the
 Moebius agent is refused). It sends `POST /v1/harness/setup`, and the server:
 
@@ -546,8 +546,8 @@ tokens. Every tool call in a chat is checked by the built-in rules and the serve
 
 ## Import skills and MCP servers
 
-Skills and MCP servers that someone else wrote can be imported instead of typed in. On the Skills page or the MCP
-servers page of the web app, press **Import**:
+Skills and MCP servers that someone else wrote can be imported instead of typed in. On the Skills tab or the MCP
+servers tab of Build > Agents in the web app, press **Import**:
 
 1. Choose **From a zip** and pick the file (it is sent to the server with `POST /v1/uploads`, at most 20 MB), or **From
    a link** and paste a git repository or a page that leads to one.
@@ -558,7 +558,7 @@ servers page of the web app, press **Import**:
 
 The agent never replaces an existing skill or server without asking, and never imports a skill under a built-in name.
 It writes a skill's other text files, such as its scripts, with `PUT /v1/skills/{name}/files/{path}`; a file that is
-not text (an image, a font) is named in its answer, to be added in a chat in the repository (below). On the Skills page
+not text (an image, a font) is named in its answer, to be added in a chat in the repository (below). On the Skills tab
 a skill is a list of its files: pick `SKILL.md` or another file to edit it, or **New file** to add one; each save or
 delete is a commit. An MCP server takes keys as `${NAME}`: set `NAME` in the server's environment and keep it in
 `harness.mcp_env`. Import needs a harness configuration repository; without one the button is disabled. The same

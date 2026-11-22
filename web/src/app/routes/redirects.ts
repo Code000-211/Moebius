@@ -128,6 +128,32 @@ export const LEGACY_ROUTES: readonly LegacyRoute[] = [
   },
   { path: "intake", resolve: (_params, projects, search) => oldTab("intake", projects, search) },
   {
+    // Skills and MCP servers are tabs of Agents; `?skill=` and `?server=` open the same window there.
+    path: "skills",
+    resolve: (_params, _projects, search) => withQuery("/agents/skills", {}, search),
+  },
+  {
+    path: "mcp-servers",
+    resolve: (_params, _projects, search) => withQuery("/agents/mcp-servers", {}, search),
+  },
+  {
+    // Agents and Rules were Settings pages first: `/settings/agents`, `/settings/skills` and the like.
+    path: "settings/agents",
+    resolve: (_params, _projects, search) => withQuery("/agents", {}, search),
+  },
+  {
+    path: "settings/skills",
+    resolve: (_params, _projects, search) => withQuery("/agents/skills", {}, search),
+  },
+  {
+    path: "settings/mcp-servers",
+    resolve: (_params, _projects, search) => withQuery("/agents/mcp-servers", {}, search),
+  },
+  {
+    path: "settings/rules",
+    resolve: (_params, _projects, search) => withQuery("/rules", {}, search),
+  },
+  {
     // The list of every issue is the built-in view "All issues"; its filters and sort stay in the query.
     path: "issues",
     resolve: (_params, _projects, search) => withQuery(ALL_ISSUES_PATH, {}, search),

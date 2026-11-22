@@ -29,6 +29,7 @@ import { chosenOrFirst, ListCard, ListDetail } from "../../ui/page/List";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonCard, SkeletonList } from "../../ui/page/Skeleton";
+import { AgentsTabs } from "../agents/AgentsTabs";
 import { Committed, EditorHead, useDraft, useDrafts } from "../harness/form";
 import { HarnessSetup, WHY_MUTED } from "../harness/HarnessSetup";
 import { ImportPanel } from "../harness/ImportPanel";
@@ -90,7 +91,8 @@ export function McpPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
-        title="MCP servers"
+        title="Agents"
+        tabs={<AgentsTabs value="agents/mcp-servers" />}
         actions={
           <div className="flex flex-wrap items-center gap-3">
             {whyQuiet && <span className="text-sm text-secondary">{whyQuiet}</span>}
