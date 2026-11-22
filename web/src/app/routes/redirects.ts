@@ -9,7 +9,14 @@
  * This is the one place that may name `/board/`: components use the path helpers of `pages.ts`.
  */
 import type { Project } from "../../api/types/projects";
-import { boardPath, cyclePath, projectTabPath, repositoryPath, scriptPath } from "../pages";
+import {
+  ALL_ISSUES_PATH,
+  boardPath,
+  cyclePath,
+  projectTabPath,
+  repositoryPath,
+  scriptPath,
+} from "../pages";
 import { holdsRepository, homeProjectOf, projectForOldAddress } from "../projects/model";
 
 export interface LegacyRoute {
@@ -145,5 +152,10 @@ export const LEGACY_ROUTES: readonly LegacyRoute[] = [
   {
     path: "settings/rules",
     resolve: (_params, _projects, search) => withQuery("/rules", {}, search),
+  },
+  {
+    // The list of every issue is the built-in view "All issues"; its filters and sort stay in the query.
+    path: "issues",
+    resolve: (_params, _projects, search) => withQuery(ALL_ISSUES_PATH, {}, search),
   },
 ];

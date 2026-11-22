@@ -1,6 +1,7 @@
 /**
- * The Issues page: the cards of every project in one list, filtered by project, kind, state and by any field of any
- * kind, and ordered by a field. It is the view across projects: a field defined once for a kind is the same filter
+ * The built-in view "All issues" of the Views page: the cards of every project in one list, filtered by project, kind,
+ * state and by any field of any kind, and ordered by a field. It is the view across projects, and it is neither edited
+ * nor deleted: a field defined once for a kind is the same filter
  * whichever project a card is in. What is set is kept in the address, as the board's filters are, and the server does
  * the filtering (`GET /v1/issues`); the values a filter offers come from the cards there are.
  */
@@ -17,7 +18,6 @@ import { useQueryParams } from "../../ui/filters/useQueryParams";
 import { Empty } from "../../ui/page/Empty";
 import { idChars, ListRow } from "../../ui/page/ListRow";
 import { Notice } from "../../ui/page/Notice";
-import { PageHeader } from "../../ui/page/PageHeader";
 import { SkeletonList } from "../../ui/page/Skeleton";
 import { useFillHeight } from "../../ui/page/useFillHeight";
 import { VirtualList } from "../../ui/page/VirtualList";
@@ -27,9 +27,8 @@ import { cardKey } from "../board/cardKey";
 import { isHeld, isLive } from "../board/model";
 import { rowAge } from "../board/rowAge";
 import { fieldsLine, issueDisplayChoices, issueFilterFields, issueQuery } from "../kinds/model";
-import { NewIssueButton } from "./NewIssueButton";
 
-export function IssuesPage() {
+export function AllIssues() {
   const [params, setQuery] = useQueryParams();
   const openCard = useOpenCard();
   const fill = useFillHeight();
@@ -62,8 +61,7 @@ export function IssuesPage() {
   );
   const values = readFilters(params, fields);
   return (
-    <div data-testid="issues-page" className="flex flex-col gap-4">
-      <PageHeader title="Issues" primary={<NewIssueButton />} />
+    <div data-testid="all-issues" className="flex flex-col gap-4">
       <FilterBar
         label="Filter the issues"
         fields={fields}

@@ -213,6 +213,19 @@ describe("the legacy table", () => {
       window.localStorage.setItem("moebius.lastProject", "99");
       expect(await landed("/intake")).toBe("/projects");
     });
+
+    describe("the Issues list", () => {
+      it("leads to the view All issues with its filters and sort kept", async () => {
+        projects = [project(1, [5])];
+        expect(await landed("/issues")).toBe("/views/all-issues");
+        cleanup();
+        expect(
+          await landed("/issues?project=2&kind=Bug&field.Severity=high&sort=asc%3AEstimate"),
+        ).toBe("/views/all-issues?project=2&kind=Bug&field.Severity=high&sort=asc%3AEstimate");
+        cleanup();
+        expect(await landed("/issues?card=4")).toBe("/views/all-issues?card=4");
+      });
+    });
   });
 
   it("sends the Skills, MCP servers and Settings addresses of Build to their tabs, keeping the query", async () => {
