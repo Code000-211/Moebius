@@ -44,7 +44,7 @@ export const GROUPS: ReadonlyArray<readonly [title: string, specs: readonly Spec
     ],
   ],
   [
-    "Nightly schedule",
+    "Nightly",
     [
       ["retro_at", "Retro at (HH:MM)", "text"],
       ["trial_window.start", "Trial window starts", "text"],

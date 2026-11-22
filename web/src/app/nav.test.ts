@@ -131,10 +131,10 @@ describe("the Settings navigation", () => {
       expect(settingsEntries(role).map((e) => e.label)).not.toContain("Members");
   });
 
-  it("names the page of /settings General and keeps Keyboard under its name", () => {
+  it("names the page of /settings General and keeps Keyboard shortcuts under its name", () => {
     const labels = Object.fromEntries(settingsEntries("owner").map((e) => [e.path, e.label]));
     expect(labels.settings).toBe("General");
-    expect(labels.shortcuts).toBe("Keyboard");
+    expect(labels.shortcuts).toBe("Keyboard shortcuts");
   });
 
   it("finds an entry by its name or its group's", () => {

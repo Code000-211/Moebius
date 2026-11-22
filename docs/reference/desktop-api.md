@@ -3314,7 +3314,7 @@ the Models screen's decision model. Response:
 
 The app settings of the server: what each plugin asks of the whole server in its manifest
 ([`app_settings`](plugin-api.md#plugin-settings)), with the value the server has. Only plugins added to the server that
-declare some are listed, by name; the web app shows them on the Plugin settings page (`/plugin-settings`). Response: `{"plugins": [...]}`, each
+declare some are listed, by name; the web app shows them on the Plugins page (`/plugins`), one box per plugin. Response: `{"plugins": [...]}`, each
 entry as in [`GET /v1/repositories/{id}/plugin-settings`](#get-v1repositoriesidplugin-settings). A plugin that is not running is left
 out, but its values are kept and come back with it.
 

@@ -56,7 +56,7 @@ pub struct Manifest {
     /// leave it out.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub project_settings: Vec<PluginSetting>,
-    /// What a person sets once for this plugin on the whole server, on the Plugin settings page of the web app. The core
+    /// What a person sets once for this plugin on the whole server, on the Plugins page of the web app. The core
     /// keeps the values and hands a launcher them in every [`LaunchRequest`]. Older plugins leave it out.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub app_settings: Vec<PluginSetting>,

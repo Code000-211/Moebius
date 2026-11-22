@@ -19,9 +19,9 @@ import { useErrorToast } from "../../ui/lib/useErrorToast";
 import { Box } from "../../ui/page/Box";
 import { Empty } from "../../ui/page/Empty";
 import { FieldRow, Rows, Select } from "../../ui/page/Field";
-import { PageHeader } from "../../ui/page/PageHeader";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
+import { AreaTitle } from "../settings/parts";
 import { NotFoundPage } from "../shell/Page";
 import { useRole } from "../shell/session";
 import { IssueTemplateBox } from "./IssueTemplate";
@@ -37,8 +37,8 @@ function Kinds() {
   const kinds = useQuery({ queryKey: keys.issueKinds, queryFn: listKinds });
   const projects = useQuery({ queryKey: keys.projects, queryFn: listProjects });
   return (
-    <div data-testid="kinds-page" className="flex flex-col gap-6">
-      <PageHeader title="Kinds of issues" />
+    <div data-testid="kinds-page" className="flex max-w-3xl flex-col gap-6">
+      <AreaTitle title="Kinds of issues" />
       <KindForm title="New kind" />
       {kinds.isPending && <SkeletonLines lines={3} message="Reading the kinds" />}
       {kinds.isError && (

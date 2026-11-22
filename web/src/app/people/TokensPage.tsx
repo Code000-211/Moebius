@@ -12,7 +12,7 @@ import { Input } from "../../ui/components/Input";
 import { useErrorToast } from "../../ui/lib/useErrorToast";
 import { Box } from "../../ui/page/Box";
 import { FieldRow, Rows } from "../../ui/page/Field";
-import { PageHeader } from "../../ui/page/PageHeader";
+import { AreaTitle } from "../settings/parts";
 import { IssuedNotice, TokensList } from "./TokensList";
 
 export function TokensPage() {
@@ -29,8 +29,8 @@ export function TokensPage() {
   });
   useErrorToast(make.error, "Could not make the token.");
   return (
-    <div data-testid="tokens-page" className="flex flex-col gap-6">
-      <PageHeader title="My tokens" />
+    <div data-testid="tokens-page" className="flex max-w-3xl flex-col gap-6">
+      <AreaTitle title="My tokens" />
       <Box title="Make a token">
         <form
           className="flex flex-col gap-3"

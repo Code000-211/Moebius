@@ -70,9 +70,12 @@ Reference feel: Linear. Dense but not full; nearly monochrome; light theme is pr
   Inbox and Fleet rows open the same window. New issue, and editing a rule/agent/skill, also use a centred window.
 
 ## Settings
-- One page: sub-navigation with search and groups You (Profile, Appearance, Notifications, Keyboard), Agents (Agents, Models,
-  Skills, Plugins), Automation (Rules, Workflows, Column scripts, Schedules), Insight (Analytics, Retro, Lessons, Export),
-  Server (General, Repositories, Runners, Members). The ~20 rarely used areas live here, not in the sidebar.
+- One page: sub-navigation with search and two groups, You (Profile with Sign out, Appearance, Keyboard shortcuts, My
+  tokens) and Server (General, Models, Plugins, Kinds of issues, Members), nine entries; Server is an owner's. Only what
+  one sets and leaves alone is here: Notifications (the Inbox is the place), Schedules (the nightly times are rows of
+  General; a schedule is a trigger of a workflow, in its project), Repositories and Column scripts (the project's
+  settings), Agents, Rules, Workflows, Insights, Improve, Runners and Ports each have a place of their own. Changed by
+  [ADR 0024](../../adr/0024-navigation-by-what-you-do.md); the old ~20 areas are gone from here.
 - Content: label left, control right; a description only where it adds a fact.
 
 ## Other pages (decided earlier, same rule applies)
