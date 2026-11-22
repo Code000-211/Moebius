@@ -34,7 +34,7 @@ in WSL (see [On Windows](#on-windows)). Every key named here is in the
    line](../reference/cli.md#connect-host---port-n---no-window---browser-path---yes---upload)). The rest of the steps
    below are for installing by hand and for a server that listens on a private network.
 
-   A dev server that an agent or a terminal on the server starts is listed on the Ports page of the web app. To reach it
+   A dev server that an agent or a terminal on the server starts is listed on the Ports tab of Fleet in the web app. To reach it
    from this machine, forward its port by hand (`ssh -L 3000:127.0.0.1:3000 <host>`); the page's "tunnel" is a WebSocket
    of the API (`GET /v1/ports/{port}/tunnel`) for a client that carries connections itself.
 
@@ -85,7 +85,7 @@ in WSL (see [On Windows](#on-windows)). Every key named here is in the
    of the answer; it is shown once, and only its hash is kept. Lea pastes it on the sign-in page, or saves it with
    `moebius login`, and makes more of her own with `POST /v1/tokens`. Revoking one (`DELETE /v1/tokens/{id}`) refuses
    it and ends the sessions it opened at once (see [the desktop API](../reference/desktop-api.md#people-and-access-tokens)).
-   An owner does the same on the People page of the web app (Settings), which also changes a role, disables a person
+   An owner does the same on the Members page of the web app (Settings, Server), which also changes a role, disables a person
    (who is signed out at once) and shows each token's last use; every person has My tokens.
 
    An upstream can log in to a provider with OAuth instead of a key: write its client id and URLs in a

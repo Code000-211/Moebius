@@ -23,8 +23,7 @@ macOS build. `moebius open` and `moebius connect` stay for everyone without it.
 
    The app checks that it matches the server: an app of `0.14.x` connects to a server of `0.14.x` only. Its version is
    in the file's name.
-2. **Make an access token** for yourself on the server: the **My tokens** page of the web app (under Setup in the
-   sidebar), or ask an owner to make one for you on the People page. The server's own token (`.moebius/token`) works
+2. **Make an access token** for yourself on the server: the **My tokens** page of the web app (Settings, You), or ask an owner to make one for you on the Members page (Settings, Server). The server's own token (`.moebius/token`) works
    too, and acts as the first owner.
 3. **Start the app and connect.** The window asks for the server's address (`127.0.0.1:7171`, or the address the
    server listens on; `https://` for a server behind TLS) and the token, with **Stay signed in** on (the token goes to the keychain; off, it stays in memory). Connect opens the web app, signed in as the

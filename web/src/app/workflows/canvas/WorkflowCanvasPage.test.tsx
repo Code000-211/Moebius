@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { keys } from "../../../api/keys";
 import { newWorkflowDraft } from "./model";
 import { WorkflowCanvasPage } from "./WorkflowCanvasPage";
 
@@ -38,6 +39,7 @@ const SAVED = {
 
 /** The PUT the canvas's first save makes, if it has happened yet. */
 let saves: RequestInit[];
+let client: QueryClient;
 
 function show() {
   saves = [];
@@ -55,7 +57,7 @@ function show() {
       throw new Error(`unexpected call ${init?.method ?? "GET"} ${url}`);
     }),
   );
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   // A data router, which `useBlocker` — the ask-before-leaving — needs.
   const router = createMemoryRouter(
     [
@@ -79,6 +81,16 @@ function show() {
 }
 
 describe("a canvas opened with a new draft", () => {
+  it("reads the automations again after a save, as the Scheduled filter joins against them", async () => {
+    show();
+    client.setQueryData(keys.automations, []);
+    await screen.findByTestId("canvas-page");
+    fireEvent.click(screen.getByTestId("canvas-save"));
+    await waitFor(() => {
+      expect(client.getQueryState(keys.automations)?.isInvalidated).toBe(true);
+    });
+  });
+
   it("starts with the manual trigger and counts as unsaved, and leads back to the list", async () => {
     show();
     await screen.findByTestId("canvas-page");
