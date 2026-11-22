@@ -104,7 +104,14 @@ export function PageHeader({
         </h1>
       </div>
       {tabs && (
-        <div className="-mb-1 flex min-w-0 self-stretch [&>[role=tablist]]:items-stretch [&_[role=tab]]:h-full [&_[role=tab]]:pb-1">
+        <div
+          className={cn(
+            "-mb-1 flex self-stretch [&>[role=tablist]]:items-stretch [&_[role=tab]]:h-full [&_[role=tab]]:pb-1",
+            // One row: the tabs keep theirs and the title gives way (it is cut with an ellipsis), so a tab never
+            // wraps below the header.
+            oneRow ? "shrink-0 [&>[role=tablist]]:flex-nowrap [&>[role=tablist]]:gap-3" : "min-w-0",
+          )}
+        >
           {tabs}
         </div>
       )}
