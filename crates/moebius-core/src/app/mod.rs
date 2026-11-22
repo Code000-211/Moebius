@@ -351,13 +351,20 @@ impl App {
     }
 
     /// Tells the core which clone is the harness configuration repository, where chats can work, gives the
-    /// automations saved before it existed their workflow files, and moves the column scripts of the repositories'
-    /// settings to their projects.
+    /// automations saved before it existed their workflow files, moves the server-wide workflow files and the rows
+    /// that belong to them to their projects (see `migrate_workflows_to_projects`), and moves the column scripts of
+    /// the repositories' settings to their projects.
     pub fn set_harness_repo(&self, repo: Arc<HarnessRepo>) {
         let _ = self.harness_repo.set(repo);
+        // A start after a crash between the move of the workflow files and the store step finishes the step first, so
+        // that an automation whose file is in its project is not given a second one.
+        if let Err(error) = self.settle_workflow_rows() {
+            eprintln!("Moebius cannot finish moving the workflows to their projects: {error}");
+        }
         if let Err(error) = self.migrate_automations() {
             eprintln!("Moebius cannot migrate the automations to workflows: {error}");
         }
+        self.migrate_workflows_to_projects();
         self.move_scripts_to_projects();
     }
 

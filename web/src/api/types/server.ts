@@ -80,4 +80,6 @@ export interface Start {
   done: boolean;
   steps: StartStep[];
   warnings: string[];
+  /** Work that waits and holds nobody back, such as a workflow file no project can take yet (`key: "workflow"`). */
+  pending?: StartStep[];
 }

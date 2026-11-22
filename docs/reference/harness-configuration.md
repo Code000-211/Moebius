@@ -434,6 +434,45 @@ project whose board the card is on, from the clone's default branch, and a symbo
   project's: it is the newer. A migration that fails (a push that is refused) is said in the log and as
   `harness_error`, and tried again with the next refresh; until then the scripts in `repos/` are not read.
 
+### Workflows of a project
+
+A workflow is owned by one project and kept at `projects/<project name>/workflows/<name>.toml` ([ADR
+0025](../adr/0025-workflows-belong-to-a-project.md)). Workflows kept server-wide, at `workflows/<name>.toml`, from
+before, are moved there once, by a migration that runs when the server starts and again at every start until nothing is
+left to move:
+
+- **The repository of a file** is the first of these that names a repository the server has: the `repository` parameter
+  of a `schedule` or `webhook` trigger; the default of a `manual` trigger's input of the type `repository`; the
+  `repository` parameter of the first node that has one (a template such as `{{ trigger.repository }}` names none).
+- **A repository goes to its home project:** the oldest project that holds it and is not private (oldest by creation,
+  then by id); when only private projects hold it, the oldest of them, since the file belongs there by its repository;
+  for a project's own files repository, that project.
+- **A file that names no repository** (or none the server has) goes to the oldest project that is not private, never to
+  a private one.
+- **All moves are one commit**, `Move the workflows to their projects`, pushed to `origin` and recorded as a decision
+  of the first owner of the kind `move_workflows` (`moved` in its context holds a line `<workflow> -> <project>` for
+  each file), and `workflows_migrated` is sent with the short id of the commit and how many files moved.
+- **A file no project can take stays where it is.** That is the case when no project exists yet, when every project
+  is private and the file names no repository, when it cannot be read, and when the project it belongs to has a workflow
+  of that name already (nothing is overwritten). It keeps running as a server-wide workflow, `workflows_migration_deferred`
+  is sent with its name and the reason, the reason is written to the log, and `GET /v1/start` lists it under `pending`.
+  The next start tries again, so creating a project is enough.
+- **The store follows the files**, in a step that runs after the commit and again at every start, so a server that
+  stopped between the two finishes it at its next start and ends as if it had not stopped. For each name that a project
+  holds a file of now: every run of it that recorded no project (from before) gets the project, even when the run's
+  repository belongs to another project; the schedule row of project 0 moves to the project with the minute it last fired
+  at, so the schedule does not fire again for a minute it has fired for; an automation row without a project gets it.
+  Nothing is copied: a file or a row exists once, before and after. Before the commit the server records which project
+  each file is moving to, and the rows go to exactly that project, even when another project holds a file of the same
+  name; the record is forgotten once the rows are placed.
+- **An automation that moved keeps firing as an automation.** Its firings are recorded and published as before
+  (`automation_fired`), one that names no repository starts its chat itself whatever the project's repositories are,
+  and a run it starts records the project. A scheduled run of any other workflow that the project refuses (for example
+  because the project has several repositories and the schedule names none) is said as `retro_error` with the reason,
+  in addition to the log.
+- A migration that fails (a push that is refused) is said in the log and as `harness_error`, and tried again at the
+  next start.
+
 A change to these files, or to a repository's settings, that a package or the Retro proposes is a branch of this
 repository like any other, merged by a person (see [Packages](#packages) and [Proposals for Moebius
 itself](#proposals-for-moebius-itself)). The Retro's proposals may change only a repository's `rules.md` and the column

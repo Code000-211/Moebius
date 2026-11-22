@@ -21,7 +21,7 @@ pub mod outgoing;
 pub mod packages;
 pub mod plugins;
 pub mod ports;
-mod schedule;
+pub(crate) mod schedule;
 pub mod settings;
 pub mod setup;
 pub mod webhooks;

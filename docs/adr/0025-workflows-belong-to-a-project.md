@@ -44,6 +44,17 @@ column scripts and its workflows. It is one step of the restructure of the web a
   for people and may differ (an automation's file is `automation-<id>.toml` with the automation's name inside).
 - **A resumed run reads its own project's file.** A run with a `project_id` that was left waiting is driven again from
   `projects/<project>/workflows/<name>.toml`, never from a server-wide file of the same name.
+- **The migration of the server-wide files** (`workflows/<name>.toml`) runs at every start and is safe to repeat. The
+  repository of a file is the first the server has among a `schedule` or `webhook` trigger's `repository`, a `manual`
+  trigger's `repository` input default and the first node that names one. It goes to that repository's home project:
+  the oldest project that holds it and is not private; when only private projects hold it, the oldest of them, since
+  the file belongs there by its repository. A file with no repository goes to the oldest project that is not private,
+  never to a private one. A file no project can take stays where it is, with a warning event and an item on Get
+  started, and is tried again at every start. The files move in one commit; the store follows in a step that works
+  from a record of where each file went (written before the commit, forgotten once its rows are placed), so a crash
+  between the two is finished by the next start, and a project that holds a file of the same name never takes the
+  rows of the moved one. The step gives the runs without a project, the schedule row (with the minute it last fired
+  at) and the automation row to that project.
 - **`run_limit` and `round_limit` stay global** in `moebius.toml`.
 - **Deleting a project is refused while it owns workflows or has a workflow run queued, running or waiting.** Finished
   runs keep `project_id` as a plain value; no cascade removes them, and a run whose project is gone shows it as

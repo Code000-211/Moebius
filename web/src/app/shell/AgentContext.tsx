@@ -98,8 +98,9 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       if (open) hide();
       else show();
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // In the capture phase, so no control that keeps its keys from the page can swallow the shortcut.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, [open, show, hide]);
 
   const value = useMemo(

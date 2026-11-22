@@ -20,12 +20,19 @@ use crate::board::{Kanban, built_in_script};
 use crate::decide::Actor;
 use crate::repos::files::writable;
 use crate::repos::git;
+use crate::workflows::definition;
 
 /// The directory of the clone that holds the settings of all projects.
 pub const DIR: &str = "projects";
 
 /// The kind of the decision recorded for the migration of the column scripts.
 const MOVE_KIND: &str = "move_scripts";
+
+/// The short id of a commit that moved workflow files, and the `(workflow, project)` pairs it moved.
+pub type WorkflowMoves = (String, Vec<(String, String)>);
+
+/// The kind of the decision recorded when the server-wide workflow files are moved to their projects.
+const MOVE_WORKFLOWS_KIND: &str = "move_workflows";
 /// The kind of the decision recorded for moving a project's folder when it is renamed.
 const RENAME_KIND: &str = "rename_project";
 
@@ -257,6 +264,78 @@ impl HarnessRepo {
             write,
         )?;
         Ok(moved)
+    }
+
+    /// Moves server-wide workflow files to the projects that own them (ADR 0025), for each `(workflow, project)` of
+    /// `moves`: `workflows/<workflow>.toml` becomes `projects/<project>/workflows/<workflow>.toml`, all in one commit
+    /// pushed to `origin` and recorded as a decision of the first owner (kind `move_workflows`). A move whose file is
+    /// gone, whose target is there already or whose project cannot be a folder is left out, so nothing is overwritten
+    /// and a second call with the same moves makes no commit. The short id of the commit and the moves made are given;
+    /// nothing to move makes no commit.
+    pub fn move_workflows_to_projects(
+        &self,
+        app: &App,
+        moves: &[(String, String)],
+    ) -> Result<Option<WorkflowMoves>> {
+        let mut read_at = self.lock();
+        let moves: Vec<(String, String)> = moves
+            .iter()
+            .filter(|(workflow, project)| {
+                valid_folder(project)
+                    && definition::file_for(workflow).is_ok()
+                    && self
+                        .path
+                        .join(format!("{}/{workflow}.toml", definition::DIRECTORY))
+                        .is_file()
+                    && !self
+                        .path
+                        .join(format!(
+                            "{}/{workflow}.toml",
+                            definition::project_directory(project)
+                        ))
+                        .exists()
+            })
+            .cloned()
+            .collect();
+        if moves.is_empty() {
+            return Ok(None);
+        }
+        let lines: Vec<String> = moves
+            .iter()
+            .map(|(workflow, project)| format!("{workflow} -> {project}"))
+            .collect();
+        let context = BTreeMap::from([("moved".to_string(), lines.join("\n"))]);
+        let edit = Edit {
+            kind: MOVE_WORKFLOWS_KIND,
+            files: DIR,
+            message: "Move the workflows to their projects",
+        };
+        let write = || {
+            for (workflow, project) in &moves {
+                let from = format!("{}/{workflow}.toml", definition::DIRECTORY);
+                let to = format!("{}/{workflow}.toml", definition::project_directory(project));
+                let target = writable(&self.path, &to)?;
+                if let Some(parent) = target.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::rename(self.path.join(&from), target)?;
+                // The file leaves the server-wide folder whether it was committed or not.
+                git(
+                    &self.path,
+                    &["rm", "--cached", "--quiet", "--ignore-unmatch", "--", &from],
+                )?;
+            }
+            Ok(())
+        };
+        let commit = self.commit(
+            app,
+            &Actor::first_owner(),
+            &mut read_at,
+            &edit,
+            context,
+            write,
+        )?;
+        Ok(commit.map(|commit| (commit, moves)))
     }
 }
 

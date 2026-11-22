@@ -91,6 +91,16 @@ CREATE TABLE workflow_node_runs (
 CREATE INDEX workflow_node_runs_by_run ON workflow_node_runs (run_id, id);
 "#;
 
+/// Where the migration of the server-wide workflow files (ADR 0025) is moving a file to: written before the commit that
+/// moves it and read by the store step that follows, which may be a start later after a crash, so that the rows of the
+/// file go to the project the file went to even when another project holds a file of the same name.
+pub(super) const MOVES: &str = r#"
+CREATE TABLE workflow_moves (
+    workflow TEXT PRIMARY KEY,
+    project_id INTEGER NOT NULL
+);
+"#;
+
 impl Store {
     /// Stores a queued run of `workflow` for `repository_id`, started by `trigger` with `value`.
     pub fn add_workflow_run(
@@ -134,6 +144,65 @@ impl Store {
             conn.last_insert_rowid()
         };
         Ok(self.workflow_run(id)?.expect("the run was just stored"))
+    }
+
+    /// Remembers that the server-wide workflow file `workflow` is being moved to the project `project_id`, replacing
+    /// what an earlier try remembered.
+    pub fn record_workflow_move(&self, workflow: &str, project_id: i64) -> Result<()> {
+        self.conn().execute(
+            "INSERT INTO workflow_moves (workflow, project_id) VALUES (?1, ?2)
+             ON CONFLICT (workflow) DO UPDATE SET project_id = excluded.project_id",
+            params![workflow, project_id],
+        )?;
+        Ok(())
+    }
+
+    /// The project the server-wide workflow file `workflow` is being moved to, when a move was recorded.
+    pub fn workflow_move(&self, workflow: &str) -> Result<Option<i64>> {
+        Ok(self
+            .read()
+            .query_row(
+                "SELECT project_id FROM workflow_moves WHERE workflow = ?1",
+                [workflow],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
+    /// The names of the files a move is recorded for, in name order.
+    pub fn workflow_move_names(&self) -> Result<Vec<String>> {
+        let conn = self.read();
+        let mut statement =
+            conn.prepare("SELECT workflow FROM workflow_moves ORDER BY workflow")?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Forgets the move recorded for `workflow`, once the rows of its file are placed.
+    pub fn forget_workflow_move(&self, workflow: &str) -> Result<()> {
+        self.conn()
+            .execute("DELETE FROM workflow_moves WHERE workflow = ?1", [workflow])?;
+        Ok(())
+    }
+
+    /// The names of the workflows with a run that records no project yet, from before workflows belonged to projects
+    /// (ADR 0025), in name order.
+    pub fn workflows_with_unplaced_runs(&self) -> Result<Vec<String>> {
+        let conn = self.read();
+        let mut statement = conn.prepare(
+            "SELECT DISTINCT workflow FROM workflow_runs WHERE project_id IS NULL ORDER BY workflow",
+        )?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Gives every run of `workflow` that records no project to the project `project_id`, whatever repository the run
+    /// belongs to. A run that has a project keeps it, so run again it changes nothing. The number of runs given.
+    pub fn place_workflow_runs(&self, workflow: &str, project_id: i64) -> Result<usize> {
+        Ok(self.conn().execute(
+            "UPDATE workflow_runs SET project_id = ?2 WHERE workflow = ?1 AND project_id IS NULL",
+            params![workflow, project_id],
+        )?)
     }
 
     /// Records the worktree of the run `id`, in which the run's agents work on the branch named for the run, so its

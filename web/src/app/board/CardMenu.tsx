@@ -31,10 +31,13 @@ import {
   DropdownMenuTrigger,
 } from "../../ui/components/DropdownMenu";
 import { cn } from "../../ui/lib/cn";
+import { keepKey } from "../../ui/lib/shortcuts";
 import { isHeld, isLive } from "./model";
 
-/** Keeps an event from reaching the card or the dock that the menu sits in. */
+/** Keeps a pointer event or click from reaching the card or the dock that the menu sits in. */
 const keep = (event: SyntheticEvent) => event.stopPropagation();
+// Keys are kept with `keepKey`, which lets a Ctrl or ⌘ chord through: the menu keeps focus on an item while it closes,
+// and a page shortcut such as Ctrl+K typed then must still reach the page.
 
 export function CardMenu({
   card,
@@ -73,7 +76,7 @@ export function CardMenu({
       <DropdownMenuTrigger
         aria-label={`More actions for #${card.number}`}
         onPointerDown={keep}
-        onKeyDown={keep}
+        onKeyDown={keepKey}
         onClick={keep}
         className={cn(
           "inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-control bg-transparent text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text data-[state=open]:bg-hover data-[state=open]:text-text",
@@ -85,7 +88,7 @@ export function CardMenu({
       <DropdownMenuContent
         align="end"
         onPointerDown={keep}
-        onKeyDown={keep}
+        onKeyDown={keepKey}
         onClick={keep}
         onCloseAutoFocus={(event) => {
           if (opensDialog.current) event.preventDefault();

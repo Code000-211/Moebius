@@ -209,6 +209,11 @@ pub struct Start {
     /// with OAuth.
     #[serde(default)]
     pub warnings: Vec<String>,
+    /// What waits for something to be done, though it holds nobody back from a first card: a server-wide workflow
+    /// file that no project can take yet (key `workflow`, its name in the title and why in the detail; ADR 0025). Each
+    /// is `done: false`, and none is counted in `done`.
+    #[serde(default)]
+    pub pending: Vec<StartStep>,
 }
 
 /// How long `pi-bolt --version` may take.
@@ -295,6 +300,7 @@ pub async fn start(
     available: AvailableModels,
     agents: &[AgentInfo],
     repositories: usize,
+    awaiting_a_project: Vec<(String, String)>,
 ) -> Start {
     let program = config.pi_bolt.clone();
     let pi_bolt = tokio::task::spawn_blocking(move || pi_bolt_runs(&program))
@@ -351,10 +357,22 @@ pub async fn start(
             )
         })
         .collect();
+    let pending = awaiting_a_project
+        .into_iter()
+        .map(|(workflow, reason)| StartStep {
+            key: "workflow".into(),
+            title: format!("Move the workflow {workflow} to a project"),
+            done: false,
+            detail: format!(
+                "The file workflows/{workflow}.toml stays where it is: {reason}. It is tried again at every start."
+            ),
+        })
+        .collect();
     Start {
         done: steps.iter().all(|s| s.done),
         steps,
         warnings,
+        pending,
     }
 }
 
@@ -401,7 +419,7 @@ mod tests {
             (Flow::Code, true, TERMS_WARNING.to_string())
         );
         assert!(!models.upstreams[0].api_key_set);
-        let start = start(&config, AvailableModels::default(), &[], 0).await;
+        let start = start(&config, AvailableModels::default(), &[], 0, vec![]).await;
         assert_eq!(
             start.warnings,
             [format!(
