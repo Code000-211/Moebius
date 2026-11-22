@@ -100,9 +100,20 @@ describe("the Settings navigation", () => {
   });
 
   it("chooses Settings on its own pages, not on a page the sidebar has a row for", () => {
-    for (const path of ["/profile", "/settings", "/runners", "/tokens", "/usage", "/ports"])
+    for (const path of ["/profile", "/settings", "/tokens", "/usage"])
       expect(inSettingsArea(path), path).toBe(true);
-    for (const path of ["/inbox", "/projects/3", "/agents", "/rules", "/analytics", "/retro"])
+    for (const path of [
+      "/inbox",
+      "/fleet",
+      "/fleet/ports",
+      "/runners",
+      "/ports",
+      "/projects/3",
+      "/agents",
+      "/rules",
+      "/analytics",
+      "/retro",
+    ])
       expect(inSettingsArea(path), path).toBe(false);
   });
 });

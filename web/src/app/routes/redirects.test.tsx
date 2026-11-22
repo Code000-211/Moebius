@@ -94,6 +94,16 @@ describe("the legacy table", () => {
     expect(router.state.historyAction).toBe("REPLACE");
   });
 
+  it("sends /runners and /ports, which are tabs of Fleet now, to them", async () => {
+    projects = [];
+    const router = await open("/runners");
+    await screen.findByTestId("where");
+    expect(at(router)).toBe("/fleet/runners");
+    expect(router.state.historyAction).toBe("REPLACE");
+    cleanup();
+    expect(await landed("/ports?x=1")).toBe("/fleet/ports?x=1");
+  });
+
   it("sends /board/:repoId to the board of the repository's home project, keeping ?card=", async () => {
     projects = [project(2, [5, 6]), project(3, [7])];
     const router = await open("/board/6?card=11");

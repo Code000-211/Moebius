@@ -45,6 +45,11 @@ export function workflowRun(id: number): Promise<WorkflowRun> {
   return get<WorkflowRun>(`/v1/workflow-runs/${id}`);
 }
 
+/** The runs of every project's workflows, newest first: what Fleet lists, each with the name of its project. */
+export function allWorkflowRuns(limit = 200): Promise<WorkflowRunSummary[]> {
+  return get<WorkflowRunSummary[]>(`/v1/workflow-runs?limit=${limit}`);
+}
+
 /** The inputs the manual trigger of a workflow names; a conflict when its trigger is not manual. */
 export function runInputs(name: string): Promise<{ trigger_kind: string; inputs: RunInput[] }> {
   return get(`/v1/workflows/${encodeURIComponent(name)}/run-inputs`);

@@ -74,6 +74,12 @@ function oldTab(
 }
 
 export const LEGACY_ROUTES: readonly LegacyRoute[] = [
+  // Runners and Ports are tabs of Fleet: live load, not settings.
+  {
+    path: "runners",
+    resolve: (_params, _projects, search) => withQuery("/fleet/runners", {}, search),
+  },
+  { path: "ports", resolve: (_params, _projects, search) => withQuery("/fleet/ports", {}, search) },
   {
     // More listed pages that now have a place of their own; the list itself is gone, and the Inbox is home.
     path: "more",

@@ -100,7 +100,7 @@ export const NAV: readonly NavEntry[] = [
     icon: PulseIcon,
     shownTo: everyone,
     sidebar: "",
-    words: "runs runners ports agents running",
+    words: "runs runners ports agents running ssh machines forwarding workflows",
   },
   {
     path: "chat",
@@ -326,14 +326,6 @@ export const NAV: readonly NavEntry[] = [
     settings: { group: "Server" },
   },
   {
-    path: "runners",
-    label: "Runners",
-    icon: PulseIcon,
-    shownTo: everyone,
-    settings: { group: "Server" },
-    words: "ssh machines",
-  },
-  {
     path: "people",
     label: "Members",
     icon: UsersIcon,
@@ -354,14 +346,6 @@ export const NAV: readonly NavEntry[] = [
     label: "Plugin settings",
     icon: FadersHorizontalIcon,
     shownTo: everyone,
-    inSettings: true,
-  },
-  {
-    path: "ports",
-    label: "Ports",
-    icon: PlugsConnectedIcon,
-    shownTo: everyone,
-    words: "forwarding",
     inSettings: true,
   },
   {

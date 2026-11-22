@@ -296,15 +296,9 @@ describe("the finished runs", () => {
       ],
       "2026-11-20",
     );
-    expect(list.map((one) => (one.type === "group" ? one.name : one.data.run.id))).toEqual([
-      "Today",
-      4,
-      2,
-      "Yesterday",
-      5,
-      "18 Nov",
-      1,
-    ]);
+    expect(
+      list.map((one) => (one.type === "group" ? one.name : (one.data as FinishedRun).run.id)),
+    ).toEqual(["Today", 4, 2, "Yesterday", 5, "18 Nov", 1]);
   });
 
   it("names a card by its key and says how long a run went on", () => {

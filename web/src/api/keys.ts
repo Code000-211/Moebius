@@ -151,5 +151,7 @@ export const keys = {
   projectWorkflows: (project: number) => ["workflows", "project", project] as const,
   projectWorkflow: (project: number, name: string) =>
     ["workflow", "project", project, name] as const,
+  /** The runs of all projects' workflows that Fleet lists; under `allWorkflowRuns`, so a workflow event refreshes it. */
+  fleetWorkflowRuns: ["workflow-runs", { fleet: true }] as const,
   workflowRuns: (workflow: string) => ["workflow-runs", workflow] as const,
 };
