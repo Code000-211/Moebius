@@ -28,6 +28,7 @@ import { Notice } from "../../ui/page/Notice";
 import { Body, PageHeader } from "../../ui/page/PageHeader";
 import { StateLabel } from "../../ui/page/StateLabel";
 import { useToast } from "../../ui/page/Toast";
+import { ImproveTabs } from "../improve/ImproveTabs";
 import { useScopeFilters } from "../scope";
 import { DeleteExport } from "./DeleteExport";
 
@@ -73,7 +74,8 @@ export function DecisionModelPage() {
   return (
     <>
       <PageHeader
-        title="Decisions"
+        title="Improve"
+        tabs={<ImproveTabs value="improve/decisions" />}
         primary={
           <Button size="sm" disabled={exporting.isPending} onClick={() => exporting.mutate()}>
             {exporting.isPending ? "Exporting" : "Export training set"}
@@ -149,47 +151,6 @@ export function DecisionModelPage() {
           )}
         </Box>
 
-        <Box title="Exports">
-          {exports.isPending ? (
-            <Body>Reading the exports.</Body>
-          ) : exports.isError ? (
-            <Notice
-              tone="error"
-              action={
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={exports.isFetching}
-                  onClick={() => void exports.refetch()}
-                >
-                  Try again
-                </Button>
-              }
-            >
-              {`Could not read the exports. ${exports.error.message}`}
-            </Notice>
-          ) : exportList.length === 0 ? (
-            <Body>No export has been made yet.</Body>
-          ) : (
-            <Table head={["Export", "When", "Judgements", "Held out", "Types", "Delete"]}>
-              {exportList.map((each) => (
-                <tr key={each.id}>
-                  <td className={`${CELL} font-mono text-sm font-semibold text-text tabular-nums`}>
-                    #{each.id}
-                  </td>
-                  <td className={`${CELL} tabular-nums`}>{when(each.at)}</td>
-                  <td className={NUMBER}>{judgements(each.kinds)}</td>
-                  <td className={NUMBER}>{each.kinds.reduce((sum, k) => sum + k.held_out, 0)}</td>
-                  <td className={CELL}>{each.kinds.map((k) => k.kind).join(", ")}</td>
-                  <td className={CELL}>
-                    <DeleteExport id={each.id} />
-                  </td>
-                </tr>
-              ))}
-            </Table>
-          )}
-        </Box>
-
         <Box title="Shadowing">
           {shadows.isPending ? (
             <Body>Reading the shadowing.</Body>
@@ -254,6 +215,46 @@ export function DecisionModelPage() {
                   </div>
                 ))}
             </div>
+          )}
+        </Box>
+        <Box title="Exports">
+          {exports.isPending ? (
+            <Body>Reading the exports.</Body>
+          ) : exports.isError ? (
+            <Notice
+              tone="error"
+              action={
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={exports.isFetching}
+                  onClick={() => void exports.refetch()}
+                >
+                  Try again
+                </Button>
+              }
+            >
+              {`Could not read the exports. ${exports.error.message}`}
+            </Notice>
+          ) : exportList.length === 0 ? (
+            <Body>No export has been made yet.</Body>
+          ) : (
+            <Table head={["Export", "When", "Judgements", "Held out", "Types", "Delete"]}>
+              {exportList.map((each) => (
+                <tr key={each.id}>
+                  <td className={`${CELL} font-mono text-sm font-semibold text-text tabular-nums`}>
+                    #{each.id}
+                  </td>
+                  <td className={`${CELL} tabular-nums`}>{when(each.at)}</td>
+                  <td className={NUMBER}>{judgements(each.kinds)}</td>
+                  <td className={NUMBER}>{each.kinds.reduce((sum, k) => sum + k.held_out, 0)}</td>
+                  <td className={CELL}>{each.kinds.map((k) => k.kind).join(", ")}</td>
+                  <td className={CELL}>
+                    <DeleteExport id={each.id} />
+                  </td>
+                </tr>
+              ))}
+            </Table>
           )}
         </Box>
       </div>

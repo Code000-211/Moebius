@@ -65,11 +65,6 @@ async function open(path: string, title: string) {
   await page.getByRole("heading", { name: title, level: 1 }).waitFor();
 }
 /** How the page names a day of the fake: "Today", "Yesterday", or the day and month, as every page does. */
-/** Opens an area of Settings by its address and waits for the title of the area, under the page's "Settings". */
-async function openArea(path: string, title: string) {
-  await page.goto(`${server.url}${path}`);
-  await page.getByRole("heading", { name: title, level: 2, exact: true }).first().waitFor();
-}
 const dayOf = (date: string) => new RegExp(dayName(date).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 const region = (name: string) => page.getByRole("region", { name, exact: true });
 /** The rows of facts under the brief's title (status, repository, direction, budget); the tag above them says the status too. */
@@ -397,10 +392,44 @@ describe("the Automations page", () => {
   });
 });
 
+describe("the tabs of Improve and Insights", () => {
+  it.skipIf(usesRealServer)(
+    "move between the pages by address, and the old addresses lead to them",
+    async () => {
+      await fresh();
+      await open("/improve", "Improve");
+      for (const [tab, path] of [
+        ["Lessons", "/improve/lessons"],
+        ["Experiments", "/improve/experiments"],
+        ["Decisions", "/improve/decisions"],
+        ["Retro", "/improve"],
+      ] as const) {
+        await page.getByRole("tab", { name: tab }).click();
+        await page.waitForURL(`**${path}`);
+        await page.getByRole("heading", { name: "Improve", level: 1 }).waitFor();
+        expect(await page.getByRole("tab", { name: tab }).getAttribute("aria-selected")).toBe(
+          "true",
+        );
+      }
+      // The training export is the last section of Decisions.
+      await page.getByRole("tab", { name: "Decisions" }).click();
+      await region("Exports").waitFor();
+      await page.getByRole("button", { name: "Export training set" }).waitFor();
+      await page.goto(`${server.url}/decision-model`);
+      await page.waitForURL("**/improve/decisions");
+      await page.goto(`${server.url}/analytics?project=1`);
+      await page.waitForURL("**/insights?project=1");
+      await page.getByRole("heading", { name: "Insights", level: 1 }).waitFor();
+      await page.getByRole("tab", { name: "Usage" }).click();
+      await page.waitForURL("**/insights/usage");
+    },
+  );
+});
+
 describe("the Retro page", () => {
   it("loads, and runs the Retro of today", async () => {
     await fresh();
-    await openArea("/retro", "Retro");
+    await open("/improve", "Improve");
     await page.getByRole("button", { name: "Run now" }).click();
     await page.getByText("No errors that day.").waitFor();
     await page
@@ -416,7 +445,7 @@ describe("the Retro page", () => {
     "lists the days and shows the errors and proposals of one",
     async () => {
       await fresh();
-      await openArea("/retro", "Retro");
+      await open("/improve", "Improve");
       const latest = page.getByRole("button", { name: dayOf("2026-10-28") });
       await latest.getByText("Proposed").waitFor();
       await latest.getByText("6 errors · 3 proposals").waitFor();
@@ -467,7 +496,7 @@ describe("the Retro page", () => {
           proposals: 0,
         });
       }
-      await openArea("/retro", "Retro");
+      await open("/improve", "Improve");
       const frame = page.locator("main");
       const list = page.getByTestId("list-column");
       const detail = page.getByTestId("detail-column");
@@ -510,7 +539,7 @@ describe("the Retro page", () => {
 
   it.skipIf(usesRealServer)("says why a second Retro of a day did not start", async () => {
     await fresh();
-    await openArea("/retro", "Retro");
+    await open("/improve", "Improve");
     await page.getByRole("button", { name: "Run now" }).click();
     await page
       .getByRole("button", { name: /Reported/ })
@@ -524,7 +553,7 @@ describe("the Retro page", () => {
     "analyses a day whose Retro failed again from the banner that says why",
     async () => {
       await fresh();
-      await openArea("/retro?day=2026-10-26", "Retro");
+      await open("/improve?day=2026-10-26", "Improve");
       await region("Left out")
         .getByText(/the server stopped while the analyst was going/)
         .waitFor();
@@ -544,7 +573,7 @@ describe("the Retro page", () => {
 
   it.skipIf(usesRealServer)("edits a lesson in place and deletes one after asking", async () => {
     await fresh();
-    await openArea("/lessons", "Lessons");
+    await open("/improve/lessons", "Improve");
     const lessons = region("Lessons");
     await lessons.getByText("Do: Add a test with emoji before you change the tokenizer.").waitFor();
     await lessons.getByText("Cards 48, 50 · given 4 times").waitFor();
@@ -587,7 +616,7 @@ describe("the Experiments page", () => {
   it("loads, and stores a brief as a draft", async () => {
     await fresh();
     const id = await repository();
-    await open("/experiments", "Experiments");
+    await open("/improve/experiments", "Improve");
     await page.getByRole("button", { name: "New brief" }).click();
     const store = page.getByRole("button", { name: "Store the brief" });
     expect(await store.isDisabled()).toBe(true);
@@ -611,7 +640,7 @@ describe("the Experiments page", () => {
     "lists the research and shows the baseline and levers of one",
     async () => {
       await fresh();
-      await open("/experiments", "Experiments");
+      await open("/improve/experiments", "Improve");
       // The newest is a draft; the finished one is chosen to see its levers.
       await page
         .getByRole("button", { name: /Make the host build faster/ })
@@ -646,7 +675,7 @@ describe("the Experiments page", () => {
 
   it.skipIf(usesRealServer)("confirms a draft, starts it and stops it", async () => {
     await fresh();
-    await open("/experiments", "Experiments");
+    await open("/improve/experiments", "Improve");
     const brief = region("Brief");
     await brief.getByText("Make the host build faster").waitFor();
     await brief.getByRole("button", { name: "Confirm" }).click();
@@ -665,7 +694,7 @@ describe("the Experiments page", () => {
 
   it.skipIf(usesRealServer)("edits the brief of a draft in place", async () => {
     await fresh();
-    await open("/experiments", "Experiments");
+    await open("/improve/experiments", "Improve");
     const brief = region("Brief");
     await brief.getByRole("button", { name: "Edit the brief" }).click();
     await brief.getByLabel("What should get better").fill("Make the release build faster");
@@ -692,7 +721,7 @@ describe("the Experiments page", () => {
     async () => {
       await fresh();
       await repository();
-      await open("/experiments", "Experiments");
+      await open("/improve/experiments", "Improve");
       await page.getByRole("button", { name: "New brief" }).click();
       await page.getByLabel("What should get better").fill("Make the tests faster");
       await page.getByLabel("Measurement").fill("echo 12");
@@ -727,7 +756,7 @@ describe("the Experiments page", () => {
 
   it.skipIf(usesRealServer)("shows what the server refuses", async () => {
     await fresh();
-    await open("/experiments", "Experiments");
+    await open("/improve/experiments", "Improve");
     fake().refuseNext("POST", "/v1/research/2/confirm", 409, "the research is running");
     await region("Brief").getByRole("button", { name: "Confirm" }).click();
     await alert("the research is running").waitFor();
@@ -738,7 +767,7 @@ describe("the Experiments page with no research", () => {
   it.skipIf(usesRealServer)("shows what the server refuses for the first brief", async () => {
     await fresh();
     fake().research.length = 0;
-    await open("/experiments", "Experiments");
+    await open("/improve/experiments", "Improve");
     await page.getByText("No research yet").waitFor();
     fake().refuseNext("POST", "/v1/research", 422, "the measurement prints nothing");
     await page.getByRole("button", { name: "New brief" }).click();
@@ -752,7 +781,7 @@ describe("the Experiments page with no research", () => {
 describe("the Decisions page", () => {
   it("loads, with nothing decided on a new server", async () => {
     await fresh();
-    await open("/decision-model", "Decisions");
+    await open("/improve/decisions", "Improve");
     await region("Decision types").waitFor();
     await region("Exports").waitFor();
     await region("Shadowing").waitFor();
@@ -761,7 +790,7 @@ describe("the Decisions page", () => {
 
   it.skipIf(!usesRealServer)("says that a new server has no decision model", async () => {
     await fresh();
-    await open("/decision-model", "Decisions");
+    await open("/improve/decisions", "Improve");
     await page.getByText("Nothing has been decided yet.").waitFor();
     await page.getByText("No export has been made yet.").waitFor();
     await region("Shadowing").getByText("No decision model is configured.").waitFor();
@@ -769,7 +798,7 @@ describe("the Decisions page", () => {
 
   it.skipIf(usesRealServer)("counts the kinds, lists the exports and the shadowing", async () => {
     await fresh();
-    await open("/decision-model", "Decisions");
+    await open("/improve/decisions", "Improve");
     await region("Decision types").getByRole("row").nth(3).waitFor();
     const kinds = region("Decision types");
     const merge = kinds.getByRole("row").filter({ hasText: "merge" });
@@ -807,7 +836,7 @@ describe("the Decisions page", () => {
     "narrows the decision types to an agent chosen in the bar",
     async () => {
       await fresh();
-      await open("/decision-model", "Decisions");
+      await open("/improve/decisions", "Improve");
       await region("Decision types").getByRole("row").nth(3).waitFor();
       const bar = page.getByRole("search", { name: "Filter the decisions" });
       await addFilter(page, bar, "Agent", "Coder");
@@ -830,7 +859,7 @@ describe("the Decisions page", () => {
 
   it.skipIf(usesRealServer)("exports the training set and lists the new export", async () => {
     await fresh();
-    await open("/decision-model", "Decisions");
+    await open("/improve/decisions", "Improve");
     await page.getByRole("button", { name: "Export training set" }).click();
     await region("Exports").getByRole("row").filter({ hasText: "#2" }).waitFor();
     expect(lastRequest()).toMatchObject({ method: "POST", path: "/v1/exports" });
@@ -841,7 +870,7 @@ describe("the Decisions page", () => {
 
   it.skipIf(usesRealServer)("says that an export was refused", async () => {
     await fresh();
-    await open("/decision-model", "Decisions");
+    await open("/improve/decisions", "Improve");
     fake().refuseNext("POST", "/v1/exports", 422, 'no judgements of kind "x"');
     await page.getByRole("button", { name: "Export training set" }).click();
     await alert('no judgements of kind "x"').waitFor();
@@ -851,7 +880,7 @@ describe("the Decisions page", () => {
     "releases a kind the model took over, or shows the server's sentence",
     async () => {
       await fresh();
-      await open("/decision-model", "Decisions");
+      await open("/improve/decisions", "Improve");
       fake().refuseNext(
         "POST",
         "/v1/takeovers/3/release",
@@ -989,7 +1018,7 @@ describe("the pages that put a list beside a detail, or open an editor window", 
     "keeps the list and the detail of Experiments each inside the window",
     async () => {
       await fresh();
-      await read("/experiments", "Experiments");
+      await read("/improve/experiments", "Improve");
       await columnsScrollEach(page);
       await scrollbarsAreQuiet(page);
     },
@@ -1002,7 +1031,7 @@ describe("deleting a research brief and an export", () => {
     async () => {
       await fresh();
       fake().research.find((each) => each.id === 1)?.status;
-      await open("/experiments", "Experiments");
+      await open("/improve/experiments", "Improve");
       await page.getByRole("button", { name: /Cut the clean build time/ }).click();
       await region("Brief").getByText("Cut the clean build time of the host").waitFor();
       await region("Brief").getByRole("button", { name: "Delete" }).click();
@@ -1029,7 +1058,7 @@ describe("deleting a research brief and an export", () => {
     await fresh();
     const running = fake().research.find((each) => each.id === 2);
     if (running) running.status = "running";
-    await open("/experiments", "Experiments");
+    await open("/improve/experiments", "Improve");
     await region("Brief").getByRole("button", { name: "Delete" }).click();
     await page
       .getByRole("dialog", { name: "Delete this brief?" })
@@ -1039,7 +1068,7 @@ describe("deleting a research brief and an export", () => {
 
   it.skipIf(usesRealServer)("drops a brief another client deleted, live", async () => {
     await fresh();
-    await open("/experiments", "Experiments");
+    await open("/improve/experiments", "Improve");
     await page.getByRole("button", { name: /Make the host build faster/ }).waitFor();
     await page.evaluate(() =>
       fetch("/v1/research/2", { method: "DELETE", headers: { "X-Moebius": "1" } }),
@@ -1051,7 +1080,7 @@ describe("deleting a research brief and an export", () => {
 
   it.skipIf(usesRealServer)("deletes an export from its row after asking", async () => {
     await fresh();
-    await open("/decision-model", "Decisions");
+    await open("/improve/decisions", "Improve");
     const row = region("Exports").getByRole("row").filter({ hasText: "#1" });
     await row.waitFor();
     await row.getByRole("button", { name: "Delete export 1" }).click();

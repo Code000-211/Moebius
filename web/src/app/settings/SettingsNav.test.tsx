@@ -18,15 +18,15 @@ describe("SettingsNav", () => {
     expect(screen.getByRole("link", { name: "Models" }).getAttribute("aria-current")).toBe("page");
     expect(screen.getByRole("link", { name: "Profile" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Runners" })).toBeTruthy();
-    expect(screen.getAllByRole("link")).toHaveLength(17);
+    expect(screen.getAllByRole("link")).toHaveLength(13);
   });
 
   it("narrows as one types and says so in one line when nothing matches", () => {
     show();
     fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
-      target: { value: "ret" },
+      target: { value: "mod" },
     });
-    expect(screen.getAllByRole("link").map((l) => l.textContent)).toEqual(["Retro"]);
+    expect(screen.getAllByRole("link").map((l) => l.textContent)).toEqual(["Models"]);
     fireEvent.change(screen.getByRole("searchbox", { name: "Search settings" }), {
       target: { value: "zzz" },
     });

@@ -786,15 +786,11 @@ describe("the Moebius agent", () => {
       // The chat stays across pages, and the next message goes to the same chat.
       await page
         .getByRole("navigation", { name: "Pages", exact: true })
-        .getByRole("link", { name: "Settings" })
+        .getByRole("link", { name: "Improve" })
         .click();
-      await page
-        .getByRole("navigation", { name: "Settings" })
-        .getByRole("link", { name: "Retro" })
-        .click();
-      await page.waitForURL("**/retro");
+      await page.waitForURL("**/improve");
       // The address changes before the page is drawn; a person writes once the Retro is on the screen.
-      await page.getByRole("heading", { name: "Retro" }).first().waitFor();
+      await page.getByRole("heading", { name: "Improve" }).first().waitFor();
       await window.getByText("You said: What is this page?").first().waitFor();
       await window.getByRole("textbox", { name: "Message" }).fill("And this one?");
       await window.getByRole("textbox", { name: "Message" }).press("Enter");

@@ -18,7 +18,6 @@ import {
   ChatCircleIcon,
   ClockIcon,
   CpuIcon,
-  DownloadSimpleIcon,
   FadersHorizontalIcon,
   FlaskIcon,
   FolderIcon,
@@ -54,7 +53,7 @@ export const SIDEBAR_GROUPS = ["", "Projects", "Workspace", "Build", "Insight"] 
 export type SidebarGroup = (typeof SIDEBAR_GROUPS)[number];
 
 /** The groups of the Settings navigation, in order. */
-export const SETTINGS_GROUPS = ["You", "Agents", "Automation", "Insight", "Server"] as const;
+export const SETTINGS_GROUPS = ["You", "Agents", "Automation", "Server"] as const;
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number];
 
 export interface NavEntry {
@@ -259,53 +258,48 @@ export const NAV: readonly NavEntry[] = [
     words: "cron",
   },
   {
-    path: "analytics",
+    path: "insights",
     label: "Insights",
     icon: ChartLineUpIcon,
     shownTo: owner,
     sidebar: "Insight",
-    settings: { group: "Insight", label: "Analytics" },
-    words: "analytics charts cost",
+    words: "analytics usage charts cost tokens spend",
   },
   {
-    path: "retro",
+    path: "insights/usage",
+    label: "Usage",
+    icon: GaugeIcon,
+    shownTo: owner,
+    words: "tokens spend insights",
+  },
+  {
+    path: "improve",
     label: "Improve",
     icon: ArrowsClockwiseIcon,
     shownTo: owner,
     sidebar: "Insight",
-    settings: { group: "Insight", label: "Retro" },
-    words: "retro retrospective",
+    words: "retro retrospective lessons experiments decisions export training",
   },
   {
-    path: "lessons",
+    path: "improve/lessons",
     label: "Lessons",
     icon: GraduationCapIcon,
-    shownTo: everyone,
-    settings: { group: "Insight" },
+    shownTo: owner,
+    words: "improve learned",
   },
   {
-    path: "export",
-    label: "Export",
-    icon: DownloadSimpleIcon,
-    shownTo: everyone,
-    settings: { group: "Insight" },
-    words: "training data",
+    path: "improve/experiments",
+    label: "Experiments",
+    icon: FlaskIcon,
+    shownTo: owner,
+    words: "improve research",
   },
-  { path: "experiments", label: "Experiments", icon: FlaskIcon, shownTo: everyone },
   {
-    path: "decision-model",
+    path: "improve/decisions",
     label: "Decisions",
     icon: GraphIcon,
-    shownTo: everyone,
-    words: "decision model",
-  },
-  {
-    path: "usage",
-    label: "Usage",
-    icon: GaugeIcon,
-    shownTo: everyone,
-    words: "tokens spend",
-    inSettings: true,
+    shownTo: owner,
+    words: "improve decision model export training data",
   },
   {
     path: "settings",
@@ -435,7 +429,7 @@ export function searchEntries(
 
 /**
  * Whether `pathname` is a page the sidebar chooses Settings on: an entry of its navigation, or a place it reaches,
- * unless the sidebar has a row of its own for the page (Agents and Rules, and for now Insights and Improve, are entries of both).
+ * unless the sidebar has a row of its own for the page (Agents, Rules, Insights and Improve).
  */
 export function inSettingsArea(pathname: string): boolean {
   const first = pathname.replace(/^\/+/, "").split("/")[0] ?? "";

@@ -243,4 +243,22 @@ describe("the legacy table", () => {
       cleanup();
     }
   });
+
+  it("sends the old Insight and Improve addresses to their tabs, keeping the query", async () => {
+    projects = [];
+    for (const [old, now] of [
+      ["/analytics", "/insights"],
+      ["/analytics?project=3&days=7", "/insights?project=3&days=7"],
+      ["/usage", "/insights/usage"],
+      ["/usage?project=3&agent=Coder", "/insights/usage?project=3&agent=Coder"],
+      ["/retro?day=2026-10-25&proposal=3", "/improve?day=2026-10-25&proposal=3"],
+      ["/lessons", "/improve/lessons"],
+      ["/experiments", "/improve/experiments"],
+      ["/decision-model?project=3", "/improve/decisions?project=3"],
+      ["/export", "/improve/decisions"],
+    ] as const) {
+      expect(await landed(old), old).toBe(now);
+      cleanup();
+    }
+  });
 });

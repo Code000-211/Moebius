@@ -136,13 +136,13 @@ const routes: Route[] = [
   // A run that stopped at a node and asks what to do next.
   { path: "/workflow-runs/42", name: "workflow-run-waiting" },
   { path: "/rules", name: "rules" },
-  { path: "/retro", name: "retro" },
+  { path: "/improve", name: "retro" },
   // A day whose analysis failed, whose banner offers making it again.
-  { path: "/retro?day=2026-10-26", name: "retro-failed" },
-  { path: "/experiments", name: "experiments" },
-  { path: "/decision-model", name: "decision-model" },
-  { path: "/analytics", name: "analytics" },
-  { path: "/usage", name: "usage" },
+  { path: "/improve?day=2026-10-26", name: "retro-failed" },
+  { path: "/improve/experiments", name: "experiments" },
+  { path: "/improve/decisions", name: "decision-model" },
+  { path: "/insights", name: "analytics" },
+  { path: "/insights/usage", name: "usage" },
   { path: "/agents", name: "agents" },
   { path: "/skills", name: "skills" },
   { path: "/mcp-servers", name: "mcp" },
@@ -181,7 +181,7 @@ const routes: Route[] = [
 
 /** The pages the issue about narrow widths named: their panes sit between the sidebar and the Properties column. */
 const SQUEEZED = new Set([
-  "/decision-model",
+  "/improve/decisions",
   "/projects/1/cycles",
   "/projects/1/milestones",
   "/rules",

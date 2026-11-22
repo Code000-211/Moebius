@@ -42,7 +42,7 @@ async function withProject(page: Page) {
 const nav = (page: Page) => page.getByRole("navigation", { name: "Settings" });
 
 describe("Settings", () => {
-  it("reaches Models, Plugins and Retro from one layout and keeps the address on reload", async () => {
+  it("reaches Models, Plugins and Column scripts from one layout and keeps the address on reload", async () => {
     server = await startServer();
     const page = await (await browser.newContext()).newPage();
     page.setDefaultTimeout(8000);
@@ -52,7 +52,7 @@ describe("Settings", () => {
     for (const [label, path] of [
       ["Models", "models"],
       ["Plugins", "plugins"],
-      ["Retro", "retro"],
+      ["Column scripts", "column-scripts"],
     ] as const) {
       await nav(page).getByRole("link", { name: label, exact: true }).click();
       await page.waitForURL(`**/${path}`);
@@ -62,10 +62,10 @@ describe("Settings", () => {
     }
     await page.reload();
     await nav(page).waitFor();
-    expect(page.url()).toMatch(/\/retro$/);
-    expect(await nav(page).getByRole("link", { name: "Retro" }).getAttribute("aria-current")).toBe(
-      "page",
-    );
+    expect(page.url()).toMatch(/\/column-scripts$/);
+    expect(
+      await nav(page).getByRole("link", { name: "Column scripts" }).getAttribute("aria-current"),
+    ).toBe("page");
   });
 
   it("narrows the entries by search, and says when nothing matches", async () => {
@@ -133,10 +133,6 @@ describe("Settings", () => {
       ["Automation", "Workflows"],
       ["Automation", "Column scripts"],
       ["Automation", "Schedules"],
-      ["Insight", "Analytics"],
-      ["Insight", "Retro"],
-      ["Insight", "Lessons"],
-      ["Insight", "Export"],
       ["Server", "General"],
       ["Server", "Repositories"],
       ["Server", "Runners"],
@@ -147,7 +143,6 @@ describe("Settings", () => {
       ["Schedules", "schedules", "Retro"],
       // The fake has a runner; a new real server has none and says so.
       ["Runners", "runners", usesRealServer ? "No runner." : "build.example.com"],
-      ["Export", "export", "Open Decisions"],
     ] as const) {
       await nav(page).getByRole("link", { name: label, exact: true }).click();
       await page.waitForURL(`**/${path}`);

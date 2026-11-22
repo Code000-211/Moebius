@@ -395,7 +395,7 @@ function fromRetro(item: InboxItem, proposed: Proposal | null, now: number): str
 /** Where a proposal is read in full: the day of the Retro that made it, opened on the proposal itself. */
 function retroLink(proposed: Proposal): string {
   const day = encodeURIComponent(proposed.retro_date);
-  return `/retro?day=${day}&proposal=${encodeURIComponent(String(proposed.id))}`;
+  return `/improve?day=${day}&proposal=${encodeURIComponent(String(proposed.id))}`;
 }
 
 /**

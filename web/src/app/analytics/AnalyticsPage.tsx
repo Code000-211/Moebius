@@ -24,6 +24,7 @@ import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
 import { Reading, SkeletonLines } from "../../ui/page/Skeleton";
 import { chart } from "../cycles/model";
+import { InsightsTabs } from "../insights/InsightsTabs";
 import { useDays, useScopeFilters } from "../scope";
 import { grouped, short } from "../usage/figures";
 import {
@@ -235,7 +236,7 @@ export function AnalyticsPage() {
   const data = report.data;
   return (
     <>
-      <PageHeader title="Analytics" />
+      <PageHeader title="Insights" tabs={<InsightsTabs value="insights" />} />
       <FilterBar
         label="Filter the analytics"
         leading={
