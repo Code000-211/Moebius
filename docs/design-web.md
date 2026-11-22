@@ -269,7 +269,7 @@ The content is rows of a label at the left and its control at the right, separat
 
 ## Other pages
 
-The same rules apply. Wiki: the tree at the left, the text, an outline of its headings at the right. Cycles and milestones (tabs of a project, under its header): a timeline. A run: a timeline bar and its steps. Analytics: figures and a table. A workflow: the canvas, with a step opened in a centred window; its definition and its runs are in the project's Workflows tab (below). The palette: a plain list; Tab sends what was typed to the agent. The terminal: dark in both themes, a full page. Errors and confirmations are a toast at the bottom right (a confirmation offers Undo). Sign-in and connect: a centred card with "Stay signed in", on by default.
+The same rules apply. Wiki: the tree at the left, the text, an outline of its headings at the right. Cycles and milestones (tabs of a project, under its header): a timeline. A run: a timeline bar and its steps. Analytics: figures and a table. A workflow: one page with the tabs Overview | Canvas | Runs | File (below). The palette: a plain list; Tab sends what was typed to the agent. The terminal: dark in both themes, a full page. Errors and confirmations are a toast at the bottom right (a confirmation offers Undo). Sign-in and connect: a centred card with "Stay signed in", on by default.
 
 
 ### The Workflows tab of a project
@@ -280,7 +280,7 @@ extended: the definitions moved from Build into the tab). Under the project head
 the panel, with no card:
 
 - **Workflows**: one 36px row per definition of this project, with the workflow icon, its name (a link to the
-  definition at `/projects/:id/workflows/:name`, which links to the canvas at `.../canvas`), what it is for in muted
+  page at `/projects/:id/workflows/:name`, described under "A workflow's page" below), what it is for in muted
   text, what starts it (Manual, Schedule, Event, Webhook) and a status tag with the age of its last run. A workflow on a
   webhook trigger shows the address it answers on, `/api/hooks/projects/<project>/<path>`, in the code font beside its
   purpose with a Copy button (`hook_address`; the address without the project is deprecated and never shown). The
@@ -307,7 +307,38 @@ server's refusal in the same way.
 
 The old Workflows and Automations pages are gone: `/workflows`, `/workflows/:name`, `/workflows/:name/canvas` and
 `/automations` redirect to the project named by `?project=`, else the one opened last or the only one, else the list of
-projects.
+projects; the last two lead to the Overview and the Canvas tab of the workflow's page.
+
+### A workflow's page
+
+A workflow is one page, not two (`web/src/app/workflows/WorkflowPage.tsx`; the owner chose mockups W1 and W2 and asked for
+them combined: W2's Overview and W1's canvas as tabs of one page). It is reached from the project's Workflows tab, and its
+header is the standard one: at the left the way back, `<Project> › Workflows ›` as two links, then the workflow's name
+as the title and a chip for what starts it (`Webhook`, `Manual`, `Schedule · next 08:00` where the server knows the next
+firing, `triggerWords.ts`); the tabs **Overview | Canvas | Runs | File**, text with the 2px underline, each at an
+address of its own (`/projects/:id/workflows/:name`, `.../canvas`, `.../runs`, `.../file`); and at the right "Copy hook
+URL" (a quiet button, a webhook's only, copying the address of the Workflows tab), a `...` menu holding Delete workflow
+(asked once, in a dialog) and the one primary button, Run, which opens the dialog of "Run a workflow here" for this
+workflow. A workflow with no file yet — the blank draft of "New workflow" — has only the title and its canvas until the
+first save, which gives it its tabs.
+
+- **Overview** (the default): two 36px key rows, Trigger (in words: `Webhook, answers on /api/hooks/projects/1/notify` with Copy,
+  or `Schedule 0 6 * * 1 · next Mon 06:00 (in 7 h)`, or `Manual, started with Run`) and Last run (its status tag, the
+  age and a link to it); then **Steps**, a numbered list in plain words with one row for each node *in the order the graph
+  runs them* (`steps.ts`), never in the order of the file: the icon of its kind, its id, a chip with its kind
+  (`Agent · Coder`, `HTTP`, `Approval`), its output name when it has one, and under them one or two lines of what it is
+  given — an agent's or an approval's prompt as plain text with its line breaks folded into spaces and "…" where it is
+  cut, a publish's title, an HTTP call's method and URL, a condition's ports and expressions. An expression such as
+  `{{ input.summary }}` is set in the code font inline. Nothing on the Overview is JSON or shows an escaped `\n`. Under the
+  steps, **Runs**: the last five, with "All runs" to the Runs tab.
+- **Canvas**: the editor of the section below, inside the page. A 40px bar over the graph holds the run to draw over it,
+  the state ("Saved", "Unsaved changes") and Save as a secondary button, since Run is the page's one primary. Choosing a
+  node, the trigger or an edge opens its form in a pane of 20rem at the **right of the graph** (`canvas/InspectorPane.tsx`):
+  the graph and its palette stay in view and nothing is laid over them. A card says its kind as the Overview does and its
+  parameters in words; nothing overlaps or is cut. The JSON a form would write is folded away under "Saved JSON".
+- **Runs**: every run as a 36px row (status, link, age, Cancel while it can still stop), each opening its page.
+- **File**: the TOML exactly as stored, read-only, in a code block that scrolls inside its box and never reaches past it,
+  with Copy.
 
 ## Components
 - Buttons: one clear primary action, quieter alternatives, consistent sizing. A button is as wide as its label, never the width of the row it happens to sit in. An action that starts a new thing says it with a plus, on the page header and in an empty place alike, so the same verb is drawn the same way wherever a person meets it. A destructive action is the `danger` variant wherever it appears, including the button that opens the question.
@@ -372,14 +403,15 @@ One implementation of each control, in one place: ``web/src/ui/``.
 
 ## The canvas
 
-A workflow's graph is edited on a canvas of its own (`web/src/app/workflows/canvas/`), the one screen in the app that is
-a surface rather than a list of rows. What that asks for, once:
+A workflow's graph is edited on a canvas (`web/src/app/workflows/canvas/`), the Canvas tab of the workflow's page and the
+one screen in the app that is a surface rather than a list of rows. What that asks for, once:
 
-- The graph is the page. It fills the panel beside the palette of kinds at its left, and nothing is laid over it but the window of the step being edited: no box, no heading, no band of padding. A step is edited in a centred window, as a card is. Pan and zoom belong to the graph, so
-  the page itself never scrolls.
+- The graph is the tab. It fills the panel beside the palette of kinds at its left and the pane of the chosen step at its
+  right, and nothing is laid over it: no box, no heading, no band of padding. A step is edited in that pane, which sits
+  beside the graph and opens and closes with the choice. Pan and zoom belong to the graph, so the tab itself never scrolls.
 - Where a node sits is what the file holds, and the file holds it because a person put it there. A node opens at the
   place it was saved at, a node dragged is a change to the file like any other, and the read-only view of the same
-  workflow draws the same positions by hand (`WorkflowGraph.tsx`) so the two never disagree about where a node is.
+  workflow's Overview lists its nodes in the order its edges give, so the two never disagree about what comes first.
 - The graph library brings its own look, and none of it reaches the screen: `src/styles/canvas.css` sets the library's
   colour variables to the app's tokens, so the dots of the grid, the wires, a chosen node and its handles are the same
   fills and hairlines as everywhere else, in both themes, and neither of the library's themes is loaded. Its own name in
@@ -390,7 +422,7 @@ a surface rather than a list of rows. What that asks for, once:
   person looks after pressing Save, which is where the state of the graph stands: "Saved", "Unsaved changes", "Saved as
   1a3b3c0".
 - A run picked is drawn over the graph rather than beside it: the node's own status on its card, and what it was given
-  and gave back in the step's window. Nothing opens, nothing navigates: the run is a way of
+  and gave back in the step's pane. Nothing opens, nothing navigates: the run is a way of
   reading the same graph.
 - Nothing is asked twice, and the keyboard is the graph's own. Delete takes the chosen node or wire away, with the wires
   that hung off it; the start of the graph cannot be taken away, since a workflow without it is not a workflow; and

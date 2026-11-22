@@ -6,7 +6,8 @@ describe("the workflow pages", () => {
   it.each([
     "WorkflowsTab.tsx",
     "WorkflowPage.tsx",
-    "WorkflowGraph.tsx",
+    "WorkflowOverview.tsx",
+    "canvas/InspectorPane.tsx",
     "WorkflowRunPage.tsx",
     "canvas/cards.tsx",
   ])("%s draws no shadow-card", (file) => {

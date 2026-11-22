@@ -135,8 +135,12 @@ const routes: Route[] = [
   { path: "/projects/1/workflows", name: "workflows-run", open: "run workflow" },
   { path: "/projects/1/workflows?runs=scheduled", name: "workflows-edit", open: "edit scheduled" },
   { path: "/projects/1/workflows/release", name: "workflow" },
-  // The graph edited on a canvas of its own.
+  // The Canvas tab of the workflow page, and the tabs of a webhook workflow with a long multi-line prompt.
   { path: "/projects/1/workflows/release/canvas", name: "workflow-canvas" },
+  { path: "/projects/1/workflows/notify", name: "workflow-webhook" },
+  { path: "/projects/1/workflows/notify/canvas", name: "workflow-webhook-canvas" },
+  { path: "/projects/1/workflows/notify/runs", name: "workflow-runs" },
+  { path: "/projects/1/workflows/notify/file", name: "workflow-file" },
   { path: "/workflow-runs/41", name: "workflow-run" },
   // A run that stopped at a node and asks what to do next.
   { path: "/workflow-runs/42", name: "workflow-run-waiting" },

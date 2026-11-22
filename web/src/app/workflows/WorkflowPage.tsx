@@ -1,37 +1,35 @@
 /**
- * One workflow's definition: the graph saved in its file, read-only and at the positions the canvas saved, each node
- * with its kind and parameters, and the raw file beside it for copying. What starts it, how many nodes it has and how
- * its last run went are its properties, in the column beside the graph. The file is shown exactly as it is stored, so
- * what a person copies is what the harness configuration will read back.
+ * One workflow, as one page: a header with the way back (`<Project> › Workflows ›`), the workflow's name, a chip for
+ * what starts it, the tabs Overview | Canvas | Runs | File (each at an address of its own, so a link and a reload keep
+ * it), and at the right Copy hook URL (a webhook's only), a `...` menu with Delete, and the primary Run.
  *
- * It reads `GET /v1/projects/{id}/workflows/{name}`. A definition that could not be read says so and offers to read it again; a
- * workflow that does not exist is said as a missing workflow rather than as an empty graph. Delete is
- * `DELETE /v1/projects/{id}/workflows/{name}`, asked twice: the actions open a dialog, which warns that a workflow
- * shaped like an automation disappears from the Scheduled list too, and a refusal of the server (a run queued, running
- * or waiting) is shown in the dialog in the server's own words.
+ * - Overview (`WorkflowOverview.tsx`): the trigger and last run, the steps in plain words, the last few runs.
+ * - Canvas (`canvas/WorkflowCanvasPage.tsx`): the editor, with the pane of a chosen step beside the graph.
+ * - Runs (`WorkflowRuns.tsx`): every run, each opening its page.
+ * - File: the TOML exactly as stored, read-only, scrolling inside its box, with Copy.
+ *
+ * It reads `GET /v1/projects/{id}/workflows/{name}` and the project's list (which holds the next firing of a schedule
+ * and the address of a webhook). A definition that could not be read says so and offers to read it again. A workflow
+ * with no file yet — the blank draft the "New workflow" dialog passes as router state, or an address reloaded before
+ * the first save — has only the canvas until that save creates it. Delete is `DELETE /v1/projects/{id}/workflows/{name}`,
+ * asked once: the dialog warns that a workflow shaped like an automation disappears from the Scheduled list too, and a
+ * refusal of the server (a run queued, running or waiting) is shown in it in the server's own words.
  */
-import {
-  ArrowLeftIcon,
-  PencilSimpleIcon,
-  PlayIcon,
-  StopIcon,
-  TrashIcon,
-} from "@phosphor-icons/react";
+import { DotsThreeIcon, PlayIcon, TrashIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { useId, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import { listProjects } from "../../api/calls/projects";
 import {
-  cancelWorkflowRun,
   deleteProjectWorkflow,
   projectWorkflow,
-  projectWorkflowRuns,
+  projectWorkflows,
 } from "../../api/calls/workflows";
 import { sayError } from "../../api/errorText";
+import { ApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import { CodeBlock } from "../../ui/chat/CodeBlock";
 import { Tag } from "../../ui/chat/Tag";
-
 import { Button } from "../../ui/components/Button";
 import {
   Dialog,
@@ -41,44 +39,64 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../ui/components/Dialog";
-import { ago, plural } from "../../ui/lib/format";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../../ui/components/DropdownMenu";
 import { useNow } from "../../ui/lib/useNow";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
-import { Property } from "../../ui/page/Property";
 import { ReadFailed } from "../../ui/page/ReadFailed";
 import { SkeletonLines } from "../../ui/page/Skeleton";
-import { projectTabPath, workflowCanvasPath, workflowRunPath } from "../pages";
-import { lastRunLine, looksLikeAutomation, runStatus, triggerName } from "./model";
+import { TabPanel, Tabs } from "../../ui/page/Tabs";
+import { boardPath, projectTabPath, WORKFLOW_TABS, type WorkflowTab, workflowPath } from "../pages";
+import { newWorkflowDraft } from "./canvas/model";
+import { draftOf, WorkflowCanvas } from "./canvas/WorkflowCanvasPage";
+import { CopyHookUrl } from "./HookAddress";
+import { looksLikeAutomation } from "./model";
 import { RunWorkflowDialog } from "./RunWorkflowDialog";
-import { WorkflowGraph } from "./WorkflowGraph";
+import { triggerChip } from "./triggerWords";
+import { WorkflowOverview } from "./WorkflowOverview";
+import { WorkflowRuns } from "./WorkflowRuns";
+
+const LABELS: Record<WorkflowTab, string> = {
+  overview: "Overview",
+  canvas: "Canvas",
+  runs: "Runs",
+  file: "File",
+};
 
 export function WorkflowPage() {
-  const { projectId = "", name = "" } = useParams();
+  const { projectId = "", name = "", tab: asked } = useParams();
   const project = Number(projectId);
+  const tab: WorkflowTab = WORKFLOW_TABS.find((each) => each === asked) ?? "overview";
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
+  const base = useId();
   const now = useNow();
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [removeRefusal, setRemoveRefusal] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  // The blank graph the "New workflow" dialog starts is passed as router state: there is no file to read for it.
+  const incoming = draftOf(location.state);
+  const [created, setCreated] = useState(false);
   const projects = useQuery({ queryKey: keys.projects, queryFn: listProjects });
   const owner = projects.data?.find((each) => each.id === project);
   const definition = useQuery({
     queryKey: keys.projectWorkflow(project, name),
     queryFn: () => projectWorkflow(project, name),
+    enabled: incoming === null || created,
+    // A name no file holds yet is a new workflow, so a read that finds none is not tried again.
+    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 3,
   });
-  const runs = useQuery({
-    queryKey: keys.projectWorkflowRuns(project, name),
-    queryFn: () => projectWorkflowRuns(project, name),
+  const listed = useQuery({
+    queryKey: keys.projectWorkflows(project),
+    queryFn: () => projectWorkflows(project),
   });
-  const cancel = useMutation({
-    mutationFn: (id: number) => cancelWorkflowRun(id),
-    onSettled: async () => {
-      await queryClient.invalidateQueries({ queryKey: keys.allWorkflowRuns });
-      await queryClient.invalidateQueries({ queryKey: keys.workflows });
-    },
-  });
+  const summary = listed.data?.find((each) => each.name === name);
   const remove = useMutation({
     mutationFn: () => deleteProjectWorkflow(project, definition.data?.name ?? name),
     onSuccess: async () => {
@@ -90,41 +108,49 @@ export function WorkflowPage() {
     },
     onError: (error) => setRemoveRefusal(sayError(error, "Could not delete it. Try again.")),
   });
-  const back = (
-    <Button asChild variant="ghost" size="sm">
-      <Link to={projectTabPath(project, "workflows")}>
-        <ArrowLeftIcon className="size-4" aria-hidden="true" />
-        {definition.data?.project_name ?? owner?.name ?? "Project"} workflows
+
+  const ownerName = definition.data?.project_name ?? owner?.name ?? "Project";
+  const trail = (
+    <nav aria-label="Where this is" className="flex items-center gap-1.5 text-sm text-secondary">
+      <Link className="rounded-round underline-offset-4 hover:underline" to={boardPath(project)}>
+        {ownerName}
       </Link>
-    </Button>
+      <span aria-hidden="true">›</span>
+      <Link
+        className="rounded-round underline-offset-4 hover:underline"
+        to={projectTabPath(project, "workflows")}
+      >
+        Workflows
+      </Link>
+      <span aria-hidden="true">›</span>
+    </nav>
   );
 
-  if (definition.isPending) {
+  const notFound =
+    definition.isError && definition.error instanceof ApiError && definition.error.status === 404;
+  const draft = incoming ?? (notFound ? newWorkflowDraft(name, "") : null);
+  const saved = definition.data?.definition ?? draft;
+  if (saved === null) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <PageHeader title={name} back={back} />
-        <SkeletonLines lines={8} message="Reading the definition" />
+        <PageHeader title={name} back={trail} />
+        {definition.isError ? (
+          <ReadFailed
+            error={definition.error}
+            fallback="Could not read this workflow's definition. Try again."
+            busy={definition.isFetching}
+            onRetry={() => void definition.refetch()}
+          />
+        ) : (
+          <SkeletonLines lines={8} message="Reading the definition" />
+        )}
       </div>
     );
   }
-  if (definition.isError) {
-    return (
-      <div className="flex h-full min-h-0 flex-col">
-        <PageHeader title={name} back={back} />
-        <ReadFailed
-          error={definition.error}
-          fallback="Could not read this workflow's definition. Try again."
-          busy={definition.isFetching}
-          onRetry={() => void definition.refetch()}
-        />
-      </div>
-    );
-  }
-
-  const saved = definition.data.definition;
-  const file = definition.data.file;
-  const history = runs.data ?? [];
-  const last = history[0] ?? null;
+  // No file yet: only the canvas, which creates it with its first save.
+  const fresh = draft !== null && !created && definition.data === undefined;
+  const file = definition.data?.file ?? "";
+  const kind = saved.trigger[0]?.kind;
   const leave = () => {
     remove.reset();
     setRemoveRefusal(null);
@@ -134,39 +160,52 @@ export function WorkflowPage() {
     <div className="flex h-full min-h-0 flex-col">
       <PageHeader
         title={saved.name}
-        back={back}
+        back={trail}
+        badge={fresh ? undefined : <Tag>{triggerChip(kind, summary, now)}</Tag>}
+        tabs={
+          fresh ? undefined : (
+            <Tabs
+              tabs={WORKFLOW_TABS.map((each) => ({ value: each, label: LABELS[each] }))}
+              value={tab}
+              onChange={(next) => navigate(workflowPath(project, saved.name, next))}
+              label="Workflow"
+              idBase={base}
+            />
+          )
+        }
         actions={
-          <div className="flex items-center gap-2">
-            <Button asChild variant="secondary" size="sm">
-              <Link to={workflowCanvasPath(project, saved.name)}>
-                <PencilSimpleIcon className="size-4" aria-hidden="true" />
-                Edit on the canvas
-              </Link>
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={!owner}
-              onClick={() => setRunning(true)}
-            >
+          fresh || summary?.hook_address === undefined ? null : (
+            <CopyHookUrl address={summary.hook_address} />
+          )
+        }
+        menu={
+          fresh ? undefined : (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                aria-label="More workflow actions"
+                className="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-control bg-transparent text-secondary transition-colors duration-(--motion-routine) ease-out hover:bg-hover hover:text-text data-[state=open]:bg-hover data-[state=open]:text-text"
+              >
+                <DotsThreeIcon className="size-5" weight="bold" aria-hidden="true" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  className="text-danger-text"
+                  onSelect={() => setConfirmingDelete(true)}
+                >
+                  <TrashIcon className="size-4" aria-hidden="true" />
+                  Delete workflow
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )
+        }
+        primary={
+          fresh ? undefined : (
+            <Button variant="primary" size="sm" disabled={!owner} onClick={() => setRunning(true)}>
               <PlayIcon className="size-4" aria-hidden="true" />
               Run
             </Button>
-            {last ? (
-              <Button asChild variant="secondary" size="sm">
-                <Link to={workflowRunPath(last.id)}>Open last run</Link>
-              </Button>
-            ) : null}
-            <Button
-              variant="danger"
-              size="sm"
-              onClick={() => setConfirmingDelete(true)}
-              disabled={confirmingDelete}
-            >
-              <TrashIcon className="size-4" aria-hidden="true" />
-              Delete workflow
-            </Button>
-          </div>
+          )
         }
       />
       {owner ? (
@@ -208,87 +247,31 @@ export function WorkflowPage() {
           </DialogContent>
         </Dialog>
       )}
-      <section aria-label="Definition" className="mb-4 flex shrink-0 flex-col gap-1">
-        <Property name="Trigger">{triggerName(saved.trigger[0]?.kind)}</Property>
-        <Property name="Nodes">{plural(saved.nodes.length, "node", "nodes")}</Property>
-        <Property name="Last run">
-          {last
-            ? `${lastRunLine(last)}${last.started_at === null ? "" : ` · ${ago(now, last.started_at)}`}.`
-            : "This workflow has not run."}
-        </Property>
-      </section>
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
-        <WorkflowGraph definition={saved} />
-        <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto">
-          <section aria-labelledby="workflow-file-title" className="flex min-h-0 flex-col">
-            <h2 id="workflow-file-title" className="m-0 mb-2 text-base font-semibold text-text">
-              File
-            </h2>
-            <CodeBlock language="TOML" code={file} />
-          </section>
-          <section
-            aria-labelledby="workflow-runs-title"
-            className="flex min-h-0 flex-col gap-2 border-t border-hairline pt-4"
-          >
-            <h2 id="workflow-runs-title" className="m-0 text-base font-semibold text-text">
-              Runs
-            </h2>
-            {runs.isError ? (
-              <Notice tone="error">
-                {sayError(runs.error, "Could not read the runs. Try again.")}
-              </Notice>
-            ) : history.length === 0 ? (
-              <p className="m-0 text-sm text-secondary">This workflow has not run.</p>
-            ) : (
-              // biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely
-              <ul role="list" className="m-0 list-none divide-y divide-hairline p-0">
-                {history.map((each) => {
-                  const status = runStatus(each.status);
-                  const open =
-                    each.status === "queued" ||
-                    each.status === "running" ||
-                    each.status === "waiting";
-                  return (
-                    <li
-                      key={each.id}
-                      data-testid="workflow-run-row"
-                      className="flex h-row-list items-center gap-2.5 text-sm"
-                    >
-                      <Tag tone={status.tone}>{status.label}</Tag>
-                      <Link
-                        className="rounded-round underline-offset-4 hover:underline"
-                        to={workflowRunPath(each.id)}
-                      >
-                        Run {each.id}
-                      </Link>
-                      <span className="tabular-nums text-secondary">
-                        {ago(now, each.created_at)}
-                      </span>
-                      {open ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          aria-label={`Cancel run ${each.id}`}
-                          disabled={cancel.isPending}
-                          onClick={() => cancel.mutate(each.id)}
-                        >
-                          <StopIcon className="size-4" aria-hidden="true" />
-                          Cancel
-                        </Button>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {cancel.isError ? (
-              <Notice tone="error">
-                {sayError(cancel.error, "Could not cancel the run. Try again.")}
-              </Notice>
-            ) : null}
-          </section>
-        </aside>
-      </div>
+      {tab === "canvas" || fresh ? (
+        <TabPanel idBase={base} value="canvas" className="flex min-h-0 flex-1 flex-col">
+          <WorkflowCanvas
+            name={saved.name}
+            loaded={saved}
+            project={project}
+            isNew={draft !== null}
+            onCreated={() => setCreated(true)}
+          />
+        </TabPanel>
+      ) : (
+        <TabPanel idBase={base} value={tab} className="min-h-0 flex-1 overflow-y-auto">
+          {tab === "overview" ? (
+            <WorkflowOverview project={project} definition={saved} summary={summary} />
+          ) : tab === "runs" ? (
+            <div className="max-w-4xl">
+              <WorkflowRuns project={project} name={saved.name} />
+            </div>
+          ) : (
+            <div className="max-w-4xl" data-testid="workflow-file">
+              <CodeBlock language="TOML" code={file} />
+            </div>
+          )}
+        </TabPanel>
+      )}
     </div>
   );
 }
