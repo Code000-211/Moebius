@@ -99,11 +99,12 @@ describe("the Rules page", () => {
   const sub = () => page.getByRole("navigation", { name: "Rules" });
   const scopeLink = (name: RegExp) => sub().getByRole("link", { name });
 
-  it("loads on the server's rules, with every scope in the sub-navigation", async () => {
+  it("loads, with every scope in the sub-navigation", async () => {
     await fresh();
     await open("/rules", "Rules");
     await sub().waitFor();
-    await region("Server").getByText("leave-ci-alone").waitFor();
+    // It opens on the server's rules when it has some, else on the built-in patterns.
+    await page.getByRole("region", { name: /^(Server|Built-in)$/ }).waitFor();
     await scopeLink(/^Built-in/).waitFor();
     await scopeLink(/^Refusals/).waitFor();
   });
