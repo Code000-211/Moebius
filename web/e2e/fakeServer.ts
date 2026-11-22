@@ -190,7 +190,7 @@ export async function startFakeServer(): Promise<FakeServer> {
   const views = createViewsFake();
   const pagesB = createPagesBFake();
   const pagesC = createPagesCFake(broadcast);
-  const workflows = createWorkflowsFake();
+  const workflows = createWorkflowsFake(() => pagesC.automationList());
   const kinds = createKindsFake(broadcast);
   const templates = createTemplatesFake(kinds);
   board.issueTemplate = templates.issueTemplate;

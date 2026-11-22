@@ -634,7 +634,15 @@ pub(crate) mod tests {
         );
         assert_eq!(route(&["server", "restart"]).1, "/v1/server/restart");
         assert_eq!(route(&["agent", "delete", "Old"]).0, "DELETE");
-        assert_eq!(route(&["workflow", "list"]).1, "/v1/workflows");
+        assert_eq!(
+            plan_with(&["workflow", "list", "--project", "3"], &mut |_| Ok(
+                json!([{"id": 3, "name": "Web"}])
+            ))
+            .unwrap()
+            .0
+            .path,
+            "/v1/projects/3/workflows"
+        );
         assert_eq!(
             route(&["workflow", "cancel", "12"]),
             (

@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { LastRun } from "../../api/types/workflows";
-import { lastRunLine, needsAttention, runStatus, triggerName } from "./model";
+import type { Automation } from "../../api/types/automations";
+import type { LastRun, WorkflowSummary } from "../../api/types/workflows";
+import {
+  lastRunLine,
+  needsAttention,
+  runFilter,
+  runStatus,
+  scheduledWorkflows,
+  triggerName,
+} from "./model";
 
 describe("a trigger", () => {
   it("says what starts the workflow", () => {
@@ -58,5 +66,56 @@ describe("what needs attention", () => {
     expect(needsAttention("waiting")).toBe(true);
     expect(needsAttention("succeeded")).toBe(false);
     expect(needsAttention(null)).toBe(false);
+  });
+});
+
+describe("the filter of the runs", () => {
+  it("is what the address names, and all of them otherwise", () => {
+    expect(runFilter("scheduled")).toBe("scheduled");
+    expect(runFilter("failed")).toBe("failed");
+    expect(runFilter("everything")).toBe("all");
+    expect(runFilter(null)).toBe("all");
+  });
+});
+
+describe("the scheduled workflows", () => {
+  const summary = (name: string, trigger: string): WorkflowSummary => ({
+    project: 1,
+    project_name: "demo",
+    name,
+    description: "",
+    trigger_kind: trigger,
+    node_count: 1,
+    last_run: null,
+  });
+  const automation = (id: number, name: string): Automation => ({
+    id,
+    name,
+    schedule: "0 8 * * *",
+    agent: "Moebius",
+    prompt: "Go.",
+    repository_id: null,
+    project_id: 1,
+    harness_repository: false,
+    enabled: true,
+    next_firing: 10,
+    last_firing: null,
+  });
+
+  it("are the schedule-trigger workflows, with the automation that is one", () => {
+    const found = scheduledWorkflows(
+      [
+        summary("manual-one", "manual"),
+        summary("nightly", "schedule"),
+        summary("automation-4", "schedule"),
+        summary("plain-schedule", "schedule"),
+      ],
+      [automation(3, "nightly"), automation(4, "Triage the overnight issues")],
+    );
+    expect(found.map((each) => [each.workflow.name, each.automation?.id])).toEqual([
+      ["nightly", 3],
+      ["automation-4", 4],
+      ["plain-schedule", undefined],
+    ]);
   });
 });

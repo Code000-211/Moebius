@@ -776,9 +776,9 @@ At the top:
 | `server/api/chats.rs` | Chats with an agent (start, write, offer, end, seen, settings) and what grilling chats ended in. |
 | `server/api/harness.rs` | The agents, skills and MCP servers of the harness configuration repository, and `POST /v1/harness/setup`. |
 | `server/api/rules.rs` | The rules page and the rules in prose. |
-| `server/api/workflows.rs` | The workflows a project owns, addressed as `/v1/projects/{id}/workflows/...` (and the deprecated aggregate routes that resolve a name across the projects a person sees): list, read, save and delete, saving and deleting as commits, a person's decision on a waiting run, and cancelling a run of one. |
+| `server/api/workflows.rs` | The workflows a project owns, addressed as `/v1/projects/{id}/workflows/...` (the routes that name a workflow without its project answer `410`): list, read, save and delete, saving and deleting as commits, a person's decision on a waiting run, and cancelling a run of one. |
 | `server/api/workflow_hooks.rs` | `POST /api/hooks/projects/{project}/{path}` and `POST /api/hooks/projects/{project}/{repository}/{path}` (and the deprecated `POST /api/hooks/{path}` and `POST /api/hooks/{repository}/{path}`), the door a workflow's `webhook` trigger answers on: the credential it asks for, the run its body starts, and its ceiling of runs going at once. |
-| `server/api/workflow_runs.rs` | `GET /v1/projects/{id}/workflows/{name}/run-inputs` and `POST /v1/projects/{id}/workflows/{name}/runs` (and their deprecated forms without a project): the inputs a manual trigger names, and starting a run by hand with them. |
+| `server/api/workflow_runs.rs` | `GET /v1/projects/{id}/workflows/{name}/run-inputs` and `POST /v1/projects/{id}/workflows/{name}/runs` (their forms without a project answer `410`): the inputs a manual trigger names, and starting a run by hand with them. |
 | `server/api/settings.rs` | `moebius.toml`, the API keys and the restart, and what the Models, Plugins and Get started pages show. |
 | `server/api/lessons.rs` | The lessons: list, read, edit and delete. |
 | `server/api/extensions.rs` | `/v1/extensions/...`: search, info, the installed packages, and proposals to install, update and remove; and the refusal of an agent's merge of a change that touches a package. |

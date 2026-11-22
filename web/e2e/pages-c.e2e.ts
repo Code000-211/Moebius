@@ -1,5 +1,5 @@
 /**
- * The pages of Rules, Automations, Retro, Experiments and Decisions, and the script editor, in a real browser:
+ * The pages of Rules, Automations (the Scheduled view of a project's Workflows tab), Retro, Experiments and Decisions, and the script editor, in a real browser:
  * each loads and shows its data, and each action sends its request and shows the outcome (a rule saved or refused, an
  * automation saved, run and deleted, a Retro started, a lesson edited, a research confirmed, an export made, a kind
  * released, a script saved, refused at its line and given up). The fake server (`fake/pages-c.ts`) has the data; against
@@ -268,13 +268,32 @@ describe("the Rules page", () => {
   });
 });
 
-describe("the Automations page", () => {
+describe("the scheduled workflows of a project's Workflows tab", () => {
   const editor = () => page.getByTestId("editor-window");
+  /** The project the tab belongs to: the fake's `demo`, or the first one of a real server. */
+  async function projectId(): Promise<number> {
+    if (!usesRealServer) return 1;
+    const listed = await context.request.get(`${server.url}/v1/projects`, {
+      headers: { "X-Moebius": "1", Authorization: `Bearer ${server.token}` },
+    });
+    return ((await listed.json()) as Array<{ id: number }>)[0]?.id ?? 1;
+  }
+  /** Opens the Scheduled view of the project's Workflows tab, where the automations are listed and edited. */
+  async function openScheduled(): Promise<number> {
+    const id = await projectId();
+    await page.goto(`${server.url}/projects/${id}/workflows?runs=scheduled`);
+    await page.getByRole("button", { name: "New scheduled workflow" }).waitFor();
+    return id;
+  }
+  const editButton = (name: string | RegExp) =>
+    page.getByRole("button", {
+      name: typeof name === "string" ? `Edit scheduled workflow ${name}` : name,
+    });
   it("loads, and saves a new automation that can be deleted again", async () => {
     await fresh();
     await ensureProject();
-    await open("/automations", "Automations");
-    await page.getByRole("button", { name: "New automation" }).click();
+    await openScheduled();
+    await page.getByRole("button", { name: "New scheduled workflow" }).click();
     await editor().getByLabel("Name", { exact: true }).fill("Weekly cleanup");
     // A save without a prompt says what is missing, and sends nothing.
     await editor().getByRole("button", { name: "Save", exact: true }).click();
@@ -287,10 +306,10 @@ describe("the Automations page", () => {
     await editor().getByRole("button", { name: "Save", exact: true }).click();
     await status("Saved.").waitFor();
     await editor().waitFor({ state: "detached" });
-    const row = page.getByTestId("automation-row").filter({ hasText: "Weekly cleanup" });
+    const row = page.getByTestId("scheduled-row").filter({ hasText: "Weekly cleanup" });
     await row.waitFor();
     // Saved, it can be opened again and deleted.
-    await row.click();
+    await row.getByRole("button", { name: "Edit scheduled workflow Weekly cleanup" }).click();
     await editor().getByRole("button", { name: "Delete automation" }).click();
     await page.getByText("Delete this automation?").waitFor();
     await page.getByRole("button", { name: "Delete automation" }).last().click();
@@ -301,14 +320,16 @@ describe("the Automations page", () => {
     "lists them, with the editor window and the past runs of the one chosen",
     async () => {
       await fresh();
-      await open("/automations", "Automations");
-      const morning = page.getByRole("button", { name: /Edit automation Morning triage/ });
+      await openScheduled();
+      const morning = page.getByTestId("scheduled-row").filter({ hasText: "Morning triage" });
       await morning.getByText("Weekdays at 8 · next in 3 h").waitFor();
-      const outdated = page.getByRole("button", { name: /Edit automation Outdated dependencies/ });
+      const outdated = page
+        .getByTestId("scheduled-row")
+        .filter({ hasText: "Outdated dependencies" });
       await outdated.getByText("Failed").waitFor();
       await outdated.getByText("the agent Coder cannot run: its model is not served").waitFor();
-      await morning.click();
-      expect(new URL(page.url()).search).toBe("?automation=1");
+      await editButton("Morning triage").click();
+      expect(new URL(page.url()).search).toBe("?runs=scheduled&automation=1");
       expect(await page.getByLabel("Name", { exact: true }).inputValue()).toBe("Morning triage");
       expect(await page.getByLabel("Cron, in the server's local time").inputValue()).toBe(
         "0 8 * * 1-5",
@@ -321,14 +342,14 @@ describe("the Automations page", () => {
       // Closing the window without a change takes it out of the address.
       await editor().getByRole("button", { name: "Cancel" }).click();
       await editor().waitFor({ state: "detached" });
-      expect(new URL(page.url()).search).toBe("");
+      expect(new URL(page.url()).search).toBe("?runs=scheduled");
     },
   );
 
   it.skipIf(usesRealServer)("runs one now and saves a change", async () => {
     await fresh();
-    await open("/automations", "Automations");
-    await page.getByRole("button", { name: /Edit automation Morning triage/ }).click();
+    await openScheduled();
+    await editButton("Morning triage").click();
     await editor().getByRole("button", { name: "Run now" }).click();
     await status("Started; its chat is among the past runs.").waitFor();
     expect(lastRequest()).toMatchObject({ method: "POST", path: "/v1/automations/1/run" });
@@ -347,13 +368,15 @@ describe("the Automations page", () => {
         name: "Morning triage, early",
         schedule: "0 8 * * 1-5",
         agent: "Moebius",
+        project: 1,
         repository: 1,
         harness: false,
         enabled: false,
       },
     });
     await page
-      .getByRole("button", { name: /Edit automation Morning triage, early/ })
+      .getByTestId("scheduled-row")
+      .filter({ hasText: "Morning triage, early" })
       .getByText("Off")
       .waitFor();
   });
@@ -362,8 +385,8 @@ describe("the Automations page", () => {
     "shows what the server refuses and what a run could not start",
     async () => {
       await fresh();
-      await open("/automations", "Automations");
-      await page.getByRole("button", { name: /Edit automation Morning triage/ }).click();
+      await openScheduled();
+      await editButton("Morning triage").click();
       fake().refuseNext("PUT", "/v1/automations/1", 422, "the agent Ghost does not exist");
       await page.getByLabel("Name", { exact: true }).fill("Morning triage, once more");
       await editor().getByRole("button", { name: "Save", exact: true }).click();
@@ -386,8 +409,8 @@ describe("the Automations page", () => {
 
   it.skipIf(usesRealServer)("follows an automation that fires on its own", async () => {
     await fresh();
-    await open("/automations", "Automations");
-    await page.getByRole("button", { name: /Edit automation Morning triage/ }).click();
+    await openScheduled();
+    await editButton("Morning triage").click();
     await region("Past runs").getByText("It has not fired yet.").count();
     await server.broadcast?.({ kind: "automation_fired", data: { automation: 1 } });
     // The page reads the firings again (the fake still has the same two).
@@ -978,9 +1001,9 @@ async function read(path: string, title: string) {
 describe("the pages that put a list beside a detail, or open an editor window", () => {
   it.skipIf(usesRealServer)("keeps an automation's editor window inside the window", async () => {
     await fresh();
-    await open("/automations", "Automations");
+    await page.goto(`${server.url}/projects/1/workflows?runs=scheduled`);
     // A row opens the automation in the editor window.
-    await page.getByRole("button", { name: /Edit automation Morning triage/ }).click();
+    await page.getByRole("button", { name: "Edit scheduled workflow Morning triage" }).click();
     await editorWindowFits(page);
     await scrollbarsAreQuiet(page, '[data-testid="editor-window"]');
   });

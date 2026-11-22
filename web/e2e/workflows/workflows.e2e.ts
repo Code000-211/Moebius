@@ -1,5 +1,5 @@
 /**
- * The Workflows pages in a real browser: the list with each workflow's trigger and last run, a definition's saved graph
+ * The Workflows pages in a real browser: a project's tab with each workflow's trigger and last run, a definition's saved graph
  * and file, a run that failed at a node, and a run that waits. The failed run is moved on by the run and node events the
  * fake server broadcasts, which is how the page is checked to update without a reload. Most of it needs the fake's
  * workflows and runs and is skipped against a real server (MOEBIUS_E2E_SERVER); "a workflow saved through the API" at
@@ -48,23 +48,24 @@ async function open(path: string, title: string | RegExp) {
   await page.getByRole("heading", { name: title, level: 1 }).waitFor();
 }
 
-describe.skipIf(usesRealServer)("the Workflows list", () => {
+describe.skipIf(usesRealServer)("the project's Workflows tab", () => {
   it("loads, with what starts each workflow and how its last run went", async () => {
     await fresh();
-    await open("/workflows", "Workflows");
-    await page.getByRole("heading", { name: "release" }).waitFor();
-    await page.getByText("Build, test and publish a release.").waitFor();
-    await page.getByText("Schedule", { exact: true }).first().waitFor();
-    await page.getByText("3 nodes").waitFor();
-    await page.getByText(/Last run: failed/).waitFor();
-    await page.getByRole("heading", { name: "deploy" }).waitFor();
-    await page.getByText("Manual", { exact: true }).waitFor();
+    await open("/projects/1/workflows", "demo");
+    const release = page.getByTestId("workflow-row").filter({ hasText: "release" });
+    await release.getByRole("heading", { name: "release" }).waitFor();
+    await release.getByText("Build, test and publish a release.").waitFor();
+    await release.getByText("Schedule", { exact: true }).waitFor();
+    await release.getByText("Failed", { exact: true }).waitFor();
+    const deploy = page.getByTestId("workflow-row").filter({ hasText: "deploy" });
+    await deploy.getByRole("heading", { name: "deploy" }).waitFor();
+    await deploy.getByText("Manual", { exact: true }).waitFor();
   });
 
   it("opens a workflow's definition from its name", async () => {
     await fresh();
-    await open("/workflows", "Workflows");
-    await page.getByRole("link", { name: "release" }).click();
+    await open("/projects/1/workflows", "demo");
+    await page.getByRole("link", { name: "release", exact: true }).click();
     await page.getByRole("heading", { name: "release", level: 1 }).waitFor();
     await page.getByRole("region", { name: "Definition graph" }).waitFor();
   });
@@ -73,7 +74,7 @@ describe.skipIf(usesRealServer)("the Workflows list", () => {
 describe.skipIf(usesRealServer)("a workflow's definition", () => {
   it("draws the saved graph with each node's kind and parameters, and shows the file", async () => {
     await fresh();
-    await open("/workflows/release", "release");
+    await open("/projects/1/workflows/release", "release");
     const graph = page.getByRole("region", { name: "Definition graph" });
     await graph.getByRole("heading", { name: "build" }).waitFor();
     await graph.getByText("agent", { exact: true }).waitFor();
@@ -153,54 +154,59 @@ describe.skipIf(usesRealServer)("a run that waits", () => {
   });
 });
 
-/** A server with no project has nowhere to keep a workflow (ADR 0025): makes one when there is none. */
-async function ensureProject(): Promise<void> {
+/** A server with no project has nowhere to keep a workflow (ADR 0025): makes one when there is none; its id. */
+async function ensureProject(): Promise<{ id: number; name: string }> {
   const headers = { "X-Moebius": "1", Authorization: `Bearer ${server.token}` };
   const listed = await context.request.get(`${server.url}/v1/projects`, { headers });
-  if (((await listed.json()) as unknown[]).length > 0) return;
+  const first = ((await listed.json()) as Array<{ id: number; name: string }>)[0];
+  if (first) return first;
   const made = await context.request.post(`${server.url}/v1/projects`, {
     headers,
     data: { name: "E2E", key: "E2E" },
   });
   expect(made.ok(), await made.text()).toBe(true);
+  return (await made.json()) as { id: number; name: string };
 }
 
 /** Saves a workflow the way the command line does, so a real server and the fake both hold it. */
-async function saveWorkflow(name: string): Promise<void> {
-  await ensureProject();
-  const response = await context.request.put(`${server.url}/v1/workflows/${name}`, {
-    headers: { "X-Moebius": "1", Authorization: `Bearer ${server.token}` },
-    data: {
-      definition: {
-        name,
-        description: "Made by the end-to-end test.",
-        trigger: [{ kind: "manual", params: {} }],
-        nodes: [
-          {
-            id: "shape",
-            kind: "code",
-            params: { source: "return input" },
-            position: { x: 320, y: 120 },
-          },
-        ],
-        edges: [{ from: "trigger", to: "shape", port: "out" }],
+async function saveWorkflow(name: string): Promise<{ id: number; name: string }> {
+  const project = await ensureProject();
+  const response = await context.request.put(
+    `${server.url}/v1/projects/${project.id}/workflows/${name}`,
+    {
+      headers: { "X-Moebius": "1", Authorization: `Bearer ${server.token}` },
+      data: {
+        definition: {
+          name,
+          description: "Made by the end-to-end test.",
+          trigger: [{ kind: "manual", params: {} }],
+          nodes: [
+            {
+              id: "shape",
+              kind: "code",
+              params: { source: "return input" },
+              position: { x: 320, y: 120 },
+            },
+          ],
+          edges: [{ from: "trigger", to: "shape", port: "out" }],
+        },
       },
     },
-  });
+  );
   if (!response.ok())
     throw new Error(`saving ${name}: ${response.status()} ${await response.text()}`);
+  return project;
 }
 
 describe("a workflow saved through the API (a real server and the fake alike)", () => {
   it("is listed with its trigger and as never run, and opens with its nodes", async () => {
     await fresh();
-    await saveWorkflow("wf1");
+    const project = await saveWorkflow("wf1");
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    await open("/workflows", "Workflows");
+    await open(`/projects/${project.id}/workflows`, project.name);
     const row = page.getByTestId("workflow-row").filter({ hasText: "wf1" });
     await row.getByText("Manual", { exact: true }).waitFor();
-    await row.getByText("1 node", { exact: true }).waitFor();
     await row.getByText("Never run").waitFor();
 
     await row.getByRole("link", { name: "wf1" }).click();
@@ -219,7 +225,8 @@ describe("a workflow saved through the API (a real server and the fake alike)", 
     page.on("response", (response) => {
       if (response.status() >= 400) failed.push(`${response.status()} ${response.url()}`);
     });
-    await page.goto(`${server.url}/workflows/notyet/canvas`);
+    const project = await ensureProject();
+    await page.goto(`${server.url}/projects/${project.id}/workflows/notyet/canvas`);
     await page
       .getByRole("heading", { name: /notyet/ })
       .first()

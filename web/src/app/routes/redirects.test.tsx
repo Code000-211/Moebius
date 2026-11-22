@@ -243,4 +243,45 @@ describe("the legacy table", () => {
       cleanup();
     }
   });
+
+  describe("the old Workflows and Automations addresses", () => {
+    beforeEach(() => window.localStorage.clear());
+
+    it("lead to the Workflows tab of the project named, opened last, or the only one", async () => {
+      projects = [project(1, [5]), project(2, [6])];
+      expect(await landed("/workflows?project=2")).toBe("/projects/2/workflows");
+      cleanup();
+      window.localStorage.setItem("moebius.lastProject", "1");
+      expect(await landed("/workflows")).toBe("/projects/1/workflows");
+      cleanup();
+      window.localStorage.clear();
+      projects = [project(7, [5])];
+      expect(await landed("/workflows")).toBe("/projects/7/workflows");
+    });
+
+    it("lead to the definition and the canvas under the project, escaping the name", async () => {
+      projects = [project(3, [5])];
+      expect(await landed("/workflows/night%20build")).toBe("/projects/3/workflows/night%20build");
+      cleanup();
+      expect(await landed("/workflows/release/canvas")).toBe(
+        "/projects/3/workflows/release/canvas",
+      );
+    });
+
+    it("lead the Automations page to the Scheduled runs, keeping the automation that was open", async () => {
+      projects = [project(3, [5])];
+      expect(await landed("/automations?automation=4")).toBe(
+        "/projects/3/workflows?runs=scheduled&automation=4",
+      );
+    });
+
+    it("lead to the list of projects when no project can be told", async () => {
+      projects = [project(3, [5]), project(4, [6])];
+      expect(await landed("/workflows")).toBe("/projects");
+      cleanup();
+      expect(await landed("/automations")).toBe("/projects");
+      cleanup();
+      expect(await landed("/workflows/release")).toBe("/projects");
+    });
+  });
 });

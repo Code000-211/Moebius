@@ -11,7 +11,7 @@ import { WorkflowPage } from "./WorkflowPage";
 
 const RUNS = fixtures.runs.map((run) => ({ ...run, status: "failed" }));
 
-/** What `GET /v1/workflows/{name}` answers, with the graph of `file`'s workflow: the real server's JSON, from the
+/** What `GET /v1/projects/{id}/workflows/{name}` answers, with the graph of `file`'s workflow: the real server's JSON, from the
  * shared fixtures. */
 const DEFINITION = {
   ...fixtures.show,
@@ -40,9 +40,28 @@ const DEFINITION = {
   },
 };
 
-/** The routes of the page: the workflow, then its runs. */
+/** The project the workflow belongs to, as the list of projects answers it. */
+const PROJECTS = [
+  {
+    id: 1,
+    name: "demo",
+    key: "DEMO",
+    created_at: 1,
+    repositories: [{ id: 5, name: "platform-api", home: true }],
+    members: [],
+    open_cards: 0,
+    files: null,
+    kinds: [],
+    intake: false,
+    private: false,
+    member: true,
+  },
+];
+
+/** The routes of the page: the projects, the workflow, then its runs. */
 function routed(definition: unknown, runs: unknown = RUNS) {
-  return (url: string) => (url.includes("/v1/workflow-runs") ? runs : definition);
+  return (url: string) =>
+    url === "/v1/projects" ? PROJECTS : url.includes("/v1/workflow-runs") ? runs : definition;
 }
 
 function show(definition: unknown, runs: unknown = RUNS) {
@@ -57,9 +76,9 @@ function show(definition: unknown, runs: unknown = RUNS) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={["/workflows/release"]}>
+      <MemoryRouter initialEntries={["/projects/1/workflows/release"]}>
         <Routes>
-          <Route path="/workflows/:name" element={<WorkflowPage />} />
+          <Route path="/projects/:projectId/workflows/:name" element={<WorkflowPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -134,7 +153,7 @@ interface DeleteAnswer {
   body: string;
 }
 
-/** Shows the detail page of `definition`, answering `DELETE /v1/workflows/{name}` with `answer`. */
+/** Shows the detail page of `definition`, answering `DELETE /v1/projects/{id}/workflows/{name}` with `answer`. */
 function showDeleting(definition: unknown, answer?: DeleteAnswer) {
   const calls: Array<{ method: string; url: string }> = [];
   vi.stubGlobal(
@@ -164,10 +183,10 @@ function showDeleting(definition: unknown, answer?: DeleteAnswer) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={["/workflows/release"]}>
+      <MemoryRouter initialEntries={["/projects/1/workflows/release"]}>
         <Routes>
-          <Route path="/workflows/:name" element={<WorkflowPage />} />
-          <Route path="/workflows" element={<p>the list of workflows</p>} />
+          <Route path="/projects/:projectId/workflows/:name" element={<WorkflowPage />} />
+          <Route path="/projects/:projectId/workflows" element={<p>the list of workflows</p>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -201,10 +220,10 @@ describe("deleting a workflow from its detail page", () => {
     const dialog = await openDeleteDialog("release");
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
     expect(await screen.findByText("the list of workflows")).toBeTruthy();
-    expect(calls).toContainEqual({ method: "DELETE", url: "/v1/workflows/release" });
+    expect(calls).toContainEqual({ method: "DELETE", url: "/v1/projects/1/workflows/release" });
   });
 
-  it("says the refusal of a run still queued or running, and stays", async () => {
+  it("says the refusal of a run still queued or running, in the server's words, and stays", async () => {
     showDeleting(DEFINITION, {
       status: 409,
       body: "workflow release has runs queued, running or waiting",
@@ -235,9 +254,9 @@ describe("the runs of a workflow", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={["/workflows/release"]}>
+        <MemoryRouter initialEntries={["/projects/1/workflows/release"]}>
           <Routes>
-            <Route path="/workflows/:name" element={<WorkflowPage />} />
+            <Route path="/projects/:projectId/workflows/:name" element={<WorkflowPage />} />
           </Routes>
         </MemoryRouter>
       </QueryClientProvider>,
@@ -248,6 +267,15 @@ describe("the runs of a workflow", () => {
     await waitFor(() =>
       expect(calls).toContainEqual({ method: "POST", url: "/v1/workflows/runs/7/cancel" }),
     );
+  });
+
+  it("reads only the runs of its project", async () => {
+    show(DEFINITION);
+    await screen.findByRole("heading", { name: "Runs" });
+    const fetch = vi.mocked(globalThis.fetch);
+    const asked = fetch.mock.calls.map((call) => String(call[0]));
+    expect(asked).toContain("/v1/workflow-runs?project=1&workflow=release");
+    expect(asked).toContain("/v1/projects/1/workflows/release");
   });
 
   it("offers Run, which asks for the inputs of the trigger", async () => {
