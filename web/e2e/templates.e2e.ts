@@ -117,7 +117,7 @@ describe.skipIf(usesRealServer)("issue templates and the Jira import", () => {
 
   it("imports a Jira project and shows the report with its warnings", async () => {
     await open();
-    await page.goto(`${server.url}/projects/1/settings/import`);
+    await page.goto(`${server.url}/projects/1/settings#import`);
     const form = page.getByRole("form", { name: "Import from Jira" });
     await form.waitFor();
     const run = form.getByRole("button", { name: "Import", exact: true });

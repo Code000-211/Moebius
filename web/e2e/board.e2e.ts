@@ -1337,7 +1337,10 @@ describe("the dock", () => {
       await page.getByText('moebius.wait("nothing to do in In progress")').waitFor();
       await page.getByRole("link", { name: "Open the script" }).click();
       await page.waitForURL("**/projects/1/settings/columns/In%20progress?repository=1");
-      await page.getByRole("heading", { name: "Script of In progress" }).waitFor();
+      await page
+        .getByRole("navigation", { name: "Project settings" })
+        .getByRole("link", { name: "Columns" })
+        .waitFor();
       await page.getByText("built in").waitFor();
       await page.getByText("-- The In progress column").waitFor();
     },

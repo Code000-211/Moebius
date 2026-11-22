@@ -333,7 +333,7 @@ impl App {
     }
 
     /// The project `id` when `sight` sees at least its record, or `NotFound`.
-    fn project_seen(&self, id: i64, sight: &Sight) -> Result<Project> {
+    pub(super) fn project_seen(&self, id: i64, sight: &Sight) -> Result<Project> {
         if !sight.project_record(id) {
             return Err(AppError::NotFound(format!("project {id}")));
         }

@@ -1,11 +1,13 @@
 /**
- * The Workflow tab of a project's settings: the script of each column of its board, picked from a list, in the same
- * editor as the board's Script page. A column that runs the project's own script says so; Save commits it to the
- * harness configuration repository and "Use the built-in script" gives it up. Only an owner can save: the server
- * answers anyone else with its refusal, which the editor shows.
+ * The Columns tab of a project's settings: the script of each column of its board, picked from a list, in the one
+ * editor of column scripts. The column is part of the address (`/projects/:projectId/settings/columns/:column`), which
+ * is where the board's column menu leads. A column that runs the project's own script says so; Save commits it to the
+ * harness configuration repository and "Use the built-in script" gives it up. Only an owner edits: anyone else reads
+ * the script.
  */
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { useNavigate } from "react-router";
 import { projectScripts, script } from "../../api/calls/board";
 import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
@@ -14,15 +16,25 @@ import { Select } from "../../ui/page/Field";
 import { Notice } from "../../ui/page/Notice";
 import { SkeletonLines } from "../../ui/page/Skeleton";
 import { ScriptEditor, type ScriptNotice } from "../board/ScriptEditor";
+import { scriptPath } from "../pages";
 
-export function ProjectWorkflowTab({ project }: { project: Project }) {
+export function ProjectColumnsTab({
+  project,
+  column,
+  canEdit,
+}: {
+  project: Project;
+  /** The column the address names, if it names one; else the first. */
+  column?: string;
+  canEdit: boolean;
+}) {
+  const navigate = useNavigate();
   const scripts = useQuery({
     queryKey: keys.projectScripts(project.id),
     queryFn: () => projectScripts(project.id),
   });
-  const [column, setColumn] = useState<string | null>(null);
   const columns = scripts.data ?? [];
-  const chosen = column ?? columns[0]?.column ?? "";
+  const chosen = columns.find((each) => each.column === column)?.column ?? columns[0]?.column ?? "";
   return (
     <div>
       <div className="flex flex-col gap-4">
@@ -46,9 +58,9 @@ export function ProjectWorkflowTab({ project }: { project: Project }) {
                 each.source === "project" ? `${each.column} · its own` : each.column,
               ])}
               value={chosen}
-              onChange={setColumn}
+              onChange={(next) => navigate(scriptPath(project.id, next))}
             />
-            <Column key={chosen} project={project.id} column={chosen} />
+            <Column key={chosen} project={project.id} column={chosen} canEdit={canEdit} />
           </>
         )}
       </div>
@@ -57,7 +69,15 @@ export function ProjectWorkflowTab({ project }: { project: Project }) {
 }
 
 /** The editor of one column's script, started again when the script under it changes. */
-function Column({ project, column }: { project: number; column: string }) {
+function Column({
+  project,
+  column,
+  canEdit,
+}: {
+  project: number;
+  column: string;
+  canEdit: boolean;
+}) {
   const source = useQuery({
     queryKey: keys.script(project, column),
     queryFn: () => script(project, column),
@@ -80,6 +100,7 @@ function Column({ project, column }: { project: number; column: string }) {
       saved={source.data.text}
       notice={notice}
       setNotice={setNotice}
+      readOnly={!canEdit}
     />
   );
 }

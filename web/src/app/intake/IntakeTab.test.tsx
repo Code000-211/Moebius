@@ -86,13 +86,6 @@ function show(role: string) {
 }
 
 describe("the Intake tab", () => {
-  it("lets an owner turn intake off", async () => {
-    const sent = server(true, []);
-    show("owner");
-    fireEvent.click(await screen.findByRole("button", { name: "Turn off intake" }));
-    await waitFor(() => expect(sent).toEqual([["PUT /v1/projects/1/intake", { enabled: false }]]));
-  });
-
   it("lists the requests of its own project only", async () => {
     const asked: string[] = [];
     server(true, [drafted]);

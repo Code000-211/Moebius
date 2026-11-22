@@ -16,6 +16,7 @@ import {
   projectTabPath,
   repositoryPath,
   scriptPath,
+  settingsPath,
   workflowCanvasPath,
   workflowPath,
 } from "../pages";
@@ -136,6 +137,26 @@ export const LEGACY_ROUTES: readonly LegacyRoute[] = [
       ]);
     },
   },
+  // The tabs of a project's settings that are gone: Workflow became Columns, Kinds went into General, Plugins into
+  // the page of each repository (Repositories), and Import into General.
+  ...(
+    [
+      ["workflow", "columns"],
+      ["kinds", "general"],
+      ["plugins", "repositories"],
+      ["import", "general"],
+    ] as const
+  ).map(
+    ([old, tab]): LegacyRoute => ({
+      path: `projects/:projectId/settings/${old}`,
+      resolve: ({ projectId }, projects, search) => {
+        const project = projects.find((each) => String(each.id) === projectId);
+        if (!project) return null;
+        const where = withQuery(settingsPath(project.id, tab), {}, search);
+        return old === "import" ? `${where}#import` : where;
+      },
+    }),
+  ),
   {
     // The cycle that was open (`?cycle=`) is the cycle page of the project.
     path: "cycles",

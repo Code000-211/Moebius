@@ -1204,8 +1204,11 @@ and no text. Accepting and declining are recorded as `accept_request` and `decli
 
 #### `PUT /v1/projects/{id}/intake`
 
-An owner turns intake on or off. Request: `{"enabled": bool}`. Requests already made stay. Response: the `ProjectView`.
-Errors: `404` for no such project.
+An owner turns intake on or off; this is the switch in the General tab of a project's settings, and the project's header
+shows or drops its Intake tab at once (the route sends `project_changed`). Request: `{"enabled": bool}`. Requests already
+made stay. Response: the `ProjectView` as the person asking sees it. Errors: `403` for anyone but an owner, `404` for no
+such project and for a private project the person may not see (an owner sees the record of every project, see
+[Projects](#projects)).
 
 #### `POST /v1/projects/{id}/requests`
 
@@ -1340,7 +1343,7 @@ for a cycle of another project or a closed one.
 ### Importing from Jira
 
 A one-off copy of a Jira project into a Moebius project, which can be run again. Only an owner imports, never an agent,
-since it may make people. The web app has it as the Import tab of a project's settings. The Jira API token is kept like the other keys, in `secrets.toml` (`PUT /v1/secrets/{name}`,
+since it may make people. The web app has it as the Import from Jira button in the General area of a project's settings. The Jira API token is kept like the other keys, in `secrets.toml` (`PUT /v1/secrets/{name}`,
 see [Secrets](configuration.md#secrets)); the request names it and never carries it, and it is not stored, logged or
 answered.
 
