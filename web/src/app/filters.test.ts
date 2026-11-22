@@ -1,12 +1,9 @@
 /**
- * What the pages that filter with the shared bar keep and let through: the Fleet's runs, the boxes
- * of the Rules page, and the scope the Usage and Decisions pages send to the server.
+ * What the pages that filter with the shared bar keep and let through: the Fleet's runs and the scope the Usage and Decisions pages send to the server.
  */
 import { describe, expect, it } from "vitest";
 import { scopeQuery } from "../api/calls/usage";
-import type { RulesView } from "../api/types/rules";
 import { filterFields as fleetFields, filtered as fleetFiltered, type Work } from "./fleet/model";
-import { filterFields as ruleFields, visible } from "./rules/filters";
 import { repositoryOf } from "./scope";
 
 const work = (run: number, agent: string, kind: string, repository: string): Work => ({
@@ -53,39 +50,6 @@ describe("the fleet's filters", () => {
       fleetFiltered(list, { project: "demo", agent: "Coder" }).map((each) => each.run),
     ).toEqual([1]);
     expect(fleetFiltered(list, { kind: "chat", project: "demo" })).toEqual([]);
-  });
-});
-
-describe("the rules page's filters", () => {
-  const view = {
-    repositories: [
-      { repository: "demo", repository_id: 3 },
-      { repository: "other", repository_id: 4 },
-    ],
-  } as RulesView;
-
-  it("offer the scopes and the projects", () => {
-    const [scope, project] = ruleFields(view);
-    expect(scope?.options.map(([value]) => value)).toEqual(["patterns", "server", "project"]);
-    expect(project?.options).toEqual([
-      ["3", "demo"],
-      ["4", "other"],
-    ]);
-  });
-
-  it("leave the boxes of the scope, and only the project's box when a project is named", () => {
-    const all = visible({});
-    expect([all.patterns, all.server, all.project(3)]).toEqual([true, true, true]);
-    const server = visible({ scope: "server" });
-    expect([server.patterns, server.server, server.project(3)]).toEqual([false, true, false]);
-    const project = visible({ project: "4" });
-    expect([project.patterns, project.server, project.project(3), project.project(4)]).toEqual([
-      false,
-      false,
-      false,
-      true,
-    ]);
-    expect(visible({ scope: "patterns", project: "4" }).project(4)).toBe(false);
   });
 });
 

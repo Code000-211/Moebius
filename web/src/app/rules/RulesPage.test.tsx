@@ -1,9 +1,13 @@
-/** The Rules page as one list of 36px rows grouped by set; a row opens its rule in the editor window. */
+/** The Rules page: a sub-navigation of scopes, the rules of the chosen one as blocks, the editor window and "New rule". */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RulesPage } from "./RulesPage";
+
+const LONG = "Run the whole suite before you push, and never skip a test to get a green run. "
+  .repeat(6)
+  .trim();
 
 const VIEW = {
   patterns: [{ name: "no-force-push", description: "Never force-push." }],
@@ -18,49 +22,108 @@ const VIEW = {
     {
       repository: "api",
       repository_id: 7,
-      text: "## Tests\nRun them.\n",
-      rules: [{ name: "Tests", text: "Run them." }],
+      text: `## Tests\n${LONG}\n`,
+      rules: [{ name: "Tests", text: LONG }],
       error: null,
     },
+    { repository: "web", repository_id: 8, text: "", rules: [], error: null },
   ],
   refusals: { "no-force-push": 2 },
 };
 
-function show() {
+function Where() {
+  return <output data-testid="where">{useLocation().search}</output>;
+}
+
+function show(path = "/rules", view: unknown = VIEW) {
   const calls: Array<{ url: string; init?: RequestInit }> = [];
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: RequestInit) => {
       calls.push({ url, init });
-      return { ok: true, status: 200, text: async () => JSON.stringify(VIEW) };
+      return { ok: true, status: 200, text: async () => JSON.stringify(view) };
     }),
   );
   render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <MemoryRouter initialEntries={["/rules"]}>
+      <MemoryRouter initialEntries={[path]}>
         <RulesPage />
+        <Where />
       </MemoryRouter>
     </QueryClientProvider>,
   );
   return calls;
 }
 
+const nav = () => screen.findByRole("navigation", { name: "Rules" });
+
 afterEach(() => vi.unstubAllGlobals());
 
-describe("the rules as a list of rows", () => {
-  it("lists every set with its rules and has no properties column", async () => {
+describe("the sub-navigation", () => {
+  it("lists the scopes with their counts, zero included, and Refusals last", async () => {
     show();
-    expect(await screen.findByText("no-force-push")).toBeTruthy();
-    expect(screen.getByText("be-careful")).toBeTruthy();
-    expect(screen.getByText("Tests")).toBeTruthy();
-    expect(screen.getByText("2 refusals")).toBeTruthy();
-    expect(screen.queryByRole("region", { name: /Properties of/ })).toBeNull();
-    expect(screen.queryByTestId("editor-window")).toBeNull();
+    const bar = within(await nav());
+    expect(bar.getByRole("link", { name: "Built-in1" })).toBeTruthy();
+    expect(bar.getByRole("link", { name: "Server1" })).toBeTruthy();
+    expect(bar.getByRole("link", { name: "api1" })).toBeTruthy();
+    expect(bar.getByRole("link", { name: "web0" })).toBeTruthy();
+    expect(bar.getAllByRole("link").at(-1)?.textContent).toBe("Refusals");
   });
 
-  it("opens the editor window on a row and asks before Escape drops a change", async () => {
+  it("opens on the server when it has rules and on the built-in patterns when it has none", async () => {
+    show();
+    expect(await screen.findByRole("region", { name: "Server" })).toBeTruthy();
+    expect((await nav()).querySelector('[aria-current="page"]')?.textContent).toContain("Server");
+    vi.unstubAllGlobals();
+    show("/rules", { ...VIEW, prose: { ...VIEW.prose, rules: [], text: "" } });
+    expect(await screen.findAllByRole("region", { name: "Built-in" })).toBeTruthy();
+  });
+
+  it("shows another scope and keeps it in the address", async () => {
+    show();
+    fireEvent.click(within(await nav()).getByRole("link", { name: "Built-in1" }));
+    expect(await screen.findByRole("region", { name: "Built-in" })).toBeTruthy();
+    expect(screen.getByTestId("where").textContent).toBe("?scope=builtin");
+  });
+});
+
+describe("the rules of a scope", () => {
+  it("shows a built-in rule read only, with its text in full and what it refused", async () => {
+    show("/rules?scope=builtin");
+    const block = await screen.findByRole("article", { name: "no-force-push" });
+    expect(within(block).getByText("Never force-push.")).toBeTruthy();
+    expect(within(block).getByLabelText("Read only")).toBeTruthy();
+    expect(within(block).getByText(/2 refusals/)).toBeTruthy();
+    expect(within(block).queryByRole("button")).toBeNull();
+  });
+
+  it("shows the whole of a long rule", async () => {
+    show("/rules?scope=repository-7");
+    const block = await screen.findByRole("article", { name: "Tests" });
+    expect(block.textContent).toContain(LONG);
+    expect(within(block).getByText("Runs in api", { exact: false })).toBeTruthy();
+  });
+
+  it("says an empty scope has no rules and offers to add one", async () => {
+    show("/rules?scope=repository-8");
+    expect(await screen.findByText("No rules for web.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add a rule" }));
+    expect(screen.getByRole("dialog", { name: "New rule" })).toBeTruthy();
+  });
+
+  it("lists the rules that refused a call this week under Refusals", async () => {
+    show("/rules?scope=refusals");
+    const list = await screen.findByRole("region", { name: "Refusals" });
+    expect(within(list).getByText("no-force-push")).toBeTruthy();
+    expect(within(list).getByText("2 refusals")).toBeTruthy();
+    expect(within(list).queryByText("be-careful")).toBeNull();
+  });
+});
+
+describe("the editor window", () => {
+  it("opens on a rule and asks before Escape drops a change", async () => {
     show();
     fireEvent.click(await screen.findByRole("button", { name: "Edit rule be-careful" }));
     const window = screen.getByTestId("editor-window");
@@ -73,6 +136,12 @@ describe("the rules as a list of rows", () => {
     await waitFor(() => expect(screen.queryByTestId("editor-window")).toBeNull());
   });
 
+  it("opens on a press anywhere in the block", async () => {
+    show();
+    fireEvent.click(await screen.findByText("Ask first."));
+    expect(screen.getByTestId("editor-window")).toBeTruthy();
+  });
+
   it("saves the whole file and closes the window", async () => {
     const calls = show();
     fireEvent.click(await screen.findByRole("button", { name: "Edit rule be-careful" }));
@@ -83,12 +152,27 @@ describe("the rules as a list of rows", () => {
     expect(put?.url).toContain("/v1/rules");
     expect(String(put?.init?.body)).toContain("Ask twice.");
   });
+});
 
-  it("adds a rule from the last row", async () => {
-    show();
-    const rows = await screen.findAllByRole("button", { name: "Add a rule" });
-    fireEvent.click(rows[0] as HTMLElement);
-    expect(screen.getByRole("dialog", { name: "New rule" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Save" }).getAttribute("disabled")).not.toBeNull();
+describe("New rule", () => {
+  it("asks for the scope, starting on the one being read, and opens the empty editor there", async () => {
+    show("/rules?scope=repository-7");
+    fireEvent.click(await screen.findByRole("button", { name: "New rule" }));
+    const dialog = screen.getByRole("dialog", { name: "New rule" });
+    expect(within(dialog).getByRole("button", { name: "Scope" }).textContent).toContain("api");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
+    const editor = await screen.findByTestId("editor-window");
+    expect(within(editor).getByLabelText("Rule name")).toBeTruthy();
+    expect(screen.getByTestId("where").textContent).toBe("?scope=repository-7");
+  });
+
+  it("starts on the server when the built-in patterns are being read", async () => {
+    show("/rules?scope=builtin");
+    fireEvent.click(await screen.findByRole("button", { name: "New rule" }));
+    const dialog = screen.getByRole("dialog", { name: "New rule" });
+    expect(within(dialog).getByRole("button", { name: "Scope" }).textContent).toContain("Server");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
+    await screen.findByTestId("editor-window");
+    expect(screen.getByTestId("where").textContent).toBe("?scope=server");
   });
 });

@@ -51,10 +51,6 @@ const fake = () => {
   if (!server.pagesC) throw new Error("this test needs the fake server");
   return server.pagesC;
 };
-const chatFake = () => {
-  if (!server.chat) throw new Error("this test needs the fake server");
-  return server.chat;
-};
 const lastRequest = () => fake().requests.at(-1);
 /** The `text` of the body of the last request. */
 const lastText = () => String((lastRequest()?.body as { text?: string } | undefined)?.text);
@@ -100,48 +96,54 @@ async function ensureProject(): Promise<void> {
 const editor = () => page.getByRole("dialog", { name: /^(Edit rule|New rule)/ });
 
 describe("the Rules page", () => {
-  it("loads, with the built-in patterns and the server's rules in one list", async () => {
+  const sub = () => page.getByRole("navigation", { name: "Rules" });
+  const scopeLink = (name: RegExp) => sub().getByRole("link", { name });
+
+  it("loads, with every scope in the sub-navigation", async () => {
     await fresh();
     await open("/rules", "Rules");
-    await region("Built-in patterns").getByText("no-force-push").waitFor();
-    await region("Rules in prose").waitFor();
+    await sub().waitFor();
+    // It opens on the server's rules when it has some, else on the built-in patterns.
+    await page.getByRole("region", { name: /^(Server|Built-in)$/ }).waitFor();
+    await scopeLink(/^Built-in/).waitFor();
+    await scopeLink(/^Refusals/).waitFor();
   });
 
-  it.skipIf(usesRealServer)("filters by scope and by project with the bar", async () => {
+  it.skipIf(usesRealServer)("switches the scope and keeps it in the address", async () => {
     await fresh();
     await open("/rules", "Rules");
-    const bar = page.getByRole("search", { name: "Filter the rules" });
-    await region("Built-in patterns").waitFor();
+    await region("Server").waitFor();
 
-    await addFilter(page, bar, "Scope", "Server rules");
-    await region("Rules in prose").waitFor();
-    await region("Built-in patterns").waitFor({ state: "detached" });
-    await expect.poll(() => region("demo").count()).toBe(0);
-    expect(new URL(page.url()).search).toBe("?scope=server");
+    await scopeLink(/^Built-in/).click();
+    const patterns = region("Built-in");
+    await patterns.getByText("no-force-push").waitFor();
+    await patterns.getByText("git push --force rewrites history on the remote").waitFor();
+    await patterns.getByText(/3 refusals/).waitFor();
+    expect(new URL(page.url()).search).toBe("?scope=builtin");
+    await expect.poll(() => region("Server").count()).toBe(0);
 
     await page.reload();
-    await bar.getByRole("button", { name: "Scope is Server rules", exact: true }).waitFor();
-    await region("Rules in prose").waitFor();
-    await expect.poll(() => region("Built-in patterns").count()).toBe(0);
+    await region("Built-in").waitFor();
 
-    await bar.getByRole("button", { name: "Clear filters" }).click();
-    await addFilter(page, bar, "Project", "demo");
-    await region("demo").waitFor();
-    await region("Rules in prose").waitFor({ state: "detached" });
-    await expect.poll(() => region("Built-in patterns").count()).toBe(0);
+    await scopeLink(/^demo/).click();
+    await region("demo").getByText("keep-migrations").waitFor();
+    expect(new URL(page.url()).search).toBe("?scope=repository-1");
+
+    await scopeLink(/^Refusals/).click();
+    const refusals = region("Refusals");
+    await refusals.getByText("no-force-push").waitFor();
+    await refusals.getByText("3 refusals").waitFor();
+    await refusals.getByText("1 refusal", { exact: true }).waitFor();
+    expect(new URL(page.url()).search).toBe("?scope=refusals");
   });
 
-  it.skipIf(usesRealServer)("lists the patterns, the rules and what each refused", async () => {
+  it.skipIf(usesRealServer)("shows a built-in rule read only", async () => {
     await fresh();
-    await open("/rules", "Rules");
-    const patterns = region("Built-in patterns");
-    await patterns.getByText("git push --force rewrites history on the remote").waitFor();
-    await patterns.getByText("3 refusals").waitFor();
-    const prose = region("Rules in prose");
-    await prose.getByText("leave-ci-alone").waitFor();
-    await prose.getByText("1 refusal").waitFor();
-    await prose.getByText("Do not copy dependencies into the tree.").waitFor();
-    await region("demo").getByText("keep-migrations").waitFor();
+    await open("/rules?scope=builtin", "Rules");
+    const block = page.getByRole("article", { name: "no-force-push" });
+    await block.getByLabel("Read only").waitFor();
+    await block.click();
+    await expect.poll(() => editor().count()).toBe(0);
   });
 
   it.skipIf(usesRealServer)(
@@ -149,7 +151,7 @@ describe("the Rules page", () => {
     async () => {
       await fresh();
       await open("/rules", "Rules");
-      const prose = region("Rules in prose");
+      const prose = region("Server");
       await prose.getByRole("button", { name: "Edit rule no-vendoring" }).click();
       const text = editor().getByLabel("Rule text");
       await text.fill("Do not copy dependencies into the tree. Use the package manager.");
@@ -167,13 +169,21 @@ describe("the Rules page", () => {
     },
   );
 
+  it.skipIf(usesRealServer)("opens the editor from a press on the text of a rule", async () => {
+    await fresh();
+    await open("/rules", "Rules");
+    await region("Server").getByText("Do not copy dependencies into the tree.").click();
+    await editor().waitFor();
+    expect(await editor().getByLabel("Rule name").inputValue()).toBe("no-vendoring");
+  });
+
   it.skipIf(usesRealServer)("asks before Escape drops a change", async () => {
     await fresh();
     await open("/rules", "Rules");
-    await region("Rules in prose").getByRole("button", { name: "Edit rule no-vendoring" }).click();
+    await region("Server").getByRole("button", { name: "Edit rule no-vendoring" }).click();
     await page.keyboard.press("Escape");
     await editor().waitFor({ state: "detached" });
-    await region("Rules in prose").getByRole("button", { name: "Edit rule no-vendoring" }).click();
+    await region("Server").getByRole("button", { name: "Edit rule no-vendoring" }).click();
     await editor().getByLabel("Rule text").fill("Changed.");
     await page.keyboard.press("Escape");
     await page.getByRole("alertdialog", { name: "Discard changes?" }).waitFor();
@@ -184,25 +194,32 @@ describe("the Rules page", () => {
     await editor().waitFor({ state: "detached" });
   });
 
-  it.skipIf(usesRealServer)("keeps a refused rule open and says why", async () => {
-    await fresh();
-    await open("/rules", "Rules");
-    await region("Rules in prose").getByRole("button", { name: "Add a rule" }).click();
-    const save = editor().getByRole("button", { name: "Save", exact: true });
-    await editor().getByLabel("Rule name").fill("two words");
-    expect(await save.isDisabled()).toBe(true);
-    await editor().getByLabel("Rule name").fill("leave-ci-alone");
-    await editor().getByLabel("Rule text").fill("Again.");
-    await save.click();
-    await alert('line 9: the rule "leave-ci-alone" is named twice').waitFor();
-    expect(await editor().getByLabel("Rule name").inputValue()).toBe("leave-ci-alone");
-  });
+  it.skipIf(usesRealServer)(
+    "asks for the scope of a new rule and says why one is refused",
+    async () => {
+      await fresh();
+      await open("/rules", "Rules");
+      await page.getByRole("button", { name: "New rule" }).click();
+      const ask = page.getByRole("dialog", { name: "New rule" });
+      expect(await ask.getByRole("button", { name: "Scope" }).textContent()).toContain("Server");
+      await ask.getByRole("button", { name: "Continue" }).click();
+      const save = editor().getByRole("button", { name: "Save", exact: true });
+      await editor().getByLabel("Rule name").fill("two words");
+      expect(await save.isDisabled()).toBe(true);
+      await editor().getByLabel("Rule name").fill("leave-ci-alone");
+      await editor().getByLabel("Rule text").fill("Again.");
+      await save.click();
+      await alert('line 9: the rule "leave-ci-alone" is named twice').waitFor();
+      expect(await editor().getByLabel("Rule name").inputValue()).toBe("leave-ci-alone");
+    },
+  );
 
   it.skipIf(usesRealServer)("adds a rule at the end and deletes one after asking", async () => {
     await fresh();
     await open("/rules", "Rules");
-    const prose = region("Rules in prose");
-    await prose.getByRole("button", { name: "Add a rule" }).click();
+    const prose = region("Server");
+    await page.getByRole("button", { name: "New rule" }).click();
+    await page.getByRole("button", { name: "Continue" }).click();
     await expect.poll(() => editor().getByRole("button", { name: "Delete rule" }).count()).toBe(0);
     await editor().getByLabel("Rule name").fill("ask-first");
     await editor().getByLabel("Rule text").fill("Ask before deleting a branch.");
@@ -228,6 +245,7 @@ describe("the Rules page", () => {
   it.skipIf(usesRealServer)("saves the rules of a repository in its own file", async () => {
     await fresh();
     await open("/rules", "Rules");
+    await scopeLink(/^demo/).click();
     const box = region("demo");
     await box.getByRole("button", { name: "Edit rule keep-migrations" }).click();
     await editor().getByLabel("Rule text").fill("Do not edit a migration that exists, ever.");
@@ -238,28 +256,15 @@ describe("the Rules page", () => {
       path: "/v1/repositories/1/settings/rules.md",
       body: { text: "## keep-migrations\nDo not edit a migration that exists, ever.\n" },
     });
-    // A refusal names the file.
-    await box.getByRole("button", { name: "Add a rule" }).click();
+    // A new rule starts on the scope being read, and a refusal names the file.
+    await page.getByRole("button", { name: "New rule" }).click();
+    const ask = page.getByRole("dialog", { name: "New rule" });
+    expect(await ask.getByRole("button", { name: "Scope" }).textContent()).toContain("demo");
+    await ask.getByRole("button", { name: "Continue" }).click();
     await editor().getByLabel("Rule name").fill("keep-migrations");
     await editor().getByLabel("Rule text").fill("Twice.");
     await editor().getByRole("button", { name: "Save", exact: true }).click();
     await alert('rules.md: line 4: the rule "keep-migrations" is named twice').waitFor();
-  });
-
-  it.skipIf(usesRealServer)("asks the Moebius agent to write the rules", async () => {
-    await fresh();
-    await open("/rules", "Rules");
-    const prose = region("Rules in prose");
-    await prose.getByRole("button", { name: "Write with agent" }).click();
-    const ask = prose.getByRole("button", { name: "Submit" });
-    expect(await ask.isDisabled()).toBe(true);
-    await prose.getByLabel("What should be allowed or forbidden").fill("never edit the lockfile");
-    await ask.click();
-    await prose.getByRole("link", { name: "Open the chat" }).waitFor();
-    const started = chatFake().started.at(-1) as { agent: string; message: string };
-    expect(started.agent).toBe("Moebius");
-    expect(started.message).toContain('"$MOEBIUS" rules save <file>');
-    expect(started.message.endsWith("never edit the lockfile")).toBe(true);
   });
 });
 

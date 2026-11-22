@@ -51,17 +51,19 @@ dropped, and the server's text stands. When a name is repeated within one file, 
 
 ### Change the server's rules in the web app
 
-Build > Rules in the web app (`/rules`) shows the built-in patterns, the rules in
-prose and the rules of each repository, with how many calls each rule refused in the last week. Every rule in prose is
-a card with its name and text and a pencil: the pencil grows the card into an editor of the name and the text, with
-Save, Cancel and Delete rule (which asks first). Under the last rule an empty "Add a rule" card adds one at the end of
-the file. A save rewrites only that rule's `## name` section and saves the whole file: with a harness configuration
+Build > Rules in the web app (`/rules`) has a sub-navigation like Settings: Built-in (the patterns, read only, with a
+lock), Server, a group Repositories with every repository and its number of rules (0 when it has none), and Refusals.
+The chosen one is in the address (`?scope=server`) and its rules fill the page, each as a block with its name, its scope
+and its whole text, and a muted line of where it applies and how many calls it refused in the last week. A block of the
+server or of a repository opens the rule in an editor window with Save, Cancel and Delete rule (which asks first); a
+scope without rules says so and offers "Add a rule". "New rule" in the header asks for the scope, the server or a
+repository (starting on the one being read), and opens the same window empty, to add the rule at the end of that file.
+Refusals lists the rules that refused a call this week, the most refusing first. A save rewrites only that rule's
+`## name` section and saves the whole file: with a harness configuration
 repository it is committed to the repository as `Update the rules` and pushed; without one it replaces the
 `rules_file` (creating `rules.md` next to `moebius.toml` the first time). The next tool call is checked against it. A
-refusal of the server (a name given twice, say) stays in red in the card. "Let the Moebius agent write them", next to
-the heading, asks for what should be allowed or forbidden and starts a chat in which the Moebius agent reads the rules,
-changes them in prose without weakening any and saves them with `"$MOEBIUS" rules save <file>`.
-Every repository has a box with its own rules as the same cards and its own "Add a rule" card. Saving commits
+refusal of the server (a name given twice, say) stays in red in the window.
+Saving a repository's rule commits
 `repos/<repository name>/rules.md` to the harness configuration repository (and pushes it) with `PUT
 /v1/repositories/{id}/settings/rules.md`; the server checks the file first as it checks its own rules (every
 `## ` line has a name, no name twice) and refuses it with the line that is wrong.
