@@ -360,52 +360,56 @@ function ScheduledList({
       </p>
     );
   return (
-    // biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely
-    <ul role="list" className="m-0 mb-2 list-none divide-y divide-hairline p-0">
-      {schedules.map(({ workflow, automation }) => {
-        const state = automation ? statusWord(automation) : null;
-        return (
-          <li key={workflow.name} data-testid="scheduled-row" className={ROW}>
-            <TreeStructureIcon className="size-4 shrink-0 text-text-muted" aria-hidden="true" />
-            <h3 className="m-0 shrink-0 truncate text-base font-medium text-text">
-              <Link
-                className="rounded-round underline-offset-4 hover:underline"
-                to={workflowPath(project, workflow.name)}
+    <div className="mb-2 border-b border-hairline">
+      {/* biome-ignore lint/a11y/noRedundantRoles: preflight sets list-style: none, and WebKit then drops a list with no marker from the accessibility tree entirely */}
+      <ul role="list" className="m-0 list-none divide-y divide-hairline p-0">
+        {schedules.map(({ workflow, automation }) => {
+          const state = automation ? statusWord(automation) : null;
+          return (
+            <li key={workflow.name} data-testid="scheduled-row" className={ROW}>
+              <TreeStructureIcon className="size-4 shrink-0 text-text-muted" aria-hidden="true" />
+              <h3 className="m-0 shrink-0 truncate text-base font-medium text-text">
+                <Link
+                  className="rounded-round underline-offset-4 hover:underline"
+                  to={workflowPath(project, workflow.name)}
+                >
+                  {automation?.name ?? workflow.name}
+                </Link>
+              </h3>
+              <span
+                className={cn(
+                  "min-w-0 flex-1 truncate text-xs",
+                  automation?.last_firing?.status === "failed"
+                    ? "text-error-text"
+                    : "text-text-muted",
+                )}
               >
-                {automation?.name ?? workflow.name}
-              </Link>
-            </h3>
-            <span
-              className={cn(
-                "min-w-0 flex-1 truncate text-xs",
-                automation?.last_firing?.status === "failed"
-                  ? "text-error-text"
-                  : "text-text-muted",
+                {automation === undefined
+                  ? "Schedule"
+                  : automation.last_firing?.status === "failed"
+                    ? automation.last_firing.reason
+                    : automation.next_firing !== null
+                      ? `${scheduleName(automation.schedule)} · next ${until(now, automation.next_firing)}`
+                      : scheduleName(automation.schedule)}
+              </span>
+              {state && (
+                <span className={cn("shrink-0 text-xs", state.className)}>{state.text}</span>
               )}
-            >
-              {automation === undefined
-                ? "Schedule"
-                : automation.last_firing?.status === "failed"
-                  ? automation.last_firing.reason
-                  : automation.next_firing !== null
-                    ? `${scheduleName(automation.schedule)} · next ${until(now, automation.next_firing)}`
-                    : scheduleName(automation.schedule)}
-            </span>
-            {state && <span className={cn("shrink-0 text-xs", state.className)}>{state.text}</span>}
-            {automation && (
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-label={`Edit scheduled workflow ${automation.name}`}
-                onClick={() => onEdit(automation.id)}
-              >
-                Edit
-              </Button>
-            )}
-          </li>
-        );
-      })}
-    </ul>
+              {automation && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label={`Edit scheduled workflow ${automation.name}`}
+                  onClick={() => onEdit(automation.id)}
+                >
+                  Edit
+                </Button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
