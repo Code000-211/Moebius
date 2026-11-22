@@ -100,7 +100,7 @@ export const NAV: readonly NavEntry[] = [
     icon: PulseIcon,
     shownTo: everyone,
     sidebar: "",
-    words: "runs runners ports agents running ssh machines forwarding workflows",
+    words: "runs runners ports agents running ssh machines forwarding",
   },
   {
     path: "chat",
