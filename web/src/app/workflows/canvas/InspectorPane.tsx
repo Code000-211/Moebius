@@ -5,7 +5,7 @@
  * "Discard changes?" in the foot first. Without `onSave` the pane is for reading and has no Save.
  */
 import { XIcon } from "@phosphor-icons/react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Button } from "../../../ui/components/Button";
 import { DeleteButton } from "../../../ui/components/EditorWindow";
 import { IconButton } from "../../../ui/components/IconButton";
@@ -34,6 +34,16 @@ export function InspectorPane({
 }) {
   const [asking, setAsking] = useState(false);
   const close = () => (dirty ? setAsking(true) : onClose());
+  // Escape closes the pane wherever the focus is, unless a window or menu over the page has taken the key.
+  const closing = useRef(close);
+  closing.current = close;
+  useEffect(() => {
+    const listen = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented) closing.current();
+    };
+    window.addEventListener("keydown", listen);
+    return () => window.removeEventListener("keydown", listen);
+  }, []);
   return (
     <aside
       aria-label={title}
