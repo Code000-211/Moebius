@@ -40,7 +40,7 @@ export function ProjectMembersTab({ project, canEdit }: { project: Project; canE
             <>
               Make it private on the{" "}
               <Link className="underline" to={settingsPath(project.id)}>
-                General tab
+                General
               </Link>{" "}
               to name its members.
             </>
