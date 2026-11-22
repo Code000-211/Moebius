@@ -281,7 +281,11 @@ the panel, with no card:
 
 - **Workflows**: one 36px row per definition of this project, with the workflow icon, its name (a link to the
   definition at `/projects/:id/workflows/:name`, which links to the canvas at `.../canvas`), what it is for in muted
-  text, what starts it (Manual, Schedule, Event, Webhook) and a status tag with the age of its last run. "New workflow"
+  text, what starts it (Manual, Schedule, Event, Webhook) and a status tag with the age of its last run. A workflow on a
+  webhook trigger shows the address it answers on, `/api/hooks/projects/<project>/<path>`, in the code font beside its
+  purpose with a Copy button (`hook_address`; the address without the project is deprecated and never shown). The
+  Webhooks panel of Settings holds only the forges' hooks, so a workflow's hook lives here, in its project: a private
+  project's hooks are only read by those who can open it. "New workflow"
   (a blank canvas) and "New scheduled workflow" (the automation template, in the editor window) sit at the right of the
   section title, as secondary buttons.
 - **Runs**: a tab row `All | Scheduled | Failed`, in the address as `?runs=`, over this project's runs newest first,
@@ -290,8 +294,9 @@ the panel, with no card:
   project's schedule-trigger workflows with their schedule and when each fires next (`in 3 h`), a word where one is
   off or failed, and Edit, which opens the automation in the editor window (`?automation=<id>`); the scheduled runs
   follow. A schedule-trigger workflow that is not an automation (a trigger with no `chat` node, or an older file) shows
-  "Schedule" in place of the time: the next firing is the server's to compute (cron in its local time, `GET /v1/automations`
-  carries it), and the app does not guess it. Saving a workflow on the canvas, and every `workflow_*` event, read the
+  `Schedule · next in 5 h · last fired 19h ago` in the same place: the server works the next firing out from the trigger's
+  cron in its local time, the way the scheduler fires (`next_firing` and `last_fired` on `GET /v1/projects/{id}/workflows`),
+  and the app does not guess it; with none it says `Schedule · no next firing`. Saving a workflow on the canvas, and every `workflow_*` event, read the
   automations again, so the list joined to the definitions stays current.
 
 The one primary button of the header, "Run a workflow here", is at its far right. It opens a dialog that asks which of

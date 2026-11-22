@@ -7,6 +7,7 @@ import {
   runFilter,
   runStatus,
   scheduledWorkflows,
+  scheduleLine,
   triggerName,
 } from "./model";
 
@@ -117,5 +118,38 @@ describe("the scheduled workflows", () => {
       ["automation-4", 4],
       ["plain-schedule", undefined],
     ]);
+  });
+});
+
+describe("the line of a schedule that is not an automation", () => {
+  const NOW = 1_700_000_000;
+  const schedule = (extra: Partial<WorkflowSummary>): WorkflowSummary => ({
+    project: 1,
+    project_name: "demo",
+    name: "release",
+    description: "",
+    trigger_kind: "schedule",
+    node_count: 1,
+    last_run: null,
+    ...extra,
+  });
+
+  it("says when it fires next", () => {
+    expect(scheduleLine(schedule({ next_firing: NOW + 3 * 3600 + 60 }), NOW)).toBe(
+      "Schedule · next in 3 h",
+    );
+  });
+
+  it("adds when it last fired", () => {
+    expect(
+      scheduleLine(schedule({ next_firing: NOW + 2 * 86_400 + 60, last_fired: NOW - 7200 }), NOW),
+    ).toBe("Schedule · next in 2 d · last fired 2h ago");
+  });
+
+  it("says there is no next firing rather than guess one", () => {
+    expect(scheduleLine(schedule({}), NOW)).toBe("Schedule · no next firing");
+    expect(scheduleLine(schedule({ last_fired: NOW - 120 }), NOW)).toBe(
+      "Schedule · no next firing · last fired 2m ago",
+    );
   });
 });

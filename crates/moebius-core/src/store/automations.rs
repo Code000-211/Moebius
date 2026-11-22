@@ -440,8 +440,18 @@ impl Store {
         Ok(Some(occurrence(first, later.as_deref(), minute, now)))
     }
 
-    /// The Unix second SQLite reads the local minute `minute` as; none when it is no time.
-    fn unix_of_minute(&self, minute: &str) -> Result<Option<i64>> {
+    /// Whether the server's clock reads the local minute `minute` at all: false for a minute that is no time and for one
+    /// in the hour a spring-forward day skips, which SQLite moves on to another minute.
+    pub fn local_minute_exists(&self, minute: &str) -> Result<bool> {
+        let Some(unix) = self.unix_of_minute(minute)? else {
+            return Ok(false);
+        };
+        Ok(self.local_minute_of(unix)?.as_deref() == Some(minute))
+    }
+
+    /// The Unix second SQLite reads the local minute `minute` as, the first time round on a fall-back day; none when it
+    /// is no time. A minute that went by is read as it went by (compare [`Store::local_minute_to_unix`]).
+    pub fn unix_of_minute(&self, minute: &str) -> Result<Option<i64>> {
         Ok(self.read().query_row(
             "SELECT CAST(strftime('%s', ?1, 'utc') AS INTEGER)",
             [minute],

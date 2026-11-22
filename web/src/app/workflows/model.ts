@@ -8,6 +8,8 @@
 import type { Automation } from "../../api/types/automations";
 import type { LastRun, WorkflowDefinition, WorkflowSummary } from "../../api/types/workflows";
 import type { TagTone } from "../../ui/chat/Tag";
+import { ago } from "../../ui/lib/format";
+import { until } from "../automations/model";
 
 /** The trigger's kind as a word: what starts the workflow. */
 export function triggerName(kind: string | null | undefined): string {
@@ -98,4 +100,17 @@ export function scheduledWorkflows(
       const automation = automations.find((each) => keeps(each, workflow.name));
       return automation ? { workflow, automation } : { workflow };
     });
+}
+
+/**
+ * What the Scheduled list says of a schedule-trigger workflow that is not an automation: when it fires next, which the
+ * server works out from the trigger's cron in its own local time, and when it last fired. Without a next firing the
+ * schedule is off or never comes due, and the line says that rather than guess.
+ */
+export function scheduleLine(workflow: WorkflowSummary, now: number): string {
+  const last =
+    workflow.last_fired === undefined ? "" : ` · last fired ${ago(now, workflow.last_fired)}`;
+  return workflow.next_firing === undefined
+    ? `Schedule · no next firing${last}`
+    : `Schedule · next ${until(now, workflow.next_firing)}${last}`;
 }
