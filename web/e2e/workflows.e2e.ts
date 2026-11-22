@@ -159,7 +159,9 @@ describe.skipIf(usesRealServer)("deleting a workflow from its detail page", () =
   it("deletes a workflow and returns to the tab, which no longer names it", async () => {
     await open(TAB);
     await definition(page, "release").getByRole("link", { name: "release", exact: true }).click();
-    await page.getByRole("button", { name: "Delete workflow" }).click();
+    await page.getByRole("tab", { name: "Overview" }).waitFor();
+    await page.getByRole("button", { name: "More workflow actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete workflow" }).click();
     const dialog = page.getByRole("dialog", { name: "Delete release?" });
     await dialog.waitFor();
     await dialog.getByRole("button", { name: "Delete" }).click();
@@ -173,7 +175,9 @@ describe.skipIf(usesRealServer)("deleting a workflow from its detail page", () =
   it("warns that a workflow shaped like an automation stops one", async () => {
     await open(TAB);
     await definition(page, "tidy").getByRole("link", { name: "tidy", exact: true }).click();
-    await page.getByRole("button", { name: "Delete workflow" }).click();
+    await page.getByRole("tab", { name: "Overview" }).waitFor();
+    await page.getByRole("button", { name: "More workflow actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete workflow" }).click();
     const dialog = page.getByRole("dialog", { name: "Delete tidy?" });
     await dialog.waitFor();
     await dialog.getByText(/automation: a schedule that starts one chat/).waitFor();
@@ -182,7 +186,9 @@ describe.skipIf(usesRealServer)("deleting a workflow from its detail page", () =
   it("says the refusal of a run still queued or running, and stays on the page", async () => {
     await open(TAB);
     await definition(page, "release").getByRole("link", { name: "release", exact: true }).click();
-    await page.getByRole("button", { name: "Delete workflow" }).click();
+    await page.getByRole("tab", { name: "Overview" }).waitFor();
+    await page.getByRole("button", { name: "More workflow actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete workflow" }).click();
     const dialog = page.getByRole("dialog", { name: "Delete release?" });
     await dialog.waitFor();
     fake().refuseNextDelete(409, "workflow release has runs queued, running or waiting");

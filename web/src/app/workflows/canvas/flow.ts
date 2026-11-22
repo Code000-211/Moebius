@@ -5,7 +5,9 @@ import type {
   WorkflowEdge,
   WorkflowNodeRun,
 } from "../../../api/types/workflows";
+import { triggerName } from "../model";
 import { portsOf } from "../nodeKinds";
+import { kindTitle, paramsInWords, plainText, stepSummary } from "../steps";
 import type { CardData } from "./cards";
 import { edgeId, nodeOf, type Problem, TRIGGER, triggerPorts } from "./model";
 
@@ -44,8 +46,8 @@ export function flowNodes(graph: WorkflowDefinition, marks: Marks = {}): CardNod
       data: {
         id: TRIGGER,
         kind: trigger?.kind ?? "none",
-        title: trigger ? `${trigger.kind}` : "No trigger",
-        summary: "",
+        title: triggerName(trigger?.kind),
+        summary: plainText(paramsInWords(trigger?.params)),
         inputs: triggerPorts().inputs,
         outputs: triggerPorts().outputs,
         trigger,
@@ -60,8 +62,9 @@ export function flowNodes(graph: WorkflowDefinition, marks: Marks = {}): CardNod
     const data: CardData = {
       id: node.id,
       kind: node.kind,
+      kindLabel: kindTitle(node),
       title: node.id,
-      summary: summaryOf(node.params),
+      summary: plainText(stepSummary(node)),
       inputs: ports.inputs,
       outputs: ports.outputs,
       problems: marks.problems?.[node.id] ?? [],
@@ -133,16 +136,6 @@ function problemForEdge(
     }
   }
   return undefined;
-}
-
-/** One line of a node's parameters, so a person recognises it without opening the panel. */
-export function summaryOf(params: unknown): string {
-  if (!params || typeof params !== "object") {
-    return "";
-  }
-  return Object.entries(params as Record<string, unknown>)
-    .map(([name, value]) => `${name}: ${typeof value === "string" ? value : JSON.stringify(value)}`)
-    .join(" · ");
 }
 
 /**

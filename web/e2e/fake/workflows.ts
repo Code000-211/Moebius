@@ -468,13 +468,40 @@ export function createWorkflowsFake(automations: AutomationSource = () => []): W
         trigger: [{ kind: "webhook", params: { path: "notify", secret: "notify-key" } }],
         nodes: [
           {
-            id: "post",
-            kind: "script",
-            params: { command: "./notify.sh" },
+            id: "triage",
+            kind: "agent",
+            params: {
+              agent: "coder",
+              prompt: `A push arrived: {{ trigger.ref }} by {{ trigger.pusher }}.
+
+Read the commits it carries and sort them into three groups:
+- changes people will notice
+- changes only developers will notice
+- changes that need a follow-up
+
+Then write the message for the channel. Keep it short and plain: one line per change, no jargon, and say which team should look at each change that needs a follow-up. Do not repeat the commit hashes, and do not guess at what a commit means when its message is empty; say that it has no message instead.`,
+              output: "summary",
+            },
             position: { x: 16, y: 16 },
           },
+          {
+            id: "approve",
+            kind: "approval",
+            params: { prompt: "Post {{ input.summary }} to the channel?", timeout_seconds: 3600 },
+            position: { x: 340, y: 16 },
+          },
+          {
+            id: "post",
+            kind: "publish",
+            params: { title: "Push to {{ trigger.ref }}", body: "{{ input.summary }}" },
+            position: { x: 664, y: 16 },
+          },
         ],
-        edges: [{ from: "trigger", to: "post", port: "out" }],
+        edges: [
+          { from: "trigger", to: "triage", port: "out" },
+          { from: "triage", to: "approve", port: "summary" },
+          { from: "approve", to: "post", port: "out" },
+        ],
       },
     ],
     [

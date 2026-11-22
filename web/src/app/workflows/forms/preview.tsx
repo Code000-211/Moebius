@@ -1,21 +1,21 @@
-/** The parameters as the file will write them, shown under the fields that change them. */
+/**
+ * The parameters as the file will write them, under the fields that change them. It is folded away until someone asks
+ * for it: the fields above say the same in a form to read, and JSON writes a line break as `\n`.
+ */
 import { asJson } from "../../../ui/page/JsonValue";
 
 export function ParamsPreview({ params }: { params: Record<string, unknown> }) {
   return (
-    <section
-      aria-label="Saved parameters"
-      className="flex flex-col gap-2 border-t border-hairline pt-3"
-    >
-      <h3 className="m-0 text-xs font-semibold uppercase tracking-wide text-secondary">
+    <details aria-label="Saved parameters" className="border-t border-hairline pt-3">
+      <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-secondary">
         Saved JSON
-      </h3>
+      </summary>
       <pre
         data-testid="params-preview"
-        className="m-0 overflow-x-auto whitespace-pre-wrap break-words rounded-panel bg-code-bg px-3 py-2 font-mono text-xs leading-5 text-code-text"
+        className="m-0 mt-2 overflow-x-auto whitespace-pre-wrap break-words rounded-panel bg-code-bg px-3 py-2 font-mono text-xs leading-5 text-code-text"
       >
         {asJson(params)}
       </pre>
-    </section>
+    </details>
   );
 }

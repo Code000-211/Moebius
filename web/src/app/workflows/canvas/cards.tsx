@@ -10,9 +10,11 @@ export interface CardData extends Record<string, unknown> {
   /** The node's own id, or `trigger` for the start. */
   id: string;
   kind: string;
+  /** The kind as a person reads it: `Agent · Coder`. */
+  kindLabel?: string;
   /** What the card is headed with. */
   title: string;
-  /** One line of the parameters, so a person recognises a node without opening it. */
+  /** The parameters in words, so a person recognises a node without opening it. */
   summary: string;
   inputs: string[];
   outputs: string[];
@@ -36,12 +38,21 @@ export function NodeCard({ data, selected }: NodeProps) {
       className={cn(
         "rounded-card border border-hairline-strong bg-panel px-3 py-3",
         WIDTH,
+        // The names of the ports it leaves by sit in the right edge, one row each, so the card is as tall as they are.
+        card.outputs.length > 1 && "min-h-20",
         selected && "canvas-node--selected",
         card.problems.length > 0 && "canvas-node--problem",
       )}
     >
-      <CardHead id={card.id} kind={card.kind} run={card.run} />
-      <p className="mt-1 truncate font-mono text-xs text-secondary" title={card.summary}>
+      <CardHead id={card.id} kind={card.kindLabel ?? card.kind} run={card.run} />
+      <p
+        className={cn(
+          "m-0 mt-1 line-clamp-2 break-words text-xs text-secondary",
+          // The right edge is for the names of the ports the node leaves by.
+          card.outputs.length > 0 && "pr-14",
+        )}
+        title={card.summary}
+      >
         {card.summary === "" ? "Takes no parameters" : card.summary}
       </p>
       <Problems problems={card.problems} />
@@ -67,8 +78,8 @@ export function TriggerCard({ data, selected }: NodeProps) {
     >
       <p className="m-0 text-xs font-semibold uppercase tracking-wide text-secondary">Trigger</p>
       <p className="mt-1 m-0 truncate text-sm text-text">{card.title}</p>
-      <p className="mt-1 m-0 truncate font-mono text-xs text-secondary">
-        {trigger ? JSON.stringify(trigger.params ?? {}) : "This workflow has no trigger."}
+      <p className="mt-1 m-0 line-clamp-2 break-words text-xs text-secondary" title={card.summary}>
+        {trigger ? card.summary || "Takes no parameters" : "This workflow has no trigger."}
       </p>
       <Problems problems={card.problems} />
       <Handle
@@ -90,7 +101,9 @@ function CardHead({ id, kind, run }: { id: string; kind: string; run?: WorkflowN
       {run ? (
         <Tag tone={runStatus(run.status).tone}>{runStatus(run.status).label}</Tag>
       ) : (
-        <span className="shrink-0 font-mono text-xs text-secondary">{kind}</span>
+        <span className="max-w-28 shrink-0 truncate text-xs text-secondary" title={kind}>
+          {kind}
+        </span>
       )}
     </div>
   );
