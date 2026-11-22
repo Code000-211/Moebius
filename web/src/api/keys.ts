@@ -140,16 +140,17 @@ export const keys = {
   kindsOf: (repository: number | null, agent: string) =>
     ["decision-model", "kinds", repository, agent] as const,
   exports: ["decision-model", "exports"] as const,
-  /** The Workflows pages: the list, one definition, and a run with its nodes. */
+  /** The Workflows tab: every list of workflows, every definition, and a run with its nodes. */
   workflows: ["workflows"] as const,
   workflowDefinitions: ["workflow"] as const,
-  workflow: (name: string) => ["workflow", name] as const,
   workflowRun: (id: number) => ["workflow-run", id] as const,
-  /** Every workflow's list of runs. */
+  /** Every list of runs. */
   allWorkflowRuns: ["workflow-runs"] as const,
   /** One project's workflows. */
   projectWorkflows: (project: number) => ["workflows", "project", project] as const,
   projectWorkflow: (project: number, name: string) =>
     ["workflow", "project", project, name] as const,
-  workflowRuns: (workflow: string) => ["workflow-runs", workflow] as const,
+  /** The runs of one project, of one of its workflows when `workflow` is given. */
+  projectWorkflowRuns: (project: number, workflow?: string) =>
+    ["workflow-runs", "project", project, workflow ?? null] as const,
 };

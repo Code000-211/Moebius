@@ -1,7 +1,7 @@
 /**
- * `/projects/:projectId/workflows|cycles|milestones|intake` (and `cycles/:cycleId`): a tab of a project. Cycles,
- * Milestones and Intake are the tabs' own pages, each drawing the project's header; Workflows says it is not built yet.
- * An id that is no project says so too, and so does the Intake address of a project that takes no requests.
+ * `/projects/:projectId/workflows|cycles|milestones|intake` (and `cycles/:cycleId`): a tab of a project. Workflows,
+ * Cycles, Milestones and Intake are the tabs' own pages, each drawing the project's header.
+ * An id that is no project says so, and so does the Intake address of a project that takes no requests.
  */
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -18,16 +18,9 @@ import { CyclesTab } from "../cycles/CyclesTab";
 import { IntakeTab } from "../intake/IntakeTab";
 import { MilestonesTab } from "../milestones/MilestonesTab";
 import type { ProjectTab } from "../pages";
-import { Placeholder } from "../shell/Placeholder";
+import { WorkflowsTab } from "../workflows/WorkflowsTab";
 import { boardRepositoryOf } from "./model";
 import { ProjectHeader } from "./ProjectHeader";
-
-const TITLES: Record<ProjectTab, string> = {
-  workflows: "Workflows",
-  cycles: "Cycles",
-  milestones: "Milestones",
-  intake: "Intake",
-};
 
 export function ProjectTabRoute({ tab }: { tab: ProjectTab }) {
   const { projectId, cycleId } = useParams();
@@ -94,10 +87,7 @@ export function ProjectTabRoute({ tab }: { tab: ProjectTab }) {
       ) : tab === "intake" ? (
         <IntakeTab key={project.id} project={project} onTerminal={onTerminal} />
       ) : (
-        <>
-          <ProjectHeader project={project} tab={tab} onTerminal={onTerminal} />
-          <Placeholder title={TITLES[tab]} />
-        </>
+        <WorkflowsTab key={project.id} project={project} onTerminal={onTerminal} />
       )}
       {repository !== null && (
         <RepositoryTerminal

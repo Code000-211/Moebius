@@ -1,4 +1,4 @@
-//! The manual trigger: a person starts each of its runs — through `POST /v1/workflows/{name}/runs` or
+//! The manual trigger: a person starts each of its runs — through `POST /v1/projects/{id}/workflows/{name}/runs` or
 //! `moebius workflow run` — giving it the inputs the trigger names. The inputs live in the trigger's parameters, are
 //! checked when the workflow's file is read, and each is checked against its type when a run is started, so a run
 //! never starts with an input the trigger does not know or a value its type does not take.

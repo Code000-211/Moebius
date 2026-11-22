@@ -25,7 +25,7 @@ const NOW = () => Math.floor(Date.now() / 1000);
 export interface WorkflowsFake {
   /** Answers a route of the workflows and returns true; false for any other path. */
   handle(request: IncomingMessage, response: ServerResponse, path: string): Promise<boolean>;
-  /** What `GET /v1/workflows` answers now, in name order: each row is made from the graph and the runs. */
+  /** What `GET /v1/projects/1/workflows` answers now, in name order: each row is made from the graph and the runs. */
   readonly workflows: WorkflowSummary[];
   /** Each workflow's definition, by name, as the server answers it and the canvas saves it. A save replaces it. */
   readonly graphs: Map<string, GraphDefinition>;
@@ -33,7 +33,7 @@ export interface WorkflowsFake {
   readonly runs: Map<number, WorkflowRun>;
   /** The requests of the workflows' routes, in order, so a test can read what a page sent. */
   readonly calls: Array<{ method: string | undefined; path: string }>;
-  /** Makes the next `DELETE /v1/workflows/{name}` answer `status` with `message`, as the server refuses it. */
+  /** Makes the next `DELETE /v1/projects/1/workflows/{name}` answer `status` with `message`, as the server refuses it. */
   refuseNextDelete(status: number, message: string): void;
 }
 
@@ -350,6 +350,11 @@ const LONG_OUTPUT = `${"compiling the workspace and linking every test binary\n"
 /** The one project the fake's workflows belong to: `demo`, which the fake's projects list names too. */
 const PROJECT = 1;
 const PROJECT_NAME = "demo";
+/** The repositories of that project, by name; a run is started in one of them. */
+const PROJECT_REPOSITORIES = new Map([["demo", 1]]);
+
+/** What the automations of the fake are: each is a schedule workflow of its project, `automation-<id>`. */
+export type AutomationSource = () => Array<{ id: number; name: string; project_id: number }>;
 
 /** What `GET /v1/workflows` answers for a workflow: its row, with the newest of its runs. */
 function summaryOf(graph: GraphDefinition, runs: Iterable<WorkflowRun>): WorkflowSummary {
@@ -381,7 +386,7 @@ function briefOf(run: WorkflowRun): WorkflowRunSummary {
   return brief;
 }
 
-export function createWorkflowsFake(): WorkflowsFake {
+export function createWorkflowsFake(automations: AutomationSource = () => []): WorkflowsFake {
   const started = NOW() - 5 * 3600;
   const graphs = new Map<string, GraphDefinition>([
     [
@@ -568,10 +573,25 @@ export function createWorkflowsFake(): WorkflowsFake {
   /** The text of each saved workflow's file; what a save wrote, or what the graph renders as. */
   const files = new Map<string, string>([...graphs].map(([name, graph]) => [name, render(graph)]));
   /** What `GET /v1/workflows` answers, in name order and from the graphs and runs as they stand now. */
-  const listed = (): WorkflowSummary[] =>
-    [...graphs.values()]
+  const listed = (): WorkflowSummary[] => [
+    ...[...graphs.values()]
       .sort((a, b) => a.name.localeCompare(b.name))
-      .map((graph) => summaryOf(graph, runs.values()));
+      .map((graph) => summaryOf(graph, runs.values())),
+    // An automation is a schedule that starts one chat: the server keeps it as a workflow named like it.
+    ...automations()
+      .filter((each) => each.project_id === PROJECT)
+      .map(
+        (each): WorkflowSummary => ({
+          project: PROJECT,
+          project_name: PROJECT_NAME,
+          name: `automation-${each.id}`,
+          description: "A schedule that starts one chat.",
+          trigger_kind: "schedule",
+          node_count: 1,
+          last_run: null,
+        }),
+      ),
+  ];
   /** Each save, so a test can read what was written and the page can name the commit. */
   let saves = 0;
   const calls: Array<{ method: string | undefined; path: string }> = [];
@@ -582,15 +602,20 @@ export function createWorkflowsFake(): WorkflowsFake {
     response: ServerResponse,
     path: string,
   ): Promise<boolean> {
-    // The project-addressed routes answer from the same data as the aggregate ones: the fake has one project.
-    const projectRoute = new RegExp(`^/v1/projects/${PROJECT}/workflows(?=/|$)`).exec(
-      decoded(path),
-    );
-    const url = projectRoute
-      ? decoded(path).replace(projectRoute[0], "/v1/workflows")
-      : decoded(path);
+    // The fake has one project: a workflow is addressed in it, and the routes that name none are gone, as on the
+    // server. Inside, the project's routes are read as `/v1/workflows...` for the rest of the handler.
+    const asked = decoded(path);
+    const projectRoute = /^\/v1\/projects\/(\d+)\/workflows(?=\/|$)/.exec(asked);
+    if (projectRoute && Number(projectRoute[1]) !== PROJECT) {
+      return plain(response, 404, `project ${projectRoute[1]} not found`);
+    }
+    const url = projectRoute ? asked.replace(projectRoute[0], "/v1/workflows") : asked;
+    if (!projectRoute && /^\/v1\/workflows(?:\/(?!runs\/\d+\/cancel$)|$)/.test(asked)) {
+      calls.push({ method: request.method, path: asked });
+      return plain(response, 410, "workflows belong to a project: use /v1/projects/{id}/workflows");
+    }
     const named = /^\/v1\/workflows\/([^/]+)$/.exec(url);
-    calls.push({ method: request.method, path: url });
+    calls.push({ method: request.method, path: asked });
     if (named) {
       const name = named[1] ?? "";
       const found = graphs.get(name);
@@ -645,13 +670,21 @@ export function createWorkflowsFake(): WorkflowsFake {
           'the trigger has no repository input, so "repository" names the run\'s repository',
         );
       }
+      const repositoryId = PROJECT_REPOSITORIES.get(body.repository);
+      if (repositoryId === undefined) {
+        return plain(
+          response,
+          422,
+          `repository ${body.repository} is not one of the repositories of project ${PROJECT_NAME}`,
+        );
+      }
       const id = Math.max(0, ...runs.keys()) + 1;
       const run: WorkflowRun = {
         id,
         project: PROJECT,
         project_name: PROJECT_NAME,
         workflow: found.name,
-        repository_id: 1,
+        repository_id: repositoryId,
         trigger: "manual",
         status: "running",
         value: {},

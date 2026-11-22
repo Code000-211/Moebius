@@ -194,7 +194,8 @@ port = "out"
         let path = folder.join("peek.toml");
         async move { std::fs::write(path, file).unwrap() }
     };
-    let runs = "/v1/workflows/peek/runs";
+    let runs = format!("/v1/projects/{}/workflows/peek/runs", private.project);
+    let runs = runs.as_str();
 
     save(workflow(
         r#"{ name = "target", type = "repository", required = true }"#,

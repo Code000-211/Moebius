@@ -124,8 +124,8 @@ describe("state pills", () => {
         "/improve",
         "/improve/experiments",
         "/rules",
-        "/workflows",
-        "/automations",
+        "/projects/1/workflows",
+        "/projects/1/workflows?runs=scheduled",
         "/plugins",
         "/agents",
       ]) {

@@ -1,15 +1,13 @@
 /**
- * What the pages that filter with the shared bar keep and let through: the Fleet's runs, the Workflows' list, the boxes
+ * What the pages that filter with the shared bar keep and let through: the Fleet's runs, the boxes
  * of the Rules page, and the scope the Usage and Decisions pages send to the server.
  */
 import { describe, expect, it } from "vitest";
 import { scopeQuery } from "../api/calls/usage";
 import type { RulesView } from "../api/types/rules";
-import type { WorkflowSummary } from "../api/types/workflows";
 import { filterFields as fleetFields, filtered as fleetFiltered, type Work } from "./fleet/model";
 import { filterFields as ruleFields, visible } from "./rules/filters";
 import { repositoryOf } from "./scope";
-import { filterFields as workflowFields, filtered as workflowsFiltered } from "./workflows/model";
 
 const work = (run: number, agent: string, kind: string, repository: string): Work => ({
   run,
@@ -55,45 +53,6 @@ describe("the fleet's filters", () => {
       fleetFiltered(list, { project: "demo", agent: "Coder" }).map((each) => each.run),
     ).toEqual([1]);
     expect(fleetFiltered(list, { kind: "chat", project: "demo" })).toEqual([]);
-  });
-});
-
-describe("the workflows' filters", () => {
-  const summary = (name: string, trigger: string, last: string | null): WorkflowSummary => ({
-    project: 1,
-    project_name: "demo",
-    name,
-    description: "",
-    trigger_kind: trigger,
-    node_count: 1,
-    last_run:
-      last === null ? null : { id: 1, status: last, created_at: 0, started_at: 1, finished_at: 2 },
-  });
-  const list = [
-    summary("a", "manual", null),
-    summary("b", "schedule", "failed"),
-    summary("c", "schedule", "succeeded"),
-  ];
-
-  it("offer the triggers and the last runs there are, in words", () => {
-    const [trigger, last] = workflowFields(list, {});
-    expect(trigger?.options).toEqual([
-      ["manual", "Manual"],
-      ["schedule", "Schedule"],
-    ]);
-    expect(last?.options).toEqual([
-      ["failed", "Failed"],
-      ["never", "Never run"],
-      ["succeeded", "Done"],
-    ]);
-  });
-
-  it("let through the workflows that pass both", () => {
-    const names = (values: Record<string, string>) =>
-      workflowsFiltered(list, values).map((each) => each.name);
-    expect(names({ trigger: "schedule" })).toEqual(["b", "c"]);
-    expect(names({ last: "never" })).toEqual(["a"]);
-    expect(names({ trigger: "schedule", last: "failed" })).toEqual(["b"]);
   });
 });
 

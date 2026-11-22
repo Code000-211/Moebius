@@ -231,7 +231,6 @@ export const NAV: readonly NavEntry[] = [
     label: "Workflows",
     icon: TreeStructureIcon,
     shownTo: everyone,
-    settings: { group: "Automation" },
     words: "canvas schedule",
   },
   {

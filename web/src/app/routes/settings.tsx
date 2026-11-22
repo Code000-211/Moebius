@@ -13,7 +13,6 @@ const SETTINGS_PAGES: Record<string, ComponentType> = {
   shortcuts: named(() => import("../shortcuts/ShortcutsPage"), "ShortcutsPage"),
   models: named(() => import("../models/ModelsPage"), "ModelsPage"),
   plugins: named(() => import("../plugins/PluginsPage"), "PluginsPage"),
-  workflows: named(() => import("../workflows/WorkflowsPage"), "WorkflowsPage"),
   "column-scripts": named(() => import("../settings/ColumnScriptsPage"), "ColumnScriptsPage"),
   schedules: named(() => import("../settings/SchedulesPage"), "SchedulesPage"),
   settings: named(() => import("../settings/SettingsPage"), "SettingsPage"),

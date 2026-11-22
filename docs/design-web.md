@@ -259,7 +259,7 @@ Inbox, My issues, the project list and Fleet are one kind of list. Lists are vir
 
 ## Settings
 
-One page. At its left a sub-navigation with a search field and these groups, in this order: You (Profile, Appearance, Notifications, Keyboard), Agents (Models, Plugins), Automation (Workflows, Column scripts, Schedules), Server (General, Repositories, Runners, Members). The groups are read from the same table as the sidebar (`nav.ts`); Insights and Improve are not here. Agents (with Skills and MCP servers) and Rules are Build's and no longer in Settings. A group name is a small muted label, and the chosen item is `--accent-text` on `--accent-tint`, in medium weight.
+One page. At its left a sub-navigation with a search field and these groups, in this order: You (Profile, Appearance, Notifications, Keyboard), Agents (Models, Plugins), Automation (Column scripts, Schedules), Server (General, Repositories, Runners, Members). The groups are read from the same table as the sidebar (`nav.ts`); Insights and Improve are not here. Agents (with Skills and MCP servers) and Rules are Build's and no longer in Settings. A group name is a small muted label, and the chosen item is `--accent-text` on `--accent-tint`, in medium weight.
 
 Appearance has these rows: Theme (System, Light, Dark), Density (Compact or Default; Default keeps the 36px rows, and what Compact changes is settled by the issue that builds it), Show thinking expanded, Wrap long lines, Reduce motion and Blur on menus.
 
@@ -267,8 +267,37 @@ The content is rows of a label at the left and its control at the right, separat
 
 ## Other pages
 
-The same rules apply. Wiki: the tree at the left, the text, an outline of its headings at the right. Cycles and milestones (tabs of a project, under its header): a timeline. A run: a timeline bar and its steps. Analytics: figures and a table. A workflow: the canvas, with a step opened in a centred window. The palette: a plain list; Tab sends what was typed to the agent. The terminal: dark in both themes, a full page. Errors and confirmations are a toast at the bottom right (a confirmation offers Undo). Sign-in and connect: a centred card with "Stay signed in", on by default.
+The same rules apply. Wiki: the tree at the left, the text, an outline of its headings at the right. Cycles and milestones (tabs of a project, under its header): a timeline. A run: a timeline bar and its steps. Analytics: figures and a table. A workflow: the canvas, with a step opened in a centred window; its definition and its runs are in the project's Workflows tab (below). The palette: a plain list; Tab sends what was typed to the agent. The terminal: dark in both themes, a full page. Errors and confirmations are a toast at the bottom right (a confirmation offers Undo). Sign-in and connect: a centred card with "Stay signed in", on by default.
 
+
+### The Workflows tab of a project
+
+A workflow belongs to one project ([ADR 0025](adr/0025-workflows-belong-to-a-project.md)), so everything about workflows
+is in that project's tab (`web/src/app/workflows/WorkflowsTab.tsx`; mockup `docs/design/navigation/ia2.png`, which the owner
+extended: the definitions moved from Build into the tab). Under the project header, two lists drawn as ordinary rows on
+the panel, with no card:
+
+- **Workflows**: one 36px row per definition of this project, with the workflow icon, its name (a link to the
+  definition at `/projects/:id/workflows/:name`, which links to the canvas at `.../canvas`), what it is for in muted
+  text, what starts it (Manual, Schedule, Event, Webhook) and a status tag with the age of its last run. "New workflow"
+  (a blank canvas) and "New scheduled workflow" (the automation template, in the editor window) sit at the right of the
+  section title, as secondary buttons.
+- **Runs**: a tab row `All | Scheduled | Failed`, in the address as `?runs=`, over this project's runs newest first,
+  each a row of the workflow's name, `repository · status` in muted text (`failed at "deploy"` in the error colour) and
+  its age at the far right. A row opens the run, whose page links back to this tab. **Scheduled** first lists the
+  project's schedule-trigger workflows with their schedule and when each fires next (`in 3 h`), a word where one is
+  off or failed, and Edit, which opens the automation in the editor window (`?automation=<id>`); the scheduled runs
+  follow.
+
+The one primary button of the header, "Run a workflow here", is at its far right. It opens a dialog that asks which of
+the project's manual workflows to run, the repository (only the project's own, the home one first and chosen) and one
+field for each input the workflow's manual trigger names. A trigger input of type `repository` is a choice among the
+same repositories. The server's refusal is shown in the dialog in its own words. Delete on a definition shows the
+server's refusal in the same way.
+
+The old Workflows and Automations pages are gone: `/workflows`, `/workflows/:name`, `/workflows/:name/canvas` and
+`/automations` redirect to the project named by `?project=`, else the one opened last or the only one, else the list of
+projects.
 
 ## Components
 - Buttons: one clear primary action, quieter alternatives, consistent sizing. A button is as wide as its label, never the width of the row it happens to sit in. An action that starts a new thing says it with a plus, on the page header and in an empty place alike, so the same verb is drawn the same way wherever a person meets it. A destructive action is the `danger` variant wherever it appears, including the button that opens the question.

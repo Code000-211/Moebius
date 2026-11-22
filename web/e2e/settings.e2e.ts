@@ -130,7 +130,6 @@ describe("Settings", () => {
       ["You", "Keyboard"],
       ["Agents", "Models"],
       ["Agents", "Plugins"],
-      ["Automation", "Workflows"],
       ["Automation", "Column scripts"],
       ["Automation", "Schedules"],
       ["Server", "General"],

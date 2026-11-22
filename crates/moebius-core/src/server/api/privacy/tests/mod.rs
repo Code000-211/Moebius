@@ -347,7 +347,10 @@ async fn every_route_of_a_private_project_s_things_is_404_to_a_non_member() {
     assert_eq!(response.status(), 404);
     let name = store_name(&state, private.repository);
     let response = reqwest::Client::new()
-        .post(format!("http://{addr}/v1/workflows/release/runs"))
+        .post(format!(
+            "http://{addr}/v1/projects/{}/workflows/release/runs",
+            private.project
+        ))
         .bearer_auth(&private.ben)
         .json(&json!({"repository": name}))
         .send()
@@ -595,61 +598,22 @@ async fn the_workflows_of_a_private_project_are_invisible_to_a_non_member() {
         404
     );
 
-    // The deprecated list and the lookup by name leave it out for a non-member.
-    let (_, seen) = call(&addr, &private.lea, "GET", "/v1/workflows").await;
-    assert!(seen.to_string().contains("secret"), "{seen}");
-    for token in [&private.ben, &private.olga] {
-        let (status, hidden) = call(&addr, token, "GET", "/v1/workflows").await;
-        assert_eq!(status, 200);
-        assert!(hidden.as_array().unwrap().is_empty(), "{hidden}");
-        assert_eq!(
-            call(&addr, token, "GET", "/v1/workflows/secret").await.0,
-            404
-        );
+    // The routes that name no project are gone for everyone, and answer alike whether the workflow exists or not: a
+    // `410` says nothing about a private project.
+    for token in [&private.lea, &private.ben, &private.olga] {
+        let (status, listed) = call(&addr, token, "GET", "/v1/workflows").await;
+        assert_eq!(status, 410, "{listed}");
+        assert!(!listed.to_string().contains("secret"), "{listed}");
+        let (hidden, hidden_body) = call(&addr, token, "GET", "/v1/workflows/secret").await;
+        let (missing, missing_body) = call(&addr, token, "GET", "/v1/workflows/nothing").await;
+        assert_eq!((hidden, missing), (410, 410));
+        assert_eq!(hidden_body, missing_body);
     }
-}
-
-/// The deprecated save names a project in its body, which the privacy check of the address cannot see: a person who
-/// does not see the project is answered `404`, whether or not it exists, and nothing is written.
-#[tokio::test]
-async fn the_body_of_the_old_save_cannot_name_a_project_the_person_does_not_see() {
-    let (dir, state, addr) = start().await;
-    let private = private(&state);
-    let harness = crate::harness::repo::testing::use_harness(&state.app, dir.path());
-    let project = state.app.store.project(private.project).unwrap().unwrap();
-    let file = "name = \"x\"\ndescription = \"Hidden.\"\n\n[[trigger]]\nkind = \"manual\"\n\n[[nodes]]\nid = \"a\"\nkind = \"test\"\n\n[[edges]]\nfrom = \"trigger\"\nto = \"a\"\nport = \"out\"\n";
-    let put = |token: String, project: i64| {
-        let addr = addr.clone();
-        let file = file.to_string();
-        async move {
-            let response = reqwest::Client::new()
-                .put(format!("http://{addr}/v1/workflows/x"))
-                .bearer_auth(token)
-                .json(&json!({ "file": file, "project": project }))
-                .send()
-                .await
-                .unwrap();
-            (response.status().as_u16(), response.text().await.unwrap())
-        }
-    };
-    let written = harness
-        .path()
-        .join(format!("projects/{}/workflows/x.toml", project.name));
-
-    // An owner who is no member sees the same answer for the private project as for one that does not exist.
-    let (status, existing) = put(private.olga.clone(), private.project).await;
-    let (missing_status, missing) = put(private.olga.clone(), private.project + 1000).await;
-    assert_eq!(
-        (status, missing_status),
-        (404, 404),
-        "{existing} / {missing}"
-    );
-    assert!(
-        !written.exists(),
-        "nothing is written into a project the person does not see"
-    );
-    // A member who is not in the project is refused by their role before the project is looked at.
-    assert_eq!(put(private.ben.clone(), private.project).await.0, 403);
+    let (status, _) = call(&addr, &private.olga, "PUT", "/v1/workflows/secret").await;
+    assert_eq!(status, 410);
+    let (status, _) = call(&addr, &private.olga, "DELETE", "/v1/workflows/secret").await;
+    assert_eq!(status, 410);
+    assert!(folder.join("secret.toml").is_file(), "nothing is deleted");
 }
 
 #[tokio::test]
