@@ -51,7 +51,7 @@ const theme = EditorView.theme(
   {
     "&": {
       backgroundColor: "var(--code-background)",
-      color: "var(--text)",
+      color: "var(--code-text)",
       fontSize: "var(--size-code)",
       border: "1px solid var(--hairline)",
       borderRadius: "var(--radius-control)",
@@ -66,21 +66,26 @@ const theme = EditorView.theme(
       minHeight: "320px",
       maxHeight: "70vh",
     },
-    ".cm-content": { caretColor: "var(--text)" },
-    ".cm-cursor": { borderLeftColor: "var(--text)" },
+    ".cm-content": { caretColor: "var(--code-text)" },
+    ".cm-cursor": { borderLeftColor: "var(--code-text)" },
     ".cm-gutters": {
-      backgroundColor: "var(--surface-sunken)",
-      color: "var(--text-secondary)",
+      backgroundColor: "color-mix(in srgb, var(--code-text) 6%, transparent)",
+      color: "var(--code-head)",
       border: "none",
       borderRadius: "var(--radius-control) 0 0 var(--radius-control)",
     },
-    ".cm-activeLine": { backgroundColor: "var(--hover)" },
-    ".cm-activeLineGutter": { backgroundColor: "var(--hover)" },
-    // The selected text: a tint of the ink, so it shows on the code ground in either theme, where `--selected` is too
-    // close to the ground to see in the light one.
-    ".cm-selectionBackground": { backgroundColor: "var(--hairline-strong)" },
+    // The ground is the dark code ground in both themes, so what is drawn on it comes from the code tokens, not from
+    // the page's light-theme fills.
+    ".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--code-text) 7%, transparent)" },
+    ".cm-activeLineGutter": {
+      backgroundColor: "color-mix(in srgb, var(--code-text) 7%, transparent)",
+    },
+    // The selected text: a tint of the code ink, so it shows on the code ground in either theme.
+    ".cm-selectionBackground": {
+      backgroundColor: "color-mix(in srgb, var(--code-text) 22%, transparent)",
+    },
     "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
-      backgroundColor: "var(--hairline-strong)",
+      backgroundColor: "color-mix(in srgb, var(--code-text) 22%, transparent)",
     },
     ".cm-lintRange-error": {
       backgroundImage: "none",
