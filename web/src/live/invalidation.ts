@@ -138,7 +138,13 @@ export function invalidates(event: ServerEvent): QueryKey[] {
 function workflowPages(event: ServerEvent): QueryKey[] {
   if (!event.kind.startsWith("workflow_")) return [];
   const run = event.data.run;
-  const stale: QueryKey[] = [keys.workflows, keys.workflowDefinitions, keys.allWorkflowRuns];
+  // The automations too: the Scheduled filter of a project's Workflows tab joins its schedule-trigger workflows to them.
+  const stale: QueryKey[] = [
+    keys.workflows,
+    keys.workflowDefinitions,
+    keys.allWorkflowRuns,
+    keys.automations,
+  ];
   if (typeof run === "number") stale.push(keys.workflowRun(run));
   return stale;
 }

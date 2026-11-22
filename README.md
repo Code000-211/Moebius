@@ -53,7 +53,7 @@ Moebius lets it decide alongside the teacher model until it agrees often enough 
 | 👥 **People** | One server is one organisation. People sign in with access tokens and have a role: owner, member or viewer. Cards and inbox items have assignees; `@mentions`, following and notices tell each person what concerns them. Chats belong to the person who started them. |
 | 🗂 **Projects** | A Kanban board over any number of repositories, or none: every project has files of its own. Cards are named by the project's key (`WEB-24`). A private project is seen only by its members. A column's behaviour is a Luau script you can open and edit from the board, and a card's properties are edited in place in the right column. |
 | 📖 **Wiki** | The organisation's pages, a git repository where every edit is a commit by its person. Links between pages and to cards, backlinks, search, history and templates. Agents read it and propose pages through the inbox. |
-| 🗓 **Planning** | Priorities, due dates and estimates; cycles per project and milestones across projects, with burn-ups; kinds of issues with fields of their own; duplicates and related issues; saved views as a list, board, calendar or timeline; analytics; intake of requests per project; an import from Jira. |
+| 🗓 **Planning** | Priorities, due dates and estimates; cycles per project and milestones that hold cards of several projects, both tabs of a project, with burn-ups; kinds of issues with fields of their own; duplicates and related issues; saved views as a list, board, calendar or timeline; analytics; intake of requests per project; an import from Jira. |
 | 💬 **The Moebius agent, everywhere** | The **Moebius** button in the header of every page (`Ctrl+J`) opens a panel beside the page with a chat that knows what you are looking at: the file and line in the editor, the script or rule you are editing. Ask it to write an issue, a rule, an agent's instructions or a whole workflow. |
 | 🛰 **Fleet** | Every working agent at a glance, live; choose any of them and stop their runs at once. |
 | 🤖 **Coder and Reviewer** | Two built-in agents, each with its own instructions. Make a new agent blank or as a copy of any existing one, settings, skills and extensions included. |
@@ -195,7 +195,7 @@ browser and sign in with the content of `.moebius/token`. The desktop app of the
 Windows installer) does the same with an access token, and can also set up a server on this machine; see [the desktop
 app](docs/guide/desktop-app.md). The **Get started** page lists what is still missing.
 
-**5. Add people.** An owner adds a person on the People page (under Setup), or from the command line, and hands over
+**5. Add people.** An owner adds a person on the Members page (Settings, Server), or from the command line, and hands over
 the `token.token` of the answer, which is shown once:
 
 ```sh

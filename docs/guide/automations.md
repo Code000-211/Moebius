@@ -22,7 +22,7 @@ The exact contract is in the [desktop API reference](../reference/desktop-api.md
 
 ## Make one in the app
 
-Open **Automations** in the sidebar and press **New automation**. Name it, pick a schedule from **Repeats** (or type the
+Open a project, then its **Workflows** tab, choose **Scheduled** and press **New scheduled workflow**. Name it, pick a schedule from **Repeats** (or type the
 cron expression next to it), choose the agent and where it works, write the prompt and press **Save**. The list then
 says when it fires next. **Run now** fires it at once, which is the quickest way to try the prompt; the firing shows
 under **Firings**, and a click on it opens its chat.

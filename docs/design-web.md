@@ -287,7 +287,10 @@ the panel, with no card:
   its age at the far right. A row opens the run, whose page links back to this tab. **Scheduled** first lists the
   project's schedule-trigger workflows with their schedule and when each fires next (`in 3 h`), a word where one is
   off or failed, and Edit, which opens the automation in the editor window (`?automation=<id>`); the scheduled runs
-  follow.
+  follow. A schedule-trigger workflow that is not an automation (a trigger with no `chat` node, or an older file) shows
+  "Schedule" in place of the time: the next firing is the server's to compute (cron in its local time, `GET /v1/automations`
+  carries it), and the app does not guess it. Saving a workflow on the canvas, and every `workflow_*` event, read the
+  automations again, so the list joined to the definitions stays current.
 
 The one primary button of the header, "Run a workflow here", is at its far right. It opens a dialog that asks which of
 the project's manual workflows to run, the repository (only the project's own, the home one first and chosen) and one

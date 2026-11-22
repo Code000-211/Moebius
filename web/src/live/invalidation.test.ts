@@ -208,6 +208,7 @@ describe("invalidates", () => {
       keys.workflows,
       keys.workflowDefinitions,
       keys.allWorkflowRuns,
+      keys.automations,
     ]);
   });
 });

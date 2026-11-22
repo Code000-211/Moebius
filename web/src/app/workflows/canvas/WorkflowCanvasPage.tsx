@@ -263,6 +263,8 @@ function Canvas({
       // cache too, in the shape its own route answers, and a part of it would leave that page short of a field.
       void queryClient.invalidateQueries({ queryKey: keys.projectWorkflow(project, name) });
       void queryClient.invalidateQueries({ queryKey: keys.workflows });
+      // A schedule trigger saved here makes or changes an automation: the Scheduled filter joins against that list.
+      void queryClient.invalidateQueries({ queryKey: keys.automations });
       setSavedOnce(true);
     },
     onError: (error) => setProblem(problemFor(messageOf(error))),
