@@ -127,20 +127,6 @@ export interface PiResources {
   themes: string[];
 }
 
-export interface PiInfo {
-  name: string;
-  source: string;
-  version: string;
-  resolved: string;
-  integrity: string | null;
-  description: string;
-  resources: PiResources;
-  dependencies: string[];
-  install_scripts: string[];
-  files: number;
-  installed: string | null;
-}
-
 /** A package the harness configuration repository vendors. */
 export interface PiInstalled {
   name: string;

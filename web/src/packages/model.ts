@@ -10,15 +10,11 @@ import type {
   PackageKind,
   PackageOutcome,
   PackageSummary,
-  PiHit,
   PiOffered,
   PiUpdates,
 } from "../api/types/packages";
 import { short } from "../app/usage/figures";
 import type { Tone } from "../ui/page/StateLabel";
-
-/** Which package manager the sheet is pointed at: the registries of Moebius, or the pi.dev catalog. */
-export type Catalog = "moebius" | "pi";
 
 export interface KindChoice {
   value: string;
@@ -40,9 +36,6 @@ export const PI_KINDS: KindChoice[] = [
   { value: "theme", label: "Theme" },
   { value: "prompt", label: "Prompt" },
 ];
-
-export const kindsOf = (catalog: Catalog): KindChoice[] =>
-  catalog === "moebius" ? MOEBIUS_KINDS : PI_KINDS;
 
 /** The words for a kind, as the filter has them; a kind the app does not know is said as it came. */
 export function kindLabel(kind: string): string {
@@ -66,11 +59,6 @@ export const needsRepository = (kind: PackageKind): boolean =>
 /** The Moebius packages of one kind (all of them for none). */
 export function inKind(packages: PackageSummary[], kind: string | null): PackageSummary[] {
   return kind === null ? packages : packages.filter((each) => each.kind === kind);
-}
-
-/** The packages of the pi.dev catalog of one kind (all of them for none); the server filters too, this is for a cache. */
-export function piInKind(hits: PiHit[], kind: string | null): PiHit[] {
-  return kind === null ? hits : hits.filter((each) => each.kinds.includes(kind));
 }
 
 export interface Standing {

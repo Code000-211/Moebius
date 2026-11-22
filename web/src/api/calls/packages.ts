@@ -10,7 +10,6 @@ import type {
   PackageOutcome,
   PackageSearch,
   PiHit,
-  PiInfo,
   PiInstalled,
   PiOffered,
   PiUpdates,
@@ -46,10 +45,6 @@ export function removePackage(name: string): Promise<PackageOutcome> {
 export function searchPi(query: string, type: string | null): Promise<PiHit[]> {
   const kind = type === null ? "" : `&type=${encodeURIComponent(type)}`;
   return get<PiHit[]>(`/v1/extensions/search?q=${encodeURIComponent(query)}${kind}`);
-}
-
-export function piInfo(source: string): Promise<PiInfo> {
-  return get<PiInfo>(`/v1/extensions/info?source=${encodeURIComponent(source)}`);
 }
 
 export function installedPi(): Promise<PiInstalled[]> {

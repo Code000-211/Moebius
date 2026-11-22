@@ -116,7 +116,7 @@ function Fact({ label, value, mono }: { label: string; value: ReactNode; mono?: 
 export function PluginsPage() {
   const sheet = usePackageSheet();
   const browse = (
-    <Button variant="secondary" size="sm" onClick={() => sheet.open("moebius")}>
+    <Button variant="secondary" size="sm" onClick={() => sheet.open()}>
       Browse packages
     </Button>
   );
@@ -159,7 +159,7 @@ export function PluginsPage() {
     <>
       <AreaTitle title="Plugins" actions={browse} />
       <div className="flex flex-col">
-        <InstalledPackages onBrowse={() => sheet.open("moebius")} />
+        <InstalledPackages onBrowse={() => sheet.open()} />
         <Section title="Settings of plugins" aside="What a plugin asks of the whole server.">
           <PluginSettingsBoxes scope={APP_SCOPE} />
         </Section>

@@ -34,32 +34,6 @@ describe("opening and closing the sheet", () => {
     const field = await inSheet().findByRole("textbox", { name: "Search the registries" });
     expect(document.activeElement).toBe(field);
   });
-
-  it("switches its catalog when it is opened from elsewhere", async () => {
-    answers["GET /v1/packages/search?q="] = { body: { packages: [summary()], problems: [] } };
-    answers["GET /v1/extensions/search?q="] = {
-      body: [
-        {
-          name: "pi-web-access",
-          version: "1.4.0",
-          description: "Lets an agent fetch web pages.",
-          kinds: ["extension"],
-          weekly_downloads: 12400,
-          npm: null,
-          homepage: null,
-          repository: null,
-          date: null,
-        },
-      ],
-    };
-    mount();
-    openRegistries();
-    await inSheet().findByText("Holds cards marked wip.", { exact: false });
-    fireEvent.click(screen.getByRole("button", { name: "open pi for Coder" }));
-    expect(await inSheet().findByText("pi-web-access")).toBeTruthy();
-    expect(inSheet().queryByText("gate")).toBeNull();
-    expect(inSheet().getByText("Pi packages from pi.dev, for Coder")).toBeTruthy();
-  });
 });
 
 describe("searching the registries", () => {
