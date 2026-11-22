@@ -417,7 +417,7 @@ describe("the terminals", () => {
 
   it.skipIf(usesRealServer)("keeps the board's shell alive while its sheet is closed", async () => {
     await open("/projects/1");
-    await page.getByRole("button", { name: "Display" }).click();
+    await page.getByRole("button", { name: "More project actions" }).click();
     await page.getByRole("menuitem", { name: "Terminal" }).click();
     await connected().waitFor();
     const sheet = page.getByRole("dialog");
@@ -439,7 +439,7 @@ describe("the terminals", () => {
     expect(fake().terminals.at(-1)?.closed).not.toBe(true);
 
     // Opening it again is the same shell, and it takes the keyboard without being clicked.
-    await page.getByRole("button", { name: "Display" }).click();
+    await page.getByRole("button", { name: "More project actions" }).click();
     await page.getByRole("menuitem", { name: "Terminal" }).click();
     await sheet.waitFor();
     expect(fake().terminals.length).toBe(1);

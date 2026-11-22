@@ -114,6 +114,8 @@ const openProperties = async (number: number) => {
 const closeProperties = async (number: number) => {
   await page.keyboard.press("Escape");
   await properties(number).waitFor({ state: "detached" });
+  // The card menu that opened it plays its exit animation with the focus still on its item; wait for it to be gone.
+  await page.getByRole("menu").waitFor({ state: "detached" });
 };
 /** The properties of the card numbered `number`, with the fold "More properties" open, once they are drawn. */
 const unfolded = async (number: number) => {
@@ -195,7 +197,46 @@ describe("the board page", () => {
     const notice = page.getByRole("status").filter({ hasText: "still has a .moebius folder" });
     await notice.waitFor();
     expect(await notice.textContent()).toContain(".moebius/old.luau");
-    await notice.getByRole("link", { name: "Project settings" }).waitFor();
+    // The way to the settings is the header's gear, not a link in the notice.
+    expect(await notice.getByRole("link").count()).toBe(0);
+    await page.getByRole("link", { name: "Project settings" }).waitFor();
+  });
+
+  it("has the project's header: tabs in the address, a gear to its settings and a menu with Terminal", async () => {
+    // The fake's project 1 holds the board; a real server's project is made with its repository.
+    if (usesRealServer) return;
+    await fresh();
+    await page.goto(`${server.url}/projects/1?card=3`);
+    // The board keeps `?card=` with the header over it.
+    await page.getByRole("tablist", { name: "Project" }).waitFor();
+    expect(new URL(page.url()).searchParams.get("card")).toBe("3");
+    await page.goto(`${server.url}/projects/1`);
+    const tabs = page.getByRole("tablist", { name: "Project" });
+    await tabs.waitFor();
+    expect(await tabs.getByRole("tab").allTextContents()).toEqual([
+      "Board",
+      "Workflows",
+      "Cycles",
+      "Milestones",
+    ]);
+    // A tab is in the address, the same header stays, and Board comes back at the board's address.
+    await tabs.getByRole("tab", { name: "Workflows" }).click();
+    await page.waitForURL("**/projects/1/workflows");
+    await page.getByText("Workflows is coming to the web app soon").waitFor();
+    await tabs.getByRole("tab", { name: "Milestones" }).click();
+    await page.waitForURL("**/projects/1/milestones");
+    await tabs.getByRole("tab", { name: "Board" }).click();
+    await page.waitForURL("**/projects/1");
+    await page.getByRole("search", { name: "Filter the cards" }).waitFor();
+    // The gear is a link a keyboard reaches, and leads to the project's settings.
+    const gear = page.getByRole("link", { name: "Project settings" });
+    await gear.focus();
+    await page.keyboard.press("Enter");
+    await page.waitForURL("**/projects/1/settings");
+    // The menu holds Terminal, which opens the shell of the project's repository.
+    await page.goto(`${server.url}/projects/1/cycles`);
+    await page.getByRole("button", { name: "More project actions" }).click();
+    await page.getByRole("menuitem", { name: "Terminal" }).waitFor();
   });
 
   it("makes a card from a new issue", async () => {

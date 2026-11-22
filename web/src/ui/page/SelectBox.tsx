@@ -8,6 +8,7 @@
  */
 import type { SyntheticEvent } from "react";
 import { cn } from "../lib/cn";
+import { keepKey } from "../lib/shortcuts";
 
 const keep = (event: SyntheticEvent) => event.stopPropagation();
 
@@ -34,7 +35,7 @@ export function SelectBox({
       onPointerDown={keep}
       onKeyDown={(event) => {
         // Escape lets go of the choice, which listens at the window: it is the one key this box does not keep.
-        if (event.key !== "Escape") event.stopPropagation();
+        if (event.key !== "Escape") keepKey(event);
       }}
       onClick={(event) => {
         event.stopPropagation();

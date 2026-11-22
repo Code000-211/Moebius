@@ -1,8 +1,11 @@
-/** The routes of the app's area: projects: the board of a project and its list, the card by key, the page of a repository under its project, the script editor of a column, the project's settings, and the list of projects. Pages are fetched when their route opens. */
+/** The routes of the app's area: projects: the board of a project and its list, the card by key, the page of a repository under its project, the tabs of a project, the script editor of a column, the project's settings, and the list of projects. Pages are fetched when their route opens. */
 import { lazy } from "react";
 
 const ProjectBoardRoute = lazy(() =>
   import("./ProjectBoardRoute").then((all) => ({ default: all.ProjectBoardRoute })),
+);
+const ProjectTabRoute = lazy(() =>
+  import("../projects/ProjectTabRoute").then((all) => ({ default: all.ProjectTabRoute })),
 );
 const CardKeyPage = lazy(() =>
   import("../board/CardKeyPage").then((all) => ({ default: all.CardKeyPage })),
@@ -28,6 +31,11 @@ export const projectsRoutes = [
   { path: "projects", element: <ProjectsPage /> },
   { path: "projects/new", element: <AddRepositoryPage /> },
   { path: "projects/:projectId", element: <ProjectBoardRoute /> },
+  { path: "projects/:projectId/workflows", element: <ProjectTabRoute tab="workflows" /> },
+  { path: "projects/:projectId/cycles", element: <ProjectTabRoute tab="cycles" /> },
+  { path: "projects/:projectId/cycles/:cycleId", element: <ProjectTabRoute tab="cycles" /> },
+  { path: "projects/:projectId/milestones", element: <ProjectTabRoute tab="milestones" /> },
+  { path: "projects/:projectId/intake", element: <ProjectTabRoute tab="intake" /> },
   { path: "projects/:projectId/list", element: <ProjectBoardRoute list /> },
   { path: "projects/:projectId/repositories/:repoId", element: <ProjectPage /> },
   { path: "projects/:projectId/settings/columns/:column", element: <ScriptPage /> },

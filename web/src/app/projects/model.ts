@@ -3,8 +3,10 @@
  * offered and what its tile says, what the form of a new repository sends, the logins a person types, what the editor says of a file it cannot edit, and what the server's answer to a
  * refused repository means to the person who asked for it.
  */
+
 import type { Forge, Repository } from "../../api/types/board";
 import type { FileDetail, NewRepository, Project } from "../../api/types/projects";
+import { readText, writeText } from "../storage";
 
 /** The forge and the repository's name there, as a page shows it: `GitHub · acme/radiance`. */
 export function forgeTag(repository: Repository): string {
@@ -292,4 +294,23 @@ export function homeProjectOf(projects: Project[], repositoryId: number): Projec
 /** The repository whose board a project shows when the address names none: its first, else the one with its own files. */
 export function boardRepositoryOf(project: Project): number | null {
   return project.repositories[0]?.id ?? project.files;
+}
+
+const LAST_PROJECT_KEY = "moebius.lastProject";
+
+/** Keeps `id` as the project this browser opened last, which the old Cycles, Milestones and Intake addresses lead to. */
+export function rememberProject(id: number): void {
+  writeText(LAST_PROJECT_KEY, String(id));
+}
+
+/**
+ * The project an address that no longer names one leads to: the one named in its query (`?project=`) when the person
+ * still sees it, else the project this browser opened last, else the only project there is; null when none of these.
+ */
+export function projectForOldAddress(projects: Project[], search: URLSearchParams): Project | null {
+  const named = search.get("project") ?? readText(LAST_PROJECT_KEY);
+  return (
+    projects.find((each) => String(each.id) === named) ??
+    (projects.length === 1 ? (projects[0] ?? null) : null)
+  );
 }
