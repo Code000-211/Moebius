@@ -17,13 +17,25 @@ import {
   DialogTitle,
 } from "../../ui/components/Dialog";
 
-export function LeaveGuard({ dirty }: { dirty: () => boolean }) {
+export function LeaveGuard({
+  dirty,
+  samePage = false,
+  what = "What you wrote in the editor is not saved yet. Leaving now loses it.",
+}: {
+  dirty: () => boolean;
+  /** A change of the query alone is no way out: the page keeps its tab there. */
+  samePage?: boolean;
+  /** What is lost, when it is not the wiki editor's text. */
+  what?: string;
+}) {
   // The wiki keeps what is open in the query (`?page=`), so a change of it is a way out as much as another path is.
   const blocker = useBlocker(
     ({ currentLocation, nextLocation }) =>
       dirty() &&
-      currentLocation.pathname + currentLocation.search !==
-        nextLocation.pathname + nextLocation.search,
+      (samePage
+        ? currentLocation.pathname !== nextLocation.pathname
+        : currentLocation.pathname + currentLocation.search !==
+          nextLocation.pathname + nextLocation.search),
   );
 
   useEffect(() => {
@@ -41,9 +53,7 @@ export function LeaveGuard({ dirty }: { dirty: () => boolean }) {
       <DialogContent className="gap-4 p-6">
         <DialogHeader>
           <DialogTitle>Leave with unsaved text?</DialogTitle>
-          <DialogDescription>
-            What you wrote in the editor is not saved yet. Leaving now loses it.
-          </DialogDescription>
+          <DialogDescription>{what}</DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="secondary" onClick={() => blocker.reset?.()}>

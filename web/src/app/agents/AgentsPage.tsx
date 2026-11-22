@@ -1,39 +1,32 @@
 /**
  * The Agents page: the agents the server can run as one list of 36px rows (the name, what it runs on, and at the right
- * a word where something is wrong), and the editor of the one chosen in the editor window (`AgentEditor`,
- * `ui/components/EditorWindow.tsx`). The chosen agent is in the address (`?agent=`, or `?new=1` for a new one), so a
- * reload and a link keep it open; closing the window takes it out of the address. A server without a harness
- * configuration repository keeps its agents in `moebius.toml`: the page then reads the agent from the settings and
- * offers to set the repository up.
+ * a word where something is wrong). A row opens the agent's own page (`AgentPage.tsx`, `/agents/<name>`). "New agent"
+ * asks one plain question, blank or from an agent that exists, and opens the page of a new agent
+ * (`/agents/new?blank=1`, `?from=`), which is named and saved there. `?new=1` shows the question, so a link keeps it
+ * open; the old addresses `?agent=` and `?new=1&blank=1` lead to the pages that replaced them (`routes/redirects.ts`).
+ * A server without a harness configuration repository keeps its agents in `moebius.toml`: the page then offers to set
+ * the repository up.
  */
 import { PlusIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useSearchParams } from "react-router";
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router";
 import { agents as readAgents } from "../../api/calls/chat";
-import {
-  mcpServers,
-  agent as readAgent,
-  runners as readRunners,
-  skillList,
-} from "../../api/calls/harness";
-import { availableModels, serverSettings } from "../../api/calls/models";
+import { skillList } from "../../api/calls/harness";
 import { sayError } from "../../api/errorText";
-import { isApiError } from "../../api/http";
 import { keys } from "../../api/keys";
 import type { Agent } from "../../api/types/chat";
-import type { AgentDetail } from "../../api/types/harness";
 import { Button } from "../../ui/components/Button";
 import { cn } from "../../ui/lib/cn";
 import { Empty } from "../../ui/page/Empty";
 import { Notice } from "../../ui/page/Notice";
 import { PageHeader } from "../../ui/page/PageHeader";
-import { SkeletonCard, SkeletonList } from "../../ui/page/Skeleton";
-import { useDrafts } from "../harness/form";
+import { SkeletonList } from "../../ui/page/Skeleton";
 import { HarnessSetup } from "../harness/HarnessSetup";
-import { AgentEditor } from "./AgentEditor";
+import { agentPath, NEW_AGENT_PATH } from "../pages";
+import { oldAgentAddress } from "../routes/redirects";
 import { AgentsTabs } from "./AgentsTabs";
-import { type AgentForm, blankForm, copyable, formOf, fromFile } from "./model";
-import { AgentWait, NewAgentChoice, NewAgentEditor } from "./NewAgent";
+import { copyable } from "./model";
+import { NewAgentChoice } from "./NewAgent";
 
 const harnessName = (harness: string) =>
   harness === "pi-bolt" ? "Pi-Bolt" : harness === "claude-code" ? "Claude Code" : harness;
@@ -52,8 +45,8 @@ function rowState(agent: Agent): { text: string; className: string } | null {
   return null;
 }
 
-/** One agent as a row of 36px that opens it; without `onOpen` (no harness configuration to edit in) it is read only. */
-function AgentRow({ agent, onOpen }: { agent: Agent; onOpen?: () => void }) {
+/** One agent as a row of 36px that opens its page; without `open` (no harness configuration to edit in) it is read only. */
+function AgentRow({ agent, open }: { agent: Agent; open: boolean }) {
   const state = rowState(agent);
   const body = (
     <>
@@ -79,16 +72,15 @@ function AgentRow({ agent, onOpen }: { agent: Agent; onOpen?: () => void }) {
   );
   const row =
     "flex h-9 w-full items-center gap-2.5 border-b border-hairline px-4 text-left text-base text-text";
-  return onOpen ? (
-    <button
-      type="button"
+  return open ? (
+    <Link
+      to={agentPath(agent.name)}
       data-testid="agent-row"
-      aria-label={`Edit agent ${agent.name}`}
-      onClick={onOpen}
+      aria-label={`Open agent ${agent.name}`}
       className={cn(row, "cursor-pointer hover:bg-row-hover")}
     >
       {body}
-    </button>
+    </Link>
   ) : (
     <div data-testid="agent-row" className={row}>
       {body}
@@ -97,38 +89,14 @@ function AgentRow({ agent, onOpen }: { agent: Agent; onOpen?: () => void }) {
 }
 
 export function AgentsPage() {
+  const { search } = useLocation();
   const [params, setParams] = useSearchParams();
-  // What was typed for each agent, held while the page lives, so a window that reopens on it keeps the draft.
-  const drafts = useDrafts<AgentForm | null>();
-  const newDraft = { hold: drafts.hold(NEW), drop: () => drafts.drop(NEW) };
+  const navigate = useNavigate();
   const agents = useQuery({ queryKey: keys.agents, queryFn: readAgents });
   const skills = useQuery({ queryKey: keys.skills, queryFn: skillList });
-  const mcp = useQuery({ queryKey: keys.mcpServers, queryFn: mcpServers });
-  const runners = useQuery({ queryKey: keys.runners, queryFn: readRunners });
-  const available = useQuery({
-    queryKey: keys.models,
-    queryFn: () => availableModels(false, false),
-  });
-
-  const chosen = params.get("agent");
-  const creating = params.get("new") === "1";
-  // A new agent starts blank (`blank=1`) or from an existing agent (`from=`); with neither, the choice is shown.
-  const startsFrom = params.get("from");
-  const startsBlank = params.get("blank") === "1";
-  const select = (changes: Record<string, string | null>) =>
-    setParams(
-      (current) => {
-        const next = new URLSearchParams(current);
-        for (const [key, value] of Object.entries(changes)) {
-          if (value === null) next.delete(key);
-          else next.set(key, value);
-        }
-        return next;
-      },
-      { replace: true },
-    );
-  const open = (name: string) => select({ agent: name, new: null, from: null, blank: null });
-  const close = () => select({ agent: null, new: null, from: null, blank: null });
+  const old = oldAgentAddress(new URLSearchParams(search));
+  const choosing = params.get("new") === "1";
+  const setChoosing = (on: boolean) => setParams(on ? { new: "1" } : {}, { replace: true });
 
   // A server with a harness configuration repository always lists the built-in skills, so none means agents are kept
   // in the tables of moebius.toml.
@@ -142,15 +110,8 @@ export function AgentsPage() {
     !editable && skills.isError
       ? "The harness configuration could not be read, so no agent can be added yet."
       : undefined;
-  const startNew = () => select({ new: "1", agent: null, from: null, blank: null });
-  const shared = {
-    inFile,
-    skills: skills.isError ? null : (skills.data ?? []),
-    mcp: mcp.isError ? null : (mcp.data ?? []),
-    runners: runners.data ?? [],
-    available: available.data,
-    onClose: close,
-  };
+  const startNew = () => setChoosing(true);
+  if (old !== null) return <Navigate to={old} replace />;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -224,104 +185,17 @@ export function AgentsPage() {
             }
           />
         ) : (
-          agents.data.map((agent) => (
-            <AgentRow
-              key={agent.name}
-              agent={agent}
-              onOpen={editable ? () => open(agent.name) : undefined}
-            />
-          ))
+          agents.data.map((agent) => <AgentRow key={agent.name} agent={agent} open={editable} />)
         )}
       </div>
-      {creating && !startsBlank && startsFrom === null ? (
+      {choosing && (
         <NewAgentChoice
-          key="choice"
           agents={copyable(agents.data ?? [])}
-          onBlank={() => select({ blank: "1" })}
-          onFrom={(name) => select({ from: name })}
-          onClose={close}
+          onBlank={() => void navigate(`${NEW_AGENT_PATH}?blank=1`)}
+          onFrom={(name) => void navigate(`${NEW_AGENT_PATH}?from=${encodeURIComponent(name)}`)}
+          onClose={() => setChoosing(false)}
         />
-      ) : creating ? (
-        <NewAgentEditor
-          key={`new-${startsFrom ?? ""}`}
-          from={startsBlank ? null : startsFrom}
-          agents={agents.data ?? []}
-          draft={drafts.take(NEW, () => null)}
-          drafts={newDraft}
-          {...shared}
-        />
-      ) : chosen !== null && editable ? (
-        <ChosenAgent
-          key={chosen}
-          name={chosen}
-          draft={drafts.take(chosen, () => null)}
-          drafts={{ hold: drafts.hold(chosen), drop: () => drafts.drop(chosen) }}
-          builtIn={agents.data?.some((agent) => agent.name === chosen && agent.built_in) ?? false}
-          {...shared}
-        />
-      ) : null}
+      )}
     </div>
-  );
-}
-
-/** The draft of a new agent, which has no name to hold it yet. */
-const NEW = "\u0000new";
-
-type Shared = Omit<React.ComponentProps<typeof AgentEditor>, "initial" | "stored" | "broken">;
-
-/** Reads the files of the agent `name`, and opens the editor on them, or on what was typed for it. */
-function ChosenAgent({
-  name,
-  builtIn,
-  draft,
-  ...shared
-}: Shared & { name: string; builtIn: boolean; draft: AgentForm | null }) {
-  const settings = useQuery({
-    queryKey: keys.settings,
-    queryFn: serverSettings,
-    enabled: shared.inFile,
-  });
-  // The server answers a built-in agent's built-in part without a harness configuration repository.
-  const detail = useQuery({
-    queryKey: keys.agent(name),
-    queryFn: () => readAgent(name),
-    enabled: !shared.inFile || builtIn,
-    retry: false,
-  });
-
-  let opened: AgentDetail | null = null;
-  let broken: string | undefined;
-  if (shared.inFile) {
-    if (settings.isPending || (builtIn && detail.isPending))
-      return <Reading name={name} onClose={shared.onClose} />;
-    if (settings.isError)
-      return <Broken name={name} message={settings.error.message} {...shared} />;
-    opened = fromFile(name, settings.data) ?? { name };
-    if (detail.data?.built_in) opened = { ...opened, built_in: detail.data.built_in };
-  } else {
-    if (detail.isPending) return <Reading name={name} onClose={shared.onClose} />;
-    if (detail.isError) {
-      // The Moebius agent is there without files; saving it makes them.
-      if (builtIn && isApiError(detail.error) && detail.error.status === 404) opened = { name };
-      else broken = detail.error.message;
-    } else {
-      opened = detail.data;
-    }
-  }
-  // What a save would replace. The draft is what was typed, which is not the same thing.
-  const stored = opened ? formOf(opened) : { ...blankForm(name), exists: true };
-  return <AgentEditor {...shared} initial={draft ?? stored} stored={stored} broken={broken} />;
-}
-
-function Broken({ name, message, ...shared }: Shared & { name: string; message: string }) {
-  const stored = { ...blankForm(name), exists: true };
-  return <AgentEditor {...shared} initial={stored} stored={stored} broken={message} />;
-}
-
-function Reading({ name, onClose }: { name: string; onClose: () => void }) {
-  return (
-    <AgentWait title={`Edit agent ${name}`} onClose={onClose}>
-      <SkeletonCard lines={4} message="Reading the agent" />
-    </AgentWait>
   );
 }

@@ -193,15 +193,15 @@ async function signedIn(path: string): Promise<Page> {
 
 /**
  * The Moebius agent's panel: it opens at the panel's right over the same page, which keeps its state, and closes again.
- * The page's own facts (a workflow's definition) are in the page, so there is no pane of properties beside it.
+ * The page's own facts (a workflow's steps) are in the page, so there is no pane of properties beside it.
  */
 describe.skipIf(usesRealServer)("the Moebius agent", () => {
   const PANEL = { name: "Moebius agent" } as const;
 
   it("opens at the panel's right and closes again, the page kept", async () => {
     const page = await signedIn("/projects/1/workflows/release");
-    const properties = page.getByRole("region", { name: "Definition", exact: true });
-    await properties.getByText("3 nodes").waitFor();
+    const properties = page.getByRole("region", { name: /^Steps/ });
+    await properties.getByText("3 steps").waitFor();
     const panel = await box(page, '[data-surface="page"]');
     await properties.evaluate((element) => {
       element.dataset.kept = "yes";
@@ -219,7 +219,7 @@ describe.skipIf(usesRealServer)("the Moebius agent", () => {
     await agent.getByRole("button", { name: "Close the Moebius agent" }).click();
     await agent.waitFor({ state: "hidden" });
     expect(await properties.getAttribute("data-kept")).toBe("yes");
-    await properties.getByText("3 nodes").waitFor();
+    await properties.getByText("3 steps").waitFor();
 
     // The shortcut opens it too, and Escape closes it.
     await page.keyboard.press("Control+j");

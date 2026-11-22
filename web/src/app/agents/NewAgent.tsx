@@ -2,12 +2,9 @@
  * Starting a new agent: first one simple choice in a small window of its own, a blank agent or one that starts from an
  * existing agent (the Coder and the Reviewer, which always exist, and the person's own; not the agents Moebius runs
  * for itself). A copy has all the settings and instructions of the agent it starts from under a name still to be
- * typed, and is saved as any new agent is, with `PUT /v1/agents/{name}`, from the editor window.
+ * typed, and is saved as any new agent is, with `PUT /v1/agents/{name}`, from the agent's page (`AgentPage.tsx`).
  */
-import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { agent as readAgent } from "../../api/calls/harness";
-import { keys } from "../../api/keys";
 import type { Agent } from "../../api/types/chat";
 import { Button } from "../../ui/components/Button";
 import {
@@ -17,14 +14,9 @@ import {
   DialogFooter,
   DialogTitle,
 } from "../../ui/components/Dialog";
-import { EditorWindow } from "../../ui/components/EditorWindow";
 import { WindowHeader } from "../../ui/components/WindowHeader";
 import { Chip } from "../../ui/page/Chip";
 import { Field, Select } from "../../ui/page/Field";
-import { Notice } from "../../ui/page/Notice";
-import { SkeletonCard } from "../../ui/page/Skeleton";
-import { AgentEditor, type EditorProps } from "./AgentEditor";
-import { type AgentForm, blankForm, copyOf } from "./model";
 
 /** The choice a new agent starts with: blank, or from the agent chosen. */
 export function NewAgentChoice({
@@ -100,62 +92,4 @@ export function NewAgentChoice({
       </DialogContent>
     </Dialog>
   );
-}
-
-/** The window while an agent is read, or when it cannot be: the same window, with Close and no Save. */
-export function AgentWait({
-  title,
-  onClose,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <EditorWindow open title={title} dirty={false} height="fit" onClose={onClose}>
-      {children}
-    </EditorWindow>
-  );
-}
-
-/** The editor of a new agent: blank, or a copy of the agent `from`, read from the server. */
-export function NewAgentEditor({
-  from,
-  agents,
-  draft,
-  ...shared
-}: Omit<EditorProps, "initial" | "stored" | "broken"> & {
-  from: string | null;
-  agents: Agent[];
-  draft: AgentForm | null;
-}) {
-  const blank = blankForm("", true);
-  const detail = useQuery({
-    queryKey: keys.agent(from ?? ""),
-    queryFn: () => readAgent(from as string),
-    enabled: from !== null,
-    retry: false,
-  });
-  if (from === null) return <AgentEditor {...shared} initial={draft ?? blank} stored={blank} />;
-  if (detail.isPending) {
-    return (
-      <AgentWait title="New agent" onClose={shared.onClose}>
-        <SkeletonCard lines={4} message={`Reading ${from}`} />
-      </AgentWait>
-    );
-  }
-  if (detail.isError) {
-    return (
-      <AgentWait title="New agent" onClose={shared.onClose}>
-        <Notice tone="error">{`Could not read ${from}. ${detail.error.message}`}</Notice>
-      </AgentWait>
-    );
-  }
-  const copy = copyOf(
-    detail.data,
-    agents.find((agent) => agent.name === from),
-  );
-  // What a save would replace is nothing: the copy is waiting to be saved from the start.
-  return <AgentEditor {...shared} initial={draft ?? copy} stored={blank} />;
 }

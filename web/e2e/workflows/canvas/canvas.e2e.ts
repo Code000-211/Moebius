@@ -169,8 +169,8 @@ function kind(kind: string): Locator {
 describe.skipIf(usesRealServer)("the workflow canvas", () => {
   it("draws the graph the file holds, its start in front of it", async () => {
     await openCanvas();
-    await shows(card("trigger"), "Trigger", "schedule");
-    await shows(card("build"), "build", "agent");
+    await shows(card("trigger"), "Trigger", "Schedule");
+    await shows(card("build"), "build", "Agent");
     await shows(card("test"), "test");
     await thereAre(wires(), 3);
     await shows(state(), "Saved");
@@ -218,7 +218,7 @@ describe.skipIf(usesRealServer)("the workflow canvas", () => {
     expect(saved?.position.x ?? 0).toBeLessThan(from.x ?? 0);
     expect(saved?.position.y ?? 0).toBeGreaterThan(from.y ?? 0);
     // The save went through the route, and the file the read-only page shows was written with it.
-    await page.getByRole("link", { name: "release" }).first().click();
+    await page.getByRole("tab", { name: "File" }).click();
     await page.getByRole("heading", { name: "release", level: 1 }).waitFor();
     await shows(page.locator("main"), "at = [");
   });
@@ -317,13 +317,13 @@ describe.skipIf(usesRealServer)("the workflow canvas", () => {
     await kind("for_each").click();
     await shows(state(), "Unsaved changes");
 
-    await page.getByRole("link", { name: "release" }).first().click();
+    await page.getByRole("tab", { name: "Overview" }).click();
     const ask = page.getByRole("dialog", { name: "Leave with unsaved changes?" });
     await ask.waitFor();
     await ask.getByRole("button", { name: "Stay", exact: true }).click();
     expect(page.url()).toContain("/workflows/release/canvas");
 
-    await page.getByRole("link", { name: "release" }).first().click();
+    await page.getByRole("tab", { name: "Overview" }).click();
     await ask.getByRole("button", { name: "Leave without saving" }).click();
     await page.getByRole("heading", { name: "release", level: 1 }).waitFor();
     expect(page.url()).not.toContain("/canvas");
@@ -344,7 +344,7 @@ describe.skipIf(usesRealServer)("the workflow canvas", () => {
     await drag("test", -60, 130);
     await shows(state(), "Unsaved changes");
 
-    await page.getByRole("link", { name: "release" }).first().click();
+    await page.getByRole("tab", { name: "Overview" }).click();
     const ask = page.getByRole("dialog", { name: "Leave with unsaved changes?" });
     await ask.waitFor();
     await ask.getByRole("button", { name: "Save and leave" }).click();

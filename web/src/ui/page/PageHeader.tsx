@@ -3,7 +3,8 @@
  * tabs, and on the right its actions — quiet text buttons and at most one primary. It sticks to the top of the panel
  * over a hairline rule, which is the rule the chosen tab's underline sits on. There is no sentence under the title and
  * no breadcrumb: the sidebar already says where a page lives. A page reached by drilling down can carry the way back
- * on the left of its name, which is where it is looked for.
+ * on the left of its name, which is where it is looked for: a button, or a short trail of links such as a workflow's
+ * `Project › Workflows ›`. A `badge` after the name says one small fact about the thing, such as what starts a workflow.
  *
  * At the right, in this order on every page: the page's own `actions` (quiet), then its `menu` (a gear or a `...`), then
  * the "Moebius" button that opens the agent's panel (`app/shell/AgentButton.tsx`), and last the page's one `primary`
@@ -42,6 +43,8 @@ export function PageHeader({
   primary,
   /** The way back, for a page that is a thing inside another thing. */
   back,
+  /** A small fact about the thing, such as what starts a workflow, right after its name. */
+  badge,
   /** Keeps the header to one row of 48px however narrow it gets: the tabs, not the buttons, give way. */
   oneRow = false,
 }: {
@@ -55,6 +58,7 @@ export function PageHeader({
   /** The page's one primary button, after the Moebius button. */
   primary?: ReactNode;
   back?: ReactNode;
+  badge?: ReactNode;
   oneRow?: boolean;
 }) {
   const sidebar = useSidebarToggle();
@@ -102,6 +106,7 @@ export function PageHeader({
         <h1 className="m-0 min-w-0 truncate text-md font-semibold tracking-tight text-text">
           {title}
         </h1>
+        {badge}
       </div>
       {tabs && (
         <div

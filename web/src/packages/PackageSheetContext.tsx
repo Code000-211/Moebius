@@ -1,7 +1,7 @@
 /**
  * Where the package sheet is pointed and whether it is showing. The shell holds one of these, so there is one sheet at
- * a time: a page opens it on a catalog (`open("moebius")` from the Plugins page, `open("pi", agent)` from an agent's
- * Extensions), and opening it from elsewhere switches the catalog it shows. It lies over the page's right column
+ * a time: a page opens it on a catalog (`open("moebius")` from the Plugins page; an agent's pi.dev packages are the Extensions
+ * tab of its page, not this sheet), and opening it from elsewhere switches the catalog it shows. It lies over the page's right column
  * (`ui/page/SheetSlot.tsx`).
  */
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";

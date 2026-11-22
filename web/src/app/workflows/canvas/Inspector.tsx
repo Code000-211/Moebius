@@ -1,6 +1,6 @@
 /**
- * The window a chosen step opens in (`ui/components/EditorWindow.tsx`): a node, the trigger or an edge. The edits are a
- * draft held in the window; Save gives them to the graph, and the shared window guards the draft when it is closed.
+ * The pane a chosen step opens in, at the right of the canvas (`InspectorPane`): a node, the trigger or an edge. The
+ * edits are a draft held in the pane; Save gives them to the graph, and the pane guards the draft when it is closed.
  */
 import { type ReactNode, useState } from "react";
 import type {
@@ -10,12 +10,13 @@ import type {
   WorkflowNode,
   WorkflowNodeRun,
 } from "../../../api/types/workflows";
-import { DeleteButton, EditorWindow } from "../../../ui/components/EditorWindow";
+import { DeleteButton } from "../../../ui/components/EditorWindow";
 import { Input } from "../../../ui/components/Input";
 import { Field } from "../../../ui/page/Field";
 import { JsonValue } from "../../../ui/page/JsonValue";
 import { triggerProblem } from "../forms/trigger";
 import { formFor, nodeKinds, triggerFormFor } from "../nodeKinds";
+import { InspectorPane } from "./InspectorPane";
 import { nodeOf, TRIGGER } from "./model";
 import { ParamForm } from "./ParamForm";
 
@@ -129,8 +130,7 @@ function NodeWindow({
   const dirty =
     id.trim() !== node.id || JSON.stringify(params) !== JSON.stringify(node.params ?? {});
   return (
-    <EditorWindow
-      open
+    <InspectorPane
       title={node.id}
       description={kind?.description}
       dirty={dirty}
@@ -175,7 +175,7 @@ function NodeWindow({
           {run.error ? <p className="m-0 text-sm text-error-text">{run.error}</p> : null}
         </Section>
       )}
-    </EditorWindow>
+    </InspectorPane>
   );
 }
 
@@ -204,11 +204,9 @@ function EdgeWindow({
   onClose: () => void;
 }) {
   return (
-    <EditorWindow
-      open
+    <InspectorPane
       title={`${edge.from} → ${edge.to}`}
       dirty={false}
-      height="fit"
       onClose={onClose}
       actions={
         <DeleteButton onClick={onDelete} data-testid="delete-edge">
@@ -224,7 +222,7 @@ function EdgeWindow({
         <dt className="text-secondary">Comes to</dt>
         <dd className="m-0 font-mono text-text">{edge.to}</dd>
       </dl>
-    </EditorWindow>
+    </InspectorPane>
   );
 }
 
@@ -242,8 +240,7 @@ function TriggerWindow({
   const [draft, setDraft] = useState(trigger);
   const Custom = draft ? triggerFormFor(draft.kind) : undefined;
   return (
-    <EditorWindow
-      open
+    <InspectorPane
       title="Trigger"
       description={trigger ? trigger.kind : "This workflow has none"}
       dirty={JSON.stringify(draft) !== JSON.stringify(trigger)}
@@ -260,6 +257,6 @@ function TriggerWindow({
           A workflow needs exactly one trigger, and this file has none.
         </p>
       )}
-    </EditorWindow>
+    </InspectorPane>
   );
 }

@@ -10,8 +10,11 @@
  * A save the server refuses is not thrown away: its message names a node, an edge or the trigger, and is shown there
  * until the next try. A run can be picked and is drawn over the graph, each node it reached with its status and what
  * it was given and gave back. Leaving with unsaved changes asks first, whether by an app route or by the tab.
+ *
+ * It is the Canvas tab of the workflow's page (`../WorkflowPage.tsx`), which reads the definition and draws the header;
+ * a chosen step is edited in the pane at the right of the graph, not in a window over it.
  */
-import { ArrowLeftIcon, FloppyDiskIcon } from "@phosphor-icons/react";
+import { FloppyDiskIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Background,
@@ -27,9 +30,8 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useBlocker, useLocation, useParams } from "react-router";
+import { useBlocker } from "react-router";
 import {
-  projectWorkflow,
   projectWorkflowRuns,
   saveProjectWorkflow,
   workflowRun,
@@ -52,10 +54,6 @@ import {
 import { cn } from "../../../ui/lib/cn";
 import { Select } from "../../../ui/page/Field";
 import { Notice } from "../../../ui/page/Notice";
-import { PageHeader } from "../../../ui/page/PageHeader";
-import { ReadFailed } from "../../../ui/page/ReadFailed";
-import { SkeletonLines } from "../../../ui/page/Skeleton";
-import { projectTabPath, workflowPath } from "../../pages";
 import { triggerProblem } from "../forms/trigger";
 import { genericKind, type NodeKind, nodeKinds, startingParams } from "../nodeKinds";
 import { NodeCard, TriggerCard } from "./cards";
@@ -67,7 +65,6 @@ import {
   edgeId,
   isDirty,
   moveNode,
-  newWorkflowDraft,
   nextPosition,
   type Problem,
   problemFor,
@@ -82,90 +79,32 @@ import { droppedKind, Palette } from "./Palette";
 
 const nodeTypes = { kind: NodeCard, trigger: TriggerCard };
 
-export function WorkflowCanvasPage() {
-  const { projectId = "", name = "" } = useParams();
-  const project = Number(projectId);
-  const location = useLocation();
-  // A draft passed as router state opens the canvas without a read: it is the blank graph the "New workflow" dialog
-  // starts, for a name no file holds yet, and its first save creates the workflow. Anything else the address carries
-  // is not a draft, and the definition is read as for an edit.
-  const incoming = draftOf(location.state);
-  const definition = useQuery({
-    queryKey: keys.projectWorkflow(project, name),
-    queryFn: () => projectWorkflow(project, name),
-    enabled: incoming === null,
-    // A name no file holds yet is a new workflow, so a read that finds none is not tried again.
-    retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 3,
-  });
-  const back = (
-    <Button asChild variant="ghost" size="sm">
-      <Link to={workflowPath(project, name)}>
-        <ArrowLeftIcon className="size-4" aria-hidden="true" />
-        {name}
-      </Link>
-    </Button>
-  );
-
-  if (incoming !== null) {
-    return (
-      <ReactFlowProvider>
-        <Canvas
-          key={incoming.name}
-          name={incoming.name}
-          loaded={incoming}
-          project={project}
-          isNew
-        />
-      </ReactFlowProvider>
-    );
-  }
-
-  if (definition.isPending) {
-    return (
-      <div className="flex h-full min-h-0 flex-col">
-        <PageHeader title={`${name} — canvas`} back={back} />
-        <SkeletonLines lines={6} message="Reading the definition" />
-      </div>
-    );
-  }
-  // The address of a workflow that is not saved yet, reloaded before its first save: a blank canvas, as the dialog opens.
-  if (
-    definition.isError &&
-    definition.error instanceof ApiError &&
-    definition.error.status === 404
-  ) {
-    return (
-      <ReactFlowProvider>
-        <Canvas
-          key={name}
-          name={name}
-          loaded={newWorkflowDraft(name, "")}
-          project={project}
-          isNew
-        />
-      </ReactFlowProvider>
-    );
-  }
-  if (definition.isError) {
-    return (
-      <div className="flex h-full min-h-0 flex-col">
-        <PageHeader title={`${name} — canvas`} back={back} />
-        <ReadFailed
-          error={definition.error}
-          fallback="Could not read this workflow's definition. Try again."
-          busy={definition.isFetching}
-          onRetry={() => void definition.refetch()}
-        />
-      </div>
-    );
-  }
+/**
+ * The canvas of one workflow, starting from `loaded`: the graph as the file holds it, or the blank draft of a workflow
+ * whose file does not exist yet (`isNew`), whose first save creates it. `onCreated` says that first save was made.
+ */
+export function WorkflowCanvas({
+  name,
+  loaded,
+  project,
+  isNew = false,
+  onCreated,
+}: {
+  name: string;
+  loaded: WorkflowDefinition;
+  project: number;
+  isNew?: boolean;
+  onCreated?: () => void;
+}) {
   return (
     <ReactFlowProvider>
       <Canvas
-        key={definition.data.name}
-        name={definition.data.name}
-        loaded={definition.data.definition}
+        key={name}
+        name={name}
+        loaded={loaded}
         project={project}
+        isNew={isNew}
+        onCreated={onCreated}
       />
     </ReactFlowProvider>
   );
@@ -175,7 +114,7 @@ export function WorkflowCanvasPage() {
  * The draft the "New workflow" dialog passes as router state, when the address carries one. Loosely checked: whatever
  * the state is that is not a graph in the shape the canvas edits is not one.
  */
-function draftOf(state: unknown): WorkflowDefinition | null {
+export function draftOf(state: unknown): WorkflowDefinition | null {
   if (typeof state !== "object" || state === null) {
     return null;
   }
@@ -217,6 +156,7 @@ function Canvas({
   loaded,
   project,
   isNew = false,
+  onCreated,
 }: {
   name: string;
   loaded: WorkflowDefinition;
@@ -224,13 +164,14 @@ function Canvas({
   project: number;
   /** Set when the workflow has no file yet: it is unsaved until the first save, which creates it. */
   isNew?: boolean;
+  /** Called after the first save of a workflow that had no file. */
+  onCreated?: () => void;
 }) {
   const queryClient = useQueryClient();
   const board = useReactFlow();
   const [draft, setDraft] = useState<WorkflowDefinition>(loaded);
   const [saved, setSaved] = useState<WorkflowDefinition>(loaded);
-  // Before the first save the graph is not in a file, so it counts as unsaved however it looks, and the way back leads
-  // to the list rather than to a detail page of a workflow that does not exist yet.
+  // Before the first save the graph is not in a file, so it counts as unsaved however it looks.
   const [savedOnce, setSavedOnce] = useState(!isNew);
   const [selection, setSelection] = useState<Selection>(null);
   const [runId, setRunId] = useState<number | null>(null);
@@ -266,6 +207,7 @@ function Canvas({
       // A schedule trigger saved here makes or changes an automation: the Scheduled filter joins against that list.
       void queryClient.invalidateQueries({ queryKey: keys.automations });
       setSavedOnce(true);
+      if (isNew) onCreated?.();
     },
     onError: (error) => setProblem(problemFor(messageOf(error))),
   });
@@ -307,6 +249,15 @@ function Canvas({
     );
     setWires(flow.edges);
   }, [flow, setCards, setWires]);
+
+  // The pane of a chosen step takes room from the graph when it opens and gives it back when it closes: the view then
+  // fits the whole graph again, so no node is left under the pane.
+  const paneOpen = selection !== null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refits only when the pane opens or closes
+  useEffect(() => {
+    const timer = setTimeout(() => void board.fitView({ padding: 0.2 }), 60);
+    return () => clearTimeout(timer);
+  }, [paneOpen]);
 
   const add = useCallback(
     (kind: NodeKind, params: Record<string, unknown>, at?: { x: number; y: number }) => {
@@ -370,52 +321,39 @@ function Canvas({
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="canvas-page">
-      <PageHeader
-        title={name}
-        back={
-          <Button asChild variant="ghost" size="sm">
-            <Link
-              to={savedOnce ? workflowPath(project, name) : projectTabPath(project, "workflows")}
-            >
-              <ArrowLeftIcon className="size-4" aria-hidden="true" />
-              {name}
-            </Link>
-          </Button>
-        }
-        actions={
-          <div className="flex items-center gap-2">
-            <Select
-              aria-label="Run to show"
-              value={runId === null ? "" : String(runId)}
-              onChange={(value) => setRunId(value === "" ? null : Number(value))}
-              options={[
-                ["", "No run picked"],
-                ...(runs.data ?? []).map((entry): [string, string] => [
-                  String(entry.id),
-                  `Run #${entry.id} · ${entry.status}`,
-                ]),
-              ]}
-            />
-            <span
-              className={cn("text-sm", dirty ? "text-attention-text" : "text-secondary")}
-              data-testid="canvas-state"
-            >
-              {dirty ? "Unsaved changes" : commit ? `Saved as ${commit.slice(0, 7)}` : "Saved"}
-            </span>
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={!dirty || save.isPending || triggerIssue !== null}
-              title={triggerIssue ?? undefined}
-              onClick={() => save.mutate()}
-              data-testid="canvas-save"
-            >
-              <FloppyDiskIcon className="size-4" aria-hidden="true" />
-              {save.isPending ? "Saving" : "Save"}
-            </Button>
-          </div>
-        }
-      />
+      <div className="flex h-10 shrink-0 items-center gap-3 border-b border-hairline pb-2">
+        <div className="w-56">
+          <Select
+            aria-label="Run to show"
+            value={runId === null ? "" : String(runId)}
+            onChange={(value) => setRunId(value === "" ? null : Number(value))}
+            options={[
+              ["", "No run picked"],
+              ...(runs.data ?? []).map((entry): [string, string] => [
+                String(entry.id),
+                `Run #${entry.id} · ${entry.status}`,
+              ]),
+            ]}
+          />
+        </div>
+        <span
+          className={cn("ml-auto text-sm", dirty ? "text-attention-text" : "text-secondary")}
+          data-testid="canvas-state"
+        >
+          {dirty ? "Unsaved changes" : commit ? `Saved as ${commit.slice(0, 7)}` : "Saved"}
+        </span>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={!dirty || save.isPending || triggerIssue !== null}
+          title={triggerIssue ?? undefined}
+          onClick={() => save.mutate()}
+          data-testid="canvas-save"
+        >
+          <FloppyDiskIcon className="size-4" aria-hidden="true" />
+          {save.isPending ? "Saving" : "Save"}
+        </Button>
+      </div>
       <div className="flex min-h-0 flex-1">
         <Palette graph={draft} onAdd={add} />
         <div className="relative flex min-w-0 flex-1 flex-col" data-testid="canvas-board">
@@ -495,34 +433,34 @@ function Canvas({
             </div>
           ) : null}
         </div>
-      </div>
-      <Inspector
-        graph={draft}
-        project={project}
-        selection={selection}
-        run={
-          selection?.kind === "node"
-            ? (run.data?.nodes.find((entry) => entry.node === selection.id) ?? null)
-            : null
-        }
-        onSaveNode={(from, to, params) => {
-          const renamed = renameNode(draft, from, to);
-          if (!renamed) {
-            return;
+        <Inspector
+          graph={draft}
+          project={project}
+          selection={selection}
+          run={
+            selection?.kind === "node"
+              ? (run.data?.nodes.find((entry) => entry.node === selection.id) ?? null)
+              : null
           }
-          setDraft(setParams(renamed, to, params));
-        }}
-        onSaveTrigger={(trigger) => setDraft((graph) => setTrigger(graph, trigger))}
-        onDeleteNode={(id) => {
-          setDraft((graph) => removeNode(graph, id));
-          setSelection(null);
-        }}
-        onDeleteEdge={(edge) => {
-          setDraft((graph) => removeEdge(graph, edge));
-          setSelection(null);
-        }}
-        onClose={() => setSelection(null)}
-      />
+          onSaveNode={(from, to, params) => {
+            const renamed = renameNode(draft, from, to);
+            if (!renamed) {
+              return;
+            }
+            setDraft(setParams(renamed, to, params));
+          }}
+          onSaveTrigger={(trigger) => setDraft((graph) => setTrigger(graph, trigger))}
+          onDeleteNode={(id) => {
+            setDraft((graph) => removeNode(graph, id));
+            setSelection(null);
+          }}
+          onDeleteEdge={(edge) => {
+            setDraft((graph) => removeEdge(graph, edge));
+            setSelection(null);
+          }}
+          onClose={() => setSelection(null)}
+        />
+      </div>
       <UnsavedChanges
         open={dirty && !save.isPending}
         onSave={async () => {

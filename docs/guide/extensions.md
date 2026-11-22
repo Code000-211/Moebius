@@ -14,7 +14,7 @@ extension gets into a run, how it sits next to the bridge, and one that works.
 
 Many extensions exist already. The pi.dev catalog (https://pi.dev/packages) lists the npm packages with the keyword
 `pi-package`, and Moebius can search it, install a package into the harness configuration repository and give it to an
-agent by name, without copying TypeScript by hand:
+agent by name, without copying TypeScript by hand. The Extensions tab of an agent's page in the web app does the same: it lists the packages that name the agent and searches pi.dev, with an Add on each result. From the command line:
 
 ```sh
 moebius ext search web search --type extension     # find one

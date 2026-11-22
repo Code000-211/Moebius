@@ -62,28 +62,126 @@ describe.skipIf(usesRealServer)("the project's Workflows tab", () => {
     await deploy.getByText("Manual", { exact: true }).waitFor();
   });
 
-  it("opens a workflow's definition from its name", async () => {
+  it("opens a workflow's page from its name, on the Overview", async () => {
     await fresh();
     await open("/projects/1/workflows", "demo");
     await page.getByRole("link", { name: "release", exact: true }).click();
     await page.getByRole("heading", { name: "release", level: 1 }).waitFor();
-    await page.getByRole("region", { name: "Definition graph" }).waitFor();
+    await page.getByRole("tab", { name: "Overview", selected: true }).waitFor();
+    await page.getByRole("heading", { name: "Steps" }).waitFor();
   });
 });
 
-describe.skipIf(usesRealServer)("a workflow's definition", () => {
-  it("draws the saved graph with each node's kind and parameters, and shows the file", async () => {
+describe.skipIf(usesRealServer)("a workflow's page", () => {
+  const tab = (name: string) => page.getByRole("tab", { name });
+
+  it("has a header with the way back, what starts it, the four tabs and Run", async () => {
     await fresh();
     await open("/projects/1/workflows/release", "release");
-    const graph = page.getByRole("region", { name: "Definition graph" });
-    await graph.getByRole("heading", { name: "build" }).waitFor();
-    await graph.getByText("agent", { exact: true }).waitFor();
-    await graph.getByText(/Build the release/).waitFor();
-    await graph.getByRole("heading", { name: "test" }).waitFor();
-    await graph.getByText(/cargo test --workspace/).waitFor();
-    await page.getByRole("heading", { name: "File" }).waitFor();
+    const trail = page.getByRole("navigation", { name: "Where this is" });
+    await trail.getByRole("link", { name: "demo" }).waitFor();
+    await trail.getByRole("link", { name: "Workflows" }).waitFor();
+    await page
+      .getByText(/^Schedule · next /)
+      .first()
+      .waitFor();
+    for (const name of ["Overview", "Canvas", "Runs", "File"]) await tab(name).waitFor();
+    await page.getByRole("button", { name: "Run", exact: true }).waitFor();
+    // Not a webhook, so there is no hook to copy.
+    expect(await page.getByRole("button", { name: "Copy hook URL" }).count()).toBe(0);
+  });
+
+  it("lists the steps of the Overview in words, without JSON or an escaped line break", async () => {
+    await fresh();
+    await open("/projects/1/workflows/notify", "notify");
+    const steps = page.getByTestId("workflow-step");
+    await steps.first().waitFor();
+    expect(await steps.count()).toBe(3);
+    const first = steps.nth(0);
+    await first.getByText("Agent · coder").waitFor();
+    await first.getByText("{{ trigger.ref }}").waitFor();
+    const text = (await first.textContent()) ?? "";
+    expect(text).toContain("A push arrived:");
+    expect(text).toContain("…");
+    expect(text).not.toContain("\\n");
+    expect(text).not.toMatch(/\{"|":/);
+    await steps.nth(1).getByText("Approval").waitFor();
+    await steps.nth(2).getByText("Publish").waitFor();
+    // A webhook says where it answers, and its header copies it.
+    await page.getByText("/api/hooks/projects/1/notify").first().waitFor();
+    expect((await page.locator("body").textContent()) ?? "").not.toContain("\\n");
+  });
+
+  it("copies the hook URL of a webhook from the header", async () => {
+    await fresh();
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await open("/projects/1/workflows/notify", "notify");
+    await page.getByRole("button", { name: "Copy hook URL" }).click();
+    await page.getByRole("button", { name: "Copied" }).waitFor();
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+      "/api/hooks/projects/1/notify",
+    );
+  });
+
+  it("moves between the tabs by their addresses", async () => {
+    await fresh();
+    await open("/projects/1/workflows/release", "release");
+    await tab("Canvas").click();
+    await page.waitForURL(/\/projects\/1\/workflows\/release\/canvas$/);
+    await page.getByTestId("canvas-page").waitFor();
+    await tab("Runs").click();
+    await page.waitForURL(/\/projects\/1\/workflows\/release\/runs$/);
+    await page.getByTestId("workflow-run-row").first().waitFor();
+    await tab("File").click();
+    await page.waitForURL(/\/projects\/1\/workflows\/release\/file$/);
     await page.getByText(/name = "release"/).waitFor();
     await page.getByRole("button", { name: /Copy code/ }).waitFor();
+    await tab("Overview").click();
+    await page.waitForURL(/\/projects\/1\/workflows\/release$/);
+    await page.getByRole("heading", { name: "Steps" }).waitFor();
+  });
+
+  it("shows the file inside its box however long its lines are", async () => {
+    await fresh();
+    await open("/projects/1/workflows/notify/file", "notify");
+    const box = page.getByTestId("workflow-file");
+    await box.getByText(/name = "notify"/).waitFor();
+    const fits = await box.evaluate((element) => {
+      const frame = element.getBoundingClientRect();
+      const pre = element.querySelector("pre");
+      if (!pre) return false;
+      const edge = pre.getBoundingClientRect();
+      // Cut off on the right would be a pre wider than its frame with nothing to scroll it.
+      return (
+        edge.right <= frame.right + 1 &&
+        (pre.scrollWidth <= pre.clientWidth || getComputedStyle(pre).overflowX !== "visible")
+      );
+    });
+    expect(fits).toBe(true);
+  });
+
+  it("opens the Run dialog from the header", async () => {
+    await fresh();
+    await open("/projects/1/workflows/deploy", "deploy");
+    await page.getByRole("button", { name: "Run", exact: true }).click();
+    await page.getByRole("dialog", { name: "Run deploy" }).waitFor();
+  });
+
+  it("opens a run from the Runs tab", async () => {
+    await fresh();
+    await open("/projects/1/workflows/release/runs", "release");
+    await page.getByRole("link", { name: "Run 41" }).click();
+    await page.getByRole("heading", { name: "release · run 41", level: 1 }).waitFor();
+  });
+
+  it("sends the old addresses to the right tab", async () => {
+    await fresh();
+    await page.goto(`${server.url}/workflows/release/canvas?project=1`);
+    await page.waitForURL(/\/projects\/1\/workflows\/release\/canvas$/);
+    await page.getByTestId("canvas-page").waitFor();
+    await page.goto(`${server.url}/workflows/release?project=1`);
+    await page.waitForURL(/\/projects\/1\/workflows\/release$/);
+    await page.getByRole("tab", { name: "Overview", selected: true }).waitFor();
   });
 });
 
@@ -211,9 +309,9 @@ describe("a workflow saved through the API (a real server and the fake alike)", 
 
     await row.getByRole("link", { name: "wf1" }).click();
     await page.getByRole("heading", { name: "wf1", level: 1 }).waitFor();
-    const graph = page.getByRole("region", { name: "Definition graph" });
-    await graph.getByRole("heading", { name: "shape" }).waitFor();
-    await graph.getByText("code", { exact: true }).waitFor();
+    const step = page.getByTestId("workflow-step").filter({ hasText: "shape" });
+    await step.waitFor();
+    await step.getByText("Code", { exact: true }).waitFor();
     await page.getByText("This workflow has not run.").first().waitFor();
     await page.getByRole("button", { name: "Run" }).waitFor();
     expect(errors).toEqual([]);

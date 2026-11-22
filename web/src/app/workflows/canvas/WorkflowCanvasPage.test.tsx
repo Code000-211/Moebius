@@ -9,8 +9,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../../api/keys";
+import { WorkflowPage } from "../WorkflowPage";
 import { newWorkflowDraft } from "./model";
-import { WorkflowCanvasPage } from "./WorkflowCanvasPage";
 
 afterEach(() => {
   cleanup();
@@ -51,8 +51,15 @@ function show() {
         saves.push(init);
         return { ok: true, status: 200, text: async () => JSON.stringify(SAVED) };
       }
-      if (url.endsWith("/workflow-runs/nightly")) {
+      if (url.includes("/v1/workflow-runs") || url === "/v1/projects") {
         return { ok: true, status: 200, text: async () => JSON.stringify([]) };
+      }
+      if (url === "/v1/projects/3/workflows" || url === "/v1/projects/3/workflows/nightly") {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify(url.endsWith("nightly") ? SAVED : []),
+        };
       }
       throw new Error(`unexpected call ${init?.method ?? "GET"} ${url}`);
     }),
@@ -62,7 +69,7 @@ function show() {
   const router = createMemoryRouter(
     [
       { path: "/projects/:projectId/workflows", element: <WorkflowsProbe /> },
-      { path: "/projects/:projectId/workflows/:name/canvas", element: <WorkflowCanvasPage /> },
+      { path: "/projects/:projectId/workflows/:name/:tab?", element: <WorkflowPage /> },
     ],
     {
       initialEntries: [
@@ -91,19 +98,21 @@ describe("a canvas opened with a new draft", () => {
     });
   });
 
-  it("starts with the manual trigger and counts as unsaved, and leads back to the list", async () => {
+  it("starts with the manual trigger and counts as unsaved, under a header with the way back", async () => {
     show();
     await screen.findByTestId("canvas-page");
     expect(screen.getAllByTestId("canvas-node").length).toBe(1);
     expect(screen.getByTestId("canvas-state").textContent).toBe("Unsaved changes");
-    expect(screen.getByRole("link", { name: "nightly" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "Workflows" }).getAttribute("href")).toBe(
       "/projects/3/workflows",
     );
+    // A workflow with no file has no tabs but its canvas.
+    expect(screen.queryByRole("tablist", { name: "Workflow" })).toBeNull();
     // No read of a workflow that does not exist was made.
     expect(fetch).not.toHaveBeenCalledWith("/v1/projects/3/workflows/nightly", expect.anything());
   });
 
-  it("saves under the new name, and then leads back to the workflow", async () => {
+  it("saves under the new name, and then the page has its tabs", async () => {
     show();
     await screen.findByTestId("canvas-page");
     fireEvent.click(screen.getByTestId("canvas-save"));
@@ -124,8 +133,6 @@ describe("a canvas opened with a new draft", () => {
     await waitFor(() => {
       expect(screen.getByTestId("canvas-state").textContent).toBe("Saved as 0123456");
     });
-    expect(screen.getByRole("link", { name: "nightly" }).getAttribute("href")).toBe(
-      "/projects/3/workflows/nightly",
-    );
+    expect(await screen.findByRole("tablist", { name: "Workflow" })).toBeTruthy();
   });
 });

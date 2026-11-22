@@ -62,10 +62,7 @@ Refusals lists the rules that refused a call this week, the most refusing first.
 `## name` section and saves the whole file: with a harness configuration
 repository it is committed to the repository as `Update the rules` and pushed; without one it replaces the
 `rules_file` (creating `rules.md` next to `moebius.toml` the first time). The next tool call is checked against it. A
-refusal of the server (a name given twice, say) stays in red in the window. "Write with Moebius", in the header, opens
-the agent's panel with a request to write the server's rules: the Moebius agent asks what should be allowed or
-forbidden, reads the rules, changes them in prose without weakening any and saves them with
-`"$MOEBIUS" rules save <file>`.
+refusal of the server (a name given twice, say) stays in red in the window.
 Saving a repository's rule commits
 `repos/<repository name>/rules.md` to the harness configuration repository (and pushes it) with `PUT
 /v1/repositories/{id}/settings/rules.md`; the server checks the file first as it checks its own rules (every

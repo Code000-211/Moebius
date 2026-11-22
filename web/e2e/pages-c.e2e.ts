@@ -266,15 +266,6 @@ describe("the Rules page", () => {
     await editor().getByRole("button", { name: "Save", exact: true }).click();
     await alert('rules.md: line 4: the rule "keep-migrations" is named twice').waitFor();
   });
-
-  it.skipIf(usesRealServer)("hands the task to the Moebius agent's panel", async () => {
-    await fresh();
-    await open("/rules", "Rules");
-    const agentButton = page.getByRole("button", { name: "Moebius", exact: true });
-    expect(await agentButton.getAttribute("aria-pressed")).toBe("false");
-    await page.getByRole("button", { name: "Write with Moebius" }).click();
-    await expect.poll(() => agentButton.getAttribute("aria-pressed")).toBe("true");
-  });
 });
 
 describe("the scheduled workflows of a project's Workflows tab", () => {

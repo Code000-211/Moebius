@@ -3,7 +3,7 @@
  * of rules, and at the right the rules of the chosen one as blocks (`RuleList`). The sets are the built-in patterns
  * (always on, read only), the server's rules in prose and one entry for each repository, each with its count, then
  * "Refusals", the rules that refused a call this week (`scopes.ts`). The chosen set is the `scope` of the address.
- * "New rule" asks for the scope, "Write with Moebius" hands the task to the agent's panel. The server's rules are saved
+ * "New rule" asks for the scope. The server's rules are saved
  * with `PUT /v1/rules`, a repository's with `PUT /v1/repositories/{id}/settings/rules.md`; the server checks both and
  * says which line is wrong.
  */
@@ -24,8 +24,6 @@ import { Notice } from "../../ui/page/Notice";
 import { InSettingsArea, PageHeader } from "../../ui/page/PageHeader";
 import { Reading, SkeletonCard } from "../../ui/page/Skeleton";
 import { SUB_NAV_GROUP, SubNavLabel, subNavRow } from "../settings/SubNav";
-import { useAgent } from "../shell/AgentContext";
-import { writeRequest } from "./file";
 import { NewRule } from "./NewRule";
 import { RuleBlock, RuleList, refused, ScopeChip } from "./RuleList";
 import { chosenScope, type Scope, scopeKey, scopeName } from "./scopes";
@@ -35,7 +33,6 @@ export function RulesPage() {
   const data = useQuery({ queryKey: keys.rules, queryFn: rules });
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.rules });
   const [params, setQuery] = useQueryParams();
-  const agent = useAgent();
   const [choosing, setChoosing] = useState(false);
 
   if (data.isPending || data.error || !data.data) {
@@ -73,13 +70,6 @@ export function RulesPage() {
   const header = (
     <PageHeader
       title="Rules"
-      actions={
-        canWriteServer && (
-          <Button variant="secondary" size="sm" onClick={() => agent.ask(writeRequest())}>
-            <span className="header-word">Write with Moebius</span>
-          </Button>
-        )
-      }
       primary={
         canCreate && (
           <Button size="sm" onClick={() => setChoosing(true)}>
